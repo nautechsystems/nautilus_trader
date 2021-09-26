@@ -5,13 +5,13 @@ name: release
 on:
   workflow_run:
     workflows:
-      - build_test
+      - build-test
     branches: [ master ]
     types:
       - completed
 
 jobs:
-  test_pip_install:
+  test-pip-install:
     if: ${{ github.event.workflow_run.conclusion == 'success' }}
     strategy:
       fail-fast: false
@@ -31,9 +31,9 @@ jobs:
       - name: Test pip installation
         run: pip install .[distributed,docs]
 
-  tag_release:
-    needs: [ test_pip_install ]
-    name: tag_release - Python 3.9 Linux
+  tag-release:
+    needs: [ test-pip-install ]
+    name: tag-release - Python 3.9 (Linux)
     runs-on: ubuntu-latest
     outputs:
       upload_url: ${{ steps.create-release.outputs.upload_url }}
@@ -42,8 +42,6 @@ jobs:
       - uses: actions/checkout@v2
         with:
           fetch-depth: 2
-
-      # Python setup
       - name: Set up Python environment
         uses: actions/setup-python@v2
         with:
@@ -106,9 +104,9 @@ jobs:
           body_path: RELEASE.md
 
 
-  publish_sdist:
-    needs: [ tag_release ]
-    name: publish_sdist - Python 3.9 Linux
+  publish-sdist:
+    needs: [ tag-release ]
+    name: publish-sdist - Python 3.9 (Linux)
     runs-on: ubuntu-latest
     env:
       # Skip build copy to avoid C dynamic libs being copied into the source
@@ -116,8 +114,6 @@ jobs:
 
     steps:
       - uses: actions/checkout@v2
-
-      # Python setup
       - name: Set up Python environment
         uses: actions/setup-python@v2
         with:
@@ -177,8 +173,8 @@ jobs:
         run: poetry publish
 
 
-  publish_wheels:
-    needs: [ tag_release ]
+  publish-wheels:
+    needs: [ tag-release ]
     strategy:
       fail-fast: false
       matrix:
@@ -189,8 +185,6 @@ jobs:
 
     steps:
       - uses: actions/checkout@v2
-
-      # Python setup
       - name: Set up Python environment
         uses: actions/setup-python@v2
         with:
