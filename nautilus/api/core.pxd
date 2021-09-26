@@ -14,12 +14,11 @@
 # -------------------------------------------------------------------------------------------------
 
 from libc.stdint cimport int64_t
-from libc.stdint cimport uint8_t
 
 
 cdef extern from "nautilus_core.h":
     struct UUID4:
-        uint8_t value[36]
+        pass
 
     double unix_timestamp()
     int64_t unix_timestamp_ms()
@@ -27,6 +26,7 @@ cdef extern from "nautilus_core.h":
     int64_t unix_timestamp_ns()
 
     UUID4 uuid4_new()
-    UUID4 uuid4_free(UUID4 uuid)
-    UUID4 uuid4_from_raw(char *ptr)
-    uint8_t[36] uuid4_to_bytes(UUID4 *ptr)
+    UUID4 uuid4_from_raw(const char *ptr)
+    const char *uuid4_to_raw(UUID4 *ptr)
+    void uuid4_free_raw(char *ptr)
+    void uuid4_free(UUID4 uuid)

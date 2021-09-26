@@ -35,7 +35,7 @@ impl Venue {
     pub unsafe extern "C" fn venue_new(ptr: *mut u8, length: usize) -> Venue {
         // SAFETY: Checks ptr is a valid UTF-8 string
         let vec = Vec::from_raw_parts(ptr, length, length);
-        let s = String::from_utf8(vec).expect("invalid UTF-8 string");
+        let s = String::from_utf8(vec).expect("Invalid UTF-8 string");
         Venue {
             value: Box::from(s.to_string()),
         }

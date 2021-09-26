@@ -60,7 +60,7 @@ impl InstrumentId {
     pub unsafe fn instrument_id_new(ptr: *mut u8, length: usize) -> InstrumentId {
         // SAFETY: Checks ptr is a valid UTF-8 string
         let vec = Vec::from_raw_parts(ptr, length, length);
-        let s = String::from_utf8(vec).expect("invalid UTF-8 string");
+        let s = String::from_utf8(vec).expect("Invalid UTF-8 string");
         let pieces: Vec<&str> = s.split(".").collect();
         assert!(pieces.len() >= 2);
         InstrumentId::new(

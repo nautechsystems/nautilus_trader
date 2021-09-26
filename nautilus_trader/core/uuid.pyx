@@ -16,9 +16,10 @@
 import re
 
 from nautilus.api.core cimport uuid4_free
+from nautilus.api.core cimport uuid4_free_raw
 from nautilus.api.core cimport uuid4_from_raw
 from nautilus.api.core cimport uuid4_new
-from nautilus.api.core cimport uuid4_to_bytes
+from nautilus.api.core cimport uuid4_to_raw
 from nautilus_trader.core.correctness cimport Condition
 
 
@@ -52,12 +53,12 @@ cdef class UUID4:
         """
         if value is None:
             # Create a new UUID4 from rust
-            self._uuid4 = uuid4_new()
+            self._uuid4 = uuid4_new()  # `self._uuid4` owned from rust
             return
 
         Condition.true(_UUID_REGEX.match(value), "value is not a valid UUID")
-        cdef bytes value_bytes = value.encode("utf-8")
-        self._uuid4 = uuid4_from_raw(<char *>value_bytes)
+        cdef bytes encoded = value.encode("utf-8") + b"\0xx"
+        self._uuid4 = uuid4_from_raw(<char *>encoded)  # `ptr` moved to rust, `self._uuid4` owned from rust
 
     def __eq__(self, UUID4 other) -> bool:
         return self.value == other.value
@@ -69,14 +70,15 @@ cdef class UUID4:
         return self.value
 
     def __repr__(self) -> str:
-        cdef bytes encoded = <bytes>uuid4_to_bytes(&self._uuid4)
-        return f"{type(self).__name__}('{encoded.decode()}')"
+        return f"{type(self).__name__}('{self.value}')"
 
     def __del__(self) -> None:
-        # Free memory allocated by rust
-        uuid4_free(self._uuid4)
+        uuid4_free(self._uuid4)  # `self._uuid4` moved to rust, and dropped
 
     @property
     def value(self) -> str:
-        cdef bytes encoded = <bytes>uuid4_to_bytes(&self._uuid4)
-        return encoded.decode()
+        cdef char *ptr = uuid4_to_raw(&self._uuid4)  # `ptr` owned from rust
+        cdef bytes utf8 = <bytes>ptr
+        cdef str output = utf8.decode()
+        uuid4_free_raw(ptr)  # `ptr` moved to rust, and dropped
+        return output

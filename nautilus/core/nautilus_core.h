@@ -5,8 +5,10 @@
 
 #include <stdint.h>
 
+typedef struct String String;
+
 typedef struct UUID4 {
-  uint8_t value[36];
+  struct String *value;
 } UUID4;
 
 /**
@@ -29,24 +31,14 @@ int64_t unix_timestamp_us(void);
  */
 int64_t unix_timestamp_ns(void);
 
-/**
- * Initializes a new instance of the UUID4 struct.
- */
 struct UUID4 uuid4_new(void);
 
-/**
- * Initializes a new instance of the UUID4 struct.
- */
-void uuid4_free(struct UUID4 uuid);
-
-/**
- * Returns a UTF-8 encoded bytes representation of the UUID value.
- */
-const uint8_t (*uuid4_to_bytes(const struct UUID4 *self))[36];
-
-/**
- * Initializes a new instance of the UUID4 struct.
- */
 struct UUID4 uuid4_from_raw(const char *ptr);
+
+const char *uuid4_to_raw(const struct UUID4 *self);
+
+void uuid4_free_raw(char *ptr);
+
+void uuid4_free(struct UUID4 uuid);
 
 #endif /* add_h */
