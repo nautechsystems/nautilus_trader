@@ -74,7 +74,7 @@ CARGO_MODE = "" if DEBUG_MODE else " --release"
 
 def _build_rust_libs() -> None:
     # Build the Rust libraries using Cargo
-    print("Compiling rust libs...")
+    print("Compiling Rust libraries...")
 
     os.system("rustc --version")  # noqa
     os.system(f"(cd nautilus && cargo build{CARGO_MODE})")  # noqa
@@ -95,6 +95,7 @@ def _build_extensions() -> List[Extension]:
         extra_compile_args.append("-O3")
         extra_compile_args.append("-pipe")
 
+    print("Creating C extension modules...")
     print(f"define_macros={define_macros}")
     print(f"extra_compile_args={extra_compile_args}")
 
@@ -151,11 +152,12 @@ def _copy_build_dir_to_project(cmd: build_ext) -> None:
             continue
 
         # Copy the file and set permissions
-        print(f"Copying: {output} -> {relative_extension}")
         shutil.copyfile(output, relative_extension)
         mode = os.stat(relative_extension).st_mode
         mode |= (mode & 0o444) >> 2
         os.chmod(relative_extension, mode)
+
+    print("Copied all compiled '.so' dynamic library files into source")
 
 
 def build(setup_kwargs):
@@ -165,6 +167,7 @@ def build(setup_kwargs):
     distribution = _build_distribution(extensions)
 
     # Build and run the command
+    print("Compiling C extension modules...")
     cmd: build_ext = build_ext(distribution)
     if PARALLEL_BUILD:
         cmd.parallel = os.cpu_count()
@@ -216,4 +219,4 @@ if __name__ == "__main__":
     print("")
 
     build({})
-    print("Build completed: nautilus_trader\n")
+    print("Build completed")
