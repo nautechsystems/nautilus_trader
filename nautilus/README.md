@@ -1,6 +1,6 @@
-# Nautilus (experimental)
+# Nautilus Core (experimental)
 
-The base layer for Nautilus system implementations written in Rust.
+The core foundation for NautilusTrader written in Rust.
 
 ## License
 
