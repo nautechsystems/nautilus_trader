@@ -67,16 +67,22 @@ jobs:
           sudo apt-get install redis-server
           redis-server --daemonize yes
 
-      # Run tests
-      - name: Run tests
+      # Run tests (Linux/macOS)
+      - name: Run tests (Linux/macOS)
+        if: runner.os != 'Windows'
+        run: nox -rs tests_with_integration
+
+      # Run tests (Windows) without parallel build (avoids linker errors)
+      - name: Run tests (Windows)
+        if: runner.os == 'Windows'
         run: nox -rs tests_with_integration -- no-parallel
 
-      # Run code coverage
+      # Run code coverage (Linux)
       - name: Run code coverage
         if: runner.os == 'Linux'
-        run: nox -rs coverage -- no-parallel
+        run: nox -rs coverage
 
-      # Upload coverage report to codecov
+      # Upload coverage report to codecov (Linux)
       - name: Upload coverage report
         if: runner.os == 'Linux'
         uses: codecov/codecov-action@v1
@@ -85,12 +91,14 @@ jobs:
           file: ./coverage.xml
           verbose: true
 
-      # Run performance tests
+      # Run performance tests (Linux)
       - name: Run performance tests
-        run: nox -rs performance_tests -- no-parallel
+        if: runner.os == 'Linux'
+        run: nox -rs performance_tests
 
-      # Store benchmark results
+      # Store benchmark results (Linux)
       - name: Store benchmark result
+        if: runner.os == 'Linux'
         uses: rhysd/github-action-benchmark@v1
         with:
           name: Benchmark with pytest-benchmark
@@ -113,7 +121,7 @@ jobs:
       - name: Set up Python environment
         uses: actions/setup-python@v2
         with:
-          python-version: 3.8
+          python-version: 3.9
 
       # Install build dependencies
       - name: Install build dependencies
