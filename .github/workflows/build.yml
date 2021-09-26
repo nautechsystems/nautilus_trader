@@ -1,4 +1,4 @@
-name: build-test
+name: build
 
 # Build and test NautilusTrader then build and deploy the docs
 
@@ -6,7 +6,7 @@ on:
   push:
     branches: [ master, develop ]
   pull_request:
-    branches: [ master, develop ]
+    branches: [ develop ]
 
 jobs:
   pre-commit:
@@ -16,18 +16,20 @@ jobs:
       - uses: actions/setup-python@v2
       - uses: pre-commit/action@v2.0.0
 
-  build-test:
+  build:
     needs: [ pre-commit ]
     strategy:
       fail-fast: false
       matrix:
         os: [ ubuntu-latest, macos-latest, windows-latest ]
         python-version: [ 3.8, 3.9 ]
-    name: build-test - Python ${{ matrix.python-version }} (${{ matrix.os }})
+    name: build - Python ${{ matrix.python-version }} (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
 
     steps:
       - uses: actions/checkout@v2
+
+      # Python setup
       - name: Set up Python environment
         uses: actions/setup-python@v2
         with:
@@ -109,7 +111,7 @@ jobs:
           fail-on-alert: false
 
   docs:
-    needs: [ build-test ]
+    needs: [ build ]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v2
