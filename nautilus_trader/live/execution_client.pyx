@@ -15,6 +15,8 @@
 
 import asyncio
 
+import pandas as pd
+import pytz
 from cpython.datetime cimport datetime
 
 from nautilus_trader.cache.cache cimport Cache
@@ -24,7 +26,6 @@ from nautilus_trader.common.logging cimport LogColor
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.common.providers cimport InstrumentProvider
 from nautilus_trader.core.correctness cimport Condition
-from nautilus_trader.core.datetime cimport nanos_to_unix_dt
 from nautilus_trader.execution.client cimport ExecutionClient
 from nautilus_trader.execution.messages cimport ExecutionMassStatus
 from nautilus_trader.execution.messages cimport ExecutionReport
@@ -286,7 +287,7 @@ cdef class LiveExecutionClient(ExecutionClient):
                 exec_reports = await self.generate_exec_reports(
                     venue_order_id=order.venue_order_id,
                     symbol=order.instrument_id.symbol,
-                    since=nanos_to_unix_dt(nanos=order.ts_init),
+                    since=pd.Timestamp(order.ts_init, tz=pytz.utc),
                 )
                 mass_status.add_exec_reports(order.venue_order_id, exec_reports)
 

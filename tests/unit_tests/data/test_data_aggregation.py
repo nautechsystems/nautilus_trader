@@ -13,17 +13,15 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from datetime import datetime
 from decimal import Decimal
 
+import pandas as pd
 import pytest
-import pytz
 
 from nautilus_trader.backtest.data.wranglers import QuoteTickDataWrangler
 from nautilus_trader.backtest.data.wranglers import TradeTickDataWrangler
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.logging import Logger
-from nautilus_trader.core.datetime import dt_to_unix_nanos
 from nautilus_trader.data.aggregation import BarBuilder
 from nautilus_trader.data.aggregation import BulkTickBarBuilder
 from nautilus_trader.data.aggregation import TickBarAggregator
@@ -1132,19 +1130,19 @@ class TestTimeBarAggregator:
         [
             [
                 BarSpecification(10, BarAggregation.SECOND, PriceType.MID),
-                dt_to_unix_nanos(datetime(1970, 1, 1, 0, 0, 10, tzinfo=pytz.utc)),
+                int(pd.Timestamp(1970, 1, 1, 0, 0, 10).to_datetime64()),
             ],
             [
                 BarSpecification(1, BarAggregation.MINUTE, PriceType.MID),
-                dt_to_unix_nanos(datetime(1970, 1, 1, 0, 1, tzinfo=pytz.utc)),
+                int(pd.Timestamp(1970, 1, 1, 0, 1).to_datetime64()),
             ],
             [
                 BarSpecification(1, BarAggregation.HOUR, PriceType.MID),
-                dt_to_unix_nanos(datetime(1970, 1, 1, 1, 0, tzinfo=pytz.utc)),
+                int(pd.Timestamp(1970, 1, 1, 1, 0).to_datetime64()),
             ],
             [
                 BarSpecification(1, BarAggregation.DAY, PriceType.MID),
-                dt_to_unix_nanos(datetime(1970, 1, 2, 0, 0, tzinfo=pytz.utc)),
+                int(pd.Timestamp(1970, 1, 2, 0, 0).to_datetime64()),
             ],
         ],
     )

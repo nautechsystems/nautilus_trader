@@ -15,6 +15,8 @@
 
 from typing import Callable
 
+import pandas as pd
+import pytz
 from libc.stdint cimport int64_t
 
 from threading import Timer as TimerThread
@@ -25,7 +27,6 @@ from nautilus_trader.common.timer cimport TimeEvent
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.datetime cimport format_iso8601
 from nautilus_trader.core.datetime cimport nanos_to_secs
-from nautilus_trader.core.datetime cimport nanos_to_unix_dt
 from nautilus_trader.core.message cimport Event
 from nautilus_trader.core.uuid cimport UUID4
 
@@ -210,7 +211,7 @@ cdef class Timer:
         return TimeEvent(
             name=self.name,
             event_id=event_id,
-            timestamp=nanos_to_unix_dt(nanos=self.next_time_ns),
+            timestamp=pd.Timestamp(self.next_time_ns, tz=pytz.utc),
             ts_event=self.next_time_ns,
             ts_init=ts_init,
         )

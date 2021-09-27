@@ -17,10 +17,9 @@ from typing import List
 
 import orjson
 import pandas as pd
+import pytz
 
 from nautilus_trader.accounting.accounts.base import Account
-from nautilus_trader.core.datetime import nanos_to_timedelta
-from nautilus_trader.core.datetime import nanos_to_unix_dt
 from nautilus_trader.model.c_enums.order_status import OrderStatus
 from nautilus_trader.model.events.account import AccountState
 from nautilus_trader.model.orders.base import Order
@@ -77,8 +76,8 @@ class ReportProvider:
             return pd.DataFrame()
 
         report = pd.DataFrame(data=filled_orders).set_index("client_order_id").sort_index()
-        report["ts_last"] = [nanos_to_unix_dt(row) for row in report["ts_last"]]
-        report["ts_init"] = [nanos_to_unix_dt(row) for row in report["ts_init"]]
+        report["ts_last"] = [pd.Timestamp(row, tz=pytz.utc) for row in report["ts_last"]]
+        report["ts_init"] = [pd.Timestamp(row, tz=pytz.utc) for row in report["ts_init"]]
 
         return report
 
@@ -111,9 +110,8 @@ class ReportProvider:
         del report["quote_currency"]
         del report["base_currency"]
         del report["cost_currency"]
-        report["ts_opened"] = [nanos_to_unix_dt(row) for row in report["ts_opened"]]
-        report["ts_closed"] = [nanos_to_unix_dt(row) for row in report["ts_closed"]]
-        report["duration_ns"] = [nanos_to_timedelta(row) for row in report["duration_ns"]]
+        report["ts_opened"] = [pd.Timestamp(row, tz=pytz.utc) for row in report["ts_opened"]]
+        report["ts_closed"] = [pd.Timestamp(row, tz=pytz.utc) for row in report["ts_closed"]]
 
         return report
 
@@ -148,7 +146,7 @@ class ReportProvider:
             return pd.DataFrame()
 
         report = pd.DataFrame(data=balances).set_index("ts_event").sort_index()
-        report.index = [nanos_to_unix_dt(row) for row in report.index]
+        report.index = [pd.Timestamp(row, tz=pytz.utc) for row in report.index]
         del report["ts_init"]
         del report["type"]
         del report["event_id"]

@@ -23,8 +23,6 @@ import pytz
 from cpython.datetime cimport datetime
 from cpython.datetime cimport timedelta
 
-from nautilus_trader.core.datetime cimport dt_to_unix_nanos
-
 from enum import Enum
 from enum import unique
 
@@ -488,7 +486,7 @@ cdef class EconomicNewsEventFilter:
 
         cdef int index = 0
         row = events.iloc[index]
-        cdef int64_t ts_event = dt_to_unix_nanos(events.index[index])
+        cdef int64_t ts_event = int(pd.Timestamp(events.index[index]).to_datetime64())
         return NewsEvent(
             NewsImpact[row["Impact"]],
             row["Name"],
@@ -537,7 +535,7 @@ cdef class EconomicNewsEventFilter:
 
         cdef int index = -1
         row = events.iloc[index]
-        cdef int64_t ts_event = dt_to_unix_nanos(events.index[index])
+        cdef int64_t ts_event = int(pd.Timestamp(events.index[index]).to_datetime64())
         return NewsEvent(
             NewsImpact[row["Impact"]],
             row["Name"],
