@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import List
 
 import numpy as np
+from colorama import Fore
 from Cython.Build import build_ext
 from Cython.Build import cythonize
 from Cython.Compiler import Options
@@ -161,8 +162,10 @@ def _copy_build_dir_to_project(cmd: build_ext) -> None:
 
 
 def build(setup_kwargs):
+    """Construct the extensions and distribution."""  # noqa
     _build_rust_libs()
 
+    # Create C Extensions to feed into cythonize()
     extensions = _build_extensions()
     distribution = _build_distribution(extensions)
 
@@ -181,10 +184,10 @@ def build(setup_kwargs):
 
 
 if __name__ == "__main__":
-    print("")
+    print(Fore.LIGHTCYAN_EX)
     print("=====================================================================")
     print("Nautilus Builder")
-    print("=====================================================================")
+    print("=====================================================================" + Fore.RESET)
 
     # Work around a Cython problem in Python 3.8.x on macOS
     # https://github.com/cython/cython/issues/3262
@@ -219,4 +222,4 @@ if __name__ == "__main__":
     print("")
 
     build({})
-    print("Build completed")
+    print(Fore.GREEN + "Build completed" + Fore.RESET)
