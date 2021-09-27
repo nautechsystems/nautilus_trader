@@ -15,6 +15,7 @@
 
 from typing import Optional
 
+import pytz
 from cpython.datetime cimport timedelta
 
 import asyncio
@@ -40,8 +41,6 @@ from nautilus_trader.common.logging cimport LogLevel
 from nautilus_trader.common.queue cimport Queue
 from nautilus_trader.common.uuid cimport UUIDFactory
 from nautilus_trader.core.correctness cimport Condition
-from nautilus_trader.core.datetime cimport format_iso8601_us
-from nautilus_trader.core.datetime cimport nanos_to_unix_dt
 from nautilus_trader.model.identifiers cimport TraderId
 
 
@@ -239,9 +238,6 @@ cdef class Logger:
         LogColor color,
         dict record,
     ):
-        # Return the formatted log message from the given arguments
-        cdef str time = format_iso8601_us(nanos_to_unix_dt(record["timestamp"]))
-
         # Set log color
         cdef str color_cmd = ""
         if color == LogColor.YELLOW:
@@ -254,7 +250,7 @@ cdef class Logger:
             color_cmd = _RED
 
         cdef str trader_id_str = f"{self.trader_id.value}." if self.trader_id is not None else ""
-        return (f"{_BOLD}{time}{_ENDC} {color_cmd}"
+        return (f"{_BOLD}{pd.Timestamp(record['timestamp'], tz=pytz.utc)}{_ENDC} {color_cmd}"
                 f"[{LogLevelParser.to_str(level)}] "
                 f"{trader_id_str}{record['component']}: {record['msg']}{_ENDC}")
 

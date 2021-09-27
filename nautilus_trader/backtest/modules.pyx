@@ -24,7 +24,6 @@ import pytz
 from nautilus_trader.accounting.calculators cimport RolloverInterestCalculator
 from nautilus_trader.backtest.exchange cimport SimulatedExchange
 from nautilus_trader.core.correctness cimport Condition
-from nautilus_trader.core.datetime cimport nanos_to_unix_dt
 from nautilus_trader.core.text cimport pad_string
 from nautilus_trader.model.c_enums.asset_class cimport AssetClass
 from nautilus_trader.model.c_enums.price_type cimport PriceType
@@ -117,7 +116,7 @@ cdef class FXRolloverInterestModule(SimulationModule):
             The current time in the simulated exchange.
 
         """
-        cdef datetime now = nanos_to_unix_dt(nanos=now_ns)
+        cdef datetime now = pd.Timestamp(now_ns, tz=pytz.utc)
         cdef datetime rollover_local
         if self._day_number != now.day:
             # Set account statistics for new day

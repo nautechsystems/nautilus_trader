@@ -27,7 +27,6 @@ import pytest
 
 from nautilus_trader.adapters.betfair.providers import BetfairInstrumentProvider
 from nautilus_trader.adapters.betfair.util import make_betfair_reader
-from nautilus_trader.core.datetime import dt_to_unix_nanos
 from nautilus_trader.model.data.tick import QuoteTick
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
@@ -417,7 +416,7 @@ class TestPersistenceCore:
                     "value": np.arange(5),
                     "instrument_id": ["a", "a", "a", "b", "b"],
                     "ts_init": [
-                        dt_to_unix_nanos(ts)
+                        int(ts.to_datetime64())
                         for ts in pd.date_range(start_date, periods=5, tz="UTC")
                     ],
                 }

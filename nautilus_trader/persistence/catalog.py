@@ -27,7 +27,6 @@ import pyarrow.parquet as pq
 from dask.utils import parse_bytes
 from pyarrow import ArrowInvalid
 
-from nautilus_trader.core.datetime import dt_to_unix_nanos
 from nautilus_trader.core.inspect import is_nautilus_class
 from nautilus_trader.model.data.base import DataType
 from nautilus_trader.model.data.base import GenericData
@@ -409,7 +408,7 @@ def make_unix_ns(value: Union[str, datetime.datetime, pd.Timestamp]) -> int:
     ts = pd.Timestamp(value)  # type: ignore
     if not ts.tz:
         ts = ts.tz_localize("UTC")
-    return dt_to_unix_nanos(ts)
+    return int(ts.to_datetime64())
 
 
 def _calculate_instrument_data_type_size(

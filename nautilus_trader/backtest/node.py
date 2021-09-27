@@ -18,7 +18,6 @@ from typing import Any, Dict, List, Optional, Tuple
 
 import cloudpickle
 import dask
-import pandas as pd
 from dask.base import normalize_token
 from dask.base import tokenize
 from dask.delayed import Delayed
@@ -284,10 +283,11 @@ def streaming_backtest_runner(
 
     streaming_kw = merge_data_configs_for_calc_streaming_chunks(data_configs=data_configs)
     for start, end in catalog.calc_streaming_chunks(**streaming_kw, target_size=batch_size_bytes):
-        print(f"Streaming backtest run from {pd.Timestamp(start)} to {pd.Timestamp(end)}")
         engine.clear_data()
         for config in data_configs:
             data = config.load(start_time=start, end_time=end)
+            if not data["data"]:
+                continue
             _load_engine_data(engine=engine, data=data)
         engine.run_streaming(start=start, end=end)
     engine.end_streaming()

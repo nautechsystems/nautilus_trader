@@ -19,11 +19,11 @@ Defines various order types used for trading.
 
 from decimal import Decimal
 
+import pandas as pd
 from cpython.datetime cimport datetime
 from libc.stdint cimport int64_t
 
 from nautilus_trader.core.correctness cimport Condition
-from nautilus_trader.core.datetime cimport dt_to_unix_nanos
 from nautilus_trader.core.datetime cimport format_iso8601
 from nautilus_trader.core.datetime cimport maybe_dt_to_unix_nanos
 from nautilus_trader.core.uuid cimport UUID4
@@ -837,7 +837,7 @@ cdef class PassiveOrder(Order):
         self.price = price
         self.liquidity_side = LiquiditySide.NONE
         self.expire_time = expire_time
-        self.expire_time_ns = dt_to_unix_nanos(dt=expire_time) if expire_time else 0
+        self.expire_time_ns = int(pd.Timestamp(expire_time).to_datetime64()) if expire_time else 0
         self.slippage = Decimal(0)
 
     cpdef str info(self):

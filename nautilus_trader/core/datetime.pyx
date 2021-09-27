@@ -24,7 +24,6 @@ import pytz
 
 from cpython.datetime cimport datetime
 from cpython.datetime cimport datetime_tzinfo
-from cpython.datetime cimport timedelta
 from cpython.unicode cimport PyUnicode_Contains
 from libc.stdint cimport int64_t
 
@@ -147,140 +146,6 @@ cpdef int64_t nanos_to_micros(int64_t nanos) except *:
     return nanos // NANOSECONDS_IN_MICROSECOND
 
 
-cpdef int64_t dt_to_unix_millis(datetime dt) except *:
-    """
-    Return the round UNIX timestamp (milliseconds) from the given `datetime`.
-
-    Parameters
-    ----------
-    dt : datetime
-        The datetime to convert.
-
-    Returns
-    -------
-    int64
-
-    Raises
-    ------
-    TypeError
-        If timestamp is ``None``.
-
-    """
-    # If timestamp is None then `-` unsupported operand for `NoneType` and `timedelta`
-    return lround((dt - UNIX_EPOCH).total_seconds() * MILLISECONDS_IN_SECOND)
-
-
-cpdef int64_t dt_to_unix_micros(datetime dt) except *:
-    """
-    Return the round UNIX timestamp (microseconds) from the given `datetime`.
-
-    Parameters
-    ----------
-    dt : datetime
-        The datetime to convert.
-
-    Returns
-    -------
-    int64
-
-    Raises
-    ------
-    TypeError
-        If timestamp is ``None``.
-
-    """
-    # If timestamp is None then `-` unsupported operand for `NoneType` and `timedelta`
-    return lround((dt - UNIX_EPOCH).total_seconds() * MICROSECONDS_IN_SECOND)
-
-
-cpdef int64_t dt_to_unix_nanos(datetime dt) except *:
-    """
-    Return the round UNIX timestamp (nanoseconds) from the given `datetime`.
-
-    Parameters
-    ----------
-    dt : datetime
-        The datetime to convert.
-
-    Returns
-    -------
-    int64
-
-    Raises
-    ------
-    TypeError
-        If timestamp is ``None``.
-
-    Warnings
-    --------
-    The maximum resolution of a Python `datetime` is 1 microsecond (μs).
-
-    """
-    # If timestamp is None then `-` unsupported operand for `NoneType` and `timedelta`
-    cdef timedelta td = (dt - UNIX_EPOCH)
-    return timedelta_to_nanos(td)
-
-
-cpdef int64_t timedelta_to_nanos(timedelta td) except *:
-    """
-    Return round nanoseconds (ns) converted from the given `timedelta`.
-
-    Parameters
-    ----------
-    td : timedelta
-        The timedelta to convert.
-
-    Returns
-    -------
-    int64
-
-    Warnings
-    --------
-    The maximum resolution of a Python `timedelta` is 1 microsecond (μs).
-
-    """
-    return (
-        td.days * NANOSECONDS_IN_DAY
-        + td.seconds * NANOSECONDS_IN_SECOND
-        + td.microsecond * NANOSECONDS_IN_MICROSECOND
-    )
-
-
-cpdef timedelta nanos_to_timedelta(int64_t nanos):
-    """
-    Return a timedelta from the given nanoseconds (ns).
-
-    Parameters
-    ----------
-    nanos : int64
-        The nanoseconds to convert.
-
-    Returns
-    -------
-    timedelta
-
-    """
-    # Floor division as maximum precision of a timedelta is 1 microsecond
-    return timedelta(microseconds=nanos // NANOSECONDS_IN_MICROSECOND)
-
-
-cpdef datetime nanos_to_unix_dt(double nanos):
-    """
-    Return the tz-aware datetime in UTC from the given UNIX time (nanoseconds).
-
-    Parameters
-    ----------
-    nanos : double
-        The nanoseconds to convert.
-
-    Returns
-    -------
-    datetime
-
-    """
-    return UNIX_EPOCH + timedelta(seconds=nanos / NANOSECONDS_IN_SECOND)
-
-
 cpdef maybe_dt_to_unix_nanos(datetime dt):
     """
     Return the UNIX time (nanoseconds) from the given datetime, or ``None``.
@@ -300,7 +165,7 @@ cpdef maybe_dt_to_unix_nanos(datetime dt):
     if dt is None:
         return None
     else:
-        return dt_to_unix_nanos(dt)
+        return int(pd.Timestamp(dt).to_datetime64())
 
 
 cpdef maybe_nanos_to_unix_dt(nanos):
@@ -322,7 +187,7 @@ cpdef maybe_nanos_to_unix_dt(nanos):
     if nanos is None:
         return None
     else:
-        return nanos_to_unix_dt(nanos)
+        return pd.Timestamp(nanos, tz=pytz.utc)
 
 
 cpdef bint is_datetime_utc(datetime dt) except *:
@@ -493,72 +358,3 @@ cpdef str format_iso8601_us(datetime dt):
 
     cdef tuple dt_partitioned = tz_stripped.rpartition('.')
     return f"{dt_partitioned[0]}.{dt_partitioned[2].rjust(6)}Z"
-
-
-cpdef int64_t iso8601_to_unix_millis(str iso8601) except *:
-    """
-    Convert the given string to the UNIX timestamp (microseconds).
-
-    Parameters
-    ----------
-    iso8601 : str
-        The input iso8601 datetime string to convert.
-
-    Notes
-    -----
-    Unit accuracy is millisecond.
-
-    Returns
-    -------
-    int64
-
-    """
-    Condition.not_none(iso8601, "iso8601")
-
-    return dt_to_unix_millis(pd.Timestamp(iso8601))
-
-
-cpdef int64_t iso8601_to_unix_micros(str iso8601) except *:
-    """
-    Convert the given string to the UNIX timestamp (microseconds).
-
-    Parameters
-    ----------
-    iso8601 : str
-        The input iso8601 datetime string to convert.
-
-    Notes
-    -----
-    Unit accuracy is microseconds.
-
-    Returns
-    -------
-    int64
-
-    """
-    Condition.not_none(iso8601, "iso8601")
-
-    return dt_to_unix_micros(pd.Timestamp(iso8601))
-
-
-cpdef int64_t iso8601_to_unix_nanos(str iso8601) except *:
-    """
-    Convert the given string to the UNIX timestamp (nanoseconds).
-
-    Parameters
-    ----------
-    iso8601 : str
-        The input iso8601 datetime string to convert.
-
-    Notes
-    -----
-    Unit accuracy is nanoseconds.
-
-    Returns
-    -------
-    int64
-
-    """
-    Condition.not_none(iso8601, "iso8601")
-
-    return dt_to_unix_nanos(pd.Timestamp(iso8601))

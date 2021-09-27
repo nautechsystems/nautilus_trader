@@ -17,6 +17,7 @@ from typing import Callable
 
 import cython
 import numpy as np
+import pandas as pd
 import pytz
 
 from cpython.datetime cimport datetime
@@ -30,10 +31,7 @@ from nautilus_trader.common.timer cimport ThreadTimer
 from nautilus_trader.common.timer cimport TimeEventHandler
 from nautilus_trader.common.uuid cimport UUIDFactory
 from nautilus_trader.core.correctness cimport Condition
-from nautilus_trader.core.datetime cimport dt_to_unix_nanos
 from nautilus_trader.core.datetime cimport nanos_to_secs
-from nautilus_trader.core.datetime cimport nanos_to_unix_dt
-from nautilus_trader.core.datetime cimport timedelta_to_nanos
 from nautilus_trader.core.time cimport unix_timestamp
 from nautilus_trader.core.time cimport unix_timestamp_ns
 
@@ -239,7 +237,7 @@ cdef class Clock:
         Condition.true(alert_time >= self.utc_now(), "alert_time was < self.utc_now()")
         Condition.callable(handler, "handler")
 
-        cdef int64_t alert_time_ns = dt_to_unix_nanos(alert_time)
+        cdef int64_t alert_time_ns = int(pd.Timestamp(alert_time).to_datetime64())
         cdef int64_t now_ns = self.timestamp_ns()
 
         cdef Timer timer = self._create_timer(
@@ -314,9 +312,9 @@ cdef class Clock:
             Condition.true(stop_time > now, "stop_time was < now")
             Condition.true(start_time + interval <= stop_time, "start_time + interval was > stop_time")
 
-        cdef int64_t interval_ns = timedelta_to_nanos(interval)
-        cdef int64_t start_time_ns = dt_to_unix_nanos(start_time)
-        cdef int64_t stop_time_ns = dt_to_unix_nanos(stop_time) if stop_time else 0
+        cdef int64_t interval_ns = int(pd.Timedelta(interval).to_timedelta64())
+        cdef int64_t start_time_ns = int(pd.Timestamp(start_time).to_datetime64())
+        cdef int64_t stop_time_ns = int(pd.Timestamp(stop_time).to_datetime64()) if stop_time else 0
 
         cdef Timer timer = self._create_timer(
             name=name,
@@ -451,7 +449,7 @@ cdef class TestClock(Clock):
             The current tz-aware UTC time of the clock.
 
         """
-        return nanos_to_unix_dt(nanos=self._time_ns)
+        return pd.Timestamp(self._time_ns, tz=pytz.utc)
 
     cpdef double timestamp(self) except *:
         """
@@ -577,7 +575,6 @@ cdef class LiveClock(Clock):
         super().__init__()
 
         self._loop = loop
-        self._utc = pytz.utc
 
     cpdef double timestamp(self) except *:
         """
@@ -619,16 +616,7 @@ cdef class LiveClock(Clock):
             The current tz-aware UTC time of the clock.
 
         """
-        # Regarding the below call to pytz.utc
-        # From the pytz docs https://pythonhosted.org/pytz/
-        # -------------------------------------------------
-        # Unfortunately using the tzinfo argument of the standard datetime
-        # constructors ‘’does not work’’ with pytz for many timezones.
-        # It is safe for timezones without daylight saving transitions though,
-        # such as UTC. The preferred way of dealing with times is to always work
-        # in UTC, converting to localtime only when generating output to be read
-        # by humans.
-        return datetime.now(tz=self._utc)
+        return pd.Timestamp(unix_timestamp_ns(), tz=pytz.utc)
 
     cdef Timer _create_timer(
         self,
