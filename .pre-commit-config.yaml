@@ -1,29 +1,5 @@
 repos:
 
-  - repo: https://github.com/psf/black
-    rev: 21.9b0
-    hooks:
-      - id: black
-        args: [
-            --line-length=100,
-        ]
-
-  - repo: https://github.com/PyCQA/isort
-    rev: 5.9.3
-    hooks:
-      - id: isort
-        args: [
-            --combine-as,
-            --line-length=100,
-            --ensure-newline-before-comments,
-            --force-single-line-imports,
-            --single-line-exclusions=typing,
-            --trailing-comma,
-            --multi-line=3,
-            --lines-after-imports=2,
-            --use-parentheses,
-        ]
-
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v4.0.1
     hooks:
@@ -54,6 +30,36 @@ repos:
         types_or: [python, cython, rst, markdown]
         exclude: "nautilus_trader/adapters/betfair/parsing.py"
 
+  - repo: https://github.com/hadialqattan/pycln
+    rev: v1.0.3
+    hooks:
+      - id: pycln
+        name: pycln (Python unused imports)
+
+  - repo: https://github.com/psf/black
+    rev: 21.9b0
+    hooks:
+      - id: black
+        args: [
+            --line-length=100,
+        ]
+
+  - repo: https://github.com/PyCQA/isort
+    rev: 5.9.3
+    hooks:
+      - id: isort
+        args: [
+            --combine-as,
+            --line-length=100,
+            --ensure-newline-before-comments,
+            --force-single-line-imports,
+            --single-line-exclusions=typing,
+            --trailing-comma,
+            --multi-line=3,
+            --lines-after-imports=2,
+            --use-parentheses,
+        ]
+
   - repo: https://github.com/pre-commit/mirrors-mypy
     rev: v0.910
     hooks:
@@ -75,7 +81,7 @@ repos:
     rev: 3.9.2
     hooks:
       - id: flake8
-        name: flake8 (python)
+        name: flake8 (Python)
         additional_dependencies:
           - flake8-bandit
           - flake8-bugbear
@@ -97,7 +103,7 @@ repos:
             --ignore=C101 E203 E252 E402 D100 D101 D102 S101 S403 W503,
         ]
       - id: flake8
-        name: flake8 (cython)
+        name: flake8 (Cython)
         additional_dependencies:
           - flake8-bandit
           - flake8-bugbear
