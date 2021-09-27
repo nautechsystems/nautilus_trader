@@ -23,7 +23,6 @@ import pytest
 
 from nautilus_trader.adapters.betfair.providers import BetfairInstrumentProvider
 from nautilus_trader.backtest.data.wranglers import QuoteTickDataWrangler
-from nautilus_trader.core.datetime import dt_to_unix_nanos
 from nautilus_trader.model.instruments.currency import CurrencySpot
 from nautilus_trader.persistence.catalog import DataCatalog
 from nautilus_trader.persistence.external.core import make_raw_files
@@ -63,9 +62,7 @@ class TestPersistenceParsers:
     def test_line_preprocessor_post_process(self):
         obj = TestStubs.trade_tick_5decimal()
         data = {
-            "ts_init": dt_to_unix_nanos(
-                pd.Timestamp("2021-06-29T06:04:11.943000", tz="UTC").to_pydatetime()
-            )
+            "ts_init": int(pd.Timestamp("2021-06-29T06:04:11.943000", tz="UTC").to_datetime64())
         }
         obj = self.line_preprocessor.post_process(obj=obj, state=data)
         assert obj.ts_init == 1624946651943000000
@@ -74,9 +71,7 @@ class TestPersistenceParsers:
         def block_parser(block: bytes, instrument_provider):
             for raw in block.split(b"\\n"):
                 ts, line = raw.split(b" - ")
-                state = {
-                    "ts_init": dt_to_unix_nanos(pd.Timestamp(ts.decode(), tz="UTC").to_pydatetime())
-                }
+                state = {"ts_init": int(pd.Timestamp(ts.decode(), tz="UTC").to_datetime64())}
                 line = line.strip().replace(b"b'", b"")
                 orjson.loads(line)
                 for obj in BetfairTestStubs.parse_betfair(
@@ -203,7 +198,7 @@ class TestLineProcessor(LinePreprocessor):
     @staticmethod
     def pre_process(line):
         ts, raw = line.split(b" - ")
-        data = {"ts_init": dt_to_unix_nanos(pd.Timestamp(ts.decode(), tz="UTC").to_pydatetime())}
+        data = {"ts_init": int(pd.Timestamp(ts.decode(), tz="UTC").to_datetime64())}
         line = raw.strip()
         return line, data
 

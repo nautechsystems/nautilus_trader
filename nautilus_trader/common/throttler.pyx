@@ -15,6 +15,8 @@
 
 from typing import Any, Callable
 
+import pandas as pd
+import pytz
 from cpython.datetime cimport timedelta
 from libc.stdint cimport int64_t
 
@@ -25,7 +27,6 @@ from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.common.queue cimport Queue
 from nautilus_trader.common.timer cimport TimeEvent
 from nautilus_trader.core.correctness cimport Condition
-from nautilus_trader.core.datetime cimport nanos_to_unix_dt
 from nautilus_trader.core.datetime cimport secs_to_nanos
 from nautilus_trader.core.math cimport max_int64
 
@@ -206,7 +207,7 @@ cdef class Throttler:
     cdef void _set_timer(self, handler: Callable[[TimeEvent], None]) except *:
         self._clock.set_time_alert(
             name=self._timer_name,
-            alert_time=nanos_to_unix_dt(self._clock.timestamp_ns() + self._delta_next()),
+            alert_time=pd.Timestamp(self._clock.timestamp_ns() + self._delta_next(), tz=pytz.utc),
             handler=handler,
         )
 

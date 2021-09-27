@@ -42,9 +42,6 @@ from nautilus_trader.common.timer cimport TimeEventHandler
 from nautilus_trader.common.uuid cimport UUIDFactory
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.data cimport Data
-from nautilus_trader.core.datetime cimport dt_to_unix_nanos
-from nautilus_trader.core.datetime cimport format_iso8601
-from nautilus_trader.core.datetime cimport nanos_to_unix_dt
 from nautilus_trader.execution.engine cimport ExecutionEngine
 from nautilus_trader.infrastructure.cache cimport RedisCacheDatabase
 from nautilus_trader.model.c_enums.account_type cimport AccountType
@@ -611,7 +608,6 @@ cdef class BacktestEngine:
 
         self.iteration = 0
         self._run_started = None
-        self._backtest_start = None
 
         self._log.info("Reset.")
 
@@ -725,6 +721,13 @@ cdef class BacktestEngine:
             The end datetime (UTC) for the current block of data. If ``None`` engine runs
             to the end of the data.
 
+        Raises
+        ------
+        ValueError
+            If no data has been added to the engine.
+        ValueError
+            If the `start` is >= the `end` datetime.
+
         """
         self._run(start, end)
 
@@ -748,22 +751,22 @@ cdef class BacktestEngine:
         cdef int64_t start_ns
         cdef int64_t end_ns
         # Time range check and set
-        Condition.not_empty(self._data, "data")
         if start is None:
             # Set `start` to start of data
             start_ns = self._data[0].ts_init
+            start = pd.Timestamp(start_ns, tz=pytz.utc)
         else:
             start = pd.to_datetime(start, utc=True)
-            Condition.equal(start.tzinfo, pytz.utc, "start.tzinfo", "UTC")
-            start_ns = dt_to_unix_nanos(start)
+            start_ns = int(start.to_datetime64())
         if end is None:
             # Set `end` to end of data
             end_ns = self._data[-1].ts_init
+            end = pd.Timestamp(end_ns, tz=pytz.utc)
         else:
             end = pd.to_datetime(end, utc=True)
-            Condition.equal(end.tzinfo, pytz.utc, "end.tzinfo", "UTC")
-            end_ns = dt_to_unix_nanos(end)
+            end_ns = int(end.to_datetime64())
         Condition.true(start_ns < end_ns, "start was >= end")
+        Condition.not_empty(self._data, "data")
 
         # Set clocks
         self._test_clock.set_time(start_ns)
@@ -772,16 +775,24 @@ cdef class BacktestEngine:
 
         if self.iteration == 0:
             # Initialize engine
-            self._backtest_start = nanos_to_unix_dt(start_ns)
-            self._test_logger.change_clock_c(self._test_clock)
-            for strategy in self.trader.strategies_c():
-                strategy.clock.set_time(start_ns)
+            self._run_started = self._clock.utc_now()
+            self._backtest_start = start
             for exchange in self._exchanges.values():
                 exchange.initialize_account()
             self._data_engine.start()
             self._exec_engine.start()
             self.trader.start()
+            self._test_logger.change_clock_c(self._test_clock)
             self._pre_run()
+
+        self._log.info("=================================================================")
+        self._log.info(" BACKTEST RUN")
+        self._log.info("=================================================================")
+        self._log.info(f"Run started:    {self._run_started}")
+        self._log.info(f"Backtest start: {self._backtest_start}")
+        self._log.info(f"Batch start:    {start}.")
+        self._log.info(f"Batch end:      {end}.")
+        self._log.info("-----------------------------------------------------------------")
 
         # Set data stream length
         self._data_len = len(self._data)
@@ -840,12 +851,6 @@ cdef class BacktestEngine:
         self._test_clock.set_time(now_ns)
 
     def _pre_run(self):
-        self._log.info("=================================================================")
-        self._log.info(" BACKTEST RUN")
-        self._log.info("=================================================================")
-        self._run_started = self._clock.utc_now()
-        self._log.info(f"Run started:    {format_iso8601(self._run_started)}")
-        self._log.info(f"Backtest start: {format_iso8601(self._backtest_start)}")
         log_memory(self._log)
 
         for exchange in self._exchanges.values():
@@ -861,17 +866,16 @@ cdef class BacktestEngine:
             else:
                 for b in account.starting_balances().values():
                     self._log.info(b.to_str())
-        self._log.info("=================================================================")
 
     def _post_run(self):
         run_finished = self._clock.utc_now()
         self._log.info("=================================================================")
         self._log.info(" BACKTEST POST-RUN")
         self._log.info("=================================================================")
-        self._log.info(f"Run started:    {format_iso8601(self._run_started)}")
-        self._log.info(f"Run finished:   {format_iso8601(run_finished)}")
-        self._log.info(f"Backtest start: {format_iso8601(self._backtest_start)}")
-        self._log.info(f"Backtest end:   {format_iso8601(self._test_clock.utc_now())}")
+        self._log.info(f"Run started:    {self._run_started}")
+        self._log.info(f"Run finished:   {run_finished}")
+        self._log.info(f"Backtest start: {self._backtest_start}")
+        self._log.info(f"Backtest end:   {self._test_clock.utc_now()}")
         self._log.info(f"Elapsed time:   {run_finished - self._run_started}")
         self._log.info(f"Iterations: {self.iteration:,}")
         self._log.info(f"Total events: {self._exec_engine.event_count:,}")
