@@ -15,7 +15,7 @@
 
 from datetime import timedelta
 from decimal import Decimal
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 from nautilus_trader.adapters.betfair.common import MAX_BET_PROB
 from nautilus_trader.adapters.betfair.common import MIN_BET_PROB
@@ -68,7 +68,7 @@ class TickTock(TradingStrategy):
         self.instrument = instrument
         self.bar_type = bar_type
 
-        self.store = []  # type: list[Any]
+        self.store: List[Any] = []
         self.timer_running = False
         self.time_alert_counter = 0
 
@@ -183,7 +183,6 @@ class EMACross(TradingStrategy):
             The tick received.
 
         """
-        pass
 
     def on_order_book(self, order_book: OrderBook):
         """
@@ -195,7 +194,6 @@ class EMACross(TradingStrategy):
             The order book received.
 
         """
-        pass
 
     def on_quote_tick(self, tick: QuoteTick):
         """
@@ -207,7 +205,6 @@ class EMACross(TradingStrategy):
             The quote tick received.
 
         """
-        pass
 
     def on_bar(self, bar: Bar):
         """
@@ -279,7 +276,6 @@ class EMACross(TradingStrategy):
             The data object received.
 
         """
-        pass
 
     def on_event(self, event):
         """
@@ -291,7 +287,6 @@ class EMACross(TradingStrategy):
             The event received.
 
         """
-        pass
 
     def on_stop(self):
         """
@@ -461,7 +456,6 @@ class OrderBookImbalanceStrategy(TradingStrategy):
             The data object received.
 
         """
-        pass
 
     def on_instrument_status_update(self, data: InstrumentStatusUpdate):
         if data.status == InstrumentStatus.CLOSED:
