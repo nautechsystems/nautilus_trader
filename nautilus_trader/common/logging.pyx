@@ -249,8 +249,9 @@ cdef class Logger:
         elif color == LogColor.RED:
             color_cmd = _RED
 
+        cdef str dt = pd.Timestamp(record["timestamp"], tz=pytz.utc).strftime("%Y-%m-%d %H:%M:%S.000%fZ")
         cdef str trader_id_str = f"{self.trader_id.value}." if self.trader_id is not None else ""
-        return (f"{_BOLD}{pd.Timestamp(record['timestamp'], tz=pytz.utc)}{_ENDC} {color_cmd}"
+        return (f"{_BOLD}{dt}{_ENDC} {color_cmd}"
                 f"[{LogLevelParser.to_str(level)}] "
                 f"{trader_id_str}{record['component']}: {record['msg']}{_ENDC}")
 
