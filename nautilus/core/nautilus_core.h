@@ -12,22 +12,22 @@ typedef struct UUID4 {
 } UUID4;
 
 /**
- * Returns the current seconds since the Unix epoch.
+ * Returns the current seconds since the UNIX epoch.
  */
 double unix_timestamp(void);
 
 /**
- * Returns the current milliseconds since the Unix epoch.
+ * Returns the current milliseconds since the UNIX epoch.
  */
 int64_t unix_timestamp_ms(void);
 
 /**
- * Returns the current microseconds since the Unix epoch.
+ * Returns the current microseconds since the UNIX epoch.
  */
 int64_t unix_timestamp_us(void);
 
 /**
- * Returns the current nanoseconds since the Unix epoch.
+ * Returns the current nanoseconds since the UNIX epoch.
  */
 int64_t unix_timestamp_ns(void);
 

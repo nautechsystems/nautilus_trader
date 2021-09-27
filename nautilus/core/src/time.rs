@@ -16,7 +16,7 @@
 use std::time::SystemTime;
 use std::time::UNIX_EPOCH;
 
-/// Returns the current seconds since the Unix epoch.
+/// Returns the current seconds since the UNIX epoch.
 #[no_mangle]
 pub extern "C" fn unix_timestamp() -> f64 {
     return SystemTime::now()
@@ -25,7 +25,7 @@ pub extern "C" fn unix_timestamp() -> f64 {
         .as_secs_f64();
 }
 
-/// Returns the current milliseconds since the Unix epoch.
+/// Returns the current milliseconds since the UNIX epoch.
 #[no_mangle]
 pub extern "C" fn unix_timestamp_ms() -> i64 {
     return SystemTime::now()
@@ -34,7 +34,7 @@ pub extern "C" fn unix_timestamp_ms() -> i64 {
         .as_millis() as i64;
 }
 
-/// Returns the current microseconds since the Unix epoch.
+/// Returns the current microseconds since the UNIX epoch.
 #[no_mangle]
 pub extern "C" fn unix_timestamp_us() -> i64 {
     return SystemTime::now()
@@ -43,7 +43,7 @@ pub extern "C" fn unix_timestamp_us() -> i64 {
         .as_micros() as i64;
 }
 
-/// Returns the current nanoseconds since the Unix epoch.
+/// Returns the current nanoseconds since the UNIX epoch.
 #[no_mangle]
 pub extern "C" fn unix_timestamp_ns() -> i64 {
     return SystemTime::now()

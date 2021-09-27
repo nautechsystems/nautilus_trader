@@ -57,7 +57,7 @@ cdef class UUID4:
             return
 
         Condition.true(_UUID_REGEX.match(value), "value is not a valid UUID")
-        cdef bytes encoded = value.encode("utf-8") + b"\0xx"
+        cdef bytes encoded = value.encode("utf-8") + b"\x00"
         self._uuid4 = uuid4_from_raw(<char *>encoded)  # `ptr` moved to rust, `self._uuid4` owned from rust
 
     def __eq__(self, UUID4 other) -> bool:
@@ -73,12 +73,11 @@ cdef class UUID4:
         return f"{type(self).__name__}('{self.value}')"
 
     def __del__(self) -> None:
-        uuid4_free(self._uuid4)  # `self._uuid4` moved to rust, and dropped
+        uuid4_free(self._uuid4)  # `self._uuid4` moved to rust (then dropped)
 
     @property
     def value(self) -> str:
-        cdef char *ptr = uuid4_to_raw(&self._uuid4)  # `ptr` owned from rust
-        cdef bytes utf8 = <bytes>ptr
-        cdef str output = utf8.decode()
-        uuid4_free_raw(ptr)  # `ptr` moved to rust, and dropped
-        return output
+        cdef char *ptr = <char *>uuid4_to_raw(&self._uuid4)  # `ptr` owned from rust
+        cdef str value = ptr.decode()  # Copy to `utf8`
+        uuid4_free_raw(ptr)  # `ptr` moved to rust (then dropped)
+        return value

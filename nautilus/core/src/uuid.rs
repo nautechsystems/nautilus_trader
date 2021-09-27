@@ -51,7 +51,7 @@ impl UUID4 {
 
     #[no_mangle]
     pub unsafe extern "C" fn uuid4_from_raw(ptr: *const c_char) -> UUID4 {
-        // SAFETY: Checks ptr is a valid null terminated C string
+        // SAFETY: Wraps and checks raw C string `ptr`, then converts to owned `String`
         UUID4::from(CStr::from_ptr(ptr).to_str().expect("invalid C string"))
     }
 
@@ -63,7 +63,7 @@ impl UUID4 {
 
     #[no_mangle]
     pub unsafe extern "C" fn uuid4_free_raw(ptr: *mut c_char) {
-        // SAFETY: Checks ptr is a valid null terminated C string
+        // SAFETY: Retakes ownership of C string `ptr`, then drops
         drop(CString::from_raw(ptr));
     }
 
@@ -87,27 +87,60 @@ impl Display for UUID4 {
 
 #[cfg(test)]
 mod tests {
-    use crate::uuid;
+    use crate::uuid::UUID4;
+    use std::ffi::{CStr, CString};
+    use std::os::raw::c_char;
 
     #[test]
-    fn new_produces_correct_length_bytes() {
-        let uuid = uuid::UUID4::new();
+    fn test_new() {
+        let uuid = UUID4::new();
 
-        println!("{}", uuid.to_string())
+        assert_eq!(uuid.to_string().len(), 36)
     }
 
     #[test]
-    fn new_to_string() {
-        let uuid = uuid::UUID4::new();
-
-        println!("{}", uuid.to_string())
-    }
-
-    #[test]
-    fn from_str() {
-        let uuid = uuid::UUID4::from("2d89666b-1a1e-4a75-b193-4eb3b454c757");
+    fn test_from_str() {
+        let uuid = UUID4::from("2d89666b-1a1e-4a75-b193-4eb3b454c757");
 
         assert_eq!(uuid.to_string().len(), 36);
         assert_eq!(uuid.to_string(), "2d89666b-1a1e-4a75-b193-4eb3b454c757");
+    }
+    //##########################################################################
+    // C API tests
+    //##########################################################################
+    #[test]
+    fn test_uuid4_new() {
+        let uuid = UUID4::uuid4_new();
+
+        assert_eq!(uuid.to_string().len(), 36)
+    }
+
+    #[test]
+    fn test_uuid4_from_raw() {
+        unsafe {
+            let cstring = CString::new("2d89666b-1a1e-4a75-b193-4eb3b454c757").unwrap();
+            let uuid = UUID4::uuid4_from_raw(cstring.as_ptr());
+
+            assert_eq!(uuid.to_string(), "2d89666b-1a1e-4a75-b193-4eb3b454c757")
+        }
+    }
+
+    #[test]
+    fn test_uuid4_to_raw() {
+        unsafe {
+            let uuid = UUID4::new();
+            let ptr = UUID4::uuid4_to_raw(&uuid);
+
+            assert_eq!(CStr::from_ptr(ptr).to_str().unwrap().len(), 36)
+        }
+    }
+
+    #[test]
+    fn test_uuid4_free_raw() {
+        unsafe {
+            let uuid = UUID4::new();
+            let ptr = UUID4::uuid4_to_raw(&uuid);
+            UUID4::uuid4_free_raw(ptr as *mut c_char);
+        }
     }
 }
