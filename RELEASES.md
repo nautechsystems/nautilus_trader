@@ -10,10 +10,12 @@ Released **TBD**
 ## Enhancements
 - Added `Clock.set_time_alert_ns(...)` method.
 - Added `Clock.set_timer_ns(...)` method.
+- Added `fill_limit_at_price` simulated exchange option.
+- Added `fill_stop_at_price` simulated exchange option.
 - Improve timer and time event efficiency.
 
 ## Fixes
-None
+- Fixed `OrderUpdated` leaves quantity calculation.
 
 ---
 

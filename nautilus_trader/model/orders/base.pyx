@@ -743,6 +743,7 @@ cdef class Order:
             self.venue_order_id = event.venue_order_id
         if event.quantity is not None:
             self.quantity = event.quantity
+            self.leaves_qty = Quantity(self.quantity - self.filled_qty, self.quantity.precision)
 
     cdef void _canceled(self, OrderCanceled event) except *:
         pass  # Do nothing else
@@ -886,6 +887,7 @@ cdef class PassiveOrder(Order):
             self.venue_order_id = event.venue_order_id
         if event.quantity is not None:
             self.quantity = event.quantity
+            self.leaves_qty = Quantity(self.quantity - self.filled_qty, self.quantity.precision)
         if event.price is not None:
             self.price = event.price
 
