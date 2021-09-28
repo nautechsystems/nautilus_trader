@@ -13,8 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 import datetime
-from functools import lru_cache
-from typing import List, Optional, Union
+from typing import List, Union
 
 import fsspec
 import numpy as np
@@ -34,43 +33,6 @@ def make_unix_ns(value: Union[str, datetime.datetime, pd.Timestamp]) -> int:
     if not ts.tz:
         ts = ts.tz_localize("UTC")
     return int(ts.to_datetime64())
-
-
-def _sample_column_widths(dataset: ds.Dataset, column_names, samples=100):
-    scanner = dataset.scanner(columns=column_names, batch_size=samples)
-    for batch in scanner.to_batches():
-        df = batch.to_pandas()
-        mem = df.memory_usage(index=False, deep=True) / batch.num_rows
-        return mem.to_dict()
-
-
-@lru_cache
-def _get_schema_widths(path: str, fs: Optional[fsspec.AbstractFileSystem] = None, samples=1000):
-    widths = {}
-    variable_width_columns = []
-
-    dataset = ds.dataset(path, filesystem=fs)
-    schema = dataset.schema
-
-    # Get fixed width types from schema
-    for n in schema.names:
-        try:
-            widths[n] = schema.field(n).type.bit_width / 8
-        except ValueError:
-            variable_width_columns.append(n)
-
-    # Read sample of parquet file to determine variable
-    variable_widths = _sample_column_widths(
-        dataset=dataset, column_names=variable_width_columns, samples=samples
-    )
-    widths.update(variable_widths)
-    return widths
-
-
-@lru_cache()
-def _get_row_size(path: str, fs: Optional[fsspec.AbstractFileSystem] = None, samples=1000):
-    schema_widths = _get_schema_widths(path=path, fs=fs, samples=samples)
-    return sum(schema_widths.values())
 
 
 def _calculate_instrument_data_type_size(
