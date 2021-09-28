@@ -93,6 +93,7 @@ cdef class SimulatedExchange:
         Logger logger not None,
         BookType book_type=BookType.L1_TBBO,
         fill_limit_at_price=False,
+        fill_stop_at_price=False,
     ):
         """
         Initialize a new instance of the ``SimulatedExchange`` class.
@@ -128,7 +129,9 @@ cdef class SimulatedExchange:
         book_type : BookType
             The order book type for the exchange.
         fill_limit_at_price : bool
-            If limit orders should be filled at their original price only (overrides slippage).
+            If ``LIMIT`` orders should be filled at their original price only (overrides slippage).
+        fill_stop_at_price : bool
+            If ``STOP_MARKET`` orders should be filled at their original price only (overrides slippage).
 
         Raises
         ------
@@ -177,6 +180,7 @@ cdef class SimulatedExchange:
         self.leverages = leverages
         self.is_frozen_account = is_frozen_account
         self.fill_limit_at_price = fill_limit_at_price
+        self.fill_stop_at_price = fill_stop_at_price
 
         self.fill_model = fill_model
 
@@ -1160,6 +1164,8 @@ cdef class SimulatedExchange:
             return book.bids.simulate_order_fills(order=submit_order, depth_type=DepthType.VOLUME)
 
     cdef list _determine_market_price_and_volume(self, Order order):
+        if order.type == OrderType.STOP_MARKET and self.fill_stop_at_price:
+            return [(order.price, order.leaves_qty)]
         cdef OrderBook book = self.get_book(order.instrument_id)
         cdef Price price = Price.from_int_c(INT_MAX if order.side == OrderSide.BUY else INT_MIN)
         cdef OrderBookOrder submit_order = OrderBookOrder(price=price, size=order.quantity, side=order.side)

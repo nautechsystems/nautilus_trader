@@ -480,7 +480,8 @@ cdef class BacktestEngine:
         list modules=None,
         FillModel fill_model=None,
         BookType book_type=BookType.L1_TBBO,
-        fill_limit_at_price=False,
+        fill_limit_at_price: bool=False,
+        fill_stop_at_price: bool=False,
     ) -> None:
         """
         Add a `SimulatedExchange` with the given parameters to the backtest engine.
@@ -513,7 +514,9 @@ cdef class BacktestEngine:
         book_type : BookType
             The default order book type for fill modelling.
         fill_limit_at_price : bool
-            If limit orders should be filled at their original price only (overrides slippage).
+            If ``LIMIT`` orders should be filled at their original price only (overrides slippage).
+        fill_stop_at_price : bool
+            If ``STOP_MARKET`` orders should be filled at their original price only (overrides slippage).
 
         Raises
         ------
@@ -550,6 +553,7 @@ cdef class BacktestEngine:
             clock=self._test_clock,
             logger=self._test_logger,
             fill_limit_at_price=fill_limit_at_price,
+            fill_stop_at_price=fill_stop_at_price,
         )
 
         self._exchanges[venue] = exchange
