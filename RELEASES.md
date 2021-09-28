@@ -13,7 +13,7 @@ Released **TBD**
 - Improve timer and time event efficiency.
 
 ## Fixes
-None
+- Fixed `OrderUpdated` leaves quantity calculation.
 
 ---
 
