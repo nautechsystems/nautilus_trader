@@ -22,10 +22,12 @@ import pytest
 from dask.utils import parse_bytes
 
 from nautilus_trader.adapters.betfair.providers import BetfairInstrumentProvider
+from nautilus_trader.backtest.config import BacktestDataConfig
 from nautilus_trader.model.data.tick import TradeTick
 from nautilus_trader.persistence.batching import _calculate_instrument_data_type_size
-from nautilus_trader.persistence.batching import calc_streaming_chunks
+from nautilus_trader.persistence.batching import calc_streaming_batches
 from nautilus_trader.persistence.batching import calculate_data_size
+from nautilus_trader.persistence.batching import generate_data_batches
 from nautilus_trader.persistence.batching import make_unix_ns
 from nautilus_trader.persistence.batching import search_data_size_timestamp
 from nautilus_trader.persistence.catalog import DataCatalog
@@ -125,7 +127,7 @@ class TestPersistenceBatching:
 
         def run():
             return list(
-                calc_streaming_chunks(
+                calc_streaming_batches(
                     catalog=self.catalog,
                     instrument_ids=instrument_ids,
                     data_types=[TradeTick],
@@ -149,7 +151,7 @@ class TestPersistenceBatching:
         )
 
         # Act
-        it = calc_streaming_chunks(
+        it = calc_streaming_batches(
             catalog=self.catalog,
             instrument_ids=instrument_ids,
             data_types=[TradeTick],
@@ -166,5 +168,32 @@ class TestPersistenceBatching:
             ("2019-12-20T19:40:18.634184448", "2019-12-20T22:20:48.447877376"),
             ("2019-12-20T22:20:48.447877376", "2019-12-20T23:59:59.999933952"),
             ("2019-12-20T23:59:59.999933952", "2019-12-21T00:00:00"),
+        ]
+        assert result == expected
+
+    def test_generate_data_batches(self):
+        # Arrange
+        instrument_ids = self.catalog.instruments()["id"].tolist()
+        config = BacktestDataConfig(
+            catalog_path=str(self.catalog.path),
+            data_type=TradeTick,
+            catalog_fs_protocol=self.catalog.fs.protocol,
+            instrument_id=instrument_ids[0],
+            start_time="2019-12-20",
+            end_time="2019-12-21",
+        )
+
+        # Act
+        # Write to cache
+        generate_data_batches(
+            catalog=self.catalog, data_configs=[config], batch_size=parse_bytes("15kib")
+        )
+
+        # Assert
+        result = self.catalog._read_streaming_cache(key="6d79fb9f397599c627229a0a53b1e149")
+        expected = [
+            [1576800000000000000, 1576874708613116672],
+            [1576874708613116672, 1576886399999870208],
+            [1576886399999870208, 1576886400000000000],
         ]
         assert result == expected

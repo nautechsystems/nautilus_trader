@@ -20,6 +20,7 @@ import fsspec
 import numpy as np
 import pandas as pd
 import pyarrow.dataset as ds
+from dask.base import tokenize
 from dask.utils import parse_bytes
 from scipy.optimize import minimize
 
@@ -145,7 +146,7 @@ def search_data_size_timestamp(
     return inner
 
 
-def calc_streaming_chunks(
+def calc_streaming_batches(
     catalog: "DataCatalog",
     instrument_ids: List[str],
     data_types: List[type],
@@ -195,6 +196,7 @@ def merge_data_configs_for_calc_streaming_chunks(data_configs: List[BacktestData
     starts = [c.start_time for c in data_configs]
     ends = [c.end_time for c in data_configs]
     start = starts[0]
+    end = ends[0]
     if len(set(starts)) > 1:
         print("Multiple start dates in data_configs, using min")
         start = min(starts)
@@ -210,15 +212,20 @@ def merge_data_configs_for_calc_streaming_chunks(data_configs: List[BacktestData
 
 
 def _cache_batches(func):
-    def inner(catalog, **kw):
-        result = func(catalog=catalog, **kw)
-        return result
+    def inner(catalog, data_configs, **kw):
+        key = tokenize(data_configs)
+        cached = catalog._read_streaming_cache(key=key)
+        if cached is not None:
+            return cached
+        data = func(catalog=catalog, data_configs=data_configs, **kw)
+        catalog._write_streaming_cache(key=key, data=data)
+        return data
 
     return inner
 
 
 @_cache_batches
-def generate_data_batches(catalog: DataCatalog, data_configs: List[BacktestDataConfig]):
+def generate_data_batches(catalog: DataCatalog, data_configs: List[BacktestDataConfig], batch_size):
     streaming_kw = merge_data_configs_for_calc_streaming_chunks(data_configs=data_configs)
-    chunks = list(calc_streaming_chunks(catalog=catalog, **streaming_kw))
-    return chunks
+    batches = list(calc_streaming_batches(catalog=catalog, target_size=batch_size, **streaming_kw))
+    return batches
