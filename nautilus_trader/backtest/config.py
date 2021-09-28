@@ -20,7 +20,6 @@ from typing import Dict, List, Optional, Union
 import pydantic
 
 from nautilus_trader.backtest.engine import BacktestEngineConfig
-from nautilus_trader.persistence.catalog import DataCatalog
 from nautilus_trader.trading.config import ImportableStrategyConfig
 
 
@@ -138,6 +137,8 @@ class BacktestDataConfig(Partialable):
         )
 
     def catalog(self):
+        from nautilus_trader.persistence.catalog import DataCatalog
+
         return DataCatalog(
             path=self.catalog_path,
             fs_protocol=self.catalog_fs_protocol,
