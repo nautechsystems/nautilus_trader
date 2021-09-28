@@ -198,7 +198,7 @@ cdef class Clock:
         self,
         str name,
         datetime alert_time,
-        handler: Callable[[TimeEvent], None]=None,
+        callback: Callable[[TimeEvent], None]=None,
     ) except *:
         """
         Set a time alert for the given time.
@@ -213,8 +213,8 @@ cdef class Clock:
             The name for the alert (must be unique for this clock).
         alert_time : datetime
             The time for the alert.
-        handler : Callable[[TimeEvent], None], optional
-            The handler to receive time events.
+        callback : Callable[[TimeEvent], None], optional
+            The callback to receive time events.
 
         Raises
         ------
@@ -230,25 +230,73 @@ cdef class Clock:
         """
         Condition.not_none(name, "name")
         Condition.not_none(alert_time, "alert_time")
-        if handler is None:
-            handler = self._default_handler
+        if callback is None:
+            callback = self._default_handler
         Condition.not_in(name, self._timers, "name", "timers")
         Condition.not_in(name, self._handlers, "name", "timers")
         Condition.true(alert_time >= self.utc_now(), "alert_time was < self.utc_now()")
-        Condition.callable(handler, "handler")
+        Condition.callable(callback, "callback")
 
         cdef int64_t alert_time_ns = int(pd.Timestamp(alert_time).to_datetime64())
         cdef int64_t now_ns = self.timestamp_ns()
 
         cdef Timer timer = self._create_timer(
             name=name,
-            callback=handler,
+            callback=callback,
             interval_ns=alert_time_ns - now_ns,
             start_time_ns=now_ns,
             stop_time_ns=alert_time_ns,
         )
+        self._add_timer(timer, callback)
 
-        self._add_timer(timer, handler)
+    cpdef void set_time_alert_ns(
+        self,
+        str name,
+        int64_t alert_time_ns,
+        callback: Callable[[TimeEvent], None]=None,
+    ) except *:
+        """
+        Set a time alert for the given time.
+
+        When the time is reached the handler will be passed the `TimeEvent`
+        containing the timers unique name. If no callback is passed then the
+        default handler (if registered) will receive the `TimeEvent`.
+
+        Parameters
+        ----------
+        name : str
+            The name for the alert (must be unique for this clock).
+        alert_time_ns : int64
+            The Unix (nanoseconds) time for the alert.
+        callback : Callable[[TimeEvent], None], optional
+            The callback to receive time events.
+
+        Raises
+        ------
+        ValueError
+            If name is not unique for this clock.
+        ValueError
+            If alert_time is not >= the clocks current time.
+        TypeError
+            If callback is not of type `Callable` or ``None``.
+        ValueError
+            If callback is ``None`` and no default handler is registered.
+
+        """
+        Condition.not_none(name, "name")
+        if callback is None:
+            callback = self._default_handler
+
+        cdef int64_t now_ns = self.timestamp_ns()
+
+        cdef Timer timer = self._create_timer(
+            name=name,
+            callback=callback,
+            interval_ns=alert_time_ns - now_ns,
+            start_time_ns=now_ns,
+            stop_time_ns=alert_time_ns,
+        )
+        self._add_timer(timer, callback)
 
     cpdef void set_timer(
         self,
@@ -256,7 +304,7 @@ cdef class Clock:
         timedelta interval,
         datetime start_time=None,
         datetime stop_time=None,
-        handler: Callable[[TimeEvent], None]=None,
+        callback: Callable[[TimeEvent], None]=None,
     ) except *:
         """
         Set a timer to run.
@@ -276,8 +324,8 @@ cdef class Clock:
             The start time for the timer (if None then starts immediately).
         stop_time : datetime, optional
             The stop time for the timer (if None then repeats indefinitely).
-        handler : Callable[[TimeEvent], None], optional
-            The handler to receive time events.
+        callback : Callable[[TimeEvent], None], optional
+            The callback to receive time events.
 
         Raises
         ------
@@ -299,12 +347,12 @@ cdef class Clock:
 
         Condition.valid_string(name, "name")
         Condition.not_none(interval, "interval")
-        if handler is None:
-            handler = self._default_handler
+        if callback is None:
+            callback = self._default_handler
         Condition.not_in(name, self._timers, "name", "timers")
         Condition.not_in(name, self._handlers, "name", "timers")
         Condition.true(interval.total_seconds() > 0, f"interval was {interval.total_seconds()}")
-        Condition.callable(handler, "handler")
+        Condition.callable(callback, "callback")
 
         if start_time is None:
             start_time = now
@@ -318,12 +366,108 @@ cdef class Clock:
 
         cdef Timer timer = self._create_timer(
             name=name,
+            callback=callback,
             interval_ns=interval_ns,
-            callback=handler,
             start_time_ns=start_time_ns,
             stop_time_ns=stop_time_ns,
         )
-        self._add_timer(timer, handler)
+        self._add_timer(timer, callback)
+
+    cpdef void set_timer_ns(
+        self,
+        str name,
+        int64_t interval_ns,
+        int64_t start_time_ns,
+        int64_t stop_time_ns,
+        callback: Callable[[TimeEvent], None]=None,
+    ) except *:
+        """
+        Set a timer to run.
+
+        The timer will run from the start time (optionally until the stop time).
+        When the intervals are reached the handlers will be passed the
+        `TimeEvent` containing the timers unique name. If no handler is passed
+        then the default handler (if registered) will receive the `TimeEvent`.
+
+        Parameters
+        ----------
+        name : str
+            The name for the timer (must be unique for this clock).
+        interval_ns : int64
+            The time interval for the timer.
+        start_time_ns : int64
+            The start time for the timer..
+        stop_time_ns : int64
+            The stop time for the timer.
+        callback : Callable[[TimeEvent], None], optional
+            The callback to receive time events.
+
+        Raises
+        ------
+        ValueError
+            If name is not unique for this clock.
+        ValueError
+            If interval is not positive (> 0).
+        ValueError
+            If stop_time is not ``None`` and stop_time < time_now.
+        ValueError
+            If stop_time is not ``None`` and start_time + interval > stop_time.
+        TypeError
+            If callback is not of type `Callable` or ``None``.
+        ValueError
+            If callback is ``None`` and no default handler is registered.
+
+        """
+        Condition.valid_string(name, "name")
+        if callback is None:
+            callback = self._default_handler
+        Condition.positive(interval_ns, f"interval_ns")
+        Condition.callable(callback, "callback")
+        Condition.true(start_time_ns + interval_ns <= stop_time_ns, "start_time_ns + interval_ns was > stop_time_ns")
+
+        cdef Timer timer = self._create_timer(
+            name=name,
+            callback=callback,
+            interval_ns=interval_ns,
+            start_time_ns=start_time_ns,
+            stop_time_ns=stop_time_ns,
+        )
+        self._add_timer(timer, callback)
+
+    cdef Timer _create_timer(
+        self,
+        str name,
+        callback: Callable[[TimeEvent], None],
+        int64_t interval_ns,
+        int64_t start_time_ns,
+        int64_t stop_time_ns,
+    ):
+        """Abstract method (implement in subclass)."""
+        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
+
+    cdef void _add_timer(self, Timer timer, handler: Callable[[TimeEvent], None]) except *:
+        self._timers[timer.name] = timer
+        self._handlers[timer.name] = handler
+        self._update_stack()
+        self._update_timing()
+
+    cdef void _remove_timer(self, Timer timer) except *:
+        self._timers.pop(timer.name, None)
+        self._handlers.pop(timer.name, None)
+        self._update_stack()
+        self._update_timing()
+
+    cdef void _update_stack(self) except *:
+        self.timer_count = len(self._timers)
+
+        if self.timer_count > 0:
+            # The call to np.asarray here looks inefficient, however its only
+            # called when a timer is added or removed. This then allows the
+            # construction of an efficient Timer[:] memoryview.
+            timers = list(self._timers.values())
+            self._stack = np.ascontiguousarray(timers, dtype=Timer)
+        else:
+            self._stack = None
 
     cpdef void cancel_timer(self, str name) except *:
         """
@@ -361,41 +505,6 @@ cdef class Clock:
             # to cancel_timer() handles the clean removal of both the handler
             # and timer.
             self.cancel_timer(name)
-
-    cdef Timer _create_timer(
-        self,
-        str name,
-        callback: Callable[[TimeEvent], None],
-        int64_t interval_ns,
-        int64_t start_time_ns,
-        int64_t stop_time_ns,
-    ):
-        """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
-
-    cdef void _add_timer(self, Timer timer, handler: Callable[[TimeEvent], None]) except *:
-        self._timers[timer.name] = timer
-        self._handlers[timer.name] = handler
-        self._update_stack()
-        self._update_timing()
-
-    cdef void _remove_timer(self, Timer timer) except *:
-        self._timers.pop(timer.name, None)
-        self._handlers.pop(timer.name, None)
-        self._update_stack()
-        self._update_timing()
-
-    cdef void _update_stack(self) except *:
-        self.timer_count = len(self._timers)
-
-        if self.timer_count > 0:
-            # The call to np.asarray here looks inefficient, however its only
-            # called when a timer is added or removed. This then allows the
-            # construction of an efficient Timer[:] memoryview.
-            timers = list(self._timers.values())
-            self._stack = np.ascontiguousarray(timers, dtype=Timer)
-        else:
-            self._stack = None
 
     @cython.boundscheck(False)
     @cython.wraparound(False)

@@ -31,4 +31,4 @@ cpdef bint is_tz_naive(time_object) except *
 cpdef datetime as_utc_timestamp(datetime dt)
 cpdef object as_utc_index(time_object)
 cpdef str format_iso8601(datetime dt)
-cpdef str format_iso8601_us(datetime dt)
+cpdef str format_iso8601_ns(datetime dt)

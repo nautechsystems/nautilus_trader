@@ -332,9 +332,9 @@ cpdef str format_iso8601(datetime dt):
     return f"{dt_partitioned[0]}.{dt_partitioned[2][:3]}Z"
 
 
-cpdef str format_iso8601_us(datetime dt):
+cpdef str format_iso8601_ns(datetime dt):
     """
-    Format the given string to microsecond accuracy ISO 8601 specification.
+    Format the given string to nanosecond accuracy ISO 8601 specification.
 
     Parameters
     ----------
@@ -354,7 +354,7 @@ cpdef str format_iso8601_us(datetime dt):
     cdef str tz_stripped = str(dt).replace(' ', 'T', 1).rpartition('+')[0]
 
     if not PyUnicode_Contains(tz_stripped, '.'):
-        return f"{tz_stripped}.000000Z"
+        return f"{tz_stripped}.000000000Z"
 
     cdef tuple dt_partitioned = tz_stripped.rpartition('.')
-    return f"{dt_partitioned[0]}.{dt_partitioned[2].rjust(6)}Z"
+    return f"{dt_partitioned[0]}.{dt_partitioned[2].ljust(9, '0')}Z"

@@ -15,8 +15,6 @@
 
 from typing import Any, Callable
 
-import pandas as pd
-import pytz
 from cpython.datetime cimport timedelta
 from libc.stdint cimport int64_t
 
@@ -205,10 +203,10 @@ cdef class Throttler:
             self.is_limiting = True
 
     cdef void _set_timer(self, handler: Callable[[TimeEvent], None]) except *:
-        self._clock.set_time_alert(
+        self._clock.set_time_alert_ns(
             name=self._timer_name,
-            alert_time=pd.Timestamp(self._clock.timestamp_ns() + self._delta_next(), tz=pytz.utc),
-            handler=handler,
+            alert_time_ns=self._clock.timestamp_ns() + self._delta_next(),
+            callback=handler,
         )
 
     cpdef void _process(self, TimeEvent event) except *:
