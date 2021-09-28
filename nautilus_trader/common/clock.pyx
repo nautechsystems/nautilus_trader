@@ -267,7 +267,7 @@ cdef class Clock:
         name : str
             The name for the alert (must be unique for this clock).
         alert_time_ns : int64
-            The Unix (nanoseconds) time for the alert.
+            The UNIX time (nanoseconds) for the alert.
         callback : Callable[[TimeEvent], None], optional
             The callback to receive time events.
 
@@ -384,7 +384,7 @@ cdef class Clock:
         """
         Set a timer to run.
 
-        The timer will run from the start time (optionally until the stop time).
+        The timer will run from the start time until the stop time.
         When the intervals are reached the handlers will be passed the
         `TimeEvent` containing the timers unique name. If no handler is passed
         then the default handler (if registered) will receive the `TimeEvent`.
@@ -394,11 +394,11 @@ cdef class Clock:
         name : str
             The name for the timer (must be unique for this clock).
         interval_ns : int64
-            The time interval for the timer.
+            The time interval (nanoseconds) for the timer.
         start_time_ns : int64
-            The start time for the timer..
+            The start UNIX time (nanoseconds) for the timer.
         stop_time_ns : int64
-            The stop time for the timer.
+            The stop UNIX time (nanoseconds) for the timer.
         callback : Callable[[TimeEvent], None], optional
             The callback to receive time events.
 
@@ -540,7 +540,7 @@ cdef class TestClock(Clock):
         Parameters
         ----------
         initial_ns : int64
-            The initial UNIX time for the clock (nanoseconds).
+            The initial UNIX time (nanoseconds) for the clock.
 
         """
         super().__init__()
