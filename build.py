@@ -9,7 +9,6 @@ from pathlib import Path
 from typing import List
 
 import numpy as np
-from colorama import Fore
 from Cython.Build import build_ext
 from Cython.Build import cythonize
 from Cython.Compiler import Options
@@ -154,10 +153,10 @@ def build(setup_kwargs):
 
 
 if __name__ == "__main__":
-    print(Fore.LIGHTCYAN_EX)
+    print("\033[36m")
     print("=====================================================================")
     print("Nautilus Builder")
-    print("=====================================================================" + Fore.RESET)
+    print("=====================================================================\033[0m")
 
     # Work around a Cython problem in Python 3.8.x on macOS
     # https://github.com/cython/cython/issues/3262
@@ -192,4 +191,4 @@ if __name__ == "__main__":
     print("")
 
     build({})
-    print(Fore.GREEN + "Build completed" + Fore.RESET)
+    print("\033[32m" + "Build completed" + "\033[0m")
