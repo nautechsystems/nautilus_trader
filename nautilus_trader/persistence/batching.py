@@ -79,17 +79,15 @@ def _calculate_instrument_data_type_size(
     data_type: type,
     start_time: int,
     end_time: int,
-    samples=1000,
-) -> int:
+):
     fp = f"{root_path}/data/{class_to_filename(data_type)}.parquet/instrument_id={instrument_id}"
     try:
         dataset = ds.dataset(fp, filesystem=fs)
-        row_size = _get_row_size(path=fp, fs=fs, samples=samples)
     except FileNotFoundError:
         return 0
-    filters = (ds.field("ts_init") >= start_time) & (ds.field("ts_init") <= end_time)
-    num_rows = dataset.to_table(columns=[], filter=filters).num_rows
-    return int(num_rows * row_size)
+    filters = (ds.field("ts_init") >= start_time) & (ds.field("ts_init") < end_time)
+    table = dataset.to_table(filter=filters)
+    return table.nbytes
 
 
 def _calculate_data_type_size(
@@ -154,6 +152,7 @@ def calc_streaming_chunks(
     start_time: Union[str, datetime.datetime, pd.Timestamp],
     end_time: Union[str, datetime.datetime, pd.Timestamp],
     target_size=parse_bytes("100mib"),  # noqa: B008
+    tolerance_pct=0.01,
     debug=False,
 ):
     """
@@ -178,6 +177,7 @@ def calc_streaming_chunks(
             method="Powell",
             bounds=((start_nanos, end_nanos),),
             options=options,
+            tol=target_size * tolerance_pct,
         )
         assert result.success, "Optimisation did not complete successfully - check inputs"
         end_nanos = int(result.x[0])
@@ -193,16 +193,19 @@ def merge_data_configs_for_calc_streaming_chunks(data_configs: List[BacktestData
     instrument_ids = [c.instrument_id for c in data_configs]
     data_types = [c.data_type for c in data_configs]
     starts = [c.start_time for c in data_configs]
+    ends = [c.end_time for c in data_configs]
+    start = starts[0]
     if len(set(starts)) > 1:
         print("Multiple start dates in data_configs, using min")
-    ends = [c.end_time for c in data_configs]
+        start = min(starts)
     if len(set(ends)) > 1:
-        print("Multiple start dates in data_configs, using min")
+        print("Multiple end dates in data_configs, using max")
+        end = max(ends)
     return {
         "instrument_ids": instrument_ids,
         "data_types": data_types,
-        "start_time": starts[0],
-        "end_time": ends[0],
+        "start_time": start,
+        "end_time": end,
     }
 
 

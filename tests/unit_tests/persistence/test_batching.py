@@ -23,7 +23,7 @@ from dask.utils import parse_bytes
 
 from nautilus_trader.adapters.betfair.providers import BetfairInstrumentProvider
 from nautilus_trader.model.data.tick import TradeTick
-from nautilus_trader.persistence.batching import _get_schema_widths
+from nautilus_trader.persistence.batching import _calculate_instrument_data_type_size
 from nautilus_trader.persistence.batching import calc_streaming_chunks
 from nautilus_trader.persistence.batching import calculate_data_size
 from nautilus_trader.persistence.batching import make_unix_ns
@@ -55,28 +55,50 @@ class TestPersistenceBatching:
             catalog=self.catalog,
         )
 
+    def test_instrument_data_type_size(self):
+        instrument_ids = self.catalog.instruments()["id"].tolist()
+        size_ins_0 = _calculate_instrument_data_type_size(
+            root_path=self.catalog.path,
+            fs=self.catalog.fs,
+            instrument_id=instrument_ids[0],
+            data_type=TradeTick,
+            start_time=make_unix_ns("2019-12-20 00:00:00"),
+            end_time=make_unix_ns("2019-12-20 22:00:00"),
+        )
+        assert size_ins_0 == 22062
+
+        size_ins_1 = _calculate_instrument_data_type_size(
+            root_path=self.catalog.path,
+            fs=self.catalog.fs,
+            instrument_id=instrument_ids[1],
+            data_type=TradeTick,
+            start_time=make_unix_ns("2019-12-20 00:00:00"),
+            end_time=make_unix_ns("2019-12-20 22:00:00"),
+        )
+        assert size_ins_1 == 12687
+
     def test_calculate_data_size(self):
         # Arrange
         instrument_ids = self.catalog.instruments()["id"].tolist()
-        func = functools.partial(
+        calc_end_time_data_size = functools.partial(
             calculate_data_size,
             root_path=self.catalog.path,
             fs=self.catalog.fs,
             instrument_ids=instrument_ids,
             data_types=[TradeTick],
-            start_time=1576840503572000000,
+            start_time=make_unix_ns("2019-12-20 00:00:00"),
         )
 
         # Act
         results = [
-            func(end_time=make_unix_ns("2019-12-20 11:30:00")),
-            func(end_time=make_unix_ns("2019-12-20 15:00:00")),
-            func(end_time=make_unix_ns("2019-12-20 18:00:00")),
-            func(end_time=make_unix_ns("2019-12-20 22:00:00")),
+            calc_end_time_data_size(end_time=make_unix_ns("2019-12-20 11:30:00")),
+            calc_end_time_data_size(end_time=make_unix_ns("2019-12-20 15:00:00")),
+            calc_end_time_data_size(end_time=make_unix_ns("2019-12-20 18:00:00")),
+            calc_end_time_data_size(end_time=make_unix_ns("2019-12-20 22:00:00")),
         ]
 
         # Assert
-        expected = [2695, 16981, 30188, 84093]
+        expected = [1138, 7019, 12459, 34749]
         assert results == expected
 
     def test_search_data_size_timestamp(self):
@@ -95,30 +117,7 @@ class TestPersistenceBatching:
 
         # Assert
         result = target_func([1576878597067000000])
-        assert int(result) == 964483
-
-    def test_get_schema_widths(self):
-        # Arrange
-        instrument_id = self.catalog.instruments()["id"][0]
-        fn = f"{self.catalog.path}/data/trade_tick.parquet/instrument_id={instrument_id}"
-
-        # TODO - compare widths * rows with df memory usage
-        # df = pd.read_parquet(fn, filesystem=self.fs)
-        # mem_usage = df.memory_usage(index=False, deep=True)
-
-        # Act
-        widths = _get_schema_widths(path=fn, fs=self.fs)
-
-        # Assert
-        expected = {
-            "aggressor_side": 4.0,
-            "match_id": 121.0,
-            "price": 64.0,
-            "size": 64.60606060606061,
-            "ts_event": 8.0,
-            "ts_init": 8.0,
-        }
-        assert widths == expected
+        assert int(result) == 1013938
 
     def test_generate_data_batches_perf(self, benchmark):
         # Arrange
@@ -143,6 +142,11 @@ class TestPersistenceBatching:
     def test_calc_streaming_chunks_results(self):
         # Arrange
         instrument_ids = self.catalog.instruments()["id"].tolist()
+        total_size = (
+            self.catalog.trade_ticks(instrument_ids=instrument_ids)
+            .memory_usage(index=False, deep=True)
+            .sum()
+        )
 
         # Act
         it = calc_streaming_chunks(
@@ -151,18 +155,16 @@ class TestPersistenceBatching:
             data_types=[TradeTick],
             start_time="2019-12-20",
             end_time="2019-12-21",
-            target_size=parse_bytes("15kib"),
-            debug=False,
+            target_size=total_size / 5,
+            debug=True,
         )
 
         # Assert
         result = [(pd.Timestamp(s).isoformat(), pd.Timestamp(e).isoformat()) for s, e in it]
         expected = [
-            ("2019-12-20T00:00:00", "2019-12-20T14:23:12.078341376"),
-            ("2019-12-20T14:23:12.078341376", "2019-12-20T17:24:00.368340736"),
-            ("2019-12-20T17:24:00.368340736", "2019-12-20T19:45:12.032017664"),
-            ("2019-12-20T19:45:12.032017664", "2019-12-20T20:45:21.035707136"),
-            ("2019-12-20T20:45:21.035707136", "2019-12-20T23:59:59.999870464"),
-            ("2019-12-20T23:59:59.999870464", "2019-12-21T00:00:00"),
+            ("2019-12-20T00:00:00", "2019-12-20T19:40:18.634184448"),
+            ("2019-12-20T19:40:18.634184448", "2019-12-20T22:20:48.447877376"),
+            ("2019-12-20T22:20:48.447877376", "2019-12-20T23:59:59.999933952"),
+            ("2019-12-20T23:59:59.999933952", "2019-12-21T00:00:00"),
         ]
         assert result == expected
