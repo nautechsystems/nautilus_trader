@@ -15,17 +15,12 @@
 
 from typing import Callable
 
-import pandas as pd
-import pytz
 from libc.stdint cimport int64_t
 
 from threading import Timer as TimerThread
 
-from cpython.datetime cimport datetime
-
 from nautilus_trader.common.timer cimport TimeEvent
 from nautilus_trader.core.correctness cimport Condition
-from nautilus_trader.core.datetime cimport format_iso8601
 from nautilus_trader.core.datetime cimport nanos_to_secs
 from nautilus_trader.core.message cimport Event
 from nautilus_trader.core.uuid cimport UUID4
@@ -40,7 +35,6 @@ cdef class TimeEvent(Event):
         self,
         str name not None,
         UUID4 event_id not None,
-        datetime timestamp not None,
         int64_t ts_event,
         int64_t ts_init,
     ):
@@ -53,8 +47,6 @@ cdef class TimeEvent(Event):
             The event name.
         event_id : UUID4
             The event ID.
-        timestamp : datetime
-            The event timestamp (UTC).
         ts_event : int64
             The UNIX timestamp (nanoseconds) when the time event occurred.
         ts_init : int64
@@ -65,7 +57,6 @@ cdef class TimeEvent(Event):
         super().__init__(event_id, ts_event, ts_init)
 
         self.name = name
-        self.timestamp = timestamp
 
     def __eq__(self, TimeEvent other) -> bool:
         return self.name == other.name
@@ -73,8 +64,7 @@ cdef class TimeEvent(Event):
     def __repr__(self) -> str:
         return (f"{type(self).__name__}("
                 f"name={self.name}, "
-                f"id={self.id}, "
-                f"timestamp={format_iso8601(self.timestamp)})")
+                f"id={self.id})")
 
 
 cdef class TimeEventHandler:
@@ -172,7 +162,6 @@ cdef class Timer:
         self.start_time_ns = start_time_ns
         self.next_time_ns = start_time_ns + interval_ns
         self.stop_time_ns = stop_time_ns
-
         self.is_expired = False
 
     def __eq__(self, Timer other) -> bool:
@@ -211,7 +200,6 @@ cdef class Timer:
         return TimeEvent(
             name=self.name,
             event_id=event_id,
-            timestamp=pd.Timestamp(self.next_time_ns, tz=pytz.utc),
             ts_event=self.next_time_ns,
             ts_init=ts_init,
         )

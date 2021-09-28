@@ -144,10 +144,6 @@ class TestTestClock:
         assert events[1].event.ts_event == 200_000_000
         assert events[2].event.ts_event == 300_000_000
         assert events[3].event.ts_event == 400_000_000
-        assert events[0].event.timestamp == datetime(1970, 1, 1, 0, 0, 0, 100000, tzinfo=pytz.utc)
-        assert events[1].event.timestamp == datetime(1970, 1, 1, 0, 0, 0, 200000, tzinfo=pytz.utc)
-        assert events[2].event.timestamp == datetime(1970, 1, 1, 0, 0, 0, 300000, tzinfo=pytz.utc)
-        assert events[3].event.timestamp == datetime(1970, 1, 1, 0, 0, 0, 400000, tzinfo=pytz.utc)
 
     def test_set_timer(self):
         # Arrange
@@ -427,7 +423,7 @@ class TestTestClock:
             interval=interval,
             start_time=UNIX_EPOCH + interval,
             stop_time=None,
-            handler=handler.append,
+            callback=handler.append,
         )
 
         # Assert
@@ -489,7 +485,7 @@ class TestTestClock:
             interval=interval,
             start_time=UNIX_EPOCH + interval,
             stop_time=None,
-            handler=handler.append,
+            callback=handler.append,
         )
 
         event_handlers = clock.advance_time(5 * 60 * 1_000_000_000)
@@ -517,7 +513,7 @@ class TestTestClock:
             interval=interval1,
             start_time=UNIX_EPOCH,
             stop_time=None,
-            handler=handler1.append,
+            callback=handler1.append,
         )
 
         clock.set_timer(
@@ -525,7 +521,7 @@ class TestTestClock:
             interval=interval2,
             start_time=UNIX_EPOCH,
             stop_time=None,
-            handler=handler2.append,
+            callback=handler2.append,
         )
 
         event_handlers = clock.advance_time(5 * 60 * 1_000_000_000)

@@ -33,10 +33,16 @@ repos:
   - repo: https://github.com/doublify/pre-commit-rust
     rev: v1.0
     hooks:
-#      - id: fmt
-#        args: ["--manifest-path", "nautilus/Cargo.toml"]
+      #      - id: fmt
+      #        args: ["--manifest-path", "nautilus/Cargo.toml"]
       - id: cargo-check
         args: ["--manifest-path", "nautilus/Cargo.toml"]
+
+  - repo: https://github.com/hadialqattan/pycln
+    rev: v1.0.3
+    hooks:
+      - id: pycln
+        name: pycln (Python unused imports)
 
   - repo: https://github.com/psf/black
     rev: 21.9b0
@@ -83,7 +89,7 @@ repos:
     rev: 3.9.2
     hooks:
       - id: flake8
-        name: flake8 (python)
+        name: flake8 (Python)
         additional_dependencies:
           - flake8-bandit
           - flake8-bugbear
@@ -105,7 +111,7 @@ repos:
             --ignore=C101 E203 E252 E402 D100 D101 D102 S101 S403 W503,
         ]
       - id: flake8
-        name: flake8 (cython)
+        name: flake8 (Cython)
         additional_dependencies:
           - flake8-bandit
           - flake8-bugbear
@@ -141,6 +147,7 @@ repos:
     rev: 0.5.0
     hooks:
       - id: nbstripout
+
 
 # Flake8 ignore justifications
 # ----------------------------
