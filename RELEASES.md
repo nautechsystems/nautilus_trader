@@ -1,3 +1,24 @@
+# NautilusTrader 1.131.0 Beta - Release Notes
+
+Released **TBD**
+
+## Breaking Changes
+- Changed `Clock.set_time_alert(...)` method signature.
+- Changed `Clock.set_timer(...)` method signature.
+- Removed `pd.Timestamp` from `TimeEvent`.
+
+## Enhancements
+- Added `Clock.set_time_alert_ns(...)` method.
+- Added `Clock.set_timer_ns(...)` method.
+- Added `fill_limit_at_price` simulated exchange option.
+- Added `fill_stop_at_price` simulated exchange option.
+- Improve timer and time event efficiency.
+
+## Fixes
+- Fixed `OrderUpdated` leaves quantity calculation.
+
+---
+
 # NautilusTrader 1.130.0 Beta - Release Notes
 
 Released on 26th, September 2021

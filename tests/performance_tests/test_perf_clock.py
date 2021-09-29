@@ -71,7 +71,7 @@ class TestClockPerformanceTests(PerformanceHarness):
 
     def test_iteratively_advance_time(self):
         store = []
-        test_clock.set_timer("test", timedelta(seconds=1), handler=store.append)
+        test_clock.set_timer("test", timedelta(seconds=1), callback=store.append)
         self.benchmark.pedantic(
             target=TestClockHarness.iteratively_advance_time,
             iterations=1,

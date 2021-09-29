@@ -480,7 +480,8 @@ cdef class BacktestEngine:
         list modules=None,
         FillModel fill_model=None,
         BookType book_type=BookType.L1_TBBO,
-        fill_limit_at_price=False,
+        fill_limit_at_price: bool=False,
+        fill_stop_at_price: bool=False,
     ) -> None:
         """
         Add a `SimulatedExchange` with the given parameters to the backtest engine.
@@ -513,7 +514,9 @@ cdef class BacktestEngine:
         book_type : BookType
             The default order book type for fill modelling.
         fill_limit_at_price : bool
-            If limit orders should be filled at their original price only (overrides slippage).
+            If ``LIMIT`` orders should be filled at their original price only (overrides slippage).
+        fill_stop_at_price : bool
+            If ``STOP_MARKET`` orders should be filled at their original price only (overrides slippage).
 
         Raises
         ------
@@ -550,6 +553,7 @@ cdef class BacktestEngine:
             clock=self._test_clock,
             logger=self._test_logger,
             fill_limit_at_price=fill_limit_at_price,
+            fill_stop_at_price=fill_stop_at_price,
         )
 
         self._exchanges[venue] = exchange
@@ -705,20 +709,20 @@ cdef class BacktestEngine:
         If more data than can fit in memory is to be run through the backtest
         engine, then streaming mode can be utilized. The expected sequence is as
         follows:
-         - Add initial data block and strategies.
+         - Add initial data batch and strategies.
          - Call `run_streaming()`.
          - Call `clear_data()`.
-         - Add next block of data stream.
+         - Add next batch of data stream.
          - Call `run_streaming()`.
          - Call `end_streaming()` when there is no more data to run on.
 
         Parameters
         ----------
         start : Union[datetime, str, int], optional
-            The start datetime (UTC) for the current block of data. If ``None``
+            The start datetime (UTC) for the current batch of data. If ``None``
             engine runs from the start of the data.
         end : Union[datetime, str, int], optional
-            The end datetime (UTC) for the current block of data. If ``None`` engine runs
+            The end datetime (UTC) for the current batch of data. If ``None`` engine runs
             to the end of the data.
 
         Raises

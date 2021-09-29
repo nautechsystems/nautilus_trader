@@ -650,7 +650,7 @@ cdef class DataEngine(Component):
                 interval=timedelta(milliseconds=interval_ms),
                 start_time=start_time,
                 stop_time=None,
-                handler=self._snapshot_order_book,
+                callback=self._snapshot_order_book,
             )
             self._log.debug(f"Set timer {timer_name}.")
 
