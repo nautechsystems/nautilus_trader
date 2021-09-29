@@ -236,7 +236,7 @@ def test_tokenization_config(backtest_config: BacktestRunConfig):
     result = tokenize(backtest_config)
 
     # Assert
-    assert result == "aafc2db1578af6d4f73a0f6d525af98c"
+    assert result == "210615e8aba1de864fb7b483940472c0"
 
 
 def test_backtest_data_config_load(catalog):
