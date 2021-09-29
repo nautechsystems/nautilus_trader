@@ -189,7 +189,7 @@ cdef class BacktestEngine:
         )
 
         nautilus_header(self._log)
-        self._log.info("=================================================================")
+        self._log.info("\033[36m=================================================================")
         self._log.info("Building engine...")
 
         ########################################################################
@@ -594,6 +594,9 @@ cdef class BacktestEngine:
             # End current backtest run
             self._end()
 
+        # Change logger clock back to live clock for consistent time stamping
+        self._test_logger.change_clock_c(self._clock)
+
         # Reset DataEngine
         if self._data_engine.is_running_c():
             self._data_engine.stop()
@@ -842,19 +845,20 @@ cdef class BacktestEngine:
             self._data_engine.start()
             self._exec_engine.start()
             self.trader.start()
+            # Change logger clock for the run
             self._test_logger.change_clock_c(self._test_clock)
             self._pre_run()
 
-        self._log.info("=================================================================")
-        self._log.info(" BACKTEST RUN")
-        self._log.info("=================================================================")
+        self._log.info("\033[36m=================================================================")
+        self._log.info("\033[36m BACKTEST RUN")
+        self._log.info("\033[36m=================================================================")
         self._log.info(f"Run config ID:  {self.run_config_id}")
         self._log.info(f"Run ID:         {self.run_id}")
         self._log.info(f"Run started:    {self.run_started}")
         self._log.info(f"Backtest start: {self.backtest_start}")
         self._log.info(f"Batch start:    {start}.")
         self._log.info(f"Batch end:      {end}.")
-        self._log.info("-----------------------------------------------------------------")
+        self._log.info("\033[36m-----------------------------------------------------------------")
 
         # Set data stream length
         self._data_len = len(self._data)
@@ -920,11 +924,11 @@ cdef class BacktestEngine:
 
         for exchange in self._exchanges.values():
             account = exchange.exec_client.get_account()
-            self._log.info("=================================================================")
-            self._log.info(f"SimulatedVenue {exchange.id}")
-            self._log.info("=================================================================")
+            self._log.info("\033[36m=================================================================")
+            self._log.info(f"\033[36mSimulatedVenue {exchange.id}")
+            self._log.info("\033[36m=================================================================")
             self._log.info(f"{repr(account)}")
-            self._log.info("-----------------------------------------------------------------")
+            self._log.info("\033[36m-----------------------------------------------------------------")
             self._log.info(f"Balances starting:")
             if exchange.is_frozen_account:
                 self._log.warning(f"ACCOUNT FROZEN")
@@ -933,9 +937,9 @@ cdef class BacktestEngine:
                     self._log.info(b.to_str())
 
     def _post_run(self):
-        self._log.info("=================================================================")
-        self._log.info(" BACKTEST POST-RUN")
-        self._log.info("=================================================================")
+        self._log.info("\033[36m=================================================================")
+        self._log.info("\033[36m BACKTEST POST-RUN")
+        self._log.info("\033[36m=================================================================")
         self._log.info(f"Run config ID:  {self.run_config_id}")
         self._log.info(f"Run ID:         {self.run_id}")
         self._log.info(f"Run started:    {self.run_started}")
@@ -953,11 +957,11 @@ cdef class BacktestEngine:
 
         for exchange in self._exchanges.values():
             account = exchange.exec_client.get_account()
-            self._log.info("=================================================================")
-            self._log.info(f"SimulatedVenue {exchange.id}")
-            self._log.info("=================================================================")
+            self._log.info("\033[36m=================================================================")
+            self._log.info(f"\033[36mSimulatedVenue {exchange.id}")
+            self._log.info("\033[36m=================================================================")
             self._log.info(f"{repr(account)}")
-            self._log.info("-----------------------------------------------------------------")
+            self._log.info("\033[36m-----------------------------------------------------------------")
             if exchange.is_frozen_account:
                 self._log.warning(f"ACCOUNT FROZEN")
             else:
@@ -966,15 +970,15 @@ cdef class BacktestEngine:
                 self._log.info(f"Balances starting:")
                 for b in account.starting_balances().values():
                     self._log.info(b.to_str())
-                self._log.info("-----------------------------------------------------------------")
+                self._log.info("\033[36m-----------------------------------------------------------------")
                 self._log.info(f"Balances ending:")
                 for b in account.balances_total().values():
                     self._log.info(b.to_str())
-                self._log.info("-----------------------------------------------------------------")
+                self._log.info("\033[36m-----------------------------------------------------------------")
                 self._log.info(f"Commissions:")
                 for b in account.commissions().values():
                     self._log.info(b.to_str())
-                self._log.info("-----------------------------------------------------------------")
+                self._log.info("\033[36m-----------------------------------------------------------------")
                 self._log.info(f"Unrealized PnLs:")
                 unrealized_pnls = self.portfolio.unrealized_pnls(Venue(exchange.id.value)).values()
                 if not unrealized_pnls:
@@ -987,9 +991,9 @@ cdef class BacktestEngine:
             for module in exchange.modules:
                 module.log_diagnostics(self._log)
 
-            self._log.info("=================================================================")
-            self._log.info(" PERFORMANCE STATISTICS")
-            self._log.info("=================================================================")
+            self._log.info("\033[36m=================================================================")
+            self._log.info("\033[36m PERFORMANCE STATISTICS")
+            self._log.info("\033[36m=================================================================")
 
             # Find all positions for exchange venue
             positions = []
@@ -1003,16 +1007,16 @@ cdef class BacktestEngine:
             # Present PnL performance stats per asset
             for currency in account.currencies():
                 self._log.info(f" {str(currency)}")
-                self._log.info("-----------------------------------------------------------------")
+                self._log.info("\033[36m-----------------------------------------------------------------")
                 for statistic in self.analyzer.get_performance_stats_pnls_formatted(currency):
                     self._log.info(statistic)
-                self._log.info("-----------------------------------------------------------------")
+                self._log.info("\033[36m-----------------------------------------------------------------")
 
             self._log.info(" Returns")
-            self._log.info("-----------------------------------------------------------------")
+            self._log.info("\033[36m-----------------------------------------------------------------")
             for statistic in self.analyzer.get_performance_stats_returns_formatted():
                 self._log.info(statistic)
-            self._log.info("-----------------------------------------------------------------")
+            self._log.info("\033[36m-----------------------------------------------------------------")
 
     def _add_data_client_if_not_exists(self, ClientId client_id) -> None:
         if client_id not in self._data_engine.registered_clients():
