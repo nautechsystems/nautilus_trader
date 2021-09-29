@@ -514,7 +514,7 @@ class TradingNode:
         self._log.info(f"msgpack {msgpack.version[0]}.{msgpack.version[1]}.{msgpack.version[2]}")
         if uvloop_version:
             self._log.info(f"uvloop {uvloop_version}")
-        self._log.info("=================================================================")
+        self._log.info("\033[36m=================================================================")
 
     def _setup_loop(self) -> None:
         if self._loop.is_closed():
@@ -619,7 +619,7 @@ class TradingNode:
         # - The execution engine clients will be set connected when all
         # accounts are updated and the current order and position status is
         # reconciled.
-        # Thus any delay here will be due to blocking network IO.
+        # Thus any delay here will be due to blocking network I/O.
         seconds = self._config.timeout_connection
         timeout: timedelta = self._clock.utc_now() + timedelta(seconds=seconds)
         while True:
@@ -636,8 +636,8 @@ class TradingNode:
 
     async def _await_portfolio_initialized(self) -> bool:
         # - The portfolio will be set initialized when all margin and unrealized
-        # PnL calculations are completed (may be waiting on first quote).
-        # Thus any delay here will be due to blocking network IO.
+        # PnL calculations are completed (maybe waiting on first quotes).
+        # Thus any delay here will be due to blocking network I/O.
         seconds = self._config.timeout_portfolio
         timeout: timedelta = self._clock.utc_now() + timedelta(seconds=seconds)
         while True:
