@@ -8,6 +8,8 @@ Released **TBD**
 - Removed `pd.Timestamp` from `TimeEvent`.
 
 ## Enhancements
+- Added optional `run_config_id` for backtest runs.
+- Added `BacktestResult` object.
 - Added `Clock.set_time_alert_ns(...)` method.
 - Added `Clock.set_timer_ns(...)` method.
 - Added `fill_limit_at_price` simulated exchange option.
