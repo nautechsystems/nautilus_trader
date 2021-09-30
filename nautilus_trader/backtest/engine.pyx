@@ -15,7 +15,7 @@
 
 import socket
 from decimal import Decimal
-from typing import List, Optional, Union
+from typing import Dict, List, Optional, Union
 
 import pandas as pd
 import pydantic
@@ -65,6 +65,7 @@ from nautilus_trader.serialization.msgpack.serializer cimport MsgPackSerializer
 from nautilus_trader.trading.strategy cimport TradingStrategy
 
 from nautilus_trader.analysis.performance import PerformanceAnalyzer
+from nautilus_trader.backtest.results import BacktestResult
 from nautilus_trader.cache.cache import CacheConfig
 from nautilus_trader.data.engine import DataEngineConfig
 from nautilus_trader.execution.engine import ExecEngineConfig
@@ -136,26 +137,35 @@ cdef class BacktestEngine:
             config = BacktestEngineConfig()
         Condition.type(config, BacktestEngineConfig, "config")
 
-        # Configuration
-        self._config = config
-
-        self._exchanges = {}
-
-        # Data
-        self._data = []
-        self._data_len = 0
-        self._index = 0
-
         # Setup components
         self._clock = LiveClock()
         created_time = self._clock.utc_now()
         self._test_clock = TestClock()
         self._uuid_factory = UUIDFactory()
 
+        self._config = config
+        self._exchanges = {}
+
         # Identifiers
         self.trader_id = TraderId(config.trader_id)
         self.machine_id = socket.gethostname()
         self.instance_id = self._uuid_factory.generate()
+
+        # Data
+        self._data = []
+        self._data_len = 0
+        self._index = 0
+
+        # Run IDs
+        self.run_config_id = None
+        self.run_id = None
+
+        # Timing
+        self.run_started = None
+        self.run_finished = None
+        self.backtest_start = None
+        self.backtest_end = None
+        self.iteration = 0
 
         self._logger = Logger(
             clock=LiveClock(),
@@ -179,7 +189,7 @@ cdef class BacktestEngine:
         )
 
         nautilus_header(self._log)
-        self._log.info("=================================================================")
+        self._log.info("\033[36m=================================================================")
         self._log.info("Building engine...")
 
         ########################################################################
@@ -262,10 +272,6 @@ cdef class BacktestEngine:
         )
 
         self.analyzer = PerformanceAnalyzer()
-
-        self.iteration = 0
-        self._run_started = None
-        self._backtest_start = None
 
         self._log.info(
             f"Initialized in "
@@ -588,6 +594,9 @@ cdef class BacktestEngine:
             # End current backtest run
             self._end()
 
+        # Change logger clock back to live clock for consistent time stamping
+        self._test_logger.change_clock_c(self._clock)
+
         # Reset DataEngine
         if self._data_engine.is_running_c():
             self._data_engine.stop()
@@ -610,8 +619,16 @@ cdef class BacktestEngine:
         for exchange in self._exchanges.values():
             exchange.reset()
 
+        # Reset run IDs
+        self.run_config_id = None
+        self.run_id = None
+
+        # Reset timing
         self.iteration = 0
-        self._run_started = None
+        self.run_started = None
+        self.run_finished = None
+        self.backtest_start = None
+        self.backtest_end = None
 
         self._log.info("Reset.")
 
@@ -671,6 +688,7 @@ cdef class BacktestEngine:
         self,
         start: Union[datetime, str, int]=None,
         end: Union[datetime, str, int]=None,
+        run_config_id: str=None,
     ) -> None:
         """
         Run a backtest.
@@ -686,6 +704,8 @@ cdef class BacktestEngine:
         end : Union[datetime, str, int], optional
             The end datetime (UTC) for the backtest run. If ``None`` engine runs
             to the end of the data.
+        run_config_id : str, optional
+            The tokenized `BacktestRunConfig` ID.
 
         Raises
         ------
@@ -695,13 +715,14 @@ cdef class BacktestEngine:
             If the `start` is >= the `end` datetime.
 
         """
-        self._run(start, end)
+        self._run(start, end, run_config_id)
         self._end()
 
     def run_streaming(
         self,
         start: Union[datetime, str, int]=None,
         end: Union[datetime, str, int]=None,
+        run_config_id: str=None,
     ):
         """
         Run a backtest in streaming mode.
@@ -724,6 +745,8 @@ cdef class BacktestEngine:
         end : Union[datetime, str, int], optional
             The end datetime (UTC) for the current batch of data. If ``None`` engine runs
             to the end of the data.
+        run_config_id : str, optional
+            The tokenized backtest run configuration ID.
 
         Raises
         ------
@@ -733,7 +756,7 @@ cdef class BacktestEngine:
             If the `start` is >= the `end` datetime.
 
         """
-        self._run(start, end)
+        self._run(start, end, run_config_id)
 
     def end_streaming(self):
         """
@@ -747,10 +770,44 @@ cdef class BacktestEngine:
         """
         self._end()
 
+    def get_result(self):
+        """
+        Return the backtest result from the last run.
+
+        Returns
+        -------
+        BacktestResult
+
+        """
+        stats_pnls: Dict[str, Dict[str, float]] = {}
+
+        for currency in self.analyzer.currencies:
+            stats_pnls[currency.code] = self.analyzer.get_performance_stats_pnls(currency)
+
+        return BacktestResult(
+            trader_id=self.trader_id.value,
+            machine_id=self.machine_id,
+            run_config_id=self.run_config_id,
+            instance_id=self.instance_id.value,
+            run_id=self.run_id.value,
+            run_started=self.run_started,
+            run_finished=self.run_finished,
+            backtest_start=self.backtest_start,
+            backtest_end=self.backtest_end,
+            elapsed_time=(self.backtest_end - self.backtest_start).total_seconds(),
+            iterations=self.iteration,
+            total_events=self._exec_engine.event_count,
+            total_orders=self.cache.orders_total_count(),
+            total_positions=self.cache.positions_total_count(),
+            stats_pnls=stats_pnls,
+            stats_returns=self.analyzer.get_performance_stats_returns(),
+        )
+
     def _run(
         self,
         start: Union[datetime, str, int]=None,
         end: Union[datetime, str, int]=None,
+        run_config_id: str=None,
     ):
         cdef int64_t start_ns
         cdef int64_t end_ns
@@ -778,25 +835,30 @@ cdef class BacktestEngine:
             strategy.clock.set_time(start_ns)
 
         if self.iteration == 0:
-            # Initialize engine
-            self._run_started = self._clock.utc_now()
-            self._backtest_start = start
+            # Initialize run
+            self.run_config_id = run_config_id  # Can be None
+            self.run_id = self._uuid_factory.generate()
+            self.run_started = self._clock.utc_now()
+            self.backtest_start = start
             for exchange in self._exchanges.values():
                 exchange.initialize_account()
             self._data_engine.start()
             self._exec_engine.start()
             self.trader.start()
+            # Change logger clock for the run
             self._test_logger.change_clock_c(self._test_clock)
             self._pre_run()
 
-        self._log.info("=================================================================")
-        self._log.info(" BACKTEST RUN")
-        self._log.info("=================================================================")
-        self._log.info(f"Run started:    {self._run_started}")
-        self._log.info(f"Backtest start: {self._backtest_start}")
+        self._log.info("\033[36m=================================================================")
+        self._log.info("\033[36m BACKTEST RUN")
+        self._log.info("\033[36m=================================================================")
+        self._log.info(f"Run config ID:  {self.run_config_id}")
+        self._log.info(f"Run ID:         {self.run_id}")
+        self._log.info(f"Run started:    {self.run_started}")
+        self._log.info(f"Backtest start: {self.backtest_start}")
         self._log.info(f"Batch start:    {start}.")
         self._log.info(f"Batch end:      {end}.")
-        self._log.info("-----------------------------------------------------------------")
+        self._log.info("\033[36m-----------------------------------------------------------------")
 
         # Set data stream length
         self._data_len = len(self._data)
@@ -835,6 +897,9 @@ cdef class BacktestEngine:
         for exchange in self._exchanges.values():
             exchange.process(self._test_clock.timestamp_ns())
 
+        self.run_finished = self._clock.utc_now()
+        self.backtest_end = self._test_clock.utc_now()
+
         self._post_run()
 
     cdef Data _next(self):
@@ -859,11 +924,11 @@ cdef class BacktestEngine:
 
         for exchange in self._exchanges.values():
             account = exchange.exec_client.get_account()
-            self._log.info("=================================================================")
-            self._log.info(f"SimulatedVenue {exchange.id}")
-            self._log.info("=================================================================")
+            self._log.info("\033[36m=================================================================")
+            self._log.info(f"\033[36mSimulatedVenue {exchange.id}")
+            self._log.info("\033[36m=================================================================")
             self._log.info(f"{repr(account)}")
-            self._log.info("-----------------------------------------------------------------")
+            self._log.info("\033[36m-----------------------------------------------------------------")
             self._log.info(f"Balances starting:")
             if exchange.is_frozen_account:
                 self._log.warning(f"ACCOUNT FROZEN")
@@ -872,15 +937,16 @@ cdef class BacktestEngine:
                     self._log.info(b.to_str())
 
     def _post_run(self):
-        run_finished = self._clock.utc_now()
-        self._log.info("=================================================================")
-        self._log.info(" BACKTEST POST-RUN")
-        self._log.info("=================================================================")
-        self._log.info(f"Run started:    {self._run_started}")
-        self._log.info(f"Run finished:   {run_finished}")
-        self._log.info(f"Backtest start: {self._backtest_start}")
-        self._log.info(f"Backtest end:   {self._test_clock.utc_now()}")
-        self._log.info(f"Elapsed time:   {run_finished - self._run_started}")
+        self._log.info("\033[36m=================================================================")
+        self._log.info("\033[36m BACKTEST POST-RUN")
+        self._log.info("\033[36m=================================================================")
+        self._log.info(f"Run config ID:  {self.run_config_id}")
+        self._log.info(f"Run ID:         {self.run_id}")
+        self._log.info(f"Run started:    {self.run_started}")
+        self._log.info(f"Run finished:   {self.run_finished}")
+        self._log.info(f"Backtest start: {self.backtest_start}")
+        self._log.info(f"Backtest end:   {self.backtest_end}")
+        self._log.info(f"Elapsed time:   {self.run_finished - self.run_started}")
         self._log.info(f"Iterations: {self.iteration:,}")
         self._log.info(f"Total events: {self._exec_engine.event_count:,}")
         self._log.info(f"Total orders: {self.cache.orders_total_count():,}")
@@ -891,11 +957,11 @@ cdef class BacktestEngine:
 
         for exchange in self._exchanges.values():
             account = exchange.exec_client.get_account()
-            self._log.info("=================================================================")
-            self._log.info(f"SimulatedVenue {exchange.id}")
-            self._log.info("=================================================================")
+            self._log.info("\033[36m=================================================================")
+            self._log.info(f"\033[36mSimulatedVenue {exchange.id}")
+            self._log.info("\033[36m=================================================================")
             self._log.info(f"{repr(account)}")
-            self._log.info("-----------------------------------------------------------------")
+            self._log.info("\033[36m-----------------------------------------------------------------")
             if exchange.is_frozen_account:
                 self._log.warning(f"ACCOUNT FROZEN")
             else:
@@ -904,15 +970,15 @@ cdef class BacktestEngine:
                 self._log.info(f"Balances starting:")
                 for b in account.starting_balances().values():
                     self._log.info(b.to_str())
-                self._log.info("-----------------------------------------------------------------")
+                self._log.info("\033[36m-----------------------------------------------------------------")
                 self._log.info(f"Balances ending:")
                 for b in account.balances_total().values():
                     self._log.info(b.to_str())
-                self._log.info("-----------------------------------------------------------------")
+                self._log.info("\033[36m-----------------------------------------------------------------")
                 self._log.info(f"Commissions:")
                 for b in account.commissions().values():
                     self._log.info(b.to_str())
-                self._log.info("-----------------------------------------------------------------")
+                self._log.info("\033[36m-----------------------------------------------------------------")
                 self._log.info(f"Unrealized PnLs:")
                 unrealized_pnls = self.portfolio.unrealized_pnls(Venue(exchange.id.value)).values()
                 if not unrealized_pnls:
@@ -925,9 +991,9 @@ cdef class BacktestEngine:
             for module in exchange.modules:
                 module.log_diagnostics(self._log)
 
-            self._log.info("=================================================================")
-            self._log.info(" PERFORMANCE STATISTICS")
-            self._log.info("=================================================================")
+            self._log.info("\033[36m=================================================================")
+            self._log.info("\033[36m PERFORMANCE STATISTICS")
+            self._log.info("\033[36m=================================================================")
 
             # Find all positions for exchange venue
             positions = []
@@ -941,16 +1007,16 @@ cdef class BacktestEngine:
             # Present PnL performance stats per asset
             for currency in account.currencies():
                 self._log.info(f" {str(currency)}")
-                self._log.info("-----------------------------------------------------------------")
+                self._log.info("\033[36m-----------------------------------------------------------------")
                 for statistic in self.analyzer.get_performance_stats_pnls_formatted(currency):
                     self._log.info(statistic)
-                self._log.info("-----------------------------------------------------------------")
+                self._log.info("\033[36m-----------------------------------------------------------------")
 
             self._log.info(" Returns")
-            self._log.info("-----------------------------------------------------------------")
+            self._log.info("\033[36m-----------------------------------------------------------------")
             for statistic in self.analyzer.get_performance_stats_returns_formatted():
                 self._log.info(statistic)
-            self._log.info("-----------------------------------------------------------------")
+            self._log.info("\033[36m-----------------------------------------------------------------")
 
     def _add_data_client_if_not_exists(self, ClientId client_id) -> None:
         if client_id not in self._data_engine.registered_clients():

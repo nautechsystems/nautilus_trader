@@ -14,47 +14,45 @@
 # -------------------------------------------------------------------------------------------------
 
 from dataclasses import dataclass
-from typing import List
-
-import pandas as pd
-
-from nautilus_trader.backtest.engine import BacktestEngine
+from datetime import datetime
+from typing import Dict, Optional
 
 
 @dataclass
 class BacktestResult:
-    id: str
-    account_balances: pd.DataFrame
-    fill_report: pd.DataFrame
-    positions: pd.DataFrame
+    trader_id: str
+    machine_id: str
+    run_config_id: Optional[str]
+    instance_id: str
+    run_id: str
+    run_started: datetime
+    run_finished: datetime
+    backtest_start: datetime
+    backtest_end: datetime
+    elapsed_time: float
+    iterations: int
+    total_events: int
+    total_orders: int
+    total_positions: int
+    stats_pnls: Dict[str, Dict[str, float]]
+    stats_returns: Dict[str, float]
 
-    @classmethod
-    def from_engine(cls, backtest_id: str, engine: BacktestEngine):
-        account_balances = pd.concat(
-            [
-                engine.trader.generate_account_report(venue).assign(venue=venue)
-                for venue in engine.list_venues()
-            ]
-        )
-        return BacktestResult(
-            id=backtest_id,
-            account_balances=account_balances,
-            fill_report=engine.trader.generate_order_fills_report(),
-            positions=engine.trader.generate_positions_report(),
-        )
-
-    def final_balances(self):
-        return self.account_balances.groupby(["venue", "currency"])["total"].last()
-
-    def __repr__(self):
-        def repr_balance():
-            items = [
-                (venue, currency, balance)
-                for (venue, currency), balance in self.final_balances().items()
-            ]
-            return ",".join([f"{v.value}[{c}]={b}" for (v, c, b) in items])
-
-        return f"{self.__class__.__name__}({self.id}, {repr_balance()})"
+    # account_balances: pd.DataFrame
+    # fills_report: pd.DataFrame
+    # positions: pd.DataFrame
+    #
+    # def final_balances(self):
+    #     return self.account_balances.groupby(["venue", "currency"])["total"].last()
+    #
+    # def __repr__(self):
+    #     def repr_balance():
+    #         items = [
+    #             (venue, currency, balance)
+    #             for (venue, currency), balance in self.final_balances().items()
+    #         ]
+    #         return ",".join([f"{v.value}[{c}]={b}" for (v, c, b) in items])
+    #
+    #     return f"{self.__class__.__name__}({self.run_id}, {repr_balance()})"
 
 
 def ensure_plotting(func):
@@ -78,15 +76,15 @@ def ensure_plotting(func):
     return inner
 
 
-@dataclass()
-class BacktestRunResults:
-    results: List[BacktestResult]
-
-    def final_balances(self):
-        return pd.concat(r.final_balances().to_frame().assign(id=r.id) for r in self.results)
-
-    @ensure_plotting
-    def plot_balances(self):
-        df = self.final_balances()
-        df = df.reset_index().set_index("id").astype({"venue": str, "total": float})
-        return df.hvplot.bar(y="total", rot=45, by=["venue", "currency"])
+# @dataclass()
+# class BacktestRunResults:
+#     results: List[BacktestResult]
+#
+#     def final_balances(self):
+#         return pd.concat(r.final_balances().to_frame().assign(id=r.id) for r in self.results)
+#
+#     @ensure_plotting
+#     def plot_balances(self):
+#         df = self.final_balances()
+#         df = df.reset_index().set_index("id").astype({"venue": str, "total": float})
+#         return df.hvplot.bar(y="total", rot=45, by=["venue", "currency"])
