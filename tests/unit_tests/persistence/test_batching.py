@@ -13,23 +13,14 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import functools
 import sys
 
 import fsspec
 import pandas as pd
 import pytest
-from dask.utils import parse_bytes
 
 from nautilus_trader.adapters.betfair.providers import BetfairInstrumentProvider
-from nautilus_trader.backtest.config import BacktestDataConfig
-from nautilus_trader.model.data.tick import TradeTick
-from nautilus_trader.persistence.batching import _calculate_instrument_data_type_size
-from nautilus_trader.persistence.batching import calc_streaming_batches
-from nautilus_trader.persistence.batching import calculate_data_size
-from nautilus_trader.persistence.batching import generate_data_batches
-from nautilus_trader.persistence.batching import make_unix_ns
-from nautilus_trader.persistence.batching import search_data_size_timestamp
+from nautilus_trader.persistence.batching import batch_files
 from nautilus_trader.persistence.catalog import DataCatalog
 from nautilus_trader.persistence.external.core import process_files
 from tests.integration_tests.adapters.betfair.test_kit import BetfairTestStubs
@@ -57,108 +48,14 @@ class TestPersistenceBatching:
             catalog=self.catalog,
         )
 
-    def test_instrument_data_type_size(self):
-        instrument_ids = self.catalog.instruments()["id"].tolist()
-        size_ins_0 = _calculate_instrument_data_type_size(
-            root_path=self.catalog.path,
-            fs=self.catalog.fs,
-            instrument_id=instrument_ids[0],
-            data_type=TradeTick,
-            start_time=make_unix_ns("2019-12-20 00:00:00"),
-            end_time=make_unix_ns("2019-12-20 22:00:00"),
-        )
-        assert size_ins_0 == 22062
-
-        size_ins_1 = _calculate_instrument_data_type_size(
-            root_path=self.catalog.path,
-            fs=self.catalog.fs,
-            instrument_id=instrument_ids[1],
-            data_type=TradeTick,
-            start_time=make_unix_ns("2019-12-20 00:00:00"),
-            end_time=make_unix_ns("2019-12-20 22:00:00"),
-        )
-        assert size_ins_1 == 12687
-
-    def test_calculate_data_size(self):
-        # Arrange
-        instrument_ids = self.catalog.instruments()["id"].tolist()
-        calc_end_time_data_size = functools.partial(
-            calculate_data_size,
-            root_path=self.catalog.path,
-            fs=self.catalog.fs,
-            instrument_ids=instrument_ids,
-            data_types=[TradeTick],
-            start_time=make_unix_ns("2019-12-20 00:00:00"),
-        )
-
-        # Act
-        results = [
-            calc_end_time_data_size(end_time=make_unix_ns("2019-12-20 11:30:00")),
-            calc_end_time_data_size(end_time=make_unix_ns("2019-12-20 15:00:00")),
-            calc_end_time_data_size(end_time=make_unix_ns("2019-12-20 18:00:00")),
-            calc_end_time_data_size(end_time=make_unix_ns("2019-12-20 22:00:00")),
-        ]
-
-        # Assert
-        expected = [1138, 7019, 12459, 34749]
-        assert results == expected
-
-    def test_search_data_size_timestamp(self):
-        # Arrange
-        instrument_ids = self.catalog.instruments()["id"].tolist()
-
-        # Act
-        target_func = search_data_size_timestamp(
-            root_path=self.catalog.path,
-            fs=self.catalog.fs,
-            instrument_ids=instrument_ids,
-            data_types=[TradeTick],
-            start_time=1576840503572000000,
-            target_size=parse_bytes("1mib"),
-        )
-
-        # Assert
-        result = target_func([1576878597067000000])
-        assert int(result) == 1013938
-
-    def test_generate_data_batches_perf(self, benchmark):
-        # Arrange
-        instrument_ids = self.catalog.instruments()["id"].tolist()
-
-        def run():
-            return list(
-                calc_streaming_batches(
-                    catalog=self.catalog,
-                    instrument_ids=instrument_ids,
-                    data_types=[TradeTick],
-                    start_time=make_unix_ns("2019-12-20"),
-                    end_time=make_unix_ns("2019-12-21"),
-                    target_size=parse_bytes("15kib"),
-                    debug=False,
-                )
-            )
-
-        result = benchmark.pedantic(target=run, rounds=5, iterations=5)
-        assert result
-
     def test_calc_streaming_chunks_results(self):
         # Arrange
-        instrument_ids = self.catalog.instruments()["id"].tolist()
-        total_size = (
-            self.catalog.trade_ticks(instrument_ids=instrument_ids)
-            .memory_usage(index=False, deep=True)
-            .sum()
-        )
-
         # Act
-        it = calc_streaming_batches(
+        it = batch_files(
             catalog=self.catalog,
-            instrument_ids=instrument_ids,
-            data_types=[TradeTick],
+            data_configs=[],
             start_time="2019-12-20",
             end_time="2019-12-21",
-            target_size=total_size / 5,
-            debug=True,
         )
 
         # Assert
@@ -168,32 +65,5 @@ class TestPersistenceBatching:
             ("2019-12-20T19:40:18.634184448", "2019-12-20T22:20:48.447877376"),
             ("2019-12-20T22:20:48.447877376", "2019-12-20T23:59:59.999933952"),
             ("2019-12-20T23:59:59.999933952", "2019-12-21T00:00:00"),
-        ]
-        assert result == expected
-
-    def test_generate_data_batches(self):
-        # Arrange
-        instrument_ids = self.catalog.instruments()["id"].tolist()
-        config = BacktestDataConfig(
-            catalog_path=str(self.catalog.path),
-            data_type=TradeTick,
-            catalog_fs_protocol=self.catalog.fs.protocol,
-            instrument_id=instrument_ids[0],
-            start_time="2019-12-20",
-            end_time="2019-12-21",
-        )
-
-        # Act
-        # Write to cache
-        generate_data_batches(
-            catalog=self.catalog, data_configs=[config], batch_size=parse_bytes("15kib")
-        )
-
-        # Assert
-        result = self.catalog._read_streaming_cache(key="6d79fb9f397599c627229a0a53b1e149")
-        expected = [
-            [1576800000000000000, 1576874708613116672],
-            [1576874708613116672, 1576886399999870208],
-            [1576886399999870208, 1576886400000000000],
         ]
         assert result == expected

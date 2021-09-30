@@ -18,7 +18,6 @@ import pathlib
 from typing import Dict, List, Optional
 
 import fsspec
-import orjson
 import pandas as pd
 import pyarrow as pa
 import pyarrow.dataset as ds
@@ -344,19 +343,6 @@ class DataCatalog(metaclass=Singleton):
         for level in dataset.partitions.levels:
             partitions[level.name] = level.keys
         return partitions
-
-    def _read_streaming_cache(self, key) -> Optional[List[List[int]]]:
-        path = self.path / f"streaming_cache/{key}.json"
-        try:
-            with self.fs.open(str(path), "rb") as f:
-                return orjson.loads(f.read())
-        except FileNotFoundError:
-            return None
-
-    def _write_streaming_cache(self, key, data: List[List[int]]):
-        path = self.path / f"streaming_cache/{key}.json"
-        with self.fs.open(str(path), "wb") as f:
-            f.write(orjson.dumps(data))
 
 
 def combine_filters(*filters):

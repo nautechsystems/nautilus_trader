@@ -19,6 +19,7 @@ from typing import List, Optional
 
 import cloudpickle
 import dask
+import pandas as pd
 from dask.base import normalize_token
 from dask.delayed import Delayed
 
@@ -28,6 +29,7 @@ from nautilus_trader.backtest.config import BacktestVenueConfig
 from nautilus_trader.backtest.engine import BacktestEngine
 from nautilus_trader.backtest.engine import BacktestEngineConfig
 from nautilus_trader.backtest.results import BacktestResult
+from nautilus_trader.core.datetime import maybe_dt_to_unix_nanos
 from nautilus_trader.model.currency import Currency
 from nautilus_trader.model.data.tick import QuoteTick
 from nautilus_trader.model.data.tick import TradeTick
@@ -38,7 +40,7 @@ from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.instruments.base import Instrument
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.orderbook.data import OrderBookDelta
-from nautilus_trader.persistence.batching import generate_data_batches
+from nautilus_trader.persistence.batching import batch_files
 from nautilus_trader.persistence.catalog import DataCatalog
 from nautilus_trader.trading.config import ImportableStrategyConfig
 from nautilus_trader.trading.config import StrategyFactory
@@ -249,16 +251,19 @@ def streaming_backtest_runner(
 ):
     config = data_configs[0]
     catalog: DataCatalog = config.catalog()
-    for start, end in generate_data_batches(
-        catalog=catalog, data_configs=data_configs, batch_size=batch_size_bytes
+    start_time = maybe_dt_to_unix_nanos(pd.Timestamp(min(dc.start_time for dc in data_configs)))
+    end_time = maybe_dt_to_unix_nanos(pd.Timestamp(max(dc.end_time for dc in data_configs)))
+
+    for data in batch_files(
+        catalog=catalog,
+        data_configs=data_configs,
+        start_time=start_time,
+        end_time=end_time,
+        batch_size=batch_size_bytes,
     ):
         engine.clear_data()
-        for config in data_configs:
-            data = config.load(start_time=start, end_time=end)
-            if not data["data"]:
-                continue
-            _load_engine_data(engine=engine, data=data)
-        engine.run_streaming(start=start, end=end, run_config_id=run_config_id)
+        _load_engine_data(engine=engine, data=data)
+        engine.run_streaming(run_config_id=run_config_id)
     engine.end_streaming()
 
 
