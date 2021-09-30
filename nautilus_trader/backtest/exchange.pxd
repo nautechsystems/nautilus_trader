@@ -86,19 +86,22 @@ cdef class SimulatedExchange:
     """If the account for the exchange is frozen.\n\n:returns: `bool`"""
     cdef readonly FillModel fill_model
     """The fill model for the exchange.\n\n:returns: `FillModel`"""
-    cdef readonly bint fill_limit_at_price
-    """If ``LIMIT`` orders should be filled at their original price only.\n\n:returns: `bool`"""
-    cdef readonly bint fill_stop_at_price
-    """If ``STOP_MARKET`` orders should be filled at their original price only.\n\n:returns: `bool`"""
+    cdef readonly bint bar_execution
+    """If the exchange execution dynamics is based on bar data.\n\n:returns: `FillModel`"""
     cdef readonly list modules
     """The simulation modules registered with the exchange.\n\n:returns: `list[SimulationModule]`"""
     cdef readonly dict instruments
     """The exchange instruments.\n\n:returns: `dict[InstrumentId, Instrument]`"""
 
-    cdef dict _books
     cdef dict _instrument_indexer
-    cdef dict _instrument_orders
-    cdef dict _working_orders
+
+    cdef dict _books
+    cdef dict _last_bids
+    cdef dict _last_asks
+    cdef dict _order_index
+    cdef dict _orders_bid
+    cdef dict _orders_ask
+
     cdef dict _symbol_pos_count
     cdef dict _symbol_ord_count
     cdef int _executions_count
@@ -123,12 +126,10 @@ cdef class SimulatedExchange:
     cpdef void check_residuals(self) except *
     cpdef void reset(self) except *
 
-# --------------------------------------------------------------------------------------------------
+# -- IDENTIFIERS -----------------------------------------------------------------------------------
 
     cdef PositionId _get_position_id(self, Order order, bint generate=*)
     cdef Position _get_position_for_order(self, Order order)
-    cdef dict _build_current_bid_rates(self)
-    cdef dict _build_current_ask_rates(self)
     cdef PositionId _generate_venue_position_id(self, InstrumentId instrument_id)
     cdef VenueOrderId _generate_venue_order_id(self, InstrumentId instrument_id)
     cdef ExecutionId _generate_execution_id(self)
@@ -181,6 +182,7 @@ cdef class SimulatedExchange:
     cdef void _add_order(self, PassiveOrder order) except *
     cdef void _delete_order(self, Order order) except *
     cdef void _iterate_matching_engine(self, InstrumentId instrument_id, int64_t timestamp_ns) except *
+    cdef void _iterate_side(self, list orders, int64_t timestamp_ns) except *
     cdef void _match_order(self, PassiveOrder order) except *
     cdef void _match_limit_order(self, LimitOrder order) except *
     cdef void _match_stop_market_order(self, StopMarketOrder order) except *
