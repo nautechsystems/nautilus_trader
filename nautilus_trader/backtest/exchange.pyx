@@ -92,7 +92,8 @@ cdef class SimulatedExchange:
         TestClock clock not None,
         Logger logger not None,
         BookType book_type=BookType.L1_TBBO,
-        bar_execution=False,
+        bar_execution: bool=False,
+        reject_stop_orders: bool=True,
     ):
         """
         Initialize a new instance of the ``SimulatedExchange`` class.
@@ -129,6 +130,8 @@ cdef class SimulatedExchange:
             The order book type for the exchange.
         bar_execution : bool
             If the exchange execution dynamics is based on bar data.
+        reject_stop_orders : bool
+            If stop orders are rejected on submission if in the market.
 
         Raises
         ------
@@ -176,6 +179,7 @@ cdef class SimulatedExchange:
         self.default_leverage = default_leverage
         self.leverages = leverages
         self.is_frozen_account = is_frozen_account
+        self.reject_stop_orders = reject_stop_orders
         self.bar_execution = bar_execution
 
         self.fill_model = fill_model
@@ -913,14 +917,15 @@ cdef class SimulatedExchange:
 
     cdef void _process_stop_market_order(self, StopMarketOrder order) except *:
         if self._is_stop_marketable(order.instrument_id, order.side, order.price):
-            self._reject_order(
-                order,
-                f"STOP {order.side_string_c()} order "
-                f"stop px of {order.price} was in the market: "
-                f"bid={self.best_bid_price(order.instrument_id)}, "
-                f"ask={self.best_ask_price(order.instrument_id)}",
-            )
-            return  # Invalid price
+            if self.reject_stop_orders:
+                self._reject_order(
+                    order,
+                    f"STOP {order.side_string_c()} order "
+                    f"stop px of {order.price} was in the market: "
+                    f"bid={self.best_bid_price(order.instrument_id)}, "
+                    f"ask={self.best_ask_price(order.instrument_id)}",
+                )
+                return  # Invalid price
 
         # Order is valid and accepted
         self._add_order(order)
