@@ -487,6 +487,7 @@ cdef class BacktestEngine:
         FillModel fill_model=None,
         BookType book_type=BookType.L1_TBBO,
         bar_execution: bool=False,
+        reject_stop_orders: bool=True,
     ) -> None:
         """
         Add a `SimulatedExchange` with the given parameters to the backtest engine.
@@ -520,6 +521,8 @@ cdef class BacktestEngine:
             The default order book type for fill modelling.
         bar_execution : bool
             If the exchange execution dynamics is based on bar data.
+        reject_stop_orders : bool
+            If stop orders are rejected on submission if in the market.
 
         Raises
         ------
@@ -556,6 +559,7 @@ cdef class BacktestEngine:
             clock=self._test_clock,
             logger=self._test_logger,
             bar_execution=bar_execution,
+            reject_stop_orders=reject_stop_orders,
         )
 
         self._exchanges[venue] = exchange

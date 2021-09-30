@@ -86,8 +86,10 @@ cdef class SimulatedExchange:
     """If the account for the exchange is frozen.\n\n:returns: `bool`"""
     cdef readonly FillModel fill_model
     """The fill model for the exchange.\n\n:returns: `FillModel`"""
+    cdef readonly bint reject_stop_orders
+    """If stop orders are rejected on submission if in the market.\n\n:returns: `bool`"""
     cdef readonly bint bar_execution
-    """If the exchange execution dynamics is based on bar data.\n\n:returns: `FillModel`"""
+    """If the exchange execution dynamics is based on bar data.\n\n:returns: `bool`"""
     cdef readonly list modules
     """The simulation modules registered with the exchange.\n\n:returns: `list[SimulationModule]`"""
     cdef readonly dict instruments
