@@ -892,16 +892,15 @@ cdef class SimulatedExchange:
         self._aggressively_fill_order(order, LiquiditySide.TAKER)
 
     cdef void _process_limit_order(self, LimitOrder order) except *:
-        if order.is_post_only:
-            if self._is_limit_marketable(order.instrument_id, order.side, order.price):
-                self._reject_order(
-                    order,
-                    f"POST_ONLY LIMIT {order.side_string_c()} order "
-                    f"limit px of {order.price} would have been a TAKER: "
-                    f"bid={self.best_bid_price(order.instrument_id)}, "
-                    f"ask={self.best_ask_price(order.instrument_id)}",
-                )
-                return  # Invalid price
+        if order.is_post_only and self._is_limit_marketable(order.instrument_id, order.side, order.price):
+            self._reject_order(
+                order,
+                f"POST_ONLY LIMIT {order.side_string_c()} order "
+                f"limit px of {order.price} would have been a TAKER: "
+                f"bid={self.best_bid_price(order.instrument_id)}, "
+                f"ask={self.best_ask_price(order.instrument_id)}",
+            )
+            return  # Invalid price
 
         # Order is valid and accepted
         self._add_order(order)
@@ -1209,6 +1208,10 @@ cdef class SimulatedExchange:
                     if price is not None:
                         return [(price, order.leaves_qty)]
             else:
+                if order.is_buy_c():
+                    self._last_asks[order.instrument_id] = order.price
+                elif order.is_sell_c():
+                    self._last_bids[order.instrument_id] = order.price
                 return [(order.price, order.leaves_qty)]
         price = Price.from_int_c(INT_MAX if order.side == OrderSide.BUY else INT_MIN)
         cdef OrderBookOrder submit_order = OrderBookOrder(price=price, size=order.quantity, side=order.side)
@@ -1369,6 +1372,6 @@ cdef class SimulatedExchange:
             ts_event=self._clock.timestamp_ns(),
         )
 
-        if order.leaves_qty == 0:
+        if order.leaves_qty == 0 and order.is_passive_c():
             # Order done
             self._delete_order(order)
