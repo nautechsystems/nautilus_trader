@@ -18,7 +18,7 @@ from libc.stdint cimport int64_t
 from nautilus_trader.accounting.accounts.base cimport Account
 from nautilus_trader.backtest.execution_client cimport BacktestExecClient
 from nautilus_trader.backtest.models cimport FillModel
-from nautilus_trader.cache.base cimport CacheFacade
+from nautilus_trader.cache.cache cimport Cache
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.logging cimport LoggerAdapter
 from nautilus_trader.common.queue cimport Queue
@@ -66,8 +66,8 @@ cdef class SimulatedExchange:
     """The exchange order management system type.\n\n:returns: `OMSType`"""
     cdef readonly BookType book_type
     """The exchange default order book type.\n\n:returns: `BookType`"""
-    cdef readonly CacheFacade cache
-    """The read-only cache wired to the exchange.\n\n:returns: `CacheFacade`"""
+    cdef readonly Cache cache
+    """The cache wired to the exchange.\n\n:returns: `CacheFacade`"""
     cdef readonly BacktestExecClient exec_client
     """The execution client wired to the exchange.\n\n:returns: `BacktestExecClient`"""
 
@@ -102,6 +102,7 @@ cdef class SimulatedExchange:
     cdef dict _order_index
     cdef dict _orders_bid
     cdef dict _orders_ask
+    cdef dict _oto_orders
 
     cdef dict _symbol_pos_count
     cdef dict _symbol_ord_count

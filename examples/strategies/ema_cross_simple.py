@@ -49,8 +49,8 @@ class EMACrossConfig(TradingStrategyConfig):
         The fast EMA period.
     slow_ema_period : int
         The slow EMA period.
-    trade_size : Decimal
-        The position size per trade.
+    trade_size : str
+        The position size per trade (interpreted as Decimal).
     order_id_tag : str
         The unique order ID tag for the strategy. Must be unique
         amongst all running strategies for a particular trader ID.
@@ -63,7 +63,7 @@ class EMACrossConfig(TradingStrategyConfig):
     bar_type: str
     fast_ema_period: int = 10
     slow_ema_period: int = 20
-    trade_size: Decimal
+    trade_size: str
 
 
 class EMACross(TradingStrategy):
@@ -91,7 +91,7 @@ class EMACross(TradingStrategy):
         # Configuration
         self.instrument_id = InstrumentId.from_str(config.instrument_id)
         self.bar_type = BarType.from_str(config.bar_type)
-        self.trade_size = config.trade_size
+        self.trade_size = Decimal(config.trade_size)
 
         # Create the indicators for the strategy
         self.fast_ema = ExponentialMovingAverage(config.fast_ema_period)

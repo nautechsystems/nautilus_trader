@@ -25,8 +25,8 @@ sys.path.insert(
     0, str(os.path.abspath(__file__ + "/../../../"))
 )  # Allows relative imports from examples
 
-from examples.strategies.ema_cross_simple import EMACross
-from examples.strategies.ema_cross_simple import EMACrossConfig
+from examples.strategies.ema_cross_bracket import EMACrossBracket
+from examples.strategies.ema_cross_bracket import EMACrossBracketConfig
 from nautilus_trader.backtest.data.wranglers import QuoteTickDataWrangler
 from nautilus_trader.backtest.engine import BacktestEngine
 from nautilus_trader.backtest.engine import BacktestEngineConfig
@@ -64,8 +64,8 @@ if __name__ == "__main__":
     # Setup data
     wrangler = QuoteTickDataWrangler(instrument=GBPUSD_SIM)
     ticks = wrangler.process_bar_data(
-        bid_data=TestDataProvider.gbpusd_1min_bid(),
-        ask_data=TestDataProvider.gbpusd_1min_ask(),
+        bid_data=TestDataProvider.gbpusd_1min_bid()[:2000],
+        ask_data=TestDataProvider.gbpusd_1min_ask()[:2000],
     )
     engine.add_instrument(GBPUSD_SIM)
     engine.add_ticks(ticks)
@@ -98,16 +98,17 @@ if __name__ == "__main__":
     )
 
     # Configure your strategy
-    config = EMACrossConfig(
+    config = EMACrossBracketConfig(
         instrument_id=str(GBPUSD_SIM.id),
         bar_type="GBP/USD.SIM-5-MINUTE-BID-INTERNAL",
         fast_ema_period=10,
         slow_ema_period=20,
+        bracket_distance_atr=3.0,
         trade_size=Decimal(1_000_000),
         order_id_tag="001",
     )
     # Instantiate and add your strategy
-    strategy = EMACross(config=config)
+    strategy = EMACrossBracket(config=config)
     engine.add_strategy(strategy=strategy)
 
     input("Press Enter to continue...")  # noqa (always Python 3)
