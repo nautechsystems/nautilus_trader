@@ -8,6 +8,9 @@ Released **TBD**
 - Removed `pd.Timestamp` from `TimeEvent`.
 
 ## Enhancements
+- Added `Cache.position_for_order(...)` method.
+- Added `SimulatedExchange.get_working_bid_orders(...)` method.
+- Added `SimulatedExchange.get_working_ask_orders(...)` method.
 - Added optional `run_config_id` for backtest runs.
 - Added `BacktestResult` object.
 - Added `Clock.set_time_alert_ns(...)` method.
