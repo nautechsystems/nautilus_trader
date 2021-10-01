@@ -15,10 +15,10 @@
 
 
 cpdef enum BookAction:
-    ADD = 1,
-    UPDATE = 2,
-    DELETE = 3,
-    CLEAR = 4,
+    ADD = 1
+    UPDATE = 2
+    DELETE = 3
+    CLEAR = 4
 
 
 cdef class BookActionParser:

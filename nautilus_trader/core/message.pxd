@@ -19,11 +19,11 @@ from nautilus_trader.core.uuid cimport UUID4
 
 
 cpdef enum MessageCategory:
-    COMMAND = 1,
-    DOCUMENT = 2,
-    EVENT = 3,
-    REQUEST = 4,
-    RESPONSE = 5,
+    COMMAND = 1
+    DOCUMENT = 2
+    EVENT = 3
+    REQUEST = 4
+    RESPONSE = 5
 
 
 cdef class MessageCategoryParser:

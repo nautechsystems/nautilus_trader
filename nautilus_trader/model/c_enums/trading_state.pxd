@@ -15,9 +15,9 @@
 
 
 cpdef enum TradingState:
-    ACTIVE = 1,
-    HALTED = 2,
-    REDUCING = 3,
+    ACTIVE = 1
+    HALTED = 2
+    REDUCING = 3
 
 
 cdef class TradingStateParser:

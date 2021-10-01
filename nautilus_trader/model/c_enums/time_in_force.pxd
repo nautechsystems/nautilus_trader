@@ -15,13 +15,13 @@
 
 
 cpdef enum TimeInForce:
-    DAY = 1,
-    GTC = 2,  # Good till Canceled
-    IOC = 3,  # Immediate or Cancel
-    FOK = 4,  # Fill or Kill
-    FAK = 5,  # Fill and Kill
-    GTD = 6,  # Good till Date
-    OC = 7,   # On Close
+    DAY = 1
+    GTC = 2  # Good till Canceled
+    IOC = 3  # Immediate or Cancel
+    FOK = 4  # Fill or Kill
+    FAK = 5  # Fill and Kill
+    GTD = 6  # Good till Date
+    OC = 7   # On Close
 
 
 cdef class TimeInForceParser:

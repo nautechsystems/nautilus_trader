@@ -15,10 +15,10 @@
 
 
 cpdef enum OrderType:
-    MARKET = 1,
-    LIMIT = 2,
-    STOP_MARKET = 3,
-    STOP_LIMIT = 4,
+    MARKET = 1
+    LIMIT = 2
+    STOP_MARKET = 3
+    STOP_LIMIT = 4
 
 
 cdef class OrderTypeParser:

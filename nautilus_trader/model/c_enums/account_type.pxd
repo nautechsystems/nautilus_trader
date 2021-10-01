@@ -15,8 +15,8 @@
 
 
 cpdef enum AccountType:
-    CASH = 1,
-    MARGIN = 2,
+    CASH = 1
+    MARGIN = 2
 
 
 cdef class AccountTypeParser:

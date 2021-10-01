@@ -15,11 +15,9 @@
 
 
 cpdef enum ContingencyType:
-    NONE = 0,
-    OTO = 1,  # One Triggers Other
-    OUO = 2,  # One Updates Other
-    OCO = 3,  # One Cancels Other
-    OCA = 4,  # One Cancels All
+    NONE = 0
+    OTO = 1  # One Triggers Other
+    OCO = 2  # One Cancels Other
 
 
 cdef class ContingencyTypeParser:

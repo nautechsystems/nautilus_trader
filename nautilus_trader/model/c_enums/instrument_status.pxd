@@ -15,10 +15,10 @@
 
 
 cpdef enum InstrumentStatus:
-    CLOSED = 1,
-    PRE_OPEN = 2,
-    OPEN = 3,
-    PAUSE = 4,
+    CLOSED = 1
+    PRE_OPEN = 2
+    OPEN = 3
+    PAUSE = 4
     PRE_CLOSE = 5  # Auction
 
 
