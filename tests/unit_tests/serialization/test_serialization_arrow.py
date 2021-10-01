@@ -40,7 +40,6 @@ from nautilus_trader.model.position import Position
 from nautilus_trader.persistence.catalog import DataCatalog
 from nautilus_trader.persistence.external.core import write_objects
 from nautilus_trader.serialization.arrow.serializer import ParquetSerializer
-from nautilus_trader.serialization.arrow.util import class_to_filename
 from tests.test_kit.providers import TestInstrumentProvider
 from tests.test_kit.stubs import TestStubs
 
@@ -296,7 +295,7 @@ class TestParquetSerializer:
         # Assert
         assert deserialized == [event]
         write_objects(catalog=self.catalog, chunk=[event])
-        df = self.catalog._query(path=f"data/{class_to_filename(cls)}.parquet")
+        df = self.catalog._query(cls=cls)
         assert len(df) == 1
 
     @pytest.mark.parametrize(
@@ -320,7 +319,7 @@ class TestParquetSerializer:
         # Assert
         assert deserialized == [event]
         write_objects(catalog=self.catalog, chunk=[event])
-        df = self.catalog._query(path=f"data/{class_to_filename(cls)}.parquet")
+        df = self.catalog._query(cls=cls)
         assert len(df) == 1
 
     @pytest.mark.parametrize(
@@ -342,7 +341,7 @@ class TestParquetSerializer:
         # Assert
         # assert deserialized == [event]
         write_objects(catalog=self.catalog, chunk=[event])
-        df = self.catalog._query(path=f"data/{class_to_filename(cls)}.parquet")
+        df = self.catalog._query(cls=cls)
         assert len(df) == 1
 
     @pytest.mark.parametrize(
@@ -381,7 +380,7 @@ class TestParquetSerializer:
         # Assert
         # assert deserialized == [event]
         write_objects(catalog=self.catalog, chunk=[event])
-        df = self.catalog._query(path=f"data/{class_to_filename(cls)}.parquet")
+        df = self.catalog._query(cls=cls)
         assert len(df) == 1
 
     @pytest.mark.parametrize(
@@ -432,7 +431,7 @@ class TestParquetSerializer:
         # Assert
         # assert deserialized == [event]
         write_objects(catalog=self.catalog, chunk=[event])
-        df = self.catalog._query(path=f"data/{class_to_filename(cls)}.parquet")
+        df = self.catalog._query(cls=cls)
         assert len(df) == 1
 
     @pytest.mark.parametrize(
