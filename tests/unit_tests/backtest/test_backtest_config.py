@@ -228,7 +228,7 @@ def test_engine_config_tokenization(backtest_config: BacktestRunConfig):
     result = tokenize(engine_config)
 
     # Assert
-    assert result == "75bb34760c59279b83be3191f6ae3fb3"
+    assert result == "22d84218139004f8b662d2c6d3dccb4a"
 
 
 def test_tokenization_config(backtest_config: BacktestRunConfig):

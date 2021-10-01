@@ -74,13 +74,7 @@ from nautilus_trader.model.orderbook.book cimport OrderBook
 from nautilus_trader.model.orderbook.data cimport OrderBookData
 from nautilus_trader.msgbus.bus cimport MessageBus
 
-
-class DataEngineConfig(pydantic.BaseModel):
-    """
-    Configuration for ``DataEngine`` instances.
-    """
-
-    pass  # No configuration currently
+from nautilus_trader.data.config import DataEngineConfig
 
 
 cdef class DataEngine(Component):

@@ -17,8 +17,6 @@ from collections import deque
 from decimal import Decimal
 from typing import Optional
 
-import pydantic
-from pydantic import PositiveInt
 from libc.stdint cimport int64_t
 
 from nautilus_trader.accounting.accounts.base cimport Account
@@ -49,19 +47,7 @@ from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.orders.base cimport Order
 from nautilus_trader.trading.strategy cimport TradingStrategy
 
-
-class CacheConfig(pydantic.BaseModel):
-    """
-    Configuration for ``Cache`` instances.
-
-    tick_capacity : int
-        The maximum length for internal tick deques.
-    bar_capacity : int
-        The maximum length for internal bar deques.
-    """
-
-    tick_capacity: PositiveInt = 1000
-    bar_capacity: PositiveInt = 1000
+from nautilus_trader.cache.config import CacheConfig
 
 
 cdef class Cache(CacheFacade):
