@@ -13,12 +13,14 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+import itertools
 import logging
 import pickle
 from typing import List, Optional
 
 import cloudpickle
 import dask
+import pandas as pd
 from dask.base import normalize_token
 from dask.delayed import Delayed
 
@@ -28,6 +30,7 @@ from nautilus_trader.backtest.config import BacktestVenueConfig
 from nautilus_trader.backtest.engine import BacktestEngine
 from nautilus_trader.backtest.engine import BacktestEngineConfig
 from nautilus_trader.backtest.results import BacktestResult
+from nautilus_trader.core.datetime import maybe_dt_to_unix_nanos
 from nautilus_trader.model.currency import Currency
 from nautilus_trader.model.data.tick import QuoteTick
 from nautilus_trader.model.data.tick import TradeTick
@@ -38,6 +41,8 @@ from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.instruments.base import Instrument
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.orderbook.data import OrderBookDelta
+from nautilus_trader.persistence.batching import batch_files
+from nautilus_trader.persistence.catalog import DataCatalog
 from nautilus_trader.trading.config import ImportableStrategyConfig
 from nautilus_trader.trading.config import StrategyFactory
 from nautilus_trader.trading.strategy import TradingStrategy
@@ -239,6 +244,19 @@ def backtest_runner(
     return engine.run(run_config_id=run_config_id)
 
 
+def _groupby_key(x):
+    return type(x).__name__
+
+
+def groupby_datatype(data):
+    return [
+        {"type": type(v[0]), "data": v}
+        for v in [
+            list(v) for _, v in itertools.groupby(sorted(data, key=_groupby_key), key=_groupby_key)
+        ]
+    ]
+
+
 def streaming_backtest_runner(
     run_config_id: str,
     engine: BacktestEngine,
@@ -246,40 +264,27 @@ def streaming_backtest_runner(
     batch_size_bytes: Optional[int] = None,
 ):
     config = data_configs[0]
-    catalog = config.catalog()
+    catalog: DataCatalog = config.catalog()
+    start_time = maybe_dt_to_unix_nanos(pd.Timestamp(min(dc.start_time for dc in data_configs)))
+    end_time = maybe_dt_to_unix_nanos(pd.Timestamp(max(dc.end_time for dc in data_configs)))
 
-    streaming_kw = merge_data_configs_for_calc_streaming_chunks(data_configs=data_configs)
-    for start, end in catalog.calc_streaming_chunks(**streaming_kw, target_size=batch_size_bytes):
+    for data in batch_files(
+        catalog=catalog,
+        data_configs=data_configs,
+        start_time=start_time,
+        end_time=end_time,
+        target_batch_size_bytes=batch_size_bytes,
+    ):
         engine.clear_data()
-        for config in data_configs:
-            data = config.load(start_time=start, end_time=end)
-            if not data["data"]:
-                continue
+        for data in groupby_datatype(data):
             _load_engine_data(engine=engine, data=data)
-        engine.run_streaming(start=start, end=end, run_config_id=run_config_id)
+        engine.run_streaming(run_config_id=run_config_id)
     engine.end_streaming()
 
 
 # Register tokenization methods with dask
 for cls in Instrument.__subclasses__():
     normalize_token.register(cls, func=cls.to_dict)
-
-
-def merge_data_configs_for_calc_streaming_chunks(data_configs: List[BacktestDataConfig]):
-    instrument_ids = [c.instrument_id for c in data_configs]
-    data_types = [c.data_type for c in data_configs]
-    starts = [c.start_time for c in data_configs]
-    if len(set(starts)) > 1:
-        logger.warning("Multiple start dates in data_configs, using min")
-    ends = [c.end_time for c in data_configs]
-    if len(set(ends)) > 1:
-        logger.warning("Multiple start dates in data_configs, using min")
-    return {
-        "instrument_ids": instrument_ids,
-        "data_types": data_types,
-        "start_time": starts[0],
-        "end_time": ends[0],
-    }
 
 
 @normalize_token.register(object)
