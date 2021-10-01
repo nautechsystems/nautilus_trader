@@ -146,26 +146,48 @@ cpdef int64_t nanos_to_micros(int64_t nanos) except *:
     return nanos // NANOSECONDS_IN_MICROSECOND
 
 
-cpdef maybe_dt_to_unix_nanos(datetime dt):
+cpdef nanos_to_unix_dt(int64_t nanos):
     """
-    Return the UNIX time (nanoseconds) from the given datetime, or ``None``.
-
-    If dt is ``None``, then will return None.
+    Return the datetime in UTC from the given UNIX time (nanoseconds).
 
     Parameters
     ----------
-    dt : datetime, optional
-        The datetime for the timestamp.
+    nanos : int64
+        The UNIX time (nanoseconds) to convert.
+
+    Returns
+    -------
+    pd.Timestamp
+
+    """
+    return pd.Timestamp(nanos, tz=pytz.utc)
+
+
+cpdef dt_to_unix_nanos(dt: pd.Timestamp):
+    """
+    Return the UNIX time (nanoseconds) from the given datetime.
+
+    Parameters
+    ----------
+    dt : pd.Timestamp, optional
+        The datetime to convert.
 
     Returns
     -------
     int64 or ``None``
 
+    Warnings
+    --------
+    This function expects a pandas `Timestamp` as standard Python `datetime`
+    objects are only accurate to 1 microsecond (μs).
+
     """
-    if dt is None:
-        return None
-    else:
-        return int(pd.Timestamp(dt).to_datetime64())
+    Condition.not_none(dt, "dt")
+
+    if not isinstance(dt, pd.Timestamp):
+        dt = pd.Timestamp(dt)
+
+    return int(dt.to_datetime64())
 
 
 cpdef maybe_nanos_to_unix_dt(nanos):
@@ -176,18 +198,48 @@ cpdef maybe_nanos_to_unix_dt(nanos):
 
     Parameters
     ----------
-    nanos : int64, optional
+    nanos : int, optional
         The UNIX time (nanoseconds) to convert.
 
     Returns
     -------
-    int64 or ``None``
+    pd.Timestamp or ``None``
 
     """
     if nanos is None:
         return None
     else:
         return pd.Timestamp(nanos, tz=pytz.utc)
+
+
+cpdef maybe_dt_to_unix_nanos(dt: pd.Timestamp):
+    """
+    Return the UNIX time (nanoseconds) from the given datetime, or ``None``.
+
+    If dt is ``None``, then will return None.
+
+    Parameters
+    ----------
+    dt : pd.Timestamp, optional
+        The datetime to convert.
+
+    Returns
+    -------
+    int64 or ``None``
+
+    Warnings
+    --------
+    If the input is not ``None`` then this function expects a pandas `Timestamp`
+    as standard Python `datetime` objects are only accurate to 1 microsecond (μs).
+
+    """
+    if dt is None:
+        return None
+
+    if not isinstance(dt, pd.Timestamp):
+        dt = pd.Timestamp(dt)
+
+    return int(dt.to_datetime64())
 
 
 cpdef bint is_datetime_utc(datetime dt) except *:
