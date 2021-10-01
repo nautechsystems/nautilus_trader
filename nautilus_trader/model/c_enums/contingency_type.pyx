@@ -23,11 +23,7 @@ cdef class ContingencyTypeParser:
         elif value == 1:
             return "OTO"
         elif value == 2:
-            return "OUO"
-        elif value == 3:
             return "OCO"
-        elif value == 4:
-            return "OCA"
         else:
             raise ValueError(f"value was invalid, was {value}")
 
@@ -37,12 +33,8 @@ cdef class ContingencyTypeParser:
             return ContingencyType.NONE
         elif value == "OTO":
             return ContingencyType.OTO
-        elif value == "OUO":
-            return ContingencyType.OUO
         elif value == "OCO":
             return ContingencyType.OCO
-        elif value == "OCA":
-            return ContingencyType.OCA
         else:
             raise ValueError(f"value was invalid, was {value}")
 

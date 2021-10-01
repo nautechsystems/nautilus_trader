@@ -15,19 +15,19 @@
 
 
 cpdef enum BarAggregation:
-    TICK = 1,
-    TICK_IMBALANCE = 2,
-    TICK_RUNS = 3,
-    VOLUME = 4,
-    VOLUME_IMBALANCE = 5,
-    VOLUME_RUNS = 6,
-    VALUE = 7,
+    TICK = 1
+    TICK_IMBALANCE = 2
+    TICK_RUNS = 3
+    VOLUME = 4
+    VOLUME_IMBALANCE = 5
+    VOLUME_RUNS = 6
+    VALUE = 7
     VALUE_IMBALANCE = 8
-    VALUE_RUNS = 9,
-    SECOND = 10,
-    MINUTE = 11,
-    HOUR = 12,
-    DAY = 13,
+    VALUE_RUNS = 9
+    SECOND = 10
+    MINUTE = 11
+    HOUR = 12
+    DAY = 13
 
 
 cdef class BarAggregationParser:

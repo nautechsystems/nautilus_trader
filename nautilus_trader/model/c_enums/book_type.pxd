@@ -15,9 +15,9 @@
 
 
 cpdef enum BookType:
-    L1_TBBO = 1,  # Top-of-book best bid/offer
-    L2_MBP = 2,   # Market by price
-    L3_MBO = 3,   # Market by order
+    L1_TBBO = 1  # Top-of-book best bid/offer
+    L2_MBP = 2   # Market by price
+    L3_MBO = 3   # Market by order
 
 
 cdef class BookTypeParser:

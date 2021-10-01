@@ -27,6 +27,7 @@ from nautilus_trader.model.commands.trading cimport SubmitOrderList
 from nautilus_trader.model.currency cimport Currency
 from nautilus_trader.model.identifiers cimport AccountId
 from nautilus_trader.model.identifiers cimport ClientId
+from nautilus_trader.model.orders.base cimport Order
 from nautilus_trader.msgbus.bus cimport MessageBus
 
 from nautilus_trader.accounting.factory import AccountFactory
@@ -137,8 +138,16 @@ cdef class BacktestExecClient(ExecutionClient):
         """
         Condition.true(self.is_connected, "not connected")
 
-        # TODO(cs): Implement
-        raise NotImplementedError("order lists are not implemented in this version.")
+        cdef Order order
+        for order in command.list.orders:
+            self.generate_order_submitted(
+                strategy_id=order.strategy_id,
+                instrument_id=order.instrument_id,
+                client_order_id=order.client_order_id,
+                ts_event=self._clock.timestamp_ns(),
+            )
+
+        self._exchange.send(command)
 
     cpdef void modify_order(self, ModifyOrder command) except *:
         """

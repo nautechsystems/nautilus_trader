@@ -14,16 +14,17 @@
 # -------------------------------------------------------------------------------------------------
 
 import datetime
-import functools
 import sys
 
 import fsspec
 import pandas as pd
 import pyarrow.dataset as ds
 import pytest
-from dask.utils import parse_bytes
 
 from nautilus_trader.adapters.betfair.providers import BetfairInstrumentProvider
+from nautilus_trader.core.datetime import maybe_dt_to_unix_nanos
+from nautilus_trader.model.currency import Currency
+from nautilus_trader.model.data.base import GenericData
 from nautilus_trader.model.data.tick import QuoteTick
 from nautilus_trader.model.data.tick import TradeTick
 from nautilus_trader.model.enums import AggressorSide
@@ -32,14 +33,15 @@ from nautilus_trader.model.instruments.betting import BettingInstrument
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.persistence.catalog import DataCatalog
-from nautilus_trader.persistence.catalog import calculate_data_size
-from nautilus_trader.persistence.catalog import make_unix_ns
-from nautilus_trader.persistence.catalog import search_data_size_timestamp
 from nautilus_trader.persistence.external.core import dicts_to_dataframes
 from nautilus_trader.persistence.external.core import process_files
 from nautilus_trader.persistence.external.core import split_and_serialize
 from nautilus_trader.persistence.external.core import write_objects
 from nautilus_trader.persistence.external.core import write_tables
+from nautilus_trader.persistence.external.readers import CSVReader
+from nautilus_trader.serialization.arrow.serializer import register_parquet
+from nautilus_trader.trading.filters import NewsEvent
+from nautilus_trader.trading.filters import NewsImpact
 from tests.integration_tests.adapters.betfair.test_kit import BetfairTestStubs
 from tests.test_kit import PACKAGE_ROOT
 from tests.test_kit.mocks import data_catalog_setup
@@ -193,76 +195,62 @@ class TestPersistenceCatalog:
         filtered_deltas = self.catalog.order_book_deltas(filter_expr=ds.field("action") == "DELETE")
         assert len(filtered_deltas) == 351
 
-    def test_calculate_data_size(self):
-        # Arrange
-        instrument_ids = self.catalog.instruments()["id"].tolist()
-        func = functools.partial(
-            calculate_data_size,
-            root_path=self.catalog.path,
-            fs=self.catalog.fs,
-            instrument_ids=instrument_ids,
-            data_types=[TradeTick],
-            start_time=1576840503572000000,
-        )
+    def test_data_loader_generic_data(self):
+        import pyarrow as pa
 
-        # Act
-        results = [
-            func(end_time=make_unix_ns("2019-12-20 11:30:00")),
-            func(end_time=make_unix_ns("2019-12-20 15:00:00")),
-            func(end_time=make_unix_ns("2019-12-20 18:00:00")),
-            func(end_time=make_unix_ns("2019-12-20 22:00:00")),
-        ]
+        def _news_event_to_dict(self):
+            return {
+                "name": self.name,
+                "impact": self.impact.name,
+                "currency": self.currency.code,
+                "ts_event": self.ts_event,
+                "ts_init": self.ts_init,
+            }
 
-        # Assert
-        expected = [1138, 7019, 12459, 34749]
-        assert results == expected
+        def _news_event_from_dict(data):
+            data.update(
+                {
+                    "impact": getattr(NewsImpact, data["impact"]),
+                    "currency": Currency.from_str(data["currency"]),
+                }
+            )
+            return NewsEvent(**data)
 
-    def test_search_data_size_timestamp(self):
-        # Arrange
-        instrument_ids = self.catalog.instruments()["id"].tolist()
-
-        # Act
-        target_func = search_data_size_timestamp(
-            root_path=self.catalog.path,
-            fs=self.catalog.fs,
-            instrument_ids=instrument_ids,
-            data_types=[TradeTick],
-            start_time=1576840503572000000,
-            target_size=parse_bytes("1mib"),
-        )
-
-        # Assert
-        result = target_func([1576878597067000000])
-        assert result == 1013827
-
-    @pytest.mark.skip(reason="WIP")
-    def test_calc_streaming_chunks(self):
-        # Arrange
-        instrument_ids = self.catalog.instruments()["id"].tolist()
-
-        # Act
-        it = self.catalog.calc_streaming_chunks(
-            instrument_ids=instrument_ids,
-            data_types=[TradeTick],
-            start_time=make_unix_ns("2019-12-20"),
-            end_time=make_unix_ns("2019-12-21"),
-            target_size=parse_bytes("15kib"),
-            debug=False,
-        )
-
-        # Assert
-        result = [(pd.Timestamp(s), pd.Timestamp(e)) for s, e in it]
-        expected = [
-            (pd.Timestamp("2019-12-20 00:00:00"), pd.Timestamp("2019-12-20 19:01:25.787733248")),
-            (
-                pd.Timestamp("2019-12-20 19:01:25.787733248"),
-                pd.Timestamp("2019-12-20 22:05:57.379827712"),
+        register_parquet(
+            cls=NewsEvent,
+            serializer=_news_event_to_dict,
+            deserializer=_news_event_from_dict,
+            partition_keys=("currency",),
+            schema=pa.schema(
+                {
+                    "name": pa.string(),
+                    "impact": pa.string(),
+                    "currency": pa.string(),
+                    "ts_event": pa.int64(),
+                    "ts_init": pa.int64(),
+                }
             ),
-            (
-                pd.Timestamp("2019-12-20 22:05:57.379827712"),
-                pd.Timestamp("2019-12-20 23:59:59.999923968"),
-            ),
-            (pd.Timestamp("2019-12-20 23:59:59.999923968"), pd.Timestamp("2019-12-21 00:00:00")),
-            (pd.Timestamp("2019-12-21 00:00:00"), pd.Timestamp("2019-12-21 00:00:00")),
-        ]
-        assert result == expected
+            force=True,
+        )
+
+        def make_news_event(df, state=None):
+            for _, row in df.iterrows():
+                yield NewsEvent(
+                    name=str(row["Name"]),
+                    impact=getattr(NewsImpact, row["Impact"]),
+                    currency=Currency.from_str(row["Currency"]),
+                    ts_event=maybe_dt_to_unix_nanos(pd.Timestamp(row["Start"])),
+                    ts_init=maybe_dt_to_unix_nanos(pd.Timestamp(row["Start"])),
+                )
+
+        process_files(
+            glob_path=f"{TEST_DATA_DIR}/news_events.csv",
+            reader=CSVReader(block_parser=make_news_event),
+            catalog=self.catalog,
+        )
+        df = self.catalog.generic_data(cls=NewsEvent, filter_expr=ds.field("currency") == "USD")
+        assert len(df) == 22925
+        data = self.catalog.generic_data(
+            cls=NewsEvent, filter_expr=ds.field("currency") == "CHF", as_nautilus=True
+        )
+        assert len(data) == 2745 and isinstance(data[0], GenericData)

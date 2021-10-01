@@ -15,9 +15,9 @@
 
 
 cpdef enum LiquiditySide:
-    NONE = 0,
-    MAKER = 1,
-    TAKER = 2,
+    NONE = 0
+    MAKER = 1
+    TAKER = 2
 
 
 cdef class LiquiditySideParser:

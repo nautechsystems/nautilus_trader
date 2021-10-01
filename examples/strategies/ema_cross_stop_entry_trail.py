@@ -55,8 +55,8 @@ class EMACrossStopEntryTrailConfig(TradingStrategyConfig):
         The period for the ATR indicator.
     trail_atr_multiple : float
         The ATR multiple for the trailing stop.
-    trade_size : Decimal
-        The position size per trade.
+    trade_size : str
+        The position size per trade (interpreted as Decimal).
     order_id_tag : str
         The unique order ID tag for the strategy. Must be unique
         amongst all running strategies for a particular trader ID.
@@ -71,7 +71,7 @@ class EMACrossStopEntryTrailConfig(TradingStrategyConfig):
     slow_ema_period: int = 20
     atr_period: int
     trail_atr_multiple: float
-    trade_size: Decimal
+    trade_size: str
 
 
 class EMACrossStopEntryTrail(TradingStrategy):
@@ -104,7 +104,7 @@ class EMACrossStopEntryTrail(TradingStrategy):
         # Configuration
         self.instrument_id = InstrumentId.from_str(config.instrument_id)
         self.bar_type = BarType.from_str(config.bar_type)
-        self.trade_size = config.trade_size
+        self.trade_size = Decimal(config.trade_size)
         self.trail_atr_multiple = config.trail_atr_multiple
 
         # Create the indicators for the strategy

@@ -15,8 +15,8 @@
 
 
 cpdef enum AggregationSource:
-    EXTERNAL = 1,
-    INTERNAL = 2,
+    EXTERNAL = 1
+    INTERNAL = 2
 
 
 cdef class AggregationSourceParser:

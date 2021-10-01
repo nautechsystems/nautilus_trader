@@ -241,6 +241,10 @@ class TestCache:
         # Assert
         assert result == {self.strategy.id}
 
+    def test_position_for_order_when_no_position_returns_none(self):
+        # Arrange, Act, Assert
+        assert self.cache.position_for_order(ClientOrderId("O-123456")) is None
+
     def test_position_exists_when_no_position_returns_false(self):
         # Arrange, Act, Assert
         assert not self.cache.position_exists(PositionId("P-123456"))
@@ -357,6 +361,7 @@ class TestCache:
         assert position not in self.cache.positions_closed(
             instrument_id=position.instrument_id, strategy_id=self.strategy.id
         )
+        assert self.cache.position_for_order(order.client_order_id) == position
 
     def test_load_position(self):
         # Arrange

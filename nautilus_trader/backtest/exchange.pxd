@@ -18,7 +18,7 @@ from libc.stdint cimport int64_t
 from nautilus_trader.accounting.accounts.base cimport Account
 from nautilus_trader.backtest.execution_client cimport BacktestExecClient
 from nautilus_trader.backtest.models cimport FillModel
-from nautilus_trader.cache.base cimport CacheFacade
+from nautilus_trader.cache.cache cimport Cache
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.logging cimport LoggerAdapter
 from nautilus_trader.common.queue cimport Queue
@@ -51,7 +51,6 @@ from nautilus_trader.model.orders.limit cimport LimitOrder
 from nautilus_trader.model.orders.market cimport MarketOrder
 from nautilus_trader.model.orders.stop_limit cimport StopLimitOrder
 from nautilus_trader.model.orders.stop_market cimport StopMarketOrder
-from nautilus_trader.model.position cimport Position
 
 
 cdef class SimulatedExchange:
@@ -67,8 +66,8 @@ cdef class SimulatedExchange:
     """The exchange order management system type.\n\n:returns: `OMSType`"""
     cdef readonly BookType book_type
     """The exchange default order book type.\n\n:returns: `BookType`"""
-    cdef readonly CacheFacade cache
-    """The read-only cache wired to the exchange.\n\n:returns: `CacheFacade`"""
+    cdef readonly Cache cache
+    """The cache wired to the exchange.\n\n:returns: `CacheFacade`"""
     cdef readonly BacktestExecClient exec_client
     """The execution client wired to the exchange.\n\n:returns: `BacktestExecClient`"""
 
@@ -86,19 +85,25 @@ cdef class SimulatedExchange:
     """If the account for the exchange is frozen.\n\n:returns: `bool`"""
     cdef readonly FillModel fill_model
     """The fill model for the exchange.\n\n:returns: `FillModel`"""
-    cdef readonly bint fill_limit_at_price
-    """If ``LIMIT`` orders should be filled at their original price only.\n\n:returns: `bool`"""
-    cdef readonly bint fill_stop_at_price
-    """If ``STOP_MARKET`` orders should be filled at their original price only.\n\n:returns: `bool`"""
+    cdef readonly bint reject_stop_orders
+    """If stop orders are rejected on submission if in the market.\n\n:returns: `bool`"""
+    cdef readonly bint bar_execution
+    """If the exchange execution dynamics is based on bar data.\n\n:returns: `bool`"""
     cdef readonly list modules
     """The simulation modules registered with the exchange.\n\n:returns: `list[SimulationModule]`"""
     cdef readonly dict instruments
     """The exchange instruments.\n\n:returns: `dict[InstrumentId, Instrument]`"""
 
-    cdef dict _books
     cdef dict _instrument_indexer
-    cdef dict _instrument_orders
-    cdef dict _working_orders
+
+    cdef dict _books
+    cdef dict _last_bids
+    cdef dict _last_asks
+    cdef dict _order_index
+    cdef dict _orders_bid
+    cdef dict _orders_ask
+    cdef dict _oto_orders
+
     cdef dict _symbol_pos_count
     cdef dict _symbol_ord_count
     cdef int _executions_count
@@ -108,7 +113,9 @@ cdef class SimulatedExchange:
     cpdef Price best_ask_price(self, InstrumentId instrument_id)
     cpdef OrderBook get_book(self, InstrumentId instrument_id)
     cpdef dict get_books(self)
-    cpdef dict get_working_orders(self)
+    cpdef list get_working_orders(self, InstrumentId instrument_id=*)
+    cpdef list get_working_bid_orders(self, InstrumentId instrument_id=*)
+    cpdef list get_working_ask_orders(self, InstrumentId instrument_id=*)
     cpdef Account get_account(self)
 
     cpdef void register_client(self, BacktestExecClient client) except *
@@ -120,15 +127,11 @@ cdef class SimulatedExchange:
     cpdef void process_tick(self, Tick tick) except *
     cpdef void process_bar(self, Bar bar) except *
     cpdef void process(self, int64_t now_ns) except *
-    cpdef void check_residuals(self) except *
     cpdef void reset(self) except *
 
-# --------------------------------------------------------------------------------------------------
+# -- IDENTIFIERS -----------------------------------------------------------------------------------
 
     cdef PositionId _get_position_id(self, Order order, bint generate=*)
-    cdef Position _get_position_for_order(self, Order order)
-    cdef dict _build_current_bid_rates(self)
-    cdef dict _build_current_ask_rates(self)
     cdef PositionId _generate_venue_position_id(self, InstrumentId instrument_id)
     cdef VenueOrderId _generate_venue_order_id(self, InstrumentId instrument_id)
     cdef ExecutionId _generate_execution_id(self)
@@ -144,7 +147,7 @@ cdef class SimulatedExchange:
     cdef void _generate_order_submitted(self, Order order) except *
     cdef void _generate_order_rejected(self, Order order, str reason) except *
     cdef void _generate_order_accepted(self, Order order) except *
-    cdef void _generate_order_pending_replace(self, Order order) except *
+    cdef void _generate_order_pending_update(self, Order order) except *
     cdef void _generate_order_pending_cancel(self, Order order) except *
     cdef void _generate_order_modify_rejected(
         self,
@@ -181,6 +184,7 @@ cdef class SimulatedExchange:
     cdef void _add_order(self, PassiveOrder order) except *
     cdef void _delete_order(self, Order order) except *
     cdef void _iterate_matching_engine(self, InstrumentId instrument_id, int64_t timestamp_ns) except *
+    cdef void _iterate_side(self, list orders, int64_t timestamp_ns) except *
     cdef void _match_order(self, PassiveOrder order) except *
     cdef void _match_limit_order(self, LimitOrder order) except *
     cdef void _match_stop_market_order(self, StopMarketOrder order) except *

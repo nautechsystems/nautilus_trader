@@ -14,47 +14,42 @@
 # -------------------------------------------------------------------------------------------------
 
 from decimal import Decimal
-from typing import Optional
+from typing import Dict, Optional
 
-from nautilus_trader.common.logging cimport LogColor
-from nautilus_trader.core.data cimport Data
-from nautilus_trader.core.message cimport Event
-from nautilus_trader.indicators.average.ema cimport ExponentialMovingAverage
-from nautilus_trader.model.c_enums.order_side cimport OrderSide
-from nautilus_trader.model.data.bar cimport Bar
-from nautilus_trader.model.data.bar cimport BarType
-from nautilus_trader.model.data.tick cimport QuoteTick
-from nautilus_trader.model.data.tick cimport TradeTick
-from nautilus_trader.model.identifiers cimport InstrumentId
-from nautilus_trader.model.instruments.base cimport Instrument
-from nautilus_trader.model.orderbook.book cimport OrderBook
-from nautilus_trader.model.orders.market cimport MarketOrder
-from nautilus_trader.trading.strategy cimport TradingStrategy
-
-from nautilus_trader.trading.strategy import TradingStrategyConfig
-
+from nautilus_trader.common.logging import LogColor
+from nautilus_trader.core.data import Data
+from nautilus_trader.core.message import Event
 
 # *** THIS IS A TEST STRATEGY WITH NO ALPHA ADVANTAGE WHATSOEVER. ***
 # *** IT IS NOT INTENDED TO BE USED TO TRADE LIVE WITH REAL MONEY. ***
+from nautilus_trader.indicators.atr import AverageTrueRange
+from nautilus_trader.indicators.average.ema import ExponentialMovingAverage
+from nautilus_trader.model.data.bar import Bar
+from nautilus_trader.model.data.bar import BarType
+from nautilus_trader.model.enums import OrderSide
+from nautilus_trader.model.identifiers import InstrumentId
+from nautilus_trader.model.instruments.base import Instrument
+from nautilus_trader.model.orders.list import OrderList
+from nautilus_trader.trading.strategy import TradingStrategy
+from nautilus_trader.trading.strategy import TradingStrategyConfig
 
-# Notes for strategies written in Cython
-# --------------------------------------
-# The `except *` statement in void method signatures is to allow C and Python
-# raised exceptions to bubble up (otherwise they are ignored)
 
-
-class EMACrossConfig(TradingStrategyConfig):
+class EMACrossBracketConfig(TradingStrategyConfig):
     """
-    Configuration for ``EMACross`` instances.
+    Configuration for ``EMACrossBracket`` instances.
 
     instrument_id : InstrumentId
         The instrument ID for the strategy.
     bar_type : BarType
         The bar type for the strategy.
+    atr_period : int
+        The period for the ATR indicator.
     fast_ema_period : int
         The fast EMA period.
     slow_ema_period : int
         The slow EMA period.
+    bracket_distance : float
+        The SL and TP bracket distance from entry ATR multiple.
     trade_size : str
         The position size per trade (interpreted as Decimal).
     order_id_tag : str
@@ -67,12 +62,14 @@ class EMACrossConfig(TradingStrategyConfig):
 
     instrument_id: str
     bar_type: str
+    atr_period: int = 20
     fast_ema_period: int = 10
     slow_ema_period: int = 20
+    bracket_distance_atr: float = 3.0
     trade_size: str
 
 
-cdef class EMACross(TradingStrategy):
+class EMACrossBracket(TradingStrategy):
     """
     A simple moving average cross example strategy.
 
@@ -81,16 +78,10 @@ cdef class EMACross(TradingStrategy):
 
     Cancels all orders and flattens all positions on stop.
     """
-    # Backing fields are necessary
-    cdef InstrumentId instrument_id
-    cdef BarType bar_type
-    cdef object trade_size
-    cdef ExponentialMovingAverage fast_ema
-    cdef ExponentialMovingAverage slow_ema
 
-    def __init__(self, config not None: EMACrossConfig):
+    def __init__(self, config: EMACrossBracketConfig):
         """
-        Initialize a new instance of the ``EMACross`` class.
+        Initialize a new instance of the ``EMACrossBracket`` class.
 
         Parameters
         ----------
@@ -101,17 +92,19 @@ cdef class EMACross(TradingStrategy):
         super().__init__(config)
 
         # Configuration
-        self.instrument_id = InstrumentId.from_str_c(config.instrument_id)
-        self.bar_type = BarType.from_str_c(config.bar_type)
+        self.instrument_id = InstrumentId.from_str(config.instrument_id)
+        self.bar_type = BarType.from_str(config.bar_type)
+        self.bracket_distance_atr = config.bracket_distance_atr
         self.trade_size = Decimal(config.trade_size)
 
         # Create the indicators for the strategy
+        self.atr = AverageTrueRange(config.atr_period)
         self.fast_ema = ExponentialMovingAverage(config.fast_ema_period)
         self.slow_ema = ExponentialMovingAverage(config.slow_ema_period)
 
         self.instrument: Optional[Instrument] = None  # Initialized in on_start
 
-    cpdef void on_start(self) except *:
+    def on_start(self):
         """Actions to be performed on strategy start."""
         self.instrument = self.cache.instrument(self.instrument_id)
         if self.instrument is None:
@@ -120,6 +113,7 @@ cdef class EMACross(TradingStrategy):
             return
 
         # Register the indicators for updating
+        self.register_indicator_for_bars(self.bar_type, self.atr)
         self.register_indicator_for_bars(self.bar_type, self.fast_ema)
         self.register_indicator_for_bars(self.bar_type, self.slow_ema)
 
@@ -129,59 +123,7 @@ cdef class EMACross(TradingStrategy):
         # Subscribe to live data
         self.subscribe_bars(self.bar_type)
 
-    cpdef void on_instrument(self, Instrument instrument) except *:
-        """
-        Actions to be performed when the strategy is running and receives an
-        instrument.
-
-        Parameters
-        ----------
-        instrument : Instrument
-            The instrument received.
-
-        """
-        pass
-
-    cpdef void on_order_book(self, OrderBook order_book) except *:
-        """
-        Actions to be performed when the strategy is running and receives an order book.
-
-        Parameters
-        ----------
-        order_book : OrderBook
-            The order book received.
-
-        """
-        # self.log.info(f"Received {order_book}")  # For debugging (must add a subscription)
-        pass
-
-    cpdef void on_quote_tick(self, QuoteTick tick) except *:
-        """
-        Actions to be performed when the strategy is running and receives a quote tick.
-
-        Parameters
-        ----------
-        tick : QuoteTick
-            The tick received.
-
-        """
-        # self.log.info(f"Received {tick}")  # For debugging (must add a subscription)
-        pass
-
-    cpdef void on_trade_tick(self, TradeTick tick) except *:
-        """
-        Actions to be performed when the strategy is running and receives a trade tick.
-
-        Parameters
-        ----------
-        tick : TradeTick
-            The tick received.
-
-        """
-        # self.log.info(f"Received {tick}")  # For debugging (must add a subscription)
-        pass
-
-    cpdef void on_bar(self, Bar bar) except *:
+    def on_bar(self, bar: Bar):
         """
         Actions to be performed when the strategy is running and receives a bar.
 
@@ -191,13 +133,12 @@ cdef class EMACross(TradingStrategy):
             The bar received.
 
         """
-        self.log.info(f"Received Bar({bar})")
+        self.log.info(f"Received {repr(bar)}")
 
         # Check if indicators ready
         if not self.indicators_initialized():
             self.log.info(
-                f"Waiting for indicators to warm up "
-                f"[{self.cache.bar_count(self.bar_type)}]...",
+                f"Waiting for indicators to warm up " f"[{self.cache.bar_count(self.bar_type)}]...",
                 color=LogColor.BLUE,
             )
             return  # Wait for indicators to warm up...
@@ -205,44 +146,50 @@ cdef class EMACross(TradingStrategy):
         # BUY LOGIC
         if self.fast_ema.value >= self.slow_ema.value:
             if self.portfolio.is_flat(self.instrument_id):
-                self.buy()
+                self.buy(bar)
             elif self.portfolio.is_net_short(self.instrument_id):
                 self.flatten_all_positions(self.instrument_id)
-                self.buy()
+                self.buy(bar)
 
         # SELL LOGIC
         elif self.fast_ema.value < self.slow_ema.value:
             if self.portfolio.is_flat(self.instrument_id):
-                self.sell()
+                self.sell(bar)
             elif self.portfolio.is_net_long(self.instrument_id):
                 self.flatten_all_positions(self.instrument_id)
-                self.sell()
+                self.sell(bar)
 
-    cpdef void buy(self) except *:
+    def buy(self, last_bar: Bar):
         """
-        Users simple buy method (example).
+        Users bracket buy method (example).
         """
-        cdef MarketOrder order = self.order_factory.market(
+        bracket_distance: float = self.bracket_distance_atr * self.atr.value
+        order_list: OrderList = self.order_factory.bracket_market(
             instrument_id=self.instrument_id,
             order_side=OrderSide.BUY,
             quantity=self.instrument.make_qty(self.trade_size),
+            stop_loss=self.instrument.make_price(last_bar.close - bracket_distance),
+            take_profit=self.instrument.make_price(last_bar.close + bracket_distance),
         )
 
-        self.submit_order(order)
+        self.submit_order_list(order_list)
 
-    cpdef void sell(self) except *:
+    def sell(self, last_bar: Bar):
         """
-        Users simple sell method (example).
+        Users bracket sell method (example).
         """
-        cdef MarketOrder order = self.order_factory.market(
+        bracket_distance: float = self.bracket_distance_atr * self.atr.value
+        order_list: OrderList = self.order_factory.bracket_market(
             instrument_id=self.instrument_id,
             order_side=OrderSide.SELL,
             quantity=self.instrument.make_qty(self.trade_size),
+            stop_loss=self.instrument.make_price(last_bar.close + bracket_distance),
+            take_profit=self.instrument.make_price(last_bar.close - bracket_distance),
         )
 
-        self.submit_order(order)
+        self.submit_order_list(order_list)
 
-    cpdef void on_data(self, Data data) except *:
+    def on_data(self, data: Data):
         """
         Actions to be performed when the strategy is running and receives generic data.
 
@@ -254,7 +201,7 @@ cdef class EMACross(TradingStrategy):
         """
         pass
 
-    cpdef void on_event(self, Event event) except *:
+    def on_event(self, event: Event):
         """
         Actions to be performed when the strategy is running and receives an event.
 
@@ -266,15 +213,17 @@ cdef class EMACross(TradingStrategy):
         """
         pass
 
-    cpdef void on_stop(self) except *:
+    def on_stop(self):
         """
         Actions to be performed when the strategy is stopped.
-
         """
         self.cancel_all_orders(self.instrument_id)
         self.flatten_all_positions(self.instrument_id)
 
-    cpdef void on_reset(self) except *:
+        # Unsubscribe from data
+        self.unsubscribe_bars(self.bar_type)
+
+    def on_reset(self):
         """
         Actions to be performed when the strategy is reset.
         """
@@ -282,7 +231,7 @@ cdef class EMACross(TradingStrategy):
         self.fast_ema.reset()
         self.slow_ema.reset()
 
-    cpdef dict on_save(self):
+    def on_save(self) -> Dict[str, bytes]:
         """
         Actions to be performed when the strategy is saved.
 
@@ -296,7 +245,7 @@ cdef class EMACross(TradingStrategy):
         """
         return {}
 
-    cpdef void on_load(self, dict state) except *:
+    def on_load(self, state: Dict[str, bytes]):
         """
         Actions to be performed when the strategy is loaded.
 
@@ -310,11 +259,11 @@ cdef class EMACross(TradingStrategy):
         """
         pass
 
-    cpdef void on_dispose(self) except *:
+    def on_dispose(self):
         """
         Actions to be performed when the strategy is disposed.
 
         Cleanup any resources used by the strategy here.
 
         """
-        self.unsubscribe_bars(self.bar_type)
+        pass

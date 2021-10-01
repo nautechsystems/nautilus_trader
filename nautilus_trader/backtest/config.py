@@ -18,9 +18,9 @@ from datetime import datetime
 from typing import Dict, List, Optional, Union
 
 import pydantic
+from dask.base import tokenize
 
 from nautilus_trader.backtest.engine import BacktestEngineConfig
-from nautilus_trader.persistence.catalog import DataCatalog
 from nautilus_trader.trading.config import ImportableStrategyConfig
 
 
@@ -138,6 +138,8 @@ class BacktestDataConfig(Partialable):
         )
 
     def catalog(self):
+        from nautilus_trader.persistence.catalog import DataCatalog
+
         return DataCatalog(
             path=self.catalog_path,
             fs_protocol=self.catalog_fs_protocol,
@@ -171,9 +173,12 @@ class BacktestRunConfig(Partialable):
     data / strategies / parameters).
     """
 
-    name: Optional[str] = None
     engine: Optional[BacktestEngineConfig] = None
     venues: Optional[List[BacktestVenueConfig]] = None
     data: Optional[List[BacktestDataConfig]] = None
     strategies: Optional[List[ImportableStrategyConfig]] = None
-    batch_size_bytes: Optional[int] = None
+    batch_size_bytes: Optional[int] = None  # TODO(cs): Useful for cached batches
+
+    @property
+    def id(self):
+        return tokenize(self)

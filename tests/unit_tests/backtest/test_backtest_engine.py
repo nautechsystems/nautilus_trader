@@ -61,6 +61,97 @@ GBPUSD_SIM = TestInstrumentProvider.default_fx_ccy("GBP/USD")
 USDJPY_SIM = TestInstrumentProvider.default_fx_ccy("USD/JPY")
 
 
+class TestBacktestEngine:
+    def setup(self):
+        # Fixture Setup
+        self.engine = BacktestEngine()
+
+        self.usdjpy = TestInstrumentProvider.default_fx_ccy("USD/JPY")
+
+        # Setup data
+        wrangler = QuoteTickDataWrangler(self.usdjpy)
+        ticks = wrangler.process_bar_data(
+            bid_data=TestDataProvider.usdjpy_1min_bid()[:2000],
+            ask_data=TestDataProvider.usdjpy_1min_ask()[:2000],
+        )
+        self.engine.add_instrument(USDJPY_SIM)
+        self.engine.add_ticks(ticks)
+
+        self.engine.add_venue(
+            venue=Venue("SIM"),
+            venue_type=VenueType.BROKERAGE,
+            oms_type=OMSType.HEDGING,
+            account_type=AccountType.MARGIN,
+            base_currency=USD,
+            starting_balances=[Money(1_000_000, USD)],
+            fill_model=FillModel(),
+        )
+
+    def teardown(self):
+        self.engine.reset()
+        self.engine.dispose()
+
+    def test_initialization(self):
+        engine = BacktestEngine()
+
+        # Arrange, Act, Assert
+        assert engine.run_id is None
+        assert engine.run_started is None
+        assert engine.run_finished is None
+        assert engine.backtest_start is None
+        assert engine.backtest_end is None
+        assert engine.iteration == 0
+
+    def test_reset_engine(self):
+        # Arrange
+        self.engine.run()
+
+        # Act
+        self.engine.reset()
+
+        # Assert
+        assert self.engine.run_id is None
+        assert self.engine.run_started is None
+        assert self.engine.run_finished is None
+        assert self.engine.backtest_start is None
+        assert self.engine.backtest_end is None
+        assert self.engine.iteration == 0  # No exceptions raised
+
+    def test_run_with_no_strategies(self):
+        # Arrange, Act
+        self.engine.run()
+
+        # Assert
+        assert self.engine.iteration == 8000
+
+    def test_run(self):
+        # Arrange, Act
+        self.engine.add_strategy(TradingStrategy())
+        self.engine.run()
+
+        # Assert
+        assert len(self.engine.trader.strategy_states()) == 1
+
+    def test_change_fill_model(self):
+        # Arrange, Act
+        self.engine.change_fill_model(Venue("SIM"), FillModel())
+
+        # Assert
+        assert True  # No exceptions raised
+
+    def test_account_state_timestamp(self):
+        # Arrange
+        start = pd.Timestamp("2013-01-31 23:59:59.700000+00:00")
+        self.engine.run(start=start)
+
+        # Act
+        report = self.engine.trader.generate_account_report(Venue("SIM"))
+
+        # Assert
+        assert len(report) == 1
+        assert report.index[0] == start
+
+
 class TestBacktestEngineData:
     def test_add_generic_data_adds_to_engine(self, capsys):
         # Arrange
@@ -306,80 +397,6 @@ class TestBacktestEngineData:
         log = "".join(capsys.readouterr())
         assert "Added USD/JPY.SIM Instrument." in log
         assert "Added 2,000 USD/JPY.SIM-1-MINUTE-BID-EXTERNAL Bar elements." in log
-
-
-class TestBacktestEngine:
-    def setup(self):
-        # Fixture Setup
-        self.engine = BacktestEngine()
-
-        self.usdjpy = TestInstrumentProvider.default_fx_ccy("USD/JPY")
-
-        # Setup data
-        wrangler = QuoteTickDataWrangler(self.usdjpy)
-        ticks = wrangler.process_bar_data(
-            bid_data=TestDataProvider.usdjpy_1min_bid()[:2000],
-            ask_data=TestDataProvider.usdjpy_1min_ask()[:2000],
-        )
-        self.engine.add_instrument(USDJPY_SIM)
-        self.engine.add_ticks(ticks)
-
-        self.engine.add_venue(
-            venue=Venue("SIM"),
-            venue_type=VenueType.BROKERAGE,
-            oms_type=OMSType.HEDGING,
-            account_type=AccountType.MARGIN,
-            base_currency=USD,
-            starting_balances=[Money(1_000_000, USD)],
-            fill_model=FillModel(),
-        )
-
-    def teardown(self):
-        self.engine.reset()
-        self.engine.dispose()
-
-    def test_initialization(self):
-        # Arrange, Act
-        self.engine.add_strategy(TradingStrategy())
-        self.engine.run()
-        # Assert
-        assert len(self.engine.trader.strategy_states()) == 1
-
-    def test_reset_engine(self):
-        # Arrange
-        self.engine.run()
-
-        # Act
-        self.engine.reset()
-
-        # Assert
-        assert self.engine.iteration == 0  # No exceptions raised
-
-    def test_run_empty_strategy(self):
-        # Arrange, Act
-        self.engine.run()
-
-        # Assert
-        assert self.engine.iteration == 8000
-
-    def test_change_fill_model(self):
-        # Arrange, Act
-        self.engine.change_fill_model(Venue("SIM"), FillModel())
-
-        # Assert
-        assert True  # No exceptions raised
-
-    def test_account_state_timestamp(self):
-        # Arrange
-        start = pd.Timestamp("2013-01-31 23:59:59.700000+00:00")
-        self.engine.run(start=start)
-
-        # Act
-        report = self.engine.trader.generate_account_report(Venue("SIM"))
-
-        # Assert
-        assert len(report) == 1
-        assert report.index[0] == start
 
 
 class TestBacktestWithAddedBars:

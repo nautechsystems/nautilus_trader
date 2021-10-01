@@ -15,8 +15,8 @@
 
 
 cpdef enum OMSType:
-    NETTING = 1,
-    HEDGING = 2,
+    NETTING = 1
+    HEDGING = 2
 
 
 cdef class OMSTypeParser:

@@ -321,9 +321,9 @@ cdef class ForexSessionFilter:
 
 @unique
 class NewsImpact(Enum):
-    NONE = 1,
-    LOW = 2,
-    MEDIUM = 3,
+    NONE = 1
+    LOW = 2
+    MEDIUM = 3
     HIGH = 4
 
 

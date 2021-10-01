@@ -2549,6 +2549,28 @@ cdef class Cache(CacheFacade):
 
         return self._positions.get(position_id)
 
+    cpdef Position position_for_order(self, ClientOrderId client_order_id):
+        """
+        Return the position associated with the given client order ID (if found).
+
+        Parameters
+        ----------
+        client_order_id : ClientOrderId
+            The client order ID.
+
+        Returns
+        -------
+        Position or ``None``
+
+        """
+        Condition.not_none(client_order_id, "client_order_id")
+
+        cdef PositionId position_id = self._index_order_position.get(client_order_id)
+        if position_id is None:
+            return None
+
+        return self._positions.get(position_id)
+
     cpdef PositionId position_id(self, ClientOrderId client_order_id):
         """
         Return the position ID associated with the given client order ID (if found).
