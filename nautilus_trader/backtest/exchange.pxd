@@ -51,7 +51,6 @@ from nautilus_trader.model.orders.limit cimport LimitOrder
 from nautilus_trader.model.orders.market cimport MarketOrder
 from nautilus_trader.model.orders.stop_limit cimport StopLimitOrder
 from nautilus_trader.model.orders.stop_market cimport StopMarketOrder
-from nautilus_trader.model.position cimport Position
 
 
 cdef class SimulatedExchange:
@@ -113,7 +112,9 @@ cdef class SimulatedExchange:
     cpdef Price best_ask_price(self, InstrumentId instrument_id)
     cpdef OrderBook get_book(self, InstrumentId instrument_id)
     cpdef dict get_books(self)
-    cpdef dict get_working_orders(self)
+    cpdef list get_working_orders(self, InstrumentId instrument_id=*)
+    cpdef list get_working_bid_orders(self, InstrumentId instrument_id=*)
+    cpdef list get_working_ask_orders(self, InstrumentId instrument_id=*)
     cpdef Account get_account(self)
 
     cpdef void register_client(self, BacktestExecClient client) except *
@@ -125,13 +126,11 @@ cdef class SimulatedExchange:
     cpdef void process_tick(self, Tick tick) except *
     cpdef void process_bar(self, Bar bar) except *
     cpdef void process(self, int64_t now_ns) except *
-    cpdef void check_residuals(self) except *
     cpdef void reset(self) except *
 
 # -- IDENTIFIERS -----------------------------------------------------------------------------------
 
     cdef PositionId _get_position_id(self, Order order, bint generate=*)
-    cdef Position _get_position_for_order(self, Order order)
     cdef PositionId _generate_venue_position_id(self, InstrumentId instrument_id)
     cdef VenueOrderId _generate_venue_order_id(self, InstrumentId instrument_id)
     cdef ExecutionId _generate_execution_id(self)
@@ -147,7 +146,7 @@ cdef class SimulatedExchange:
     cdef void _generate_order_submitted(self, Order order) except *
     cdef void _generate_order_rejected(self, Order order, str reason) except *
     cdef void _generate_order_accepted(self, Order order) except *
-    cdef void _generate_order_pending_replace(self, Order order) except *
+    cdef void _generate_order_pending_update(self, Order order) except *
     cdef void _generate_order_pending_cancel(self, Order order) except *
     cdef void _generate_order_modify_rejected(
         self,
