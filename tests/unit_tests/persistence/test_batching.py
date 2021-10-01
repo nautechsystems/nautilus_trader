@@ -18,8 +18,12 @@ import sys
 import fsspec
 import pandas as pd
 import pytest
+from dask.utils import parse_bytes
 
 from nautilus_trader.adapters.betfair.providers import BetfairInstrumentProvider
+from nautilus_trader.backtest.config import BacktestDataConfig
+from nautilus_trader.core.datetime import maybe_dt_to_unix_nanos
+from nautilus_trader.model.orderbook.data import OrderBookData
 from nautilus_trader.persistence.batching import batch_files
 from nautilus_trader.persistence.catalog import DataCatalog
 from nautilus_trader.persistence.external.core import process_files
@@ -48,22 +52,35 @@ class TestPersistenceBatching:
             catalog=self.catalog,
         )
 
-    def test_calc_streaming_chunks_results(self):
+    def test_batch_files_single(self):
         # Arrange
-        # Act
-        it = batch_files(
-            catalog=self.catalog,
-            data_configs=[],
-            start_time="2019-12-20",
-            end_time="2019-12-21",
+        instrument_ids = self.catalog.instruments()["id"].unique().tolist()
+        base = BacktestDataConfig(
+            catalog_path=str(self.catalog.path),
+            catalog_fs_protocol=self.catalog.fs.protocol,
+            data_type=OrderBookData,
         )
 
+        iter_batches = batch_files(
+            catalog=self.catalog,
+            data_configs=[
+                base.replace(instrument_id=instrument_ids[0]),
+                base.replace(instrument_id=instrument_ids[1]),
+            ],
+            start_time=maybe_dt_to_unix_nanos(pd.Timestamp("2019-12-20")),
+            end_time=maybe_dt_to_unix_nanos(pd.Timestamp("2019-12-21")),
+            target_batch_size_bytes=parse_bytes("10kib"),
+            read_num_rows=300,
+        )
+
+        # Act
+        timestamp_chunks = []
+        for batch in iter_batches:
+            timestamp_chunks.append([b.ts_init for b in batch])
+
         # Assert
-        result = [(pd.Timestamp(s).isoformat(), pd.Timestamp(e).isoformat()) for s, e in it]
-        expected = [
-            ("2019-12-20T00:00:00", "2019-12-20T19:40:18.634184448"),
-            ("2019-12-20T19:40:18.634184448", "2019-12-20T22:20:48.447877376"),
-            ("2019-12-20T22:20:48.447877376", "2019-12-20T23:59:59.999933952"),
-            ("2019-12-20T23:59:59.999933952", "2019-12-21T00:00:00"),
-        ]
-        assert result == expected
+        latest_timestamp = 0
+        for timestamps in timestamp_chunks:
+            assert max(timestamps) > latest_timestamp
+            latest_timestamp = max(timestamps)
+            assert timestamps == sorted(timestamps)

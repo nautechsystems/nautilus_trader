@@ -13,6 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+import itertools
 import logging
 import pickle
 from typing import List, Optional
@@ -243,6 +244,19 @@ def backtest_runner(
     return engine.run(run_config_id=run_config_id)
 
 
+def _groupby_key(x):
+    return type(x).__name__
+
+
+def groupby_datatype(data):
+    return [
+        {"type": type(v[0]), "data": v}
+        for v in [
+            list(v) for _, v in itertools.groupby(sorted(data, key=_groupby_key), key=_groupby_key)
+        ]
+    ]
+
+
 def streaming_backtest_runner(
     run_config_id: str,
     engine: BacktestEngine,
@@ -259,10 +273,11 @@ def streaming_backtest_runner(
         data_configs=data_configs,
         start_time=start_time,
         end_time=end_time,
-        batch_size=batch_size_bytes,
+        target_batch_size_bytes=batch_size_bytes,
     ):
         engine.clear_data()
-        _load_engine_data(engine=engine, data=data)
+        for data in groupby_datatype(data):
+            _load_engine_data(engine=engine, data=data)
         engine.run_streaming(run_config_id=run_config_id)
     engine.end_streaming()
 

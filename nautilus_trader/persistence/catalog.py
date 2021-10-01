@@ -85,7 +85,7 @@ class DataCatalog(metaclass=Singleton):
 
     def _query(
         self,
-        path,
+        cls,
         filter_expr=None,
         instrument_ids=None,
         start=None,
@@ -110,7 +110,7 @@ class DataCatalog(metaclass=Singleton):
         if end is not None:
             filters.append(ds.field(ts_column) <= int(pd.Timestamp(end).to_datetime64()))
 
-        full_path = str(self.path.joinpath(path))
+        full_path = self._make_path(cls=cls)
         if not (self.fs.exists(full_path) or self.fs.isdir(full_path)):
             if raise_on_empty:
                 raise FileNotFoundError(f"protocol={self.fs.protocol}, path={full_path}")
@@ -125,7 +125,7 @@ class DataCatalog(metaclass=Singleton):
                 table=table, mappings=mappings, raise_on_empty=raise_on_empty, **kwargs
             )
         else:
-            return self._handle_table_nautilus(table=table, cls=kwargs["cls"], mappings=mappings)
+            return self._handle_table_nautilus(table=table, cls=cls, mappings=mappings)
 
     def load_inverse_mappings(self, path):
         mappings = load_mappings(fs=self.fs, path=path)
@@ -170,6 +170,9 @@ class DataCatalog(metaclass=Singleton):
         data = ParquetSerializer.deserialize(cls=cls, chunk=dicts)
         return data
 
+    def _make_path(self, cls: type) -> str:
+        return f"{self.path}/data/{class_to_filename(cls)}.parquet"
+
     def query(
         self,
         cls: type,
@@ -180,8 +183,7 @@ class DataCatalog(metaclass=Singleton):
         as_type: Optional[Dict] = None,
         **kwargs,
     ):
-        path = f"{class_to_filename(cls)}.parquet"
-        if path.startswith(GENERIC_DATA_PREFIX):
+        if not is_nautilus_class(cls=cls):
             # Special handling for generic data
             return self.generic_data(
                 cls=cls,
@@ -190,10 +192,8 @@ class DataCatalog(metaclass=Singleton):
                 as_nautilus=as_nautilus,
                 **kwargs,
             )
-        if as_nautilus:
-            kwargs["cls"] = cls
         return self._query(
-            path=f"data/{path}",
+            cls=cls,
             filter_expr=filter_expr,
             instrument_ids=instrument_ids,
             sort_columns=sort_columns,
@@ -218,11 +218,9 @@ class DataCatalog(metaclass=Singleton):
 
         dfs = []
         for cls in subclasses:
-            if as_nautilus:
-                kwargs["cls"] = cls
             try:
                 df = self._query(
-                    path=f"data/{class_to_filename(cls)}.parquet",
+                    cls=cls,
                     filter_expr=filter_expr,
                     instrument_ids=instrument_ids,
                     raise_on_empty=False,
