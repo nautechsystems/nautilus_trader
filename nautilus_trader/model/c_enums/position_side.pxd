@@ -15,9 +15,9 @@
 
 
 cpdef enum PositionSide:
-    FLAT = 1,
-    LONG = 2,
-    SHORT = 3,
+    FLAT = 1
+    LONG = 2
+    SHORT = 3
 
 
 cdef class PositionSideParser:

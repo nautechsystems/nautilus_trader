@@ -15,7 +15,7 @@
 
 
 cpdef enum CandleWickSize:
-    NONE = 0,  # No candle wick
-    SMALL = 1,
-    MEDIUM = 2,
-    LARGE = 3,
+    NONE = 0  # No candle wick
+    SMALL = 1
+    MEDIUM = 2
+    LARGE = 3

@@ -15,8 +15,8 @@
 
 
 cpdef enum OrderSide:
-    BUY = 1,
-    SELL = 2,
+    BUY = 1
+    SELL = 2
 
 
 cdef class OrderSideParser:

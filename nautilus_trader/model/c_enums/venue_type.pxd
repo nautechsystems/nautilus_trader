@@ -15,10 +15,10 @@
 
 
 cpdef enum VenueType:
-    EXCHANGE = 1,
-    ECN = 2,
-    BROKERAGE = 3,
-    BROKERAGE_MULTI_VENUE = 4,
+    EXCHANGE = 1
+    ECN = 2
+    BROKERAGE = 3
+    BROKERAGE_MULTI_VENUE = 4
 
 
 cdef class VenueTypeParser:

@@ -15,13 +15,13 @@
 
 
 cpdef enum AssetType:
-    SPOT = 1,
-    SWAP = 2,
-    FUTURE = 3,
-    FORWARD = 4,
-    CFD = 5,
-    OPTION = 6,
-    WARRANT = 7,
+    SPOT = 1
+    SWAP = 2
+    FUTURE = 3
+    FORWARD = 4
+    CFD = 5
+    OPTION = 6
+    WARRANT = 7
 
 
 cdef class AssetTypeParser:

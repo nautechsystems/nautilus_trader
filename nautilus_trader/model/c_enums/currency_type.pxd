@@ -15,8 +15,8 @@
 
 
 cpdef enum CurrencyType:
-    CRYPTO = 1,
-    FIAT = 2,
+    CRYPTO = 1
+    FIAT = 2
 
 
 cdef class CurrencyTypeParser:

@@ -15,8 +15,8 @@
 
 
 cpdef enum InstrumentCloseType:
-    END_OF_SESSION = 1,
-    EXPIRED = 2,
+    END_OF_SESSION = 1
+    EXPIRED = 2
 
 
 cdef class InstrumentCloseTypeParser:
