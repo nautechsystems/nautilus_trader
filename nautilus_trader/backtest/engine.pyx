@@ -65,51 +65,8 @@ from nautilus_trader.serialization.msgpack.serializer cimport MsgPackSerializer
 from nautilus_trader.trading.strategy cimport TradingStrategy
 
 from nautilus_trader.analysis.performance import PerformanceAnalyzer
+from nautilus_trader.backtest.config import BacktestEngineConfig
 from nautilus_trader.backtest.results import BacktestResult
-from nautilus_trader.cache.cache import CacheConfig
-from nautilus_trader.data.engine import DataEngineConfig
-from nautilus_trader.execution.engine import ExecEngineConfig
-from nautilus_trader.infrastructure.cache import CacheDatabaseConfig
-from nautilus_trader.risk.engine import RiskEngineConfig
-
-
-class BacktestEngineConfig(pydantic.BaseModel):
-    """
-    Configuration for ``BacktestEngine`` instances.
-
-    trader_id : str, default="BACKTESTER-000"
-        The trader ID.
-    log_level : str, default="INFO"
-        The minimum log level for logging messages to stdout.
-    cache : CacheConfig, optional
-        The configuration for the cache.
-    cache_database : CacheDatabaseConfig, optional
-        The configuration for the cache database.
-    data_engine : DataEngineConfig, optional
-        The configuration for the data engine.
-    risk_engine : RiskEngineConfig, optional
-        The configuration for the risk engine.
-    exec_engine : ExecEngineConfig, optional
-        The configuration for the execution engine.
-    bypass_logging : bool, default=False
-        If logging should be bypassed.
-    run_analysis : bool, default=True
-        If post backtest performance analysis should be run.
-
-    """
-
-    trader_id: str = "BACKTESTER-000"
-    log_level: str = "INFO"
-    cache: Optional[CacheConfig] = None
-    cache_database: Optional[CacheDatabaseConfig] = None
-    data_engine: Optional[DataEngineConfig] = None
-    risk_engine: Optional[RiskEngineConfig] = None
-    exec_engine: Optional[ExecEngineConfig] = None
-    bypass_logging: bool = False
-    run_analysis: bool = True
-
-    def __dask_tokenize__(self):
-        return tuple(self.dict().items())
 
 
 cdef class BacktestEngine:

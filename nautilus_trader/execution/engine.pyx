@@ -76,13 +76,7 @@ from nautilus_trader.model.objects cimport Quantity
 from nautilus_trader.model.orders.base cimport Order
 from nautilus_trader.msgbus.bus cimport MessageBus
 
-
-class ExecEngineConfig(pydantic.BaseModel):
-    """
-    Configuration for ``ExecutionEngine`` instances.
-    """
-
-    pass  # No configuration currently
+from nautilus_trader.execution.config import ExecEngineConfig
 
 
 cdef class ExecutionEngine(Component):
