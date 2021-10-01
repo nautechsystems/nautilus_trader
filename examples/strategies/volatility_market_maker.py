@@ -66,8 +66,7 @@ class VolatilityMarketMakerConfig(TradingStrategyConfig):
     bar_type: str
     atr_period: int
     atr_multiple: float
-    order_id_tag: str = "001"
-    trade_size: Decimal
+    trade_size: str
 
 
 class VolatilityMarketMaker(TradingStrategy):
@@ -93,7 +92,7 @@ class VolatilityMarketMaker(TradingStrategy):
         # Configuration
         self.instrument_id = InstrumentId.from_str(config.instrument_id)
         self.bar_type = BarType.from_str(config.bar_type)
-        self.trade_size = config.trade_size
+        self.trade_size = Decimal(config.trade_size)
         self.atr_multiple = config.atr_multiple
 
         # Create the indicators for the strategy

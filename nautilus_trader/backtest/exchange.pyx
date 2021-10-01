@@ -33,6 +33,7 @@ from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.model.c_enums.account_type cimport AccountType
 from nautilus_trader.model.c_enums.account_type cimport AccountTypeParser
 from nautilus_trader.model.c_enums.book_type cimport BookType
+from nautilus_trader.model.c_enums.contingency_type cimport ContingencyType
 from nautilus_trader.model.c_enums.depth_type cimport DepthType
 from nautilus_trader.model.c_enums.liquidity_side cimport LiquiditySide
 from nautilus_trader.model.c_enums.oms_type cimport OMSType
@@ -213,6 +214,7 @@ cdef class SimulatedExchange:
         self._order_index = {}  # type: dict[ClientOrderId, PassiveOrder]
         self._orders_bid = {}   # type: dict[InstrumentId, list[PassiveOrder]]
         self._orders_ask = {}   # type: dict[InstrumentId, list[PassiveOrder]]
+        self._oto_orders = {}   # type: dict[ClientOrderId]
 
         self._symbol_pos_count = {}   # type: dict[InstrumentId, int]
         self._symbol_ord_count = {}   # type: dict[InstrumentId, int]
@@ -575,13 +577,14 @@ cdef class SimulatedExchange:
 
         cdef:
             TradingCommand command
-            PassiveOrder order
+            Order order
         while self._message_queue.count > 0:
             command = self._message_queue.get_nowait()
             if isinstance(command, SubmitOrder):
                 self._process_order(command.order)
             elif isinstance(command, SubmitOrderList):
-                pass  # ...
+                for order in command.list.orders:
+                    self._process_order(order)
             elif isinstance(command, CancelOrder):
                 order = self._order_index.pop(command.client_order_id, None)
                 if order is None:
@@ -705,13 +708,29 @@ cdef class SimulatedExchange:
             raise RuntimeError("invalid order type")
 
     cdef void _cancel_order(self, PassiveOrder order) except *:
+        cdef:
+            list orders_bid
+            list orders_ask
+
         if order.is_buy_c():
-            self._orders_bid[order.instrument_id].remove(order)
+            orders_bid = self._orders_bid.get(order.instrument_id)
+            if not orders_bid or order not in orders_bid:
+                return  # No order to cancel
+            orders_bid.remove(order)  # TODO(cs): Optimize
         elif order.is_sell_c():
-            self._orders_ask[order.instrument_id].remove(order)
+            orders_ask = self._orders_ask.get(order.instrument_id)
+            if not orders_ask or order not in orders_ask:
+                return  # No order to cancel
+            orders_ask.remove(order)  # TODO(cs): Optimize
 
         self._generate_order_pending_cancel(order)
         self._generate_order_canceled(order)
+
+        if order.contingency == ContingencyType.OCO:
+            for client_order_id in order.contingency_ids:
+                oco_order = self.cache.order(client_order_id)
+                assert oco_order is not None, "OCO contingency not found"
+                self._cancel_order(oco_order)
 
     cdef void _expire_order(self, PassiveOrder order) except *:
         self._generate_order_expired(order)
@@ -879,6 +898,35 @@ cdef class SimulatedExchange:
 
     cdef void _process_order(self, Order order) except *:
         Condition.not_in(order.client_order_id, self._order_index, "order.client_order_id", "order_index")
+
+        cdef Order oco_order
+        # Check contingency orders
+        if order.contingency == ContingencyType.OTO:
+            for client_order_id in order.child_order_ids:
+                self._oto_orders[client_order_id] = order.client_order_id
+        elif order.contingency == ContingencyType.OCO:
+            for client_order_id in order.contingency_ids:
+                oco_order = self.cache.order(client_order_id)
+                assert order.is_passive_c(), "OCO contingency was not a passive order"
+                assert oco_order is not None, "OCO contingency other not found"
+                if oco_order.is_completed_c():
+                    self._cancel_order(order)
+                    continue  # Order completed
+                if order.quantity != oco_order.leaves_qty:
+                    self._update_order(
+                        order,
+                        qty=oco_order.leaves_qty,
+                        price=order.price,
+                        trigger=order.trigger if order.type == OrderType.STOP_LIMIT else None,
+                    )
+
+        cdef Order parent
+        if order.parent_order_id is not None:
+            if order.client_order_id in self._oto_orders:
+                parent = self.cache.order(order.parent_order_id)
+                assert parent is not None, "OTO parent not found"
+                if not parent.is_working_c() and not parent.is_completed_c():
+                    return  # Pending trigger
 
         cdef PositionId position_id
         if order.position_id is not None:
@@ -1414,3 +1462,16 @@ cdef class SimulatedExchange:
 
         if order.is_passive_c() and order.is_completed_c():
             self._delete_order(order)
+
+        cdef PassiveOrder child_order
+        if order.contingency == ContingencyType.OTO:
+            for client_order_id in order.child_order_ids:
+                child_order = self.cache.order(client_order_id)
+                assert child_order is not None, "OTO child order not found"
+                if child_order.position_id is None:
+                    self.cache.add_position_id(order.position_id, self.id, client_order_id, child_order.strategy_id)
+        elif order.contingency == ContingencyType.OCO:
+            for client_order_id in order.contingency_ids:
+                oco_order = self.cache.order(client_order_id)
+                assert oco_order is not None, "OCO contingency not found"
+                self._cancel_order(oco_order)
