@@ -22,15 +22,19 @@ import pytz
 
 from nautilus_trader.core.datetime import as_utc_index
 from nautilus_trader.core.datetime import as_utc_timestamp
+from nautilus_trader.core.datetime import dt_to_unix_nanos
 from nautilus_trader.core.datetime import format_iso8601
 from nautilus_trader.core.datetime import is_datetime_utc
 from nautilus_trader.core.datetime import is_tz_aware
 from nautilus_trader.core.datetime import is_tz_naive
+from nautilus_trader.core.datetime import maybe_dt_to_unix_nanos
+from nautilus_trader.core.datetime import maybe_nanos_to_unix_dt
 from nautilus_trader.core.datetime import micros_to_nanos
 from nautilus_trader.core.datetime import millis_to_nanos
 from nautilus_trader.core.datetime import nanos_to_micros
 from nautilus_trader.core.datetime import nanos_to_millis
 from nautilus_trader.core.datetime import nanos_to_secs
+from nautilus_trader.core.datetime import nanos_to_unix_dt
 from nautilus_trader.core.datetime import secs_to_nanos
 from tests.test_kit.stubs import UNIX_EPOCH
 
@@ -155,6 +159,107 @@ class TestDatetimeFunctions:
 
         # Assert
         assert result == expected
+
+    @pytest.mark.parametrize(
+        "value, expected",
+        [
+            [-100_000_000, pd.Timestamp("1969-12-31 23:59:59.900000+0000", tz="UTC")],
+            [-1_000, pd.Timestamp("1969-12-31 23:59:59.999999+0000", tz="UTC")],
+            [0, UNIX_EPOCH],
+            [1_000, pd.Timestamp("1970-01-01 00:00:00.000001+0000", tz="UTC")],
+            [1_000_000_000, pd.Timestamp("1970-01-01 00:00:01+0000", tz="UTC")],
+        ],
+    )
+    def test_nanos_to_unix_dt(self, value, expected):
+        # Arrange, Act
+        result = nanos_to_unix_dt(value)
+
+        # Assert
+        assert result == expected
+        assert result.tzinfo == pytz.utc
+
+    @pytest.mark.parametrize(
+        "value, expected",
+        [
+            [None, None],
+            [-100_000_000, pd.Timestamp("1969-12-31 23:59:59.900000+0000", tz="UTC")],
+            [-1_000, pd.Timestamp("1969-12-31 23:59:59.999999+0000", tz="UTC")],
+            [0, UNIX_EPOCH],
+            [1_000, pd.Timestamp("1970-01-01 00:00:00.000001+0000", tz="UTC")],
+            [1_000_000_000, pd.Timestamp("1970-01-01 00:00:01+0000", tz="UTC")],
+        ],
+    )
+    def test_maybe_nanos_to_unix_dt(self, value, expected):
+        # Arrange, Act
+        result = maybe_nanos_to_unix_dt(value)
+
+        # Assert
+        assert result == expected
+        assert result is None or result.tzinfo == pytz.utc
+
+    @pytest.mark.parametrize(
+        "value, expected",
+        [
+            [UNIX_EPOCH - timedelta(milliseconds=100), -100_000_000],
+            [UNIX_EPOCH, 0],
+            [UNIX_EPOCH + timedelta(milliseconds=100), 100_000_000],
+            [UNIX_EPOCH + timedelta(milliseconds=1), 1_000_000],
+            [UNIX_EPOCH + timedelta(microseconds=3), 3_000],
+            [UNIX_EPOCH + timedelta(hours=12), 43_200_000_000_000],
+            [datetime(2021, 5, 7, 13, 41, 7, 930000, tzinfo=pytz.utc), 1620394867930000000],
+        ],
+    )
+    def test_dt_to_unix_nanos(self, value, expected):
+        # Arrange, Act
+        result = dt_to_unix_nanos(value)
+
+        # Assert
+        assert result == expected
+
+    @pytest.mark.parametrize(
+        "value, expected",
+        [
+            [None, None],
+            [UNIX_EPOCH - timedelta(milliseconds=100), -100_000_000],
+            [UNIX_EPOCH, 0],
+            [UNIX_EPOCH + timedelta(milliseconds=100), 100_000_000],
+            [UNIX_EPOCH + timedelta(milliseconds=1), 1_000_000],
+            [UNIX_EPOCH + timedelta(microseconds=3), 3_000],
+            [UNIX_EPOCH + timedelta(hours=12), 43_200_000_000_000],
+            [datetime(2021, 5, 7, 13, 41, 7, 930000, tzinfo=pytz.utc), 1620394867930000000],
+        ],
+    )
+    def test_maybe_dt_to_unix_nanos(self, value, expected):
+        # Arrange, Act
+        result = maybe_dt_to_unix_nanos(value)
+
+        # Assert
+        assert result == expected
+
+    @pytest.mark.parametrize(
+        "value, expected",
+        [
+            [
+                datetime(1969, 12, 1, 1, 0, tzinfo=pytz.utc).isoformat(),
+                -2674800000000000,
+            ],
+            [datetime(1970, 1, 1, 0, 0, tzinfo=pytz.utc).isoformat(), 0],
+            [
+                datetime(2013, 1, 1, 1, 0, tzinfo=pytz.utc).isoformat(),
+                1357002000000000000,
+            ],
+            [
+                datetime(2020, 1, 2, 3, 2, microsecond=333, tzinfo=pytz.utc).isoformat(),
+                1577934120003330000,
+            ],
+        ],
+    )
+    def test_iso8601_to_unix_nanos_given_iso8601_datetime_string(self, value, expected):
+        # Arrange, Act
+        result = dt_to_unix_nanos(value)
+
+        # Assert
+        assert result == pytest.approx(expected, 100)  # 100 nanoseconds
 
     def test_is_datetime_utc_given_tz_naive_datetime_returns_false(self):
         # Arrange
