@@ -179,12 +179,6 @@ class TestSimulatedExchange:
             == "SimulatedExchange(id=SIM, venue_type=ECN, oms_type=HEDGING, account_type=MARGIN)"
         )
 
-    def test_check_residuals(self):
-        # Arrange, Act
-        self.exchange.check_residuals()
-        # Assert
-        assert True  # No exceptions raised
-
     def test_process_quote_tick_sets_market(self):
         # Arrange
         tick = TestStubs.quote_tick_3decimal(USDJPY_SIM.id)
@@ -254,10 +248,7 @@ class TestSimulatedExchange:
 
         self.exchange.process_tick(tick2)
 
-        # Act
-        self.exchange.check_residuals()
-
-        # Assert
+        # Act, Assert
         # TODO: Revisit testing
         assert len(self.exchange.get_working_orders()) == 3
         assert bracket1.stop_loss in self.exchange.get_working_orders().values()
@@ -268,7 +259,7 @@ class TestSimulatedExchange:
         # Arrange, Act
         orders = self.exchange.get_working_orders()
 
-        assert orders == {}
+        assert orders == []
 
     def test_submit_buy_limit_order_with_no_market_accepts_order(self):
         # Arrange
@@ -467,7 +458,7 @@ class TestSimulatedExchange:
         # Assert
         assert order.status == OrderStatus.ACCEPTED
         assert len(self.exchange.get_working_orders()) == 1
-        assert order.client_order_id in self.exchange.get_working_orders()
+        assert order in self.exchange.get_working_orders()
 
     def test_submit_limit_order_when_marketable_then_fills(self):
         # Arrange: Prepare market
@@ -597,7 +588,7 @@ class TestSimulatedExchange:
         # Assert
         assert order.status == OrderStatus.ACCEPTED
         assert len(self.exchange.get_working_orders()) == 1
-        assert order.client_order_id in self.exchange.get_working_orders()
+        assert order in self.exchange.get_working_orders()
 
     def test_submit_stop_limit_order_when_inside_market_rejects(self):
         # Arrange: Prepare market
@@ -650,7 +641,7 @@ class TestSimulatedExchange:
         # Assert
         assert order.status == OrderStatus.ACCEPTED
         assert len(self.exchange.get_working_orders()) == 1
-        assert order.client_order_id in self.exchange.get_working_orders()
+        assert order in self.exchange.get_working_orders()
 
     @pytest.mark.skip(reason="WIP")
     def test_submit_bracket_market_order(self):
