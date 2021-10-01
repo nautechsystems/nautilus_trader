@@ -15,6 +15,7 @@
 
 import copy
 import dataclasses
+import json
 import pathlib
 import pickle
 import sys
@@ -25,6 +26,8 @@ import dask
 import pytest
 import pytz
 from dask.base import tokenize
+from pydantic import BaseModel
+from pydantic.json import pydantic_encoder
 
 from nautilus_trader.backtest.config import BacktestDataConfig
 from nautilus_trader.backtest.config import BacktestRunConfig
@@ -86,7 +89,7 @@ def backtest_config(catalog):
             BacktestDataConfig(
                 catalog_path="/root",
                 catalog_fs_protocol="memory",
-                data_type=QuoteTick,
+                data_cls_path="nautilus_trader.model.data.tick.QuoteTick",
                 instrument_id="AUD/USD.SIM",
                 start_time=1580398089820000000,
                 end_time=1580504394501000000,
@@ -206,7 +209,7 @@ def test_venue_config_tokenization(backtest_config: BacktestRunConfig):
     result = tokenize(venue)
 
     # Assert
-    assert result == "04c48e76f89c4ba393caa3f7dc138b00"
+    assert result == "929e4f4f526a79fbe27d73fb17762d1d"
 
 
 def test_data_config_tokenization(backtest_config: BacktestRunConfig):
@@ -217,7 +220,7 @@ def test_data_config_tokenization(backtest_config: BacktestRunConfig):
     result = tokenize(data_config)
 
     # Assert
-    assert result == "f479a81a847b7ceb8dc682b818c6df57"
+    assert result == "d05f46f2c3c44f4a160322191caabb8a"
 
 
 def test_engine_config_tokenization(backtest_config: BacktestRunConfig):
@@ -228,7 +231,7 @@ def test_engine_config_tokenization(backtest_config: BacktestRunConfig):
     result = tokenize(engine_config)
 
     # Assert
-    assert result == "22d84218139004f8b662d2c6d3dccb4a"
+    assert result == "4e36e7d25fc8e8e98ea5a7127e9cff57"
 
 
 def test_tokenization_config(backtest_config: BacktestRunConfig):
@@ -236,7 +239,7 @@ def test_tokenization_config(backtest_config: BacktestRunConfig):
     result = tokenize(backtest_config)
 
     # Assert
-    assert result == "210615e8aba1de864fb7b483940472c0"
+    assert result == "4c71026aad804afc3c4abe05a3c2de42"
 
 
 def test_backtest_data_config_load(catalog):
@@ -244,7 +247,7 @@ def test_backtest_data_config_load(catalog):
     c = BacktestDataConfig(
         catalog_path="/root/",
         catalog_fs_protocol="memory",
-        data_type=QuoteTick,
+        data_cls_path="nautilus_trader.model.data.tick.QuoteTick",
         instrument_id=instrument.id.value,
         start_time=1580398089820000000,
         end_time=1580504394501000000,
@@ -278,13 +281,46 @@ def test_backtest_config_partial():
     config = config.update(
         data=[
             BacktestDataConfig(
-                catalog_path="/",
-                catalog_fs_protocol="memory",
-                data_type=QuoteTick,
-                instrument_id="AUD/USD.IDEALPRO",
-                start_time=1580398089820000,
-                end_time=1580504394501000,
+                "/",
+                "nautilus_trader.model.data.tick.QuoteTick",
+                "memory",
+                {},
+                "AUD/USD.IDEALPRO",
+                1580398089820000,
+                1580504394501000,
             )
         ],
     )
     assert config.is_partial()
+
+
+def test_resolve_cls():
+    config = BacktestDataConfig(
+        "/",
+        "nautilus_trader.model.data.tick.QuoteTick",
+        "memory",
+        {},
+        "AUD/USD.IDEALPRO",
+        1580398089820000,
+        1580504394501000,
+    )
+    assert config.data_type == QuoteTick
+
+
+@pytest.mark.parametrize(
+    "model",
+    [
+        # BacktestVenueConfig("SIM", "ECN", "HEDGING", "MARGIN", "USD", ["1000000 USD"]),
+        BacktestDataConfig(
+            catalog_path="/",
+            data_cls_path="nautilus_trader.model.data.tick.QuoteTick",
+            catalog_fs_protocol="memory",
+            catalog_fs_storage_options={},
+            instrument_id="AUD/USD.IDEALPRO",
+            start_time=1580398089820000,
+            end_time=1580504394501000,
+        ),
+    ],
+)
+def test_models_to_json(model: BaseModel):
+    print(json.dumps(model, indent=4, default=pydantic_encoder))

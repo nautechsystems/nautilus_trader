@@ -14,6 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 import dataclasses
+import importlib
 from datetime import datetime
 from typing import Dict, List, Optional, Union
 
@@ -122,7 +123,7 @@ class BacktestDataConfig(Partialable):
     """
 
     catalog_path: str
-    data_type: type
+    data_cls_path: str
     catalog_fs_protocol: str = None
     catalog_fs_storage_options: Optional[Dict] = None
     instrument_id: Optional[str] = None
@@ -130,6 +131,12 @@ class BacktestDataConfig(Partialable):
     end_time: Optional[Union[datetime, str, int]] = None
     filters: Optional[dict] = None
     client_id: Optional[str] = None
+
+    @property
+    def data_type(self):
+        mod_path, cls_name = self.data_cls_path.rsplit(".", maxsplit=1)
+        mod = importlib.import_module(mod_path)
+        return getattr(mod, cls_name)
 
     @property
     def query(self):
