@@ -180,6 +180,23 @@ class TestStubs:
         )
 
     @staticmethod
+    def trade_tick_3decimal(
+        instrument_id=None,
+        price=None,
+        aggressor_side=None,
+        quantity=None,
+    ) -> TradeTick:
+        return TradeTick(
+            instrument_id=instrument_id or TestStubs.usdjpy_id(),
+            price=price or Price.from_str("1.001"),
+            size=quantity or Quantity.from_int(100000),
+            aggressor_side=aggressor_side or AggressorSide.BUY,
+            match_id="123456",
+            ts_event=0,
+            ts_init=0,
+        )
+
+    @staticmethod
     def trade_tick_5decimal(
         instrument_id=None,
         price=None,
