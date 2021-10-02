@@ -14,6 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 import dataclasses
+import importlib
 from datetime import datetime
 from typing import Dict, List, Optional, Union
 
@@ -87,7 +88,7 @@ class Partialable:
         return r
 
 
-@pydantic.dataclasses.dataclass()
+@pydantic.dataclasses.dataclass
 class BacktestVenueConfig(Partialable):
     """
     Represents the venue configuration for one specific backtest engine.
@@ -115,14 +116,14 @@ class BacktestVenueConfig(Partialable):
         return tuple(values)
 
 
-@pydantic.dataclasses.dataclass()
+@pydantic.dataclasses.dataclass
 class BacktestDataConfig(Partialable):
     """
     Represents the data configuration for one specific backtest run.
     """
 
     catalog_path: str
-    data_type: type
+    data_cls_path: str
     catalog_fs_protocol: str = None
     catalog_fs_storage_options: Optional[Dict] = None
     instrument_id: Optional[str] = None
@@ -130,6 +131,12 @@ class BacktestDataConfig(Partialable):
     end_time: Optional[Union[datetime, str, int]] = None
     filters: Optional[dict] = None
     client_id: Optional[str] = None
+
+    @property
+    def data_type(self):
+        mod_path, cls_name = self.data_cls_path.rsplit(".", maxsplit=1)
+        mod = importlib.import_module(mod_path)
+        return getattr(mod, cls_name)
 
     @property
     def query(self):
@@ -209,7 +216,7 @@ class BacktestEngineConfig(pydantic.BaseModel):
         return tuple(self.dict().items())
 
 
-@pydantic.dataclasses.dataclass()
+@pydantic.dataclasses.dataclass
 class BacktestRunConfig(Partialable):
     """
     Represents the configuration for one specific backtest run (a single set of
@@ -220,7 +227,7 @@ class BacktestRunConfig(Partialable):
     venues: Optional[List[BacktestVenueConfig]] = None
     data: Optional[List[BacktestDataConfig]] = None
     strategies: Optional[List[ImportableStrategyConfig]] = None
-    batch_size_bytes: Optional[int] = None  # TODO(cs): Useful for cached batches
+    batch_size_bytes: Optional[int] = None
 
     @property
     def id(self):
