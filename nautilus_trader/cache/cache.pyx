@@ -1215,7 +1215,7 @@ cdef class Cache(CacheFacade):
         self._index_position_strategy[position_id] = strategy_id
 
         # Index: PositionId -> Set[ClientOrderId]
-        cdef set position_orders = self._index_position_orders.get(client_order_id)
+        cdef set position_orders = self._index_position_orders.get(position_id)
         if not position_orders:
             self._index_position_orders[position_id] = {client_order_id}
         else:
@@ -1231,7 +1231,8 @@ cdef class Cache(CacheFacade):
         self._log.debug(
             f"Indexed {repr(position_id)}, "
             f"client_order_id={client_order_id}, "
-            f"strategy_id={strategy_id}).")
+            f"strategy_id={strategy_id}).",
+        )
 
     cpdef void add_position(self, Position position, OMSType oms_type) except *:
         """
@@ -2394,6 +2395,28 @@ cdef class Cache(CacheFacade):
             return [self._orders[client_order_id] for client_order_id in client_order_ids]
         except KeyError as ex:
             self._log.error("Cannot find order object in cached orders " + str(ex))
+
+    cpdef list orders_for_position(self, PositionId position_id):
+        """
+        Return all orders for the given position ID.
+
+        Parameters
+        ----------
+        position_id : PositionId
+            The position ID for the orders.
+
+        Returns
+        -------
+        list[Order]
+
+        """
+        Condition.not_none(position_id, "position_id")
+
+        cdef set client_order_ids = self._index_position_orders.get(position_id)
+        if not client_order_ids:
+            return []
+
+        return [self._orders[client_order_id] for client_order_id in client_order_ids]
 
     cpdef list orders_active(
         self,

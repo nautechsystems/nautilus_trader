@@ -141,6 +141,13 @@ class TestCache:
         # Assert
         assert True  # No exception raised
 
+    def test_orders_for_position_when_no_position_returns_empty_list(self):
+        # Arrange, Act
+        result = self.cache.orders_for_position(PositionId("1"))
+
+        # Assert
+        assert result == []
+
     def test_cache_positions_with_no_positions(self):
         # Arrange, Act
         self.cache.cache_positions()
@@ -362,6 +369,7 @@ class TestCache:
             instrument_id=position.instrument_id, strategy_id=self.strategy.id
         )
         assert self.cache.position_for_order(order.client_order_id) == position
+        assert self.cache.orders_for_position(position.id) == [order]
 
     def test_load_position(self):
         # Arrange
@@ -637,6 +645,7 @@ class TestCache:
             OrderSide.SELL,
             Quantity.from_int(100000),
         )
+        self.cache.add_order(order2, position_id)
 
         order2.apply(TestStubs.event_order_submitted(order2))
         self.cache.update_order(order2)
@@ -646,7 +655,7 @@ class TestCache:
         order2_filled = TestStubs.event_order_filled(
             order2,
             instrument=AUDUSD_SIM,
-            position_id=PositionId("P-1"),
+            position_id=position_id,
             last_px=Price.from_str("1.00001"),
         )
 
@@ -675,6 +684,10 @@ class TestCache:
         assert self.cache.positions_open_count() == 0
         assert self.cache.positions_closed_count() == 1
         assert self.cache.positions_total_count() == 1
+        assert self.cache.position_for_order(order1.client_order_id) == position
+        assert self.cache.position_for_order(order2.client_order_id) == position
+        assert order1 in self.cache.orders_for_position(position.id)
+        assert order2 in self.cache.orders_for_position(position.id)
 
     def test_positions_queries_with_multiple_open_returns_expected_positions(self):
         # Arrange
