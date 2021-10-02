@@ -8,6 +8,8 @@ Released **TBD**
 - Removed `pd.Timestamp` from `TimeEvent`.
 
 ## Enhancements
+- `OrderList` submission and OTO, OCO contingencies now operational.
+- Added `Cache.orders_for_position(...)` method.
 - Added `Cache.position_for_order(...)` method.
 - Added `SimulatedExchange.get_working_bid_orders(...)` method.
 - Added `SimulatedExchange.get_working_ask_orders(...)` method.
@@ -21,6 +23,8 @@ Released **TBD**
 
 ## Fixes
 - Fixed `OrderUpdated` leaves quantity calculation.
+- Fixed contingency order logic at the exchange.
+- Fixed indexing of orders for a position in the cache.
 
 ---
 
