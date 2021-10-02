@@ -98,6 +98,7 @@ cdef class CacheFacade:
     cpdef ClientOrderId client_order_id(self, VenueOrderId venue_order_id)
     cpdef VenueOrderId venue_order_id(self, ClientOrderId client_order_id)
     cpdef list orders(self, Venue venue=*, InstrumentId instrument_id=*, StrategyId strategy_id=*)
+    cpdef list orders_for_position(self, PositionId position_id)
     cpdef list orders_active(self, Venue venue=*, InstrumentId instrument_id=*, StrategyId strategy_id=*)
     cpdef list orders_inflight(self, Venue venue=*, InstrumentId instrument_id=*, StrategyId strategy_id=*)
     cpdef list orders_working(self, Venue venue=*, InstrumentId instrument_id=*, StrategyId strategy_id=*)
