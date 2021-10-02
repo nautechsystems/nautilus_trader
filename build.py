@@ -5,6 +5,7 @@ import os
 import platform
 import shutil
 import sys
+from datetime import datetime
 from pathlib import Path
 from typing import List
 
@@ -158,6 +159,8 @@ if __name__ == "__main__":
     print("Nautilus Builder")
     print("=====================================================================\033[0m")
 
+    start_ts = datetime.utcnow()
+
     # Work around a Cython problem in Python 3.8.x on macOS
     # https://github.com/cython/cython/issues/3262
     if platform.system() == "Darwin":
@@ -191,4 +194,5 @@ if __name__ == "__main__":
     print("")
 
     build({})
+    print(f"Build time: {datetime.utcnow() - start_ts}")
     print("\033[32m" + "Build completed" + "\033[0m")

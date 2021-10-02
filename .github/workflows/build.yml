@@ -96,16 +96,16 @@ jobs:
         run: nox -rs performance_tests
 
       # Store benchmark results (Linux)
-      - name: Store benchmark result (Linux)
-        if: runner.os == 'Linux'
-        uses: rhysd/github-action-benchmark@v1
-        with:
-          name: Benchmark with pytest-benchmark
-          tool: "pytest"
-          output-file-path: output.json
-          github-token: ${{ secrets.GHPAGES_ACCESS }}
-          auto-push: true
-          # Show alert with commit comment on detecting possible performance regression
-          alert-threshold: '200%'
-          comment-always: true
-          fail-on-alert: false
+#      - name: Store benchmark result (Linux)
+#        if: runner.os == 'Linux'
+#        uses: rhysd/github-action-benchmark@v1
+#        with:
+#          name: Benchmark with pytest-benchmark
+#          tool: "pytest"
+#          output-file-path: output.json
+#          github-token: ${{ secrets.GHPAGES_ACCESS }}
+#          auto-push: true
+#          # Show alert with commit comment on detecting possible performance regression
+#          alert-threshold: '200%'
+#          comment-always: true
+#          fail-on-alert: false
