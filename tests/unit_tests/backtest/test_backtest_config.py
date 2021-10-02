@@ -310,8 +310,9 @@ def test_resolve_cls():
 @pytest.mark.parametrize(
     "model",
     [
-        # BacktestVenueConfig("SIM", "ECN", "HEDGING", "MARGIN", "USD", ["1000000 USD"]),
-        BacktestDataConfig(
+        # type ignore due to workaround for kwargs on pydantic data classes
+        # https://github.com/python/mypy/issues/6239
+        BacktestDataConfig(  # type: ignore
             catalog_path="/",
             data_cls_path="nautilus_trader.model.data.tick.QuoteTick",
             catalog_fs_protocol="memory",
