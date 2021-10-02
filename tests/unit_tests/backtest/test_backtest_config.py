@@ -15,7 +15,6 @@
 
 import copy
 import dataclasses
-import json
 import pathlib
 import pickle
 import sys
@@ -26,8 +25,6 @@ import dask
 import pytest
 import pytz
 from dask.base import tokenize
-from pydantic import BaseModel
-from pydantic.json import pydantic_encoder
 
 from nautilus_trader.backtest.config import BacktestDataConfig
 from nautilus_trader.backtest.config import BacktestRunConfig
@@ -209,7 +206,7 @@ def test_venue_config_tokenization(backtest_config: BacktestRunConfig):
     result = tokenize(venue)
 
     # Assert
-    assert result == "929e4f4f526a79fbe27d73fb17762d1d"
+    assert result == "04c48e76f89c4ba393caa3f7dc138b00"
 
 
 def test_data_config_tokenization(backtest_config: BacktestRunConfig):
@@ -220,7 +217,7 @@ def test_data_config_tokenization(backtest_config: BacktestRunConfig):
     result = tokenize(data_config)
 
     # Assert
-    assert result == "d05f46f2c3c44f4a160322191caabb8a"
+    assert result == "9aa767ed2688e65b681fd7bead9c5d3b"
 
 
 def test_engine_config_tokenization(backtest_config: BacktestRunConfig):
@@ -231,7 +228,7 @@ def test_engine_config_tokenization(backtest_config: BacktestRunConfig):
     result = tokenize(engine_config)
 
     # Assert
-    assert result == "4e36e7d25fc8e8e98ea5a7127e9cff57"
+    assert result == "22d84218139004f8b662d2c6d3dccb4a"
 
 
 def test_tokenization_config(backtest_config: BacktestRunConfig):
@@ -239,7 +236,7 @@ def test_tokenization_config(backtest_config: BacktestRunConfig):
     result = tokenize(backtest_config)
 
     # Assert
-    assert result == "4c71026aad804afc3c4abe05a3c2de42"
+    assert result == "d6728a094680796c4bd7fdda475acfeb"
 
 
 def test_backtest_data_config_load(catalog):
@@ -305,22 +302,3 @@ def test_resolve_cls():
         1580504394501000,
     )
     assert config.data_type == QuoteTick
-
-
-@pytest.mark.parametrize(
-    "model",
-    [
-        # BacktestVenueConfig("SIM", "ECN", "HEDGING", "MARGIN", "USD", ["1000000 USD"]),
-        BacktestDataConfig(
-            catalog_path="/",
-            data_cls_path="nautilus_trader.model.data.tick.QuoteTick",
-            catalog_fs_protocol="memory",
-            catalog_fs_storage_options={},
-            instrument_id="AUD/USD.IDEALPRO",
-            start_time=1580398089820000,
-            end_time=1580504394501000,
-        ),
-    ],
-)
-def test_models_to_json(model: BaseModel):
-    print(json.dumps(model, indent=4, default=pydantic_encoder))
