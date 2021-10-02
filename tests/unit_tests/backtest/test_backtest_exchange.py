@@ -2397,8 +2397,8 @@ class TestL2OrderBookExchange:
             instrument_id=USDJPY_SIM.id,
             bid=Price.from_str("110.000"),
             ask=Price.from_str("110.010"),
-            bid_size=Quantity.from_int(1500000),
-            ask_size=Quantity.from_int(1500000),
+            bid_size=Quantity.from_int(1500),
+            ask_size=Quantity.from_int(1500),
             ts_event=0,
             ts_init=0,
         )
