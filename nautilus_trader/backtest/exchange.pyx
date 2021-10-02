@@ -608,7 +608,12 @@ cdef class SimulatedExchange:
                         f"{repr(command.client_order_id)} not found",
                     )
                     continue
-                self._update_order(order, command.quantity, command.price, command.trigger)
+                self._update_order(
+                    order,
+                    command.quantity,
+                    command.price,
+                    command.trigger,
+                )
 
         # Iterate over modules
         cdef SimulationModule module
@@ -649,7 +654,622 @@ cdef class SimulatedExchange:
 
         self._log.info("Reset.")
 
-# --------------------------------------------------------------------------------------------------
+# -- COMMAND HANDLING ------------------------------------------------------------------------------
+
+    cdef void _process_order(self, Order order) except *:
+        Condition.not_in(order.client_order_id, self._order_index, "order.client_order_id", "order_index")
+
+        cdef Order oco_order
+        # Check contingency orders
+        if order.contingency == ContingencyType.OTO:
+            for client_order_id in order.child_order_ids:
+                self._oto_orders[client_order_id] = order.client_order_id
+
+        # Check reduce-only instruction
+        cdef Position position
+        if order.is_reduce_only:
+            position = self.cache.position_for_order(order.client_order_id)
+            if (
+                not position
+                or position.is_closed_c()
+                or (order.is_buy_c() and position.is_long_c())
+                or (order.is_sell_c() and position.is_short_c())
+            ):
+                self._reject_order(
+                    order,
+                    f"REDUCE_ONLY {order.type_string_c()} {order.side_string_c()} order "
+                    f"would have increased position.",
+                )
+                return  # Reduce only
+
+        if order.type == OrderType.MARKET:
+            self._process_market_order(order)
+        elif order.type == OrderType.LIMIT:
+            self._process_limit_order(order)
+        elif order.type == OrderType.STOP_MARKET:
+            self._process_stop_market_order(order)
+        elif order.type == OrderType.STOP_LIMIT:
+            self._process_stop_limit_order(order)
+        else:  # pragma: no cover (design-time error)
+            raise RuntimeError("unsupported order type")
+
+    cdef void _process_market_order(self, MarketOrder order) except *:
+        # Check market exists
+        if order.side == OrderSide.BUY and not self.best_ask_price(order.instrument_id):
+            self._reject_order(order, f"no market for {order.instrument_id}")
+            return  # Cannot accept order
+        elif order.side == OrderSide.SELL and not self.best_bid_price(order.instrument_id):
+            self._reject_order(order, f"no market for {order.instrument_id}")
+            return  # Cannot accept order
+
+        # Immediately fill marketable order
+        self._fill_market_order(order, LiquiditySide.TAKER)
+
+    cdef void _process_limit_order(self, LimitOrder order) except *:
+        if order.is_post_only and self._is_limit_marketable(order.instrument_id, order.side, order.price):
+            self._reject_order(
+                order,
+                f"POST_ONLY LIMIT {order.side_string_c()} order "
+                f"limit px of {order.price} would have been a TAKER: "
+                f"bid={self.best_bid_price(order.instrument_id)}, "
+                f"ask={self.best_ask_price(order.instrument_id)}",
+            )
+            return  # Invalid price
+
+        # Order is valid and accepted
+        self._add_order(order)
+        self._generate_order_accepted(order)
+
+        # Check for immediate fill
+        if self._is_limit_matched(order.instrument_id, order.side, order.price):
+            # Filling as liquidity taker
+            self._fill_limit_order(order, LiquiditySide.TAKER)
+
+    cdef void _process_stop_market_order(self, StopMarketOrder order) except *:
+        if self._is_stop_marketable(order.instrument_id, order.side, order.price):
+            if self.reject_stop_orders:
+                self._reject_order(
+                    order,
+                    f"STOP {order.side_string_c()} order "
+                    f"stop px of {order.price} was in the market: "
+                    f"bid={self.best_bid_price(order.instrument_id)}, "
+                    f"ask={self.best_ask_price(order.instrument_id)}",
+                )
+                return  # Invalid price
+
+        # Order is valid and accepted
+        self._add_order(order)
+        self._generate_order_accepted(order)
+
+    cdef void _process_stop_limit_order(self, StopLimitOrder order) except *:
+        if self._is_stop_marketable(order.instrument_id, order.side, order.trigger):
+            self._reject_order(
+                order,
+                f"STOP_LIMIT {order.side_string_c()} order "
+                f"trigger stop px of {order.trigger} was in the market: "
+                f"bid={self.best_bid_price(order.instrument_id)}, "
+                f"ask={self.best_ask_price(order.instrument_id)}",
+            )
+            return  # Invalid price
+
+        # Order is valid and accepted
+        self._add_order(order)
+        self._generate_order_accepted(order)
+
+    cdef void _update_limit_order(
+        self,
+        LimitOrder order,
+        Quantity qty,
+        Price price,
+    ) except *:
+        if self._is_limit_marketable(order.instrument_id, order.side, price):
+            if order.is_post_only:
+                self._generate_order_modify_rejected(
+                    order.strategy_id,
+                    order.instrument_id,
+                    order.client_order_id,
+                    order.venue_order_id,
+                    f"POST_ONLY LIMIT {order.side_string_c()} order "
+                    f"new limit px of {price} would have been a TAKER: "
+                    f"bid={self.best_bid_price(order.instrument_id)}, "
+                    f"ask={self.best_ask_price(order.instrument_id)}",
+                )
+                return  # Cannot update order
+            else:
+                self._generate_order_updated(order, qty, price, None)
+                self._fill_limit_order(order, LiquiditySide.TAKER)  # Immediate fill as TAKER
+                return  # Filled
+
+        self._generate_order_updated(order, qty, price, None)
+
+    cdef void _update_stop_market_order(
+        self,
+        StopMarketOrder order,
+        Quantity qty,
+        Price price,
+    ) except *:
+        if self._is_stop_marketable(order.instrument_id, order.side, price):
+            self._generate_order_modify_rejected(
+                order.strategy_id,
+                order.instrument_id,
+                order.client_order_id,
+                order.venue_order_id,
+                f"STOP {order.side_string_c()} order "
+                f"new stop px of {price} was in the market: "
+                f"bid={self.best_bid_price(order.instrument_id)}, "
+                f"ask={self.best_ask_price(order.instrument_id)}",
+            )
+            return  # Cannot update order
+
+        self._generate_order_updated(order, qty, price, None)
+
+    cdef void _update_stop_limit_order(
+        self,
+        StopLimitOrder order,
+        Quantity qty,
+        Price price,
+        Price trigger,
+    ) except *:
+        if not order.is_triggered:
+            # Amending stop price
+            if self._is_stop_marketable(order.instrument_id, order.side, price):
+                self._generate_order_modify_rejected(
+                    order.strategy_id,
+                    order.instrument_id,
+                    order.client_order_id,
+                    order.venue_order_id,
+                    f"STOP_LIMIT {order.side_string_c()} order "
+                    f"new trigger stop px of {price} was in the market: "
+                    f"bid={self.best_bid_price(order.instrument_id)}, "
+                    f"ask={self.best_ask_price(order.instrument_id)}",
+                )
+                return  # Cannot update order
+        else:
+            # Amending limit price
+            if self._is_limit_marketable(order.instrument_id, order.side, price):
+                if order.is_post_only:
+                    self._generate_order_modify_rejected(
+                        order.strategy_id,
+                        order.instrument_id,
+                        order.client_order_id,
+                        order.venue_order_id,
+                        f"POST_ONLY LIMIT {order.side_string_c()} order  "
+                        f"new limit px of {price} would have been a TAKER: "
+                        f"bid={self.best_bid_price(order.instrument_id)}, "
+                        f"ask={self.best_ask_price(order.instrument_id)}",
+                    )
+                    return  # Cannot update order
+                else:
+                    self._generate_order_updated(order, qty, price, None)
+                    self._fill_limit_order(order, LiquiditySide.TAKER)  # Immediate fill as TAKER
+                    return  # Filled
+
+        self._generate_order_updated(order, qty, price, trigger or order.trigger)
+
+# -- EVENT HANDLING --------------------------------------------------------------------------------
+
+    cdef void _reject_order(self, Order order, str reason) except *:
+        # Generate event
+        self._generate_order_rejected(order, reason)
+
+        cdef ClientOrderId client_order_id
+        cdef PassiveOrder oco_order
+        if order.contingency == ContingencyType.OCO:
+            for client_order_id in order.contingency_ids:
+                oco_order = self.cache.order(client_order_id)
+                assert oco_order is not None, "OCO order not found"
+                self._reject_order(oco_order, f"Rejected from OCO order {order.client_order_id}")
+
+    cdef void _update_order(self, PassiveOrder order, Quantity qty, Price price, Price trigger) except *:
+        # Generate event
+        self._generate_order_pending_update(order)
+
+        if order.type == OrderType.LIMIT:
+            self._update_limit_order(order, qty, price)
+        elif order.type == OrderType.STOP_MARKET:
+            self._update_stop_market_order(order, qty, price)
+        elif order.type == OrderType.STOP_LIMIT:
+            self._update_stop_limit_order(order, qty, price, trigger)
+        else:  # pragma: no cover (design-time error)
+            raise RuntimeError("invalid order type")
+
+        cdef ClientOrderId client_order_id
+        cdef PassiveOrder oco_order
+        if order.contingency == ContingencyType.OCO:
+            for client_order_id in order.contingency_ids:
+                oco_order = self.cache.order(client_order_id)
+                assert oco_order is not None, "OCO order not found"
+                if oco_order.leaves_qty != order.leaves_qty:
+                    self._update_order(
+                        oco_order,
+                        qty=order.leaves_qty,
+                        price=order.price,
+                        trigger=order.trigger if order.type == OrderType.STOP_LIMIT else None,
+                    )
+
+    cdef void _cancel_order(self, PassiveOrder order) except *:
+        cdef:
+            list orders_bid
+            list orders_ask
+
+        if order.is_buy_c():
+            orders_bid = self._orders_bid.get(order.instrument_id)
+            if not orders_bid or order not in orders_bid:
+                return  # No order to cancel
+            orders_bid.remove(order)  # TODO(cs): Optimize
+        elif order.is_sell_c():
+            orders_ask = self._orders_ask.get(order.instrument_id)
+            if not orders_ask or order not in orders_ask:
+                return  # No order to cancel
+            orders_ask.remove(order)  # TODO(cs): Optimize
+
+        self._generate_order_pending_cancel(order)
+        self._generate_order_canceled(order)
+
+        cdef ClientOrderId client_order_id
+        cdef PassiveOrder oco_order
+        if order.contingency == ContingencyType.OCO:
+            for client_order_id in order.contingency_ids:
+                oco_order = self.cache.order(client_order_id)
+                assert oco_order is not None, "OCO order not found"
+                self._cancel_order(oco_order)
+
+    cdef void _expire_order(self, PassiveOrder order) except *:
+        self._generate_order_expired(order)
+
+        cdef ClientOrderId client_order_id
+        cdef PassiveOrder oco_order
+        if order.contingency == ContingencyType.OCO:
+            for client_order_id in order.contingency_ids:
+                oco_order = self.cache.order(client_order_id)
+                assert oco_order is not None, "OCO order not found"
+                self._cancel_order(oco_order)
+
+# -- ORDER MATCHING ENGINE -------------------------------------------------------------------------
+
+    cdef void _add_order(self, PassiveOrder order) except *:
+        self._order_index[order.client_order_id] = order
+
+        if order.is_buy_c():
+            orders_bid = self._orders_bid.get(order.instrument_id)
+            if orders_bid is None:
+                orders_bid = []
+                self._orders_bid[order.instrument_id] = orders_bid
+            orders_bid.append(order)
+            orders_bid.sort(key=lambda x: x.price, reverse=True)
+        elif order.is_sell_c():
+            orders_ask = self._orders_ask.get(order.instrument_id)
+            if orders_ask is None:
+                orders_ask = []
+                self._orders_ask[order.instrument_id] = orders_ask
+            orders_ask.append(order)
+            orders_ask.sort(key=lambda x: x.price)
+
+    cdef void _delete_order(self, Order order) except *:
+        self._order_index.pop(order.client_order_id, None)
+
+        if order.is_buy_c():
+            orders_bid = self._orders_bid.get(order.instrument_id)
+            if orders_bid is not None:
+                orders_bid.remove(order)
+        elif order.is_sell_c():
+            orders_ask = self._orders_ask.get(order.instrument_id)
+            if orders_ask is not None:
+                orders_ask.remove(order)
+
+    cdef void _iterate_matching_engine(
+        self, InstrumentId instrument_id,
+        int64_t timestamp_ns,
+    ) except *:
+        # Iterate bids
+        cdef list orders_bid = self._orders_bid.get(instrument_id)
+        if orders_bid is not None:
+            self._iterate_side(orders_bid.copy(), timestamp_ns)  # Copy list for safe loop
+
+        # Iterate asks
+        cdef list orders_ask = self._orders_ask.get(instrument_id)
+        if orders_ask is not None:
+            self._iterate_side(orders_ask.copy(), timestamp_ns)  # Copy list for safe loop
+
+    cdef void _iterate_side(self, list orders, int64_t timestamp_ns) except *:
+        cdef PassiveOrder order
+        for order in orders:
+            if not order.is_working_c():
+                continue  # Orders state has changed since the loop started
+            elif order.expire_time and timestamp_ns >= order.expire_time_ns:
+                self._delete_order(order)
+                self._expire_order(order)
+                continue
+            # Check for order match
+            self._match_order(order)
+
+    cdef void _match_order(self, PassiveOrder order) except *:
+        if order.type == OrderType.LIMIT:
+            self._match_limit_order(order)
+        elif order.type == OrderType.STOP_MARKET:
+            self._match_stop_market_order(order)
+        elif order.type == OrderType.STOP_LIMIT:
+            self._match_stop_limit_order(order)
+        else:  # pragma: no cover (design-time error)
+            raise RuntimeError("invalid order type")
+
+    cdef void _match_limit_order(self, LimitOrder order) except *:
+        if self._is_limit_matched(order.instrument_id, order.side, order.price):
+            self._fill_limit_order(order, LiquiditySide.MAKER)
+
+    cdef void _match_stop_market_order(self, StopMarketOrder order) except *:
+        if self._is_stop_triggered(order.instrument_id, order.side, order.price):
+            # Triggered stop places market order
+            self._fill_market_order(order, LiquiditySide.TAKER)
+
+    cdef void _match_stop_limit_order(self, StopLimitOrder order) except *:
+        if order.is_triggered:
+            if self._is_limit_matched(order.instrument_id, order.side, order.price):
+                self._fill_limit_order(order, LiquiditySide.MAKER)
+            return
+
+        if self._is_stop_triggered(order.instrument_id, order.side, order.trigger):
+            self._generate_order_triggered(order)
+            # Check for immediate fill
+            if not self._is_limit_marketable(order.instrument_id, order.side, order.price):
+                return
+
+            if order.is_post_only:  # Would be liquidity taker
+                self._delete_order(order)  # Remove order from working orders
+                self._reject_order(
+                    order,
+                    f"POST_ONLY LIMIT {order.side_string_c()} order "
+                    f"limit px of {order.price} would have been a TAKER: "
+                    f"bid={self.best_bid_price(order.instrument_id)}, "
+                    f"ask={self.best_ask_price(order.instrument_id)}",
+                )
+            else:
+                self._fill_limit_order(order, LiquiditySide.TAKER)  # Fills as TAKER
+
+    cdef bint _is_limit_marketable(self, InstrumentId instrument_id, OrderSide side, Price order_price) except *:
+        if side == OrderSide.BUY:
+            ask = self.best_ask_price(instrument_id)
+            if ask is None:
+                return False  # No market
+            return order_price >= ask  # Match with LIMIT sells
+        else:  # => OrderSide.SELL
+            bid = self.best_bid_price(instrument_id)
+            if bid is None:  # No market
+                return False
+            return order_price <= bid  # Match with LIMIT buys
+
+    cdef bint _is_limit_matched(self, InstrumentId instrument_id, OrderSide side, Price price) except *:
+        if side == OrderSide.BUY:
+            ask = self.best_ask_price(instrument_id)
+            if ask is None:
+                return False  # No market
+            return price > ask or (ask == price and self.fill_model.is_limit_filled())
+        else:  # => OrderSide.SELL
+            bid = self.best_bid_price(instrument_id)
+            if bid is None:
+                return False  # No market
+            return price < bid or (bid == price and self.fill_model.is_limit_filled())
+
+    cdef bint _is_stop_marketable(self, InstrumentId instrument_id, OrderSide side, Price price) except *:
+        if side == OrderSide.BUY:
+            ask = self.best_ask_price(instrument_id)
+            if ask is None:
+                return False  # No market
+            return ask >= price  # Match with LIMIT sells
+        else:  # => OrderSide.SELL
+            bid = self.best_bid_price(instrument_id)
+            if bid is None:
+                return False  # No market
+            return bid <= price  # Match with LIMIT buys
+
+    cdef bint _is_stop_triggered(self, InstrumentId instrument_id, OrderSide side, Price price) except *:
+        if side == OrderSide.BUY:
+            ask = self.best_ask_price(instrument_id)
+            if ask is None:
+                return False  # No market
+            return ask > price or (ask == price and self.fill_model.is_stop_filled())
+        elif side == OrderSide.SELL:
+            bid = self.best_bid_price(instrument_id)
+            if bid is None:
+                return False  # No market
+            return bid < price or (bid == price and self.fill_model.is_stop_filled())
+
+    cdef list _determine_limit_price_and_volume(self, PassiveOrder order):
+        if self.bar_execution:
+            if order.is_buy_c():
+                self._last_bids[order.instrument_id] = order.price
+            elif order.is_sell_c():
+                self._last_asks[order.instrument_id] = order.price
+            return [(order.price, order.leaves_qty)]
+        cdef OrderBook book = self.get_book(order.instrument_id)
+        cdef OrderBookOrder submit_order = OrderBookOrder(price=order.price, size=order.quantity, side=order.side)
+
+        if order.is_buy_c():
+            return book.asks.simulate_order_fills(order=submit_order, depth_type=DepthType.VOLUME)
+        elif order.is_sell_c():
+            return book.bids.simulate_order_fills(order=submit_order, depth_type=DepthType.VOLUME)
+
+    cdef list _determine_market_price_and_volume(self, Order order):
+        cdef Price price
+        if self.bar_execution:
+            if order.type == OrderType.MARKET:
+                if order.is_buy_c():
+                    price = self._last_asks.get(order.instrument_id)
+                    if price is not None:
+                        return [(price, order.leaves_qty)]
+                elif order.is_sell_c():
+                    price = self._last_bids.get(order.instrument_id)
+                    if price is not None:
+                        return [(price, order.leaves_qty)]
+            else:
+                if order.is_buy_c():
+                    self._last_asks[order.instrument_id] = order.price
+                elif order.is_sell_c():
+                    self._last_bids[order.instrument_id] = order.price
+                return [(order.price, order.leaves_qty)]
+        price = Price.from_int_c(INT_MAX if order.side == OrderSide.BUY else INT_MIN)
+        cdef OrderBookOrder submit_order = OrderBookOrder(price=price, size=order.quantity, side=order.side)
+        cdef OrderBook book = self.get_book(order.instrument_id)
+        if order.is_buy_c():
+            return book.asks.simulate_order_fills(order=submit_order)
+        elif order.is_sell_c():
+            return book.bids.simulate_order_fills(order=submit_order)
+
+    cdef void _fill_limit_order(self, PassiveOrder order, LiquiditySide liquidity_side) except *:
+        cdef PositionId position_id = self._get_position_id(order)
+        cdef Position position = None
+        if order.is_reduce_only and position_id is not None:
+            position = self.cache.position(position_id)
+            if position is None:
+                self._log.warning(
+                    f"Canceling REDUCE_ONLY {order.type_string_c()} "
+                    f"as would increase position.",
+                )
+                self._cancel_order(order)
+                return  # Order canceled
+
+        self._apply_fills(
+            order=order,
+            liquidity_side=liquidity_side,
+            fills=self._determine_limit_price_and_volume(order),
+            position_id=position_id,
+            position=position,
+        )
+
+    cdef void _fill_market_order(self, Order order, LiquiditySide liquidity_side) except *:
+        cdef PositionId position_id = self._get_position_id(order)
+        cdef Position position = None
+        if order.is_reduce_only and position_id is not None:
+            position = self.cache.position(position_id)
+            if position is None:
+                self._log.warning(
+                    f"Canceling REDUCE_ONLY {order.type_string_c()} "
+                    f"as would increase position.",
+                )
+                self._cancel_order(order)
+                return  # Order canceled
+
+        self._apply_fills(
+            order=order,
+            liquidity_side=liquidity_side,
+            fills=self._determine_market_price_and_volume(order),
+            position_id=position_id,
+            position=position,
+        )
+
+    cdef void _apply_fills(
+        self,
+        Order order,
+        LiquiditySide liquidity_side,
+        list fills,
+        PositionId position_id,
+        Position position,
+    ) except *:
+        if not fills:
+            return  # No fills
+
+        cdef Instrument instrument = self.instruments[order.instrument_id]
+
+        cdef Price fill_px
+        cdef Quantity fill_qty
+        for fill_px, fill_qty in fills:
+            if order.is_reduce_only and order.leaves_qty == 0:
+                return  # Done early
+            if order.type == OrderType.STOP_MARKET:
+                fill_px = order.price  # TODO: Temporary strategy for market moving through price
+            if self.book_type == BookType.L1_TBBO and self.fill_model.is_slipped():
+                if order.side == OrderSide.BUY:
+                    fill_px = Price(fill_px + instrument.price_increment, instrument.price_precision)
+                else:  # => OrderSide.SELL
+                    fill_px = Price(fill_px - instrument.price_increment, instrument.price_precision)
+            if order.is_reduce_only and fill_qty > position.quantity:
+                # Adjust fill to honor reduce only execution
+                org_qty: Decimal = fill_qty.as_decimal()
+                adj_qty: Decimal = fill_qty - (fill_qty - position.quantity)
+                fill_qty = Quantity(adj_qty, fill_qty.precision)
+                updated_qty = order.quantity.as_decimal() - (org_qty - adj_qty)
+                if updated_qty > 0:
+                    self._generate_order_updated(
+                        order=order,
+                        qty=Quantity(updated_qty, fill_qty.precision),
+                        price=None,
+                        trigger=None,
+                    )
+            if fill_qty <= 0:
+                return  # Done
+            self._fill_order(
+                instrument=instrument,
+                order=order,
+                venue_position_id=position_id,
+                last_qty=fill_qty,
+                last_px=fill_px,
+                liquidity_side=liquidity_side,
+            )
+
+        if (
+            not self.bar_execution
+            and self.book_type == BookType.L1_TBBO
+            and order.is_working_c()
+            and (order.type == OrderType.MARKET or order.type == OrderType.STOP_MARKET)
+        ):
+            fill_px = fills[-1][0]
+            if order.side == OrderSide.BUY:
+                fill_px = Price(fill_px + instrument.price_increment, instrument.price_precision)
+            else:  # => OrderSide.SELL
+                fill_px = Price(fill_px - instrument.price_increment, instrument.price_precision)
+            self._fill_order(
+                instrument=instrument,
+                order=order,
+                venue_position_id=position_id,
+                last_qty=order.leaves_qty,
+                last_px=fill_px,
+                liquidity_side=liquidity_side,
+            )
+
+    cdef void _fill_order(
+        self,
+        Instrument instrument,
+        Order order,
+        PositionId venue_position_id,
+        Quantity last_qty,
+        Price last_px,
+        LiquiditySide liquidity_side,
+    ) except *:
+        # Calculate commission
+        cdef Money commission = self.exec_client.get_account().calculate_commission(
+            instrument=instrument,
+            last_qty=order.quantity,
+            last_px=last_px,
+            liquidity_side=liquidity_side,
+        )
+
+        self._generate_order_filled(
+            order=order,
+            venue_position_id=venue_position_id,
+            last_qty=last_qty,
+            last_px=last_px,
+            quote_currency=instrument.quote_currency,
+            commission=commission,
+            liquidity_side=liquidity_side,
+        )
+
+        if order.is_passive_c() and order.is_completed_c():
+            self._delete_order(order)
+
+        cdef PassiveOrder child_order
+        if order.contingency == ContingencyType.OTO:
+            for client_order_id in order.child_order_ids:
+                child_order = self.cache.order(client_order_id)
+                assert child_order is not None, "OTO order not found"
+                if child_order.position_id is None:
+                    self.cache.add_position_id(order.position_id, self.id, client_order_id, child_order.strategy_id)
+        elif order.contingency == ContingencyType.OCO:
+            for client_order_id in order.contingency_ids:
+                oco_order = self.cache.order(client_order_id)
+                assert oco_order is not None, "OCO order not found"
+                self._cancel_order(oco_order)
+
+# -- IDENTIFIER GENERATORS -------------------------------------------------------------------------
 
     cdef PositionId _get_position_id(self, Order order, bint generate=True):
         cdef PositionId position_id
@@ -688,52 +1308,7 @@ cdef class SimulatedExchange:
         self._executions_count += 1
         return ExecutionId(f"{self._executions_count}")
 
-# -- EVENT HANDLING --------------------------------------------------------------------------------
-
-    cdef void _reject_order(self, Order order, str reason) except *:
-        # Generate event
-        self._generate_order_rejected(order, reason)
-
-    cdef void _update_order(self, PassiveOrder order, Quantity qty, Price price, Price trigger) except *:
-        # Generate event
-        self._generate_order_pending_update(order)
-
-        if order.type == OrderType.LIMIT:
-            self._update_limit_order(order, qty, price)
-        elif order.type == OrderType.STOP_MARKET:
-            self._update_stop_market_order(order, qty, price)
-        elif order.type == OrderType.STOP_LIMIT:
-            self._update_stop_limit_order(order, qty, price, trigger)
-        else:  # pragma: no cover (design-time error)
-            raise RuntimeError("invalid order type")
-
-    cdef void _cancel_order(self, PassiveOrder order) except *:
-        cdef:
-            list orders_bid
-            list orders_ask
-
-        if order.is_buy_c():
-            orders_bid = self._orders_bid.get(order.instrument_id)
-            if not orders_bid or order not in orders_bid:
-                return  # No order to cancel
-            orders_bid.remove(order)  # TODO(cs): Optimize
-        elif order.is_sell_c():
-            orders_ask = self._orders_ask.get(order.instrument_id)
-            if not orders_ask or order not in orders_ask:
-                return  # No order to cancel
-            orders_ask.remove(order)  # TODO(cs): Optimize
-
-        self._generate_order_pending_cancel(order)
-        self._generate_order_canceled(order)
-
-        if order.contingency == ContingencyType.OCO:
-            for client_order_id in order.contingency_ids:
-                oco_order = self.cache.order(client_order_id)
-                assert oco_order is not None, "OCO contingency not found"
-                self._cancel_order(oco_order)
-
-    cdef void _expire_order(self, PassiveOrder order) except *:
-        self._generate_order_expired(order)
+# -- EVENT GENERATORS ------------------------------------------------------------------------------
 
     cdef void _generate_fresh_account_state(self) except *:
         cdef list balances = [
@@ -853,17 +1428,22 @@ cdef class SimulatedExchange:
         Price price,
         Price trigger,
     ) except *:
-        # Generate event (venue_order_id needs generating for the reduce_only update case)
+        # Generate event
+        cdef VenueOrderId venue_order_id = order.venue_order_id
+        cdef bint venue_order_id_modified = False
+        if venue_order_id is None:
+            venue_order_id = self._generate_venue_order_id(order.instrument_id)
+            venue_order_id_modified = True
         self.exec_client.generate_order_updated(
             strategy_id=order.strategy_id,
             instrument_id=order.instrument_id,
             client_order_id=order.client_order_id,
-            venue_order_id=order.venue_order_id or self._generate_venue_order_id(order.instrument_id),
+            venue_order_id=venue_order_id,
             quantity=qty,
             price=price,
             trigger=trigger,
             ts_event=self._clock.timestamp_ns(),
-            venue_order_id_modified=order.venue_order_id is None,
+            venue_order_id_modified=venue_order_id_modified,
         )
 
     cdef void _generate_order_canceled(self, Order order) except *:
@@ -896,582 +1476,33 @@ cdef class SimulatedExchange:
             ts_event=order.expire_time_ns,
         )
 
-    cdef void _process_order(self, Order order) except *:
-        Condition.not_in(order.client_order_id, self._order_index, "order.client_order_id", "order_index")
-
-        cdef Order oco_order
-        # Check contingency orders
-        if order.contingency == ContingencyType.OTO:
-            for client_order_id in order.child_order_ids:
-                self._oto_orders[client_order_id] = order.client_order_id
-        elif order.contingency == ContingencyType.OCO:
-            for client_order_id in order.contingency_ids:
-                oco_order = self.cache.order(client_order_id)
-                assert order.is_passive_c(), "OCO contingency was not a passive order"
-                assert oco_order is not None, "OCO contingency other not found"
-                if oco_order.is_completed_c():
-                    self._cancel_order(order)
-                    continue  # Order completed
-                if order.quantity != oco_order.leaves_qty:
-                    self._update_order(
-                        order,
-                        qty=oco_order.leaves_qty,
-                        price=order.price,
-                        trigger=order.trigger if order.type == OrderType.STOP_LIMIT else None,
-                    )
-
-        cdef Order parent
-        if order.parent_order_id is not None:
-            if order.client_order_id in self._oto_orders:
-                parent = self.cache.order(order.parent_order_id)
-                assert parent is not None, "OTO parent not found"
-                if not parent.is_working_c() and not parent.is_completed_c():
-                    return  # Pending trigger
-
-        cdef PositionId position_id
-        if order.position_id is not None:
-            position_id = self.cache.position_id(order.client_order_id)
-            if position_id is not None and position_id != order.position_id:
-                self._reject_order(
-                    order,
-                    "SUBMITTED POSITION_ID does not match exchange position ID.",
-                )
-                return
-
-        # Check reduce-only instruction
-        cdef Position position
-        if order.is_reduce_only:
-            position = self.cache.position_for_order(order.client_order_id)
-            if (
-                not position
-                or position.is_closed_c()
-                or (order.is_buy_c() and position.is_long_c())
-                or (order.is_sell_c() and position.is_short_c())
-            ):
-                self._reject_order(
-                    order,
-                    f"REDUCE_ONLY {order.type_string_c()} {order.side_string_c()} order "
-                    f"would have increased position.",
-                )
-                return  # Reduce only
-
-        if order.type == OrderType.MARKET:
-            self._process_market_order(order)
-        elif order.type == OrderType.LIMIT:
-            self._process_limit_order(order)
-        elif order.type == OrderType.STOP_MARKET:
-            self._process_stop_market_order(order)
-        elif order.type == OrderType.STOP_LIMIT:
-            self._process_stop_limit_order(order)
-        else:  # pragma: no cover (design-time error)
-            raise RuntimeError("invalid order type")
-
-    cdef void _process_market_order(self, MarketOrder order) except *:
-        # Check market exists
-        if order.side == OrderSide.BUY and not self.best_ask_price(order.instrument_id):
-            self._reject_order(order, f"no market for {order.instrument_id}")
-            return  # Cannot accept order
-        elif order.side == OrderSide.SELL and not self.best_bid_price(order.instrument_id):
-            self._reject_order(order, f"no market for {order.instrument_id}")
-            return  # Cannot accept order
-
-        # Immediately fill marketable order
-        self._aggressively_fill_order(order, LiquiditySide.TAKER)
-
-    cdef void _process_limit_order(self, LimitOrder order) except *:
-        if order.is_post_only and self._is_limit_marketable(order.instrument_id, order.side, order.price):
-            self._reject_order(
-                order,
-                f"POST_ONLY LIMIT {order.side_string_c()} order "
-                f"limit px of {order.price} would have been a TAKER: "
-                f"bid={self.best_bid_price(order.instrument_id)}, "
-                f"ask={self.best_ask_price(order.instrument_id)}",
-            )
-            return  # Invalid price
-
-        # Order is valid and accepted
-        self._add_order(order)
-        self._generate_order_accepted(order)
-
-        # Check for immediate fill
-        if self._is_limit_matched(order.instrument_id, order.side, order.price):
-            # Filling as liquidity taker
-            self._passively_fill_order(order, LiquiditySide.TAKER)
-
-    cdef void _process_stop_market_order(self, StopMarketOrder order) except *:
-        if self._is_stop_marketable(order.instrument_id, order.side, order.price):
-            if self.reject_stop_orders:
-                self._reject_order(
-                    order,
-                    f"STOP {order.side_string_c()} order "
-                    f"stop px of {order.price} was in the market: "
-                    f"bid={self.best_bid_price(order.instrument_id)}, "
-                    f"ask={self.best_ask_price(order.instrument_id)}",
-                )
-                return  # Invalid price
-
-        # Order is valid and accepted
-        self._add_order(order)
-        self._generate_order_accepted(order)
-
-    cdef void _process_stop_limit_order(self, StopLimitOrder order) except *:
-        if self._is_stop_marketable(order.instrument_id, order.side, order.trigger):
-            self._reject_order(
-                order,
-                f"STOP_LIMIT {order.side_string_c()} order "
-                f"trigger stop px of {order.trigger} was in the market: "
-                f"bid={self.best_bid_price(order.instrument_id)}, "
-                f"ask={self.best_ask_price(order.instrument_id)}",
-            )
-            return  # Invalid price
-
-        # Order is valid and accepted
-        self._add_order(order)
-        self._generate_order_accepted(order)
-
-    cdef void _update_limit_order(
-        self,
-        LimitOrder order,
-        Quantity qty,
-        Price price,
-    ) except *:
-        if self._is_limit_marketable(order.instrument_id, order.side, price):
-            if order.is_post_only:
-                self._generate_order_modify_rejected(
-                    order.strategy_id,
-                    order.instrument_id,
-                    order.client_order_id,
-                    order.venue_order_id,
-                    f"POST_ONLY LIMIT {order.side_string_c()} order "
-                    f"new limit px of {price} would have been a TAKER: "
-                    f"bid={self.best_bid_price(order.instrument_id)}, "
-                    f"ask={self.best_ask_price(order.instrument_id)}",
-                )
-                return  # Cannot update order
-            else:
-                self._generate_order_updated(order, qty, price, None)
-                self._passively_fill_order(order, LiquiditySide.TAKER)  # Immediate fill as TAKER
-                return  # Filled
-
-        self._generate_order_updated(order, qty, price, None)
-
-    cdef void _update_stop_market_order(
-        self,
-        StopMarketOrder order,
-        Quantity qty,
-        Price price,
-    ) except *:
-        if self._is_stop_marketable(order.instrument_id, order.side, price):
-            self._generate_order_modify_rejected(
-                order.strategy_id,
-                order.instrument_id,
-                order.client_order_id,
-                order.venue_order_id,
-                f"STOP {order.side_string_c()} order "
-                f"new stop px of {price} was in the market: "
-                f"bid={self.best_bid_price(order.instrument_id)}, "
-                f"ask={self.best_ask_price(order.instrument_id)}",
-            )
-            return  # Cannot update order
-
-        self._generate_order_updated(order, qty, price, None)
-
-    cdef void _update_stop_limit_order(
-        self,
-        StopLimitOrder order,
-        Quantity qty,
-        Price price,
-        Price trigger,
-    ) except *:
-        if not order.is_triggered:
-            # Amending stop price
-            if self._is_stop_marketable(order.instrument_id, order.side, price):
-                self._generate_order_modify_rejected(
-                    order.strategy_id,
-                    order.instrument_id,
-                    order.client_order_id,
-                    order.venue_order_id,
-                    f"STOP_LIMIT {order.side_string_c()} order "
-                    f"new trigger stop px of {price} was in the market: "
-                    f"bid={self.best_bid_price(order.instrument_id)}, "
-                    f"ask={self.best_ask_price(order.instrument_id)}",
-                )
-                return  # Cannot update order
-        else:
-            # Amending limit price
-            if self._is_limit_marketable(order.instrument_id, order.side, price):
-                if order.is_post_only:
-                    self._generate_order_modify_rejected(
-                        order.strategy_id,
-                        order.instrument_id,
-                        order.client_order_id,
-                        order.venue_order_id,
-                        f"POST_ONLY LIMIT {order.side_string_c()} order  "
-                        f"new limit px of {price} would have been a TAKER: "
-                        f"bid={self.best_bid_price(order.instrument_id)}, "
-                        f"ask={self.best_ask_price(order.instrument_id)}",
-                    )
-                    return  # Cannot update order
-                else:
-                    self._generate_order_updated(order, qty, price, None)
-                    self._passively_fill_order(order, LiquiditySide.TAKER)  # Immediate fill as TAKER
-                    return  # Filled
-
-        self._generate_order_updated(order, qty, price, trigger or order.trigger)
-
-# -- ORDER MATCHING ENGINE -------------------------------------------------------------------------
-
-    cdef void _add_order(self, PassiveOrder order) except *:
-        self._order_index[order.client_order_id] = order
-
-        if order.is_buy_c():
-            orders_bid = self._orders_bid.get(order.instrument_id)
-            if orders_bid is None:
-                orders_bid = []
-                self._orders_bid[order.instrument_id] = orders_bid
-            orders_bid.append(order)
-            orders_bid.sort(key=lambda x: x.price, reverse=True)
-        elif order.is_sell_c():
-            orders_ask = self._orders_ask.get(order.instrument_id)
-            if orders_ask is None:
-                orders_ask = []
-                self._orders_ask[order.instrument_id] = orders_ask
-            orders_ask.append(order)
-            orders_ask.sort(key=lambda x: x.price)
-
-    cdef void _delete_order(self, Order order) except *:
-        self._order_index.pop(order.client_order_id, None)
-
-        if order.is_buy_c():
-            orders_bid = self._orders_bid.get(order.instrument_id)
-            if orders_bid is not None:
-                orders_bid.remove(order)
-        elif order.is_sell_c():
-            orders_ask = self._orders_ask.get(order.instrument_id)
-            if orders_ask is not None:
-                orders_ask.remove(order)
-
-    cdef void _iterate_matching_engine(
-        self, InstrumentId instrument_id,
-        int64_t timestamp_ns,
-    ) except *:
-        # Iterate bids
-        cdef list orders_bid = self._orders_bid.get(instrument_id)
-        if orders_bid is not None:
-            self._iterate_side(orders_bid.copy(), timestamp_ns)  # Copy list for safe loop
-
-        # Iterate asks
-        cdef list orders_ask = self._orders_ask.get(instrument_id)
-        if orders_ask is not None:
-            self._iterate_side(orders_ask.copy(), timestamp_ns)  # Copy list for safe loop
-
-    cdef void _iterate_side(self, list orders, int64_t timestamp_ns) except *:
-        cdef PassiveOrder order
-        for order in orders:
-            if not order.is_working_c():
-                continue  # Orders state has changed since the loop started
-            elif order.expire_time and timestamp_ns >= order.expire_time_ns:
-                self._delete_order(order)
-                self._expire_order(order)
-                continue
-            # Check for order match
-            self._match_order(order)
-
-    cdef void _match_order(self, PassiveOrder order) except *:
-        if order.type == OrderType.LIMIT:
-            self._match_limit_order(order)
-        elif order.type == OrderType.STOP_MARKET:
-            self._match_stop_market_order(order)
-        elif order.type == OrderType.STOP_LIMIT:
-            self._match_stop_limit_order(order)
-        else:  # pragma: no cover (design-time error)
-            raise RuntimeError("invalid order type")
-
-    cdef void _match_limit_order(self, LimitOrder order) except *:
-        if self._is_limit_matched(order.instrument_id, order.side, order.price):
-            self._passively_fill_order(order, LiquiditySide.MAKER)
-
-    cdef void _match_stop_market_order(self, StopMarketOrder order) except *:
-        if self._is_stop_triggered(order.instrument_id, order.side, order.price):
-            # Triggered stop places market order
-            self._aggressively_fill_order(order, LiquiditySide.TAKER)
-
-    cdef void _match_stop_limit_order(self, StopLimitOrder order) except *:
-        if order.is_triggered:
-            if self._is_limit_matched(order.instrument_id, order.side, order.price):
-                self._passively_fill_order(order, LiquiditySide.MAKER)
-        else:  # Order not triggered
-            if self._is_stop_triggered(order.instrument_id, order.side, order.trigger):
-                self._generate_order_triggered(order)
-
-            # Check for immediate fill
-            if not self._is_limit_marketable(order.instrument_id, order.side, order.price):
-                return
-
-            if order.is_post_only:  # Would be liquidity taker
-                self._delete_order(order)  # Remove order from working orders
-                self._reject_order(
-                    order,
-                    f"POST_ONLY LIMIT {order.side_string_c()} order "
-                    f"limit px of {order.price} would have been a TAKER: "
-                    f"bid={self.best_bid_price(order.instrument_id)}, "
-                    f"ask={self.best_ask_price(order.instrument_id)}",
-                )
-            else:
-                self._passively_fill_order(order, LiquiditySide.TAKER)  # Fills as TAKER
-
-    cdef bint _is_limit_marketable(self, InstrumentId instrument_id, OrderSide side, Price order_price) except *:
-        if side == OrderSide.BUY:
-            ask = self.best_ask_price(instrument_id)
-            if ask is None:
-                return False  # No market
-            return order_price >= ask  # Match with LIMIT sells
-        else:  # => OrderSide.SELL
-            bid = self.best_bid_price(instrument_id)
-            if bid is None:  # No market
-                return False
-            return order_price <= bid  # Match with LIMIT buys
-
-    cdef bint _is_limit_matched(self, InstrumentId instrument_id, OrderSide side, Price price) except *:
-        if side == OrderSide.BUY:
-            ask = self.best_ask_price(instrument_id)
-            if ask is None:
-                return False  # No market
-            return price > ask or (ask == price and self.fill_model.is_limit_filled())
-        else:  # => OrderSide.SELL
-            bid = self.best_bid_price(instrument_id)
-            if bid is None:
-                return False  # No market
-            return price < bid or (bid == price and self.fill_model.is_limit_filled())
-
-    cdef bint _is_stop_marketable(self, InstrumentId instrument_id, OrderSide side, Price price) except *:
-        if side == OrderSide.BUY:
-            ask = self.best_ask_price(instrument_id)
-            if ask is None:
-                return False  # No market
-            return ask >= price  # Match with LIMIT sells
-        else:  # => OrderSide.SELL
-            bid = self.best_bid_price(instrument_id)
-            if bid is None:
-                return False  # No market
-            return bid <= price  # Match with LIMIT buys
-
-    cdef bint _is_stop_triggered(self, InstrumentId instrument_id, OrderSide side, Price price) except *:
-        if side == OrderSide.BUY:
-            ask = self.best_ask_price(instrument_id)
-            if ask is None:
-                return False  # No market
-            return ask > price or (ask == price and self.fill_model.is_stop_filled())
-        elif side == OrderSide.SELL:
-            bid = self.best_bid_price(instrument_id)
-            if bid is None:
-                return False  # No market
-            return bid < price or (bid == price and self.fill_model.is_stop_filled())
-
-    cdef list _determine_limit_price_and_volume(self, PassiveOrder order):
-        if self.bar_execution:
-            if order.is_buy_c():
-                self._last_bids[order.instrument_id] = order.price
-            elif order.is_sell_c():
-                self._last_asks[order.instrument_id] = order.price
-            return [(order.price, order.leaves_qty)]
-        cdef OrderBook book = self.get_book(order.instrument_id)
-        cdef OrderBookOrder submit_order = OrderBookOrder(price=order.price, size=order.quantity, side=order.side)
-
-        if order.is_buy_c():
-            return book.asks.simulate_order_fills(order=submit_order, depth_type=DepthType.VOLUME)
-        elif order.is_sell_c():
-            return book.bids.simulate_order_fills(order=submit_order, depth_type=DepthType.VOLUME)
-
-    cdef list _determine_market_price_and_volume(self, Order order):
-        cdef Price price
-        if self.bar_execution:
-            if order.type == OrderType.MARKET:
-                if order.is_buy_c():
-                    price = self._last_asks.get(order.instrument_id)
-                    if price is not None:
-                        return [(price, order.leaves_qty)]
-                elif order.is_sell_c():
-                    price = self._last_bids.get(order.instrument_id)
-                    if price is not None:
-                        return [(price, order.leaves_qty)]
-            else:
-                if order.is_buy_c():
-                    self._last_asks[order.instrument_id] = order.price
-                elif order.is_sell_c():
-                    self._last_bids[order.instrument_id] = order.price
-                return [(order.price, order.leaves_qty)]
-        price = Price.from_int_c(INT_MAX if order.side == OrderSide.BUY else INT_MIN)
-        cdef OrderBookOrder submit_order = OrderBookOrder(price=price, size=order.quantity, side=order.side)
-        cdef OrderBook book = self.get_book(order.instrument_id)
-        if order.is_buy_c():
-            return book.asks.simulate_order_fills(order=submit_order)
-        elif order.is_sell_c():
-            return book.bids.simulate_order_fills(order=submit_order)
-
-# --------------------------------------------------------------------------------------------------
-
-    cdef void _passively_fill_order(self, PassiveOrder order, LiquiditySide liquidity_side) except *:
-        cdef PositionId position_id = self._get_position_id(order)
-        cdef Position position = None
-        if order.is_reduce_only and position_id is not None:
-            position = self.cache.position(position_id)
-            if position is None:
-                self._log.warning(
-                    f"Canceling REDUCE_ONLY {order.type_string_c()} "
-                    f"as would increase position.",
-                )
-                self._cancel_order(order)
-                return  # Order canceled
-
-        cdef list fills = self._determine_limit_price_and_volume(order)
-        if not fills:
-            return  # No fills
-
-        cdef Price fill_px
-        cdef Quantity fill_qty
-        for fill_px, fill_qty in fills:
-            if order.is_reduce_only and order.leaves_qty == 0:
-                return  # Done early
-            if order.is_reduce_only and fill_qty > position.quantity:
-                # Adjust fill to honor reduce only execution
-                org_qty: Decimal = fill_qty.as_decimal()
-                adj_qty: Decimal = fill_qty - (fill_qty - position.quantity)
-                fill_qty = Quantity(adj_qty, fill_qty.precision)
-                updated_qty = order.quantity.as_decimal() - (org_qty - adj_qty)
-                if updated_qty > 0:
-                    self._generate_order_updated(
-                        order=order,
-                        qty=Quantity(updated_qty, fill_qty.precision),  # noqa
-                        price=None,
-                        trigger=None,
-                    )
-            if fill_qty <= 0:
-                return  # Done
-            self._fill_order(
-                order=order,
-                last_qty=fill_qty,
-                last_px=fill_px,
-                liquidity_side=liquidity_side,
-                venue_position_id=position_id,
-            )
-
-    cdef void _aggressively_fill_order(self, Order order, LiquiditySide liquidity_side) except *:
-        cdef PositionId position_id = self._get_position_id(order)
-        cdef Position position = None
-        if order.is_reduce_only and position_id is not None:
-            position = self.cache.position(position_id)
-            if position is None:
-                self._log.warning(
-                    f"Canceling REDUCE_ONLY {order.type_string_c()} "
-                    f"as would increase position.",
-                )
-                self._cancel_order(order)
-                return  # Order canceled
-
-        cdef list fills = self._determine_market_price_and_volume(order)
-        if not fills:
-            return  # No fills
-
-        cdef Price fill_px
-        cdef Quantity fill_qty
-        for fill_px, fill_qty in fills:
-            if order.is_reduce_only and order.leaves_qty == 0:
-                return  # Done early
-            if order.type == OrderType.STOP_MARKET:
-                fill_px = order.price  # TODO: Temporary strategy for market moving through price
-            if self.book_type == BookType.L1_TBBO and self.fill_model.is_slipped():
-                instrument = self.instruments[order.instrument_id]  # TODO: Pending refactoring
-                if order.side == OrderSide.BUY:
-                    fill_px = Price(fill_px + instrument.price_increment, instrument.price_precision)
-                else:  # => OrderSide.SELL
-                    fill_px = Price(fill_px - instrument.price_increment, instrument.price_precision)
-            if order.is_reduce_only and fill_qty > position.quantity:
-                # Adjust fill to honor reduce only execution
-                org_qty: Decimal = fill_qty.as_decimal()
-                adj_qty: Decimal = fill_qty - (fill_qty - position.quantity)
-                fill_qty = Quantity(adj_qty, fill_qty.precision)
-                updated_qty = order.quantity.as_decimal() - (org_qty - adj_qty)
-                if updated_qty > 0:
-                    self._generate_order_updated(
-                        order=order,
-                        qty=Quantity(updated_qty, fill_qty.precision),  # noqa
-                        price=None,
-                        trigger=None,
-                    )
-            if fill_qty <= 0:
-                return  # Done
-            self._fill_order(
-                order=order,
-                last_qty=fill_qty,
-                last_px=fill_px,
-                liquidity_side=liquidity_side,
-                venue_position_id=position_id,
-            )
-
-        # TODO: For L1 fill remaining size at next tick price (temporary)
-        if self.book_type == BookType.L1_TBBO and order.is_working_c():
-            fill_px = fills[-1][0]
-            instrument = self.instruments[order.instrument_id]  # TODO: Pending refactoring
-            if order.side == OrderSide.BUY:
-                fill_px = Price(fill_px + instrument.price_increment, instrument.price_precision)
-            else:  # => OrderSide.SELL
-                fill_px = Price(fill_px - instrument.price_increment, instrument.price_precision)
-            self._fill_order(
-                order=order,
-                last_qty=order.leaves_qty,
-                last_px=fill_px,
-                liquidity_side=liquidity_side,
-                venue_position_id=position_id,
-            )
-
-    cdef void _fill_order(
+    cdef void _generate_order_filled(
         self,
         Order order,
+        PositionId venue_position_id,
         Quantity last_qty,
         Price last_px,
-        LiquiditySide liquidity_side,
-        PositionId venue_position_id,
+        Currency quote_currency,
+        Money commission,
+        LiquiditySide liquidity_side
     ) except *:
-        # Calculate commission
-        cdef Instrument instrument = self.instruments[order.instrument_id]
-        cdef Money commission = self.exec_client.get_account().calculate_commission(
-            instrument=instrument,
-            last_qty=order.quantity,
-            last_px=last_px,
-            liquidity_side=liquidity_side,
-        )
-
         # Generate event
+        cdef VenueOrderId venue_order_id = order.venue_order_id
+        if venue_order_id is None:
+            venue_order_id = self._generate_venue_order_id(order.instrument_id)
         self.exec_client.generate_order_filled(
             strategy_id=order.strategy_id,
             instrument_id=order.instrument_id,
             client_order_id=order.client_order_id,
-            venue_order_id=order.venue_order_id or self._generate_venue_order_id(order.instrument_id),
+            venue_order_id=venue_order_id,
             venue_position_id=venue_position_id,
             execution_id=self._generate_execution_id(),
             order_side=order.side,
             order_type=order.type,
             last_qty=last_qty,
             last_px=last_px,
-            quote_currency=instrument.quote_currency,
+            quote_currency=quote_currency,
             commission=commission,
             liquidity_side=liquidity_side,
             ts_event=self._clock.timestamp_ns(),
         )
-
-        if order.is_passive_c() and order.is_completed_c():
-            self._delete_order(order)
-
-        cdef PassiveOrder child_order
-        if order.contingency == ContingencyType.OTO:
-            for client_order_id in order.child_order_ids:
-                child_order = self.cache.order(client_order_id)
-                assert child_order is not None, "OTO child order not found"
-                if child_order.position_id is None:
-                    self.cache.add_position_id(order.position_id, self.id, client_order_id, child_order.strategy_id)
-        elif order.contingency == ContingencyType.OCO:
-            for client_order_id in order.contingency_ids:
-                oco_order = self.cache.order(client_order_id)
-                assert oco_order is not None, "OCO contingency not found"
-                self._cancel_order(oco_order)
