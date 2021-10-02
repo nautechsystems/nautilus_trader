@@ -657,13 +657,30 @@ cdef class SimulatedExchange:
 # -- COMMAND HANDLING ------------------------------------------------------------------------------
 
     cdef void _process_order(self, Order order) except *:
-        Condition.not_in(order.client_order_id, self._order_index, "order.client_order_id", "order_index")
+        if order.client_order_id in self._order_index:
+            return  # Already processed
 
-        cdef Order oco_order
         # Check contingency orders
+        cdef ClientOrderId client_order_id
         if order.contingency == ContingencyType.OTO:
+            assert order.client_order_id is not None
             for client_order_id in order.child_order_ids:
                 self._oto_orders[client_order_id] = order.client_order_id
+
+        cdef Order parent
+        if order.parent_order_id is not None:
+            if order.client_order_id in self._oto_orders:
+                parent = self.cache.order(order.parent_order_id)
+                assert parent is not None, "OTO parent not found"
+                if parent.is_completed_c():
+                    self._cancel_order(order)
+                    return  # Order canceled
+                elif parent.is_working_c():
+                    self._log.info(
+                        f"Pending OTO {order.client_order_id} "
+                        f"triggers from {parent.client_order_id}",
+                    )
+                    return  # Pending trigger
 
         # Check reduce-only instruction
         cdef Position position
@@ -717,8 +734,7 @@ cdef class SimulatedExchange:
             return  # Invalid price
 
         # Order is valid and accepted
-        self._add_order(order)
-        self._generate_order_accepted(order)
+        self._accept_order(order)
 
         # Check for immediate fill
         if self._is_limit_matched(order.instrument_id, order.side, order.price):
@@ -738,8 +754,7 @@ cdef class SimulatedExchange:
                 return  # Invalid price
 
         # Order is valid and accepted
-        self._add_order(order)
-        self._generate_order_accepted(order)
+        self._accept_order(order)
 
     cdef void _process_stop_limit_order(self, StopLimitOrder order) except *:
         if self._is_stop_marketable(order.instrument_id, order.side, order.trigger):
@@ -753,8 +768,7 @@ cdef class SimulatedExchange:
             return  # Invalid price
 
         # Order is valid and accepted
-        self._add_order(order)
-        self._generate_order_accepted(order)
+        self._accept_order(order)
 
     cdef void _update_limit_order(
         self,
@@ -860,19 +874,31 @@ cdef class SimulatedExchange:
                 assert oco_order is not None, "OCO order not found"
                 self._reject_order(oco_order, f"Rejected from OCO order {order.client_order_id}")
 
+    cdef void _accept_order(self, PassiveOrder order) except *:
+        self._add_order(order)
+        self._generate_order_accepted(order)
+
     cdef void _update_order(self, PassiveOrder order, Quantity qty, Price price, Price trigger) except *:
         # Generate event
         self._generate_order_pending_update(order)
+
+        if qty is None:
+            qty = order.quantity
+        if price is None:
+            price = order.price
 
         if order.type == OrderType.LIMIT:
             self._update_limit_order(order, qty, price)
         elif order.type == OrderType.STOP_MARKET:
             self._update_stop_market_order(order, qty, price)
         elif order.type == OrderType.STOP_LIMIT:
+            if trigger is None:
+                trigger = order.trigger
             self._update_stop_limit_order(order, qty, price, trigger)
         else:  # pragma: no cover (design-time error)
             raise RuntimeError("invalid order type")
 
+        # TODO(cs): Refactor below duplication
         cdef ClientOrderId client_order_id
         cdef PassiveOrder oco_order
         if order.contingency == ContingencyType.OCO:
@@ -880,12 +906,14 @@ cdef class SimulatedExchange:
                 oco_order = self.cache.order(client_order_id)
                 assert oco_order is not None, "OCO order not found"
                 if oco_order.leaves_qty != order.leaves_qty:
-                    self._update_order(
-                        oco_order,
-                        qty=order.leaves_qty,
-                        price=order.price,
-                        trigger=order.trigger if order.type == OrderType.STOP_LIMIT else None,
-                    )
+                    if oco_order.type == OrderType.LIMIT:
+                        self._update_limit_order(oco_order, order.leaves_qty, oco_order.price)
+                    elif oco_order.type == OrderType.STOP_MARKET:
+                        self._update_stop_market_order(oco_order, order.leaves_qty, oco_order.price)
+                    elif oco_order.type == OrderType.STOP_LIMIT:
+                        self._update_stop_limit_order(oco_order, order.leaves_qty, oco_order.price, oco_order.trigger)
+                    else:  # pragma: no cover (design-time error)
+                        raise RuntimeError("invalid order type")
 
     cdef void _cancel_order(self, PassiveOrder order) except *:
         cdef:
@@ -1256,18 +1284,42 @@ cdef class SimulatedExchange:
         if order.is_passive_c() and order.is_completed_c():
             self._delete_order(order)
 
+        cdef ClientOrderId client_order_id
         cdef PassiveOrder child_order
         if order.contingency == ContingencyType.OTO:
             for client_order_id in order.child_order_ids:
                 child_order = self.cache.order(client_order_id)
                 assert child_order is not None, "OTO order not found"
                 if child_order.position_id is None:
-                    self.cache.add_position_id(order.position_id, self.id, client_order_id, child_order.strategy_id)
+                    self.cache.add_position_id(
+                        position_id=order.position_id,
+                        venue=self.id,
+                        client_order_id=client_order_id,
+                        strategy_id=child_order.strategy_id,
+                    )
+                    self._log.debug(
+                        f"Indexed {repr(order.position_id)} "
+                        f"for {repr(child_order.client_order_id)}",
+                    )
+                if not child_order.is_working_c():
+                    self._accept_order(child_order)
+
         elif order.contingency == ContingencyType.OCO:
             for client_order_id in order.contingency_ids:
                 oco_order = self.cache.order(client_order_id)
                 assert oco_order is not None, "OCO order not found"
-                self._cancel_order(oco_order)
+                if order.is_completed_c():
+                    self._cancel_order(oco_order)
+                elif order.leaves_qty != oco_order.leaves_qty:
+                    # TODO(cs): Refactor below duplication
+                    if oco_order.type == OrderType.LIMIT:
+                        self._update_limit_order(oco_order, order.leaves_qty, oco_order.price)
+                    elif oco_order.type == OrderType.STOP_MARKET:
+                        self._update_stop_market_order(oco_order, order.leaves_qty, oco_order.price)
+                    elif oco_order.type == OrderType.STOP_LIMIT:
+                        self._update_stop_limit_order(oco_order, order.leaves_qty, oco_order.price, oco_order.trigger)
+                    else:  # pragma: no cover (design-time error)
+                        raise RuntimeError("invalid order type")
 
 # -- IDENTIFIER GENERATORS -------------------------------------------------------------------------
 

@@ -18,7 +18,6 @@ from decimal import Decimal
 from typing import Dict, List, Optional, Union
 
 import pandas as pd
-import pydantic
 import pytz
 
 from cpython.datetime cimport datetime
@@ -525,8 +524,6 @@ cdef class BacktestEngine:
         exec_client = BacktestExecClient(
             exchange=exchange,
             account_id=AccountId(venue.value, "001"),
-            account_type=account_type,
-            base_currency=base_currency,
             msgbus=self._msgbus,
             cache=self._cache,
             clock=self._test_clock,
