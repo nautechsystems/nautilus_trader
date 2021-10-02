@@ -15,6 +15,7 @@
 
 import copy
 import dataclasses
+import json
 import pathlib
 import pickle
 import sys
@@ -25,6 +26,8 @@ import dask
 import pytest
 import pytz
 from dask.base import tokenize
+from pydantic import BaseModel
+from pydantic.json import pydantic_encoder
 
 from nautilus_trader.backtest.config import BacktestDataConfig
 from nautilus_trader.backtest.config import BacktestRunConfig
@@ -302,3 +305,23 @@ def test_resolve_cls():
         1580504394501000,
     )
     assert config.data_type == QuoteTick
+
+
+@pytest.mark.parametrize(
+    "model",
+    [
+        # type ignore due to workaround for kwargs on pydantic data classes
+        # https://github.com/python/mypy/issues/6239
+        BacktestDataConfig(  # type: ignore
+            catalog_path="/",
+            data_cls_path="nautilus_trader.model.data.tick.QuoteTick",
+            catalog_fs_protocol="memory",
+            catalog_fs_storage_options={},
+            instrument_id="AUD/USD.IDEALPRO",
+            start_time=1580398089820000,
+            end_time=1580504394501000,
+        ),
+    ],
+)
+def test_models_to_json(model: BaseModel):
+    print(json.dumps(model, indent=4, default=pydantic_encoder))
