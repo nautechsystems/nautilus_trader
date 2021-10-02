@@ -220,7 +220,7 @@ def test_data_config_tokenization(backtest_config: BacktestRunConfig):
     result = tokenize(data_config)
 
     # Assert
-    assert result == "d05f46f2c3c44f4a160322191caabb8a"
+    assert result == "9aa767ed2688e65b681fd7bead9c5d3b"
 
 
 def test_engine_config_tokenization(backtest_config: BacktestRunConfig):
@@ -231,7 +231,7 @@ def test_engine_config_tokenization(backtest_config: BacktestRunConfig):
     result = tokenize(engine_config)
 
     # Assert
-    assert result == "4e36e7d25fc8e8e98ea5a7127e9cff57"
+    assert result == "22d84218139004f8b662d2c6d3dccb4a"
 
 
 def test_tokenization_config(backtest_config: BacktestRunConfig):
@@ -239,7 +239,7 @@ def test_tokenization_config(backtest_config: BacktestRunConfig):
     result = tokenize(backtest_config)
 
     # Assert
-    assert result == "4c71026aad804afc3c4abe05a3c2de42"
+    assert result == "d6728a094680796c4bd7fdda475acfeb"
 
 
 def test_backtest_data_config_load(catalog):
