@@ -19,12 +19,10 @@ from nautilus_trader.common.clock cimport TestClock
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.execution.client cimport ExecutionClient
-from nautilus_trader.model.c_enums.account_type cimport AccountType
 from nautilus_trader.model.commands.trading cimport CancelOrder
 from nautilus_trader.model.commands.trading cimport ModifyOrder
 from nautilus_trader.model.commands.trading cimport SubmitOrder
 from nautilus_trader.model.commands.trading cimport SubmitOrderList
-from nautilus_trader.model.currency cimport Currency
 from nautilus_trader.model.identifiers cimport AccountId
 from nautilus_trader.model.identifiers cimport ClientId
 from nautilus_trader.model.orders.base cimport Order
@@ -42,8 +40,6 @@ cdef class BacktestExecClient(ExecutionClient):
         self,
         SimulatedExchange exchange not None,
         AccountId account_id not None,
-        AccountType account_type,
-        Currency base_currency,  # Can be None
         MessageBus msgbus not None,
         Cache cache not None,
         TestClock clock not None,
@@ -59,10 +55,6 @@ cdef class BacktestExecClient(ExecutionClient):
             The simulated exchange for the backtest.
         account_id : AccountId
             The account ID for the client.
-        account_type : AccountType
-            The account type for the client.
-        base_currency : Currency, optional
-            The account base currency for the client. Use ``None`` for multi-currency accounts.
         msgbus : MessageBus
             The message bus for the client.
         cache : Cache
@@ -79,8 +71,8 @@ cdef class BacktestExecClient(ExecutionClient):
             client_id=ClientId(exchange.id.value),
             venue_type=exchange.venue_type,
             account_id=account_id,
-            account_type=account_type,
-            base_currency=base_currency,
+            account_type=exchange.account_type,
+            base_currency=exchange.base_currency,
             msgbus=msgbus,
             cache=cache,
             clock=clock,
