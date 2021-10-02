@@ -232,7 +232,7 @@ class TestBacktestEngineData:
         log = "".join(capsys.readouterr())
         assert "Added 2 ETH/USDT.BINANCE OrderBookData elements." in log
 
-    def test_add_order_book_operations_adds_to_engine(self, capsys):
+    def test_add_order_book_deltas_adds_to_engine(self, capsys):
         # Arrange
         engine = BacktestEngine()
         engine.add_instrument(AUDUSD_SIM)
