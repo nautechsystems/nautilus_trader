@@ -209,7 +209,7 @@ def test_venue_config_tokenization(backtest_config: BacktestRunConfig):
     result = tokenize(venue)
 
     # Assert
-    assert result == "929e4f4f526a79fbe27d73fb17762d1d"
+    assert result == "04c48e76f89c4ba393caa3f7dc138b00"
 
 
 def test_data_config_tokenization(backtest_config: BacktestRunConfig):
