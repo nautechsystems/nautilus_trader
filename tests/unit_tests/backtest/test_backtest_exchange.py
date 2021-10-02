@@ -132,8 +132,6 @@ class TestSimulatedExchange:
         self.exec_client = BacktestExecClient(
             exchange=self.exchange,
             account_id=self.account_id,
-            account_type=AccountType.MARGIN,
-            base_currency=USD,
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
@@ -1762,8 +1760,6 @@ class TestBitmexExchange:
         self.exec_client = BacktestExecClient(
             exchange=self.exchange,
             account_id=self.account_id,
-            account_type=AccountType.MARGIN,
-            base_currency=BTC,
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,

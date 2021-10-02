@@ -145,6 +145,7 @@ cdef class SimulatedExchange:
 # -- EVENT HANDLING --------------------------------------------------------------------------------
 
     cdef void _reject_order(self, Order order, str reason) except *
+    cdef void _accept_order(self, PassiveOrder order) except *
     cdef void _update_order(self, PassiveOrder order, Quantity qty, Price price, Price trigger) except *
     cdef void _cancel_order(self, PassiveOrder order) except *
     cdef void _expire_order(self, PassiveOrder order) except *
