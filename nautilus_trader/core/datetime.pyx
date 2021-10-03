@@ -148,7 +148,7 @@ cpdef int64_t nanos_to_micros(int64_t nanos) except *:
 
 cpdef unix_nanos_to_dt(int64_t nanos):
     """
-    Return the datetime in UTC from the given UNIX time (nanoseconds).
+    Return the datetime (UTC) from the given UNIX time (nanoseconds).
 
     Parameters
     ----------
@@ -165,7 +165,7 @@ cpdef unix_nanos_to_dt(int64_t nanos):
 
 cpdef dt_to_unix_nanos(dt: pd.Timestamp):
     """
-    Return the UNIX time (nanoseconds) from the given datetime.
+    Return the UNIX time (nanoseconds) from the given datetime (UTC).
 
     Parameters
     ----------
@@ -185,14 +185,14 @@ cpdef dt_to_unix_nanos(dt: pd.Timestamp):
     Condition.not_none(dt, "dt")
 
     if not isinstance(dt, pd.Timestamp):
-        dt = pd.Timestamp(dt)
+        dt = pd.Timestamp(dt, utc=True)
 
     return int(dt.to_datetime64())
 
 
 cpdef maybe_unix_nanos_to_dt(nanos):
     """
-    Return the datetime in UTC from the given UNIX time (nanoseconds), or ``None``.
+    Return the datetime (UTC) from the given UNIX time (nanoseconds), or ``None``.
 
     If nanos is ``None``, then will return None.
 
@@ -237,7 +237,7 @@ cpdef maybe_dt_to_unix_nanos(dt: pd.Timestamp):
         return None
 
     if not isinstance(dt, pd.Timestamp):
-        dt = pd.Timestamp(dt)
+        dt = pd.Timestamp(dt, utc=True)
 
     return int(dt.to_datetime64())
 
