@@ -449,7 +449,7 @@ class TestPersistenceCore:
         ]
         assert new_partitions == expected
 
-    @pytest.mark.skip(reason="WIP")
+    @pytest.mark.skip(reason="bm to fix")
     def test_validate_data_catalog(self):
         # Arrange
         self._loaded_data_into_catalog()

@@ -110,7 +110,6 @@ def backtest_config(catalog):
     )
 
 
-@pytest.mark.skip(reason="WIP")
 @pytest.fixture(scope="function")
 def backtest_configs(backtest_config):
     base = copy.copy(backtest_config)

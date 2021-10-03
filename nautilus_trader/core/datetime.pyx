@@ -185,7 +185,7 @@ cpdef dt_to_unix_nanos(dt: pd.Timestamp):
     Condition.not_none(dt, "dt")
 
     if not isinstance(dt, pd.Timestamp):
-        dt = pd.Timestamp(dt, utc=True)
+        dt = pd.Timestamp(dt)
 
     return int(dt.to_datetime64())
 
@@ -237,7 +237,7 @@ cpdef maybe_dt_to_unix_nanos(dt: pd.Timestamp):
         return None
 
     if not isinstance(dt, pd.Timestamp):
-        dt = pd.Timestamp(dt, utc=True)
+        dt = pd.Timestamp(dt)
 
     return int(dt.to_datetime64())
 

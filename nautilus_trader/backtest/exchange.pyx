@@ -453,7 +453,7 @@ cdef class SimulatedExchange:
         if self.is_frozen_account:
             return  # Nothing to adjust
 
-        account = self.cache.account_for_venue(self.exec_client.venue)
+        cdef Account account = self.cache.account_for_venue(self.exec_client.venue)
         if account is None:
             self._log.error(
                 f"Cannot adjust account: no account found for {self.exec_client.venue}"
@@ -932,8 +932,6 @@ cdef class SimulatedExchange:
 
         self._generate_order_canceled(order)
 
-        cdef ClientOrderId client_order_id
-        cdef PassiveOrder oco_order
         if order.contingency == ContingencyType.OCO and cancel_ocos:
             self._cancel_oco_orders(order)
 
