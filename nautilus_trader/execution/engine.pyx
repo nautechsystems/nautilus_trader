@@ -679,7 +679,6 @@ cdef class ExecutionEngine(Component):
         if (
             oms_type == OMSType.HEDGING
             and position.is_opposite_side(fill.order_side)
-            and position.quantity > 0
             and fill.last_qty > position.quantity
         ):
             self._flip_position(position, fill, oms_type)
@@ -728,30 +727,31 @@ cdef class ExecutionEngine(Component):
         cdef Money commission2 = Money(fill.commission - commission1, fill.commission.currency)
 
         cdef OrderFilled fill_split1 = None
-        # Split fill to close original position
-        fill_split1 = OrderFilled(
-            trader_id=fill.trader_id,
-            strategy_id=fill.strategy_id,
-            account_id=fill.account_id,
-            instrument_id=fill.instrument_id,
-            client_order_id=fill.client_order_id,
-            venue_order_id=fill.venue_order_id,
-            execution_id=fill.execution_id,
-            position_id=fill.position_id,
-            order_side=fill.order_side,
-            order_type=fill.order_type,
-            last_qty=position.quantity,  # Fill original position quantity remaining
-            last_px=fill.last_px,
-            currency=fill.currency,
-            commission=commission1,
-            liquidity_side=fill.liquidity_side,
-            event_id=fill.id,
-            ts_event=fill.ts_event,
-            ts_init=fill.ts_init,
-        )
+        if position.quantity > 0:
+            # Split fill to close original position
+            fill_split1 = OrderFilled(
+                trader_id=fill.trader_id,
+                strategy_id=fill.strategy_id,
+                account_id=fill.account_id,
+                instrument_id=fill.instrument_id,
+                client_order_id=fill.client_order_id,
+                venue_order_id=fill.venue_order_id,
+                execution_id=fill.execution_id,
+                position_id=fill.position_id,
+                order_side=fill.order_side,
+                order_type=fill.order_type,
+                last_qty=position.quantity,  # Fill original position quantity remaining
+                last_px=fill.last_px,
+                currency=fill.currency,
+                commission=commission1,
+                liquidity_side=fill.liquidity_side,
+                event_id=fill.id,
+                ts_event=fill.ts_event,
+                ts_init=fill.ts_init,
+            )
 
-        # Close original position
-        self._update_position(position, fill_split1, oms_type)
+            # Close original position
+            self._update_position(position, fill_split1, oms_type)
 
         cdef PositionId position_id_flip = fill.position_id
         if oms_type == OMSType.HEDGING:
