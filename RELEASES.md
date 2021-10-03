@@ -3,6 +3,7 @@
 Released **TBD**
 
 ## Breaking Changes
+- Renamed `nanos_to_unix_dt` to `unix_nanos_to_dt` (more accurate name).
 - Changed `Clock.set_time_alert(...)` method signature.
 - Changed `Clock.set_timer(...)` method signature.
 - Removed `pd.Timestamp` from `TimeEvent`.

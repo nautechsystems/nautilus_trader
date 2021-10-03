@@ -41,6 +41,7 @@ from nautilus_trader.common.timer cimport TimeEventHandler
 from nautilus_trader.common.uuid cimport UUIDFactory
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.data cimport Data
+from nautilus_trader.core.datetime cimport unix_nanos_to_dt
 from nautilus_trader.execution.engine cimport ExecutionEngine
 from nautilus_trader.infrastructure.cache cimport RedisCacheDatabase
 from nautilus_trader.model.c_enums.account_type cimport AccountType
@@ -770,14 +771,14 @@ cdef class BacktestEngine:
         if start is None:
             # Set `start` to start of data
             start_ns = self._data[0].ts_init
-            start = pd.Timestamp(start_ns, unit="ns", tz=pytz.utc)
+            start = unix_nanos_to_dt(start_ns)
         else:
             start = pd.to_datetime(start, unit="ns", utc=True)
             start_ns = int(start.to_datetime64())
         if end is None:
             # Set `end` to end of data
             end_ns = self._data[-1].ts_init
-            end = pd.Timestamp(end_ns, unit="ns", tz=pytz.utc)
+            end = unix_nanos_to_dt(end_ns)
         else:
             end = pd.to_datetime(end, unit="ns", utc=True)
             end_ns = int(end.to_datetime64())

@@ -18,11 +18,11 @@ from typing import Dict, List, Optional
 
 import numpy as np
 import pandas as pd
-import pytz
 import quantstats
 from numpy import float64
 
 from nautilus_trader.accounting.accounts.base import Account
+from nautilus_trader.core.datetime import unix_nanos_to_dt
 from nautilus_trader.model.currency import Currency
 from nautilus_trader.model.identifiers import PositionId
 from nautilus_trader.model.objects import Money
@@ -88,7 +88,7 @@ class PerformanceAnalyzer:
         """
         for position in positions:
             self.add_trade(position.id, position.realized_pnl)
-            self.add_return(pd.Timestamp(position.ts_closed, tz=pytz.utc), position.realized_return)
+            self.add_return(unix_nanos_to_dt(position.ts_closed), position.realized_return)
 
     def add_trade(self, position_id: PositionId, realized_pnl: Money) -> None:
         """
