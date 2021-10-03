@@ -107,6 +107,8 @@ class TradingNodeConfig(pydantic.BaseModel):
         The data client configurations.
     exec_clients : Dict[str, Dict[str, Any]], optional
         The execution client configurations.
+    persistence : LivePersistenceConfig, optional
+        The config for enabling persistence via feather files
     """
 
     trader_id: str = "TRADER-000"
