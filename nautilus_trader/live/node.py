@@ -194,11 +194,6 @@ class TradingNode:
         self._log_header()
         self._log.info("Building...")
 
-        # Persistence
-        self.persistence_writers: List[Any] = []
-        if config.persistence:
-            self._setup_persistence(config=config.persistence)
-
         if platform.system() != "Windows":
             # Windows does not support signal handling
             # https://stackoverflow.com/questions/45987985/asyncio-loops-add-signal-handler-in-windows
@@ -284,6 +279,11 @@ class TradingNode:
 
         if config.load_strategy_state:
             self.trader.load()
+
+        # Setup persistence (requires trader)
+        self.persistence_writers: List[Any] = []
+        if config.persistence:
+            self._setup_persistence(config=config.persistence)
 
         self._builder = TradingNodeBuilder(
             loop=self._loop,
@@ -418,7 +418,7 @@ class TradingNode:
         self._builder.build_exec_clients(self._config.exec_clients)
         self._is_built = True
 
-    def start(self) -> None:
+    def start(self) -> Optional[asyncio.Task]:
         """
         Start the trading node.
         """
@@ -430,12 +430,14 @@ class TradingNode:
 
         try:
             if self._loop.is_running():
-                self._loop.create_task(self._run())
+                return self._loop.create_task(self._run())
             else:
                 self._loop.run_until_complete(self._run())
+                return None
 
         except RuntimeError as ex:
             self._log.exception(ex)
+            return None
 
     def stop(self) -> None:
         """
