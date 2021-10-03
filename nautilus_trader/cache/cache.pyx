@@ -2959,31 +2959,6 @@ cdef class Cache(CacheFacade):
 
         return position_id in self._index_positions_closed
 
-    cpdef int positions_total_count(
-        self,
-        Venue venue=None,
-        InstrumentId instrument_id=None,
-        StrategyId strategy_id=None,
-    ) except *:
-        """
-        Return the total count of positions with the given query filters.
-
-        Parameters
-        ----------
-        venue : Venue, optional
-            The venue ID query filter.
-        instrument_id : InstrumentId, optional
-            The instrument ID query filter.
-        strategy_id : StrategyId, optional
-            The strategy ID query filter.
-
-        Returns
-        -------
-        int
-
-        """
-        return len(self.position_ids(venue, instrument_id, strategy_id))
-
     cpdef int positions_open_count(
         self,
         Venue venue=None,
@@ -3033,6 +3008,31 @@ cdef class Cache(CacheFacade):
 
         """
         return len(self.position_closed_ids(venue, instrument_id, strategy_id))
+
+    cpdef int positions_total_count(
+        self,
+        Venue venue=None,
+        InstrumentId instrument_id=None,
+        StrategyId strategy_id=None,
+    ) except *:
+        """
+        Return the total count of positions with the given query filters.
+
+        Parameters
+        ----------
+        venue : Venue, optional
+            The venue ID query filter.
+        instrument_id : InstrumentId, optional
+            The instrument ID query filter.
+        strategy_id : StrategyId, optional
+            The strategy ID query filter.
+
+        Returns
+        -------
+        int
+
+        """
+        return len(self.position_ids(venue, instrument_id, strategy_id))
 
 # -- STRATEGY QUERIES ------------------------------------------------------------------------------
 
