@@ -115,13 +115,13 @@ cdef class BacktestEngine:
         # Run IDs
         self.run_config_id = None
         self.run_id = None
+        self.iteration = 0
 
         # Timing
         self.run_started = None
         self.run_finished = None
         self.backtest_start = None
         self.backtest_end = None
-        self.iteration = 0
 
         self._logger = Logger(
             clock=LiveClock(),
@@ -304,8 +304,7 @@ cdef class BacktestEngine:
         self._add_market_data_client_if_not_exists(instrument.id.venue)
 
         # Add data
-        self._data_engine.process(instrument)
-        self._cache.add_instrument(instrument)
+        self._data_engine.process(instrument)  # Adds to cache
 
         self._log.info(f"Added {instrument.id} Instrument.")
 
@@ -607,6 +606,8 @@ cdef class BacktestEngine:
             self._data_engine.stop()
         if self._exec_engine.is_running_c():
             self._exec_engine.stop()
+        if self._risk_engine.is_running_c():
+            self._risk_engine.stop()
 
         self._data_engine.dispose()
         self._exec_engine.dispose()
@@ -769,16 +770,16 @@ cdef class BacktestEngine:
         if start is None:
             # Set `start` to start of data
             start_ns = self._data[0].ts_init
-            start = pd.Timestamp(start_ns, tz=pytz.utc)
+            start = pd.Timestamp(start_ns, unit="ns", tz=pytz.utc)
         else:
-            start = pd.to_datetime(start, utc=True)
+            start = pd.to_datetime(start, unit="ns", utc=True)
             start_ns = int(start.to_datetime64())
         if end is None:
             # Set `end` to end of data
             end_ns = self._data[-1].ts_init
-            end = pd.Timestamp(end_ns, tz=pytz.utc)
+            end = pd.Timestamp(end_ns, unit="ns", tz=pytz.utc)
         else:
-            end = pd.to_datetime(end, utc=True)
+            end = pd.to_datetime(end, unit="ns", utc=True)
             end_ns = int(end.to_datetime64())
         Condition.true(start_ns < end_ns, "start was >= end")
         Condition.not_empty(self._data, "data")
