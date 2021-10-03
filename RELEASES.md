@@ -25,6 +25,7 @@ Released **TBD**
 - Fixed `OrderUpdated` leaves quantity calculation.
 - Fixed contingency order logic at the exchange.
 - Fixed indexing of orders for a position in the cache.
+- Fixed flip logic for zero sized positions (not a flip).
 
 ---
 
