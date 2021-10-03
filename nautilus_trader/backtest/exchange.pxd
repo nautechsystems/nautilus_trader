@@ -146,8 +146,12 @@ cdef class SimulatedExchange:
 
     cdef void _reject_order(self, Order order, str reason) except *
     cdef void _accept_order(self, PassiveOrder order) except *
-    cdef void _update_order(self, PassiveOrder order, Quantity qty, Price price, Price trigger) except *
-    cdef void _cancel_order(self, PassiveOrder order) except *
+    cdef void _update_order(self, PassiveOrder order, Quantity qty, Price price, Price trigger=*) except *
+    cdef void _update_oco_orders(self, PassiveOrder order) except *
+    cdef void _apply_update(self, PassiveOrder order, Quantity qty, Price price, Price trigger=*) except *
+    cdef void _cancel_order(self, PassiveOrder order, bint pending=*, bint cancel_ocos=*) except *
+    cdef void _cancel_oto_orders(self, PassiveOrder order) except *
+    cdef void _cancel_oco_orders(self, PassiveOrder order) except *
     cdef void _expire_order(self, PassiveOrder order) except *
 
 # -- ORDER MATCHING ENGINE -------------------------------------------------------------------------
@@ -174,6 +178,7 @@ cdef class SimulatedExchange:
         Instrument instrument,
         Order order,
         PositionId venue_position_id,
+        Position position,
         Quantity last_qty,
         Price last_px,
         LiquiditySide liquidity_side,

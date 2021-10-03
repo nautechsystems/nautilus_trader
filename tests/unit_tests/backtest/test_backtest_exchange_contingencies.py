@@ -20,6 +20,7 @@ from nautilus_trader.backtest.execution_client import BacktestExecClient
 from nautilus_trader.backtest.models import FillModel
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.logging import Logger
+from nautilus_trader.common.logging import LogLevel
 from nautilus_trader.common.uuid import UUIDFactory
 from nautilus_trader.data.engine import DataEngine
 from nautilus_trader.execution.engine import ExecutionEngine
@@ -34,7 +35,6 @@ from nautilus_trader.model.enums import VenueType
 from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.objects import Money
-from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.msgbus.bus import MessageBus
 from nautilus_trader.portfolio.portfolio import Portfolio
@@ -53,7 +53,10 @@ class TestSimulatedExchangeContingencyAdvancedOrders:
         # Fixture Setup
         self.clock = TestClock()
         self.uuid_factory = UUIDFactory()
-        self.logger = Logger(clock=self.clock)
+        self.logger = Logger(
+            clock=self.clock,
+            level_stdout=LogLevel.INFO,
+        )
 
         self.trader_id = TestStubs.trader_id()
         self.account_id = TestStubs.account_id()
@@ -147,20 +150,25 @@ class TestSimulatedExchangeContingencyAdvancedOrders:
 
     def test_submit_bracket_market_buy_accepts_sl_and_tp(self):
         # Arrange: Prepare market
-        tick = TestStubs.quote_tick_3decimal(
+        tick = QuoteTick(
             instrument_id=ETHUSD_FTX.id,
-            bid=Price.from_str("3090.2"),
-            ask=Price.from_str("3090.5"),
+            bid=ETHUSD_FTX.make_price(3090.2),
+            ask=ETHUSD_FTX.make_price(3090.5),
+            bid_size=ETHUSD_FTX.make_qty(15.100),
+            ask_size=ETHUSD_FTX.make_qty(15.100),
+            ts_event=0,
+            ts_init=0,
         )
+
         self.data_engine.process(tick)
         self.exchange.process_tick(tick)
 
         bracket = self.strategy.order_factory.bracket_market(
             instrument_id=ETHUSD_FTX.id,
             order_side=OrderSide.BUY,
-            quantity=Quantity.from_int(10),
-            stop_loss=Price.from_str("3089.9"),
-            take_profit=Price.from_str("3091.0"),
+            quantity=ETHUSD_FTX.make_qty(10.000),
+            stop_loss=ETHUSD_FTX.make_price(3050.0),
+            take_profit=ETHUSD_FTX.make_price(3150.0),
         )
 
         # Act
@@ -176,10 +184,10 @@ class TestSimulatedExchangeContingencyAdvancedOrders:
         # Arrange: Prepare market
         tick = QuoteTick(
             instrument_id=ETHUSD_FTX.id,
-            bid=Price.from_str("3090.2"),
-            ask=Price.from_str("3090.5"),
-            bid_size=Quantity.from_str("15.100"),
-            ask_size=Quantity.from_str("15.100"),
+            bid=ETHUSD_FTX.make_price(3090.2),
+            ask=ETHUSD_FTX.make_price(3090.5),
+            bid_size=ETHUSD_FTX.make_qty(15.100),
+            ask_size=ETHUSD_FTX.make_qty(15.100),
             ts_event=0,
             ts_init=0,
         )
@@ -190,9 +198,9 @@ class TestSimulatedExchangeContingencyAdvancedOrders:
         bracket = self.strategy.order_factory.bracket_market(
             instrument_id=ETHUSD_FTX.id,
             order_side=OrderSide.SELL,
-            quantity=Quantity.from_int(10),
-            stop_loss=Price.from_str("3090.0"),
-            take_profit=Price.from_str("3089.9"),
+            quantity=ETHUSD_FTX.make_qty(10.000),
+            stop_loss=ETHUSD_FTX.make_price(3150.0),
+            take_profit=ETHUSD_FTX.make_price(3050.0),
         )
 
         # Act
@@ -208,10 +216,10 @@ class TestSimulatedExchangeContingencyAdvancedOrders:
         # Arrange: Prepare market
         tick = QuoteTick(
             instrument_id=ETHUSD_FTX.id,
-            bid=Price.from_str("3090.2"),
-            ask=Price.from_str("3090.5"),
-            bid_size=Quantity.from_str("15.100"),
-            ask_size=Quantity.from_str("15.100"),
+            bid=ETHUSD_FTX.make_price(3090.2),
+            ask=ETHUSD_FTX.make_price(3090.5),
+            bid_size=ETHUSD_FTX.make_qty(15.100),
+            ask_size=ETHUSD_FTX.make_qty(15.100),
             ts_event=0,
             ts_init=0,
         )
@@ -222,10 +230,10 @@ class TestSimulatedExchangeContingencyAdvancedOrders:
         bracket = self.strategy.order_factory.bracket_limit(
             instrument_id=ETHUSD_FTX.id,
             order_side=OrderSide.BUY,
-            quantity=Quantity.from_int(10),
-            entry=Price.from_str("3090.0"),
-            stop_loss=Price.from_str("3089.9"),
-            take_profit=Price.from_str("3090.9"),
+            quantity=ETHUSD_FTX.make_qty(10.000),
+            entry=ETHUSD_FTX.make_price(3090.0),
+            stop_loss=ETHUSD_FTX.make_price(3050.0),
+            take_profit=ETHUSD_FTX.make_price(3150.0),
         )
 
         # Act
@@ -241,10 +249,10 @@ class TestSimulatedExchangeContingencyAdvancedOrders:
         # Arrange: Prepare market
         tick = QuoteTick(
             instrument_id=ETHUSD_FTX.id,
-            bid=Price.from_str("3090.2"),
-            ask=Price.from_str("3090.5"),
-            bid_size=Quantity.from_str("15.100"),
-            ask_size=Quantity.from_str("15.100"),
+            bid=ETHUSD_FTX.make_price(3090.2),
+            ask=ETHUSD_FTX.make_price(3090.5),
+            bid_size=ETHUSD_FTX.make_qty(15.100),
+            ask_size=ETHUSD_FTX.make_qty(15.100),
             ts_event=0,
             ts_init=0,
         )
@@ -255,10 +263,10 @@ class TestSimulatedExchangeContingencyAdvancedOrders:
         bracket = self.strategy.order_factory.bracket_limit(
             instrument_id=ETHUSD_FTX.id,
             order_side=OrderSide.SELL,
-            quantity=Quantity.from_int(10),
-            entry=Price.from_str("3100.0"),
-            stop_loss=Price.from_str("3150.0"),
-            take_profit=Price.from_str("3050.0"),
+            quantity=ETHUSD_FTX.make_qty(10.000),
+            entry=ETHUSD_FTX.make_price(3100.0),
+            stop_loss=ETHUSD_FTX.make_price(3150.0),
+            take_profit=ETHUSD_FTX.make_price(3050.0),
         )
 
         # Act
@@ -274,10 +282,10 @@ class TestSimulatedExchangeContingencyAdvancedOrders:
         # Arrange: Prepare market
         tick = QuoteTick(
             instrument_id=ETHUSD_FTX.id,
-            bid=Price.from_str("3090.2"),
-            ask=Price.from_str("3090.5"),
-            bid_size=Quantity.from_str("15.100"),
-            ask_size=Quantity.from_str("15.100"),
+            bid=ETHUSD_FTX.make_price(3090.2),
+            ask=ETHUSD_FTX.make_price(3090.5),
+            bid_size=ETHUSD_FTX.make_qty(15.100),
+            ask_size=ETHUSD_FTX.make_qty(15.100),
             ts_event=0,
             ts_init=0,
         )
@@ -288,10 +296,10 @@ class TestSimulatedExchangeContingencyAdvancedOrders:
         bracket = self.strategy.order_factory.bracket_limit(
             instrument_id=ETHUSD_FTX.id,
             order_side=OrderSide.BUY,
-            quantity=Quantity.from_int(10),
-            entry=Price.from_str("3100.0"),
-            stop_loss=Price.from_str("3050.0"),
-            take_profit=Price.from_str("3150.0"),
+            quantity=ETHUSD_FTX.make_qty(10.000),
+            entry=ETHUSD_FTX.make_price(3100.0),
+            stop_loss=ETHUSD_FTX.make_price(3050.0),
+            take_profit=ETHUSD_FTX.make_price(3150.0),
         )
 
         # Act
@@ -310,10 +318,10 @@ class TestSimulatedExchangeContingencyAdvancedOrders:
         # Arrange: Prepare market
         tick = QuoteTick(
             instrument_id=ETHUSD_FTX.id,
-            bid=Price.from_str("3090.2"),
-            ask=Price.from_str("3090.5"),
-            bid_size=Quantity.from_str("15.100"),
-            ask_size=Quantity.from_str("15.100"),
+            bid=ETHUSD_FTX.make_price(3090.2),
+            ask=ETHUSD_FTX.make_price(3090.5),
+            bid_size=ETHUSD_FTX.make_qty(15.100),
+            ask_size=ETHUSD_FTX.make_qty(15.100),
             ts_event=0,
             ts_init=0,
         )
@@ -324,10 +332,10 @@ class TestSimulatedExchangeContingencyAdvancedOrders:
         bracket = self.strategy.order_factory.bracket_limit(
             instrument_id=ETHUSD_FTX.id,
             order_side=OrderSide.SELL,
-            quantity=Quantity.from_int(10),
-            entry=Price.from_str("3050.0"),
-            stop_loss=Price.from_str("3150.0"),
-            take_profit=Price.from_str("3000.0"),
+            quantity=ETHUSD_FTX.make_qty(10.000),
+            entry=ETHUSD_FTX.make_price(3050.0),
+            stop_loss=ETHUSD_FTX.make_price(3150.0),
+            take_profit=ETHUSD_FTX.make_price(3000.0),
         )
 
         # Act
@@ -342,14 +350,51 @@ class TestSimulatedExchangeContingencyAdvancedOrders:
         assert bracket.orders[1] in self.exchange.get_working_orders()
         assert bracket.orders[2] in self.exchange.get_working_orders()
 
+    def test_reject_bracket_entry_then_rejects_sl_and_tp(self):
+        # Arrange: Prepare market
+        tick = QuoteTick(
+            instrument_id=ETHUSD_FTX.id,
+            bid=ETHUSD_FTX.make_price(3090.2),
+            ask=ETHUSD_FTX.make_price(3090.5),
+            bid_size=ETHUSD_FTX.make_qty(15.100),
+            ask_size=ETHUSD_FTX.make_qty(15.100),
+            ts_event=0,
+            ts_init=0,
+        )
+
+        self.data_engine.process(tick)
+        self.exchange.process_tick(tick)
+
+        bracket = self.strategy.order_factory.bracket_limit(
+            instrument_id=ETHUSD_FTX.id,
+            order_side=OrderSide.SELL,
+            quantity=ETHUSD_FTX.make_qty(10.000),
+            entry=ETHUSD_FTX.make_price(3050.0),  # <-- in the market
+            stop_loss=ETHUSD_FTX.make_price(3150.0),
+            take_profit=ETHUSD_FTX.make_price(3000.0),
+            post_only=True,  # <-- will reject placed into the market
+        )
+
+        # Act
+        self.strategy.submit_order_list(bracket)
+        self.exchange.process(0)
+
+        # Assert
+        assert bracket.orders[0].status == OrderStatus.REJECTED
+        assert bracket.orders[1].status == OrderStatus.REJECTED
+        assert bracket.orders[2].status == OrderStatus.REJECTED
+        assert len(self.exchange.get_working_orders()) == 0
+        assert bracket.orders[1] not in self.exchange.get_working_orders()
+        assert bracket.orders[2] not in self.exchange.get_working_orders()
+
     def test_filling_bracket_sl_cancels_tp_order(self):
         # Arrange: Prepare market
         tick1 = QuoteTick(
             instrument_id=ETHUSD_FTX.id,
-            bid=Price.from_str("3090.2"),
-            ask=Price.from_str("3090.5"),
-            bid_size=Quantity.from_str("15.100"),
-            ask_size=Quantity.from_str("15.100"),
+            bid=ETHUSD_FTX.make_price(3090.2),
+            ask=ETHUSD_FTX.make_price(3090.5),
+            bid_size=ETHUSD_FTX.make_qty(15.100),
+            ask_size=ETHUSD_FTX.make_qty(15.100),
             ts_event=0,
             ts_init=0,
         )
@@ -360,26 +405,26 @@ class TestSimulatedExchangeContingencyAdvancedOrders:
         bracket = self.strategy.order_factory.bracket_limit(
             instrument_id=ETHUSD_FTX.id,
             order_side=OrderSide.BUY,
-            quantity=Quantity.from_int(10),
-            entry=Price.from_str("3100.0"),
-            stop_loss=Price.from_str("3050.0"),
-            take_profit=Price.from_str("3150.0"),
+            quantity=ETHUSD_FTX.make_qty(10.000),
+            entry=ETHUSD_FTX.make_price(3100.0),
+            stop_loss=ETHUSD_FTX.make_price(3050.0),
+            take_profit=ETHUSD_FTX.make_price(3150.0),
         )
 
         self.strategy.submit_order_list(bracket)
         self.exchange.process(0)
 
-        # Act
         tick2 = QuoteTick(
             instrument_id=ETHUSD_FTX.id,
-            bid=Price.from_str("3150.0"),
-            ask=Price.from_str("3151.0"),
-            bid_size=Quantity.from_str("10.000"),
-            ask_size=Quantity.from_str("10.000"),
+            bid=ETHUSD_FTX.make_price(3150.0),
+            ask=ETHUSD_FTX.make_price(3151.0),
+            bid_size=ETHUSD_FTX.make_qty(10.000),
+            ask_size=ETHUSD_FTX.make_qty(10.000),
             ts_event=0,
             ts_init=0,
         )
 
+        # Act
         self.exchange.process_tick(tick2)
 
         # Assert
@@ -393,10 +438,10 @@ class TestSimulatedExchangeContingencyAdvancedOrders:
         # Arrange: Prepare market
         tick1 = QuoteTick(
             instrument_id=ETHUSD_FTX.id,
-            bid=Price.from_str("3090.2"),
-            ask=Price.from_str("3090.5"),
-            bid_size=Quantity.from_str("15.100"),
-            ask_size=Quantity.from_str("15.100"),
+            bid=ETHUSD_FTX.make_price(3090.2),
+            ask=ETHUSD_FTX.make_price(3090.5),
+            bid_size=ETHUSD_FTX.make_qty(15.100),
+            ask_size=ETHUSD_FTX.make_qty(15.100),
             ts_event=0,
             ts_init=0,
         )
@@ -407,10 +452,10 @@ class TestSimulatedExchangeContingencyAdvancedOrders:
         bracket = self.strategy.order_factory.bracket_limit(
             instrument_id=ETHUSD_FTX.id,
             order_side=OrderSide.BUY,
-            quantity=Quantity.from_int(10),
-            entry=Price.from_str("3100.0"),
-            stop_loss=Price.from_str("3050.0"),
-            take_profit=Price.from_str("3150.0"),
+            quantity=ETHUSD_FTX.make_qty(10.000),
+            entry=ETHUSD_FTX.make_price(3100.0),
+            stop_loss=ETHUSD_FTX.make_price(3050.0),
+            take_profit=ETHUSD_FTX.make_price(3150.0),
         )
 
         self.strategy.submit_order_list(bracket)
@@ -419,10 +464,10 @@ class TestSimulatedExchangeContingencyAdvancedOrders:
         # Act
         tick2 = QuoteTick(
             instrument_id=ETHUSD_FTX.id,
-            bid=Price.from_str("3150.0"),
-            ask=Price.from_str("3151.0"),
-            bid_size=Quantity.from_str("10.000"),
-            ask_size=Quantity.from_str("10.000"),
+            bid=ETHUSD_FTX.make_price(3150.0),
+            ask=ETHUSD_FTX.make_price(3151.0),
+            bid_size=ETHUSD_FTX.make_qty(10.000),
+            ask_size=ETHUSD_FTX.make_qty(10.000),
             ts_event=0,
             ts_init=0,
         )
@@ -440,10 +485,10 @@ class TestSimulatedExchangeContingencyAdvancedOrders:
         # Arrange: Prepare market
         tick1 = QuoteTick(
             instrument_id=ETHUSD_FTX.id,
-            bid=Price.from_str("3090.2"),
-            ask=Price.from_str("3090.5"),
-            bid_size=Quantity.from_str("15.100"),
-            ask_size=Quantity.from_str("15.100"),
+            bid=ETHUSD_FTX.make_price(3090.2),
+            ask=ETHUSD_FTX.make_price(3090.5),
+            bid_size=ETHUSD_FTX.make_qty(15.100),
+            ask_size=ETHUSD_FTX.make_qty(15.100),
             ts_event=0,
             ts_init=0,
         )
@@ -454,10 +499,10 @@ class TestSimulatedExchangeContingencyAdvancedOrders:
         bracket = self.strategy.order_factory.bracket_limit(
             instrument_id=ETHUSD_FTX.id,
             order_side=OrderSide.BUY,
-            quantity=Quantity.from_int(10),
-            entry=Price.from_str("3100.0"),
-            stop_loss=Price.from_str("3050.0"),
-            take_profit=Price.from_str("3150.0"),
+            quantity=ETHUSD_FTX.make_qty(10.000),
+            entry=ETHUSD_FTX.make_price(3100.0),
+            stop_loss=ETHUSD_FTX.make_price(3050.0),
+            take_profit=ETHUSD_FTX.make_price(3150.0),
         )
 
         en = bracket.orders[0]
@@ -470,10 +515,10 @@ class TestSimulatedExchangeContingencyAdvancedOrders:
         # Act
         tick2 = QuoteTick(
             instrument_id=ETHUSD_FTX.id,
-            bid=Price.from_str("3150.0"),
-            ask=Price.from_str("3151.0"),
-            bid_size=Quantity.from_str("5.000"),
-            ask_size=Quantity.from_str("5.000"),
+            bid=ETHUSD_FTX.make_price(3150.0),
+            ask=ETHUSD_FTX.make_price(3151.0),
+            bid_size=ETHUSD_FTX.make_qty(5.000),
+            ask_size=ETHUSD_FTX.make_qty(5.1000),
             ts_event=0,
             ts_init=0,
         )
@@ -494,10 +539,10 @@ class TestSimulatedExchangeContingencyAdvancedOrders:
         # Arrange: Prepare market
         tick1 = QuoteTick(
             instrument_id=ETHUSD_FTX.id,
-            bid=Price.from_str("3090.2"),
-            ask=Price.from_str("3090.5"),
-            bid_size=Quantity.from_str("15.100"),
-            ask_size=Quantity.from_str("15.100"),
+            bid=ETHUSD_FTX.make_price(3090.2),
+            ask=ETHUSD_FTX.make_price(3090.5),
+            bid_size=ETHUSD_FTX.make_qty(15.100),
+            ask_size=ETHUSD_FTX.make_qty(15.100),
             ts_event=0,
             ts_init=0,
         )
@@ -508,10 +553,10 @@ class TestSimulatedExchangeContingencyAdvancedOrders:
         bracket = self.strategy.order_factory.bracket_limit(
             instrument_id=ETHUSD_FTX.id,
             order_side=OrderSide.BUY,
-            quantity=Quantity.from_int(10),
-            entry=Price.from_str("3100.0"),
-            stop_loss=Price.from_str("3050.0"),
-            take_profit=Price.from_str("3150.0"),
+            quantity=ETHUSD_FTX.make_qty(10.000),
+            entry=ETHUSD_FTX.make_price(3100.0),
+            stop_loss=ETHUSD_FTX.make_price(3050.0),
+            take_profit=ETHUSD_FTX.make_price(3150.0),
         )
 
         en = bracket.orders[0]
@@ -535,5 +580,97 @@ class TestSimulatedExchangeContingencyAdvancedOrders:
         assert tp.status == OrderStatus.ACCEPTED
         assert sl.quantity == Quantity.from_int(5)
         assert tp.quantity == Quantity.from_int(5)
+        assert len(self.exchange.get_working_orders()) == 2
+        assert len(self.exchange.cache.positions_open()) == 1
+
+    def test_closing_position_cancels_bracket_ocos(self):
+        # Arrange: Prepare market
+        tick1 = QuoteTick(
+            instrument_id=ETHUSD_FTX.id,
+            bid=ETHUSD_FTX.make_price(3090.2),
+            ask=ETHUSD_FTX.make_price(3090.5),
+            bid_size=ETHUSD_FTX.make_qty(15.100),
+            ask_size=ETHUSD_FTX.make_qty(15.100),
+            ts_event=0,
+            ts_init=0,
+        )
+
+        self.data_engine.process(tick1)
+        self.exchange.process_tick(tick1)
+
+        bracket = self.strategy.order_factory.bracket_market(
+            instrument_id=ETHUSD_FTX.id,
+            order_side=OrderSide.BUY,
+            quantity=ETHUSD_FTX.make_qty(10.000),
+            stop_loss=ETHUSD_FTX.make_price(3050.0),
+            take_profit=ETHUSD_FTX.make_price(3150.0),
+        )
+
+        en = bracket.orders[0]
+        sl = bracket.orders[1]
+        tp = bracket.orders[2]
+
+        self.strategy.submit_order_list(bracket)
+        self.exchange.process(0)
+
+        # Act
+        self.strategy.flatten_position(self.strategy.cache.position(en.position_id))
+        self.exchange.process(0)
+
+        # Assert
+        assert en.status == OrderStatus.FILLED
+        assert sl.status == OrderStatus.CANCELED
+        assert tp.status == OrderStatus.CANCELED
+        assert len(self.exchange.get_working_orders()) == 0
+        assert len(self.exchange.cache.positions_open()) == 0
+
+    def test_partially_filling_position_updates_bracket_ocos(self):
+        # Arrange: Prepare market
+        tick1 = QuoteTick(
+            instrument_id=ETHUSD_FTX.id,
+            bid=ETHUSD_FTX.make_price(3090.2),
+            ask=ETHUSD_FTX.make_price(3090.5),
+            bid_size=ETHUSD_FTX.make_qty(15.100),
+            ask_size=ETHUSD_FTX.make_qty(15.100),
+            ts_event=0,
+            ts_init=0,
+        )
+
+        self.data_engine.process(tick1)
+        self.exchange.process_tick(tick1)
+
+        bracket = self.strategy.order_factory.bracket_market(
+            instrument_id=ETHUSD_FTX.id,
+            order_side=OrderSide.BUY,
+            quantity=ETHUSD_FTX.make_qty(10.000),
+            stop_loss=ETHUSD_FTX.make_price(3050.0),
+            take_profit=ETHUSD_FTX.make_price(3150.0),
+        )
+
+        en = bracket.orders[0]
+        sl = bracket.orders[1]
+        tp = bracket.orders[2]
+
+        self.strategy.submit_order_list(bracket)
+        self.exchange.process(0)
+
+        # Act
+        reduce_order = self.strategy.order_factory.market(
+            instrument_id=ETHUSD_FTX.id,
+            order_side=OrderSide.SELL,
+            quantity=ETHUSD_FTX.make_qty(5.000),
+        )
+        self.strategy.submit_order(
+            reduce_order,
+            position_id=self.cache.position_for_order(en.client_order_id).id,
+        )
+        self.exchange.process(0)
+
+        # Assert
+        assert en.status == OrderStatus.FILLED
+        assert sl.status == OrderStatus.ACCEPTED
+        assert tp.status == OrderStatus.ACCEPTED
+        assert sl.quantity == ETHUSD_FTX.make_qty(5.000)
+        assert tp.quantity == ETHUSD_FTX.make_qty(5.000)
         assert len(self.exchange.get_working_orders()) == 2
         assert len(self.exchange.cache.positions_open()) == 1
