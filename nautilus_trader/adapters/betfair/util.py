@@ -34,7 +34,7 @@ def flatten_tree(y: Dict, **filters):
         def _filter(k, v):
             if isinstance(v, str):
                 return k == v
-            elif isinstance(v, list):
+            elif isinstance(v, (tuple, list)):
                 return k in v
             else:
                 raise TypeError
