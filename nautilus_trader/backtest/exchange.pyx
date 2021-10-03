@@ -329,8 +329,8 @@ cdef class SimulatedExchange:
 
         Parameters
         ----------
-        instrument_id : InstrumentId
-            The optional instrument_id query filter.
+        instrument_id : InstrumentId, optional
+            The instrument_id query filter.
 
         Returns
         -------
@@ -348,8 +348,8 @@ cdef class SimulatedExchange:
 
         Parameters
         ----------
-        instrument_id : InstrumentId
-            The optional instrument_id query filter.
+        instrument_id : InstrumentId, optional
+            The instrument_id query filter.
 
         Returns
         -------
@@ -371,8 +371,8 @@ cdef class SimulatedExchange:
 
         Parameters
         ----------
-        instrument_id : InstrumentId
-            The optional instrument_id query filter.
+        instrument_id : InstrumentId, optional
+            The instrument_id query filter.
 
         Returns
         -------

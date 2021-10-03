@@ -30,8 +30,6 @@ from nautilus_trader.trading.strategy cimport TradingStrategy
 cdef class CacheDatabase:
     cdef LoggerAdapter _log
 
-# -- COMMANDS -------------------------------------------------------------------------------------
-
     cpdef void flush(self) except *
     cpdef dict load_currencies(self)
     cpdef dict load_instruments(self)
