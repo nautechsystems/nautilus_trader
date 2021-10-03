@@ -23,7 +23,7 @@ import time
 import warnings
 from datetime import timedelta
 from functools import partial
-from typing import Any, Callable, Dict, Optional
+from typing import Any, Callable, Dict, List, Optional
 
 import msgpack
 import orjson
@@ -193,6 +193,7 @@ class TradingNode:
         self._log.info("Building...")
 
         # Persistence
+        self.persistence_writers: List[Any] = []
         if config.persistence:
             self._setup_persistence(config=config.persistence)
 
@@ -540,17 +541,21 @@ class TradingNode:
         # Setup persistence
         path = f"{config.catalog_path}/live/{self.instance_id}.feather"
         writer = FeatherWriter(path=path)
+        self.persistence_writers.append(writer)
         self.trader.subscribe("*", writer.write)
         self._log.info(f"Persisting data & events to {path=}")
 
         # Setup logging
-        def sink(record, f):
-            f.write(orjson.dumps(record) + b"\n")
+        if config.persist_logs:
 
-        path = f"{config.catalog_path}/logs/{self.instance_id}.log"
-        log_sink = open(path, "wb")
-        self._logger.register_sink(partial(sink, f=log_sink))
-        self._log.info(f"Persisting logs to {path=}")
+            def sink(record, f):
+                f.write(orjson.dumps(record) + b"\n")
+
+            path = f"{config.catalog_path}/logs/{self.instance_id}.log"
+            log_sink = open(path, "wb")
+            self.persistence_writers.append(log_sink)
+            self._logger.register_sink(partial(sink, f=log_sink))
+            self._log.info(f"Persisting logs to {path=}")
 
     def _loop_sig_handler(self, sig) -> None:
         self._loop.remove_signal_handler(signal.SIGTERM)
@@ -718,6 +723,10 @@ class TradingNode:
 
         for name in timer_names:
             self._log.info(f"Cancelled Timer(name={name}).")
+
+        # Clean up persistence
+        for writer in self.persistence_writers:
+            writer.close()
 
         self._log.info("STOPPED.")
         self._logger.stop()
