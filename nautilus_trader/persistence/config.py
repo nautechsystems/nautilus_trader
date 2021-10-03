@@ -40,4 +40,4 @@ class LivePersistenceConfig(pydantic.BaseModel):
 
     @classmethod
     def from_catalog(cls, catalog: DataCatalog, **kwargs):
-        return cls(catalog_path=catalog.path, fs_protocol=catalog.fs.protocol, **kwargs)
+        return cls(catalog_path=str(catalog.path), fs_protocol=catalog.fs.protocol, **kwargs)
