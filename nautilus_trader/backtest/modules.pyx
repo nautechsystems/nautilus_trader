@@ -204,8 +204,7 @@ cdef class FXRolloverInterestModule(SimulationModule):
         account_balances_starting = ', '.join([b.to_str() for b in self._exchange.starting_balances])
         account_starting_length = len(account_balances_starting)
         rollover_totals = ', '.join([b.to_str() for b in self._rollover_totals.values()])
-        rollover_interest = pad_string(rollover_totals, account_starting_length)
-        log.info(f"Rollover interest (totals):  {rollover_interest}")
+        log.info(f"Rollover interest (totals): {rollover_totals}")
 
     cpdef void reset(self) except *:
         self._rollover_time = None  # Initialized at first rollover
