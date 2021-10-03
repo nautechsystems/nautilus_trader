@@ -606,7 +606,8 @@ cdef class SimulatedExchange:
                         f"{repr(command.client_order_id)} not found",
                     )
                     continue
-                self._cancel_order(order)
+                if order.is_active_c():
+                    self._cancel_order(order)
             elif isinstance(command, ModifyOrder):
                 order = self._order_index.get(command.client_order_id)
                 if order is None:
@@ -913,11 +914,6 @@ cdef class SimulatedExchange:
             raise RuntimeError("invalid order type")
 
     cdef void _cancel_order(self, PassiveOrder order, bint pending=True, bint cancel_ocos=True) except *:
-        if order.is_completed_c():
-            # Design-time log
-            self._log.warning("Canceling order when already completed.")
-            return  # Already completed
-
         if order.venue_order_id is None:
             order.venue_order_id = self._generate_venue_order_id(order.instrument_id)
 
@@ -1331,7 +1327,7 @@ cdef class SimulatedExchange:
             for client_order_id in order.contingency_ids:
                 oco_order = self.cache.order(client_order_id)
                 assert oco_order is not None, "OCO order not found"
-                if order.is_completed_c():
+                if order.is_completed_c() and oco_order.is_active_c():
                     self._cancel_order(oco_order, pending=False)
                 elif order.leaves_qty != oco_order.leaves_qty:
                     self._apply_update(oco_order, order.leaves_qty, oco_order.price)

@@ -64,8 +64,8 @@ if __name__ == "__main__":
     # Setup data
     wrangler = QuoteTickDataWrangler(instrument=GBPUSD_SIM)
     ticks = wrangler.process_bar_data(
-        bid_data=TestDataProvider.gbpusd_1min_bid()[:2000],
-        ask_data=TestDataProvider.gbpusd_1min_ask()[:2000],
+        bid_data=TestDataProvider.gbpusd_1min_bid(),
+        ask_data=TestDataProvider.gbpusd_1min_ask(),
     )
     engine.add_instrument(GBPUSD_SIM)
     engine.add_ticks(ticks)
