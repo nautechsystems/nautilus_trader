@@ -773,14 +773,14 @@ cdef class BacktestEngine:
             start_ns = self._data[0].ts_init
             start = unix_nanos_to_dt(start_ns)
         else:
-            start = pd.to_datetime(start, unit="ns", utc=True)
+            start = pd.to_datetime(start, utc=True)
             start_ns = int(start.to_datetime64())
         if end is None:
             # Set `end` to end of data
             end_ns = self._data[-1].ts_init
             end = unix_nanos_to_dt(end_ns)
         else:
-            end = pd.to_datetime(end, unit="ns", utc=True)
+            end = pd.to_datetime(end, utc=True)
             end_ns = int(end.to_datetime64())
         Condition.true(start_ns < end_ns, "start was >= end")
         Condition.not_empty(self._data, "data")
@@ -790,6 +790,7 @@ cdef class BacktestEngine:
         for strategy in self.trader.strategies_c():
             strategy.clock.set_time(start_ns)
 
+        cdef SimulatedExchange exchange
         if self.iteration == 0:
             # Initialize run
             self.run_config_id = run_config_id  # Can be None
@@ -803,18 +804,9 @@ cdef class BacktestEngine:
             self.trader.start()
             # Change logger clock for the run
             self._test_logger.change_clock_c(self._test_clock)
-            self._pre_run()
+            self._log_pre_run()
 
-        self._log.info("\033[36m=================================================================")
-        self._log.info("\033[36m BACKTEST RUN")
-        self._log.info("\033[36m=================================================================")
-        self._log.info(f"Run config ID:  {self.run_config_id}")
-        self._log.info(f"Run ID:         {self.run_id}")
-        self._log.info(f"Run started:    {self.run_started}")
-        self._log.info(f"Backtest start: {self.backtest_start}")
-        self._log.info(f"Batch start:    {start}.")
-        self._log.info(f"Batch end:      {end}.")
-        self._log.info("\033[36m-----------------------------------------------------------------")
+        self._log_run(start, end)
 
         # Set data stream length
         self._data_len = len(self._data)
@@ -856,7 +848,7 @@ cdef class BacktestEngine:
         self.run_finished = self._clock.utc_now()
         self.backtest_end = self._test_clock.utc_now()
 
-        self._post_run()
+        self._log_post_run()
 
     cdef Data _next(self):
         cdef int64_t cursor = self._index
@@ -875,7 +867,7 @@ cdef class BacktestEngine:
             event_handler.handle()
         self._test_clock.set_time(now_ns)
 
-    def _pre_run(self):
+    def _log_pre_run(self):
         log_memory(self._log)
 
         for exchange in self._exchanges.values():
@@ -892,7 +884,19 @@ cdef class BacktestEngine:
                 for b in account.starting_balances().values():
                     self._log.info(b.to_str())
 
-    def _post_run(self):
+    def _log_run(self, start: pd.Timestamp, end: pd.Timestamp):
+        self._log.info("\033[36m=================================================================")
+        self._log.info("\033[36m BACKTEST RUN")
+        self._log.info("\033[36m=================================================================")
+        self._log.info(f"Run config ID:  {self.run_config_id}")
+        self._log.info(f"Run ID:         {self.run_id}")
+        self._log.info(f"Run started:    {self.run_started}")
+        self._log.info(f"Backtest start: {self.backtest_start}")
+        self._log.info(f"Batch start:    {start}.")
+        self._log.info(f"Batch end:      {end}.")
+        self._log.info("\033[36m-----------------------------------------------------------------")
+
+    def _log_post_run(self):
         self._log.info("\033[36m=================================================================")
         self._log.info("\033[36m BACKTEST POST-RUN")
         self._log.info("\033[36m=================================================================")
