@@ -28,14 +28,14 @@ from nautilus_trader.core.datetime import is_datetime_utc
 from nautilus_trader.core.datetime import is_tz_aware
 from nautilus_trader.core.datetime import is_tz_naive
 from nautilus_trader.core.datetime import maybe_dt_to_unix_nanos
-from nautilus_trader.core.datetime import maybe_nanos_to_unix_dt
+from nautilus_trader.core.datetime import maybe_unix_nanos_to_dt
 from nautilus_trader.core.datetime import micros_to_nanos
 from nautilus_trader.core.datetime import millis_to_nanos
 from nautilus_trader.core.datetime import nanos_to_micros
 from nautilus_trader.core.datetime import nanos_to_millis
 from nautilus_trader.core.datetime import nanos_to_secs
-from nautilus_trader.core.datetime import nanos_to_unix_dt
 from nautilus_trader.core.datetime import secs_to_nanos
+from nautilus_trader.core.datetime import unix_nanos_to_dt
 from tests.test_kit.stubs import UNIX_EPOCH
 
 
@@ -170,9 +170,9 @@ class TestDatetimeFunctions:
             [1_000_000_000, pd.Timestamp("1970-01-01 00:00:01+0000", tz="UTC")],
         ],
     )
-    def test_nanos_to_unix_dt(self, value, expected):
+    def test_unix_nanos_to_dt(self, value, expected):
         # Arrange, Act
-        result = nanos_to_unix_dt(value)
+        result = unix_nanos_to_dt(value)
 
         # Assert
         assert result == expected
@@ -189,9 +189,9 @@ class TestDatetimeFunctions:
             [1_000_000_000, pd.Timestamp("1970-01-01 00:00:01+0000", tz="UTC")],
         ],
     )
-    def test_maybe_nanos_to_unix_dt(self, value, expected):
+    def test_maybe_unix_nanos_to_dt(self, value, expected):
         # Arrange, Act
-        result = maybe_nanos_to_unix_dt(value)
+        result = maybe_unix_nanos_to_dt(value)
 
         # Assert
         assert result == expected

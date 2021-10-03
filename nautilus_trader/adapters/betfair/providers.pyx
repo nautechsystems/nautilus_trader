@@ -147,7 +147,7 @@ cdef class BetfairInstrumentProvider(InstrumentProvider):
 
 def _parse_date(s, tz):
     # pd.Timestamp is ~5x faster than datetime.datetime.isoformat here.
-    return pd.Timestamp(s, tz=tz).to_pydatetime()
+    return pd.Timestamp(s, tz=tz)
 
 
 def parse_market_definition(market_definition):
