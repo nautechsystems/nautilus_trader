@@ -91,7 +91,7 @@ if __name__ == "__main__":
         oms_type=OMSType.HEDGING,  # Venue will generate position_ids
         account_type=AccountType.MARGIN,
         base_currency=USD,  # Standard single-currency account
-        starting_balances=[Money(10_000_000, USD)],
+        starting_balances=[Money(1_000_000, USD)],
         fill_model=fill_model,
         modules=[fx_rollover_interest],
         bar_execution=True,  # Recommended for running on bar data

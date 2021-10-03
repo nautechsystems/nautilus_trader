@@ -144,13 +144,10 @@ cdef class SimulatedExchange:
 
 # -- EVENT HANDLING --------------------------------------------------------------------------------
 
-    cdef void _reject_order(self, Order order, str reason) except *
     cdef void _accept_order(self, PassiveOrder order) except *
-    cdef void _update_order(self, PassiveOrder order, Quantity qty, Price price, Price trigger=*) except *
+    cdef void _update_order(self, PassiveOrder order, Quantity qty, Price price, Price trigger=*, bint update_ocos=*) except *
     cdef void _update_oco_orders(self, PassiveOrder order) except *
-    cdef void _apply_update(self, PassiveOrder order, Quantity qty, Price price, Price trigger=*) except *
-    cdef void _cancel_order(self, PassiveOrder order, bint pending=*, bint cancel_ocos=*) except *
-    cdef void _cancel_oto_orders(self, PassiveOrder order) except *
+    cdef void _cancel_order(self, PassiveOrder order, bint cancel_ocos=*) except *
     cdef void _cancel_oco_orders(self, PassiveOrder order) except *
     cdef void _expire_order(self, PassiveOrder order) except *
 
@@ -172,7 +169,14 @@ cdef class SimulatedExchange:
     cdef list _determine_market_price_and_volume(self, Order order)
     cdef void _fill_limit_order(self, PassiveOrder order, LiquiditySide liquidity_side) except *
     cdef void _fill_market_order(self, Order order, LiquiditySide liquidity_side) except *
-    cdef void _apply_fills(self, Order order, LiquiditySide liquidity_side, list fills, PositionId position_id, Position position) except *
+    cdef void _apply_fills(
+        self,
+        Order order,
+        LiquiditySide liquidity_side,
+        list fills,
+        PositionId position_id,
+        Position position,
+    ) except *
     cdef void _fill_order(
         self,
         Instrument instrument,

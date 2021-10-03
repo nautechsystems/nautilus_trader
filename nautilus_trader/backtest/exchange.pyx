@@ -607,6 +607,7 @@ cdef class SimulatedExchange:
                     )
                     continue
                 if order.is_active_c():
+                    self._generate_order_pending_cancel(order)
                     self._cancel_order(order)
             elif isinstance(command, ModifyOrder):
                 order = self._order_index.get(command.client_order_id)
@@ -619,6 +620,7 @@ cdef class SimulatedExchange:
                         f"{repr(command.client_order_id)} not found",
                     )
                     continue
+                self._generate_order_pending_update(order)
                 self._update_order(
                     order,
                     command.quantity,
@@ -680,7 +682,10 @@ cdef class SimulatedExchange:
                 parent = self.cache.order(order.parent_order_id)
                 assert parent is not None, "OTO parent not found"
                 if parent.status_c() == OrderStatus.REJECTED and order.is_active_c():
-                    self._reject_order(order, f"REJECT OTO from {parent.client_order_id}")
+                    self._generate_order_rejected(
+                        order,
+                        f"REJECT OTO from {parent.client_order_id}",
+                    )
                     return  # Order rejected
                 elif parent.status_c() == OrderStatus.ACCEPTED:
                     self._log.info(
@@ -699,7 +704,7 @@ cdef class SimulatedExchange:
                 or (order.is_buy_c() and position.is_long_c())
                 or (order.is_sell_c() and position.is_short_c())
             ):
-                self._reject_order(
+                self._generate_order_rejected(
                     order,
                     f"REDUCE_ONLY {order.type_string_c()} {order.side_string_c()} order "
                     f"would have increased position.",
@@ -720,10 +725,10 @@ cdef class SimulatedExchange:
     cdef void _process_market_order(self, MarketOrder order) except *:
         # Check market exists
         if order.side == OrderSide.BUY and not self.best_ask_price(order.instrument_id):
-            self._reject_order(order, f"no market for {order.instrument_id}")
+            self._generate_order_rejected(order, f"no market for {order.instrument_id}")
             return  # Cannot accept order
         elif order.side == OrderSide.SELL and not self.best_bid_price(order.instrument_id):
-            self._reject_order(order, f"no market for {order.instrument_id}")
+            self._generate_order_rejected(order, f"no market for {order.instrument_id}")
             return  # Cannot accept order
 
         # Immediately fill marketable order
@@ -731,7 +736,7 @@ cdef class SimulatedExchange:
 
     cdef void _process_limit_order(self, LimitOrder order) except *:
         if order.is_post_only and self._is_limit_marketable(order.instrument_id, order.side, order.price):
-            self._reject_order(
+            self._generate_order_rejected(
                 order,
                 f"POST_ONLY LIMIT {order.side_string_c()} order "
                 f"limit px of {order.price} would have been a TAKER: "
@@ -751,7 +756,7 @@ cdef class SimulatedExchange:
     cdef void _process_stop_market_order(self, StopMarketOrder order) except *:
         if self._is_stop_marketable(order.instrument_id, order.side, order.price):
             if self.reject_stop_orders:
-                self._reject_order(
+                self._generate_order_rejected(
                     order,
                     f"STOP {order.side_string_c()} order "
                     f"stop px of {order.price} was in the market: "
@@ -765,7 +770,7 @@ cdef class SimulatedExchange:
 
     cdef void _process_stop_limit_order(self, StopLimitOrder order) except *:
         if self._is_stop_marketable(order.instrument_id, order.side, order.trigger):
-            self._reject_order(
+            self._generate_order_rejected(
                 order,
                 f"STOP_LIMIT {order.side_string_c()} order "
                 f"trigger stop px of {order.trigger} was in the market: "
@@ -869,39 +874,16 @@ cdef class SimulatedExchange:
 
 # -- EVENT HANDLING --------------------------------------------------------------------------------
 
-    cdef void _reject_order(self, Order order, str reason) except *:
-        self._generate_order_rejected(order, reason)
-
     cdef void _accept_order(self, PassiveOrder order) except *:
         self._add_order(order)
         self._generate_order_accepted(order)
 
-    cdef void _update_order(self, PassiveOrder order, Quantity qty, Price price, Price trigger=None) except *:
-        self._generate_order_pending_update(order)
-
+    cdef void _update_order(self, PassiveOrder order, Quantity qty, Price price, Price trigger=None, bint update_ocos=True) except *:
         if qty is None:
             qty = order.quantity
         if price is None:
             price = order.price
-        if order.type == OrderType.STOP_LIMIT and trigger is None:
-            trigger = order.trigger
 
-        self._apply_update(order, qty, price, trigger)
-
-        if order.contingency == ContingencyType.OCO:
-            self._update_oco_orders(order)
-
-    cdef void _update_oco_orders(self, PassiveOrder order) except *:
-        self._log.debug(f"Updating OCO orders from {order.client_order_id}")
-        cdef ClientOrderId client_order_id
-        cdef PassiveOrder oco_order
-        for client_order_id in order.contingency_ids:
-            oco_order = self.cache.order(client_order_id)
-            assert oco_order is not None, "OCO order not found"
-            if oco_order.leaves_qty != order.leaves_qty:
-                self._apply_update(oco_order, order.leaves_qty, oco_order.price)
-
-    cdef void _apply_update(self, PassiveOrder order, Quantity qty, Price price, Price trigger=None) except *:
         if order.type == OrderType.LIMIT:
             self._update_limit_order(order, qty, price)
         elif order.type == OrderType.STOP_MARKET:
@@ -913,7 +895,26 @@ cdef class SimulatedExchange:
         else:  # pragma: no cover (design-time error)
             raise RuntimeError("invalid order type")
 
-    cdef void _cancel_order(self, PassiveOrder order, bint pending=True, bint cancel_ocos=True) except *:
+        if order.contingency == ContingencyType.OCO and update_ocos:
+            self._update_oco_orders(order)
+
+    cdef void _update_oco_orders(self, PassiveOrder order) except *:
+        self._log.debug(f"Updating OCO orders from {order.client_order_id}")
+        cdef ClientOrderId client_order_id
+        cdef PassiveOrder oco_order
+        for client_order_id in order.contingency_ids:
+            oco_order = self.cache.order(client_order_id)
+            assert oco_order is not None, "OCO order not found"
+            if oco_order.leaves_qty != order.leaves_qty:
+                self._update_order(
+                    oco_order,
+                    order.leaves_qty,
+                    oco_order.price,
+                    trigger=None,
+                    update_ocos=False,
+                )
+
+    cdef void _cancel_order(self, PassiveOrder order, bint cancel_ocos=True) except *:
         if order.venue_order_id is None:
             order.venue_order_id = self._generate_venue_order_id(order.instrument_id)
 
@@ -929,25 +930,12 @@ cdef class SimulatedExchange:
             if orders_ask and order in orders_ask:
                 orders_ask.remove(order)
 
-        if pending:
-            self._generate_order_pending_cancel(order)
         self._generate_order_canceled(order)
 
         cdef ClientOrderId client_order_id
         cdef PassiveOrder oco_order
         if order.contingency == ContingencyType.OCO and cancel_ocos:
             self._cancel_oco_orders(order)
-
-    cdef void _cancel_oto_orders(self, PassiveOrder order) except *:
-        self._log.debug(f"Canceling OTO orders from {order.client_order_id}")
-        # Iterate all child orders and cancel if active
-        cdef ClientOrderId client_order_id
-        cdef PassiveOrder oto_order
-        for client_order_id in order.child_order_ids:
-            oto_order = self.cache.order(client_order_id)
-            assert oto_order is not None, "OTO child order not found"
-            if oto_order.is_active_c():
-                self._cancel_order(oto_order, pending=False, cancel_ocos=False)
 
     cdef void _cancel_oco_orders(self, PassiveOrder order) except*:
         self._log.debug(f"Canceling OCO orders from {order.client_order_id}")
@@ -958,7 +946,7 @@ cdef class SimulatedExchange:
             oco_order = self.cache.order(client_order_id)
             assert oco_order is not None, "OCO order not found"
             if oco_order.is_active_c():
-                self._cancel_order(oco_order, pending=False, cancel_ocos=False)
+                self._cancel_order(oco_order, cancel_ocos=False)
 
     cdef void _expire_order(self, PassiveOrder order) except *:
         self._generate_order_expired(order)
@@ -1058,7 +1046,7 @@ cdef class SimulatedExchange:
 
             if order.is_post_only:  # Would be liquidity taker
                 self._delete_order(order)  # Remove order from working orders
-                self._reject_order(
+                self._generate_order_rejected(
                     order,
                     f"POST_ONLY LIMIT {order.side_string_c()} order "
                     f"limit px of {order.price} would have been a TAKER: "
@@ -1250,12 +1238,11 @@ cdef class SimulatedExchange:
             )
 
         if (
-            not self.bar_execution
+            order.is_working_c()
             and self.book_type == BookType.L1_TBBO
-            and order.is_working_c()
             and (order.type == OrderType.MARKET or order.type == OrderType.STOP_MARKET)
         ):
-            # Continue filling into next level
+            # Exhausted simulated book volume - continue aggressive filling into next level)
             fill_px = fills[-1][0]
             if order.side == OrderSide.BUY:
                 fill_px = Price(fill_px + instrument.price_increment, instrument.price_precision)
@@ -1328,9 +1315,15 @@ cdef class SimulatedExchange:
                 oco_order = self.cache.order(client_order_id)
                 assert oco_order is not None, "OCO order not found"
                 if order.is_completed_c() and oco_order.is_active_c():
-                    self._cancel_order(oco_order, pending=False)
+                    self._cancel_order(oco_order)
                 elif order.leaves_qty != oco_order.leaves_qty:
-                    self._apply_update(oco_order, order.leaves_qty, oco_order.price)
+                    self._update_order(
+                        oco_order,
+                        order.leaves_qty,
+                        oco_order.price,
+                        trigger=None,
+                        update_ocos=False,
+                    )
 
         if position is None:
             return
@@ -1343,7 +1336,7 @@ cdef class SimulatedExchange:
                 and order.is_passive_c()
             ):
                 if position.quantity == 0:
-                    self._cancel_order(order, pending=False)
+                    self._cancel_order(order)
                 elif order.leaves_qty != position.quantity:
                     self._update_order(order, position.quantity, order.price)
 
