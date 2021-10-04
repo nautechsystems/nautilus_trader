@@ -18,8 +18,6 @@ from typing import Optional
 
 from pydantic import PositiveInt
 
-from nautilus_trader.risk.engine import RiskEngineConfig
-
 from nautilus_trader.cache.base cimport CacheFacade
 from nautilus_trader.common.clock cimport LiveClock
 from nautilus_trader.common.logging cimport Logger
@@ -31,6 +29,8 @@ from nautilus_trader.core.message cimport Message
 from nautilus_trader.core.message cimport MessageCategory
 from nautilus_trader.msgbus.bus cimport MessageBus
 from nautilus_trader.portfolio.base cimport PortfolioFacade
+
+from nautilus_trader.risk.config import RiskEngineConfig
 
 
 class LiveRiskEngineConfig(RiskEngineConfig):
