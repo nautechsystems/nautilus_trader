@@ -25,7 +25,7 @@ from nautilus_trader.cache.cache import CacheConfig
 from nautilus_trader.data.engine import DataEngineConfig
 from nautilus_trader.execution.engine import ExecEngineConfig
 from nautilus_trader.infrastructure.cache import CacheDatabaseConfig
-from nautilus_trader.risk.engine import RiskEngineConfig
+from nautilus_trader.risk.config import RiskEngineConfig
 from nautilus_trader.trading.config import ImportableStrategyConfig
 
 
