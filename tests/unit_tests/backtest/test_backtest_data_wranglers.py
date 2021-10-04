@@ -13,8 +13,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import pytest
-
 from nautilus_trader.backtest.data.wranglers import BarDataWrangler
 from nautilus_trader.backtest.data.wranglers import QuoteTickDataWrangler
 from nautilus_trader.backtest.data.wranglers import TradeTickDataWrangler
@@ -62,8 +60,32 @@ class TestQuoteTickDataWrangler:
         assert ticks[0].bid_size == Quantity.from_int(1000000)
         assert ticks[0].ask_size == Quantity.from_int(1000000)
         assert ticks[0].ts_event == 1357077600295000064
+        assert ticks[0].ts_event == 1357077600295000064
 
-    def test_pre_process_with_bar_data(self):
+    def test_process_tick_data_with_delta(self):
+        # Arrange
+        usdjpy = TestInstrumentProvider.default_fx_ccy("USD/JPY")
+
+        wrangler = QuoteTickDataWrangler(instrument=usdjpy)
+
+        # Act
+        ticks = wrangler.process(
+            data=TestDataProvider.usdjpy_ticks(),
+            default_volume=1000000,
+            ts_init_delta=1_000_500,
+        )
+
+        # Assert
+        assert len(ticks) == 1000
+        assert ticks[0].instrument_id == usdjpy.id
+        assert ticks[0].bid == Price.from_str("86.655")
+        assert ticks[0].ask == Price.from_str("86.728")
+        assert ticks[0].bid_size == Quantity.from_int(1000000)
+        assert ticks[0].ask_size == Quantity.from_int(1000000)
+        assert ticks[0].ts_event == 1357077600295000064
+        assert ticks[0].ts_init == 1357077600296000564  # <-- delta diff
+
+    def test_pre_process_bar_data_with_delta(self):
         # Arrange
         usdjpy = TestInstrumentProvider.default_fx_ccy("USD/JPY")
         bid_data = TestDataProvider.usdjpy_1min_bid()[:100]
@@ -76,6 +98,7 @@ class TestQuoteTickDataWrangler:
             bid_data=bid_data,
             ask_data=ask_data,
             default_volume=1000000,
+            ts_init_delta=1_000_500,
         )
 
         # Assert
@@ -86,6 +109,7 @@ class TestQuoteTickDataWrangler:
         assert ticks[0].bid_size == Quantity.from_int(1000000)
         assert ticks[0].ask_size == Quantity.from_int(1000000)
         assert ticks[0].ts_event == 1359676799700000000
+        assert ticks[0].ts_init == 1359676799701000500  # <-- delta diff
 
 
 class TestTradeTickDataWrangler:
@@ -114,7 +138,28 @@ class TestTradeTickDataWrangler:
         assert ticks[0].size == Quantity.from_str("2.67900")
         assert ticks[0].aggressor_side == AggressorSide.SELL
         assert ticks[0].match_id == "148568980"
+        assert ticks[0].ts_event == 1597399200223000064
         assert ticks[0].ts_init == 1597399200223000064
+
+    def test_process_with_delta(self):
+        # Arrange
+        ethusdt = TestInstrumentProvider.ethusdt_binance()
+        wrangler = TradeTickDataWrangler(instrument=ethusdt)
+
+        # Act
+        ticks = wrangler.process(
+            TestDataProvider.ethusdt_trades()[:100],
+            ts_init_delta=1_000_500,
+        )
+
+        # Assert
+        assert len(ticks) == 100
+        assert ticks[0].price == Price.from_str("423.760")
+        assert ticks[0].size == Quantity.from_str("2.67900")
+        assert ticks[0].aggressor_side == AggressorSide.SELL
+        assert ticks[0].match_id == "148568980"
+        assert ticks[0].ts_event == 1597399200223000064
+        assert ticks[0].ts_init == 1597399200224000564  # <-- delta diff
 
 
 class TestBarDataWrangler:
@@ -138,12 +183,15 @@ class TestBarDataWrangler:
         assert bars[0].low == Price.from_str("1.57576")
         assert bars[0].close == Price.from_str("1.57576")
         assert bars[0].volume == Quantity.from_int(1000000)
+        assert bars[0].ts_event == 1328054400000000000
+        assert bars[0].ts_init == 1328054400000000000
 
-    def test_process_with_default_volume(self):
+    def test_process_with_default_volume_and_delta(self):
         # Arrange, Act
         bars = self.wrangler.process(
             data=TestDataProvider.gbpusd_1min_bid()[:1000],
             default_volume=10,
+            ts_init_delta=1_000_500,
         )
 
         # Assert
@@ -153,9 +201,10 @@ class TestBarDataWrangler:
         assert bars[0].low == Price.from_str("1.57576")
         assert bars[0].close == Price.from_str("1.57576")
         assert bars[0].volume == Quantity.from_int(10)  # <-- default volume
+        assert bars[0].ts_event == 1328054400000000000
+        assert bars[0].ts_init == 1328054400001000500  # <-- delta diff
 
 
-@pytest.mark.skip(reason="WIP")
 class TestTardisQuoteDataWrangler:
     def setup(self):
         # Fixture Setup
@@ -173,17 +222,20 @@ class TestTardisQuoteDataWrangler:
         instrument = TestInstrumentProvider.btcusdt_binance()
         wrangler = QuoteTickDataWrangler(instrument=instrument)
 
-        print(TestDataProvider.tardis_quotes())
         # Act
-        ticks = wrangler.process(TestDataProvider.tardis_quotes())
+        ticks = wrangler.process(
+            TestDataProvider.tardis_quotes(),
+            ts_init_delta=1_000_501,
+        )
 
         # Assert
         assert len(ticks) == 9999
-        # assert ticks[0].ts_event == 0
-        # assert ticks[0].bid_size == "0.670000"
-        # assert ticks[0].ask_size == "0.840000"
-        # assert ticks[0].bid == "9681.92"
-        # assert ticks[0].ask == "9682.00"
+        assert ticks[0].bid == Price.from_str("9681.92")
+        assert ticks[0].ask == Price.from_str("9682.00")
+        assert ticks[0].bid_size == Quantity.from_str("0.670000")
+        assert ticks[0].ask_size == Quantity.from_str("0.840000")
+        assert ticks[0].ts_event == 1582329603502091776
+        assert ticks[0].ts_init == 1582329603503092277
 
 
 class TestTardisTradeDataWrangler:
@@ -212,4 +264,5 @@ class TestTardisTradeDataWrangler:
         assert ticks[0].size == Quantity.from_str("0.132000")
         assert ticks[0].aggressor_side == AggressorSide.BUY
         assert ticks[0].match_id == "42377944"
+        assert ticks[0].ts_event == 1582329602418379008
         assert ticks[0].ts_init == 1582329602418379008
