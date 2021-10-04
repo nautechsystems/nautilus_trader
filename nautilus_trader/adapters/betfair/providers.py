@@ -13,7 +13,8 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from typing import Dict, List, Optional
+import time
+from typing import Dict, List, Optional, Set
 
 import pandas as pd
 
@@ -24,23 +25,22 @@ from nautilus_trader.adapters.betfair.common import EVENT_TYPE_TO_NAME
 from nautilus_trader.adapters.betfair.parsing import parse_handicap
 from nautilus_trader.adapters.betfair.util import chunk
 from nautilus_trader.adapters.betfair.util import flatten_tree
+from nautilus_trader.common.clock import LiveClock
+from nautilus_trader.common.logging import Logger
+from nautilus_trader.common.logging import LoggerAdapter
+from nautilus_trader.common.providers import InstrumentProvider
+from nautilus_trader.model.identifiers import InstrumentId
+from nautilus_trader.model.instruments.betting import BettingInstrument
 
-from nautilus_trader.common.clock cimport LiveClock
-from nautilus_trader.common.logging cimport Logger
-from nautilus_trader.common.logging cimport LoggerAdapter
-from nautilus_trader.common.providers cimport InstrumentProvider
-from nautilus_trader.core.time cimport unix_timestamp_ns
-from nautilus_trader.model.instruments.betting cimport BettingInstrument
 
-
-cdef class BetfairInstrumentProvider(InstrumentProvider):
+class BetfairInstrumentProvider(InstrumentProvider):
     """
     Provides a means of loading `BettingInstruments` from the Betfair APIClient.
     """
 
     def __init__(
         self,
-        client not None: BetfairClient,
+        client: BetfairClient,
         logger: Logger,
         market_filter: Optional[Dict] = None,
     ):
@@ -51,18 +51,23 @@ cdef class BetfairInstrumentProvider(InstrumentProvider):
         ----------
         client : APIClient
             The client for the provider.
+        logger : Logger
+            The logger for the provider.
+        market_filter : Dict, optional
+            The market filter for the provider.
+
         """
         super().__init__()
 
         self._client = client
         self._log = LoggerAdapter("BetfairInstrumentProvider", logger)
-        self._instruments = {}
-        self._cache = {}
+        self._instruments: Dict[InstrumentId, BettingInstrument] = {}
+        self._cache: Dict[InstrumentId, BettingInstrument] = {}
         self._account_currency = None
 
         self.market_filter = market_filter or {}
         self.venue = BETFAIR_VENUE
-        self._missing_instruments = set()
+        self._missing_instruments: Set[BettingInstrument] = set()
 
     @classmethod
     def from_instruments(cls, instruments, logger=None):
@@ -84,7 +89,7 @@ cdef class BetfairInstrumentProvider(InstrumentProvider):
         self._log.info(f"Found {len(markets)} markets, loading metadata")
         market_metadata = await load_markets_metadata(client=self._client, markets=markets)
 
-        self._log.info(f"Creating instruments..")
+        self._log.info("Creating instruments..")
         instruments = [
             instrument
             for metadata in market_metadata.values()
@@ -95,27 +100,34 @@ cdef class BetfairInstrumentProvider(InstrumentProvider):
 
         self._log.info(f"{len(instruments)} Instruments created")
 
-    cpdef list load_markets(self, dict market_filter=None):
-        """ Search for betfair markets. Useful for debugging / interactive use """
+    def load_markets(self, market_filter=None):
+        """Search for betfair markets. Useful for debugging / interactive use"""
         return load_markets(client=self._client, market_filter=market_filter)
 
-    cpdef list search_instruments(self, dict instrument_filter=None):
-
-        """ Search for instruments within the cache. Useful for debugging / interactive use """
+    def search_instruments(self, instrument_filter=None):
+        """Search for instruments within the cache. Useful for debugging / interactive use"""
         instruments = self.list_instruments()
         if instrument_filter:
             instruments = [
-                ins for ins in instruments
+                ins
+                for ins in instruments
                 if all([getattr(ins, k) == v for k, v in instrument_filter.items()])
             ]
         return instruments
 
-    cpdef BettingInstrument get_betting_instrument(self, str market_id, str selection_id, str handicap):
-        """ Performance friendly instrument lookup """
+    def get_betting_instrument(
+        self,
+        market_id: str,
+        selection_id: str,
+        handicap: str,
+    ) -> BettingInstrument:
+        """Return a betting instrument with performance friendly lookup."""
         key = (market_id, selection_id, handicap)
         if key not in self._cache:
             instrument_filter = {
-                'market_id': market_id, 'selection_id': selection_id, 'selection_handicap': parse_handicap(handicap)
+                "market_id": market_id,
+                "selection_id": selection_id,
+                "selection_handicap": parse_handicap(handicap),
             }
             instruments = self.search_instruments(instrument_filter=instrument_filter)
             count = len(instruments)
@@ -129,19 +141,19 @@ cdef class BetfairInstrumentProvider(InstrumentProvider):
             self._cache[key] = instruments[0]
         return self._cache[key]
 
-    cpdef list list_instruments(self):
+    def list_instruments(self):
         return list(self._instruments.values())
 
     async def get_account_currency(self) -> str:
         if self._account_currency is None:
             detail = await self._client.get_account_details()
-            self._account_currency = detail['currencyCode']
+            self._account_currency = detail["currencyCode"]
         return self._account_currency
 
-    cpdef void set_instruments(self, list instruments) except *:
+    def set_instruments(self, instruments: List):
         self._instruments = {ins.id: ins for ins in instruments}
 
-    cpdef void add_instruments(self, list instruments) except *:
+    def add_instruments(self, instruments: List):
         self._instruments.update({ins.id: ins for ins in instruments})
 
 
@@ -157,7 +169,7 @@ def parse_market_definition(market_definition):
         market_definition["marketId"] = market_id
 
     def _parse_grouped():
-        """ Parse a market where data is grouped by type (ie keys are {'competition': {'id': 1, 'name': 'NBA') """
+        """Parse a market where data is grouped by type (ie keys are {'competition': {'id': 1, 'name': 'NBA')"""
         return {
             "event_type_id": market_definition["eventType"]["id"],
             "event_type_name": market_definition["eventType"]["name"],
@@ -189,18 +201,24 @@ def parse_market_definition(market_definition):
         }
 
     def _parse_top_level():
-        """ Parse a market where all data is contained at the top-level (ie keys are eventTypeId, competitionId) """
+        """Parse a market where all data is contained at the top-level (ie keys are eventTypeId, competitionId)"""
         return {
             "event_type_id": market_definition["eventTypeId"],
-            "event_type_name": market_definition.get("eventTypeName", EVENT_TYPE_TO_NAME[market_definition["eventTypeId"]]),
+            "event_type_name": market_definition.get(
+                "eventTypeName", EVENT_TYPE_TO_NAME[market_definition["eventTypeId"]]
+            ),
             "event_id": market_definition["eventId"],
             "event_name": market_definition.get("eventName", ""),
-            "event_open_date": pd.Timestamp(market_definition["openDate"], tz=market_definition["timezone"]),
+            "event_open_date": pd.Timestamp(
+                market_definition["openDate"], tz=market_definition["timezone"]
+            ),
             "betting_type": market_definition["bettingType"],
             "country_code": market_definition.get("countryCode"),
             "market_type": market_definition.get("marketType"),
             "market_name": market_definition.get("name", ""),
-            "market_start_time": pd.Timestamp(market_definition["marketTime"], tz=market_definition["timezone"]),
+            "market_start_time": pd.Timestamp(
+                market_definition["marketTime"], tz=market_definition["timezone"]
+            ),
             "market_id": market_definition["marketId"],
             "runners": [
                 {
@@ -212,6 +230,7 @@ def parse_market_definition(market_definition):
                 for r in market_definition["runners"]
             ],
         }
+
     if all(k in market_definition for k in ("eventType", "event")):
         return _parse_grouped()
     else:
@@ -220,8 +239,7 @@ def parse_market_definition(market_definition):
 
 # TODO: handle short hand market def
 def make_instruments(market_definition, currency):
-    cdef list instruments = []
-
+    instruments = []
     market_definition = parse_market_definition(market_definition)
 
     # assert market_definition['event']['openDate'] == 'GMT'
@@ -246,8 +264,8 @@ def make_instruments(market_definition, currency):
             selection_handicap=parse_handicap(runner.get("hc", runner.get("handicap"))),
             currency=currency,
             # TODO - Add the provider, use clock
-            ts_event=unix_timestamp_ns(),  # TODO(bm): Duplicate timestamps for now
-            ts_init=unix_timestamp_ns(),
+            ts_event=time.time_ns(),  # TODO(bm): Duplicate timestamps for now
+            ts_init=time.time_ns(),
             # info=market_definition,  # TODO We should probably store a copy of the raw input data
         )
         instruments.append(instrument)
@@ -255,8 +273,17 @@ def make_instruments(market_definition, currency):
 
 
 VALID_MARKET_FILTER_KEYS = (
-    'event_type_name', 'event_type_id', 'event_name', 'event_id', 'event_countryCode', 'market_name', 'market_id',
-    'market_exchangeId', 'market_marketType', 'market_marketStartTime', 'market_numberOfWinners'
+    "event_type_name",
+    "event_type_id",
+    "event_name",
+    "event_id",
+    "event_countryCode",
+    "market_name",
+    "market_id",
+    "market_exchangeId",
+    "market_marketType",
+    "market_marketStartTime",
+    "market_numberOfWinners",
 )
 
 
@@ -264,7 +291,11 @@ async def load_markets(client: BetfairClient, market_filter=None):
     if isinstance(market_filter, dict):
         # This code gets called from search instruments which may pass selection_id/handicap which don't exist here,
         # only the market_id is relevant, so we just drop these two fields
-        market_filter = {k: v for k, v in market_filter.items() if k not in ("selection_id", "selection_handicap")}
+        market_filter = {
+            k: v
+            for k, v in market_filter.items()
+            if k not in ("selection_id", "selection_handicap")
+        }
     assert all((k in VALID_MARKET_FILTER_KEYS for k in (market_filter or [])))
     navigation = await client.list_navigation()
     return list(flatten_tree(navigation, **(market_filter or {})))
@@ -291,17 +322,21 @@ async def load_markets_metadata(client: BetfairClient, markets: List[Dict]) -> D
 
 
 def get_market_book(client, market_ids):
-    resp = client.betting.list_market_book(market_ids=market_ids, price_projection={"priceData": ["EX_TRADED"]})
+    resp = client.betting.list_market_book(
+        market_ids=market_ids, price_projection={"priceData": ["EX_TRADED"]}
+    )
     data = []
     for market in resp:
-        for runner in market['runners']:
-            data.append({
-                'market_id': market['marketId'],
-                'selection_id': runner['selectionId'],
-                'market_matched': market['totalMatched'],
-                'market_status': market['status'],
-                'selection_status': runner['status'],
-                'selection_matched': runner.get('totalMatched'),
-                'selection_last_price': runner.get('lastPriceTraded'),
-            })
+        for runner in market["runners"]:
+            data.append(
+                {
+                    "market_id": market["marketId"],
+                    "selection_id": runner["selectionId"],
+                    "market_matched": market["totalMatched"],
+                    "market_status": market["status"],
+                    "selection_status": runner["status"],
+                    "selection_matched": runner.get("totalMatched"),
+                    "selection_last_price": runner.get("lastPriceTraded"),
+                }
+            )
     return pd.DataFrame(data)

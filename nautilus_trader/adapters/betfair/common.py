@@ -17,10 +17,10 @@ from enum import Enum
 
 import numpy as np
 
-from nautilus_trader.model.c_enums.order_side cimport OrderSide
-from nautilus_trader.model.c_enums.time_in_force cimport TimeInForce
-from nautilus_trader.model.identifiers cimport Venue
-from nautilus_trader.model.objects cimport Price
+from nautilus_trader.model.enums import OrderSide
+from nautilus_trader.model.enums import TimeInForce
+from nautilus_trader.model.identifiers import Venue
+from nautilus_trader.model.objects import Price
 
 
 BETFAIR_VENUE = Venue("BETFAIR")
@@ -75,7 +75,7 @@ def parse_price(p):
 
 
 def parse_prob(p):
-    return str(round(p, 5)).ljust(7, '0')
+    return str(round(p, 5)).ljust(7, "0")
 
 
 def invert_price(p):
@@ -104,9 +104,7 @@ price_increments = [
 price_probability_map = {}
 for start, end, step in price_increments:
     prices = np.append(np.arange(start, end, step), [end])
-    probabilities = map(
-        parse_prob, (1 / prices)
-    )  # Lowest precision to keep unique mapping
+    probabilities = map(parse_prob, (1 / prices))  # Lowest precision to keep unique mapping
     price_probability_map.update(dict(zip(map(parse_price, prices), probabilities)))
 
 probability_price_map = {v: k for k, v in price_probability_map.items()}

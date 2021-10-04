@@ -13,23 +13,23 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from libc.stdint cimport int64_t
+from enum import Enum
+from typing import Dict
 
 import orjson
 import pyarrow as pa
 
+from nautilus_trader.core.data import Data
+from nautilus_trader.model.data.ticker import Ticker
+from nautilus_trader.model.identifiers import InstrumentId
+from nautilus_trader.model.objects import Price
+from nautilus_trader.model.objects import Quantity
+from nautilus_trader.model.orderbook.data import OrderBookDelta
 from nautilus_trader.serialization.arrow.serializer import register_parquet
 from nautilus_trader.serialization.base import register_serializable_object
 
-from nautilus_trader.core.data cimport Data
-from nautilus_trader.model.data.ticker cimport Ticker
-from nautilus_trader.model.identifiers cimport InstrumentId
-from nautilus_trader.model.objects cimport Price
-from nautilus_trader.model.objects cimport Quantity
-from nautilus_trader.model.orderbook.data cimport OrderBookDelta
 
-
-cpdef enum SubscriptionStatus:
+class SubscriptionStatus(Enum):
     UNSUBSCRIBED = 0
     PENDING_STARTUP = 1
     RUNNING = 2
@@ -46,25 +46,25 @@ class InstrumentSearch(Data):
         self.instruments = instruments
 
 
-cdef class BSPOrderBookDelta(OrderBookDelta):
+class BSPOrderBookDelta(OrderBookDelta):
     @staticmethod
-    def from_dict(dict values) -> BSPOrderBookDelta:
-        return BSPOrderBookDelta.from_dict_c(values)
+    def from_dict(values):
+        return BSPOrderBookDelta.from_dict(values)
 
     @staticmethod
-    def to_dict(BSPOrderBookDelta obj):
-        return BSPOrderBookDelta.to_dict_c(obj)
+    def to_dict(obj):
+        return BSPOrderBookDelta.to_dict(obj)
 
 
-cdef class BetfairTicker(Ticker):
+class BetfairTicker(Ticker):
     def __init__(
         self,
-        InstrumentId instrument_id not None,
-        int64_t ts_event,
-        int64_t ts_init,
-        Price last_traded_price=None,
-        Quantity traded_volume=None,
-        dict info=None,
+        instrument_id: InstrumentId,
+        ts_event: int,
+        ts_init: int,
+        last_traded_price: Price = None,
+        traded_volume: Quantity = None,
+        info=None,
     ):
         super().__init__(instrument_id=instrument_id, ts_event=ts_event, ts_init=ts_init, info=info)
         self.last_traded_price = last_traded_price
@@ -80,18 +80,22 @@ cdef class BetfairTicker(Ticker):
                 "last_traded_price": pa.string(),
                 "traded_volume": pa.string(),
             },
-            metadata={"type": "BetfairTicker"}
+            metadata={"type": "BetfairTicker"},
         )
 
 
-def betfair_ticker_from_dict(values: dict):
+def betfair_ticker_from_dict(values: Dict):
     return BetfairTicker(
-        instrument_id=InstrumentId.from_str_c(values["instrument_id"]),
+        instrument_id=InstrumentId.from_str(values["instrument_id"]),
         ts_event=values["ts_event"],
         ts_init=values["ts_init"],
-        last_traded_price=Price.from_str_c(values["last_traded_price"]) if values['last_traded_price'] else None,
-        traded_volume=Quantity.from_str_c(values["traded_volume"]) if values['traded_volume'] else None,
-        info=orjson.loads(values['info']) if values.get('info') is not None else None,
+        last_traded_price=Price.from_str(values["last_traded_price"])
+        if values["last_traded_price"]
+        else None,
+        traded_volume=Quantity.from_str(values["traded_volume"])
+        if values["traded_volume"]
+        else None,
+        info=orjson.loads(values["info"]) if values.get("info") is not None else None,
     )
 
 
@@ -107,7 +111,7 @@ def betfair_ticker_to_dict(ticker: BetfairTicker):
     }
 
 
-BSP_SCHEMA =pa.schema(
+BSP_SCHEMA = pa.schema(
     {
         "instrument_id": pa.string(),
         "ts_event": pa.int64(),
@@ -126,5 +130,7 @@ BSP_SCHEMA =pa.schema(
 register_serializable_object(BetfairTicker, betfair_ticker_to_dict, betfair_ticker_from_dict)
 register_parquet(cls=BetfairTicker, schema=BetfairTicker.schema())
 
-register_serializable_object(BSPOrderBookDelta, BSPOrderBookDelta.to_dict, BSPOrderBookDelta.from_dict)
+register_serializable_object(
+    BSPOrderBookDelta, BSPOrderBookDelta.to_dict, BSPOrderBookDelta.from_dict
+)
 register_parquet(cls=BSPOrderBookDelta, schema=BSP_SCHEMA)

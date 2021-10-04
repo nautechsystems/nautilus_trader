@@ -27,9 +27,8 @@ from nautilus_trader.model.identifiers cimport InstrumentId
 
 
 cdef class DataClient(Component):
-    cdef Cache _cache
-
-    cdef dict _feeds_generic_data
+    cdef readonly Cache _cache
+    cdef readonly dict _feeds_generic_data
 
     cdef readonly bint is_connected
     """If the client is connected.\n\n:returns: `bool`"""
@@ -47,21 +46,21 @@ cdef class DataClient(Component):
 
 # -- DATA HANDLERS ---------------------------------------------------------------------------------
 
-    cdef void _handle_data(self, Data data) except *
-    cdef void _handle_data_response(self, DataType data_type, Data data, UUID4 correlation_id) except *
+    cpdef void _handle_data(self, Data data) except *
+    cpdef void _handle_data_response(self, DataType data_type, Data data, UUID4 correlation_id) except *
 
 
 cdef class MarketDataClient(DataClient):
-    cdef dict _feeds_order_book_delta
-    cdef dict _feeds_order_book_snapshot
-    cdef dict _feeds_ticker
-    cdef dict _feeds_quote_tick
-    cdef dict _feeds_trade_tick
-    cdef dict _feeds_bar
-    cdef dict _feeds_instrument_status_update
-    cdef dict _feeds_instrument_close_price
+    cdef readonly dict _feeds_order_book_delta
+    cdef readonly dict _feeds_order_book_snapshot
+    cdef readonly dict _feeds_ticker
+    cdef readonly dict _feeds_quote_tick
+    cdef readonly dict _feeds_trade_tick
+    cdef readonly dict _feeds_bar
+    cdef readonly dict _feeds_instrument_status_update
+    cdef readonly dict _feeds_instrument_close_price
+    cdef readonly set _feeds_instrument
 
-    cdef set _feeds_instrument
     cdef object _update_instruments_task
 
     cpdef list unavailable_methods(self)
@@ -130,6 +129,6 @@ cdef class MarketDataClient(DataClient):
 
 # -- DATA HANDLERS ---------------------------------------------------------------------------------
 
-    cdef void _handle_quote_ticks(self, InstrumentId instrument_id, list ticks, UUID4 correlation_id) except *
-    cdef void _handle_trade_ticks(self, InstrumentId instrument_id, list ticks, UUID4 correlation_id) except *
-    cdef void _handle_bars(self, BarType bar_type, list bars, Bar partial, UUID4 correlation_id) except *
+    cpdef void _handle_quote_ticks(self, InstrumentId instrument_id, list ticks, UUID4 correlation_id) except *
+    cpdef void _handle_trade_ticks(self, InstrumentId instrument_id, list ticks, UUID4 correlation_id) except *
+    cpdef void _handle_bars(self, BarType bar_type, list bars, Bar partial, UUID4 correlation_id) except *

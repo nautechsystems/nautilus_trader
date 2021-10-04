@@ -140,10 +140,10 @@ cdef class DataClient(Component):
 
 # -- DATA HANDLERS ---------------------------------------------------------------------------------
 
-    cdef void _handle_data(self, Data data) except *:
+    cpdef void _handle_data(self, Data data) except *:
         self._msgbus.send(endpoint="DataEngine.process", msg=data)
 
-    cdef void _handle_data_response(self, DataType data_type, Data data, UUID4 correlation_id) except *:
+    cpdef void _handle_data_response(self, DataType data_type, Data data, UUID4 correlation_id) except *:
         cdef DataResponse response = DataResponse(
             client_id=self.id,
             data_type=data_type,
@@ -479,7 +479,7 @@ cdef class MarketDataClient(DataClient):
 
 # -- DATA HANDLERS ---------------------------------------------------------------------------------
 
-    cdef void _handle_quote_ticks(self, InstrumentId instrument_id, list ticks, UUID4 correlation_id) except *:
+    cpdef void _handle_quote_ticks(self, InstrumentId instrument_id, list ticks, UUID4 correlation_id) except *:
         cdef DataResponse response = DataResponse(
             client_id=self.id,
             data_type=DataType(QuoteTick, metadata={"instrument_id": instrument_id}),
@@ -491,7 +491,7 @@ cdef class MarketDataClient(DataClient):
 
         self._msgbus.send(endpoint="DataEngine.response", msg=response)
 
-    cdef void _handle_trade_ticks(self, InstrumentId instrument_id, list ticks, UUID4 correlation_id) except *:
+    cpdef void _handle_trade_ticks(self, InstrumentId instrument_id, list ticks, UUID4 correlation_id) except *:
         cdef DataResponse response = DataResponse(
             client_id=self.id,
             data_type=DataType(TradeTick, metadata={"instrument_id": instrument_id}),
@@ -503,7 +503,7 @@ cdef class MarketDataClient(DataClient):
 
         self._msgbus.send(endpoint="DataEngine.response", msg=response)
 
-    cdef void _handle_bars(self, BarType bar_type, list bars, Bar partial, UUID4 correlation_id) except *:
+    cpdef void _handle_bars(self, BarType bar_type, list bars, Bar partial, UUID4 correlation_id) except *:
         cdef DataResponse response = DataResponse(
             client_id=self.id,
             data_type=DataType(Bar, metadata={"bar_type": bar_type, "Partial": partial}),

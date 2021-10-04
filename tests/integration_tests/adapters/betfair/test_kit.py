@@ -31,7 +31,6 @@ from nautilus_trader.adapters.betfair.client.core import BetfairClient
 from nautilus_trader.adapters.betfair.common import BETFAIR_VENUE
 from nautilus_trader.adapters.betfair.data import BetfairDataClient
 from nautilus_trader.adapters.betfair.data import on_market_update
-from nautilus_trader.adapters.betfair.execution import BetfairExecutionClient
 from nautilus_trader.adapters.betfair.providers import BetfairInstrumentProvider
 from nautilus_trader.adapters.betfair.providers import make_instruments
 from nautilus_trader.adapters.betfair.util import historical_instrument_provider_loader
@@ -242,21 +241,6 @@ class BetfairTestStubs:
         client.request.side_effect = request
         client.session_token = "xxxsessionToken="
 
-        return client
-
-    @staticmethod
-    async def execution_client(
-        betfair_client, account_id, exec_engine, clock, live_logger
-    ) -> BetfairExecutionClient:
-        client = BetfairExecutionClient(
-            client=betfair_client,
-            account_id=account_id,
-            engine=exec_engine,
-            clock=clock,
-            logger=live_logger,
-        )
-        client.instrument_provider().load_all()
-        exec_engine.register_client(client)
         return client
 
     @staticmethod
