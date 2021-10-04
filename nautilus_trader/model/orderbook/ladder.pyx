@@ -248,9 +248,10 @@ cdef class Ladder:
         cdef double cumulative_denominator = 0.0
         cdef double current = 0.0
         cdef double target = order.size if depth_type == DepthType.VOLUME else order.price * order.size
+        cdef double remainder = 0.0
+
         cdef Level level
         cdef Order book_order
-
         for level in self.levels:
             if self.reverse and level.price < order.price:
                 break
