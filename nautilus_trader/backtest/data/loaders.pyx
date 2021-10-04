@@ -104,10 +104,10 @@ cdef class TardisTradeDataLoader:
         """
         Condition.not_none(file_path, "file_path")
 
-        df = pd.read_csv(file_path, index_col='local_timestamp', date_parser=_ts_parser, parse_dates=True)
-        df.rename(columns={'id': 'trade_id', 'amount': 'quantity'}, inplace=True)
-        df['side'] = df.side.str.upper()
-        df = df[['symbol', 'trade_id', 'price', 'quantity', 'side']]
+        df = pd.read_csv(file_path, index_col="local_timestamp", date_parser=_ts_parser, parse_dates=True)
+        df.rename(columns={"id": "trade_id", "amount": "quantity"}, inplace=True)
+        df["side"] = df.side.str.upper()
+        df = df[["symbol", "trade_id", "price", "quantity", "side"]]
 
         return df
 
@@ -134,14 +134,18 @@ cdef class TardisQuoteDataLoader:
         """
         Condition.not_none(file_path, "file_path")
 
-        df = pd.read_csv(file_path, index_col='local_timestamp', date_parser=_ts_parser, parse_dates=True)
+        df = pd.read_csv(file_path, index_col="local_timestamp", date_parser=_ts_parser, parse_dates=True)
         df.rename(
-            columns={'ask_amount': 'ask_size', 'ask_price': 'ask', 'bid_price': 'bid', 'bid_amount': 'bid_size'},
+            columns={
+                "ask_amount": "ask_size",
+                "ask_price": "ask",
+                "bid_price": "bid",
+                "bid_amount": "bid_size",
+            },
             inplace=True,
         )
-        df = df[['symbol', 'ask_size', 'ask', 'bid_size', 'bid']]
 
-        return df
+        return df[["bid", "ask", "bid_size", "ask_size"]]
 
 
 cdef class ParquetTickDataLoader:
@@ -167,7 +171,7 @@ cdef class ParquetTickDataLoader:
         Condition.not_none(file_path, "file_path")
 
         df = pd.read_parquet(file_path)
-        df.set_index('timestamp', inplace=True)
+        df.set_index("timestamp", inplace=True)
         return df
 
 
@@ -194,5 +198,5 @@ cdef class ParquetBarDataLoader:
         Condition.not_none(file_path, "file_path")
 
         df = pd.read_parquet(file_path)
-        df.set_index('timestamp', inplace=True)
+        df.set_index("timestamp", inplace=True)
         return df
