@@ -59,18 +59,17 @@ class BetfairInstrumentProvider(InstrumentProvider):
         """
         super().__init__()
 
+        self.market_filter = market_filter or {}
+        self.venue = BETFAIR_VENUE
         self._client = client
         self._log = LoggerAdapter("BetfairInstrumentProvider", logger)
         self._cache: Dict[InstrumentId, BettingInstrument] = {}
         self._account_currency = None
-
-        self.market_filter = market_filter or {}
-        self.venue = BETFAIR_VENUE
         self._missing_instruments: Set[BettingInstrument] = set()
 
     @classmethod
     def from_instruments(cls, instruments, logger=None):
-        logger = Logger(LiveClock())
+        logger = logger or Logger(LiveClock())
         instance = cls(client=1, logger=logger)
         instance.set_instruments(instruments)
         return instance
@@ -94,8 +93,8 @@ class BetfairInstrumentProvider(InstrumentProvider):
             for metadata in market_metadata.values()
             for instrument in make_instruments(metadata, currency=currency)
         ]
-        for ins in instruments:
-            self._instruments[ins.id] = ins
+        for instrument in instruments:
+            self.add(instrument=instrument)
 
         self._log.info(f"{len(instruments)} Instruments created")
 
@@ -141,7 +140,7 @@ class BetfairInstrumentProvider(InstrumentProvider):
         return self._cache[key]
 
     def list_instruments(self):
-        return list(self._instruments.values())
+        return list(self.get_all().values())
 
     async def get_account_currency(self) -> str:
         if self._account_currency is None:
@@ -152,8 +151,9 @@ class BetfairInstrumentProvider(InstrumentProvider):
     def set_instruments(self, instruments: List):
         self._instruments = {ins.id: ins for ins in instruments}
 
-    def add_instruments(self, instruments: List):
-        self._instruments.update({ins.id: ins for ins in instruments})
+    def add_instruments(self, instruments: List[BettingInstrument]):
+        for instrument in instruments:
+            self.add(instrument)
 
 
 def _parse_date(s, tz):
