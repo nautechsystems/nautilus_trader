@@ -61,7 +61,6 @@ class BetfairInstrumentProvider(InstrumentProvider):
 
         self._client = client
         self._log = LoggerAdapter("BetfairInstrumentProvider", logger)
-        self._instruments: Dict[InstrumentId, BettingInstrument] = {}
         self._cache: Dict[InstrumentId, BettingInstrument] = {}
         self._account_currency = None
 

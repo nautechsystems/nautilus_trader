@@ -19,8 +19,8 @@ from nautilus_trader.model.instruments.base cimport Instrument
 
 
 cdef class InstrumentProvider:
-    cdef dict _instruments
-    cdef dict _currencies
+    cdef public dict _instruments
+    cdef readonly dict _currencies
 
     cpdef void load_all(self) except *
     cpdef void load(self, InstrumentId instrument_id, dict details) except *

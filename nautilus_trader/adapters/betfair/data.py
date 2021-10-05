@@ -130,7 +130,6 @@ class BetfairDataClient(LiveMarketDataClient):
         self._log.debug(f"Loading {len(instruments)} instruments from provider into cache, ")
         for instrument in instruments:
             self._handle_data(instrument)
-            self._cache.add_instrument(instrument)
 
         self._log.debug(
             f"DataEngine has {len(self._cache.instruments(BETFAIR_VENUE))} Betfair instruments"
@@ -162,7 +161,7 @@ class BetfairDataClient(LiveMarketDataClient):
         self._log.info("Closing BetfairClient...")
         self._client.client_logout()
 
-        self.is_connected = False
+        self._set_connected(False)
         self._log.info("Disconnected.")
 
     def _reset(self):
