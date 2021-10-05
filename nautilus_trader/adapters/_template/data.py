@@ -36,8 +36,7 @@ from nautilus_trader.model.identifiers import InstrumentId
 
 class TemplateLiveMarketDataClient(LiveMarketDataClient):
     """
-    An example template of a ``LiveMarketDataClient`` showing the overridable
-    abstract methods.
+    An example of a ``LiveMarketDataClient`` highlighting the overridable abstract methods.
 
     +------------------------+----------------+
     | Method                 | Category       |

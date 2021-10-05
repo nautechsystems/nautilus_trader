@@ -15,10 +15,18 @@
 
 
 class BetfairError(Exception):
+    """
+    The base class for all `Betfair` specific errors.
+    """
+
     pass
 
 
 class BetfairAPIError(BetfairError):
+    """
+    Represents a `Betfair` API specific error.
+    """
+
     def __init__(self, code: str, message: str):
         super().__init__()
         self.code = code

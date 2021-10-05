@@ -227,7 +227,7 @@ def backtest_runner(
     data_configs: List[BacktestDataConfig],
     batch_size_bytes: Optional[int] = None,
 ):
-    """Execute a backtest run"""
+    """Execute a backtest run."""
     if batch_size_bytes is not None:
         return streaming_backtest_runner(
             run_config_id=run_config_id,

@@ -29,8 +29,6 @@ Alternative implementations can be written on top of the generic engine - which
 just need to override the `execute` and `process` methods.
 """
 
-import pydantic
-
 from libc.stdint cimport int64_t
 
 from decimal import Decimal

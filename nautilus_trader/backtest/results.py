@@ -20,6 +20,10 @@ from typing import Dict, Optional
 
 @dataclass
 class BacktestResult:
+    """
+    Represents the results of a single complete backtest run.
+    """
+
     trader_id: str
     machine_id: str
     run_config_id: Optional[str]

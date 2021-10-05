@@ -38,8 +38,7 @@ from nautilus_trader.model.orders.base import Order
 
 class TemplateLiveExecutionClient(LiveExecutionClient):
     """
-    An example template of a ``LiveExecutionClient`` showing the overridable
-    abstract methods.
+    An example of a ``LiveExecutionClient`` highlighting the overridable abstract methods.
 
     +------------------------+----------------+
     | Method                 | Category       |

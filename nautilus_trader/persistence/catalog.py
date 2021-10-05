@@ -45,7 +45,7 @@ from nautilus_trader.serialization.arrow.util import dict_of_lists_to_list_of_di
 
 class DataCatalog(metaclass=Singleton):
     """
-    Provides a queryable data catalogue
+    Provides a queryable data catalogue.
     """
 
     def __init__(
