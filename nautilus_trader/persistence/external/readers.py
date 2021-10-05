@@ -104,12 +104,12 @@ class Reader:
             assert (
                 self.instrument_provider is not None
             ), "Passed `instrument_provider_update` but `instrument_provider` was None"
-            instruments = set(self.instrument_provider.get_all().values())
+            instruments = set(self.instrument_provider._instruments.values())
             r = self.instrument_provider_update(self.instrument_provider, data)
             # Check the user hasn't accidentally used a generator here also
             if isinstance(r, Generator):
                 raise Exception(f"{self.instrument_provider_update} func should not be generator")
-            new_instruments = set(self.instrument_provider.get_all().values()).difference(
+            new_instruments = set(self.instrument_provider._instruments.values()).difference(
                 instruments
             )
             if new_instruments:

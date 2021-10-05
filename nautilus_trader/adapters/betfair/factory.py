@@ -127,9 +127,6 @@ class BetfairLiveDataClientFactory(LiveDataClientFactory):
             client=client, logger=logger, market_filter=tuple(market_filter.items())
         )
 
-        print(f"PROVIDER: {provider}")
-        print(f"CLIENT: {client}")
-
         data_client = BetfairDataClient(
             loop=loop,
             client=client,
@@ -199,9 +196,6 @@ class BetfairLiveExecutionClientFactory(LiveExecutionClientFactory):
         provider = get_instrument_provider(
             client=client, logger=logger, market_filter=tuple(market_filter.items())
         )
-
-        print(f"PROVIDER: {provider}")
-        print(f"CLIENT: {client}")
 
         # Get account ID env variable or set default
         account_id_env_var = os.getenv(config.get("account_id", ""), "001")
