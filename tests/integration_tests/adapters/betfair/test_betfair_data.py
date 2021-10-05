@@ -19,7 +19,6 @@ from collections import Counter
 from functools import partial
 from unittest.mock import patch
 
-import numpy as np
 import pytest
 
 from nautilus_trader.adapters.betfair.common import BETFAIR_VENUE
@@ -139,9 +138,9 @@ class TestBetfairDataClient:
             betfair_client=self.betfair_client
         )
         # Add a subset of instruments
-        np.random.seed(0)
-        instruments = np.random.choice(INSTRUMENTS, size=1000)
-        np.random.seed(None)
+        instruments = [
+            ins for ins in INSTRUMENTS if ins.market_id in BetfairDataProvider.market_ids()
+        ]
         self.instrument_provider.add_instruments(instruments)
 
         self.client = BetfairDataClient(
@@ -332,7 +331,7 @@ class TestBetfairDataClient:
         self.client.request(req, UUID4(str(self.uuid)))
         await asyncio.sleep(0)
         resp = self.messages[0]
-        assert len(resp.data.instruments) == 9416
+        assert len(resp.data.instruments) == 6800
 
     def test_orderbook_repr(self):
         self.client._on_market_update(BetfairStreaming.mcm_live_IMAGE())

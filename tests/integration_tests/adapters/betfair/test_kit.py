@@ -99,7 +99,7 @@ class BetfairTestStubs:
         return BetfairInstrumentProvider(
             client=betfair_client,
             logger=BetfairTestStubs.live_logger(BetfairTestStubs.clock()),
-            market_filter={"event_type_name": "Tennis"},
+            # market_filter={"event_type_name": "Tennis"},
         )
 
     @staticmethod
@@ -758,6 +758,8 @@ class BetfairDataProvider:
             "1.180727728",
             "1.180737193",
             "1.180770798",
+            "1.180737206",
+            "1.165003060",
         )
 
     @staticmethod
