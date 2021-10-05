@@ -140,7 +140,7 @@ class BetfairDataClient(LiveMarketDataClient):
         self._log.debug("scheduling heartbeat")
         self._loop.create_task(self._post_connect_heartbeat())
 
-        self.is_connected = True
+        self._set_connected(True)
         self._log.info("Connected.")
 
     async def _post_connect_heartbeat(self):
