@@ -32,6 +32,10 @@ from nautilus_trader.network.http_client import ResponseException
 
 
 class BetfairClient(HTTPClient):
+    """
+    Provides a HTTP client for `Betfair`.
+    """
+
     IDENTITY_URL = "https://identitysso-cert.betfair.com/api/"
     BASE_URL = "https://api.betfair.com/exchange/"
     NAVIGATION_URL = BASE_URL + "betting/rest/v1/en/navigation/menu.json"
@@ -131,7 +135,7 @@ class BetfairClient(HTTPClient):
 
     async def list_navigation(self):
         """
-        List the tree (navigation) of all betfair markets
+        List the tree (navigation) of all betfair markets.
         """
         resp = await self.get(url=self.NAVIGATION_URL, headers=self.headers)
         return orjson.loads(resp.data)
@@ -145,7 +149,7 @@ class BetfairClient(HTTPClient):
         locale: str = None,
     ):
         """
-        Return specific data about markets
+        Return specific data about markets.
         """
         assert 0 < max_results <= 1000
 
@@ -183,7 +187,7 @@ class BetfairClient(HTTPClient):
         customer_strategy_ref: str = None,
     ):
         """
-        Place a new order
+        Place a new order.
         """
         params = parse_params(**locals())
         resp = await self.rpc_post(

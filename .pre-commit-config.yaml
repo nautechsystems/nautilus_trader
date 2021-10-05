@@ -62,7 +62,7 @@ repos:
         ]
 
   - repo: https://github.com/pre-commit/mirrors-mypy
-    rev: v0.910
+    rev: v0.910-1
     hooks:
       - id: mypy
         args: [
@@ -132,7 +132,7 @@ repos:
       - id: pydocstyle
         files: ^nautilus_trader/
         args:
-        - "--ignore=D100,D101,D102,D103,D104,D105,D107,D200,D203,D205,D212,D213,D400,D415"
+        - "--ignore=D100,D102,D103,D104,D107,D105,D200,D203,D205,D212,D400,D415"
         additional_dependencies:
           - toml
 
@@ -142,7 +142,7 @@ repos:
       - id: nbstripout
 
 
-# Flake8 ignore justifications
+# flake8 ignore justifications
 # ----------------------------
 # C101: Coding magic comment not found
 # D100: Missing docstring in public module (picks up entire test suite)
@@ -159,7 +159,15 @@ repos:
 # S403: Consider possible security implications associated with pickle module (pickle ok!)
 # W503: in error will be amended by flake8 soon (https://www.flake8rules.com/rules/W503.html)
 
-
 # pydocstyle ignore justifications
 # --------------------------------
-# WIP
+# D100: Missing docstring in public module  **fix**
+# D102: Missing docstring in public method  **fix**
+# D103: Missing docstring in public function  **fix**
+# D104: Missing docstring in public package  **fix**
+# D200: One-line docstring should fit on one line with quotes (optional style)
+# D203: 1 blank line required before class docstring (optional style)
+# D205: 1 blank line required between summary line and description (optional style)
+# D212: Multi-line docstring summary should start at the first line (optional style)
+# D400: First line should end with a period (not always a first line)
+# D415: First line should end with a period, question mark, or exclamation point (not always a first line)

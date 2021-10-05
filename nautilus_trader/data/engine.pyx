@@ -29,8 +29,6 @@ Alternative implementations can be written on top of the generic engine - which
 just need to override the `execute`, `process`, `send` and `receive` methods.
 """
 
-import pydantic
-
 from cpython.datetime cimport timedelta
 
 from typing import Callable, Optional
