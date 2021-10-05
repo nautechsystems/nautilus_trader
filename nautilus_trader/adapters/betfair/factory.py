@@ -74,6 +74,10 @@ def get_instrument_provider(client: BetfairClient, logger: Logger, market_filter
 
 
 class BetfairLiveDataClientFactory(LiveDataClientFactory):
+    """
+    Provides a `Betfair` live data client factory.
+    """
+
     @staticmethod
     def create(
         loop: asyncio.AbstractEventLoop,

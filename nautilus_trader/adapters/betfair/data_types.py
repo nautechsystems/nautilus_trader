@@ -30,12 +30,20 @@ from nautilus_trader.serialization.base import register_serializable_object
 
 
 class SubscriptionStatus(Enum):
+    """
+    Represents a `Betfair` subscription status.
+    """
+
     UNSUBSCRIBED = 0
     PENDING_STARTUP = 1
     RUNNING = 2
 
 
 class InstrumentSearch(Data):
+    """
+    Represents a `Betfair` instrument search.
+    """
+
     def __init__(
         self,
         instruments,
@@ -47,6 +55,10 @@ class InstrumentSearch(Data):
 
 
 class BSPOrderBookDelta(OrderBookDelta):
+    """
+    Represents a `Betfair` BSP order book delta.
+    """
+
     @staticmethod
     def from_dict(values):
         return BSPOrderBookDelta.from_dict(values)
@@ -57,6 +69,10 @@ class BSPOrderBookDelta(OrderBookDelta):
 
 
 class BetfairTicker(Ticker):
+    """
+    Represents a `Betfair` ticker.
+    """
+
     def __init__(
         self,
         instrument_id: InstrumentId,
