@@ -218,6 +218,10 @@ EVENT_TYPE_TO_NAME = {
 
 
 class HistoricalSportType(Enum):
+    """
+    Represents a `Betfair` historical sport type.
+    """
+
     HORSE_RACING = "Horse Racing"
     SOCCER = "Soccer"
     TENNIS = "Tennis"
