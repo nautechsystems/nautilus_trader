@@ -22,8 +22,8 @@ cdef class LiveDataClientFactory:
 
 
 cdef class LiveDataClient(DataClient):
-    cdef object _loop
+    cdef readonly object _loop
 
 
 cdef class LiveMarketDataClient(MarketDataClient):
-    cdef object _loop
+    cdef readonly object _loop

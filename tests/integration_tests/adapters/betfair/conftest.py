@@ -20,4 +20,5 @@ import pytest
 
 @pytest.fixture(scope="session")
 def loop():
+    # used by `test_betfair_data.instrument_list` fixture
     return asyncio.get_event_loop()
