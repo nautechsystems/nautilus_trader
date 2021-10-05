@@ -14,49 +14,50 @@
 # -------------------------------------------------------------------------------------------------
 
 import asyncio
+from typing import Dict, Set
 
 import orjson
-
-from nautilus_trader.adapters.betfair.providers cimport BetfairInstrumentProvider
-from nautilus_trader.cache.cache cimport Cache
-from nautilus_trader.common.clock cimport LiveClock
-from nautilus_trader.common.logging cimport LogColor
-from nautilus_trader.common.logging cimport Logger
-from nautilus_trader.core.correctness cimport Condition
-from nautilus_trader.core.data cimport Data
-from nautilus_trader.core.message cimport Event
-from nautilus_trader.core.uuid cimport UUID4
-from nautilus_trader.live.data_client cimport LiveMarketDataClient
-from nautilus_trader.model.c_enums.book_type cimport BookType
-from nautilus_trader.model.data.base cimport DataType
-from nautilus_trader.model.identifiers cimport ClientId
-from nautilus_trader.model.identifiers cimport InstrumentId
-from nautilus_trader.model.instruments.betting cimport BettingInstrument
-from nautilus_trader.msgbus.bus cimport MessageBus
 
 from nautilus_trader.adapters.betfair.client.core import BetfairClient
 from nautilus_trader.adapters.betfair.common import BETFAIR_VENUE
 from nautilus_trader.adapters.betfair.data_types import InstrumentSearch
+from nautilus_trader.adapters.betfair.data_types import SubscriptionStatus
 from nautilus_trader.adapters.betfair.parsing import on_market_update
+from nautilus_trader.adapters.betfair.providers import BetfairInstrumentProvider
 from nautilus_trader.adapters.betfair.sockets import BetfairMarketStreamClient
+from nautilus_trader.cache.cache import Cache
+from nautilus_trader.common.clock import LiveClock
+from nautilus_trader.common.logging import LogColor
+from nautilus_trader.common.logging import Logger
+from nautilus_trader.core.correctness import PyCondition
+from nautilus_trader.core.data import Data
+from nautilus_trader.core.message import Event
+from nautilus_trader.core.uuid import UUID4
+from nautilus_trader.live.data_client import LiveMarketDataClient
+from nautilus_trader.model.data.base import DataType
+from nautilus_trader.model.enums import BookType
+from nautilus_trader.model.identifiers import ClientId
+from nautilus_trader.model.identifiers import InstrumentId
+from nautilus_trader.model.instruments.betting import BettingInstrument
+from nautilus_trader.msgbus.bus import MessageBus
 
 
-cdef class BetfairDataClient(LiveMarketDataClient):
+class BetfairDataClient(LiveMarketDataClient):
     """
     Provides a data client for the Betfair API.
     """
 
     def __init__(
         self,
-        loop not None: asyncio.AbstractEventLoop,
-        client not None: BetfairClient,
-        MessageBus msgbus not None,
-        Cache cache not None,
-        LiveClock clock not None,
-        Logger logger not None,
-        dict market_filter not None,
-        BetfairInstrumentProvider instrument_provider not None,
-        bint strict_handling=False,
+        loop: asyncio.AbstractEventLoop,
+        client: BetfairClient,
+        msgbus: MessageBus,
+        cache: Cache,
+        clock: LiveClock,
+        logger: Logger,
+        market_filter: Dict,
+        instrument_provider: BetfairInstrumentProvider,
+        strict_handling: bool = False,
     ):
         """
         Initialize a new instance of the ``BetfairDataClient`` class.
@@ -75,13 +76,18 @@ cdef class BetfairDataClient(LiveMarketDataClient):
             The clock for the client.
         logger : Logger
             The logger for the client.
+        market_filter : Dict
+            The market filter.
+        instrument_provider : BetfairInstrumentProvider
+            The instrument provider.
+        strict_handling : bool
+            If strict handling mode is enabled.
 
         """
         self._client: BetfairClient = client
-        self._instrument_provider: BetfairInstrumentProvider = instrument_provider or BetfairInstrumentProvider(
-            client=client,
-            logger=logger,
-            market_filter=market_filter
+        self._instrument_provider: BetfairInstrumentProvider = (
+            instrument_provider
+            or BetfairInstrumentProvider(client=client, logger=logger, market_filter=market_filter)
         )
         super().__init__(
             loop=loop,
@@ -100,11 +106,11 @@ cdef class BetfairDataClient(LiveMarketDataClient):
         self.subscription_status = SubscriptionStatus.UNSUBSCRIBED
 
         # Subscriptions
-        self._subscribed_instrument_ids = set()  # type: set[InstrumentId]
+        self._subscribed_instrument_ids: Set[InstrumentId] = set()
         self._strict_handling = strict_handling
-        self._subscribed_market_ids = set()   # type: set[InstrumentId]
+        self._subscribed_market_ids: Set[InstrumentId] = set()
 
-    cpdef void _start(self) except *:
+    def _start(self) -> None:
         self._log.info("Connecting...")
         self._loop.create_task(self._connect())
 
@@ -124,23 +130,24 @@ cdef class BetfairDataClient(LiveMarketDataClient):
         self._log.debug(f"Loading {len(instruments)} instruments from provider into cache, ")
         for instrument in instruments:
             self._handle_data(instrument)
-            self._cache.add_instrument(instrument)
 
-        self._log.debug(f"DataEngine has {len(self._cache.instruments(BETFAIR_VENUE))} Betfair instruments")
+        self._log.debug(
+            f"DataEngine has {len(self._cache.instruments(BETFAIR_VENUE))} Betfair instruments"
+        )
 
         # Schedule a heartbeat in 10s to give us a little more time to load instruments
         self._log.debug("scheduling heartbeat")
         self._loop.create_task(self._post_connect_heartbeat())
 
-        self.is_connected = True
+        self._set_connected(True)
         self._log.info("Connected.")
 
     async def _post_connect_heartbeat(self):
         for _ in range(3):
             await asyncio.sleep(5)
-            await self._stream.send(orjson.dumps({'op': 'heartbeat'}))
+            await self._stream.send(orjson.dumps({"op": "heartbeat"}))
 
-    cpdef void _stop(self) except *:
+    def _stop(self) -> None:
         self._loop.create_task(self._disconnect())
 
     async def _disconnect(self):
@@ -154,52 +161,53 @@ cdef class BetfairDataClient(LiveMarketDataClient):
         self._log.info("Closing BetfairClient...")
         self._client.client_logout()
 
-        self.is_connected = False
+        self._set_connected(False)
         self._log.info("Disconnected.")
 
-    cpdef void _reset(self) except *:
+    def _reset(self):
         if self.is_connected:
             self._log.error("Cannot reset a connected data client.")
             return
 
         self._subscribed_instrument_ids = set()
 
-    cpdef void _dispose(self) except *:
+    def _dispose(self):
         if self.is_connected:
             self._log.error("Cannot dispose a connected data client.")
             return
 
-# -- REQUESTS --------------------------------------------------------------------------------------
+    # -- REQUESTS --------------------------------------------------------------------------------------
 
-    cpdef void request(self, DataType data_type, UUID4 correlation_id) except *:
+    def request(self, data_type: DataType, correlation_id: UUID4):
         if data_type.type == InstrumentSearch:
             # Strategy has requested a list of instruments
-            self._loop.create_task(self._handle_instrument_search(data_type=data_type, correlation_id=correlation_id))
+            self._loop.create_task(
+                self._handle_instrument_search(data_type=data_type, correlation_id=correlation_id)
+            )
         else:
             super().request(data_type=data_type, correlation_id=correlation_id)
 
     async def _handle_instrument_search(self, data_type: DataType, correlation_id: UUID4):
         await self._instrument_provider.load_all_async(market_filter=data_type.metadata)
-        instruments = self._instrument_provider.search_instruments(instrument_filter=data_type.metadata)
+        instruments = self._instrument_provider.search_instruments(
+            instrument_filter=data_type.metadata
+        )
         now = self._clock.timestamp_ns()
         search = InstrumentSearch(
             instruments=instruments,
             ts_event=now,
             ts_init=now,
         )
-        self._handle_data_response(
-            data_type=data_type,
-            data=search,
-            correlation_id=correlation_id
-        )
+        self._handle_data_response(data_type=data_type, data=search, correlation_id=correlation_id)
 
-# -- SUBSCRIPTIONS ---------------------------------------------------------------------------------
+    # -- SUBSCRIPTIONS ---------------------------------------------------------------------------------
 
-    cpdef void subscribe_order_book_deltas(
-        self, InstrumentId instrument_id,
-        BookType book_type,
-        dict kwargs=None,
-    ) except *:
+    def subscribe_order_book_deltas(
+        self,
+        instrument_id: InstrumentId,
+        book_type: BookType,
+        kwargs=None,
+    ):
         """
         Subscribe to `OrderBook` data for the given instrument ID.
 
@@ -215,9 +223,9 @@ cdef class BetfairDataClient(LiveMarketDataClient):
         """
         if kwargs is None:
             kwargs = {}
-        Condition.not_none(instrument_id, "instrument_id")
+        PyCondition.not_none(instrument_id, "instrument_id")
 
-        cdef BettingInstrument instrument = self._instrument_provider.find(instrument_id)  # type: BettingInstrument
+        instrument: BettingInstrument = self._instrument_provider.find(instrument_id)
 
         if instrument.market_id in self._subscribed_market_ids:
             self._log.warning(
@@ -239,7 +247,9 @@ cdef class BetfairDataClient(LiveMarketDataClient):
         elif self.subscription_status == SubscriptionStatus.RUNNING:
             self._loop.create_task(self.delayed_subscribe(delay=0))
 
-        self._log.info(f"Added market_id {instrument.market_id} for {instrument_id.symbol} <OrderBook> data.")
+        self._log.info(
+            f"Added market_id {instrument.market_id} for {instrument_id.symbol} <OrderBook> data."
+        )
 
     async def delayed_subscribe(self, delay=0):
         self._log.debug(f"Scheduling subscribe for delay={delay}")
@@ -248,37 +258,20 @@ cdef class BetfairDataClient(LiveMarketDataClient):
         await self._stream.send_subscription_message(market_ids=list(self._subscribed_market_ids))
         self._log.info(f"Added market_ids {self._subscribed_market_ids} for <OrderBookData> data.")
 
-    cpdef void subscribe_trade_ticks(self, InstrumentId instrument_id) except *:
+    def subscribe_trade_ticks(self, instrument_id: InstrumentId):
         pass  # Subscribed as part of orderbook
 
-    cpdef void subscribe_instrument(self, InstrumentId instrument_id) except *:
+    def subscribe_instrument(self, instrument_id: InstrumentId):
         for instrument in self._instrument_provider.list_instruments():
             self._handle_data(data=instrument)
 
-    cpdef void subscribe_instrument_status_updates(self, InstrumentId instrument_id) except *:
+    def subscribe_instrument_status_updates(self, instrument_id: InstrumentId):
         pass  # Subscribed as part of orderbook
 
-    cpdef void subscribe_instrument_close_prices(self, InstrumentId instrument_id) except *:
+    def subscribe_instrument_close_prices(self, instrument_id: InstrumentId):
         pass  # Subscribed as part of orderbook
 
-    cpdef void unsubscribe_order_book_snapshots(self, InstrumentId instrument_id) except *:
-        """
-        Unsubscribe from `OrderBook` data for the given instrument ID.
-
-        Parameters
-        ----------
-        instrument_id : InstrumentId
-            The order book instrument to unsubscribe from.
-
-        """
-        Condition.not_none(instrument_id, "instrument_id")
-
-        # TODO - this could be done by removing the market from self.__subscribed_market_ids and resending the
-        #  subscription message - when we have a use case
-
-        self._log.warning(f"Betfair does not support unsubscribing from instruments")
-
-    cpdef void unsubscribe_order_book_deltas(self, InstrumentId instrument_id) except *:
+    def unsubscribe_order_book_snapshots(self, instrument_id: InstrumentId):
         """
         Unsubscribe from `OrderBook` data for the given instrument ID.
 
@@ -290,28 +283,42 @@ cdef class BetfairDataClient(LiveMarketDataClient):
         """
         # TODO - this could be done by removing the market from self.__subscribed_market_ids and resending the
         #  subscription message - when we have a use case
-        Condition.not_none(instrument_id, "instrument_id")
-        self._log.warning(f"Betfair does not support unsubscribing from instruments")
 
-# -- INTERNAL --------------------------------------------------------------------------------------
+        self._log.warning("Betfair does not support unsubscribing from instruments")
 
-    cdef void _log_betfair_error(self, ex, str method_name) except *:
+    def unsubscribe_order_book_deltas(self, instrument_id: InstrumentId):
+        """
+        Unsubscribe from `OrderBook` data for the given instrument ID.
+
+        Parameters
+        ----------
+        instrument_id : InstrumentId
+            The order book instrument to unsubscribe from.
+
+        """
+        # TODO - this could be done by removing the market from self.__subscribed_market_ids and resending the
+        #  subscription message - when we have a use case
+        self._log.warning("Betfair does not support unsubscribing from instruments")
+
+    # -- INTERNAL --------------------------------------------------------------------------------------
+
+    def _log_betfair_error(self, ex: Exception, method_name: str):
         self._log.warning(f"{type(ex).__name__}: {ex} in {method_name}")
 
-# -- Debugging ---------------------------------------------------------------------------------------
+    # -- Debugging ---------------------------------------------------------------------------------------
 
-    cpdef BetfairInstrumentProvider instrument_provider(self):
+    def instrument_provider(self) -> BetfairInstrumentProvider:
         return self._instrument_provider
 
-    cpdef void handle_data(self, Data data) except *:
+    def handle_data(self, data: Data):
         self._handle_data(data=data)
 
-# -- STREAMS ---------------------------------------------------------------------------------------
-    cpdef void on_market_update(self, bytes raw) except *:
-        cdef dict update = orjson.loads(raw)  # type: dict
+    # -- STREAMS ---------------------------------------------------------------------------------------
+    def on_market_update(self, raw: bytes):
+        update = orjson.loads(raw)
         self._on_market_update(update=update)
 
-    cpdef void _on_market_update(self, dict update) except *:
+    def _on_market_update(self, update):
         if self._check_stream_unhealthy(update=update):
             # TODO (bm) - emit warning ?
             pass
@@ -325,28 +332,35 @@ cdef class BetfairDataClient(LiveMarketDataClient):
             self._log.debug(f"{data}")
             if isinstance(data, Data):
                 if self._strict_handling:
-                    if hasattr(data, "instrument_id") and data.instrument_id not in self._subscribed_instrument_ids:
+                    if (
+                        hasattr(data, "instrument_id")
+                        and data.instrument_id not in self._subscribed_instrument_ids
+                    ):
                         # We receive data for multiple instruments within a subscription, don't emit data if we're not
                         # subscribed to this particular instrument as this will trigger a bunch of error logs
                         continue
                 self._handle_data(data=data)
             elif isinstance(data, Event):
-                self._log.warning(f"Received event: {data}, DataEngine not yet setup to send events")
+                self._log.warning(
+                    f"Received event: {data}, DataEngine not yet setup to send events"
+                )
 
-    cpdef bint _check_stream_unhealthy(self, dict update) except *:
+    def _check_stream_unhealthy(self, update: Dict):
         conflated = update.get("con", False)  # Consuming data slower than the rate of deliver
         if conflated:
-            print('!conflated')
-            self._log.warning("Conflated stream - consuming data too slow (data received is delayed)")
+            print("!conflated")
+            self._log.warning(
+                "Conflated stream - consuming data too slow (data received is delayed)"
+            )
         if update.get("status") == 503:
-            print('!503')
+            print("!503")
             self._log.warning("Stream unhealthy, waiting for recover")
 
-    cpdef void _handle_no_data(self, update) except *:
-        if update.get('op') == 'connection' or update.get('connectionsAvailable'):
+    def _handle_no_data(self, update):
+        if update.get("op") == "connection" or update.get("connectionsAvailable"):
             return
         self._log.warning(f"Received message but parsed no updates: {update}")
-        if update.get("statusCode") == 'FAILURE' and update.get('connectionClosed'):
+        if update.get("statusCode") == "FAILURE" and update.get("connectionClosed"):
             # TODO (bm) - self._loop.create_task(self._stream.reconnect())
             self._log.error(str(update))
             raise RuntimeError()

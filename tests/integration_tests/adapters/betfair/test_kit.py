@@ -23,6 +23,7 @@ from typing import Optional
 from unittest.mock import MagicMock
 from unittest.mock import patch
 
+import numpy as np
 import orjson
 import pandas as pd
 from aiohttp import ClientResponse
@@ -31,9 +32,9 @@ from nautilus_trader.adapters.betfair.client.core import BetfairClient
 from nautilus_trader.adapters.betfair.common import BETFAIR_VENUE
 from nautilus_trader.adapters.betfair.data import BetfairDataClient
 from nautilus_trader.adapters.betfair.data import on_market_update
-from nautilus_trader.adapters.betfair.execution import BetfairExecutionClient
 from nautilus_trader.adapters.betfair.providers import BetfairInstrumentProvider
 from nautilus_trader.adapters.betfair.providers import make_instruments
+from nautilus_trader.adapters.betfair.util import flatten_tree
 from nautilus_trader.adapters.betfair.util import historical_instrument_provider_loader
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.factories import OrderFactory
@@ -98,7 +99,7 @@ class BetfairTestStubs:
         return BetfairInstrumentProvider(
             client=betfair_client,
             logger=BetfairTestStubs.live_logger(BetfairTestStubs.clock()),
-            market_filter={"event_type_name": "Tennis"},
+            # market_filter={"event_type_name": "Tennis"},
         )
 
     @staticmethod
@@ -232,9 +233,12 @@ class BetfairTestStubs:
                 "SportsAPING/v1.0/listCurrentOrders": BetfairResponses.list_current_orders,
                 "SportsAPING/v1.0/listClearedOrders": BetfairResponses.list_cleared_orders,
             }
+            kw = {}
+            if rpc_method == "SportsAPING/v1.0/listMarketCatalogue":
+                kw = {"filters": kwargs["json"]["params"]["filter"]}
             if rpc_method in responses:
                 resp = MagicMock(spec=ClientResponse)
-                resp.data = orjson.dumps(responses[rpc_method]())
+                resp.data = orjson.dumps(responses[rpc_method](**kw))
                 return resp
             raise KeyError(rpc_method)
 
@@ -242,21 +246,6 @@ class BetfairTestStubs:
         client.request.side_effect = request
         client.session_token = "xxxsessionToken="
 
-        return client
-
-    @staticmethod
-    async def execution_client(
-        betfair_client, account_id, exec_engine, clock, live_logger
-    ) -> BetfairExecutionClient:
-        client = BetfairExecutionClient(
-            client=betfair_client,
-            account_id=account_id,
-            engine=exec_engine,
-            clock=clock,
-            logger=live_logger,
-        )
-        client.instrument_provider().load_all()
-        exec_engine.register_client(client)
         return client
 
     @staticmethod
@@ -595,8 +584,11 @@ class BetfairResponses:
         return BetfairResponses.load("list_current_orders_empty.json")
 
     @staticmethod
-    def betting_list_market_catalogue():
+    def betting_list_market_catalogue(filters=None):
         result = BetfairResponses.load("betting_list_market_catalogue.json")
+        filters = filters or {}
+        if "marketIds" in filters:
+            result = [r for r in result if r["marketId"] in filters["marketIds"]]
         return {"jsonrpc": "2.0", "result": result, "id": 1}
 
     @staticmethod
@@ -766,7 +758,16 @@ class BetfairDataProvider:
             "1.180727728",
             "1.180737193",
             "1.180770798",
+            "1.180737206",
+            "1.165003060",
         )
+
+    @staticmethod
+    def market_sample():
+        np.random.seed(0)
+        navigation = BetfairResponses.navigation_list_navigation()
+        markets = list(flatten_tree(navigation))
+        return np.random.choice(markets, size=int(len(markets) * 0.05))
 
     @staticmethod
     def market_catalogue_short():

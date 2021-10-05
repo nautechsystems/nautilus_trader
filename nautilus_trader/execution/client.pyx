@@ -778,13 +778,13 @@ cdef class ExecutionClient(Component):
 
 # --------------------------------------------------------------------------------------------------
 
-    cdef void _send_account_state(self, AccountState account_state) except *:
+    cpdef void _send_account_state(self, AccountState account_state) except *:
         self._msgbus.send(
             endpoint=f"Portfolio.update_account",
             msg=account_state,
         )
 
-    cdef void _send_order_event(self, OrderEvent event) except *:
+    cpdef void _send_order_event(self, OrderEvent event) except *:
         self._msgbus.send(
             endpoint="ExecEngine.process",
             msg=event,

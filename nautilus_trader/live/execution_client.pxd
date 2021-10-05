@@ -22,7 +22,7 @@ cdef class LiveExecutionClientFactory:
 
 
 cdef class LiveExecutionClient(ExecutionClient):
-    cdef object _loop
+    cdef readonly object _loop
 
     cdef InstrumentProvider _instrument_provider
 

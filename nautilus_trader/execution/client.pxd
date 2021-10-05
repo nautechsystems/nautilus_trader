@@ -44,8 +44,8 @@ from nautilus_trader.model.objects cimport Quantity
 
 
 cdef class ExecutionClient(Component):
-    cdef Cache _cache
-    cdef Account _account
+    cdef readonly Cache _cache
+    cdef readonly Account _account
 
     cdef readonly Venue venue
     """The clients venue ID (if not multi-venue brokerage).\n\n:returns: `Venue` or ``None``"""
@@ -193,5 +193,5 @@ cdef class ExecutionClient(Component):
 
 # --------------------------------------------------------------------------------------------------
 
-    cdef void _send_account_state(self, AccountState account_state) except *
-    cdef void _send_order_event(self, OrderEvent event) except *
+    cpdef void _send_account_state(self, AccountState account_state) except *
+    cpdef void _send_order_event(self, OrderEvent event) except *

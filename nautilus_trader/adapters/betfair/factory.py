@@ -17,21 +17,21 @@ import asyncio
 import os
 from functools import lru_cache
 
-from nautilus_trader.adapters.betfair.providers import BetfairInstrumentProvider
-from nautilus_trader.cache.cache cimport Cache
-from nautilus_trader.common.clock cimport LiveClock
-from nautilus_trader.common.logging cimport LiveLogger
-from nautilus_trader.live.data_client cimport LiveDataClientFactory
-from nautilus_trader.live.execution_client cimport LiveExecutionClientFactory
-from nautilus_trader.model.currency cimport Currency
-from nautilus_trader.model.identifiers cimport AccountId
-from nautilus_trader.adapters.betfair.common import BETFAIR_VENUE
-from nautilus_trader.adapters.betfair.data cimport BetfairDataClient
-from nautilus_trader.adapters.betfair.execution cimport BetfairExecutionClient
-from nautilus_trader.msgbus.bus cimport MessageBus
 from nautilus_trader.adapters.betfair.client.core import BetfairClient
+from nautilus_trader.adapters.betfair.common import BETFAIR_VENUE
+from nautilus_trader.adapters.betfair.data import BetfairDataClient
+from nautilus_trader.adapters.betfair.execution import BetfairExecutionClient
+from nautilus_trader.adapters.betfair.providers import BetfairInstrumentProvider
+from nautilus_trader.cache.cache import Cache
+from nautilus_trader.common.clock import LiveClock
+from nautilus_trader.common.logging import LiveLogger
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.common.logging import LoggerAdapter
+from nautilus_trader.live.data_client import LiveDataClientFactory
+from nautilus_trader.live.execution_client import LiveExecutionClientFactory
+from nautilus_trader.model.currency import Currency
+from nautilus_trader.model.identifiers import AccountId
+from nautilus_trader.msgbus.bus import MessageBus
 
 
 CLIENTS = {}
@@ -64,21 +64,25 @@ def get_betfair_client(
 
 @lru_cache(1)
 def get_instrument_provider(client: BetfairClient, logger: Logger, market_filter: tuple):
-    LoggerAdapter("BetfairFactory", logger).warning("Creating new instance of BetfairInstrumentProvider")
+    LoggerAdapter("BetfairFactory", logger).warning(
+        "Creating new instance of BetfairInstrumentProvider"
+    )
     # LoggerAdapter("BetfairFactory", logger).warning(f"kwargs: {locals()}")
-    return BetfairInstrumentProvider(client=client, logger=logger, market_filter=dict(market_filter))
+    return BetfairInstrumentProvider(
+        client=client, logger=logger, market_filter=dict(market_filter)
+    )
 
 
-cdef class BetfairLiveDataClientFactory(LiveDataClientFactory):
+class BetfairLiveDataClientFactory(LiveDataClientFactory):
     @staticmethod
     def create(
-        loop not None: asyncio.AbstractEventLoop,
-        str name not None,
-        dict config not None,
-        MessageBus msgbus not None,
-        Cache cache not None,
-        LiveClock clock not None,
-        LiveLogger logger not None,
+        loop: asyncio.AbstractEventLoop,
+        name: str,
+        config,
+        msgbus: MessageBus,
+        cache: Cache,
+        clock: LiveClock,
+        logger: LiveLogger,
         client_cls=None,
     ):
         """
@@ -119,10 +123,9 @@ cdef class BetfairLiveDataClientFactory(LiveDataClientFactory):
             loop=loop,
             logger=logger,
         )
-        provider = get_instrument_provider(client=client, logger=logger, market_filter=tuple(market_filter.items()))
-
-        print(f"PROVIDER: {provider}")
-        print(f"CLIENT: {client}")
+        provider = get_instrument_provider(
+            client=client, logger=logger, market_filter=tuple(market_filter.items())
+        )
 
         data_client = BetfairDataClient(
             loop=loop,
@@ -137,20 +140,20 @@ cdef class BetfairLiveDataClientFactory(LiveDataClientFactory):
         return data_client
 
 
-cdef class BetfairLiveExecutionClientFactory(LiveExecutionClientFactory):
+class BetfairLiveExecutionClientFactory(LiveExecutionClientFactory):
     """
     Provides data and execution clients for Betfair.
     """
 
     @staticmethod
     def create(
-        loop not None: asyncio.AbstractEventLoop,
-        str name not None,
-        dict config not None,
-        MessageBus msgbus not None,
-        Cache cache not None,
-        LiveClock clock not None,
-        LiveLogger logger not None,
+        loop: asyncio.AbstractEventLoop,
+        name: str,
+        config,
+        msgbus: MessageBus,
+        cache: Cache,
+        clock: LiveClock,
+        logger: LiveLogger,
         client_cls=None,
     ):
         """
@@ -190,10 +193,9 @@ cdef class BetfairLiveExecutionClientFactory(LiveExecutionClientFactory):
             loop=loop,
             logger=logger,
         )
-        provider = get_instrument_provider(client=client, logger=logger, market_filter=tuple(market_filter.items()))
-
-        print(f"PROVIDER: {provider}")
-        print(f"CLIENT: {client}")
+        provider = get_instrument_provider(
+            client=client, logger=logger, market_filter=tuple(market_filter.items())
+        )
 
         # Get account ID env variable or set default
         account_id_env_var = os.getenv(config.get("account_id", ""), "001")
@@ -206,12 +208,12 @@ cdef class BetfairLiveExecutionClientFactory(LiveExecutionClientFactory):
             loop=loop,
             client=client,
             account_id=account_id,
-            base_currency=Currency.from_str_c(config.get("base_currency")),
+            base_currency=Currency.from_str(config.get("base_currency")),
             msgbus=msgbus,
             cache=cache,
             clock=clock,
             logger=logger,
             market_filter=market_filter,
-            instrument_provider=provider
+            instrument_provider=provider,
         )
         return exec_client

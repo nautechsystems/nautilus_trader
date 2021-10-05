@@ -137,7 +137,11 @@ class TestBetfairDataClient:
         self.instrument_provider = BetfairTestStubs.instrument_provider(
             betfair_client=self.betfair_client
         )
-        self.instrument_provider.add_instruments(INSTRUMENTS)
+        # Add a subset of instruments
+        instruments = [
+            ins for ins in INSTRUMENTS if ins.market_id in BetfairDataProvider.market_ids()
+        ]
+        self.instrument_provider.add_instruments(instruments)
 
         self.client = BetfairDataClient(
             loop=self.loop,
@@ -178,6 +182,15 @@ class TestBetfairDataClient:
         self.msgbus.register(
             endpoint="DataEngine.response", handler=partial(handler, endpoint="response")  # type: ignore
         )
+
+    @pytest.mark.asyncio
+    @patch("nautilus_trader.adapters.betfair.data.BetfairDataClient._post_connect_heartbeat")
+    @patch("nautilus_trader.adapters.betfair.data.BetfairMarketStreamClient.connect")
+    @patch("nautilus_trader.adapters.betfair.client.core.BetfairClient.connect")
+    async def test_connect(
+        self, mock_client_connect, mock_stream_connect, mock_post_connect_heartbeat
+    ):
+        await self.client._connect()
 
     def test_subscriptions(self):
         self.client.subscribe_trade_ticks(BetfairTestStubs.instrument_id())
@@ -318,7 +331,7 @@ class TestBetfairDataClient:
         self.client.request(req, UUID4(str(self.uuid)))
         await asyncio.sleep(0)
         resp = self.messages[0]
-        assert len(resp.data.instruments) == 9416
+        assert len(resp.data.instruments) == 6800
 
     def test_orderbook_repr(self):
         self.client._on_market_update(BetfairStreaming.mcm_live_IMAGE())
