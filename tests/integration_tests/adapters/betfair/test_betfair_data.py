@@ -19,6 +19,7 @@ from collections import Counter
 from functools import partial
 from unittest.mock import patch
 
+import numpy as np
 import pytest
 
 from nautilus_trader.adapters.betfair.common import BETFAIR_VENUE
@@ -137,7 +138,11 @@ class TestBetfairDataClient:
         self.instrument_provider = BetfairTestStubs.instrument_provider(
             betfair_client=self.betfair_client
         )
-        self.instrument_provider.add_instruments(INSTRUMENTS)
+        # Add a subset of instruments
+        np.random.seed(0)
+        instruments = np.random.choice(INSTRUMENTS, size=1000)
+        np.random.seed(None)
+        self.instrument_provider.add_instruments(instruments)
 
         self.client = BetfairDataClient(
             loop=self.loop,
@@ -178,6 +183,15 @@ class TestBetfairDataClient:
         self.msgbus.register(
             endpoint="DataEngine.response", handler=partial(handler, endpoint="response")  # type: ignore
         )
+
+    @pytest.mark.asyncio
+    @patch("nautilus_trader.adapters.betfair.data.BetfairDataClient._post_connect_heartbeat")
+    @patch("nautilus_trader.adapters.betfair.data.BetfairMarketStreamClient.connect")
+    @patch("nautilus_trader.adapters.betfair.client.core.BetfairClient.connect")
+    async def test_connect(
+        self, mock_client_connect, mock_stream_connect, mock_post_connect_heartbeat
+    ):
+        await self.client._connect()
 
     def test_subscriptions(self):
         self.client.subscribe_trade_ticks(BetfairTestStubs.instrument_id())

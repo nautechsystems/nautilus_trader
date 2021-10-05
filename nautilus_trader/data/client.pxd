@@ -33,6 +33,8 @@ cdef class DataClient(Component):
     cdef readonly bint is_connected
     """If the client is connected.\n\n:returns: `bool`"""
 
+    cpdef void _set_connected(self, bint value=*) except *
+
 # -- SUBSCRIPTIONS ---------------------------------------------------------------------------------
 
     cpdef list subscribed_generic_data(self)

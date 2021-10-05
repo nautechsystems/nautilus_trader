@@ -95,6 +95,18 @@ cdef class DataClient(Component):
     def __repr__(self) -> str:
         return f"{type(self).__name__}-{self.id.value}"
 
+    cpdef void _set_connected(self, bint value=True) except *:
+        """
+        Setter for pure Python implementations to change the readonly property.
+
+        Parameters
+        ----------
+        value : bool
+            The value to set for is_connected.
+
+        """
+        self.is_connected = value
+
     def connect(self):
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
