@@ -15,10 +15,9 @@
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
+from nautilus_trader.model.c_enums.order_side cimport OrderSideParser
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
-
-from nautilus_trader.model.c_enums.order_side import OrderSideParser
 
 
 cdef class Bet:
@@ -102,7 +101,7 @@ cdef class Bet:
             "type": type(obj).__name__,
             "price": str(obj.price),
             "size": str(obj.size),
-            "side": str(obj.side.to_str()),
+            "side": OrderSideParser.to_str(obj.side),
         }
 
     @staticmethod
