@@ -22,9 +22,7 @@ from nautilus_trader.model.objects cimport Quantity
 
 
 cdef class BettingAccount(Account):
-    """
-    Provides a betting account.
-    """
+    cdef dict _balances_locked
 
 # -- CALCULATIONS ----------------------------------------------------------------------------------
 

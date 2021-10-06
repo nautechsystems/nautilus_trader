@@ -16,14 +16,18 @@
 from decimal import Decimal
 
 from nautilus_trader.core.correctness cimport Condition
+
 from nautilus_trader.model.c_enums.account_type import AccountType
+
 from nautilus_trader.accounting.accounts.base cimport Account
 from nautilus_trader.model.c_enums.liquidity_side cimport LiquiditySide
 from nautilus_trader.model.c_enums.liquidity_side cimport LiquiditySideParser
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
 from nautilus_trader.model.currency cimport Currency
+from nautilus_trader.model.data.bet cimport Bet
 from nautilus_trader.model.events.account cimport AccountState
 from nautilus_trader.model.events.order cimport OrderFilled
+from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.instruments.base cimport Instrument
 from nautilus_trader.model.objects cimport AccountBalance
 from nautilus_trader.model.objects cimport Money
@@ -60,6 +64,7 @@ cdef class BettingAccount(Account):
         Condition.not_none(event, "event")
         Condition.equal(event.account_type, AccountType.BETTING, "event.account_type", "account_type")
         super().__init__(event, calculate_account_state)
+        self._balances_locked = {}  # type: dict[InstrumentId, Money]
 
 # -- CALCULATIONS ----------------------------------------------------------------------------------
 
@@ -84,69 +89,61 @@ cdef class BettingAccount(Account):
         )
 
         self._balances[currency] = new_balance
-
-    cpdef Money calculate_commission(
-        self,
-        Instrument instrument,
-        Quantity last_qty,
-        last_px: Decimal,
-        LiquiditySide liquidity_side,
-        bint inverse_as_quote=False,
-    ):
-        """
-        Calculate the commission generated from a transaction with the given
-        parameters.
-
-        Result will be in quote currency for standard instruments, or base
-        currency for inverse instruments.
-
-        Parameters
-        ----------
-        instrument : Instrument
-            The instrument for the calculation.
-        last_qty : Quantity
-            The transaction quantity.
-        last_px : Decimal or Price
-            The transaction price.
-        liquidity_side : LiquiditySide
-            The liquidity side for the transaction.
-        inverse_as_quote : bool
-            If inverse instrument calculations use quote currency (instead of base).
-
-        Returns
-        -------
-        Money
-
-        Raises
-        ------
-        ValueError
-            If `liquidity_side` is ``None``.
-
-        """
-        Condition.not_none(instrument, "instrument")
-        Condition.not_none(last_qty, "last_qty")
-        Condition.type(last_px, (Decimal, Price), "last_px")
-        Condition.not_equal(liquidity_side, LiquiditySide.NONE, "liquidity_side", "NONE")
-
-        notional: Decimal = instrument.notional_value(
-            quantity=last_qty,
-            price=last_px,
-            inverse_as_quote=inverse_as_quote,
-        ).as_decimal()
-
-        if liquidity_side == LiquiditySide.MAKER:
-            commission: Decimal = notional * instrument.maker_fee
-        elif liquidity_side == LiquiditySide.TAKER:
-            commission: Decimal = notional * instrument.taker_fee
-        else:  # pragma: no cover (design-time error)
-            raise ValueError(
-                f"invalid LiquiditySide, was {LiquiditySideParser.to_str(liquidity_side)}"
-            )
-
-        if instrument.is_inverse and not inverse_as_quote:
-            return Money(commission, instrument.base_currency)
-        else:
-            return Money(commission, instrument.quote_currency)
+    #
+    # cpdef Money calculate_commission(
+    #     self,
+    #     Instrument instrument,
+    #     Quantity last_qty,
+    #     last_px: Decimal,
+    #     LiquiditySide liquidity_side,
+    #     bint inverse_as_quote=False,
+    # ):
+    #     """
+    #     Calculate the commission generated from a transaction with the given
+    #     parameters.
+    #
+    #     Parameters
+    #     ----------
+    #     instrument : Instrument
+    #         The instrument for the calculation.
+    #     last_qty : Quantity
+    #         The transaction quantity.
+    #     last_px : Decimal or Price
+    #         The transaction price.
+    #     liquidity_side : LiquiditySide
+    #         The liquidity side for the transaction.
+    #
+    #     Returns
+    #     -------
+    #     Money
+    #
+    #     Raises
+    #     ------
+    #     ValueError
+    #         If `liquidity_side` is ``None``.
+    #
+    #     """
+    #     Condition.not_none(instrument, "instrument")
+    #     Condition.not_none(last_qty, "last_qty")
+    #     Condition.type(last_px, (Decimal, Price), "last_px")
+    #     Condition.not_equal(liquidity_side, LiquiditySide.NONE, "liquidity_side", "NONE")
+    #     Condition.not_equal(inverse_as_quote, True)
+    #
+    #     notional: Decimal = instrument.notional_value(
+    #         quantity=last_qty,
+    #         price=last_px,
+    #     ).as_decimal()
+    #
+    #     if liquidity_side == LiquiditySide.MAKER:
+    #         commission: Decimal = notional * instrument.maker_fee
+    #     elif liquidity_side == LiquiditySide.TAKER:
+    #         commission: Decimal = notional * instrument.taker_fee
+    #     else:  # pragma: no cover (design-time error)
+    #         raise ValueError(
+    #             f"invalid LiquiditySide, was {LiquiditySideParser.to_str(liquidity_side)}"
+    #         )
+    #
+    #     return Money(commission, instrument.quote_currency)
 
     cpdef Money calculate_balance_locked(
         self,
@@ -159,9 +156,6 @@ cdef class BettingAccount(Account):
         """
         Calculate the locked balance from the given parameters.
 
-        Result will be in quote currency for standard instruments, or base
-        currency for inverse instruments.
-
         Parameters
         ----------
         instrument : Instrument
@@ -172,8 +166,6 @@ cdef class BettingAccount(Account):
             The order quantity.
         price : Price
             The order price.
-        inverse_as_quote : bool
-            If inverse instrument calculations use quote currency (instead of base).
 
         Returns
         -------
@@ -183,35 +175,31 @@ cdef class BettingAccount(Account):
         Condition.not_none(instrument, "instrument")
         Condition.not_none(quantity, "quantity")
         Condition.not_none(price, "price")
+        Condition.not_equal(inverse_as_quote, True, "inverse_as_quote", "True")
 
         cdef Currency quote_currency = instrument.quote_currency
-        cdef Currency base_currency = instrument.get_base_currency()
+
+        cdef Bet bet = Bet(
+            price=price,
+            size=quantity,
+            side=side
+        )
 
         # Determine notional value
-        if side == OrderSide.BUY:
-            notional: Decimal = instrument.notional_value(
-                quantity=quantity,
-                price=price.as_decimal(),
-                inverse_as_quote=inverse_as_quote,
-            ).as_decimal()
-        else:  # OrderSide.SELL
-            if base_currency is not None:
-                notional = quantity.as_decimal()
-            else:
-                return None  # No balance to lock
+        # if side == OrderSide.BUY:
+        #     notional: Decimal = instrument.notional_value(
+        #         quantity=quantity,
+        #         price=price.as_decimal(),
+        #     ).as_decimal()
+        # else:  # OrderSide.SELL
+        #     if base_currency is not None:
+        #         notional = quantity.as_decimal()
+        #     else:
+        #         return None  # No balance to lock
 
         # Add expected commission
-        locked: Decimal = notional
-        locked += (notional * instrument.taker_fee * 2)
-
-        # Handle inverse
-        if instrument.is_inverse and not inverse_as_quote:
-            return Money(locked, base_currency)
-
-        if side == OrderSide.BUY:
-            return Money(locked, quote_currency)
-        else:  # OrderSide.SELL
-            return Money(locked, base_currency)
+        locked: Decimal = bet.exposure()
+        return Money(locked, quote_currency)
 
     cpdef list calculate_pnls(
         self,

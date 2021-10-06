@@ -21,10 +21,7 @@ from nautilus_trader.accounting.accounts.betting import BettingAccount
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.factories import OrderFactory
 from nautilus_trader.core.uuid import UUID4
-from nautilus_trader.model.currencies import AUD
 from nautilus_trader.model.currencies import GBP
-from nautilus_trader.model.currencies import JPY
-from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import LiquiditySide
 from nautilus_trader.model.enums import OrderSide
@@ -32,14 +29,12 @@ from nautilus_trader.model.events.account import AccountState
 from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import PositionId
 from nautilus_trader.model.identifiers import StrategyId
-from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.objects import AccountBalance
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.position import Position
 from tests.integration_tests.adapters.betfair.test_kit import BetfairTestStubs
-from tests.test_kit.providers import TestInstrumentProvider
 from tests.test_kit.stubs import TestStubs
 
 
@@ -52,6 +47,27 @@ class TestBettingAccount:
             trader_id=self.trader_id,
             strategy_id=StrategyId("S-001"),
             clock=TestClock(),
+        )
+
+    @staticmethod
+    def _make_account_state(starting_balance: float):
+        return AccountState(
+            account_id=AccountId("SIM", "001"),
+            account_type=AccountType.BETTING,
+            base_currency=GBP,
+            reported=True,
+            balances=[
+                AccountBalance(
+                    GBP,
+                    Money(starting_balance, GBP),
+                    Money(0.00, GBP),
+                    Money(starting_balance, GBP),
+                ),
+            ],
+            info={},  # No default currency set
+            event_id=UUID4(),
+            ts_event=0,
+            ts_init=0,
         )
 
     def test_instantiated_accounts_basic_properties(self):
@@ -71,14 +87,14 @@ class TestBettingAccount:
         event = AccountState(
             account_id=AccountId("SIM", "000"),
             account_type=AccountType.BETTING,
-            base_currency=USD,
+            base_currency=GBP,
             reported=True,
             balances=[
                 AccountBalance(
-                    USD,
-                    Money(1_000_000, USD),
-                    Money(0, USD),
-                    Money(1_000_000, USD),
+                    GBP,
+                    Money(1_000_000, GBP),
+                    Money(0, GBP),
+                    Money(1_000_000, GBP),
                 ),
             ],
             info={},
@@ -91,16 +107,16 @@ class TestBettingAccount:
         account = BettingAccount(event)
 
         # Assert
-        assert account.base_currency == USD
+        assert account.base_currency == GBP
         assert account.last_event == event
         assert account.events == [event]
         assert account.event_count == 1
-        assert account.balance_total() == Money(1_000_000, USD)
-        assert account.balance_free() == Money(1_000_000, USD)
-        assert account.balance_locked() == Money(0, USD)
-        assert account.balances_total() == {USD: Money(1_000_000, USD)}
-        assert account.balances_free() == {USD: Money(1_000_000, USD)}
-        assert account.balances_locked() == {USD: Money(0, USD)}
+        assert account.balance_total() == Money(1_000_000, GBP)
+        assert account.balance_free() == Money(1_000_000, GBP)
+        assert account.balance_locked() == Money(0, GBP)
+        assert account.balances_total() == {GBP: Money(1_000_000, GBP)}
+        assert account.balances_free() == {GBP: Money(1_000_000, GBP)}
+        assert account.balances_locked() == {GBP: Money(0, GBP)}
 
     def test_apply_given_new_state_event_updates_correctly(self):
         # Arrange
@@ -156,87 +172,46 @@ class TestBettingAccount:
         assert account.balance_free(GBP) == Money(8.50000000, GBP)
         assert account.balance_locked(GBP) == Money(0.50000000, GBP)
 
-    def test_calculate_balance_locked_buy(self):
+    @pytest.mark.parametrize(
+        "price, quantity, side, remaining_balance",
+        [
+            ("0.667", 10, "BUY", 1000.0),
+            # ("0.5",   10, "BUY", 1000.0),
+            # ("0.1",   10, "BUY", 1000.0),
+            # ("0.667", 10, "SELL", 1000.0),
+            # ("0.5",   10, "SELL", 1000.0),
+            # ("0.1",   10, "SELL", 1000.0),
+        ],
+    )
+    def test_calculate_balance_locked(self, price, quantity, side, remaining_balance):
         # Arrange
-        event = AccountState(
-            account_id=AccountId("SIM", "001"),
-            account_type=AccountType.BETTING,
-            base_currency=USD,
-            reported=True,
-            balances=[
-                AccountBalance(
-                    USD,
-                    Money(1_000.00, USD),
-                    Money(0.00, USD),
-                    Money(1_000.00, USD),
-                ),
-            ],
-            info={},  # No default currency set
-            event_id=UUID4(),
-            ts_event=0,
-            ts_init=0,
-        )
-
+        event = self._make_account_state(starting_balance=1000.0)
         account = BettingAccount(event)
 
         # Act
         result = account.calculate_balance_locked(
             instrument=self.instrument,
-            side=OrderSide.BUY,
-            quantity=Quantity.from_int(1),
-            price=Price.from_str("0.80"),
+            side=side,
+            quantity=Quantity.from_int(quantity),
+            price=Price.from_str(price),
         )
 
         # Assert
-        assert result == Money(800_032.00, USD)  # Notional + expected commission
-
-    def test_calculate_balance_locked_sell(self):
-        # Arrange
-        event = AccountState(
-            account_id=AccountId("SIM", "001"),
-            account_type=AccountType.BETTING,
-            base_currency=USD,
-            reported=True,
-            balances=[
-                AccountBalance(
-                    USD,
-                    Money(1_000_000.00, USD),
-                    Money(0.00, USD),
-                    Money(1_000_000.00, USD),
-                ),
-            ],
-            info={},  # No default currency set
-            event_id=UUID4(),
-            ts_event=0,
-            ts_init=0,
-        )
-
-        account = BettingAccount(event)
-
-        # Act
-        result = account.calculate_balance_locked(
-            instrument=self.instrument,
-            side=OrderSide.SELL,
-            quantity=Quantity.from_int(1_000_000),
-            price=Price.from_str("0.80"),
-        )
-
-        # Assert
-        assert result == Money(1_000_040.00, AUD)  # Notional + expected commission
+        assert result == Money(remaining_balance, GBP)  # Notional + expected commission
 
     def test_calculate_pnls_for_single_currency_cash_account(self):
         # Arrange
         event = AccountState(
             account_id=AccountId("SIM", "001"),
             account_type=AccountType.BETTING,
-            base_currency=USD,
+            base_currency=GBP,
             reported=True,
             balances=[
                 AccountBalance(
-                    USD,
-                    Money(1_000_000.00, USD),
-                    Money(0.00, USD),
-                    Money(1_000_000.00, USD),
+                    GBP,
+                    Money(1_000_000.00, GBP),
+                    Money(0.00, GBP),
+                    Money(1_000_000.00, GBP),
                 ),
             ],
             info={},  # No default currency set
@@ -271,68 +246,19 @@ class TestBettingAccount:
         )
 
         # Assert
-        assert result == [Money(-800016.00, USD)]
+        assert result == [Money(-800016.00, GBP)]
 
     def test_calculate_commission_when_given_liquidity_side_none_raises_value_error(
         self,
     ):
         # Arrange
         account = TestStubs.cash_account()
-        instrument = TestInstrumentProvider.xbtusd_bitmex()
 
         # Act, Assert
         with pytest.raises(ValueError):
             account.calculate_commission(
-                instrument=instrument,
+                instrument=self.instrument,
                 last_qty=Quantity.from_int(100000),
                 last_px=Decimal("11450.50"),
                 liquidity_side=LiquiditySide.NONE,
             )
-
-    def test_calculate_commission_for_taker_fx(self):
-        # Arrange
-        account = TestStubs.cash_account()
-        instrument = self.instrument
-
-        # Act
-        result = account.calculate_commission(
-            instrument=instrument,
-            last_qty=Quantity.from_int(1500000),
-            last_px=Decimal("0.80050"),
-            liquidity_side=LiquiditySide.TAKER,
-        )
-
-        # Assert
-        assert result == Money(24.02, USD)
-
-    def test_calculate_commission_crypto_taker(self):
-        # Arrange
-        account = TestStubs.cash_account()
-        instrument = TestInstrumentProvider.xbtusd_bitmex()
-
-        # Act
-        result = account.calculate_commission(
-            instrument=instrument,
-            last_qty=Quantity.from_int(100000),
-            last_px=Decimal("11450.50"),
-            liquidity_side=LiquiditySide.TAKER,
-        )
-
-        # Assert
-        assert result == Money(0.00654993, GBP)
-
-    def test_calculate_commission_fx_taker(self):
-        # Arrange
-        account = TestStubs.cash_account()
-        instrument = TestInstrumentProvider.default_fx_ccy("USD/JPY", Venue("IDEALPRO"))
-
-        # Act
-        result = account.calculate_commission(
-            instrument=instrument,
-            last_qty=Quantity.from_int(2200000),
-            last_px=Decimal("120.310"),
-            liquidity_side=LiquiditySide.TAKER,
-        )
-
-        # Assert
-        assert result == Money(5294, JPY)

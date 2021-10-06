@@ -19,6 +19,8 @@ from nautilus_trader.model.c_enums.order_side cimport OrderSideParser
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
 
+from nautilus_trader.adapters.betfair.common import probability_to_price
+
 
 cdef class Bet:
     """
@@ -132,3 +134,12 @@ cdef class Bet:
 
         """
         return Bet.to_dict_c(obj)
+
+
+# cpdef Bet nautilus_to_bet(price: Price, quantity: Quantity, side: OrderSide):
+#     """
+#     Nautilus considers orders/trades in probability space; convert back to betting prices/quantities
+#     """
+#     return Bet(
+#         price=probability_to_price,
+#     )
