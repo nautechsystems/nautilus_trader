@@ -485,6 +485,8 @@ class BetfairExecutionClient(LiveExecutionClient):
         )
         if client_order_id is None:
             self._log.warning(f"Can't find client_order_id for {update}")
+            return
+        PyCondition.type(client_order_id, ClientOrderId, "client_order_id")
         order = self._cache.order(client_order_id)
         PyCondition.not_none(order, "order")
         instrument = self._cache.instrument(order.instrument_id)
