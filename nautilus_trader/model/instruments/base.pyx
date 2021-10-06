@@ -14,6 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 import orjson
+
 from libc.stdint cimport int64_t
 
 from decimal import Decimal
@@ -26,6 +27,8 @@ from nautilus_trader.model.c_enums.asset_type cimport AssetTypeParser
 from nautilus_trader.model.currency cimport Currency
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.objects cimport Quantity
+
+from nautilus_trader.model.tick_scheme.base import TICK_SCHEMES
 
 
 cdef class Instrument(Data):
@@ -42,9 +45,8 @@ cdef class Instrument(Data):
         AssetType asset_type,
         Currency quote_currency not None,
         bint is_inverse,
-        int price_precision,
+        str tick_scheme_name,
         int size_precision,
-        Price price_increment not None,
         Quantity size_increment not None,
         Quantity multiplier not None,
         Quantity lot_size,      # Can be None
@@ -52,8 +54,6 @@ cdef class Instrument(Data):
         Quantity min_quantity,  # Can be None
         Money max_notional,     # Can be None
         Money min_notional,     # Can be None
-        Price max_price,        # Can be None
-        Price min_price,        # Can be None
         margin_init not None: Decimal,
         margin_maint not None: Decimal,
         maker_fee not None: Decimal,
@@ -77,12 +77,8 @@ cdef class Instrument(Data):
             The quote currency.
         is_inverse : Currency
             If the instrument costing is inverse (quantity expressed in quote currency units).
-        price_precision : int
-            The price decimal precision.
         size_precision : int
             The trading size decimal precision.
-        price_increment : Price
-            The minimum price increment (tick size).
         size_increment : Price
             The minimum size increment.
         multiplier : Decimal
@@ -97,10 +93,6 @@ cdef class Instrument(Data):
             The maximum allowable order notional value.
         min_notional : Money, optional
             The minimum allowable order notional value.
-        max_price : Price, optional
-            The maximum allowable printed price.
-        min_price : Price, optional
-            The minimum allowable printed price.
         margin_init : Decimal
             The initial (order) margin requirement in percentage of order value.
         margin_maint : Decimal
@@ -119,15 +111,11 @@ cdef class Instrument(Data):
         Raises
         ------
         ValueError
-            If price_precision is negative (< 0).
-        ValueError
             If size_precision is negative (< 0).
         ValueError
             If price_increment is not positive (> 0).
         ValueError
             If size_increment is not positive (> 0).
-        ValueError
-            If price_precision is not equal to price_increment.precision.
         ValueError
             If size_increment is not equal to size_increment.precision.
         ValueError
@@ -142,19 +130,12 @@ cdef class Instrument(Data):
             If max_notional is not positive (> 0).
         ValueError
             If min_notional is negative (< 0).
-        ValueError
-            If max_price is not positive (> 0).
-        ValueError
-            If min_price is negative (< 0).
-
         """
-        Condition.not_negative_int(price_precision, "price_precision")
         Condition.not_negative_int(size_precision, "size_precision")
-        Condition.positive(price_increment, "price_increment")
         Condition.positive(size_increment, "size_increment")
-        Condition.equal(price_precision, price_increment.precision, "price_precision", "price_increment.precision")  # noqa
         Condition.equal(size_precision, size_increment.precision, "size_precision", "size_increment.precision")  # noqa
         Condition.positive(multiplier, "multiplier")
+        Condition.is_in(tick_scheme_name, TICK_SCHEMES, "tick_scheme_name", str(TICK_SCHEMES))
         if lot_size is not None:
             Condition.positive(lot_size, "lot_size")
         if max_quantity is not None:
@@ -165,10 +146,6 @@ cdef class Instrument(Data):
             Condition.positive(max_notional, "max_notional")
         if min_notional is not None:
             Condition.not_negative(min_notional, "min_notional")
-        if max_price is not None:
-            Condition.positive(max_price, "max_price")
-        if min_price is not None:
-            Condition.not_negative(min_price, "min_price")
         Condition.type(margin_init, Decimal, "margin_init")
         Condition.not_negative(margin_init, "margin_init")
         Condition.type(margin_maint, Decimal, "margin_maint")
@@ -182,8 +159,7 @@ cdef class Instrument(Data):
         self.asset_type = asset_type
         self.quote_currency = quote_currency
         self.is_inverse = is_inverse
-        self.price_precision = price_precision
-        self.price_increment = price_increment
+        self.tick_scheme_name = tick_scheme_name
         self.size_precision = size_precision
         self.size_increment = size_increment
         self.multiplier = multiplier
@@ -192,8 +168,6 @@ cdef class Instrument(Data):
         self.min_quantity = min_quantity
         self.max_notional = max_notional
         self.min_notional = min_notional
-        self.max_price = max_price
-        self.min_price = min_price
         self.margin_init = margin_init
         self.margin_maint = margin_maint
         self.maker_fee = maker_fee

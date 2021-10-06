@@ -1,0 +1,67 @@
+# -------------------------------------------------------------------------------------------------
+#  Copyright (C) 2015-2021 Nautech Systems Pty Ltd. All rights reserved.
+#  https://nautechsystems.io
+#
+#  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
+#  You may not use this file except in compliance with the License.
+#  You may obtain a copy of the License at https://www.gnu.org/licenses/lgpl-3.0.en.html
+#
+#  Unless required by applicable law or agreed to in writing, software
+#  distributed under the License is distributed on an "AS IS" BASIS,
+#  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+#  See the License for the specific language governing permissions and
+#  limitations under the License.
+# -------------------------------------------------------------------------------------------------
+
+from nautilus_trader.core.correctness cimport Condition
+from nautilus_trader.model.objects cimport Price
+
+
+cdef class TickScheme:
+    """
+    Represents a instrument tick scheme, mapping the prices available for an instrument
+    """
+
+    def __init__(self, Price min_tick, Price max_tick):
+        """
+        Initialize a new instance of the `TickScheme` class.
+
+        Parameters
+        ----------
+        min_tick : Price
+            The minimum possible tick `Price`
+        max_tick: Price
+            The maximum possible tick `Price`
+        """
+
+    cpdef Price next_ask_tick(self, Price price):
+        """
+        For a given price, return the next ask (higher) tick
+
+        :param price: The price
+        :return: Price
+        """
+        raise NotImplementedError
+
+    cpdef Price next_bid_tick(self, Price price):
+        """
+        For a given price, return the next bid (lower) tick
+
+        :param price: The relative price
+        :return: Price
+        """
+        raise NotImplementedError
+
+
+TICK_SCHEMES = {}
+
+cpdef void register_tick_scheme(str name, tick_scheme: TickScheme):
+    global TICK_SCHEMES
+    Condition.not_in(name, TICK_SCHEMES, "name", "TICK_SCHEMES")
+    TICK_SCHEMES[name] = tick_scheme
+    print(f"registered tick scheme {name}, all={TICK_SCHEMES}")
+
+
+cpdef TickScheme get_tick_scheme(str name):
+    Condition.is_in(name, TICK_SCHEMES, "name", "TICK_SCHEMES")
+    return TICK_SCHEMES[name]
