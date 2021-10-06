@@ -13,17 +13,26 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from nautilus_trader.accounting.accounts.base cimport Account
+from nautilus_trader.model.c_enums.order_side cimport OrderSide
+from nautilus_trader.model.instruments.base cimport Instrument
+from nautilus_trader.model.objects cimport Money
+from nautilus_trader.model.objects cimport Price
+from nautilus_trader.model.objects cimport Quantity
 
-cpdef enum AccountType:
-    CASH = 1
-    MARGIN = 2
-    BETTING = 3
 
+cdef class BettingAccount(Account):
+    """
+    Provides a betting account.
+    """
 
-cdef class AccountTypeParser:
+# -- CALCULATIONS ----------------------------------------------------------------------------------
 
-    @staticmethod
-    cdef str to_str(int value)
-
-    @staticmethod
-    cdef AccountType from_str(str value) except *
+    cpdef Money calculate_balance_locked(
+        self,
+        Instrument instrument,
+        OrderSide side,
+        Quantity quantity,
+        Price price,
+        bint inverse_as_quote=*,
+    )
