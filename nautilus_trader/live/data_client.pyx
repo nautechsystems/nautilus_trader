@@ -25,7 +25,7 @@ from nautilus_trader.model.identifiers cimport ClientId
 from nautilus_trader.msgbus.bus cimport MessageBus
 
 
-cdef class LiveDataClientFactory:
+class LiveDataClientFactory:
     """
     Provides a factory for creating `LiveDataClient` instances.
     """

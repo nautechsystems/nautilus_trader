@@ -14,32 +14,35 @@
 # -------------------------------------------------------------------------------------------------
 
 import asyncio
+from typing import Dict
 
-from nautilus_trader.common.clock cimport LiveClock
-from nautilus_trader.common.logging cimport LiveLogger
-from nautilus_trader.common.logging cimport LoggerAdapter
-from nautilus_trader.core.correctness cimport Condition
-from nautilus_trader.live.data_client cimport LiveDataClientFactory
-from nautilus_trader.live.data_engine cimport LiveDataEngine
-from nautilus_trader.live.execution_client cimport LiveExecutionClientFactory
-from nautilus_trader.live.execution_engine cimport LiveExecutionEngine
+from nautilus_trader.cache.cache import Cache
+from nautilus_trader.common.clock import LiveClock
+from nautilus_trader.common.logging import LiveLogger
+from nautilus_trader.common.logging import LoggerAdapter
+from nautilus_trader.core.correctness import PyCondition
+from nautilus_trader.live.data_client import LiveDataClientFactory
+from nautilus_trader.live.data_engine import LiveDataEngine
+from nautilus_trader.live.execution_client import LiveExecutionClientFactory
+from nautilus_trader.live.execution_engine import LiveExecutionEngine
+from nautilus_trader.msgbus.bus import MessageBus
 
 
-cdef class TradingNodeBuilder:
+class TradingNodeBuilder:
     """
     Provides building services for a trading node.
     """
 
     def __init__(
         self,
-        loop not None: asyncio.AbstractEventLoop,
-        LiveDataEngine data_engine not None,
-        LiveExecutionEngine exec_engine not None,
-        MessageBus msgbus not None,
-        Cache cache not None,
-        LiveClock clock not None,
-        LiveLogger logger not None,
-        LoggerAdapter log not None,
+        loop: asyncio.AbstractEventLoop,
+        data_engine: LiveDataEngine,
+        exec_engine: LiveExecutionEngine,
+        msgbus: MessageBus,
+        cache: Cache,
+        clock: LiveClock,
+        logger: LiveLogger,
+        log: LoggerAdapter,
     ):
         """
         Initialize a new instance of the TradingNodeBuilder class.
@@ -74,10 +77,10 @@ cdef class TradingNodeBuilder:
         self._data_engine = data_engine
         self._exec_engine = exec_engine
 
-        self._data_factories = {}  # type: dict[str, LiveDataClientFactory]
-        self._exec_factories = {}  # type: dict[str, LiveExecutionClientFactory]
+        self._data_factories: Dict[str, LiveDataClientFactory] = {}
+        self._exec_factories: Dict[str, LiveExecutionClientFactory] = {}
 
-    cpdef void add_data_client_factory(self, str name, factory) except *:
+    def add_data_client_factory(self, name: str, factory):
         """
         Add the given data client factory to the builder.
 
@@ -96,18 +99,17 @@ cdef class TradingNodeBuilder:
             If name has already been added.
 
         """
-        Condition.valid_string(name, "name")
-        Condition.not_none(factory, "factory")
-        Condition.not_in(name, self._data_factories, "name", "self._data_factories")
+        PyCondition.valid_string(name, "name")
+        PyCondition.not_none(factory, "factory")
+        PyCondition.not_in(name, self._data_factories, "name", "self._data_factories")
 
         if not issubclass(factory, LiveDataClientFactory):
-            self._log.error(f"Factory was not of type `LiveDataClientFactory` "
-                            f"was {factory}.")
+            self._log.error(f"Factory was not of type `LiveDataClientFactory` " f"was {factory}.")
             return
 
         self._data_factories[name] = factory
 
-    cpdef void add_exec_client_factory(self, str name, factory) except *:
+    def add_exec_client_factory(self, name: str, factory):
         """
         Add the given client factory to the builder.
 
@@ -126,18 +128,19 @@ cdef class TradingNodeBuilder:
             If name has already been added.
 
         """
-        Condition.valid_string(name, "name")
-        Condition.not_none(factory, "factory")
-        Condition.not_in(name, self._exec_factories, "name", "self._exec_factories")
+        PyCondition.valid_string(name, "name")
+        PyCondition.not_none(factory, "factory")
+        PyCondition.not_in(name, self._exec_factories, "name", "self._exec_factories")
 
         if not issubclass(factory, LiveExecutionClientFactory):
-            self._log.error(f"Factory was not of type `LiveExecutionClientFactory` "
-                            f"was {factory}.")
+            self._log.error(
+                f"Factory was not of type `LiveExecutionClientFactory` " f"was {factory}."
+            )
             return
 
         self._exec_factories[name] = factory
 
-    cpdef void build_data_clients(self, dict config) except *:
+    def build_data_clients(self, config: Dict):
         """
         Build the data clients with the given configuration.
 
@@ -147,7 +150,7 @@ cdef class TradingNodeBuilder:
             The data clients configuration.
 
         """
-        Condition.not_none(config, "config")
+        PyCondition.not_none(config, "config")
 
         if not config:
             self._log.warning("No `data_clients` configuration found.")
@@ -168,7 +171,7 @@ cdef class TradingNodeBuilder:
 
             self._data_engine.register_client(client)
 
-    cpdef void build_exec_clients(self, dict config) except *:
+    def build_exec_clients(self, config: Dict):
         """
         Build the execution clients with the given configuration.
 
@@ -178,7 +181,7 @@ cdef class TradingNodeBuilder:
             The execution clients configuration.
 
         """
-        Condition.not_none(config, "config")
+        PyCondition.not_none(config, "config")
 
         if not config:
             self._log.warning("No `exec_clients` configuration found.")

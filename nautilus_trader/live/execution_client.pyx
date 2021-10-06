@@ -45,7 +45,7 @@ from nautilus_trader.model.orders.base cimport Order
 from nautilus_trader.msgbus.bus cimport MessageBus
 
 
-cdef class LiveExecutionClientFactory:
+class LiveExecutionClientFactory:
     """
     Provides a factory for creating `LiveDataClient` instances.
     """

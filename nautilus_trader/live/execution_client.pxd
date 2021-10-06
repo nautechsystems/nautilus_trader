@@ -17,10 +17,6 @@ from nautilus_trader.common.providers cimport InstrumentProvider
 from nautilus_trader.execution.client cimport ExecutionClient
 
 
-cdef class LiveExecutionClientFactory:
-    pass
-
-
 cdef class LiveExecutionClient(ExecutionClient):
     cdef readonly object _loop
 
