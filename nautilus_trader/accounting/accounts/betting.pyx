@@ -39,10 +39,10 @@ cdef class BettingAccount(Account):
     def __init__(
         self,
         AccountState event,
-        bint calculate_account_state=False,
+        bint calculate_account_state=True,
     ):
         """
-        Initialize a new instance of the ``CashAccount`` class.
+        Initialize a new instance of the ``BettingAccount`` class.
 
         Parameters
         ----------
@@ -54,7 +54,7 @@ cdef class BettingAccount(Account):
         Raises
         ------
         ValueError
-            If `event.account_type` is not equal to ``CASH``.
+            If `event.account_type` is not equal to ``BETTING``.
 
         """
         Condition.not_none(event, "event")

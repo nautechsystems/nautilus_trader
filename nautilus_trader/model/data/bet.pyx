@@ -1,0 +1,135 @@
+# -------------------------------------------------------------------------------------------------
+#  Copyright (C) 2015-2021 Nautech Systems Pty Ltd. All rights reserved.
+#  https://nautechsystems.io
+#
+#  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
+#  You may not use this file except in compliance with the License.
+#  You may obtain a copy of the License at https://www.gnu.org/licenses/lgpl-3.0.en.html
+#
+#  Unless required by applicable law or agreed to in writing, software
+#  distributed under the License is distributed on an "AS IS" BASIS,
+#  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+#  See the License for the specific language governing permissions and
+#  limitations under the License.
+# -------------------------------------------------------------------------------------------------
+
+from nautilus_trader.core.correctness cimport Condition
+from nautilus_trader.model.c_enums.order_side cimport OrderSide
+from nautilus_trader.model.objects cimport Price
+from nautilus_trader.model.objects cimport Quantity
+
+from nautilus_trader.model.c_enums.order_side import OrderSideParser
+
+
+cdef class Bet:
+    """
+    Represents a bet "order" or "trade" in price space (not probability)
+    """
+    def __init__(
+        self,
+        Price price,
+        Quantity size,
+        OrderSide side,
+    ):
+        """
+        Initialize a new instance of the ``Bet`` class.
+
+        Parameters
+        ----------
+        price : Price
+            The price of the bet
+        size : Quantity
+            The size of the bet.
+        side : OrderSide
+            The side ( OrderSide.BUY = BACK, OrderSide.SELL = LAY ) of the bet
+
+        Raises
+        ------
+        ValueError
+            If price is less than 1.0.
+        """
+        Condition.in_range_int(price._value, 1, 1000, "price")
+        self.price = price
+        self.size = size
+        self.side = side
+
+    cpdef stake(self):
+        return self.size * (self.price - 1)
+
+    cpdef cost(self):
+        return self.size
+
+    cpdef win_payoff(self):
+        if self.side == OrderSide.BUY:
+            return self.stake()
+        elif self.side == OrderSide.SELL:
+            return -self.stake()
+
+    cpdef lose_payoff(self):
+        if self.side == OrderSide.BUY:
+            return -self.cost()
+        elif self.side == OrderSide.SELL:
+            return self.cost()
+
+    cpdef exposure(self):
+        return self.win_payoff() - self.lose_payoff()
+
+    def __eq__(self, Bet other) -> bool:
+        return Bet.to_dict_c(self) == Bet.to_dict_c(other)
+
+    def __hash__(self) -> int:
+        return hash(frozenset(Bet.to_dict_c(self)))
+
+    def __str__(self) -> str:
+        return f"{self.side},{self.price},{self.size}"
+
+    def __repr__(self) -> str:
+        return f"{type(self).__name__}({self})"
+
+    @staticmethod
+    cdef Bet from_dict_c(dict values):
+        Condition.not_none(values, "values")
+        return Bet(
+            price=Price.from_str_c(values["price"]),
+            size=Quantity.from_str_c(values["size"]),
+            side=OrderSideParser.from_str(values['side'])
+        )
+
+    @staticmethod
+    cdef dict to_dict_c(Bet obj):
+        Condition.not_none(obj, "obj")
+        return {
+            "type": type(obj).__name__,
+            "price": str(obj.price),
+            "size": str(obj.size),
+            "side": str(obj.side.to_str()),
+        }
+
+    @staticmethod
+    def from_dict(dict values) -> Bet:
+        """
+        Return a Bet parsed from the given values.
+
+        Parameters
+        ----------
+        values : dict[str, object]
+            The values for initialization.
+
+        Returns
+        -------
+        Bet
+
+        """
+        return Bet.from_dict_c(values)
+
+    @staticmethod
+    def to_dict(Bet obj):
+        """
+        Return a dictionary representation of this object.
+
+        Returns
+        -------
+        dict[str, object]
+
+        """
+        return Bet.to_dict_c(obj)

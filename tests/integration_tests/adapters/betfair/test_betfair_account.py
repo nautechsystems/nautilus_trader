@@ -38,7 +38,7 @@ class TestBettingAccount:
 
         self.clock = LiveClock()
         self.venue = BETFAIR_VENUE
-        self.account = TestStubs.margin_account()  # TODO(bm): Implement betting account
+        self.account = TestStubs.betting_account()
         self.instrument = BetfairTestStubs.betting_instrument()
 
         # Setup logging
