@@ -13,8 +13,13 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from nautilus_trader.data.client cimport DataClient
 from nautilus_trader.data.client cimport MarketDataClient
 
 
+cdef class LiveDataClient(DataClient):
+    cdef readonly _loop
+
+
 cdef class LiveMarketDataClient(MarketDataClient):
-    cdef readonly object _loop
+    cdef readonly _loop
