@@ -554,7 +554,7 @@ cdef class TestClock(Clock):
 
         Returns
         -------
-        datetime
+        pd.Timestamp
             The current tz-aware UTC time of the clock.
 
         """
@@ -721,11 +721,11 @@ cdef class LiveClock(Clock):
 
         Returns
         -------
-        datetime
+        pd.Timestamp
             The current tz-aware UTC time of the clock.
 
         """
-        return pd.Timestamp(unix_timestamp_ns(), tz=pytz.utc)
+        return pd.Timestamp.utcnow()
 
     cdef Timer _create_timer(
         self,
