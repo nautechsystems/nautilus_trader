@@ -30,9 +30,9 @@ from nautilus_trader.trading.strategy import TradingStrategyConfig
 # *** IT IS NOT INTENDED TO BE USED TO TRADE LIVE WITH REAL MONEY. ***
 
 
-class OrderbookImbalanceConfig(TradingStrategyConfig):
+class OrderBookImbalanceConfig(TradingStrategyConfig):
     """
-    Configuration for ``OrderbookImbalance`` instances.
+    Configuration for ``OrderBookImbalance`` instances.
 
     instrument_id : InstrumentId
         The instrument ID for the strategy.
@@ -59,7 +59,7 @@ class OrderbookImbalanceConfig(TradingStrategyConfig):
     trigger_imbalance_ratio: float = 0.20
 
 
-class OrderbookImbalance(TradingStrategy):
+class OrderBookImbalance(TradingStrategy):
     """
     A simple strategy that sends FAK limit orders when there is a bid/ask
     imbalance in the order book.
@@ -67,7 +67,7 @@ class OrderbookImbalance(TradingStrategy):
     Cancels all orders and flattens all positions on stop.
     """
 
-    def __init__(self, config: OrderbookImbalanceConfig):
+    def __init__(self, config: OrderBookImbalanceConfig):
         """
         Initialize a new instance of the ``OrderbookImbalance`` class.
 
