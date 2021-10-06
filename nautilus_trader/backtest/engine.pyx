@@ -18,7 +18,6 @@ from decimal import Decimal
 from typing import Dict, List, Optional, Union
 
 import pandas as pd
-import pytz
 
 from cpython.datetime cimport datetime
 from libc.stdint cimport int64_t
