@@ -287,7 +287,7 @@ cdef class LiveExecutionClient(ExecutionClient):
                 exec_reports = await self.generate_exec_reports(
                     venue_order_id=order.venue_order_id,
                     symbol=order.instrument_id.symbol,
-                    since=pd.Timestamp(order.ts_init, tz=pytz.utc),
+                    since=pd.Timestamp(order.ts_init, tz="UTC"),
                 )
                 mass_status.add_exec_reports(order.venue_order_id, exec_reports)
 

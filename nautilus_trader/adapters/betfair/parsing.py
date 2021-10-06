@@ -79,7 +79,6 @@ from nautilus_trader.model.orders.market import MarketOrder
 
 uuid_factory = UUIDFactory()
 MILLIS_TO_NANOS = 1_000_000
-SECS_TO_NANOS = 1_000_000_000
 
 
 def make_custom_order_ref(client_order_id, strategy_id):
@@ -665,7 +664,7 @@ async def generate_order_status_report(self, order) -> Optional[OrderStatusRepor
             venue_order_id=VenueOrderId(),
             order_status=OrderStatus(),
             filled_qty=Quantity.zero(),
-            ts_init=SECS_TO_NANOS * pd.Timestamp(order["timestamp"]).timestamp(),
+            ts_init=int(pd.Timestamp(order["timestamp"]).to_datetime64()),
         )
         for order in self.client().betting.list_current_orders()["currentOrders"]
     ]
@@ -681,7 +680,7 @@ async def generate_trades_list(
         self._log.warn(f"Found no existing order for {venue_order_id}")
         return []
     fill = filled["clearedOrders"][0]
-    ts_event = SECS_TO_NANOS * pd.Timestamp(fill["lastMatchedDate"]).timestamp()
+    ts_event = int(pd.Timestamp(fill["lastMatchedDate"]).to_datetime64())
     return [
         ExecutionReport(
             client_order_id=self.venue_order_id_to_client_order_id[venue_order_id],

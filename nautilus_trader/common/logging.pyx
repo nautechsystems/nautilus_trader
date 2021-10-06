@@ -15,8 +15,6 @@
 
 from typing import Optional
 
-import pytz
-
 from cpython.datetime cimport timedelta
 
 import asyncio
@@ -254,7 +252,7 @@ cdef class Logger:
             color_cmd = _RED
 
         # Return the formatted log message from the given arguments
-        cdef str dt = format_iso8601_ns(pd.Timestamp(record["timestamp"], tz=pytz.utc))
+        cdef str dt = format_iso8601_ns(pd.Timestamp(record["timestamp"], tz="UTC"))
         cdef str trader_id_str = f"{self.trader_id.value}." if self.trader_id is not None else ""
         return (f"{_BOLD}{dt}{_ENDC} {color_cmd}"
                 f"[{LogLevelParser.to_str(level)}] "
