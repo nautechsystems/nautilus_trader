@@ -20,10 +20,32 @@ from nautilus_trader.live.node import TradingNodeConfig
 
 
 async def main():
+    # Connect to Betfair client early to load instruments and account currency
+    loop = asyncio.get_event_loop()
+    logger = LiveLogger(loop=loop, clock=LiveClock())
+    client = get_betfair_client(
+        username=os.getenv("BETFAIR_USERNAME"),
+        password=os.getenv("BETFAIR_PASSWORD"),
+        app_key=os.getenv("BETFAIR_APP_KEY"),
+        cert_dir=os.getenv("BETFAIR_CERT_DIR"),
+        logger=logger,
+        loop=loop,
+    )
+    await client.connect()
+
     # Find instruments for a particular market_id
     market_filter = {"market_id": ("1.188629427",)}
-    instruments = await get_instruments(market_filter=market_filter)
+    provider = get_instrument_provider(
+        client=client,
+        logger=logger,
+        market_filter=tuple(market_filter.items()),
+    )
+    await provider.load_all_async()
+    instruments = provider.list_instruments()
     print(f"Found instruments:\n{instruments}")
+
+    # Determine account currency
+    account = await client.get_account_details()
 
     # Configure trading node
     config = TradingNodeConfig(
@@ -41,7 +63,7 @@ async def main():
         },
         exec_clients={
             "BETFAIR": {
-                "base_currency": "AUD",
+                "base_currency": account["currencyCode"],
                 "username": "BETFAIR_USERNAME",  # value is the environment variable key
                 "password": "BETFAIR_PASSWORD",  # value is the environment variable key
                 "app_key": "BETFAIR_APP_KEY",  # value is the environment variable key
@@ -78,30 +100,6 @@ async def main():
         print(traceback.format_exc())
     finally:
         node.dispose()
-
-
-async def get_instruments(market_filter):
-    # Load instruments
-    loop = asyncio.get_event_loop()
-    logger = LiveLogger(loop=loop, clock=LiveClock())
-    client = get_betfair_client(
-        username=os.getenv("BETFAIR_USERNAME"),
-        password=os.getenv("BETFAIR_PASSWORD"),
-        app_key=os.getenv("BETFAIR_APP_KEY"),
-        cert_dir=os.getenv("BETFAIR_CERT_DIR"),
-        logger=logger,
-        loop=loop,
-    )
-    await client.connect()
-    await client.get_account_funds()
-
-    provider = get_instrument_provider(
-        client=client,
-        logger=logger,
-        market_filter=tuple(market_filter.items()),
-    )
-    await provider.load_all_async()
-    return provider.list_instruments()
 
 
 if __name__ == "__main__":
