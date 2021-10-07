@@ -71,6 +71,22 @@ class TestBettingAccount:
             ts_init=0,
         )
 
+    def _make_fill(self, price="0.5", volume=10, side="BUY", position_id="P-123456"):
+        order = self.order_factory.market(
+            self.instrument.id,
+            getattr(OrderSide, side),
+            Quantity.from_int(volume),
+        )
+
+        fill = TestStubs.event_order_filled(
+            order,
+            instrument=self.instrument,
+            position_id=PositionId(position_id),
+            strategy_id=StrategyId("S-001"),
+            last_px=Price.from_str(price),
+        )
+        return fill
+
     def test_instantiated_accounts_basic_properties(self):
         # Arrange, Act
         account = TestStubs.betting_account()
@@ -204,21 +220,7 @@ class TestBettingAccount:
         # Arrange
         event = self._make_account_state(starting_balance=1000.0)
         account = BettingAccount(event)
-
-        order = self.order_factory.market(
-            self.instrument.id,
-            OrderSide.BUY,
-            Quantity.from_int(100),
-        )
-
-        fill = TestStubs.event_order_filled(
-            order,
-            instrument=self.instrument,
-            position_id=PositionId("P-123456"),
-            strategy_id=StrategyId("S-001"),
-            last_px=Price.from_str("0.80000"),
-        )
-
+        fill = self._make_fill(price="0.8", volume=100)
         position = Position(self.instrument, fill)
 
         # Act
@@ -230,6 +232,28 @@ class TestBettingAccount:
 
         # Assert
         assert result == [Money("-80.00", GBP)]
+
+    def test_calculate_pnls_partially_closed(self):
+        # Arrange
+        event = self._make_account_state(starting_balance=1000.0)
+        account = BettingAccount(event)
+        fill1 = self._make_fill(price="0.50", volume=100, side="BUY")
+        fill2 = self._make_fill(price="0.80", volume=100, side="SELL")
+
+        position = Position(self.instrument, fill1)
+        position.apply(fill2)
+
+        # Act
+        result = account.calculate_pnls(
+            instrument=self.instrument,
+            position=position,
+            fill=fill2,
+        )
+
+        # Assert
+        # TODO - this should really be 75 GBP given the position (but we are currently not using position?)
+        # assert result == [Money("75.00", GBP)]
+        assert result == [Money("80.00", GBP)]
 
     def test_calculate_commission_when_given_liquidity_side_none_raises_value_error(
         self,
