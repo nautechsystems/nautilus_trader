@@ -13,7 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from nautilus_trader.accounting.accounts.base cimport Account
+from nautilus_trader.accounting.accounts.cash cimport CashAccount
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
 from nautilus_trader.model.instruments.base cimport Instrument
 from nautilus_trader.model.objects cimport Money
@@ -21,11 +21,7 @@ from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
 
 
-cdef class BettingAccount(Account):
-    cdef dict _balances_locked
-
-# -- CALCULATIONS ----------------------------------------------------------------------------------
-
+cdef class BettingAccount(CashAccount):
     cpdef Money calculate_balance_locked(
         self,
         Instrument instrument,

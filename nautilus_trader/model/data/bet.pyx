@@ -145,7 +145,6 @@ cpdef Bet nautilus_to_bet(price: Price, quantity: Quantity, side: OrderSide):
     Nautilus considers orders/trades in probability space; convert back to betting prices/quantities
     """
     bet_price = Price.from_int_c(1) / price
-    print(bet_price)
     return Bet(
         price=bet_price,
         quantity=quantity,
