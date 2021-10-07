@@ -13,10 +13,13 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import unittest
+
+import pytest
 
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.tick_scheme.base import get_tick_scheme
+from nautilus_trader.model.tick_scheme.base import round_down
+from nautilus_trader.model.tick_scheme.base import round_up
 from tests.test_kit.providers import TestInstrumentProvider
 
 
@@ -24,9 +27,33 @@ AUDUSD = TestInstrumentProvider.default_fx_ccy("AUD/USD")
 JPYUSD = TestInstrumentProvider.default_fx_ccy("JPY/USD")
 
 
-class TestFixedTickScheme(unittest.TestCase):
-    def setUp(self) -> None:
+class TestFixedTickScheme:
+    def setup(self) -> None:
         self.tick_scheme = get_tick_scheme("FixedTickScheme4Decimal")
+
+    @pytest.mark.parametrize(
+        "value,precision,expected",
+        [
+            (0.72775, 4, "0.7277"),
+            (0.7277, 4, "0.7277"),
+            (0.727741111, 4, "0.7277"),
+            (0.799999, 2, "0.79"),
+        ],
+    )
+    def test_round_down(self, value, precision, expected):
+        assert round_down(value, precision) == Price.from_str(expected)
+
+    @pytest.mark.parametrize(
+        "value,precision,expected",
+        [
+            (0.72775, 4, "0.7278"),
+            (0.7277, 4, "0.7277"),
+            (0.727741111, 4, "0.7278"),
+            (0.799999, 2, "0.80"),
+        ],
+    )
+    def test_round_up(self, value, precision, expected):
+        assert round_up(value, precision) == Price.from_str(expected)
 
     def test_attrs(self):
         assert self.tick_scheme.price_precision == 4
@@ -35,42 +62,43 @@ class TestFixedTickScheme(unittest.TestCase):
 
     def test_next_ask_tick_basic(self):
         # Standard checks
-        assert self.tick_scheme.next_ask_tick(price=Price.from_str("0.7277")) == Price.from_str(
-            "0.7278"
-        )
-        assert self.tick_scheme.next_ask_tick(price=Price.from_str("0.9999")) == Price.from_str(
-            "1.0000"
-        )
+        result = self.tick_scheme.next_ask_tick(0.7277)
+        expected = Price.from_str("0.7278")
+        assert result == expected
+
+        result = self.tick_scheme.next_ask_tick(0.9999)
+        expected = Price.from_str("1.0000")
+        assert result == expected
 
     def test_next_ask_price_between_ticks(self):
-        assert self.tick_scheme.next_ask_tick(price=Price.from_str("72775001")) == Price.from_str(
-            "0.7278"
-        )
+        result = self.tick_scheme.next_ask_tick(price=Price.from_str("72775001"))
+        expected = Price.from_str("0.7278")
+        assert result == expected
 
     def test_next_ask_price_max_tick(self):
         assert self.tick_scheme.next_ask_tick(price=Price.from_str("10000")) is None
 
     def test_next_ask_price_near_boundary(self):
-        assert self.tick_scheme.next_ask_tick(price=Price.from_str("0.00005")) == Price.from_str(
-            "0.0001"
-        )
+        result = self.tick_scheme.next_ask_tick(price=Price.from_str("0.00005"))
+        expected = Price.from_str("0.0001")
+        assert result == expected
 
     def test_next_bid_tick_basic(self):
         # Standard checks at change points
-        assert self.tick_scheme.next_bid_tick(price=Price.from_str("0.7277")) == Price.from_str(
-            "0.7276"
-        )
-        assert self.tick_scheme.next_ask_tick(price=Price.from_str("1.0001")) == Price.from_str(
-            "1.0000"
-        )
+        result = self.tick_scheme.next_bid_tick(price=Price.from_str("0.7277"))
+        expected = Price.from_str("0.7276")
+        assert result == expected
+
+        result = self.tick_scheme.next_ask_tick(price=Price.from_str("1.0001"))
+        expected = Price.from_str("1.0000")
+        assert result == expected
 
     def test_next_bid_price_between_ticks(self):
-        assert self.tick_scheme.next_ask_tick(price=Price.from_str("72775001")) == Price.from_str(
-            "0.7277"
-        )
+        result = self.tick_scheme.next_ask_tick(price=Price.from_str("72775001"))
+        expected = Price.from_str("0.7277")
+        assert result == expected
 
 
-#
 # class TestBettingTickScheme(unittest.TestCase):
 #     def setUp(self) -> None:
 #         self.tick_scheme = get_tick_scheme("FixedTickScheme4Decimal")

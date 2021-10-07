@@ -12,6 +12,8 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+from libc.math cimport ceil
+from libc.math cimport floor
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.model.objects cimport Price
@@ -34,7 +36,7 @@ cdef class TickScheme:
             The maximum possible tick `Price`
         """
 
-    cpdef Price next_ask_tick(self, Price price):
+    cpdef Price next_ask_tick(self, double price):
         """
         For a given price, return the next ask (higher) tick
 
@@ -43,7 +45,7 @@ cdef class TickScheme:
         """
         raise NotImplementedError
 
-    cpdef Price next_bid_tick(self, Price price):
+    cpdef Price next_bid_tick(self, double price):
         """
         For a given price, return the next bid (lower) tick
 
@@ -65,3 +67,19 @@ cpdef void register_tick_scheme(str name, tick_scheme: TickScheme):
 cpdef TickScheme get_tick_scheme(str name):
     Condition.is_in(name, TICK_SCHEMES, "name", "TICK_SCHEMES")
     return TICK_SCHEMES[name]
+
+
+cpdef Price round_down(double value, int precision):
+    """
+    Returns a value rounded down to a specific number of decimal places.
+    """
+    cdef int factor = 10 ** precision
+    return Price(floor(value * factor) / factor, precision=precision)
+
+
+cpdef Price round_up(double value, int precision):
+    """
+    Returns a value rounded down to a specific number of decimal places.
+    """
+    cdef int factor = 10 ** precision
+    return Price(ceil(value * factor) / factor, precision=precision)

@@ -18,6 +18,8 @@ from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.tick_scheme.base cimport TickScheme
 
 from nautilus_trader.model.tick_scheme.base import register_tick_scheme
+from nautilus_trader.model.tick_scheme.base import round_down
+from nautilus_trader.model.tick_scheme.base import round_up
 
 
 cdef class FixedTickScheme(TickScheme):
@@ -50,38 +52,23 @@ cdef class FixedTickScheme(TickScheme):
         self.max_tick = max_tick
         self.increment = Price.from_str_c('1'.zfill(price_precision))
 
-    def next_ask_tick(self, price):
+    cpdef Price next_ask_tick(self, double value):
         """
         For a given price, return the next ask (higher) price on the ladder
 
-        :param price: The relative price
+        :param value: The price
         :return: Price
         """
-        cdef int idx
-        if price >= self.max_tick:
-            return None
-        idx = self.ticks.searchsorted(price)
-        if price in self.ticks:
-            return self.ticks[idx + 1]
-        else:
-            return self.ticks[idx]
+        return round_up(value=value, precision=self.price_precision)
 
-    cpdef Price next_bid_tick(self, Price price):
+    cpdef Price next_bid_tick(self, double value):
         """
         For a given price, return the next bid (lower)price on the ladder
 
-        :param price: The relative price
+        :param value: The price
         :return: Price
         """
-        cdef int idx
-        if price <= self.min_tick:
-            return None
-        idx = self.ticks.searchsorted(price)
-        if price in self.ticks:
-            return self.ticks[idx - 1]
-        else:
-            return self.ticks[idx - 1]
-
+        return round_down(value=value)
 
 # Most FOREX pairs
 FixedTickScheme4Decimal = FixedTickScheme(

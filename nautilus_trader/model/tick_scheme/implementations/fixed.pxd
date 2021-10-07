@@ -20,6 +20,6 @@ from nautilus_trader.model.tick_scheme.base cimport TickScheme
 
 cdef class FixedTickScheme(TickScheme):
     cdef readonly int price_precision
-
-    cpdef Price next_ask_tick(self, Price price)
-    cpdef Price next_bid_tick(self, Price price)
+    cdef Price increment
+    cpdef Price next_ask_tick(self, double price)
+    cpdef Price next_bid_tick(self, double price)
