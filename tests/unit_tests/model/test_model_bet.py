@@ -33,9 +33,9 @@ class TestBet:
 
     def test_bet_equality(self):
         # Arrange
-        bet1 = Bet(price=self.price, size=self.size, side=OrderSide.BUY)
-        bet2 = Bet(price=self.price, size=self.size, side=OrderSide.BUY)
-        bet3 = Bet(price=self.price, size=self.size, side=OrderSide.SELL)
+        bet1 = Bet(price=self.price, quantity=self.size, side=OrderSide.BUY)
+        bet2 = Bet(price=self.price, quantity=self.size, side=OrderSide.BUY)
+        bet3 = Bet(price=self.price, quantity=self.size, side=OrderSide.SELL)
 
         # Act, Assert
         assert bet1 == bet1
@@ -44,7 +44,7 @@ class TestBet:
 
     def test_bet_hash_str_and_repr(self):
         # Arrange
-        bet = Bet(price=self.price, size=self.size, side=OrderSide.BUY)
+        bet = Bet(price=self.price, quantity=self.size, side=OrderSide.BUY)
 
         # Act, Assert
         assert isinstance(hash(bet), int)
@@ -65,7 +65,7 @@ class TestBet:
     def test_win_payoff(self, price, size, side, expected):
         side = getattr(OrderSide, side)
         result = Bet(
-            price=Price.from_str(price), size=Quantity.from_int(size), side=side
+            price=Price.from_str(price), quantity=Quantity.from_int(size), side=side
         ).win_payoff()
         assert result == expected
 
@@ -83,7 +83,7 @@ class TestBet:
     def test_lose_payoff(self, price, size, side, expected):
         side = getattr(OrderSide, side)
         result = Bet(
-            price=Price.from_str(price), size=Quantity.from_int(size), side=side
+            price=Price.from_str(price), quantity=Quantity.from_int(size), side=side
         ).lose_payoff()
         assert result == expected
 
@@ -101,10 +101,10 @@ class TestBet:
     def test_exposure(self, price, size, side, expected):
         side = getattr(OrderSide, side)
         result = Bet(
-            price=Price.from_str(price), size=Quantity.from_int(size), side=side
+            price=Price.from_str(price), quantity=Quantity.from_int(size), side=side
         ).exposure()
         assert result == expected
 
     def test_dict(self):
-        bet = Bet(price=self.price, size=self.size, side=OrderSide.BUY)
+        bet = Bet(price=self.price, quantity=self.size, side=OrderSide.BUY)
         assert Bet.from_dict(bet.to_dict(bet)) == bet
