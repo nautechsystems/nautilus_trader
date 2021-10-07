@@ -21,10 +21,10 @@ from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.logging import LiveLogger
 from nautilus_trader.common.logging import LoggerAdapter
 from nautilus_trader.core.correctness import PyCondition
-from nautilus_trader.live.data_client import LiveDataClientFactory
 from nautilus_trader.live.data_engine import LiveDataEngine
-from nautilus_trader.live.execution_client import LiveExecutionClientFactory
 from nautilus_trader.live.execution_engine import LiveExecutionEngine
+from nautilus_trader.live.factories import LiveDataClientFactory
+from nautilus_trader.live.factories import LiveExecutionClientFactory
 from nautilus_trader.msgbus.bus import MessageBus
 
 
