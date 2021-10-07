@@ -35,6 +35,8 @@ from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
 from nautilus_trader.model.position cimport Position
 
+from nautilus_trader.model.data.bet import nautilus_to_bet
+
 
 cdef class BettingAccount(Account):
     """
@@ -179,9 +181,9 @@ cdef class BettingAccount(Account):
 
         cdef Currency quote_currency = instrument.quote_currency
 
-        cdef Bet bet = Bet(
+        cdef Bet bet = nautilus_to_bet(
             price=price,
-            size=quantity,
+            quantity=quantity,
             side=side
         )
 
@@ -198,7 +200,7 @@ cdef class BettingAccount(Account):
         #         return None  # No balance to lock
 
         # Add expected commission
-        locked: Decimal = bet.exposure()
+        locked: Decimal = bet.liability()
         return Money(locked, quote_currency)
 
     cpdef list calculate_pnls(

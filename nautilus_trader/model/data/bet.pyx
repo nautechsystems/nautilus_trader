@@ -19,8 +19,6 @@ from nautilus_trader.model.c_enums.order_side cimport OrderSideParser
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
 
-from nautilus_trader.adapters.betfair.common import probability_to_price
-
 
 cdef class Bet:
     """
@@ -28,8 +26,8 @@ cdef class Bet:
     """
     def __init__(
         self,
-        Price price,
-        Quantity size,
+        object price,
+        Quantity quantity,
         OrderSide side,
     ):
         """
@@ -39,7 +37,7 @@ cdef class Bet:
         ----------
         price : Price
             The price of the bet
-        size : Quantity
+        quantity : Quantity
             The size of the bet.
         side : OrderSide
             The side ( OrderSide.BUY = BACK, OrderSide.SELL = LAY ) of the bet
@@ -49,16 +47,22 @@ cdef class Bet:
         ValueError
             If price is less than 1.0.
         """
-        Condition.in_range_int(price._value, 1, 1000, "price")
+        Condition.in_range_int(price, 1, 1000, "price")
         self.price = price
-        self.size = size
+        self.quantity = quantity
         self.side = side
 
     cpdef stake(self):
-        return self.size * (self.price - 1)
+        return self.quantity * (self.price - 1)
 
     cpdef cost(self):
-        return self.size
+        return self.quantity
+
+    cpdef liability(self):
+        if self.side == OrderSide.BUY:
+            return self.cost()
+        else:  # OrderSide.SELL
+            return self.stake()
 
     cpdef win_payoff(self):
         if self.side == OrderSide.BUY:
@@ -82,7 +86,7 @@ cdef class Bet:
         return hash(frozenset(Bet.to_dict_c(self)))
 
     def __str__(self) -> str:
-        return f"{self.side},{self.price},{self.size}"
+        return f"{self.side},{self.price},{self.quantity}"
 
     def __repr__(self) -> str:
         return f"{type(self).__name__}({self})"
@@ -92,7 +96,7 @@ cdef class Bet:
         Condition.not_none(values, "values")
         return Bet(
             price=Price.from_str_c(values["price"]),
-            size=Quantity.from_str_c(values["size"]),
+            quantity=Quantity.from_str_c(values["quantity"]),
             side=OrderSideParser.from_str(values['side'])
         )
 
@@ -102,7 +106,7 @@ cdef class Bet:
         return {
             "type": type(obj).__name__,
             "price": str(obj.price),
-            "size": str(obj.size),
+            "quantity": str(obj.quantity),
             "side": OrderSideParser.to_str(obj.side),
         }
 
@@ -136,10 +140,14 @@ cdef class Bet:
         return Bet.to_dict_c(obj)
 
 
-# cpdef Bet nautilus_to_bet(price: Price, quantity: Quantity, side: OrderSide):
-#     """
-#     Nautilus considers orders/trades in probability space; convert back to betting prices/quantities
-#     """
-#     return Bet(
-#         price=probability_to_price,
-#     )
+cpdef Bet nautilus_to_bet(price: Price, quantity: Quantity, side: OrderSide):
+    """
+    Nautilus considers orders/trades in probability space; convert back to betting prices/quantities
+    """
+    bet_price = Price.from_int_c(1) / price
+    print(bet_price)
+    return Bet(
+        price=bet_price,
+        quantity=quantity,
+        side=side
+    )

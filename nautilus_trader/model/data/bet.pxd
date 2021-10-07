@@ -14,16 +14,16 @@
 # -------------------------------------------------------------------------------------------------
 
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
-from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
 
 
 cdef class Bet:
-    cdef Price price
-    cdef Quantity size
+    cdef object price
+    cdef Quantity quantity
     cdef OrderSide side
 
     cpdef stake(self)
+    cpdef liability(self)
     cpdef cost(self)
     cpdef win_payoff(self)
     cpdef lose_payoff(self)

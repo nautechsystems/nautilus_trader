@@ -21,6 +21,7 @@ from nautilus_trader.accounting.accounts.betting import BettingAccount
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.factories import OrderFactory
 from nautilus_trader.core.uuid import UUID4
+from nautilus_trader.model.c_enums.order_side import OrderSideParser
 from nautilus_trader.model.currencies import GBP
 from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import LiquiditySide
@@ -173,17 +174,17 @@ class TestBettingAccount:
         assert account.balance_locked(GBP) == Money(0.50000000, GBP)
 
     @pytest.mark.parametrize(
-        "price, quantity, side, remaining_balance",
+        "price, quantity, side, locked_balance",
         [
-            ("0.667", 10, "BUY", 1000.0),
-            # ("0.5",   10, "BUY", 1000.0),
-            # ("0.1",   10, "BUY", 1000.0),
-            # ("0.667", 10, "SELL", 1000.0),
-            # ("0.5",   10, "SELL", 1000.0),
-            # ("0.1",   10, "SELL", 1000.0),
+            ("0.80", 10, "BUY", "10"),
+            ("0.50", 10, "BUY", "10"),
+            ("0.10", 20, "BUY", "20"),
+            ("0.80", 10, "SELL", "2.5"),
+            ("0.5", 10, "SELL", "10"),
+            ("0.1", 10, "SELL", "90"),
         ],
     )
-    def test_calculate_balance_locked(self, price, quantity, side, remaining_balance):
+    def test_calculate_balance_locked(self, price, quantity, side, locked_balance):
         # Arrange
         event = self._make_account_state(starting_balance=1000.0)
         account = BettingAccount(event)
@@ -191,41 +192,23 @@ class TestBettingAccount:
         # Act
         result = account.calculate_balance_locked(
             instrument=self.instrument,
-            side=side,
+            side=OrderSideParser.from_str_py(side),
             quantity=Quantity.from_int(quantity),
             price=Price.from_str(price),
         )
 
         # Assert
-        assert result == Money(remaining_balance, GBP)  # Notional + expected commission
+        assert result == Money(Price.from_str(locked_balance), GBP)
 
     def test_calculate_pnls_for_single_currency_cash_account(self):
         # Arrange
-        event = AccountState(
-            account_id=AccountId("SIM", "001"),
-            account_type=AccountType.BETTING,
-            base_currency=GBP,
-            reported=True,
-            balances=[
-                AccountBalance(
-                    GBP,
-                    Money(1_000_000.00, GBP),
-                    Money(0.00, GBP),
-                    Money(1_000_000.00, GBP),
-                ),
-            ],
-            info={},  # No default currency set
-            event_id=UUID4(),
-            ts_event=0,
-            ts_init=0,
-        )
-
+        event = self._make_account_state(starting_balance=1000.0)
         account = BettingAccount(event)
 
         order = self.order_factory.market(
             self.instrument.id,
             OrderSide.BUY,
-            Quantity.from_int(1_000_000),
+            Quantity.from_int(100),
         )
 
         fill = TestStubs.event_order_filled(
@@ -246,7 +229,7 @@ class TestBettingAccount:
         )
 
         # Assert
-        assert result == [Money(-800016.00, GBP)]
+        assert result == [Money("-80.00", GBP)]
 
     def test_calculate_commission_when_given_liquidity_side_none_raises_value_error(
         self,
@@ -258,7 +241,7 @@ class TestBettingAccount:
         with pytest.raises(ValueError):
             account.calculate_commission(
                 instrument=self.instrument,
-                last_qty=Quantity.from_int(100000),
-                last_px=Decimal("11450.50"),
+                last_qty=Quantity.from_int(1),
+                last_px=Decimal("1"),
                 liquidity_side=LiquiditySide.NONE,
             )
