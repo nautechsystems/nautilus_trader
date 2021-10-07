@@ -88,8 +88,8 @@ cdef class QuoteTickDataWrangler:
         if "ask_size" not in data.columns:
             data["ask_size"] = float(default_volume)
 
-        cdef int64_t[:] ts_events = np.ascontiguousarray([secs_to_nanos(dt.timestamp()) for dt in data.index])  # noqa
-        cdef int64_t[:] ts_inits = np.ascontiguousarray([ts_event + ts_init_delta for ts_event in ts_events])  # noqa
+        cdef int64_t[:] ts_events = np.ascontiguousarray([secs_to_nanos(dt.timestamp()) for dt in data.index], dtype=np.int64)  # noqa
+        cdef int64_t[:] ts_inits = np.ascontiguousarray([ts_event + ts_init_delta for ts_event in ts_events], dtype=np.int64)  # noqa
 
         return list(map(
             self._build_tick,
@@ -200,8 +200,8 @@ cdef class QuoteTickDataWrangler:
                     df_ticks_final.iloc[i + 1] = low
                     df_ticks_final.iloc[i + 2] = high
 
-        cdef int64_t[:] ts_events = np.ascontiguousarray([secs_to_nanos(dt.timestamp()) for dt in df_ticks_final.index])  # noqa
-        cdef int64_t[:] ts_inits = np.ascontiguousarray([ts_event + ts_init_delta for ts_event in ts_events])  # noqa
+        cdef int64_t[:] ts_events = np.ascontiguousarray([secs_to_nanos(dt.timestamp()) for dt in df_ticks_final.index], dtype=np.int64)  # noqa
+        cdef int64_t[:] ts_inits = np.ascontiguousarray([ts_event + ts_init_delta for ts_event in ts_events], dtype=np.int64)  # noqa
 
         return list(map(
             self._build_tick,
@@ -272,8 +272,8 @@ cdef class TradeTickDataWrangler:
         processed["aggressor_side"] = self._create_side_if_not_exist(data)
         processed["match_id"] = data["trade_id"].apply(str)
 
-        cdef int64_t[:] ts_events = np.ascontiguousarray([secs_to_nanos(dt.timestamp()) for dt in data.index])  # noqa
-        cdef int64_t[:] ts_inits = np.ascontiguousarray([ts_event + ts_init_delta for ts_event in ts_events])  # noqa
+        cdef int64_t[:] ts_events = np.ascontiguousarray([secs_to_nanos(dt.timestamp()) for dt in data.index], dtype=np.int64)  # noqa
+        cdef int64_t[:] ts_inits = np.ascontiguousarray([ts_event + ts_init_delta for ts_event in ts_events], dtype=np.int64)  # noqa
 
         return list(map(
             self._build_tick,
@@ -372,8 +372,8 @@ cdef class BarDataWrangler:
         if "volume" not in data:
             data["volume"] = float(default_volume)
 
-        cdef int64_t[:] ts_events = np.ascontiguousarray([secs_to_nanos(dt.timestamp()) for dt in data.index])  # noqa
-        cdef int64_t[:] ts_inits = np.ascontiguousarray([ts_event + ts_init_delta for ts_event in ts_events])  # noqa
+        cdef int64_t[:] ts_events = np.ascontiguousarray([secs_to_nanos(dt.timestamp()) for dt in data.index], dtype=np.int64)  # noqa
+        cdef int64_t[:] ts_inits = np.ascontiguousarray([ts_event + ts_init_delta for ts_event in ts_events], dtype=np.int64)  # noqa
 
         return list(map(
             self._build_bar,

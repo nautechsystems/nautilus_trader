@@ -17,13 +17,9 @@ from nautilus_trader.data.client cimport DataClient
 from nautilus_trader.data.client cimport MarketDataClient
 
 
-cdef class LiveDataClientFactory:
-    pass
-
-
 cdef class LiveDataClient(DataClient):
-    cdef readonly object _loop
+    cdef readonly _loop
 
 
 cdef class LiveMarketDataClient(MarketDataClient):
-    cdef readonly object _loop
+    cdef readonly _loop

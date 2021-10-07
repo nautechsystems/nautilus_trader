@@ -33,7 +33,7 @@ from nautilus_trader.core.math cimport lround
 
 # UNIX epoch is the UTC time at 00:00:00 on 1/1/1970
 # https://en.wikipedia.org/wiki/Unix_time
-cdef datetime UNIX_EPOCH = datetime(1970, 1, 1, 0, 0, 0, 0, tzinfo=pytz.utc)
+cdef datetime UNIX_EPOCH = pd.Timestamp("1970-01-01", tz="UTC")
 
 # Time unit conversion constants
 cdef int64_t MILLISECONDS_IN_SECOND = 1_000
@@ -160,7 +160,7 @@ cpdef unix_nanos_to_dt(int64_t nanos):
     pd.Timestamp
 
     """
-    return pd.Timestamp(nanos, unit="ns", tz=pytz.utc)
+    return pd.Timestamp(nanos, unit="ns", tz="UTC")
 
 
 cpdef dt_to_unix_nanos(dt: pd.Timestamp):
@@ -209,7 +209,7 @@ cpdef maybe_unix_nanos_to_dt(nanos):
     if nanos is None:
         return None
     else:
-        return pd.Timestamp(nanos, unit="ns", tz=pytz.utc)
+        return pd.Timestamp(nanos, unit="ns", tz="UTC")
 
 
 cpdef maybe_dt_to_unix_nanos(dt: pd.Timestamp):

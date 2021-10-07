@@ -484,3 +484,35 @@ class TestBacktestWithAddedBars:
         assert strategy.fast_ema.count == 30117
         assert self.engine.iteration == 180702
         assert self.engine.portfolio.account(self.venue).balance_total(USD) == Money(977151.62, USD)
+
+    def test_dump_pickled_data(self):
+        # Arrange, # Act, # Assert
+        assert len(self.engine.dump_pickled_data()) == 34_700_594
+
+    def test_load_pickled_data(self):
+        # Arrange
+        bar_type = BarType(
+            instrument_id=GBPUSD_SIM.id,
+            bar_spec=TestStubs.bar_spec_1min_bid(),
+            aggregation_source=AggregationSource.EXTERNAL,  # <-- important
+        )
+        config = EMACrossConfig(
+            instrument_id=str(GBPUSD_SIM.id),
+            bar_type=str(bar_type),
+            trade_size=Decimal(100_000),
+            fast_ema=10,
+            slow_ema=20,
+        )
+        strategy = EMACross(config=config)
+        self.engine.add_strategy(strategy)
+
+        data = self.engine.dump_pickled_data()
+
+        # Act
+        self.engine.load_pickled_data(data)
+        self.engine.run()
+
+        # Assert
+        assert strategy.fast_ema.count == 30117
+        assert self.engine.iteration == 180702
+        assert self.engine.portfolio.account(self.venue).balance_total(USD) == Money(977151.62, USD)

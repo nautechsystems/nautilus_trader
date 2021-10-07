@@ -24,7 +24,7 @@ from tests.test_kit.stubs import TestStubs
 @pytest.mark.skip(reason="WIP")
 @pytest.mark.asyncio
 async def test_client_recv():
-    NUM_MESSAGES = 3
+    num_messages = 3
     lines = []
 
     def record(*args, **kwargs):
@@ -37,8 +37,8 @@ async def test_client_recv():
         logger=TestStubs.logger(),
     )
     await client.connect()
-    for _ in range(NUM_MESSAGES):
+    for _ in range(num_messages):
         await client.send(b"Hello")
     await asyncio.sleep(1)
     await client.close()
-    assert len(lines) == NUM_MESSAGES
+    assert len(lines) == num_messages
