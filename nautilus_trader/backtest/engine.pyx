@@ -13,6 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+import pickle
 import socket
 from decimal import Decimal
 from typing import Dict, List, Optional, Union
@@ -426,6 +427,35 @@ cdef class BacktestEngine:
             f"Added {len(data):,} {first.type} "
             f"Bar element{'' if len(data) == 1 else 's'}.",
         )
+
+    def dump_pickled_data(self) -> bytes:
+        """
+        Return the internal data stream pickled.
+
+        Returns
+        -------
+        bytes
+
+        """
+        return pickle.dumps(self._data)
+
+    def load_pickled_data(self, bytes data) -> None:
+        """
+        Load the given pickled data directly into the internal data stream.
+
+        It is highly advised to only pass data to this method which was obtained
+        through a call to `.dump_pickled_data()`.
+
+        Warnings
+        --------
+        This low-level direct access method makes the following assumptions:
+         - The data contains valid Nautilus objects only, which inherit from `Data`.
+         - The data was successfully pickled from a call to `pickle.dumps()`.
+         - The data was sorted prior to pickling.
+         - All required instruments have been added to the engine.
+
+        """
+        self._data = pickle.loads(data)
 
     def add_venue(
         self,
