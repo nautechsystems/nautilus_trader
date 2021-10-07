@@ -17,56 +17,11 @@ import asyncio
 
 from nautilus_trader.cache.cache cimport Cache
 from nautilus_trader.common.clock cimport LiveClock
-from nautilus_trader.common.logging cimport LiveLogger
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.data.client cimport DataClient
 from nautilus_trader.data.client cimport MarketDataClient
 from nautilus_trader.model.identifiers cimport ClientId
 from nautilus_trader.msgbus.bus cimport MessageBus
-
-
-class LiveDataClientFactory:
-    """
-    Provides a factory for creating `LiveDataClient` instances.
-    """
-
-    @staticmethod
-    def create(
-        str name not None,
-        dict config not None,
-        MessageBus msgbus not None,
-        Cache cache not None,
-        LiveClock clock not None,
-        LiveLogger logger not None,
-        client_cls=None,
-    ):
-        """
-        Return a new data client from the given parameters.
-
-        Parameters
-        ----------
-        name : str
-            The client name.
-        config : dict[str, object]
-            The configuration for the client.
-        msgbus : MessageBus
-            The message bus for the client.
-        cache : Cache
-            The cache for the client.
-        clock : LiveClock
-            The clock for the client.
-        logger : LiveLogger
-            The logger for the client.
-        client_cls : class, optional
-            The internal client constructor. This allows external library and
-            testing dependency injection.
-
-        Returns
-        -------
-        LiveDataClient
-
-        """
-        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
 
 cdef class LiveDataClient(DataClient):

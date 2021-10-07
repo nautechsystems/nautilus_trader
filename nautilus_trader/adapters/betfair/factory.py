@@ -27,8 +27,8 @@ from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.logging import LiveLogger
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.common.logging import LoggerAdapter
-from nautilus_trader.live.data_client import LiveDataClientFactory
-from nautilus_trader.live.execution_client import LiveExecutionClientFactory
+from nautilus_trader.live.factories import LiveDataClientFactory
+from nautilus_trader.live.factories import LiveExecutionClientFactory
 from nautilus_trader.model.currency import Currency
 from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.msgbus.bus import MessageBus
@@ -90,24 +90,24 @@ class BetfairLiveDataClientFactory(LiveDataClientFactory):
         client_cls=None,
     ):
         """
-        Create new Betfair clients.
+        Create a new Betfair client.
 
         Parameters
         ----------
         loop : asyncio.AbstractEventLoop
-            The event loop for the clients.
+            The event loop for the client.
         name : str
             The client name.
         config : dict
             The configuration dictionary.
         msgbus : MessageBus
-            The message bus for the clients.
+            The message bus for the client.
         cache : Cache
-            The cache for the clients.
+            The cache for the client.
         clock : LiveClock
-            The clock for the clients.
+            The clock for the client.
         logger : LiveLogger
-            The logger for the clients.
+            The logger for the client.
         client_cls : class, optional
             The class to call to return a new internal client.
 
@@ -166,21 +166,22 @@ class BetfairLiveExecutionClientFactory(LiveExecutionClientFactory):
         Parameters
         ----------
         loop : asyncio.AbstractEventLoop
-            The event loop for the clients.
+            The event loop for the client.
         name : str
             The client name.
-        config : dict
-            The configuration dictionary.
+        config : dict[str, object]
+            The configuration for the client.
         msgbus : MessageBus
-            The message bus for the clients.
+            The message bus for the client.
         cache : Cache
-            The cache for the clients.
+            The cache for the client.
         clock : LiveClock
-            The clock for the clients.
+            The clock for the client.
         logger : LiveLogger
-            The logger for the clients.
+            The logger for the client.
         client_cls : class, optional
-            The class to call to return a new internal client.
+            The internal client constructor. This allows external library and
+            testing dependency injection.
 
         Returns
         -------
