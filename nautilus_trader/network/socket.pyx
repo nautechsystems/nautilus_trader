@@ -22,9 +22,6 @@ from nautilus_trader.common.logging cimport LoggerAdapter
 from nautilus_trader.core.correctness cimport Condition
 
 
-cdef bytes DEFAULT_CRLF = b"\r\n"
-
-
 cdef class SocketClient:
     """
     Provides a low-level generic socket base client.
@@ -86,7 +83,7 @@ cdef class SocketClient:
             logger=logger,
         )
 
-        self._crlf = crlf or DEFAULT_CRLF
+        self._crlf = crlf or b"\r\n"
         self._encoding = encoding
         self._running = False
         self._stopped = False
@@ -134,11 +131,11 @@ cdef class SocketClient:
         await self._writer.drain()
 
     async def start(self):
-        cdef bytes partial = b""
-        cdef bytes raw
-
         self._log.debug("Starting recv loop")
 
+        cdef:
+            bytes partial = b""
+            bytes raw = b""
         while self._running:
             try:
                 raw = await self._reader.readuntil(separator=self._crlf)

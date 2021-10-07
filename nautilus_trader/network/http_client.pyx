@@ -16,7 +16,7 @@
 import asyncio
 import itertools
 import socket
-from typing import Dict, List, Union
+from typing import List
 
 import aiohttp
 from aiohttp import ClientResponse
@@ -85,7 +85,7 @@ cdef class HTTPClient:
     @property
     def session(self) -> ClientSession:
         assert self._sessions, "No sessions, need to connect?"
-        session = next(self._sessions)  # type: ClientSession
+        session: ClientSession = next(self._sessions)
         return session
 
     async def connect(self):
@@ -111,9 +111,9 @@ cdef class HTTPClient:
             self._log.debug(f"Closing session: {session}")
             await session.close()
 
-    async def request(self, method, url, headers=None, json=None, **kwargs) -> Union[bytes, Dict]:
+    async def request(self, str method, str url, headers=None, json=None, **kwargs) -> ClientResponse:
         # self._log.debug(f"Request: {method=}, {url=}, {headers=}, {json=}, {kwargs if kwargs else ''}")
-        session = self.session
+        session: ClientSession = self.session
         if session.closed:
             self._log.warning("Session closed! reconnecting")
             await self.connect()
@@ -125,19 +125,17 @@ cdef class HTTPClient:
             **kwargs
         ) as resp:
             try:
-                data = await resp.read()
-                resp.data = data
+                resp.data = await resp.read()
                 resp.raise_for_status()
-                # self._log.debug(str(data))
                 return resp
-            except ClientResponseError as e:
-                self._log.exception(e)
-                raise ResponseException(resp=resp, client_response_error=e)
+            except ClientResponseError as ex:
+                self._log.exception(ex)
+                raise ResponseException(resp=resp, client_response_error=ex)
 
-    async def get(self, url, **kwargs):
+    async def get(self, str url, **kwargs):
         return await self.request(method="GET", url=url, **kwargs)
 
-    async def post(self, url, **kwargs):
+    async def post(self, str url, **kwargs):
         return await self.request(method="POST", url=url, **kwargs)
 
     # TODO more convenience methods?

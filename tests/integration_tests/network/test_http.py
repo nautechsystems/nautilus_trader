@@ -31,15 +31,13 @@ async def client():
     return client
 
 
-@pytest.mark.skip(reason="WIP")
 @pytest.mark.asyncio
 async def test_client_get(client):
     resp = await client.get("https://httpbin.org/get")
-    assert len(resp) > 100
+    assert len(resp.data) > 100
 
 
-@pytest.mark.skip(reason="WIP")
 @pytest.mark.asyncio
 async def test_client_post(client):
-    resp = await client.get("https://httpbin.org/get")
-    assert len(resp) > 100
+    resp = await client.post("https://httpbin.org/post")
+    assert len(resp.data) > 100
