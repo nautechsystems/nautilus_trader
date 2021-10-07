@@ -22,6 +22,7 @@ from nautilus_trader.model.objects cimport Quantity
 
 
 cdef class BettingAccount(CashAccount):
+    cdef bint is_cash_account(self) except *
     cpdef Money calculate_balance_locked(
         self,
         Instrument instrument,

@@ -560,7 +560,7 @@ class TestBetfairExecutionClient:
 
         # Assert
         assert balance.free == Money(1000.0, GBP)
-        assert balance_order.free == Money(980.0, GBP)
+        assert balance_order.free == Money(990.0, GBP)
         assert balance_cancel.free == Money(1000.0, GBP)
 
         self.exec_engine.kill()
