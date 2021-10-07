@@ -122,7 +122,7 @@ class BetfairExecutionClient(LiveExecutionClient):
             client_id=ClientId(BETFAIR_VENUE.value),
             venue_type=VenueType.EXCHANGE,
             account_id=account_id,
-            account_type=AccountType.CASH,
+            account_type=AccountType.BETTING,
             base_currency=base_currency,
             instrument_provider=self._instrument_provider,
             msgbus=msgbus,
