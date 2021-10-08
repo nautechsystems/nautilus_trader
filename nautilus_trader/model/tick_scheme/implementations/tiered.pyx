@@ -12,6 +12,8 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+from numpy cimport ndarray
+import numpy as np
 
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.tick_scheme.base cimport TickScheme
@@ -36,15 +38,29 @@ cdef class TieredTickScheme(TickScheme):
             The tiers for the tick scheme. Should be a list of (start, stop, step) tuples
         """
         self.tiers = self._validate_tiers(tiers)
+        self.ticks: ndarray = self.build_ticks(tiers)
+        self.min_tick = self.ticks[0]
+        self.max_tick = self.ticks[-1]
 
     @staticmethod
-    def _validate_tiers(self, tiers):
+    def _validate_tiers(tiers):
         for x in tiers:
             assert len(x) == 3, "Mappings should be list of tuples like [(start, stop, increment), ...]"
             start, stop, incr = x
             assert start < stop, f"Start should be less than stop (start={start}, stop={stop})"
             assert incr <= start and incr <= stop, f"Increment should be less than start and stop ({start}, {stop}, {incr})"
         return tiers
+
+    cdef ndarray build_ticks(self, list tiers):
+        """ Expand mappings in the full tick values """
+        cdef list ticks = []
+        for start, end, step in tiers:
+            example = Price.from_str(str(step))
+            ticks.extend([
+                Price(value=x, precision=example.precision)
+                for x in np.arange(start, end, step)
+            ])
+        return np.asarray(ticks)
 
     cpdef Price next_ask_tick(self, double value):
         """
@@ -53,7 +69,14 @@ cdef class TieredTickScheme(TickScheme):
         :param value: The price
         :return: Price
         """
-        return round_up(value=value)
+        cdef int idx
+        if value >= self.max_tick:
+            return None
+        idx = self.ticks.searchsorted(value)
+        if value in self.ticks:
+            return self.ticks[idx + 1]
+        else:
+            return self.ticks[idx]
 
     cpdef Price next_bid_tick(self, double value):
         """
@@ -62,10 +85,16 @@ cdef class TieredTickScheme(TickScheme):
         :param value: The price
         :return: Price
         """
-        return round_down(value=value)
+        cdef int idx
+        if value >= self.max_tick:
+            return None
+        idx = self.ticks.searchsorted(value)
+        if value in self.ticks:
+            return self.ticks[idx + 1]
+        else:
+            return self.ticks[idx]
 
-
-betfair_tick_scheme = TieredTickScheme(
+BetfairTickScheme = TieredTickScheme(
     tiers=[
         (1.01, 2, 0.01),
         (2, 3, 0.02),
@@ -80,4 +109,21 @@ betfair_tick_scheme = TieredTickScheme(
     ]
 )
 
-register_tick_scheme("BetfairTickScheme", betfair_tick_scheme)
+TOPIX100TickScheme = TieredTickScheme(
+    tiers=[
+        (0, 1_000, 0.1),
+        (1_000, 3_000, 0.5),
+        (3_000, 10_000, 1),
+        (10_000, 30_000, 5),
+        (30_000, 100_000, 10),
+        (100_000, 300_000, 50),
+        (300_000, 1_000_000, 100),
+        (1_000_000, 3_000_000, 500),
+        (3_000_000, 10_000_000, 1_000),
+        (10_000_000, 30_000_000, 5_000),
+        (30_000_000, np.inf, 10_000),
+    ]
+)
+
+register_tick_scheme("BetfairTickScheme", BetfairTickScheme)
+register_tick_scheme("TOPIX100TickScheme", TOPIX100TickScheme)

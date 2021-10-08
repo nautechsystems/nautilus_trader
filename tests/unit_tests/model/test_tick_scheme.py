@@ -100,69 +100,164 @@ class TestFixedTickScheme:
 
 
 class TestBettingTickScheme:
-    def setUp(self) -> None:
+    def setup(self) -> None:
         self.tick_scheme = get_tick_scheme("BetfairTickScheme")
 
     def test_attrs(self):
-        assert self.tick_scheme.price_precision == 4
-        assert self.tick_scheme.min_tick == Price.from_str_c("0.01")
-        assert self.tick_scheme.max_tick == Price.from_str_c("999.99")
+        assert self.tick_scheme.min_tick == Price.from_str("1.01")
+        assert self.tick_scheme.max_tick == Price.from_str("990")
 
     def test_next_ask_tick(self):
         # Standard checks at switch points
-        assert self.tick_scheme.next_ask_tick(price=Price.from_str("0.01")) == Price.from_str(
+        assert self.tick_scheme.next_ask_tick(value=Price.from_str("0.01")) == Price.from_str(
             "0.02"
         )
-        assert self.tick_scheme.next_ask_tick(price=Price.from_str("1.0")) == Price.from_str("1.10")
-        assert self.tick_scheme.next_ask_tick(price=Price.from_str("9.90")) == Price.from_str(
+        assert self.tick_scheme.next_ask_tick(value=Price.from_str("1.0")) == Price.from_str("1.10")
+        assert self.tick_scheme.next_ask_tick(value=Price.from_str("9.90")) == Price.from_str(
             "10.0"
         )
-        assert self.tick_scheme.next_ask_tick(price=Price.from_str("10.0")) == Price.from_str(
+        assert self.tick_scheme.next_ask_tick(value=Price.from_str("10.0")) == Price.from_str(
+            "10.50"
+        )
+        # Check prices within ticks still work as expected
+        assert self.tick_scheme.next_ask_tick(value=Price.from_str("10.25")) == Price.from_str(
             "10.50"
         )
 
+        # Check tick boundary (max tick is 100.0)
+        assert self.tick_scheme.next_ask_tick(value=Price.from_str("99.50")) is None
+
+        # Check near tick boundary
+        assert self.tick_scheme.next_ask_tick(value=Price.from_str("99.49")) == Price.from_str(
+            "99.50"
+        )
+
+    def test_next_bid_tick(self):
+        # Standard checks at change points
+        assert self.tick_scheme.next_bid_tick(value=Price.from_str("0.02")) == Price.from_str(
+            "0.01"
+        )
+        assert self.tick_scheme.next_bid_tick(value=Price.from_str("1.10")) == Price.from_str(
+            "1.00"
+        )
+        assert self.tick_scheme.next_bid_tick(value=Price.from_str("10.0")) == Price.from_str(
+            "9.90"
+        )
+        assert self.tick_scheme.next_bid_tick(value=Price.from_str("10.50")) == Price.from_str(
+            "10.00"
+        )
+
+        # Check prices within ticks still work as expected
+        assert self.tick_scheme.next_bid_tick(value=Price.from_str("10.25")) == Price.from_str(
+            "10.00"
+        )
+
+        # Check tick boundary (min tick is 0.01)
+        assert self.tick_scheme.next_bid_tick(value=Price.from_str("0.01")) is None
+        assert self.tick_scheme.next_bid_tick(value=Price.from_str("0.005")) is None
+
+        # Check near tick boundary
+        assert self.tick_scheme.next_bid_tick(value=Price.from_str("0.015")) == Price.from_str(
+            "0.01"
+        )
+
+    def test_nearest_bid_tick(self):
+        # Standard checks at change points
+        assert self.tick_scheme.nearest_bid_tick(value=Price.from_str("0.001")) == Price.from_str(
+            "0.01"
+        )
+        assert self.tick_scheme.nearest_bid_tick(value=Price.from_str("0.01")) == Price.from_str(
+            "0.01"
+        )
+        assert self.tick_scheme.nearest_bid_tick(value=Price.from_str("0.015")) == Price.from_str(
+            "0.01"
+        )
+        assert self.tick_scheme.nearest_bid_tick(value=Price.from_str("10.0")) == Price.from_str(
+            "9.90"
+        )
+        assert self.tick_scheme.nearest_bid_tick(value=Price.from_str("10.50")) == Price.from_str(
+            "10.00"
+        )
+
+        # Check prices within ticks still work as expected
+        assert self.tick_scheme.next_bid_tick(value=Price.from_str("10.25")) == Price.from_str(
+            "10.00"
+        )
+
+        # Check tick boundary (min tick is 0.01)
+        assert self.tick_scheme.next_bid_tick(value=Price.from_str("0.01")) is None
+        assert self.tick_scheme.next_bid_tick(value=Price.from_str("0.005")) is None
+
+        # Check near tick boundary
+        assert self.tick_scheme.next_bid_tick(value=Price.from_str("0.015")) == Price.from_str(
+            "0.01"
+        )
+
 
 #
+class TestTopix100TickScheme:
+    def setup(self) -> None:
+        self.tick_scheme = get_tick_scheme("TOPIX100TickScheme")
+
+    #
+    def test_attrs(self):
+        assert self.tick_scheme.min_tick == Price.from_str("1.01")
+        assert self.tick_scheme.max_tick == Price.from_str("990")
+
+
+#
+#     def test_next_ask_tick(self):
+#         # Standard checks at switch points
+#         assert self.tick_scheme.next_ask_tick(value=Price.from_str("0.01")) == Price.from_str(
+#             "0.02"
+#         )
+#         assert self.tick_scheme.next_ask_tick(value=Price.from_str("1.0")) == Price.from_str("1.10")
+#         assert self.tick_scheme.next_ask_tick(value=Price.from_str("9.90")) == Price.from_str(
+#             "10.0"
+#         )
+#         assert self.tick_scheme.next_ask_tick(value=Price.from_str("10.0")) == Price.from_str(
+#             "10.50"
+#         )
 #         # Check prices within ticks still work as expected
-#         assert self.tick_scheme.next_ask_tick(price=Price.from_str("10.25")) == Price.from_str("10.50")
+#         assert self.tick_scheme.next_ask_tick(value=Price.from_str("10.25")) == Price.from_str("10.50")
 #
 #         # Check tick boundary (max tick is 100.0)
-#         assert self.tick_scheme.next_ask_tick(price=Price.from_str("99.50")) is None
+#         assert self.tick_scheme.next_ask_tick(value=Price.from_str("99.50")) is None
 #
 #         # Check near tick boundary
-#         assert self.tick_scheme.next_ask_tick(price=Price.from_str("99.49")) == Price.from_str("99.50")
+#         assert self.tick_scheme.next_ask_tick(value=Price.from_str("99.49")) == Price.from_str("99.50")
 #
 #     def test_next_bid_tick(self):
 #         # Standard checks at change points
-#         assert self.tick_scheme.next_bid_tick(price=Price.from_str("0.02")) == Price.from_str("0.01")
-#         assert self.tick_scheme.next_bid_tick(price=Price.from_str("1.10")) == Price.from_str("1.00")
-#         assert self.tick_scheme.next_bid_tick(price=Price.from_str("10.0")) == Price.from_str("9.90")
-#         assert self.tick_scheme.next_bid_tick(price=Price.from_str("10.50")) == Price.from_str("10.00")
+#         assert self.tick_scheme.next_bid_tick(value=Price.from_str("0.02")) == Price.from_str("0.01")
+#         assert self.tick_scheme.next_bid_tick(value=Price.from_str("1.10")) == Price.from_str("1.00")
+#         assert self.tick_scheme.next_bid_tick(value=Price.from_str("10.0")) == Price.from_str("9.90")
+#         assert self.tick_scheme.next_bid_tick(value=Price.from_str("10.50")) == Price.from_str("10.00")
 #
 #         # Check prices within ticks still work as expected
-#         assert self.tick_scheme.next_bid_tick(price=Price.from_str("10.25")) == Price.from_str("10.00")
+#         assert self.tick_scheme.next_bid_tick(value=Price.from_str("10.25")) == Price.from_str("10.00")
 #
 #         # Check tick boundary (min tick is 0.01)
-#         assert self.tick_scheme.next_bid_tick(price=Price.from_str("0.01")) is None
-#         assert self.tick_scheme.next_bid_tick(price=Price.from_str("0.005")) is None
+#         assert self.tick_scheme.next_bid_tick(value=Price.from_str("0.01")) is None
+#         assert self.tick_scheme.next_bid_tick(value=Price.from_str("0.005")) is None
 #
 #         # Check near tick boundary
-#         assert self.tick_scheme.next_bid_tick(price=Price.from_str("0.015")) == Price.from_str("0.01")
+#         assert self.tick_scheme.next_bid_tick(value=Price.from_str("0.015")) == Price.from_str("0.01")
 #
 #     def test_nearest_bid_tick(self):
 #         # Standard checks at change points
-#         assert self.tick_scheme.nearest_bid_tick(price=Price.from_str("0.001")) == Price.from_str("0.01")
-#         assert self.tick_scheme.nearest_bid_tick(price=Price.from_str("0.01")) == Price.from_str("0.01")
-#         assert self.tick_scheme.nearest_bid_tick(price=Price.from_str("0.015")) == Price.from_str("0.01")
-#         assert self.tick_scheme.nearest_bid_tick(price=Price.from_str("10.0")) == Price.from_str("9.90")
-#         assert self.tick_scheme.nearest_bid_tick(price=Price.from_str("10.50")) == Price.from_str("10.00")
+#         assert self.tick_scheme.nearest_bid_tick(value=Price.from_str("0.001")) == Price.from_str("0.01")
+#         assert self.tick_scheme.nearest_bid_tick(value=Price.from_str("0.01")) == Price.from_str("0.01")
+#         assert self.tick_scheme.nearest_bid_tick(value=Price.from_str("0.015")) == Price.from_str("0.01")
+#         assert self.tick_scheme.nearest_bid_tick(value=Price.from_str("10.0")) == Price.from_str("9.90")
+#         assert self.tick_scheme.nearest_bid_tick(value=Price.from_str("10.50")) == Price.from_str("10.00")
 #
 #         # Check prices within ticks still work as expected
-#         assert self.tick_scheme.next_bid_tick(price=Price.from_str("10.25")) == Price.from_str("10.00")
+#         assert self.tick_scheme.next_bid_tick(value=Price.from_str("10.25")) == Price.from_str("10.00")
 #
 #         # Check tick boundary (min tick is 0.01)
-#         assert self.tick_scheme.next_bid_tick(price=Price.from_str("0.01")) is None
-#         assert self.tick_scheme.next_bid_tick(price=Price.from_str("0.005")) is None
+#         assert self.tick_scheme.next_bid_tick(value=Price.from_str("0.01")) is None
+#         assert self.tick_scheme.next_bid_tick(value=Price.from_str("0.005")) is None
 #
 #         # Check near tick boundary
-#         assert self.tick_scheme.next_bid_tick(price=Price.from_str("0.015")) == Price.from_str("0.01")
+#         assert self.tick_scheme.next_bid_tick(value=Price.from_str("0.015")) == Price.from_str("0.01")

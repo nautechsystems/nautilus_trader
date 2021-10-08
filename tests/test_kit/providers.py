@@ -490,9 +490,9 @@ class TestInstrumentProvider:
 
         # Check tick precision of quote currency
         if quote_currency == "JPY":
-            tick_scheme_name = "FixedTickScheme2Decimal"
+            tick_scheme_name = "FixedTickScheme3Decimal"
         else:
-            tick_scheme_name = "FixedTickScheme4Decimal"
+            tick_scheme_name = "FixedTickScheme5Decimal"
 
         return CurrencySpot(
             instrument_id=instrument_id,

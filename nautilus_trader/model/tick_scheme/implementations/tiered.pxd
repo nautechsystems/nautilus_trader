@@ -19,5 +19,9 @@ from nautilus_trader.model.tick_scheme.base cimport TickScheme
 
 
 cdef class TieredTickScheme(TickScheme):
+    cdef list tiers
+    cdef ndarray ticks
+
+    cdef ndarray build_ticks(self, list tiers)
     cpdef Price next_ask_tick(self, double price)
     cpdef Price next_bid_tick(self, double price)
