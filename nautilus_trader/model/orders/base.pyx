@@ -912,5 +912,5 @@ cdef class PassiveOrder(Order):
     cdef void _set_slippage(self) except *:
         if self.side == OrderSide.BUY:
             self.slippage = self.avg_px - self.price
-        else:  # self.side == OrderSide.SELL:
+        elif self.side == OrderSide.SELL:
             self.slippage = self.price - self.avg_px

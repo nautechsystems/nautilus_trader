@@ -248,6 +248,8 @@ cdef class CashAccount(Account):
                 notional = quantity.as_decimal()
             else:
                 return None  # No balance to lock
+        else:  # pragma: no cover (design-time error)
+            raise RuntimeError("invalid order side")
 
         # Add expected commission
         locked: Decimal = notional
