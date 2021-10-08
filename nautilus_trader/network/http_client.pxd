@@ -24,5 +24,8 @@ cdef class HTTPClient:
     cdef int _ttl_dns_cache
     cdef object _ssl
     cdef dict _connector_kwargs
-    cdef object _sessions
-    cdef dict _headers
+    cdef list _sessions
+    cdef int _sessions_idx
+    cdef int _sessions_len
+
+    cdef object _get_session(self)
