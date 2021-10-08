@@ -17,7 +17,7 @@ import asyncio
 
 import pytest
 
-from nautilus_trader.network.ws_client import WebSocketClient
+from nautilus_trader.network.websocket import WebSocketClient
 from tests.test_kit.stubs import TestStubs
 
 
