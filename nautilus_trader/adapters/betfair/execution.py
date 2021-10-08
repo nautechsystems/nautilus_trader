@@ -161,6 +161,7 @@ class BetfairExecutionClient(LiveExecutionClient):
         await asyncio.gather(*aws)
 
         self._set_connected(True)
+        assert self.is_connected
         self._log.info("Connected.")
 
     def _stop(self) -> None:
