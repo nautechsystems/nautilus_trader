@@ -13,44 +13,32 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.tick_scheme.base cimport TickScheme
 
+from nautilus_trader.core.correctness import Condition
 from nautilus_trader.model.tick_scheme.base import register_tick_scheme
 from nautilus_trader.model.tick_scheme.base import round_down
 from nautilus_trader.model.tick_scheme.base import round_up
 
 
-cdef class FixedTickScheme(TickScheme):
+cdef class TieredTickScheme(TickScheme):
     """
-    Represents a Fixed precision tick scheme such as Forex or Crypto.
+    Represents a tick scheme where tick levels change based on price level, such as various financial exchanges.
     """
 
-    def __init__(
-            self,
-            int price_precision,
-            Price min_tick,
-            Price max_tick,
-    ):
+    def __init__(self, object tiers):
         """
         Initialize a new instance of the `Instrument` class.
 
         Parameters
         ----------
-        price_precision: int
-            The instrument price precision
-        min_tick : Price
-            The minimum possible tick `Price`
-        max_tick: Price
-            The maximum possible tick `Price`
-
+        tiers: List[Tuple(start, stop, step)]
+            The tiers for the tick scheme. Should be a list of (start, stop, step) tuples
         """
-
-        self.price_precision = price_precision
-        self.min_tick = min_tick
-        self.max_tick = max_tick
-        self.increment = Price.from_str_c('1'.zfill(price_precision))
+        Condition.type(tiers, list, "tiers")
+        [Condition.type(t, tuple, "tier") for t in tiers]
+        self.tiers = tiers
 
     cpdef Price next_ask_tick(self, double value):
         """
@@ -59,7 +47,7 @@ cdef class FixedTickScheme(TickScheme):
         :param value: The price
         :return: Price
         """
-        return round_up(value=value, precision=self.price_precision)
+        return round_up(value=value)
 
     cpdef Price next_bid_tick(self, double value):
         """
@@ -70,19 +58,20 @@ cdef class FixedTickScheme(TickScheme):
         """
         return round_down(value=value)
 
-# Most FOREX pairs
-FixedTickScheme5Decimal = FixedTickScheme(
-    price_precision=5,
-    min_tick=Price.from_str_c("0.0001"),
-    max_tick=Price.from_str_c("9.9999"),
+
+betfair_tick_scheme = TieredTickScheme(
+    tiers=[
+        (1.01, 2, 0.01),
+        (2, 3, 0.02),
+        (3, 4, 0.05),
+        (4, 6, 0.1),
+        (6, 10, 0.2),
+        (10, 20, 0.5),
+        (20, 30, 1),
+        (30, 50, 2),
+        (50, 100, 5),
+        (100, 1000, 10),
+    ]
 )
 
-# JPY denominated FOREX pairs
-FixedTickScheme3Decimal = FixedTickScheme(
-    price_precision=3,
-    min_tick=Price.from_str_c("0.01"),
-    max_tick=Price.from_str_c("999.99"),
-)
-
-register_tick_scheme("FixedTickScheme5Decimal", FixedTickScheme5Decimal)
-register_tick_scheme("FixedTickScheme3Decimal", FixedTickScheme3Decimal)
+register_tick_scheme("BetfairTickScheme", betfair_tick_scheme)
