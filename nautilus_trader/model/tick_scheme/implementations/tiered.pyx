@@ -16,7 +16,6 @@
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.tick_scheme.base cimport TickScheme
 
-from nautilus_trader.core.correctness import Condition
 from nautilus_trader.model.tick_scheme.base import register_tick_scheme
 from nautilus_trader.model.tick_scheme.base import round_down
 from nautilus_trader.model.tick_scheme.base import round_up
@@ -36,9 +35,16 @@ cdef class TieredTickScheme(TickScheme):
         tiers: List[Tuple(start, stop, step)]
             The tiers for the tick scheme. Should be a list of (start, stop, step) tuples
         """
-        Condition.type(tiers, list, "tiers")
-        [Condition.type(t, tuple, "tier") for t in tiers]
-        self.tiers = tiers
+        self.tiers = self._validate_tiers(tiers)
+
+    @staticmethod
+    def _validate_tiers(self, tiers):
+        for x in tiers:
+            assert len(x) == 3, "Mappings should be list of tuples like [(start, stop, increment), ...]"
+            start, stop, incr = x
+            assert start < stop, f"Start should be less than stop (start={start}, stop={stop})"
+            assert incr <= start and incr <= stop, f"Increment should be less than start and stop ({start}, {stop}, {incr})"
+        return tiers
 
     cpdef Price next_ask_tick(self, double value):
         """
