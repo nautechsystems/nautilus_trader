@@ -78,7 +78,7 @@ cdef class Bet:
     cpdef liability(self):
         if self.side == OrderSide.BUY:
             return self.cost()
-        else:  # OrderSide.SELL
+        elif self.side == OrderSide.SELL:
             return self.stake()
 
     cpdef win_payoff(self):
