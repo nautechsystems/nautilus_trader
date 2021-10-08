@@ -435,6 +435,7 @@ class BetfairExecutionClient(LiveExecutionClient):
         PyCondition.not_none(self.base_currency, "self.base_currency")
         details = await self._client.get_account_details()
         currency_code = details["currencyCode"]
+        self._log.debug(f"Account {currency_code=}, {self.base_currency.code=}")
         assert currency_code == self.base_currency.code
         self._log.debug("Base currency matches client details")
 

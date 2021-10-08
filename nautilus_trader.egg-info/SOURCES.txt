@@ -57,11 +57,8 @@ nautilus_trader/adapters/betfair/client/util.py
 nautilus_trader/adapters/binance/__init__.py
 nautilus_trader/adapters/bitmex/__init__.py
 nautilus_trader/adapters/ib/__init__.py
-nautilus_trader/adapters/ib/data.cpython-39-x86_64-linux-gnu.so
 nautilus_trader/adapters/ib/data.py
-nautilus_trader/adapters/ib/execution.cpython-39-x86_64-linux-gnu.so
 nautilus_trader/adapters/ib/execution.py
-nautilus_trader/adapters/ib/providers.cpython-39-x86_64-linux-gnu.so
 nautilus_trader/adapters/ib/providers.py
 nautilus_trader/analysis/__init__.py
 nautilus_trader/analysis/performance.py
@@ -358,7 +355,6 @@ nautilus_trader/live/execution_engine.pxd
 nautilus_trader/live/execution_engine.pyx
 nautilus_trader/live/factories.py
 nautilus_trader/live/node.py
-nautilus_trader/live/node_builder.cpython-39-x86_64-linux-gnu.so
 nautilus_trader/live/node_builder.py
 nautilus_trader/live/risk_engine.cpython-39-x86_64-linux-gnu.so
 nautilus_trader/live/risk_engine.pxd
@@ -559,9 +555,6 @@ nautilus_trader/model/orders/stop_market.pyx
 nautilus_trader/model/orders/unpacker.cpython-39-x86_64-linux-gnu.so
 nautilus_trader/model/orders/unpacker.pxd
 nautilus_trader/model/orders/unpacker.pyx
-nautilus_trader/model/tick_scheme/base.cpython-39-x86_64-linux-gnu.so
-nautilus_trader/model/tick_scheme/implementations/betting.cpython-39-x86_64-linux-gnu.so
-nautilus_trader/model/tick_scheme/implementations/fixed.cpython-39-x86_64-linux-gnu.so
 nautilus_trader/msgbus/__init__.pxd
 nautilus_trader/msgbus/__init__.py
 nautilus_trader/msgbus/bus.cpython-39-x86_64-linux-gnu.so
