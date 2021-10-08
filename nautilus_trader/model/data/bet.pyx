@@ -13,6 +13,8 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from decimal import Decimal
+
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
 from nautilus_trader.model.c_enums.order_side cimport OrderSideParser
@@ -22,8 +24,9 @@ from nautilus_trader.model.objects cimport Quantity
 
 cdef class Bet:
     """
-    Represents a bet "order" or "trade" in price space (not probability)
+    Represents a bet "order" or "trade" in price space (not probability).
     """
+
     def __init__(
         self,
         object price,
@@ -46,11 +49,25 @@ cdef class Bet:
         ------
         ValueError
             If price is less than 1.0.
+
         """
         Condition.in_range_int(price, 1, 1000, "price")
+
         self.price = price
         self.quantity = quantity
         self.side = side
+
+    def __eq__(self, Bet other) -> bool:
+        return Bet.to_dict_c(self) == Bet.to_dict_c(other)
+
+    def __hash__(self) -> int:
+        return hash(frozenset(Bet.to_dict_c(self)))
+
+    def __str__(self) -> str:
+        return f"{self.side},{self.price},{self.quantity}"
+
+    def __repr__(self) -> str:
+        return f"{type(self).__name__}({self})"
 
     cpdef stake(self):
         return self.quantity * (self.price - 1)
@@ -78,18 +95,6 @@ cdef class Bet:
 
     cpdef exposure(self):
         return self.win_payoff() - self.lose_payoff()
-
-    def __eq__(self, Bet other) -> bool:
-        return Bet.to_dict_c(self) == Bet.to_dict_c(other)
-
-    def __hash__(self) -> int:
-        return hash(frozenset(Bet.to_dict_c(self)))
-
-    def __str__(self) -> str:
-        return f"{self.side},{self.price},{self.quantity}"
-
-    def __repr__(self) -> str:
-        return f"{type(self).__name__}({self})"
 
     @staticmethod
     cdef Bet from_dict_c(dict values):
@@ -140,11 +145,11 @@ cdef class Bet:
         return Bet.to_dict_c(obj)
 
 
-cpdef Bet nautilus_to_bet(price: Price, quantity: Quantity, side: OrderSide):
+cpdef Bet nautilus_to_bet(Price price, Quantity quantity, OrderSide side):
     """
-    Nautilus considers orders/trades in probability space; convert back to betting prices/quantities
+    Nautilus considers orders/trades in probability space; convert back to betting prices/quantities.
     """
-    bet_price = Price.from_int_c(1) / price
+    bet_price: Decimal = Decimal(1) / price
     return Bet(
         price=bet_price,
         quantity=quantity,
