@@ -14,6 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
+from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
 
 
@@ -34,3 +35,6 @@ cdef class Bet:
 
     @staticmethod
     cdef dict to_dict_c(Bet obj)
+
+
+cpdef Bet nautilus_to_bet(Price price, Quantity quantity, OrderSide side)
