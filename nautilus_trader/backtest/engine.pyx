@@ -455,6 +455,8 @@ cdef class BacktestEngine:
          - All required instruments have been added to the engine.
 
         """
+        Condition.not_none(data, "data")
+
         self._data = pickle.loads(data)
 
     def add_venue(
