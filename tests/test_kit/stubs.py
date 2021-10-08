@@ -28,6 +28,7 @@ from nautilus_trader.common.events.system import ComponentStateChanged
 from nautilus_trader.common.logging import LiveLogger
 from nautilus_trader.core.data import Data
 from nautilus_trader.core.uuid import UUID4
+from nautilus_trader.model.currencies import GBP
 from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.data.bar import Bar
 from nautilus_trader.model.data.bar import BarSpecification
@@ -402,6 +403,12 @@ class TestStubs:
         )
 
     @staticmethod
+    def betting_account():
+        return AccountFactory.create(
+            TestStubs.event_betting_account_state(account_id=TestStubs.account_id())
+        )
+
+    @staticmethod
     def limit_order(
         instrument_id=None, side=None, price=None, quantity=None, time_in_force=None
     ) -> LimitOrder:
@@ -473,6 +480,27 @@ class TestStubs:
                     Money(1_000_000, USD),
                     Money(0, USD),
                     Money(1_000_000, USD),
+                )
+            ],
+            info={},
+            event_id=UUID4(),
+            ts_event=0,
+            ts_init=0,
+        )
+
+    @staticmethod
+    def event_betting_account_state(account_id=None) -> AccountState:
+        return AccountState(
+            account_id=account_id or TestStubs.account_id(),
+            account_type=AccountType.BETTING,
+            base_currency=GBP,
+            reported=False,  # reported
+            balances=[
+                AccountBalance(
+                    GBP,
+                    Money(1_000_000, GBP),
+                    Money(0, GBP),
+                    Money(1_000_000, GBP),
                 )
             ],
             info={},

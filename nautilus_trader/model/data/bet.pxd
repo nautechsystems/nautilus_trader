@@ -13,34 +13,24 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import asyncio
-
-import pytest
-
-from nautilus_trader.network.socket import SocketClient
-from tests.test_kit.stubs import TestStubs
+from nautilus_trader.model.c_enums.order_side cimport OrderSide
+from nautilus_trader.model.objects cimport Quantity
 
 
-@pytest.mark.asyncio
-async def test_socket_base(socket_server, event_loop):
-    messages = []
+cdef class Bet:
+    cdef object price
+    cdef Quantity quantity
+    cdef OrderSide side
 
-    def handler(raw):
-        messages.append(raw)
-        if len(messages) > 5:
-            client.stop()
+    cpdef stake(self)
+    cpdef liability(self)
+    cpdef cost(self)
+    cpdef win_payoff(self)
+    cpdef lose_payoff(self)
+    cpdef exposure(self)
 
-    host, port = socket_server
-    client = SocketClient(
-        host=host,
-        port=port,
-        loop=event_loop,
-        handler=handler,
-        logger=TestStubs.logger(),
-        ssl=False,
-    )
-    await client.connect()
-    await asyncio.sleep(3)
-    assert messages == [b"hello"] * 6
-    await asyncio.sleep(1)
-    client.stop()
+    @staticmethod
+    cdef Bet from_dict_c(dict values)
+
+    @staticmethod
+    cdef dict to_dict_c(Bet obj)

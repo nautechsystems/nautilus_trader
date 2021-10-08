@@ -17,6 +17,7 @@ import asyncio
 from typing import Callable, Dict, List, Optional
 
 import aiohttp
+from aiohttp import WSMessage
 
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.common.logging cimport LoggerAdapter
@@ -70,7 +71,7 @@ cdef class WebSocketClient:
         )
         self._ws_connect_kwargs = kwargs or {}
 
-        self._session = Optional[aiohttp.ClientSession] = None
+        self._session: Optional[aiohttp.ClientSession] = None
         self._ws: Optional[aiohttp.ClientWebSocketResponse] = None
         self._tasks: List[asyncio.Task] = []
         self._running = False
@@ -93,16 +94,16 @@ cdef class WebSocketClient:
         await self._ws.close()
         self._log.debug("Websocket closed")
 
-    async def send(self, raw: bytes):
+    async def send(self, bytes raw):
         self._log.debug("SEND:" + str(raw))
         await self._ws.send_bytes(raw)
 
     async def recv(self):
         try:
-            resp = await self._ws.receive()
+            resp: WSMessage = await self._ws.receive()
             return resp.data
-        except asyncio.IncompleteReadError as e:
-            self._log.exception(e)
+        except asyncio.IncompleteReadError as ex:
+            self._log.exception(ex)
             await self.connect(start=False)
 
     async def start(self):

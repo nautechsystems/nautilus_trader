@@ -13,34 +13,21 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import asyncio
+from nautilus_trader.accounting.accounts.cash cimport CashAccount
+from nautilus_trader.model.c_enums.order_side cimport OrderSide
+from nautilus_trader.model.instruments.base cimport Instrument
+from nautilus_trader.model.objects cimport Money
+from nautilus_trader.model.objects cimport Price
+from nautilus_trader.model.objects cimport Quantity
 
-import pytest
 
-from nautilus_trader.network.socket import SocketClient
-from tests.test_kit.stubs import TestStubs
-
-
-@pytest.mark.asyncio
-async def test_socket_base(socket_server, event_loop):
-    messages = []
-
-    def handler(raw):
-        messages.append(raw)
-        if len(messages) > 5:
-            client.stop()
-
-    host, port = socket_server
-    client = SocketClient(
-        host=host,
-        port=port,
-        loop=event_loop,
-        handler=handler,
-        logger=TestStubs.logger(),
-        ssl=False,
+cdef class BettingAccount(CashAccount):
+    cdef bint is_cash_account(self) except *
+    cpdef Money calculate_balance_locked(
+        self,
+        Instrument instrument,
+        OrderSide side,
+        Quantity quantity,
+        Price price,
+        bint inverse_as_quote=*,
     )
-    await client.connect()
-    await asyncio.sleep(3)
-    assert messages == [b"hello"] * 6
-    await asyncio.sleep(1)
-    client.stop()
