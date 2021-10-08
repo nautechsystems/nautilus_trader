@@ -621,8 +621,10 @@ cdef class RiskEngine(Component):
                 return False  # Denied
             if order.side == OrderSide.BUY:
                 price = last.ask
-            else:  # order.side == OrderSide.SELL
+            elif order.side == OrderSide.SELL:
                 price = last.bid
+            else:  # pragma: no cover (design-time error)
+                raise RuntimeError("invalid order side")
         else:
             price = order.price
 
