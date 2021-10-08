@@ -27,8 +27,8 @@ from nautilus_trader.adapters.betfair.client.exceptions import BetfairAPIError
 from nautilus_trader.adapters.betfair.client.exceptions import BetfairError
 from nautilus_trader.adapters.betfair.client.util import parse_params
 from nautilus_trader.common.logging import Logger
-from nautilus_trader.network.http_client import HTTPClient
-from nautilus_trader.network.http_client import ResponseException
+from nautilus_trader.network.http import HTTPClient
+from nautilus_trader.network.http import ResponseException
 
 
 class BetfairClient(HTTPClient):

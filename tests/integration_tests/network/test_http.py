@@ -18,7 +18,7 @@ import sys
 
 import pytest
 
-from nautilus_trader.network.http_client import HTTPClient
+from nautilus_trader.network.http import HTTPClient
 from tests.test_kit.stubs import TestStubs
 
 

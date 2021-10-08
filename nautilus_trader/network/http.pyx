@@ -112,7 +112,9 @@ cdef class HTTPClient:
                 family=socket.AF_INET,
                 ssl=self._ssl,
                 **self._connector_kwargs
-            )) for address in self._addresses
+            ),
+            loop=self._loop,
+        ) for address in self._addresses
         ]
         self._sessions_len = len(self._sessions)
         self._sessions_idx = 0
