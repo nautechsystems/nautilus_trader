@@ -14,14 +14,15 @@
 # -------------------------------------------------------------------------------------------------
 
 import asyncio
-import itertools
 import socket
-from typing import List
+from ssl import SSLContext
+from typing import List, Union
 
 import aiohttp
 from aiohttp import ClientResponse
 from aiohttp import ClientResponseError
 from aiohttp import ClientSession
+from aiohttp import Fingerprint
 
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.common.logging cimport LoggerAdapter
@@ -33,7 +34,7 @@ cdef int ONE_DAY = 86_400
 
 cdef class HTTPClient:
     """
-    Provides a low-level HTTP2 client.
+    Provides an asynchronous HTTP client.
     """
 
     def __init__(
@@ -43,7 +44,7 @@ cdef class HTTPClient:
         list addresses=None,
         list nameservers=None,
         int ttl_dns_cache=ONE_DAY,
-        ssl=False,
+        ssl: Union[None, bool, Fingerprint, SSLContext]=False,
         dict connector_kwargs=None,
     ):
         """
@@ -57,7 +58,7 @@ cdef class HTTPClient:
             The logger for the client.
         ttl_dns_cache : int
             The time to live for the DNS cache.
-        ssl: SSL Context, default=False
+        ssl: Union[None, bool, Fingerprint, SSLContext], default=False
             The ssl context to use for HTTPS.
         connector_kwargs : dict, optional
             The connector key word arguments.
@@ -81,16 +82,26 @@ cdef class HTTPClient:
         self._ttl_dns_cache = ttl_dns_cache
         self._connector_kwargs = connector_kwargs or {}
         self._sessions: List[ClientSession] = []
+        self._sessions_idx = 0
+        self._sessions_len = 0
 
     @property
     def session(self) -> ClientSession:
-        assert self._sessions, "No sessions, need to connect?"
-        session: ClientSession = next(self._sessions)
-        return session
+        return self._get_session()
+
+    cdef object _get_session(self):
+        if not self._sessions:
+            raise RuntimeError("No sessions, need to connect?")
+        # Circular buffer
+        if self._sessions_idx >= self._sessions_len:
+            self._sessions_idx = 0
+        cdef int idx = self._sessions_idx
+        self._sessions_idx += 1
+        return self._sessions[idx]
 
     async def connect(self):
-        self._log.debug("Connecting sessions")
-        sessions = [aiohttp.ClientSession(
+        self._log.debug("Connecting sessions...")
+        self._sessions = [aiohttp.ClientSession(
             connector=aiohttp.TCPConnector(
                 limit=0,
                 resolver=aiohttp.AsyncResolver(
@@ -103,19 +114,28 @@ cdef class HTTPClient:
                 **self._connector_kwargs
             )) for address in self._addresses
         ]
-        self._sessions = itertools.cycle(sessions)
-        self._log.debug(f"Connected sessions: {sessions}")
+        self._sessions_len = len(self._sessions)
+        self._sessions_idx = 0
+        self._log.debug(f"Connected sessions: {self._sessions}.")
 
     async def disconnect(self):
         for session in self._sessions:
-            self._log.debug(f"Closing session: {session}")
+            self._log.debug(f"Closing session: {session}...")
             await session.close()
+            self._log.debug(f"Session closed.")
 
-    async def request(self, str method, str url, headers=None, json=None, **kwargs) -> ClientResponse:
+    async def request(
+        self,
+        str method,
+        str url,
+        dict headers=None,
+        dict json=None,
+        **kwargs,
+    ) -> ClientResponse:
         # self._log.debug(f"Request: {method=}, {url=}, {headers=}, {json=}, {kwargs if kwargs else ''}")
-        session: ClientSession = self.session
+        session: ClientSession = self._get_session()
         if session.closed:
-            self._log.warning("Session closed! reconnecting")
+            self._log.warning("Session closed: reconnecting.")
             await self.connect()
         async with session.request(
             method=method,
