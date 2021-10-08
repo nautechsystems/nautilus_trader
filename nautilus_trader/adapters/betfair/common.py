@@ -168,6 +168,9 @@ def price_to_probability(price, side=None, force=False) -> Price:
     return Price(probability, precision=5)
 
 
+# def quantity_to_probability_quantity(quantity: Quantity)
+
+
 def probability_to_price(probability, side=None) -> Price:
     """
     Convert a bet probability into a betting price, rounded to the "better"

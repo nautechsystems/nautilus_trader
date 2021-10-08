@@ -13,17 +13,24 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-
-cpdef enum AccountType:
-    CASH = 1
-    MARGIN = 2
-    BETTING = 3
+from nautilus_trader.model.c_enums.order_side cimport OrderSide
+from nautilus_trader.model.objects cimport Quantity
 
 
-cdef class AccountTypeParser:
+cdef class Bet:
+    cdef object price
+    cdef Quantity quantity
+    cdef OrderSide side
+
+    cpdef stake(self)
+    cpdef liability(self)
+    cpdef cost(self)
+    cpdef win_payoff(self)
+    cpdef lose_payoff(self)
+    cpdef exposure(self)
 
     @staticmethod
-    cdef str to_str(int value)
+    cdef Bet from_dict_c(dict values)
 
     @staticmethod
-    cdef AccountType from_str(str value) except *
+    cdef dict to_dict_c(Bet obj)

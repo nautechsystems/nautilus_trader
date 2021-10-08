@@ -16,6 +16,7 @@
 from decimal import Decimal
 from typing import Optional
 
+from nautilus_trader.accounting.accounts.base import Account
 from nautilus_trader.accounting.accounts.cash cimport CashAccount
 from nautilus_trader.accounting.accounts.margin cimport MarginAccount
 from nautilus_trader.cache.base cimport CacheFacade

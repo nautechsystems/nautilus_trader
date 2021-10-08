@@ -77,9 +77,11 @@ class BetfairClient(HTTPClient):
 
     @staticmethod
     def ssl_context(cert_dir):
-        certs = [p for p in pathlib.Path(cert_dir).glob("*") if p.suffix in (".crt", ".key")]
+        files = list(pathlib.Path(cert_dir).glob("*"))
+        cert_file = next((p for p in files if p.suffix == ".crt"))
+        key_file = next((p for p in files if p.suffix == ".key"))
         context = ssl.create_default_context()
-        context.load_cert_chain(*certs)
+        context.load_cert_chain(certfile=cert_file, keyfile=key_file)
         return context
 
     # For testing purposes, can't mock HTTPClient.request due to cython

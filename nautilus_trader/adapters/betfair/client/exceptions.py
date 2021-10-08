@@ -75,4 +75,8 @@ ERROR_CODES = {
         "kind": "OperationForbidden",
         "reason": "The App Key sent with the request is not permitted to access the operation",
     },
+    "AANGX-0004": {
+        "kind": "InvalidAppKey",
+        "reason": "The App Key (or password) is not valid",
+    },
 }

@@ -14,6 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 from nautilus_trader.accounting.accounts.base cimport Account
+from nautilus_trader.accounting.accounts.betting cimport BettingAccount
 from nautilus_trader.accounting.accounts.cash cimport CashAccount
 from nautilus_trader.accounting.accounts.margin cimport MarginAccount
 from nautilus_trader.core.correctness cimport Condition
@@ -93,6 +94,8 @@ cdef class AccountFactory:
             return CashAccount(event, calculated)
         elif event.account_type == AccountType.MARGIN:
             return MarginAccount(event, calculated)
+        elif event.account_type == AccountType.BETTING:
+            return BettingAccount(event, calculated)
         else:  # pragma: no cover (design-time error)
             raise RuntimeError("invalid account type")
 

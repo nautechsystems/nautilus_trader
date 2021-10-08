@@ -537,7 +537,6 @@ class TestBetfairExecutionClient:
         await asyncio.sleep(1)
 
         balance = self.cache.account_for_venue(self.venue).balances()[GBP]
-
         order = BetfairTestStubs.make_order(
             price=Price.from_str("0.5"), quantity=Quantity.from_int(10)
         )
@@ -561,7 +560,7 @@ class TestBetfairExecutionClient:
 
         # Assert
         assert balance.free == Money(1000.0, GBP)
-        assert balance_order.free == Money(980.0, GBP)
+        assert balance_order.free == Money(990.0, GBP)
         assert balance_cancel.free == Money(1000.0, GBP)
 
         self.exec_engine.kill()

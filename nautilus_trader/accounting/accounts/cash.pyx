@@ -36,6 +36,7 @@ cdef class CashAccount(Account):
     """
     Provides a cash account.
     """
+    ACCOUNT_TYPE = AccountType.CASH  # required for BettingAccount subclass
 
     def __init__(
         self,
@@ -59,7 +60,7 @@ cdef class CashAccount(Account):
 
         """
         Condition.not_none(event, "event")
-        Condition.equal(event.account_type, AccountType.CASH, "event.account_type", "account_type")
+        Condition.equal(event.account_type, self.ACCOUNT_TYPE, "event.account_type", "account_type")
 
         super().__init__(event, calculate_account_state)
 

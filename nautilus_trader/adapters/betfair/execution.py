@@ -122,7 +122,7 @@ class BetfairExecutionClient(LiveExecutionClient):
             client_id=ClientId(BETFAIR_VENUE.value),
             venue_type=VenueType.EXCHANGE,
             account_id=account_id,
-            account_type=AccountType.CASH,
+            account_type=AccountType.BETTING,
             base_currency=base_currency,
             instrument_provider=self._instrument_provider,
             msgbus=msgbus,
@@ -161,6 +161,7 @@ class BetfairExecutionClient(LiveExecutionClient):
         await asyncio.gather(*aws)
 
         self._set_connected(True)
+        assert self.is_connected
         self._log.info("Connected.")
 
     def _stop(self) -> None:
@@ -195,6 +196,7 @@ class BetfairExecutionClient(LiveExecutionClient):
         )
         self._log.debug(f"Received account state: {account_state}, sending")
         self._send_account_state(account_state)
+        self._log.debug("Initial Account state completed")
 
     # -- COMMAND HANDLERS --------------------------------------------------------------------------
 
@@ -429,10 +431,13 @@ class BetfairExecutionClient(LiveExecutionClient):
         """
         Check account currency against BetfairClient
         """
+        self._log.debug("Checking account currency")
         PyCondition.not_none(self.base_currency, "self.base_currency")
         details = await self._client.get_account_details()
         currency_code = details["currencyCode"]
+        self._log.debug(f"Account {currency_code=}, {self.base_currency.code=}")
         assert currency_code == self.base_currency.code
+        self._log.debug("Base currency matches client details")
 
     # -- DEBUGGING ---------------------------------------------------------------------------------
 
@@ -485,6 +490,8 @@ class BetfairExecutionClient(LiveExecutionClient):
         )
         if client_order_id is None:
             self._log.warning(f"Can't find client_order_id for {update}")
+            return
+        PyCondition.type(client_order_id, ClientOrderId, "client_order_id")
         order = self._cache.order(client_order_id)
         PyCondition.not_none(order, "order")
         instrument = self._cache.instrument(order.instrument_id)
