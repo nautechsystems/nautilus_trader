@@ -22,6 +22,8 @@ cdef class AccountTypeParser:
             return "CASH"
         elif value == 2:
             return "MARGIN"
+        elif value == 3:
+            return "BETTING"
         else:
             raise ValueError(f"value was invalid, was {value}")
 
@@ -31,6 +33,8 @@ cdef class AccountTypeParser:
             return AccountType.CASH
         elif value == "MARGIN":
             return AccountType.MARGIN
+        elif value == "BETTING":
+            return AccountType.BETTING
         else:
             raise ValueError(f"value was invalid, was {value}")
 

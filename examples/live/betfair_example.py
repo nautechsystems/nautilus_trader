@@ -19,7 +19,7 @@ from nautilus_trader.live.node import TradingNodeConfig
 # *** IT IS NOT INTENDED TO BE USED TO TRADE LIVE WITH REAL MONEY. ***
 
 
-async def main():
+async def main(market_id: str):
     # Connect to Betfair client early to load instruments and account currency
     loop = asyncio.get_event_loop()
     logger = LiveLogger(loop=loop, clock=LiveClock())
@@ -34,7 +34,7 @@ async def main():
     await client.connect()
 
     # Find instruments for a particular market_id
-    market_filter = {"market_id": ("1.188629427",)}
+    market_filter = {"market_id": (market_id,)}
     provider = get_instrument_provider(
         client=client,
         logger=logger,
@@ -103,4 +103,4 @@ async def main():
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    asyncio.run(main(market_id="1.188737202"))
