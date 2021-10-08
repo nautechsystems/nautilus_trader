@@ -196,6 +196,7 @@ class BetfairExecutionClient(LiveExecutionClient):
         )
         self._log.debug(f"Received account state: {account_state}, sending")
         self._send_account_state(account_state)
+        self._log.debug("Initial Account state completed")
 
     # -- COMMAND HANDLERS --------------------------------------------------------------------------
 
@@ -430,10 +431,12 @@ class BetfairExecutionClient(LiveExecutionClient):
         """
         Check account currency against BetfairClient
         """
+        self._log.debug("Checking account currency")
         PyCondition.not_none(self.base_currency, "self.base_currency")
         details = await self._client.get_account_details()
         currency_code = details["currencyCode"]
         assert currency_code == self.base_currency.code
+        self._log.debug("Base currency matches client details")
 
     # -- DEBUGGING ---------------------------------------------------------------------------------
 
