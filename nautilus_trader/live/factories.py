@@ -90,7 +90,7 @@ class LiveExecutionClientFactory:
         Parameters
         ----------
         loop : asyncio.AbstractEventLoop
-            The event loop for the clients.
+            The event loop for the client.
         name : str
             The client name.
         config : dict[str, object]
