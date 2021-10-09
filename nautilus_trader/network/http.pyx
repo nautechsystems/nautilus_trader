@@ -19,6 +19,7 @@ from ssl import SSLContext
 from typing import List, Union
 
 import aiohttp
+import cython
 from aiohttp import ClientResponse
 from aiohttp import ClientResponseError
 from aiohttp import ClientSession
@@ -89,6 +90,8 @@ cdef class HTTPClient:
     def session(self) -> ClientSession:
         return self._get_session()
 
+    @cython.boundscheck(False)
+    @cython.wraparound(False)
     cdef object _get_session(self):
         if not self._sessions:
             raise RuntimeError("No sessions, need to connect?")

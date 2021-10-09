@@ -14,6 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 import asyncio
+import types
 from typing import Callable, Dict, List, Optional
 
 import aiohttp
@@ -31,10 +32,10 @@ cdef class WebSocketClient:
 
     def __init__(
         self,
-        str ws_url not None,
         loop not None: asyncio.AbstractEventLoop,
-        handler not None: Callable,
         Logger logger not None: Logger,
+        str ws_url not None,
+        handler not None: Callable,
         kwargs: Optional[Dict] = None,
     ):
         """
@@ -42,14 +43,14 @@ cdef class WebSocketClient:
 
         Parameters
         ----------
+        loop : asyncio.AbstractEventLoop
+            The event loop for the client.
+        logger : LoggerAdapter
+            The logger adapter for the client.
         ws_url : str
             The websocket url to connect to.
         handler : Callable
             The handler for received raw data.
-        logger : LoggerAdapter
-            The logger adapter for the client.
-        loop : asyncio.AbstractEventLoop, optional
-            The event loop for the client.
         kwargs : dict, optional
             The additional kwargs to pass to aiohttp.ClientSession._ws_connect().
 
@@ -63,12 +64,12 @@ cdef class WebSocketClient:
 
         self.ws_url = ws_url
 
-        self._loop = loop or asyncio.get_event_loop()
-        self._handler = handler
+        self._loop = loop
         self._log = LoggerAdapter(
             component_name=type(self).__name__,
             logger=logger,
         )
+        self._handler = handler
         self._ws_connect_kwargs = kwargs or {}
 
         self._session: Optional[aiohttp.ClientSession] = None
@@ -90,7 +91,7 @@ cdef class WebSocketClient:
     async def disconnect(self):
         self._trigger_stop = True
         while not self._stopped:
-            await asyncio.sleep(0.01)
+            await self._sleep0()
         await self._ws.close()
         self._log.debug("Websocket closed")
 
@@ -125,3 +126,14 @@ cdef class WebSocketClient:
         tasks = [task for task in asyncio.all_tasks() if task is not asyncio.current_task()]
         list(map(lambda task: task.cancel(), tasks))
         return await asyncio.gather(*tasks, return_exceptions=True)
+
+    @types.coroutine
+    def _sleep0(self):
+        # Skip one event loop run cycle.
+        #
+        # This is equivalent to `asyncio.sleep(0)` however avoids the overhead
+        # of the pure Python function call and integer comparison <= 0.
+        #
+        # Uses a bare 'yield' expression (which Task.__step knows how to handle)
+        # instead of creating a Future object.
+        yield
