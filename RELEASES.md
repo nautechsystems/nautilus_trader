@@ -1,6 +1,6 @@
 # NautilusTrader 1.131.0 Beta - Release Notes
 
-Released **TBD**
+Released on 10th, October 2021
 
 ## Breaking Changes
 - Renamed `nanos_to_unix_dt` to `unix_nanos_to_dt` (more accurate name).
