@@ -17,8 +17,9 @@ from nautilus_trader.common.logging cimport LoggerAdapter
 
 
 cdef class HTTPClient:
-    cdef object _loop
+    cdef readonly object _loop
     cdef readonly LoggerAdapter _log
+
     cdef list _addresses
     cdef list _nameservers
     cdef int _ttl_dns_cache

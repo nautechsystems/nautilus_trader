@@ -35,8 +35,8 @@ cdef class WebSocketClient:
         self,
         loop not None: asyncio.AbstractEventLoop,
         Logger logger not None: Logger,
+        handler: Callable[[bytes], None],
         str ws_url not None,
-        handler not None: Callable,
         kwargs: Optional[Dict] = None,
     ):
         """
@@ -48,10 +48,10 @@ cdef class WebSocketClient:
             The event loop for the client.
         logger : LoggerAdapter
             The logger adapter for the client.
+        handler : Callable[[bytes], None]
+            The handler for received raw data.
         ws_url : str
             The websocket url to connect to.
-        handler : Callable
-            The handler for received raw data.
         kwargs : dict, optional
             The additional kwargs to pass to aiohttp.ClientSession._ws_connect().
 
@@ -82,7 +82,7 @@ cdef class WebSocketClient:
 
     async def connect(self, bint start=True) -> None:
         self._session = aiohttp.ClientSession(loop=self._loop)
-        self._log.debug(f"Connecting to websocket: {self.ws_url}")
+        self._log.debug(f"Connecting to websocket: {self.ws_url}...")
         self._ws = await self._session.ws_connect(url=self.ws_url, **self._ws_connect_kwargs)
         await self.post_connect()
         if start:
