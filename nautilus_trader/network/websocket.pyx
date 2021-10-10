@@ -123,7 +123,7 @@ cdef class WebSocketClient:
         while self._running:
             try:
                 raw = await self.recv()
-                self._log.debug("[RECV] {raw}")
+                self._log.debug(f"[RECV] {raw}")
                 if raw is not None:
                     self._handler(raw)
             except Exception as ex:
