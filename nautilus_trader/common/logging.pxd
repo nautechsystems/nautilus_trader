@@ -34,19 +34,19 @@ cdef str RES
 
 
 cpdef enum LogLevel:
-    DEBUG = 10,
-    INFO = 20,
-    WARNING = 30,
-    ERROR = 40,
-    CRITICAL = 50,
+    DEBUG = 10
+    INFO = 20
+    WARNING = 30
+    ERROR = 40
+    CRITICAL = 50
 
 
 cpdef enum LogColor:
-    NORMAL = 0,
-    GREEN = 1,
-    BLUE = 2,
-    YELLOW = 3,
-    RED = 4,
+    NORMAL = 0
+    GREEN = 1
+    BLUE = 2
+    YELLOW = 3
+    RED = 4
 
 
 cdef class LogLevelParser:

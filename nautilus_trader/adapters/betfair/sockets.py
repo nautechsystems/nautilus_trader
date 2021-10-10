@@ -33,6 +33,10 @@ _UNIQUE_ID = 0
 
 
 class BetfairStreamClient(SocketClient):
+    """
+    Provides a streaming client for `Betfair`.
+    """
+
     def __init__(
         self,
         client: BetfairClient,
@@ -45,11 +49,11 @@ class BetfairStreamClient(SocketClient):
         encoding=None,
     ):
         super().__init__(
+            loop=loop or asyncio.get_event_loop(),
+            logger=logger_adapter.get_logger(),
             host=host or HOST,
             port=port or PORT,
-            loop=loop or asyncio.get_event_loop(),
             handler=message_handler,
-            logger=logger_adapter.get_logger(),
             crlf=crlf or CRLF,
             encoding=encoding or ENCODING,
         )
@@ -80,6 +84,10 @@ class BetfairStreamClient(SocketClient):
 
 
 class BetfairOrderStreamClient(BetfairStreamClient):
+    """
+    Provides an order stream client for `Betfair`.
+    """
+
     def __init__(
         self,
         client: BetfairClient,
@@ -115,6 +123,10 @@ class BetfairOrderStreamClient(BetfairStreamClient):
 
 
 class BetfairMarketStreamClient(BetfairStreamClient):
+    """
+    Provides a `Betfair` market stream client.
+    """
+
     def __init__(self, client: BetfairClient, logger: Logger, message_handler: Callable, **kwargs):
         self.subscription_message = None
         super().__init__(

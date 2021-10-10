@@ -17,8 +17,6 @@ from collections import deque
 from decimal import Decimal
 from typing import Optional
 
-import pydantic
-from pydantic import PositiveInt
 from libc.stdint cimport int64_t
 
 from nautilus_trader.accounting.accounts.base cimport Account
@@ -49,19 +47,7 @@ from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.orders.base cimport Order
 from nautilus_trader.trading.strategy cimport TradingStrategy
 
-
-class CacheConfig(pydantic.BaseModel):
-    """
-    Configuration for ``Cache`` instances.
-
-    tick_capacity : int
-        The maximum length for internal tick deques.
-    bar_capacity : int
-        The maximum length for internal bar deques.
-    """
-
-    tick_capacity: PositiveInt = 1000
-    bar_capacity: PositiveInt = 1000
+from nautilus_trader.cache.config import CacheConfig
 
 
 cdef class Cache(CacheFacade):
@@ -1229,7 +1215,7 @@ cdef class Cache(CacheFacade):
         self._index_position_strategy[position_id] = strategy_id
 
         # Index: PositionId -> Set[ClientOrderId]
-        cdef set position_orders = self._index_position_orders.get(client_order_id)
+        cdef set position_orders = self._index_position_orders.get(position_id)
         if not position_orders:
             self._index_position_orders[position_id] = {client_order_id}
         else:
@@ -1245,7 +1231,8 @@ cdef class Cache(CacheFacade):
         self._log.debug(
             f"Indexed {repr(position_id)}, "
             f"client_order_id={client_order_id}, "
-            f"strategy_id={strategy_id}).")
+            f"strategy_id={strategy_id}).",
+        )
 
     cpdef void add_position(self, Position position, OMSType oms_type) except *:
         """
@@ -2409,6 +2396,28 @@ cdef class Cache(CacheFacade):
         except KeyError as ex:
             self._log.error("Cannot find order object in cached orders " + str(ex))
 
+    cpdef list orders_for_position(self, PositionId position_id):
+        """
+        Return all orders for the given position ID.
+
+        Parameters
+        ----------
+        position_id : PositionId
+            The position ID for the orders.
+
+        Returns
+        -------
+        list[Order]
+
+        """
+        Condition.not_none(position_id, "position_id")
+
+        cdef set client_order_ids = self._index_position_orders.get(position_id)
+        if not client_order_ids:
+            return []
+
+        return [self._orders[client_order_id] for client_order_id in client_order_ids]
+
     cpdef list orders_active(
         self,
         Venue venue=None,
@@ -2546,6 +2555,28 @@ cdef class Cache(CacheFacade):
 
         """
         Condition.not_none(position_id, "position_id")
+
+        return self._positions.get(position_id)
+
+    cpdef Position position_for_order(self, ClientOrderId client_order_id):
+        """
+        Return the position associated with the given client order ID (if found).
+
+        Parameters
+        ----------
+        client_order_id : ClientOrderId
+            The client order ID.
+
+        Returns
+        -------
+        Position or ``None``
+
+        """
+        Condition.not_none(client_order_id, "client_order_id")
+
+        cdef PositionId position_id = self._index_order_position.get(client_order_id)
+        if position_id is None:
+            return None
 
         return self._positions.get(position_id)
 
@@ -2928,31 +2959,6 @@ cdef class Cache(CacheFacade):
 
         return position_id in self._index_positions_closed
 
-    cpdef int positions_total_count(
-        self,
-        Venue venue=None,
-        InstrumentId instrument_id=None,
-        StrategyId strategy_id=None,
-    ) except *:
-        """
-        Return the total count of positions with the given query filters.
-
-        Parameters
-        ----------
-        venue : Venue, optional
-            The venue ID query filter.
-        instrument_id : InstrumentId, optional
-            The instrument ID query filter.
-        strategy_id : StrategyId, optional
-            The strategy ID query filter.
-
-        Returns
-        -------
-        int
-
-        """
-        return len(self.position_ids(venue, instrument_id, strategy_id))
-
     cpdef int positions_open_count(
         self,
         Venue venue=None,
@@ -3002,6 +3008,31 @@ cdef class Cache(CacheFacade):
 
         """
         return len(self.position_closed_ids(venue, instrument_id, strategy_id))
+
+    cpdef int positions_total_count(
+        self,
+        Venue venue=None,
+        InstrumentId instrument_id=None,
+        StrategyId strategy_id=None,
+    ) except *:
+        """
+        Return the total count of positions with the given query filters.
+
+        Parameters
+        ----------
+        venue : Venue, optional
+            The venue ID query filter.
+        instrument_id : InstrumentId, optional
+            The instrument ID query filter.
+        strategy_id : StrategyId, optional
+            The strategy ID query filter.
+
+        Returns
+        -------
+        int
+
+        """
+        return len(self.position_ids(venue, instrument_id, strategy_id))
 
 # -- STRATEGY QUERIES ------------------------------------------------------------------------------
 

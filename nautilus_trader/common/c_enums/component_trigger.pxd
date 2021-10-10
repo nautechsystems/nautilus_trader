@@ -15,19 +15,19 @@
 
 
 cpdef enum ComponentTrigger:
-    INITIALIZE = 1,
-    START = 2,
-    RUNNING = 3,
-    STOP = 4,
-    STOPPED = 5,
-    RESUME = 6,
-    RESET = 7,
-    DISPOSE = 8,
-    DISPOSED = 9,
-    DEGRADE = 10,
-    DEGRADED = 11,
-    FAULT = 12,
-    FAULTED = 13,
+    INITIALIZE = 1
+    START = 2
+    RUNNING = 3
+    STOP = 4
+    STOPPED = 5
+    RESUME = 6
+    RESET = 7
+    DISPOSE = 8
+    DISPOSED = 9
+    DEGRADE = 10
+    DEGRADED = 11
+    FAULT = 12
+    FAULTED = 13
 
 
 cdef class ComponentTriggerParser:

@@ -23,16 +23,16 @@ def instrument_provider():
     return TemplateInstrumentProvider()
 
 
-@pytest.mark.skip(reason="WIP")
+@pytest.mark.skip(reason="example")
 def test_load_all_async(instrument_provider):
     pass
 
 
-@pytest.mark.skip(reason="WIP")
+@pytest.mark.skip(reason="example")
 def test_load_all(instrument_provider):
     pass
 
 
-@pytest.mark.skip(reason="WIP")
+@pytest.mark.skip(reason="example")
 def test_load(instrument_provider):
     pass

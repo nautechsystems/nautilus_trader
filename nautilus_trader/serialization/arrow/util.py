@@ -60,11 +60,13 @@ def check_partition_columns(
     df: pd.DataFrame, partition_columns: Optional[List[str]]
 ) -> Dict[str, Dict[str, str]]:
     """
+    Check partition columns.
+
     When writing a parquet dataset, parquet uses the values in `partition_columns`
     as part of the filename. The values in `df` could potentially contain illegal
     characters. This function generates a mapping of {illegal: legal} that is
     used to "clean" the values before they are written to the filename (and also
-    saving this mapping for reversing the process on reload)
+    saving this mapping for reversing the process on reload).
     """
     if partition_columns:
         missing = [c for c in partition_columns if c not in df.columns]

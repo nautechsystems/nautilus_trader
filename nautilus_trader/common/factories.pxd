@@ -120,4 +120,5 @@ cdef class OrderFactory:
         TimeInForce tif=*,
         datetime expire_time=*,
         TimeInForce tif_bracket=*,
+        bint post_only=*,
     )

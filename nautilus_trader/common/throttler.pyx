@@ -25,7 +25,6 @@ from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.common.queue cimport Queue
 from nautilus_trader.common.timer cimport TimeEvent
 from nautilus_trader.core.correctness cimport Condition
-from nautilus_trader.core.datetime cimport nanos_to_unix_dt
 from nautilus_trader.core.datetime cimport secs_to_nanos
 from nautilus_trader.core.math cimport max_int64
 
@@ -204,10 +203,10 @@ cdef class Throttler:
             self.is_limiting = True
 
     cdef void _set_timer(self, handler: Callable[[TimeEvent], None]) except *:
-        self._clock.set_time_alert(
+        self._clock.set_time_alert_ns(
             name=self._timer_name,
-            alert_time=nanos_to_unix_dt(self._clock.timestamp_ns() + self._delta_next()),
-            handler=handler,
+            alert_time_ns=self._clock.timestamp_ns() + self._delta_next(),
+            callback=handler,
         )
 
     cpdef void _process(self, TimeEvent event) except *:

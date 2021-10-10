@@ -22,9 +22,6 @@ from nautilus_trader.common.logging cimport LoggerAdapter
 from nautilus_trader.core.correctness cimport Condition
 
 
-cdef bytes DEFAULT_CRLF = b"\r\n"
-
-
 cdef class SocketClient:
     """
     Provides a low-level generic socket base client.
@@ -32,36 +29,36 @@ cdef class SocketClient:
 
     def __init__(
         self,
+        loop not None: asyncio.AbstractEventLoop,
+        Logger logger not None: Logger,
         host,
         port,
-        loop not None: asyncio.AbstractEventLoop,
         handler not None: Callable,
-        Logger logger not None: Logger,
         bint ssl=True,
-        str encoding="utf-8",
         bytes crlf=None,
+        str encoding="utf-8",
     ):
         """
         Initialize a new instance of the ``WebSocketClient`` class.
 
         Parameters
         ----------
+        loop : asyncio.AbstractEventLoop
+            The event loop for the client.
+        logger : Logger
+            The logger for the client.
         host : str
             The host for the client.
         port : int
             The port for the client.
-        logger : Logger
-            The logger for the client.
-        loop : asyncio.AbstractEventLoop
-            The event loop for the client.
         handler : Callable
             The handler to process the raw bytes read.
         ssl : bool
             If SSL should be used for socket connection.
-        encoding : str, optional
-            The encoding to use when sending messages.
         crlf : bytes, optional
             The carriage return, line feed delimiter on which to split messages.
+        encoding : str, optional
+            The encoding to use when sending messages.
 
         Raises
         ------
@@ -78,15 +75,15 @@ cdef class SocketClient:
         self.port = port
         self.ssl = ssl
         self._loop = loop
-        self._reader: Optional[asyncio.StreamReader] = None
-        self._writer: Optional[asyncio.StreamWriter] = None
-        self._handler = handler
         self._log = LoggerAdapter(
             component_name=type(self).__name__,
             logger=logger,
         )
+        self._reader: Optional[asyncio.StreamReader] = None
+        self._writer: Optional[asyncio.StreamWriter] = None
+        self._handler = handler
 
-        self._crlf = crlf or DEFAULT_CRLF
+        self._crlf = crlf or b"\r\n"
         self._encoding = encoding
         self._running = False
         self._stopped = False
@@ -134,16 +131,16 @@ cdef class SocketClient:
         await self._writer.drain()
 
     async def start(self):
-        cdef bytes partial = b""
-        cdef bytes raw
-
         self._log.debug("Starting recv loop")
 
+        cdef:
+            bytes partial = b""
+            bytes raw = b""
         while self._running:
             try:
                 raw = await self._reader.readuntil(separator=self._crlf)
                 if partial:
-                    raw = partial + raw
+                    raw += partial
                     partial = b""
                 self._log.debug("[RECV] " + raw.decode())
                 self._handler(raw.rstrip(self._crlf))
@@ -159,7 +156,11 @@ cdef class SocketClient:
 
     @types.coroutine
     def _sleep0(self):
+        # Skip one event loop run cycle.
+        #
         # This is equivalent to `asyncio.sleep(0)` however avoids the overhead
         # of the pure Python function call and integer comparison <= 0.
-        # Skip one event loop run cycle
+        #
+        # Uses a bare 'yield' expression (which Task.__step knows how to handle)
+        # instead of creating a Future object.
         yield

@@ -464,7 +464,7 @@ cdef class OrderFactory:
         # Validate prices
         if order_side == OrderSide.BUY:
             Condition.true(stop_loss < take_profit, "stop_loss was >= take_profit")
-        else:  # entry_order.side == OrderSide.SELL
+        elif order_side == OrderSide.SELL:
             Condition.true(stop_loss > take_profit, "stop_loss was <= take_profit")
 
         cdef OrderListId order_list_id = OrderListId(str(self._order_list_id))
@@ -551,6 +551,7 @@ cdef class OrderFactory:
         TimeInForce tif=TimeInForce.GTC,
         datetime expire_time=None,
         TimeInForce tif_bracket=TimeInForce.GTC,
+        bint post_only=False,
     ):
         """
         Create a bracket order with a LIMIT entry from the given parameters.
@@ -575,6 +576,8 @@ cdef class OrderFactory:
             The order expire time (for GTD orders).
         tif_bracket : TimeInForce {``DAY``, ``GTC``}, optional
             The bracket orders time-in-force.
+        post_only : bool
+            If the entry order will only provide liquidity (make a market).
 
         Returns
         -------
@@ -603,7 +606,7 @@ cdef class OrderFactory:
             Condition.true(stop_loss < take_profit, "stop_loss was >= take_profit")
             Condition.true(entry > stop_loss, "BUY entry was <= stop_loss")
             Condition.true(entry < take_profit, "BUY entry was >= take_profit")
-        else:  # entry_order.side == OrderSide.SELL
+        elif order_side == OrderSide.SELL:
             Condition.true(stop_loss > take_profit, "stop_loss was <= take_profit")
             Condition.true(entry < stop_loss, "SELL entry was >= stop_loss")
             Condition.true(entry > take_profit, "SELL entry was <= take_profit")
@@ -626,6 +629,7 @@ cdef class OrderFactory:
             expire_time=expire_time,
             init_id=self._uuid_factory.generate(),
             ts_init=self._clock.timestamp_ns(),
+            post_only=post_only,
             order_list_id=order_list_id,
             parent_order_id=None,
             child_order_ids=[stop_loss_client_order_id, take_profit_client_order_id],

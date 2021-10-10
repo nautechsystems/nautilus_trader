@@ -77,14 +77,14 @@ cdef class BettingInstrument(Instrument):
         self.event_id = event_id
         self.event_name = event_name
         self.event_country_code = event_country_code
-        self.event_open_date = pd.Timestamp(event_open_date).tz_convert("UTC").to_pydatetime()
+        self.event_open_date = pd.Timestamp(event_open_date).tz_convert("UTC")
 
         # Market Info e.g. Match odds / Handicap
         self.betting_type = betting_type
         self.market_id = market_id
         self.market_type = market_type
         self.market_name = market_name
-        self.market_start_time = pd.Timestamp(market_start_time).tz_convert("UTC").to_pydatetime()
+        self.market_start_time = pd.Timestamp(market_start_time).tz_convert("UTC")
 
         # Selection/Runner (individual selection/runner) e.g. (LA Lakers)
         self.selection_id = selection_id

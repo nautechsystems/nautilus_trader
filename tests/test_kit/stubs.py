@@ -28,6 +28,7 @@ from nautilus_trader.common.events.system import ComponentStateChanged
 from nautilus_trader.common.logging import LiveLogger
 from nautilus_trader.core.data import Data
 from nautilus_trader.core.uuid import UUID4
+from nautilus_trader.model.currencies import GBP
 from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.data.bar import Bar
 from nautilus_trader.model.data.bar import BarSpecification
@@ -175,6 +176,23 @@ class TestStubs:
             ask=ask or Price.from_str("1.00003"),
             bid_size=Quantity.from_int(1_000_000),
             ask_size=Quantity.from_int(1_000_000),
+            ts_event=0,
+            ts_init=0,
+        )
+
+    @staticmethod
+    def trade_tick_3decimal(
+        instrument_id=None,
+        price=None,
+        aggressor_side=None,
+        quantity=None,
+    ) -> TradeTick:
+        return TradeTick(
+            instrument_id=instrument_id or TestStubs.usdjpy_id(),
+            price=price or Price.from_str("1.001"),
+            size=quantity or Quantity.from_int(100000),
+            aggressor_side=aggressor_side or AggressorSide.BUY,
+            match_id="123456",
             ts_event=0,
             ts_init=0,
         )
@@ -385,6 +403,12 @@ class TestStubs:
         )
 
     @staticmethod
+    def betting_account():
+        return AccountFactory.create(
+            TestStubs.event_betting_account_state(account_id=TestStubs.account_id())
+        )
+
+    @staticmethod
     def limit_order(
         instrument_id=None, side=None, price=None, quantity=None, time_in_force=None
     ) -> LimitOrder:
@@ -456,6 +480,27 @@ class TestStubs:
                     Money(1_000_000, USD),
                     Money(0, USD),
                     Money(1_000_000, USD),
+                )
+            ],
+            info={},
+            event_id=UUID4(),
+            ts_event=0,
+            ts_init=0,
+        )
+
+    @staticmethod
+    def event_betting_account_state(account_id=None) -> AccountState:
+        return AccountState(
+            account_id=account_id or TestStubs.account_id(),
+            account_type=AccountType.BETTING,
+            base_currency=GBP,
+            reported=False,  # reported
+            balances=[
+                AccountBalance(
+                    GBP,
+                    Money(1_000_000, GBP),
+                    Money(0, GBP),
+                    Money(1_000_000, GBP),
                 )
             ],
             info={},

@@ -37,11 +37,10 @@ class TestBetfairInstrumentProvider:
         self.clock = LiveClock()
         self.logger = LiveLogger(loop=self.loop, clock=self.clock)
         self.client = BetfairTestStubs.betfair_client(loop=self.loop, logger=self.logger)
-        self.market_filter = {"event_type_name": "Tennis"}
         self.provider = BetfairInstrumentProvider(
             client=self.client,
             logger=BetfairTestStubs.live_logger(BetfairTestStubs.clock()),
-            market_filter=self.market_filter,
+            market_filter=None,
         )
 
     @pytest.mark.asyncio
@@ -63,7 +62,7 @@ class TestBetfairInstrumentProvider:
         markets = await load_markets(self.client, market_filter={"event_type_name": "Basketball"})
         market_metadata = await load_markets_metadata(client=self.client, markets=markets)
         assert isinstance(market_metadata, dict)
-        assert len(market_metadata) == 12035
+        assert len(market_metadata) == 169
 
     @pytest.mark.asyncio
     async def test_make_instruments(self):
@@ -86,23 +85,33 @@ class TestBetfairInstrumentProvider:
 
     @pytest.mark.asyncio
     async def test_load_all(self):
-        await self.provider.load_all_async()
-        assert len(self.provider.list_instruments()) == 172535
+        await self.provider.load_all_async({"event_type_name": "Tennis"})
+        assert len(self.provider.list_instruments()) == 4711
 
-    # def test_search_instruments(provider):
-    #     markets = provider.search_markets(market_filter={"market_marketType": "MATCH_ODDS"})
-    #     assert len(markets) == 1000
+    @pytest.mark.asyncio
+    async def test_list_instruments(self):
+        await self.provider.load_all_async(market_filter={"event_type_name": "Basketball"})
+        instruments = self.provider.list_instruments()
+        assert len(instruments) == 23908
+
+    @pytest.mark.asyncio
+    async def test_search_instruments(self):
+        await self.provider.load_all_async(market_filter={"event_type_name": "Basketball"})
+        instruments = self.provider.search_instruments(
+            instrument_filter={"market_type": "MATCH_ODDS"}
+        )
+        assert len(instruments) == 104
 
     @pytest.mark.asyncio
     async def test_get_betting_instrument(self):
-        await self.provider.load_all_async()
+        await self.provider.load_all_async(market_filter={"market_id": ["1.180678317"]})
         kw = dict(
-            market_id="1.180736294",
-            selection_id="38849165",
+            market_id="1.180678317",
+            selection_id="11313157",
             handicap="0.0",
         )
         instrument = self.provider.get_betting_instrument(**kw)
-        assert instrument.market_id == "1.180736294"
+        assert instrument.market_id == "1.180678317"
 
         # Test throwing warning
         kw["handicap"] = "-1000"

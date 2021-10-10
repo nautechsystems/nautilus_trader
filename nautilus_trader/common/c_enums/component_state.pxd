@@ -15,20 +15,20 @@
 
 
 cpdef enum ComponentState:
-    PRE_INITIALIZED = 0,
-    INITIALIZED = 1,
-    STARTING = 2,
-    RUNNING = 3,
-    STOPPING = 4,
-    STOPPED = 5,
-    RESUMING = 6,
-    RESETTING = 7,
-    DISPOSING = 8,
-    DISPOSED = 9,
-    DEGRADING = 10,
-    DEGRADED = 11,
-    FAULTING = 12,
-    FAULTED = 13,
+    PRE_INITIALIZED = 0
+    INITIALIZED = 1
+    STARTING = 2
+    RUNNING = 3
+    STOPPING = 4
+    STOPPED = 5
+    RESUMING = 6
+    RESETTING = 7
+    DISPOSING = 8
+    DISPOSED = 9
+    DEGRADING = 10
+    DEGRADED = 11
+    FAULTING = 12
+    FAULTED = 13
 
 
 cdef class ComponentStateParser:

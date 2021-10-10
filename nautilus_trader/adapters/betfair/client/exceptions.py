@@ -15,10 +15,18 @@
 
 
 class BetfairError(Exception):
+    """
+    The base class for all `Betfair` specific errors.
+    """
+
     pass
 
 
 class BetfairAPIError(BetfairError):
+    """
+    Represents a `Betfair` API specific error.
+    """
+
     def __init__(self, code: str, message: str):
         super().__init__()
         self.code = code
@@ -66,5 +74,9 @@ ERROR_CODES = {
     "DSC-0038": {
         "kind": "OperationForbidden",
         "reason": "The App Key sent with the request is not permitted to access the operation",
+    },
+    "AANGX-0004": {
+        "kind": "InvalidAppKey",
+        "reason": "The App Key (or password) is not valid",
     },
 }

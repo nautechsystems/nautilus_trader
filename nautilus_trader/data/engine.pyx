@@ -29,8 +29,6 @@ Alternative implementations can be written on top of the generic engine - which
 just need to override the `execute`, `process`, `send` and `receive` methods.
 """
 
-import pydantic
-
 from cpython.datetime cimport timedelta
 
 from typing import Callable, Optional
@@ -74,13 +72,7 @@ from nautilus_trader.model.orderbook.book cimport OrderBook
 from nautilus_trader.model.orderbook.data cimport OrderBookData
 from nautilus_trader.msgbus.bus cimport MessageBus
 
-
-class DataEngineConfig(pydantic.BaseModel):
-    """
-    Configuration for ``DataEngine`` instances.
-    """
-
-    pass  # No configuration currently
+from nautilus_trader.data.config import DataEngineConfig
 
 
 cdef class DataEngine(Component):
@@ -650,7 +642,7 @@ cdef class DataEngine(Component):
                 interval=timedelta(milliseconds=interval_ms),
                 start_time=start_time,
                 stop_time=None,
-                handler=self._snapshot_order_book,
+                callback=self._snapshot_order_book,
             )
             self._log.debug(f"Set timer {timer_name}.")
 

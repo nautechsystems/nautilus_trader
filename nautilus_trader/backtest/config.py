@@ -14,13 +14,18 @@
 # -------------------------------------------------------------------------------------------------
 
 import dataclasses
+import importlib
 from datetime import datetime
 from typing import Dict, List, Optional, Union
 
 import pydantic
+from dask.base import tokenize
 
-from nautilus_trader.backtest.engine import BacktestEngineConfig
-from nautilus_trader.persistence.catalog import DataCatalog
+from nautilus_trader.cache.cache import CacheConfig
+from nautilus_trader.data.engine import DataEngineConfig
+from nautilus_trader.execution.engine import ExecEngineConfig
+from nautilus_trader.infrastructure.cache import CacheDatabaseConfig
+from nautilus_trader.risk.config import RiskEngineConfig
 from nautilus_trader.trading.config import ImportableStrategyConfig
 
 
@@ -83,7 +88,7 @@ class Partialable:
         return r
 
 
-@pydantic.dataclasses.dataclass()
+@pydantic.dataclasses.dataclass
 class BacktestVenueConfig(Partialable):
     """
     Represents the venue configuration for one specific backtest engine.
@@ -111,14 +116,14 @@ class BacktestVenueConfig(Partialable):
         return tuple(values)
 
 
-@pydantic.dataclasses.dataclass()
+@pydantic.dataclasses.dataclass
 class BacktestDataConfig(Partialable):
     """
     Represents the data configuration for one specific backtest run.
     """
 
     catalog_path: str
-    data_type: type
+    data_cls_path: str
     catalog_fs_protocol: str = None
     catalog_fs_storage_options: Optional[Dict] = None
     instrument_id: Optional[str] = None
@@ -126,6 +131,12 @@ class BacktestDataConfig(Partialable):
     end_time: Optional[Union[datetime, str, int]] = None
     filters: Optional[dict] = None
     client_id: Optional[str] = None
+
+    @property
+    def data_type(self):
+        mod_path, cls_name = self.data_cls_path.rsplit(".", maxsplit=1)
+        mod = importlib.import_module(mod_path)
+        return getattr(mod, cls_name)
 
     @property
     def query(self):
@@ -138,6 +149,8 @@ class BacktestDataConfig(Partialable):
         )
 
     def catalog(self):
+        from nautilus_trader.persistence.catalog import DataCatalog
+
         return DataCatalog(
             path=self.catalog_path,
             fs_protocol=self.catalog_fs_protocol,
@@ -164,16 +177,58 @@ class BacktestDataConfig(Partialable):
         }
 
 
-@pydantic.dataclasses.dataclass()
+class BacktestEngineConfig(pydantic.BaseModel):
+    """
+    Configuration for ``BacktestEngine`` instances.
+
+    trader_id : str, default="BACKTESTER-000"
+        The trader ID.
+    log_level : str, default="INFO"
+        The minimum log level for logging messages to stdout.
+    cache : CacheConfig, optional
+        The configuration for the cache.
+    cache_database : CacheDatabaseConfig, optional
+        The configuration for the cache database.
+    data_engine : DataEngineConfig, optional
+        The configuration for the data engine.
+    risk_engine : RiskEngineConfig, optional
+        The configuration for the risk engine.
+    exec_engine : ExecEngineConfig, optional
+        The configuration for the execution engine.
+    bypass_logging : bool, default=False
+        If logging should be bypassed.
+    run_analysis : bool, default=True
+        If post backtest performance analysis should be run.
+
+    """
+
+    trader_id: str = "BACKTESTER-000"
+    log_level: str = "INFO"
+    cache: Optional[CacheConfig] = None
+    cache_database: Optional[CacheDatabaseConfig] = None
+    data_engine: Optional[DataEngineConfig] = None
+    risk_engine: Optional[RiskEngineConfig] = None
+    exec_engine: Optional[ExecEngineConfig] = None
+    bypass_logging: bool = False
+    run_analysis: bool = True
+
+    def __dask_tokenize__(self):
+        return tuple(self.dict().items())
+
+
+@pydantic.dataclasses.dataclass
 class BacktestRunConfig(Partialable):
     """
     Represents the configuration for one specific backtest run (a single set of
     data / strategies / parameters).
     """
 
-    name: Optional[str] = None
     engine: Optional[BacktestEngineConfig] = None
     venues: Optional[List[BacktestVenueConfig]] = None
     data: Optional[List[BacktestDataConfig]] = None
     strategies: Optional[List[ImportableStrategyConfig]] = None
     batch_size_bytes: Optional[int] = None
+
+    @property
+    def id(self):
+        return tokenize(self)

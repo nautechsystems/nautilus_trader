@@ -17,28 +17,28 @@ import asyncio
 
 import pytest
 
-from nautilus_trader.network.ws_client import WebSocketClient
+from nautilus_trader.network.websocket import WebSocketClient
 from tests.test_kit.stubs import TestStubs
 
 
 @pytest.mark.skip(reason="WIP")
 @pytest.mark.asyncio
 async def test_client_recv():
-    NUM_MESSAGES = 3
+    num_messages = 3
     lines = []
 
     def record(*args, **kwargs):
         lines.append((args, kwargs))
 
     client = WebSocketClient(
-        ws_url="ws://echo.websocket.org",
         loop=asyncio.get_event_loop(),
-        handler=record,
         logger=TestStubs.logger(),
+        handler=record,
+        ws_url="ws://echo.websocket.org",
     )
     await client.connect()
-    for _ in range(NUM_MESSAGES):
+    for _ in range(num_messages):
         await client.send(b"Hello")
     await asyncio.sleep(1)
     await client.close()
-    assert len(lines) == NUM_MESSAGES
+    assert len(lines) == num_messages

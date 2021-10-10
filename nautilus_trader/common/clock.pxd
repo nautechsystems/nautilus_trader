@@ -54,14 +54,33 @@ cdef class Clock:
     cpdef list timer_names(self)
     cpdef Timer timer(self, str name)
     cpdef void register_default_handler(self, handler: Callable[[TimeEvent], None]) except *
-    cpdef void set_time_alert(self, str name, datetime alert_time, handler=*) except *
+    cpdef void set_time_alert(
+        self,
+        str name,
+        datetime alert_time,
+        callback: Callable[[TimeEvent], None]=*,
+    ) except *
+    cpdef void set_time_alert_ns(
+        self,
+        str name,
+        int64_t alert_time_ns,
+        callback: Callable[[TimeEvent], None]=*,
+    ) except *
     cpdef void set_timer(
         self,
         str name,
         timedelta interval,
         datetime start_time=*,
         datetime stop_time=*,
-        handler: Callable[[TimeEvent], None]=*,
+        callback: Callable[[TimeEvent], None]=*,
+    ) except *
+    cpdef void set_timer_ns(
+        self,
+        str name,
+        int64_t interval_ns,
+        int64_t start_time_ns,
+        int64_t stop_time_ns,
+        callback: Callable[[TimeEvent], None]=*,
     ) except *
     cpdef void cancel_timer(self, str name) except *
     cpdef void cancel_timers(self) except *

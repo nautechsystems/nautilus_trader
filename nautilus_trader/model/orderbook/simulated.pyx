@@ -64,6 +64,11 @@ cdef class SimulatedL1OrderBook(L1OrderBook):
             size_precision=size_precision,
         )
 
+        self._top_bid = None
+        self._top_ask = None
+        self._top_bid_level = None
+        self._top_ask_level = None
+
     cpdef void add(self, Order order) except *:
         """
         NotImplemented (Use `update(order)` for SimulatedOrderBook).

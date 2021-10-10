@@ -17,6 +17,10 @@ from enum import Enum
 
 
 class MarketProjection(Enum):
+    """
+    Represents a `Betfair` market projection type.
+    """
+
     COMPETITION = "COMPETITION"
     EVENT = "EVENT"
     EVENT_TYPE = "EVENT_TYPE"
@@ -27,6 +31,10 @@ class MarketProjection(Enum):
 
 
 class MarketSort(Enum):
+    """
+    Represents a `Betfair` market sort type.
+    """
+
     MINIMUM_TRADED = "MINIMUM_TRADED"
     MAXIMUM_TRADED = "MAXIMUM_TRADED"
     MINIMUM_AVAILABLE = "MINIMUM_AVAILABLE"
@@ -36,6 +44,10 @@ class MarketSort(Enum):
 
 
 class MarketBettingType(Enum):
+    """
+    Represents a `Betfair` market betting type.
+    """
+
     ODDS = "ODDS"
     LINE = "LINE"
     RANGE = "RANGE"
@@ -45,6 +57,10 @@ class MarketBettingType(Enum):
 
 
 class OrderStatus(Enum):
+    """
+    Represents a `Betfair` order status.
+    """
+
     PENDING = "PENDING"
     EXECUTION_COMPLETE = "EXECUTION_COMPLETE"
     EXECUTABLE = "EXECUTABLE"
@@ -52,6 +68,10 @@ class OrderStatus(Enum):
 
 
 class OrderProjection(Enum):
+    """
+    Represents a `Betfair` order projection.
+    """
+
     ALL = "ALL"
     EXECUTABLE = "EXECUTABLE"
     EXECUTION_COMPLETE = "EXECUTION_COMPLETE"

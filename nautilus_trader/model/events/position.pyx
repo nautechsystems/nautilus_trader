@@ -160,6 +160,7 @@ cdef class PositionEvent(Event):
         self.duration_ns = duration_ns
 
     def __str__(self) -> str:
+        cdef str net_qty_str = f"{self.net_qty:,}".replace(",", "_")
         return (f"{type(self).__name__}("
                 f"instrument_id={self.instrument_id.value}, "
                 f"position_id={self.position_id.value}, "
@@ -168,7 +169,7 @@ cdef class PositionEvent(Event):
                 f"strategy_id={self.strategy_id.value}, "
                 f"entry={OrderSideParser.to_str(self.entry)}, "
                 f"side={PositionSideParser.to_str(self.side)}, "
-                f"net_qty={self.net_qty}, "
+                f"net_qty={net_qty_str}, "
                 f"quantity={self.quantity.to_str()}, "
                 f"peak_qty={self.peak_qty.to_str()}, "
                 f"currency={self.currency.code}, "
@@ -184,6 +185,7 @@ cdef class PositionEvent(Event):
                 f"duration_ns={self.duration_ns})")
 
     def __repr__(self) -> str:
+        cdef str net_qty_str = f"{self.net_qty:,}".replace(",", "_")
         return (f"{type(self).__name__}("
                 f"trader_id={self.trader_id.value}, "
                 f"strategy_id={self.strategy_id.value}, "
@@ -194,7 +196,7 @@ cdef class PositionEvent(Event):
                 f"strategy_id={self.strategy_id.value}, "
                 f"entry={OrderSideParser.to_str(self.entry)}, "
                 f"side={PositionSideParser.to_str(self.side)}, "
-                f"net_qty={self.net_qty}, "
+                f"net_qty={net_qty_str}, "
                 f"quantity={self.quantity.to_str()}, "
                 f"peak_qty={self.peak_qty.to_str()}, "
                 f"currency={self.currency.code}, "

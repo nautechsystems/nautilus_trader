@@ -24,7 +24,22 @@ import pydantic
 
 from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.trading.strategy import TradingStrategy
-from nautilus_trader.trading.strategy import TradingStrategyConfig
+
+
+class TradingStrategyConfig(pydantic.BaseModel):
+    """
+    The base model for all trading strategy configurations.
+
+    order_id_tag : str
+        The unique order ID tag for the strategy. Must be unique
+        amongst all running strategies for a particular trader ID.
+    oms_type : OMSType
+        The order management system type for the strategy. This will determine
+        how the `ExecutionEngine` handles position IDs (see docs).
+    """
+
+    order_id_tag: str = "000"
+    oms_type: str = "HEDGING"
 
 
 class StrategyFactory:

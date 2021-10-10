@@ -33,6 +33,10 @@ def resolve_kwargs(func, *args, **kwargs):
 
 
 class Singleton(type):
+    """
+    The base class to ensure a singleton.
+    """
+
     def __init__(cls, name, bases, dict_like):
         super(Singleton, cls).__init__(name, bases, dict_like)
         cls._instances = {}

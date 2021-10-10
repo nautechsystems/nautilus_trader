@@ -66,18 +66,8 @@ jobs:
           sudo apt-get install redis-server
           redis-server --daemonize yes
 
-      # Run tests (UNIX)
-      - name: Run tests (UNIX)
-        if: runner.os != 'Windows'
-        run: nox -rs tests_with_integration
-
-      # Run tests (Windows) without parallel build (avoids linker errors)
-      - name: Run tests (Windows)
-        if: runner.os == 'Windows'
-        run: nox -rs tests_with_integration -- no-parallel
-
-      # Run code coverage (Linux)
-      - name: Run code coverage (Linux)
+      # Run tests (Linux)
+      - name: Run tests (Linux)
         if: runner.os == 'Linux'
         run: nox -rs coverage
 
@@ -90,22 +80,33 @@ jobs:
           file: ./coverage.xml
           verbose: true
 
+      # Run tests (macOS)
+      - name: Run tests (macOS)
+        if: runner.os == 'macOS'
+        run: nox -rs tests_with_integration
+
+      # Run tests (Windows) without parallel build (avoids linker errors)
+      - name: Run tests (Windows)
+        if: runner.os == 'Windows'
+        run: nox -rs tests_with_integration -- no-parallel
+
       # Run performance tests (Linux)
       - name: Run performance tests (Linux)
         if: runner.os == 'Linux'
         run: nox -rs performance_tests
 
       # Store benchmark results (Linux)
-      - name: Store benchmark result (Linux)
-        if: runner.os == 'Linux'
-        uses: rhysd/github-action-benchmark@v1
-        with:
-          name: Benchmark with pytest-benchmark
-          tool: "pytest"
-          output-file-path: output.json
-          github-token: ${{ secrets.GHPAGES_ACCESS }}
-          auto-push: true
-          # Show alert with commit comment on detecting possible performance regression
-          alert-threshold: '200%'
-          comment-always: true
-          fail-on-alert: false
+#      - name: Store benchmark result (Linux)
+#        if: runner.os == 'Linux'
+#        uses: rhysd/github-action-benchmark@v1
+#        with:
+#          name: Benchmark with pytest-benchmark
+#          tool: "pytest"
+#          output-file-path: output.json
+#          github-token: ${{ secrets.GHPAGES_ACCESS }}
+#          auto-push: true
+#          # Show alert with commit comment on detecting possible performance regression
+#          alert-threshold: '200%'
+#          comment-always: true
+#          fail-on-alert: false
+

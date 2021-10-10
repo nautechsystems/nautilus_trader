@@ -22,7 +22,7 @@ import quantstats
 from numpy import float64
 
 from nautilus_trader.accounting.accounts.base import Account
-from nautilus_trader.core.datetime import nanos_to_unix_dt
+from nautilus_trader.core.datetime import unix_nanos_to_dt
 from nautilus_trader.model.currency import Currency
 from nautilus_trader.model.identifiers import PositionId
 from nautilus_trader.model.objects import Money
@@ -43,6 +43,18 @@ class PerformanceAnalyzer:
         self._account_balances = {}  # type: dict[Currency, Money]
         self._realized_pnls = {}  # type: dict[Currency, pd.Series]
         self._returns = pd.Series(dtype=float64)
+
+    @property
+    def currencies(self):
+        """
+        Return the analyzed currencies.
+
+        Returns
+        -------
+        List[Currency]
+
+        """
+        return list(self._account_balances.keys())
 
     def calculate_statistics(self, account: Account, positions: List[Position]) -> None:
         """
@@ -76,7 +88,7 @@ class PerformanceAnalyzer:
         """
         for position in positions:
             self.add_trade(position.id, position.realized_pnl)
-            self.add_return(nanos_to_unix_dt(position.ts_closed), position.realized_return)
+            self.add_return(unix_nanos_to_dt(position.ts_closed), position.realized_return)
 
     def add_trade(self, position_id: PositionId, realized_pnl: Money) -> None:
         """
@@ -560,16 +572,37 @@ class PerformanceAnalyzer:
 
         """
         return {
-            "PnL": self.total_pnl(currency),
-            "PnL%": self.total_pnl_percentage(currency),
-            "MaxWinner": self.max_winner(currency),
-            "AvgWinner": self.avg_winner(currency),
-            "MinWinner": self.min_winner(currency),
-            "MinLoser": self.min_loser(currency),
-            "AvgLoser": self.avg_loser(currency),
-            "MaxLoser": self.max_loser(currency),
-            "WinRate": self.win_rate(currency),
-            "Expectancy": self.expectancy(currency),
+            "pnl": self.total_pnl(currency),
+            "pnl_%": self.total_pnl_percentage(currency),
+            "max_winner": self.max_winner(currency),
+            "avg_winner": self.avg_winner(currency),
+            "min_winner": self.min_winner(currency),
+            "min_loser": self.min_loser(currency),
+            "avg_loser": self.avg_loser(currency),
+            "max_loser": self.max_loser(currency),
+            "win_rate": self.win_rate(currency),
+            "expectancy": self.expectancy(currency),
+        }
+
+    def get_performance_stats_returns(self) -> Dict[str, float]:
+        """
+        Return the performance statistics from the last backtest run.
+
+        Returns
+        -------
+        dict[str, double]
+
+        """
+        return {
+            "returns_avg": self.returns_avg(),
+            "returns_avg_win": self.returns_avg_win(),
+            "returns_avg_loss": self.returns_avg_loss(),
+            "returns_annual_volatility": self.returns_annual_volatility(),
+            "sharpe_ratio": self.sharpe_ratio(),
+            "sortino_ratio": self.sortino_ratio(),
+            "profit_factor": self.profit_factor(),
+            "profit_ratio": self.profit_ratio(),
+            "risk_return_ratio": self.risk_return_ratio(),
         }
 
     def get_performance_stats_pnls_formatted(self, currency: Currency = None) -> List[str]:
@@ -599,27 +632,6 @@ class PerformanceAnalyzer:
             f"Win Rate:          {round(self.win_rate(currency), 4)}",
             f"Expectancy:        {round(self.expectancy(currency), currency.precision):,} {currency}",
         ]
-
-    def get_performance_stats_returns(self) -> Dict[str, float]:
-        """
-        Return the performance statistics from the last backtest run.
-
-        Returns
-        -------
-        dict[str, double]
-
-        """
-        return {
-            "returns_avg": self.returns_avg(),
-            "returns_avg_win": self.returns_avg_win(),
-            "returns_avg_loss": self.returns_avg_loss(),
-            "returns_annual_volatility": self.returns_annual_volatility(),
-            "sharpe_ratio": self.sharpe_ratio(),
-            "sortino_ratio": self.sortino_ratio(),
-            "profit_factor": self.profit_factor(),
-            "profit_ratio": self.profit_ratio(),
-            "risk_return_ratio": self.risk_return_ratio(),
-        }
 
     def get_performance_stats_returns_formatted(self) -> List[str]:
         """

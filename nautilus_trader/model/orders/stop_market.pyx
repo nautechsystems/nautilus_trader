@@ -17,7 +17,7 @@ from cpython.datetime cimport datetime
 from libc.stdint cimport int64_t
 
 from nautilus_trader.core.correctness cimport Condition
-from nautilus_trader.core.datetime cimport maybe_nanos_to_unix_dt
+from nautilus_trader.core.datetime cimport maybe_unix_nanos_to_dt
 from nautilus_trader.core.uuid cimport UUID4
 from nautilus_trader.model.c_enums.contingency_type cimport ContingencyType
 from nautilus_trader.model.c_enums.contingency_type cimport ContingencyTypeParser
@@ -219,7 +219,7 @@ cdef class StopMarketOrder(PassiveOrder):
             quantity=init.quantity,
             price=Price.from_str_c(init.options["price"]),
             time_in_force=init.time_in_force,
-            expire_time=maybe_nanos_to_unix_dt(init.options.get("expire_time")),
+            expire_time=maybe_unix_nanos_to_dt(init.options.get("expire_time")),
             init_id=init.id,
             ts_init=init.ts_init,
             reduce_only=init.reduce_only,

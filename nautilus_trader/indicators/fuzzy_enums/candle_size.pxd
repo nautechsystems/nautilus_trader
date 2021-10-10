@@ -15,10 +15,10 @@
 
 
 cpdef enum CandleSize:
-    NONE = 0,  # Doji
-    VERY_SMALL = 1,
-    SMALL = 2,
-    MEDIUM = 3,
-    LARGE = 4,
-    VERY_LARGE = 5,
-    EXTREMELY_LARGE = 6,
+    NONE = 0  # Doji
+    VERY_SMALL = 1
+    SMALL = 2
+    MEDIUM = 3
+    LARGE = 4
+    VERY_LARGE = 5
+    EXTREMELY_LARGE = 6
