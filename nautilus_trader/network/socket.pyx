@@ -140,7 +140,7 @@ cdef class SocketClient:
             try:
                 raw = await self._reader.readuntil(separator=self._crlf)
                 if partial:
-                    raw = partial + raw
+                    raw += partial
                     partial = b""
                 self._log.debug("[RECV] " + raw.decode())
                 self._handler(raw.rstrip(self._crlf))
