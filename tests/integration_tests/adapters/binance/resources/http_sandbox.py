@@ -19,8 +19,8 @@ import os
 
 import pytest
 
-from nautilus_trader.adapters.binance.client.http import BinanceHTTPClient
-from nautilus_trader.adapters.binance.client.spot.market import BinanceMarketAPI
+from nautilus_trader.adapters.binance.http.api.spot import BinanceSpotHTTPAPI
+from nautilus_trader.adapters.binance.http.client import BinanceHTTPClient
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.logging import Logger
 
@@ -39,9 +39,7 @@ async def test_binance_http_client():
         base_url="https://api.binance.com",
     )
 
-    market = BinanceMarketAPI(client=client)
+    market = BinanceSpotHTTPAPI(client=client)
     await client.connect()
-    response = await market.exchange_info("ETHUSDC")
+    response = await market.depth("ETHUSDT")
     print(json.dumps(json.loads(response), indent=4))
-
-    print(await market.time())

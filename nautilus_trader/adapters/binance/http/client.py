@@ -13,7 +13,6 @@
 #  limitations under the License.
 #
 #  Heavily refactored from MIT licensed github.com/binance/binance-connector-python
-#  https://github.com/binance/binance-connector-python/blob/master/binance/api.py
 #  Original author: Jeremy https://github.com/2pd
 # -------------------------------------------------------------------------------------------------
 
@@ -26,10 +25,10 @@ from aiohttp import ClientResponse
 from aiohttp import ClientResponseError
 
 import nautilus_trader
-from nautilus_trader.adapters.binance.client.error import BinanceClientError
-from nautilus_trader.adapters.binance.client.error import BinanceServerError
-from nautilus_trader.adapters.binance.client.parsing import clean_none_value
-from nautilus_trader.adapters.binance.client.parsing import encoded_string
+from nautilus_trader.adapters.binance.http.error import BinanceClientError
+from nautilus_trader.adapters.binance.http.error import BinanceServerError
+from nautilus_trader.adapters.binance.http.parsing import clean_none_value
+from nautilus_trader.adapters.binance.http.parsing import encoded_string
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.network.http import HTTPClient
@@ -52,9 +51,7 @@ class BinanceHTTPClient(HTTPClient):
         secret=None,
         base_url=None,
         timeout=None,
-        proxies: Dict = None,
         show_limit_usage=False,
-        show_header=False,
     ):
         super().__init__(
             loop=loop,
@@ -65,7 +62,6 @@ class BinanceHTTPClient(HTTPClient):
         self._secret = secret
         self._base_url = base_url
         self._show_limit_usage = show_limit_usage
-        self._show_header = show_header
         self._proxies = None
         self._headers: Dict[str, str] = {
             "Content-Type": "application/json;charset=utf-8",
@@ -75,8 +71,8 @@ class BinanceHTTPClient(HTTPClient):
 
         if timeout is not None:
             self._headers["timeout"] = timeout
-        # if proxies is not None:
-        #     self._headers["proxies"] = proxies
+
+        # TODO(cs): Implement limit usage
 
     @property
     def headers(self):
@@ -154,7 +150,6 @@ class BinanceHTTPClient(HTTPClient):
         except ClientResponseError as ex:
             await self._handle_exception(ex)
 
-        result = {}
         if self._show_limit_usage:
             limit_usage = {}
             for key in resp.headers.keys():
@@ -165,14 +160,6 @@ class BinanceHTTPClient(HTTPClient):
                     or key.startswith("x-sapi-used")
                 ):
                     limit_usage[key] = resp.headers[key]
-            result["limit_usage"] = limit_usage
-
-        if self._show_header:
-            result["header"] = resp.headers
-
-        # if len(result) != 0:
-        #     result["data"] = resp.data
-        #     return result
 
         return resp.data
 

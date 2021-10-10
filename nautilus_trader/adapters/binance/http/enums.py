@@ -12,8 +12,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
-#  From MIT licensed github.com/binance/binance-connector-python
-#  https://github.com/binance/binance-connector-python/blob/master/binance/lib/enums.py
+#  Heavily refactored from MIT licensed github.com/binance/binance-connector-python
 #  Original author: Jeremy https://github.com/2pd
 # -------------------------------------------------------------------------------------------------
 
