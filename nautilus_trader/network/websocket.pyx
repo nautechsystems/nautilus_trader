@@ -19,6 +19,7 @@ from typing import Callable, Dict, List, Optional
 
 import aiohttp
 from aiohttp import WSMessage
+from aiohttp import WSMsgType
 
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.common.logging cimport LoggerAdapter
@@ -83,10 +84,15 @@ cdef class WebSocketClient:
         self._session = aiohttp.ClientSession(loop=self._loop)
         self._log.debug(f"Connecting to websocket: {self.ws_url}")
         self._ws = await self._session.ws_connect(url=self.ws_url, **self._ws_connect_kwargs)
+        await self.post_connect()
         if start:
             self._running = True
             task = self._loop.create_task(self.start())
             self._tasks.append(task)
+
+    async def post_connect(self):
+        """ Optional post connect to send any connection messages or other. Called before start()"""
+        pass
 
     async def disconnect(self) -> None:
         self._trigger_stop = True
@@ -102,7 +108,12 @@ cdef class WebSocketClient:
     async def recv(self) -> bytes:
         try:
             resp: WSMessage = await self._ws.receive()
-            return resp.data
+            if resp.type == WSMsgType.TEXT:
+                return resp.data.encode()
+            elif resp.type == WSMsgType.BINARY:
+                return resp.data
+            else:
+                raise TypeError(f"Unknown websocket response data type: {resp.type}")
         except asyncio.IncompleteReadError as ex:
             self._log.exception(ex)
             await self.connect(start=False)

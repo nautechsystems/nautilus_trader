@@ -17,9 +17,9 @@ from nautilus_trader.common.logging cimport LoggerAdapter
 
 
 cdef class WebSocketClient:
-    cdef object _loop
+    cdef readonly object _loop
+    cdef readonly LoggerAdapter _log
     cdef object _handler
-    cdef LoggerAdapter _log
     cdef dict _ws_connect_kwargs
     cdef object _ws
     cdef object _session
