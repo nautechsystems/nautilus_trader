@@ -11,18 +11,7 @@
 #  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
+#
+#  Heavily refactored from MIT licensed github.com/binance/binance-connector-python
+#  Original author: Jeremy https://github.com/2pd
 # -------------------------------------------------------------------------------------------------
-
-from nautilus_trader.common.logging cimport LoggerAdapter
-
-
-cdef class HTTPClient:
-    cdef object _loop
-    cdef readonly LoggerAdapter _log
-    cdef list _addresses
-    cdef list _nameservers
-    cdef int _ttl_dns_cache
-    cdef object _ssl
-    cdef dict _connector_kwargs
-    cdef object _sessions
-    cdef dict _headers

@@ -49,11 +49,11 @@ class BetfairStreamClient(SocketClient):
         encoding=None,
     ):
         super().__init__(
+            loop=loop or asyncio.get_event_loop(),
+            logger=logger_adapter.get_logger(),
             host=host or HOST,
             port=port or PORT,
-            loop=loop or asyncio.get_event_loop(),
             handler=message_handler,
-            logger=logger_adapter.get_logger(),
             crlf=crlf or CRLF,
             encoding=encoding or ENCODING,
         )

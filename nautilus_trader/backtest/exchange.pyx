@@ -1055,42 +1055,50 @@ cdef class SimulatedExchange:
                 self._fill_limit_order(order, LiquiditySide.TAKER)  # Fills as TAKER
 
     cdef bint _is_limit_marketable(self, InstrumentId instrument_id, OrderSide side, Price order_price) except *:
+        cdef Price bid
+        cdef Price ask
         if side == OrderSide.BUY:
             ask = self.best_ask_price(instrument_id)
             if ask is None:
                 return False  # No market
             return order_price >= ask  # Match with LIMIT sells
-        else:  # => OrderSide.SELL
+        elif side == OrderSide.SELL:
             bid = self.best_bid_price(instrument_id)
             if bid is None:  # No market
                 return False
             return order_price <= bid  # Match with LIMIT buys
 
     cdef bint _is_limit_matched(self, InstrumentId instrument_id, OrderSide side, Price price) except *:
+        cdef Price bid
+        cdef Price ask
         if side == OrderSide.BUY:
             ask = self.best_ask_price(instrument_id)
             if ask is None:
                 return False  # No market
             return price > ask or (ask == price and self.fill_model.is_limit_filled())
-        else:  # => OrderSide.SELL
+        elif side == OrderSide.SELL:
             bid = self.best_bid_price(instrument_id)
             if bid is None:
                 return False  # No market
             return price < bid or (bid == price and self.fill_model.is_limit_filled())
 
     cdef bint _is_stop_marketable(self, InstrumentId instrument_id, OrderSide side, Price price) except *:
+        cdef Price bid
+        cdef Price ask
         if side == OrderSide.BUY:
             ask = self.best_ask_price(instrument_id)
             if ask is None:
                 return False  # No market
             return ask >= price  # Match with LIMIT sells
-        else:  # => OrderSide.SELL
+        elif side == OrderSide.SELL:
             bid = self.best_bid_price(instrument_id)
             if bid is None:
                 return False  # No market
             return bid <= price  # Match with LIMIT buys
 
     cdef bint _is_stop_triggered(self, InstrumentId instrument_id, OrderSide side, Price price) except *:
+        cdef Price bid
+        cdef Price ask
         if side == OrderSide.BUY:
             ask = self.best_ask_price(instrument_id)
             if ask is None:
@@ -1208,7 +1216,7 @@ cdef class SimulatedExchange:
             if self.book_type == BookType.L1_TBBO and self.fill_model.is_slipped():
                 if order.side == OrderSide.BUY:
                     fill_px = Price(fill_px + instrument.price_increment, instrument.price_precision)
-                else:  # => OrderSide.SELL
+                elif order.side == OrderSide.SELL:
                     fill_px = Price(fill_px - instrument.price_increment, instrument.price_precision)
             if order.is_reduce_only and fill_qty > position.quantity:
                 # Adjust fill to honor reduce only execution
@@ -1244,7 +1252,7 @@ cdef class SimulatedExchange:
             fill_px = fills[-1][0]
             if order.side == OrderSide.BUY:
                 fill_px = Price(fill_px + instrument.price_increment, instrument.price_precision)
-            else:  # => OrderSide.SELL
+            elif order.side == OrderSide.SELL:
                 fill_px = Price(fill_px - instrument.price_increment, instrument.price_precision)
             self._fill_order(
                 instrument=instrument,

@@ -11,36 +11,35 @@
 #  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
+#
+#  Heavily refactored from MIT licensed github.com/binance/binance-connector-python
+#  Original author: Jeremy https://github.com/2pd
 # -------------------------------------------------------------------------------------------------
 
-import asyncio
-import sys
 
-import pytest
-
-from nautilus_trader.network.http import HTTPClient
-from tests.test_kit.stubs import TestStubs
+class BinanceError(Exception):
+    """
+    The base class for all `Binance` specific errors.
+    """
 
 
-@pytest.fixture()
-async def client():
-    client = HTTPClient(
-        loop=asyncio.get_event_loop(),
-        logger=TestStubs.logger(),
-    )
-    await client.connect()
-    return client
+class BinanceServerError(BinanceError):
+    """
+    Represents a `Binance` specific 500 series HTTP error.
+    """
+
+    def __init__(self, status, message, headers):
+        self.status = status
+        self.message = message
+        self.headers = headers
 
 
-@pytest.mark.skipif(sys.platform == "win32", reason="failing on windows")
-@pytest.mark.asyncio
-async def test_client_get(client):
-    resp = await client.get("https://httpbin.org/get")
-    assert len(resp.data) > 100
+class BinanceClientError(BinanceError):
+    """
+    Represents a `Binance` specific 400 series HTTP error.
+    """
 
-
-@pytest.mark.skipif(sys.platform == "win32", reason="failing on windows")
-@pytest.mark.asyncio
-async def test_client_post(client):
-    resp = await client.post("https://httpbin.org/post")
-    assert len(resp.data) > 100
+    def __init__(self, status, message, headers):
+        self.status = status
+        self.message = message
+        self.headers = headers

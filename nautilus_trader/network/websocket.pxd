@@ -13,34 +13,23 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import asyncio
-import sys
-
-import pytest
-
-from nautilus_trader.network.http import HTTPClient
-from tests.test_kit.stubs import TestStubs
+from nautilus_trader.common.logging cimport LoggerAdapter
 
 
-@pytest.fixture()
-async def client():
-    client = HTTPClient(
-        loop=asyncio.get_event_loop(),
-        logger=TestStubs.logger(),
-    )
-    await client.connect()
-    return client
+cdef class WebSocketClient:
+    cdef readonly object _loop
+    cdef readonly LoggerAdapter _log
 
+    cdef object _handler
+    cdef dict _ws_connect_kwargs
+    cdef object _ws
+    cdef object _session
+    cdef list _tasks
+    cdef bint _running
+    cdef bint _stopped
+    cdef bint _trigger_stop
 
-@pytest.mark.skipif(sys.platform == "win32", reason="failing on windows")
-@pytest.mark.asyncio
-async def test_client_get(client):
-    resp = await client.get("https://httpbin.org/get")
-    assert len(resp.data) > 100
-
-
-@pytest.mark.skipif(sys.platform == "win32", reason="failing on windows")
-@pytest.mark.asyncio
-async def test_client_post(client):
-    resp = await client.post("https://httpbin.org/post")
-    assert len(resp.data) > 100
+    cdef readonly str ws_url
+    """The client URL.\n\n:returns: `str`"""
+    cdef readonly bint is_connected
+    """If the client is connected.\n\n:returns: `bool`"""

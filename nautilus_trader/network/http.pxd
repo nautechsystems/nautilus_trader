@@ -13,34 +13,20 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import asyncio
-import sys
-
-import pytest
-
-from nautilus_trader.network.http import HTTPClient
-from tests.test_kit.stubs import TestStubs
+from nautilus_trader.common.logging cimport LoggerAdapter
 
 
-@pytest.fixture()
-async def client():
-    client = HTTPClient(
-        loop=asyncio.get_event_loop(),
-        logger=TestStubs.logger(),
-    )
-    await client.connect()
-    return client
+cdef class HTTPClient:
+    cdef readonly object _loop
+    cdef readonly LoggerAdapter _log
 
+    cdef list _addresses
+    cdef list _nameservers
+    cdef int _ttl_dns_cache
+    cdef object _ssl
+    cdef dict _connector_kwargs
+    cdef list _sessions
+    cdef int _sessions_idx
+    cdef int _sessions_len
 
-@pytest.mark.skipif(sys.platform == "win32", reason="failing on windows")
-@pytest.mark.asyncio
-async def test_client_get(client):
-    resp = await client.get("https://httpbin.org/get")
-    assert len(resp.data) > 100
-
-
-@pytest.mark.skipif(sys.platform == "win32", reason="failing on windows")
-@pytest.mark.asyncio
-async def test_client_post(client):
-    resp = await client.post("https://httpbin.org/post")
-    assert len(resp.data) > 100
+    cdef object _get_session(self)

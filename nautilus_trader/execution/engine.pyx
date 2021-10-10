@@ -716,8 +716,10 @@ cdef class ExecutionEngine(Component):
         cdef Quantity difference = None
         if position.side == PositionSide.LONG:
             difference = Quantity(fill.last_qty - position.quantity, position.size_precision)
-        else:  # position.side == PositionSide.SHORT:
+        elif position.side == PositionSide.SHORT:
             difference = Quantity(abs(position.quantity - fill.last_qty), position.size_precision)
+        else:
+            difference = fill.last_qty
 
         # Split commission between two positions
         fill_percent: Decimal = position.quantity / fill.last_qty
@@ -725,7 +727,7 @@ cdef class ExecutionEngine(Component):
         cdef Money commission2 = Money(fill.commission - commission1, fill.commission.currency)
 
         cdef OrderFilled fill_split1 = None
-        if position.quantity > 0:
+        if position.is_open_c():
             # Split fill to close original position
             fill_split1 = OrderFilled(
                 trader_id=fill.trader_id,

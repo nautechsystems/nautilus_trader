@@ -11,24 +11,29 @@
 #  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
+#
+#  Heavily refactored from MIT licensed github.com/binance/binance-connector-python
+#  Original author: Jeremy https://github.com/2pd
 # -------------------------------------------------------------------------------------------------
 
-from nautilus_trader.common.logging cimport LoggerAdapter
+import json
+from urllib.parse import urlencode
 
 
-cdef class WebSocketClient:
-    cdef object _loop
-    cdef object _handler
-    cdef LoggerAdapter _log
-    cdef dict _ws_connect_kwargs
-    cdef object _ws
-    cdef object _session
-    cdef list _tasks
-    cdef bint _running
-    cdef bint _stopped
-    cdef bint _trigger_stop
+def clean_none_value(d) -> dict:
+    out = {}
+    for k in d.keys():
+        if d[k] is not None:
+            out[k] = d[k]
+    return out
 
-    cdef readonly str ws_url
-    """The client URL.\n\n:returns: `str`"""
-    cdef readonly bint is_connected
-    """If the client is connected.\n\n:returns: `bool`"""
+
+def encoded_string(query):
+    return urlencode(query, True).replace("%40", "@").replace("%2F", "/")
+
+
+def convert_list_to_json_array(symbols):
+    if symbols is None:
+        return symbols
+    res = json.dumps(symbols)
+    return res.replace(" ", "")

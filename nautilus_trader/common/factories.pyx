@@ -464,7 +464,7 @@ cdef class OrderFactory:
         # Validate prices
         if order_side == OrderSide.BUY:
             Condition.true(stop_loss < take_profit, "stop_loss was >= take_profit")
-        else:  # entry_order.side == OrderSide.SELL
+        elif order_side == OrderSide.SELL:
             Condition.true(stop_loss > take_profit, "stop_loss was <= take_profit")
 
         cdef OrderListId order_list_id = OrderListId(str(self._order_list_id))
@@ -606,7 +606,7 @@ cdef class OrderFactory:
             Condition.true(stop_loss < take_profit, "stop_loss was >= take_profit")
             Condition.true(entry > stop_loss, "BUY entry was <= stop_loss")
             Condition.true(entry < take_profit, "BUY entry was >= take_profit")
-        else:  # entry_order.side == OrderSide.SELL
+        elif order_side == OrderSide.SELL:
             Condition.true(stop_loss > take_profit, "stop_loss was <= take_profit")
             Condition.true(entry < stop_loss, "SELL entry was >= stop_loss")
             Condition.true(entry > take_profit, "SELL entry was <= take_profit")
