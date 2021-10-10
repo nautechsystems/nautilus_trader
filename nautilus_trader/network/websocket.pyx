@@ -83,10 +83,15 @@ cdef class WebSocketClient:
         self._session = aiohttp.ClientSession(loop=self._loop)
         self._log.debug(f"Connecting to websocket: {self.ws_url}")
         self._ws = await self._session.ws_connect(url=self.ws_url, **self._ws_connect_kwargs)
+        await self.post_connect()
         if start:
             self._running = True
             task = self._loop.create_task(self.start())
             self._tasks.append(task)
+
+    async def post_connect(self):
+        """ Optional post connect to send any connection messages or other. Called before start()"""
+        pass
 
     async def disconnect(self):
         self._trigger_stop = True
