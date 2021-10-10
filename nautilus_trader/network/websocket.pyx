@@ -15,10 +15,11 @@
 
 import asyncio
 import types
-from typing import Callable, Dict, List, Optional
+from typing import AnyStr, Callable, Dict, List, Optional
 
 import aiohttp
 from aiohttp import WSMessage
+from aiohttp import WSMsgType
 
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.common.logging cimport LoggerAdapter
@@ -107,7 +108,12 @@ cdef class WebSocketClient:
     async def recv(self) -> bytes:
         try:
             resp: WSMessage = await self._ws.receive()
-            return resp.data
+            if resp.type == WSMsgType.TEXT:
+                return resp.data.encode()
+            elif resp.type == WSMsgType.BINARY:
+                return resp.data
+            else:
+                raise TypeError(f"Unknown websocket response data type: {resp.type}")
         except asyncio.IncompleteReadError as ex:
             self._log.exception(ex)
             await self.connect(start=False)
