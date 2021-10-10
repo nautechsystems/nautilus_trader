@@ -27,8 +27,6 @@ attempts to operate without a managing `Trader` instance.
 
 from typing import Optional
 
-import pydantic
-
 from nautilus_trader.cache.base cimport CacheFacade
 from nautilus_trader.common.actor cimport Actor
 from nautilus_trader.common.clock cimport Clock
@@ -70,21 +68,7 @@ from nautilus_trader.model.orders.market cimport MarketOrder
 from nautilus_trader.model.position cimport Position
 from nautilus_trader.msgbus.bus cimport MessageBus
 
-
-class TradingStrategyConfig(pydantic.BaseModel):
-    """
-    The base model for all trading strategy configurations.
-
-    order_id_tag : str
-        The unique order ID tag for the strategy. Must be unique
-        amongst all running strategies for a particular trader ID.
-    oms_type : OMSType
-        The order management system type for the strategy. This will determine
-        how the `ExecutionEngine` handles position IDs (see docs).
-    """
-
-    order_id_tag: str = "000"
-    oms_type: str = "HEDGING"
+from nautilus_trader.trading.config import TradingStrategyConfig
 
 
 cdef class TradingStrategy(Actor):

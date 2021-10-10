@@ -1,6 +1,6 @@
 name: release
 
-# Release NautilusTrader on completion of the `build_test` workflow
+# Release NautilusTrader on successful completion of the `build` workflow
 
 on:
   workflow_run:
@@ -39,7 +39,7 @@ jobs:
 
   tag-release:
     needs: [ test-pip-install ]
-    name: tag-release - Python 3.9 (Linux)
+    name: tag-release - Python 3.9 (ubuntu-latest)
     runs-on: ubuntu-latest
     outputs:
       upload_url: ${{ steps.create-release.outputs.upload_url }}
@@ -58,11 +58,6 @@ jobs:
       # Install build dependencies
       - name: Install build dependencies
         run: python -m pip install --upgrade pip setuptools wheel poetry
-
-      # Test pip installation
-      - name: Test pip installation
-        if: runner.os != 'Windows'
-        run: pip install .[distributed,docs]
 
       # Setup Poetry caching
       - name: Get Poetry cache dir
@@ -114,10 +109,10 @@ jobs:
 
   publish-sdist:
     needs: [ tag-release ]
-    name: publish-sdist - Python 3.9 (Linux)
+    name: publish-sdist - Python 3.9 (ubuntu-latest)
     runs-on: ubuntu-latest
     env:
-      # Skip build copy to avoid C dynamic libs being copied into the source
+      # Skip build copy to avoid *.so files being copied into the source
       SKIP_BUILD_COPY: true
 
     steps:
@@ -147,7 +142,7 @@ jobs:
             ${{ runner.os }}-${{ matrix.python-version }}-poetry-publish-
             ${{ runner.os }}-${{ matrix.python-version }}-poetry-
 
-      # Install / Build (No need to copy built *.so files back into the source tree)
+      # Install / Build
       - name: Install / Build
         run: |
           poetry install

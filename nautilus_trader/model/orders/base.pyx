@@ -19,11 +19,11 @@ Defines various order types used for trading.
 
 from decimal import Decimal
 
+import pandas as pd
 from cpython.datetime cimport datetime
 from libc.stdint cimport int64_t
 
 from nautilus_trader.core.correctness cimport Condition
-from nautilus_trader.core.datetime cimport dt_to_unix_nanos
 from nautilus_trader.core.datetime cimport format_iso8601
 from nautilus_trader.core.datetime cimport maybe_dt_to_unix_nanos
 from nautilus_trader.core.uuid cimport UUID4
@@ -743,6 +743,7 @@ cdef class Order:
             self.venue_order_id = event.venue_order_id
         if event.quantity is not None:
             self.quantity = event.quantity
+            self.leaves_qty = Quantity(self.quantity - self.filled_qty, self.quantity.precision)
 
     cdef void _canceled(self, OrderCanceled event) except *:
         pass  # Do nothing else
@@ -837,7 +838,7 @@ cdef class PassiveOrder(Order):
         self.price = price
         self.liquidity_side = LiquiditySide.NONE
         self.expire_time = expire_time
-        self.expire_time_ns = dt_to_unix_nanos(dt=expire_time) if expire_time else 0
+        self.expire_time_ns = int(pd.Timestamp(expire_time).to_datetime64()) if expire_time else 0
         self.slippage = Decimal(0)
 
     cpdef str info(self):
@@ -886,6 +887,7 @@ cdef class PassiveOrder(Order):
             self.venue_order_id = event.venue_order_id
         if event.quantity is not None:
             self.quantity = event.quantity
+            self.leaves_qty = Quantity(self.quantity - self.filled_qty, self.quantity.precision)
         if event.price is not None:
             self.price = event.price
 
@@ -910,5 +912,5 @@ cdef class PassiveOrder(Order):
     cdef void _set_slippage(self) except *:
         if self.side == OrderSide.BUY:
             self.slippage = self.avg_px - self.price
-        else:  # self.side == OrderSide.SELL:
+        elif self.side == OrderSide.SELL:
             self.slippage = self.price - self.avg_px

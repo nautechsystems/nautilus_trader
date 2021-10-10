@@ -15,8 +15,8 @@
 
 
 cpdef enum CandleBodySize:
-    NONE = 0,  # Doji
-    SMALL = 1,
-    MEDIUM = 2,
-    LARGE = 3,
-    TREND = 4,
+    NONE = 0  # Doji
+    SMALL = 1
+    MEDIUM = 2
+    LARGE = 3
+    TREND = 4

@@ -40,7 +40,7 @@ async def test_socket_base(socket_server, event_loop):
         ssl=False,
     )
     await client.connect()
-    await asyncio.sleep(5)
+    await asyncio.sleep(3)
     assert messages == [b"hello"] * 6
     await asyncio.sleep(1)
     client.stop()

@@ -13,10 +13,10 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+import pandas as pd
 from cpython.datetime cimport datetime
 
 from nautilus_trader.core.correctness cimport Condition
-from nautilus_trader.core.datetime cimport nanos_to_unix_dt
 from nautilus_trader.indicators.base.indicator cimport Indicator
 from nautilus_trader.model.data.bar cimport Bar
 
@@ -52,7 +52,7 @@ cdef class VolumeWeightedAveragePrice(Indicator):
         self.update_raw(
             bar.close.as_double(),
             bar.volume.as_double(),
-            nanos_to_unix_dt(nanos=bar.ts_init),
+            pd.Timestamp(bar.ts_init, tz="UTC"),
         )
 
     cpdef void update_raw(

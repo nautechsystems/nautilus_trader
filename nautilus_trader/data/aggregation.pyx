@@ -687,7 +687,7 @@ cdef class TimeBarAggregator(BarAggregator):
             interval=self.interval,
             start_time=self.get_start_time(),
             stop_time=None,
-            handler=self._build_event,
+            callback=self._build_event,
         )
 
         self._log.debug(f"Started timer {timer_name}.")

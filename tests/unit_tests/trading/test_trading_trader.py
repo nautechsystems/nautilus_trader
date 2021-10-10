@@ -116,8 +116,6 @@ class TestTrader:
         self.exec_client = BacktestExecClient(
             exchange=self.exchange,
             account_id=self.account_id,
-            account_type=AccountType.MARGIN,
-            base_currency=USD,
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,

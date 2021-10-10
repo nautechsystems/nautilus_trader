@@ -40,8 +40,7 @@ from nautilus_trader.common.logging cimport LogLevel
 from nautilus_trader.common.queue cimport Queue
 from nautilus_trader.common.uuid cimport UUIDFactory
 from nautilus_trader.core.correctness cimport Condition
-from nautilus_trader.core.datetime cimport format_iso8601_us
-from nautilus_trader.core.datetime cimport nanos_to_unix_dt
+from nautilus_trader.core.datetime cimport format_iso8601_ns
 from nautilus_trader.model.identifiers cimport TraderId
 
 
@@ -239,12 +238,11 @@ cdef class Logger:
         LogColor color,
         dict record,
     ):
-        # Return the formatted log message from the given arguments
-        cdef str time = format_iso8601_us(nanos_to_unix_dt(record["timestamp"]))
-
         # Set log color
         cdef str color_cmd = ""
-        if color == LogColor.YELLOW:
+        if color == LogColor.NORMAL:
+            pass
+        elif color == LogColor.YELLOW:
             color_cmd = _YELLOW
         elif color == LogColor.GREEN:
             color_cmd = _GREEN
@@ -253,8 +251,10 @@ cdef class Logger:
         elif color == LogColor.RED:
             color_cmd = _RED
 
+        # Return the formatted log message from the given arguments
+        cdef str dt = format_iso8601_ns(pd.Timestamp(record["timestamp"], tz="UTC"))
         cdef str trader_id_str = f"{self.trader_id.value}." if self.trader_id is not None else ""
-        return (f"{_BOLD}{time}{_ENDC} {color_cmd}"
+        return (f"{_BOLD}{dt}{_ENDC} {color_cmd}"
                 f"[{LogLevelParser.to_str(level)}] "
                 f"{trader_id_str}{record['component']}: {record['msg']}{_ENDC}")
 
@@ -498,11 +498,11 @@ cdef class LoggerAdapter:
 cpdef void nautilus_header(LoggerAdapter logger) except *:
     Condition.not_none(logger, "logger")
     print("")  # New line to begin
-    logger.info("=================================================================")
-    logger.info(f" NAUTILUS TRADER - Algorithmic Trading Platform")
-    logger.info(f" by Nautech Systems Pty Ltd.")
-    logger.info(f" Copyright (C) 2015-2021. All rights reserved.")
-    logger.info("=================================================================")
+    logger.info("\033[36m=================================================================")
+    logger.info(f"\033[36m NAUTILUS TRADER - Algorithmic Trading Platform")
+    logger.info(f"\033[36m by Nautech Systems Pty Ltd.")
+    logger.info(f"\033[36m Copyright (C) 2015-2021. All rights reserved.")
+    logger.info("\033[36m=================================================================")
     logger.info("                                                                 ")
     logger.info("                            .......                              ")
     logger.info("                         .............                           ")
@@ -521,9 +521,9 @@ cpdef void nautilus_header(LoggerAdapter logger) except *:
     logger.info("             ....                ..'..                           ")
     logger.info("                 ..................                              ")
     logger.info("                                                                 ")
-    logger.info("=================================================================")
-    logger.info(" SYSTEM SPECIFICATION")
-    logger.info("=================================================================")
+    logger.info("\033[36m=================================================================")
+    logger.info("\033[36m SYSTEM SPECIFICATION")
+    logger.info("\033[36m=================================================================")
     logger.info(f"CPU architecture: {platform.processor()}")
     try:
         cpu_freq_str = f"@ {int(psutil.cpu_freq()[2])} MHz"
@@ -532,15 +532,15 @@ cpdef void nautilus_header(LoggerAdapter logger) except *:
     logger.info(f"CPU(s): {psutil.cpu_count()} {cpu_freq_str}")
     logger.info(f"OS: {platform.platform()}")
     log_memory(logger)
-    logger.info("=================================================================")
-    logger.info(" IDENTIFIERS")
-    logger.info("=================================================================")
+    logger.info("\033[36m=================================================================")
+    logger.info("\033[36m IDENTIFIERS")
+    logger.info("\033[36m=================================================================")
     logger.info(f"trader_id: {logger.trader_id.value}")
     logger.info(f"machine_id: {logger.machine_id}")
     logger.info(f"instance_id: {logger.instance_id.value}")
-    logger.info("=================================================================")
-    logger.info(" VERSIONING")
-    logger.info("=================================================================")
+    logger.info("\033[36m=================================================================")
+    logger.info("\033[36m VERSIONING")
+    logger.info("\033[36m=================================================================")
     logger.info(f"nautilus-trader {__version__}")
     logger.info(f"python {python_version()}")
     logger.info(f"numpy {np.__version__}")
@@ -549,9 +549,9 @@ cpdef void nautilus_header(LoggerAdapter logger) except *:
 
 
 cpdef void log_memory(LoggerAdapter logger) except *:
-    logger.info("=================================================================")
-    logger.info(" MEMORY USAGE")
-    logger.info("=================================================================")
+    logger.info("\033[36m=================================================================")
+    logger.info("\033[36m MEMORY USAGE")
+    logger.info("\033[36m=================================================================")
     ram_total_mb = round(psutil.virtual_memory()[0] / 1000000)
     ram_used__mb = round(psutil.virtual_memory()[3] / 1000000)
     ram_avail_mb = round(psutil.virtual_memory()[1] / 1000000)

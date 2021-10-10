@@ -52,7 +52,10 @@ def parse_market_filter(market_filter):
 
 def snake_to_camel_case(s):
     """
-    Convert a snakecase string to camel case
+    Convert a snakecase string to camel case.
+
+    Examples
+    --------
     >>> snake_to_camel_case('bet_status')
     'betStatus'
 
@@ -61,6 +64,7 @@ def snake_to_camel_case(s):
 
     >>> snake_to_camel_case("filter_")
     'filter'
+
     """
     components = s.split("_")
     return components[0] + "".join(x.title() for x in components[1:])

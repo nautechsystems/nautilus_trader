@@ -13,21 +13,19 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from datetime import timedelta
 
 from nautilus_trader.common.timer import TimeEvent
 from nautilus_trader.common.timer import TimeEventHandler
 from nautilus_trader.common.timer import Timer
 from nautilus_trader.core.uuid import UUID4
-from tests.test_kit.stubs import UNIX_EPOCH
 
 
 class TestTimeEvent:
     def test_equality(self):
         # Arrange
-        event1 = TimeEvent("EVENT_1", UUID4(), UNIX_EPOCH, 0, 0)
-        event2 = TimeEvent("EVENT_1", UUID4(), UNIX_EPOCH, 0, 0)
-        event3 = TimeEvent("EVENT_2", UUID4(), UNIX_EPOCH, 0, 0)
+        event1 = TimeEvent("EVENT_1", UUID4(), 0, 0)
+        event2 = TimeEvent("EVENT_1", UUID4(), 0, 0)
+        event3 = TimeEvent("EVENT_2", UUID4(), 0, 0)
 
         # Act, Assert
         assert event1 == event1
@@ -37,27 +35,25 @@ class TestTimeEvent:
     def test_str_repr(self):
         # Arrange
         uuid = UUID4()
-        event = TimeEvent("EVENT", uuid, UNIX_EPOCH, 0, 0)
+        event = TimeEvent("EVENT", uuid, 0, 0)
 
         # Act, Assert
-        assert str(event) == (
-            f"TimeEvent(name=EVENT, id={uuid}, " f"timestamp=1970-01-01T00:00:00.000Z)"
-        )
-        assert repr(event) == (
-            f"TimeEvent(name=EVENT, id={uuid}, " f"timestamp=1970-01-01T00:00:00.000Z)"
-        )
+        assert str(event) == (f"TimeEvent(name=EVENT, id={uuid})")
+        assert repr(event) == (f"TimeEvent(name=EVENT, id={uuid})")
 
 
 class TestTimeEventHandler:
     def test_comparisons(self):
         # Arrange
         receiver = []
-        event1 = TimeEventHandler(TimeEvent("123", UUID4(), UNIX_EPOCH, 0, 0), receiver.append)
+        event1 = TimeEventHandler(
+            TimeEvent("123", UUID4(), 0, 0),
+            receiver.append,
+        )
         event2 = TimeEventHandler(
             TimeEvent(
                 "123",
                 UUID4(),
-                UNIX_EPOCH + timedelta(seconds=1),
                 1_000_000_000,
                 0,
             ),
@@ -76,27 +72,19 @@ class TestTimeEventHandler:
         # Arrange
         receiver = []
         uuid = UUID4()
-        handler = TimeEventHandler(TimeEvent("123", uuid, UNIX_EPOCH, 0, 0), receiver.append)
+        handler = TimeEventHandler(TimeEvent("123", uuid, 0, 0), receiver.append)
 
         print(str(handler))
         # Act, Assert
-        assert str(handler) == (
-            f"TimeEventHandler(event=TimeEvent(name=123, id={uuid}, "
-            f"timestamp=1970-01-01T00:00:00.000Z))"
-        )
-        assert repr(handler) == (
-            f"TimeEventHandler(event=TimeEvent(name=123, id={uuid}, "
-            f"timestamp=1970-01-01T00:00:00.000Z))"
-        )
+        assert str(handler) == (f"TimeEventHandler(event=TimeEvent(name=123, id={uuid}))")
+        assert repr(handler) == (f"TimeEventHandler(event=TimeEvent(name=123, id={uuid}))")
 
     def test_sort(self):
         # Arrange
         receiver = []
-        event1 = TimeEventHandler(TimeEvent("123", UUID4(), UNIX_EPOCH, 0, 0), receiver.append)
-        event2 = TimeEventHandler(TimeEvent("123", UUID4(), UNIX_EPOCH, 0, 0), receiver.append)
-        event3 = TimeEventHandler(
-            TimeEvent("123", UUID4(), UNIX_EPOCH + timedelta(1), 0, 0), receiver.append
-        )
+        event1 = TimeEventHandler(TimeEvent("123", UUID4(), 0, 0), receiver.append)
+        event2 = TimeEventHandler(TimeEvent("123", UUID4(), 0, 0), receiver.append)
+        event3 = TimeEventHandler(TimeEvent("123", UUID4(), 0, 0), receiver.append)
 
         # Act
         # Stable sort as event1 and event2 remain in order

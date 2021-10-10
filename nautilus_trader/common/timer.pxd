@@ -13,7 +13,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from cpython.datetime cimport datetime
 from libc.stdint cimport int64_t
 
 from nautilus_trader.common.uuid cimport UUIDFactory
@@ -24,8 +23,6 @@ from nautilus_trader.core.uuid cimport UUID4
 cdef class TimeEvent(Event):
     cdef readonly str name
     """The time events unique name.\n\n:returns: `str`"""
-    cdef readonly datetime timestamp
-    """The events timestamp (UTC).\n\n:returns: `datetime`"""
 
 
 cdef class TimeEventHandler:

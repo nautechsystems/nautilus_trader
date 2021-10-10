@@ -12,15 +12,16 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+
+import itertools
 import logging
 import pickle
-from typing import Any, Dict, List, Optional, Tuple
+from typing import List, Optional
 
 import cloudpickle
 import dask
 import pandas as pd
 from dask.base import normalize_token
-from dask.base import tokenize
 from dask.delayed import Delayed
 
 from nautilus_trader.backtest.config import BacktestDataConfig
@@ -29,7 +30,7 @@ from nautilus_trader.backtest.config import BacktestVenueConfig
 from nautilus_trader.backtest.engine import BacktestEngine
 from nautilus_trader.backtest.engine import BacktestEngineConfig
 from nautilus_trader.backtest.results import BacktestResult
-from nautilus_trader.backtest.results import BacktestRunResults
+from nautilus_trader.core.datetime import maybe_dt_to_unix_nanos
 from nautilus_trader.model.currency import Currency
 from nautilus_trader.model.data.tick import QuoteTick
 from nautilus_trader.model.data.tick import TradeTick
@@ -40,6 +41,8 @@ from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.instruments.base import Instrument
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.orderbook.data import OrderBookDelta
+from nautilus_trader.persistence.batching import batch_files
+from nautilus_trader.persistence.catalog import DataCatalog
 from nautilus_trader.trading.config import ImportableStrategyConfig
 from nautilus_trader.trading.config import StrategyFactory
 from nautilus_trader.trading.strategy import TradingStrategy
@@ -76,21 +79,21 @@ class BacktestNode:
             The delayed graph, yet to be computed.
 
         """
-        results: List[Tuple[str, Dict[str, Any]]] = []
+        results: List[BacktestResult] = []
         for config in run_configs:
-            config.check(ignore=("name",))  # check all values set
-            results.append(
-                self._run_delayed(
-                    name=config.name or f"backtest-{tokenize(config)}",
-                    venue_configs=config.venues,
-                    data_configs=config.data,
-                    strategy_configs=config.strategies,
-                    batch_size_bytes=config.batch_size_bytes,
-                )
+            config.check()  # check all values set
+            result = self._run_delayed(
+                run_config_id=config.id,
+                venue_configs=config.venues,
+                data_configs=config.data,
+                strategy_configs=config.strategies,
+                batch_size_bytes=config.batch_size_bytes,
             )
+            results.append(result)
+
         return self._gather_delayed(results)
 
-    def run_sync(self, run_configs: List[BacktestRunConfig]) -> BacktestRunResults:
+    def run_sync(self, run_configs: List[BacktestRunConfig]) -> List[BacktestResult]:
         """
         Run a list of backtest configs synchronously.
 
@@ -107,53 +110,42 @@ class BacktestNode:
         """
         results: List[BacktestResult] = []
         for config in run_configs:
-            config.check(ignore=("name",))  # check all values set
-            results.append(
-                self._run(
-                    name=config.name or f"backtest-{tokenize(config)}",
-                    venue_configs=config.venues,
-                    data_configs=config.data,
-                    strategy_configs=config.strategies,
-                    batch_size_bytes=config.batch_size_bytes,
-                )
+            config.check()  # check all values set
+            result = self._run(
+                run_config_id=config.id,
+                venue_configs=config.venues,
+                data_configs=config.data,
+                strategy_configs=config.strategies,
+                batch_size_bytes=config.batch_size_bytes,
             )
-        return self._gather(results)
+            results.append(result)
 
-    # @dask.delayed(pure=True)
-    # def _load_delayed(self, config: BacktestDataConfig):
-    #     return self._load(config=config)
-    #
-    # def _load(self, config: BacktestDataConfig):
-    #     query = config.query
-    #     return {
-    #         "type": query["cls"],
-    #         "data": config.catalog.query(**query),
-    #         "instrument": config.catalog.instruments(
-    #             instrument_ids=config.instrument_id, as_nautilus=True
-    #         )[0],
-    #         "client_id": config.client_id,
-    #     }
+        return results
 
     @dask.delayed
     def _run_delayed(
         self,
-        name: str,
+        run_config_id: str,
         venue_configs: List[BacktestVenueConfig],
         data_configs: List[BacktestDataConfig],
         strategy_configs: List[ImportableStrategyConfig],
         batch_size_bytes: Optional[int] = None,
-    ):
+    ) -> BacktestResult:
         return self._run(
-            name=name,
+            run_config_id=run_config_id,
             venue_configs=venue_configs,
             data_configs=data_configs,
             strategy_configs=strategy_configs,
             batch_size_bytes=batch_size_bytes,
         )
 
+    @dask.delayed
+    def _gather_delayed(self, *results):
+        return results
+
     def _run(
         self,
-        name,
+        run_config_id: str,
         venue_configs: List[BacktestVenueConfig],
         data_configs: List[BacktestDataConfig],
         strategy_configs: List[ImportableStrategyConfig],
@@ -163,17 +155,31 @@ class BacktestNode:
             venue_configs=venue_configs,
             data_configs=data_configs,
         )
-        results: BacktestResult = self._run_engine(
-            name=name,
+        # Create strategies
+        strategies: List[TradingStrategy] = [
+            StrategyFactory.create(config) for config in strategy_configs
+        ]
+
+        engine.add_strategies(strategies)
+
+        # Run backtest
+        backtest_runner(
+            run_config_id=run_config_id,
             engine=engine,
             data_configs=data_configs,
-            strategy_configs=strategy_configs,
             batch_size_bytes=batch_size_bytes,
         )
-        return results
+
+        result = engine.get_result()
+
+        engine.dispose()
+
+        return result
 
     def _create_engine(
-        self, venue_configs: List[BacktestVenueConfig], data_configs: List[BacktestDataConfig]
+        self,
+        venue_configs: List[BacktestVenueConfig],
+        data_configs: List[BacktestDataConfig],
     ):
         # Configure backtest engine
         config = BacktestEngineConfig(
@@ -203,44 +209,6 @@ class BacktestNode:
             )
         return engine
 
-    def _run_engine(
-        self,
-        name: str,
-        engine: BacktestEngine,
-        data_configs: List[BacktestDataConfig],
-        strategy_configs: List[ImportableStrategyConfig],
-        batch_size_bytes: Optional[int] = None,
-    ) -> BacktestResult:
-        """
-        Actual execution of a backtest instance. Creates strategies and runs the engine
-        """
-        # Create strategies
-        strategies: List[TradingStrategy] = [
-            StrategyFactory.create(config) for config in strategy_configs
-        ]
-
-        engine.add_strategies(strategies)
-
-        # Actual run backtest
-        backtest_runner(
-            engine=engine,
-            data_configs=data_configs,
-            batch_size_bytes=batch_size_bytes,
-        )
-
-        result = BacktestResult.from_engine(backtest_id=name, engine=engine)
-
-        engine.dispose()
-
-        return result
-
-    @dask.delayed
-    def _gather_delayed(self, *results):
-        return self._gather(*results)
-
-    def _gather(self, *results) -> BacktestRunResults:
-        return BacktestRunResults(sum(results, list()))
-
 
 def _load_engine_data(engine: BacktestEngine, data):
     if data["type"] == QuoteTick:
@@ -254,13 +222,15 @@ def _load_engine_data(engine: BacktestEngine, data):
 
 
 def backtest_runner(
+    run_config_id: str,
     engine: BacktestEngine,
     data_configs: List[BacktestDataConfig],
     batch_size_bytes: Optional[int] = None,
 ):
-    """Execute a backtest run"""
+    """Execute a backtest run."""
     if batch_size_bytes is not None:
         return streaming_backtest_runner(
+            run_config_id=run_config_id,
             engine=engine,
             data_configs=data_configs,
             batch_size_bytes=batch_size_bytes,
@@ -271,48 +241,50 @@ def backtest_runner(
         d = config.load()
         _load_engine_data(engine=engine, data=d)
 
-    return engine.run()
+    return engine.run(run_config_id=run_config_id)
+
+
+def _groupby_key(x):
+    return type(x).__name__
+
+
+def groupby_datatype(data):
+    return [
+        {"type": type(v[0]), "data": v}
+        for v in [
+            list(v) for _, v in itertools.groupby(sorted(data, key=_groupby_key), key=_groupby_key)
+        ]
+    ]
 
 
 def streaming_backtest_runner(
+    run_config_id: str,
     engine: BacktestEngine,
     data_configs: List[BacktestDataConfig],
     batch_size_bytes: Optional[int] = None,
 ):
     config = data_configs[0]
-    catalog = config.catalog()
+    catalog: DataCatalog = config.catalog()
+    start_time = maybe_dt_to_unix_nanos(pd.Timestamp(min(dc.start_time for dc in data_configs)))
+    end_time = maybe_dt_to_unix_nanos(pd.Timestamp(max(dc.end_time for dc in data_configs)))
 
-    streaming_kw = merge_data_configs_for_calc_streaming_chunks(data_configs=data_configs)
-    for start, end in catalog.calc_streaming_chunks(**streaming_kw, target_size=batch_size_bytes):
-        print(f"Streaming backtest run from {pd.Timestamp(start)} to {pd.Timestamp(end)}")
+    for data in batch_files(
+        catalog=catalog,
+        data_configs=data_configs,
+        start_time=start_time,
+        end_time=end_time,
+        target_batch_size_bytes=batch_size_bytes,
+    ):
         engine.clear_data()
-        for config in data_configs:
-            data = config.load(start_time=start, end_time=end)
+        for data in groupby_datatype(data):
             _load_engine_data(engine=engine, data=data)
-        engine.run_streaming(start=start, end=end)
+        engine.run_streaming(run_config_id=run_config_id)
     engine.end_streaming()
 
 
 # Register tokenization methods with dask
 for cls in Instrument.__subclasses__():
     normalize_token.register(cls, func=cls.to_dict)
-
-
-def merge_data_configs_for_calc_streaming_chunks(data_configs: List[BacktestDataConfig]):
-    instrument_ids = [c.instrument_id for c in data_configs]
-    data_types = [c.data_type for c in data_configs]
-    starts = [c.start_time for c in data_configs]
-    if len(set(starts)) > 1:
-        logger.warning("Multiple start dates in data_configs, using min")
-    ends = [c.end_time for c in data_configs]
-    if len(set(ends)) > 1:
-        logger.warning("Multiple start dates in data_configs, using min")
-    return {
-        "instrument_ids": instrument_ids,
-        "data_types": data_types,
-        "start_time": starts[0],
-        "end_time": ends[0],
-    }
 
 
 @normalize_token.register(object)

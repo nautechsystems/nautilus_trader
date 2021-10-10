@@ -13,8 +13,10 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+import numpy as np
+from libc.stdint cimport int64_t
+
 import random
-from decimal import Decimal
 
 import pandas as pd
 
@@ -50,7 +52,8 @@ cdef class QuoteTickDataWrangler:
     def process(
         self,
         data: pd.DataFrame,
-        default_volume=1_000_000,
+        default_volume: float=1_000_000.0,
+        ts_init_delta: int=0,
     ):
         """
         Process the give tick dataset into Nautilus `QuoteTick` objects.
@@ -63,8 +66,12 @@ cdef class QuoteTickDataWrangler:
         ----------
         data : pd.DataFrame
             The tick data to process.
-        default_volume : int, float or Decimal
+        default_volume : float
             The default volume for each tick (if not provided).
+        ts_init_delta : int
+            The difference in nanoseconds between the data timestamps and the
+            `ts_init` value. Can be used to represent/simulate latency between
+            the data source and the Nautilus system. Cannot be negative.
 
         Returns
         -------
@@ -81,17 +88,22 @@ cdef class QuoteTickDataWrangler:
         if "ask_size" not in data.columns:
             data["ask_size"] = float(default_volume)
 
+        cdef int64_t[:] ts_events = np.ascontiguousarray([secs_to_nanos(dt.timestamp()) for dt in data.index], dtype=np.int64)  # noqa
+        cdef int64_t[:] ts_inits = np.ascontiguousarray([ts_event + ts_init_delta for ts_event in ts_events], dtype=np.int64)  # noqa
+
         return list(map(
             self._build_tick,
             data.values,
-            [<double>dt.timestamp() for dt in data.index],
+            ts_events,
+            ts_inits,
         ))
 
     def process_bar_data(
         self,
         bid_data: pd.DataFrame,
         ask_data: pd.DataFrame,
-        default_volume=1_000_000,
+        default_volume: float=1_000_000.0,
+        ts_init_delta: int=0,
         random_seed=None,
     ):
         """
@@ -106,8 +118,12 @@ cdef class QuoteTickDataWrangler:
             The bid bar data.
         ask_data : pd.DataFrame
             The ask bar data.
-        default_volume : Decimal
+        default_volume : float
             The volume per tick if not available from the data.
+        ts_init_delta : int
+            The difference in nanoseconds between the data timestamps and the
+            `ts_init` value. Can be used to represent/simulate latency between
+            the data source and the Nautilus system.
         random_seed : int, optional
             The random seed for shuffling order of high and low ticks from bar
             data. If random_seed is ``None`` then won't shuffle.
@@ -184,14 +200,18 @@ cdef class QuoteTickDataWrangler:
                     df_ticks_final.iloc[i + 1] = low
                     df_ticks_final.iloc[i + 2] = high
 
+        cdef int64_t[:] ts_events = np.ascontiguousarray([secs_to_nanos(dt.timestamp()) for dt in df_ticks_final.index], dtype=np.int64)  # noqa
+        cdef int64_t[:] ts_inits = np.ascontiguousarray([ts_event + ts_init_delta for ts_event in ts_events], dtype=np.int64)  # noqa
+
         return list(map(
             self._build_tick,
             df_ticks_final.values,
-            [dt.timestamp() for dt in df_ticks_final.index],
+            ts_events,
+            ts_inits,
         ))
 
     # cpdef method for Python wrap() (called with map)
-    cpdef QuoteTick _build_tick(self, double[:] values, double timestamp):
+    cpdef QuoteTick _build_tick(self, double[:] values, int64_t ts_event, int64_t ts_init):
         # Build a quote tick from the given values. The function expects the values to
         # be an ndarray with 4 elements [bid, ask, bid_size, ask_size] of type double.
         return QuoteTick(
@@ -200,8 +220,8 @@ cdef class QuoteTickDataWrangler:
             ask=Price(values[1], self.instrument.price_precision),
             bid_size=Quantity(values[2], self.instrument.size_precision),
             ask_size=Quantity(values[3], self.instrument.size_precision),
-            ts_event=secs_to_nanos(timestamp),  # TODO(cs): Hardcoded identical for now
-            ts_init=secs_to_nanos(timestamp),
+            ts_event=ts_event,
+            ts_init=ts_init,
         )
 
 
@@ -222,7 +242,7 @@ cdef class TradeTickDataWrangler:
         """
         self.instrument = instrument
 
-    def process(self, data: pd.DataFrame):
+    def process(self, data: pd.DataFrame, ts_init_delta: int=0):
         """
         Process the given trade tick dataset into Nautilus `TradeTick` objects.
 
@@ -230,6 +250,10 @@ cdef class TradeTickDataWrangler:
         ----------
         data : pd.DataFrame
             The data to process.
+        ts_init_delta : int
+            The difference in nanoseconds between the data timestamps and the
+            `ts_init` value. Can be used to represent/simulate latency between
+            the data source and the Nautilus system.
 
         Raises
         ------
@@ -248,10 +272,14 @@ cdef class TradeTickDataWrangler:
         processed["aggressor_side"] = self._create_side_if_not_exist(data)
         processed["match_id"] = data["trade_id"].apply(str)
 
+        cdef int64_t[:] ts_events = np.ascontiguousarray([secs_to_nanos(dt.timestamp()) for dt in data.index], dtype=np.int64)  # noqa
+        cdef int64_t[:] ts_inits = np.ascontiguousarray([ts_event + ts_init_delta for ts_event in ts_events], dtype=np.int64)  # noqa
+
         return list(map(
             self._build_tick,
             processed.values,
-            [dt.timestamp() for dt in data.index],
+            ts_events,
+            ts_inits,
         ))
 
     def _create_side_if_not_exist(self, data):
@@ -261,7 +289,7 @@ cdef class TradeTickDataWrangler:
             return data["buyer_maker"].apply(lambda x: "SELL" if x is True else "BUY")
 
     # cpdef method for Python wrap() (called with map)
-    cpdef TradeTick _build_tick(self, str[:] values, double timestamp):
+    cpdef TradeTick _build_tick(self, str[:] values, int64_t ts_event, int64_t ts_init):
         # Build a quote tick from the given values. The function expects the values to
         # be an ndarray with 4 elements [bid, ask, bid_size, ask_size] of type double.
         return TradeTick(
@@ -270,8 +298,8 @@ cdef class TradeTickDataWrangler:
             size=Quantity(values[1], self.instrument.size_precision),
             aggressor_side=AggressorSideParser.from_str(values[2]),
             match_id=values[3],
-            ts_event=secs_to_nanos(timestamp),  # TODO(cs): Hardcoded identical for now
-            ts_init=secs_to_nanos(timestamp),
+            ts_event=ts_event,
+            ts_init=ts_init,
         )
 
 
@@ -305,7 +333,8 @@ cdef class BarDataWrangler:
     def process(
         self,
         data: pd.DataFrame,
-        default_volume=Decimal(1_000_000),
+        default_volume: float=1_000_000.0,
+        ts_init_delta: int=0,
     ):
         """
         Process the given bar dataset into Nautilus `Bar` objects.
@@ -317,8 +346,12 @@ cdef class BarDataWrangler:
         ----------
         data : pd.DataFrame
             The data to process.
-        default_volume : int, float or Decimal
+        default_volume : float
             The default volume for each bar (if not provided).
+        ts_init_delta : int
+            The difference in nanoseconds between the data timestamps and the
+            `ts_init` value. Can be used to represent/simulate latency between
+            the data source and the Nautilus system.
 
         Returns
         -------
@@ -339,14 +372,18 @@ cdef class BarDataWrangler:
         if "volume" not in data:
             data["volume"] = float(default_volume)
 
+        cdef int64_t[:] ts_events = np.ascontiguousarray([secs_to_nanos(dt.timestamp()) for dt in data.index], dtype=np.int64)  # noqa
+        cdef int64_t[:] ts_inits = np.ascontiguousarray([ts_event + ts_init_delta for ts_event in ts_events], dtype=np.int64)  # noqa
+
         return list(map(
             self._build_bar,
             data.values,
-            [<double>dt.timestamp() for dt in data.index],
+            ts_events,
+            ts_inits
         ))
 
     # cpdef method for Python wrap() (called with map)
-    cpdef Bar _build_bar(self, double[:] values, double timestamp):
+    cpdef Bar _build_bar(self, double[:] values, int64_t ts_event, int64_t ts_init):
         # Build a bar from the given index and values. The function expects the
         # values to be an ndarray with 5 elements [open, high, low, close, volume].
         return Bar(
@@ -356,6 +393,6 @@ cdef class BarDataWrangler:
             low=Price(values[2], self.instrument.price_precision),
             close=Price(values[3], self.instrument.price_precision),
             volume=Quantity(values[4], self.instrument.size_precision),
-            ts_event=secs_to_nanos(timestamp),  # TODO(cs): Hardcoded identical for now
-            ts_init=secs_to_nanos(timestamp),
+            ts_event=ts_event,
+            ts_init=ts_init,
         )

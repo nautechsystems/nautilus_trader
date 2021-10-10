@@ -13,7 +13,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import pydantic
 import redis
 
 from nautilus_trader.accounting.accounts.base cimport Account
@@ -38,6 +37,8 @@ from nautilus_trader.model.position cimport Position
 from nautilus_trader.serialization.base cimport Serializer
 from nautilus_trader.trading.strategy cimport TradingStrategy
 
+from nautilus_trader.infrastructure.config import CacheDatabaseConfig
+
 
 cdef str _UTF8 = 'utf-8'
 cdef str _CURRENCIES = 'Currencies'
@@ -47,26 +48,6 @@ cdef str _TRADER = 'Trader'
 cdef str _ORDERS = 'Orders'
 cdef str _POSITIONS = 'Positions'
 cdef str _STRATEGIES = 'Strategies'
-
-
-class CacheDatabaseConfig(pydantic.BaseModel):
-    """
-    Configuration for ``CacheDatabase`` instances.
-
-    type : str
-        The database type.
-    host : str
-        The database host address.
-    port : int
-        The database port.
-    flush : bool
-        If database should be flushed before start.
-    """
-
-    type: str = "redis"
-    host: str = "localhost"
-    port: int = 6379
-    flush: bool = False
 
 
 cdef class RedisCacheDatabase(CacheDatabase):

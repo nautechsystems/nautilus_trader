@@ -952,7 +952,8 @@ cdef class Portfolio(PortfolioFacade):
             net_position += position.net_qty
 
         self._net_positions[instrument_id] = net_position
-        self._log.info(f"{instrument_id} net_position={net_position}")
+        cdef str net_position_str = f"{net_position:,}".replace(",", "_")
+        self._log.info(f"{instrument_id} net_position={net_position_str}")
 
     cdef Money _calculate_unrealized_pnl(self, InstrumentId instrument_id):
         cdef Account account = self._cache.account_for_venue(instrument_id.venue)

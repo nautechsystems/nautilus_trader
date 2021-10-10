@@ -15,9 +15,9 @@
 
 
 cpdef enum AggressorSide:
-    UNKNOWN = 0,
-    BUY = 1,
-    SELL = 2,
+    UNKNOWN = 0
+    BUY = 1
+    SELL = 2
 
 
 cdef class AggressorSideParser:

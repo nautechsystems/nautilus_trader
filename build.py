@@ -5,6 +5,7 @@ import os
 import platform
 import shutil
 import sys
+from datetime import datetime
 from pathlib import Path
 from typing import List
 
@@ -17,7 +18,7 @@ from setuptools import Distribution
 from setuptools import Extension
 
 
-# If DEBUG mode is enabled, skip compiler optimizations (TODO: implement)
+# If DEBUG mode is enabled, skip compiler optimizations
 DEBUG_MODE = bool(os.getenv("DEBUG_MODE", ""))
 # If PROFILING mode is enabled, include traces necessary for coverage and profiling
 PROFILING_MODE = bool(os.getenv("PROFILING_MODE", ""))
@@ -50,8 +51,6 @@ CYTHON_COMPILER_DIRECTIVES = {
     "profile": PROFILING_MODE,  # If we're profiling, turn on line tracing
     "linetrace": PROFILING_MODE,
     "warn.maybe_uninitialized": True,
-    # "warn.unused_result": True,  # TODO(cs): Picks up legitimate unused variables
-    # "warn.unused": True,  # TODO(cs): Fails on unused entry 'genexpr'
 }
 
 
@@ -70,6 +69,7 @@ def _build_extensions() -> List[Extension]:
         extra_compile_args.append("-O3")
         extra_compile_args.append("-pipe")
 
+    print("Creating C extension modules...")
     print(f"define_macros={define_macros}")
     print(f"extra_compile_args={extra_compile_args}")
 
@@ -125,20 +125,22 @@ def _copy_build_dir_to_project(cmd: build_ext) -> None:
             continue
 
         # Copy the file and set permissions
-        print(f"Copying: {output} -> {relative_extension}")
         shutil.copyfile(output, relative_extension)
         mode = os.stat(relative_extension).st_mode
         mode |= (mode & 0o444) >> 2
         os.chmod(relative_extension, mode)
 
+    print("Copied all compiled '.so' dynamic library files into source")
+
 
 def build(setup_kwargs):
     """Construct the extensions and distribution."""  # noqa
-    # Build C Extensions to feed into cythonize()
+    # Create C Extensions to feed into cythonize()
     extensions = _build_extensions()
     distribution = _build_distribution(extensions)
 
     # Build and run the command
+    print("Compiling C extension modules...")
     cmd: build_ext = build_ext(distribution)
     if PARALLEL_BUILD:
         cmd.parallel = os.cpu_count()
@@ -152,10 +154,12 @@ def build(setup_kwargs):
 
 
 if __name__ == "__main__":
-    print("")
+    print("\033[36m")
     print("=====================================================================")
     print("Nautilus Builder")
-    print("=====================================================================")
+    print("=====================================================================\033[0m")
+
+    start_ts = datetime.utcnow()
 
     # Work around a Cython problem in Python 3.8.x on macOS
     # https://github.com/cython/cython/issues/3262
@@ -190,4 +194,5 @@ if __name__ == "__main__":
     print("")
 
     build({})
-    print("Build completed: nautilus_trader\n")
+    print(f"Build time: {datetime.utcnow() - start_ts}")
+    print("\033[32m" + "Build completed" + "\033[0m")

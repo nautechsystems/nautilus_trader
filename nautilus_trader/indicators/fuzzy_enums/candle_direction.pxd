@@ -15,6 +15,6 @@
 
 
 cpdef enum CandleDirection:
-    BULL = 1,
-    NONE = 0,  # Doji
-    BEAR = -1,
+    BULL = 1
+    NONE = 0  # Doji
+    BEAR = -1

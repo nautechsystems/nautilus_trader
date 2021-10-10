@@ -34,9 +34,9 @@ cdef class ComponentFSMFactory:
 
 
 cdef class Component:
-    cdef Clock _clock
-    cdef UUIDFactory _uuid_factory
-    cdef LoggerAdapter _log
+    cdef readonly Clock _clock
+    cdef readonly UUIDFactory _uuid_factory
+    cdef readonly LoggerAdapter _log
     cdef FiniteStateMachine _fsm
     cdef MessageBus _msgbus
     cdef dict _config

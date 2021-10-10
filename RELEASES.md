@@ -1,3 +1,35 @@
+# NautilusTrader 1.131.0 Beta - Release Notes
+
+Released on 10th, October 2021
+
+## Breaking Changes
+- Renamed `nanos_to_unix_dt` to `unix_nanos_to_dt` (more accurate name).
+- Changed `Clock.set_time_alert(...)` method signature.
+- Changed `Clock.set_timer(...)` method signature.
+- Removed `pd.Timestamp` from `TimeEvent`.
+
+## Enhancements
+- `OrderList` submission and OTO, OCO contingencies now operational.
+- Added `Cache.orders_for_position(...)` method.
+- Added `Cache.position_for_order(...)` method.
+- Added `SimulatedExchange.get_working_bid_orders(...)` method.
+- Added `SimulatedExchange.get_working_ask_orders(...)` method.
+- Added optional `run_config_id` for backtest runs.
+- Added `BacktestResult` object.
+- Added `Clock.set_time_alert_ns(...)` method.
+- Added `Clock.set_timer_ns(...)` method.
+- Added `fill_limit_at_price` simulated exchange option.
+- Added `fill_stop_at_price` simulated exchange option.
+- Improve timer and time event efficiency.
+
+## Fixes
+- Fixed `OrderUpdated` leaves quantity calculation.
+- Fixed contingency order logic at the exchange.
+- Fixed indexing of orders for a position in the cache.
+- Fixed flip logic for zero sized positions (not a flip).
+
+---
+
 # NautilusTrader 1.130.0 Beta - Release Notes
 
 Released on 26th, September 2021

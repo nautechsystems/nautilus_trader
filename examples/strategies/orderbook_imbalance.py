@@ -30,13 +30,13 @@ from nautilus_trader.trading.strategy import TradingStrategyConfig
 # *** IT IS NOT INTENDED TO BE USED TO TRADE LIVE WITH REAL MONEY. ***
 
 
-class OrderbookImbalanceConfig(TradingStrategyConfig):
+class OrderBookImbalanceConfig(TradingStrategyConfig):
     """
-    Configuration for ``OrderbookImbalance`` instances.
+    Configuration for ``OrderBookImbalance`` instances.
 
     instrument_id : InstrumentId
         The instrument ID for the strategy.
-    max_trade_size : Decimal
+    max_trade_size : str
         The max position size per trade (volume on the level can be less).
     trigger_min_size : float
         The minimum size on the larger side to trigger an order.
@@ -54,12 +54,12 @@ class OrderbookImbalanceConfig(TradingStrategyConfig):
     """
 
     instrument_id: str
-    max_trade_size: Decimal
-    trigger_min_size = 100.0
-    trigger_imbalance_ratio = 0.20
+    max_trade_size: str
+    trigger_min_size: float = 100.0
+    trigger_imbalance_ratio: float = 0.20
 
 
-class OrderbookImbalance(TradingStrategy):
+class OrderBookImbalance(TradingStrategy):
     """
     A simple strategy that sends FAK limit orders when there is a bid/ask
     imbalance in the order book.
@@ -67,7 +67,7 @@ class OrderbookImbalance(TradingStrategy):
     Cancels all orders and flattens all positions on stop.
     """
 
-    def __init__(self, config: OrderbookImbalanceConfig):
+    def __init__(self, config: OrderBookImbalanceConfig):
         """
         Initialize a new instance of the ``OrderbookImbalance`` class.
 
@@ -82,7 +82,7 @@ class OrderbookImbalance(TradingStrategy):
 
         # Configuration
         self.instrument_id = InstrumentId.from_str(config.instrument_id)
-        self.max_trade_size = config.max_trade_size
+        self.max_trade_size = Decimal(config.max_trade_size)
         self.trigger_min_size = config.trigger_min_size
         self.trigger_imbalance_ratio = config.trigger_imbalance_ratio
 

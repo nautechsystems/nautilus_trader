@@ -15,21 +15,19 @@
 
 import asyncio
 
+import pandas as pd
 from cpython.datetime cimport datetime
 
 from nautilus_trader.cache.cache cimport Cache
 from nautilus_trader.common.clock cimport LiveClock
-from nautilus_trader.common.logging cimport LiveLogger
 from nautilus_trader.common.logging cimport LogColor
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.common.providers cimport InstrumentProvider
 from nautilus_trader.core.correctness cimport Condition
-from nautilus_trader.core.datetime cimport nanos_to_unix_dt
 from nautilus_trader.execution.client cimport ExecutionClient
 from nautilus_trader.execution.messages cimport ExecutionMassStatus
 from nautilus_trader.execution.messages cimport ExecutionReport
 from nautilus_trader.execution.messages cimport OrderStatusReport
-from nautilus_trader.live.execution_engine cimport LiveExecutionEngine
 from nautilus_trader.model.c_enums.account_type cimport AccountType
 from nautilus_trader.model.c_enums.order_status cimport OrderStatus
 from nautilus_trader.model.c_enums.order_status cimport OrderStatusParser
@@ -42,50 +40,6 @@ from nautilus_trader.model.identifiers cimport VenueOrderId
 from nautilus_trader.model.instruments.base cimport Instrument
 from nautilus_trader.model.orders.base cimport Order
 from nautilus_trader.msgbus.bus cimport MessageBus
-
-
-cdef class LiveExecutionClientFactory:
-    """
-    Provides a factory for creating `LiveDataClient` instances.
-    """
-
-    @staticmethod
-    def create(
-        str name not None,
-        dict config not None,
-        LiveExecutionEngine engine not None,
-        Cache cache not None,
-        LiveClock clock not None,
-        LiveLogger logger not None,
-        client_cls=None,
-    ):
-        """
-        Return a new execution client from the given parameters.
-
-        Parameters
-        ----------
-        name : str
-            The client name.
-        config : dict[str, object]
-            The configuration for the client.
-        engine : LiveDataEngine
-            The engine for the client.
-        cache : Cache
-            The cache for the client.
-        clock : LiveClock
-            The clock for the client.
-        logger : LiveLogger
-            The logger for the client.
-        client_cls : class, optional
-            The internal client constructor. This allows external library and
-            testing dependency injection.
-
-        Returns
-        -------
-        LiveExecutionClient
-
-        """
-        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
 
 cdef class LiveExecutionClient(ExecutionClient):
@@ -286,7 +240,7 @@ cdef class LiveExecutionClient(ExecutionClient):
                 exec_reports = await self.generate_exec_reports(
                     venue_order_id=order.venue_order_id,
                     symbol=order.instrument_id.symbol,
-                    since=nanos_to_unix_dt(nanos=order.ts_init),
+                    since=pd.Timestamp(order.ts_init, tz="UTC"),
                 )
                 mass_status.add_exec_reports(order.venue_order_id, exec_reports)
 
