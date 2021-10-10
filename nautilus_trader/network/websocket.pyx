@@ -79,7 +79,7 @@ cdef class WebSocketClient:
         self._stopped = False
         self._trigger_stop = False
 
-    async def connect(self, bint start=True):
+    async def connect(self, bint start=True) -> None:
         self._session = aiohttp.ClientSession(loop=self._loop)
         self._log.debug(f"Connecting to websocket: {self.ws_url}")
         self._ws = await self._session.ws_connect(url=self.ws_url, **self._ws_connect_kwargs)
@@ -93,18 +93,18 @@ cdef class WebSocketClient:
         """ Optional post connect to send any connection messages or other. Called before start()"""
         pass
 
-    async def disconnect(self):
+    async def disconnect(self) -> None:
         self._trigger_stop = True
         while not self._stopped:
             await self._sleep0()
         await self._ws.close()
         self._log.debug("Websocket closed")
 
-    async def send(self, bytes raw):
+    async def send(self, raw: bytes) -> None:
         self._log.debug("SEND:" + str(raw))
         await self._ws.send_bytes(raw)
 
-    async def recv(self):
+    async def recv(self) -> bytes:
         try:
             resp: WSMessage = await self._ws.receive()
             return resp.data
@@ -112,7 +112,7 @@ cdef class WebSocketClient:
             self._log.exception(ex)
             await self.connect(start=False)
 
-    async def start(self):
+    async def start(self) -> None:
         self._log.debug("Starting recv loop")
         while self._running:
             try:

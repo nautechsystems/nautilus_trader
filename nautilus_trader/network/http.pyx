@@ -16,12 +16,11 @@
 import asyncio
 import socket
 from ssl import SSLContext
-from typing import List, Union
+from typing import Dict, List, Optional, Union
 
 import aiohttp
 import cython
 from aiohttp import ClientResponse
-from aiohttp import ClientResponseError
 from aiohttp import ClientSession
 from aiohttp import Fingerprint
 
@@ -102,7 +101,7 @@ cdef class HTTPClient:
         self._sessions_idx += 1
         return self._sessions[idx]
 
-    async def connect(self):
+    async def connect(self) -> None:
         self._log.debug("Connecting sessions...")
         self._sessions = [aiohttp.ClientSession(
             connector=aiohttp.TCPConnector(
@@ -123,7 +122,7 @@ cdef class HTTPClient:
         self._sessions_idx = 0
         self._log.debug(f"Connected sessions: {self._sessions}.")
 
-    async def disconnect(self):
+    async def disconnect(self) -> None:
         for session in self._sessions:
             self._log.debug(f"Closing session: {session}...")
             await session.close()
@@ -131,13 +130,12 @@ cdef class HTTPClient:
 
     async def request(
         self,
-        str method,
-        str url,
-        dict headers=None,
-        dict json=None,
+        method: str,
+        url: str,
+        headers: Optional[Dict[str, str]]=None,
+        json: Optional[Dict[str, str]]=None,
         **kwargs,
     ) -> ClientResponse:
-        # self._log.debug(f"Request: {method=}, {url=}, {headers=}, {json=}, {kwargs if kwargs else ''}")
         session: ClientSession = self._get_session()
         if session.closed:
             self._log.warning("Session closed: reconnecting.")
@@ -149,25 +147,32 @@ cdef class HTTPClient:
             json=json,
             **kwargs
         ) as resp:
-            try:
-                resp.data = await resp.read()
-                resp.raise_for_status()
-                return resp
-            except ClientResponseError as ex:
-                self._log.exception(ex)
-                raise ResponseException(resp=resp, client_response_error=ex)
+            resp.raise_for_status()
+            resp.data = await resp.read()
+            return resp
 
-    async def get(self, str url, **kwargs):
-        return await self.request(method="GET", url=url, **kwargs)
+    async def get(
+        self,
+        url: str,
+        headers: Optional[Dict[str, str]]=None,
+        **kwargs,
+    ) -> ClientResponse:
+        return await self.request(
+            method="GET",
+            url=url,
+            headers=headers,
+            **kwargs,
+        )
 
-    async def post(self, str url, **kwargs):
-        return await self.request(method="POST", url=url, **kwargs)
-
-    # TODO more convenience methods?
-
-
-class ResponseException(BaseException):
-    def __init__(self, resp: ClientResponse, client_response_error: ClientResponseError):
-        super().__init__()
-        self.resp = resp
-        self.client_response_error = client_response_error
+    async def post(
+        self,
+        url: str,
+        headers: Optional[Dict[str, str]]=None,
+        **kwargs,
+    ) -> ClientResponse:
+        return await self.request(
+            method="POST",
+            url=url,
+            headers=headers,
+            **kwargs,
+        )

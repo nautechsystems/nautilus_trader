@@ -20,17 +20,22 @@
 import asyncio
 import hashlib
 import hmac
-import json
-import logging
-from json import JSONDecodeError
 from typing import Dict
-from urllib.parse import urlencode
 
+from aiohttp import ClientResponse
+from aiohttp import ClientResponseError
+
+import nautilus_trader
 from nautilus_trader.adapters.binance.client.error import BinanceClientError
 from nautilus_trader.adapters.binance.client.error import BinanceServerError
+from nautilus_trader.adapters.binance.client.parsing import clean_none_value
+from nautilus_trader.adapters.binance.client.parsing import encoded_string
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.network.http import HTTPClient
+
+
+NAUTILUS_VERSION = nautilus_trader.__version__
 
 
 class BinanceHTTPClient(HTTPClient):
@@ -47,7 +52,7 @@ class BinanceHTTPClient(HTTPClient):
         secret=None,
         base_url=None,
         timeout=None,
-        proxies=None,
+        proxies: Dict = None,
         show_limit_usage=False,
         show_header=False,
     ):
@@ -55,61 +60,68 @@ class BinanceHTTPClient(HTTPClient):
             loop=loop,
             logger=logger,
         )
-        self.clock = clock
-        self.key = key
-        self.secret = secret
-        self.timeout = timeout
-        self.show_limit_usage = False
-        self.show_header = False
-        self.proxies = None
-        self.headers: Dict[str, str] = {}
-        # self.session.headers.update(
-        #     {
-        #         "Content-Type": "application/json;charset=utf-8",
-        #         "User-Agent": "binance-connector/" + __version__,
-        #         "X-MBX-APIKEY": key,
-        #     }
-        # )
+        self._clock = clock
+        self._key = key
+        self._secret = secret
+        self._base_url = base_url
+        self._show_limit_usage = show_limit_usage
+        self._show_header = show_header
+        self._proxies = None
+        self._headers: Dict[str, str] = {
+            "Content-Type": "application/json;charset=utf-8",
+            "User-Agent": "nautilus-trader/" + NAUTILUS_VERSION,
+            "X-MBX-APIKEY": key,
+        }
 
-        if base_url:
-            self.base_url = base_url
+        if timeout is not None:
+            self._headers["timeout"] = timeout
+        # if proxies is not None:
+        #     self._headers["proxies"] = proxies
 
-        if show_limit_usage is True:
-            self.show_limit_usage = True
+    @property
+    def headers(self):
+        return self._headers
 
-        if show_header is True:
-            self.show_header = True
+    async def query(self, url_path, payload=None):
+        return await self.send_request("GET", url_path, payload=payload)
 
-        if type(proxies) is dict:
-            self.proxies = proxies
-
-        return
-
-    def query(self, url_path, payload=None):
-        return self.send_request("GET", url_path, payload=payload)
-
-    def limit_request(self, http_method, url_path, payload=None):
+    async def limit_request(
+        self,
+        http_method: str,
+        url_path: str,
+        payload: Dict[str, str] = None,
+    ):
         """
         Limit request is for those endpoints require API key in the header.
         """
         # check_required_parameter(self.key, "apiKey")
-        return self.send_request(http_method, url_path, payload=payload)
+        return await self.send_request(http_method, url_path, payload=payload)
 
-    def sign_request(self, http_method, url_path, payload=None):
+    async def sign_request(
+        self,
+        http_method: str,
+        url_path: str,
+        payload: Dict[str, str] = None,
+    ):
         if payload is None:
             payload = {}
-        payload["timestamp"] = self.clock.timestamp() * 1000
+        payload["timestamp"] = self._clock.timestamp() * 1000
         query_string = self._prepare_params(payload)
         signature = self._get_sign(query_string)
         payload["signature"] = signature
-        return self.send_request(http_method, url_path, payload)
+        return await self.send_request(http_method, url_path, payload)
 
-    def limited_encoded_sign_request(self, http_method, url_path, payload=None):
+    async def limited_encoded_sign_request(
+        self,
+        http_method: str,
+        url_path: str,
+        payload: Dict[str, str] = None,
+    ) -> bytes:
         """
         Limit encoded sign request.
 
         This is used for some endpoints has special symbol in the url.
-        In some endpoints these symbols should not encoded
+        In some endpoints these symbols should not encoded.
         - @
         - [
         - ]
@@ -117,77 +129,72 @@ class BinanceHTTPClient(HTTPClient):
         """
         if payload is None:
             payload = {}
-        payload["timestamp"] = self.clock.timestamp() * 1000
+        payload["timestamp"] = self._clock.timestamp() * 1000
         query_string = self._prepare_params(payload)
         signature = self._get_sign(query_string)
         url_path = url_path + "?" + query_string + "&signature=" + signature
-        return self.send_request(http_method, url_path)
+        return await self.send_request(http_method, url_path)
 
-    def send_request(self, http_method, url_path, payload=None):
+    async def send_request(
+        self,
+        http_method: str,
+        url_path: str,
+        payload: Dict[str, str] = None,
+    ) -> bytes:
+        print(f"\nRequest: {http_method}, {url_path}, {self._headers}, {payload}")
         if payload is None:
             payload = {}
-        url = self.base_url + url_path
-        logging.debug("url: " + url)
-        params = {
-            "url": url,
-            "params": self._prepare_params(payload),
-            "timeout": self.timeout,
-            "proxies": self.proxies,
-        }
-        response = self._dispatch_request(http_method)(**params)
-        logging.debug("raw response from server:" + response.text)
-        self._handle_exception(response)
-
         try:
-            data = response.json()
-        except ValueError:
-            data = response.text
-        result = {}
+            resp: ClientResponse = await self.request(
+                method=http_method,
+                url=self._base_url + url_path,
+                headers=self._headers,
+                params=self._prepare_params(payload),
+            )
+        except ClientResponseError as ex:
+            await self._handle_exception(ex)
 
-        if self.show_limit_usage:
+        result = {}
+        if self._show_limit_usage:
             limit_usage = {}
-            for key in response.headers.keys():
+            for key in resp.headers.keys():
                 key = key.lower()
                 if (
                     key.startswith("x-mbx-used-weight")
                     or key.startswith("x-mbx-order-count")
                     or key.startswith("x-sapi-used")
                 ):
-                    limit_usage[key] = response.headers[key]
+                    limit_usage[key] = resp.headers[key]
             result["limit_usage"] = limit_usage
 
-        if self.show_header:
-            result["header"] = response.headers
+        if self._show_header:
+            result["header"] = resp.headers
 
-        if len(result) != 0:
-            result["data"] = data
-            return result
+        # if len(result) != 0:
+        #     result["data"] = resp.data
+        #     return result
 
-        return data
+        return resp.data
 
-    def _prepare_params(self, params):
-        return urlencode(clean_none_value(params), True).replace("%40", "@")
+    def _prepare_params(self, params) -> str:
+        return encoded_string(clean_none_value(params))
 
     def _get_sign(self, data):
         m = hmac.new(self.secret.encode("utf-8"), data.encode("utf-8"), hashlib.sha256)
         return m.hexdigest()
 
-    def _handle_exception(self, response):
-        status_code = response.status_code
-        if status_code < 400:
+    async def _handle_exception(self, error: ClientResponseError):
+        if error.status < 400:
             return
-        if 400 <= status_code < 500:
-            try:
-                err = json.loads(response.text)
-            except JSONDecodeError:
-                raise BinanceClientError(status_code, None, response.text, response.headers)
-            raise BinanceClientError(status_code, err["code"], err["msg"], response.headers)
-        raise BinanceServerError(status_code, response.text)
-
-
-def clean_none_value(d) -> dict:
-    out = {}
-    for k in d.keys():
-        if d[k] is not None:
-            out[k] = d[k]
-    return out
+        elif 400 <= error.status < 500:
+            raise BinanceClientError(
+                status=error.status,
+                message=error.message,
+                headers=error.headers,
+            )
+        else:
+            raise BinanceServerError(
+                status=error.status,
+                message=error.message,
+                headers=error.headers,
+            )
