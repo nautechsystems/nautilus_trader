@@ -19,5 +19,5 @@ from nautilus_trader.model.objects cimport Price
 cdef class TickScheme:
     cdef readonly Price min_tick
     cdef readonly Price max_tick
-    cpdef Price next_ask_tick(self, double price)
-    cpdef Price next_bid_tick(self, double price)
+    cpdef Price nearest_ask_tick(self, double price)
+    cpdef Price nearest_bid_tick(self, double price)

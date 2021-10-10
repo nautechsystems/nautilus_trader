@@ -51,7 +51,7 @@ cdef class FixedTickScheme(TickScheme):
         self.max_tick = max_tick
         self.increment = Price.from_str_c('1'.zfill(price_precision))
 
-    cpdef Price next_ask_tick(self, double value):
+    cpdef Price nearest_ask_tick(self, double value):
         """
         For a given price, return the next ask (higher) price on the ladder
 
@@ -64,7 +64,7 @@ cdef class FixedTickScheme(TickScheme):
         cdef double rounded = round_up(value=value, base=base)
         return Price(rounded, precision=self.price_precision)
 
-    cpdef Price next_bid_tick(self, double value):
+    cpdef Price nearest_bid_tick(self, double value):
         """
         For a given price, return the next bid (lower)price on the ladder
 

@@ -26,5 +26,5 @@ cdef class TieredTickScheme(TickScheme):
     cdef np.ndarray precisions
 
     cpdef int get_boundaries_idx(self, double value)
-    cpdef Price next_ask_tick(self, double price)
-    cpdef Price next_bid_tick(self, double price)
+    cpdef Price nearest_ask_tick(self, double price)
+    cpdef Price nearest_bid_tick(self, double price)
