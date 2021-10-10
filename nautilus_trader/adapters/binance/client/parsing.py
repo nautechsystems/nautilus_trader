@@ -11,36 +11,29 @@
 #  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
-
+#
 #  Heavily refactored from MIT licensed github.com/binance/binance-connector-python
-#  https://github.com/binance/binance-connector-python/blob/master/binance/error.py
 #  Original author: Jeremy https://github.com/2pd
 # -------------------------------------------------------------------------------------------------
 
-
-class BinanceError(Exception):
-    """
-    The base class for all `Binance` specific errors.
-    """
+import json
+from urllib.parse import urlencode
 
 
-class BinanceServerError(BinanceError):
-    """
-    Represents a `Binance` specific 500 series HTTP error.
-    """
-
-    def __init__(self, status, message, headers):
-        self.status = status
-        self.message = message
-        self.headers = headers
+def clean_none_value(d) -> dict:
+    out = {}
+    for k in d.keys():
+        if d[k] is not None:
+            out[k] = d[k]
+    return out
 
 
-class BinanceClientError(BinanceError):
-    """
-    Represents a `Binance` specific 400 series HTTP error.
-    """
+def encoded_string(query):
+    return urlencode(query, True).replace("%40", "@").replace("%2F", "/")
 
-    def __init__(self, status, message, headers):
-        self.status = status
-        self.message = message
-        self.headers = headers
+
+def convert_list_to_json_array(symbols):
+    if symbols is None:
+        return symbols
+    res = json.dumps(symbols)
+    return res.replace(" ", "")
