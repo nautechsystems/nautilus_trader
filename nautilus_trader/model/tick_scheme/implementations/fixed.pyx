@@ -13,7 +13,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.tick_scheme.base cimport TickScheme
 
@@ -59,7 +58,11 @@ cdef class FixedTickScheme(TickScheme):
         :param value: The price
         :return: Price
         """
-        return round_up(value=value, precision=self.price_precision)
+        if value > self.max_tick:
+            return None
+        cdef double base = 1 * 10 ** - float(self.price_precision)
+        cdef double rounded = round_up(value=value, base=base)
+        return Price(rounded, precision=self.price_precision)
 
     cpdef Price next_bid_tick(self, double value):
         """
@@ -68,20 +71,25 @@ cdef class FixedTickScheme(TickScheme):
         :param value: The price
         :return: Price
         """
-        return round_down(value=value)
+        if value < self.min_tick:
+            return None
+        cdef double base = 1 * 10 ** - float(self.price_precision)
+        cdef double rounded = round_down(value=value, base=base)
+        return Price(rounded, precision=self.price_precision)
+
 
 # Most FOREX pairs
 FixedTickScheme5Decimal = FixedTickScheme(
     price_precision=5,
-    min_tick=Price.from_str_c("0.0001"),
-    max_tick=Price.from_str_c("9.9999"),
+    min_tick=Price.from_str_c("0.00001"),
+    max_tick=Price.from_str_c("9.99999"),
 )
 
 # JPY denominated FOREX pairs
 FixedTickScheme3Decimal = FixedTickScheme(
     price_precision=3,
-    min_tick=Price.from_str_c("0.01"),
-    max_tick=Price.from_str_c("999.99"),
+    min_tick=Price.from_str_c("0.001"),
+    max_tick=Price.from_str_c("999.999"),
 )
 
 register_tick_scheme("FixedTickScheme5Decimal", FixedTickScheme5Decimal)

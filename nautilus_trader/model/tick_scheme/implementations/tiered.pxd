@@ -12,7 +12,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
-from numpy cimport ndarray
+cimport numpy as np
 
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.tick_scheme.base cimport TickScheme
@@ -20,8 +20,11 @@ from nautilus_trader.model.tick_scheme.base cimport TickScheme
 
 cdef class TieredTickScheme(TickScheme):
     cdef list tiers
-    cdef ndarray ticks
+    cdef np.ndarray ticks
+    cdef np.ndarray boundaries
+    cdef readonly np.ndarray bases
+    cdef np.ndarray precisions
 
-    cdef ndarray build_ticks(self, list tiers)
+    cpdef int get_boundaries_idx(self, double value)
     cpdef Price next_ask_tick(self, double price)
     cpdef Price next_bid_tick(self, double price)

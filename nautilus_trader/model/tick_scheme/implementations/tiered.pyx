@@ -12,9 +12,11 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
-from numpy cimport ndarray
+cimport numpy as np
+
 import numpy as np
 
+from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.tick_scheme.base cimport TickScheme
 
@@ -38,9 +40,11 @@ cdef class TieredTickScheme(TickScheme):
             The tiers for the tick scheme. Should be a list of (start, stop, step) tuples
         """
         self.tiers = self._validate_tiers(tiers)
-        self.ticks: ndarray = self.build_ticks(tiers)
-        self.min_tick = self.ticks[0]
-        self.max_tick = self.ticks[-1]
+        self.min_tick = Price.from_str(str(tiers[0][0]))
+        self.max_tick = Price.from_str(str(tiers[-1][1]))
+        self.boundaries: np.ndarray[np.float_t] = np.asarray([0] + [t[0] for t in tiers])
+        self.bases: np.ndarray[np.int_t] = np.asarray([np.nan] + [t[2] for t in tiers] + [tiers[-1][2]])
+        self.precisions: np.ndarray[np.int_t] = np.asarray([0] + [Price.from_str(str(b)).precision for b in self.boundaries])
 
     @staticmethod
     def _validate_tiers(tiers):
@@ -51,48 +55,41 @@ cdef class TieredTickScheme(TickScheme):
             assert incr <= start and incr <= stop, f"Increment should be less than start and stop ({start}, {stop}, {incr})"
         return tiers
 
-    cdef ndarray build_ticks(self, list tiers):
-        """ Expand mappings in the full tick values """
-        cdef list ticks = []
-        for start, end, step in tiers:
-            example = Price.from_str(str(step))
-            ticks.extend([
-                Price(value=x, precision=example.precision)
-                for x in np.arange(start, end, step)
-            ])
-        return np.asarray(ticks)
+    cpdef int get_boundaries_idx(self, double value):
+        # Check for exact value in boundaries array
+        cdef np.ndarray existing = np.where(self.boundaries == value)[0]
+        if existing.size > 0:
+            return existing[0]
 
-    cpdef Price next_ask_tick(self, double value):
+        # Else, find position between boundaries
+        cdef int base_idx = self.boundaries.searchsorted(value)
+        if base_idx != 0:
+            base_idx -= 1
+        Condition.in_range(value, self.min_tick, self.max_tick, "value")
+        return base_idx
+
+    cpdef Price nearest_ask_tick(self, double value):
         """
         For a given price, return the next ask (higher) price on the ladder
 
         :param value: The price
         :return: Price
         """
-        cdef int idx
-        if value >= self.max_tick:
-            return None
-        idx = self.ticks.searchsorted(value)
-        if value in self.ticks:
-            return self.ticks[idx + 1]
-        else:
-            return self.ticks[idx]
+        cdef int base_idx = self.get_boundaries_idx(value=value)
+        cdef double rounded = round_up(value=value, base=self.bases[base_idx])
+        return Price(rounded, precision=self.precisions[base_idx])
 
-    cpdef Price next_bid_tick(self, double value):
+    cpdef Price nearest_bid_tick(self, double value):
         """
         For a given price, return the next bid (lower)price on the ladder
 
         :param value: The price
         :return: Price
         """
-        cdef int idx
-        if value >= self.max_tick:
-            return None
-        idx = self.ticks.searchsorted(value)
-        if value in self.ticks:
-            return self.ticks[idx + 1]
-        else:
-            return self.ticks[idx]
+        cdef int base_idx = self.get_boundaries_idx(value=value)
+        cdef double rounded = round_down(value=value, base=self.bases[base_idx])
+        return Price(rounded, precision=self.precisions[base_idx])
+
 
 BetfairTickScheme = TieredTickScheme(
     tiers=[
@@ -111,7 +108,7 @@ BetfairTickScheme = TieredTickScheme(
 
 TOPIX100TickScheme = TieredTickScheme(
     tiers=[
-        (0, 1_000, 0.1),
+        (0.1, 1_000, 0.1),
         (1_000, 3_000, 0.5),
         (3_000, 10_000, 1),
         (10_000, 30_000, 5),

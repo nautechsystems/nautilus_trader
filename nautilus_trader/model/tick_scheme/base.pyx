@@ -61,7 +61,6 @@ cpdef void register_tick_scheme(str name, tick_scheme: TickScheme):
     global TICK_SCHEMES
     Condition.not_in(name, TICK_SCHEMES, "name", "TICK_SCHEMES")
     TICK_SCHEMES[name] = tick_scheme
-    print(f"registered tick scheme {name}, all={TICK_SCHEMES}")
 
 
 cpdef TickScheme get_tick_scheme(str name):
@@ -69,17 +68,27 @@ cpdef TickScheme get_tick_scheme(str name):
     return TICK_SCHEMES[name]
 
 
-cpdef Price round_down(double value, int precision):
+cpdef list list_tick_schemes():
+    return list(TICK_SCHEMES)
+
+
+cdef _round_base(double value, double base):
+    """
+    >>> _round_base(0.72775, 0.0001)
+    0.7277
+    """
+    return int(value / base) * base
+
+
+cpdef double round_down(double value, double base):
     """
     Returns a value rounded down to a specific number of decimal places.
     """
-    cdef int factor = 10 ** precision
-    return Price(floor(value * factor) / factor, precision=precision)
+    return _round_base(value=value, base=base)
 
 
-cpdef Price round_up(double value, int precision):
+cpdef double round_up(double value, double base):
     """
     Returns a value rounded down to a specific number of decimal places.
     """
-    cdef int factor = 10 ** precision
-    return Price(ceil(value * factor) / factor, precision=precision)
+    return _round_base(value=value, base=base) + base
