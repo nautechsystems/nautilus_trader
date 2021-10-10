@@ -16,24 +16,24 @@
 #  Original author: Jeremy https://github.com/2pd
 # -------------------------------------------------------------------------------------------------
 
-from nautilus_trader.adapters.binance.client.http import BinanceHTTPClient
-from nautilus_trader.adapters.binance.client.parsing import convert_list_to_json_array
+from nautilus_trader.adapters.binance.http.client import BinanceHTTPClient
+from nautilus_trader.adapters.binance.http.parsing import convert_list_to_json_array
 from nautilus_trader.core.correctness import PyCondition
 
 
-class BinanceMarketAPI:
+class BinanceSpotHTTPAPI:
     """
-    Provides low-level access to the `Binance SPOT` market API.
+    Provides access to the `Binance SPOT` REST HTTP API.
     """
 
     def __init__(self, client: BinanceHTTPClient):
         """
-        Initialize a new instance of the ``BinanceMarketAPI`` class.
+        Initialize a new instance of the ``BinanceSpotHTTPAPI`` class.
 
         Parameters
         ----------
         client : BinanceHTTPClient
-            The Binance API client.
+            The Binance REST API client.
 
         """
         PyCondition.not_none(client, "client")
@@ -73,16 +73,20 @@ class BinanceMarketAPI:
         Exchange Information.
 
         Current exchange trading rules and symbol information.
+        Only either `symbol` or `symbols` should be passed.
 
         `GET /api/v3/exchangeinfo`
+
+        Parameters
+        ----------
+        symbol : str, optional
+            The trading pair
+        symbols : list[str], optional
+            The list of trading pairs.
 
         References
         ----------
         https://binance-docs.github.io/apidocs/spot/en/#exchange-information
-
-         Args:
-            symbol (str, optional): the trading pair
-            symbols (list, optional): list of trading pairs
 
         """
         if symbol and symbols:
@@ -100,14 +104,16 @@ class BinanceMarketAPI:
 
         `GET /api/v3/depth`
 
+        Parameters
+        ----------
+        symbol : str
+            The trading pair
+        **kwargs : dict
+            limit (int, optional): limit the results. Default 100; valid limits:[5, 10, 20, 50, 100, 500, 1000, 5000]
+
         References
         ----------
         https://binance-docs.github.io/apidocs/spot/en/#order-book
-
-        Args:
-            symbol (str): the trading pair
-        Keyword Args:
-            limit (int, optional): limit the results. Default 100; valid limits:[5, 10, 20, 50, 100, 500, 1000, 5000]
 
         """
         PyCondition.valid_string(symbol, "symbol")
@@ -125,14 +131,16 @@ class BinanceMarketAPI:
 
         `GET /api/v3/trades`
 
+        Parameters
+        ----------
+        symbol : str
+            The trading pair
+        **kwargs : dict
+            limit (int, optional): limit the results. Default 500; max 1000.
+
         References
         ----------
         https://binance-docs.github.io/apidocs/spot/en/#recent-trades-list
-
-        Args:
-            symbol (str): the trading pair
-        Keyword Args:
-            limit (int, optional): limit the results. Default 500; max 1000.
 
         """
         PyCondition.valid_string(symbol, "symbol")
@@ -150,15 +158,17 @@ class BinanceMarketAPI:
 
         `GET /api/v3/historicalTrades`
 
+        Parameters
+        ----------
+        symbol : str
+            The trading pair
+        **kwargs : dict
+            limit (int, optional): limit the results. Default 500; max 1000.
+            formId (int, optional): trade id to fetch from. Default gets most recent trades.
+
         References
         ----------
         https://binance-docs.github.io/apidocs/spot/en/#old-trade-lookup
-
-        Args:
-            symbol (str): the trading pair
-        Keyword Args:
-            limit (int, optional): limit the results. Default 500; max 1000.
-            formId (int, optional): trade id to fetch from. Default gets most recent trades.
 
         """
         PyCondition.valid_string(symbol, "symbol")
@@ -175,17 +185,19 @@ class BinanceMarketAPI:
 
         `GET /api/v3/aggTrades`
 
-        References
+        Parameters
         ----------
-        https://binance-docs.github.io/apidocs/spot/en/#compressed-aggregate-trades-list
-
-        Args:
-            symbol (str): the trading pair
-        Keyword Args:
+        symbol : str
+            The trading pair
+        **kwargs : dict
             limit (int, optional): limit the results. Default 500; max 1000.
             formId (int, optional): id to get aggregate trades from INCLUSIVE.
             startTime (int, optional): Timestamp in ms to get aggregate trades from INCLUSIVE.
             endTime (int, optional): Timestamp in ms to get aggregate trades until INCLUSIVE.
+
+        References
+        ----------
+        https://binance-docs.github.io/apidocs/spot/en/#compressed-aggregate-trades-list
 
         """
         PyCondition.valid_string(symbol, "symbol")
@@ -201,20 +213,20 @@ class BinanceMarketAPI:
 
         `GET /api/v3/klines`
 
-        References
-        ----------
-        https://binance-docs.github.io/apidocs/spot/en/#kline-candlestick-data
-
         Parameters
         ----------
         symbol : str
             The trading pair.
         interval : str
             The interval of kline, e.g 1m, 5m, 1h, 1d, etc.
-        **kwargs:
+        **kwargs : dict
             limit (int, optional): limit the results. Default 500; max 1000.
             startTime (int, optional): Timestamp in ms to get aggregate trades from INCLUSIVE.
             endTime (int, optional): Timestamp in ms to get aggregate trades until INCLUSIVE.
+
+        References
+        ----------
+        https://binance-docs.github.io/apidocs/spot/en/#kline-candlestick-data
 
         """
         PyCondition.valid_string(symbol, "symbol")
@@ -231,12 +243,14 @@ class BinanceMarketAPI:
 
         `GET /api/v3/avgPrice`
 
+        Parameters
+        ----------
+        symbol : str
+            The trading pair
+
         References
         ----------
         https://binance-docs.github.io/apidocs/spot/en/#current-average-price
-
-        Args:
-            symbol (str): the trading pair
 
         """
         PyCondition.valid_string(symbol, "symbol")
@@ -252,12 +266,14 @@ class BinanceMarketAPI:
 
         `GET /api/v3/ticker/24hr`
 
+        Parameters
+        ----------
+        symbol : str
+            The trading pair, optional
+
         References
         ----------
         https://binance-docs.github.io/apidocs/spot/en/#24hr-ticker-price-change-statistics
-
-        Args:
-            symbol (str, optional): the trading pair
 
         """
         PyCondition.type_or_none(symbol, str, "symbol")
@@ -273,12 +289,14 @@ class BinanceMarketAPI:
 
         `GET /api/v3/ticker/price`
 
+        Parameters
+        ----------
+        symbol : str
+            The trading pair, optional
+
         References
         ----------
         https://binance-docs.github.io/apidocs/spot/en/#symbol-price-ticker
-
-        Args:
-            symbol (str, optional): the trading pair
 
         """
         PyCondition.type_or_none(symbol, str, "symbol")
@@ -294,12 +312,14 @@ class BinanceMarketAPI:
 
         `GET /api/v3/ticker/bookTicker`
 
+        Parameters
+        ----------
+        symbol : str
+            The trading pair, optional
+
         References
         ----------
         https://binance-docs.github.io/apidocs/spot/en/#symbol-order-book-ticker
-
-        Args:
-            symbol (str, optional): the trading pair
 
         """
         PyCondition.type_or_none(symbol, str, "symbol")
