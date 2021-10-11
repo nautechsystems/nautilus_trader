@@ -15,7 +15,8 @@
 
 import asyncio
 import types
-from typing import Callable, Dict, List, Optional
+from asyncio import Task
+from typing import Callable, List, Optional
 
 import aiohttp
 from aiohttp import WSMessage
@@ -35,9 +36,7 @@ cdef class WebSocketClient:
         self,
         loop not None: asyncio.AbstractEventLoop,
         Logger logger not None: Logger,
-        handler: Callable[[bytes], None],
-        str ws_url not None,
-        kwargs: Optional[Dict] = None,
+        handler not None: Callable[[bytes], None],
     ):
         """
         Initialize a new instance of the ``WebSocketClient`` class.
@@ -50,70 +49,71 @@ cdef class WebSocketClient:
             The logger adapter for the client.
         handler : Callable[[bytes], None]
             The handler for received raw data.
-        ws_url : str
-            The websocket url to connect to.
-        kwargs : dict, optional
-            The additional kwargs to pass to aiohttp.ClientSession._ws_connect().
-
-        Raises
-        ------
-        ValueError
-            If ws_url is not a valid string.
 
         """
-        Condition.valid_string(ws_url, "ws_url")
-
-        self.ws_url = ws_url
-
         self._loop = loop
         self._log = LoggerAdapter(
             component_name=type(self).__name__,
             logger=logger,
         )
         self._handler = handler
-        self._ws_connect_kwargs = kwargs or {}
 
         self._session: Optional[aiohttp.ClientSession] = None
-        self._ws: Optional[aiohttp.ClientWebSocketResponse] = None
+        self._socket: Optional[aiohttp.ClientWebSocketResponse] = None
         self._tasks: List[asyncio.Task] = []
         self._running = False
         self._stopped = False
         self._trigger_stop = False
 
-    async def connect(self, bint start=True) -> None:
+    async def connect(
+        self,
+        str ws_url,
+        bint start=True,
+        **ws_kwargs,
+    ) -> None:
+        Condition.valid_string(ws_url, "ws_url")
+
+        self._log.debug(f"Connecting to websocket: {ws_url}...")
+
         self._session = aiohttp.ClientSession(loop=self._loop)
-        self._log.debug(f"Connecting to websocket: {self.ws_url}...")
-        self._ws = await self._session.ws_connect(url=self.ws_url, **self._ws_connect_kwargs)
+        self._socket = await self._session.ws_connect(url=ws_url, **ws_kwargs)
         await self.post_connect()
         if start:
             self._running = True
-            task = self._loop.create_task(self.start())
+            task: Task = self._loop.create_task(self.start())
             self._tasks.append(task)
 
     async def post_connect(self):
-        """ Optional post connect to send any connection messages or other. Called before start()"""
+        """
+        Actions to be performed post connection.
+
+        This method is called before start(), override to implement additional
+        connection related behaviour (sending other messages etc.).
+        """
         pass
 
     async def disconnect(self) -> None:
         self._trigger_stop = True
         while not self._stopped:
             await self._sleep0()
-        await self._ws.close()
+        await self._socket.close()
         self._log.debug("Websocket closed")
 
     async def send(self, raw: bytes) -> None:
         self._log.debug("SEND:" + str(raw))
-        await self._ws.send_bytes(raw)
+        await self._socket.send_bytes(raw)
 
     async def recv(self) -> bytes:
         try:
-            resp: WSMessage = await self._ws.receive()
+            resp: WSMessage = await self._socket.receive()
             if resp.type == WSMsgType.TEXT:
                 return resp.data.encode()
             elif resp.type == WSMsgType.BINARY:
                 return resp.data
             else:
-                self._log.warning(f"Received unknown data type: {resp.type} data: {resp.data}")
+                self._log.warning(
+                    f"Received unknown data type: {resp.type} data: {resp.data}",
+                )
                 return b""
         except asyncio.IncompleteReadError as ex:
             self._log.exception(ex)

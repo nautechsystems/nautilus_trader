@@ -11,22 +11,7 @@
 #  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
+#
+#  Heavily refactored from MIT licensed github.com/binance/binance-connector-python
+#  Original author: Jeremy https://github.com/2pd
 # -------------------------------------------------------------------------------------------------
-
-from nautilus_trader.common.logging cimport LoggerAdapter
-
-
-cdef class WebSocketClient:
-    cdef readonly object _loop
-    cdef readonly LoggerAdapter _log
-
-    cdef object _handler
-    cdef object _session
-    cdef object _socket
-    cdef list _tasks
-    cdef bint _running
-    cdef bint _stopped
-    cdef bint _trigger_stop
-
-    cdef readonly bint is_connected
-    """If the client is connected.\n\n:returns: `bool`"""
