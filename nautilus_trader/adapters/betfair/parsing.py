@@ -114,8 +114,10 @@ def _make_limit_order(order: Union[LimitOrder, MarketOrder]):
         price = probability_to_price(probability=order.price, side=order.side)
         liability = order.quantity * (price - 1)
         size = round(order.quantity / (liability / order.quantity), 0)
-    else:  # OrderSide.BUY
+    elif order.side == OrderSide.BUY:
         size = order.quantity
+    else:
+        raise RuntimeError()  # pragma: no cover
     size = str(float(size))
 
     if order.time_in_force == TimeInForce.OC:
