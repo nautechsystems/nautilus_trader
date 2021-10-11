@@ -110,7 +110,7 @@ def _order_to_liability(order: Union[LimitOrder, MarketOrder]) -> float:
         # Orders are sent in "liability" terms, convert to stake
         sell_price = probability_to_price(probability=order.price, side=order.side)
         liability = order.quantity * (sell_price - 1)
-        size = round(order.quantity / (liability / order.quantity), 0)
+        size = float(round(order.quantity / (liability / order.quantity), 0))
     elif order.side == OrderSide.BUY:
         size = float(order.quantity)
     else:
