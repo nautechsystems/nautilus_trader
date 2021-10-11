@@ -113,7 +113,8 @@ cdef class WebSocketClient:
             elif resp.type == WSMsgType.BINARY:
                 return resp.data
             else:
-                raise TypeError(f"Unknown websocket response data type: {resp.type}")
+                self._log.warning(f"Received unknown data type: {resp.type} data: {resp.data}")
+                return b""
         except asyncio.IncompleteReadError as ex:
             self._log.exception(ex)
             await self.connect(start=False)
@@ -123,7 +124,7 @@ cdef class WebSocketClient:
         while self._running:
             try:
                 raw = await self.recv()
-                self._log.debug("[RECV] {raw}")
+                self._log.debug(f"[RECV] {raw}")
                 if raw is not None:
                     self._handler(raw)
             except Exception as ex:
