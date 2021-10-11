@@ -87,7 +87,7 @@ cdef class WebSocketClient:
             self._tasks.append(task)
         self.is_connected = True
         self._ws_url = ws_url
-        self.__ws_kwargs = ws_kwargs
+        self._ws_kwargs = ws_kwargs
 
     async def post_connect(self):
         """

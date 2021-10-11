@@ -53,7 +53,7 @@ class TestWebsocketClient:
         await asyncio.sleep(0.1)
         await self.client.close()
 
-        expected = [b"Hello-response", b"Hello-response", b"Hello-response"]
+        expected = [b"connected"] + [b"Hello-response"] * 3
         assert self.messages == expected
 
     @pytest.mark.asyncio

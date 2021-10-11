@@ -27,7 +27,7 @@ cdef class WebSocketClient:
     cdef object _socket
     cdef list _tasks
     cdef bint _running
-    cdef public bint _stopped
+    cdef bint _stopped
     cdef bint _trigger_stop
     cdef readonly int _connection_retry_count
     cdef readonly int _unknown_message_count
