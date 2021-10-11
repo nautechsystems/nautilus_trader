@@ -29,6 +29,7 @@ cdef class WebSocketClient:
     cdef bint _stopped
     cdef bint _trigger_stop
     cdef int _connection_retry_count
+    cdef int _max_retry_connection
 
     cdef readonly str ws_url
     """The client URL.\n\n:returns: `str`"""
