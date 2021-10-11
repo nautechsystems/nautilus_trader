@@ -105,20 +105,23 @@ def parse_betfair_timestamp(pt):
     return pt * MILLIS_TO_NANOS
 
 
+def _order_to_liability(order: Union[LimitOrder, MarketOrder]) -> float:
+    if order.side == OrderSide.SELL:
+        # Orders are sent in "liability" terms, convert to stake
+        sell_price = probability_to_price(probability=order.price, side=order.side)
+        liability = order.quantity * (sell_price - 1)
+        size = round(order.quantity / (liability / order.quantity), 0)
+    elif order.side == OrderSide.BUY:
+        size = float(order.quantity)
+    else:
+        raise RuntimeError()  # pragma: no cover
+    return size
+
+
 def _make_limit_order(order: Union[LimitOrder, MarketOrder]):
     price = determine_order_price(order)
     price = str(float(probability_to_price(probability=price, side=order.side)))
-
-    if order.side == OrderSide.SELL:
-        # Orders are sent in "liability" terms, convert to stake
-        price = probability_to_price(probability=order.price, side=order.side)
-        liability = order.quantity * (price - 1)
-        size = round(order.quantity / (liability / order.quantity), 0)
-    elif order.side == OrderSide.BUY:
-        size = order.quantity
-    else:
-        raise RuntimeError()  # pragma: no cover
-    size = str(float(size))
+    size = str(_order_to_liability(order=order))
 
     if order.time_in_force == TimeInForce.OC:
         return {
@@ -142,7 +145,7 @@ def _make_market_order(order: Union[LimitOrder, MarketOrder]):
     if order.time_in_force == TimeInForce.OC:
         return {
             "orderType": "MARKET_ON_CLOSE",
-            "marketOnCloseOrder": {"liability": str(float(order.quantity))},
+            "marketOnCloseOrder": {"liability": str(_order_to_liability(order))},
         }
     else:
         # Betfair doesn't really support market orders, return a limit order with min/max price
@@ -159,7 +162,11 @@ def _make_market_order(order: Union[LimitOrder, MarketOrder]):
             init_id=order.init_id,
             ts_init=order.ts_init,
         )
-        return _make_limit_order(order=limit_order)
+        limit_order = _make_limit_order(order=limit_order)
+        # We transform the size of a limit order inside `_make_limit_order` but for a market order we want to just use
+        # the size as is.
+        limit_order["limitOrder"]["size"] = str(order.quantity.as_double())
+        return limit_order
 
 
 def make_order(order: Union[LimitOrder, MarketOrder]):
