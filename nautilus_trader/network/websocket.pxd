@@ -21,17 +21,14 @@ cdef class WebSocketClient:
     cdef readonly LoggerAdapter _log
 
     cdef object _handler
-    cdef dict _ws_connect_kwargs
-    cdef object _ws
     cdef object _session
+    cdef object _socket
     cdef list _tasks
     cdef bint _running
-    cdef bint _stopped
+    cdef public bint _stopped
     cdef bint _trigger_stop
     cdef int _connection_retry_count
     cdef int _max_retry_connection
 
-    cdef readonly str ws_url
-    """The client URL.\n\n:returns: `str`"""
     cdef readonly bint is_connected
     """If the client is connected.\n\n:returns: `bool`"""

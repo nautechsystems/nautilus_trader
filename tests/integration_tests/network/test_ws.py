@@ -21,24 +21,36 @@ from nautilus_trader.network.websocket import WebSocketClient
 from tests.test_kit.stubs import TestStubs
 
 
-@pytest.mark.skip(reason="WIP")
-@pytest.mark.asyncio
-async def test_client_recv():
-    num_messages = 3
-    lines = []
+class TestWebsocketClient:
+    def setup(self):
+        self.messages = []
 
-    def record(*args, **kwargs):
-        lines.append((args, kwargs))
+        def record(data: bytes):
+            self.messages.append(data)
 
-    client = WebSocketClient(
-        loop=asyncio.get_event_loop(),
-        logger=TestStubs.logger(),
-        handler=record,
-        ws_url="ws://echo.websocket.org",
-    )
-    await client.connect()
-    for _ in range(num_messages):
-        await client.send(b"Hello")
-    await asyncio.sleep(1)
-    await client.close()
-    assert len(lines) == num_messages
+        self.client = WebSocketClient(
+            loop=asyncio.get_event_loop(),
+            logger=TestStubs.logger(),
+            handler=record,
+        )
+
+    @staticmethod
+    def _server_url(server) -> str:
+        return f"http://{server.host}:{server.port}/ws"
+
+    @pytest.mark.asyncio
+    async def test_connect(self, websocket_server):
+        await self.client.connect(ws_url=self._server_url(websocket_server))
+        assert self.client.is_connected
+
+    @pytest.mark.asyncio
+    async def test_client_recv(self, websocket_server):
+        num_messages = 3
+        await self.client.connect(ws_url=self._server_url(websocket_server))
+        for _ in range(num_messages):
+            await self.client.send(b"Hello")
+        await asyncio.sleep(0.1)
+        await self.client.close()
+
+        expected = [b"Hello-response", b"Hello-response", b"Hello-response"]
+        assert self.messages == expected
