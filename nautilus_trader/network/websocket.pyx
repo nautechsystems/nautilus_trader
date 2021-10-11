@@ -15,6 +15,7 @@
 
 import asyncio
 import types
+from asyncio import Task
 from random import random
 from typing import Callable, List, Optional
 
@@ -80,7 +81,7 @@ cdef class WebSocketClient:
         await self.post_connect()
         if start:
             self._running = True
-            task = self._loop.create_task(self.start())
+            task: Task = self._loop.create_task(self.start())
             self._tasks.append(task)
         self.is_connected = True
 
@@ -114,7 +115,9 @@ cdef class WebSocketClient:
             elif resp.type in (WSMsgType.ERROR, WSMsgType.CLOSING, WSMsgType.CLOSED):
                 raise ConnectionAbortedError("Websocket error or closed")
             else:
-                self._log.warning(f"Received unknown data type: {resp.type} data: {resp.data}")
+                self._log.warning(
+                    f"Received unknown data type: {resp.type} data: {resp.data}",
+                )
                 return b""
         except (asyncio.IncompleteReadError, ConnectionAbortedError) as ex:
             self._log.exception(ex)
