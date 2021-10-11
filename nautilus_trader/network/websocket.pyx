@@ -16,7 +16,6 @@
 import asyncio
 import types
 from asyncio import Task
-from random import random
 from typing import Callable, List, Optional
 
 import aiohttp
@@ -50,12 +49,14 @@ cdef class WebSocketClient:
         logger : LoggerAdapter
             The logger adapter for the client.
         handler : Callable[[bytes], None]
-            The handler for received raw data.
+            The handler for rece    ived raw data.
 
         """
         self._loop = loop
         self._log = LoggerAdapter(component_name=type(self).__name__, logger=logger)
         self._handler = handler
+        self._ws_url = None
+        self._ws_kwargs = {}
 
         self._session: Optional[aiohttp.ClientSession] = None
         self._socket: Optional[aiohttp.ClientWebSocketResponse] = None
@@ -64,6 +65,7 @@ cdef class WebSocketClient:
         self._stopped = False
         self._trigger_stop = False
         self._connection_retry_count = 0
+        self._unknown_message_count = 0
         self._max_retry_connection = max_retry_connection
         self.is_connected = False
 
@@ -84,6 +86,8 @@ cdef class WebSocketClient:
             task: Task = self._loop.create_task(self.start())
             self._tasks.append(task)
         self.is_connected = True
+        self._ws_url = ws_url
+        self.__ws_kwargs = ws_kwargs
 
     async def post_connect(self):
         """
@@ -112,21 +116,32 @@ cdef class WebSocketClient:
                 return resp.data.encode()
             elif resp.type == WSMsgType.BINARY:
                 return resp.data
-            elif resp.type in (WSMsgType.ERROR, WSMsgType.CLOSING, WSMsgType.CLOSED):
+            elif resp.type in (WSMsgType.ERROR, WSMsgType.CLOSE, WSMsgType.CLOSING, WSMsgType.CLOSED):
+                self._log.warning(f"Received closing msg {resp}")
                 raise ConnectionAbortedError("Websocket error or closed")
             else:
                 self._log.warning(
                     f"Received unknown data type: {resp.type} data: {resp.data}",
                 )
+                self._unknown_message_count += 1
+                if self._unknown_message_count > 20:
+                    # This shouldn't be happening and we don't want to spam the logger, trigger a reconnection
+                    raise ConnectionAbortedError("Too many unknown messages")
                 return b""
-        except (asyncio.IncompleteReadError, ConnectionAbortedError) as ex:
+        except (asyncio.IncompleteReadError, ConnectionAbortedError, RuntimeError) as ex:
             self._log.exception(ex)
+            self._log.debug(f"Error, attempting reconnection {self._connection_retry_count=} {self._max_retry_connection=}")
             if self._connection_retry_count > self._max_retry_connection:
                 raise MaxRetriesExceeded(f"Max retries of {self._max_retry_connection} exceeded")
+            await self._reconnect_backoff()
             self._connection_retry_count += 1
-            # Exponential backoff
-            await asyncio.sleep(2 ** (self._connection_retry_count - 1) + random() / 50)
-            await self.connect(start=False)
+            self._log.debug(f"Attempting reconnect (attempt: {self._connection_retry_count}) after exception")
+            await self.connect(ws_url=self._ws_url, start=False)
+
+    async def _reconnect_backoff(self):
+        backoff = 2 ** self._connection_retry_count
+        self._log.debug(f"Exponential backoff attempt {self._connection_retry_count}, sleeping for {backoff}")
+        await asyncio.sleep(backoff)
 
     async def start(self) -> None:
         self._log.debug("Starting recv loop")

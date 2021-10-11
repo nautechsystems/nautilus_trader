@@ -19,6 +19,8 @@ from nautilus_trader.common.logging cimport LoggerAdapter
 cdef class WebSocketClient:
     cdef readonly object _loop
     cdef readonly LoggerAdapter _log
+    cdef readonly str _ws_url
+    cdef readonly dict _ws_kwargs
 
     cdef object _handler
     cdef object _session
@@ -27,7 +29,8 @@ cdef class WebSocketClient:
     cdef bint _running
     cdef public bint _stopped
     cdef bint _trigger_stop
-    cdef int _connection_retry_count
+    cdef readonly int _connection_retry_count
+    cdef readonly int _unknown_message_count
     cdef int _max_retry_connection
 
     cdef readonly bint is_connected

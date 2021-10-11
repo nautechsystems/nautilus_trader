@@ -30,8 +30,9 @@ class TestWebsocketClient:
 
         self.client = WebSocketClient(
             loop=asyncio.get_event_loop(),
-            logger=TestStubs.logger(),
+            logger=TestStubs.logger(level="DEBUG"),
             handler=record,
+            max_retry_connection=10,
         )
 
     @staticmethod
@@ -56,5 +57,31 @@ class TestWebsocketClient:
         assert self.messages == expected
 
     @pytest.mark.asyncio
+    async def test_reconnect(self, websocket_server):
+        # Arrange
+        await self.client.connect(ws_url=self._server_url(websocket_server))
+        await self.client.send(b"close")
+        await asyncio.sleep(0.1)
+
+        # Act
+        await self.client.recv()
+        await asyncio.sleep(0.1)
+        await self.client.recv()
+
+        # Assert
+        assert self.messages == [b"connected"] * 2
+
+    @pytest.mark.asyncio
     async def test_exponential_backoff(self, websocket_server):
-        pass
+        # Arrange
+        await self.client.connect(ws_url=self._server_url(websocket_server))
+
+        # Act
+        for _ in range(2):
+            await self.client.send(b"close")
+            await asyncio.sleep(0.1)
+            await self.client.recv()
+            await asyncio.sleep(0.1)
+            await self.client.recv()
+
+        assert self.client._connection_retry_count == 3

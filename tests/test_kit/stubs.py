@@ -26,6 +26,7 @@ from nautilus_trader.common.enums import ComponentState
 from nautilus_trader.common.events.risk import TradingStateChanged
 from nautilus_trader.common.events.system import ComponentStateChanged
 from nautilus_trader.common.logging import LiveLogger
+from nautilus_trader.common.logging import LogLevelParser
 from nautilus_trader.core.data import Data
 from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.model.currencies import GBP
@@ -714,8 +715,12 @@ class TestStubs:
         return LiveClock()
 
     @staticmethod
-    def logger():
-        return LiveLogger(loop=asyncio.get_event_loop(), clock=TestStubs.clock())
+    def logger(level="INFO"):
+        return LiveLogger(
+            loop=asyncio.get_event_loop(),
+            clock=TestStubs.clock(),
+            level_stdout=LogLevelParser.from_str_py(level),
+        )
 
     @staticmethod
     def msgbus():

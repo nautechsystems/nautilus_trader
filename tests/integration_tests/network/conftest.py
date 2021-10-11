@@ -57,10 +57,12 @@ async def websocket_server(event_loop):
         await ws.prepare(request)
         request.app["websockets"].add(ws)
 
+        await ws.send_bytes(b"connected")
+
         async for msg in ws:
             if msg.type == WSMsgType.BINARY:
-                if msg.data == "close":
-                    await ws.close()
+                if msg.data == b"close":
+                    await ws.close(code=257)
                 else:
                     await ws.send_bytes(msg.data + b"-response")
         return ws
