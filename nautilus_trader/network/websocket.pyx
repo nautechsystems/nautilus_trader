@@ -15,6 +15,7 @@
 
 import asyncio
 import types
+from random import random
 from typing import Callable, Dict, List, Optional
 
 import aiohttp
@@ -38,6 +39,7 @@ cdef class WebSocketClient:
         handler: Callable[[bytes], None],
         str ws_url not None,
         kwargs: Optional[Dict] = None,
+        max_retry_connection=10,
     ):
         """
         Initialize a new instance of the ``WebSocketClient`` class.
@@ -79,6 +81,8 @@ cdef class WebSocketClient:
         self._running = False
         self._stopped = False
         self._trigger_stop = False
+        self._connection_retry_count = 0
+        self._max_retry_connection = max_retry_connection
 
     async def connect(self, bint start=True) -> None:
         self._session = aiohttp.ClientSession(loop=self._loop)
@@ -89,6 +93,7 @@ cdef class WebSocketClient:
             self._running = True
             task = self._loop.create_task(self.start())
             self._tasks.append(task)
+        self._connection_retry_count = 0  # Reset after successful connection
 
     async def post_connect(self):
         """ Optional post connect to send any connection messages or other. Called before start()"""
@@ -112,11 +117,18 @@ cdef class WebSocketClient:
                 return resp.data.encode()
             elif resp.type == WSMsgType.BINARY:
                 return resp.data
+            elif resp.type in (WSMsgType.ERROR, WSMsgType.CLOSING, WSMsgType.CLOSED):
+                raise ConnectionAbortedError("Websocket error or closed")
             else:
                 self._log.warning(f"Received unknown data type: {resp.type} data: {resp.data}")
                 return b""
-        except asyncio.IncompleteReadError as ex:
+        except (asyncio.IncompleteReadError, ConnectionAbortedError) as ex:
             self._log.exception(ex)
+            if self._connection_retry_count > self._max_retry_connection:
+                raise MaxRetriesExceeded(f"Max retries of {self._max_retry_connection} exceeded")
+            self._connection_retry_count += 1
+            # Exponential backoff
+            await asyncio.sleep(2 ** (self._connection_retry_count - 1) + random() / 50)
             await self.connect(start=False)
 
     async def start(self) -> None:
@@ -149,3 +161,7 @@ cdef class WebSocketClient:
         # Uses a bare 'yield' expression (which Task.__step knows how to handle)
         # instead of creating a Future object.
         yield
+
+
+class MaxRetriesExceeded(ConnectionError):
+    pass
