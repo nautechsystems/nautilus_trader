@@ -33,12 +33,15 @@ from nautilus_trader.model.data.tick import TradeTick
 from nautilus_trader.model.data.ticker import Ticker
 from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import OrderSide
+from nautilus_trader.model.enums import OrderSideParser
 from nautilus_trader.model.enums import TimeInForce
 from nautilus_trader.model.events.account import AccountState
 from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import VenueOrderId
 from nautilus_trader.model.objects import AccountBalance
 from nautilus_trader.model.objects import Money
+from nautilus_trader.model.objects import Price
+from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.orderbook.data import OrderBookDeltas
 from tests.integration_tests.adapters.betfair.test_kit import BetfairResponses
 from tests.integration_tests.adapters.betfair.test_kit import BetfairTestStubs
@@ -54,6 +57,23 @@ class TestBetfairParsing:
         self.client = BetfairTestStubs.betfair_client(loop=self.loop, logger=self.logger)
         self.provider = BetfairTestStubs.instrument_provider(self.client)
         self.uuid = UUID4()
+
+    @pytest.mark.parametrize(
+        "price, quantity, side, betfair_quantity",
+        [
+            ("0.20", "100", "BUY", "100.0"),
+            ("0.25", "100", "SELL", "33.0"),
+            ("0.80", "25", "SELL", "100.0"),
+        ],
+    )
+    def test_nautilus_to_betfair_order_volumes(self, price, quantity, side, betfair_quantity):
+        order = BetfairTestStubs.limit_order(
+            side=OrderSideParser.from_str_py(side),
+            price=Price.from_str(price),
+            quantity=Quantity.from_str(quantity),
+        )
+        result = make_order(order=order)
+        assert result["limitOrder"]["size"] == betfair_quantity
 
     def test_order_submit_to_betfair(self):
         command = BetfairTestStubs.submit_order_command()

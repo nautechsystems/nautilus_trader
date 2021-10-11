@@ -18,7 +18,7 @@ import hashlib
 import itertools
 from collections import defaultdict
 from functools import lru_cache
-from typing import List, Optional, Union
+from typing import Dict, List, Optional, Union
 
 import orjson
 import pandas as pd
@@ -108,7 +108,16 @@ def parse_betfair_timestamp(pt):
 def _make_limit_order(order: Union[LimitOrder, MarketOrder]):
     price = determine_order_price(order)
     price = str(float(probability_to_price(probability=price, side=order.side)))
-    size = str(float(order.quantity))
+
+    if order.side == OrderSide.SELL:
+        # Orders are sent in "liability" terms, convert to stake
+        price = probability_to_price(probability=order.price, side=order.side)
+        liability = order.quantity * (price - 1)
+        size = round(order.quantity / (liability / order.quantity), 0)
+    else:  # OrderSide.BUY
+        size = order.quantity
+    size = str(float(size))
+
     if order.time_in_force == TimeInForce.OC:
         return {
             "orderType": "LIMIT_ON_CLOSE",
@@ -160,7 +169,7 @@ def make_order(order: Union[LimitOrder, MarketOrder]):
         raise TypeError(f"Unknown order type: {type(order)}")
 
 
-def order_submit_to_betfair(command: SubmitOrder, instrument: BettingInstrument):
+def order_submit_to_betfair(command: SubmitOrder, instrument: BettingInstrument) -> Dict:
     """
     Convert a SubmitOrder command into the data required by BetfairClient
     """
