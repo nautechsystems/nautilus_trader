@@ -54,3 +54,7 @@ class TestWebsocketClient:
 
         expected = [b"Hello-response", b"Hello-response", b"Hello-response"]
         assert self.messages == expected
+
+    @pytest.mark.asyncio
+    async def test_exponential_backoff(self, websocket_server):
+        pass

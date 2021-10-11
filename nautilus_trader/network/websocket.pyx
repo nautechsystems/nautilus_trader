@@ -37,7 +37,7 @@ cdef class WebSocketClient:
         loop not None: asyncio.AbstractEventLoop,
         Logger logger not None: Logger,
         handler not None: Callable[[bytes], None],
-        max_retry_connection=10,
+        max_retry_connection=0,
     ):
         """
         Initialize a new instance of the ``WebSocketClient`` class.
@@ -111,6 +111,8 @@ cdef class WebSocketClient:
                 return resp.data.encode()
             elif resp.type == WSMsgType.BINARY:
                 return resp.data
+            elif resp.type in (WSMsgType.ERROR, WSMsgType.CLOSING, WSMsgType.CLOSED):
+                raise ConnectionAbortedError("Websocket error or closed")
             else:
                 self._log.warning(f"Received unknown data type: {resp.type} data: {resp.data}")
                 return b""

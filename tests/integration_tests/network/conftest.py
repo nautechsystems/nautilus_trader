@@ -14,8 +14,10 @@
 # -------------------------------------------------------------------------------------------------
 
 import asyncio
+import weakref
 
 import pytest
+from aiohttp import WSCloseCode
 from aiohttp import WSMsgType
 from aiohttp import web
 from aiohttp.test_utils import TestServer
@@ -53,6 +55,7 @@ async def websocket_server(event_loop):
     async def handler(request):
         ws = web.WebSocketResponse()
         await ws.prepare(request)
+        request.app["websockets"].add(ws)
 
         async for msg in ws:
             if msg.type == WSMsgType.BINARY:
@@ -60,17 +63,24 @@ async def websocket_server(event_loop):
                     await ws.close()
                 else:
                     await ws.send_bytes(msg.data + b"-response")
-
         return ws
 
     app = web.Application()
+    app["websockets"] = weakref.WeakSet()
     app.add_routes([web.get("/ws", handler)])
 
+    async def on_shutdown(app):
+        for ws in set(app["websockets"]):
+            await ws.close(code=WSCloseCode.GOING_AWAY, message="Server shutdown")
+
+    app.on_shutdown.append(on_shutdown)
+
     server = TestServer(app)
-    await server.start_server(loop=event_loop, shutdown_timeout=5)
+    await server.start_server(loop=event_loop)
     yield server
+    await app.shutdown()
+    await app.cleanup()
     await server.close()
-    print("done")
 
 
 @pytest.fixture()
