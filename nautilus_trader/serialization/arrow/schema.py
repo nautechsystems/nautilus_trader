@@ -46,6 +46,7 @@ from nautilus_trader.model.instruments.equity import Equity
 from nautilus_trader.model.instruments.future import Future
 from nautilus_trader.model.instruments.option import Option
 from nautilus_trader.model.orderbook.data import OrderBookData
+from nautilus_trader.serialization.arrow.serializer import register_parquet
 
 
 NAUTILUS_PARQUET_SCHEMA = {
@@ -69,6 +70,7 @@ NAUTILUS_PARQUET_SCHEMA = {
     Ticker: pa.schema(
         {
             "instrument_id": pa.dictionary(pa.int8(), pa.string()),
+            "info": pa.string(),
             "ts_event": pa.int64(),
             "ts_init": pa.int64(),
         },
@@ -526,3 +528,8 @@ NAUTILUS_PARQUET_SCHEMA = {
         }
     ),
 }
+
+
+# default schemas
+for cls, schema in NAUTILUS_PARQUET_SCHEMA.items():
+    register_parquet(cls, schema=schema)

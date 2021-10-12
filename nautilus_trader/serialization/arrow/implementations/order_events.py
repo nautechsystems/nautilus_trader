@@ -18,7 +18,9 @@ from typing import Dict, List
 import orjson
 
 from nautilus_trader.model.events.order import OrderEvent
+from nautilus_trader.model.events.order import OrderFilled
 from nautilus_trader.model.events.order import OrderInitialized
+from nautilus_trader.serialization.arrow.serializer import register_parquet
 
 
 def serialize(event: OrderEvent):
@@ -44,3 +46,7 @@ def serialize_order_initialized(event: OrderInitialized):
 
 def deserialize(data: List[Dict]):
     raise NotImplementedError()  # pragma: no cover
+
+
+register_parquet(OrderFilled, serializer=serialize)
+register_parquet(OrderInitialized, serializer=serialize_order_initialized)

@@ -13,8 +13,12 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from nautilus_trader.model.events.position import PositionChanged
+from nautilus_trader.model.events.position import PositionClosed
 from nautilus_trader.model.events.position import PositionEvent
+from nautilus_trader.model.events.position import PositionOpened
 from nautilus_trader.model.objects import Money
+from nautilus_trader.serialization.arrow.serializer import register_parquet
 
 
 def try_float(x):
@@ -39,3 +43,11 @@ def serialize(event: PositionEvent):
 
 def deserialize(_):
     raise NotImplementedError()  # pragma: no cover
+
+
+for cls in (PositionOpened, PositionChanged, PositionClosed):
+    register_parquet(
+        cls,
+        serializer=serialize,
+        deserializer=deserialize,
+    )

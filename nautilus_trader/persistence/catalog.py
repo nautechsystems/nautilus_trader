@@ -37,7 +37,7 @@ from nautilus_trader.model.orderbook.data import OrderBookData
 from nautilus_trader.persistence.external.metadata import load_mappings
 from nautilus_trader.persistence.streaming import read_feather
 from nautilus_trader.persistence.util import Singleton
-from nautilus_trader.serialization.arrow.serializer import NAUTILUS_PARQUET_SCHEMA
+from nautilus_trader.serialization.arrow.schema import NAUTILUS_PARQUET_SCHEMA
 from nautilus_trader.serialization.arrow.serializer import ParquetSerializer
 from nautilus_trader.serialization.arrow.util import GENERIC_DATA_PREFIX
 from nautilus_trader.serialization.arrow.util import camel_to_snake_case
