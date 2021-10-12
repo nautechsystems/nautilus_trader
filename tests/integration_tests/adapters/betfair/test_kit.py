@@ -341,7 +341,9 @@ class BetfairTestStubs:
         return order
 
     @staticmethod
-    def limit_order(time_in_force=TimeInForce.GTC):
+    def limit_order(
+        time_in_force=TimeInForce.GTC, price=None, side=None, quantity=None
+    ) -> LimitOrder:
         return LimitOrder(
             trader_id=TestStubs.trader_id(),
             strategy_id=TestStubs.strategy_id(),
@@ -349,9 +351,9 @@ class BetfairTestStubs:
             client_order_id=ClientOrderId(
                 f"O-20210410-022422-001-001-{TestStubs.strategy_id().value}"
             ),
-            order_side=OrderSide.BUY,
-            quantity=Quantity.from_int(10),
-            price=Price(0.33, precision=5),
+            order_side=side or OrderSide.BUY,
+            quantity=quantity or Quantity.from_int(10),
+            price=price or Price(0.33, precision=5),
             time_in_force=time_in_force,
             expire_time=None,
             init_id=BetfairTestStubs.uuid(),
@@ -359,7 +361,7 @@ class BetfairTestStubs:
         )
 
     @staticmethod
-    def market_order(side=None, time_in_force=None):
+    def market_order(side=None, time_in_force=None) -> MarketOrder:
         return MarketOrder(
             trader_id=TestStubs.trader_id(),
             strategy_id=TestStubs.strategy_id(),
