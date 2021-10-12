@@ -43,6 +43,7 @@ class TestWebsocketClient:
     async def test_connect(self, websocket_server):
         await self.client.connect(ws_url=self._server_url(websocket_server))
         assert self.client.is_connected
+        await self.client.disconnect()
 
     @pytest.mark.asyncio
     async def test_client_recv(self, websocket_server):

@@ -61,7 +61,6 @@ cdef class WebSocketClient:
         self._session: Optional[aiohttp.ClientSession] = None
         self._socket: Optional[aiohttp.ClientWebSocketResponse] = None
         self._tasks: List[asyncio.Task] = []
-        self._running = False
         self._stopped = False
         self._trigger_stop = False
         self._connection_retry_count = 0
@@ -84,7 +83,6 @@ cdef class WebSocketClient:
         self._ws_kwargs = ws_kwargs
         await self.post_connect()
         if start:
-            self._running = True
             task: Task = self._loop.create_task(self.start())
             self._tasks.append(task)
         self.is_connected = True
@@ -109,9 +107,9 @@ cdef class WebSocketClient:
         self._log.debug("SEND:" + str(raw))
         await self._socket.send_bytes(raw)
 
-    async def recv(self) -> bytes:
+    async def recv(self) -> Optional[bytes]:
         try:
-            resp: WSMessage = await self._socket.receive()
+            resp: WSMessage = await self._socket.receive(timeout=1)
             if resp.type == WSMsgType.TEXT:
                 return resp.data.encode()
             elif resp.type == WSMsgType.BINARY:
@@ -154,16 +152,17 @@ cdef class WebSocketClient:
 
     async def start(self) -> None:
         self._log.debug("Starting recv loop")
-        while self._running:
+        while not self._trigger_stop:
             try:
                 raw = await self.recv()
+                if raw is None:
+                    continue
                 self._log.debug(f"[RECV] {raw}")
                 if raw is not None:
                     self._handler(raw)
             except Exception as ex:
                 # TODO - Handle disconnect? Should we reconnect or throw?
                 self._log.exception(ex)
-                self._running = False
         self._log.debug("Stopped")
         self._stopped = True
 
