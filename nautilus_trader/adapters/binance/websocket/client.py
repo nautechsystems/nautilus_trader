@@ -29,14 +29,13 @@ class BinanceWebSocketClient(WebSocketClient):
     Provides a `Binance` streaming WebSocket client.
     """
 
-    BASE_URL = "wss://stream.binance.com:9443/"
-
     def __init__(
         self,
         loop: asyncio.AbstractEventLoop,
         clock: LiveClock,
         logger: Logger,
         handler: Callable[[bytes], None],
+        base_url: str,
     ):
         super().__init__(
             loop=loop,
@@ -44,6 +43,7 @@ class BinanceWebSocketClient(WebSocketClient):
             handler=handler,
         )
 
+        self._base_url = base_url
         self._clock = clock
         self._streams: List[str] = []
 
@@ -67,10 +67,11 @@ class BinanceWebSocketClient(WebSocketClient):
             raise RuntimeError("No subscriptions for connection.")
 
         if len(self._streams) == 1:
-            ws_url = self.BASE_URL + "ws/" + self._streams[0]
+            ws_url = self._base_url + "/ws/" + self._streams[0]
         else:
-            ws_url = self.BASE_URL + "streams?streams=" + "/".join(self._streams)
+            ws_url = self._base_url + "/stream?streams=" + "/".join(self._streams)
 
+        self._log.info(f"Connecting to {ws_url}")
         await super().connect(ws_url=ws_url, start=start, **ws_kwargs)
 
     def _add_stream(self, stream: str):
