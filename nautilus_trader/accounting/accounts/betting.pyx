@@ -17,18 +17,14 @@ from decimal import Decimal
 
 from nautilus_trader.accounting.accounts.cash cimport CashAccount
 from nautilus_trader.core.correctness cimport Condition
-from nautilus_trader.model.c_enums.account_type import AccountType
+from nautilus_trader.model.c_enums.account_type cimport AccountType
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
-from nautilus_trader.model.currency cimport Currency
 from nautilus_trader.model.data.bet cimport Bet
-from nautilus_trader.model.events.account cimport AccountState
-from nautilus_trader.model.identifiers cimport InstrumentId
+from nautilus_trader.model.data.bet cimport nautilus_to_bet
 from nautilus_trader.model.instruments.base cimport Instrument
 from nautilus_trader.model.objects cimport Money
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
-
-from nautilus_trader.model.data.bet import nautilus_to_bet
 
 
 cdef class BettingAccount(CashAccount):
@@ -38,7 +34,7 @@ cdef class BettingAccount(CashAccount):
     ACCOUNT_TYPE = AccountType.BETTING
 
     cdef bint is_cash_account(self) except *:
-        return 1
+        return True
 
 # -- CALCULATIONS ----------------------------------------------------------------------------------
 
@@ -63,6 +59,8 @@ cdef class BettingAccount(CashAccount):
             The order quantity.
         price : Price
             The order price.
+        inverse_as_quote : bool
+            Not applicable for betting accounts.
 
         Returns
         -------
@@ -74,13 +72,10 @@ cdef class BettingAccount(CashAccount):
         Condition.not_none(price, "price")
         Condition.not_equal(inverse_as_quote, True, "inverse_as_quote", "True")
 
-        cdef Currency quote_currency = instrument.quote_currency
-
         cdef Bet bet = nautilus_to_bet(
             price=price,
             quantity=quantity,
             side=side
         )
         locked: Decimal = bet.liability()
-        print(locked)
-        return Money(locked, quote_currency)
+        return Money(locked, instrument.quote_currency)

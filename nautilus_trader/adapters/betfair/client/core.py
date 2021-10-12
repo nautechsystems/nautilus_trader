@@ -17,9 +17,11 @@ import asyncio
 import datetime
 import pathlib
 import ssl
-from typing import Dict, List, Optional, Union
+from typing import Dict, List, Optional
 
 import orjson
+from aiohttp import ClientResponse
+from aiohttp import ClientResponseError
 
 from nautilus_trader.adapters.betfair.client.enums import MarketProjection
 from nautilus_trader.adapters.betfair.client.enums import MarketSort
@@ -27,8 +29,7 @@ from nautilus_trader.adapters.betfair.client.exceptions import BetfairAPIError
 from nautilus_trader.adapters.betfair.client.exceptions import BetfairError
 from nautilus_trader.adapters.betfair.client.util import parse_params
 from nautilus_trader.common.logging import Logger
-from nautilus_trader.network.http_client import HTTPClient
-from nautilus_trader.network.http_client import ResponseException
+from nautilus_trader.network.http import HTTPClient
 
 
 class BetfairClient(HTTPClient):
@@ -85,7 +86,7 @@ class BetfairClient(HTTPClient):
         return context
 
     # For testing purposes, can't mock HTTPClient.request due to cython
-    async def request(self, method, url, **kwargs) -> Union[bytes, List, Dict]:
+    async def request(self, method, url, **kwargs) -> ClientResponse:
         return await super().request(method=method, url=url, **kwargs)
 
     async def rpc_post(
@@ -94,22 +95,19 @@ class BetfairClient(HTTPClient):
         data = {**self.JSON_RPC_DEFAULTS, "method": method, **(data or {}), "params": params or {}}
         try:
             resp = await self.request(method="POST", url=url, headers=self.headers, json=data)
-            data = orjson.loads(resp.data)  # type: ignore
+            data = orjson.loads(resp.data)
             if "error" in data:
                 raise BetfairAPIError(code=data["error"]["code"], message=data["error"]["message"])
             if isinstance(data, dict):
                 return data["result"]
             else:
                 raise TypeError("Unexpected type:" + str(resp))
-        except BetfairError as e:
-            self._log.error(str(e))
-            raise e
-
-        except ResponseException as e:
-            self._log.error(
-                f"Err on {method} status={e.resp.status}, message={e.client_response_error.message}"
-            )
-            raise e
+        except BetfairError as ex:
+            self._log.error(str(ex))
+            raise ex
+        except ClientResponseError as ex:
+            self._log.error(f"Err on {method} status={ex.status}, message={str(ex)}")
+            raise ex
 
     async def connect(self):
         await super().connect()

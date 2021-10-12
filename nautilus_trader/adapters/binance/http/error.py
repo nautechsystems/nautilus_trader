@@ -11,30 +11,35 @@
 #  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
+#
+#  Heavily refactored from MIT licensed github.com/binance/binance-connector-python
+#  Original author: Jeremy https://github.com/2pd
 # -------------------------------------------------------------------------------------------------
 
-from nautilus_trader.model.c_enums.order_side cimport OrderSide
-from nautilus_trader.model.objects cimport Price
-from nautilus_trader.model.objects cimport Quantity
+
+class BinanceError(Exception):
+    """
+    The base class for all `Binance` specific errors.
+    """
 
 
-cdef class Bet:
-    cdef object price
-    cdef Quantity quantity
-    cdef OrderSide side
+class BinanceServerError(BinanceError):
+    """
+    Represents a `Binance` specific 500 series HTTP error.
+    """
 
-    cpdef stake(self)
-    cpdef liability(self)
-    cpdef cost(self)
-    cpdef win_payoff(self)
-    cpdef lose_payoff(self)
-    cpdef exposure(self)
-
-    @staticmethod
-    cdef Bet from_dict_c(dict values)
-
-    @staticmethod
-    cdef dict to_dict_c(Bet obj)
+    def __init__(self, status, message, headers):
+        self.status = status
+        self.message = message
+        self.headers = headers
 
 
-cpdef Bet nautilus_to_bet(Price price, Quantity quantity, OrderSide side)
+class BinanceClientError(BinanceError):
+    """
+    Represents a `Binance` specific 400 series HTTP error.
+    """
+
+    def __init__(self, status, message, headers):
+        self.status = status
+        self.message = message
+        self.headers = headers

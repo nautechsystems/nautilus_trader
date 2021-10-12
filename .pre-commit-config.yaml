@@ -35,7 +35,7 @@ repos:
     hooks:
       - id: pycln
         name: pycln (Python unused imports)
-        exclude: "nautilus_trader/live/node.py"
+        exclude: "nautilus_trader/live/node.py|nautilus_trader/adapters/betfair/execution.py"
 
   - repo: https://github.com/psf/black
     rev: 21.9b0

@@ -11,30 +11,29 @@
 #  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
+#
+#  Heavily refactored from MIT licensed github.com/binance/binance-connector-python
+#  Original author: Jeremy https://github.com/2pd
 # -------------------------------------------------------------------------------------------------
 
-from nautilus_trader.model.c_enums.order_side cimport OrderSide
-from nautilus_trader.model.objects cimport Price
-from nautilus_trader.model.objects cimport Quantity
+import json
+from urllib.parse import urlencode
 
 
-cdef class Bet:
-    cdef object price
-    cdef Quantity quantity
-    cdef OrderSide side
-
-    cpdef stake(self)
-    cpdef liability(self)
-    cpdef cost(self)
-    cpdef win_payoff(self)
-    cpdef lose_payoff(self)
-    cpdef exposure(self)
-
-    @staticmethod
-    cdef Bet from_dict_c(dict values)
-
-    @staticmethod
-    cdef dict to_dict_c(Bet obj)
+def clean_none_value(d) -> dict:
+    out = {}
+    for k in d.keys():
+        if d[k] is not None:
+            out[k] = d[k]
+    return out
 
 
-cpdef Bet nautilus_to_bet(Price price, Quantity quantity, OrderSide side)
+def encoded_string(query):
+    return urlencode(query, True).replace("%40", "@").replace("%2F", "/")
+
+
+def convert_list_to_json_array(symbols):
+    if symbols is None:
+        return symbols
+    res = json.dumps(symbols)
+    return res.replace(" ", "")

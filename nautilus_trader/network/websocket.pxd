@@ -13,28 +13,25 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from nautilus_trader.model.c_enums.order_side cimport OrderSide
-from nautilus_trader.model.objects cimport Price
-from nautilus_trader.model.objects cimport Quantity
+from nautilus_trader.common.logging cimport LoggerAdapter
 
 
-cdef class Bet:
-    cdef object price
-    cdef Quantity quantity
-    cdef OrderSide side
+cdef class WebSocketClient:
+    cdef readonly object _loop
+    cdef readonly LoggerAdapter _log
+    cdef readonly str _ws_url
+    cdef readonly dict _ws_kwargs
 
-    cpdef stake(self)
-    cpdef liability(self)
-    cpdef cost(self)
-    cpdef win_payoff(self)
-    cpdef lose_payoff(self)
-    cpdef exposure(self)
+    cdef object _handler
+    cdef object _session
+    cdef object _socket
+    cdef list _tasks
+    cdef bint _running
+    cdef bint _stopped
+    cdef bint _trigger_stop
+    cdef readonly int _connection_retry_count
+    cdef readonly int _unknown_message_count
+    cdef int _max_retry_connection
 
-    @staticmethod
-    cdef Bet from_dict_c(dict values)
-
-    @staticmethod
-    cdef dict to_dict_c(Bet obj)
-
-
-cpdef Bet nautilus_to_bet(Price price, Quantity quantity, OrderSide side)
+    cdef readonly bint is_connected
+    """If the client is connected.\n\n:returns: `bool`"""

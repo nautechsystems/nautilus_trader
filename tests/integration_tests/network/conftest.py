@@ -14,8 +14,13 @@
 # -------------------------------------------------------------------------------------------------
 
 import asyncio
+import weakref
 
 import pytest
+from aiohttp import WSCloseCode
+from aiohttp import WSMsgType
+from aiohttp import web
+from aiohttp.test_utils import TestServer
 
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.logging import LiveLogger
@@ -42,6 +47,42 @@ async def socket_server():
     async with server:
         await server.start_serving()
         yield addr
+
+
+@pytest.fixture()
+@pytest.mark.asyncio
+async def websocket_server(event_loop):
+    async def handler(request):
+        ws = web.WebSocketResponse()
+        await ws.prepare(request)
+        request.app["websockets"].add(ws)
+
+        await ws.send_bytes(b"connected")
+
+        async for msg in ws:
+            if msg.type == WSMsgType.BINARY:
+                if msg.data == b"close":
+                    await ws.close(code=257)
+                else:
+                    await ws.send_bytes(msg.data + b"-response")
+        return ws
+
+    app = web.Application()
+    app["websockets"] = weakref.WeakSet()
+    app.add_routes([web.get("/ws", handler)])
+
+    async def on_shutdown(app):
+        for ws in set(app["websockets"]):
+            await ws.close(code=WSCloseCode.GOING_AWAY, message="Server shutdown")
+
+    app.on_shutdown.append(on_shutdown)
+
+    server = TestServer(app)
+    await server.start_server(loop=event_loop)
+    yield server
+    await app.shutdown()
+    await app.cleanup()
+    await server.close()
 
 
 @pytest.fixture()

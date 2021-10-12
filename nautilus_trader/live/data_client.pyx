@@ -108,7 +108,7 @@ cdef class LiveMarketDataClient(MarketDataClient):
 
         Parameters
         ----------
-        loop : asyncio.AbstractEventLoop,
+        loop : asyncio.AbstractEventLoop
             The event loop for the client.
         client_id : ClientId
             The client ID.

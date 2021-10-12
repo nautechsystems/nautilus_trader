@@ -429,7 +429,7 @@ cdef class Position:
         # Calculate avg prices, points, return, PnL
         if fill.order_side == OrderSide.BUY:
             self._handle_buy_order_fill(fill)
-        else:  # event.order_side == OrderSide.SELL:
+        elif fill.order_side == OrderSide.SELL:
             self._handle_sell_order_fill(fill)
 
         # Set quantities

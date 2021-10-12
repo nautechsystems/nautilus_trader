@@ -13,28 +13,20 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from nautilus_trader.model.c_enums.order_side cimport OrderSide
-from nautilus_trader.model.objects cimport Price
-from nautilus_trader.model.objects cimport Quantity
+from nautilus_trader.common.logging cimport LoggerAdapter
 
 
-cdef class Bet:
-    cdef object price
-    cdef Quantity quantity
-    cdef OrderSide side
+cdef class HTTPClient:
+    cdef readonly object _loop
+    cdef readonly LoggerAdapter _log
 
-    cpdef stake(self)
-    cpdef liability(self)
-    cpdef cost(self)
-    cpdef win_payoff(self)
-    cpdef lose_payoff(self)
-    cpdef exposure(self)
+    cdef list _addresses
+    cdef list _nameservers
+    cdef int _ttl_dns_cache
+    cdef object _ssl
+    cdef dict _connector_kwargs
+    cdef list _sessions
+    cdef int _sessions_idx
+    cdef int _sessions_len
 
-    @staticmethod
-    cdef Bet from_dict_c(dict values)
-
-    @staticmethod
-    cdef dict to_dict_c(Bet obj)
-
-
-cpdef Bet nautilus_to_bet(Price price, Quantity quantity, OrderSide side)
+    cdef object _get_session(self)

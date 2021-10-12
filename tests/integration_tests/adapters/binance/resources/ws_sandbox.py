@@ -13,16 +13,27 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from nautilus_trader.common.logging cimport LoggerAdapter
+import asyncio
+
+import pytest
+
+from nautilus_trader.adapters.binance.websocket.spot import BinanceSpotWebSocket
+from nautilus_trader.common.clock import LiveClock
+from nautilus_trader.common.logging import LiveLogger
 
 
-cdef class HTTPClient:
-    cdef object _loop
-    cdef readonly LoggerAdapter _log
-    cdef list _addresses
-    cdef list _nameservers
-    cdef int _ttl_dns_cache
-    cdef object _ssl
-    cdef dict _connector_kwargs
-    cdef object _sessions
-    cdef dict _headers
+@pytest.mark.asyncio
+async def test_binance_websocket_client():
+    loop = asyncio.get_event_loop()
+    clock = LiveClock()
+
+    client = BinanceSpotWebSocket(
+        loop=loop,
+        clock=clock,
+        logger=LiveLogger(loop=loop, clock=clock),
+        handler=print,
+    )
+
+    client.subscribe_trades("BTCUSDT")
+
+    await client.connect(start=True)

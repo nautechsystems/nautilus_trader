@@ -13,28 +13,33 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from nautilus_trader.model.c_enums.order_side cimport OrderSide
-from nautilus_trader.model.objects cimport Price
-from nautilus_trader.model.objects cimport Quantity
+import asyncio
+import json
+import os
+
+import pytest
+
+from nautilus_trader.adapters.binance.http.api.spot import BinanceSpotHTTPAPI
+from nautilus_trader.adapters.binance.http.client import BinanceHTTPClient
+from nautilus_trader.common.clock import LiveClock
+from nautilus_trader.common.logging import Logger
 
 
-cdef class Bet:
-    cdef object price
-    cdef Quantity quantity
-    cdef OrderSide side
+@pytest.mark.asyncio
+async def test_binance_http_client():
+    loop = asyncio.get_event_loop()
+    clock = LiveClock()
 
-    cpdef stake(self)
-    cpdef liability(self)
-    cpdef cost(self)
-    cpdef win_payoff(self)
-    cpdef lose_payoff(self)
-    cpdef exposure(self)
+    client = BinanceHTTPClient(
+        loop=loop,
+        clock=clock,
+        logger=Logger(clock=clock),
+        key=os.getenv("BINANCE_API_KEY"),
+        secret=os.getenv("BINANCE_API_SECRET"),
+        base_url="https://api.binance.com",
+    )
 
-    @staticmethod
-    cdef Bet from_dict_c(dict values)
-
-    @staticmethod
-    cdef dict to_dict_c(Bet obj)
-
-
-cpdef Bet nautilus_to_bet(Price price, Quantity quantity, OrderSide side)
+    market = BinanceSpotHTTPAPI(client=client)
+    await client.connect()
+    response = await market.depth("ETHUSDT")
+    print(json.dumps(json.loads(response), indent=4))

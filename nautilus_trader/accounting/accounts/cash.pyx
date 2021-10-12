@@ -243,11 +243,13 @@ cdef class CashAccount(Account):
                 price=price.as_decimal(),
                 inverse_as_quote=inverse_as_quote,
             ).as_decimal()
-        else:  # OrderSide.SELL
+        elif side == OrderSide.SELL:
             if base_currency is not None:
                 notional = quantity.as_decimal()
             else:
                 return None  # No balance to lock
+        else:  # pragma: no cover (design-time error)
+            raise RuntimeError("invalid order side")
 
         # Add expected commission
         locked: Decimal = notional
@@ -259,7 +261,7 @@ cdef class CashAccount(Account):
 
         if side == OrderSide.BUY:
             return Money(locked, quote_currency)
-        else:  # OrderSide.SELL
+        elif side == OrderSide.SELL:
             return Money(locked, base_currency)
 
     cpdef list calculate_pnls(
@@ -302,7 +304,7 @@ cdef class CashAccount(Account):
             if base_currency and not self.base_currency:
                 pnls[base_currency] = Money(fill_qty, base_currency)
             pnls[quote_currency] = Money(-(fill_px * fill_qty), quote_currency)
-        else:  # OrderSide.SELL
+        elif fill.order_side == OrderSide.SELL:
             if base_currency and not self.base_currency:
                 pnls[base_currency] = Money(-fill_qty, base_currency)
             pnls[quote_currency] = Money(fill_px * fill_qty, quote_currency)
