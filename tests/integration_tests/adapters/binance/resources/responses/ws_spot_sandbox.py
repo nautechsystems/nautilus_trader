@@ -34,6 +34,9 @@ async def test_binance_websocket_client():
         handler=print,
     )
 
-    client.subscribe_trades("BTCUSDT")
+    client.subscribe_book_ticker()
+    # client.subscribe_partial_book_depth("ETHUSDT", 2, 100)
 
     await client.connect(start=True)
+    await asyncio.sleep(4)
+    await client.close()

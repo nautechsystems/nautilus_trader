@@ -16,6 +16,7 @@
 #  Original author: Jeremy https://github.com/2pd
 # -------------------------------------------------------------------------------------------------
 
+
 import asyncio
 from typing import Callable
 
@@ -24,9 +25,9 @@ from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.logging import Logger
 
 
-class BinanceSpotWebSocket(BinanceWebSocketClient):
+class BinanceFuturesWebSocket(BinanceWebSocketClient):
     """
-    Provides access to the `Binance SPOT` streaming WebSocket API.
+    Provides access to the `Binance FUTURES` streaming WebSocket API.
     """
 
     def __init__(
@@ -41,8 +42,22 @@ class BinanceSpotWebSocket(BinanceWebSocketClient):
             clock=clock,
             logger=logger,
             handler=handler,
-            base_url="wss://stream.binance.com:9443",
+            base_url="wss://fstream.binance.com",
         )
+
+    def subscribe_mark_price(self, symbol: str = None, speed: int = None):
+        """
+        Aggregate Trade Streams.
+
+        The Aggregate Trade Streams push trade information that is aggregated for a single taker order.
+        Stream Name: <symbol>@aggTrade
+        Update Speed: 3000ms or 1000ms
+
+        """
+        if symbol is None:
+            self._add_stream("!markPrice@arr")
+        else:
+            self._add_stream(f"{symbol.lower()}@markPrice@{speed / 1000}s")
 
     def subscribe_agg_trades(self, symbol: str):
         """
