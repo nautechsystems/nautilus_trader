@@ -12,9 +12,6 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
-from libc.math cimport ceil
-from libc.math cimport floor
-
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.model.objects cimport Price
 
@@ -36,7 +33,7 @@ cdef class TickScheme:
             The maximum possible tick `Price`
         """
 
-    cpdef Price next_ask_tick(self, double price):
+    cpdef Price nearest_ask_tick(self, double price):
         """
         For a given price, return the next ask (higher) tick
 
@@ -45,7 +42,7 @@ cdef class TickScheme:
         """
         raise NotImplementedError
 
-    cpdef Price next_bid_tick(self, double price):
+    cpdef Price nearest_bid_tick(self, double price):
         """
         For a given price, return the next bid (lower) tick
 
@@ -61,7 +58,6 @@ cpdef void register_tick_scheme(str name, tick_scheme: TickScheme):
     global TICK_SCHEMES
     Condition.not_in(name, TICK_SCHEMES, "name", "TICK_SCHEMES")
     TICK_SCHEMES[name] = tick_scheme
-    print(f"registered tick scheme {name}, all={TICK_SCHEMES}")
 
 
 cpdef TickScheme get_tick_scheme(str name):
@@ -69,17 +65,27 @@ cpdef TickScheme get_tick_scheme(str name):
     return TICK_SCHEMES[name]
 
 
-cpdef Price round_down(double value, int precision):
+cpdef list list_tick_schemes():
+    return list(TICK_SCHEMES)
+
+
+cdef _round_base(double value, double base):
+    """
+    >>> _round_base(0.72775, 0.0001)
+    0.7277
+    """
+    return int(value / base) * base
+
+
+cpdef double round_down(double value, double base):
     """
     Returns a value rounded down to a specific number of decimal places.
     """
-    cdef int factor = 10 ** precision
-    return Price(floor(value * factor) / factor, precision=precision)
+    return _round_base(value=value, base=base)
 
 
-cpdef Price round_up(double value, int precision):
+cpdef double round_up(double value, double base):
     """
     Returns a value rounded down to a specific number of decimal places.
     """
-    cdef int factor = 10 ** precision
-    return Price(ceil(value * factor) / factor, precision=precision)
+    return _round_base(value=value, base=base) + base

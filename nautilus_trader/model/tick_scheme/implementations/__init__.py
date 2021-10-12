@@ -5,3 +5,4 @@ from nautilus_trader.model.tick_scheme.implementations.fixed import (  # noqa: F
 from nautilus_trader.model.tick_scheme.implementations.fixed import (  # noqa: F401
     FixedTickScheme5Decimal,
 )
+from nautilus_trader.model.tick_scheme.implementations.tiered import BetfairTickScheme  # noqa: F401
