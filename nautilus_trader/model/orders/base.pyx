@@ -903,8 +903,17 @@ cdef class PassiveOrder(Order):
         self.execution_id = fill.execution_id
         self.liquidity_side = fill.liquidity_side
         filled_qty: Decimal = self.filled_qty.as_decimal() + fill.last_qty.as_decimal()
+        leaves_qty: Decimal = self.quantity.as_decimal() - filled_qty
+        if leaves_qty < 0:
+            raise ValueError(
+                f"invalid order.leaves_qty: was {leaves_qty}, "
+                f"order.quantity={self.quantity}, "
+                f"order.filled_qty={self.filled_qty}, "
+                f"fill.last_qty={fill.last_qty}, "
+                f"fill={fill}",
+            )
         self.filled_qty = Quantity(filled_qty, fill.last_qty.precision)
-        self.leaves_qty = Quantity(self.quantity.as_decimal() - filled_qty, fill.last_qty.precision)
+        self.leaves_qty = Quantity(leaves_qty, fill.last_qty.precision)
         self.ts_last = fill.ts_event
         self.avg_px = self._calculate_avg_px(fill.last_qty, fill.last_px)
         self._set_slippage()
