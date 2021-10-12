@@ -18,18 +18,15 @@ import sys
 
 import pytest
 
-from nautilus_trader.adapters.betfair.common import BETFAIR_VENUE
 from nautilus_trader.adapters.betfair.providers import BetfairInstrumentProvider
-from nautilus_trader.backtest.engine import BacktestEngine
-from nautilus_trader.model.currencies import GBP
-from nautilus_trader.model.enums import AccountType
-from nautilus_trader.model.enums import BookType
-from nautilus_trader.model.enums import OMSType
-from nautilus_trader.model.enums import VenueType
-from nautilus_trader.model.objects import Money
+from nautilus_trader.backtest.config import BacktestDataConfig
+from nautilus_trader.backtest.config import BacktestEngineConfig
+from nautilus_trader.backtest.config import BacktestRunConfig
+from nautilus_trader.backtest.config import BacktestVenueConfig
+from nautilus_trader.backtest.node import BacktestNode
 from nautilus_trader.persistence.catalog import DataCatalog
+from nautilus_trader.persistence.config import PersistenceConfig
 from nautilus_trader.persistence.external.core import process_files
-from nautilus_trader.persistence.streaming import FeatherWriter
 from nautilus_trader.persistence.streaming import read_feather
 from tests.integration_tests.adapters.betfair.test_kit import BetfairTestStubs
 from tests.test_kit import PACKAGE_ROOT
@@ -59,27 +56,24 @@ class TestPersistenceStreaming:
         )
         return data
 
-    @pytest.mark.skip("Awaiting backtest config refactor")
     def test_feather_writer(self):
         # Arrange
-        path = "/root/backtest001"
-        instruments = self.catalog.instruments(as_nautilus=True)
-        engine = BacktestEngine()
-        self.catalog.setup_engine(engine=engine, instruments=instruments)
-        engine.add_venue(
-            venue=BETFAIR_VENUE,
-            venue_type=VenueType.EXCHANGE,
-            oms_type=OMSType.NETTING,
-            account_type=AccountType.CASH,
-            base_currency=GBP,
-            starting_balances=[Money(100_000, GBP)],
-            book_type=BookType.L2_MBP,
+        # path = "/root/backtest001"
+        # instruments = self.catalog.instruments(as_nautilus=True)
+        base_data_config = BacktestDataConfig()
+        run_config = BacktestRunConfig(
+            engine=BacktestEngineConfig(),
+            venues=BacktestVenueConfig(
+                name="BETFAIR", type="EXCHANGE", oms_type="NETTING", account_type="BETTING"
+            ),
+            data=[base_data_config, base_data_config],
+            persistence=PersistenceConfig(),
+            strategies=[],
         )
+        node = BacktestNode()
 
         # Act
-        writer = FeatherWriter(path=path, fs_protocol="memory")
-        engine.trader.subscribe("*", writer.write)
-        engine.run()
+        node.run_sync(run_configs=[run_config])
 
         # Assert
         result = {}

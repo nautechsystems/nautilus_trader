@@ -20,9 +20,9 @@ import pydantic
 from nautilus_trader.persistence.catalog import DataCatalog
 
 
-class LivePersistenceConfig(pydantic.BaseModel):
+class PersistenceConfig(pydantic.BaseModel):
     """
-    Configuration for persisting live runs to the catalog in feather format.
+    Configuration for persisting live or backtest runs to the catalog in feather format.
 
     catalog_path : str
         The path to the data catalog
@@ -35,6 +35,7 @@ class LivePersistenceConfig(pydantic.BaseModel):
     """
 
     catalog_path: str
+    kind: str  # live or backtest
     fs_protocol: Optional[str] = None
     persist_logs: bool = False
     flush_interval: Optional[int] = None

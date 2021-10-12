@@ -50,6 +50,7 @@ from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.msgbus.bus import MessageBus
 from nautilus_trader.portfolio.portfolio import Portfolio
+from tests.integration_tests.adapters.betfair.test_kit import TEST_PATH
 from tests.integration_tests.adapters.betfair.test_kit import BetfairDataProvider
 from tests.integration_tests.adapters.betfair.test_kit import BetfairResponses
 from tests.integration_tests.adapters.betfair.test_kit import BetfairStreaming
@@ -565,3 +566,19 @@ class TestBetfairExecutionClient:
 
         self.exec_engine.kill()
         await asyncio.sleep(1)
+
+    @pytest.mark.asyncio
+    async def test_replay(self):
+        # Arrange
+        self.client.stream = MagicMock()
+        self.exec_engine.start()
+        await asyncio.sleep(1)
+
+        fn = TEST_PATH.joinpath("streaming/streaming_order_stream.json")
+
+        import orjson
+
+        for update in orjson.loads(fn.read_bytes()):
+            await self.client._handle_order_stream_update(update=update)
+            await asyncio.sleep(0.1)
+        raise ZeroDivisionError

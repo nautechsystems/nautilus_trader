@@ -15,9 +15,10 @@
 
 import os
 import pathlib
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Union
 
 import fsspec
+import orjson
 import pandas as pd
 import pyarrow as pa
 import pyarrow.dataset as ds
@@ -34,7 +35,9 @@ from nautilus_trader.model.data.venue import InstrumentStatusUpdate
 from nautilus_trader.model.instruments.base import Instrument
 from nautilus_trader.model.orderbook.data import OrderBookData
 from nautilus_trader.persistence.external.metadata import load_mappings
+from nautilus_trader.persistence.streaming import read_feather
 from nautilus_trader.persistence.util import Singleton
+from nautilus_trader.serialization.arrow.serializer import NAUTILUS_PARQUET_SCHEMA
 from nautilus_trader.serialization.arrow.serializer import ParquetSerializer
 from nautilus_trader.serialization.arrow.util import GENERIC_DATA_PREFIX
 from nautilus_trader.serialization.arrow.util import camel_to_snake_case
@@ -159,8 +162,17 @@ class DataCatalog(metaclass=Singleton):
         return df
 
     @staticmethod
-    def _handle_table_nautilus(table: pa.Table, cls: type, mappings: Optional[Dict]):
-        dicts = dict_of_lists_to_list_of_dicts(table.to_pydict())
+    def _handle_table_nautilus(
+        table: Union[pa.Table, pd.DataFrame], cls: type, mappings: Optional[Dict]
+    ):
+        if isinstance(table, pa.Table):
+            dicts = dict_of_lists_to_list_of_dicts(table.to_pydict())
+        elif isinstance(table, pd.DataFrame):
+            dicts = table.to_dict("records")
+        else:
+            raise TypeError(
+                f"`table` was {type(table)}, expected `pyarrow.Table` or `pandas.DataFrame`"
+            )
         if not dicts:
             return []
         for key, maps in mappings.items():
@@ -341,6 +353,37 @@ class DataCatalog(metaclass=Singleton):
         for level in dataset.partitions.levels:
             partitions[level.name] = level.keys
         return partitions
+
+    def read_live(self, live_run_id: str, as_nautilus=True):
+        class_mapping: Dict[str, type] = {cls.__name__: cls for cls in NAUTILUS_PARQUET_SCHEMA}
+        data = {}
+        dtype_mappings = {
+            "OrderInitialized": {"quantity": str},
+            "OrderFilled": {"last_qty": str, "last_px": str},
+        }
+        extras = {
+            "OrderInitialized": {"options": orjson.dumps({})},
+            "OrderFilled": {"order_type": "LIMIT"},
+        }
+        for path in [p for p in self.fs.glob(f"{self.path}/live/{live_run_id}.feather/*.feather")]:
+            cls_name = pathlib.Path(path).stem
+            df = read_feather(path=path, fs=self.fs)
+            if df is None:
+                print(f"No data for {cls_name}")
+                continue
+            # Apply post read fixes
+            try:
+                df = df.astype(dtype_mappings.get(cls_name, {})).assign(**extras.get(cls_name, {}))
+                objs = self._handle_table_nautilus(
+                    table=df, cls=class_mapping[cls_name], mappings={}
+                )
+                data[cls_name] = objs
+            except Exception as e:
+                print(f"Failed to deserialize {cls_name}: {e}")
+        return sorted(sum(data.values(), list()), key=lambda x: x.ts_init)
+
+    def read_backtest(self, backtest_run_id: str):
+        raise NotImplementedError
 
 
 def combine_filters(*filters):
