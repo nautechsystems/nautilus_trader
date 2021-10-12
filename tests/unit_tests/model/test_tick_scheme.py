@@ -147,8 +147,15 @@ class TestBettingTickScheme:
     def test_build_ticks(self):
         assert self.tick_scheme.ticks[:5] == [Price()]
 
-    def test_nearest_ask_tick_basic(self):
-        # Standard checks
+    @pytest.mark.parametrize(
+        "value, n, expected",
+        [
+            (1.50, ""),
+            (0.7275, "0.728"),
+            (0.7275, "0.733"),
+        ],
+    )
+    def test_next_ask_tick(self, value, n, expected):  # Standard checks
         result = self.tick_scheme.nearest_ask_tick(1.50)
         expected = Price.from_str("1.50")
         assert result == expected
