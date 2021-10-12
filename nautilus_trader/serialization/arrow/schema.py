@@ -22,6 +22,7 @@ from nautilus_trader.model.data.tick import TradeTick
 from nautilus_trader.model.data.ticker import Ticker
 from nautilus_trader.model.data.venue import InstrumentClosePrice
 from nautilus_trader.model.data.venue import InstrumentStatusUpdate
+from nautilus_trader.model.data.venue import VenueStatusUpdate
 from nautilus_trader.model.events.account import AccountState
 from nautilus_trader.model.events.order import OrderAccepted
 from nautilus_trader.model.events.order import OrderCanceled
@@ -99,6 +100,15 @@ NAUTILUS_PARQUET_SCHEMA = {
             "ts_init": pa.int64(),
         },
         metadata={"type": "TradeTick"},
+    ),
+    VenueStatusUpdate: pa.schema(
+        {
+            "venue": pa.dictionary(pa.int8(), pa.string()),
+            "status": pa.dictionary(pa.int8(), pa.string()),
+            "ts_event": pa.int64(),
+            "ts_init": pa.int64(),
+        },
+        metadata={"type": "InstrumentStatusUpdate"},
     ),
     InstrumentClosePrice: pa.schema(
         {
@@ -390,15 +400,26 @@ NAUTILUS_PARQUET_SCHEMA = {
     ),
     PositionChanged: pa.schema(
         {
+            "trader_id": pa.dictionary(pa.int8(), pa.string()),
             "strategy_id": pa.dictionary(pa.int8(), pa.string()),
             "instrument_id": pa.dictionary(pa.int8(), pa.string()),
+            "account_id": pa.dictionary(pa.int8(), pa.string()),
             "position_id": pa.string(),
+            "from_order": pa.string(),
             "entry": pa.string(),
             "side": pa.string(),
             "net_qty": pa.float64(),
             "quantity": pa.float64(),
             "peak_qty": pa.float64(),
+            "last_qty": pa.float64(),
+            "last_px": pa.float64(),
+            "currency": pa.string(),
             "avg_px_open": pa.float64(),
+            "avg_px_close": pa.float64(),
+            "realized_points": pa.float64(),
+            "realized_return": pa.float64(),
+            "realized_pnl": pa.float64(),
+            "unrealized_pnl": pa.float64(),
             "event_id": pa.string(),
             "ts_opened": pa.int64(),
             "ts_event": pa.int64(),
@@ -407,20 +428,29 @@ NAUTILUS_PARQUET_SCHEMA = {
     ),
     PositionClosed: pa.schema(
         {
+            "trader_id": pa.dictionary(pa.int8(), pa.string()),
+            "account_id": pa.dictionary(pa.int8(), pa.string()),
             "strategy_id": pa.dictionary(pa.int8(), pa.string()),
             "instrument_id": pa.dictionary(pa.int8(), pa.string()),
+            "from_order": pa.string(),
             "position_id": pa.string(),
             "entry": pa.string(),
             "side": pa.string(),
             "net_qty": pa.float64(),
             "quantity": pa.float64(),
             "peak_qty": pa.float64(),
+            "last_qty": pa.float64(),
+            "last_px": pa.float64(),
+            "currency": pa.string(),
             "avg_px_open": pa.float64(),
             "avg_px_close": pa.float64(),
+            "realized_points": pa.float64(),
+            "realized_return": pa.float64(),
             "realized_pnl": pa.float64(),
             "event_id": pa.string(),
             "ts_opened": pa.int64(),
             "ts_closed": pa.int64(),
+            "duration_ns": pa.int64(),
             "ts_init": pa.int64(),
         }
     ),

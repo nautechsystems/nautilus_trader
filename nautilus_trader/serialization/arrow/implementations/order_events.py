@@ -13,7 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from typing import Dict, List
+from typing import Dict
 
 import orjson
 
@@ -44,9 +44,11 @@ def serialize_order_initialized(event: OrderInitialized):
     return data
 
 
-def deserialize(data: List[Dict]):
-    raise NotImplementedError()  # pragma: no cover
+def deserialize_order_filled(data: Dict) -> OrderFilled:
+    for k in ("last_px", "last_qty"):
+        data[k] = str(data[k])
+    return OrderFilled.from_dict(data)
 
 
-register_parquet(OrderFilled, serializer=serialize)
+register_parquet(OrderFilled, serializer=serialize, deserializer=deserialize_order_filled)
 register_parquet(OrderInitialized, serializer=serialize_order_initialized)

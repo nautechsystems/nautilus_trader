@@ -43,6 +43,7 @@ from nautilus_trader.persistence.external.core import write_objects
 from nautilus_trader.serialization.arrow.serializer import ParquetSerializer
 from tests.test_kit.providers import TestInstrumentProvider
 from tests.test_kit.stubs import TestStubs
+from tests.unit_tests.serialization.conftest import nautilus_objects
 
 
 AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy("AUD/USD")
@@ -98,7 +99,10 @@ class TestParquetSerializer:
         deserialized = ParquetSerializer.deserialize(cls=cls, chunk=serialized)
 
         # Assert
-        assert deserialized == [obj]
+        expected = obj
+        if isinstance(deserialized, list) and not isinstance(expected, list):
+            expected = [expected]
+        assert deserialized == expected
         write_objects(catalog=self.catalog, chunk=[obj])
         df = self.catalog._query(cls=cls)
         assert len(df) == 1
@@ -396,18 +400,7 @@ class TestParquetSerializer:
         position.apply(close_fill)
 
         event = position_func(position=position)
-        cls = type(event)
-
-        serialized = ParquetSerializer.serialize(event)
-        assert serialized
-        # TODO (bm) - can't deserialize positions right now
-        # deserialized = ParquetSerializer.deserialize(cls=cls, chunk=serialized)
-
-        # Assert
-        # assert deserialized == [event]
-        write_objects(catalog=self.catalog, chunk=[event])
-        df = self.catalog._query(cls=cls)
-        assert len(df) == 1
+        self._test_serialization(obj=event)
 
     @pytest.mark.parametrize(
         "instrument",
@@ -429,13 +422,9 @@ class TestParquetSerializer:
         df = self.catalog.instruments()
         assert len(df) == 1
 
-    # @pytest.mark.parametrize(
-    #     "name, obj", [(obj.__class__.__name__, obj) for obj in nautilus_objects()]
-    # )
-    # def test_serialize_and_deserialize_all(self, name, obj):
-    #     # Arrange, Act
-    #     serialized = ParquetSerializer.serialize(obj)
-    #     deserialized = ParquetSerializer.deserialize(cls=type(obj), chunk=[serialized])
-    #
-    #     # Assert
-    #     assert deserialized == [obj]
+    @pytest.mark.parametrize(
+        "name, obj", [(obj.__class__.__name__, obj) for obj in nautilus_objects()]
+    )
+    def test_serialize_and_deserialize_all(self, name, obj):
+        # Arrange, Act
+        assert self._test_serialization(obj)

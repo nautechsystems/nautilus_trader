@@ -354,7 +354,7 @@ class DataCatalog(metaclass=Singleton):
             partitions[level.name] = level.keys
         return partitions
 
-    def read_live(self, live_run_id: str, as_nautilus=True):
+    def read_live(self, live_run_id: str):
         class_mapping: Dict[str, type] = {cls.__name__: cls for cls in NAUTILUS_PARQUET_SCHEMA}
         data = {}
         dtype_mappings = {

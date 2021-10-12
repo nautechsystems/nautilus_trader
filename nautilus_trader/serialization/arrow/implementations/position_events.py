@@ -12,6 +12,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+from typing import Dict, Union
 
 from nautilus_trader.model.events.position import PositionChanged
 from nautilus_trader.model.events.position import PositionClosed
@@ -34,20 +35,39 @@ def serialize(event: PositionEvent):
         "quantity": float,
         "peak_qty": float,
         "avg_px_open": float,
+        "last_qty": float,
+        "last_px": float,
         "avg_px_close": try_float,
+        "realized_points": try_float,
+        "realized_return": try_float,
     }
     values = {k: caster[k](v) if k in caster else v for k, v in data.items()}  # type: ignore
-    values["realized_pnl"] = Money.from_str(values["realized_pnl"]).as_double()
+    if "realized_pnl" in values:
+        realized = Money.from_str(values["realized_pnl"])
+        values["realized_pnl"] = realized.as_double()
+    if "unrealized_pnl" in values:
+        unrealized = Money.from_str(values["unrealized_pnl"])
+        values["unrealized_pnl"] = unrealized.as_double()
     return values
 
 
-def deserialize(_):
-    raise NotImplementedError()  # pragma: no cover
+def deserialize(cls):
+    def inner(data: Dict) -> Union[PositionOpened, PositionChanged, PositionClosed]:
+        for k in ("net_qty", "quantity", "last_qty", "peak_qty", "last_px"):
+            if k in data:
+                data[k] = str(data[k])
+        if "realized_pnl" in data:
+            data["realized_pnl"] = f"{data['realized_pnl']} {data['currency']}"
+        if "unrealized_pnl" in data:
+            data["unrealized_pnl"] = f"{data['unrealized_pnl']} {data['currency']}"
+        return cls.from_dict(data)
+
+    return inner
 
 
 for cls in (PositionOpened, PositionChanged, PositionClosed):
     register_parquet(
         cls,
         serializer=serialize,
-        deserializer=deserialize,
+        deserializer=deserialize(cls=cls),
     )
