@@ -80,9 +80,16 @@ def instrument_list(mock_load_markets_metadata, loop: asyncio.AbstractEventLoop)
     instrument_provider = BetfairInstrumentProvider(client=client, logger=logger, market_filter={})
 
     # Load instruments
-    catalog = {r["marketId"]: r for r in BetfairResponses.betting_list_market_catalogue()["result"]}
+    market_ids = BetfairDataProvider.market_ids()
+    catalog = {
+        r["marketId"]: r
+        for r in BetfairResponses.betting_list_market_catalogue()["result"]
+        if r["marketId"] in market_ids
+    }
     mock_load_markets_metadata.return_value = catalog
-    t = loop.create_task(instrument_provider.load_all_async())
+    t = loop.create_task(
+        instrument_provider.load_all_async(market_filter={"market_id": market_ids})
+    )
     loop.run_until_complete(t)
 
     # Fill INSTRUMENTS global cache

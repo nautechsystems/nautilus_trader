@@ -106,7 +106,7 @@ class BetfairClient(HTTPClient):
             self._log.error(str(ex))
             raise ex
         except ClientResponseError as ex:
-            self._log.error(f"Err on {method} status={ex.status}, message={ex.message}")
+            self._log.error(f"Err on {method} status={ex.status}, message={str(ex)}")
             raise ex
 
     async def connect(self):
