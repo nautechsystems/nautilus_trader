@@ -73,21 +73,21 @@ cdef class WebSocketClient:
         self,
         str ws_url,
         bint start=True,
-        **ws_kwargs
+        **ws_kwargs,
     ) -> None:
         Condition.valid_string(ws_url, "ws_url")
 
         self._log.debug(f"Connecting to websocket: {ws_url}...")
         self._session = aiohttp.ClientSession(loop=self._loop)
         self._socket = await self._session.ws_connect(url=ws_url, **ws_kwargs)
+        self._ws_url = ws_url
+        self._ws_kwargs = ws_kwargs
         await self.post_connect()
         if start:
             self._running = True
             task: Task = self._loop.create_task(self.start())
             self._tasks.append(task)
         self.is_connected = True
-        self._ws_url = ws_url
-        self._ws_kwargs = ws_kwargs
 
     async def post_connect(self):
         """
@@ -130,17 +130,26 @@ cdef class WebSocketClient:
                 return b""
         except (asyncio.IncompleteReadError, ConnectionAbortedError, RuntimeError) as ex:
             self._log.exception(ex)
-            self._log.debug(f"Error, attempting reconnection {self._connection_retry_count=} {self._max_retry_connection=}")
+            self._log.debug(
+                f"Error, attempting reconnection {self._connection_retry_count=} "
+                f"{self._max_retry_connection=}",
+            )
             if self._connection_retry_count > self._max_retry_connection:
                 raise MaxRetriesExceeded(f"Max retries of {self._max_retry_connection} exceeded")
             await self._reconnect_backoff()
             self._connection_retry_count += 1
-            self._log.debug(f"Attempting reconnect (attempt: {self._connection_retry_count}) after exception")
-            await self.connect(ws_url=self._ws_url, start=False)
+            self._log.debug(
+                f"Attempting reconnect "
+                f"(attempt: {self._connection_retry_count}) after exception",
+            )
+            await self.connect(ws_url=self._ws_url, start=False, **self._ws_kwargs)
 
     async def _reconnect_backoff(self):
         backoff = 2 ** self._connection_retry_count
-        self._log.debug(f"Exponential backoff attempt {self._connection_retry_count}, sleeping for {backoff}")
+        self._log.debug(
+            f"Exponential backoff attempt "
+            f"{self._connection_retry_count}, sleeping for {backoff}",
+        )
         await asyncio.sleep(backoff)
 
     async def start(self) -> None:
