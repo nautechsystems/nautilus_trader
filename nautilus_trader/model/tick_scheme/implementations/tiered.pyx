@@ -30,7 +30,7 @@ cdef class TieredTickScheme(TickScheme):
     Represents a tick scheme where tick levels change based on price level, such as various financial exchanges.
     """
 
-    def __init__(self, object tiers):
+    def __init__(self, object tiers, bint build_ticks=True):
         """
         Initialize a new instance of the `Instrument` class.
 
@@ -54,6 +54,15 @@ cdef class TieredTickScheme(TickScheme):
             assert start < stop, f"Start should be less than stop (start={start}, stop={stop})"
             assert incr <= start and incr <= stop, f"Increment should be less than start and stop ({start}, {stop}, {incr})"
         return tiers
+
+    @staticmethod
+    def _build_ticks(tiers):
+        """ Expand mappings into the full tick values """
+        cdef list ticks = []
+        for start, end, step in tiers:
+            precision = Price(str(step)).precision
+            ticks.extend([Price(value=x, precision=precision) for x in np.arange(start, end, step)])
+        return np.asarray(ticks)
 
     cpdef int get_boundaries_idx(self, double value):
         # Check for exact value in boundaries array

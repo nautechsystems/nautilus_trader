@@ -35,18 +35,42 @@ cdef class TickScheme:
 
     cpdef Price nearest_ask_tick(self, double price):
         """
-        For a given price, return the next ask (higher) tick
+        For a given `price`, return the nearest ask (higher)  tick (simply returning `price` if it is a valid tick).
 
         :param price: The price
         :return: Price
         """
         raise NotImplementedError
 
+    cpdef Price next_ask_tick(self, double price, int n=0):
+        """
+        Return the `Price` `n` ask ticks away from `price`.
+
+        If a given price is between two ticks, n=0 will find the nearest ask tick.
+
+        :param price: The reference price
+        :param n: The number of ticks to move
+        :return: Price
+        """
+        raise NotImplementedError
+
     cpdef Price nearest_bid_tick(self, double price):
         """
-        For a given price, return the next bid (lower) tick
+        For a given `price`, return the nearest bid (lower) tick (simply returning `price` if it is a valid tick).
 
-        :param price: The relative price
+        :param price: The price
+        :return: Price
+        """
+        raise NotImplementedError
+
+    cpdef Price next_bid_tick(self, double price, int n=0):
+        """
+        Return the `Price` `n` bid ticks away from `price`.
+
+        If a given price is between two ticks, n=0 will find the nearest bid tick.
+
+        :param price: The reference price
+        :param n: The number of ticks to move
         :return: Price
         """
         raise NotImplementedError
@@ -69,7 +93,7 @@ cpdef list list_tick_schemes():
     return list(TICK_SCHEMES)
 
 
-cdef _round_base(double value, double base):
+cdef double _round_base(double value, double base):
     """
     >>> _round_base(0.72775, 0.0001)
     0.7277

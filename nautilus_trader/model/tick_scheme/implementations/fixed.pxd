@@ -22,4 +22,6 @@ cdef class FixedTickScheme(TickScheme):
     cdef readonly int price_precision
     cdef Price increment
     cpdef Price nearest_ask_tick(self, double price)
+    cpdef Price next_ask_tick(self, double price, int n=*)
     cpdef Price nearest_bid_tick(self, double price)
+    cpdef Price next_bid_tick(self, double price, int n=*)

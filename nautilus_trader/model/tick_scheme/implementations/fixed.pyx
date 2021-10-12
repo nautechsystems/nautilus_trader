@@ -58,11 +58,7 @@ cdef class FixedTickScheme(TickScheme):
         :param value: The price
         :return: Price
         """
-        if value > self.max_tick:
-            return None
-        cdef double base = 1 * 10 ** - float(self.price_precision)
-        cdef double rounded = round_up(value=value, base=base)
-        return Price(rounded, precision=self.price_precision)
+        return self.next_ask_tick(value=value, n=0)
 
     cpdef Price nearest_bid_tick(self, double value):
         """
@@ -71,10 +67,38 @@ cdef class FixedTickScheme(TickScheme):
         :param value: The price
         :return: Price
         """
+        return self.next_bid_tick(value=value, n=0)
+
+    cpdef Price next_ask_tick(self, double value, int n=0):
+        """
+        Return the `Price` `n` bid ticks away from `price`.
+
+        If a given price is between two ticks, n=0 will find the nearest bid tick.
+
+        :param value: The reference price
+        :param n: The number of ticks to move
+        :return: Price
+        """
+        if value > self.max_tick:
+            return None
+        cdef double base = 1 * 10 ** - float(self.price_precision)
+        cdef double rounded = round_up(value=value, base=base) + (n * base)
+        return Price(rounded, precision=self.price_precision)
+
+    cpdef Price next_bid_tick(self, double value, int n=0):
+        """
+        Return the `Price` `n` bid ticks away from `price`.
+
+        If a given price is between two ticks, n=0 will find the nearest bid tick.
+
+        :param value: The reference price
+        :param n: The number of ticks to move
+        :return: Price
+        """
         if value < self.min_tick:
             return None
         cdef double base = 1 * 10 ** - float(self.price_precision)
-        cdef double rounded = round_down(value=value, base=base)
+        cdef double rounded = round_down(value=value, base=base) - (n * base)
         return Price(rounded, precision=self.price_precision)
 
 
