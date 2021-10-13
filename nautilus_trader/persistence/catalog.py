@@ -18,7 +18,6 @@ import pathlib
 from typing import Dict, List, Optional, Union
 
 import fsspec
-import orjson
 import pandas as pd
 import pyarrow as pa
 import pyarrow.dataset as ds
@@ -70,7 +69,9 @@ class DataCatalog(metaclass=Singleton):
             The fs storage options.
 
         """
-        self.fs = fsspec.filesystem(fs_protocol, **(fs_storage_options or {}))
+        self.fs: fsspec.AbstractFileSystem = fsspec.filesystem(
+            fs_protocol, **(fs_storage_options or {})
+        )
         self.path = pathlib.Path(path)
 
     @classmethod
@@ -354,18 +355,10 @@ class DataCatalog(metaclass=Singleton):
             partitions[level.name] = level.keys
         return partitions
 
-    def read_live(self, live_run_id: str):
+    def _read_feather(self, kind: str, run_id: str):
         class_mapping: Dict[str, type] = {cls.__name__: cls for cls in NAUTILUS_PARQUET_SCHEMA}
         data = {}
-        dtype_mappings = {
-            "OrderInitialized": {"quantity": str},
-            "OrderFilled": {"last_qty": str, "last_px": str},
-        }
-        extras = {
-            "OrderInitialized": {"options": orjson.dumps({})},
-            "OrderFilled": {"order_type": "LIMIT"},
-        }
-        for path in [p for p in self.fs.glob(f"{self.path}/live/{live_run_id}.feather/*.feather")]:
+        for path in [p for p in self.fs.glob(f"{self.path}/{kind}/{run_id}.feather/*.feather")]:
             cls_name = pathlib.Path(path).stem
             df = read_feather(path=path, fs=self.fs)
             if df is None:
@@ -373,7 +366,6 @@ class DataCatalog(metaclass=Singleton):
                 continue
             # Apply post read fixes
             try:
-                df = df.astype(dtype_mappings.get(cls_name, {})).assign(**extras.get(cls_name, {}))
                 objs = self._handle_table_nautilus(
                     table=df, cls=class_mapping[cls_name], mappings={}
                 )
@@ -382,8 +374,11 @@ class DataCatalog(metaclass=Singleton):
                 print(f"Failed to deserialize {cls_name}: {e}")
         return sorted(sum(data.values(), list()), key=lambda x: x.ts_init)
 
+    def read_live_run(self, live_run_id: str):
+        return self._read_feather(kind="live", run_id=live_run_id)
+
     def read_backtest(self, backtest_run_id: str):
-        raise NotImplementedError
+        return self._read_feather(kind="backtest", run_id=backtest_run_id)
 
 
 def combine_filters(*filters):

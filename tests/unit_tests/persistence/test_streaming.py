@@ -13,30 +13,26 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import pathlib
 import sys
 
 import pytest
 
 from nautilus_trader.adapters.betfair.providers import BetfairInstrumentProvider
-from nautilus_trader.backtest.config import BacktestDataConfig
-from nautilus_trader.backtest.config import BacktestEngineConfig
-from nautilus_trader.backtest.config import BacktestRunConfig
-from nautilus_trader.backtest.config import BacktestVenueConfig
 from nautilus_trader.backtest.node import BacktestNode
 from nautilus_trader.persistence.catalog import DataCatalog
-from nautilus_trader.persistence.config import PersistenceConfig
 from nautilus_trader.persistence.external.core import process_files
-from nautilus_trader.persistence.streaming import read_feather
 from tests.integration_tests.adapters.betfair.test_kit import BetfairTestStubs
 from tests.test_kit import PACKAGE_ROOT
+from tests.test_kit.mocks import data_catalog_setup
 
 
 @pytest.mark.skipif(sys.platform == "win32", reason="test path broken on windows")
 class TestPersistenceStreaming:
     def setup(self):
+        data_catalog_setup()
         self.catalog = DataCatalog.from_env()
         self.fs = self.catalog.fs
+        self._loaded_data_into_catalog()
 
     def _loaded_data_into_catalog(self):
         self.instrument_provider = BetfairInstrumentProvider.from_instruments([])
@@ -58,17 +54,11 @@ class TestPersistenceStreaming:
 
     def test_feather_writer(self):
         # Arrange
-        # path = "/root/backtest001"
-        # instruments = self.catalog.instruments(as_nautilus=True)
-        base_data_config = BacktestDataConfig()
-        run_config = BacktestRunConfig(
-            engine=BacktestEngineConfig(),
-            venues=BacktestVenueConfig(
-                name="BETFAIR", type="EXCHANGE", oms_type="NETTING", account_type="BETTING"
-            ),
-            data=[base_data_config, base_data_config],
-            persistence=PersistenceConfig(),
-            strategies=[],
+        instrument = self.catalog.instruments(as_nautilus=True)[0]
+        run_config = BetfairTestStubs.betfair_backtest_run_config(
+            catalog_path=str(self.catalog.path),
+            catalog_fs_protocol=self.catalog.fs.protocol,
+            instrument_id=instrument.id.value,
         )
         node = BacktestNode()
 
@@ -76,15 +66,5 @@ class TestPersistenceStreaming:
         node.run_sync(run_configs=[run_config])
 
         # Assert
-        result = {}
-        for path in self.fs.ls("/root/backtest001/"):
-            name = pathlib.Path(path).name
-            persisted = read_feather(fs=self.fs, path=path)
-            if persisted is not None:
-                result[name] = persisted.shape
-        expected = {
-            "InstrumentStatusUpdate.feather": (2, 4),
-            "OrderBookData.feather": (2384, 11),
-            "TradeTick.feather": (624, 7),
-        }
-        assert result == expected
+        result = self.catalog.read_backtest(backtest_run_id=run_config.id)
+        assert len(result) == 3521

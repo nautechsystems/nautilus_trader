@@ -13,7 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from typing import Optional
+from typing import Dict, Optional
 
 import pydantic
 
@@ -37,9 +37,17 @@ class PersistenceConfig(pydantic.BaseModel):
     catalog_path: str
     kind: str  # live or backtest
     fs_protocol: Optional[str] = None
+    fs_storage_options: Optional[Dict] = None
     persist_logs: bool = False
     flush_interval: Optional[int] = None
 
     @classmethod
     def from_catalog(cls, catalog: DataCatalog, **kwargs):
         return cls(catalog_path=str(catalog.path), fs_protocol=catalog.fs.protocol, **kwargs)
+
+    def as_catalog(self) -> DataCatalog:
+        return DataCatalog(
+            path=self.catalog_path,
+            fs_protocol=self.fs_protocol,
+            fs_storage_options=self.fs_storage_options,
+        )

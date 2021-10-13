@@ -476,7 +476,9 @@ class TradingNode:
     def _setup_persistence(self, config: PersistenceConfig) -> None:
         # Setup persistence
         path = f"{config.catalog_path}/live/{self.instance_id}.feather"
-        writer = FeatherWriter(path=path)
+        writer = FeatherWriter(
+            path=path, fs_protocol=config.fs_protocol, flush_interval=config.flush_interval
+        )
         self.persistence_writers.append(writer)
         self.trader.subscribe("*", writer.write)
         self._log.info(f"Persisting data & events to {path=}")
