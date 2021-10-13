@@ -17,7 +17,6 @@ import asyncio
 from unittest.mock import MagicMock
 from unittest.mock import patch
 
-import orjson
 import pytest
 
 from nautilus_trader.adapters.betfair.common import BETFAIR_VENUE
@@ -51,7 +50,6 @@ from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.msgbus.bus import MessageBus
 from nautilus_trader.portfolio.portfolio import Portfolio
-from tests.integration_tests.adapters.betfair.test_kit import TEST_PATH
 from tests.integration_tests.adapters.betfair.test_kit import BetfairDataProvider
 from tests.integration_tests.adapters.betfair.test_kit import BetfairResponses
 from tests.integration_tests.adapters.betfair.test_kit import BetfairStreaming
@@ -85,6 +83,7 @@ class TestBetfairExecutionClient:
 
         self.cache = TestStubs.cache()
         self.cache.add_instrument(BetfairTestStubs.betting_instrument())
+        self.cache.add_account(TestStubs.betting_account(account_id=self.account_id))
 
         self.portfolio = Portfolio(
             msgbus=self.msgbus,
@@ -349,6 +348,32 @@ class TestBetfairExecutionClient:
         assert isinstance(cancelled, OrderCancelRejected)
 
     @pytest.mark.asyncio
+    async def test_order_multiple_fills(self):
+        # Arrange
+        self.exec_engine.start()
+        client_order_id = ClientOrderId("1")
+        venue_order_id = VenueOrderId("246938411724")
+        submitted = BetfairTestStubs.make_submitted_order(
+            client_order_id=client_order_id, quantity=Quantity.from_int(20)
+        )
+        self.cache.add_order(submitted, position_id=BetfairTestStubs.position_id())
+        self.client.venue_order_id_to_client_order_id[venue_order_id] = client_order_id
+
+        # Act
+        for update in BetfairStreaming.ocm_multiple_fills():
+            await self.client._handle_order_stream_update(update)
+            await asyncio.sleep(0.1)
+
+        # Assert
+        result = [fill.last_qty for fill in self.messages]
+        expected = [
+            Quantity.from_str("16.1900"),
+            Quantity.from_str("0.77"),
+            Quantity.from_str("0.77"),
+        ]
+        assert result == expected
+
+    @pytest.mark.asyncio
     @pytest.mark.skip(reason="Not implemented")
     async def test_streaming_orders_full_image_strategy(self):
         pass
@@ -536,7 +561,6 @@ class TestBetfairExecutionClient:
         # Arrange
         self.client.stream = MagicMock()
         self.exec_engine.start()
-        self.exec_engine.connect()
         await asyncio.sleep(1)
 
         balance = self.cache.account_for_venue(self.venue).balances()[GBP]
@@ -568,19 +592,3 @@ class TestBetfairExecutionClient:
 
         self.exec_engine.kill()
         await asyncio.sleep(1)
-
-    @pytest.mark.skip(reason="not implemented")
-    @pytest.mark.asyncio
-    async def test_replay(self):
-        # Arrange
-        self.client.stream = MagicMock()
-        self.exec_engine.start()
-        self.exec_engine.connect()
-        await asyncio.sleep(1)
-
-        fn = TEST_PATH.joinpath("streaming/streaming_order_stream.json")
-
-        for update in orjson.loads(fn.read_bytes()):
-            await self.client._handle_order_stream_update(update=update)
-            await asyncio.sleep(0.1)
-        raise ZeroDivisionError
