@@ -20,13 +20,11 @@ from nautilus_trader.model.tick_scheme.base cimport TickScheme
 
 cdef class TieredTickScheme(TickScheme):
     cdef list tiers
+    cdef int max_ticks_per_tier
     cdef readonly np.ndarray ticks
-    cdef np.ndarray boundaries
-    cdef readonly np.ndarray bases
-    cdef np.ndarray precisions
+    cdef int tick_count
 
-    cpdef int get_boundaries_idx(self, double value)
-    cpdef Price nearest_ask_tick(self, double price)
-    cpdef Price next_ask_tick(self, double price, int n=*)
-    cpdef Price nearest_bid_tick(self, double price)
-    cpdef Price next_bid_tick(self, double price, int n=*)
+    cpdef _build_ticks(self)
+    cpdef int find_tick_index(self, double value)
+    cpdef Price next_ask_tick(self, double value, int n=*)
+    cpdef Price next_bid_tick(self, double value, int n=*)

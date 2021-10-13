@@ -21,7 +21,7 @@ cdef class TickScheme:
     Represents a instrument tick scheme, mapping the prices available for an instrument
     """
 
-    def __init__(self, Price min_tick, Price max_tick):
+    def __init__(self, str name, Price min_tick, Price max_tick):
         """
         Initialize a new instance of the `TickScheme` class.
 
@@ -32,17 +32,11 @@ cdef class TickScheme:
         max_tick: Price
             The maximum possible tick `Price`
         """
+        self.name = name
+        self.min_tick = min_tick
+        self.max_tick = max_tick
 
-    cpdef Price nearest_ask_tick(self, double price):
-        """
-        For a given `price`, return the nearest ask (higher)  tick (simply returning `price` if it is a valid tick).
-
-        :param price: The price
-        :return: Price
-        """
-        raise NotImplementedError
-
-    cpdef Price next_ask_tick(self, double price, int n=0):
+    cpdef Price next_ask_tick(self, double value, int n=0):
         """
         Return the `Price` `n` ask ticks away from `price`.
 
@@ -54,22 +48,13 @@ cdef class TickScheme:
         """
         raise NotImplementedError
 
-    cpdef Price nearest_bid_tick(self, double price):
+    cpdef Price next_bid_tick(self, double value, int n=0):
         """
-        For a given `price`, return the nearest bid (lower) tick (simply returning `price` if it is a valid tick).
-
-        :param price: The price
-        :return: Price
-        """
-        raise NotImplementedError
-
-    cpdef Price next_bid_tick(self, double price, int n=0):
-        """
-        Return the `Price` `n` bid ticks away from `price`.
+        Return the `Price` `n` bid ticks away from `value``.
 
         If a given price is between two ticks, n=0 will find the nearest bid tick.
 
-        :param price: The reference price
+        :param value: The reference price
         :param n: The number of ticks to move
         :return: Price
         """
@@ -78,10 +63,10 @@ cdef class TickScheme:
 
 TICK_SCHEMES = {}
 
-cpdef void register_tick_scheme(str name, tick_scheme: TickScheme):
+cpdef void register_tick_scheme(tick_scheme: TickScheme):
     global TICK_SCHEMES
-    Condition.not_in(name, TICK_SCHEMES, "name", "TICK_SCHEMES")
-    TICK_SCHEMES[name] = tick_scheme
+    Condition.not_in(tick_scheme.name, TICK_SCHEMES, "name", "TICK_SCHEMES")
+    TICK_SCHEMES[tick_scheme.name] = tick_scheme
 
 
 cpdef TickScheme get_tick_scheme(str name):

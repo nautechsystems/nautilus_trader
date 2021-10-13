@@ -12,8 +12,6 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
-from numpy cimport ndarray
-
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.tick_scheme.base cimport TickScheme
 
@@ -21,7 +19,5 @@ from nautilus_trader.model.tick_scheme.base cimport TickScheme
 cdef class FixedTickScheme(TickScheme):
     cdef readonly int price_precision
     cdef Price increment
-    cpdef Price nearest_ask_tick(self, double price)
-    cpdef Price next_ask_tick(self, double price, int n=*)
-    cpdef Price nearest_bid_tick(self, double price)
-    cpdef Price next_bid_tick(self, double price, int n=*)
+    cpdef Price next_ask_tick(self, double value, int n=*)
+    cpdef Price next_bid_tick(self, double value, int n=*)

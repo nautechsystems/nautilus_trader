@@ -12,7 +12,6 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
-import numpy as np
 import pytest
 
 from nautilus_trader.model.objects import Price
@@ -74,8 +73,8 @@ class TestFixedTickScheme:
             (0.7271, "0.728"),
         ],
     )
-    def test_nearest_ask_tick(self, value, expected):
-        result = self.tick_scheme.nearest_ask_tick(value)
+    def test_next_ask_tick(self, value, expected):
+        result = self.tick_scheme.next_ask_tick(value)
         if expected is None:
             expected = expected
         else:
@@ -92,20 +91,48 @@ class TestFixedTickScheme:
             (0.7271, "0.727"),
         ],
     )
-    def test_nearest_bid_tick(self, value, expected):
-        result = self.tick_scheme.nearest_bid_tick(value)
+    def test_next_bid_tick(self, value, expected):
+        result = self.tick_scheme.next_bid_tick(value)
         if expected is None:
             expected = expected
         else:
             expected = Price.from_str(expected)
         assert result == expected
 
+
+class TestBettingTickScheme:
+    def setup(self) -> None:
+        self.tick_scheme: TieredTickScheme = get_tick_scheme("BetfairTickScheme")
+
+    def test_attrs(self):
+        assert self.tick_scheme.min_tick == Price.from_str("1.01")
+        assert self.tick_scheme.max_tick == Price.from_str("990")
+
+    def test_build_ticks(self):
+        result = self.tick_scheme.ticks[:5].tolist()
+        expected = [Price.from_str(f"1.0{n}") for n in range(1, 6)]
+        assert result == expected
+
+    @pytest.mark.parametrize(
+        "value, expected",
+        [
+            (1.005, 0),
+            (1.01, 0),
+            (2.01, 100),
+            (3.50, 159),
+        ],
+    )
+    def test_find_tick_idx(self, value, expected):
+        result = self.tick_scheme.find_tick_index(value)
+        assert result == expected
+
     @pytest.mark.parametrize(
         "value, n, expected",
         [
-            (0.727, 0, "0.728"),
-            (0.7275, 0, "0.728"),
-            (0.7275, 5, "0.733"),
+            (1.50, 0, "1.50"),
+            (2.0, 0, "2.00"),
+            (2.01, 0, "2.02"),
+            # (0.7275, "0.733"),
         ],
     )
     def test_next_ask_tick(self, value, n, expected):
@@ -116,80 +143,15 @@ class TestFixedTickScheme:
     @pytest.mark.parametrize(
         "value, n, expected",
         [
-            (0.727, 0, "0.727"),
-            (0.7275, 0, "0.727"),
-            (0.7275, 10, "0.717"),
+            (1.50, 0, "1.50"),
+            (2.0, 0, "2.00"),
+            (2.001, 0, "2.00"),
+            # (0.7275, "0.733"),
         ],
     )
     def test_next_bid_tick(self, value, n, expected):
-        result = self.tick_scheme.next_bid_tick(value, n=n)
+        result = self.tick_scheme.next_bid_tick(value=value, n=n)
         expected = Price.from_str(expected)
-        assert result == expected
-
-
-class TestBettingTickScheme:
-    def setup(self) -> None:
-        self.tick_scheme: TieredTickScheme = get_tick_scheme("BetfairTickScheme")
-
-    def test_attrs(self):
-        assert self.tick_scheme.min_tick == Price.from_str("1.01")
-        assert self.tick_scheme.max_tick == Price.from_str("1000")
-
-    def test_get_base(self):
-        ts = self.tick_scheme
-        assert np.isnan(ts.bases[ts.get_boundaries_idx(0.99)])
-        assert ts.bases[ts.get_boundaries_idx(1.01)] == 0.01
-        assert ts.bases[ts.get_boundaries_idx(1.50)] == 0.01
-        assert ts.bases[ts.get_boundaries_idx(2.50)] == 0.02
-        assert ts.bases[ts.get_boundaries_idx(5.1)] == 0.1
-        assert np.isnan(ts.bases[ts.get_boundaries_idx(10_000)])
-
-    def test_build_ticks(self):
-        assert self.tick_scheme.ticks[:5] == [Price()]
-
-    @pytest.mark.parametrize(
-        "value, n, expected",
-        [
-            (1.50, ""),
-            (0.7275, "0.728"),
-            (0.7275, "0.733"),
-        ],
-    )
-    def test_next_ask_tick(self, value, n, expected):  # Standard checks
-        result = self.tick_scheme.nearest_ask_tick(1.50)
-        expected = Price.from_str("1.50")
-        assert result == expected
-
-        result = self.tick_scheme.nearest_ask_tick(2.0)
-        expected = Price.from_str("2.02")
-        assert result == expected
-
-    def test_next_ask_price_between_ticks(self):
-        result = self.tick_scheme.nearest_ask_tick(value=Price.from_str("2.01"))
-        expected = Price.from_str("2.02")
-        assert result == expected
-
-    def test_next_ask_price_max_tick(self):
-        assert self.tick_scheme.nearest_ask_tick(value=Price.from_str("1000")) is None
-
-    def test_next_ask_price_near_boundary(self):
-        result = self.tick_scheme.nearest_ask_tick(value=Price.from_str("1.00"))
-        expected = Price.from_str("0.0001")
-        assert result == expected
-
-    def test_nearest_bid_tick_basic(self):
-        # Standard checks at change points
-        result = self.tick_scheme.nearest_bid_tick(value=Price.from_str("3.9"))
-        expected = Price.from_str("3.95")
-        assert result == expected
-
-        result = self.tick_scheme.nearest_ask_tick(value=Price.from_str("1.0001"))
-        expected = Price.from_str("1.0000")
-        assert result == expected
-
-    def test_next_bid_price_between_ticks(self):
-        result = self.tick_scheme.nearest_ask_tick(value=Price.from_str("72775001"))
-        expected = Price.from_str("0.7277")
         assert result == expected
 
 
@@ -202,40 +164,40 @@ class TestBettingTickScheme:
 #         assert self.tick_scheme.min_tick == Price.from_str("1.01")
 #         assert self.tick_scheme.max_tick == Price.from_str("990")
 #
-#     def test_nearest_ask_tick_basic(self):
+#     def test_next_ask_tick_basic(self):
 #         # Standard checks
-#         result = self.tick_scheme.nearest_ask_tick(0.7277)
+#         result = self.tick_scheme.next_ask_tick(0.7277)
 #         expected = Price.from_str("0.7278")
 #         assert result == expected
 #
-#         result = self.tick_scheme.nearest_ask_tick(0.9999)
+#         result = self.tick_scheme.next_ask_tick(0.9999)
 #         expected = Price.from_str("1.0000")
 #         assert result == expected
 #
 #     def test_next_ask_price_between_ticks(self):
-#         result = self.tick_scheme.nearest_ask_tick(value=Price.from_str("72775001"))
+#         result = self.tick_scheme.next_ask_tick(value=Price.from_str("72775001"))
 #         expected = Price.from_str("0.7278")
 #         assert result == expected
 #
 #     def test_next_ask_price_max_tick(self):
-#         assert self.tick_scheme.nearest_ask_tick(value=Price.from_str("10000")) is None
+#         assert self.tick_scheme.next_ask_tick(value=Price.from_str("10000")) is None
 #
 #     def test_next_ask_price_near_boundary(self):
-#         result = self.tick_scheme.nearest_ask_tick(value=Price.from_str("0.00005"))
+#         result = self.tick_scheme.next_ask_tick(value=Price.from_str("0.00005"))
 #         expected = Price.from_str("0.0001")
 #         assert result == expected
 #
-#     def test_nearest_bid_tick_basic(self):
+#     def test_next_bid_tick_basic(self):
 #         # Standard checks at change points
-#         result = self.tick_scheme.nearest_bid_tick(value=Price.from_str("0.7277"))
+#         result = self.tick_scheme.next_bid_tick(value=Price.from_str("0.7277"))
 #         expected = Price.from_str("0.7276")
 #         assert result == expected
 #
-#         result = self.tick_scheme.nearest_ask_tick(value=Price.from_str("1.0001"))
+#         result = self.tick_scheme.next_ask_tick(value=Price.from_str("1.0001"))
 #         expected = Price.from_str("1.0000")
 #         assert result == expected
 #
 #     def test_next_bid_price_between_ticks(self):
-#         result = self.tick_scheme.nearest_ask_tick(value=Price.from_str("72775001"))
+#         result = self.tick_scheme.next_ask_tick(value=Price.from_str("72775001"))
 #         expected = Price.from_str("0.7277")
 #         assert result == expected

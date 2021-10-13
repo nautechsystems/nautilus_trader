@@ -12,8 +12,6 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
-cimport numpy as np
-
 import numpy as np
 
 from nautilus_trader.core.correctness cimport Condition
@@ -21,8 +19,6 @@ from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.tick_scheme.base cimport TickScheme
 
 from nautilus_trader.model.tick_scheme.base import register_tick_scheme
-from nautilus_trader.model.tick_scheme.base import round_down
-from nautilus_trader.model.tick_scheme.base import round_up
 
 
 cdef class TieredTickScheme(TickScheme):
@@ -30,7 +26,7 @@ cdef class TieredTickScheme(TickScheme):
     Represents a tick scheme where tick levels change based on price level, such as various financial exchanges.
     """
 
-    def __init__(self, object tiers, bint build_ticks=True):
+    def __init__(self, str name, object tiers, int max_ticks_per_tier=100):
         """
         Initialize a new instance of the `Instrument` class.
 
@@ -40,11 +36,10 @@ cdef class TieredTickScheme(TickScheme):
             The tiers for the tick scheme. Should be a list of (start, stop, step) tuples
         """
         self.tiers = self._validate_tiers(tiers)
-        self.min_tick = Price.from_str(str(tiers[0][0]))
-        self.max_tick = Price.from_str(str(tiers[-1][1]))
-        self.boundaries: np.ndarray[np.float_t] = np.asarray([0] + [t[0] for t in tiers])
-        self.bases: np.ndarray[np.int_t] = np.asarray([np.nan] + [t[2] for t in tiers] + [tiers[-1][2]])
-        self.precisions: np.ndarray[np.int_t] = np.asarray([0] + [Price.from_str(str(b)).precision for b in self.boundaries])
+        self.max_ticks_per_tier = max_ticks_per_tier
+        self.ticks = self._build_ticks()
+        super().__init__(name=name, min_tick=min(self.ticks), max_tick=max(self.ticks))
+        self.tick_count = len(self.ticks)
 
     @staticmethod
     def _validate_tiers(tiers):
@@ -55,52 +50,45 @@ cdef class TieredTickScheme(TickScheme):
             assert incr <= start and incr <= stop, f"Increment should be less than start and stop ({start}, {stop}, {incr})"
         return tiers
 
-    @staticmethod
-    def _build_ticks(tiers):
+    cpdef _build_ticks(self):
         """ Expand mappings into the full tick values """
-        cdef list ticks = []
-        for start, end, step in tiers:
-            precision = Price(str(step)).precision
-            ticks.extend([Price(value=x, precision=precision) for x in np.arange(start, end, step)])
-        return np.asarray(ticks)
+        cdef list all_ticks = []
+        for start, stop, step in self.tiers:
+            if stop == np.inf:
+                stop = start + self.max_ticks_per_tier + 1
+            precision = Price.from_str_c(str(step)).precision
+            ticks = [Price(value=x, precision=precision) for x in np.arange(start, stop, step)]
+            if len(ticks) > self.max_ticks_per_tier:
+                print(f"{self.name}: too many ticks for tier ({start=}, {stop=}, {step=}, trimming to {self.max_ticks_per_tier} (from {len(ticks)})")
+                ticks = ticks[:self.max_ticks_per_tier]
+            all_ticks.extend(ticks)
+        return np.asarray(all_ticks)
 
-    cpdef int get_boundaries_idx(self, double value):
-        # Check for exact value in boundaries array
-        cdef np.ndarray existing = np.where(self.boundaries == value)[0]
-        if existing.size > 0:
-            return existing[0]
+    cpdef int find_tick_index(self, double value):
+        cdef int idx = self.ticks.searchsorted(value)
+        print(f"Searching for {value=}, {idx=}, exact?={value == self.ticks[idx].as_double()}")
+        if value == self.ticks[idx].as_double():
+            return idx
+        return idx
 
-        # Else, find position between boundaries
-        cdef int base_idx = self.boundaries.searchsorted(value)
-        if base_idx != 0:
-            base_idx -= 1
-        Condition.in_range(value, self.min_tick, self.max_tick, "value")
-        return base_idx
+    cpdef Price next_ask_tick(self, double value, int n=0):
+        Condition.not_negative(n, "n")
+        cdef int idx = self.find_tick_index(value)
+        print(idx)
+        Condition.true(idx + n <= self.tick_count, f"n={n} beyond ask tick bound")
+        return self.ticks[idx + n]
 
-    cpdef Price nearest_ask_tick(self, double value):
-        """
-        For a given price, return the next ask (higher) price on the ladder
-
-        :param value: The price
-        :return: Price
-        """
-        cdef int base_idx = self.get_boundaries_idx(value=value)
-        cdef double rounded = round_up(value=value, base=self.bases[base_idx])
-        return Price(rounded, precision=self.precisions[base_idx])
-
-    cpdef Price nearest_bid_tick(self, double value):
-        """
-        For a given price, return the next bid (lower)price on the ladder
-
-        :param value: The price
-        :return: Price
-        """
-        cdef int base_idx = self.get_boundaries_idx(value=value)
-        cdef double rounded = round_down(value=value, base=self.bases[base_idx])
-        return Price(rounded, precision=self.precisions[base_idx])
+    cpdef Price next_bid_tick(self, double value, int n=0):
+        Condition.not_negative(n, "n")
+        cdef int idx = self.find_tick_index(value)
+        Condition.true((idx - n) > 0, f"n={n} beyond bid tick bound")
+        if self.ticks[idx].as_double() == value:
+            return self.ticks[idx - n]
+        return self.ticks[idx - 1 - n]
 
 
 BetfairTickScheme = TieredTickScheme(
+    name="BetfairTickScheme",
     tiers=[
         (1.01, 2, 0.01),
         (2, 3, 0.02),
@@ -116,6 +104,7 @@ BetfairTickScheme = TieredTickScheme(
 )
 
 TOPIX100TickScheme = TieredTickScheme(
+    name="TOPIX100TickScheme",
     tiers=[
         (0.1, 1_000, 0.1),
         (1_000, 3_000, 0.5),
@@ -128,8 +117,9 @@ TOPIX100TickScheme = TieredTickScheme(
         (3_000_000, 10_000_000, 1_000),
         (10_000_000, 30_000_000, 5_000),
         (30_000_000, np.inf, 10_000),
-    ]
+    ],
+    max_ticks_per_tier=10000,
 )
 
-register_tick_scheme("BetfairTickScheme", BetfairTickScheme)
-register_tick_scheme("TOPIX100TickScheme", TOPIX100TickScheme)
+register_tick_scheme(BetfairTickScheme)
+register_tick_scheme(TOPIX100TickScheme)

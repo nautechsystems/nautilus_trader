@@ -28,6 +28,7 @@ cdef class FixedTickScheme(TickScheme):
 
     def __init__(
             self,
+            str name,
             int price_precision,
             Price min_tick,
             Price max_tick,
@@ -45,29 +46,9 @@ cdef class FixedTickScheme(TickScheme):
             The maximum possible tick `Price`
 
         """
-
+        super().__init__(name=name, min_tick=min_tick, max_tick=max_tick)
         self.price_precision = price_precision
-        self.min_tick = min_tick
-        self.max_tick = max_tick
         self.increment = Price.from_str_c('1'.zfill(price_precision))
-
-    cpdef Price nearest_ask_tick(self, double value):
-        """
-        For a given price, return the next ask (higher) price on the ladder
-
-        :param value: The price
-        :return: Price
-        """
-        return self.next_ask_tick(value=value, n=0)
-
-    cpdef Price nearest_bid_tick(self, double value):
-        """
-        For a given price, return the next bid (lower)price on the ladder
-
-        :param value: The price
-        :return: Price
-        """
-        return self.next_bid_tick(value=value, n=0)
 
     cpdef Price next_ask_tick(self, double value, int n=0):
         """
@@ -104,6 +85,7 @@ cdef class FixedTickScheme(TickScheme):
 
 # Most FOREX pairs
 FixedTickScheme5Decimal = FixedTickScheme(
+    name="FixedTickScheme5Decimal",
     price_precision=5,
     min_tick=Price.from_str_c("0.00001"),
     max_tick=Price.from_str_c("9.99999"),
@@ -111,10 +93,11 @@ FixedTickScheme5Decimal = FixedTickScheme(
 
 # JPY denominated FOREX pairs
 FixedTickScheme3Decimal = FixedTickScheme(
+    name="FixedTickScheme3Decimal",
     price_precision=3,
     min_tick=Price.from_str_c("0.001"),
     max_tick=Price.from_str_c("999.999"),
 )
 
-register_tick_scheme("FixedTickScheme5Decimal", FixedTickScheme5Decimal)
-register_tick_scheme("FixedTickScheme3Decimal", FixedTickScheme3Decimal)
+register_tick_scheme(FixedTickScheme5Decimal)
+register_tick_scheme(FixedTickScheme3Decimal)
