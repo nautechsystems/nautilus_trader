@@ -306,9 +306,15 @@ class BetfairTestStubs:
 
     @staticmethod
     def make_submitted_order(
-        ts_event=0, ts_init=0, factory=None, client_order_id: Optional[ClientOrderId] = None
+        ts_event=0,
+        ts_init=0,
+        factory=None,
+        client_order_id: Optional[ClientOrderId] = None,
+        **order_kwargs,
     ):
-        order = BetfairTestStubs.make_order(factory=factory, client_order_id=client_order_id)
+        order = BetfairTestStubs.make_order(
+            factory=factory, client_order_id=client_order_id, **order_kwargs
+        )
         submitted = OrderSubmitted(
             trader_id=TestStubs.trader_id(),
             strategy_id=TestStubs.strategy_id(),
@@ -711,6 +717,10 @@ class BetfairStreaming:
     @staticmethod
     def ocm_MIXED():
         return BetfairStreaming.load("streaming_ocm_MIXED.json")
+
+    @staticmethod
+    def ocm_multiple_fills():
+        return BetfairStreaming.load("streaming_ocm_multiple_fills.json")
 
     @staticmethod
     def ocm_DUPLICATE_EXECUTION():
