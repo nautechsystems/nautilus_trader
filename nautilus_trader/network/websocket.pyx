@@ -61,7 +61,6 @@ cdef class WebSocketClient:
         self._session: Optional[aiohttp.ClientSession] = None
         self._socket: Optional[aiohttp.ClientWebSocketResponse] = None
         self._tasks: List[asyncio.Task] = []
-        self._running = False
         self._stopped = False
         self._trigger_stop = False
         self._connection_retry_count = 0
@@ -73,21 +72,20 @@ cdef class WebSocketClient:
         self,
         str ws_url,
         bint start=True,
-        **ws_kwargs
+        **ws_kwargs,
     ) -> None:
         Condition.valid_string(ws_url, "ws_url")
 
         self._log.debug(f"Connecting to websocket: {ws_url}...")
         self._session = aiohttp.ClientSession(loop=self._loop)
         self._socket = await self._session.ws_connect(url=ws_url, **ws_kwargs)
+        self._ws_url = ws_url
+        self._ws_kwargs = ws_kwargs
         await self.post_connect()
         if start:
-            self._running = True
             task: Task = self._loop.create_task(self.start())
             self._tasks.append(task)
         self.is_connected = True
-        self._ws_url = ws_url
-        self._ws_kwargs = ws_kwargs
 
     async def post_connect(self):
         """
@@ -109,9 +107,9 @@ cdef class WebSocketClient:
         self._log.debug("SEND:" + str(raw))
         await self._socket.send_bytes(raw)
 
-    async def recv(self) -> bytes:
+    async def recv(self) -> Optional[bytes]:
         try:
-            resp: WSMessage = await self._socket.receive()
+            resp: WSMessage = await self._socket.receive(timeout=1)
             if resp.type == WSMsgType.TEXT:
                 return resp.data.encode()
             elif resp.type == WSMsgType.BINARY:
@@ -130,31 +128,41 @@ cdef class WebSocketClient:
                 return b""
         except (asyncio.IncompleteReadError, ConnectionAbortedError, RuntimeError) as ex:
             self._log.exception(ex)
-            self._log.debug(f"Error, attempting reconnection {self._connection_retry_count=} {self._max_retry_connection=}")
+            self._log.debug(
+                f"Error, attempting reconnection {self._connection_retry_count=} "
+                f"{self._max_retry_connection=}",
+            )
             if self._connection_retry_count > self._max_retry_connection:
                 raise MaxRetriesExceeded(f"Max retries of {self._max_retry_connection} exceeded")
             await self._reconnect_backoff()
             self._connection_retry_count += 1
-            self._log.debug(f"Attempting reconnect (attempt: {self._connection_retry_count}) after exception")
-            await self.connect(ws_url=self._ws_url, start=False)
+            self._log.debug(
+                f"Attempting reconnect "
+                f"(attempt: {self._connection_retry_count}) after exception",
+            )
+            await self.connect(ws_url=self._ws_url, start=False, **self._ws_kwargs)
 
     async def _reconnect_backoff(self):
         backoff = 2 ** self._connection_retry_count
-        self._log.debug(f"Exponential backoff attempt {self._connection_retry_count}, sleeping for {backoff}")
+        self._log.debug(
+            f"Exponential backoff attempt "
+            f"{self._connection_retry_count}, sleeping for {backoff}",
+        )
         await asyncio.sleep(backoff)
 
     async def start(self) -> None:
         self._log.debug("Starting recv loop")
-        while self._running:
+        while not self._trigger_stop:
             try:
                 raw = await self.recv()
+                if raw is None:
+                    continue
                 self._log.debug(f"[RECV] {raw}")
                 if raw is not None:
                     self._handler(raw)
             except Exception as ex:
                 # TODO - Handle disconnect? Should we reconnect or throw?
                 self._log.exception(ex)
-                self._running = False
         self._log.debug("Stopped")
         self._stopped = True
 

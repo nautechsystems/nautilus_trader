@@ -12,9 +12,30 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
-from nautilus_trader.serialization.arrow.implementations import account_state  # noqa: F401
-from nautilus_trader.serialization.arrow.implementations import closing_prices  # noqa: F401
-from nautilus_trader.serialization.arrow.implementations import instruments  # noqa: F401
-from nautilus_trader.serialization.arrow.implementations import order_book  # noqa: F401
-from nautilus_trader.serialization.arrow.implementations import order_events  # noqa: F401
-from nautilus_trader.serialization.arrow.implementations import position_events  # noqa: F401
+
+import asyncio
+
+import pytest
+
+from nautilus_trader.adapters.binance.websocket.spot import BinanceSpotWebSocket
+from nautilus_trader.common.clock import LiveClock
+from nautilus_trader.common.logging import LiveLogger
+
+
+@pytest.mark.asyncio
+async def test_binance_websocket_client():
+    loop = asyncio.get_event_loop()
+    clock = LiveClock()
+
+    client = BinanceSpotWebSocket(
+        loop=loop,
+        clock=clock,
+        logger=LiveLogger(loop=loop, clock=clock),
+        handler=print,
+    )
+
+    client.subscribe_ticker()
+
+    await client.connect(start=True)
+    await asyncio.sleep(4)
+    await client.close()

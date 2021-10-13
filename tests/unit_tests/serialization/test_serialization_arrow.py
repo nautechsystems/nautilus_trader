@@ -16,6 +16,7 @@
 import copy
 import os
 import sys
+from typing import Any
 
 import pytest
 from fsspec.implementations.memory import MemoryFileSystem
@@ -42,6 +43,7 @@ from nautilus_trader.persistence.external.core import write_objects
 from nautilus_trader.serialization.arrow.serializer import ParquetSerializer
 from tests.test_kit.providers import TestInstrumentProvider
 from tests.test_kit.stubs import TestStubs
+from tests.unit_tests.serialization.conftest import nautilus_objects
 
 
 AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy("AUD/USD")
@@ -89,6 +91,25 @@ class TestParquetSerializer:
         self.order_cancelled = copy.copy(self.order_pending_cancel)
         self.order_cancelled.apply(TestStubs.event_order_canceled(self.order_pending_cancel))
 
+    def _test_serialization(self, obj: Any):
+        cls = type(obj)
+        serialized = ParquetSerializer.serialize(obj)
+        if not isinstance(serialized, list):
+            serialized = [serialized]
+        deserialized = ParquetSerializer.deserialize(cls=cls, chunk=serialized)
+
+        # Assert
+        expected = obj
+        if isinstance(deserialized, list) and not isinstance(expected, list):
+            expected = [expected]
+        assert deserialized == expected
+        write_objects(catalog=self.catalog, chunk=[obj])
+        df = self.catalog._query(cls=cls)
+        assert len(df) == 1
+        nautilus = self.catalog._query(cls=cls, as_dataframe=False)[0]
+        assert nautilus.ts_init == 0
+        return True
+
     @pytest.mark.parametrize(
         "tick",
         [
@@ -98,12 +119,7 @@ class TestParquetSerializer:
         ],
     )
     def test_serialize_and_deserialize_tick(self, tick):
-        serialized = ParquetSerializer.serialize(tick)
-        deserialized = ParquetSerializer.deserialize(cls=type(tick), chunk=[serialized])
-
-        # Assert
-        assert deserialized == [tick]
-        write_objects(catalog=self.catalog, chunk=[tick])
+        self._test_serialization(obj=tick)
 
     def test_serialize_and_deserialize_order_book_delta(self):
         delta = OrderBookDelta(
@@ -285,42 +301,27 @@ class TestParquetSerializer:
     )
     def test_serialize_and_deserialize_order_events_base(self, event_func):
         order = TestStubs.limit_order()
-        # order.venue_order_id = "1"
         event = event_func(order=order)
-        cls = type(event)
-
-        serialized = ParquetSerializer.serialize(event)
-        deserialized = ParquetSerializer.deserialize(cls=cls, chunk=[serialized])
-
-        # Assert
-        assert deserialized == [event]
-        write_objects(catalog=self.catalog, chunk=[event])
-        df = self.catalog._query(cls=cls)
-        assert len(df) == 1
+        self._test_serialization(obj=event)
 
     @pytest.mark.parametrize(
         "event_func",
         [
+            TestStubs.event_order_submitted,
+            TestStubs.event_order_accepted,
             TestStubs.event_order_canceled,
-            TestStubs.event_order_expired,
-            TestStubs.event_order_pending_cancel,
             TestStubs.event_order_pending_update,
+            TestStubs.event_order_pending_cancel,
             TestStubs.event_order_triggered,
+            TestStubs.event_order_expired,
+            TestStubs.event_order_rejected,
+            TestStubs.event_order_canceled,
         ],
     )
     def test_serialize_and_deserialize_order_events_post_accepted(self, event_func):
         # Act
         event = event_func(order=self.order_accepted)
-        cls = type(event)
-
-        serialized = ParquetSerializer.serialize(event)
-        deserialized = ParquetSerializer.deserialize(cls=cls, chunk=[serialized])
-
-        # Assert
-        assert deserialized == [event]
-        write_objects(catalog=self.catalog, chunk=[event])
-        df = self.catalog._query(cls=cls)
-        assert len(df) == 1
+        assert self._test_serialization(obj=event)
 
     @pytest.mark.parametrize(
         "event_func",
@@ -331,18 +332,7 @@ class TestParquetSerializer:
     def test_serialize_and_deserialize_order_events_filled(self, event_func):
         # Act
         event = event_func(order=self.order_accepted, instrument=AUDUSD_SIM)
-        cls = type(event)
-
-        serialized = ParquetSerializer.serialize(event)
-        assert serialized
-        # TODO (bm) - can't deserialize order filled right now
-        # deserialized = ParquetSerializer.deserialize(cls=cls, chunk=serialized)
-
-        # Assert
-        # assert deserialized == [event]
-        write_objects(catalog=self.catalog, chunk=[event])
-        df = self.catalog._query(cls=cls)
-        assert len(df) == 1
+        self._test_serialization(obj=event)
 
     @pytest.mark.parametrize(
         "position_func",
@@ -370,18 +360,7 @@ class TestParquetSerializer:
         position = Position(instrument=instrument, fill=fill3)
 
         event = position_func(position=position)
-        cls = type(event)
-
-        serialized = ParquetSerializer.serialize(event)
-        assert serialized
-        # TODO (bm) - can't deserialize positions right now
-        # deserialized = ParquetSerializer.deserialize(cls=cls, chunk=serialized)
-
-        # Assert
-        # assert deserialized == [event]
-        write_objects(catalog=self.catalog, chunk=[event])
-        df = self.catalog._query(cls=cls)
-        assert len(df) == 1
+        self._test_serialization(obj=event)
 
     @pytest.mark.parametrize(
         "position_func",
@@ -421,18 +400,7 @@ class TestParquetSerializer:
         position.apply(close_fill)
 
         event = position_func(position=position)
-        cls = type(event)
-
-        serialized = ParquetSerializer.serialize(event)
-        assert serialized
-        # TODO (bm) - can't deserialize positions right now
-        # deserialized = ParquetSerializer.deserialize(cls=cls, chunk=serialized)
-
-        # Assert
-        # assert deserialized == [event]
-        write_objects(catalog=self.catalog, chunk=[event])
-        df = self.catalog._query(cls=cls)
-        assert len(df) == 1
+        self._test_serialization(obj=event)
 
     @pytest.mark.parametrize(
         "instrument",
@@ -453,3 +421,10 @@ class TestParquetSerializer:
         write_objects(catalog=self.catalog, chunk=[instrument])
         df = self.catalog.instruments()
         assert len(df) == 1
+
+    @pytest.mark.parametrize(
+        "name, obj", [(obj.__class__.__name__, obj) for obj in nautilus_objects()]
+    )
+    def test_serialize_and_deserialize_all(self, name, obj):
+        # Arrange, Act
+        assert self._test_serialization(obj)

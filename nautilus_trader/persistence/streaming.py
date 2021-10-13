@@ -117,7 +117,8 @@ class FeatherWriter:
             self._writers[cls].close()
 
 
-def read_feather(fs: fsspec.AbstractFileSystem, path: str):
+def read_feather(path: str, fs: fsspec.AbstractFileSystem = None):
+    fs = fs or fsspec.filesystem("file")
     if not fs.exists(path):
         return
     try:

@@ -14,9 +14,13 @@
 # -------------------------------------------------------------------------------------------------
 
 from nautilus_trader.model.data.venue import InstrumentClosePrice
+from nautilus_trader.serialization.arrow.serializer import register_parquet
 
 
 def serialize(price: InstrumentClosePrice):
     result = price.to_dict(price)
     result["close_price"] = price.close_price.as_double()
     return result
+
+
+register_parquet(InstrumentClosePrice, serializer=serialize)

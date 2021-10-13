@@ -23,7 +23,7 @@ from nautilus_trader.infrastructure.cache import CacheDatabaseConfig
 from nautilus_trader.live.data_engine import LiveDataEngineConfig
 from nautilus_trader.live.execution_engine import LiveExecEngineConfig
 from nautilus_trader.live.risk_engine import LiveRiskEngineConfig
-from nautilus_trader.persistence.config import LivePersistenceConfig
+from nautilus_trader.persistence.config import PersistenceConfig
 
 
 class TradingNodeConfig(pydantic.BaseModel):
@@ -85,4 +85,4 @@ class TradingNodeConfig(pydantic.BaseModel):
     check_residuals_delay: PositiveFloat = 10.0
     data_clients: Dict[str, Dict[str, Any]] = {}
     exec_clients: Dict[str, Dict[str, Any]] = {}
-    persistence: Optional[LivePersistenceConfig] = None
+    persistence: Optional[PersistenceConfig] = None

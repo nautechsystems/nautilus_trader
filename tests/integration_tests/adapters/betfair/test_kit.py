@@ -28,6 +28,7 @@ import orjson
 import pandas as pd
 from aiohttp import ClientResponse
 
+from examples.strategies.orderbook_imbalance import OrderBookImbalanceConfig
 from nautilus_trader.adapters.betfair.client.core import BetfairClient
 from nautilus_trader.adapters.betfair.common import BETFAIR_VENUE
 from nautilus_trader.adapters.betfair.data import BetfairDataClient
@@ -36,6 +37,10 @@ from nautilus_trader.adapters.betfair.providers import BetfairInstrumentProvider
 from nautilus_trader.adapters.betfair.providers import make_instruments
 from nautilus_trader.adapters.betfair.util import flatten_tree
 from nautilus_trader.adapters.betfair.util import historical_instrument_provider_loader
+from nautilus_trader.backtest.config import BacktestDataConfig
+from nautilus_trader.backtest.config import BacktestEngineConfig
+from nautilus_trader.backtest.config import BacktestRunConfig
+from nautilus_trader.backtest.config import BacktestVenueConfig
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.factories import OrderFactory
 from nautilus_trader.common.logging import LiveLogger
@@ -58,9 +63,11 @@ from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.orders.limit import LimitOrder
 from nautilus_trader.model.orders.market import MarketOrder
+from nautilus_trader.persistence.config import PersistenceConfig
 from nautilus_trader.persistence.external.core import make_raw_files
 from nautilus_trader.persistence.external.readers import TextReader
 from nautilus_trader.portfolio.portfolio import Portfolio
+from nautilus_trader.trading.config import ImportableStrategyConfig
 from tests import TESTS_PACKAGE_ROOT
 from tests.test_kit import PACKAGE_ROOT
 from tests.test_kit.mocks import MockLiveExecutionEngine
@@ -472,6 +479,60 @@ class BetfairTestStubs:
             **kwargs,
         )
         return reader
+
+    @staticmethod
+    def betfair_backtest_run_config(
+        catalog_path: str,
+        instrument_id: str,
+        catalog_fs_protocol: str = "memory",
+        persist=True,
+        add_strategy=True,
+    ) -> BacktestRunConfig:
+        persistence_config = PersistenceConfig(
+            catalog_path=catalog_path,
+            fs_protocol=catalog_fs_protocol,
+            kind="backtest",
+            persit_logs=True,
+        )
+        base_data_config = BacktestDataConfig(  # type: ignore
+            catalog_path=catalog_path,
+            catalog_fs_protocol=catalog_fs_protocol,
+        )
+        venue = BacktestVenueConfig(  # type: ignore
+            name="BETFAIR",
+            venue_type="EXCHANGE",
+            oms_type="NETTING",
+            account_type="BETTING",
+            base_currency="USD",
+            starting_balances=["10000 USD"],
+            book_type="L2_MBP",
+        )
+        run_config = BacktestRunConfig(  # type: ignore
+            engine=BacktestEngineConfig(),
+            venues=[venue],
+            data=[
+                base_data_config.replace(
+                    data_cls_path="nautilus_trader.model.data.tick.TradeTick",
+                    instrument_id=instrument_id,
+                ),
+                base_data_config.replace(
+                    data_cls_path="nautilus_trader.model.orderbook.data.OrderBookData",
+                    instrument_id=instrument_id,
+                ),
+            ],
+            persistence=persistence_config if persist else None,
+            strategies=[
+                ImportableStrategyConfig(
+                    path="examples.strategies.orderbook_imbalance:OrderBookImbalance",
+                    config=OrderBookImbalanceConfig(
+                        instrument_id=instrument_id, max_trade_size=100
+                    ),
+                )
+            ]
+            if add_strategy
+            else None,
+        )
+        return run_config
 
 
 class BetfairRequests:

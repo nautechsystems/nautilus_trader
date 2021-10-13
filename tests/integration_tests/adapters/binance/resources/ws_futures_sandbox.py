@@ -17,7 +17,7 @@ import asyncio
 
 import pytest
 
-from nautilus_trader.adapters.binance.websocket.spot import BinanceSpotWebSocket
+from nautilus_trader.adapters.binance.websocket.futures import BinanceFuturesWebSocket
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.logging import LiveLogger
 
@@ -27,13 +27,15 @@ async def test_binance_websocket_client():
     loop = asyncio.get_event_loop()
     clock = LiveClock()
 
-    client = BinanceSpotWebSocket(
+    client = BinanceFuturesWebSocket(
         loop=loop,
         clock=clock,
         logger=LiveLogger(loop=loop, clock=clock),
         handler=print,
     )
 
-    client.subscribe_trades("BTCUSDT")
+    client.subscribe_book_ticker("BTCUSDT")
 
     await client.connect(start=True)
+    await asyncio.sleep(4)
+    await client.close()
