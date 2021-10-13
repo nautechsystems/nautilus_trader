@@ -26,6 +26,7 @@ from nautilus_trader.model.orderbook.data import OrderBookData
 from nautilus_trader.model.orderbook.data import OrderBookDelta
 from nautilus_trader.model.orderbook.data import OrderBookDeltas
 from nautilus_trader.model.orderbook.data import OrderBookSnapshot
+from nautilus_trader.serialization.arrow.serializer import register_parquet
 
 
 def _parse_delta(delta: OrderBookDelta, cls):
@@ -128,3 +129,13 @@ def deserialize(data: List[Dict]):
         elif len(chunk) >= 1:  # type: ignore
             results.append(_build_order_book_deltas(values=chunk))
     return sorted(results, key=lambda x: x.ts_event)
+
+
+for cls in [OrderBookData] + OrderBookData.__subclasses__():
+    register_parquet(
+        cls=cls,
+        serializer=serialize,
+        deserializer=deserialize,
+        table=OrderBookData,
+        chunk=True,
+    )

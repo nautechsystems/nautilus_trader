@@ -12,9 +12,9 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
-from nautilus_trader.serialization.arrow.implementations import account_state  # noqa: F401
-from nautilus_trader.serialization.arrow.implementations import closing_prices  # noqa: F401
-from nautilus_trader.serialization.arrow.implementations import instruments  # noqa: F401
-from nautilus_trader.serialization.arrow.implementations import order_book  # noqa: F401
-from nautilus_trader.serialization.arrow.implementations import order_events  # noqa: F401
-from nautilus_trader.serialization.arrow.implementations import position_events  # noqa: F401
+from nautilus_trader.model.instruments.base import Instrument
+from nautilus_trader.serialization.arrow.serializer import register_parquet
+
+
+for cls in Instrument.__subclasses__():
+    register_parquet(cls, partition_keys=tuple())

@@ -15,7 +15,7 @@
 
 import os
 import pathlib
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Union
 
 import fsspec
 import pandas as pd
@@ -34,7 +34,9 @@ from nautilus_trader.model.data.venue import InstrumentStatusUpdate
 from nautilus_trader.model.instruments.base import Instrument
 from nautilus_trader.model.orderbook.data import OrderBookData
 from nautilus_trader.persistence.external.metadata import load_mappings
+from nautilus_trader.persistence.streaming import read_feather
 from nautilus_trader.persistence.util import Singleton
+from nautilus_trader.serialization.arrow.schema import NAUTILUS_PARQUET_SCHEMA
 from nautilus_trader.serialization.arrow.serializer import ParquetSerializer
 from nautilus_trader.serialization.arrow.util import GENERIC_DATA_PREFIX
 from nautilus_trader.serialization.arrow.util import camel_to_snake_case
@@ -67,7 +69,9 @@ class DataCatalog(metaclass=Singleton):
             The fs storage options.
 
         """
-        self.fs = fsspec.filesystem(fs_protocol, **(fs_storage_options or {}))
+        self.fs: fsspec.AbstractFileSystem = fsspec.filesystem(
+            fs_protocol, **(fs_storage_options or {})
+        )
         self.path = pathlib.Path(path)
 
     @classmethod
@@ -159,8 +163,17 @@ class DataCatalog(metaclass=Singleton):
         return df
 
     @staticmethod
-    def _handle_table_nautilus(table: pa.Table, cls: type, mappings: Optional[Dict]):
-        dicts = dict_of_lists_to_list_of_dicts(table.to_pydict())
+    def _handle_table_nautilus(
+        table: Union[pa.Table, pd.DataFrame], cls: type, mappings: Optional[Dict]
+    ):
+        if isinstance(table, pa.Table):
+            dicts = dict_of_lists_to_list_of_dicts(table.to_pydict())
+        elif isinstance(table, pd.DataFrame):
+            dicts = table.to_dict("records")
+        else:
+            raise TypeError(
+                f"`table` was {type(table)}, expected `pyarrow.Table` or `pandas.DataFrame`"
+            )
         if not dicts:
             return []
         for key, maps in mappings.items():
@@ -341,6 +354,31 @@ class DataCatalog(metaclass=Singleton):
         for level in dataset.partitions.levels:
             partitions[level.name] = level.keys
         return partitions
+
+    def _read_feather(self, kind: str, run_id: str):
+        class_mapping: Dict[str, type] = {cls.__name__: cls for cls in NAUTILUS_PARQUET_SCHEMA}
+        data = {}
+        for path in [p for p in self.fs.glob(f"{self.path}/{kind}/{run_id}.feather/*.feather")]:
+            cls_name = pathlib.Path(path).stem
+            df = read_feather(path=path, fs=self.fs)
+            if df is None:
+                print(f"No data for {cls_name}")
+                continue
+            # Apply post read fixes
+            try:
+                objs = self._handle_table_nautilus(
+                    table=df, cls=class_mapping[cls_name], mappings={}
+                )
+                data[cls_name] = objs
+            except Exception as e:
+                print(f"Failed to deserialize {cls_name}: {e}")
+        return sorted(sum(data.values(), list()), key=lambda x: x.ts_init)
+
+    def read_live_run(self, live_run_id: str):
+        return self._read_feather(kind="live", run_id=live_run_id)
+
+    def read_backtest(self, backtest_run_id: str):
+        return self._read_feather(kind="backtest", run_id=backtest_run_id)
 
 
 def combine_filters(*filters):

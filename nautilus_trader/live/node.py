@@ -46,7 +46,7 @@ from nautilus_trader.live.node_builder import TradingNodeBuilder
 from nautilus_trader.live.risk_engine import LiveRiskEngine
 from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.msgbus.bus import MessageBus
-from nautilus_trader.persistence.config import LivePersistenceConfig
+from nautilus_trader.persistence.config import PersistenceConfig
 from nautilus_trader.persistence.streaming import FeatherWriter
 from nautilus_trader.portfolio.portfolio import Portfolio
 from nautilus_trader.serialization.msgpack.serializer import MsgPackSerializer
@@ -473,10 +473,12 @@ class TradingNode:
             self._loop.add_signal_handler(sig, self._loop_sig_handler, sig)
         self._log.debug(f"Event loop {signals} handling setup.")
 
-    def _setup_persistence(self, config: LivePersistenceConfig) -> None:
+    def _setup_persistence(self, config: PersistenceConfig) -> None:
         # Setup persistence
         path = f"{config.catalog_path}/live/{self.instance_id}.feather"
-        writer = FeatherWriter(path=path)
+        writer = FeatherWriter(
+            path=path, fs_protocol=config.fs_protocol, flush_interval=config.flush_interval
+        )
         self.persistence_writers.append(writer)
         self.trader.subscribe("*", writer.write)
         self._log.info(f"Persisting data & events to {path=}")
