@@ -17,6 +17,7 @@ import asyncio
 from unittest.mock import MagicMock
 from unittest.mock import patch
 
+import orjson
 import pytest
 
 from nautilus_trader.adapters.betfair.common import BETFAIR_VENUE
@@ -567,6 +568,7 @@ class TestBetfairExecutionClient:
         self.exec_engine.kill()
         await asyncio.sleep(1)
 
+    @pytest.mark.skip(reason="not implemented")
     @pytest.mark.asyncio
     async def test_replay(self):
         # Arrange
@@ -575,8 +577,6 @@ class TestBetfairExecutionClient:
         await asyncio.sleep(1)
 
         fn = TEST_PATH.joinpath("streaming/streaming_order_stream.json")
-
-        import orjson
 
         for update in orjson.loads(fn.read_bytes()):
             await self.client._handle_order_stream_update(update=update)

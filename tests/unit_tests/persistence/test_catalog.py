@@ -254,9 +254,3 @@ class TestPersistenceCatalog:
             cls=NewsEvent, filter_expr=ds.field("currency") == "CHF", as_nautilus=True
         )
         assert len(data) == 2745 and isinstance(data[0], GenericData)
-
-    def test_read_live(self):
-        # Arrange
-        catalog = DataCatalog(path="")
-        events = catalog.read_live(live_run_id="11e82181-6ed6-4cb5-8b89-535feab74902")
-        assert len(events) == 1
