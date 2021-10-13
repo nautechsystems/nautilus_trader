@@ -144,9 +144,19 @@ class BetfairExecutionClient(LiveExecutionClient):
 
         AccountFactory.register_calculated_account(account_id.issuer)
 
-    def _start(self) -> None:
+    def connect(self):
+        """
+        Connect the client.
+        """
         self._log.info("Connecting...")
         self._loop.create_task(self._connect())
+
+    def disconnect(self):
+        """
+        Disconnect the client.
+        """
+        self._log.info("Disconnecting...")
+        self._loop.create_task(self._disconnect())
 
     async def _connect(self):
         self._log.info("Connecting to BetfairClient...")
@@ -164,12 +174,7 @@ class BetfairExecutionClient(LiveExecutionClient):
         assert self.is_connected
         self._log.info("Connected.")
 
-    def _stop(self) -> None:
-        self._loop.create_task(self._disconnect())
-
     async def _disconnect(self) -> None:
-        self._log.info("Disconnecting...")
-
         # Close socket
         self._log.info("Closing streaming socket...")
         await self.stream.disconnect()

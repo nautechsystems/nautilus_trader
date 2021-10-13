@@ -13,6 +13,11 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+"""
+The `LiveExecutionClient` class is responsible for interfacing with a particular
+API which may be presented directly by an exchange, or broker intermediary.
+"""
+
 import asyncio
 
 import pandas as pd

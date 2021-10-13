@@ -536,6 +536,7 @@ class TestBetfairExecutionClient:
         # Arrange
         self.client.stream = MagicMock()
         self.exec_engine.start()
+        self.exec_engine.connect()
         await asyncio.sleep(1)
 
         balance = self.cache.account_for_venue(self.venue).balances()[GBP]
@@ -574,6 +575,7 @@ class TestBetfairExecutionClient:
         # Arrange
         self.client.stream = MagicMock()
         self.exec_engine.start()
+        self.exec_engine.connect()
         await asyncio.sleep(1)
 
         fn = TEST_PATH.joinpath("streaming/streaming_order_stream.json")

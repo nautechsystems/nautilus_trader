@@ -110,9 +110,19 @@ class BetfairDataClient(LiveMarketDataClient):
         self._strict_handling = strict_handling
         self._subscribed_market_ids: Set[InstrumentId] = set()
 
-    def _start(self) -> None:
+    def connect(self):
+        """
+        Connect the client.
+        """
         self._log.info("Connecting...")
         self._loop.create_task(self._connect())
+
+    def disconnect(self):
+        """
+        Disconnect the client.
+        """
+        self._log.info("Disconnecting...")
+        self._loop.create_task(self._disconnect())
 
     async def _connect(self):
         self._log.info("Connecting to BetfairClient...")
@@ -147,12 +157,7 @@ class BetfairDataClient(LiveMarketDataClient):
             await asyncio.sleep(5)
             await self._stream.send(orjson.dumps({"op": "heartbeat"}))
 
-    def _stop(self) -> None:
-        self._loop.create_task(self._disconnect())
-
     async def _disconnect(self):
-        self._log.info("Disconnecting...")
-
         # Close socket
         self._log.info("Closing streaming socket...")
         await self._stream.disconnect()
