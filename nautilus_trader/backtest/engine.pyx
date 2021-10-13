@@ -459,6 +459,11 @@ cdef class BacktestEngine:
 
         self._data = pickle.loads(data)
 
+        self._log.info(
+            f"Loaded {len(self._data):,} data "
+            f"element{'' if len(data) == 1 else 's'} from pickle.",
+        )
+
     def add_venue(
         self,
         Venue venue,
