@@ -109,7 +109,7 @@ cdef class WebSocketClient:
 
     async def recv(self) -> Optional[bytes]:
         try:
-            resp: WSMessage = await self._socket.receive(timeout=1)
+            resp: WSMessage = await self._socket.receive()
             if resp.type == WSMsgType.TEXT:
                 return resp.data.encode()
             elif resp.type == WSMsgType.BINARY:
