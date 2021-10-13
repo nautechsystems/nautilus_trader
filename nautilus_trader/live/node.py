@@ -513,6 +513,10 @@ class TradingNode:
             self._exec_engine.start()
             self._risk_engine.start()
 
+            # Connect all clients
+            self._data_engine.connect()
+            self._exec_engine.connect()
+
             # Await engine connection and initialization
             self._log.info(
                 f"Waiting for engines to connect and initialize "
