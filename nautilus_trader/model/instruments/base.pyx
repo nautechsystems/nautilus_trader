@@ -29,6 +29,9 @@ from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.objects cimport Quantity
 
 from nautilus_trader.model.tick_scheme.base import TICK_SCHEMES
+from nautilus_trader.model.tick_scheme.base import get_tick_scheme
+
+from nautilus_trader.model.tick_scheme.base cimport TickScheme
 
 
 cdef class Instrument(Data):
@@ -45,6 +48,8 @@ cdef class Instrument(Data):
         AssetType asset_type,
         Currency quote_currency not None,
         bint is_inverse,
+        int price_precision,
+        Price price_increment,
         str tick_scheme_name,
         int size_precision,
         Quantity size_increment not None,
@@ -54,6 +59,8 @@ cdef class Instrument(Data):
         Quantity min_quantity,  # Can be None
         Money max_notional,     # Can be None
         Money min_notional,     # Can be None
+        Price max_price,  # Can be None
+        Price min_price,  # Can be None
         margin_init not None: Decimal,
         margin_maint not None: Decimal,
         maker_fee not None: Decimal,
@@ -77,8 +84,12 @@ cdef class Instrument(Data):
             The quote currency.
         is_inverse : Currency
             If the instrument costing is inverse (quantity expressed in quote currency units).
+        price_precision : int
+            The price decimal precision.
         size_precision : int
             The trading size decimal precision.
+        price_increment : Price
+            The minimum price increment (tick size).
         size_increment : Price
             The minimum size increment.
         multiplier : Decimal
@@ -93,6 +104,10 @@ cdef class Instrument(Data):
             The maximum allowable order notional value.
         min_notional : Money, optional
             The minimum allowable order notional value.
+        max_price : Price, optional
+            The maximum allowable printed price.
+        min_price : Price, optional
+            The minimum allowable printed price.
         margin_init : Decimal
             The initial (order) margin requirement in percentage of order value.
         margin_maint : Decimal
@@ -365,6 +380,16 @@ cdef class Instrument(Data):
 
         """
         return Price(float(value), precision=self.price_precision)
+
+    cpdef Price next_bid_tick(self, double value, int num_ticks=0):
+        Condition.not_none(self.tick_scheme_name, "self.tick_scheme_name")
+        cdef TickScheme tick_scheme = get_tick_scheme(self.tick_scheme_name)
+        return tick_scheme.next_bid_tick(value=value, n=num_ticks)
+
+    cpdef Price next_ask_tick(self, double value, int num_ticks=0):
+        Condition.not_none(self.tick_scheme_name, "self.tick_scheme_name")
+        cdef TickScheme tick_scheme = get_tick_scheme(self.tick_scheme_name)
+        return tick_scheme.next_ask_tick(value=value, n=num_ticks)
 
     cpdef Quantity make_qty(self, value):
         """

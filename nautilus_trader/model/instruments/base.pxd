@@ -36,6 +36,8 @@ cdef class Instrument(Data):
     """The quote currency for the instrument.\n\n:returns: `Currency`"""
     cdef readonly bint is_inverse
     """If the quantity is expressed in quote currency.\n\n:returns: `Currency`"""
+    cdef readonly int price_precision
+    """The price precision of the instrument.\n\n:returns: `int`"""
     cdef readonly int size_precision
     """The size precision of the instrument.\n\n:returns: `int`"""
     cdef readonly str tick_scheme_name
@@ -54,6 +56,10 @@ cdef class Instrument(Data):
     """The maximum notional order value for the instrument.\n\n:returns: `Money` or ``None``"""
     cdef readonly Money min_notional
     """The minimum notional order value for the instrument.\n\n:returns: `Money` or ``None``"""
+    cdef readonly Price max_price
+    """The maximum printable price for the instrument.\n\n:returns: `Price` or ``None``"""
+    cdef readonly Price min_price
+    """The minimum printable price for the instrument.\n\n:returns: `Price` or ``None``"""
     cdef readonly object margin_init
     """The initial (order) margin rate for the instrument.\n\n:returns: `Decimal`"""
     cdef readonly object margin_maint
@@ -74,5 +80,7 @@ cdef class Instrument(Data):
     cpdef Currency get_base_currency(self)
     cpdef Currency get_cost_currency(self)
     cpdef Price make_price(self, value)
+    cpdef Price next_bid_tick(self, double value, int num_ticks=*)
+    cpdef Price next_ask_tick(self, double value, int num_ticks=*)
     cpdef Quantity make_qty(self, value)
     cpdef Money notional_value(self, Quantity quantity, price: Decimal, bint inverse_as_quote=*)
