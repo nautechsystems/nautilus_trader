@@ -42,6 +42,7 @@ from nautilus_trader.model.data.venue import VenueStatusUpdate
 from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import AggressorSide
 from nautilus_trader.model.enums import BarAggregation
+from nautilus_trader.model.enums import BookAction
 from nautilus_trader.model.enums import BookType
 from nautilus_trader.model.enums import InstrumentStatus
 from nautilus_trader.model.enums import LiquiditySide
@@ -78,6 +79,8 @@ from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.orderbook.book import OrderBook
 from nautilus_trader.model.orderbook.data import Order
+from nautilus_trader.model.orderbook.data import OrderBookDelta
+from nautilus_trader.model.orderbook.data import OrderBookDeltas
 from nautilus_trader.model.orderbook.data import OrderBookSnapshot
 from nautilus_trader.model.orderbook.ladder import Ladder
 from nautilus_trader.model.orders.limit import LimitOrder
@@ -318,7 +321,7 @@ class TestStubs:
         )
 
     @staticmethod
-    def order(price: float, side: OrderSide, size=10):
+    def order(price: float = 100, side: OrderSide = OrderSide.BUY, size=10):
         return Order(price=price, size=size, side=side)
 
     @staticmethod
@@ -375,6 +378,27 @@ class TestStubs:
             book_type=book_type,
             bids=[(float(bid_price - i), float(bid_volume * (1 + i))) for i in range(bid_levels)],
             asks=[(float(ask_price + i), float(ask_volume * (1 + i))) for i in range(ask_levels)],
+            ts_event=0,
+            ts_init=0,
+        )
+
+    @staticmethod
+    def order_book_delta(order=None):
+        return OrderBookDelta(
+            instrument_id=TestStubs.audusd_id(),
+            book_type=BookType.L2_MBP,
+            action=BookAction.ADD,
+            order=order or TestStubs.order(),
+            ts_event=0,
+            ts_init=0,
+        )
+
+    @staticmethod
+    def order_book_deltas(deltas=None):
+        return OrderBookDeltas(
+            instrument_id=TestStubs.audusd_id(),
+            book_type=BookType.L2_MBP,
+            deltas=deltas or [TestStubs.order_book_delta()],
             ts_event=0,
             ts_init=0,
         )

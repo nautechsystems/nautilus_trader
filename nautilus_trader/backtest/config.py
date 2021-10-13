@@ -25,6 +25,7 @@ from nautilus_trader.cache.cache import CacheConfig
 from nautilus_trader.data.engine import DataEngineConfig
 from nautilus_trader.execution.engine import ExecEngineConfig
 from nautilus_trader.infrastructure.cache import CacheDatabaseConfig
+from nautilus_trader.persistence.config import PersistenceConfig
 from nautilus_trader.risk.config import RiskEngineConfig
 from nautilus_trader.trading.config import ImportableStrategyConfig
 
@@ -100,6 +101,7 @@ class BacktestVenueConfig(Partialable):
     account_type: str
     base_currency: Optional[str]
     starting_balances: List[str]
+    book_type: str = "L1_TBBO"
     # fill_model: Optional[FillModel] = None  # TODO(cs): Implement next iteration
     # modules: Optional[List[SimulationModule]] = None  # TODO(cs): Implement next iteration
 
@@ -123,8 +125,8 @@ class BacktestDataConfig(Partialable):
     """
 
     catalog_path: str
-    data_cls_path: str
-    catalog_fs_protocol: str = None
+    data_cls_path: Optional[str] = None
+    catalog_fs_protocol: Optional[str] = None
     catalog_fs_storage_options: Optional[Dict] = None
     instrument_id: Optional[str] = None
     start_time: Optional[Union[datetime, str, int]] = None
@@ -227,6 +229,7 @@ class BacktestRunConfig(Partialable):
     venues: Optional[List[BacktestVenueConfig]] = None
     data: Optional[List[BacktestDataConfig]] = None
     strategies: Optional[List[ImportableStrategyConfig]] = None
+    persistence: Optional[PersistenceConfig] = None
     batch_size_bytes: Optional[int] = None
 
     @property

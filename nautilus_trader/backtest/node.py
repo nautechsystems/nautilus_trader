@@ -31,6 +31,7 @@ from nautilus_trader.backtest.engine import BacktestEngine
 from nautilus_trader.backtest.engine import BacktestEngineConfig
 from nautilus_trader.backtest.results import BacktestResult
 from nautilus_trader.core.datetime import maybe_dt_to_unix_nanos
+from nautilus_trader.model.c_enums.book_type import BookTypeParser
 from nautilus_trader.model.currency import Currency
 from nautilus_trader.model.data.tick import QuoteTick
 from nautilus_trader.model.data.tick import TradeTick
@@ -40,9 +41,12 @@ from nautilus_trader.model.enums import VenueType
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.instruments.base import Instrument
 from nautilus_trader.model.objects import Money
+from nautilus_trader.model.orderbook.data import OrderBookData
 from nautilus_trader.model.orderbook.data import OrderBookDelta
 from nautilus_trader.persistence.batching import batch_files
 from nautilus_trader.persistence.catalog import DataCatalog
+from nautilus_trader.persistence.config import PersistenceConfig
+from nautilus_trader.persistence.streaming import FeatherWriter
 from nautilus_trader.trading.config import ImportableStrategyConfig
 from nautilus_trader.trading.config import StrategyFactory
 from nautilus_trader.trading.strategy import TradingStrategy
@@ -115,6 +119,7 @@ class BacktestNode:
                 run_config_id=config.id,
                 venue_configs=config.venues,
                 data_configs=config.data,
+                persistence=config.persistence,
                 strategy_configs=config.strategies,
                 batch_size_bytes=config.batch_size_bytes,
             )
@@ -149,6 +154,7 @@ class BacktestNode:
         venue_configs: List[BacktestVenueConfig],
         data_configs: List[BacktestDataConfig],
         strategy_configs: List[ImportableStrategyConfig],
+        persistence: Optional[PersistenceConfig] = None,
         batch_size_bytes: Optional[int] = None,
     ) -> BacktestResult:
         engine: BacktestEngine = self._create_engine(
@@ -159,6 +165,18 @@ class BacktestNode:
         strategies: List[TradingStrategy] = [
             StrategyFactory.create(config) for config in strategy_configs
         ]
+
+        # Setup persistence
+        writer = None
+        if persistence is not None:
+            catalog = persistence.as_catalog()
+            catalog.fs.mkdir(f"{persistence.catalog_path}/backtest/")
+            writer = FeatherWriter(
+                path=f"{persistence.catalog_path}/backtest/{run_config_id}.feather",
+                fs_protocol=persistence.fs_protocol,
+                flush_interval=persistence.flush_interval,
+            )
+            engine.trader.subscribe("*", writer.write)
 
         engine.add_strategies(strategies)
 
@@ -173,6 +191,8 @@ class BacktestNode:
         result = engine.get_result()
 
         engine.dispose()
+        if writer is not None:
+            writer.close()
 
         return result
 
@@ -206,6 +226,7 @@ class BacktestNode:
                 account_type=AccountType[config.account_type],
                 base_currency=Currency.from_str(config.base_currency),
                 starting_balances=[Money.from_str(m) for m in config.starting_balances],
+                book_type=BookTypeParser.from_str_py(config.book_type),
             )
         return engine
 
@@ -215,7 +236,7 @@ def _load_engine_data(engine: BacktestEngine, data):
         engine.add_ticks(data=data["data"])
     elif data["type"] == TradeTick:
         engine.add_ticks(data=data["data"])
-    elif data["type"] == OrderBookDelta:
+    elif data["type"] in (OrderBookDelta, OrderBookData):
         engine.add_order_book_data(data=data["data"])
     else:
         engine.add_generic_data(client_id=data["client_id"], data=data["data"])
