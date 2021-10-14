@@ -58,7 +58,7 @@ cdef class TieredTickScheme(TickScheme):
                 stop = start + ((self.max_ticks_per_tier + 1) * step)
             precision = Price.from_str_c(str(step)).precision
             ticks = [Price(value=x, precision=precision) for x in np.arange(start, stop, step)]
-            if len(ticks) > self.max_ticks_per_tier:
+            if len(ticks) > self.max_ticks_per_tier+1:
                 print(f"{self.name}: too many ticks for tier ({start=}, {stop=}, {step=}, trimming to {self.max_ticks_per_tier} (from {len(ticks)})")
                 ticks = ticks[:self.max_ticks_per_tier]
             all_ticks.extend(ticks)
@@ -87,23 +87,6 @@ cdef class TieredTickScheme(TickScheme):
             return self.ticks[idx - n]
         return self.ticks[idx - 1 - n]
 
-
-BETFAIR_TICK_SCHEME = TieredTickScheme(
-    name="BETFAIR",
-    tiers=[
-        (1.01, 2, 0.01),
-        (2, 3, 0.02),
-        (3, 4, 0.05),
-        (4, 6, 0.1),
-        (6, 10, 0.2),
-        (10, 20, 0.5),
-        (20, 30, 1),
-        (30, 50, 2),
-        (50, 100, 5),
-        (100, 1000, 10),
-    ]
-)
-register_tick_scheme(BETFAIR_TICK_SCHEME)
 
 TOPIX100_TICK_SCHEME = TieredTickScheme(
     name="TOPIX100",

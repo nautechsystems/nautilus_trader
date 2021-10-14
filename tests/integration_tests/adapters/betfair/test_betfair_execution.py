@@ -447,7 +447,7 @@ class TestBetfairExecutionClient:
         # Assert
         assert len(self.messages) == 2
         assert isinstance(self.messages[1], OrderFilled)
-        assert self.messages[1].last_px == Price(0.90909, precision=5)
+        assert self.messages[1].last_px == Price.from_str("0.9090909")
 
     @pytest.mark.asyncio
     async def test_order_stream_mixed(self):

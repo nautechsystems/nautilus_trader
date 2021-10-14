@@ -331,7 +331,7 @@ class TestBettingInstrument:
     @pytest.mark.parametrize(
         "value, n, expected",
         [
-            (1.011, 0, "1.02"),
+            (0.001, 0, "0.0010000"),
         ],
     )
     def test_next_ask_tick(self, value, n, expected):
@@ -342,7 +342,7 @@ class TestBettingInstrument:
     @pytest.mark.parametrize(
         "value, n, expected",
         [
-            (2.01, 0, "2.00"),
+            (0.501, 0, "0.5000000"),
         ],
     )
     def test_next_bid_tick(self, value, n, expected):

@@ -29,7 +29,7 @@ JPYUSD = TestInstrumentProvider.default_fx_ccy("JPY/USD")
 
 class TestFixedTickScheme:
     def setup(self) -> None:
-        self.tick_scheme = get_tick_scheme("Fixed3Decimal")
+        self.tick_scheme = get_tick_scheme("FOREX_3DECIMAL")
         assert self.tick_scheme.price_precision
 
     @pytest.mark.parametrize(
@@ -104,24 +104,30 @@ class TestFixedTickScheme:
 
 class TestBettingTickScheme:
     def setup(self) -> None:
-        self.tick_scheme: TieredTickScheme = get_tick_scheme("Betfair")
+        self.tick_scheme: TieredTickScheme = get_tick_scheme("BETFAIR")
 
     def test_attrs(self):
-        assert self.tick_scheme.min_tick == Price.from_str("1.01")
-        assert self.tick_scheme.max_tick == Price.from_str("990")
+        assert self.tick_scheme.min_tick == Price.from_str("0.0010000")
+        assert self.tick_scheme.max_tick == Price.from_str("0.9900990")
 
     def test_build_ticks(self):
         result = self.tick_scheme.ticks[:5].tolist()
-        expected = [Price.from_str(f"1.0{n}") for n in range(1, 6)]
+        expected = [
+            Price.from_str("0.0010000"),
+            Price.from_str("0.0010101"),
+            Price.from_str("0.0010204"),
+            Price.from_str("0.0010309"),
+            Price.from_str("0.0010417"),
+        ]
         assert result == expected
 
     @pytest.mark.parametrize(
         "value, expected",
         [
-            (1.005, 0),
-            (1.01, 0),
-            (2.01, 100),
-            (3.50, 159),
+            (0.99, 349),
+            (0.90, 339),
+            (0.5, 250),
+            (0.285, 190),
         ],
     )
     def test_find_tick_idx(self, value, expected):
@@ -131,11 +137,11 @@ class TestBettingTickScheme:
     @pytest.mark.parametrize(
         "value, n, expected",
         [
-            (1.50, 0, "1.50"),
-            (2.0, 0, "2.00"),
-            (2.01, 0, "2.02"),
-            (2.02, 0, "2.02"),
-            (2.02, 2, "2.06"),
+            (0.667, 0, "0.6711409"),
+            (0.5, 0, "0.5"),
+            (0.4975, 0, "0.5000000"),
+            (0.4950, 0, "0.4950495"),
+            (0.4950, 2, "0.5025126"),
         ],
     )
     def test_next_ask_tick(self, value, n, expected):
@@ -146,11 +152,11 @@ class TestBettingTickScheme:
     @pytest.mark.parametrize(
         "value, n, expected",
         [
-            (1.50, 0, "1.50"),
-            (2.0, 0, "2.00"),
-            (2.001, 0, "2.00"),
-            (2.01, 0, "2.00"),
-            (2.01, 2, "1.98"),
+            (0.667, 0, "0.6666667"),
+            (0.5, 0, "0.5"),
+            (0.4975, 0, "0.4950495"),
+            (0.4950, 0, "0.4901961"),
+            (0.4950, 2, "0.4807692"),
         ],
     )
     def test_next_bid_tick(self, value, n, expected):
@@ -165,7 +171,7 @@ class TestTopix100TickScheme:
 
     def test_attrs(self):
         assert self.tick_scheme.min_tick == Price.from_str("0.1")
-        assert self.tick_scheme.max_tick == Price.from_int(129_990_000)
+        assert self.tick_scheme.max_tick == Price.from_int(130_000_000)
 
     @pytest.mark.parametrize(
         "value, n, expected",

@@ -275,8 +275,6 @@ class BetfairExecutionClient(LiveExecutionClient):
         PyCondition.not_none(instrument, "instrument")
         existing_order = self._cache.order(client_order_id)  # type: Order
 
-        # TODO (bm) Should we move this section up a level into cdef?
-
         self.generate_order_pending_update(
             strategy_id=command.strategy_id,
             instrument_id=command.instrument_id,
@@ -357,7 +355,7 @@ class BetfairExecutionClient(LiveExecutionClient):
                     update_instruction["instruction"]["limitOrder"]["size"], precision=4
                 ),
                 price=price_to_probability(
-                    update_instruction["instruction"]["limitOrder"]["price"]
+                    str(update_instruction["instruction"]["limitOrder"]["price"])
                 ),
                 trigger=None,  # Not applicable for Betfair
                 ts_event=self._clock.timestamp_ns(),
@@ -539,7 +537,7 @@ class BetfairExecutionClient(LiveExecutionClient):
                     order_side=B2N_ORDER_STREAM_SIDE[update["side"]],
                     order_type=OrderType.LIMIT,
                     last_qty=Quantity(update["sm"], instrument.size_precision),
-                    last_px=price_to_probability(update["p"]),
+                    last_px=price_to_probability(str(update["p"])),
                     # avg_px=Decimal(order['avp']),
                     quote_currency=instrument.quote_currency,
                     commission=Money(0, self.base_currency),
@@ -572,7 +570,7 @@ class BetfairExecutionClient(LiveExecutionClient):
                     order_side=B2N_ORDER_STREAM_SIDE[update["side"]],
                     order_type=OrderType.LIMIT,
                     last_qty=Quantity(update["sm"], instrument.size_precision),
-                    last_px=price_to_probability(update["p"]),
+                    last_px=price_to_probability(str(update["p"])),
                     quote_currency=instrument.quote_currency,
                     # avg_px=order['avp'],
                     commission=Money(0, self.base_currency),
