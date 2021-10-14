@@ -55,7 +55,7 @@ cdef class TieredTickScheme(TickScheme):
         cdef list all_ticks = []
         for start, stop, step in self.tiers:
             if stop == np.inf:
-                stop = start + self.max_ticks_per_tier + 1
+                stop = start + ((self.max_ticks_per_tier + 1) * step)
             precision = Price.from_str_c(str(step)).precision
             ticks = [Price(value=x, precision=precision) for x in np.arange(start, stop, step)]
             if len(ticks) > self.max_ticks_per_tier:
@@ -68,7 +68,6 @@ cdef class TieredTickScheme(TickScheme):
         cdef int idx = self.ticks.searchsorted(value)
         prev_value = self.ticks[idx - 1].as_double()
         # print(f"Searching for {value=}, {idx=}, {prev_value=}, exact?={value == prev_value}")
-
         if value == prev_value:
             return idx - 1
         return idx
@@ -120,7 +119,7 @@ TOPIX100TickScheme = TieredTickScheme(
         (10_000_000, 30_000_000, 5_000),
         (30_000_000, np.inf, 10_000),
     ],
-    max_ticks_per_tier=10000,
+    max_ticks_per_tier=10_000,
 )
 
 register_tick_scheme(BetfairTickScheme)

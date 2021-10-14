@@ -157,49 +157,40 @@ class TestBettingTickScheme:
         assert result == expected
 
 
-# class TestTopix100TickScheme:
-#     def setup(self) -> None:
-#         self.tick_scheme = get_tick_scheme("TOPIX100TickScheme")
-#
-#     #
-#     def test_attrs(self):
-#         assert self.tick_scheme.min_tick == Price.from_str("1.01")
-#         assert self.tick_scheme.max_tick == Price.from_str("990")
-#
-#     def test_next_ask_tick_basic(self):
-#         # Standard checks
-#         result = self.tick_scheme.next_ask_tick(0.7277)
-#         expected = Price.from_str("0.7278")
-#         assert result == expected
-#
-#         result = self.tick_scheme.next_ask_tick(0.9999)
-#         expected = Price.from_str("1.0000")
-#         assert result == expected
-#
-#     def test_next_ask_price_between_ticks(self):
-#         result = self.tick_scheme.next_ask_tick(value=Price.from_str("72775001"))
-#         expected = Price.from_str("0.7278")
-#         assert result == expected
-#
-#     def test_next_ask_price_max_tick(self):
-#         assert self.tick_scheme.next_ask_tick(value=Price.from_str("10000")) is None
-#
-#     def test_next_ask_price_near_boundary(self):
-#         result = self.tick_scheme.next_ask_tick(value=Price.from_str("0.00005"))
-#         expected = Price.from_str("0.0001")
-#         assert result == expected
-#
-#     def test_next_bid_tick_basic(self):
-#         # Standard checks at change points
-#         result = self.tick_scheme.next_bid_tick(value=Price.from_str("0.7277"))
-#         expected = Price.from_str("0.7276")
-#         assert result == expected
-#
-#         result = self.tick_scheme.next_ask_tick(value=Price.from_str("1.0001"))
-#         expected = Price.from_str("1.0000")
-#         assert result == expected
-#
-#     def test_next_bid_price_between_ticks(self):
-#         result = self.tick_scheme.next_ask_tick(value=Price.from_str("72775001"))
-#         expected = Price.from_str("0.7277")
-#         assert result == expected
+class TestTopix100TickScheme:
+    def setup(self) -> None:
+        self.tick_scheme = get_tick_scheme("TOPIX100TickScheme")
+
+    def test_attrs(self):
+        assert self.tick_scheme.min_tick == Price.from_str("0.1")
+        assert self.tick_scheme.max_tick == Price.from_int(129_990_000)
+
+    @pytest.mark.parametrize(
+        "value, n, expected",
+        [
+            (1000, 0, "1000"),
+            (1000.25, 0, "1000.50"),
+            (10_001, 0, "10_005"),
+            (10_000_001, 0, "10_005_000"),
+            (9999, 2, "10_005"),
+        ],
+    )
+    def test_next_ask_tick(self, value, n, expected):
+        result = self.tick_scheme.next_ask_tick(value, n=n)
+        expected = Price.from_str(expected)
+        assert result == expected
+
+    @pytest.mark.parametrize(
+        "value, n, expected",
+        [
+            (1000, 0, "1000"),
+            (1000.75, 0, "1000.50"),
+            (10_007, 0, "10_005"),
+            (10_000_001, 0, "10_000_000"),
+            (10_006, 2, "9999"),
+        ],
+    )
+    def test_next_bid_tick(self, value, n, expected):
+        result = self.tick_scheme.next_bid_tick(value=value, n=n)
+        expected = Price.from_str(expected)
+        assert result == expected
