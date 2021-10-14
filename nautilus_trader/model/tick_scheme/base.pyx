@@ -61,7 +61,7 @@ cdef class TickScheme:
         raise NotImplementedError
 
 
-TICK_SCHEMES = {}
+cdef object TICK_SCHEMES = {}
 
 cpdef void register_tick_scheme(tick_scheme: TickScheme):
     global TICK_SCHEMES

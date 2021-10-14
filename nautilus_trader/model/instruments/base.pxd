@@ -40,6 +40,8 @@ cdef class Instrument(Data):
     """The price precision of the instrument.\n\n:returns: `int`"""
     cdef readonly int size_precision
     """The size precision of the instrument.\n\n:returns: `int`"""
+    cdef readonly Price price_increment
+    """The minimum price increment or tick size for the instrument.\n\n:returns: `Price`"""
     cdef readonly str tick_scheme_name
     """The TickScheme name.\n\n:returns: `str`"""
     cdef readonly Quantity size_increment

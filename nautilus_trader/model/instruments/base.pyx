@@ -27,11 +27,9 @@ from nautilus_trader.model.c_enums.asset_type cimport AssetTypeParser
 from nautilus_trader.model.currency cimport Currency
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.objects cimport Quantity
-
-from nautilus_trader.model.tick_scheme.base import TICK_SCHEMES
-from nautilus_trader.model.tick_scheme.base import get_tick_scheme
-
+from nautilus_trader.model.tick_scheme.base cimport TICK_SCHEMES
 from nautilus_trader.model.tick_scheme.base cimport TickScheme
+from nautilus_trader.model.tick_scheme.base cimport get_tick_scheme
 
 
 cdef class Instrument(Data):
@@ -49,7 +47,6 @@ cdef class Instrument(Data):
         Currency quote_currency not None,
         bint is_inverse,
         int price_precision,
-        str tick_scheme_name,
         int size_precision,
         Price price_increment,
         Quantity size_increment not None,
@@ -67,6 +64,7 @@ cdef class Instrument(Data):
         taker_fee not None: Decimal,
         int64_t ts_event,
         int64_t ts_init,
+        str tick_scheme_name=None,
         dict info=None,
     ):
         """
@@ -126,11 +124,15 @@ cdef class Instrument(Data):
         Raises
         ------
         ValueError
+            If price_precision is negative (< 0).
+        ValueError
             If size_precision is negative (< 0).
         ValueError
             If price_increment is not positive (> 0).
         ValueError
             If size_increment is not positive (> 0).
+        ValueError
+            If price_precision is not equal to price_increment.precision.
         ValueError
             If size_increment is not equal to size_increment.precision.
         ValueError
@@ -145,12 +147,20 @@ cdef class Instrument(Data):
             If max_notional is not positive (> 0).
         ValueError
             If min_notional is negative (< 0).
+        ValueError
+            If max_price is not positive (> 0).
+        ValueError
+            If min_price is negative (< 0).
+
         """
+        Condition.not_negative_int(price_precision, "price_precision")
         Condition.not_negative_int(size_precision, "size_precision")
+        Condition.positive(price_increment, "price_increment")
         Condition.positive(size_increment, "size_increment")
+        Condition.equal(price_precision, price_increment.precision, "price_precision", "price_increment.precision")  # noqa
         Condition.equal(size_precision, size_increment.precision, "size_precision", "size_increment.precision")  # noqa
         Condition.positive(multiplier, "multiplier")
-        Condition.is_in(tick_scheme_name, TICK_SCHEMES, "tick_scheme_name", str(TICK_SCHEMES))
+
         if lot_size is not None:
             Condition.positive(lot_size, "lot_size")
         if max_quantity is not None:
@@ -161,12 +171,19 @@ cdef class Instrument(Data):
             Condition.positive(max_notional, "max_notional")
         if min_notional is not None:
             Condition.not_negative(min_notional, "min_notional")
+        if tick_scheme_name is not None:
+            Condition.is_in(tick_scheme_name, TICK_SCHEMES, "tick_scheme_name", str(TICK_SCHEMES))
+        if max_price is not None:
+            Condition.positive(max_price, "max_price")
+        if min_price is not None:
+            Condition.not_negative(min_price, "min_price")
         Condition.type(margin_init, Decimal, "margin_init")
         Condition.not_negative(margin_init, "margin_init")
         Condition.type(margin_maint, Decimal, "margin_maint")
         Condition.not_negative(margin_maint, "margin_maint")
         Condition.type(maker_fee, Decimal, "maker_fee")
         Condition.type(taker_fee, Decimal, "taker_fee")
+
         super().__init__(ts_event, ts_init)
 
         self.id = instrument_id
@@ -174,6 +191,8 @@ cdef class Instrument(Data):
         self.asset_type = asset_type
         self.quote_currency = quote_currency
         self.is_inverse = is_inverse
+        self.price_precision = price_precision
+        self.price_increment = price_increment
         self.tick_scheme_name = tick_scheme_name
         self.size_precision = size_precision
         self.size_increment = size_increment
@@ -183,6 +202,8 @@ cdef class Instrument(Data):
         self.min_quantity = min_quantity
         self.max_notional = max_notional
         self.min_notional = min_notional
+        self.max_price = max_price
+        self.min_price = min_price
         self.margin_init = margin_init
         self.margin_maint = margin_maint
         self.maker_fee = maker_fee

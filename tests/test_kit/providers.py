@@ -490,20 +490,23 @@ class TestInstrumentProvider:
 
         # Check tick precision of quote currency
         if quote_currency == "JPY":
-            tick_scheme_name = "FixedTickScheme3Decimal"
+            price_precision = 3
         else:
-            tick_scheme_name = "FixedTickScheme5Decimal"
+            price_precision = 5
 
         return CurrencySpot(
             instrument_id=instrument_id,
             base_currency=Currency.from_str(base_currency),
             quote_currency=Currency.from_str(quote_currency),
-            tick_scheme_name=tick_scheme_name,
+            price_precision=price_precision,
             size_precision=0,
+            price_increment=Price(1 / 10 ** price_precision, price_precision),
             size_increment=Quantity.from_int(1),
             lot_size=Quantity.from_str("1000"),
             max_quantity=Quantity.from_str("1e7"),
             min_quantity=Quantity.from_str("1000"),
+            max_price=None,
+            min_price=None,
             max_notional=Money(50000000.00, USD),
             min_notional=Money(1000.00, USD),
             margin_init=Decimal("0.03"),

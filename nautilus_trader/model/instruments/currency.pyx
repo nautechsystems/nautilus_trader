@@ -40,20 +40,24 @@ cdef class CurrencySpot(Instrument):
         InstrumentId instrument_id not None,
         Currency base_currency not None,
         Currency quote_currency not None,
-        str tick_scheme_name,
+        int price_precision,
         int size_precision,
+        Price price_increment not None,
         Quantity size_increment not None,
         Quantity lot_size,      # Can be None
         Quantity max_quantity,  # Can be None
         Quantity min_quantity,  # Can be None
         Money max_notional,     # Can be None
         Money min_notional,     # Can be None
+        Price max_price,        # Can be None
+        Price min_price,        # Can be None
         margin_init not None: Decimal,
         margin_maint not None: Decimal,
         maker_fee not None: Decimal,
         taker_fee not None: Decimal,
         int64_t ts_event,
         int64_t ts_init,
+        str tick_scheme_name=None,
         dict info=None,
     ):
         """
@@ -67,10 +71,12 @@ cdef class CurrencySpot(Instrument):
             The base currency.
         quote_currency : Currency
             The quote currency.
-        tick_scheme_name : str
-            The TickScheme name
+        price_precision : int
+            The price decimal precision.
         size_precision : int
             The trading size decimal precision.
+        price_increment : Price
+            The minimum price increment (tick size).
         size_increment : Price
             The minimum size increment.
         lot_size : Quantity, optional
@@ -83,6 +89,10 @@ cdef class CurrencySpot(Instrument):
             The maximum allowable order notional value.
         min_notional : Money, optional
             The minimum allowable order notional value.
+        max_price : Price, optional
+            The maximum allowable printed price.
+        min_price : Price, optional
+            The minimum allowable printed price.
         margin_init : Decimal
             The initial (order) margin requirement in percentage of order value.
         margin_maint : Decimal
@@ -105,7 +115,11 @@ cdef class CurrencySpot(Instrument):
         ValueError
             If size_precision is negative (< 0).
         ValueError
+            If price_increment is not positive (> 0).
+        ValueError
             If size_increment is not positive (> 0).
+        ValueError
+            If price_precision is not equal to price_increment.precision.
         ValueError
             If size_increment is not equal to size_increment.precision.
         ValueError
@@ -118,6 +132,10 @@ cdef class CurrencySpot(Instrument):
             If max_notional is not positive (> 0).
         ValueError
             If min_notional is negative (< 0).
+        ValueError
+            If max_price is not positive (> 0).
+        ValueError
+            If min_price is negative (< 0).
 
         """
         # Determine asset class
@@ -134,8 +152,9 @@ cdef class CurrencySpot(Instrument):
             asset_type=AssetType.SPOT,
             quote_currency=quote_currency,
             is_inverse=False,
-            tick_scheme_name=tick_scheme_name,
+            price_precision=price_precision,
             size_precision=size_precision,
+            price_increment=price_increment,
             size_increment=size_increment,
             multiplier=Quantity.from_int_c(1),
             lot_size=lot_size,
@@ -143,6 +162,8 @@ cdef class CurrencySpot(Instrument):
             min_quantity=min_quantity,
             max_notional=max_notional,
             min_notional=min_notional,
+            max_price=max_price,
+            min_price=min_price,
             margin_init=margin_init,
             margin_maint=margin_maint,
             maker_fee=maker_fee,
