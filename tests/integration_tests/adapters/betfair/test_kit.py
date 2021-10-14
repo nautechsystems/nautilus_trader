@@ -727,6 +727,10 @@ class BetfairStreaming:
         return BetfairStreaming.load("streaming_ocm_DUPLICATE_EXECUTION.json")
 
     @staticmethod
+    def ocm_error_fill():
+        return BetfairStreaming.load("streaming_ocm_error_fill.json")
+
+    @staticmethod
     def mcm_BSP():
         return BetfairStreaming.load("streaming_mcm_BSP.json")
 
