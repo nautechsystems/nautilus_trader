@@ -88,8 +88,8 @@ cdef class TieredTickScheme(TickScheme):
         return self.ticks[idx - 1 - n]
 
 
-BetfairTickScheme = TieredTickScheme(
-    name="BetfairTickScheme",
+BETFAIR_TICK_SCHEME = TieredTickScheme(
+    name="BETFAIR",
     tiers=[
         (1.01, 2, 0.01),
         (2, 3, 0.02),
@@ -103,9 +103,10 @@ BetfairTickScheme = TieredTickScheme(
         (100, 1000, 10),
     ]
 )
+register_tick_scheme(BETFAIR_TICK_SCHEME)
 
-TOPIX100TickScheme = TieredTickScheme(
-    name="TOPIX100TickScheme",
+TOPIX100_TICK_SCHEME = TieredTickScheme(
+    name="TOPIX100",
     tiers=[
         (0.1, 1_000, 0.1),
         (1_000, 3_000, 0.5),
@@ -122,5 +123,4 @@ TOPIX100TickScheme = TieredTickScheme(
     max_ticks_per_tier=10_000,
 )
 
-register_tick_scheme(BetfairTickScheme)
-register_tick_scheme(TOPIX100TickScheme)
+register_tick_scheme(TOPIX100_TICK_SCHEME)

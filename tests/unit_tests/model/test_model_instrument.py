@@ -41,6 +41,7 @@ ETHUSD_BITMEX = TestInstrumentProvider.ethusd_bitmex()
 AAPL_EQUITY = TestInstrumentProvider.aapl_equity()
 ES_FUTURE = TestInstrumentProvider.es_future()
 AAPL_OPTION = TestInstrumentProvider.aapl_option()
+NFL_INSTRUMENT = TestInstrumentProvider.betting_instrument()
 
 
 class TestInstrument:
@@ -285,6 +286,34 @@ class TestInstrument:
         # Assert
         assert result == expected
 
+    @pytest.mark.parametrize(
+        "instrument, tick_scheme_name, value, n, expected",
+        [
+            (AUDUSD_SIM, "FixedTickScheme5Decimal", 0.727771, 0, "0.72777"),
+            (AUDUSD_SIM, "FixedTickScheme5Decimal", 0.9999, 0, "1.00000"),
+        ],
+    )
+    @pytest.mark.skip("Not implemented")
+    def test_next_ask_tick(self, instrument, tick_scheme_name, value, n, expected):
+        instrument.tick_scheme_name = tick_scheme_name
+        result = instrument.next_ask_tick(value, n=n)
+        expected = Price.from_str(expected)
+        assert result == expected
+
+    @pytest.mark.parametrize(
+        "instrument, tick_scheme_name, value, n, expected",
+        [
+            (AUDUSD_SIM, "FixedTickScheme5Decimal", 0.727771, 0, "0.72777"),
+            (AUDUSD_SIM, "FixedTickScheme5Decimal", 0.9999, 0, "1.00000"),
+        ],
+    )
+    @pytest.mark.skip("Not implemented")
+    def test_next_bid_tick(self, instrument, tick_scheme_name, value, n, expected):
+        instrument.tick_scheme_name = tick_scheme_name
+        result = instrument.next_bid_tick(value, n=n)
+        expected = Price.from_str(expected)
+        assert result == expected
+
 
 class TestBettingInstrument:
     def setup(self):
@@ -298,3 +327,25 @@ class TestBettingInstrument:
         ).as_decimal()
         # We are long 100 at 0.5 probability, aka 2.0 in odds terms
         assert notional == Decimal("200.0")
+
+    @pytest.mark.parametrize(
+        "value, n, expected",
+        [
+            (1.011, 0, "1.02"),
+        ],
+    )
+    def test_next_ask_tick(self, value, n, expected):
+        result = self.instrument.next_ask_tick(value, num_ticks=n)
+        expected = Price.from_str(expected)
+        assert result == expected
+
+    @pytest.mark.parametrize(
+        "value, n, expected",
+        [
+            (2.01, 0, "2.00"),
+        ],
+    )
+    def test_next_bid_tick(self, value, n, expected):
+        result = self.instrument.next_bid_tick(value, num_ticks=n)
+        expected = Price.from_str(expected)
+        assert result == expected

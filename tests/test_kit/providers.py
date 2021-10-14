@@ -540,6 +540,7 @@ class TestInstrumentProvider:
             currency="GBP",
             ts_event=0,
             ts_init=0,
+            tick_scheme_name="BETFAIR",
         )
 
     @staticmethod

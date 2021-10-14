@@ -29,7 +29,7 @@ JPYUSD = TestInstrumentProvider.default_fx_ccy("JPY/USD")
 
 class TestFixedTickScheme:
     def setup(self) -> None:
-        self.tick_scheme = get_tick_scheme("FixedTickScheme3Decimal")
+        self.tick_scheme = get_tick_scheme("Fixed3Decimal")
         assert self.tick_scheme.price_precision
 
     @pytest.mark.parametrize(
@@ -104,7 +104,7 @@ class TestFixedTickScheme:
 
 class TestBettingTickScheme:
     def setup(self) -> None:
-        self.tick_scheme: TieredTickScheme = get_tick_scheme("BetfairTickScheme")
+        self.tick_scheme: TieredTickScheme = get_tick_scheme("Betfair")
 
     def test_attrs(self):
         assert self.tick_scheme.min_tick == Price.from_str("1.01")
@@ -161,7 +161,7 @@ class TestBettingTickScheme:
 
 class TestTopix100TickScheme:
     def setup(self) -> None:
-        self.tick_scheme = get_tick_scheme("TOPIX100TickScheme")
+        self.tick_scheme = get_tick_scheme("TOPIX100")
 
     def test_attrs(self):
         assert self.tick_scheme.min_tick == Price.from_str("0.1")

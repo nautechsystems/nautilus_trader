@@ -61,6 +61,7 @@ cdef class BettingInstrument(Instrument):
         str currency not None,
         int64_t ts_event,
         int64_t ts_init,
+        str tick_scheme_name="BETFAIR",
     ):
         assert event_open_date.tzinfo is not None
         assert market_start_time.tzinfo is not None
@@ -116,6 +117,7 @@ cdef class BettingInstrument(Instrument):
             ts_event=ts_event,
             ts_init=ts_init,
             info=dict(),  # TODO - Add raw response?
+            tick_scheme_name=tick_scheme_name
         )
 
     @staticmethod

@@ -85,20 +85,19 @@ cdef class FixedTickScheme(TickScheme):
 
 
 # Most FOREX pairs
-FixedTickScheme5Decimal = FixedTickScheme(
-    name="FixedTickScheme5Decimal",
+FOREX_5DECIMAL_TICK_SCHEME = FixedTickScheme(
+    name="FOREX_5DECIMAL",
     price_precision=5,
     min_tick=Price.from_str_c("0.00001"),
     max_tick=Price.from_str_c("9.99999"),
 )
+register_tick_scheme(FOREX_5DECIMAL_TICK_SCHEME)
 
 # JPY denominated FOREX pairs
-FixedTickScheme3Decimal = FixedTickScheme(
-    name="FixedTickScheme3Decimal",
+FOREX_3DECIMAL_TICK_SCHEME = FixedTickScheme(
+    name="FOREX_3DECIMAL",
     price_precision=3,
     min_tick=Price.from_str_c("0.001"),
     max_tick=Price.from_str_c("999.999"),
 )
-
-register_tick_scheme(FixedTickScheme5Decimal)
-register_tick_scheme(FixedTickScheme3Decimal)
+register_tick_scheme(FOREX_3DECIMAL_TICK_SCHEME)
