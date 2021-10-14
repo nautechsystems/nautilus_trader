@@ -368,7 +368,7 @@ class BetfairExecutionClient(LiveExecutionClient):
         self.create_task(self._cancel_order(command))
 
     async def _cancel_order(self, command: CancelOrder) -> None:
-        self._log.debug("Received cancel order")
+        self._log.debug(f"Received cancel order: {command}")
         self.generate_order_pending_cancel(
             strategy_id=command.strategy_id,
             instrument_id=command.instrument_id,
@@ -527,6 +527,7 @@ class BetfairExecutionClient(LiveExecutionClient):
         if update["sm"] > 0 and update["sm"] > order.filled_qty:
             execution_id = create_execution_id(update)
             if execution_id not in self.published_executions[client_order_id]:
+                fill_qty = update["sm"] - order.filled_qty
                 self.generate_order_filled(
                     strategy_id=order.strategy_id,
                     instrument_id=order.instrument_id,
@@ -536,7 +537,7 @@ class BetfairExecutionClient(LiveExecutionClient):
                     execution_id=execution_id,
                     order_side=B2N_ORDER_STREAM_SIDE[update["side"]],
                     order_type=OrderType.LIMIT,
-                    last_qty=Quantity(update["sm"], instrument.size_precision),
+                    last_qty=Quantity(fill_qty, instrument.size_precision),
                     last_px=price_to_probability(str(update["p"])),
                     # avg_px=Decimal(order['avp']),
                     quote_currency=instrument.quote_currency,
@@ -601,6 +602,8 @@ class BetfairExecutionClient(LiveExecutionClient):
                         update.get("cd") or update.get("ld") or update.get("md")
                     ),
                 )
+                if venue_order_id in self.venue_order_id_to_client_order_id:
+                    del self.venue_order_id_to_client_order_id[venue_order_id]
         # Market order will not be in self.published_executions
         if client_order_id in self.published_executions:
             # This execution is complete - no need to track this anymore
@@ -612,7 +615,9 @@ class BetfairExecutionClient(LiveExecutionClient):
         for _ in selection.get("ml", []):
             pass
 
-    async def wait_for_order(self, venue_order_id: VenueOrderId, timeout_seconds=10.0) -> None:
+    async def wait_for_order(
+        self, venue_order_id: VenueOrderId, timeout_seconds=10.0
+    ) -> Optional[ClientOrderId]:
         """
         We may get an order update from the socket before our submit_order
         response has come back (with our betId).
@@ -640,6 +645,7 @@ class BetfairExecutionClient(LiveExecutionClient):
             f"after {timeout_seconds} seconds"
             f"\nexisting: {self.venue_order_id_to_client_order_id})"
         )
+        return None
 
     # -- RECONCILIATION -------------------------------------------------------------------------------
 

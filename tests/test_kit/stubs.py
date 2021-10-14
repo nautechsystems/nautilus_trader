@@ -428,9 +428,9 @@ class TestStubs:
         )
 
     @staticmethod
-    def betting_account():
+    def betting_account(account_id=None):
         return AccountFactory.create(
-            TestStubs.event_betting_account_state(account_id=TestStubs.account_id())
+            TestStubs.event_betting_account_state(account_id=account_id or TestStubs.account_id())
         )
 
     @staticmethod
@@ -523,9 +523,9 @@ class TestStubs:
             balances=[
                 AccountBalance(
                     GBP,
-                    Money(1_000_000, GBP),
+                    Money(1_000, GBP),
                     Money(0, GBP),
-                    Money(1_000_000, GBP),
+                    Money(1_000, GBP),
                 )
             ],
             info={},
