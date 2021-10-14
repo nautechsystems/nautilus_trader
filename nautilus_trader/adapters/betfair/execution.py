@@ -92,7 +92,7 @@ class BetfairExecutionClient(LiveExecutionClient):
         loop : asyncio.AbstractEventLoop
             The event loop for the client.
         client : BetfairClient
-            The Betfair HTTPClient.
+            The Betfair HttpClient.
         account_id : AccountId
             The account ID for the client.
         base_currency : Currency

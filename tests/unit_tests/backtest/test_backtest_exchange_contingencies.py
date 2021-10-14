@@ -100,7 +100,7 @@ class TestSimulatedExchangeContingencyAdvancedOrders:
 
         self.exchange = SimulatedExchange(
             venue=FTX,
-            venue_type=VenueType.ECN,
+            venue_type=VenueType.EXCHANGE,
             oms_type=OMSType.NETTING,
             account_type=AccountType.MARGIN,
             base_currency=None,  # Multi-asset wallet
