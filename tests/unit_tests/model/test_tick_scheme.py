@@ -132,7 +132,8 @@ class TestBettingTickScheme:
             (1.50, 0, "1.50"),
             (2.0, 0, "2.00"),
             (2.01, 0, "2.02"),
-            # (0.7275, "0.733"),
+            (2.02, 0, "2.02"),
+            (2.02, 2, "2.06"),
         ],
     )
     def test_next_ask_tick(self, value, n, expected):
@@ -146,7 +147,8 @@ class TestBettingTickScheme:
             (1.50, 0, "1.50"),
             (2.0, 0, "2.00"),
             (2.001, 0, "2.00"),
-            # (0.7275, "0.733"),
+            (2.01, 0, "2.00"),
+            (2.01, 2, "1.98"),
         ],
     )
     def test_next_bid_tick(self, value, n, expected):

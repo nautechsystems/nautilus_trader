@@ -66,9 +66,11 @@ cdef class TieredTickScheme(TickScheme):
 
     cpdef int find_tick_index(self, double value):
         cdef int idx = self.ticks.searchsorted(value)
-        print(f"Searching for {value=}, {idx=}, exact?={value == self.ticks[idx].as_double()}")
-        if value == self.ticks[idx].as_double():
-            return idx
+        prev_value = self.ticks[idx - 1].as_double()
+        # print(f"Searching for {value=}, {idx=}, {prev_value=}, exact?={value == prev_value}")
+
+        if value == prev_value:
+            return idx - 1
         return idx
 
     cpdef Price next_ask_tick(self, double value, int n=0):
