@@ -67,7 +67,7 @@ class BetfairDataClient(LiveMarketDataClient):
         loop : asyncio.AbstractEventLoop
             The event loop for the client.
         client : BetfairClient
-            The betfair HTTPClient
+            The betfair HttpClient
         msgbus : MessageBus
             The message bus for the client.
         cache : Cache

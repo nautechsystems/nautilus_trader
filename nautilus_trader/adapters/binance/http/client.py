@@ -31,13 +31,13 @@ from nautilus_trader.adapters.binance.http.parsing import clean_none_value
 from nautilus_trader.adapters.binance.http.parsing import encoded_string
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.logging import Logger
-from nautilus_trader.network.http import HTTPClient
+from nautilus_trader.network.http import HttpClient
 
 
 NAUTILUS_VERSION = nautilus_trader.__version__
 
 
-class BinanceHTTPClient(HTTPClient):
+class BinanceHttpClient(HttpClient):
     """
     Provides a `Binance` asynchronous HTTP client
     """

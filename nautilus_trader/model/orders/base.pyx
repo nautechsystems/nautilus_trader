@@ -588,8 +588,8 @@ cdef class Order:
             return OrderSide.SELL
         elif side == OrderSide.SELL:
             return OrderSide.BUY
-        else:
-            raise ValueError(f"side was invalid, was {side}")
+        else:  # pragma: no cover (design-time error)
+            raise ValueError(f"invalid OrderSide, was {side}")
 
     @staticmethod
     cdef OrderSide flatten_side_c(PositionSide side) except *:
@@ -597,8 +597,8 @@ cdef class Order:
             return OrderSide.SELL
         elif side == PositionSide.SHORT:
             return OrderSide.BUY
-        else:
-            raise ValueError(f"side was invalid, was {side}")
+        else:  # pragma: no cover (design-time error)
+            raise ValueError(f"invalid OrderSide, was {side}")
 
     @staticmethod
     def opposite_side(OrderSide side) -> OrderSide:
@@ -721,6 +721,8 @@ cdef class Order:
             else:
                 self._fsm.trigger(OrderStatus.FILLED)
             self._filled(event)
+        else:  # pragma: no cover (design-time error)
+            raise ValueError(f"invalid OrderEvent, was {type(event)}")
 
         # Update events last as FSM may raise InvalidStateTrigger
         self._events.append(event)

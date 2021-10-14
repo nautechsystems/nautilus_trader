@@ -32,7 +32,7 @@ from nautilus_trader.core.correctness cimport Condition
 cdef int ONE_DAY = 86_400
 
 
-cdef class HTTPClient:
+cdef class HttpClient:
     """
     Provides an asynchronous HTTP client.
     """
@@ -48,7 +48,7 @@ cdef class HTTPClient:
         dict connector_kwargs=None,
     ):
         """
-        Initialize a new instance of the ``HTTPClient`` class.
+        Initialize a new instance of the ``HttpClient`` class.
 
         Parameters
         ----------
