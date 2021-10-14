@@ -62,6 +62,7 @@ class TestFixedTickScheme:
         assert self.tick_scheme.price_precision == 3
         assert self.tick_scheme.min_tick == Price.from_str("0.001")
         assert self.tick_scheme.max_tick == Price.from_str("999.999")
+        assert self.tick_scheme.increment == Price.from_str("0.001")
 
     @pytest.mark.parametrize(
         "value, expected",
@@ -203,14 +204,14 @@ class TestBitmexSpotTickScheme:
             name="BitmexSpot",
             price_precision=1,
             increment=0.50,
-            min_tick=Price.from_str_c("0.001"),
-            max_tick=Price.from_str_c("999.999"),
+            min_tick=Price.from_str("0.001"),
+            max_tick=Price.from_str("999.999"),
         )
 
     @pytest.mark.parametrize(
         "value, n, expected",
         [
-            (1000, 0, "1000"),
+            (10.1, 0, "10.5"),
         ],
     )
     def test_next_ask_tick(self, value, n, expected):
@@ -221,7 +222,7 @@ class TestBitmexSpotTickScheme:
     @pytest.mark.parametrize(
         "value, n, expected",
         [
-            (1000, 0, "1000"),
+            (10.1, 0, "10.0"),
         ],
     )
     def test_next_bid_tick(self, value, n, expected):

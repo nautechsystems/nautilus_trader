@@ -49,7 +49,7 @@ cdef class FixedTickScheme(TickScheme):
         """
         super().__init__(name=name, min_tick=min_tick, max_tick=max_tick)
         self.price_precision = price_precision
-        self.increment = Price.from_str(str(increment)) or Price.from_str_c('1'.zfill(price_precision))
+        self.increment = Price.from_str(str(increment or "0." + "1".zfill(price_precision)))
 
     cpdef Price next_ask_tick(self, double value, int n=0):
         """
@@ -63,7 +63,7 @@ cdef class FixedTickScheme(TickScheme):
         """
         if value > self.max_tick:
             return None
-        cdef double base = 1 * 10 ** - float(self.price_precision)
+        cdef double base = self.increment.as_double()
         cdef double rounded = round_up(value=value, base=base) + (n * base)
         return Price(rounded, precision=self.price_precision)
 
@@ -79,7 +79,7 @@ cdef class FixedTickScheme(TickScheme):
         """
         if value < self.min_tick:
             return None
-        cdef double base = 1 * 10 ** - float(self.price_precision)
+        cdef double base = self.increment.as_double()
         cdef double rounded = round_down(value=value, base=base) - (n * base)
         return Price(rounded, precision=self.price_precision)
 
