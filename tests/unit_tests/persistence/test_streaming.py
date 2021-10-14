@@ -52,7 +52,6 @@ class TestPersistenceStreaming:
         )
         return data
 
-    @pytest.mark.skip("broken on manager.pyx:L182")
     def test_feather_writer(self):
         # Arrange
         instrument = self.catalog.instruments(as_nautilus=True)[0]

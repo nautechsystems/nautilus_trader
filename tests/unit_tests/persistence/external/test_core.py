@@ -449,7 +449,6 @@ class TestPersistenceCore:
         ]
         assert new_partitions == expected
 
-    @pytest.mark.skip(reason="bm to fix")
     def test_validate_data_catalog(self):
         # Arrange
         self._loaded_data_into_catalog()
@@ -466,7 +465,7 @@ class TestPersistenceCore:
         expected = [
             f"/root/data/betfair_ticker.parquet/instrument_id={ins1}/20191220.parquet",
             f"/root/data/betfair_ticker.parquet/instrument_id={ins2}/20191220.parquet",
-            "/root/data/betting_instrument.parquet/20210922.parquet",
+            "/root/data/betting_instrument.parquet/20211014.parquet",
             f"/root/data/instrument_status_update.parquet/instrument_id={ins1}/20191220.parquet",
             f"/root/data/instrument_status_update.parquet/instrument_id={ins2}/20191220.parquet",
             f"/root/data/order_book_data.parquet/instrument_id={ins1}/20191220.parquet",
