@@ -49,9 +49,9 @@ cdef class Instrument(Data):
         Currency quote_currency not None,
         bint is_inverse,
         int price_precision,
-        Price price_increment,
         str tick_scheme_name,
         int size_precision,
+        Price price_increment,
         Quantity size_increment not None,
         Quantity multiplier not None,
         Quantity lot_size,      # Can be None
@@ -59,8 +59,8 @@ cdef class Instrument(Data):
         Quantity min_quantity,  # Can be None
         Money max_notional,     # Can be None
         Money min_notional,     # Can be None
-        Price max_price,  # Can be None
-        Price min_price,  # Can be None
+        Price max_price,        # Can be None
+        Price min_price,        # Can be None
         margin_init not None: Decimal,
         margin_maint not None: Decimal,
         maker_fee not None: Decimal,
