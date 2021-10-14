@@ -509,8 +509,8 @@ class BetfairTestStubs:
             venue_type="EXCHANGE",
             oms_type="NETTING",
             account_type="BETTING",
-            base_currency="USD",
-            starting_balances=["10000 USD"],
+            base_currency="GBP",
+            starting_balances=["10000 GBP"],
             book_type="L2_MBP",
         )
         run_config = BacktestRunConfig(  # type: ignore
@@ -531,7 +531,9 @@ class BetfairTestStubs:
                 ImportableStrategyConfig(
                     path="examples.strategies.orderbook_imbalance:OrderBookImbalance",
                     config=OrderBookImbalanceConfig(
-                        instrument_id=instrument_id, max_trade_size=100
+                        instrument_id=instrument_id,
+                        trigger_min_size=30,
+                        max_trade_size=50,
                     ),
                 )
             ]
