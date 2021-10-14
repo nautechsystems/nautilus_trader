@@ -640,6 +640,8 @@ cdef class ExecutionEngine(Component):
         elif oms_type == OMSType.NETTING:
             # Assign netted position ID singleton
             fill.position_id = PositionId(f"{fill.instrument_id.value}-{fill.strategy_id.value}")
+        else:  # pragma: no cover
+            raise ValueError(f"invalid OMSType, was {oms_type}")
 
     cdef void _handle_order_fill(self, OrderFilled fill, OMSType oms_type) except *:
         cdef Position position = self._cache.position(fill.position_id)

@@ -113,8 +113,8 @@ def _order_to_liability(order: Union[LimitOrder, MarketOrder]) -> float:
         size = float(round(order.quantity / (liability / order.quantity), 0))
     elif order.side == OrderSide.BUY:
         size = float(order.quantity)
-    else:
-        raise RuntimeError()  # pragma: no cover
+    else:  # pragma: no cover (design-time error)
+        raise ValueError(f"invalid OrderSide, was {order.side}")
     return size
 
 
