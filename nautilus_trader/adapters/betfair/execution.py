@@ -595,14 +595,17 @@ class BetfairExecutionClient(LiveExecutionClient):
             )
             if key not in self.pending_update_order_client_ids:
                 # The remainder of this order has been canceled
+                cancelled_ts = update.get("cd") or update.get("ld") or update.get("md")
+                if cancelled_ts is not None:
+                    cancelled_ts = millis_to_nanos(cancelled_ts)
+                else:
+                    cancelled_ts = self._clock.timestamp_ns()
                 self.generate_order_canceled(
                     strategy_id=order.strategy_id,
                     instrument_id=instrument.id,
                     client_order_id=client_order_id,
                     venue_order_id=venue_order_id,
-                    ts_event=millis_to_nanos(
-                        update.get("cd") or update.get("ld") or update.get("md")
-                    ),
+                    ts_event=cancelled_ts,
                 )
                 if venue_order_id in self.venue_order_id_to_client_order_id:
                     del self.venue_order_id_to_client_order_id[venue_order_id]
