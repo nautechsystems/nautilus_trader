@@ -18,6 +18,7 @@ from nautilus_trader.model.objects import Price
 from nautilus_trader.model.tick_scheme.base import get_tick_scheme
 from nautilus_trader.model.tick_scheme.base import round_down
 from nautilus_trader.model.tick_scheme.base import round_up
+from nautilus_trader.model.tick_scheme.implementations.fixed import FixedTickScheme
 from nautilus_trader.model.tick_scheme.implementations.tiered import TieredTickScheme
 from tests.test_kit.providers import TestInstrumentProvider
 
@@ -188,6 +189,39 @@ class TestTopix100TickScheme:
             (10_007, 0, "10_005"),
             (10_000_001, 0, "10_000_000"),
             (10_006, 2, "9999"),
+        ],
+    )
+    def test_next_bid_tick(self, value, n, expected):
+        result = self.tick_scheme.next_bid_tick(value=value, n=n)
+        expected = Price.from_str(expected)
+        assert result == expected
+
+
+class TestBitmexSpotTickScheme:
+    def setup(self) -> None:
+        self.tick_scheme = FixedTickScheme(
+            name="BitmexSpot",
+            price_precision=1,
+            increment=0.50,
+            min_tick=Price.from_str_c("0.001"),
+            max_tick=Price.from_str_c("999.999"),
+        )
+
+    @pytest.mark.parametrize(
+        "value, n, expected",
+        [
+            (1000, 0, "1000"),
+        ],
+    )
+    def test_next_ask_tick(self, value, n, expected):
+        result = self.tick_scheme.next_ask_tick(value, n=n)
+        expected = Price.from_str(expected)
+        assert result == expected
+
+    @pytest.mark.parametrize(
+        "value, n, expected",
+        [
+            (1000, 0, "1000"),
         ],
     )
     def test_next_bid_tick(self, value, n, expected):

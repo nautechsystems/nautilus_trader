@@ -32,6 +32,7 @@ cdef class FixedTickScheme(TickScheme):
             int price_precision,
             Price min_tick,
             Price max_tick,
+            increment=None,
     ):
         """
         Initialize a new instance of the `Instrument` class.
@@ -48,7 +49,7 @@ cdef class FixedTickScheme(TickScheme):
         """
         super().__init__(name=name, min_tick=min_tick, max_tick=max_tick)
         self.price_precision = price_precision
-        self.increment = Price.from_str_c('1'.zfill(price_precision))
+        self.increment = Price.from_str(str(increment)) or Price.from_str_c('1'.zfill(price_precision))
 
     cpdef Price next_ask_tick(self, double value, int n=0):
         """
