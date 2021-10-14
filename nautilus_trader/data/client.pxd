@@ -28,7 +28,7 @@ from nautilus_trader.model.identifiers cimport InstrumentId
 
 cdef class DataClient(Component):
     cdef readonly Cache _cache
-    cdef readonly dict _feeds_generic_data
+    cdef set _subscriptions_generic
 
     cdef readonly bint is_connected
     """If the client is connected.\n\n:returns: `bool`"""
@@ -42,6 +42,9 @@ cdef class DataClient(Component):
     cpdef void subscribe(self, DataType data_type) except *
     cpdef void unsubscribe(self, DataType data_type) except *
 
+    cpdef void _add_subscription(self, DataType data_type) except *
+    cpdef void _remove_subscription(self, DataType data_type) except *
+
 # -- REQUEST HANDLERS ------------------------------------------------------------------------------
 
     cpdef void request(self, DataType data_type, UUID4 correlation_id) except *
@@ -53,19 +56,17 @@ cdef class DataClient(Component):
 
 
 cdef class MarketDataClient(DataClient):
-    cdef readonly dict _feeds_order_book_delta
-    cdef readonly dict _feeds_order_book_snapshot
-    cdef readonly dict _feeds_ticker
-    cdef readonly dict _feeds_quote_tick
-    cdef readonly dict _feeds_trade_tick
-    cdef readonly dict _feeds_bar
-    cdef readonly dict _feeds_instrument_status_update
-    cdef readonly dict _feeds_instrument_close_price
-    cdef readonly set _feeds_instrument
+    cdef set _subscriptions_order_book_delta
+    cdef set _subscriptions_order_book_snapshot
+    cdef set _subscriptions_ticker
+    cdef set _subscriptions_quote_tick
+    cdef set _subscriptions_trade_tick
+    cdef set _subscriptions_bar
+    cdef set _subscriptions_instrument_status_update
+    cdef set _subscriptions_instrument_close_price
+    cdef set _subscriptions_instrument
 
     cdef object _update_instruments_task
-
-    cpdef list unavailable_methods(self)
 
 # -- SUBSCRIPTIONS ---------------------------------------------------------------------------------
 
@@ -87,7 +88,6 @@ cdef class MarketDataClient(DataClient):
     cpdef void subscribe_quote_ticks(self, InstrumentId instrument_id) except *
     cpdef void subscribe_trade_ticks(self, InstrumentId instrument_id) except *
     cpdef void subscribe_bars(self, BarType bar_type) except *
-    cpdef void subscribe_venue_status_updates(self, InstrumentId instrument_id) except *
     cpdef void subscribe_instrument_status_updates(self, InstrumentId instrument_id) except *
     cpdef void subscribe_instrument_close_prices(self, InstrumentId instrument_id) except *
     cpdef void unsubscribe_instruments(self) except *
@@ -98,9 +98,27 @@ cdef class MarketDataClient(DataClient):
     cpdef void unsubscribe_quote_ticks(self, InstrumentId instrument_id) except *
     cpdef void unsubscribe_trade_ticks(self, InstrumentId instrument_id) except *
     cpdef void unsubscribe_bars(self, BarType bar_type) except *
-    cpdef void unsubscribe_venue_status_updates(self, InstrumentId instrument_id) except *
     cpdef void unsubscribe_instrument_status_updates(self, InstrumentId instrument_id) except *
     cpdef void unsubscribe_instrument_close_prices(self, InstrumentId instrument_id) except *
+
+    cpdef void _add_subscription_instrument(self, InstrumentId instrument_id) except *
+    cpdef void _add_subscription_order_book_deltas(self, InstrumentId instrument_id) except *
+    cpdef void _add_subscription_order_book_snapshots(self, InstrumentId instrument_id) except *
+    cpdef void _add_subscription_ticker(self, InstrumentId instrument_id) except *
+    cpdef void _add_subscription_quote_ticks(self, InstrumentId instrument_id) except *
+    cpdef void _add_subscription_trade_ticks(self, InstrumentId instrument_id) except *
+    cpdef void _add_subscription_bars(self, BarType bar_type) except *
+    cpdef void _add_subscription_instrument_status_updates(self, InstrumentId instrument_id) except *
+    cpdef void _add_subscription_instrument_close_prices(self, InstrumentId instrument_id) except *
+    cpdef void _remove_subscription_instrument(self, InstrumentId instrument_id) except *
+    cpdef void _remove_subscription_order_book_deltas(self, InstrumentId instrument_id) except *
+    cpdef void _remove_subscription_order_book_snapshots(self, InstrumentId instrument_id) except *
+    cpdef void _remove_subscription_ticker(self, InstrumentId instrument_id) except *
+    cpdef void _remove_subscription_quote_ticks(self, InstrumentId instrument_id) except *
+    cpdef void _remove_subscription_trade_ticks(self, InstrumentId instrument_id) except *
+    cpdef void _remove_subscription_bars(self, BarType bar_type) except *
+    cpdef void _remove_subscription_instrument_status_updates(self, InstrumentId instrument_id) except *
+    cpdef void _remove_subscription_instrument_close_prices(self, InstrumentId instrument_id) except *
 
 # -- REQUEST HANDLERS ------------------------------------------------------------------------------
 
