@@ -16,7 +16,7 @@
 #  Original author: Jeremy https://github.com/2pd
 # -------------------------------------------------------------------------------------------------
 
-from nautilus_trader.adapters.binance.http.client import BinanceHTTPClient
+from nautilus_trader.adapters.binance.http.client import BinanceHttpClient
 from nautilus_trader.adapters.binance.http.parsing import convert_list_to_json_array
 from nautilus_trader.core.correctness import PyCondition
 
@@ -26,13 +26,13 @@ class BinanceSpotHTTPAPI:
     Provides access to the `Binance SPOT` REST HTTP API.
     """
 
-    def __init__(self, client: BinanceHTTPClient):
+    def __init__(self, client: BinanceHttpClient):
         """
         Initialize a new instance of the ``BinanceSpotHTTPAPI`` class.
 
         Parameters
         ----------
-        client : BinanceHTTPClient
+        client : BinanceHttpClient
             The Binance REST API client.
 
         """

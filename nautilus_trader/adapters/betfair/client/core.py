@@ -29,10 +29,10 @@ from nautilus_trader.adapters.betfair.client.exceptions import BetfairAPIError
 from nautilus_trader.adapters.betfair.client.exceptions import BetfairError
 from nautilus_trader.adapters.betfair.client.util import parse_params
 from nautilus_trader.common.logging import Logger
-from nautilus_trader.network.http import HTTPClient
+from nautilus_trader.network.http import HttpClient
 
 
-class BetfairClient(HTTPClient):
+class BetfairClient(HttpClient):
     """
     Provides a HTTP client for `Betfair`.
     """
@@ -85,7 +85,7 @@ class BetfairClient(HTTPClient):
         context.load_cert_chain(certfile=cert_file, keyfile=key_file)
         return context
 
-    # For testing purposes, can't mock HTTPClient.request due to cython
+    # For testing purposes, can't mock HttpClient.request due to cython
     async def request(self, method, url, **kwargs) -> ClientResponse:
         return await super().request(method=method, url=url, **kwargs)
 
