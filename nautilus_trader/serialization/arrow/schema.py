@@ -12,7 +12,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
-
+import orjson
 import pyarrow as pa
 
 from nautilus_trader.common.events.risk import TradingStateChanged
@@ -193,6 +193,7 @@ NAUTILUS_PARQUET_SCHEMA = {
             "event_id": pa.string(),
             "ts_init": pa.int64(),
         },
+        metadata={"options_fields": orjson.dumps(["post_only", "hidden", "price", "trigger"])},
     ),
     OrderDenied: pa.schema(
         {
