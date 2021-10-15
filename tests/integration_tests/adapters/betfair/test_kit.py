@@ -67,6 +67,7 @@ from nautilus_trader.persistence.config import PersistenceConfig
 from nautilus_trader.persistence.external.core import make_raw_files
 from nautilus_trader.persistence.external.readers import TextReader
 from nautilus_trader.portfolio.portfolio import Portfolio
+from nautilus_trader.risk.config import RiskEngineConfig
 from nautilus_trader.trading.config import ImportableStrategyConfig
 from tests import TESTS_PACKAGE_ROOT
 from tests.test_kit import PACKAGE_ROOT
@@ -493,7 +494,11 @@ class BetfairTestStubs:
         catalog_fs_protocol: str = "memory",
         persist=True,
         add_strategy=True,
+        bypass_risk=False,
     ) -> BacktestRunConfig:
+        engine_config = BacktestEngineConfig(
+            log_level="INFO", risk_engine=RiskEngineConfig(bypass=bypass_risk)
+        )
         persistence_config = PersistenceConfig(
             catalog_path=catalog_path,
             fs_protocol=catalog_fs_protocol,
@@ -514,7 +519,7 @@ class BetfairTestStubs:
             book_type="L2_MBP",
         )
         run_config = BacktestRunConfig(  # type: ignore
-            engine=BacktestEngineConfig(),
+            engine=engine_config,
             venues=[venue],
             data=[
                 base_data_config.replace(

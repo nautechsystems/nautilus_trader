@@ -462,10 +462,11 @@ class TestPersistenceCore:
         ]
         ins1, ins2 = self.catalog.instruments()["id"].tolist()
 
+        today_str = pd.Timestamp.now().strftime("%Y%m%d")
         expected = [
             f"/root/data/betfair_ticker.parquet/instrument_id={ins1}/20191220.parquet",
             f"/root/data/betfair_ticker.parquet/instrument_id={ins2}/20191220.parquet",
-            "/root/data/betting_instrument.parquet/20211014.parquet",
+            f"/root/data/betting_instrument.parquet/{today_str}.parquet",
             f"/root/data/instrument_status_update.parquet/instrument_id={ins1}/20191220.parquet",
             f"/root/data/instrument_status_update.parquet/instrument_id={ins2}/20191220.parquet",
             f"/root/data/order_book_data.parquet/instrument_id={ins1}/20191220.parquet",

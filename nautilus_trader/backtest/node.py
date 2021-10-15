@@ -90,6 +90,7 @@ class BacktestNode:
                 run_config_id=config.id,
                 venue_configs=config.venues,
                 data_configs=config.data,
+                persistence=config.persistence,
                 strategy_configs=config.strategies,
                 batch_size_bytes=config.batch_size_bytes,
             )
@@ -117,6 +118,7 @@ class BacktestNode:
             config.check()  # check all values set
             result = self._run(
                 run_config_id=config.id,
+                engine_config=config.engine,
                 venue_configs=config.venues,
                 data_configs=config.data,
                 persistence=config.persistence,
@@ -131,6 +133,7 @@ class BacktestNode:
     def _run_delayed(
         self,
         run_config_id: str,
+        engine_config: BacktestEngineConfig,
         venue_configs: List[BacktestVenueConfig],
         data_configs: List[BacktestDataConfig],
         strategy_configs: List[ImportableStrategyConfig],
@@ -138,6 +141,7 @@ class BacktestNode:
     ) -> BacktestResult:
         return self._run(
             run_config_id=run_config_id,
+            engine_config=engine_config,
             venue_configs=venue_configs,
             data_configs=data_configs,
             strategy_configs=strategy_configs,
@@ -151,6 +155,7 @@ class BacktestNode:
     def _run(
         self,
         run_config_id: str,
+        engine_config: BacktestEngineConfig,
         venue_configs: List[BacktestVenueConfig],
         data_configs: List[BacktestDataConfig],
         strategy_configs: List[ImportableStrategyConfig],
@@ -158,6 +163,7 @@ class BacktestNode:
         batch_size_bytes: Optional[int] = None,
     ) -> BacktestResult:
         engine: BacktestEngine = self._create_engine(
+            config=engine_config,
             venue_configs=venue_configs,
             data_configs=data_configs,
         )
@@ -198,14 +204,10 @@ class BacktestNode:
 
     def _create_engine(
         self,
+        config: BacktestEngineConfig,
         venue_configs: List[BacktestVenueConfig],
         data_configs: List[BacktestDataConfig],
     ):
-        # Configure backtest engine
-        config = BacktestEngineConfig(
-            bypass_logging=True,
-            run_analysis=True,
-        )
         # Build the backtest engine
         engine = BacktestEngine(config=config)
 

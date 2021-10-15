@@ -155,12 +155,14 @@ cdef class Instrument(Data):
         """
         Condition.not_negative_int(price_precision, "price_precision")
         Condition.not_negative_int(size_precision, "size_precision")
-        Condition.positive(price_increment, "price_increment")
         Condition.positive(size_increment, "size_increment")
-        Condition.equal(price_precision, price_increment.precision, "price_precision", "price_increment.precision")  # noqa
         Condition.equal(size_precision, size_increment.precision, "size_precision", "size_increment.precision")  # noqa
         Condition.positive(multiplier, "multiplier")
 
+        if price_increment is not None:
+            Condition.positive(price_increment, "price_increment")
+        if price_precision is not None and price_increment is not None:
+            Condition.equal(price_precision, price_increment.precision, "price_precision", "price_increment.precision")  # noqa
         if lot_size is not None:
             Condition.positive(lot_size, "lot_size")
         if max_quantity is not None:
