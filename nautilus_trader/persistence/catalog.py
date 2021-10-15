@@ -36,8 +36,8 @@ from nautilus_trader.model.orderbook.data import OrderBookData
 from nautilus_trader.persistence.external.metadata import load_mappings
 from nautilus_trader.persistence.streaming import read_feather
 from nautilus_trader.persistence.util import Singleton
-from nautilus_trader.serialization.arrow.schema import NAUTILUS_PARQUET_SCHEMA
 from nautilus_trader.serialization.arrow.serializer import ParquetSerializer
+from nautilus_trader.serialization.arrow.serializer import list_schemas
 from nautilus_trader.serialization.arrow.util import GENERIC_DATA_PREFIX
 from nautilus_trader.serialization.arrow.util import camel_to_snake_case
 from nautilus_trader.serialization.arrow.util import class_to_filename
@@ -355,8 +355,8 @@ class DataCatalog(metaclass=Singleton):
             partitions[level.name] = level.keys
         return partitions
 
-    def _read_feather(self, kind: str, run_id: str):
-        class_mapping: Dict[str, type] = {cls.__name__: cls for cls in NAUTILUS_PARQUET_SCHEMA}
+    def _read_feather(self, kind: str, run_id: str, raise_on_failed_deserialize: bool = False):
+        class_mapping: Dict[str, type] = {cls.__name__: cls for cls in list_schemas()}
         data = {}
         for path in [p for p in self.fs.glob(f"{self.path}/{kind}/{run_id}.feather/*.feather")]:
             cls_name = pathlib.Path(path).stem
@@ -371,14 +371,16 @@ class DataCatalog(metaclass=Singleton):
                 )
                 data[cls_name] = objs
             except Exception as e:
+                if raise_on_failed_deserialize:
+                    raise
                 print(f"Failed to deserialize {cls_name}: {e}")
         return sorted(sum(data.values(), list()), key=lambda x: x.ts_init)
 
-    def read_live_run(self, live_run_id: str):
-        return self._read_feather(kind="live", run_id=live_run_id)
+    def read_live_run(self, live_run_id: str, **kwargs):
+        return self._read_feather(kind="live", run_id=live_run_id, **kwargs)
 
-    def read_backtest(self, backtest_run_id: str):
-        return self._read_feather(kind="backtest", run_id=backtest_run_id)
+    def read_backtest(self, backtest_run_id: str, **kwargs):
+        return self._read_feather(kind="backtest", run_id=backtest_run_id, **kwargs)
 
 
 def combine_filters(*filters):
