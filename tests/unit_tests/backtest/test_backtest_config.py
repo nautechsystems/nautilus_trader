@@ -40,6 +40,7 @@ from nautilus_trader.persistence.catalog import DataCatalog
 from nautilus_trader.persistence.external.core import process_files
 from nautilus_trader.persistence.external.readers import CSVReader
 from nautilus_trader.trading.config import ImportableStrategyConfig
+from tests.integration_tests.adapters.betfair.test_kit import BetfairTestStubs
 from tests.test_kit import PACKAGE_ROOT
 from tests.test_kit.mocks import aud_usd_data_loader
 from tests.test_kit.mocks import data_catalog_setup
@@ -312,6 +313,23 @@ def test_backtest_data_config_generic_data(catalog):
     assert len(result["data"]) == 86985
     assert result["instrument"] is None
     assert result["client_id"] == ClientId("NewsClient")
+
+
+def test_backtest_data_config_status_updates(catalog):
+    process_files(
+        glob_path=PACKAGE_ROOT + "/data/1.166564490.bz2",
+        reader=BetfairTestStubs.betfair_reader(),
+        catalog=catalog,
+    )
+    c = BacktestDataConfig(
+        catalog_path="/root/",
+        catalog_fs_protocol="memory",
+        data_cls_path="nautilus_trader.model.data.venue.InstrumentStatusUpdate",
+    )
+    result = c.load()
+    assert len(result["data"]) == 2
+    assert result["instrument"] is None
+    assert result["client_id"] is None
 
 
 def test_resolve_cls():
