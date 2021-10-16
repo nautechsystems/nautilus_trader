@@ -17,6 +17,7 @@ import asyncio
 from datetime import datetime
 from typing import List
 
+import pandas as pd
 import pytz
 
 from nautilus_trader.accounting.factory import AccountFactory
@@ -28,9 +29,11 @@ from nautilus_trader.common.events.system import ComponentStateChanged
 from nautilus_trader.common.logging import LiveLogger
 from nautilus_trader.common.logging import LogLevelParser
 from nautilus_trader.core.data import Data
+from nautilus_trader.core.datetime import maybe_dt_to_unix_nanos
 from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.model.currencies import GBP
 from nautilus_trader.model.currencies import USD
+from nautilus_trader.model.currency import Currency
 from nautilus_trader.model.data.bar import Bar
 from nautilus_trader.model.data.bar import BarSpecification
 from nautilus_trader.model.data.bar import BarType
@@ -86,6 +89,9 @@ from nautilus_trader.model.orderbook.ladder import Ladder
 from nautilus_trader.model.orders.limit import LimitOrder
 from nautilus_trader.msgbus.bus import MessageBus
 from nautilus_trader.portfolio.portfolio import Portfolio
+from nautilus_trader.serialization.arrow.serializer import register_parquet
+from nautilus_trader.trading.filters import NewsEvent
+from nautilus_trader.trading.filters import NewsImpact
 from nautilus_trader.trading.strategy import TradingStrategy
 from tests.test_kit.mocks import MockLiveDataEngine
 from tests.test_kit.mocks import MockLiveExecutionEngine
@@ -813,3 +819,53 @@ class TestStubs:
             clock=TestStubs.clock(),
             logger=TestStubs.logger(),
         )
+
+    @staticmethod
+    def setup_news_event_persistence():
+        import pyarrow as pa
+
+        def _news_event_to_dict(self):
+            return {
+                "name": self.name,
+                "impact": self.impact.name,
+                "currency": self.currency.code,
+                "ts_event": self.ts_event,
+                "ts_init": self.ts_init,
+            }
+
+        def _news_event_from_dict(data):
+            data.update(
+                {
+                    "impact": getattr(NewsImpact, data["impact"]),
+                    "currency": Currency.from_str(data["currency"]),
+                }
+            )
+            return NewsEvent(**data)
+
+        register_parquet(
+            cls=NewsEvent,
+            serializer=_news_event_to_dict,
+            deserializer=_news_event_from_dict,
+            partition_keys=("currency",),
+            schema=pa.schema(
+                {
+                    "name": pa.string(),
+                    "impact": pa.string(),
+                    "currency": pa.string(),
+                    "ts_event": pa.int64(),
+                    "ts_init": pa.int64(),
+                }
+            ),
+            force=True,
+        )
+
+    @staticmethod
+    def news_event_parser(df, state=None):
+        for _, row in df.iterrows():
+            yield NewsEvent(
+                name=str(row["Name"]),
+                impact=getattr(NewsImpact, row["Impact"]),
+                currency=Currency.from_str(row["Currency"]),
+                ts_event=maybe_dt_to_unix_nanos(pd.Timestamp(row["Start"])),
+                ts_init=maybe_dt_to_unix_nanos(pd.Timestamp(row["Start"])),
+            )
