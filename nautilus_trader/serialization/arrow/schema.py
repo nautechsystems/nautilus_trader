@@ -17,6 +17,7 @@ import pyarrow as pa
 
 from nautilus_trader.common.events.risk import TradingStateChanged
 from nautilus_trader.common.events.system import ComponentStateChanged
+from nautilus_trader.model.data.bar import Bar
 from nautilus_trader.model.data.tick import QuoteTick
 from nautilus_trader.model.data.tick import TradeTick
 from nautilus_trader.model.data.ticker import Ticker
@@ -100,6 +101,18 @@ NAUTILUS_PARQUET_SCHEMA = {
             "ts_init": pa.int64(),
         },
         metadata={"type": "TradeTick"},
+    ),
+    Bar: pa.schema(
+        {
+            "bar_type": pa.dictionary(pa.int8(), pa.string()),
+            "open": pa.string(),
+            "high": pa.string(),
+            "low": pa.string(),
+            "close": pa.string(),
+            "volume": pa.string(),
+            "ts_event": pa.int64(),
+            "ts_init": pa.int64(),
+        }
     ),
     VenueStatusUpdate: pa.schema(
         {
