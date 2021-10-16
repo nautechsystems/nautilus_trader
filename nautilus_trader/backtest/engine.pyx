@@ -397,7 +397,7 @@ cdef class BacktestEngine:
 
         """
         Condition.not_empty(data, "data")
-        cdef Tick first = data[0]
+        cdef Data first = data[0]
         Condition.true(
             first.instrument_id in self._cache.instrument_ids(),
             "Instrument for given data not found in the cache. "
