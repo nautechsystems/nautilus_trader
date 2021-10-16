@@ -234,12 +234,14 @@ class BacktestNode:
 
 
 def _load_engine_data(engine: BacktestEngine, data):
-    if data["type"] in (QuoteTick, TradeTick, InstrumentStatusUpdate):
+    if data["type"] in (QuoteTick, TradeTick):
         engine.add_ticks(data=data["data"])
     elif data["type"] == Bar:
         engine.add_bars(data=data["data"])
     elif data["type"] in (OrderBookDelta, OrderBookData):
         engine.add_order_book_data(data=data["data"])
+    elif data["type"] in (InstrumentStatusUpdate,):
+        engine.add_data(data=data["data"])
     else:
         engine.add_generic_data(client_id=data["client_id"], data=data["data"])
 
