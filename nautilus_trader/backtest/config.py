@@ -25,6 +25,7 @@ from nautilus_trader.cache.cache import CacheConfig
 from nautilus_trader.data.engine import DataEngineConfig
 from nautilus_trader.execution.engine import ExecEngineConfig
 from nautilus_trader.infrastructure.cache import CacheDatabaseConfig
+from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.persistence.config import PersistenceConfig
 from nautilus_trader.risk.config import RiskEngineConfig
 from nautilus_trader.trading.config import ImportableStrategyConfig
@@ -174,8 +175,10 @@ class BacktestDataConfig(Partialable):
             "data": catalog.query(**query),
             "instrument": catalog.instruments(instrument_ids=self.instrument_id, as_nautilus=True)[
                 0
-            ],
-            "client_id": self.client_id,
+            ]
+            if self.instrument_id
+            else None,
+            "client_id": ClientId(self.client_id) if self.client_id else None,
         }
 
 

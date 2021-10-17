@@ -17,13 +17,10 @@ import datetime
 import sys
 
 import fsspec
-import pandas as pd
 import pyarrow.dataset as ds
 import pytest
 
 from nautilus_trader.adapters.betfair.providers import BetfairInstrumentProvider
-from nautilus_trader.core.datetime import maybe_dt_to_unix_nanos
-from nautilus_trader.model.currency import Currency
 from nautilus_trader.model.data.base import GenericData
 from nautilus_trader.model.data.tick import QuoteTick
 from nautilus_trader.model.data.tick import TradeTick
@@ -39,13 +36,12 @@ from nautilus_trader.persistence.external.core import split_and_serialize
 from nautilus_trader.persistence.external.core import write_objects
 from nautilus_trader.persistence.external.core import write_tables
 from nautilus_trader.persistence.external.readers import CSVReader
-from nautilus_trader.serialization.arrow.serializer import register_parquet
 from nautilus_trader.trading.filters import NewsEvent
-from nautilus_trader.trading.filters import NewsImpact
 from tests.integration_tests.adapters.betfair.test_kit import BetfairTestStubs
 from tests.test_kit import PACKAGE_ROOT
 from tests.test_kit.mocks import data_catalog_setup
 from tests.test_kit.providers import TestInstrumentProvider
+from tests.test_kit.stubs import TestStubs
 
 
 TEST_DATA_DIR = PACKAGE_ROOT + "/data"
@@ -196,56 +192,10 @@ class TestPersistenceCatalog:
         assert len(filtered_deltas) == 351
 
     def test_data_loader_generic_data(self):
-        import pyarrow as pa
-
-        def _news_event_to_dict(self):
-            return {
-                "name": self.name,
-                "impact": self.impact.name,
-                "currency": self.currency.code,
-                "ts_event": self.ts_event,
-                "ts_init": self.ts_init,
-            }
-
-        def _news_event_from_dict(data):
-            data.update(
-                {
-                    "impact": getattr(NewsImpact, data["impact"]),
-                    "currency": Currency.from_str(data["currency"]),
-                }
-            )
-            return NewsEvent(**data)
-
-        register_parquet(
-            cls=NewsEvent,
-            serializer=_news_event_to_dict,
-            deserializer=_news_event_from_dict,
-            partition_keys=("currency",),
-            schema=pa.schema(
-                {
-                    "name": pa.string(),
-                    "impact": pa.string(),
-                    "currency": pa.string(),
-                    "ts_event": pa.int64(),
-                    "ts_init": pa.int64(),
-                }
-            ),
-            force=True,
-        )
-
-        def make_news_event(df, state=None):
-            for _, row in df.iterrows():
-                yield NewsEvent(
-                    name=str(row["Name"]),
-                    impact=getattr(NewsImpact, row["Impact"]),
-                    currency=Currency.from_str(row["Currency"]),
-                    ts_event=maybe_dt_to_unix_nanos(pd.Timestamp(row["Start"])),
-                    ts_init=maybe_dt_to_unix_nanos(pd.Timestamp(row["Start"])),
-                )
-
+        TestStubs.setup_news_event_persistence()
         process_files(
             glob_path=f"{TEST_DATA_DIR}/news_events.csv",
-            reader=CSVReader(block_parser=make_news_event),
+            reader=CSVReader(block_parser=TestStubs.news_event_parser),
             catalog=self.catalog,
         )
         df = self.catalog.generic_data(cls=NewsEvent, filter_expr=ds.field("currency") == "USD")
