@@ -33,8 +33,10 @@ from nautilus_trader.backtest.results import BacktestResult
 from nautilus_trader.core.datetime import maybe_dt_to_unix_nanos
 from nautilus_trader.model.c_enums.book_type import BookTypeParser
 from nautilus_trader.model.currency import Currency
+from nautilus_trader.model.data.bar import Bar
 from nautilus_trader.model.data.tick import QuoteTick
 from nautilus_trader.model.data.tick import TradeTick
+from nautilus_trader.model.data.venue import InstrumentStatusUpdate
 from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import OMSType
 from nautilus_trader.model.enums import VenueType
@@ -232,12 +234,14 @@ class BacktestNode:
 
 
 def _load_engine_data(engine: BacktestEngine, data):
-    if data["type"] == QuoteTick:
+    if data["type"] in (QuoteTick, TradeTick):
         engine.add_ticks(data=data["data"])
-    elif data["type"] == TradeTick:
-        engine.add_ticks(data=data["data"])
+    elif data["type"] == Bar:
+        engine.add_bars(data=data["data"])
     elif data["type"] in (OrderBookDelta, OrderBookData):
         engine.add_order_book_data(data=data["data"])
+    elif data["type"] in (InstrumentStatusUpdate,):
+        engine.add_data(data=data["data"])
     else:
         engine.add_generic_data(client_id=data["client_id"], data=data["data"])
 

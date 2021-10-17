@@ -28,11 +28,13 @@ from nautilus_trader.model.data.bar import BarSpecification
 from nautilus_trader.model.data.bar import BarType
 from nautilus_trader.model.data.base import DataType
 from nautilus_trader.model.data.base import GenericData
+from nautilus_trader.model.data.venue import InstrumentStatusUpdate
 from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import AggregationSource
 from nautilus_trader.model.enums import BarAggregation
 from nautilus_trader.model.enums import BookAction
 from nautilus_trader.model.enums import BookType
+from nautilus_trader.model.enums import InstrumentStatus
 from nautilus_trader.model.enums import OMSType
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import PriceType
@@ -397,6 +399,34 @@ class TestBacktestEngineData:
         log = "".join(capsys.readouterr())
         assert "Added USD/JPY.SIM Instrument." in log
         assert "Added 2,000 USD/JPY.SIM-1-MINUTE-BID-EXTERNAL Bar elements." in log
+
+    def test_add_instrument_status_to_engine(self, capsys):
+        # Arrange
+        engine = BacktestEngine()
+
+        data = [
+            InstrumentStatusUpdate(
+                instrument_id=USDJPY_SIM.id,
+                status=InstrumentStatus.CLOSED,
+                ts_init=0,
+                ts_event=0,
+            ),
+            InstrumentStatusUpdate(
+                instrument_id=USDJPY_SIM.id,
+                status=InstrumentStatus.OPEN,
+                ts_init=0,
+                ts_event=0,
+            ),
+        ]
+
+        # Act
+        engine.add_instrument(USDJPY_SIM)
+        engine.add_data(data=data)
+
+        # Assert
+        log = "".join(capsys.readouterr())
+        assert "Added USD/JPY.SIM Instrument." in log
+        assert "Added 2 USD/JPY.SIM InstrumentStatusUpdate elements." in log
 
 
 class TestBacktestWithAddedBars:
