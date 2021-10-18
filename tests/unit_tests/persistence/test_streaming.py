@@ -70,20 +70,20 @@ class TestPersistenceStreaming:
         result = self.catalog.read_backtest(
             backtest_run_id=run_config.id, raise_on_failed_deserialize=True
         )
-        assert len(result) == 5147
-        c = Counter([r.__class__.__name__ for r in result])
+        result = dict(Counter([r.__class__.__name__ for r in result]))
         expected = {
-            "OrderBookDeltas": 1077,
             "AccountState": 892,
+            "BettingInstrument": 1,
+            "ComponentStateChanged": 7,
+            "OrderAccepted": 396,
+            "OrderBookDeltas": 1077,
+            "OrderBookSnapshot": 1,
+            "OrderDenied": 296,
             "OrderInitialized": 792,
             "OrderFilled": 496,
             "OrderSubmitted": 496,
-            "OrderAccepted": 396,
             "PositionOpened": 396,
-            "OrderDenied": 296,
-            "TradeTick": 198,
             "PositionClosed": 100,
-            "ComponentStateChanged": 7,
-            "OrderBookSnapshot": 1,
+            "TradeTick": 198,
         }
-        assert c == expected
+        assert result == expected
