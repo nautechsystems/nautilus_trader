@@ -176,6 +176,12 @@ class BacktestNode:
                 flush_interval=persistence.flush_interval,
             )
             engine.trader.subscribe("*", writer.write)
+            # Manually write instruments
+            instrument_ids = set(filter(None, (data.instrument_id for data in data_configs)))
+            for instrument in catalog.instruments(
+                instrument_ids=list(instrument_ids), as_nautilus=True
+            ):
+                writer.write(instrument)
 
         if strategies:
             engine.add_strategies(strategies)
