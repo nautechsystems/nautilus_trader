@@ -488,6 +488,29 @@ class BetfairTestStubs:
         return reader
 
     @staticmethod
+    def betfair_venue_config() -> BacktestVenueConfig:
+        return BacktestVenueConfig(  # type: ignore
+            name="BETFAIR",
+            venue_type="EXCHANGE",
+            oms_type="NETTING",
+            account_type="BETTING",
+            base_currency="GBP",
+            starting_balances=["10000 GBP"],
+            book_type="L2_MBP",
+        )
+
+    @staticmethod
+    def persistence_config(
+        catalog_path: str, catalog_fs_protocol: str = "memory"
+    ) -> PersistenceConfig:
+        return PersistenceConfig(
+            catalog_path=str(catalog_path),
+            fs_protocol=catalog_fs_protocol,
+            kind="backtest",
+            persit_logs=True,
+        )
+
+    @staticmethod
     def betfair_backtest_run_config(
         catalog_path: str,
         instrument_id: str,
@@ -499,28 +522,13 @@ class BetfairTestStubs:
         engine_config = BacktestEngineConfig(
             log_level="INFO", risk_engine=RiskEngineConfig(bypass=bypass_risk)
         )
-        persistence_config = PersistenceConfig(
-            catalog_path=catalog_path,
-            fs_protocol=catalog_fs_protocol,
-            kind="backtest",
-            persit_logs=True,
-        )
         base_data_config = BacktestDataConfig(  # type: ignore
             catalog_path=catalog_path,
             catalog_fs_protocol=catalog_fs_protocol,
         )
-        venue = BacktestVenueConfig(  # type: ignore
-            name="BETFAIR",
-            venue_type="EXCHANGE",
-            oms_type="NETTING",
-            account_type="BETTING",
-            base_currency="GBP",
-            starting_balances=["10000 GBP"],
-            book_type="L2_MBP",
-        )
         run_config = BacktestRunConfig(  # type: ignore
             engine=engine_config,
-            venues=[venue],
+            venues=[BetfairTestStubs.betfair_venue_config()],
             data=[
                 base_data_config.replace(
                     data_cls_path="nautilus_trader.model.data.tick.TradeTick",
@@ -531,7 +539,9 @@ class BetfairTestStubs:
                     instrument_id=instrument_id,
                 ),
             ],
-            persistence=persistence_config if persist else None,
+            persistence=BetfairTestStubs.persistence_config(catalog_path=catalog_path)
+            if persist
+            else None,
             strategies=[
                 ImportableStrategyConfig(
                     path="examples.strategies.orderbook_imbalance:OrderBookImbalance",

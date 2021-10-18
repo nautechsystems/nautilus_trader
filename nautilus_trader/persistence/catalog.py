@@ -184,7 +184,7 @@ class DataCatalog(metaclass=Singleton):
         return data
 
     def _make_path(self, cls: type) -> str:
-        return f"{self.path}/data/{class_to_filename(cls)}.parquet"
+        return f"{self.path}/data/{class_to_filename(cls=cls)}.parquet"
 
     def query(
         self,
@@ -345,10 +345,9 @@ class DataCatalog(metaclass=Singleton):
             if n.startswith(GENERIC_DATA_PREFIX)
         ]
 
-    def list_partitions(self, cls_type):
+    def list_partitions(self, cls_type: type):
         assert isinstance(cls_type, type), "`cls_type` should be type, i.e. TradeTick"
-        prefix = GENERIC_DATA_PREFIX if not is_nautilus_class(cls_type) else ""
-        name = prefix + camel_to_snake_case(cls_type.__name__)
+        name = class_to_filename(cls_type)
         dataset = pq.ParquetDataset(self.path / f"{name}.parquet", filesystem=self.fs)
         partitions = {}
         for level in dataset.partitions.levels:
@@ -356,10 +355,10 @@ class DataCatalog(metaclass=Singleton):
         return partitions
 
     def _read_feather(self, kind: str, run_id: str, raise_on_failed_deserialize: bool = False):
-        class_mapping: Dict[str, type] = {cls.__name__: cls for cls in list_schemas()}
+        class_mapping: Dict[str, type] = {class_to_filename(cls): cls for cls in list_schemas()}
         data = {}
         for path in [p for p in self.fs.glob(f"{self.path}/{kind}/{run_id}.feather/*.feather")]:
-            cls_name = pathlib.Path(path).stem
+            cls_name = camel_to_snake_case(pathlib.Path(path).stem).replace("__", "_")
             df = read_feather(path=path, fs=self.fs)
             if df is None:
                 print(f"No data for {cls_name}")

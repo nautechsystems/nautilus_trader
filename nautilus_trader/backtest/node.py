@@ -14,7 +14,6 @@
 # -------------------------------------------------------------------------------------------------
 
 import itertools
-import logging
 import pickle
 from typing import List, Optional
 
@@ -31,10 +30,13 @@ from nautilus_trader.backtest.engine import BacktestEngine
 from nautilus_trader.backtest.engine import BacktestEngineConfig
 from nautilus_trader.backtest.results import BacktestResult
 from nautilus_trader.core.datetime import maybe_dt_to_unix_nanos
+from nautilus_trader.core.inspect import is_nautilus_class
 from nautilus_trader.model.c_enums.book_type import BookTypeParser
 from nautilus_trader.model.currency import Currency
+from nautilus_trader.model.data.bar import Bar
 from nautilus_trader.model.data.tick import QuoteTick
 from nautilus_trader.model.data.tick import TradeTick
+from nautilus_trader.model.data.venue import InstrumentStatusUpdate
 from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import OMSType
 from nautilus_trader.model.enums import VenueType
@@ -50,9 +52,6 @@ from nautilus_trader.persistence.streaming import FeatherWriter
 from nautilus_trader.trading.config import ImportableStrategyConfig
 from nautilus_trader.trading.config import StrategyFactory
 from nautilus_trader.trading.strategy import TradingStrategy
-
-
-logger = logging.getLogger(__name__)
 
 
 class BacktestNode:
@@ -183,8 +182,15 @@ class BacktestNode:
                 flush_interval=persistence.flush_interval,
             )
             engine.trader.subscribe("*", writer.write)
+            # Manually write instruments
+            instrument_ids = set(filter(None, (data.instrument_id for data in data_configs)))
+            for instrument in catalog.instruments(
+                instrument_ids=list(instrument_ids), as_nautilus=True
+            ):
+                writer.write(instrument)
 
-        engine.add_strategies(strategies)
+        if strategies:
+            engine.add_strategies(strategies)
 
         # Run backtest
         backtest_runner(
@@ -234,14 +240,18 @@ class BacktestNode:
 
 
 def _load_engine_data(engine: BacktestEngine, data):
-    if data["type"] == QuoteTick:
+    if data["type"] in (QuoteTick, TradeTick):
         engine.add_ticks(data=data["data"])
-    elif data["type"] == TradeTick:
-        engine.add_ticks(data=data["data"])
+    elif data["type"] == Bar:
+        engine.add_bars(data=data["data"])
     elif data["type"] in (OrderBookDelta, OrderBookData):
         engine.add_order_book_data(data=data["data"])
-    else:
+    elif data["type"] in (InstrumentStatusUpdate,):
+        engine.add_data(data=data["data"])
+    elif not is_nautilus_class(data["type"]):
         engine.add_generic_data(client_id=data["client_id"], data=data["data"])
+    else:
+        raise ValueError(f"Data type {data['type']} not setup for loading into backtest engine")
 
 
 def backtest_runner(

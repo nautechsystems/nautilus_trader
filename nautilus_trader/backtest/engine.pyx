@@ -381,6 +381,40 @@ cdef class BacktestEngine:
             f"{type(first).__name__} element{'' if len(data) == 1 else 's'}.",
         )
 
+    def add_data(self, list data) -> None:
+        """
+        Add the tick data to the backtest engine.
+
+        Parameters
+        ----------
+        data : list[Tick]
+            The tick data to add.
+
+        Raises
+        ------
+        ValueError
+            If `data` is empty.
+
+        """
+        Condition.not_empty(data, "data")
+        cdef Data first = data[0]
+        Condition.true(
+            first.instrument_id in self._cache.instrument_ids(),
+            "Instrument for given data not found in the cache. "
+            "Please call `add_instrument()` before adding related data.",
+        )
+
+        # Check client has been registered
+        self._add_market_data_client_if_not_exists(first.instrument_id.venue)
+
+        # Add data
+        self._data = sorted(self._data + data, key=lambda x: x.ts_init)
+
+        self._log.info(
+            f"Added {len(data):,} {first.instrument_id} "
+            f"{type(first).__name__} element{'' if len(data) == 1 else 's'}.",
+        )
+
     def add_bars(self, list data) -> None:
         """
         Add the built bar data objects to the backtest engines. Suitable for

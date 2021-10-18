@@ -37,7 +37,7 @@ def nautilus_objects() -> List[Any]:
         TestStubs.ticker(),
         TestStubs.quote_tick_5decimal(),
         TestStubs.trade_tick_5decimal(),
-        # TestStubs.bar_5decimal(),
+        TestStubs.bar_5decimal(),
         TestStubs.venue_status_update(),
         TestStubs.instrument_status_update(),
         TestStubs.event_component_state_changed(),

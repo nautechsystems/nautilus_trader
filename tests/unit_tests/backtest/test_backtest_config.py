@@ -35,13 +35,19 @@ from nautilus_trader.backtest.config import BacktestVenueConfig
 from nautilus_trader.backtest.config import Partialable
 from nautilus_trader.backtest.engine import BacktestEngineConfig
 from nautilus_trader.model.data.tick import QuoteTick
+from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.persistence.catalog import DataCatalog
+from nautilus_trader.persistence.external.core import process_files
+from nautilus_trader.persistence.external.readers import CSVReader
 from nautilus_trader.trading.config import ImportableStrategyConfig
+from tests.integration_tests.adapters.betfair.test_kit import BetfairTestStubs
 from tests.test_kit import PACKAGE_ROOT
+from tests.test_kit.mocks import NewsEventData
 from tests.test_kit.mocks import aud_usd_data_loader
 from tests.test_kit.mocks import data_catalog_setup
 from tests.test_kit.providers import TestInstrumentProvider
 from tests.test_kit.strategies import EMACrossConfig
+from tests.test_kit.stubs import TestStubs
 
 
 TEST_DATA_DIR = str(pathlib.Path(PACKAGE_ROOT).joinpath("data"))
@@ -191,9 +197,6 @@ def test_backtest_config_pickle(backtest_config):
     pickle.loads(pickle.dumps(backtest_config))  # noqa: S301
 
 
-# All inputs to dask delayed functions must be deterministically tokenizable
-
-
 def test_strategies_tokenization(backtest_config: BacktestRunConfig):
     # Arrange, Act
     result = tokenize(backtest_config.strategies)
@@ -291,6 +294,43 @@ def test_backtest_config_partial():
         ],
     )
     assert config.is_partial()
+
+
+def test_backtest_data_config_generic_data(catalog):
+    # Arrange
+    TestStubs.setup_news_event_persistence()
+    process_files(
+        glob_path=f"{TEST_DATA_DIR}/news_events.csv",
+        reader=CSVReader(block_parser=TestStubs.news_event_parser),
+        catalog=catalog,
+    )
+    c = BacktestDataConfig(
+        catalog_path="/root/",
+        catalog_fs_protocol="memory",
+        data_cls_path=f"{NewsEventData.__module__}.NewsEventData",
+        client_id="NewsClient",
+    )
+    result = c.load()
+    assert len(result["data"]) == 86985
+    assert result["instrument"] is None
+    assert result["client_id"] == ClientId("NewsClient")
+
+
+def test_backtest_data_config_status_updates(catalog):
+    process_files(
+        glob_path=PACKAGE_ROOT + "/data/1.166564490.bz2",
+        reader=BetfairTestStubs.betfair_reader(),
+        catalog=catalog,
+    )
+    c = BacktestDataConfig(
+        catalog_path="/root/",
+        catalog_fs_protocol="memory",
+        data_cls_path="nautilus_trader.model.data.venue.InstrumentStatusUpdate",
+    )
+    result = c.load()
+    assert len(result["data"]) == 2
+    assert result["instrument"] is None
+    assert result["client_id"] is None
 
 
 def test_resolve_cls():
