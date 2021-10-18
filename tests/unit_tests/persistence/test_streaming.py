@@ -19,12 +19,17 @@ from collections import Counter
 import pytest
 
 from nautilus_trader.adapters.betfair.providers import BetfairInstrumentProvider
+from nautilus_trader.backtest.config import BacktestDataConfig
+from nautilus_trader.backtest.config import BacktestRunConfig
 from nautilus_trader.backtest.node import BacktestNode
 from nautilus_trader.persistence.catalog import DataCatalog
 from nautilus_trader.persistence.external.core import process_files
+from nautilus_trader.persistence.external.readers import CSVReader
 from tests.integration_tests.adapters.betfair.test_kit import BetfairTestStubs
 from tests.test_kit import PACKAGE_ROOT
+from tests.test_kit.mocks import NewsEventData
 from tests.test_kit.mocks import data_catalog_setup
+from tests.test_kit.stubs import TestStubs
 
 
 @pytest.mark.skipif(sys.platform == "win32", reason="test path broken on windows")
@@ -87,3 +92,35 @@ class TestPersistenceStreaming:
             "TradeTick": 198,
         }
         assert result == expected
+
+    def test_feather_writer_generic_data(self):
+        # Arrange
+        TestStubs.setup_news_event_persistence()
+        process_files(
+            glob_path=f"{PACKAGE_ROOT}/data/news_events.csv",
+            reader=CSVReader(block_parser=TestStubs.news_event_parser),
+            catalog=self.catalog,
+        )
+        data_config = BacktestDataConfig(
+            catalog_path="/root/",
+            catalog_fs_protocol="memory",
+            data_cls_path=f"{NewsEventData.__module__}.NewsEventData",
+            client_id="NewsClient",
+        )
+        run_config = BacktestRunConfig(
+            data=[data_config],
+            persistence=BetfairTestStubs.persistence_config(catalog_path=self.catalog.path),
+            venues=[BetfairTestStubs.betfair_venue_config()],
+            strategies=[],
+        )
+
+        # Act
+        node = BacktestNode()
+        node.run_sync([run_config])
+
+        # Assert
+        result = self.catalog.read_backtest(
+            backtest_run_id=run_config.id, raise_on_failed_deserialize=True
+        )
+        result = Counter([r.__class__.__name__ for r in result])
+        assert result["NewsEventData"] == 86985
