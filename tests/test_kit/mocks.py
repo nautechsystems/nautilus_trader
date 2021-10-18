@@ -58,6 +58,7 @@ from nautilus_trader.persistence.external.core import process_files
 from nautilus_trader.persistence.external.readers import CSVReader
 from nautilus_trader.persistence.external.readers import Reader
 from nautilus_trader.persistence.util import clear_singleton_instances
+from nautilus_trader.trading.filters import NewsEvent
 from nautilus_trader.trading.strategy import TradingStrategy
 
 
@@ -817,6 +818,12 @@ class MockLiveRiskEngine(LiveRiskEngine):
 class MockReader(Reader):
     def parse(self, block: bytes) -> Generator:
         yield block
+
+
+class NewsEventData(NewsEvent):
+    """Generic data NewsEvent, needs to be defined here due to `inspect.is_nautilus_class`"""
+
+    pass
 
 
 def data_catalog_setup():

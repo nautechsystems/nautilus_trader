@@ -82,9 +82,9 @@ class FeatherWriter:
     def write(self, obj: object):
         assert obj is not None
         cls = obj.__class__
-        table = get_cls_table(cls).__name__
         if isinstance(obj, GenericData):
             cls = obj.data_type.type
+        table = get_cls_table(cls).__name__
         if table not in self._writers:
             print(f"Can't find writer for cls: {cls}")
             return

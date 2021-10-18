@@ -42,6 +42,7 @@ from nautilus_trader.persistence.external.readers import CSVReader
 from nautilus_trader.trading.config import ImportableStrategyConfig
 from tests.integration_tests.adapters.betfair.test_kit import BetfairTestStubs
 from tests.test_kit import PACKAGE_ROOT
+from tests.test_kit.mocks import NewsEventData
 from tests.test_kit.mocks import aud_usd_data_loader
 from tests.test_kit.mocks import data_catalog_setup
 from tests.test_kit.providers import TestInstrumentProvider
@@ -306,7 +307,7 @@ def test_backtest_data_config_generic_data(catalog):
     c = BacktestDataConfig(
         catalog_path="/root/",
         catalog_fs_protocol="memory",
-        data_cls_path="nautilus_trader.trading.filters.NewsEvent",
+        data_cls_path=f"{NewsEventData.__module__}.NewsEventData",
         client_id="NewsClient",
     )
     result = c.load()

@@ -36,9 +36,9 @@ from nautilus_trader.persistence.external.core import split_and_serialize
 from nautilus_trader.persistence.external.core import write_objects
 from nautilus_trader.persistence.external.core import write_tables
 from nautilus_trader.persistence.external.readers import CSVReader
-from nautilus_trader.trading.filters import NewsEvent
 from tests.integration_tests.adapters.betfair.test_kit import BetfairTestStubs
 from tests.test_kit import PACKAGE_ROOT
+from tests.test_kit.mocks import NewsEventData
 from tests.test_kit.mocks import data_catalog_setup
 from tests.test_kit.providers import TestInstrumentProvider
 from tests.test_kit.stubs import TestStubs
@@ -198,9 +198,9 @@ class TestPersistenceCatalog:
             reader=CSVReader(block_parser=TestStubs.news_event_parser),
             catalog=self.catalog,
         )
-        df = self.catalog.generic_data(cls=NewsEvent, filter_expr=ds.field("currency") == "USD")
+        df = self.catalog.generic_data(cls=NewsEventData, filter_expr=ds.field("currency") == "USD")
         assert len(df) == 22925
         data = self.catalog.generic_data(
-            cls=NewsEvent, filter_expr=ds.field("currency") == "CHF", as_nautilus=True
+            cls=NewsEventData, filter_expr=ds.field("currency") == "CHF", as_nautilus=True
         )
         assert len(data) == 2745 and isinstance(data[0], GenericData)
