@@ -146,7 +146,7 @@ class TestBacktestConfig:
         result = tokenize(venue)
 
         # Assert
-        assert result == "929e4f4f526a79fbe27d73fb17762d1d"
+        assert result == "d2f74877f3aeeba2f89b95807a8ced02"
 
     def test_data_config_tokenization(self):
         # Arrange, Act
@@ -156,7 +156,7 @@ class TestBacktestConfig:
         result = tokenize(data_config)
 
         # Assert
-        assert result == "fafc01d1d11d502599034ab80d3e213b"
+        assert result == "a3bac111f5e433648a505aa156a85f32"
 
     def test_engine_config_tokenization(self):
         # Arrange,
@@ -166,14 +166,14 @@ class TestBacktestConfig:
         result = tokenize(engine_config)
 
         # Assert
-        assert result == "4e36e7d25fc8e8e98ea5a7127e9cff57"
+        assert result == "22d84218139004f8b662d2c6d3dccb4a"
 
     def test_tokenization_config(self):
         # Arrange, Act
         result = tokenize(self.backtest_config)
 
         # Assert
-        assert result == "de2ecbf67507a290dbcf6043250589f7"
+        assert result == "2ac0e3978f8f40ab0a94feef0f21328d"
 
     def test_backtest_data_config_load(self):
         instrument = TestInstrumentProvider.default_fx_ccy("AUD/USD")
