@@ -132,7 +132,7 @@ class BacktestDataConfig(Partialable):
     instrument_id: Optional[str] = None
     start_time: Optional[Union[datetime, str, int]] = None
     end_time: Optional[Union[datetime, str, int]] = None
-    filters: Optional[dict] = None
+    filter_expr: Optional[str] = None
     client_id: Optional[str] = None
 
     @property
@@ -148,6 +148,7 @@ class BacktestDataConfig(Partialable):
             instrument_ids=[self.instrument_id] if self.instrument_id else None,
             start=self.start_time,
             end=self.end_time,
+            filter_expr=self.filter_expr,
             as_nautilus=True,
         )
 
@@ -166,6 +167,7 @@ class BacktestDataConfig(Partialable):
             {
                 "start": start_time or query["start"],
                 "end": end_time or query["end"],
+                "filter_expr": parse_filters_expr(query.pop("filter_expr", "None")),
             }
         )
 
@@ -238,3 +240,34 @@ class BacktestRunConfig(Partialable):
     @property
     def id(self):
         return tokenize(self)
+
+
+def parse_filters_expr(s: str):
+    # TODO (bm) - could we do this better, probably requires writing our own parser?
+    """
+    Parse a pyarrow.dataset filter expression from a string
+
+    >>> parse_filters_expr('field("Currency") == "CHF"')
+    <pyarrow.dataset.Expression (Currency == "CHF")>
+
+    >>> parse_filters_expr("print('hello')")
+
+    >>> parse_filters_expr("None")
+
+    """
+    from pyarrow.dataset import field
+
+    assert field  # required for eval.
+
+    if not s:
+        return
+
+    def safer_eval(input_string):
+        allowed_names = {"field": field}
+        code = compile(input_string, "<string>", "eval")
+        for name in code.co_names:
+            if name not in allowed_names:
+                raise NameError(f"Use of {name} not allowed")
+        return eval(code, {}, allowed_names)  # noqa: S307
+
+    return safer_eval(s)  # Only allow use of the field object
