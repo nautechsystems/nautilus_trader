@@ -90,12 +90,12 @@ from nautilus_trader.model.orders.limit import LimitOrder
 from nautilus_trader.msgbus.bus import MessageBus
 from nautilus_trader.portfolio.portfolio import Portfolio
 from nautilus_trader.serialization.arrow.serializer import register_parquet
-from nautilus_trader.trading.filters import NewsEvent
 from nautilus_trader.trading.filters import NewsImpact
 from nautilus_trader.trading.strategy import TradingStrategy
 from tests.test_kit.mocks import MockLiveDataEngine
 from tests.test_kit.mocks import MockLiveExecutionEngine
 from tests.test_kit.mocks import MockLiveRiskEngine
+from tests.test_kit.mocks import NewsEventData
 from tests.test_kit.providers import TestInstrumentProvider
 
 
@@ -840,10 +840,10 @@ class TestStubs:
                     "currency": Currency.from_str(data["currency"]),
                 }
             )
-            return NewsEvent(**data)
+            return NewsEventData(**data)
 
         register_parquet(
-            cls=NewsEvent,
+            cls=NewsEventData,
             serializer=_news_event_to_dict,
             deserializer=_news_event_from_dict,
             partition_keys=("currency",),
@@ -862,7 +862,7 @@ class TestStubs:
     @staticmethod
     def news_event_parser(df, state=None):
         for _, row in df.iterrows():
-            yield NewsEvent(
+            yield NewsEventData(
                 name=str(row["Name"]),
                 impact=getattr(NewsImpact, row["Impact"]),
                 currency=Currency.from_str(row["Currency"]),
