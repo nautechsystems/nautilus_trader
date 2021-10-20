@@ -20,6 +20,7 @@ import pytest
 from nautilus_trader.backtest.data_client import BacktestMarketDataClient
 from nautilus_trader.common.actor import Actor
 from nautilus_trader.common.clock import TestClock
+from nautilus_trader.common.config import ActorConfig
 from nautilus_trader.common.enums import ComponentState
 from nautilus_trader.common.enums import LogLevel
 from nautilus_trader.common.logging import Logger
@@ -67,7 +68,7 @@ class TestActor:
 
         self.trader_id = TestStubs.trader_id()
         self.account_id = TestStubs.account_id()
-        self.component_id = ComponentId("MyComponent-001")
+        self.component_id = "MyComponent-001"
 
         self.msgbus = MessageBus(
             trader_id=self.trader_id,
@@ -114,14 +115,14 @@ class TestActor:
 
     def test_id(self):
         # Arrange, Act
-        actor = Actor(component_id=self.component_id)
+        actor = Actor(config=ActorConfig(component_id=self.component_id))
 
         # Assert
-        assert actor.id == self.component_id
+        assert actor.id == ComponentId(self.component_id)
 
     def test_pre_initialization(self):
         # Arrange
-        actor = Actor(self.component_id)
+        actor = Actor(config=ActorConfig(component_id=self.component_id))
 
         # Act, Assert
         assert actor.state == ComponentState.PRE_INITIALIZED
@@ -129,7 +130,7 @@ class TestActor:
 
     def test_initialization(self):
         # Arrange
-        actor = Actor(self.component_id)
+        actor = Actor(config=ActorConfig(component_id=self.component_id))
         actor.register_base(
             trader_id=self.trader_id,
             msgbus=self.msgbus,
@@ -144,7 +145,7 @@ class TestActor:
 
     def test_register_warning_event(self):
         # Arrange
-        actor = Actor(self.component_id)
+        actor = Actor(config=ActorConfig(component_id=self.component_id))
         actor.register_base(
             trader_id=self.trader_id,
             msgbus=self.msgbus,
@@ -161,7 +162,7 @@ class TestActor:
 
     def test_deregister_warning_event(self):
         # Arrange
-        actor = Actor(self.component_id)
+        actor = Actor(config=ActorConfig(component_id=self.component_id))
         actor.register_base(
             trader_id=self.trader_id,
             msgbus=self.msgbus,
@@ -180,7 +181,7 @@ class TestActor:
 
     def test_handle_event(self):
         # Arrange
-        actor = Actor(self.component_id)
+        actor = Actor(config=ActorConfig(component_id=self.component_id))
 
         event = TestStubs.event_cash_account_state()
 
@@ -192,7 +193,7 @@ class TestActor:
 
     def test_on_start_when_not_overridden_does_nothing(self):
         # Arrange
-        actor = Actor(self.component_id)
+        actor = Actor(config=ActorConfig(component_id=self.component_id))
 
         # Act
         actor.on_start()
@@ -202,7 +203,7 @@ class TestActor:
 
     def test_on_stop_when_not_overridden_does_nothing(self):
         # Arrange
-        actor = Actor(self.component_id)
+        actor = Actor(config=ActorConfig(component_id=self.component_id))
 
         # Act
         actor.on_stop()
@@ -212,7 +213,7 @@ class TestActor:
 
     def test_on_resume_when_not_overridden_does_nothing(self):
         # Arrange
-        actor = Actor(self.component_id)
+        actor = Actor(config=ActorConfig(component_id=self.component_id))
 
         # Act
         actor.on_resume()
@@ -222,7 +223,7 @@ class TestActor:
 
     def test_on_reset_when_not_overridden_does_nothing(self):
         # Arrange
-        actor = Actor(self.component_id)
+        actor = Actor(config=ActorConfig(component_id=self.component_id))
 
         # Act
         actor.on_reset()
@@ -232,7 +233,7 @@ class TestActor:
 
     def test_on_dispose_when_not_overridden_does_nothing(self):
         # Arrange
-        actor = Actor(self.component_id)
+        actor = Actor(config=ActorConfig(component_id=self.component_id))
 
         # Act
         actor.on_dispose()
@@ -242,7 +243,7 @@ class TestActor:
 
     def test_on_degrade_when_not_overridden_does_nothing(self):
         # Arrange
-        actor = Actor(self.component_id)
+        actor = Actor(config=ActorConfig(component_id=self.component_id))
 
         # Act
         actor.on_degrade()
@@ -252,7 +253,7 @@ class TestActor:
 
     def test_on_fault_when_not_overridden_does_nothing(self):
         # Arrange
-        actor = Actor(self.component_id)
+        actor = Actor(config=ActorConfig(component_id=self.component_id))
 
         # Act
         actor.on_fault()
@@ -262,7 +263,7 @@ class TestActor:
 
     def test_on_instrument_when_not_overridden_does_nothing(self):
         # Arrange
-        actor = Actor(self.component_id)
+        actor = Actor(config=ActorConfig(component_id=self.component_id))
 
         # Act
         actor.on_instrument(TestInstrumentProvider.btcusdt_binance())
@@ -272,7 +273,7 @@ class TestActor:
 
     def test_on_order_book_when_not_overridden_does_nothing(self):
         # Arrange
-        actor = Actor(self.component_id)
+        actor = Actor(config=ActorConfig(component_id=self.component_id))
 
         # Act
         actor.on_order_book(TestStubs.order_book())
@@ -282,7 +283,7 @@ class TestActor:
 
     def test_on_order_book_delta_when_not_overridden_does_nothing(self):
         # Arrange
-        actor = Actor(self.component_id)
+        actor = Actor(config=ActorConfig(component_id=self.component_id))
 
         # Act
         actor.on_order_book_delta(TestStubs.order_book_snapshot())
@@ -292,7 +293,7 @@ class TestActor:
 
     def test_on_ticker_when_not_overridden_does_nothing(self):
         # Arrange
-        actor = Actor(self.component_id)
+        actor = Actor(config=ActorConfig(component_id=self.component_id))
 
         # Act
         actor.on_ticker(TestStubs.ticker())
@@ -302,7 +303,7 @@ class TestActor:
 
     def test_on_venue_status_update_when_not_overridden_does_nothing(self):
         # Arrange
-        actor = Actor(self.component_id)
+        actor = Actor(config=ActorConfig(component_id=self.component_id))
 
         # Act
         actor.on_venue_status_update(TestStubs.venue_status_update())
@@ -312,7 +313,7 @@ class TestActor:
 
     def test_on_instrument_status_update_when_not_overridden_does_nothing(self):
         # Arrange
-        actor = Actor(self.component_id)
+        actor = Actor(config=ActorConfig(component_id=self.component_id))
 
         # Act
         actor.on_instrument_status_update(TestStubs.instrument_status_update())
@@ -322,7 +323,7 @@ class TestActor:
 
     def test_on_event_when_not_overridden_does_nothing(self):
         # Arrange
-        actor = Actor(self.component_id)
+        actor = Actor(config=ActorConfig(component_id=self.component_id))
 
         # Act
         actor.on_event(TestStubs.event_cash_account_state())
@@ -332,7 +333,7 @@ class TestActor:
 
     def test_on_quote_tick_when_not_overridden_does_nothing(self):
         # Arrange
-        actor = Actor(self.component_id)
+        actor = Actor(config=ActorConfig(component_id=self.component_id))
 
         tick = TestStubs.quote_tick_5decimal()
 
@@ -344,7 +345,7 @@ class TestActor:
 
     def test_on_trade_tick_when_not_overridden_does_nothing(self):
         # Arrange
-        actor = Actor(self.component_id)
+        actor = Actor(config=ActorConfig(component_id=self.component_id))
 
         tick = TestStubs.trade_tick_5decimal()
 
@@ -356,7 +357,7 @@ class TestActor:
 
     def test_on_bar_when_not_overridden_does_nothing(self):
         # Arrange
-        actor = Actor(self.component_id)
+        actor = Actor(config=ActorConfig(component_id=self.component_id))
 
         bar = TestStubs.bar_5decimal()
 
@@ -368,7 +369,7 @@ class TestActor:
 
     def test_on_data_when_not_overridden_does_nothing(self):
         # Arrange
-        actor = Actor(self.component_id)
+        actor = Actor(config=ActorConfig(component_id=self.component_id))
         news_event = NewsEvent(
             impact=NewsImpact.HIGH,
             name="Unemployment Rate",
@@ -385,7 +386,7 @@ class TestActor:
 
     def test_start_when_not_initialized_raises_invalid_state_trigger(self):
         # Arrange
-        actor = Actor(self.component_id)
+        actor = Actor(config=ActorConfig(component_id=self.component_id))
 
         # Act, Assert
         with pytest.raises(InvalidStateTrigger):
@@ -393,7 +394,7 @@ class TestActor:
 
     def test_stop_when_not_initialized_raises_invalid_state_trigger(self):
         # Arrange
-        actor = Actor(self.component_id)
+        actor = Actor(config=ActorConfig(component_id=self.component_id))
 
         try:
             actor.start()
@@ -408,7 +409,7 @@ class TestActor:
 
     def test_resume_when_not_initialized_raises_invalid_state_trigger(self):
         # Arrange
-        actor = Actor(self.component_id)
+        actor = Actor(config=ActorConfig(component_id=self.component_id))
 
         # Act, Assert
         with pytest.raises(InvalidStateTrigger):
@@ -416,7 +417,7 @@ class TestActor:
 
     def test_reset_when_not_initialized_raises_invalid_state_trigger(self):
         # Arrange
-        actor = Actor(self.component_id)
+        actor = Actor(config=ActorConfig(component_id=self.component_id))
 
         # Act, Assert
         with pytest.raises(InvalidStateTrigger):
@@ -424,7 +425,7 @@ class TestActor:
 
     def test_dispose_when_not_initialized_raises_invalid_state_trigger(self):
         # Arrange
-        actor = Actor(self.component_id)
+        actor = Actor(config=ActorConfig(component_id=self.component_id))
 
         # Act, Assert
         with pytest.raises(InvalidStateTrigger):
@@ -432,7 +433,7 @@ class TestActor:
 
     def test_degrade_when_not_initialized_raises_invalid_state_trigger(self):
         # Arrange
-        actor = Actor(self.component_id)
+        actor = Actor(config=ActorConfig(component_id=self.component_id))
 
         # Act, Assert
         with pytest.raises(InvalidStateTrigger):
@@ -440,7 +441,7 @@ class TestActor:
 
     def test_fault_when_not_initialized_raises_invalid_state_trigger(self):
         # Arrange
-        actor = Actor(self.component_id)
+        actor = Actor(config=ActorConfig(component_id=self.component_id))
 
         # Act, Assert
         with pytest.raises(InvalidStateTrigger):

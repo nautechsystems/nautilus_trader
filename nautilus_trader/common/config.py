@@ -20,72 +20,81 @@ from importlib.machinery import ModuleSpec
 from types import ModuleType
 from typing import Optional, Union
 
-from nautilus_trader.common.config import ActorConfig
-from nautilus_trader.common.config import ImportableActorConfig
+import pydantic
+
 from nautilus_trader.core.correctness import PyCondition
 
 
-class TradingStrategyConfig(ActorConfig):
+class ActorConfig(pydantic.BaseModel):
     """
-    The base model for all trading strategy configurations.
+    The base model for all actor configurations.
 
     component_id : str, optional
-        The unique component ID for the strategy. Will become the strategy ID if not None.
-    order_id_tag : str
-        The unique order ID tag for the strategy. Must be unique
-        amongst all running strategies for a particular trader ID.
-    oms_type : OMSType
-        The order management system type for the strategy. This will determine
-        how the `ExecutionEngine` handles position IDs (see docs).
+        The component ID. If ``None`` then the identifier will be taken from
+        `type(self).__name__`.
+
     """
 
-    order_id_tag: str = "000"
-    oms_type: str = "HEDGING"
+    component_id: Optional[str] = None
 
 
-class ImportableStrategyConfig(ImportableActorConfig):
+class ImportableActorConfig(pydantic.BaseModel):
     """
-    Represents a trading strategy configuration for one specific backtest run.
+    Represents an actor configuration for one specific backtest run.
 
     path : str, optional
         The fully-qualified name of the module.
     source : bytes, optional
-        The strategy source code.
-    config : Union[TradingStrategyConfig, str]
+        The actor source code.
+    config : Union[ActorConfig, str]
 
     """
 
     path: Optional[str]
     source: Optional[bytes]
-    config: Union[TradingStrategyConfig, str]
+    config: Union[ActorConfig, str]
+
+    def _check_path(self):
+        assert self.path, "`path` not set, can't parse module"
+        assert ":" in self.path, "Path variable should be of the form: path.to.module:class"
+
+    @property
+    def module(self):
+        self._check_path()
+        return self.path.rsplit(":")[0]
+
+    @property
+    def cls(self):
+        self._check_path()
+        return self.path.rsplit(":")[1]
 
 
-class StrategyFactory:
+class ActorFactory:
     """
-    Provides strategy creation from importable configurations.
+    Provides actor creation from importable configurations.
     """
 
     @staticmethod
-    def create(config: ImportableStrategyConfig):
+    def create(config: ImportableActorConfig):
         """
-        Create a trading strategy from the given configuration.
+        Create an actor from the given configuration.
 
         Parameters
         ----------
-        config : ImportableStrategyConfig
+        config : ImportableActorConfig
             The configuration for the building step.
 
         Returns
         -------
-        TradingStrategy
+        Actor
 
         Raises
         ------
         TypeError
-            If config is not of type `ImportableStrategyConfig`.
+            If config is not of type `ImportableActorConfig`.
 
         """
-        PyCondition.type(config, ImportableStrategyConfig, "config")
+        PyCondition.type(config, ImportableActorConfig, "config")
         if (config.path is None or config.path.isspace()) and (
             config.source is None or config.source.isspace()
         ):
@@ -94,7 +103,7 @@ class StrategyFactory:
         if config.path is not None:
             mod = importlib.import_module(config.module)
             cls = getattr(mod, config.cls)
-            assert isinstance(config.config, TradingStrategyConfig)
+            assert isinstance(config.config, ActorConfig)
             return cls(config=config.config)
         else:
             spec: ModuleSpec = importlib.util.spec_from_loader(config.module, loader=None)

@@ -30,6 +30,7 @@ from nautilus_trader.backtest.execution_client cimport BacktestExecClient
 from nautilus_trader.backtest.models cimport FillModel
 from nautilus_trader.backtest.modules cimport SimulationModule
 from nautilus_trader.cache.cache cimport Cache
+from nautilus_trader.common.actor import Actor
 from nautilus_trader.common.clock cimport LiveClock
 from nautilus_trader.common.clock cimport TestClock
 from nautilus_trader.common.logging cimport Logger
@@ -607,6 +608,40 @@ cdef class BacktestEngine:
 
         self._log.info(f"Added {exchange}.")
 
+    def change_fill_model(self, Venue venue, FillModel model) -> None:
+        """
+        Change the fill model for the exchange of the given venue.
+
+        Parameters
+        ----------
+        venue : Venue
+            The venue of the simulated exchange.
+        model : FillModel
+            The fill model to change to.
+
+        """
+        Condition.not_none(venue, "venue")
+        Condition.not_none(model, "model")
+        Condition.is_in(venue, self._exchanges, "venue", "self._exchanges")
+
+        self._exchanges[venue].set_fill_model(model)
+
+    def add_component(self, component: Actor) -> None:
+        # Checked inside trader
+        self.trader.add_component(component)
+
+    def add_components(self, components: List[Actor]) -> None:
+        # Checked inside trader
+        self.trader.add_components(components)
+
+    def add_strategy(self, strategy: TradingStrategy) -> None:
+        # Checked inside trader
+        self.trader.add_strategy(strategy)
+
+    def add_strategies(self, strategies: List[TradingStrategy]) -> None:
+        # Checked inside trader
+        self.trader.add_strategies(strategies)
+
     def reset(self) -> None:
         """
         Reset the backtest engine.
@@ -684,32 +719,6 @@ cdef class BacktestEngine:
         self._data_engine.dispose()
         self._exec_engine.dispose()
         self._risk_engine.dispose()
-
-    def change_fill_model(self, Venue venue, FillModel model) -> None:
-        """
-        Change the fill model for the exchange of the given venue.
-
-        Parameters
-        ----------
-        venue : Venue
-            The venue of the simulated exchange.
-        model : FillModel
-            The fill model to change to.
-
-        """
-        Condition.not_none(venue, "venue")
-        Condition.not_none(model, "model")
-        Condition.is_in(venue, self._exchanges, "venue", "self._exchanges")
-
-        self._exchanges[venue].set_fill_model(model)
-
-    def add_strategy(self, strategy: TradingStrategy) -> None:
-        # Checked inside trader
-        self.trader.add_strategy(strategy)
-
-    def add_strategies(self, strategies: List[TradingStrategy]) -> None:
-        # Checked inside trader
-        self.trader.add_strategies(strategies)
 
     def run(
         self,

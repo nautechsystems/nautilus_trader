@@ -109,11 +109,12 @@ cdef class TradingStrategy(Actor):
             config = TradingStrategyConfig()
         Condition.type(config, TradingStrategyConfig, "config")
 
-        self.oms_type = OMSTypeParser.from_str(config.oms_type)
+        super().__init__(config)
+        # Assign strategy ID after base class initialized
+        component_id = type(self).__name__ if config.component_id is None else config.component_id
+        self.id = StrategyId(f"{component_id}-{config.order_id_tag}")
 
-        # Assign strategy ID
-        strategy_id = StrategyId(f"{type(self).__name__}-{config.order_id_tag}")
-        super().__init__(component_id=strategy_id, config=config.dict())
+        self.oms_type = OMSTypeParser.from_str(config.oms_type)
 
         # Indicators
         self._indicators = []             # type: list[Indicator]
