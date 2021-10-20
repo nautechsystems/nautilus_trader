@@ -173,7 +173,7 @@ class TestBacktestConfig:
         result = tokenize(self.backtest_config)
 
         # Assert
-        assert result == "2ac0e3978f8f40ab0a94feef0f21328d"
+        assert result == "5a2c9290bb73a4b5884ffce50673e538"
 
     def test_backtest_data_config_load(self):
         instrument = TestInstrumentProvider.default_fx_ccy("AUD/USD")

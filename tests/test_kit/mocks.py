@@ -25,6 +25,7 @@ from fsspec.implementations.memory import MemoryFileSystem
 from nautilus_trader.accounting.accounts.base import Account
 from nautilus_trader.cache.database import CacheDatabase
 from nautilus_trader.common.actor import Actor
+from nautilus_trader.common.config import ActorConfig
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.common.providers import InstrumentProvider
 from nautilus_trader.core.datetime import secs_to_nanos
@@ -116,12 +117,12 @@ class MockActor(Actor):
     Provides a mock actor for testing.
     """
 
-    def __init__(self):
+    def __init__(self, config: ActorConfig = None):
         """
         Initialize a new instance of the ``MockActor`` class.
 
         """
-        super().__init__()
+        super().__init__(config)
 
         self.object_storer = ObjectStorer()
 
