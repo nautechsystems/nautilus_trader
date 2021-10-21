@@ -71,7 +71,7 @@ class BetfairInstrumentProvider(InstrumentProvider):
     def from_instruments(cls, instruments, logger=None):
         logger = logger or Logger(LiveClock())
         instance = cls(client=1, logger=logger)
-        instance.set_instruments(instruments)
+        instance.add_instruments(instruments)
         return instance
 
     async def load_all_async(self, market_filter=None):
@@ -147,9 +147,6 @@ class BetfairInstrumentProvider(InstrumentProvider):
             detail = await self._client.get_account_details()
             self._account_currency = detail["currencyCode"]
         return self._account_currency
-
-    def set_instruments(self, instruments: List):
-        self._instruments = {ins.id: ins for ins in instruments}
 
     def add_instruments(self, instruments: List[BettingInstrument]):
         for instrument in instruments:

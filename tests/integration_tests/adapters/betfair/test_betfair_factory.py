@@ -22,8 +22,8 @@ from nautilus_trader.adapters.betfair.client.core import BetfairClient
 from nautilus_trader.adapters.betfair.common import BETFAIR_VENUE
 from nautilus_trader.adapters.betfair.data import BetfairDataClient
 from nautilus_trader.adapters.betfair.execution import BetfairExecutionClient
-from nautilus_trader.adapters.betfair.factory import BetfairLiveDataClientFactory
-from nautilus_trader.adapters.betfair.factory import BetfairLiveExecutionClientFactory
+from nautilus_trader.adapters.betfair.factories import BetfairLiveDataClientFactory
+from nautilus_trader.adapters.betfair.factories import BetfairLiveExecutionClientFactory
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.logging import LiveLogger
 from nautilus_trader.common.logging import LoggerAdapter
@@ -88,5 +88,5 @@ class TestBetfairFactory:
         # Assert
         assert BetfairDataClient == type(data_client)
         assert BetfairExecutionClient == type(exec_client)
-        # TODO - assert login called
+        # TODO(bm) - assert login called
         # assert mock_login.assert_called_once_with()
