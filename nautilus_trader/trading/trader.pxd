@@ -32,8 +32,8 @@ cdef class Trader(Component):
     cdef DataEngine _data_engine
     cdef RiskEngine _risk_engine
     cdef ExecutionEngine _exec_engine
-    cdef list _strategies
     cdef list _components
+    cdef list _strategies
 
     cdef readonly analyzer
     """The traders performance analyzer.\n\n:returns: `PerformanceAnalyzer`"""
