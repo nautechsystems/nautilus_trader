@@ -42,6 +42,8 @@ class BinanceHttpClient(HttpClient):
     Provides a `Binance` asynchronous HTTP client
     """
 
+    BASE_URL = "https://api.binance.com"
+
     def __init__(
         self,
         loop: asyncio.AbstractEventLoop,
@@ -60,7 +62,7 @@ class BinanceHttpClient(HttpClient):
         self._clock = clock
         self._key = key
         self._secret = secret
-        self._base_url = base_url
+        self._base_url = base_url or self.BASE_URL
         self._show_limit_usage = show_limit_usage
         self._proxies = None
         self._headers: Dict[str, str] = {
