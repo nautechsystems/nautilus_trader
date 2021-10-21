@@ -26,10 +26,10 @@ sys.path.insert(
 
 from examples.strategies.orderbook_imbalance import OrderBookImbalance
 from examples.strategies.orderbook_imbalance import OrderBookImbalanceConfig
-from nautilus_trader.adapters.betfair.factory import BetfairLiveDataClientFactory
-from nautilus_trader.adapters.betfair.factory import BetfairLiveExecutionClientFactory
-from nautilus_trader.adapters.betfair.factory import get_betfair_client
-from nautilus_trader.adapters.betfair.factory import get_instrument_provider
+from nautilus_trader.adapters.betfair.factories import BetfairLiveDataClientFactory
+from nautilus_trader.adapters.betfair.factories import BetfairLiveExecutionClientFactory
+from nautilus_trader.adapters.betfair.factories import get_betfair_client
+from nautilus_trader.adapters.betfair.factories import get_instrument_provider
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.logging import LiveLogger
 from nautilus_trader.infrastructure.config import CacheDatabaseConfig
