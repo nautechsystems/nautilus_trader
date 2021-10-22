@@ -44,7 +44,7 @@ jobs:
       - name: Run pre-commit
         run: |
           pre-commit run --all-files
-          ls .cache/pre-commit
+          ls ~/.cache/pre-commit
 
       # Setup cached Poetry environment
       - name: Setup cached Poetry environment
