@@ -37,8 +37,9 @@ jobs:
         uses: actions/cache@v2
         with:
           path: ~/.cache/pre-commit
-          key: ${{ runner.os }}-${{ matrix.python-version }}-pre-commit-${{ hashFiles('.pre-commit-config.yaml') }}
-          restore-keys: ${{ runner.os }}-${{ matrix.python-version }}-pre-commit-
+          key: ${{ runner.os }}-${{ matrix.python-version }}-pre-commit-${{ hashFiles('.github/workflows/*.yml')-${{ hashFiles('.pre-commit-config.yaml') }}
+          restore-keys: |
+            ${{ runner.os }}-${{ matrix.python-version }}-pre-commit-
 
       # Run pre-commit
       - name: Run pre-commit
@@ -46,16 +47,15 @@ jobs:
 
       # Setup cached Poetry environment
       - name: Setup cached Poetry environment
-        id: poetry-cache
+        id: cache-poetry
         run: echo "::set-output name=dir::$(poetry config cache-dir)"
 
       - name: Poetry/Nox cache
         uses: actions/cache@v2
         with:
-          path: ${{ steps.poetry-cache.outputs.dir }}
-          key: ${{ runner.os }}-${{ matrix.python-version }}-poetry-test-${{ hashFiles('**/poetry.lock') }}
+          path: ${{ steps.cache-poetry.outputs.dir }}
+          key: ${{ runner.os }}-${{ matrix.python-version }}-poetry-${{ hashFiles('.github/workflows/*.yml')-${{ hashFiles('**/poetry.lock') }}
           restore-keys: |
-            ${{ runner.os }}-${{ matrix.python-version }}-poetry-test-
             ${{ runner.os }}-${{ matrix.python-version }}-poetry-
 
       # Install and run database dependencies
@@ -99,18 +99,3 @@ jobs:
       - name: Run performance tests (Linux)
         if: runner.os == 'Linux'
         run: nox -rs performance_tests
-
-      # Store benchmark results (Linux)
-#      - name: Store benchmark result (Linux)
-#        if: runner.os == 'Linux'
-#        uses: rhysd/github-action-benchmark@v1
-#        with:
-#          name: Benchmark with pytest-benchmark
-#          tool: "pytest"
-#          output-file-path: output.json
-#          github-token: ${{ secrets.GHPAGES_ACCESS }}
-#          auto-push: true
-#          # Show alert with commit comment on detecting possible performance regression
-#          alert-threshold: '200%'
-#          comment-always: true
-#          fail-on-alert: false
