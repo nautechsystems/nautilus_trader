@@ -571,8 +571,8 @@ class MockLiveExecutionClient(LiveExecutionClient):
             logger=logger,
         )
 
-        self._order_status_reports = {}  # type: dict[VenueOrderId, OrderStatusReport]
-        self._trades_lists = {}  # type: dict[VenueOrderId, list[ExecutionReport]]
+        self._order_status_reports: Dict[VenueOrderId, OrderStatusReport] = {}
+        self._trades_lists: Dict[VenueOrderId, list[ExecutionReport]] = {}
 
         self.calls = []
         self.commands = []
@@ -642,11 +642,11 @@ class MockCacheDatabase(CacheDatabase):
         """
         super().__init__(logger)
 
-        self.currencies = {}  # type: dict[str, Currency]
-        self.instruments = {}  # type: dict[InstrumentId, Instrument]
-        self.accounts = {}  # type: dict[AccountId, Account]
-        self.orders = {}  # type: dict[ClientOrderId, Order]
-        self.positions = {}  # type: dict[PositionId, Position]
+        self.currencies: Dict[str, Currency] = {}
+        self.instruments: Dict[InstrumentId, Instrument] = {}
+        self.accounts: Dict[AccountId, Account] = {}
+        self.orders: Dict[ClientOrderId, Order] = {}
+        self.positions: Dict[PositionId, Position] = {}
 
     def flush(self) -> None:
         self.accounts.clear()
