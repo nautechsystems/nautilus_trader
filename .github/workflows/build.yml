@@ -16,7 +16,18 @@ jobs:
       - uses: actions/setup-python@v2
         with:
           python-version: 3.9
-      - uses: pre-commit/action@v2.0.3
+
+      # Cache pre-commit
+      - name: Cache pre-commit
+        id: cache-pre-commit
+        uses: actions/cache@v2
+        with:
+          path: .cache/pre-commit
+          key: pre-commit-${{ hashFiles('.pre-commit-config.yaml') }}
+
+      # Run pre-commit
+      - name: Run pre-commit
+        run: pre-commit run --all-files
 
   build:
     needs: [ pre-commit ]
