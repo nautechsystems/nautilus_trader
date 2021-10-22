@@ -61,16 +61,16 @@ jobs:
 
       # Setup Poetry caching
       - name: Get Poetry cache dir
-        id: poetry-cache
+        id: cache-poetry
         run: echo "::set-output name=dir::$(poetry config cache-dir)"
 
       - name: Poetry/Nox cache
         uses: actions/cache@v2
         with:
-          path: ${{ steps.poetry-cache.outputs.dir }}
-          key: ${{ runner.os }}-${{ matrix.python-version }}-poetry-tag-${{ hashFiles('**/poetry.lock') }}
+          path: ${{ steps.cache-poetry.outputs.dir }}
+          key: ${{ runner.os }}-${{ matrix.python-version }}-poetry-release-${{ hashFiles('.github/workflows/*.yml') }}-${{ hashFiles('**/poetry.lock') }}
           restore-keys: |
-            ${{ runner.os }}-${{ matrix.python-version }}-poetry-tag-
+            ${{ runner.os }}-${{ matrix.python-version }}-poetry-release-
             ${{ runner.os }}-${{ matrix.python-version }}-poetry-
 
       # Install
@@ -130,16 +130,16 @@ jobs:
 
       # Setup Poetry caching
       - name: Get Poetry cache dir
-        id: poetry-cache
+        id: cache-poetry
         run: echo "::set-output name=dir::$(poetry config cache-dir)"
 
       - name: Poetry/Nox cache
         uses: actions/cache@v2
         with:
-          path: ${{ steps.poetry-cache.outputs.dir }}
-          key: ${{ runner.os }}-${{ matrix.python-version }}-poetry-publish-${{ hashFiles('**/poetry.lock') }}
+          path: ${{ steps.cache-poetry.outputs.dir }}
+          key: ${{ runner.os }}-${{ matrix.python-version }}-poetry-release-${{ hashFiles('.github/workflows/*.yml') }}-${{ hashFiles('**/poetry.lock') }}
           restore-keys: |
-            ${{ runner.os }}-${{ matrix.python-version }}-poetry-publish-
+            ${{ runner.os }}-${{ matrix.python-version }}-poetry-release-
             ${{ runner.os }}-${{ matrix.python-version }}-poetry-
 
       # Install / Build
@@ -203,16 +203,16 @@ jobs:
 
       # Setup Poetry caching
       - name: Get Poetry cache dir
-        id: poetry-cache
+        id: cache-poetry
         run: echo "::set-output name=dir::$(poetry config cache-dir)"
 
       - name: Poetry/Nox cache
         uses: actions/cache@v2
         with:
-          path: ${{ steps.poetry-cache.outputs.dir }}
-          key: ${{ runner.os }}-${{ matrix.python-version }}-poetry-publish-${{ hashFiles('**/poetry.lock') }}
+          path: ${{ steps.cache-poetry.outputs.dir }}
+          key: ${{ runner.os }}-${{ matrix.python-version }}-poetry-release-${{ hashFiles('.github/workflows/*.yml') }}-${{ hashFiles('**/poetry.lock') }}
           restore-keys: |
-            ${{ runner.os }}-${{ matrix.python-version }}-poetry-publish-
+            ${{ runner.os }}-${{ matrix.python-version }}-poetry-release-
             ${{ runner.os }}-${{ matrix.python-version }}-poetry-
 
       # Install / Build
