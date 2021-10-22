@@ -7,17 +7,7 @@ on:
     branches: [ master, develop ]
 
 jobs:
-  pre-commit:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v2
-      - uses: actions/setup-python@v2
-        with:
-          python-version: 3.9
-      - uses: pre-commit/action@v2.0.3
-
   docs:
-    needs: [ pre-commit ]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v2
