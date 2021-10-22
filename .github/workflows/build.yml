@@ -37,7 +37,7 @@ jobs:
         uses: actions/cache@v2
         with:
           path: ~/.cache/pre-commit
-          key: ${{ runner.os }}-${{ matrix.python-version }}-pre-commit-${{ hashFiles('.github/workflows/*.yml')-${{ hashFiles('.pre-commit-config.yaml') }}
+          key: ${{ runner.os }}-${{ matrix.python-version }}-pre-commit-${{ hashFiles('.github/workflows/*.yml') }}-${{ hashFiles('.pre-commit-config.yaml') }}
           restore-keys: |
             ${{ runner.os }}-${{ matrix.python-version }}-pre-commit-
 
@@ -45,8 +45,8 @@ jobs:
       - name: Run pre-commit
         run: pre-commit run --all-files
 
-      # Setup cached Poetry environment
-      - name: Setup cached Poetry environment
+      # Setup Poetry caching
+      - name: Get Poetry cache dir
         id: cache-poetry
         run: echo "::set-output name=dir::$(poetry config cache-dir)"
 
@@ -54,8 +54,9 @@ jobs:
         uses: actions/cache@v2
         with:
           path: ${{ steps.cache-poetry.outputs.dir }}
-          key: ${{ runner.os }}-${{ matrix.python-version }}-poetry-${{ hashFiles('.github/workflows/*.yml')-${{ hashFiles('**/poetry.lock') }}
+          key: ${{ runner.os }}-${{ matrix.python-version }}-poetry-build${{ hashFiles('.github/workflows/*.yml') }}-${{ hashFiles('**/poetry.lock') }}
           restore-keys: |
+            ${{ runner.os }}-${{ matrix.python-version }}-poetry-build$-
             ${{ runner.os }}-${{ matrix.python-version }}-poetry-
 
       # Install and run database dependencies
