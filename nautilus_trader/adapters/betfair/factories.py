@@ -16,6 +16,7 @@
 import asyncio
 import os
 from functools import lru_cache
+from typing import Any, Dict
 
 from nautilus_trader.adapters.betfair.client.core import BetfairClient
 from nautilus_trader.adapters.betfair.common import BETFAIR_VENUE
@@ -63,7 +64,11 @@ def get_betfair_client(
 
 
 @lru_cache(1)
-def get_instrument_provider(client: BetfairClient, logger: Logger, market_filter: tuple):
+def get_instrument_provider(
+    client: BetfairClient,
+    logger: Logger,
+    market_filter: tuple,
+) -> BetfairInstrumentProvider:
     LoggerAdapter("BetfairFactory", logger).warning(
         "Creating new instance of BetfairInstrumentProvider"
     )
@@ -82,15 +87,15 @@ class BetfairLiveDataClientFactory(LiveDataClientFactory):
     def create(
         loop: asyncio.AbstractEventLoop,
         name: str,
-        config,
+        config: Dict[str, Any],
         msgbus: MessageBus,
         cache: Cache,
         clock: LiveClock,
         logger: LiveLogger,
         client_cls=None,
-    ):
+    ) -> BetfairDataClient:
         """
-        Create a new Betfair client.
+        Create a new Betfair data client.
 
         Parameters
         ----------
@@ -98,7 +103,7 @@ class BetfairLiveDataClientFactory(LiveDataClientFactory):
             The event loop for the client.
         name : str
             The client name.
-        config : dict
+        config : dict[str, Any]
             The configuration dictionary.
         msgbus : MessageBus
             The message bus for the client.
@@ -153,15 +158,15 @@ class BetfairLiveExecutionClientFactory(LiveExecutionClientFactory):
     def create(
         loop: asyncio.AbstractEventLoop,
         name: str,
-        config,
+        config: Dict[str, Any],
         msgbus: MessageBus,
         cache: Cache,
         clock: LiveClock,
         logger: LiveLogger,
         client_cls=None,
-    ):
+    ) -> BetfairExecutionClient:
         """
-        Create new Betfair clients.
+        Create a new Betfair execution client.
 
         Parameters
         ----------
@@ -169,7 +174,7 @@ class BetfairLiveExecutionClientFactory(LiveExecutionClientFactory):
             The event loop for the client.
         name : str
             The client name.
-        config : dict[str, object]
+        config : dict[str, Any]
             The configuration for the client.
         msgbus : MessageBus
             The message bus for the client.
@@ -185,7 +190,7 @@ class BetfairLiveExecutionClientFactory(LiveExecutionClientFactory):
 
         Returns
         -------
-        BetfairExecClient
+        BetfairExecutionClient
 
         """
         market_filter = config.get("market_filter", {})

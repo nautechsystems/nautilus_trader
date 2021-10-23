@@ -52,6 +52,7 @@ from nautilus_trader.model.c_enums.venue_type import VenueType
 from nautilus_trader.model.commands.trading import CancelOrder
 from nautilus_trader.model.commands.trading import ModifyOrder
 from nautilus_trader.model.commands.trading import SubmitOrder
+from nautilus_trader.model.commands.trading import SubmitOrderList
 from nautilus_trader.model.currency import Currency
 from nautilus_trader.model.events.account import AccountState
 from nautilus_trader.model.identifiers import AccountId
@@ -107,14 +108,13 @@ class BetfairExecutionClient(LiveExecutionClient):
             The logger for the client.
         market_filter : Dict
             The market filter.
-        instrument_provider : BetfairInstrumentProvider
+        instrument_provider : BetfairInstrumentProvider, optional
             The instrument provider.
 
         """
-        self._client = client  # type: BetfairClient
-        self._instrument_provider: BetfairInstrumentProvider = (
-            instrument_provider
-            or BetfairInstrumentProvider(client=client, logger=logger, market_filter=market_filter)
+        self._client = client
+        self._instrument_provider = instrument_provider or BetfairInstrumentProvider(
+            client=client, logger=logger, market_filter=market_filter
         )
 
         super().__init__(
@@ -262,6 +262,10 @@ class BetfairExecutionClient(LiveExecutionClient):
                     ts_event=self._clock.timestamp_ns(),
                 )
                 self._log.debug("Generated _generate_order_accepted")
+
+    def submit_order_list(self, command: SubmitOrderList):
+        """Abstract method (implement in subclass)."""
+        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
     def modify_order(self, command: ModifyOrder) -> None:
         PyCondition.not_none(command, "command")

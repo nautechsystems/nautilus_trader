@@ -14,7 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 import asyncio
-from typing import Dict, Set
+from typing import Dict, Optional, Set
 
 import orjson
 
@@ -56,7 +56,7 @@ class BetfairDataClient(LiveMarketDataClient):
         clock: LiveClock,
         logger: Logger,
         market_filter: Dict,
-        instrument_provider: BetfairInstrumentProvider,
+        instrument_provider: Optional[BetfairInstrumentProvider] = None,
         strict_handling: bool = False,
     ):
         """
@@ -78,16 +78,15 @@ class BetfairDataClient(LiveMarketDataClient):
             The logger for the client.
         market_filter : Dict
             The market filter.
-        instrument_provider : BetfairInstrumentProvider
+        instrument_provider : BetfairInstrumentProvider, optional
             The instrument provider.
         strict_handling : bool
             If strict handling mode is enabled.
 
         """
-        self._client: BetfairClient = client
-        self._instrument_provider: BetfairInstrumentProvider = (
-            instrument_provider
-            or BetfairInstrumentProvider(client=client, logger=logger, market_filter=market_filter)
+        self._client = client
+        self._instrument_provider = instrument_provider or BetfairInstrumentProvider(
+            client=client, logger=logger, market_filter=market_filter
         )
         super().__init__(
             loop=loop,
