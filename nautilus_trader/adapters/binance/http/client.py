@@ -27,7 +27,6 @@ from aiohttp import ClientResponseError
 import nautilus_trader
 from nautilus_trader.adapters.binance.http.error import BinanceClientError
 from nautilus_trader.adapters.binance.http.error import BinanceServerError
-from nautilus_trader.adapters.binance.http.parsing import clean_none_value
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.network.http import HttpClient
@@ -38,7 +37,7 @@ NAUTILUS_VERSION = nautilus_trader.__version__
 
 class BinanceHttpClient(HttpClient):
     """
-    Provides a `Binance` asynchronous HTTP client
+    Provides a `Binance` asynchronous HTTP client.
     """
 
     BASE_URL = "https://api.binance.com"
@@ -79,7 +78,7 @@ class BinanceHttpClient(HttpClient):
     def headers(self):
         return self._headers
 
-    async def query(self, url_path, payload=None) -> bytes:
+    async def query(self, url_path, payload: Dict[str, str] = None) -> bytes:
         return await self.send_request("GET", url_path, payload=payload)
 
     async def limit_request(
@@ -101,7 +100,7 @@ class BinanceHttpClient(HttpClient):
     ) -> bytes:
         if payload is None:
             payload = {}
-        payload["timestamp"] = self._clock.timestamp() * 1000
+        payload["timestamp"] = str(int(self._clock.timestamp() * 1000))
         query_string = self._prepare_params(payload)
         signature = self._get_sign(query_string)
         payload["signature"] = signature
@@ -125,7 +124,7 @@ class BinanceHttpClient(HttpClient):
         """
         if payload is None:
             payload = {}
-        payload["timestamp"] = self._clock.timestamp() * 1000
+        payload["timestamp"] = str(int(self._clock.timestamp() * 1000))
         query_string = self._prepare_params(payload)
         signature = self._get_sign(query_string)
         url_path = url_path + "?" + query_string + "&signature=" + signature
@@ -146,7 +145,7 @@ class BinanceHttpClient(HttpClient):
                 method=http_method,
                 url=self._base_url + url_path,
                 headers=self._headers,
-                params=clean_none_value(payload),
+                params=self._prepare_params(payload),
             )
         except ClientResponseError as ex:
             await self._handle_exception(ex)
@@ -164,11 +163,11 @@ class BinanceHttpClient(HttpClient):
 
         return resp.data
 
-    def _prepare_params(self, params) -> str:
-        return clean_none_value(params)
+    def _prepare_params(self, params: Dict[str, str]) -> str:
+        return "&".join([k + "=" + v for k, v in params.items()])
 
     def _get_sign(self, data) -> str:
-        m = hmac.new(self.secret.encode("utf-8"), data.encode("utf-8"), hashlib.sha256)
+        m = hmac.new(self._secret.encode(), data.encode(), hashlib.sha256)
         return m.hexdigest()
 
     async def _handle_exception(self, error: ClientResponseError) -> None:

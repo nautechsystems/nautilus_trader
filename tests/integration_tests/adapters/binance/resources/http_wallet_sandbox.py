@@ -20,13 +20,13 @@ import os
 import pytest
 
 from nautilus_trader.adapters.binance.factories import get_binance_http_client
-from nautilus_trader.adapters.binance.http.api.spot import BinanceSpotHTTPAPI
+from nautilus_trader.adapters.binance.http.api.wallet import BinanceWalletHttpAPI
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.logging import Logger
 
 
 @pytest.mark.asyncio
-async def test_binance_http_client():
+async def test_binance_spot_wallet_http_client():
     loop = asyncio.get_event_loop()
     clock = LiveClock()
 
@@ -38,9 +38,9 @@ async def test_binance_http_client():
         secret=os.getenv("BINANCE_API_SECRET"),
     )
 
-    market = BinanceSpotHTTPAPI(client=client)
+    wallet = BinanceWalletHttpAPI(client=client)
     await client.connect()
-    response = await market.exchange_info(symbols=["BTCUSDT", "ETHUSDT"])
+    response = await wallet.trade_fee(symbol="BTCUSDT")
     print(json.dumps(json.loads(response), indent=4))
 
     await client.disconnect()

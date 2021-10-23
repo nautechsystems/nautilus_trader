@@ -16,23 +16,23 @@
 #  Original author: Jeremy https://github.com/2pd
 # -------------------------------------------------------------------------------------------------
 
-from typing import Optional
+from typing import Dict, Optional
 
 from nautilus_trader.adapters.binance.http.client import BinanceHttpClient
 from nautilus_trader.adapters.binance.http.parsing import convert_list_to_json_array
 from nautilus_trader.core.correctness import PyCondition
 
 
-class BinanceSpotHTTPAPI:
+class BinanceSpotMarketHttpAPI:
     """
-    Provides access to the `Binance SPOT` REST HTTP API.
+    Provides access to the `Binance SPOT Market` HTTP REST API.
     """
 
     BASE_ENDPOINT = "/api/v3/"
 
     def __init__(self, client: BinanceHttpClient):
         """
-        Initialize a new instance of the ``BinanceSpotHTTPAPI`` class.
+        Initialize a new instance of the ``BinanceSpotMarketHttpAPI`` class.
 
         Parameters
         ----------
@@ -110,11 +110,16 @@ class BinanceSpotHTTPAPI:
         """
         if symbol and symbols:
             raise ValueError("`symbol` and `symbols` cannot be sent together")
-        PyCondition.type_or_none(symbols, list, "symbols")
+
+        payload: Dict[str, str] = {}
+        if symbol is not None:
+            payload["symbol"] = symbol
+        if symbols is not None:
+            payload["symbols"] = convert_list_to_json_array(symbols)
 
         return await self.client.query(
             url_path=self.BASE_ENDPOINT + "exchangeInfo",
-            payload={"symbol": symbol, "symbols": convert_list_to_json_array(symbols)},
+            payload=payload,
         )
 
     async def depth(self, symbol: str, limit: Optional[int] = None) -> bytes:
@@ -141,11 +146,13 @@ class BinanceSpotHTTPAPI:
         https://binance-docs.github.io/apidocs/spot/en/#order-book
 
         """
-        PyCondition.valid_string(symbol, "symbol")
+        payload: Dict[str, str] = {"symbol": symbol}
+        if limit is not None:
+            payload["limit"] = str(limit)
 
         return await self.client.query(
             url_path=self.BASE_ENDPOINT + "depth",
-            payload={"symbol": symbol, "limit": limit},
+            payload=payload,
         )
 
     async def trades(self, symbol: str, limit: Optional[int] = None) -> bytes:
@@ -173,18 +180,20 @@ class BinanceSpotHTTPAPI:
         https://binance-docs.github.io/apidocs/spot/en/#recent-trades-list
 
         """
-        PyCondition.valid_string(symbol, "symbol")
+        payload: Dict[str, str] = {"symbol": symbol}
+        if limit is not None:
+            payload["limit"] = str(limit)
 
         return await self.client.query(
             url_path=self.BASE_ENDPOINT + "trades",
-            payload={"symbol": symbol, "limit": limit},
+            payload=payload,
         )
 
     async def historical_trades(
         self,
         symbol: str,
-        limit: Optional[int] = None,
         from_id: Optional[int] = None,
+        limit: Optional[int] = None,
     ) -> bytes:
         """
         Old Trade Lookup.
@@ -197,10 +206,10 @@ class BinanceSpotHTTPAPI:
         ----------
         symbol : str
             The trading pair.
-        limit : int, optional
-            The limit for the response. Default 500; max 1000.
         from_id : int, optional
             The trade ID to fetch from. Default gets most recent trades.
+        limit : int, optional
+            The limit for the response. Default 500; max 1000.
 
         Returns
         -------
@@ -212,12 +221,16 @@ class BinanceSpotHTTPAPI:
         https://binance-docs.github.io/apidocs/spot/en/#old-trade-lookup
 
         """
-        PyCondition.valid_string(symbol, "symbol")
+        payload: Dict[str, str] = {"symbol": symbol}
+        if limit is not None:
+            payload["limit"] = str(limit)
+        if from_id is not None:
+            payload["fromId"] = str(from_id)
 
         return await self.client.limit_request(
             http_method="GET",
             url_path=self.BASE_ENDPOINT + "historicalTrades",
-            payload={"symbol": symbol, "limit": limit, "fromId": from_id},
+            payload=payload,
         )
 
     async def agg_trades(
@@ -256,17 +269,19 @@ class BinanceSpotHTTPAPI:
         https://binance-docs.github.io/apidocs/spot/en/#compressed-aggregate-trades-list
 
         """
-        PyCondition.valid_string(symbol, "symbol")
+        payload: Dict[str, str] = {"symbol": symbol}
+        if from_id is not None:
+            payload["fromId"] = str(from_id)
+        if start_time_ms is not None:
+            payload["startTime"] = str(start_time_ms)
+        if end_time_ms is not None:
+            payload["endTime"] = str(end_time_ms)
+        if limit is not None:
+            payload["limit"] = str(limit)
 
         return await self.client.query(
             url_path=self.BASE_ENDPOINT + "aggTrades",
-            payload={
-                "symbol": symbol,
-                "fromId": from_id,
-                "startTime": start_time_ms,
-                "endTime": end_time_ms,
-                "limit": limit,
-            },
+            payload=payload,
         )
 
     async def klines(
@@ -300,18 +315,17 @@ class BinanceSpotHTTPAPI:
         https://binance-docs.github.io/apidocs/spot/en/#kline-candlestick-data
 
         """
-        PyCondition.valid_string(symbol, "symbol")
-        PyCondition.valid_string(interval, "interval")
+        payload: Dict[str, str] = {"symbol": symbol, "internal": interval}
+        if start_time_ms is not None:
+            payload["startTime"] = str(start_time_ms)
+        if end_time_ms is not None:
+            payload["endTime"] = str(end_time_ms)
+        if limit is not None:
+            payload["limit"] = str(limit)
 
         return await self.client.query(
             url_path=self.BASE_ENDPOINT + "klines",
-            payload={
-                "symbol": symbol,
-                "interval": interval,
-                "startTime": start_time_ms,
-                "endTime": end_time_ms,
-                "limit": limit,
-            },
+            payload=payload,
         )
 
     async def avg_price(self, symbol: str) -> bytes:
@@ -335,11 +349,11 @@ class BinanceSpotHTTPAPI:
         https://binance-docs.github.io/apidocs/spot/en/#current-average-price
 
         """
-        PyCondition.valid_string(symbol, "symbol")
+        payload: Dict[str, str] = {"symbol": symbol}
 
         return await self.client.query(
             url_path=self.BASE_ENDPOINT + "avgPrice",
-            payload={"symbol": symbol},
+            payload=payload,
         )
 
     async def ticker_24hr(self, symbol: str = None) -> bytes:
@@ -363,11 +377,13 @@ class BinanceSpotHTTPAPI:
         https://binance-docs.github.io/apidocs/spot/en/#24hr-ticker-price-change-statistics
 
         """
-        PyCondition.type_or_none(symbol, str, "symbol")
+        payload: Dict[str, str] = {}
+        if symbol is not None:
+            payload["symbol"] = symbol
 
         return await self.client.query(
             url_path=self.BASE_ENDPOINT + "ticker/24hr",
-            payload={"symbol": symbol},
+            payload=payload,
         )
 
     async def ticker_price(self, symbol: str = None) -> bytes:
@@ -391,11 +407,13 @@ class BinanceSpotHTTPAPI:
         https://binance-docs.github.io/apidocs/spot/en/#symbol-price-ticker
 
         """
-        PyCondition.type_or_none(symbol, str, "symbol")
+        payload: Dict[str, str] = {}
+        if symbol is not None:
+            payload["symbol"] = symbol
 
         return await self.client.query(
             url_path=self.BASE_ENDPOINT + "ticker/price",
-            payload={"symbol": symbol},
+            payload=payload,
         )
 
     async def book_ticker(self, symbol: str = None) -> bytes:
@@ -419,9 +437,11 @@ class BinanceSpotHTTPAPI:
         https://binance-docs.github.io/apidocs/spot/en/#symbol-order-book-ticker
 
         """
-        PyCondition.type_or_none(symbol, str, "symbol")
+        payload: Dict[str, str] = {}
+        if symbol is not None:
+            payload["symbol"] = symbol
 
         return await self.client.query(
             url_path=self.BASE_ENDPOINT + "ticker/bookTicker",
-            payload={"symbol": symbol},
+            payload=payload,
         )
