@@ -68,7 +68,7 @@ jobs:
         uses: actions/cache@v2
         with:
           path: ${{ steps.cache-poetry.outputs.dir }}
-          key: ${{ runner.os }}-${{ matrix.python-version }}-poetry-release-${{ hashFiles('.github/workflows/*.yml') }}-${{ hashFiles('**/poetry.lock') }}
+          key: ${{ runner.os }}-${{ matrix.python-version }}-poetry-release-${{ hashFiles('.github/workflows/*.yml', '**/poetry.lock') }}
           restore-keys: |
             ${{ runner.os }}-${{ matrix.python-version }}-poetry-release-
             ${{ runner.os }}-${{ matrix.python-version }}-poetry-
@@ -137,7 +137,7 @@ jobs:
         uses: actions/cache@v2
         with:
           path: ${{ steps.cache-poetry.outputs.dir }}
-          key: ${{ runner.os }}-${{ matrix.python-version }}-poetry-release-${{ hashFiles('.github/workflows/*.yml') }}-${{ hashFiles('**/poetry.lock') }}
+          key: ${{ runner.os }}-${{ matrix.python-version }}-poetry-release-${{ hashFiles('.github/workflows/*.yml', '**/poetry.lock') }}
           restore-keys: |
             ${{ runner.os }}-${{ matrix.python-version }}-poetry-release-
             ${{ runner.os }}-${{ matrix.python-version }}-poetry-
@@ -210,7 +210,7 @@ jobs:
         uses: actions/cache@v2
         with:
           path: ${{ steps.cache-poetry.outputs.dir }}
-          key: ${{ runner.os }}-${{ matrix.python-version }}-poetry-release-${{ hashFiles('.github/workflows/*.yml') }}-${{ hashFiles('**/poetry.lock') }}
+          key: ${{ runner.os }}-${{ matrix.python-version }}-poetry-release-${{ hashFiles('.github/workflows/*.yml', '**/poetry.lock') }}
           restore-keys: |
             ${{ runner.os }}-${{ matrix.python-version }}-poetry-release-
             ${{ runner.os }}-${{ matrix.python-version }}-poetry-

@@ -37,7 +37,7 @@ jobs:
         uses: actions/cache@v2
         with:
           path: ~/.cache/pre-commit
-          key: ${{ runner.os }}-${{ matrix.python-version }}-pre-commit-${{ hashFiles('.github/workflows/*.yml') }}-${{ hashFiles('.pre-commit-config.yaml') }}
+          key: ${{ runner.os }}-${{ matrix.python-version }}-pre-commit-${{ hashFiles('.github/workflows/*.yml', '.pre-commit-config.yaml') }}
           restore-keys: |
             ${{ runner.os }}-${{ matrix.python-version }}-pre-commit-
 
@@ -54,7 +54,7 @@ jobs:
         uses: actions/cache@v2
         with:
           path: ${{ steps.cache-poetry.outputs.dir }}
-          key: ${{ runner.os }}-${{ matrix.python-version }}-poetry-build${{ hashFiles('.github/workflows/*.yml') }}-${{ hashFiles('**/poetry.lock') }}
+          key: ${{ runner.os }}-${{ matrix.python-version }}-poetry-build${{ hashFiles('.github/workflows/*.yml', '**/poetry.lock') }}
           restore-keys: |
             ${{ runner.os }}-${{ matrix.python-version }}-poetry-build$-
             ${{ runner.os }}-${{ matrix.python-version }}-poetry-
