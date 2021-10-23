@@ -59,6 +59,18 @@ cdef class InstrumentProvider:
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
+    cpdef void add_currency(self, Currency currency) except *:
+        """
+        Add the given currency to the provider.
+
+        Parameters
+        ----------
+        currency : Currency
+            The currency to add.
+
+        """
+        self._currencies[currency.code] = currency
+
     cpdef void add(self, Instrument instrument) except *:
         """
         Add the given instrument to the provider.

@@ -19,10 +19,6 @@
 import json
 
 
-def clean_none_value(d):
-    return {k: v for k, v in d.items() if v is not None}
-
-
 def convert_list_to_json_array(symbols):
     if symbols is None:
         return symbols

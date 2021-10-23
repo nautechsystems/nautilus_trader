@@ -20,6 +20,7 @@ import pytest
 
 from nautilus_trader.adapters.binance.http.client import BinanceHttpClient
 from nautilus_trader.adapters.binance.providers import BinanceInstrumentProvider
+from tests.test_kit.stubs import TestStubs
 
 
 class TestBinanceInstrumentProvider:
@@ -31,10 +32,17 @@ class TestBinanceInstrumentProvider:
         monkeypatch,
     ):
         # Arrange: prepare data for monkey patch
-        data = pkgutil.get_data(
+        response1 = pkgutil.get_data(
+            package="tests.integration_tests.adapters.binance.resources.responses",
+            resource="wallet_trading_fee.json",
+        )
+
+        response2 = pkgutil.get_data(
             package="tests.integration_tests.adapters.binance.resources.responses",
             resource="spot_market_exchange_info.json",
         )
+
+        responses = [response2, response1]
 
         # Mock coroutine for patch
         async def mock_send_request(
@@ -43,7 +51,7 @@ class TestBinanceInstrumentProvider:
             url_path: str,  # noqa (needed for mock)
             payload: Dict[str, str],  # noqa (needed for mock)
         ) -> bytes:
-            return data
+            return responses.pop()
 
         # Apply mock coroutine to client
         monkeypatch.setattr(
@@ -59,3 +67,12 @@ class TestBinanceInstrumentProvider:
 
         # Act
         await self.provider.load_all_async()
+
+        # Assert
+        assert self.provider.count == 2
+        assert self.provider.find(TestStubs.btcusdt_binance_id()) is not None
+        assert self.provider.find(TestStubs.ethusdt_binance_id()) is not None
+        assert len(self.provider.currencies()) == 3
+        assert "BTC" in self.provider.currencies()
+        assert "ETH" in self.provider.currencies()
+        assert "USDT" in self.provider.currencies()
