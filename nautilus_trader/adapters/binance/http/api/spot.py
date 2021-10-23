@@ -16,6 +16,8 @@
 #  Original author: Jeremy https://github.com/2pd
 # -------------------------------------------------------------------------------------------------
 
+from typing import Optional
+
 from nautilus_trader.adapters.binance.http.client import BinanceHttpClient
 from nautilus_trader.adapters.binance.http.parsing import convert_list_to_json_array
 from nautilus_trader.core.correctness import PyCondition
@@ -25,6 +27,8 @@ class BinanceSpotHTTPAPI:
     """
     Provides access to the `Binance SPOT` REST HTTP API.
     """
+
+    BASE_ENDPOINT = "/api/v3/"
 
     def __init__(self, client: BinanceHttpClient):
         """
@@ -46,14 +50,19 @@ class BinanceSpotHTTPAPI:
 
         `GET /api/v3/ping`
 
+        Returns
+        -------
+        bytes
+            The raw response content.
+
         References
         ----------
         https://binance-docs.github.io/apidocs/spot/en/#test-connectivity
 
         """
-        return await self.client.query(url_path="/api/v3/ping")
+        return await self.client.query(url_path=self.BASE_ENDPOINT + "ping")
 
-    async def time(self):
+    async def time(self) -> bytes:
         """
         Check Server Time.
 
@@ -61,14 +70,19 @@ class BinanceSpotHTTPAPI:
 
         `GET /api/v3/time`
 
+        Returns
+        -------
+        bytes
+            The raw response content.
+
         References
         ----------
         https://binance-docs.github.io/apidocs/spot/en/#check-server-time
 
         """
-        return await self.client.query(url_path="/api/v3/time")
+        return await self.client.query(url_path=self.BASE_ENDPOINT + "time")
 
-    async def exchange_info(self, symbol: str = None, symbols: list = None):
+    async def exchange_info(self, symbol: str = None, symbols: list = None) -> bytes:
         """
         Exchange Information.
 
@@ -80,9 +94,14 @@ class BinanceSpotHTTPAPI:
         Parameters
         ----------
         symbol : str, optional
-            The trading pair
+            The trading pair.
         symbols : list[str], optional
             The list of trading pairs.
+
+        Returns
+        -------
+        bytes
+            The raw response content.
 
         References
         ----------
@@ -90,15 +109,15 @@ class BinanceSpotHTTPAPI:
 
         """
         if symbol and symbols:
-            raise ValueError("symbol and symbols cannot be sent together.")
+            raise ValueError("`symbol` and `symbols` cannot be sent together")
         PyCondition.type_or_none(symbols, list, "symbols")
 
         return await self.client.query(
-            url_path="/api/v3/exchangeInfo",
+            url_path=self.BASE_ENDPOINT + "exchangeInfo",
             payload={"symbol": symbol, "symbols": convert_list_to_json_array(symbols)},
         )
 
-    async def depth(self, symbol: str, **kwargs):
+    async def depth(self, symbol: str, limit: Optional[int] = None) -> bytes:
         """
         Get orderbook.
 
@@ -107,9 +126,15 @@ class BinanceSpotHTTPAPI:
         Parameters
         ----------
         symbol : str
-            The trading pair
-        **kwargs : dict
-            limit (int, optional): limit the results. Default 100; valid limits:[5, 10, 20, 50, 100, 500, 1000, 5000]
+            The trading pair.
+        limit : int, optional, default 100
+            The limit for the response. Default 100; max 5000.
+            Valid limits:[5, 10, 20, 50, 100, 500, 1000, 5000].
+
+        Returns
+        -------
+        bytes
+            The raw response content.
 
         References
         ----------
@@ -119,11 +144,11 @@ class BinanceSpotHTTPAPI:
         PyCondition.valid_string(symbol, "symbol")
 
         return await self.client.query(
-            url_path="/api/v3/depth",
-            payload={"symbol": symbol, **kwargs},
+            url_path=self.BASE_ENDPOINT + "depth",
+            payload={"symbol": symbol, "limit": limit},
         )
 
-    async def trades(self, symbol: str, **kwargs):
+    async def trades(self, symbol: str, limit: Optional[int] = None) -> bytes:
         """
         Recent Trades List.
 
@@ -134,9 +159,14 @@ class BinanceSpotHTTPAPI:
         Parameters
         ----------
         symbol : str
-            The trading pair
-        **kwargs : dict
-            limit (int, optional): limit the results. Default 500; max 1000.
+            The trading pair.
+        limit : int, optional
+            The limit for the response. Default 500; max 1000.
+
+        Returns
+        -------
+        bytes
+            The raw response content.
 
         References
         ----------
@@ -146,11 +176,16 @@ class BinanceSpotHTTPAPI:
         PyCondition.valid_string(symbol, "symbol")
 
         return await self.client.query(
-            url_path="/api/v3/trades",
-            payload={"symbol": symbol, **kwargs},
+            url_path=self.BASE_ENDPOINT + "trades",
+            payload={"symbol": symbol, "limit": limit},
         )
 
-    async def historical_trades(self, symbol: str, **kwargs):
+    async def historical_trades(
+        self,
+        symbol: str,
+        limit: Optional[int] = None,
+        from_id: Optional[int] = None,
+    ) -> bytes:
         """
         Old Trade Lookup.
 
@@ -161,10 +196,16 @@ class BinanceSpotHTTPAPI:
         Parameters
         ----------
         symbol : str
-            The trading pair
-        **kwargs : dict
-            limit (int, optional): limit the results. Default 500; max 1000.
-            formId (int, optional): trade id to fetch from. Default gets most recent trades.
+            The trading pair.
+        limit : int, optional
+            The limit for the response. Default 500; max 1000.
+        from_id : int, optional
+            The trade ID to fetch from. Default gets most recent trades.
+
+        Returns
+        -------
+        bytes
+            The raw response content.
 
         References
         ----------
@@ -175,11 +216,18 @@ class BinanceSpotHTTPAPI:
 
         return await self.client.limit_request(
             http_method="GET",
-            url_path="/api/v3/historicalTrades",
-            payload={"symbol": symbol, **kwargs},
+            url_path=self.BASE_ENDPOINT + "historicalTrades",
+            payload={"symbol": symbol, "limit": limit, "fromId": from_id},
         )
 
-    async def agg_trades(self, symbol: str, **kwargs):
+    async def agg_trades(
+        self,
+        symbol: str,
+        from_id: Optional[int] = None,
+        start_time_ms: Optional[int] = None,
+        end_time_ms: Optional[int] = None,
+        limit: Optional[int] = None,
+    ) -> bytes:
         """
         Compressed/Aggregate Trades List.
 
@@ -188,12 +236,20 @@ class BinanceSpotHTTPAPI:
         Parameters
         ----------
         symbol : str
-            The trading pair
-        **kwargs : dict
-            limit (int, optional): limit the results. Default 500; max 1000.
-            formId (int, optional): id to get aggregate trades from INCLUSIVE.
-            startTime (int, optional): Timestamp in ms to get aggregate trades from INCLUSIVE.
-            endTime (int, optional): Timestamp in ms to get aggregate trades until INCLUSIVE.
+            The trading pair.
+        from_id : int, optional
+            The trade ID to fetch from. Default gets most recent trades.
+        start_time_ms : int, optional
+            The UNIX timestamp (ms) to get aggregate trades from INCLUSIVE.
+        end_time_ms: int, optional
+            The UNIX timestamp (ms) to get aggregate trades until INCLUSIVE.
+        limit : int, optional
+            The limit for the response. Default 500; max 1000.
+
+        Returns
+        -------
+        bytes
+            The raw response content.
 
         References
         ----------
@@ -203,11 +259,24 @@ class BinanceSpotHTTPAPI:
         PyCondition.valid_string(symbol, "symbol")
 
         return await self.client.query(
-            url_path="/api/v3/aggTrades",
-            payload={"symbol": symbol, **kwargs},
+            url_path=self.BASE_ENDPOINT + "aggTrades",
+            payload={
+                "symbol": symbol,
+                "fromId": from_id,
+                "startTime": start_time_ms,
+                "endTime": end_time_ms,
+                "limit": limit,
+            },
         )
 
-    async def klines(self, symbol: str, interval: str, **kwargs):
+    async def klines(
+        self,
+        symbol: str,
+        interval: str,
+        start_time_ms: Optional[int] = None,
+        end_time_ms: Optional[int] = None,
+        limit: Optional[int] = None,
+    ) -> bytes:
         """
         Kline/Candlestick Data.
 
@@ -219,10 +288,12 @@ class BinanceSpotHTTPAPI:
             The trading pair.
         interval : str
             The interval of kline, e.g 1m, 5m, 1h, 1d, etc.
-        **kwargs : dict
-            limit (int, optional): limit the results. Default 500; max 1000.
-            startTime (int, optional): Timestamp in ms to get aggregate trades from INCLUSIVE.
-            endTime (int, optional): Timestamp in ms to get aggregate trades until INCLUSIVE.
+        start_time_ms : int, optional
+            The UNIX timestamp (ms) to get aggregate trades from INCLUSIVE.
+        end_time_ms: int, optional
+            The UNIX timestamp (ms) to get aggregate trades until INCLUSIVE.
+        limit : int, optional
+            The limit for the response. Default 500; max 1000.
 
         References
         ----------
@@ -233,11 +304,17 @@ class BinanceSpotHTTPAPI:
         PyCondition.valid_string(interval, "interval")
 
         return await self.client.query(
-            url_path="/api/v3/klines",
-            payload={"symbol": symbol, "interval": interval, **kwargs},
+            url_path=self.BASE_ENDPOINT + "klines",
+            payload={
+                "symbol": symbol,
+                "interval": interval,
+                "startTime": start_time_ms,
+                "endTime": end_time_ms,
+                "limit": limit,
+            },
         )
 
-    async def avg_price(self, symbol: str):
+    async def avg_price(self, symbol: str) -> bytes:
         """
         Get the current average price for the given symbol.
 
@@ -246,7 +323,12 @@ class BinanceSpotHTTPAPI:
         Parameters
         ----------
         symbol : str
-            The trading pair
+            The trading pair.
+
+        Returns
+        -------
+        bytes
+            The raw response content.
 
         References
         ----------
@@ -256,11 +338,11 @@ class BinanceSpotHTTPAPI:
         PyCondition.valid_string(symbol, "symbol")
 
         return await self.client.query(
-            url_path="/api/v3/avgPrice",
+            url_path=self.BASE_ENDPOINT + "avgPrice",
             payload={"symbol": symbol},
         )
 
-    async def ticker_24hr(self, symbol: str = None):
+    async def ticker_24hr(self, symbol: str = None) -> bytes:
         """
         24hr Ticker Price Change Statistics.
 
@@ -268,8 +350,13 @@ class BinanceSpotHTTPAPI:
 
         Parameters
         ----------
-        symbol : str
-            The trading pair, optional
+        symbol : str, optional
+            The trading pair.
+
+        Returns
+        -------
+        bytes
+            The raw response content.
 
         References
         ----------
@@ -279,11 +366,11 @@ class BinanceSpotHTTPAPI:
         PyCondition.type_or_none(symbol, str, "symbol")
 
         return await self.client.query(
-            url_path="/api/v3/ticker/24hr",
+            url_path=self.BASE_ENDPOINT + "ticker/24hr",
             payload={"symbol": symbol},
         )
 
-    async def ticker_price(self, symbol: str = None):
+    async def ticker_price(self, symbol: str = None) -> bytes:
         """
         Symbol Price Ticker.
 
@@ -291,8 +378,13 @@ class BinanceSpotHTTPAPI:
 
         Parameters
         ----------
-        symbol : str
-            The trading pair, optional
+        symbol : str, optional
+            The trading pair.
+
+        Returns
+        -------
+        bytes
+            The raw response content.
 
         References
         ----------
@@ -302,11 +394,11 @@ class BinanceSpotHTTPAPI:
         PyCondition.type_or_none(symbol, str, "symbol")
 
         return await self.client.query(
-            url_path="/api/v3/ticker/price",
+            url_path=self.BASE_ENDPOINT + "ticker/price",
             payload={"symbol": symbol},
         )
 
-    async def book_ticker(self, symbol: str = None):
+    async def book_ticker(self, symbol: str = None) -> bytes:
         """
         Symbol Order Book Ticker.
 
@@ -314,8 +406,13 @@ class BinanceSpotHTTPAPI:
 
         Parameters
         ----------
-        symbol : str
-            The trading pair, optional
+        symbol : str, optional
+            The trading pair.
+
+        Returns
+        -------
+        bytes
+            The raw response content.
 
         References
         ----------
@@ -325,6 +422,6 @@ class BinanceSpotHTTPAPI:
         PyCondition.type_or_none(symbol, str, "symbol")
 
         return await self.client.query(
-            url_path="/api/v3/ticker/bookTicker",
+            url_path=self.BASE_ENDPOINT + "ticker/bookTicker",
             payload={"symbol": symbol},
         )

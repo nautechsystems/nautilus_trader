@@ -13,41 +13,48 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import asyncio
-import os
+import pkgutil
+from typing import Dict
 
 import pytest
 
-from nautilus_trader.adapters.binance.factories import get_binance_http_client
+from nautilus_trader.adapters.binance.http.client import BinanceHttpClient
 from nautilus_trader.adapters.binance.providers import BinanceInstrumentProvider
-from nautilus_trader.common.clock import LiveClock
-from nautilus_trader.common.logging import LiveLogger
-from nautilus_trader.common.logging import Logger
 
 
 class TestBinanceInstrumentProvider:
-    def setup(self):
-        # Fixture Setup
-        self.loop = asyncio.get_event_loop()
-        self.clock = LiveClock()
-        self.logger = LiveLogger(loop=self.loop, clock=self.clock)
-
-    @pytest.mark.skip(reason="WIP")
     @pytest.mark.asyncio
-    async def test_load_all_async(self):
-        # Arrange
-        client = get_binance_http_client(
-            loop=self.loop,
-            clock=self.clock,
-            logger=Logger(clock=self.clock),
-            key=os.getenv("BINANCE_API_KEY"),
-            secret=os.getenv("BINANCE_API_SECRET"),
+    async def test_load_all_async(
+        self,
+        binance_http_client,
+        live_logger,
+        monkeypatch,
+    ):
+        # Arrange: prepare data for monkey patch
+        data = pkgutil.get_data(
+            package="tests.integration_tests.adapters.binance.resources.responses",
+            resource="spot_market_exchange_info.json",
         )
-        await client.connect()
+
+        # Mock coroutine for patch
+        async def mock_send_request(
+            self,  # noqa (needed for mock)
+            http_method: str,  # noqa (needed for mock)
+            url_path: str,  # noqa (needed for mock)
+            payload: Dict[str, str],  # noqa (needed for mock)
+        ) -> bytes:
+            return data
+
+        # Apply mock coroutine to client
+        monkeypatch.setattr(
+            target=BinanceHttpClient,
+            name="send_request",
+            value=mock_send_request,
+        )
 
         self.provider = BinanceInstrumentProvider(
-            client=client,
-            logger=self.logger,
+            client=binance_http_client,
+            logger=live_logger,
         )
 
         # Act

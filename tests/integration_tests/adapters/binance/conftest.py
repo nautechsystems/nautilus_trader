@@ -11,19 +11,39 @@
 #  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
-#
-#  Heavily refactored from MIT licensed github.com/binance/binance-connector-python
-#  Original author: Jeremy https://github.com/2pd
 # -------------------------------------------------------------------------------------------------
 
-import json
+import asyncio
+
+import pytest
+
+from nautilus_trader.adapters.binance.http.client import BinanceHttpClient
+from nautilus_trader.common.clock import LiveClock
+from nautilus_trader.common.logging import Logger
 
 
-def clean_none_value(d):
-    return {k: v for k, v in d.items() if v is not None}
+@pytest.fixture(scope="session")
+def loop():
+    return asyncio.get_event_loop()
 
 
-def convert_list_to_json_array(symbols):
-    if symbols is None:
-        return symbols
-    return json.dumps(symbols).replace(" ", "")
+@pytest.fixture(scope="session")
+def live_clock():
+    return LiveClock()
+
+
+@pytest.fixture(scope="session")
+def live_logger(live_clock):
+    return Logger(clock=live_clock)
+
+
+@pytest.fixture(scope="session")
+def binance_http_client(loop, live_clock, live_logger):
+    client = BinanceHttpClient(  # noqa: S106 (no hardcoded password)
+        loop=asyncio.get_event_loop(),
+        clock=live_clock,
+        logger=live_logger,
+        key="SOME_BINANCE_API_KEY",
+        secret="SOME_BINANCE_API_SECRET",
+    )
+    return client

@@ -19,7 +19,7 @@
 import asyncio
 import hashlib
 import hmac
-from typing import Dict
+from typing import Any, Dict
 
 from aiohttp import ClientResponse
 from aiohttp import ClientResponseError
@@ -28,7 +28,6 @@ import nautilus_trader
 from nautilus_trader.adapters.binance.http.error import BinanceClientError
 from nautilus_trader.adapters.binance.http.error import BinanceServerError
 from nautilus_trader.adapters.binance.http.parsing import clean_none_value
-from nautilus_trader.adapters.binance.http.parsing import encoded_string
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.network.http import HttpClient
@@ -80,19 +79,18 @@ class BinanceHttpClient(HttpClient):
     def headers(self):
         return self._headers
 
-    async def query(self, url_path, payload=None):
+    async def query(self, url_path, payload=None) -> bytes:
         return await self.send_request("GET", url_path, payload=payload)
 
     async def limit_request(
         self,
         http_method: str,
         url_path: str,
-        payload: Dict[str, str] = None,
-    ):
+        payload: Dict[str, Any] = None,
+    ) -> bytes:
         """
         Limit request is for those endpoints require API key in the header.
         """
-        # check_required_parameter(self.key, "apiKey")
         return await self.send_request(http_method, url_path, payload=payload)
 
     async def sign_request(
@@ -100,7 +98,7 @@ class BinanceHttpClient(HttpClient):
         http_method: str,
         url_path: str,
         payload: Dict[str, str] = None,
-    ):
+    ) -> bytes:
         if payload is None:
             payload = {}
         payload["timestamp"] = self._clock.timestamp() * 1000
@@ -139,7 +137,8 @@ class BinanceHttpClient(HttpClient):
         url_path: str,
         payload: Dict[str, str] = None,
     ) -> bytes:
-        print(f"\nRequest: {http_method}, {url_path}, {self._headers}, {payload}")
+        # TODO(cs): Uncomment for development
+        # print(f"\nRequest: {http_method}, {url_path}, {self._headers}, {payload}")
         if payload is None:
             payload = {}
         try:
@@ -147,7 +146,7 @@ class BinanceHttpClient(HttpClient):
                 method=http_method,
                 url=self._base_url + url_path,
                 headers=self._headers,
-                params=self._prepare_params(payload),
+                params=clean_none_value(payload),
             )
         except ClientResponseError as ex:
             await self._handle_exception(ex)
@@ -166,13 +165,13 @@ class BinanceHttpClient(HttpClient):
         return resp.data
 
     def _prepare_params(self, params) -> str:
-        return encoded_string(clean_none_value(params))
+        return clean_none_value(params)
 
-    def _get_sign(self, data):
+    def _get_sign(self, data) -> str:
         m = hmac.new(self.secret.encode("utf-8"), data.encode("utf-8"), hashlib.sha256)
         return m.hexdigest()
 
-    async def _handle_exception(self, error: ClientResponseError):
+    async def _handle_exception(self, error: ClientResponseError) -> None:
         if error.status < 400:
             return
         elif 400 <= error.status < 500:
