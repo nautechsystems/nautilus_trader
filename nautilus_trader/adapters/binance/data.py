@@ -14,11 +14,13 @@
 # -------------------------------------------------------------------------------------------------
 
 import asyncio
+from typing import Optional
 
 import pandas as pd
 
 from nautilus_trader.adapters.binance.common import BINANCE_VENUE
 from nautilus_trader.adapters.binance.http.client import BinanceHttpClient
+from nautilus_trader.adapters.binance.http.error import BinanceError
 from nautilus_trader.adapters.binance.providers import BinanceInstrumentProvider
 from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.clock import LiveClock
@@ -30,6 +32,9 @@ from nautilus_trader.model.enums import BookType
 from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.msgbus.bus import MessageBus
+
+
+_SECONDS_IN_HOUR: int = 60 * 60
 
 
 class BinanceDataClient(LiveMarketDataClient):
@@ -71,6 +76,7 @@ class BinanceDataClient(LiveMarketDataClient):
         super().__init__(
             loop=loop,
             client_id=ClientId(BINANCE_VENUE.value),
+            instrument_provider=instrument_provider,
             msgbus=msgbus,
             cache=cache,
             clock=clock,
@@ -78,23 +84,44 @@ class BinanceDataClient(LiveMarketDataClient):
         )
 
         self._client = client
-        self._instrument_provider = instrument_provider
+
+        self._update_instruments_task: Optional[asyncio.Task] = None
 
     def connect(self):
-        """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
+        """
+        Connect the client to Binance.
+        """
+        self._log.info("Connecting...")
+        self._loop.create_task(self._connect())
 
     def disconnect(self):
-        """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
+        """
+        Disconnect the client from Binance.
+        """
+        self._log.info("Disconnecting...")
+        self._loop.create_task(self._disconnect())
 
-    def reset(self):
-        """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
+    async def _connect(self):
+        if not self._client.connected:
+            await self._client.connect()
+        try:
+            await self._instrument_provider.load_all_or_wait_async()
+        except BinanceError as ex:
+            self._log.ex(ex)
+            return
 
-    def dispose(self):
-        """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
+        self._send_all_instruments_to_data_engine()
+        self._schedule_subscribed_instruments_update(_SECONDS_IN_HOUR)
+
+        self._set_connected(True)
+        self._log.info("Connected.")
+
+    async def _disconnect(self):
+        if self._client.connected:
+            await self._client.disconnect()
+
+        self._set_connected(False)
+        self._log.info("Disconnected.")
 
     # -- SUBSCRIPTIONS -----------------------------------------------------------------------------
 
@@ -228,3 +255,22 @@ class BinanceDataClient(LiveMarketDataClient):
     ):
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
+
+    async def _subscribed_instruments_update(self, delay):
+        await self._instrument_provider.load_all_async()
+
+        self._send_all_instruments_to_data_engine()
+
+        update = self.run_after_delay(delay, self._subscribed_instruments_update(delay))
+        self._update_instruments_task = self._loop.create_task(update)
+
+    def _send_all_instruments_to_data_engine(self):
+        for instrument in self._instrument_provider.get_all().values():
+            self._handle_data(instrument)
+
+        for currency in self._instrument_provider.currencies().values():
+            self._cache.add_currency(currency)
+
+    def _schedule_subscribed_instruments_update(self, delay: int):
+        update = self.run_after_delay(delay, self._subscribed_instruments_update(delay))
+        self._update_instruments_task = self._loop.create_task(update)

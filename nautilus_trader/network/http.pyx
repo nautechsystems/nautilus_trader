@@ -86,6 +86,10 @@ cdef class HttpClient:
         self._sessions_len = 0
 
     @property
+    def connected(self) -> bool:
+        return len(self._sessions) > 0
+
+    @property
     def session(self) -> ClientSession:
         return self._get_session()
 
