@@ -86,12 +86,12 @@ class TestBetfairInstrumentProvider:
     @pytest.mark.asyncio
     async def test_load_all(self):
         await self.provider.load_all_async({"event_type_name": "Tennis"})
-        assert len(self.provider.list_instruments()) == 4711
+        assert len(self.provider.list_all()) == 4711
 
     @pytest.mark.asyncio
-    async def test_list_instruments(self):
+    async def test_list_all(self):
         await self.provider.load_all_async(market_filter={"event_type_name": "Basketball"})
-        instruments = self.provider.list_instruments()
+        instruments = self.provider.list_all()
         assert len(instruments) == 23908
 
     @pytest.mark.asyncio
@@ -131,7 +131,7 @@ class TestBetfairInstrumentProvider:
         instruments = make_instruments(
             market_definition=update["mc"][0]["marketDefinition"], currency="GBP"
         )
-        self.provider.add_instruments(instruments)
+        self.provider.add_bulk(instruments)
 
         results = []
         for data in on_market_update(instrument_provider=self.provider, update=update):

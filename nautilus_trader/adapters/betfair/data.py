@@ -76,7 +76,7 @@ class BetfairDataClient(LiveMarketDataClient):
             The clock for the client.
         logger : Logger
             The logger for the client.
-        market_filter : Dict
+        market_filter : dict
             The market filter.
         instrument_provider : BetfairInstrumentProvider, optional
             The instrument provider.
@@ -84,18 +84,18 @@ class BetfairDataClient(LiveMarketDataClient):
             If strict handling mode is enabled.
 
         """
-        self._client = client
-        self._instrument_provider = instrument_provider or BetfairInstrumentProvider(
-            client=client, logger=logger, market_filter=market_filter
-        )
         super().__init__(
             loop=loop,
             client_id=ClientId(BETFAIR_VENUE.value),
+            instrument_provider=instrument_provider
+            or BetfairInstrumentProvider(client=client, logger=logger, market_filter=market_filter),
             msgbus=msgbus,
             cache=cache,
             clock=clock,
             logger=logger,
         )
+
+        self._client = client
         self._stream = BetfairMarketStreamClient(
             client=self._client,
             logger=logger,
@@ -132,10 +132,9 @@ class BetfairDataClient(LiveMarketDataClient):
         await self._stream.connect()
 
         # Pass any preloaded instruments into the engine
-        instruments = self._instrument_provider.list_instruments()
-        if not instruments:
+        if self._instrument_provider.count == 0:
             await self._instrument_provider.load_all_async()
-        instruments = self._instrument_provider.list_instruments()
+        instruments = self._instrument_provider.list_all()
         self._log.debug(f"Loading {len(instruments)} instruments from provider into cache, ")
         for instrument in instruments:
             self._handle_data(instrument)
@@ -266,7 +265,7 @@ class BetfairDataClient(LiveMarketDataClient):
         pass  # Subscribed as part of orderbook
 
     def subscribe_instrument(self, instrument_id: InstrumentId):
-        for instrument in self._instrument_provider.list_instruments():
+        for instrument in self._instrument_provider.list_all():
             self._handle_data(data=instrument)
 
     def subscribe_instrument_status_updates(self, instrument_id: InstrumentId):

@@ -53,7 +53,7 @@ class BetfairInstrumentProvider(InstrumentProvider):
             The client for the provider.
         logger : Logger
             The logger for the provider.
-        market_filter : Dict, optional
+        market_filter : dict, optional
             The market filter for the provider.
 
         """
@@ -71,7 +71,7 @@ class BetfairInstrumentProvider(InstrumentProvider):
     def from_instruments(cls, instruments, logger=None):
         logger = logger or Logger(LiveClock())
         instance = cls(client=1, logger=logger)
-        instance.add_instruments(instruments)
+        instance.add_bulk(instruments)
         return instance
 
     async def load_all_async(self, market_filter=None):
@@ -104,7 +104,7 @@ class BetfairInstrumentProvider(InstrumentProvider):
 
     def search_instruments(self, instrument_filter=None):
         """Search for instruments within the cache. Useful for debugging / interactive use"""
-        instruments = self.list_instruments()
+        instruments = self.list_all()
         if instrument_filter:
             instruments = [
                 ins
@@ -139,18 +139,11 @@ class BetfairInstrumentProvider(InstrumentProvider):
             self._cache[key] = instruments[0]
         return self._cache[key]
 
-    def list_instruments(self):
-        return list(self.get_all().values())
-
     async def get_account_currency(self) -> str:
         if self._account_currency is None:
             detail = await self._client.get_account_details()
             self._account_currency = detail["currencyCode"]
         return self._account_currency
-
-    def add_instruments(self, instruments: List[BettingInstrument]):
-        for instrument in instruments:
-            self.add(instrument)
 
 
 def _parse_date(s, tz):
