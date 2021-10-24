@@ -54,8 +54,10 @@ def get_cached_binance_http_client(
     ----------
     key : str, optional
         The API key for the client.
+        If None then will source from the `BINANCE_API_KEY` env var.
     secret : str, optional
         The API secret for the client.
+        If None then will source from the `BINANCE_API_SECRET` env var.
     loop : asyncio.AbstractEventLoop
         The event loop for the client.
     clock : LiveClock
@@ -77,7 +79,6 @@ def get_cached_binance_http_client(
 
     client_key: str = hashlib.sha256("|".join((key, secret)).encode()).hexdigest()
     if client_key not in HTTP_CLIENTS:
-        print("Creating new instance of BinanceHttpClient")  # TODO(cs): debugging
         client = BinanceHttpClient(
             loop=loop,
             clock=clock,

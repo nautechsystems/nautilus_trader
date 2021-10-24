@@ -83,8 +83,10 @@ class BinanceInstrumentProvider(InstrumentProvider):
             return  # Already loaded
 
         if not self._loading:
+            self._log.debug("Loading instruments...")
             await self.load_all_async()
         else:
+            self._log.debug("Awaiting loading...")
             while self._loading:
                 # Wait 100ms
                 await asyncio.sleep(0.1)

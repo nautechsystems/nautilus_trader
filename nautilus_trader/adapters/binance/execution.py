@@ -19,6 +19,7 @@ from typing import List
 
 from nautilus_trader.adapters.binance.common import BINANCE_VENUE
 from nautilus_trader.adapters.binance.http.client import BinanceHttpClient
+from nautilus_trader.adapters.binance.http.error import BinanceError
 from nautilus_trader.adapters.binance.providers import BinanceInstrumentProvider
 from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.clock import LiveClock
@@ -82,11 +83,11 @@ class BinanceSpotExecutionClient(LiveExecutionClient):
         super().__init__(
             loop=loop,
             client_id=ClientId(BINANCE_VENUE.value),
+            instrument_provider=instrument_provider,
             venue_type=VenueType.EXCHANGE,
             account_id=account_id,
             account_type=AccountType.CASH,
             base_currency=None,
-            instrument_provider=instrument_provider,
             msgbus=msgbus,
             cache=cache,
             clock=clock,
@@ -95,23 +96,39 @@ class BinanceSpotExecutionClient(LiveExecutionClient):
         )
 
         self._client = client
-        self._instrument_provider = instrument_provider
 
-    def connect(self) -> None:
-        """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
+    def connect(self):
+        """
+        Connect the client to Binance.
+        """
+        self._log.info("Connecting...")
+        self._loop.create_task(self._connect())
 
-    def disconnect(self) -> None:
-        """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
+    def disconnect(self):
+        """
+        Disconnect the client from Binance.
+        """
+        self._log.info("Disconnecting...")
+        self._loop.create_task(self._disconnect())
 
-    def reset(self) -> None:
-        """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
+    async def _connect(self):
+        if not self._client.connected:
+            await self._client.connect()
+        try:
+            await self._instrument_provider.load_all_or_wait_async()
+        except BinanceError as ex:
+            self._log.ex(ex)
+            return
 
-    def dispose(self) -> None:
-        """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
+        self._set_connected(True)
+        self._log.info("Connected.")
+
+    async def _disconnect(self):
+        if self._client.connected:
+            await self._client.disconnect()
+
+        self._set_connected(False)
+        self._log.info("Disconnected.")
 
     # -- COMMAND HANDLERS --------------------------------------------------------------------------
 
