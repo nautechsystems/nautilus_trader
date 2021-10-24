@@ -63,7 +63,7 @@ async def main(market_id: str):
         market_filter=tuple(market_filter.items()),
     )
     await provider.load_all_async()
-    instruments = provider.list_instruments()
+    instruments = provider.list_all()
     print(f"Found instruments:\n{instruments}")
 
     # Determine account currency
