@@ -76,20 +76,20 @@ async def main(market_id: str):
         cache_database=CacheDatabaseConfig(type="in-memory"),
         data_clients={
             "BETFAIR": {
-                "username": "YOUR_BETFAIR_USERNAME",
-                "password": "YOUR_BETFAIR_PASSWORD",
-                "app_key": "YOUR_BETFAIR_APP_KEY",
-                "cert_dir": "YOUR_BETFAIR_CERT_DIR",
+                # "username": "YOUR_BETFAIR_USERNAME",
+                # "password": "YOUR_BETFAIR_PASSWORD",
+                # "app_key": "YOUR_BETFAIR_APP_KEY",
+                # "cert_dir": "YOUR_BETFAIR_CERT_DIR",
                 "market_filter": market_filter,
             },
         },
         exec_clients={
             "BETFAIR": {
                 "base_currency": account["currencyCode"],
-                "username": "YOUR_BETFAIR_USERNAME",
-                "password": "YOUR_BETFAIR_PASSWORD",
-                "app_key": "YOUR_BETFAIR_APP_KEY",
-                "cert_dir": "YOUR_BETFAIR_CERT_DIR",
+                # "username": "YOUR_BETFAIR_USERNAME",
+                # "password": "YOUR_BETFAIR_PASSWORD",
+                # "app_key": "YOUR_BETFAIR_APP_KEY",
+                # "cert_dir": "YOUR_BETFAIR_CERT_DIR",
                 "market_filter": market_filter,
             },
         },
@@ -124,4 +124,4 @@ async def main(market_id: str):
 
 
 if __name__ == "__main__":
-    asyncio.run(main(market_id="1.189009581"))
+    asyncio.run(main(market_id="1.189635762"))

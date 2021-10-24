@@ -45,7 +45,7 @@ repos:
             --line-length=100,
         ]
 
-  - repo: https://github.com/PyCQA/isort
+  - repo: https://github.com/pycqa/isort
     rev: 5.9.3
     hooks:
       - id: isort
