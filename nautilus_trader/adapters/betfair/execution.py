@@ -106,25 +106,21 @@ class BetfairExecutionClient(LiveExecutionClient):
             The clock for the client.
         logger : Logger
             The logger for the client.
-        market_filter : Dict
+        market_filter : dict
             The market filter.
         instrument_provider : BetfairInstrumentProvider, optional
             The instrument provider.
 
         """
-        self._client = client
-        self._instrument_provider = instrument_provider or BetfairInstrumentProvider(
-            client=client, logger=logger, market_filter=market_filter
-        )
-
         super().__init__(
             loop=loop,
             client_id=ClientId(BETFAIR_VENUE.value),
+            instrument_provider=instrument_provider
+            or BetfairInstrumentProvider(client=client, logger=logger, market_filter=market_filter),
             venue_type=VenueType.EXCHANGE,
             account_id=account_id,
             account_type=AccountType.BETTING,
             base_currency=base_currency,
-            instrument_provider=self._instrument_provider,
             msgbus=msgbus,
             cache=cache,
             clock=clock,
@@ -132,6 +128,7 @@ class BetfairExecutionClient(LiveExecutionClient):
             config={"name": "BetfairExecClient"},
         )
 
+        self._client = client
         self.stream = BetfairOrderStreamClient(
             client=self._client,
             logger=logger,

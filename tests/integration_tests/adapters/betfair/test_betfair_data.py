@@ -93,7 +93,7 @@ def instrument_list(mock_load_markets_metadata, loop: asyncio.AbstractEventLoop)
     loop.run_until_complete(t)
 
     # Fill INSTRUMENTS global cache
-    INSTRUMENTS.extend(instrument_provider.list_instruments())
+    INSTRUMENTS.extend(instrument_provider.list_all())
     assert INSTRUMENTS
 
 
@@ -148,7 +148,7 @@ class TestBetfairDataClient:
         instruments = [
             ins for ins in INSTRUMENTS if ins.market_id in BetfairDataProvider.market_ids()
         ]
-        self.instrument_provider.add_instruments(instruments)
+        self.instrument_provider.add_bulk(instruments)
 
         self.client = BetfairDataClient(
             loop=self.loop,
@@ -315,7 +315,7 @@ class TestBetfairDataClient:
         for mc in update[0]["mc"]:
             market_def = {**mc["marketDefinition"], "marketId": mc["id"]}
             instruments = make_instruments(market_definition=market_def, currency="GBP")
-            provider.add_instruments(instruments)
+            provider.add_bulk(instruments)
 
         for update in update:
             self.client._on_market_update(update)

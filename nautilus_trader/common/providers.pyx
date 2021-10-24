@@ -13,6 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.model.currency cimport Currency
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.instruments.base cimport Instrument
@@ -83,9 +84,36 @@ cdef class InstrumentProvider:
         """
         self._instruments[instrument.id] = instrument
 
-    cpdef dict get_all(self):
+    cpdef void add_bulk(self, list instruments) except *:
+        """
+        Add the given instruments bulk to the provider.
+
+        Parameters
+        ----------
+        instruments : list[Instrument]
+            The instruments to add.
+
+        """
+        Condition.not_none(instruments, "instruments")
+
+        cdef Instrument instrument
+        for instrument in instruments:
+            self.add(instrument)
+
+    cpdef list list_all(self):
         """
         Return all loaded instruments.
+
+        Returns
+        -------
+        list[Instrument]
+
+        """
+        return list(self.get_all().values())
+
+    cpdef dict get_all(self):
+        """
+        Return all loaded instruments as a map keyed by instrument ID.
 
         If no instruments loaded, will return an empty dict.
 
