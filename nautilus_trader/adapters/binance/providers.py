@@ -13,6 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+import asyncio
 import time
 from decimal import Decimal
 from typing import Dict
@@ -68,17 +69,40 @@ class BinanceInstrumentProvider(InstrumentProvider):
         self._wallet = BinanceWalletHttpAPI(self._client)
         self._spot_market = BinanceSpotMarketHttpAPI(self._client)
 
-    async def load_all_async(self):
+        # Async loading flags
+        self._loaded = False
+        self._loading = False
+
+    async def load_all_or_wait_async(self) -> None:
         """
-        Load all Binance instruments into the provider asynchronously.
+        Load all instruments into the provider asynchronously, or await loading.
+
+        If `load_async` has been previously called then will immediately return.
+        """
+        if self._loaded:
+            return  # Already loaded
+
+        if not self._loading:
+            await self.load_all_async()
+        else:
+            while self._loading:
+                # Wait 100ms
+                await asyncio.sleep(0.1)
+
+    async def load_all_async(self) -> None:
+        """
+        Load the latest Binance instruments into the provider asynchronously.
 
         """
+        # Set async loading flag
+        self._loading = True
+
         # Get current commission rates
         raw: bytes = await self._wallet.trade_fee()
-        fees: Dict[str, str] = {s["symbol"]: s for s in orjson.loads(raw)}
+        fees: Dict[str, Dict[str, str]] = {s["symbol"]: s for s in orjson.loads(raw)}
 
         # Get exchange info for all assets
-        raw: bytes = await self._spot_market.exchange_info()
+        raw = await self._spot_market.exchange_info()
         response = orjson.loads(raw)
         server_time_ns: int = millis_to_nanos(response["serverTime"])
 
@@ -130,8 +154,8 @@ class BinanceInstrumentProvider(InstrumentProvider):
             max_price = Price(float(price_filter["maxPrice"]), precision=price_precision)
             min_price = Price(float(price_filter["minPrice"]), precision=price_precision)
             pair_fees = fees.get(native_symbol)
-            maker_fee = None
-            taker_fee = None
+            maker_fee: Decimal = Decimal(0)
+            taker_fee: Decimal = Decimal(0)
             if pair_fees:
                 maker_fee = Decimal(pair_fees["makerCommission"])
                 taker_fee = Decimal(pair_fees["takerCommission"])
@@ -165,10 +189,6 @@ class BinanceInstrumentProvider(InstrumentProvider):
             self.add_currency(currency=quote_currency)
             self.add(instrument=instrument)
 
-    def load_all(self):
-        """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")
-
-    def load(self, instrument_id: InstrumentId, details: Dict):
-        """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")
+        # Set async loading flags
+        self._loading = False
+        self._loaded = True

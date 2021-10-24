@@ -60,16 +60,25 @@ class TestBetfairFactory:
 
     @pytest.mark.asyncio()
     def test_create(self):
-        config = {
-            "data_client": True,
-            "exec_client": True,
+        data_config = {
+            "username": "SOME_BETFAIR_USERNAME",
+            "password": "SOME_BETFAIR_PASSWORD",
+            "app_key": "SOME_BETFAIR_APP_KEY",
+            "cert_dir": "SOME_BETFAIR_CERT_DIR",
+        }
+        exec_config = {
+            "username": "SOME_BETFAIR_USERNAME",
+            "password": "SOME_BETFAIR_PASSWORD",
+            "app_key": "SOME_BETFAIR_APP_KEY",
+            "cert_dir": "SOME_BETFAIR_CERT_DIR",
             "base_currency": "AUD",
         }
+
         with patch.object(BetfairClient, "ssl_context", return_value=True):
             data_client = BetfairLiveDataClientFactory.create(
                 loop=asyncio.get_event_loop(),
                 name=BETFAIR_VENUE.value,
-                config=config,
+                config=data_config,
                 msgbus=self.msgbus,
                 cache=self.cache,
                 clock=self.clock,
@@ -78,7 +87,7 @@ class TestBetfairFactory:
             exec_client = BetfairLiveExecutionClientFactory.create(
                 loop=asyncio.get_event_loop(),
                 name=BETFAIR_VENUE.value,
-                config=config,
+                config=exec_config,
                 msgbus=self.msgbus,
                 cache=self.cache,
                 clock=self.clock,
@@ -88,5 +97,3 @@ class TestBetfairFactory:
         # Assert
         assert BetfairDataClient == type(data_client)
         assert BetfairExecutionClient == type(exec_client)
-        # TODO(bm) - assert login called
-        # assert mock_login.assert_called_once_with()

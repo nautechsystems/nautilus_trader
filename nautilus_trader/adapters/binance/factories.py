@@ -14,9 +14,10 @@
 # -------------------------------------------------------------------------------------------------
 
 import asyncio
+import hashlib
 import os
 from functools import lru_cache
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
 from nautilus_trader.adapters.binance.common import BINANCE_VENUE
 from nautilus_trader.adapters.binance.data import BinanceDataClient
@@ -33,18 +34,48 @@ from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.msgbus.bus import MessageBus
 
 
-HTTP_CLIENTS = {}
+HTTP_CLIENTS: Dict[str, BinanceHttpClient] = {}
 
 
-def get_binance_http_client(
-    key: str,
-    secret: str,
+def get_cached_binance_http_client(
+    key: Optional[str],
+    secret: Optional[str],
     loop: asyncio.AbstractEventLoop,
     clock: LiveClock,
     logger: Logger,
 ) -> BinanceHttpClient:
+    """
+    Cache and return a Binance HTTP client with the given key or secret.
+
+    If a cached client with matching key and secret already exists, then that
+    cached client will be returned.
+
+    Parameters
+    ----------
+    key : str, optional
+        The API key for the client.
+    secret : str, optional
+        The API secret for the client.
+    loop : asyncio.AbstractEventLoop
+        The event loop for the client.
+    clock : LiveClock
+        The clock for the client.
+    logger : Logger
+        The logger for the client.
+
+    Returns
+    -------
+    BinanceHttpClient
+
+    """
     global HTTP_CLIENTS
-    client_key = (key, secret)
+
+    if key is None:
+        key = os.environ["BINANCE_API_KEY"]
+    if secret is None:
+        secret = os.environ["BINANCE_API_SECRET"]
+
+    client_key: str = hashlib.sha256("|".join((key, secret)).encode()).hexdigest()
     if client_key not in HTTP_CLIENTS:
         print("Creating new instance of BinanceHttpClient")  # TODO(cs): debugging
         client = BinanceHttpClient(
@@ -59,10 +90,27 @@ def get_binance_http_client(
 
 
 @lru_cache(1)
-def get_binance_instrument_provider(
+def get_cached_binance_instrument_provider(
     client: BinanceHttpClient,
     logger: Logger,
 ) -> BinanceInstrumentProvider:
+    """
+    Cache and return a BinanceInstrumentProvider.
+
+    If a cached provider already exists, then that cached provider will be returned.
+
+    Parameters
+    ----------
+    client : BinanceHttpClient
+        The client for the instrument provider.
+    logger : Logger
+        The logger for the instrument provider.
+
+    Returns
+    -------
+    BinanceInstrumentProvider
+
+    """
     return BinanceInstrumentProvider(
         client=client,
         logger=logger,
@@ -112,16 +160,16 @@ class BinanceLiveDataClientFactory(LiveDataClientFactory):
         BinanceDataClient
 
         """
-        client = get_binance_http_client(
-            key=os.getenv(config.get("api_key")),
-            secret=os.getenv(config.get("api_secret")),
+        client = get_cached_binance_http_client(
+            key=config.get("api_key"),
+            secret=config.get("api_secret"),
             loop=loop,
             clock=clock,
             logger=logger,
         )
 
         # Get instrument provider singleton
-        provider = get_binance_instrument_provider(client=client, logger=logger)
+        provider = get_cached_binance_instrument_provider(client=client, logger=logger)
 
         # Create client
         data_client = BinanceDataClient(
@@ -180,16 +228,16 @@ class BinanceLiveExecutionClientFactory(LiveExecutionClientFactory):
         BinanceSpotExecutionClient
 
         """
-        client = get_binance_http_client(
-            key=os.getenv(config.get("api_key")),
-            secret=os.getenv(config.get("api_secret")),
+        client = get_cached_binance_http_client(
+            key=config.get("api_key"),
+            secret=config.get("api_secret"),
             loop=loop,
             clock=clock,
             logger=logger,
         )
 
         # Get instrument provider singleton
-        provider = get_binance_instrument_provider(client=client, logger=logger)
+        provider = get_cached_binance_instrument_provider(client=client, logger=logger)
 
         # Get account ID env variable or set default
         account_id_env_var = os.getenv(config.get("account_id", ""), "001")

@@ -58,7 +58,7 @@ from nautilus_trader.model.instruments.option cimport Option
 
 # Default mappings for Nautilus objects
 
-_OBJECT_TO_DICT_MAP = {
+_OBJECT_TO_DICT_MAP: Dict[str, Callable[[None], Dict]] = {
     CancelOrder.__name__: CancelOrder.to_dict_c,
     SubmitOrder.__name__: SubmitOrder.to_dict_c,
     SubmitOrderList.__name__: SubmitOrderList.to_dict_c,
@@ -101,7 +101,7 @@ _OBJECT_TO_DICT_MAP = {
 
 
 # Default mappings for Nautilus objects
-_OBJECT_FROM_DICT_MAP = {
+_OBJECT_FROM_DICT_MAP: Dict[str, Callable[[Dict], Any]] = {
     CancelOrder.__name__: CancelOrder.from_dict_c,
     SubmitOrder.__name__: SubmitOrder.from_dict_c,
     SubmitOrderList.__name__: SubmitOrderList.from_dict_c,
@@ -144,7 +144,7 @@ _OBJECT_FROM_DICT_MAP = {
 
 
 cpdef void register_serializable_object(
-    object obj,
+    obj,
     to_dict: Callable[[Any], Dict[str, Any]],
     from_dict: Callable[[Dict[str, Any]], Any],
 ) except *:

@@ -14,9 +14,10 @@
 # -------------------------------------------------------------------------------------------------
 
 import asyncio
+import hashlib
 import os
 from functools import lru_cache
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
 from nautilus_trader.adapters.betfair.client.core import BetfairClient
 from nautilus_trader.adapters.betfair.common import BETFAIR_VENUE
@@ -35,22 +36,66 @@ from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.msgbus.bus import MessageBus
 
 
-CLIENTS = {}
+CLIENTS: Dict[str, BetfairClient] = {}
 
 
 @lru_cache(1)
-def get_betfair_client(
-    username: str,
-    password: str,
-    app_key: str,
-    cert_dir: str,
+def get_cached_betfair_client(
+    username: Optional[str],
+    password: Optional[str],
+    app_key: Optional[str],
+    cert_dir: Optional[str],
     loop: asyncio.AbstractEventLoop,
     logger: Logger,
 ) -> BetfairClient:
+    """
+    Cache and return a Betfair HTTP client with the given credentials.
+
+    If a cached client with matching credentials already exists, then that
+    cached client will be returned.
+
+    Parameters
+    ----------
+    username : str, optional
+        The API username for the client.
+        If None then will source from the `BETFAIR_USERNAME` env var.
+    password : str, optional
+        The API password for the client.
+        If None then will source from the `BETFAIR_PASSWORD` env var.
+    app_key : str, optional
+        The API application key for the client.
+        If None then will source from the `BETFAIR_APP_KEY` env var.
+    cert_dir : str, optional
+        The API SSL certificate directory for the client.
+        If None then will source from the `BETFAIR_CERT_DIR` env var.
+    loop : asyncio.AbstractEventLoop
+        The event loop for the client.
+    logger : Logger
+        The logger for the client.
+
+    Returns
+    -------
+    BetfairClient
+
+    """
     global CLIENTS
-    key = (username, password, app_key, cert_dir)
+
+    if username is None:
+        username = os.environ["BETFAIR_USERNAME"]
+    if password is None:
+        password = os.environ["BETFAIR_PASSWORD"]
+    if app_key is None:
+        app_key = os.environ["BETFAIR_APP_KEY"]
+    if cert_dir is None:
+        cert_dir = os.environ["BETFAIR_CERT_DIR"]
+
+    key: str = hashlib.sha256(
+        "|".join((username, password, app_key, cert_dir)).encode()
+    ).hexdigest()
     if key not in CLIENTS:
-        LoggerAdapter("BetfairFactory", logger).warning("Creating new instance of BetfairClient")
+        LoggerAdapter("BetfairFactory", logger).warning(
+            "Creating new instance of BetfairClient",
+        )
         client = BetfairClient(
             username=username,
             password=password,
@@ -64,15 +109,33 @@ def get_betfair_client(
 
 
 @lru_cache(1)
-def get_instrument_provider(
+def get_cached_betfair_instrument_provider(
     client: BetfairClient,
     logger: Logger,
     market_filter: tuple,
 ) -> BetfairInstrumentProvider:
+    """
+    Cache and return a BetfairInstrumentProvider.
+
+    If a cached provider already exists, then that cached provider will be returned.
+
+    Parameters
+    ----------
+    client : BinanceHttpClient
+        The client for the instrument provider.
+    logger : Logger
+        The logger for the instrument provider.
+    market_filter : tuple
+        The market filter to load into the instrument provider.
+
+    Returns
+    -------
+    BinanceInstrumentProvider
+
+    """
     LoggerAdapter("BetfairFactory", logger).warning(
         "Creating new instance of BetfairInstrumentProvider"
     )
-    # LoggerAdapter("BetfairFactory", logger).warning(f"kwargs: {locals()}")
     return BetfairInstrumentProvider(
         client=client, logger=logger, market_filter=dict(market_filter)
     )
@@ -124,15 +187,15 @@ class BetfairLiveDataClientFactory(LiveDataClientFactory):
         market_filter = config.get("market_filter", {})
 
         # Create client
-        client = get_betfair_client(
-            username=os.getenv(config.get("username", ""), ""),
-            password=os.getenv(config.get("password", ""), ""),
-            app_key=os.getenv(config.get("app_key", ""), ""),
-            cert_dir=os.getenv(config.get("cert_dir", ""), ""),
+        client = get_cached_betfair_client(
+            username=config.get("username"),
+            password=config.get("password"),
+            app_key=config.get("app_key"),
+            cert_dir=config.get("cert_dir"),
             loop=loop,
             logger=logger,
         )
-        provider = get_instrument_provider(
+        provider = get_cached_betfair_instrument_provider(
             client=client, logger=logger, market_filter=tuple(market_filter.items())
         )
 
@@ -195,15 +258,15 @@ class BetfairLiveExecutionClientFactory(LiveExecutionClientFactory):
         """
         market_filter = config.get("market_filter", {})
 
-        client = get_betfair_client(
-            username=os.getenv(config.get("username", ""), ""),
-            password=os.getenv(config.get("password", ""), ""),
-            app_key=os.getenv(config.get("app_key", ""), ""),
-            cert_dir=os.getenv(config.get("cert_dir", ""), ""),
+        client = get_cached_betfair_client(
+            username=config.get("username"),
+            password=config.get("password"),
+            app_key=config.get("app_key"),
+            cert_dir=config.get("cert_dir"),
             loop=loop,
             logger=logger,
         )
-        provider = get_instrument_provider(
+        provider = get_cached_betfair_instrument_provider(
             client=client, logger=logger, market_filter=tuple(market_filter.items())
         )
 

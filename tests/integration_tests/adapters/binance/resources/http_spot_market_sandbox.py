@@ -19,7 +19,7 @@ import os
 
 import pytest
 
-from nautilus_trader.adapters.binance.factories import get_binance_http_client
+from nautilus_trader.adapters.binance.factories import get_cached_binance_http_client
 from nautilus_trader.adapters.binance.http.api.spot_market import BinanceSpotMarketHttpAPI
 from nautilus_trader.adapters.binance.providers import BinanceInstrumentProvider
 from nautilus_trader.common.clock import LiveClock
@@ -31,7 +31,7 @@ async def test_binance_spot_market_http_client():
     loop = asyncio.get_event_loop()
     clock = LiveClock()
 
-    client = get_binance_http_client(
+    client = get_cached_binance_http_client(
         loop=loop,
         clock=clock,
         logger=Logger(clock=clock),
