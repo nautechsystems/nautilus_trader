@@ -28,6 +28,7 @@ import orjson
 import pandas as pd
 from aiohttp import ClientResponse
 
+from examples.strategies.orderbook_imbalance import OrderBookImbalanceConfig
 from nautilus_trader.adapters.betfair.client.core import BetfairClient
 from nautilus_trader.adapters.betfair.common import BETFAIR_VENUE
 from nautilus_trader.adapters.betfair.data import BetfairDataClient
@@ -36,6 +37,10 @@ from nautilus_trader.adapters.betfair.providers import BetfairInstrumentProvider
 from nautilus_trader.adapters.betfair.providers import make_instruments
 from nautilus_trader.adapters.betfair.util import flatten_tree
 from nautilus_trader.adapters.betfair.util import historical_instrument_provider_loader
+from nautilus_trader.backtest.config import BacktestDataConfig
+from nautilus_trader.backtest.config import BacktestEngineConfig
+from nautilus_trader.backtest.config import BacktestRunConfig
+from nautilus_trader.backtest.config import BacktestVenueConfig
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.factories import OrderFactory
 from nautilus_trader.common.logging import LiveLogger
@@ -58,9 +63,11 @@ from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.orders.limit import LimitOrder
 from nautilus_trader.model.orders.market import MarketOrder
+from nautilus_trader.persistence.config import PersistenceConfig
 from nautilus_trader.persistence.external.core import make_raw_files
 from nautilus_trader.persistence.external.readers import TextReader
 from nautilus_trader.portfolio.portfolio import Portfolio
+from nautilus_trader.trading.config import ImportableStrategyConfig
 from tests import TESTS_PACKAGE_ROOT
 from tests.test_kit import PACKAGE_ROOT
 from tests.test_kit.mocks import MockLiveExecutionEngine
@@ -299,9 +306,15 @@ class BetfairTestStubs:
 
     @staticmethod
     def make_submitted_order(
-        ts_event=0, ts_init=0, factory=None, client_order_id: Optional[ClientOrderId] = None
+        ts_event=0,
+        ts_init=0,
+        factory=None,
+        client_order_id: Optional[ClientOrderId] = None,
+        **order_kwargs,
     ):
-        order = BetfairTestStubs.make_order(factory=factory, client_order_id=client_order_id)
+        order = BetfairTestStubs.make_order(
+            factory=factory, client_order_id=client_order_id, **order_kwargs
+        )
         submitted = OrderSubmitted(
             trader_id=TestStubs.trader_id(),
             strategy_id=TestStubs.strategy_id(),
@@ -341,7 +354,9 @@ class BetfairTestStubs:
         return order
 
     @staticmethod
-    def limit_order(time_in_force=TimeInForce.GTC):
+    def limit_order(
+        time_in_force=TimeInForce.GTC, price=None, side=None, quantity=None
+    ) -> LimitOrder:
         return LimitOrder(
             trader_id=TestStubs.trader_id(),
             strategy_id=TestStubs.strategy_id(),
@@ -349,9 +364,9 @@ class BetfairTestStubs:
             client_order_id=ClientOrderId(
                 f"O-20210410-022422-001-001-{TestStubs.strategy_id().value}"
             ),
-            order_side=OrderSide.BUY,
-            quantity=Quantity.from_int(10),
-            price=Price(0.33, precision=5),
+            order_side=side or OrderSide.BUY,
+            quantity=quantity or Quantity.from_int(10),
+            price=price or Price(0.33, precision=5),
             time_in_force=time_in_force,
             expire_time=None,
             init_id=BetfairTestStubs.uuid(),
@@ -359,7 +374,7 @@ class BetfairTestStubs:
         )
 
     @staticmethod
-    def market_order(side=None, time_in_force=None):
+    def market_order(side=None, time_in_force=None) -> MarketOrder:
         return MarketOrder(
             trader_id=TestStubs.trader_id(),
             strategy_id=TestStubs.strategy_id(),
@@ -470,6 +485,73 @@ class BetfairTestStubs:
             **kwargs,
         )
         return reader
+
+    @staticmethod
+    def betfair_venue_config() -> BacktestVenueConfig:
+        return BacktestVenueConfig(  # type: ignore
+            name="BETFAIR",
+            venue_type="EXCHANGE",
+            oms_type="NETTING",
+            account_type="BETTING",
+            base_currency="GBP",
+            starting_balances=["10000 GBP"],
+            book_type="L2_MBP",
+        )
+
+    @staticmethod
+    def persistence_config(
+        catalog_path: str, catalog_fs_protocol: str = "memory"
+    ) -> PersistenceConfig:
+        return PersistenceConfig(
+            catalog_path=str(catalog_path),
+            fs_protocol=catalog_fs_protocol,
+            kind="backtest",
+            persit_logs=True,
+        )
+
+    @staticmethod
+    def betfair_backtest_run_config(
+        catalog_path: str,
+        instrument_id: str,
+        catalog_fs_protocol: str = "memory",
+        persist=True,
+        add_strategy=True,
+    ) -> BacktestRunConfig:
+        base_data_config = BacktestDataConfig(  # type: ignore
+            catalog_path=catalog_path,
+            catalog_fs_protocol=catalog_fs_protocol,
+        )
+
+        run_config = BacktestRunConfig(  # type: ignore
+            engine=BacktestEngineConfig(),
+            venues=[BetfairTestStubs.betfair_venue_config()],
+            data=[
+                base_data_config.replace(
+                    data_cls_path="nautilus_trader.model.data.tick.TradeTick",
+                    instrument_id=instrument_id,
+                ),
+                base_data_config.replace(
+                    data_cls_path="nautilus_trader.model.orderbook.data.OrderBookData",
+                    instrument_id=instrument_id,
+                ),
+            ],
+            persistence=BetfairTestStubs.persistence_config(catalog_path=catalog_path)
+            if persist
+            else None,
+            strategies=[
+                ImportableStrategyConfig(
+                    path="examples.strategies.orderbook_imbalance:OrderBookImbalance",
+                    config=OrderBookImbalanceConfig(
+                        instrument_id=instrument_id,
+                        trigger_min_size=30,
+                        max_trade_size=50,
+                    ),
+                )
+            ]
+            if add_strategy
+            else None,
+        )
+        return run_config
 
 
 class BetfairRequests:
@@ -650,8 +732,16 @@ class BetfairStreaming:
         return BetfairStreaming.load("streaming_ocm_MIXED.json")
 
     @staticmethod
+    def ocm_multiple_fills():
+        return BetfairStreaming.load("streaming_ocm_multiple_fills.json")
+
+    @staticmethod
     def ocm_DUPLICATE_EXECUTION():
         return BetfairStreaming.load("streaming_ocm_DUPLICATE_EXECUTION.json")
+
+    @staticmethod
+    def ocm_error_fill():
+        return BetfairStreaming.load("streaming_ocm_error_fill.json")
 
     @staticmethod
     def mcm_BSP():

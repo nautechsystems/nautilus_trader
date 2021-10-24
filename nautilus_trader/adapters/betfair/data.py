@@ -14,7 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 import asyncio
-from typing import Dict, Set
+from typing import Dict, Optional, Set
 
 import orjson
 
@@ -56,7 +56,7 @@ class BetfairDataClient(LiveMarketDataClient):
         clock: LiveClock,
         logger: Logger,
         market_filter: Dict,
-        instrument_provider: BetfairInstrumentProvider,
+        instrument_provider: Optional[BetfairInstrumentProvider] = None,
         strict_handling: bool = False,
     ):
         """
@@ -67,7 +67,7 @@ class BetfairDataClient(LiveMarketDataClient):
         loop : asyncio.AbstractEventLoop
             The event loop for the client.
         client : BetfairClient
-            The betfair HTTPClient
+            The betfair HttpClient
         msgbus : MessageBus
             The message bus for the client.
         cache : Cache
@@ -76,27 +76,26 @@ class BetfairDataClient(LiveMarketDataClient):
             The clock for the client.
         logger : Logger
             The logger for the client.
-        market_filter : Dict
+        market_filter : dict
             The market filter.
-        instrument_provider : BetfairInstrumentProvider
+        instrument_provider : BetfairInstrumentProvider, optional
             The instrument provider.
         strict_handling : bool
             If strict handling mode is enabled.
 
         """
-        self._client: BetfairClient = client
-        self._instrument_provider: BetfairInstrumentProvider = (
-            instrument_provider
-            or BetfairInstrumentProvider(client=client, logger=logger, market_filter=market_filter)
-        )
         super().__init__(
             loop=loop,
             client_id=ClientId(BETFAIR_VENUE.value),
+            instrument_provider=instrument_provider
+            or BetfairInstrumentProvider(client=client, logger=logger, market_filter=market_filter),
             msgbus=msgbus,
             cache=cache,
             clock=clock,
             logger=logger,
         )
+
+        self._client = client
         self._stream = BetfairMarketStreamClient(
             client=self._client,
             logger=logger,
@@ -110,9 +109,19 @@ class BetfairDataClient(LiveMarketDataClient):
         self._strict_handling = strict_handling
         self._subscribed_market_ids: Set[InstrumentId] = set()
 
-    def _start(self) -> None:
+    def connect(self):
+        """
+        Connect the client.
+        """
         self._log.info("Connecting...")
         self._loop.create_task(self._connect())
+
+    def disconnect(self):
+        """
+        Disconnect the client.
+        """
+        self._log.info("Disconnecting...")
+        self._loop.create_task(self._disconnect())
 
     async def _connect(self):
         self._log.info("Connecting to BetfairClient...")
@@ -123,10 +132,9 @@ class BetfairDataClient(LiveMarketDataClient):
         await self._stream.connect()
 
         # Pass any preloaded instruments into the engine
-        instruments = self._instrument_provider.list_instruments()
-        if not instruments:
+        if self._instrument_provider.count == 0:
             await self._instrument_provider.load_all_async()
-        instruments = self._instrument_provider.list_instruments()
+        instruments = self._instrument_provider.list_all()
         self._log.debug(f"Loading {len(instruments)} instruments from provider into cache, ")
         for instrument in instruments:
             self._handle_data(instrument)
@@ -147,12 +155,7 @@ class BetfairDataClient(LiveMarketDataClient):
             await asyncio.sleep(5)
             await self._stream.send(orjson.dumps({"op": "heartbeat"}))
 
-    def _stop(self) -> None:
-        self._loop.create_task(self._disconnect())
-
     async def _disconnect(self):
-        self._log.info("Disconnecting...")
-
         # Close socket
         self._log.info("Closing streaming socket...")
         await self._stream.disconnect()
@@ -262,7 +265,7 @@ class BetfairDataClient(LiveMarketDataClient):
         pass  # Subscribed as part of orderbook
 
     def subscribe_instrument(self, instrument_id: InstrumentId):
-        for instrument in self._instrument_provider.list_instruments():
+        for instrument in self._instrument_provider.list_all():
             self._handle_data(data=instrument)
 
     def subscribe_instrument_status_updates(self, instrument_id: InstrumentId):

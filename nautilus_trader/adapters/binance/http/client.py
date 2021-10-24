@@ -19,7 +19,7 @@
 import asyncio
 import hashlib
 import hmac
-from typing import Dict
+from typing import Any, Dict
 
 from aiohttp import ClientResponse
 from aiohttp import ClientResponseError
@@ -27,20 +27,20 @@ from aiohttp import ClientResponseError
 import nautilus_trader
 from nautilus_trader.adapters.binance.http.error import BinanceClientError
 from nautilus_trader.adapters.binance.http.error import BinanceServerError
-from nautilus_trader.adapters.binance.http.parsing import clean_none_value
-from nautilus_trader.adapters.binance.http.parsing import encoded_string
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.logging import Logger
-from nautilus_trader.network.http import HTTPClient
+from nautilus_trader.network.http import HttpClient
 
 
 NAUTILUS_VERSION = nautilus_trader.__version__
 
 
-class BinanceHTTPClient(HTTPClient):
+class BinanceHttpClient(HttpClient):
     """
-    Provides a `Binance` asynchronous HTTP client
+    Provides a `Binance` asynchronous HTTP client.
     """
+
+    BASE_URL = "https://api.binance.com"
 
     def __init__(
         self,
@@ -60,7 +60,7 @@ class BinanceHTTPClient(HTTPClient):
         self._clock = clock
         self._key = key
         self._secret = secret
-        self._base_url = base_url
+        self._base_url = base_url or self.BASE_URL
         self._show_limit_usage = show_limit_usage
         self._proxies = None
         self._headers: Dict[str, str] = {
@@ -78,19 +78,18 @@ class BinanceHTTPClient(HTTPClient):
     def headers(self):
         return self._headers
 
-    async def query(self, url_path, payload=None):
+    async def query(self, url_path, payload: Dict[str, str] = None) -> bytes:
         return await self.send_request("GET", url_path, payload=payload)
 
     async def limit_request(
         self,
         http_method: str,
         url_path: str,
-        payload: Dict[str, str] = None,
-    ):
+        payload: Dict[str, Any] = None,
+    ) -> bytes:
         """
         Limit request is for those endpoints require API key in the header.
         """
-        # check_required_parameter(self.key, "apiKey")
         return await self.send_request(http_method, url_path, payload=payload)
 
     async def sign_request(
@@ -98,10 +97,10 @@ class BinanceHTTPClient(HTTPClient):
         http_method: str,
         url_path: str,
         payload: Dict[str, str] = None,
-    ):
+    ) -> bytes:
         if payload is None:
             payload = {}
-        payload["timestamp"] = self._clock.timestamp() * 1000
+        payload["timestamp"] = str(int(self._clock.timestamp() * 1000))
         query_string = self._prepare_params(payload)
         signature = self._get_sign(query_string)
         payload["signature"] = signature
@@ -125,7 +124,7 @@ class BinanceHTTPClient(HTTPClient):
         """
         if payload is None:
             payload = {}
-        payload["timestamp"] = self._clock.timestamp() * 1000
+        payload["timestamp"] = str(int(self._clock.timestamp() * 1000))
         query_string = self._prepare_params(payload)
         signature = self._get_sign(query_string)
         url_path = url_path + "?" + query_string + "&signature=" + signature
@@ -137,7 +136,8 @@ class BinanceHTTPClient(HTTPClient):
         url_path: str,
         payload: Dict[str, str] = None,
     ) -> bytes:
-        print(f"\nRequest: {http_method}, {url_path}, {self._headers}, {payload}")
+        # TODO(cs): Uncomment for development
+        # print(f"\nRequest: {http_method}, {url_path}, {self._headers}, {payload}")
         if payload is None:
             payload = {}
         try:
@@ -163,14 +163,14 @@ class BinanceHTTPClient(HTTPClient):
 
         return resp.data
 
-    def _prepare_params(self, params) -> str:
-        return encoded_string(clean_none_value(params))
+    def _prepare_params(self, params: Dict[str, str]) -> str:
+        return "&".join([k + "=" + v for k, v in params.items()])
 
-    def _get_sign(self, data):
-        m = hmac.new(self.secret.encode("utf-8"), data.encode("utf-8"), hashlib.sha256)
+    def _get_sign(self, data) -> str:
+        m = hmac.new(self._secret.encode(), data.encode(), hashlib.sha256)
         return m.hexdigest()
 
-    async def _handle_exception(self, error: ClientResponseError):
+    async def _handle_exception(self, error: ClientResponseError) -> None:
         if error.status < 400:
             return
         elif 400 <= error.status < 500:

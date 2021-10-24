@@ -83,6 +83,7 @@ class TestBetfairExecutionClient:
 
         self.cache = TestStubs.cache()
         self.cache.add_instrument(BetfairTestStubs.betting_instrument())
+        self.cache.add_account(TestStubs.betting_account(account_id=self.account_id))
 
         self.portfolio = Portfolio(
             msgbus=self.msgbus,
@@ -173,9 +174,11 @@ class TestBetfairExecutionClient:
         venue_order_ids = self._prefill_venue_order_id_to_client_order_id(update)
         venue_order_id_to_client_order_id = {}
         for c_id, v_id in enumerate(venue_order_ids):
+            client_order_id = ClientOrderId(str(c_id))
+            venue_order_id = VenueOrderId(str(v_id))
             self._log.debug(f"Adding client_order_id=[{c_id}], venue_order_id=[{v_id}] ")
             order = BetfairTestStubs.make_accepted_order(
-                venue_order_id=VenueOrderId(str(v_id)), client_order_id=ClientOrderId(str(c_id))
+                venue_order_id=venue_order_id, client_order_id=client_order_id
             )
             self._log.debug(f"created order: {order}")
             venue_order_id_to_client_order_id[v_id] = order.client_order_id
@@ -184,6 +187,7 @@ class TestBetfairExecutionClient:
             if cache_order is None:
                 self._log.debug("Adding order to cache")
                 self.cache.add_order(order, position_id=PositionId(v_id.value))
+                assert self.cache.order(client_order_id).venue_order_id == venue_order_id
             self.cache.update_order(order)
 
         self.client.venue_order_id_to_client_order_id = venue_order_id_to_client_order_id
@@ -345,6 +349,32 @@ class TestBetfairExecutionClient:
         pending_cancel, cancelled = self.messages
         assert isinstance(pending_cancel, OrderPendingCancel)
         assert isinstance(cancelled, OrderCancelRejected)
+
+    @pytest.mark.asyncio
+    async def test_order_multiple_fills(self):
+        # Arrange
+        self.exec_engine.start()
+        client_order_id = ClientOrderId("1")
+        venue_order_id = VenueOrderId("246938411724")
+        submitted = BetfairTestStubs.make_submitted_order(
+            client_order_id=client_order_id, quantity=Quantity.from_int(20)
+        )
+        self.cache.add_order(submitted, position_id=BetfairTestStubs.position_id())
+        self.client.venue_order_id_to_client_order_id[venue_order_id] = client_order_id
+
+        # Act
+        for update in BetfairStreaming.ocm_multiple_fills():
+            await self.client._handle_order_stream_update(update)
+            await asyncio.sleep(0.1)
+
+        # Assert
+        result = [fill.last_qty for fill in self.messages]
+        expected = [
+            Quantity.from_str("16.1900"),
+            Quantity.from_str("0.77"),
+            Quantity.from_str("0.77"),
+        ]
+        assert result == expected
 
     @pytest.mark.asyncio
     @pytest.mark.skip(reason="Not implemented")
@@ -565,3 +595,11 @@ class TestBetfairExecutionClient:
 
         self.exec_engine.kill()
         await asyncio.sleep(1)
+
+    @pytest.mark.asyncio
+    async def test_betfair_order_cancelled_no_timestamp(self):
+        update = BetfairStreaming.ocm_error_fill()
+        self._setup_exec_client_and_cache(update)
+        for upd in update["oc"][0]["orc"][0]["uo"]:
+            self.client._handle_stream_execution_complete_order_update(update=upd)
+            await asyncio.sleep(1)

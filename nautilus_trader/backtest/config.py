@@ -22,9 +22,12 @@ import pydantic
 from dask.base import tokenize
 
 from nautilus_trader.cache.cache import CacheConfig
+from nautilus_trader.common.config import ImportableActorConfig
 from nautilus_trader.data.engine import DataEngineConfig
 from nautilus_trader.execution.engine import ExecEngineConfig
 from nautilus_trader.infrastructure.cache import CacheDatabaseConfig
+from nautilus_trader.model.identifiers import ClientId
+from nautilus_trader.persistence.config import PersistenceConfig
 from nautilus_trader.risk.config import RiskEngineConfig
 from nautilus_trader.trading.config import ImportableStrategyConfig
 
@@ -100,6 +103,7 @@ class BacktestVenueConfig(Partialable):
     account_type: str
     base_currency: Optional[str]
     starting_balances: List[str]
+    book_type: str = "L1_TBBO"
     # fill_model: Optional[FillModel] = None  # TODO(cs): Implement next iteration
     # modules: Optional[List[SimulationModule]] = None  # TODO(cs): Implement next iteration
 
@@ -123,13 +127,13 @@ class BacktestDataConfig(Partialable):
     """
 
     catalog_path: str
-    data_cls_path: str
-    catalog_fs_protocol: str = None
+    data_cls_path: Optional[str] = None
+    catalog_fs_protocol: Optional[str] = None
     catalog_fs_storage_options: Optional[Dict] = None
     instrument_id: Optional[str] = None
     start_time: Optional[Union[datetime, str, int]] = None
     end_time: Optional[Union[datetime, str, int]] = None
-    filters: Optional[dict] = None
+    filter_expr: Optional[str] = None
     client_id: Optional[str] = None
 
     @property
@@ -145,6 +149,7 @@ class BacktestDataConfig(Partialable):
             instrument_ids=[self.instrument_id] if self.instrument_id else None,
             start=self.start_time,
             end=self.end_time,
+            filter_expr=self.filter_expr,
             as_nautilus=True,
         )
 
@@ -163,6 +168,7 @@ class BacktestDataConfig(Partialable):
             {
                 "start": start_time or query["start"],
                 "end": end_time or query["end"],
+                "filter_expr": parse_filters_expr(query.pop("filter_expr", "None")),
             }
         )
 
@@ -172,8 +178,10 @@ class BacktestDataConfig(Partialable):
             "data": catalog.query(**query),
             "instrument": catalog.instruments(instrument_ids=self.instrument_id, as_nautilus=True)[
                 0
-            ],
-            "client_id": self.client_id,
+            ]
+            if self.instrument_id
+            else None,
+            "client_id": ClientId(self.client_id) if self.client_id else None,
         }
 
 
@@ -226,9 +234,42 @@ class BacktestRunConfig(Partialable):
     engine: Optional[BacktestEngineConfig] = None
     venues: Optional[List[BacktestVenueConfig]] = None
     data: Optional[List[BacktestDataConfig]] = None
+    actors: Optional[List[ImportableActorConfig]] = None
     strategies: Optional[List[ImportableStrategyConfig]] = None
+    persistence: Optional[PersistenceConfig] = None
     batch_size_bytes: Optional[int] = None
 
     @property
     def id(self):
         return tokenize(self)
+
+
+def parse_filters_expr(s: str):
+    # TODO (bm) - could we do this better, probably requires writing our own parser?
+    """
+    Parse a pyarrow.dataset filter expression from a string
+
+    >>> parse_filters_expr('field("Currency") == "CHF"')
+    <pyarrow.dataset.Expression (Currency == "CHF")>
+
+    >>> parse_filters_expr("print('hello')")
+
+    >>> parse_filters_expr("None")
+
+    """
+    from pyarrow.dataset import field
+
+    assert field  # required for eval.
+
+    if not s:
+        return
+
+    def safer_eval(input_string):
+        allowed_names = {"field": field}
+        code = compile(input_string, "<string>", "eval")
+        for name in code.co_names:
+            if name not in allowed_names:
+                raise NameError(f"Use of {name} not allowed")
+        return eval(code, {}, allowed_names)  # noqa: S307
+
+    return safer_eval(s)  # Only allow use of the field object

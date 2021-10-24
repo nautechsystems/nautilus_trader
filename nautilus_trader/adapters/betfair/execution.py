@@ -52,6 +52,7 @@ from nautilus_trader.model.c_enums.venue_type import VenueType
 from nautilus_trader.model.commands.trading import CancelOrder
 from nautilus_trader.model.commands.trading import ModifyOrder
 from nautilus_trader.model.commands.trading import SubmitOrder
+from nautilus_trader.model.commands.trading import SubmitOrderList
 from nautilus_trader.model.currency import Currency
 from nautilus_trader.model.events.account import AccountState
 from nautilus_trader.model.identifiers import AccountId
@@ -92,7 +93,7 @@ class BetfairExecutionClient(LiveExecutionClient):
         loop : asyncio.AbstractEventLoop
             The event loop for the client.
         client : BetfairClient
-            The Betfair HTTPClient.
+            The Betfair HttpClient.
         account_id : AccountId
             The account ID for the client.
         base_currency : Currency
@@ -105,26 +106,21 @@ class BetfairExecutionClient(LiveExecutionClient):
             The clock for the client.
         logger : Logger
             The logger for the client.
-        market_filter : Dict
+        market_filter : dict
             The market filter.
-        instrument_provider : BetfairInstrumentProvider
+        instrument_provider : BetfairInstrumentProvider, optional
             The instrument provider.
 
         """
-        self._client = client  # type: BetfairClient
-        self._instrument_provider: BetfairInstrumentProvider = (
-            instrument_provider
-            or BetfairInstrumentProvider(client=client, logger=logger, market_filter=market_filter)
-        )
-
         super().__init__(
             loop=loop,
             client_id=ClientId(BETFAIR_VENUE.value),
+            instrument_provider=instrument_provider
+            or BetfairInstrumentProvider(client=client, logger=logger, market_filter=market_filter),
             venue_type=VenueType.EXCHANGE,
             account_id=account_id,
             account_type=AccountType.BETTING,
             base_currency=base_currency,
-            instrument_provider=self._instrument_provider,
             msgbus=msgbus,
             cache=cache,
             clock=clock,
@@ -132,6 +128,7 @@ class BetfairExecutionClient(LiveExecutionClient):
             config={"name": "BetfairExecClient"},
         )
 
+        self._client = client
         self.stream = BetfairOrderStreamClient(
             client=self._client,
             logger=logger,
@@ -144,9 +141,19 @@ class BetfairExecutionClient(LiveExecutionClient):
 
         AccountFactory.register_calculated_account(account_id.issuer)
 
-    def _start(self) -> None:
+    def connect(self):
+        """
+        Connect the client.
+        """
         self._log.info("Connecting...")
         self._loop.create_task(self._connect())
+
+    def disconnect(self):
+        """
+        Disconnect the client.
+        """
+        self._log.info("Disconnecting...")
+        self._loop.create_task(self._disconnect())
 
     async def _connect(self):
         self._log.info("Connecting to BetfairClient...")
@@ -164,12 +171,7 @@ class BetfairExecutionClient(LiveExecutionClient):
         assert self.is_connected
         self._log.info("Connected.")
 
-    def _stop(self) -> None:
-        self._loop.create_task(self._disconnect())
-
     async def _disconnect(self) -> None:
-        self._log.info("Disconnecting...")
-
         # Close socket
         self._log.info("Closing streaming socket...")
         await self.stream.disconnect()
@@ -257,6 +259,10 @@ class BetfairExecutionClient(LiveExecutionClient):
                     ts_event=self._clock.timestamp_ns(),
                 )
                 self._log.debug("Generated _generate_order_accepted")
+
+    def submit_order_list(self, command: SubmitOrderList):
+        """Abstract method (implement in subclass)."""
+        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
     def modify_order(self, command: ModifyOrder) -> None:
         PyCondition.not_none(command, "command")
@@ -365,7 +371,7 @@ class BetfairExecutionClient(LiveExecutionClient):
         self.create_task(self._cancel_order(command))
 
     async def _cancel_order(self, command: CancelOrder) -> None:
-        self._log.debug("Received cancel order")
+        self._log.debug(f"Received cancel order: {command}")
         self.generate_order_pending_cancel(
             strategy_id=command.strategy_id,
             instrument_id=command.instrument_id,
@@ -524,6 +530,7 @@ class BetfairExecutionClient(LiveExecutionClient):
         if update["sm"] > 0 and update["sm"] > order.filled_qty:
             execution_id = create_execution_id(update)
             if execution_id not in self.published_executions[client_order_id]:
+                fill_qty = update["sm"] - order.filled_qty
                 self.generate_order_filled(
                     strategy_id=order.strategy_id,
                     instrument_id=order.instrument_id,
@@ -533,7 +540,7 @@ class BetfairExecutionClient(LiveExecutionClient):
                     execution_id=execution_id,
                     order_side=B2N_ORDER_STREAM_SIDE[update["side"]],
                     order_type=OrderType.LIMIT,
-                    last_qty=Quantity(update["sm"], instrument.size_precision),
+                    last_qty=Quantity(fill_qty, instrument.size_precision),
                     last_px=price_to_probability(update["p"]),
                     # avg_px=Decimal(order['avp']),
                     quote_currency=instrument.quote_currency,
@@ -589,15 +596,20 @@ class BetfairExecutionClient(LiveExecutionClient):
             )
             if key not in self.pending_update_order_client_ids:
                 # The remainder of this order has been canceled
+                cancelled_ts = update.get("cd") or update.get("ld") or update.get("md")
+                if cancelled_ts is not None:
+                    cancelled_ts = millis_to_nanos(cancelled_ts)
+                else:
+                    cancelled_ts = self._clock.timestamp_ns()
                 self.generate_order_canceled(
                     strategy_id=order.strategy_id,
                     instrument_id=instrument.id,
                     client_order_id=client_order_id,
                     venue_order_id=venue_order_id,
-                    ts_event=millis_to_nanos(
-                        update.get("cd") or update.get("ld") or update.get("md")
-                    ),
+                    ts_event=cancelled_ts,
                 )
+                if venue_order_id in self.venue_order_id_to_client_order_id:
+                    del self.venue_order_id_to_client_order_id[venue_order_id]
         # Market order will not be in self.published_executions
         if client_order_id in self.published_executions:
             # This execution is complete - no need to track this anymore
@@ -609,7 +621,9 @@ class BetfairExecutionClient(LiveExecutionClient):
         for _ in selection.get("ml", []):
             pass
 
-    async def wait_for_order(self, venue_order_id: VenueOrderId, timeout_seconds=10.0) -> None:
+    async def wait_for_order(
+        self, venue_order_id: VenueOrderId, timeout_seconds=10.0
+    ) -> Optional[ClientOrderId]:
         """
         We may get an order update from the socket before our submit_order
         response has come back (with our betId).
@@ -637,6 +651,7 @@ class BetfairExecutionClient(LiveExecutionClient):
             f"after {timeout_seconds} seconds"
             f"\nexisting: {self.venue_order_id_to_client_order_id})"
         )
+        return None
 
     # -- RECONCILIATION -------------------------------------------------------------------------------
 

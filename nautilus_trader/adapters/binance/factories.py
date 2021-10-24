@@ -14,66 +14,111 @@
 # -------------------------------------------------------------------------------------------------
 
 import asyncio
+import hashlib
 import os
 from functools import lru_cache
+from typing import Any, Dict, Optional
 
-from nautilus_trader.adapters.betfair.client.core import BetfairClient
-from nautilus_trader.adapters.betfair.common import BETFAIR_VENUE
-from nautilus_trader.adapters.betfair.data import BetfairDataClient
-from nautilus_trader.adapters.betfair.execution import BetfairExecutionClient
-from nautilus_trader.adapters.betfair.providers import BetfairInstrumentProvider
+from nautilus_trader.adapters.binance.common import BINANCE_VENUE
+from nautilus_trader.adapters.binance.data import BinanceDataClient
+from nautilus_trader.adapters.binance.execution import BinanceSpotExecutionClient
+from nautilus_trader.adapters.binance.http.client import BinanceHttpClient
+from nautilus_trader.adapters.binance.providers import BinanceInstrumentProvider
 from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.logging import LiveLogger
 from nautilus_trader.common.logging import Logger
-from nautilus_trader.common.logging import LoggerAdapter
 from nautilus_trader.live.factories import LiveDataClientFactory
 from nautilus_trader.live.factories import LiveExecutionClientFactory
-from nautilus_trader.model.currency import Currency
 from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.msgbus.bus import MessageBus
 
 
-CLIENTS = {}
+HTTP_CLIENTS: Dict[str, BinanceHttpClient] = {}
 
 
-@lru_cache(1)
-def get_betfair_client(
-    username: str,
-    password: str,
-    app_key: str,
-    cert_dir: str,
+def get_cached_binance_http_client(
+    key: Optional[str],
+    secret: Optional[str],
     loop: asyncio.AbstractEventLoop,
+    clock: LiveClock,
     logger: Logger,
-) -> BetfairClient:
-    global CLIENTS
-    key = (username, password, app_key, cert_dir)
-    if key not in CLIENTS:
-        LoggerAdapter("BetfairFactory", logger).warning("Creating new instance of BetfairClient")
-        client = BetfairClient(
-            username=username,
-            password=password,
-            app_key=app_key,
-            cert_dir=cert_dir,
+) -> BinanceHttpClient:
+    """
+    Cache and return a Binance HTTP client with the given key or secret.
+
+    If a cached client with matching key and secret already exists, then that
+    cached client will be returned.
+
+    Parameters
+    ----------
+    key : str, optional
+        The API key for the client.
+        If None then will source from the `BINANCE_API_KEY` env var.
+    secret : str, optional
+        The API secret for the client.
+        If None then will source from the `BINANCE_API_SECRET` env var.
+    loop : asyncio.AbstractEventLoop
+        The event loop for the client.
+    clock : LiveClock
+        The clock for the client.
+    logger : Logger
+        The logger for the client.
+
+    Returns
+    -------
+    BinanceHttpClient
+
+    """
+    global HTTP_CLIENTS
+
+    if key is None:
+        key = os.environ["BINANCE_API_KEY"]
+    if secret is None:
+        secret = os.environ["BINANCE_API_SECRET"]
+
+    client_key: str = hashlib.sha256("|".join((key, secret)).encode()).hexdigest()
+    if client_key not in HTTP_CLIENTS:
+        client = BinanceHttpClient(
             loop=loop,
+            clock=clock,
             logger=logger,
+            key=key,
+            secret=secret,
         )
-        CLIENTS[key] = client
-    return CLIENTS[key]
+        HTTP_CLIENTS[client_key] = client
+    return HTTP_CLIENTS[client_key]
 
 
 @lru_cache(1)
-def get_instrument_provider(client: BetfairClient, logger: Logger, market_filter: tuple):
-    LoggerAdapter("BetfairFactory", logger).warning(
-        "Creating new instance of BetfairInstrumentProvider"
-    )
-    # LoggerAdapter("BetfairFactory", logger).warning(f"kwargs: {locals()}")
-    return BetfairInstrumentProvider(
-        client=client, logger=logger, market_filter=dict(market_filter)
+def get_cached_binance_instrument_provider(
+    client: BinanceHttpClient,
+    logger: Logger,
+) -> BinanceInstrumentProvider:
+    """
+    Cache and return a BinanceInstrumentProvider.
+
+    If a cached provider already exists, then that cached provider will be returned.
+
+    Parameters
+    ----------
+    client : BinanceHttpClient
+        The client for the instrument provider.
+    logger : Logger
+        The logger for the instrument provider.
+
+    Returns
+    -------
+    BinanceInstrumentProvider
+
+    """
+    return BinanceInstrumentProvider(
+        client=client,
+        logger=logger,
     )
 
 
-class BetfairLiveDataClientFactory(LiveDataClientFactory):
+class BinanceLiveDataClientFactory(LiveDataClientFactory):
     """
     Provides a `Betfair` live data client factory.
     """
@@ -82,15 +127,15 @@ class BetfairLiveDataClientFactory(LiveDataClientFactory):
     def create(
         loop: asyncio.AbstractEventLoop,
         name: str,
-        config,
+        config: Dict[str, Any],
         msgbus: MessageBus,
         cache: Cache,
         clock: LiveClock,
         logger: LiveLogger,
         client_cls=None,
-    ):
+    ) -> BinanceDataClient:
         """
-        Create a new Betfair client.
+        Create a new Binance data client.
 
         Parameters
         ----------
@@ -113,38 +158,34 @@ class BetfairLiveDataClientFactory(LiveDataClientFactory):
 
         Returns
         -------
-        BetfairDataClient
+        BinanceDataClient
 
         """
-        market_filter = config.get("market_filter", {})
-
-        # Create client
-        client = get_betfair_client(
-            username=os.getenv(config.get("username", ""), ""),
-            password=os.getenv(config.get("password", ""), ""),
-            app_key=os.getenv(config.get("app_key", ""), ""),
-            cert_dir=os.getenv(config.get("cert_dir", ""), ""),
+        client = get_cached_binance_http_client(
+            key=config.get("api_key"),
+            secret=config.get("api_secret"),
             loop=loop,
+            clock=clock,
             logger=logger,
         )
-        provider = get_instrument_provider(
-            client=client, logger=logger, market_filter=tuple(market_filter.items())
-        )
 
-        data_client = BetfairDataClient(
+        # Get instrument provider singleton
+        provider = get_cached_binance_instrument_provider(client=client, logger=logger)
+
+        # Create client
+        data_client = BinanceDataClient(
             loop=loop,
             client=client,
             msgbus=msgbus,
             cache=cache,
             clock=clock,
             logger=logger,
-            market_filter=market_filter,
             instrument_provider=provider,
         )
         return data_client
 
 
-class BetfairLiveExecutionClientFactory(LiveExecutionClientFactory):
+class BinanceLiveExecutionClientFactory(LiveExecutionClientFactory):
     """
     Provides data and execution clients for Betfair.
     """
@@ -153,15 +194,15 @@ class BetfairLiveExecutionClientFactory(LiveExecutionClientFactory):
     def create(
         loop: asyncio.AbstractEventLoop,
         name: str,
-        config,
+        config: Dict[str, Any],
         msgbus: MessageBus,
         cache: Cache,
         clock: LiveClock,
         logger: LiveLogger,
         client_cls=None,
-    ):
+    ) -> BinanceSpotExecutionClient:
         """
-        Create new Betfair clients.
+        Create a new Binance execution client.
 
         Parameters
         ----------
@@ -185,40 +226,35 @@ class BetfairLiveExecutionClientFactory(LiveExecutionClientFactory):
 
         Returns
         -------
-        BetfairExecClient
+        BinanceSpotExecutionClient
 
         """
-        market_filter = config.get("market_filter", {})
-
-        client = get_betfair_client(
-            username=os.getenv(config.get("username", ""), ""),
-            password=os.getenv(config.get("password", ""), ""),
-            app_key=os.getenv(config.get("app_key", ""), ""),
-            cert_dir=os.getenv(config.get("cert_dir", ""), ""),
+        client = get_cached_binance_http_client(
+            key=config.get("api_key"),
+            secret=config.get("api_secret"),
             loop=loop,
+            clock=clock,
             logger=logger,
         )
-        provider = get_instrument_provider(
-            client=client, logger=logger, market_filter=tuple(market_filter.items())
-        )
+
+        # Get instrument provider singleton
+        provider = get_cached_binance_instrument_provider(client=client, logger=logger)
 
         # Get account ID env variable or set default
         account_id_env_var = os.getenv(config.get("account_id", ""), "001")
 
         # Set account ID
-        account_id = AccountId(BETFAIR_VENUE.value, account_id_env_var)
+        account_id = AccountId(BINANCE_VENUE.value, account_id_env_var)
 
         # Create client
-        exec_client = BetfairExecutionClient(
+        exec_client = BinanceSpotExecutionClient(
             loop=loop,
             client=client,
             account_id=account_id,
-            base_currency=Currency.from_str(config.get("base_currency")),
             msgbus=msgbus,
             cache=cache,
             clock=clock,
             logger=logger,
-            market_filter=market_filter,
             instrument_provider=provider,
         )
         return exec_client

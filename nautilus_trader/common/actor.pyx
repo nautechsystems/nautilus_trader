@@ -25,6 +25,7 @@ attempts to operate without a managing `Trader` instance.
 """
 
 import warnings
+from typing import Optional
 
 import cython
 
@@ -65,6 +66,8 @@ from nautilus_trader.model.instruments.base cimport Instrument
 from nautilus_trader.model.orderbook.data cimport OrderBookData
 from nautilus_trader.msgbus.bus cimport MessageBus
 
+from nautilus_trader.common.config import ActorConfig
+
 
 cdef class Actor(Component):
     """
@@ -75,23 +78,36 @@ cdef class Actor(Component):
     This class should not be used directly, but through a concrete subclass.
     """
 
-    def __init__(self, ComponentId component_id=None, dict config=None):
+    def __init__(self, config: Optional[ActorConfig]=None):
         """
         Initialize a new instance of the ``Actor`` class.
 
         Parameters
         ----------
-        component_id : ComponentId, optional
-            The component ID. If ``None`` is passed then the identifier will be
-            taken from `type(self).__name__`.
+        config : ActorConfig, optional
+            The actor configuration.
+
+        Raises
+        ------
+        TypeError
+            If config is not of type `ActorConfig`.
 
         """
-        cdef Clock clock = LiveClock()
+        if config is None:
+            config = ActorConfig()
+        Condition.type(config, ActorConfig, "config")
+
+        if config.component_id is not None:
+            component_id = ComponentId(config.component_id)
+        else:
+            component_id = None
+
+        clock = LiveClock()
         super().__init__(
             clock=clock,
             logger=Logger(clock=clock),
             component_id=component_id,
-            config=config,
+            config=config.dict(),
         )
 
         self._warning_events = set()

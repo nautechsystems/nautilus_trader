@@ -1,3 +1,24 @@
+# NautilusTrader 1.132.0 Beta - Release Notes
+
+Released on 24th, October 2021
+
+## Breaking Changes
+- `Actor` constructor now takes `ActorConfig`.
+
+## Enhancements
+- Added `ActorConfig`.
+- Added `ImportableActorConfig`.
+- Added `ActorFactory`.
+- Added `actors` to `BacktestRunConfig`.
+- Improved network base classes.
+- Refine `InstrumentProvider`.
+
+## Fixes
+- Fixed persistence config for `BacktestNode`.
+- Various Betfair integration fixes.
+
+---
+
 # NautilusTrader 1.131.0 Beta - Release Notes
 
 Released on 10th, October 2021

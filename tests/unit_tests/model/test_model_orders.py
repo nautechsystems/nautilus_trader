@@ -172,6 +172,25 @@ class TestOrders:
                 expire_time=None,
             )
 
+    def test_overfill_limit_buy_order_raises_value_error(self):
+        # Arrange, Act, Assert
+        order = self.order_factory.limit(
+            AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100000),
+            Price.from_str("1.00000"),
+        )
+
+        order.apply(TestStubs.event_order_submitted(order))
+        order.apply(TestStubs.event_order_accepted(order))
+        over_fill = TestStubs.event_order_filled(
+            order, instrument=AUDUSD_SIM, last_qty=Quantity.from_int(110000)  # <-- overfill
+        )
+
+        # Assert
+        with pytest.raises(ValueError):
+            order.apply(over_fill)
+
     def test_reset_order_factory(self):
         # Arrange
         self.order_factory.limit(

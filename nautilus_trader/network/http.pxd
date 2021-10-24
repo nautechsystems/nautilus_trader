@@ -16,7 +16,7 @@
 from nautilus_trader.common.logging cimport LoggerAdapter
 
 
-cdef class HTTPClient:
+cdef class HttpClient:
     cdef readonly object _loop
     cdef readonly LoggerAdapter _log
 

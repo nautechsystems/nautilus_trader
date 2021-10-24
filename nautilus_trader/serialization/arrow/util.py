@@ -122,7 +122,7 @@ def camel_to_snake_case(s):
     return re.sub(r"((?<=[a-z0-9])[A-Z]|(?!^)[A-Z](?=[a-z]))", r"_\1", s).lower()
 
 
-def class_to_filename(cls):
+def class_to_filename(cls: type) -> str:
     """
     Convert the given class to a filename.
     """

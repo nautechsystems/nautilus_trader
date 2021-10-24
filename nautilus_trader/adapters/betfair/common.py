@@ -132,6 +132,8 @@ def round_probability(probability, side):
         if idx == 0:
             return all_probabilities[idx]
         return all_probabilities[idx - 1]
+    else:  # pragma: no cover (design-time error)
+        raise ValueError(f"invalid OrderSide, was {side}")
 
 
 def round_price(price, side):
@@ -146,6 +148,8 @@ def round_price(price, side):
             return all_prices[idx]
         elif side == OrderSide.SELL:
             return all_prices[idx - 1]
+        else:  # pragma: no cover (design-time error)
+            raise ValueError(f"invalid OrderSide, was {side}")
 
 
 def price_to_probability(price, side=None, force=False) -> Price:
