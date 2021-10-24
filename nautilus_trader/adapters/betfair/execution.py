@@ -52,6 +52,7 @@ from nautilus_trader.model.c_enums.venue_type import VenueType
 from nautilus_trader.model.commands.trading import CancelOrder
 from nautilus_trader.model.commands.trading import ModifyOrder
 from nautilus_trader.model.commands.trading import SubmitOrder
+from nautilus_trader.model.commands.trading import SubmitOrderList
 from nautilus_trader.model.currency import Currency
 from nautilus_trader.model.events.account import AccountState
 from nautilus_trader.model.identifiers import AccountId
@@ -105,26 +106,21 @@ class BetfairExecutionClient(LiveExecutionClient):
             The clock for the client.
         logger : Logger
             The logger for the client.
-        market_filter : Dict
+        market_filter : dict
             The market filter.
-        instrument_provider : BetfairInstrumentProvider
+        instrument_provider : BetfairInstrumentProvider, optional
             The instrument provider.
 
         """
-        self._client = client  # type: BetfairClient
-        self._instrument_provider: BetfairInstrumentProvider = (
-            instrument_provider
-            or BetfairInstrumentProvider(client=client, logger=logger, market_filter=market_filter)
-        )
-
         super().__init__(
             loop=loop,
             client_id=ClientId(BETFAIR_VENUE.value),
+            instrument_provider=instrument_provider
+            or BetfairInstrumentProvider(client=client, logger=logger, market_filter=market_filter),
             venue_type=VenueType.EXCHANGE,
             account_id=account_id,
             account_type=AccountType.BETTING,
             base_currency=base_currency,
-            instrument_provider=self._instrument_provider,
             msgbus=msgbus,
             cache=cache,
             clock=clock,
@@ -132,6 +128,7 @@ class BetfairExecutionClient(LiveExecutionClient):
             config={"name": "BetfairExecClient"},
         )
 
+        self._client = client
         self.stream = BetfairOrderStreamClient(
             client=self._client,
             logger=logger,
@@ -262,6 +259,10 @@ class BetfairExecutionClient(LiveExecutionClient):
                     ts_event=self._clock.timestamp_ns(),
                 )
                 self._log.debug("Generated _generate_order_accepted")
+
+    def submit_order_list(self, command: SubmitOrderList):
+        """Abstract method (implement in subclass)."""
+        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
     def modify_order(self, command: ModifyOrder) -> None:
         PyCondition.not_none(command, "command")

@@ -26,10 +26,10 @@ sys.path.insert(
 
 from examples.strategies.orderbook_imbalance import OrderBookImbalance
 from examples.strategies.orderbook_imbalance import OrderBookImbalanceConfig
-from nautilus_trader.adapters.betfair.factory import BetfairLiveDataClientFactory
-from nautilus_trader.adapters.betfair.factory import BetfairLiveExecutionClientFactory
-from nautilus_trader.adapters.betfair.factory import get_betfair_client
-from nautilus_trader.adapters.betfair.factory import get_instrument_provider
+from nautilus_trader.adapters.betfair.factories import BetfairLiveDataClientFactory
+from nautilus_trader.adapters.betfair.factories import BetfairLiveExecutionClientFactory
+from nautilus_trader.adapters.betfair.factories import get_cached_betfair_client
+from nautilus_trader.adapters.betfair.factories import get_cached_betfair_instrument_provider
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.logging import LiveLogger
 from nautilus_trader.infrastructure.config import CacheDatabaseConfig
@@ -45,11 +45,11 @@ async def main(market_id: str):
     # Connect to Betfair client early to load instruments and account currency
     loop = asyncio.get_event_loop()
     logger = LiveLogger(loop=loop, clock=LiveClock())
-    client = get_betfair_client(
-        username=os.getenv("BETFAIR_USERNAME"),
-        password=os.getenv("BETFAIR_PASSWORD"),
-        app_key=os.getenv("BETFAIR_APP_KEY"),
-        cert_dir=os.getenv("BETFAIR_CERT_DIR"),
+    client = get_cached_betfair_client(
+        username=None,  # Pass here or will source from the `BETFAIR_USERNAME` env var
+        password=None,  # Pass here or will source from the `BETFAIR_PASSWORD` env var
+        app_key=None,  # Pass here or will source from the `BETFAIR_APP_KEY` env var
+        cert_dir=None,  # Pass here or will source from the `BETFAIR_CERT_DIR` env var
         logger=logger,
         loop=loop,
     )
@@ -57,13 +57,13 @@ async def main(market_id: str):
 
     # Find instruments for a particular market_id
     market_filter = {"market_id": (market_id,)}
-    provider = get_instrument_provider(
+    provider = get_cached_betfair_instrument_provider(
         client=client,
         logger=logger,
         market_filter=tuple(market_filter.items()),
     )
     await provider.load_all_async()
-    instruments = provider.list_instruments()
+    instruments = provider.list_all()
     print(f"Found instruments:\n{instruments}")
 
     # Determine account currency
@@ -76,22 +76,21 @@ async def main(market_id: str):
         cache_database=CacheDatabaseConfig(type="in-memory"),
         data_clients={
             "BETFAIR": {
-                "username": "BETFAIR_USERNAME",  # value is the environment variable key
-                "password": "BETFAIR_PASSWORD",  # value is the environment variable key
-                "app_key": "BETFAIR_APP_KEY",  # value is the environment variable key
-                "cert_dir": "BETFAIR_CERT_DIR",  # value is the environment variable key
+                # "username": "YOUR_BETFAIR_USERNAME",
+                # "password": "YOUR_BETFAIR_PASSWORD",
+                # "app_key": "YOUR_BETFAIR_APP_KEY",
+                # "cert_dir": "YOUR_BETFAIR_CERT_DIR",
                 "market_filter": market_filter,
             },
         },
         exec_clients={
             "BETFAIR": {
                 "base_currency": account["currencyCode"],
-                "username": "BETFAIR_USERNAME",  # value is the environment variable key
-                "password": "BETFAIR_PASSWORD",  # value is the environment variable key
-                "app_key": "BETFAIR_APP_KEY",  # value is the environment variable key
-                "cert_dir": "BETFAIR_CERT_DIR",  # value is the environment variable key
+                # "username": "YOUR_BETFAIR_USERNAME",
+                # "password": "YOUR_BETFAIR_PASSWORD",
+                # "app_key": "YOUR_BETFAIR_APP_KEY",
+                # "cert_dir": "YOUR_BETFAIR_CERT_DIR",
                 "market_filter": market_filter,
-                "sandbox_mode": False,  # If clients use the testnet
             },
         },
     )
@@ -125,4 +124,4 @@ async def main(market_id: str):
 
 
 if __name__ == "__main__":
-    asyncio.run(main(market_id="1.189009581"))
+    asyncio.run(main(market_id="1.189635762"))

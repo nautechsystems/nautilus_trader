@@ -29,6 +29,9 @@ from nautilus_trader.backtest.config import BacktestVenueConfig
 from nautilus_trader.backtest.engine import BacktestEngine
 from nautilus_trader.backtest.engine import BacktestEngineConfig
 from nautilus_trader.backtest.results import BacktestResult
+from nautilus_trader.common.actor import Actor
+from nautilus_trader.common.config import ActorFactory
+from nautilus_trader.common.config import ImportableActorConfig
 from nautilus_trader.core.datetime import maybe_dt_to_unix_nanos
 from nautilus_trader.core.inspect import is_nautilus_class
 from nautilus_trader.model.c_enums.book_type import BookTypeParser
@@ -73,7 +76,7 @@ class BacktestNode:
 
         Parameters
         ----------
-        run_configs : List[BacktestRunConfig]
+        run_configs : list[BacktestRunConfig]
             The backtest run configurations.
 
         Returns
@@ -89,8 +92,9 @@ class BacktestNode:
                 run_config_id=config.id,
                 venue_configs=config.venues,
                 data_configs=config.data,
-                persistence=config.persistence,
+                actor_configs=config.actors,
                 strategy_configs=config.strategies,
+                persistence=config.persistence,
                 batch_size_bytes=config.batch_size_bytes,
             )
             results.append(result)
@@ -103,12 +107,12 @@ class BacktestNode:
 
         Parameters
         ----------
-        run_configs : List[BacktestRunConfig]
+        run_configs : list[BacktestRunConfig]
             The backtest run configurations.
 
         Returns
         -------
-        Dict[str, Any]
+        list[BacktestResult]
             The results of the backtest runs.
 
         """
@@ -120,8 +124,9 @@ class BacktestNode:
                 engine_config=config.engine,
                 venue_configs=config.venues,
                 data_configs=config.data,
-                persistence=config.persistence,
+                actor_configs=config.actors,
                 strategy_configs=config.strategies,
+                persistence=config.persistence,
                 batch_size_bytes=config.batch_size_bytes,
             )
             results.append(result)
@@ -135,7 +140,9 @@ class BacktestNode:
         engine_config: BacktestEngineConfig,
         venue_configs: List[BacktestVenueConfig],
         data_configs: List[BacktestDataConfig],
+        actor_configs: List[ImportableActorConfig],
         strategy_configs: List[ImportableStrategyConfig],
+        persistence: Optional[PersistenceConfig] = None,
         batch_size_bytes: Optional[int] = None,
     ) -> BacktestResult:
         return self._run(
@@ -143,7 +150,9 @@ class BacktestNode:
             engine_config=engine_config,
             venue_configs=venue_configs,
             data_configs=data_configs,
+            actor_configs=actor_configs,
             strategy_configs=strategy_configs,
+            persistence=persistence,
             batch_size_bytes=batch_size_bytes,
         )
 
@@ -157,6 +166,7 @@ class BacktestNode:
         engine_config: BacktestEngineConfig,
         venue_configs: List[BacktestVenueConfig],
         data_configs: List[BacktestDataConfig],
+        actor_configs: List[ImportableActorConfig],
         strategy_configs: List[ImportableStrategyConfig],
         persistence: Optional[PersistenceConfig] = None,
         batch_size_bytes: Optional[int] = None,
@@ -166,10 +176,6 @@ class BacktestNode:
             venue_configs=venue_configs,
             data_configs=data_configs,
         )
-        # Create strategies
-        strategies: List[TradingStrategy] = [
-            StrategyFactory.create(config) for config in strategy_configs
-        ]
 
         # Setup persistence
         writer = None
@@ -189,8 +195,19 @@ class BacktestNode:
             ):
                 writer.write(instrument)
 
-        if strategies:
-            engine.add_strategies(strategies)
+        # Create actors
+        if actor_configs:
+            actors: List[Actor] = [ActorFactory.create(config) for config in actor_configs]
+            if actors:
+                engine.add_components(actors)
+
+        # Create strategies
+        if strategy_configs:
+            strategies: List[TradingStrategy] = [
+                StrategyFactory.create(config) for config in strategy_configs
+            ]
+            if strategies:
+                engine.add_strategies(strategies)
 
         # Run backtest
         backtest_runner(

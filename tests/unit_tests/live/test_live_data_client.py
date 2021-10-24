@@ -17,6 +17,7 @@ import asyncio
 
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.logging import Logger
+from nautilus_trader.common.providers import InstrumentProvider
 from nautilus_trader.common.uuid import UUIDFactory
 from nautilus_trader.live.data_client import LiveDataClient
 from nautilus_trader.live.data_client import LiveMarketDataClient
@@ -123,6 +124,7 @@ class TestLiveMarketDataClientTests:
         self.client = LiveMarketDataClient(
             loop=self.loop,
             client_id=ClientId(BINANCE.value),
+            instrument_provider=InstrumentProvider(),
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,

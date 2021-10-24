@@ -17,8 +17,8 @@ import asyncio
 
 import pytest
 
-from nautilus_trader.adapters.betfair.factory import BetfairLiveDataClientFactory
-from nautilus_trader.adapters.betfair.factory import BetfairLiveExecutionClientFactory
+from nautilus_trader.adapters.betfair.factories import BetfairLiveDataClientFactory
+from nautilus_trader.adapters.betfair.factories import BetfairLiveExecutionClientFactory
 from nautilus_trader.infrastructure.cache import CacheDatabaseConfig
 from nautilus_trader.live.node import TradingNode
 from nautilus_trader.live.node import TradingNodeConfig

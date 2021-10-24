@@ -45,7 +45,7 @@ repos:
             --line-length=100,
         ]
 
-  - repo: https://github.com/PyCQA/isort
+  - repo: https://github.com/pycqa/isort
     rev: 5.9.3
     hooks:
       - id: isort
@@ -79,7 +79,7 @@ repos:
         ]
 
   - repo: https://github.com/pycqa/flake8
-    rev: 3.9.2
+    rev: 4.0.1
     hooks:
       - id: flake8
         name: flake8 (Python)
@@ -157,7 +157,6 @@ repos:
 # E999: SyntaxError: invalid syntax (cimport seen as invalid syntax)
 # S101: Use of assert detected (use of assert normal for pytest)
 # S403: Consider possible security implications associated with pickle module (pickle ok!)
-# W503: in error will be amended by flake8 soon (https://www.flake8rules.com/rules/W503.html)
 
 # pydocstyle ignore justifications
 # --------------------------------

@@ -14,7 +14,10 @@
 # -------------------------------------------------------------------------------------------------
 
 from datetime import datetime
+from typing import List
 
+from nautilus_trader.execution.messages import ExecutionReport
+from nautilus_trader.execution.messages import OrderStatusReport
 from nautilus_trader.live.execution_client import LiveExecutionClient
 from nautilus_trader.model.commands.trading import CancelOrder
 from nautilus_trader.model.commands.trading import ModifyOrder
@@ -38,59 +41,64 @@ from nautilus_trader.model.orders.base import Order
 
 class TemplateLiveExecutionClient(LiveExecutionClient):
     """
-    An example of a ``LiveExecutionClient`` highlighting the overridable abstract methods.
+    An example of a ``LiveExecutionClient`` highlighting the method requirements.
 
-    +------------------------+----------------+
-    | Method                 | Category       |
-    +------------------------+----------------+
-    | connect                | required       |
-    | disconnect             | required       |
-    | reset                  | as required    |
-    | dispose                | as required    |
-    +------------------------+----------------*
-    |                        |                |
-    |                        |                |
-    | to be completed...
+    +------------------------------+-------------+
+    | Method                       | Requirement |
+    +------------------------------+-------------+
+    | connect                      | required    |
+    | disconnect                   | required    |
+    | reset                        | optional    |
+    | dispose                      | optional    |
+    +--------------------------------------------+
+    | submit_order                 | required    |
+    | submit_order_list            | required    |
+    | modify_order                 | required    |
+    | cancel_order                 | required    |
+    | generate_order_status_report | required    |
+    | generate_order_status_report | required    |
+    | generate_exec_reports        | required    |
+    +--------------------------------------------+
 
     """
 
-    def connect(self):
+    def connect(self) -> None:
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
-    def disconnect(self):
+    def disconnect(self) -> None:
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
-    def reset(self):
+    def reset(self) -> None:
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
-    def dispose(self):
+    def dispose(self) -> None:
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
     # -- COMMAND HANDLERS --------------------------------------------------------------------------
 
-    def submit_order(self, command: SubmitOrder):
+    def submit_order(self, command: SubmitOrder) -> None:
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
-    def submit_order_list(self, command: SubmitOrderList):
+    def submit_order_list(self, command: SubmitOrderList) -> None:
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
-    def modify_order(self, command: ModifyOrder):
+    def modify_order(self, command: ModifyOrder) -> None:
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
-    def cancel_order(self, command: CancelOrder):
+    def cancel_order(self, command: CancelOrder) -> None:
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
     # -- RECONCILIATION ----------------------------------------------------------------------------
 
-    async def generate_order_status_report(self, order: Order):
+    async def generate_order_status_report(self, order: Order) -> OrderStatusReport:
         """
         Generate an order status report for the given order.
 
@@ -109,8 +117,11 @@ class TemplateLiveExecutionClient(LiveExecutionClient):
         raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
     async def generate_exec_reports(
-        self, venue_order_id: VenueOrderId, symbol: Symbol, since: datetime = None
-    ):
+        self,
+        venue_order_id: VenueOrderId,
+        symbol: Symbol,
+        since: datetime = None,
+    ) -> List[ExecutionReport]:
         """
         Generate a list of execution reports.
 

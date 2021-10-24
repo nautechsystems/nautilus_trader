@@ -22,6 +22,7 @@ import pydantic
 from dask.base import tokenize
 
 from nautilus_trader.cache.cache import CacheConfig
+from nautilus_trader.common.config import ImportableActorConfig
 from nautilus_trader.data.engine import DataEngineConfig
 from nautilus_trader.execution.engine import ExecEngineConfig
 from nautilus_trader.infrastructure.cache import CacheDatabaseConfig
@@ -233,6 +234,7 @@ class BacktestRunConfig(Partialable):
     engine: Optional[BacktestEngineConfig] = None
     venues: Optional[List[BacktestVenueConfig]] = None
     data: Optional[List[BacktestDataConfig]] = None
+    actors: Optional[List[ImportableActorConfig]] = None
     strategies: Optional[List[ImportableStrategyConfig]] = None
     persistence: Optional[PersistenceConfig] = None
     batch_size_bytes: Optional[int] = None
