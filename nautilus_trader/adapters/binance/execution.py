@@ -79,9 +79,6 @@ class BinanceSpotExecutionClient(LiveExecutionClient):
             The instrument provider.
 
         """
-        self._client = client
-        self._instrument_provider = instrument_provider
-
         super().__init__(
             loop=loop,
             client_id=ClientId(BINANCE_VENUE.value),
@@ -89,13 +86,16 @@ class BinanceSpotExecutionClient(LiveExecutionClient):
             account_id=account_id,
             account_type=AccountType.CASH,
             base_currency=None,
-            instrument_provider=self._instrument_provider,
+            instrument_provider=instrument_provider,
             msgbus=msgbus,
             cache=cache,
             clock=clock,
             logger=logger,
             config={"name": "BinanceExecClient"},
         )
+
+        self._client = client
+        self._instrument_provider = instrument_provider
 
     def connect(self) -> None:
         """Abstract method (implement in subclass)."""
