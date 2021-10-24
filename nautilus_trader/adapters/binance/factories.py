@@ -14,10 +14,23 @@
 # -------------------------------------------------------------------------------------------------
 
 import asyncio
+import os
+from functools import lru_cache
+from typing import Any, Dict
 
+from nautilus_trader.adapters.binance.common import BINANCE_VENUE
+from nautilus_trader.adapters.binance.data import BinanceDataClient
+from nautilus_trader.adapters.binance.execution import BinanceSpotExecutionClient
 from nautilus_trader.adapters.binance.http.client import BinanceHttpClient
+from nautilus_trader.adapters.binance.providers import BinanceInstrumentProvider
+from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.clock import LiveClock
+from nautilus_trader.common.logging import LiveLogger
 from nautilus_trader.common.logging import Logger
+from nautilus_trader.live.factories import LiveDataClientFactory
+from nautilus_trader.live.factories import LiveExecutionClientFactory
+from nautilus_trader.model.identifiers import AccountId
+from nautilus_trader.msgbus.bus import MessageBus
 
 
 HTTP_CLIENTS = {}
@@ -43,3 +56,156 @@ def get_binance_http_client(
         )
         HTTP_CLIENTS[client_key] = client
     return HTTP_CLIENTS[client_key]
+
+
+@lru_cache(1)
+def get_binance_instrument_provider(
+    client: BinanceHttpClient,
+    logger: Logger,
+) -> BinanceInstrumentProvider:
+    return BinanceInstrumentProvider(
+        client=client,
+        logger=logger,
+    )
+
+
+class BinanceLiveDataClientFactory(LiveDataClientFactory):
+    """
+    Provides a `Betfair` live data client factory.
+    """
+
+    @staticmethod
+    def create(
+        loop: asyncio.AbstractEventLoop,
+        name: str,
+        config: Dict[str, Any],
+        msgbus: MessageBus,
+        cache: Cache,
+        clock: LiveClock,
+        logger: LiveLogger,
+        client_cls=None,
+    ) -> BinanceDataClient:
+        """
+        Create a new Binance data client.
+
+        Parameters
+        ----------
+        loop : asyncio.AbstractEventLoop
+            The event loop for the client.
+        name : str
+            The client name.
+        config : dict
+            The configuration dictionary.
+        msgbus : MessageBus
+            The message bus for the client.
+        cache : Cache
+            The cache for the client.
+        clock : LiveClock
+            The clock for the client.
+        logger : LiveLogger
+            The logger for the client.
+        client_cls : class, optional
+            The class to call to return a new internal client.
+
+        Returns
+        -------
+        BinanceDataClient
+
+        """
+        client = get_binance_http_client(
+            key=os.getenv(config.get("api_key")),
+            secret=os.getenv(config.get("api_secret")),
+            loop=loop,
+            clock=clock,
+            logger=logger,
+        )
+
+        # Get instrument provider singleton
+        provider = get_binance_instrument_provider(client=client, logger=logger)
+
+        # Create client
+        data_client = BinanceDataClient(
+            loop=loop,
+            client=client,
+            msgbus=msgbus,
+            cache=cache,
+            clock=clock,
+            logger=logger,
+            instrument_provider=provider,
+        )
+        return data_client
+
+
+class BinanceLiveExecutionClientFactory(LiveExecutionClientFactory):
+    """
+    Provides data and execution clients for Betfair.
+    """
+
+    @staticmethod
+    def create(
+        loop: asyncio.AbstractEventLoop,
+        name: str,
+        config: Dict[str, Any],
+        msgbus: MessageBus,
+        cache: Cache,
+        clock: LiveClock,
+        logger: LiveLogger,
+        client_cls=None,
+    ) -> BinanceSpotExecutionClient:
+        """
+        Create a new Binance execution client.
+
+        Parameters
+        ----------
+        loop : asyncio.AbstractEventLoop
+            The event loop for the client.
+        name : str
+            The client name.
+        config : dict[str, object]
+            The configuration for the client.
+        msgbus : MessageBus
+            The message bus for the client.
+        cache : Cache
+            The cache for the client.
+        clock : LiveClock
+            The clock for the client.
+        logger : LiveLogger
+            The logger for the client.
+        client_cls : class, optional
+            The internal client constructor. This allows external library and
+            testing dependency injection.
+
+        Returns
+        -------
+        BinanceSpotExecutionClient
+
+        """
+        client = get_binance_http_client(
+            key=os.getenv(config.get("api_key")),
+            secret=os.getenv(config.get("api_secret")),
+            loop=loop,
+            clock=clock,
+            logger=logger,
+        )
+
+        # Get instrument provider singleton
+        provider = get_binance_instrument_provider(client=client, logger=logger)
+
+        # Get account ID env variable or set default
+        account_id_env_var = os.getenv(config.get("account_id", ""), "001")
+
+        # Set account ID
+        account_id = AccountId(BINANCE_VENUE.value, account_id_env_var)
+
+        # Create client
+        exec_client = BinanceSpotExecutionClient(
+            loop=loop,
+            client=client,
+            account_id=account_id,
+            msgbus=msgbus,
+            cache=cache,
+            clock=clock,
+            logger=logger,
+            instrument_provider=provider,
+        )
+        return exec_client
