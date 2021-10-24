@@ -85,9 +85,9 @@ class TradingNodeConfig(pydantic.BaseModel):
         The timeout for all engine clients to disconnect.
     check_residuals_delay : PositiveFloat (seconds)
         The delay after stopping the node to check residual state before final shutdown.
-    data_clients : Dict[str, Dict[str, Any]], optional
+    data_clients : dict[str, dict[str, Any]], optional
         The data client configurations.
-    exec_clients : Dict[str, Dict[str, Any]], optional
+    exec_clients : dict[str, dict[str, Any]], optional
         The execution client configurations.
     persistence : LivePersistenceConfig, optional
         The config for enabling persistence via feather files

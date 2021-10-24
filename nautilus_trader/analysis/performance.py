@@ -51,7 +51,7 @@ class PerformanceAnalyzer:
 
         Returns
         -------
-        List[Currency]
+        list[Currency]
 
         """
         return list(self._account_balances.keys())

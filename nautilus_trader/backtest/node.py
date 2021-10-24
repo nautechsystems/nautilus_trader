@@ -76,7 +76,7 @@ class BacktestNode:
 
         Parameters
         ----------
-        run_configs : List[BacktestRunConfig]
+        run_configs : list[BacktestRunConfig]
             The backtest run configurations.
 
         Returns
@@ -107,12 +107,12 @@ class BacktestNode:
 
         Parameters
         ----------
-        run_configs : List[BacktestRunConfig]
+        run_configs : list[BacktestRunConfig]
             The backtest run configurations.
 
         Returns
         -------
-        Dict[str, Any]
+        list[BacktestResult]
             The results of the backtest runs.
 
         """
