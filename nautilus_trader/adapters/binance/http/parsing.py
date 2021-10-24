@@ -17,23 +17,9 @@
 # -------------------------------------------------------------------------------------------------
 
 import json
-from urllib.parse import urlencode
-
-
-def clean_none_value(d) -> dict:
-    out = {}
-    for k in d.keys():
-        if d[k] is not None:
-            out[k] = d[k]
-    return out
-
-
-def encoded_string(query):
-    return urlencode(query, True).replace("%40", "@").replace("%2F", "/")
 
 
 def convert_list_to_json_array(symbols):
     if symbols is None:
         return symbols
-    res = json.dumps(symbols)
-    return res.replace(" ", "")
+    return json.dumps(symbols).replace(" ", "")

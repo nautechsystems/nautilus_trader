@@ -13,12 +13,15 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from typing import Dict, List
+from typing import Dict
 
 import orjson
 
 from nautilus_trader.model.events.order import OrderEvent
+from nautilus_trader.model.events.order import OrderFilled
 from nautilus_trader.model.events.order import OrderInitialized
+from nautilus_trader.serialization.arrow.schema import NAUTILUS_PARQUET_SCHEMA
+from nautilus_trader.serialization.arrow.serializer import register_parquet
 
 
 def serialize(event: OrderEvent):
@@ -36,11 +39,30 @@ def serialize_order_initialized(event: OrderInitialized):
         "price": float,
     }
     data = event.to_dict(event)
-    data.update({"trigger": False, "price": None})
     data.update(orjson.loads(data.pop("options", "{}")))  # noqa: P103
     data = {k: caster[k](v) if (k in caster and v is not None) else v for k, v in data.items()}
     return data
 
 
-def deserialize(data: List[Dict]):
-    raise NotImplementedError()  # pragma: no cover
+def deserialize_order_filled(data: Dict) -> OrderFilled:
+    for k in ("last_px", "last_qty"):
+        data[k] = str(data[k])
+    return OrderFilled.from_dict(data)
+
+
+def deserialize_order_initialised(data: Dict) -> OrderInitialized:
+    for k in ("price", "quantity"):
+        data[k] = str(data[k])
+    options_fields = orjson.loads(
+        NAUTILUS_PARQUET_SCHEMA[OrderInitialized].metadata[b"options_fields"]
+    )
+    data["options"] = orjson.dumps({k: data.pop(k, None) for k in options_fields})
+    return OrderInitialized.from_dict(data)
+
+
+register_parquet(OrderFilled, serializer=serialize, deserializer=deserialize_order_filled)
+register_parquet(
+    OrderInitialized,
+    serializer=serialize_order_initialized,
+    deserializer=deserialize_order_initialised,
+)

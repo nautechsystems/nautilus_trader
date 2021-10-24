@@ -11,34 +11,31 @@
 #  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
-# -------------------------------------------------------------------------------------------------import asyncio
+# -------------------------------------------------------------------------------------------------
 
 import asyncio
 
 import pytest
 
-from nautilus_trader.network.websocket import WebSocketClient
-from tests.test_kit.stubs import TestStubs
+from nautilus_trader.adapters.binance.websocket.futures import BinanceFuturesWebSocket
+from nautilus_trader.common.clock import LiveClock
+from nautilus_trader.common.logging import LiveLogger
 
 
-@pytest.mark.skip(reason="WIP")
 @pytest.mark.asyncio
-async def test_client_recv():
-    num_messages = 3
-    lines = []
+async def test_binance_websocket_client():
+    loop = asyncio.get_event_loop()
+    clock = LiveClock()
 
-    def record(*args, **kwargs):
-        lines.append((args, kwargs))
-
-    client = WebSocketClient(
-        loop=asyncio.get_event_loop(),
-        logger=TestStubs.logger(),
-        handler=record,
-        ws_url="ws://echo.websocket.org",
+    client = BinanceFuturesWebSocket(
+        loop=loop,
+        clock=clock,
+        logger=LiveLogger(loop=loop, clock=clock),
+        handler=print,
     )
-    await client.connect()
-    for _ in range(num_messages):
-        await client.send(b"Hello")
-    await asyncio.sleep(1)
+
+    client.subscribe_book_ticker("BTCUSDT")
+
+    await client.connect(start=True)
+    await asyncio.sleep(4)
     await client.close()
-    assert len(lines) == num_messages

@@ -303,11 +303,11 @@ cdef class Component:
         self._log = LoggerAdapter(component_name=self.id.value, logger=logger)
 
     cdef void _change_msgbus(self, MessageBus msgbus) except *:
+        # As an additional system wiring check: if a message bus is being added
+        # here then there should not be an existing trader ID or message bus.
         Condition.not_none(msgbus, "msgbus")
         Condition.none(self.trader_id, "self.trader_id")
         Condition.none(self._msgbus, "self._msgbus")
-        # As an additional system wiring check: if a message bus is being added
-        # here then there should not be an existing trader ID or message bus.
 
         self.trader_id = msgbus.trader_id
         self._msgbus = msgbus

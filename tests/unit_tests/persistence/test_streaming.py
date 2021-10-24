@@ -13,33 +13,32 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import pathlib
 import sys
+from collections import Counter
 
 import pytest
 
-from nautilus_trader.adapters.betfair.common import BETFAIR_VENUE
 from nautilus_trader.adapters.betfair.providers import BetfairInstrumentProvider
-from nautilus_trader.backtest.engine import BacktestEngine
-from nautilus_trader.model.currencies import GBP
-from nautilus_trader.model.enums import AccountType
-from nautilus_trader.model.enums import BookType
-from nautilus_trader.model.enums import OMSType
-from nautilus_trader.model.enums import VenueType
-from nautilus_trader.model.objects import Money
+from nautilus_trader.backtest.config import BacktestDataConfig
+from nautilus_trader.backtest.config import BacktestRunConfig
+from nautilus_trader.backtest.node import BacktestNode
 from nautilus_trader.persistence.catalog import DataCatalog
 from nautilus_trader.persistence.external.core import process_files
-from nautilus_trader.persistence.streaming import FeatherWriter
-from nautilus_trader.persistence.streaming import read_feather
+from nautilus_trader.persistence.external.readers import CSVReader
 from tests.integration_tests.adapters.betfair.test_kit import BetfairTestStubs
 from tests.test_kit import PACKAGE_ROOT
+from tests.test_kit.mocks import NewsEventData
+from tests.test_kit.mocks import data_catalog_setup
+from tests.test_kit.stubs import TestStubs
 
 
 @pytest.mark.skipif(sys.platform == "win32", reason="test path broken on windows")
 class TestPersistenceStreaming:
     def setup(self):
+        data_catalog_setup()
         self.catalog = DataCatalog.from_env()
         self.fs = self.catalog.fs
+        self._loaded_data_into_catalog()
 
     def _loaded_data_into_catalog(self):
         self.instrument_provider = BetfairInstrumentProvider.from_instruments([])
@@ -59,38 +58,69 @@ class TestPersistenceStreaming:
         )
         return data
 
-    @pytest.mark.skip("Awaiting backtest config refactor")
     def test_feather_writer(self):
         # Arrange
-        path = "/root/backtest001"
-        instruments = self.catalog.instruments(as_nautilus=True)
-        engine = BacktestEngine()
-        self.catalog.setup_engine(engine=engine, instruments=instruments)
-        engine.add_venue(
-            venue=BETFAIR_VENUE,
-            venue_type=VenueType.EXCHANGE,
-            oms_type=OMSType.NETTING,
-            account_type=AccountType.CASH,
-            base_currency=GBP,
-            starting_balances=[Money(100_000, GBP)],
-            book_type=BookType.L2_MBP,
+        instrument = self.catalog.instruments(as_nautilus=True)[0]
+        run_config = BetfairTestStubs.betfair_backtest_run_config(
+            catalog_path=str(self.catalog.path),
+            catalog_fs_protocol=self.catalog.fs.protocol,
+            instrument_id=instrument.id.value,
+        )
+        node = BacktestNode()
+
+        # Act
+        node.run_sync(run_configs=[run_config])
+
+        # Assert
+        result = self.catalog.read_backtest(
+            backtest_run_id=run_config.id, raise_on_failed_deserialize=True
+        )
+        result = dict(Counter([r.__class__.__name__ for r in result]))
+        expected = {
+            "AccountState": 892,
+            "BettingInstrument": 1,
+            "ComponentStateChanged": 7,
+            "OrderAccepted": 396,
+            "OrderBookDeltas": 1077,
+            "OrderBookSnapshot": 1,
+            "OrderDenied": 296,
+            "OrderInitialized": 792,
+            "OrderFilled": 496,
+            "OrderSubmitted": 496,
+            "PositionOpened": 396,
+            "PositionClosed": 100,
+            "TradeTick": 198,
+        }
+        assert result == expected
+
+    def test_feather_writer_generic_data(self):
+        # Arrange
+        TestStubs.setup_news_event_persistence()
+        process_files(
+            glob_path=f"{PACKAGE_ROOT}/data/news_events.csv",
+            reader=CSVReader(block_parser=TestStubs.news_event_parser),
+            catalog=self.catalog,
+        )
+        data_config = BacktestDataConfig(
+            catalog_path="/root/",
+            catalog_fs_protocol="memory",
+            data_cls_path=f"{NewsEventData.__module__}.NewsEventData",
+            client_id="NewsClient",
+        )
+        run_config = BacktestRunConfig(
+            data=[data_config],
+            persistence=BetfairTestStubs.persistence_config(catalog_path=self.catalog.path),
+            venues=[BetfairTestStubs.betfair_venue_config()],
+            strategies=[],
         )
 
         # Act
-        writer = FeatherWriter(path=path, fs_protocol="memory")
-        engine.trader.subscribe("*", writer.write)
-        engine.run()
+        node = BacktestNode()
+        node.run_sync([run_config])
 
         # Assert
-        result = {}
-        for path in self.fs.ls("/root/backtest001/"):
-            name = pathlib.Path(path).name
-            persisted = read_feather(fs=self.fs, path=path)
-            if persisted is not None:
-                result[name] = persisted.shape
-        expected = {
-            "InstrumentStatusUpdate.feather": (2, 4),
-            "OrderBookData.feather": (2384, 11),
-            "TradeTick.feather": (624, 7),
-        }
-        assert result == expected
+        result = self.catalog.read_backtest(
+            backtest_run_id=run_config.id, raise_on_failed_deserialize=True
+        )
+        result = Counter([r.__class__.__name__ for r in result])
+        assert result["NewsEventData"] == 86985

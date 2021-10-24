@@ -17,6 +17,7 @@ import asyncio
 from datetime import datetime
 from typing import List
 
+import pandas as pd
 import pytz
 
 from nautilus_trader.accounting.factory import AccountFactory
@@ -26,10 +27,13 @@ from nautilus_trader.common.enums import ComponentState
 from nautilus_trader.common.events.risk import TradingStateChanged
 from nautilus_trader.common.events.system import ComponentStateChanged
 from nautilus_trader.common.logging import LiveLogger
+from nautilus_trader.common.logging import LogLevelParser
 from nautilus_trader.core.data import Data
+from nautilus_trader.core.datetime import maybe_dt_to_unix_nanos
 from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.model.currencies import GBP
 from nautilus_trader.model.currencies import USD
+from nautilus_trader.model.currency import Currency
 from nautilus_trader.model.data.bar import Bar
 from nautilus_trader.model.data.bar import BarSpecification
 from nautilus_trader.model.data.bar import BarType
@@ -41,6 +45,7 @@ from nautilus_trader.model.data.venue import VenueStatusUpdate
 from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import AggressorSide
 from nautilus_trader.model.enums import BarAggregation
+from nautilus_trader.model.enums import BookAction
 from nautilus_trader.model.enums import BookType
 from nautilus_trader.model.enums import InstrumentStatus
 from nautilus_trader.model.enums import LiquiditySide
@@ -77,15 +82,20 @@ from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.orderbook.book import OrderBook
 from nautilus_trader.model.orderbook.data import Order
+from nautilus_trader.model.orderbook.data import OrderBookDelta
+from nautilus_trader.model.orderbook.data import OrderBookDeltas
 from nautilus_trader.model.orderbook.data import OrderBookSnapshot
 from nautilus_trader.model.orderbook.ladder import Ladder
 from nautilus_trader.model.orders.limit import LimitOrder
 from nautilus_trader.msgbus.bus import MessageBus
 from nautilus_trader.portfolio.portfolio import Portfolio
+from nautilus_trader.serialization.arrow.serializer import register_parquet
+from nautilus_trader.trading.filters import NewsImpact
 from nautilus_trader.trading.strategy import TradingStrategy
 from tests.test_kit.mocks import MockLiveDataEngine
 from tests.test_kit.mocks import MockLiveExecutionEngine
 from tests.test_kit.mocks import MockLiveRiskEngine
+from tests.test_kit.mocks import NewsEventData
 from tests.test_kit.providers import TestInstrumentProvider
 
 
@@ -317,7 +327,7 @@ class TestStubs:
         )
 
     @staticmethod
-    def order(price: float, side: OrderSide, size=10):
+    def order(price: float = 100, side: OrderSide = OrderSide.BUY, size=10):
         return Order(price=price, size=size, side=side)
 
     @staticmethod
@@ -379,6 +389,27 @@ class TestStubs:
         )
 
     @staticmethod
+    def order_book_delta(order=None):
+        return OrderBookDelta(
+            instrument_id=TestStubs.audusd_id(),
+            book_type=BookType.L2_MBP,
+            action=BookAction.ADD,
+            order=order or TestStubs.order(),
+            ts_event=0,
+            ts_init=0,
+        )
+
+    @staticmethod
+    def order_book_deltas(deltas=None):
+        return OrderBookDeltas(
+            instrument_id=TestStubs.audusd_id(),
+            book_type=BookType.L2_MBP,
+            deltas=deltas or [TestStubs.order_book_delta()],
+            ts_event=0,
+            ts_init=0,
+        )
+
+    @staticmethod
     def trader_id() -> TraderId:
         return TraderId("TESTER-000")
 
@@ -403,9 +434,9 @@ class TestStubs:
         )
 
     @staticmethod
-    def betting_account():
+    def betting_account(account_id=None):
         return AccountFactory.create(
-            TestStubs.event_betting_account_state(account_id=TestStubs.account_id())
+            TestStubs.event_betting_account_state(account_id=account_id or TestStubs.account_id())
         )
 
     @staticmethod
@@ -498,9 +529,9 @@ class TestStubs:
             balances=[
                 AccountBalance(
                     GBP,
-                    Money(1_000_000, GBP),
+                    Money(1_000, GBP),
                     Money(0, GBP),
-                    Money(1_000_000, GBP),
+                    Money(1_000, GBP),
                 )
             ],
             info={},
@@ -714,8 +745,12 @@ class TestStubs:
         return LiveClock()
 
     @staticmethod
-    def logger():
-        return LiveLogger(loop=asyncio.get_event_loop(), clock=TestStubs.clock())
+    def logger(level="INFO"):
+        return LiveLogger(
+            loop=asyncio.get_event_loop(),
+            clock=TestStubs.clock(),
+            level_stdout=LogLevelParser.from_str_py(level),
+        )
 
     @staticmethod
     def msgbus():
@@ -784,3 +819,53 @@ class TestStubs:
             clock=TestStubs.clock(),
             logger=TestStubs.logger(),
         )
+
+    @staticmethod
+    def setup_news_event_persistence():
+        import pyarrow as pa
+
+        def _news_event_to_dict(self):
+            return {
+                "name": self.name,
+                "impact": self.impact.name,
+                "currency": self.currency.code,
+                "ts_event": self.ts_event,
+                "ts_init": self.ts_init,
+            }
+
+        def _news_event_from_dict(data):
+            data.update(
+                {
+                    "impact": getattr(NewsImpact, data["impact"]),
+                    "currency": Currency.from_str(data["currency"]),
+                }
+            )
+            return NewsEventData(**data)
+
+        register_parquet(
+            cls=NewsEventData,
+            serializer=_news_event_to_dict,
+            deserializer=_news_event_from_dict,
+            partition_keys=("currency",),
+            schema=pa.schema(
+                {
+                    "name": pa.string(),
+                    "impact": pa.string(),
+                    "currency": pa.string(),
+                    "ts_event": pa.int64(),
+                    "ts_init": pa.int64(),
+                }
+            ),
+            force=True,
+        )
+
+    @staticmethod
+    def news_event_parser(df, state=None):
+        for _, row in df.iterrows():
+            yield NewsEventData(
+                name=str(row["Name"]),
+                impact=getattr(NewsImpact, row["Impact"]),
+                currency=Currency.from_str(row["Currency"]),
+                ts_event=maybe_dt_to_unix_nanos(pd.Timestamp(row["Start"])),
+                ts_init=maybe_dt_to_unix_nanos(pd.Timestamp(row["Start"])),
+            )

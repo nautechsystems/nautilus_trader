@@ -15,7 +15,7 @@
 
 import os
 import pathlib
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Union
 
 import fsspec
 import pandas as pd
@@ -34,8 +34,10 @@ from nautilus_trader.model.data.venue import InstrumentStatusUpdate
 from nautilus_trader.model.instruments.base import Instrument
 from nautilus_trader.model.orderbook.data import OrderBookData
 from nautilus_trader.persistence.external.metadata import load_mappings
+from nautilus_trader.persistence.streaming import read_feather
 from nautilus_trader.persistence.util import Singleton
 from nautilus_trader.serialization.arrow.serializer import ParquetSerializer
+from nautilus_trader.serialization.arrow.serializer import list_schemas
 from nautilus_trader.serialization.arrow.util import GENERIC_DATA_PREFIX
 from nautilus_trader.serialization.arrow.util import camel_to_snake_case
 from nautilus_trader.serialization.arrow.util import class_to_filename
@@ -67,7 +69,9 @@ class DataCatalog(metaclass=Singleton):
             The fs storage options.
 
         """
-        self.fs = fsspec.filesystem(fs_protocol, **(fs_storage_options or {}))
+        self.fs: fsspec.AbstractFileSystem = fsspec.filesystem(
+            fs_protocol, **(fs_storage_options or {})
+        )
         self.path = pathlib.Path(path)
 
     @classmethod
@@ -159,8 +163,17 @@ class DataCatalog(metaclass=Singleton):
         return df
 
     @staticmethod
-    def _handle_table_nautilus(table: pa.Table, cls: type, mappings: Optional[Dict]):
-        dicts = dict_of_lists_to_list_of_dicts(table.to_pydict())
+    def _handle_table_nautilus(
+        table: Union[pa.Table, pd.DataFrame], cls: type, mappings: Optional[Dict]
+    ):
+        if isinstance(table, pa.Table):
+            dicts = dict_of_lists_to_list_of_dicts(table.to_pydict())
+        elif isinstance(table, pd.DataFrame):
+            dicts = table.to_dict("records")
+        else:
+            raise TypeError(
+                f"`table` was {type(table)}, expected `pyarrow.Table` or `pandas.DataFrame`"
+            )
         if not dicts:
             return []
         for key, maps in mappings.items():
@@ -171,7 +184,7 @@ class DataCatalog(metaclass=Singleton):
         return data
 
     def _make_path(self, cls: type) -> str:
-        return f"{self.path}/data/{class_to_filename(cls)}.parquet"
+        return f"{self.path}/data/{class_to_filename(cls=cls)}.parquet"
 
     def query(
         self,
@@ -332,15 +345,41 @@ class DataCatalog(metaclass=Singleton):
             if n.startswith(GENERIC_DATA_PREFIX)
         ]
 
-    def list_partitions(self, cls_type):
+    def list_partitions(self, cls_type: type):
         assert isinstance(cls_type, type), "`cls_type` should be type, i.e. TradeTick"
-        prefix = GENERIC_DATA_PREFIX if not is_nautilus_class(cls_type) else ""
-        name = prefix + camel_to_snake_case(cls_type.__name__)
+        name = class_to_filename(cls_type)
         dataset = pq.ParquetDataset(self.path / f"{name}.parquet", filesystem=self.fs)
         partitions = {}
         for level in dataset.partitions.levels:
             partitions[level.name] = level.keys
         return partitions
+
+    def _read_feather(self, kind: str, run_id: str, raise_on_failed_deserialize: bool = False):
+        class_mapping: Dict[str, type] = {class_to_filename(cls): cls for cls in list_schemas()}
+        data = {}
+        for path in [p for p in self.fs.glob(f"{self.path}/{kind}/{run_id}.feather/*.feather")]:
+            cls_name = camel_to_snake_case(pathlib.Path(path).stem).replace("__", "_")
+            df = read_feather(path=path, fs=self.fs)
+            if df is None:
+                print(f"No data for {cls_name}")
+                continue
+            # Apply post read fixes
+            try:
+                objs = self._handle_table_nautilus(
+                    table=df, cls=class_mapping[cls_name], mappings={}
+                )
+                data[cls_name] = objs
+            except Exception as e:
+                if raise_on_failed_deserialize:
+                    raise
+                print(f"Failed to deserialize {cls_name}: {e}")
+        return sorted(sum(data.values(), list()), key=lambda x: x.ts_init)
+
+    def read_live_run(self, live_run_id: str, **kwargs):
+        return self._read_feather(kind="live", run_id=live_run_id, **kwargs)
+
+    def read_backtest(self, backtest_run_id: str, **kwargs):
+        return self._read_feather(kind="backtest", run_id=backtest_run_id, **kwargs)
 
 
 def combine_filters(*filters):

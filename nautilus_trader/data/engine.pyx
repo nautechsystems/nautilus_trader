@@ -1134,7 +1134,6 @@ cdef class DataEngine(Component):
                 clock=self._clock,
                 logger=self._log.get_logger(),
             )
-
             self._hydrate_aggregator(client, aggregator, bar_type)
         elif bar_type.spec.aggregation == BarAggregation.TICK:
             aggregator = TickBarAggregator(

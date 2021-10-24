@@ -431,6 +431,8 @@ cdef class Position:
             self._handle_buy_order_fill(fill)
         elif fill.order_side == OrderSide.SELL:
             self._handle_sell_order_fill(fill)
+        else:  # pragma: no cover
+            raise ValueError(f"invalid OrderSide, was {fill.order_side}")
 
         # Set quantities
         self.quantity = Quantity(abs(self.net_qty), self.size_precision)

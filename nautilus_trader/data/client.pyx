@@ -13,20 +13,13 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-"""
-The `DataClient` class is responsible for interfacing with a particular API
-which may be presented directly by an exchange, or broker intermediary. It
-could also be possible to write clients for specialized data publishers.
-"""
-
-import asyncio
-
 from cpython.datetime cimport datetime
 
 from nautilus_trader.cache.cache cimport Cache
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.component cimport Component
 from nautilus_trader.common.logging cimport Logger
+from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.data cimport Data
 from nautilus_trader.core.uuid cimport UUID4
 from nautilus_trader.data.messages cimport DataResponse
@@ -87,8 +80,8 @@ cdef class DataClient(Component):
 
         self._cache = cache
 
-        # Feeds
-        self._feeds_generic_data = {}  # type: dict[DataType, asyncio.Task]
+        # Subscriptions
+        self._subscriptions_generic = set()  # type: set[DataType]
 
         self.is_connected = False
 
@@ -107,14 +100,6 @@ cdef class DataClient(Component):
         """
         self.is_connected = value
 
-    def connect(self):
-        """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
-
-    def disconnect(self):
-        """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
-
 # -- SUBSCRIPTIONS ---------------------------------------------------------------------------------
 
     cpdef list subscribed_generic_data(self):
@@ -126,7 +111,7 @@ cdef class DataClient(Component):
         list[DataType]
 
         """
-        return sorted(list(self._feeds_generic_data.keys()))
+        return sorted(list(self._subscriptions_generic))
 
     cpdef void subscribe(self, DataType data_type) except *:
         """Abstract method (implement in subclass)."""
@@ -135,6 +120,34 @@ cdef class DataClient(Component):
     cpdef void unsubscribe(self, DataType data_type) except *:
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
+
+    cpdef void _add_subscription(self, DataType data_type) except *:
+        """
+        Add subscription for the given data type.
+
+        Parameters
+        ----------
+        data_type : DataType
+            The data type for the subscription.
+
+        """
+        Condition.not_none(data_type, "data_type")
+
+        self._subscriptions_generic.add(data_type)
+
+    cpdef void _remove_subscription(self, DataType data_type) except *:
+        """
+        Remove subscription for the given data type.
+
+        Parameters
+        ----------
+        data_type : DataType
+            The data type for the subscription.
+
+        """
+        Condition.not_none(data_type, "data_type")
+
+        self._subscriptions_generic.discard(data_type)
 
 # -- REQUESTS --------------------------------------------------------------------------------------
 
@@ -214,30 +227,19 @@ cdef class MarketDataClient(DataClient):
             config=config,
         )
 
-        # Feeds
-        self._feeds_order_book_delta = {}          # type: dict[InstrumentId, asyncio.Task]
-        self._feeds_order_book_snapshot = {}       # type: dict[InstrumentId, asyncio.Task]
-        self._feeds_ticker = {}                    # type: dict[InstrumentId, asyncio.Task]
-        self._feeds_quote_tick = {}                # type: dict[InstrumentId, asyncio.Task]
-        self._feeds_trade_tick = {}                # type: dict[InstrumentId, asyncio.Task]
-        self._feeds_bar = {}                       # type: dict[BarType, asyncio.Task]
-        self._feeds_instrument_status_update = {}  # type: dict[InstrumentId, asyncio.Task]
-        self._feeds_instrument_close_price = {}    # type: dict[InstrumentId, asyncio.Task]
+        # Subscriptions
+        self._subscriptions_order_book_delta = set()          # type: set[InstrumentId]
+        self._subscriptions_order_book_snapshot = set()       # type: set[InstrumentId]
+        self._subscriptions_ticker = set()                    # type: set[InstrumentId]
+        self._subscriptions_quote_tick = set()                # type: set[InstrumentId]
+        self._subscriptions_trade_tick = set()                # type: set[InstrumentId]
+        self._subscriptions_bar = set()                       # type: set[BarType]
+        self._subscriptions_instrument_status_update = set()  # type: set[InstrumentId]
+        self._subscriptions_instrument_close_price = set()    # type: set[InstrumentId]
+        self._subscriptions_instrument = set()                # type: set[InstrumentId]
 
-        self._feeds_instrument = set()             # type: set[InstrumentId]
+        # Tasks
         self._update_instruments_task = None
-
-    cpdef list unavailable_methods(self):
-        """
-        Return a list of unavailable methods for this data client.
-
-        Returns
-        -------
-        list[str]
-            The names of the unavailable methods.
-
-        """
-        return self._config.get("unavailable_methods", []).copy()
 
 # -- SUBSCRIPTIONS ---------------------------------------------------------------------------------
 
@@ -250,7 +252,7 @@ cdef class MarketDataClient(DataClient):
         list[InstrumentId]
 
         """
-        return sorted(list(self._feeds_instrument))
+        return sorted(list(self._subscriptions_instrument))
 
     cpdef list subscribed_order_book_deltas(self):
         """
@@ -261,7 +263,7 @@ cdef class MarketDataClient(DataClient):
         list[InstrumentId]
 
         """
-        return sorted(list(self._feeds_order_book_delta.keys()))
+        return sorted(list(self._subscriptions_order_book_delta))
 
     cpdef list subscribed_order_book_snapshots(self):
         """
@@ -272,7 +274,7 @@ cdef class MarketDataClient(DataClient):
         list[InstrumentId]
 
         """
-        return sorted(list(self._feeds_order_book_snapshot.keys()))
+        return sorted(list(self._subscriptions_order_book_snapshot))
 
     cpdef list subscribed_tickers(self):
         """
@@ -283,7 +285,7 @@ cdef class MarketDataClient(DataClient):
         list[InstrumentId]
 
         """
-        return sorted(list(self._feeds_ticker.keys()))
+        return sorted(list(self._subscriptions_ticker))
 
     cpdef list subscribed_quote_ticks(self):
         """
@@ -294,7 +296,7 @@ cdef class MarketDataClient(DataClient):
         list[InstrumentId]
 
         """
-        return sorted(list(self._feeds_quote_tick.keys()))
+        return sorted(list(self._subscriptions_quote_tick))
 
     cpdef list subscribed_trade_ticks(self):
         """
@@ -305,7 +307,7 @@ cdef class MarketDataClient(DataClient):
         list[InstrumentId]
 
         """
-        return sorted(list(self._feeds_trade_tick.keys()))
+        return sorted(list(self._subscriptions_trade_tick))
 
     cpdef list subscribed_bars(self):
         """
@@ -316,7 +318,7 @@ cdef class MarketDataClient(DataClient):
         list[BarType]
 
         """
-        return sorted(list(self._feeds_bar.keys()))
+        return sorted(list(self._subscriptions_bar))
 
     cpdef list subscribed_instrument_status_updates(self):
         """
@@ -327,7 +329,7 @@ cdef class MarketDataClient(DataClient):
         list[InstrumentId]
 
         """
-        return sorted(list(self._feeds_instrument_status_update.keys()))
+        return sorted(list(self._subscriptions_instrument_status_update))
 
     cpdef list subscribed_instrument_close_prices(self):
         """
@@ -338,7 +340,7 @@ cdef class MarketDataClient(DataClient):
         list[InstrumentId]
 
         """
-        return sorted(list(self._feeds_instrument_close_price.keys()))
+        return sorted(list(self._subscriptions_instrument_close_price))
 
     cpdef void subscribe(self, DataType data_type) except *:
         """Abstract method (implement in subclass)."""
@@ -373,10 +375,6 @@ cdef class MarketDataClient(DataClient):
         raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
     cpdef void subscribe_trade_ticks(self, InstrumentId instrument_id) except *:
-        """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
-
-    cpdef void subscribe_venue_status_updates(self, InstrumentId instrument_id) except *:
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
@@ -424,10 +422,6 @@ cdef class MarketDataClient(DataClient):
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
-    cpdef void unsubscribe_venue_status_updates(self, InstrumentId instrument_id) except *:
-        """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
-
     cpdef void unsubscribe_instrument_status_updates(self, InstrumentId instrument_id) except *:
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
@@ -435,6 +429,258 @@ cdef class MarketDataClient(DataClient):
     cpdef void unsubscribe_instrument_close_prices(self, InstrumentId instrument_id) except *:
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
+
+    cpdef void _add_subscription_instrument(self, InstrumentId instrument_id) except *:
+        """
+        Add subscription for instrument updates for the given instrument ID.
+
+        Parameters
+        ----------
+        instrument_id : InstrumentId
+            The instrument ID for the subscription.
+
+        """
+        Condition.not_none(instrument_id, "instrument_id")
+
+        self._subscriptions_instrument.add(instrument_id)
+
+    cpdef void _add_subscription_order_book_deltas(self, InstrumentId instrument_id) except *:
+        """
+        Add subscription for order book deltas for the given instrument ID.
+
+        Parameters
+        ----------
+        instrument_id : InstrumentId
+            The instrument ID for the subscription.
+
+        """
+        Condition.not_none(instrument_id, "instrument_id")
+
+        self._subscriptions_order_book_delta.add(instrument_id)
+
+    cpdef void _add_subscription_order_book_snapshots(self, InstrumentId instrument_id) except *:
+        """
+        Add subscription for order book snapshots for the given instrument ID.
+
+        Parameters
+        ----------
+        instrument_id : InstrumentId
+            The instrument ID for the subscription.
+
+        """
+        Condition.not_none(instrument_id, "instrument_id")
+
+        self._subscriptions_order_book_snapshot.add(instrument_id)
+
+    cpdef void _add_subscription_ticker(self, InstrumentId instrument_id) except *:
+        """
+        Add subscription for ticker updates for the given instrument ID.
+
+        Parameters
+        ----------
+        instrument_id : InstrumentId
+            The instrument ID for the subscription.
+
+        """
+        Condition.not_none(instrument_id, "instrument_id")
+
+        self._subscriptions_ticker.add(instrument_id)
+
+    cpdef void _add_subscription_quote_ticks(self, InstrumentId instrument_id) except *:
+        """
+        Add subscription for quote ticks for the given instrument ID.
+
+        Parameters
+        ----------
+        instrument_id : InstrumentId
+            The instrument ID for the subscription.
+
+        """
+        Condition.not_none(instrument_id, "instrument_id")
+
+        self._subscriptions_quote_tick.add(instrument_id)
+
+    cpdef void _add_subscription_trade_ticks(self, InstrumentId instrument_id) except *:
+        """
+        Add subscription for trade ticks for the given instrument ID.
+
+        Parameters
+        ----------
+        instrument_id : InstrumentId
+            The instrument ID for the subscription.
+
+        """
+        Condition.not_none(instrument_id, "instrument_id")
+
+        self._subscriptions_trade_tick.add(instrument_id)
+
+    cpdef void _add_subscription_bars(self, BarType bar_type) except *:
+        """
+        Add subscription for bars for the bar type.
+
+        Parameters
+        ----------
+        bar_type : BarType
+            The bar type for the subscription.
+
+        """
+        Condition.not_none(bar_type, "bar_type")
+
+        self._subscriptions_bar.add(bar_type)
+
+    cpdef void _add_subscription_instrument_status_updates(self, InstrumentId instrument_id) except *:
+        """
+        Add subscription for instrument status updates for the given instrument ID.
+
+        Parameters
+        ----------
+        instrument_id : InstrumentId
+            The instrument ID for the subscription.
+
+        """
+        Condition.not_none(instrument_id, "instrument_id")
+
+        self._subscriptions_instrument_status_update.add(instrument_id)
+
+    cpdef void _add_subscription_instrument_close_prices(self, InstrumentId instrument_id) except *:
+        """
+        Add subscription for instrument close price updates for the given instrument ID.
+
+        Parameters
+        ----------
+        instrument_id : InstrumentId
+            The instrument ID for the subscription.
+
+        """
+        Condition.not_none(instrument_id, "instrument_id")
+
+        self._subscriptions_instrument_close_price.add(instrument_id)
+
+    cpdef void _remove_subscription_instrument(self, InstrumentId instrument_id) except *:
+        """
+        Remove subscription for instrument updates for the given instrument ID.
+
+        Parameters
+        ----------
+        instrument_id : InstrumentId
+            The instrument ID for the subscription.
+
+        """
+        Condition.not_none(instrument_id, "instrument_id")
+
+        self._subscriptions_instrument.discard(instrument_id)
+
+    cpdef void _remove_subscription_order_book_deltas(self, InstrumentId instrument_id) except *:
+        """
+        Remove subscription for order book deltas for the given instrument ID.
+
+        Parameters
+        ----------
+        instrument_id : InstrumentId
+            The instrument ID for the subscription.
+
+        """
+        Condition.not_none(instrument_id, "instrument_id")
+
+        self._subscriptions_order_book_delta.discard(instrument_id)
+
+    cpdef void _remove_subscription_order_book_snapshots(self, InstrumentId instrument_id) except *:
+        """
+        Remove subscription for order book snapshots for the given instrument ID.
+
+        Parameters
+        ----------
+        instrument_id : InstrumentId
+            The instrument ID for the subscription.
+
+        """
+        Condition.not_none(instrument_id, "instrument_id")
+
+        self._subscriptions_order_book_snapshot.discard(instrument_id)
+
+    cpdef void _remove_subscription_ticker(self, InstrumentId instrument_id) except *:
+        """
+        Remove subscription for ticker updates for the given instrument ID.
+
+        Parameters
+        ----------
+        instrument_id : InstrumentId
+            The instrument ID for the subscription.
+
+        """
+        Condition.not_none(instrument_id, "instrument_id")
+
+        self._subscriptions_ticker.discard(instrument_id)
+
+    cpdef void _remove_subscription_quote_ticks(self, InstrumentId instrument_id) except *:
+        """
+        Remove subscription for quote ticks for the given instrument ID.
+
+        Parameters
+        ----------
+        instrument_id : InstrumentId
+            The instrument ID for the subscription.
+
+        """
+        Condition.not_none(instrument_id, "instrument_id")
+
+        self._subscriptions_quote_tick.discard(instrument_id)
+
+    cpdef void _remove_subscription_trade_ticks(self, InstrumentId instrument_id) except *:
+        """
+        Remove subscription for trade ticks for the given instrument ID.
+
+        Parameters
+        ----------
+        instrument_id : InstrumentId
+            The instrument ID for the subscription.
+
+        """
+        Condition.not_none(instrument_id, "instrument_id")
+
+        self._subscriptions_trade_tick.discard(instrument_id)
+
+    cpdef void _remove_subscription_bars(self, BarType bar_type) except *:
+        """
+        Remove subscription for bars for the given bar type.
+
+        Parameters
+        ----------
+        bar_type : BarType
+            The bar type for the subscription.
+
+        """
+        Condition.not_none(bar_type, "bar_type")
+
+        self._subscriptions_bar.discard(bar_type)
+
+    cpdef void _remove_subscription_instrument_status_updates(self, InstrumentId instrument_id) except *:
+        """
+        Remove subscription for instrument status updates for the given instrument ID.
+
+        Parameters
+        ----------
+        instrument_id : InstrumentId
+            The instrument ID for the subscription.
+
+        """
+        Condition.not_none(instrument_id, "instrument_id")
+
+        self._subscriptions_instrument_status_update.discard(instrument_id)
+
+    cpdef void _remove_subscription_instrument_close_prices(self, InstrumentId instrument_id) except *:
+        """
+        Remove subscription for instrument close price updates for the given instrument ID.
+
+        Parameters
+        ----------
+        instrument_id : InstrumentId
+            The instrument ID for the subscription.
+
+        """
+        Condition.not_none(instrument_id, "instrument_id")
+
+        self._subscriptions_instrument_close_price.discard(instrument_id)
 
 # -- REQUESTS --------------------------------------------------------------------------------------
 

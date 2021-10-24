@@ -30,6 +30,7 @@ from nautilus_trader.backtest.execution_client cimport BacktestExecClient
 from nautilus_trader.backtest.models cimport FillModel
 from nautilus_trader.backtest.modules cimport SimulationModule
 from nautilus_trader.cache.cache cimport Cache
+from nautilus_trader.common.actor import Actor
 from nautilus_trader.common.clock cimport LiveClock
 from nautilus_trader.common.clock cimport TestClock
 from nautilus_trader.common.logging cimport Logger
@@ -381,6 +382,41 @@ cdef class BacktestEngine:
             f"{type(first).__name__} element{'' if len(data) == 1 else 's'}.",
         )
 
+    def add_data(self, list data) -> None:
+        """
+        Add the tick data to the backtest engine.
+
+        Parameters
+        ----------
+        data : list[Tick]
+            The tick data to add.
+
+        Raises
+        ------
+        ValueError
+            If `data` is empty.
+
+        """
+        Condition.not_empty(data, "data")
+        cdef Data first = data[0]
+        assert hasattr(first, 'instrument_id'), "added data must have an instrument_id property"
+        Condition.true(
+            first.instrument_id in self._cache.instrument_ids(),
+            "Instrument for given data not found in the cache. "
+            "Please call `add_instrument()` before adding related data.",
+        )
+
+        # Check client has been registered
+        self._add_market_data_client_if_not_exists(first.instrument_id.venue)
+
+        # Add data
+        self._data = sorted(self._data + data, key=lambda x: x.ts_init)
+
+        self._log.info(
+            f"Added {len(data):,} {first.instrument_id} "
+            f"{type(first).__name__} element{'' if len(data) == 1 else 's'}.",
+        )
+
     def add_bars(self, list data) -> None:
         """
         Add the built bar data objects to the backtest engines. Suitable for
@@ -458,6 +494,11 @@ cdef class BacktestEngine:
         Condition.not_none(data, "data")
 
         self._data = pickle.loads(data)
+
+        self._log.info(
+            f"Loaded {len(self._data):,} data "
+            f"element{'' if len(data) == 1 else 's'} from pickle.",
+        )
 
     def add_venue(
         self,
@@ -567,6 +608,40 @@ cdef class BacktestEngine:
 
         self._log.info(f"Added {exchange}.")
 
+    def change_fill_model(self, Venue venue, FillModel model) -> None:
+        """
+        Change the fill model for the exchange of the given venue.
+
+        Parameters
+        ----------
+        venue : Venue
+            The venue of the simulated exchange.
+        model : FillModel
+            The fill model to change to.
+
+        """
+        Condition.not_none(venue, "venue")
+        Condition.not_none(model, "model")
+        Condition.is_in(venue, self._exchanges, "venue", "self._exchanges")
+
+        self._exchanges[venue].set_fill_model(model)
+
+    def add_component(self, component: Actor) -> None:
+        # Checked inside trader
+        self.trader.add_component(component)
+
+    def add_components(self, components: List[Actor]) -> None:
+        # Checked inside trader
+        self.trader.add_components(components)
+
+    def add_strategy(self, strategy: TradingStrategy) -> None:
+        # Checked inside trader
+        self.trader.add_strategy(strategy)
+
+    def add_strategies(self, strategies: List[TradingStrategy]) -> None:
+        # Checked inside trader
+        self.trader.add_strategies(strategies)
+
     def reset(self) -> None:
         """
         Reset the backtest engine.
@@ -644,32 +719,6 @@ cdef class BacktestEngine:
         self._data_engine.dispose()
         self._exec_engine.dispose()
         self._risk_engine.dispose()
-
-    def change_fill_model(self, Venue venue, FillModel model) -> None:
-        """
-        Change the fill model for the exchange of the given venue.
-
-        Parameters
-        ----------
-        venue : Venue
-            The venue of the simulated exchange.
-        model : FillModel
-            The fill model to change to.
-
-        """
-        Condition.not_none(venue, "venue")
-        Condition.not_none(model, "model")
-        Condition.is_in(venue, self._exchanges, "venue", "self._exchanges")
-
-        self._exchanges[venue].set_fill_model(model)
-
-    def add_strategy(self, strategy: TradingStrategy) -> None:
-        # Checked inside trader
-        self.trader.add_strategy(strategy)
-
-    def add_strategies(self, strategies: List[TradingStrategy]) -> None:
-        # Checked inside trader
-        self.trader.add_strategies(strategies)
 
     def run(
         self,

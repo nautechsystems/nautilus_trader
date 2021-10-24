@@ -17,13 +17,38 @@ from typing import Any, Dict, Optional
 
 import pydantic
 from pydantic import PositiveFloat
+from pydantic import PositiveInt
 
 from nautilus_trader.cache.cache import CacheConfig
+from nautilus_trader.data.config import DataEngineConfig
+from nautilus_trader.execution.config import ExecEngineConfig
 from nautilus_trader.infrastructure.cache import CacheDatabaseConfig
-from nautilus_trader.live.data_engine import LiveDataEngineConfig
-from nautilus_trader.live.execution_engine import LiveExecEngineConfig
-from nautilus_trader.live.risk_engine import LiveRiskEngineConfig
-from nautilus_trader.persistence.config import LivePersistenceConfig
+from nautilus_trader.persistence.config import PersistenceConfig
+from nautilus_trader.risk.config import RiskEngineConfig
+
+
+class LiveDataEngineConfig(DataEngineConfig):
+    """
+    Configuration for ``LiveDataEngine`` instances.
+    """
+
+    qsize: PositiveInt = 10000
+
+
+class LiveRiskEngineConfig(RiskEngineConfig):
+    """
+    Configuration for ``LiveRiskEngine`` instances.
+    """
+
+    qsize: PositiveInt = 10000
+
+
+class LiveExecEngineConfig(ExecEngineConfig):
+    """
+    Configuration for ``LiveExecEngine`` instances.
+    """
+
+    qsize: PositiveInt = 10000
 
 
 class TradingNodeConfig(pydantic.BaseModel):
@@ -60,9 +85,9 @@ class TradingNodeConfig(pydantic.BaseModel):
         The timeout for all engine clients to disconnect.
     check_residuals_delay : PositiveFloat (seconds)
         The delay after stopping the node to check residual state before final shutdown.
-    data_clients : Dict[str, Dict[str, Any]], optional
+    data_clients : dict[str, dict[str, Any]], optional
         The data client configurations.
-    exec_clients : Dict[str, Dict[str, Any]], optional
+    exec_clients : dict[str, dict[str, Any]], optional
         The execution client configurations.
     persistence : LivePersistenceConfig, optional
         The config for enabling persistence via feather files
@@ -85,4 +110,4 @@ class TradingNodeConfig(pydantic.BaseModel):
     check_residuals_delay: PositiveFloat = 10.0
     data_clients: Dict[str, Dict[str, Any]] = {}
     exec_clients: Dict[str, Dict[str, Any]] = {}
-    persistence: Optional[LivePersistenceConfig] = None
+    persistence: Optional[PersistenceConfig] = None

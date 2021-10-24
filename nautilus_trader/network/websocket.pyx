@@ -15,7 +15,8 @@
 
 import asyncio
 import types
-from typing import Callable, Dict, List, Optional
+from asyncio import Task
+from typing import Callable, List, Optional
 
 import aiohttp
 from aiohttp import WSMessage
@@ -35,9 +36,8 @@ cdef class WebSocketClient:
         self,
         loop not None: asyncio.AbstractEventLoop,
         Logger logger not None: Logger,
-        handler: Callable[[bytes], None],
-        str ws_url not None,
-        kwargs: Optional[Dict] = None,
+        handler not None: Callable[[bytes], None],
+        max_retry_connection=0,
     ):
         """
         Initialize a new instance of the ``WebSocketClient`` class.
@@ -49,87 +49,120 @@ cdef class WebSocketClient:
         logger : LoggerAdapter
             The logger adapter for the client.
         handler : Callable[[bytes], None]
-            The handler for received raw data.
-        ws_url : str
-            The websocket url to connect to.
-        kwargs : dict, optional
-            The additional kwargs to pass to aiohttp.ClientSession._ws_connect().
-
-        Raises
-        ------
-        ValueError
-            If ws_url is not a valid string.
+            The handler for rece    ived raw data.
 
         """
-        Condition.valid_string(ws_url, "ws_url")
-
-        self.ws_url = ws_url
-
         self._loop = loop
-        self._log = LoggerAdapter(
-            component_name=type(self).__name__,
-            logger=logger,
-        )
+        self._log = LoggerAdapter(component_name=type(self).__name__, logger=logger)
         self._handler = handler
-        self._ws_connect_kwargs = kwargs or {}
+        self._ws_url = None
+        self._ws_kwargs = {}
 
         self._session: Optional[aiohttp.ClientSession] = None
-        self._ws: Optional[aiohttp.ClientWebSocketResponse] = None
+        self._socket: Optional[aiohttp.ClientWebSocketResponse] = None
         self._tasks: List[asyncio.Task] = []
-        self._running = False
         self._stopped = False
         self._trigger_stop = False
+        self._connection_retry_count = 0
+        self._unknown_message_count = 0
+        self._max_retry_connection = max_retry_connection
+        self.is_connected = False
 
-    async def connect(self, bint start=True) -> None:
+    async def connect(
+        self,
+        str ws_url,
+        bint start=True,
+        **ws_kwargs,
+    ) -> None:
+        Condition.valid_string(ws_url, "ws_url")
+
+        self._log.debug(f"Connecting to websocket: {ws_url}...")
         self._session = aiohttp.ClientSession(loop=self._loop)
-        self._log.debug(f"Connecting to websocket: {self.ws_url}...")
-        self._ws = await self._session.ws_connect(url=self.ws_url, **self._ws_connect_kwargs)
+        self._socket = await self._session.ws_connect(url=ws_url, **ws_kwargs)
+        self._ws_url = ws_url
+        self._ws_kwargs = ws_kwargs
         await self.post_connect()
         if start:
-            self._running = True
-            task = self._loop.create_task(self.start())
+            task: Task = self._loop.create_task(self.start())
             self._tasks.append(task)
+        self.is_connected = True
 
     async def post_connect(self):
-        """ Optional post connect to send any connection messages or other. Called before start()"""
+        """
+        Actions to be performed post connection.
+
+        This method is called before start(), override to implement additional
+        connection related behaviour (sending other messages etc.).
+        """
         pass
 
     async def disconnect(self) -> None:
         self._trigger_stop = True
         while not self._stopped:
             await self._sleep0()
-        await self._ws.close()
+        await self._socket.close()
         self._log.debug("Websocket closed")
 
     async def send(self, raw: bytes) -> None:
         self._log.debug("SEND:" + str(raw))
-        await self._ws.send_bytes(raw)
+        await self._socket.send_bytes(raw)
 
-    async def recv(self) -> bytes:
+    async def recv(self) -> Optional[bytes]:
         try:
-            resp: WSMessage = await self._ws.receive()
+            resp: WSMessage = await self._socket.receive()
             if resp.type == WSMsgType.TEXT:
                 return resp.data.encode()
             elif resp.type == WSMsgType.BINARY:
                 return resp.data
+            elif resp.type in (WSMsgType.ERROR, WSMsgType.CLOSE, WSMsgType.CLOSING, WSMsgType.CLOSED):
+                self._log.warning(f"Received closing msg {resp}")
+                raise ConnectionAbortedError("Websocket error or closed")
             else:
-                raise TypeError(f"Unknown websocket response data type: {resp.type}")
-        except asyncio.IncompleteReadError as ex:
+                self._log.warning(
+                    f"Received unknown data type: {resp.type} data: {resp.data}",
+                )
+                self._unknown_message_count += 1
+                if self._unknown_message_count > 20:
+                    # This shouldn't be happening and we don't want to spam the logger, trigger a reconnection
+                    raise ConnectionAbortedError("Too many unknown messages")
+                return b""
+        except (asyncio.IncompleteReadError, ConnectionAbortedError, RuntimeError) as ex:
             self._log.exception(ex)
-            await self.connect(start=False)
+            self._log.debug(
+                f"Error, attempting reconnection {self._connection_retry_count=} "
+                f"{self._max_retry_connection=}",
+            )
+            if self._connection_retry_count > self._max_retry_connection:
+                raise MaxRetriesExceeded(f"Max retries of {self._max_retry_connection} exceeded")
+            await self._reconnect_backoff()
+            self._connection_retry_count += 1
+            self._log.debug(
+                f"Attempting reconnect "
+                f"(attempt: {self._connection_retry_count}) after exception",
+            )
+            await self.connect(ws_url=self._ws_url, start=False, **self._ws_kwargs)
+
+    async def _reconnect_backoff(self):
+        backoff = 2 ** self._connection_retry_count
+        self._log.debug(
+            f"Exponential backoff attempt "
+            f"{self._connection_retry_count}, sleeping for {backoff}",
+        )
+        await asyncio.sleep(backoff)
 
     async def start(self) -> None:
         self._log.debug("Starting recv loop")
-        while self._running:
+        while not self._trigger_stop:
             try:
                 raw = await self.recv()
-                self._log.debug("[RECV] {raw}")
+                if raw is None:
+                    continue
+                self._log.debug(f"[RECV] {raw}")
                 if raw is not None:
                     self._handler(raw)
             except Exception as ex:
                 # TODO - Handle disconnect? Should we reconnect or throw?
                 self._log.exception(ex)
-                self._running = False
         self._log.debug("Stopped")
         self._stopped = True
 
@@ -148,3 +181,7 @@ cdef class WebSocketClient:
         # Uses a bare 'yield' expression (which Task.__step knows how to handle)
         # instead of creating a Future object.
         yield
+
+
+class MaxRetriesExceeded(ConnectionError):
+    pass

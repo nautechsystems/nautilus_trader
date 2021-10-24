@@ -13,6 +13,11 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+"""
+The `LiveExecutionClient` class is responsible for interfacing with a particular
+API which may be presented directly by an exchange, or broker intermediary.
+"""
+
 import asyncio
 
 import pandas as pd
@@ -55,11 +60,11 @@ cdef class LiveExecutionClient(ExecutionClient):
         self,
         loop not None: asyncio.AbstractEventLoop,
         ClientId client_id not None,
+        InstrumentProvider instrument_provider not None,
         VenueType venue_type,
         AccountId account_id not None,
         AccountType account_type,
         Currency base_currency,  # Can be None
-        InstrumentProvider instrument_provider not None,
         MessageBus msgbus not None,
         Cache cache not None,
         LiveClock clock not None,
@@ -75,6 +80,8 @@ cdef class LiveExecutionClient(ExecutionClient):
             The event loop for the client.
         client_id : ClientId
             The client ID.
+        instrument_provider : InstrumentProvider
+            The instrument provider for the client.
         venue_type : VenueType
             The client venue type.
         account_id : AccountId
@@ -83,8 +90,6 @@ cdef class LiveExecutionClient(ExecutionClient):
             The account type for the client.
         base_currency : Currency, optional
             The account base currency for the client. Use ``None`` for multi-currency accounts.
-        instrument_provider : InstrumentProvider
-            The instrument provider for the client.
         msgbus : MessageBus
             The message bus for the client.
         cache : Cache
@@ -121,38 +126,9 @@ cdef class LiveExecutionClient(ExecutionClient):
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
-    cpdef void reset(self) except *:
-        """
-        Reset the client.
-        """
-        if self.is_connected:
-            self._log.error("Cannot reset a connected execution client.")
-            return
-
-        self._log.info("Resetting...")
-
-        self._on_reset()
-
-        self._log.info("Reset.")
-
-    cdef void _on_reset(self) except *:
-        """
-        Actions to be performed when client is reset.
-        """
-        pass  # Optionally override in subclass
-
-    cpdef void dispose(self) except *:
-        """
-        Dispose the client.
-        """
-        if self.is_connected:
-            self._log.error("Cannot dispose a connected execution client.")
-            return
-
-        self._log.info("Disposing...")
-
-        # Nothing to dispose yet
-        self._log.info("Disposed.")
+    async def run_after_delay(self, delay, coro):
+        await asyncio.sleep(delay)
+        return await coro
 
     async def generate_order_status_report(self, Order order):
         """

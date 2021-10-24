@@ -115,27 +115,16 @@ cdef class Trader(Component):
         self._risk_engine = risk_engine
         self._exec_engine = exec_engine
 
-        self._strategies = []
         self._components = []
+        self._strategies = []
 
         self.analyzer = PerformanceAnalyzer()
-
-    cdef list strategies_c(self):
-        return self._strategies
 
     cdef list components_c(self):
         return self._components
 
-    cpdef list strategy_ids(self):
-        """
-        Return the strategy IDs loaded in the trader.
-
-        Returns
-        -------
-        list[StrategyId]
-
-        """
-        return sorted([strategy.id for strategy in self._strategies])
+    cdef list strategies_c(self):
+        return self._strategies
 
     cpdef list component_ids(self):
         """
@@ -148,21 +137,16 @@ cdef class Trader(Component):
         """
         return sorted([component.id for component in self._components])
 
-    cpdef dict strategy_states(self):
+    cpdef list strategy_ids(self):
         """
-        Return the traders strategy states.
+        Return the strategy IDs loaded in the trader.
 
         Returns
         -------
-        dict[StrategyId, str]
+        list[StrategyId]
 
         """
-        cdef dict states = {}
-        cdef TradingStrategy strategy
-        for strategy in self._strategies:
-            states[strategy.id] = strategy.state_string_c()
-
-        return states
+        return sorted([strategy.id for strategy in self._strategies])
 
     cpdef dict component_states(self):
         """
@@ -180,16 +164,21 @@ cdef class Trader(Component):
 
         return states
 
-    cpdef list components(self):
+    cpdef dict strategy_states(self):
         """
-        Return the custom components loaded in the trader.
+        Return the traders strategy states.
 
         Returns
         -------
-        list[Actor]
+        dict[StrategyId, str]
 
         """
-        return self._components.copy()
+        cdef dict states = {}
+        cdef TradingStrategy strategy
+        for strategy in self._strategies:
+            states[strategy.id] = strategy.state_string_c()
+
+        return states
 
 # -- ACTION IMPLEMENTATIONS ------------------------------------------------------------------------
 
@@ -198,22 +187,15 @@ cdef class Trader(Component):
             self._log.error(f"No strategies loaded.")
             return
 
-        cdef TradingStrategy strategy
-        for strategy in self._strategies:
-            strategy.start()
-
         cdef Actor component
         for component in self._components:
             component.start()
 
-    cpdef void _stop(self) except *:
         cdef TradingStrategy strategy
         for strategy in self._strategies:
-            if strategy.is_running_c():
-                strategy.stop()
-            else:
-                self._log.warning(f"{strategy} already stopped.")
+            strategy.start()
 
+    cpdef void _stop(self) except *:
         cdef Actor component
         for component in self._components:
             if component.is_running_c():
@@ -221,26 +203,33 @@ cdef class Trader(Component):
             else:
                 self._log.warning(f"{component} already stopped.")
 
-    cpdef void _reset(self) except *:
         cdef TradingStrategy strategy
         for strategy in self._strategies:
-            strategy.reset()
+            if strategy.is_running_c():
+                strategy.stop()
+            else:
+                self._log.warning(f"{strategy} already stopped.")
 
+    cpdef void _reset(self) except *:
         cdef Actor component
         for component in self._components:
             component.reset()
+
+        cdef TradingStrategy strategy
+        for strategy in self._strategies:
+            strategy.reset()
 
         self._portfolio.reset()
         self.analyzer.reset()
 
     cpdef void _dispose(self) except *:
-        cdef TradingStrategy strategy
-        for strategy in self._strategies:
-            strategy.dispose()
-
         cdef Actor component
         for component in self._components:
             component.dispose()
+
+        cdef TradingStrategy strategy
+        for strategy in self._strategies:
+            strategy.dispose()
 
 # --------------------------------------------------------------------------------------------------
 

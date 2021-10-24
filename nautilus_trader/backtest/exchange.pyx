@@ -893,7 +893,7 @@ cdef class SimulatedExchange:
                 trigger = order.trigger
             self._update_stop_limit_order(order, qty, price, trigger)
         else:  # pragma: no cover (design-time error)
-            raise RuntimeError("invalid order type")
+            raise ValueError(f"invalid OrderType, was {order.type}")
 
         if order.contingency == ContingencyType.OCO and update_ocos:
             self._update_oco_orders(order)
@@ -1019,7 +1019,7 @@ cdef class SimulatedExchange:
         elif order.type == OrderType.STOP_LIMIT:
             self._match_stop_limit_order(order)
         else:  # pragma: no cover (design-time error)
-            raise RuntimeError("invalid order type")
+            raise ValueError(f"invalid OrderType, was {order.type}")
 
     cdef void _match_limit_order(self, LimitOrder order) except *:
         if self._is_limit_matched(order.instrument_id, order.side, order.price):
@@ -1067,6 +1067,8 @@ cdef class SimulatedExchange:
             if bid is None:  # No market
                 return False
             return order_price <= bid  # Match with LIMIT buys
+        else:  # pragma: no cover (design-time error)
+            raise ValueError(f"invalid OrderSide, was {side}")
 
     cdef bint _is_limit_matched(self, InstrumentId instrument_id, OrderSide side, Price price) except *:
         cdef Price bid
@@ -1081,6 +1083,8 @@ cdef class SimulatedExchange:
             if bid is None:
                 return False  # No market
             return price < bid or (bid == price and self.fill_model.is_limit_filled())
+        else:  # pragma: no cover (design-time error)
+            raise ValueError(f"invalid OrderSide, was {side}")
 
     cdef bint _is_stop_marketable(self, InstrumentId instrument_id, OrderSide side, Price price) except *:
         cdef Price bid
@@ -1095,6 +1099,8 @@ cdef class SimulatedExchange:
             if bid is None:
                 return False  # No market
             return bid <= price  # Match with LIMIT buys
+        else:  # pragma: no cover (design-time error)
+            raise ValueError(f"invalid OrderSide, was {side}")
 
     cdef bint _is_stop_triggered(self, InstrumentId instrument_id, OrderSide side, Price price) except *:
         cdef Price bid
@@ -1109,6 +1115,8 @@ cdef class SimulatedExchange:
             if bid is None:
                 return False  # No market
             return bid < price or (bid == price and self.fill_model.is_stop_filled())
+        else:  # pragma: no cover (design-time error)
+            raise ValueError(f"invalid OrderSide, was {side}")
 
     cdef list _determine_limit_price_and_volume(self, PassiveOrder order):
         if self.bar_execution:
@@ -1218,6 +1226,8 @@ cdef class SimulatedExchange:
                     fill_px = Price(fill_px + instrument.price_increment, instrument.price_precision)
                 elif order.side == OrderSide.SELL:
                     fill_px = Price(fill_px - instrument.price_increment, instrument.price_precision)
+                else:  # pragma: no cover (design-time error)
+                    raise ValueError(f"invalid OrderSide, was {order.side}")
             if order.is_reduce_only and fill_qty > position.quantity:
                 # Adjust fill to honor reduce only execution
                 org_qty: Decimal = fill_qty.as_decimal()
@@ -1254,6 +1264,9 @@ cdef class SimulatedExchange:
                 fill_px = Price(fill_px + instrument.price_increment, instrument.price_precision)
             elif order.side == OrderSide.SELL:
                 fill_px = Price(fill_px - instrument.price_increment, instrument.price_precision)
+            else:  # pragma: no cover (design-time error)
+                raise ValueError(f"invalid OrderSide, was {order.side}")
+
             self._fill_order(
                 instrument=instrument,
                 order=order,

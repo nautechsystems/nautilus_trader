@@ -19,6 +19,7 @@ from typing import Dict, List
 import orjson
 
 from nautilus_trader.model.events.account import AccountState
+from nautilus_trader.serialization.arrow.serializer import register_parquet
 
 
 def serialize(state: AccountState):
@@ -62,3 +63,11 @@ def deserialize(data: List[Dict]):
         chunk = list(chunk)  # type: ignore
         results.append(_deserialize(values=chunk))
     return sorted(results, key=lambda x: x.ts_init)
+
+
+register_parquet(
+    AccountState,
+    serializer=serialize,
+    deserializer=deserialize,
+    chunk=True,
+)
