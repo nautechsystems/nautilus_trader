@@ -57,6 +57,7 @@ cdef class CurrencySpot(Instrument):
         taker_fee not None: Decimal,
         int64_t ts_event,
         int64_t ts_init,
+        str tick_scheme_name=None,
         dict info=None,
     ):
         """

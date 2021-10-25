@@ -15,18 +15,21 @@
 
 from enum import Enum
 
-import numpy as np
-
+from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import TimeInForce
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.objects import Price
+from nautilus_trader.model.tick_scheme import register_tick_scheme
+from nautilus_trader.model.tick_scheme.implementations.tiered import TieredTickScheme
 
 
 BETFAIR_VENUE = Venue("BETFAIR")
+BETFAIR_PRICE_PRECISION = 7
 
-# -- MAPPINGS -------------------------------
 """
+# ------------------------------- MAPPINGS ------------------------------- #
+
 Mappings between Nautilus and betfair.
 
 Prefixes:
@@ -67,29 +70,8 @@ B2N_ORDER_STREAM_SIDE = {
     "L": OrderSide.SELL,
 }
 
-# TODO - Clean this up with Price() objects?
 
-
-def parse_price(p):
-    return int(round(p * 100))
-
-
-def parse_prob(p):
-    return str(round(p, 5)).ljust(7, "0")
-
-
-def invert_price(p):
-    if p is None:
-        return
-    return parse_price(1 / (1 - (1 / p))) / 100
-
-
-def invert_probability(p):
-    return 1 - p
-
-
-# -- A bunch of structures for dealing with prices and probabilities.
-price_increments = [
+BETFAIR_PRICE_TIERS = [
     (1.01, 2, 0.01),
     (2, 3, 0.02),
     (3, 4, 0.05),
@@ -99,98 +81,57 @@ price_increments = [
     (20, 30, 1),
     (30, 50, 2),
     (50, 100, 5),
-    (100, 1000, 10),
+    (100, 1010, 10),
 ]
-price_probability_map = {}
-for start, end, step in price_increments:
-    prices = np.append(np.arange(start, end, step), [end])
-    probabilities = map(parse_prob, (1 / prices))  # Lowest precision to keep unique mapping
-    price_probability_map.update(dict(zip(map(parse_price, prices), probabilities)))
+BETFAIR_PRICES = list(
+    reversed(TieredTickScheme(name="betfair_prob", tiers=BETFAIR_PRICE_TIERS).ticks)
+)
+BETFAIR_PROBABILITIES = [
+    Price(Price.from_int(1) / tick, precision=BETFAIR_PRICE_PRECISION) for tick in BETFAIR_PRICES
+]
+BETFAIR_PRICE_TO_PROBABILITY_MAP = {
+    price: prob for price, prob in zip(BETFAIR_PRICES, BETFAIR_PROBABILITIES)
+}
+BETFAIR_PROBABILITY_TO_PRICE_MAP = {
+    price: prob for price, prob in zip(BETFAIR_PROBABILITIES, BETFAIR_PRICES)
+}
+MAX_BET_PROB = max(BETFAIR_PROBABILITY_TO_PRICE_MAP)
+MIN_BET_PROB = min(BETFAIR_PROBABILITY_TO_PRICE_MAP)
 
-probability_price_map = {v: k for k, v in price_probability_map.items()}
-inverse_price_map = {p: invert_price(p / 100) for p in price_probability_map}
-all_probabilities = np.asarray(sorted(map(float, probability_price_map)))
-
-all_prices = np.asarray(np.asarray(list(price_probability_map)) / 100.0)
-
-MAX_BET_PROB = Price(max(price_probability_map.values()), 5)
-MIN_BET_PROB = Price(min(price_probability_map.values()), 5)
-
-
-def round_probability(probability, side):
-    """
-    If we have a probability in between two prices, round to the better price
-    """
-    if probability in all_probabilities:
-        return probability
-    idx = all_probabilities.searchsorted(probability)
-    if side == OrderSide.SELL:
-        if idx == len(all_probabilities):
-            return all_probabilities[-1]
-        return all_probabilities[idx]
-    elif side == OrderSide.BUY:
-        if idx == 0:
-            return all_probabilities[idx]
-        return all_probabilities[idx - 1]
-    else:  # pragma: no cover (design-time error)
-        raise ValueError(f"invalid OrderSide, was {side}")
+BETFAIR_TICK_SCHEME = TieredTickScheme(
+    name="BETFAIR",
+    tiers=[
+        (start, stop, stop - start)
+        for start, stop in zip(
+            BETFAIR_PROBABILITIES, BETFAIR_PROBABILITIES[1:] + [Price.from_int(1)]
+        )
+    ],
+)
+register_tick_scheme(BETFAIR_TICK_SCHEME)
 
 
-def round_price(price, side):
-    """
-    If we have a probability in between two prices, round to the better price
-    """
-    if price in all_prices:
-        return price
+def price_to_probability(price: str) -> Price:
+    PyCondition.type(price, str, "price", "str")
+    PyCondition.positive(float(price), "price")
+    price = Price.from_str(price)
+    if price in BETFAIR_PRICE_TO_PROBABILITY_MAP:
+        return BETFAIR_PRICE_TO_PROBABILITY_MAP[price]
     else:
-        idx = all_prices.searchsorted(price)
-        if side == OrderSide.BUY:
-            return all_prices[idx]
-        elif side == OrderSide.SELL:
-            return all_prices[idx - 1]
-        else:  # pragma: no cover (design-time error)
-            raise ValueError(f"invalid OrderSide, was {side}")
+        # This is likely a trade tick that has been currency adjusted, simply return the nearest price
+        value = Price.from_int(1) / price
+        bid = BETFAIR_TICK_SCHEME.next_bid_tick(value=value)
+        ask = BETFAIR_TICK_SCHEME.next_ask_tick(value=value)
+        if abs(bid - value) < abs(ask - value):
+            return bid
+        else:
+            return ask
 
 
-def price_to_probability(price, side=None, force=False) -> Price:
-    """
-    Convert a bet price into a probability, rounded to the "better" probability
-    (based on the side) if a the price is between the real ticks for betfair
-    prices.
-    """
-    rounded = round(price * 100)
-    if rounded not in price_probability_map:
-        if force:
-            prob = 1.0 / price
-            return Price(prob, precision=5)
-        if side is None:
-            raise ValueError(
-                f"If not passing a side, price ({price}) must exist in `price_probability_map`"
-            )
-        rounded = round(round_price(price=price, side=side) * 100)
-    probability = float(price_probability_map[rounded])
-    return Price(probability, precision=5)
+def probability_to_price(probability: Price):
+    return BETFAIR_PROBABILITY_TO_PRICE_MAP[probability]
 
 
-# def quantity_to_probability_quantity(quantity: Quantity)
-
-
-def probability_to_price(probability, side=None) -> Price:
-    """
-    Convert a bet probability into a betting price, rounded to the "better"
-    price (based on the side) if a the probability is between the real ticks
-    for betfair prices.
-    """
-    parsed = parse_prob(probability)
-    if parsed not in probability_price_map:
-        if side is None:
-            raise ValueError(
-                f"If not passing a side, probability ({probability}) "
-                f"must exist in `probability_price_map`"
-            )
-        parsed = parse_prob(round_probability(probability=probability, side=side))
-    price = float(probability_price_map[parsed]) / 100.0
-    return Price(price, precision=5)
+# ------------------------------- BETFAIR CONSTANTS ------------------------------- #
 
 
 EVENT_TYPE_TO_NAME = {

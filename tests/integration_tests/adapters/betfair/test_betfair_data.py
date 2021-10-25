@@ -242,18 +242,16 @@ class TestBetfairDataClient:
         )
         expected = set(
             [
-                0.02174,
-                0.39370,
-                0.36765,
-                0.21739,
-                0.00102,
-                0.17241,
-                0.00102,
-                0.55556,
-                0.45872,
-                0.21739,
-                0.00769,
-                0.02381,
+                0.0010204,
+                0.0076923,
+                0.0217391,
+                0.0238095,
+                0.1724138,
+                0.2173913,
+                0.3676471,
+                0.3937008,
+                0.4587156,
+                0.5555556,
             ]
         )
         assert result == expected
@@ -286,7 +284,7 @@ class TestBetfairDataClient:
         assert result == expected
         # Ensure order prices are coming through as probability
         update_op = self.messages[0].deltas[0]
-        assert update_op.order.price == 0.21277
+        assert update_op.order.price == 0.212766
 
     def test_market_update_md(self):
         self.client._on_market_update(BetfairStreaming.mcm_UPDATE_md())
@@ -346,8 +344,8 @@ class TestBetfairDataClient:
         ob = L2OrderBook(InstrumentId(Symbol("1"), BETFAIR_VENUE), 5, 5)
         ob.apply_snapshot(ob_snap)
         print(ob.pprint())
-        assert ob.best_ask_price() == 0.58824
-        assert ob.best_bid_price() == 0.58480
+        assert ob.best_ask_price() == 0.5882353
+        assert ob.best_bid_price() == 0.5847953
 
     def test_orderbook_updates(self):
         order_books = {}
@@ -458,7 +456,7 @@ class TestBetfairDataClient:
     def test_betfair_ticker(self):
         self.client._on_market_update(BetfairStreaming.mcm_UPDATE_tv())
         ticker: BetfairTicker = self.messages[1]
-        assert ticker.last_traded_price == Price.from_str("0.31746")
+        assert ticker.last_traded_price == Price.from_str("0.3174603")
         assert ticker.traded_volume == Quantity.from_str("364.45")
 
     def test_betfair_orderbook(self):

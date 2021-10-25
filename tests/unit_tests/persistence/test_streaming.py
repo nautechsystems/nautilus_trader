@@ -84,11 +84,11 @@ class TestPersistenceStreaming:
             "OrderBookDeltas": 1077,
             "OrderBookSnapshot": 1,
             "OrderDenied": 296,
-            "OrderInitialized": 792,
             "OrderFilled": 496,
+            "OrderInitialized": 792,
             "OrderSubmitted": 496,
-            "PositionOpened": 396,
             "PositionClosed": 100,
+            "PositionOpened": 396,
             "TradeTick": 198,
         }
         assert result == expected

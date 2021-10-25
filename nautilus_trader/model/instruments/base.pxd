@@ -42,6 +42,8 @@ cdef class Instrument(Data):
     """The size precision of the instrument.\n\n:returns: `int`"""
     cdef readonly Price price_increment
     """The minimum price increment or tick size for the instrument.\n\n:returns: `Price`"""
+    cdef readonly str tick_scheme_name
+    """The TickScheme name.\n\n:returns: `str`"""
     cdef readonly Quantity size_increment
     """The minimum size increment for the instrument.\n\n:returns: `Quantity`"""
     cdef readonly Quantity multiplier
@@ -80,5 +82,7 @@ cdef class Instrument(Data):
     cpdef Currency get_base_currency(self)
     cpdef Currency get_cost_currency(self)
     cpdef Price make_price(self, value)
+    cpdef Price next_bid_tick(self, double value, int num_ticks=*)
+    cpdef Price next_ask_tick(self, double value, int num_ticks=*)
     cpdef Quantity make_qty(self, value)
     cpdef Money notional_value(self, Quantity quantity, price: Decimal, bint inverse_as_quote=*)
