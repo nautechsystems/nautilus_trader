@@ -121,6 +121,7 @@ class BacktestNode:
             config.check()  # check all values set
             result = self._run(
                 run_config_id=config.id,
+                engine_config=config.engine,
                 venue_configs=config.venues,
                 data_configs=config.data,
                 actor_configs=config.actors,
@@ -136,6 +137,7 @@ class BacktestNode:
     def _run_delayed(
         self,
         run_config_id: str,
+        engine_config: BacktestEngineConfig,
         venue_configs: List[BacktestVenueConfig],
         data_configs: List[BacktestDataConfig],
         actor_configs: List[ImportableActorConfig],
@@ -145,6 +147,7 @@ class BacktestNode:
     ) -> BacktestResult:
         return self._run(
             run_config_id=run_config_id,
+            engine_config=engine_config,
             venue_configs=venue_configs,
             data_configs=data_configs,
             actor_configs=actor_configs,
@@ -160,6 +163,7 @@ class BacktestNode:
     def _run(
         self,
         run_config_id: str,
+        engine_config: BacktestEngineConfig,
         venue_configs: List[BacktestVenueConfig],
         data_configs: List[BacktestDataConfig],
         actor_configs: List[ImportableActorConfig],
@@ -168,6 +172,7 @@ class BacktestNode:
         batch_size_bytes: Optional[int] = None,
     ) -> BacktestResult:
         engine: BacktestEngine = self._create_engine(
+            config=engine_config,
             venue_configs=venue_configs,
             data_configs=data_configs,
         )
@@ -222,14 +227,10 @@ class BacktestNode:
 
     def _create_engine(
         self,
+        config: BacktestEngineConfig,
         venue_configs: List[BacktestVenueConfig],
         data_configs: List[BacktestDataConfig],
     ):
-        # Configure backtest engine
-        config = BacktestEngineConfig(
-            bypass_logging=True,
-            run_analysis=True,
-        )
         # Build the backtest engine
         engine = BacktestEngine(config=config)
 

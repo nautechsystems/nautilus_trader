@@ -27,6 +27,7 @@ from nautilus_trader.adapters.betfair.common import B2N_MARKET_STREAM_SIDE
 from nautilus_trader.adapters.betfair.common import B_ASK_KINDS
 from nautilus_trader.adapters.betfair.common import B_BID_KINDS
 from nautilus_trader.adapters.betfair.common import B_SIDE_KINDS
+from nautilus_trader.adapters.betfair.common import BETFAIR_TICK_SCHEME
 from nautilus_trader.adapters.betfair.common import BETFAIR_VENUE
 from nautilus_trader.adapters.betfair.common import MAX_BET_PROB
 from nautilus_trader.adapters.betfair.common import MIN_BET_PROB
@@ -105,10 +106,20 @@ def parse_betfair_timestamp(pt):
     return pt * MILLIS_TO_NANOS
 
 
+def _probability_to_price(probability: Price, side: OrderSide):
+    if side == OrderSide.BUY:
+        tick_prob = BETFAIR_TICK_SCHEME.next_bid_tick(value=probability)
+    elif side == OrderSide.SELL:
+        tick_prob = BETFAIR_TICK_SCHEME.next_ask_tick(value=probability)
+    else:
+        raise RuntimeError(f"invalid OrderSide, was {side}")
+    return probability_to_price(probability=tick_prob)
+
+
 def _order_to_liability(order: Union[LimitOrder, MarketOrder]) -> float:
     if order.side == OrderSide.SELL:
         # Orders are sent in "liability" terms, convert to stake
-        sell_price = probability_to_price(probability=order.price, side=order.side)
+        sell_price = _probability_to_price(probability=order.price, side=order.side)
         liability = order.quantity * (sell_price - 1)
         size = float(round(order.quantity / (liability / order.quantity), 0))
     elif order.side == OrderSide.BUY:
@@ -119,8 +130,7 @@ def _order_to_liability(order: Union[LimitOrder, MarketOrder]) -> float:
 
 
 def _make_limit_order(order: Union[LimitOrder, MarketOrder]):
-    price = determine_order_price(order)
-    price = str(float(probability_to_price(probability=price, side=order.side)))
+    price = str(float(_probability_to_price(probability=order.price, side=order.side)))
     size = str(_order_to_liability(order=order))
 
     if order.time_in_force == TimeInForce.OC:
@@ -222,7 +232,7 @@ def order_update_to_betfair(
         "instructions": [
             {
                 "betId": venue_order_id.value,
-                "newPrice": float(probability_to_price(probability=command.price, side=side)),
+                "newPrice": float(_probability_to_price(probability=command.price, side=side)),
             }
         ],
     }
@@ -307,8 +317,8 @@ def _handle_market_snapshot(selection, instrument, ts_event, ts_init):
         snapshot = OrderBookSnapshot(
             book_type=BookType.L2_MBP,
             instrument_id=instrument.id,
-            bids=[(price_to_probability(p, OrderSide.BUY), v) for p, v in asks],
-            asks=[(price_to_probability(p, OrderSide.SELL), v) for p, v in bids],
+            bids=[(price_to_probability(str(p)), v) for p, v in asks if p],
+            asks=[(price_to_probability(str(p)), v) for p, v in bids if p],
             ts_event=ts_event,
             ts_init=ts_init,
         )
@@ -350,7 +360,7 @@ def _handle_market_trades(
         trade_id = hash_json(data=(ts_event, price, volume))
         tick = TradeTick(
             instrument_id=instrument.id,
-            price=price_to_probability(price, force=True),  # Already wrapping in Price
+            price=price_to_probability(str(price)),
             size=Quantity(volume, precision=4),
             aggressor_side=AggressorSide.UNKNOWN,
             match_id=trade_id,
@@ -371,7 +381,7 @@ def _handle_bsp_updates(runner, instrument, ts_event, ts_init):
                 book_type=BookType.L2_MBP,
                 action=BookAction.DELETE if volume == 0 else BookAction.UPDATE,
                 order=Order(
-                    price=price_to_probability(price, side=B2N_MARKET_STREAM_SIDE[side]),
+                    price=price_to_probability(str(price)),
                     size=Quantity(volume, precision=8),
                     side=B2N_MARKET_STREAM_SIDE[side],
                 ),
@@ -391,13 +401,15 @@ def _handle_book_updates(runner, instrument, ts_event, ts_init):
                 _, price, volume = upd
             else:
                 price, volume = upd
+            if price == 0.0:
+                continue
             deltas.append(
                 OrderBookDelta(
                     instrument_id=instrument.id,
                     book_type=BookType.L2_MBP,
                     action=BookAction.DELETE if volume == 0 else BookAction.UPDATE,
                     order=Order(
-                        price=price_to_probability(price, side=B2N_MARKET_STREAM_SIDE[side]),
+                        price=price_to_probability(str(price)),
                         size=Quantity(volume, precision=8),
                         side=B2N_MARKET_STREAM_SIDE[side],
                     ),
@@ -520,7 +532,7 @@ def _handle_market_runners_status(instrument_provider, market, ts_event, ts_init
 def _handle_ticker(runner: dict, instrument: BettingInstrument, ts_event, ts_init):
     last_traded_price, traded_volume = None, None
     if "ltp" in runner:
-        last_traded_price = price_to_probability(runner["ltp"], side=B2N_MARKET_STREAM_SIDE["atb"])
+        last_traded_price = price_to_probability(str(runner["ltp"]))
     if "tv" in runner:
         traded_volume = Quantity(value=runner.get("tv"), precision=instrument.size_precision)
     return BetfairTicker(

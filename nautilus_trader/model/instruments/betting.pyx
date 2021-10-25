@@ -33,6 +33,8 @@ from nautilus_trader.model.objects cimport Money
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
 
+from nautilus_trader.adapters.betfair.common import BETFAIR_PRICE_PRECISION
+
 
 cdef class BettingInstrument(Instrument):
     """
@@ -61,6 +63,8 @@ cdef class BettingInstrument(Instrument):
         str currency not None,
         int64_t ts_event,
         int64_t ts_init,
+        str tick_scheme_name="BETFAIR",
+        int price_precision=BETFAIR_PRICE_PRECISION,
     ):
         assert event_open_date.tzinfo is not None
         assert market_start_time.tzinfo is not None
@@ -97,9 +101,9 @@ cdef class BettingInstrument(Instrument):
             asset_type=AssetType.SPOT,
             quote_currency=Currency.from_str_c(currency),
             is_inverse=False,
-            price_precision=5,
             size_precision=4,
-            price_increment=Price(1e-5, precision=5),
+            price_precision=price_precision,
+            price_increment=None,
             size_increment=Quantity(1e-4, precision=4),
             multiplier=Quantity.from_int_c(1),
             lot_size=Quantity.from_int_c(1),
@@ -116,6 +120,7 @@ cdef class BettingInstrument(Instrument):
             ts_event=ts_event,
             ts_init=ts_init,
             info=dict(),  # TODO - Add raw response?
+            tick_scheme_name=tick_scheme_name
         )
 
     @staticmethod
