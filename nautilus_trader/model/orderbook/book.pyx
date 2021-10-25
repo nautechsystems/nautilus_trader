@@ -193,7 +193,7 @@ cdef class OrderBook:
         Raises
         ------
         ValueError
-            If delta.book_type is not equal to self.type.
+            If `delta.book_type` is not equal to `self.type`.
 
         """
         Condition.not_none(delta, "delta")
@@ -213,7 +213,7 @@ cdef class OrderBook:
         Raises
         ------
         ValueError
-            If snapshot.book_type is not equal to self.type.
+            If `snapshot.book_type` is not equal to `self.type`.
 
         """
         Condition.not_none(deltas, "deltas")
@@ -235,7 +235,7 @@ cdef class OrderBook:
         Raises
         ------
         ValueError
-            If snapshot.book_type is not equal to self.type.
+            If `snapshot.book_type` is not equal to `self.type`.
 
         """
         Condition.not_none(snapshot, "snapshot")
@@ -274,7 +274,7 @@ cdef class OrderBook:
         Raises
         ------
         ValueError
-            If data.level is not equal to self.type.
+            If `data.level` is not equal to `self.type`.
 
         """
         Condition(data.book_type, self.type, "data.book_type", "self.type")
@@ -702,9 +702,9 @@ cdef class L3OrderBook(OrderBook):
         Raises
         ------
         OverflowError
-            If price_precision is negative (< 0).
+            If `price_precision` is negative (< 0).
         OverflowError
-            If size_precision is negative (< 0).
+            If `size_precision` is negative (< 0).
 
         """
         super().__init__(
@@ -743,9 +743,9 @@ cdef class L2OrderBook(OrderBook):
         Raises
         ------
         OverflowError
-            If price_precision is negative (< 0).
+            If `price_precision` is negative (< 0).
         OverflowError
-            If size_precision is negative (< 0).
+            If `size_precision` is negative (< 0).
 
         """
         super().__init__(
@@ -866,9 +866,9 @@ cdef class L1OrderBook(OrderBook):
         Raises
         ------
         OverflowError
-            If price_precision is negative (< 0).
+            If `price_precision` is negative (< 0).
         OverflowError
-            If size_precision is negative (< 0).
+            If `size_precision` is negative (< 0).
 
         """
         super().__init__(

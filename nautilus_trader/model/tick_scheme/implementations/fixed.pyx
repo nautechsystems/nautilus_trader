@@ -27,20 +27,20 @@ cdef class FixedTickScheme(TickScheme):
     """
 
     def __init__(
-            self,
-            str name,
-            int price_precision,
-            Price min_tick,
-            Price max_tick,
-            increment=None,
+        self,
+        str name not None,
+        int price_precision,
+        Price min_tick not None,
+        Price max_tick not None,
+        increment=None,
     ):
         """
-        Initialize a new instance of the `Instrument` class.
+        Initialize a new instance of the `FixedTickScheme` class.
 
         Parameters
         ----------
         price_precision: int
-            The instrument price precision
+            The instrument price precision.
         min_tick : Price
             The minimum possible tick `Price`
         max_tick: Price
@@ -51,33 +51,49 @@ cdef class FixedTickScheme(TickScheme):
         self.price_precision = price_precision
         self.increment = Price.from_str(str(increment or "0." + "1".zfill(price_precision)))
 
-    cpdef Price next_ask_tick(self, double value, int n=0):
+    cpdef Price next_ask_price(self, double value, int n=0):
         """
-        Return the `Price` `n` bid ticks away from `price`.
+        Return the price `n` bid ticks away from value.
 
         If a given price is between two ticks, n=0 will find the nearest bid tick.
 
-        :param value: The reference price
-        :param n: The number of ticks to move
-        :return: Price
+        Parameters
+        ----------
+        value : double
+            The reference value.
+        n : int, default 0
+            The number of ticks to move.
+
+        Returns
+        -------
+        Price
+
         """
-        if value > self.max_tick:
+        if value > self.max_price:
             return None
         cdef double base = self.increment.as_double()
         cdef double rounded = round_up(value=value, base=base) + (n * base)
         return Price(rounded, precision=self.price_precision)
 
-    cpdef Price next_bid_tick(self, double value, int n=0):
+    cpdef Price next_bid_price(self, double value, int n=0):
         """
-        Return the `Price` `n` bid ticks away from `price`.
+        Return the price `n` bid ticks away from value.
 
         If a given price is between two ticks, n=0 will find the nearest bid tick.
 
-        :param value: The reference price
-        :param n: The number of ticks to move
-        :return: Price
+        Parameters
+        ----------
+        value : double
+            The reference value.
+        n : int, default 0
+            The number of ticks to move.
+
+        Returns
+        -------
+        Price
+
         """
-        if value < self.min_tick:
+        if value < self.min_price:
             return None
         cdef double base = self.increment.as_double()
         cdef double rounded = round_down(value=value, base=base) - (n * base)

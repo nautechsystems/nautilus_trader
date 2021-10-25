@@ -23,9 +23,12 @@ from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.objects cimport Money
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
+from nautilus_trader.model.tick_scheme.base cimport TickScheme
 
 
 cdef class Instrument(Data):
+    cdef TickScheme _tick_scheme
+
     cdef readonly InstrumentId id
     """The instrument ID.\n\n:returns: `InstrumentId`"""
     cdef readonly AssetClass asset_class
@@ -42,8 +45,6 @@ cdef class Instrument(Data):
     """The size precision of the instrument.\n\n:returns: `int`"""
     cdef readonly Price price_increment
     """The minimum price increment or tick size for the instrument.\n\n:returns: `Price`"""
-    cdef readonly str tick_scheme_name
-    """The TickScheme name.\n\n:returns: `str`"""
     cdef readonly Quantity size_increment
     """The minimum size increment for the instrument.\n\n:returns: `Quantity`"""
     cdef readonly Quantity multiplier
@@ -70,6 +71,8 @@ cdef class Instrument(Data):
     """The maker fee rate for the instrument.\n\n:returns: `Decimal`"""
     cdef readonly object taker_fee
     """The taker fee rate for the instrument.\n\n:returns: `Decimal`"""
+    cdef readonly str tick_scheme_name
+    """The tick scheme name.\n\n:returns: `str` or ``None``"""
     cdef readonly dict info
     """The raw info for the instrument.\n\n:returns: `dict[str, object]`"""
 
@@ -82,7 +85,7 @@ cdef class Instrument(Data):
     cpdef Currency get_base_currency(self)
     cpdef Currency get_cost_currency(self)
     cpdef Price make_price(self, value)
-    cpdef Price next_bid_tick(self, double value, int num_ticks=*)
-    cpdef Price next_ask_tick(self, double value, int num_ticks=*)
+    cpdef Price next_bid_price(self, double value, int num_ticks=*)
+    cpdef Price next_ask_price(self, double value, int num_ticks=*)
     cpdef Quantity make_qty(self, value)
     cpdef Money notional_value(self, Quantity quantity, price: Decimal, bint inverse_as_quote=*)

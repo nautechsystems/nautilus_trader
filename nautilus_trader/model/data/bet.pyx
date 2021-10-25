@@ -48,7 +48,7 @@ cdef class Bet:
         Raises
         ------
         ValueError
-            If price is less than 1.0.
+            If `price` is less than 1.0.
 
         """
         Condition.in_range_int(price, 1, 1000, "price")

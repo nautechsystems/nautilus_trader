@@ -119,8 +119,8 @@ def price_to_probability(price: str) -> Price:
     else:
         # This is likely a trade tick that has been currency adjusted, simply return the nearest price
         value = Price.from_int(1) / price
-        bid = BETFAIR_TICK_SCHEME.next_bid_tick(value=value)
-        ask = BETFAIR_TICK_SCHEME.next_ask_tick(value=value)
+        bid = BETFAIR_TICK_SCHEME.next_bid_price(value=value)
+        ask = BETFAIR_TICK_SCHEME.next_ask_price(value=value)
         if abs(bid - value) < abs(ask - value):
             return bid
         else:

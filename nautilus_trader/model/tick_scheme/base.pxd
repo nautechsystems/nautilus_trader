@@ -20,9 +20,14 @@ cdef object TICK_SCHEMES
 
 cdef class TickScheme:
     cdef readonly str name
-    cdef readonly Price min_tick
-    cdef readonly Price max_tick
-    cpdef Price next_ask_tick(self, double value, int n=*)
-    cpdef Price next_bid_tick(self, double value, int n=*)
+    """The name of the scheme.\n\n:returns: `str`"""
+    cdef readonly Price min_price
+    """The minimum valid price for the scheme.\n\n:returns: `Price`"""
+    cdef readonly Price max_price
+    """The maximum valid price for the scheme.\n\n:returns: `Price`"""
+
+    cpdef Price next_ask_price(self, double value, int n=*)
+    cpdef Price next_bid_price(self, double value, int n=*)
+
 
 cpdef TickScheme get_tick_scheme(str name)

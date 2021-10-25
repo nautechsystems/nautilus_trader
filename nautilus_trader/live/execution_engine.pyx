@@ -80,7 +80,7 @@ cdef class LiveExecutionEngine(ExecutionEngine):
         Raises
         ------
         TypeError
-            If config is not of type `LiveExecEngineConfig`.
+            If `config` is not of type `LiveExecEngineConfig`.
 
         """
         if config is None:
@@ -161,7 +161,7 @@ cdef class LiveExecutionEngine(ExecutionEngine):
         Raises
         ------
         ValueError
-            If timeout_secs is not positive (> 0).
+            If `timeout_secs` is not positive (> 0).
 
         """
         Condition.positive(timeout_secs, "timeout_secs")

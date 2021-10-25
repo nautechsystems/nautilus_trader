@@ -12,12 +12,16 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.tick_scheme.base cimport TickScheme
 
 
 cdef class FixedTickScheme(TickScheme):
     cdef readonly int price_precision
+    """The tick scheme price precision.\n\n:returns: `int`"""
     cdef readonly Price increment
-    cpdef Price next_ask_tick(self, double value, int n=*)
-    cpdef Price next_bid_tick(self, double value, int n=*)
+    """The tick scheme price increment.\n\n:returns: `Price`"""
+
+    cpdef Price next_ask_price(self, double value, int n=*)
+    cpdef Price next_bid_price(self, double value, int n=*)

@@ -191,7 +191,7 @@ cdef class Queue:
         Raises
         ------
         IndexError
-            If index is out of range.
+            If `index` is out of range.
 
         """
         return self._queue[index]

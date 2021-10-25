@@ -82,13 +82,13 @@ cdef class Option(Instrument):
         Raises
         ------
         ValueError
-            If multiplier is not positive (> 0).
+            If `multiplier` is not positive (> 0).
         ValueError
-            If price_precision is negative (< 0).
+            If `price_precision` is negative (< 0).
         ValueError
-            If tick_size is not positive (> 0).
+            If `tick_size` is not positive (> 0).
         ValueError
-            If lot size is not positive (> 0).
+            If `lot_size` is not positive (> 0).
 
         """
         Condition.positive_int(multiplier, "multiplier")

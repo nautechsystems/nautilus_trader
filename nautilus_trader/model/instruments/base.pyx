@@ -28,7 +28,6 @@ from nautilus_trader.model.currency cimport Currency
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.objects cimport Quantity
 from nautilus_trader.model.tick_scheme.base cimport TICK_SCHEMES
-from nautilus_trader.model.tick_scheme.base cimport TickScheme
 from nautilus_trader.model.tick_scheme.base cimport get_tick_scheme
 
 
@@ -48,7 +47,7 @@ cdef class Instrument(Data):
         bint is_inverse,
         int price_precision,
         int size_precision,
-        Price price_increment,
+        Price price_increment,  # Can be None  # TODO(cs): review this
         Quantity size_increment not None,
         Quantity multiplier not None,
         Quantity lot_size,      # Can be None
@@ -118,39 +117,43 @@ cdef class Instrument(Data):
             The UNIX timestamp (nanoseconds) when the data event occurred.
         ts_init: int64
             The UNIX timestamp (nanoseconds) when the data object was initialized.
+        tick_scheme_name : str, optional
+            The name of the tick scheme.
         info : dict[str, object], optional
             The additional instrument information.
 
         Raises
         ------
         ValueError
-            If price_precision is negative (< 0).
+            If `tick_scheme_name` is not a valid string.
         ValueError
-            If size_precision is negative (< 0).
+            If `price_precision` is negative (< 0).
         ValueError
-            If price_increment is not positive (> 0).
+            If `size_precision` is negative (< 0).
         ValueError
-            If size_increment is not positive (> 0).
+            If `price_increment` is not positive (> 0).
         ValueError
-            If price_precision is not equal to price_increment.precision.
+            If `size_increment` is not positive (> 0).
         ValueError
-            If size_increment is not equal to size_increment.precision.
+            If `price_precision` is not equal to price_increment.precision.
         ValueError
-            If multiplier is not positive (> 0).
+            If `size_increment` is not equal to size_increment.precision.
         ValueError
-            If lot size is not positive (> 0).
+            If `multiplier` is not positive (> 0).
         ValueError
-            If max_quantity is not positive (> 0).
+            If `lot size` is not positive (> 0).
         ValueError
-            If min_quantity is negative (< 0).
+            If `max_quantity` is not positive (> 0).
         ValueError
-            If max_notional is not positive (> 0).
+            If `min_quantity` is negative (< 0).
         ValueError
-            If min_notional is negative (< 0).
+            If `max_notional` is not positive (> 0).
         ValueError
-            If max_price is not positive (> 0).
+            If `min_notional` is negative (< 0).
         ValueError
-            If min_price is negative (< 0).
+            If `max_price` is not positive (> 0).
+        ValueError
+            If `min_price` is negative (< 0).
 
         """
         Condition.not_negative_int(price_precision, "price_precision")
@@ -159,6 +162,9 @@ cdef class Instrument(Data):
         Condition.equal(size_precision, size_increment.precision, "size_precision", "size_increment.precision")  # noqa
         Condition.positive(multiplier, "multiplier")
 
+        if tick_scheme_name is not None:
+            Condition.valid_string(tick_scheme_name, "tick_scheme_name")
+            Condition.is_in(tick_scheme_name, TICK_SCHEMES, "tick_scheme_name", "TICK_SCHEMES")
         if price_increment is not None:
             Condition.positive(price_increment, "price_increment")
         if price_precision is not None and price_increment is not None:
@@ -173,8 +179,6 @@ cdef class Instrument(Data):
             Condition.positive(max_notional, "max_notional")
         if min_notional is not None:
             Condition.not_negative(min_notional, "min_notional")
-        if tick_scheme_name is not None:
-            Condition.is_in(tick_scheme_name, TICK_SCHEMES, "tick_scheme_name", str(TICK_SCHEMES))
         if max_price is not None:
             Condition.positive(max_price, "max_price")
         if min_price is not None:
@@ -212,13 +216,17 @@ cdef class Instrument(Data):
         self.taker_fee = taker_fee
         self.info = info
 
+        # Assign tick scheme if named
+        if self.tick_scheme_name is not None:
+            self._tick_scheme = get_tick_scheme(self.tick_scheme_name)
+
     def __eq__(self, Instrument other) -> bool:
         return self.id.value == other.id.value
 
     def __hash__(self) -> int:
         return hash(self.id.value)
 
-    def __repr__(self) -> str:
+    def __repr__(self) -> str:  # TODO(cs): tick_scheme_name pending
         return (f"{type(self).__name__}"
                 f"(id={self.id.value}, "
                 f"symbol={self.id.symbol}, "
@@ -404,15 +412,59 @@ cdef class Instrument(Data):
         """
         return Price(float(value), precision=self.price_precision)
 
-    cpdef Price next_bid_tick(self, double value, int num_ticks=0):
-        Condition.not_none(self.tick_scheme_name, "self.tick_scheme_name")
-        cdef TickScheme tick_scheme = get_tick_scheme(self.tick_scheme_name)
-        return tick_scheme.next_bid_tick(value=value, n=num_ticks)
+    cpdef Price next_bid_price(self, double value, int num_ticks=0):
+        """
+        Return the price `n` bid ticks away from value.
 
-    cpdef Price next_ask_tick(self, double value, int num_ticks=0):
-        Condition.not_none(self.tick_scheme_name, "self.tick_scheme_name")
-        cdef TickScheme tick_scheme = get_tick_scheme(self.tick_scheme_name)
-        return tick_scheme.next_ask_tick(value=value, n=num_ticks)
+        If a given price is between two ticks, n=0 will find the nearest bid tick.
+
+        Parameters
+        ----------
+        value : double
+            The reference value.
+        num_ticks : int, default 0
+            The number of ticks to move.
+
+        Returns
+        -------
+        Price
+
+        Raises
+        ------
+        ValueError
+            If tick scheme is not registered.
+
+        """
+        Condition.not_none(self._tick_scheme, "self._tick_scheme")
+
+        return self._tick_scheme.next_bid_price(value=value, n=num_ticks)
+
+    cpdef Price next_ask_price(self, double value, int num_ticks=0):
+        """
+        Return the price `n` ask ticks away from value.
+
+        If a given price is between two ticks, n=0 will find the nearest ask tick.
+
+        Parameters
+        ----------
+        value : double
+            The reference value.
+        num_ticks : int, default 0
+            The number of ticks to move.
+
+        Returns
+        -------
+        Price
+
+        Raises
+        ------
+        ValueError
+            If tick scheme is not registered.
+
+        """
+        Condition.not_none(self._tick_scheme, "self._tick_scheme")
+
+        return self._tick_scheme.next_ask_price(value=value, n=num_ticks)
 
     cpdef Quantity make_qty(self, value):
         """

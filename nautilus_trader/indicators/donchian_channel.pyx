@@ -44,7 +44,7 @@ cdef class DonchianChannel(Indicator):
         Raises
         ------
         ValueError
-            If period is not positive (> 0).
+            If `period` is not positive (> 0).
 
         """
         Condition.positive_int(period, "period")

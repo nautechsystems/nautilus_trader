@@ -63,9 +63,9 @@ cdef class SocketClient:
         Raises
         ------
         ValueError
-            If host is not a valid string.
+            If `host` is not a valid string.
         ValueError
-            If port is not positive (> 0).
+            If `port` is not positive (> 0).
 
         """
         Condition.valid_string(host, "host")

@@ -294,9 +294,9 @@ class TestInstrument:
         ],
     )
     @pytest.mark.skip("Not implemented")
-    def test_next_ask_tick(self, instrument, tick_scheme_name, value, n, expected):
+    def test_next_ask_price(self, instrument, tick_scheme_name, value, n, expected):
         instrument.tick_scheme_name = tick_scheme_name
-        result = instrument.next_ask_tick(value, n=n)
+        result = instrument.next_ask_price(value, n=n)
         expected = Price.from_str(expected)
         assert result == expected
 
@@ -308,9 +308,9 @@ class TestInstrument:
         ],
     )
     @pytest.mark.skip("Not implemented")
-    def test_next_bid_tick(self, instrument, tick_scheme_name, value, n, expected):
+    def test_next_bid_price(self, instrument, tick_scheme_name, value, n, expected):
         instrument.tick_scheme_name = tick_scheme_name
-        result = instrument.next_bid_tick(value, n=n)
+        result = instrument.next_bid_price(value, n=n)
         expected = Price.from_str(expected)
         assert result == expected
 
@@ -334,8 +334,8 @@ class TestBettingInstrument:
             (0.001, 0, "0.0010000"),
         ],
     )
-    def test_next_ask_tick(self, value, n, expected):
-        result = self.instrument.next_ask_tick(value, num_ticks=n)
+    def test_next_ask_price(self, value, n, expected):
+        result = self.instrument.next_ask_price(value, num_ticks=n)
         expected = Price.from_str(expected)
         assert result == expected
 
@@ -345,7 +345,7 @@ class TestBettingInstrument:
             (0.501, 0, "0.5000000"),
         ],
     )
-    def test_next_bid_tick(self, value, n, expected):
-        result = self.instrument.next_bid_tick(value, num_ticks=n)
+    def test_next_bid_price(self, value, n, expected):
+        result = self.instrument.next_bid_price(value, num_ticks=n)
         expected = Price.from_str(expected)
         assert result == expected

@@ -472,7 +472,7 @@ class TestInstrumentProvider:
         Raises
         ------
         ValueError
-            If the instrument_id.instrument_id length is not in range [6, 7].
+            If `symbol` length is not in range [6, 7].
 
         """
         if venue is None:

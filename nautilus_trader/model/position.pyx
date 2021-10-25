@@ -53,9 +53,9 @@ cdef class Position:
         Raises
         ------
         ValueError
-            If instrument.id is not equal to fill.instrument_id.
+            If `instrument.id` is not equal to `fill.instrument_id`.
         ValueError
-            If event.position_id is ``None``.
+            If `event.position_id` is ``None``.
 
         """
         Condition.equal(instrument.id, fill.instrument_id, "instrument.id", "fill.instrument_id")
@@ -412,7 +412,7 @@ cdef class Position:
         Raises
         ------
         KeyError
-            If fill.execution_id already applied to the position.
+            If `fill.execution_id` already applied to the position.
 
         """
         Condition.not_none(fill, "fill")

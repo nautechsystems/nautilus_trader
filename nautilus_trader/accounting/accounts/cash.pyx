@@ -80,7 +80,7 @@ cdef class CashAccount(Account):
         Raises
         ------
         ValueError
-            If margin_init is negative (< 0).
+            If `margin_init` is negative (< 0).
 
         Warnings
         --------

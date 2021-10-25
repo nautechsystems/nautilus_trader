@@ -94,9 +94,9 @@ class TradingNodeBuilder:
         Raises
         ------
         ValueError
-            If name is not a valid string.
+            If `name` is not a valid string.
         KeyError
-            If name has already been added.
+            If `name` has already been added.
 
         """
         PyCondition.valid_string(name, "name")
@@ -123,9 +123,9 @@ class TradingNodeBuilder:
         Raises
         ------
         ValueError
-            If name is not a valid string.
+            If `name` is not a valid string.
         KeyError
-            If name has already been added.
+            If `name` has already been added.
 
         """
         PyCondition.valid_string(name, "name")

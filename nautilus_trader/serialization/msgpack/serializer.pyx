@@ -57,7 +57,7 @@ cdef class MsgPackSerializer(Serializer):
         Raises
         ------
         RuntimeError
-            If object cannot be serialized.
+            If `obj` cannot be serialized.
 
         """
         Condition.not_none(obj, "obj")
@@ -94,7 +94,7 @@ cdef class MsgPackSerializer(Serializer):
         Raises
         ------
         RuntimeError
-            If object cannot be deserialized.
+            If `obj_bytes` cannot be deserialized.
 
         """
         Condition.not_none(obj_bytes, "obj_bytes")

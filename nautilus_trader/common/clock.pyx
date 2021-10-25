@@ -169,7 +169,7 @@ cdef class Clock:
         Raises
         ------
         ValueError
-            If name is not a valid string.
+            If `name` is not a valid string.
 
         """
         Condition.valid_string(name, "name")
@@ -186,7 +186,7 @@ cdef class Clock:
         Raises
         ------
         TypeError
-            If handler is not of type `Callable`.
+            If `handler` is not of type `Callable`.
 
         """
         Condition.callable(handler, "handler")
@@ -219,13 +219,13 @@ cdef class Clock:
         Raises
         ------
         ValueError
-            If name is not unique for this clock.
+            If `name` is not unique for this clock.
         ValueError
-            If alert_time is not >= the clocks current time.
+            If `alert_time` is not >= the clocks current time.
         TypeError
-            If handler is not of type `Callable` or ``None``.
+            If `handler` is not of type `Callable` or ``None``.
         ValueError
-            If handler is ``None`` and no default handler is registered.
+            If `handler` is ``None`` and no default handler is registered.
 
         """
         Condition.not_none(name, "name")
@@ -274,13 +274,13 @@ cdef class Clock:
         Raises
         ------
         ValueError
-            If name is not unique for this clock.
+            If `name` is not unique for this clock.
         ValueError
-            If alert_time is not >= the clocks current time.
+            If `alert_time` is not >= the clocks current time.
         TypeError
-            If callback is not of type `Callable` or ``None``.
+            If `callback` is not of type `Callable` or ``None``.
         ValueError
-            If callback is ``None`` and no default handler is registered.
+            If `callback` is ``None`` and no default handler is registered.
 
         """
         Condition.not_none(name, "name")
@@ -330,17 +330,17 @@ cdef class Clock:
         Raises
         ------
         ValueError
-            If name is not unique for this clock.
+            If `name` is not unique for this clock.
         ValueError
-            If interval is not positive (> 0).
+            If `interval` is not positive (> 0).
         ValueError
-            If stop_time is not ``None`` and stop_time < time_now.
+            If `stop_time` is not ``None`` and `stop_time` < time now.
         ValueError
-            If stop_time is not ``None`` and start_time + interval > stop_time.
+            If `stop_time` is not ``None`` and `start_time` + `interval` > `stop_time`.
         TypeError
-            If handler is not of type `Callable` or ``None``.
+            If `handler` is not of type `Callable` or ``None``.
         ValueError
-            If handler is ``None`` and no default handler is registered.
+            If `handler` is ``None`` and no default handler is registered.
 
         """
         cdef datetime now = self.utc_now()  # Call here for greater accuracy
@@ -405,17 +405,17 @@ cdef class Clock:
         Raises
         ------
         ValueError
-            If name is not unique for this clock.
+            If `name` is not unique for this clock.
         ValueError
-            If interval is not positive (> 0).
+            If `interval` is not positive (> 0).
         ValueError
-            If stop_time is not ``None`` and stop_time < time_now.
+            If `stop_time` is not ``None`` and `stop_time` < time now.
         ValueError
-            If stop_time is not ``None`` and start_time + interval > stop_time.
+            If `stop_time` is not ``None`` and `start_time` + interval > `stop_time`.
         TypeError
-            If callback is not of type `Callable` or ``None``.
+            If `callback` is not of type `Callable` or ``None``.
         ValueError
-            If callback is ``None`` and no default handler is registered.
+            If `callback` is ``None`` and no default handler is registered.
 
         """
         Condition.valid_string(name, "name")
@@ -619,7 +619,7 @@ cdef class TestClock(Clock):
         Raises
         ------
         ValueError
-            If to_time is < the clocks current time.
+            If `to_time` is < the clocks current time.
 
         """
         # Ensure monotonic

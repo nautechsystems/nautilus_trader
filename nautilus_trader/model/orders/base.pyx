@@ -617,7 +617,7 @@ cdef class Order:
         Raises
         ------
         ValueError
-            If side is invalid.
+            If `side` is invalid.
 
         """
         return Order.opposite_side_c(side)
@@ -639,7 +639,7 @@ cdef class Order:
         Raises
         ------
         ValueError
-            If side is ``FLAT`` or invalid.
+            If `side` is ``FLAT`` or invalid.
 
         """
         return Order.flatten_side_c(side)
@@ -656,13 +656,13 @@ cdef class Order:
         Raises
         ------
         ValueError
-            If self.client_order_id is not equal to event.client_order_id.
+            If `self.client_order_id` is not equal to `event.client_order_id`.
         ValueError
-            If self.venue_order_id and event.venue_order_id are both not ``None``, and are not equal.
+            If `self.venue_order_id` and `event.venue_order_id` are both not ``None``, and are not equal.
         InvalidStateTrigger
-            If event is not a valid trigger from the current order.status.
+            If `event` is not a valid trigger from the current order status.
         KeyError
-            If event is OrderFilled and event.execution_id already applied to the order.
+            If `event` is `OrderFilled` and `event.execution_id` already applied to the order.
 
         """
         Condition.not_none(event, "event")

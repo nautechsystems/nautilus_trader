@@ -66,7 +66,7 @@ cdef class HttpClient:
         Raises
         ------
         ValueError
-            If ttl_dns_cache is not positive.
+            If `ttl_dns_cache` is not positive (> 0).
 
         """
         Condition.positive(ttl_dns_cache, "ttl_dns_cache")

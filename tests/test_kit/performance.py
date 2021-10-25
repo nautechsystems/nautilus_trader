@@ -36,9 +36,9 @@ class PerformanceBench:
         Raises
         ------
         ValueError
-            If runs is not positive (> 1).
+            If `runs` is not positive (> 1).
         ValueError
-            If iterations is not positive (> 1).
+            If `iterations` is not positive (> 1).
 
         Returns
         -------

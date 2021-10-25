@@ -375,7 +375,7 @@ cdef class OrderDenied(OrderEvent):
         Raises
         ------
         ValueError
-            If denied_reason is not a valid_string.
+            If `denied_reason` is not a valid_string.
 
         """
         Condition.valid_string(reason, "denied_reason")
@@ -783,7 +783,7 @@ cdef class OrderRejected(OrderEvent):
         Raises
         ------
         ValueError
-            If reason is not a valid_string.
+            If `reason` is not a valid string.
 
         """
         Condition.valid_string(reason, "reason")
@@ -1609,7 +1609,7 @@ cdef class OrderModifyRejected(OrderEvent):
         Raises
         ------
         ValueError
-            If reason is not a valid string.
+            If `reason` is not a valid string.
 
         """
         Condition.valid_string(reason, "reason")
@@ -1760,7 +1760,7 @@ cdef class OrderCancelRejected(OrderEvent):
         Raises
         ------
         ValueError
-            If reason is not a valid string.
+            If `reason` is not a valid string.
 
         """
         Condition.valid_string(reason, "reason")
@@ -1916,7 +1916,7 @@ cdef class OrderUpdated(OrderEvent):
         Raises
         ------
         ValueError
-            If quantity is not positive (> 0).
+            If `quantity` is not positive (> 0).
 
         """
         Condition.positive(quantity, "quantity")
@@ -2106,7 +2106,7 @@ cdef class OrderFilled(OrderEvent):
         Raises
         ------
         ValueError
-            If last_qty is not positive (> 0).
+            If `last_qty` is not positive (> 0).
 
         """
         Condition.positive(last_qty, "last_qty")

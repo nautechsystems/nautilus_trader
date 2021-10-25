@@ -119,8 +119,8 @@ cdef class BettingInstrument(Instrument):
             taker_fee=Decimal(0),
             ts_event=ts_event,
             ts_init=ts_init,
+            tick_scheme_name=tick_scheme_name,
             info=dict(),  # TODO - Add raw response?
-            tick_scheme_name=tick_scheme_name
         )
 
     @staticmethod

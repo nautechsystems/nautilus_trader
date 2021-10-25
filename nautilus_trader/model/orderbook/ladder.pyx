@@ -51,9 +51,9 @@ cdef class Ladder:
         Raises
         ------
         OverflowError
-            If price_precision is negative (< 0).
+            If `price_precision` is negative (< 0).
         OverflowError
-            If size_precision is negative (< 0).
+            If `size_precision` is negative (< 0).
 
         """
         Condition.not_negative_int(price_precision, "price_precision")
@@ -144,7 +144,7 @@ cdef class Ladder:
         Raises
         ------
         KeyError
-            If order.id is not contained in the order_id_level_index.
+            If `order.id` is not contained in the order ID level index.
 
         """
         Condition.not_none(order, "order")

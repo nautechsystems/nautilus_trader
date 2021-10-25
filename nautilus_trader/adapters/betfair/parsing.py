@@ -108,9 +108,9 @@ def parse_betfair_timestamp(pt):
 
 def _probability_to_price(probability: Price, side: OrderSide):
     if side == OrderSide.BUY:
-        tick_prob = BETFAIR_TICK_SCHEME.next_bid_tick(value=probability)
+        tick_prob = BETFAIR_TICK_SCHEME.next_bid_price(value=probability)
     elif side == OrderSide.SELL:
-        tick_prob = BETFAIR_TICK_SCHEME.next_ask_tick(value=probability)
+        tick_prob = BETFAIR_TICK_SCHEME.next_ask_price(value=probability)
     else:
         raise RuntimeError(f"invalid OrderSide, was {side}")
     return probability_to_price(probability=tick_prob)

@@ -66,7 +66,7 @@ cdef class OrderFactory:
         Raises
         ------
         ValueError
-            If initial_count is negative (< 0).
+            If `initial_count` is negative (< 0).
 
         """
         Condition.not_negative_int(initial_count, "initial_count")
@@ -155,9 +155,9 @@ cdef class OrderFactory:
         Raises
         ------
         ValueError
-            If quantity is not positive (> 0).
+            If `quantity` is not positive (> 0).
         ValueError
-            If time_in_force is other than ``GTC``, ``IOC``, ``FOK`` or ``OC``.
+            If `time_in_force` is other than ``GTC``, ``IOC``, ``FOK`` or ``OC``.
 
         """
         return MarketOrder(
@@ -228,13 +228,13 @@ cdef class OrderFactory:
         Raises
         ------
         ValueError
-            If quantity is not positive (> 0).
+            If `quantity` is not positive (> 0).
         ValueError
-            If time_in_force is GTD and expire_time is ``None``.
+            If `time_in_force` is ``GTD`` and `expire_time` is ``None``.
         ValueError
-            If post_only and hidden.
+            If `post_only` and `hidden`.
         ValueError
-            If hidden and post_only.
+            If `hidden` and `post_only`.
 
         """
         return LimitOrder(
@@ -303,9 +303,9 @@ cdef class OrderFactory:
         Raises
         ------
         ValueError
-            If quantity is not positive (> 0).
+            If `quantity` is not positive (> 0).
         ValueError
-            If time_in_force is GTD and expire_time is ``None``.
+            If `time_in_force` is ``GTD`` and `expire_time` is ``None``.
 
         """
         return StopMarketOrder(
@@ -381,13 +381,13 @@ cdef class OrderFactory:
         Raises
         ------
         ValueError
-            If quantity is not positive (> 0).
+            If `quantity` is not positive (> 0).
         ValueError
-            If time_in_force is GTD and expire_time is ``None``.
+            If `time_in_force` is ``GTD`` and `expire_time` is ``None``.
         ValueError
-            If post_only and hidden.
+            If `post_only` and `hidden`.
         ValueError
-            If hidden and post_only.
+            If `hidden` and `post_only`.
 
         """
         return StopLimitOrder(

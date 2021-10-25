@@ -81,15 +81,15 @@ cdef class Throttler:
         Raises
         ------
         ValueError
-            If name is not a valid string.
+            If `name` is not a valid string.
         ValueError
-            If limit is not positive (> 0).
+            If `limit` is not positive (> 0).
         ValueError
-            If interval is not positive (> 0).
+            If `interval` is not positive (> 0).
         ValueError
-            If output_send is not of type `Callable`.
+            If `output_send` is not of type `Callable`.
         ValueError
-            If output_drop is not of type `Callable` or ``None``.
+            If `output_drop` is not of type `Callable` or ``None``.
 
         """
         Condition.valid_string(name, "name")

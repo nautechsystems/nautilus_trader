@@ -75,7 +75,7 @@ cdef class MessageBus:
         Raises
         ------
         ValueError
-            If name is not ``None`` and not a valid string.
+            If `name` is not ``None`` and not a valid string.
 
         """
         if name is None:
@@ -172,11 +172,11 @@ cdef class MessageBus:
         Raises
         ------
         ValueError
-            If endpoint is not a valid string.
+            If `endpoint` is not a valid string.
         ValueError
-            If handler is not of type `Callable`.
+            If `handler` is not of type `Callable`.
         KeyError
-            If endpoint already registered.
+            If `endpoint` already registered.
 
         """
         Condition.valid_string(endpoint, "endpoint")
@@ -201,13 +201,13 @@ cdef class MessageBus:
         Raises
         ------
         ValueError
-            If endpoint is not a valid string.
+            If `endpoint` is not a valid string.
         ValueError
-            If handler is not of type `Callable`.
+            If `handler` is not of type `Callable`.
         KeyError
-            If endpoint is not registered.
+            If `endpoint` is not registered.
         ValueError
-            If handler is not registered at the endpoint.
+            If `handler` is not registered at the endpoint.
 
         """
         Condition.valid_string(endpoint, "endpoint")
@@ -328,9 +328,9 @@ cdef class MessageBus:
         Raises
         ------
         ValueError
-            If topic is not a valid string.
+            If `topic` is not a valid string.
         ValueError
-            If handler is not of type `Callable`.
+            If `handler` is not of type `Callable`.
 
         Warnings
         --------
@@ -388,9 +388,9 @@ cdef class MessageBus:
         Raises
         ------
         ValueError
-            If topic is not a valid string.
+            If `topic` is not a valid string.
         ValueError
-            If handler is not of type `Callable`.
+            If `handler` is not of type `Callable`.
 
         """
         Condition.valid_string(topic, "topic")

@@ -12,6 +12,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+
 import numpy as np
 
 from nautilus_trader.core.correctness cimport Condition
@@ -26,14 +27,20 @@ cdef class TieredTickScheme(TickScheme):
     Represents a tick scheme where tick levels change based on price level, such as various financial exchanges.
     """
 
-    def __init__(self, str name, object tiers, int max_ticks_per_tier=100):
+    def __init__(
+        self,
+        str name not None,
+        object tiers not None,
+        int max_ticks_per_tier=100,
+    ):
         """
-        Initialize a new instance of the `Instrument` class.
+        Initialize a new instance of the `TieredTickScheme` class.
 
         Parameters
         ----------
-        tiers: List[Tuple(start, stop, step)]
-            The tiers for the tick scheme. Should be a list of (start, stop, step) tuples
+        tiers : list[tuple(start, stop, step)]
+            The tiers for the tick scheme. Should be a list of (start, stop, step) tuples.
+
         """
         self.tiers = self._validate_tiers(tiers)
         self.max_ticks_per_tier = max_ticks_per_tier
@@ -51,7 +58,7 @@ cdef class TieredTickScheme(TickScheme):
         return tiers
 
     cpdef _build_ticks(self):
-        """ Expand mappings into the full tick values """
+        # Expand mappings into the full tick values
         cdef list all_ticks = []
         for start, stop, step in self.tiers:
             if stop == np.inf:
@@ -72,14 +79,48 @@ cdef class TieredTickScheme(TickScheme):
             return idx - 1
         return idx
 
-    cpdef Price next_ask_tick(self, double value, int n=0):
+    cpdef Price next_ask_price(self, double value, int n=0):
+        """
+        Return the price `n` ask ticks away from value.
+
+        If a given price is between two ticks, n=0 will find the nearest ask tick.
+
+        Parameters
+        ----------
+        value : double
+            The reference value.
+        n : int, default 0
+            The number of ticks to move.
+
+        Returns
+        -------
+        Price
+
+        """
         Condition.not_negative(n, "n")
         cdef int idx = self.find_tick_index(value)
         print(idx)
         Condition.true(idx + n <= self.tick_count, f"n={n} beyond ask tick bound")
         return self.ticks[idx + n]
 
-    cpdef Price next_bid_tick(self, double value, int n=0):
+    cpdef Price next_bid_price(self, double value, int n=0):
+        """
+        Return the price `n` bid ticks away from value.
+
+        If a given price is between two ticks, n=0 will find the nearest bid tick.
+
+        Parameters
+        ----------
+        value : double
+            The reference value.
+        n : int, default 0
+            The number of ticks to move.
+
+        Returns
+        -------
+        Price
+
+        """
         Condition.not_negative(n, "n")
         cdef int idx = self.find_tick_index(value)
         Condition.true((idx - n) > 0, f"n={n} beyond bid tick bound")

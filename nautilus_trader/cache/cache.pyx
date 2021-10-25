@@ -76,7 +76,7 @@ cdef class Cache(CacheFacade):
         Raises
         ------
         TypeError
-            If config is not of type `CacheConfig`.
+            If `config` is not of type `CacheConfig`.
 
         """
         if config is None:
@@ -1100,7 +1100,7 @@ cdef class Cache(CacheFacade):
         Raises
         ------
         ValueError
-            If account_id is already contained in the cache.
+            If `account_id` is already contained in the cache.
 
         """
         Condition.not_none(account, "account")
@@ -1131,7 +1131,7 @@ cdef class Cache(CacheFacade):
         Raises
         ------
         ValueError
-            If order.client_order_id is already contained in the cache.
+            If `order.client_order_id` is already contained in the cache.
 
         """
         Condition.not_none(order, "order")
@@ -1248,7 +1248,7 @@ cdef class Cache(CacheFacade):
         Raises
         ------
         ValueError
-            If oms_type is ``HEDGING`` and position.id is already contained in the cache.
+            If `oms_type` is ``HEDGING`` and `position.id` is already contained in the cache.
 
         """
         Condition.not_none(position, "position")
@@ -1390,7 +1390,7 @@ cdef class Cache(CacheFacade):
         Raises
         ------
         ValueError
-            If strategy is not contained in the strategies.
+            If `strategy` is not contained in the strategies.
 
         """
         Condition.not_none(strategy, "strategy")
@@ -1855,7 +1855,7 @@ cdef class Cache(CacheFacade):
         Raises
         ------
         ValueError
-            If price_type is ``LAST``.
+            If `price_type` is ``LAST``.
 
         """
         Condition.not_none(from_currency, "from_currency")
