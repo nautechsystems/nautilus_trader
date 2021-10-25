@@ -244,9 +244,9 @@ cdef class LiveExecutionClient(ExecutionClient):
         Raises
         ------
         ValueError
-            If report.client_order_id is not equal to order.client_order_id.
+            If `report.client_order_id` is not equal to `order.client_order_id`.
         ValueError
-            If report.venue_order_id is not equal to order.venue_order_id.
+            If `report.venue_order_id` is not equal to `order.venue_order_id`.
 
         Returns
         -------

@@ -82,7 +82,7 @@ class StrategyFactory:
         Raises
         ------
         TypeError
-            If config is not of type `ImportableStrategyConfig`.
+            If `config` is not of type `ImportableStrategyConfig`.
 
         """
         PyCondition.type(config, ImportableStrategyConfig, "config")

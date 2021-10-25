@@ -111,7 +111,7 @@ cdef class ExecutionEngine(Component):
         Raises
         ------
         TypeError
-            If config is not of type `ExecEngineConfig`.
+            If `config` is not of type `ExecEngineConfig`.
 
         """
         if config is None:
@@ -259,7 +259,7 @@ cdef class ExecutionEngine(Component):
         Raises
         ------
         ValueError
-            If client is already registered with the execution engine.
+            If `client` is already registered with the execution engine.
 
         """
         Condition.not_none(client, "client")
@@ -360,7 +360,7 @@ cdef class ExecutionEngine(Component):
         Raises
         ------
         ValueError
-            If client is not registered with the execution engine.
+            If `client` is not registered with the execution engine.
 
         """
         Condition.not_none(client, "client")

@@ -93,7 +93,7 @@ cdef class ClientOrderIdGenerator(IdentifierGenerator):
         Raises
         ------
         ValueError
-            If initial_count is negative (< 0).
+            If `initial_count` is negative (< 0).
 
         """
         Condition.not_negative_int(initial_count, "initial_count")
@@ -175,7 +175,7 @@ cdef class PositionIdGenerator(IdentifierGenerator):
         Raises
         ------
         ValueError
-            If the count is negative (< 0).
+            If `count` is negative (< 0).
 
         """
         Condition.not_none(strategy_id, "strategy_id")

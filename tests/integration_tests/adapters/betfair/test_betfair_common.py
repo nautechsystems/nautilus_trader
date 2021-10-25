@@ -12,6 +12,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+
 import pytest
 
 from nautilus_trader.adapters.betfair.common import BETFAIR_TICK_SCHEME
@@ -31,8 +32,8 @@ class TestBetfairCommon:
         assert MIN_BET_PROB == Price.from_str("0.0010000")
 
     def test_betfair_ticks(self):
-        assert self.tick_scheme.min_tick == Price.from_str("0.0010000")
-        assert self.tick_scheme.max_tick == Price.from_str("0.9900990")
+        assert self.tick_scheme.min_price == Price.from_str("0.0010000")
+        assert self.tick_scheme.max_price == Price.from_str("0.9900990")
 
     @pytest.mark.parametrize(
         "price, prob",
@@ -63,5 +64,5 @@ class TestBetfairCommon:
     )
     def test_probability_to_price(self, raw_prob, price):
         # Exact match
-        prob = self.tick_scheme.next_bid_tick(raw_prob)
+        prob = self.tick_scheme.next_bid_price(raw_prob)
         assert probability_to_price(prob) == Price.from_str(price)

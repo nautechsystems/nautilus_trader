@@ -41,7 +41,7 @@ cdef class RateOfChange(Indicator):
         Raises
         ------
         ValueError
-            If period is not > 1.
+            If `period` is not > 1.
 
         """
         Condition.true(period > 1, "period was <= 1")

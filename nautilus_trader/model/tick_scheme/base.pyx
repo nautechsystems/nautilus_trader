@@ -12,64 +12,100 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.model.objects cimport Price
 
 
 cdef class TickScheme:
     """
-    Represents a instrument tick scheme, mapping the prices available for an instrument
+    Represents an instrument tick scheme.
+
+    Maps the valid prices available for an instrument.
     """
 
-    def __init__(self, str name, Price min_tick, Price max_tick):
+    def __init__(
+        self,
+        str name not None,
+        Price min_tick not None,
+        Price max_tick not None,
+    ):
         """
         Initialize a new instance of the `TickScheme` class.
 
         Parameters
         ----------
+        name : str
+            The name of the tick scheme.
         min_tick : Price
             The minimum possible tick `Price`
         max_tick: Price
             The maximum possible tick `Price`
-        """
-        self.name = name
-        self.min_tick = min_tick
-        self.max_tick = max_tick
 
-    cpdef Price next_ask_tick(self, double value, int n=0):
+        Raises
+        ------
+        ValueError
+            If `name` is not a valid string.
         """
-        Return the `Price` `n` ask ticks away from `price`.
+        Condition.valid_string(name, "name")
+
+        self.name = name
+        self.min_price = min_tick
+        self.max_price = max_tick
+
+    cpdef Price next_ask_price(self, double value, int n=0):
+        """
+        Return the price `n` ask ticks away from value.
 
         If a given price is between two ticks, n=0 will find the nearest ask tick.
 
-        :param price: The reference price
-        :param n: The number of ticks to move
-        :return: Price
-        """
-        raise NotImplementedError
+        Parameters
+        ----------
+        value : double
+            The reference value.
+        n : int, default 0
+            The number of ticks to move.
 
-    cpdef Price next_bid_tick(self, double value, int n=0):
+        Returns
+        -------
+        Price
+
         """
-        Return the `Price` `n` bid ticks away from `value``.
+        raise NotImplementedError()  # pragma: no cover
+
+    cpdef Price next_bid_price(self, double value, int n=0):
+        """
+        Return the price `n` bid ticks away from value.
 
         If a given price is between two ticks, n=0 will find the nearest bid tick.
 
-        :param value: The reference price
-        :param n: The number of ticks to move
-        :return: Price
+        Parameters
+        ----------
+        value : double
+            The reference value.
+        n : int, default 0
+            The number of ticks to move.
+
+        Returns
+        -------
+        Price
+
         """
-        raise NotImplementedError
+        raise NotImplementedError()  # pragma: no cover
 
 
 cdef object TICK_SCHEMES = {}
 
 cpdef void register_tick_scheme(tick_scheme: TickScheme):
+    Condition.not_none(tick_scheme, "tick_scheme")
+
     global TICK_SCHEMES
     Condition.not_in(tick_scheme.name, TICK_SCHEMES, "name", "TICK_SCHEMES")
     TICK_SCHEMES[tick_scheme.name] = tick_scheme
 
 
 cpdef TickScheme get_tick_scheme(str name):
+    Condition.valid_string(name, "name")
     Condition.is_in(name, TICK_SCHEMES, "name", "TICK_SCHEMES")
     return TICK_SCHEMES[name]
 

@@ -43,7 +43,7 @@ cdef class SpreadAnalyzer(Indicator):
         Raises
         ------
         ValueError
-            If capacity is not positive (> 0).
+            If `capacity` is not positive (> 0).
 
         """
         Condition.positive_int(capacity, "capacity")
@@ -68,7 +68,7 @@ cdef class SpreadAnalyzer(Indicator):
         Raises
         ------
         ValueError
-            If tick.instrument_id does not equal the analyzers instrument_id.
+            If `tick.instrument_id` does not equal the analyzers instrument ID.
 
         """
         Condition.not_none(tick, "tick")

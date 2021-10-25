@@ -80,7 +80,7 @@ class TradingNode:
         Raises
         ------
         TypeError
-            If config is not of type `TradingNodeConfig`.
+            If `config` is not of type `TradingNodeConfig`.
 
         """
         if config is None:
@@ -292,7 +292,7 @@ class TradingNode:
         Raises
         ------
         KeyError
-            If handler already registered.
+            If `handler` already registered.
 
         """
         self._logger.register_sink(handler=handler)
@@ -311,9 +311,9 @@ class TradingNode:
         Raises
         ------
         ValueError
-            If name is not a valid string.
+            If `name` is not a valid string.
         KeyError
-            If name has already been added.
+            If `name` has already been added.
 
         """
         self._builder.add_data_client_factory(name, factory)
@@ -332,9 +332,9 @@ class TradingNode:
         Raises
         ------
         ValueError
-            If name is not a valid string.
+            If `name` is not a valid string.
         KeyError
-            If name has already been added.
+            If `name` has already been added.
 
         """
         self._builder.add_exec_client_factory(name, factory)

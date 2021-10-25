@@ -159,7 +159,7 @@ cdef class DataEngine(Component):
         Raises
         ------
         ValueError
-            If client is already registered.
+            If `client` is already registered.
 
         """
         Condition.not_none(client, "client")

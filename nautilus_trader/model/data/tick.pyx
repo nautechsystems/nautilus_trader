@@ -260,7 +260,7 @@ cdef class TradeTick(Tick):
         Raises
         ------
         ValueError
-            If match_id is not a valid string.
+            If `match_id` is not a valid string.
 
         """
         Condition.valid_string(match_id, "match_id")

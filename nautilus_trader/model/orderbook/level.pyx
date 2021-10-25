@@ -81,7 +81,7 @@ cdef class Level:
         Raises
         ------
         ValueError
-            If order.price is not equal to the levels price.
+            If `order.price` is not equal to the levels price.
 
         """
         Condition.not_none(order, "order")
@@ -101,7 +101,7 @@ cdef class Level:
         Raises
         ------
         KeyError
-            If the order is not found at this level.
+            If `order` is not found at this level.
 
         """
         Condition.not_none(order, "order")

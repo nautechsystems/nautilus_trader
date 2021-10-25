@@ -234,7 +234,7 @@ cdef class MarginAccount(Account):
         Raises
         ------
         ValueError
-            If margin_init is negative (< 0).
+            If `margin_init` is negative (< 0).
 
         Warnings
         --------
@@ -262,7 +262,7 @@ cdef class MarginAccount(Account):
         Raises
         ------
         ValueError
-            If margin_maint is negative (< 0).
+            If `margin_maint` is negative (< 0).
 
         Warnings
         --------
@@ -373,7 +373,7 @@ cdef class MarginAccount(Account):
         Raises
         ------
         ValueError
-            If liquidity_side is NONE.
+            If `liquidity_side` is NONE.
 
         """
         Condition.not_none(instrument, "instrument")

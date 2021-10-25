@@ -68,7 +68,7 @@ cdef class ForexSessionFilter:
         Raises
         ------
         ValueError
-            If time_now is not tz aware UTC.
+            If `time_now` is not tz aware UTC.
 
         """
         Condition.type(session, ForexSession, "session")
@@ -114,7 +114,7 @@ cdef class ForexSessionFilter:
         Raises
         ------
         ValueError
-            If time_now is not tz aware UTC.
+            If `time_now` is not tz aware UTC.
 
         """
         Condition.type(session, ForexSession, "session")
@@ -172,7 +172,7 @@ cdef class ForexSessionFilter:
         Raises
         ------
         ValueError
-            If time_now is not tz aware UTC.
+            If `time_now` is not tz aware UTC.
 
         """
         Condition.type(session, ForexSession, "session")
@@ -230,7 +230,7 @@ cdef class ForexSessionFilter:
         Raises
         ------
         ValueError
-            If time_now is not tz aware UTC.
+            If `time_now` is not tz aware UTC.
 
         """
         Condition.type(session, ForexSession, "session")
@@ -288,7 +288,7 @@ cdef class ForexSessionFilter:
         Raises
         ------
         ValueError
-            If time_now is not tz aware UTC.
+            If `time_now` is not tz aware UTC.
 
         """
         Condition.type(session, ForexSession, "session")
@@ -462,11 +462,11 @@ cdef class EconomicNewsEventFilter:
         Raises
         ------
         ValueError
-            The time_now < self.unfiltered_data_start
+            The `time_now` < `self.unfiltered_data_start`.
         ValueError
-            The time_now > self.unfiltered_data_end
+            The `time_now` > `self.unfiltered_data_end`.
         ValueError
-            If time_now is not tz aware UTC.
+            If `time_now` is not tz aware UTC.
 
         """
         Condition.true(is_datetime_utc(time_now), "time_now was not tz aware UTC")
@@ -512,11 +512,11 @@ cdef class EconomicNewsEventFilter:
         Raises
         ------
         ValueError
-            The time_now < self.unfiltered_data_start
+            The `time_now` < `self.unfiltered_data_start`.
         ValueError
-            The time_now > self.unfiltered_data_end
+            The `time_now` > `self.unfiltered_data_end`.
         ValueError
-            If time_now is not tz aware UTC.
+            If `time_now` is not tz aware UTC.
 
         """
         Condition.true(is_datetime_utc(time_now), "time_now was not tz aware UTC")

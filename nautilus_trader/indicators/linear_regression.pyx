@@ -41,7 +41,7 @@ cdef class LinearRegression(Indicator):
         Raises
         ------
         ValueError
-            If period is not greater than zero.
+            If `period` is not greater than zero.
 
         """
         Condition.positive_int(period, "period")

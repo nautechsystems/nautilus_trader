@@ -119,13 +119,13 @@ cdef class StopLimitOrder(PassiveOrder):
         order_list_id : OrderListId, optional
             The order list ID associated with the order.
         parent_order_id : ClientOrderId, optional
-            The orders parent client order ID.
+            The order parent client order ID.
         child_order_ids : list[ClientOrderId], optional
-            The orders child client order ID(s).
+            The order child client order ID(s).
         contingency : ContingencyType
-            The orders contingency type.
+            The order contingency type.
         contingency_ids : list[ClientOrderId], optional
-            The orders contingency client order ID(s).
+            The order contingency client order ID(s).
         tags : str, optional
             The custom user tags for the order. These are optional and can
             contain any arbitrary delimiter if required.
@@ -133,11 +133,11 @@ cdef class StopLimitOrder(PassiveOrder):
         Raises
         ------
         ValueError
-            If quantity is not positive (> 0).
+            If `quantity` is not positive (> 0).
         ValueError
-            If time_in_force is ``GTD`` and the expire_time is ``None``.
+            If `time_in_force` is ``GTD`` and the expire_time is ``None``.
         ValueError
-            If post_only and hidden.
+            If `post_only` and `hidden`.
 
         """
         if post_only:
@@ -243,7 +243,7 @@ cdef class StopLimitOrder(PassiveOrder):
         Raises
         ------
         ValueError
-            If init.type is not equal to ``STOP_LIMIT``.
+            If `init.type` is not equal to ``STOP_LIMIT``.
 
         """
         Condition.not_none(init, "init")

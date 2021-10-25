@@ -160,7 +160,7 @@ cdef class Logger:
         Raises
         ------
         KeyError
-            If handler already registered.
+            If `handler` already registered.
 
         """
         Condition.not_none(handler, "handler")

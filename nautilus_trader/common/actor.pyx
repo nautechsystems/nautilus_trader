@@ -90,7 +90,7 @@ cdef class Actor(Component):
         Raises
         ------
         TypeError
-            If config is not of type `ActorConfig`.
+            If `config` is not of type `ActorConfig`.
 
         """
         if config is None:
@@ -715,9 +715,9 @@ cdef class Actor(Component):
         Raises
         ------
         ValueError
-            If depth is negative (< 0).
+            If `depth` is negative (< 0).
         ValueError
-            If interval_ms is not positive (> 0).
+            If `interval_ms` is not positive (> 0).
 
         """
         Condition.not_none(instrument_id, "instrument_id")

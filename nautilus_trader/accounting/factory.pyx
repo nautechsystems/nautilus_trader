@@ -45,7 +45,7 @@ cdef class AccountFactory:
         Raises
         ------
         KeyError
-            If issuer has already registered a custom account type.
+            If `issuer` has already registered a custom account type.
 
         """
         Condition.not_none(issuer, "issuer")
@@ -68,7 +68,7 @@ cdef class AccountFactory:
         Raises
         ------
         KeyError
-            If an issuer has already been registered for the issuer.
+            If an issuer has already been registered for the `issuer`.
 
         """
         Condition.not_none(issuer, "issuer")

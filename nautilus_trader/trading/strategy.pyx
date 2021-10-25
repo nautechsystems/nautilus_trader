@@ -102,7 +102,7 @@ cdef class TradingStrategy(Actor):
         Raises
         ------
         TypeError
-            If config is not of type `TradingStrategyConfig`.
+            If `config` is not of type `TradingStrategyConfig`.
 
         """
         if config is None:
@@ -235,6 +235,9 @@ cdef class TradingStrategy(Actor):
 
         """
         Condition.not_none(trader_id, "trader_id")
+        Condition.not_none(portfolio, "portfolio")
+        Condition.not_none(msgbus, "msgbus")
+        Condition.not_none(cache, "cache")
         Condition.not_none(clock, "clock")
         Condition.not_none(logger, "logger")
 
@@ -378,7 +381,7 @@ cdef class TradingStrategy(Actor):
         Raises
         ------
         RuntimeError
-            If strategy is not registered with a trader.
+            If `strategy` is not registered with a trader.
 
         Warnings
         --------
@@ -416,7 +419,7 @@ cdef class TradingStrategy(Actor):
         Raises
         ------
         RuntimeError
-            If strategy is not registered with a trader.
+            If `strategy` is not registered with a trader.
 
         Warnings
         --------
@@ -564,7 +567,7 @@ cdef class TradingStrategy(Actor):
         Raises
         ------
         ValueError
-            If trigger is not ``None`` and order.type != ``STOP_LIMIT``.
+            If `trigger` is not ``None`` and `order.type` != ``STOP_LIMIT``.
 
         References
         ----------
