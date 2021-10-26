@@ -182,7 +182,7 @@ cdef class QuoteTick(Tick):
         Parameters
         ----------
         price_type : PriceType
-            The price type to extraction.
+            The price type to extract.
 
         Returns
         -------
@@ -205,7 +205,7 @@ cdef class QuoteTick(Tick):
         Parameters
         ----------
         price_type : PriceType
-            The price type for extraction.
+            The price type to extract.
 
         Returns
         -------
