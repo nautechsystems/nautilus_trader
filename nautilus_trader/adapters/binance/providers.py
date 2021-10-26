@@ -50,7 +50,7 @@ class BinanceInstrumentProvider(InstrumentProvider):
         logger: Logger,
     ):
         """
-        Initialize a new instance of the ``BetfairInstrumentProvider`` class.
+        Initialize a new instance of the ``BinanceInstrumentProvider`` class.
 
         Parameters
         ----------
@@ -75,7 +75,8 @@ class BinanceInstrumentProvider(InstrumentProvider):
 
     async def load_all_or_wait_async(self) -> None:
         """
-        Load all instruments into the provider asynchronously, or await loading.
+        Load the latest Binance instruments into the provider asynchronously, or
+        await loading.
 
         If `load_async` has been previously called then will immediately return.
         """
@@ -85,6 +86,7 @@ class BinanceInstrumentProvider(InstrumentProvider):
         if not self._loading:
             self._log.debug("Loading instruments...")
             await self.load_all_async()
+            self._log.info(f"Loaded {self.count} instruments.")
         else:
             self._log.debug("Awaiting loading...")
             while self._loading:
