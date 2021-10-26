@@ -117,7 +117,7 @@ def get_cached_binance_instrument_provider(
 
 class BinanceLiveDataClientFactory(LiveDataClientFactory):
     """
-    Provides a `Betfair` live data client factory.
+    Provides a `Binance` live data client factory.
     """
 
     @staticmethod
@@ -184,7 +184,7 @@ class BinanceLiveDataClientFactory(LiveDataClientFactory):
 
 class BinanceLiveExecutionClientFactory(LiveExecutionClientFactory):
     """
-    Provides data and execution clients for Betfair.
+    Provides a `Binance` live execution client factory.
     """
 
     @staticmethod
