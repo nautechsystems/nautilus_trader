@@ -18,6 +18,8 @@ from nautilus_trader.model.tick_scheme.base cimport TickScheme
 
 
 cdef class FixedTickScheme(TickScheme):
+    cdef double _increment
+
     cdef readonly int price_precision
     """The tick scheme price precision.\n\n:returns: `int`"""
     cdef readonly Price increment

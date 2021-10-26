@@ -16,10 +16,10 @@
 import numpy as np
 
 from nautilus_trader.core.correctness cimport Condition
+from nautilus_trader.core.text cimport precision_from_str
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.tick_scheme.base cimport TickScheme
-
-from nautilus_trader.model.tick_scheme.base import register_tick_scheme
+from nautilus_trader.model.tick_scheme.base cimport register_tick_scheme
 
 
 cdef class TieredTickScheme(TickScheme):
@@ -30,7 +30,7 @@ cdef class TieredTickScheme(TickScheme):
     def __init__(
         self,
         str name not None,
-        object tiers not None,
+        list tiers not None,
         int max_ticks_per_tier=100,
     ):
         """
@@ -38,8 +38,17 @@ cdef class TieredTickScheme(TickScheme):
 
         Parameters
         ----------
+        name : str
+            The name of the tick scheme.
         tiers : list[tuple(start, stop, step)]
             The tiers for the tick scheme. Should be a list of (start, stop, step) tuples.
+        max_ticks_per_tier : int, default 100
+            The maximum number of ticks per tier.
+
+        Raises
+        ------
+        ValueError
+            If `name` is not a valid string.
 
         """
         self.tiers = self._validate_tiers(tiers)
@@ -49,7 +58,7 @@ cdef class TieredTickScheme(TickScheme):
         self.tick_count = len(self.ticks)
 
     @staticmethod
-    def _validate_tiers(tiers):
+    def _validate_tiers(list tiers):
         for x in tiers:
             assert len(x) == 3, "Mappings should be list of tuples like [(start, stop, increment), ...]"
             start, stop, incr = x
@@ -63,7 +72,7 @@ cdef class TieredTickScheme(TickScheme):
         for start, stop, step in self.tiers:
             if stop == np.inf:
                 stop = start + ((self.max_ticks_per_tier + 1) * step)
-            precision = Price.from_str_c(str(step)).precision
+            precision = precision_from_str(str(step))
             ticks = [Price(value=x, precision=precision) for x in np.arange(start, stop, step)]
             if len(ticks) > self.max_ticks_per_tier+1:
                 print(f"{self.name}: too many ticks for tier ({start=}, {stop=}, {step=}, trimming to {self.max_ticks_per_tier} (from {len(ticks)})")
@@ -73,7 +82,7 @@ cdef class TieredTickScheme(TickScheme):
 
     cpdef int find_tick_index(self, double value):
         cdef int idx = self.ticks.searchsorted(value)
-        prev_value = self.ticks[idx - 1].as_double()
+        cdef double prev_value = self.ticks[idx - 1].as_double()
         # print(f"Searching for {value=}, {idx=}, {prev_value=}, exact?={value == prev_value}")
         if value == prev_value:
             return idx - 1
@@ -99,7 +108,6 @@ cdef class TieredTickScheme(TickScheme):
         """
         Condition.not_negative(n, "n")
         cdef int idx = self.find_tick_index(value)
-        print(idx)
         Condition.true(idx + n <= self.tick_count, f"n={n} beyond ask tick bound")
         return self.ticks[idx + n]
 

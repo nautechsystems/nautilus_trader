@@ -16,7 +16,7 @@
 from nautilus_trader.model.objects cimport Price
 
 
-cdef object TICK_SCHEMES
+cdef dict TICK_SCHEMES
 
 cdef class TickScheme:
     cdef readonly str name
@@ -30,4 +30,8 @@ cdef class TickScheme:
     cpdef Price next_bid_price(self, double value, int n=*)
 
 
+cpdef double round_down(double value, double base) except *
+cpdef double round_up(double value, double base) except *
+
+cpdef void register_tick_scheme(TickScheme tick_scheme) except *
 cpdef TickScheme get_tick_scheme(str name)
