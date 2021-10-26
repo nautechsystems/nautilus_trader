@@ -38,14 +38,15 @@ cdef class TickScheme:
         name : str
             The name of the tick scheme.
         min_tick : Price
-            The minimum possible tick `Price`
+            The minimum possible tick `Price`.
         max_tick: Price
-            The maximum possible tick `Price`
+            The maximum possible tick `Price`.
 
         Raises
         ------
         ValueError
             If `name` is not a valid string.
+
         """
         Condition.valid_string(name, "name")
 
@@ -94,9 +95,31 @@ cdef class TickScheme:
         raise NotImplementedError()  # pragma: no cover
 
 
-cdef object TICK_SCHEMES = {}
+cdef inline double _round_base(double value, double base) except *:
+    """
+    >>> _round_base(0.72775, 0.0001)
+    0.7277
+    """
+    return int(value / base) * base
 
-cpdef void register_tick_scheme(tick_scheme: TickScheme):
+
+cpdef double round_down(double value, double base) except *:
+    """
+    Returns a value rounded down to a specific number of decimal places.
+    """
+    return _round_base(value=value, base=base)
+
+
+cpdef double round_up(double value, double base) except *:
+    """
+    Returns a value rounded down to a specific number of decimal places.
+    """
+    return _round_base(value=value, base=base) + base
+
+
+cdef dict TICK_SCHEMES = {}  # type: dict[str, TickScheme]
+
+cpdef void register_tick_scheme(TickScheme tick_scheme) except *:
     Condition.not_none(tick_scheme, "tick_scheme")
 
     global TICK_SCHEMES
@@ -112,25 +135,3 @@ cpdef TickScheme get_tick_scheme(str name):
 
 cpdef list list_tick_schemes():
     return list(TICK_SCHEMES)
-
-
-cdef double _round_base(double value, double base):
-    """
-    >>> _round_base(0.72775, 0.0001)
-    0.7277
-    """
-    return int(value / base) * base
-
-
-cpdef double round_down(double value, double base):
-    """
-    Returns a value rounded down to a specific number of decimal places.
-    """
-    return _round_base(value=value, base=base)
-
-
-cpdef double round_up(double value, double base):
-    """
-    Returns a value rounded down to a specific number of decimal places.
-    """
-    return _round_base(value=value, base=base) + base
