@@ -349,3 +349,7 @@ class TestBettingInstrument:
         result = self.instrument.next_bid_price(value, num_ticks=n)
         expected = Price.from_str(expected)
         assert result == expected
+
+    def test_min_max_price(self):
+        assert self.instrument.min_price == Price.from_str("0.0010000")
+        assert self.instrument.max_price == Price.from_str("0.9900990")
