@@ -65,6 +65,8 @@ cdef class BettingInstrument(Instrument):
         int64_t ts_init,
         str tick_scheme_name="BETFAIR",
         int price_precision=BETFAIR_PRICE_PRECISION,
+        Price min_price=None,
+        Price max_price=None,
     ):
         assert event_open_date.tzinfo is not None
         assert market_start_time.tzinfo is not None
@@ -122,6 +124,10 @@ cdef class BettingInstrument(Instrument):
             tick_scheme_name=tick_scheme_name,
             info=dict(),  # TODO - Add raw response?
         )
+        if not min_price and tick_scheme_name:
+            self.min_price = self._tick_scheme.min_price
+        if not max_price and tick_scheme_name:
+            self.max_price = self._tick_scheme.max_price
 
     @staticmethod
     cdef BettingInstrument from_dict_c(dict values):
