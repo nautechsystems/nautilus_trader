@@ -20,6 +20,7 @@ from unittest.mock import patch
 import pytest
 
 from nautilus_trader.adapters.betfair.common import BETFAIR_VENUE
+from nautilus_trader.adapters.betfair.common import price_to_probability
 from nautilus_trader.adapters.betfair.execution import BetfairClient
 from nautilus_trader.adapters.betfair.execution import BetfairExecutionClient
 from nautilus_trader.adapters.betfair.parsing import betfair_account_to_account_state
@@ -476,6 +477,24 @@ class TestBetfairExecutionClient:
         assert len(self.messages) == 2
         assert isinstance(self.messages[1], OrderFilled)
         assert self.messages[1].last_px == Price.from_str("0.9090909")
+
+    @pytest.mark.asyncio
+    async def test_order_stream_filled_better_price(self):
+        # Arrange
+        update = BetfairStreaming.ocm_filled_different_price()
+        self._setup_exec_client_and_cache(update)
+        await self._setup_account()
+
+        # Act
+        await self.client._handle_order_stream_update(update=update)
+        await asyncio.sleep(0)
+
+        # Assert
+        assert len(self.messages) == 2
+        assert isinstance(self.messages[1], OrderFilled)
+        # We send an order to BUY @ 1.30, but get filled at 1.20
+        expected = price_to_probability("1.20")
+        assert self.messages[1].last_px == expected
 
     @pytest.mark.asyncio
     async def test_order_stream_mixed(self):

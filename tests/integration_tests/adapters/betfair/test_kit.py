@@ -732,6 +732,10 @@ class BetfairStreaming:
         return BetfairStreaming.load("streaming_ocm_FILLED.json")
 
     @staticmethod
+    def ocm_filled_different_price():
+        return BetfairStreaming.load("streaming_ocm_filled_different_price.json")
+
+    @staticmethod
     def ocm_MIXED():
         return BetfairStreaming.load("streaming_ocm_MIXED.json")
 
