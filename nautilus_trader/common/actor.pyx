@@ -461,6 +461,7 @@ cdef class Actor(Component):
         self._change_logger(logger)
         self._change_msgbus(msgbus)  # The trader ID is also assigned here
 
+        self.trader_id = trader_id
         self.msgbus = msgbus
         self.cache = cache
 
@@ -543,6 +544,7 @@ cdef class Actor(Component):
         """
         Condition.not_none(client_id, "client_id")
         Condition.not_none(data_type, "data_type")
+        Condition.true(self.trader_id is not None, "The actor has not been registered")
 
         self._msgbus.subscribe(
             topic=f"data.{data_type}",
@@ -575,6 +577,7 @@ cdef class Actor(Component):
 
         """
         Condition.not_none(data_type, "data_type")
+        Condition.true(self.trader_id is not None, "The actor has not been registered")
 
         self._msgbus.subscribe(
             topic=f"data.strategy"
@@ -599,6 +602,7 @@ cdef class Actor(Component):
 
         """
         Condition.not_none(instrument_id, "instrument_id")
+        Condition.true(self.trader_id is not None, "The actor has not been registered")
 
         self._msgbus.subscribe(
             topic=f"data.instrument"
@@ -627,6 +631,7 @@ cdef class Actor(Component):
 
         """
         Condition.not_none(venue, "venue")
+        Condition.true(self.trader_id is not None, "The actor has not been registered")
 
         self._msgbus.subscribe(
             topic=f"data.instrument.{venue}.*",
@@ -663,6 +668,7 @@ cdef class Actor(Component):
 
         """
         Condition.not_none(instrument_id, "instrument_id")
+        Condition.true(self.trader_id is not None, "The actor has not been registered")
 
         self._msgbus.subscribe(
             topic=f"data.book.deltas"
@@ -723,6 +729,7 @@ cdef class Actor(Component):
         Condition.not_none(instrument_id, "instrument_id")
         Condition.not_negative(depth, "depth")
         Condition.not_negative(interval_ms, "interval_ms")
+        Condition.true(self.trader_id is not None, "The actor has not been registered")
 
         self._msgbus.subscribe(
             topic=f"data.book.snapshots"
@@ -758,6 +765,7 @@ cdef class Actor(Component):
 
         """
         Condition.not_none(instrument_id, "instrument_id")
+        Condition.true(self.trader_id is not None, "The actor has not been registered")
 
         self._msgbus.subscribe(
             topic=f"data.tickers"
@@ -786,6 +794,7 @@ cdef class Actor(Component):
 
         """
         Condition.not_none(instrument_id, "instrument_id")
+        Condition.true(self.trader_id is not None, "The actor has not been registered")
 
         self._msgbus.subscribe(
             topic=f"data.quotes"
@@ -814,6 +823,7 @@ cdef class Actor(Component):
 
         """
         Condition.not_none(instrument_id, "instrument_id")
+        Condition.true(self.trader_id is not None, "The actor has not been registered")
 
         self._msgbus.subscribe(
             topic=f"data.trades"
@@ -842,6 +852,7 @@ cdef class Actor(Component):
 
         """
         Condition.not_none(bar_type, "bar_type")
+        Condition.true(self.trader_id is not None, "The actor has not been registered")
 
         self._msgbus.subscribe(
             topic=f"data.bars.{bar_type}",
@@ -868,6 +879,7 @@ cdef class Actor(Component):
 
         """
         Condition.not_none(venue, "venue")
+        Condition.true(self.trader_id is not None, "The actor has not been registered")
 
         self._msgbus.subscribe(
             topic=f"data.venue.status",
@@ -894,6 +906,7 @@ cdef class Actor(Component):
 
         """
         Condition.not_none(instrument_id, "instrument_id")
+        Condition.true(self.trader_id is not None, "The actor has not been registered")
 
         self._msgbus.subscribe(
             topic=f"data.venue.status",
@@ -920,6 +933,7 @@ cdef class Actor(Component):
 
         """
         Condition.not_none(instrument_id, "instrument_id")
+        Condition.true(self.trader_id is not None, "The actor has not been registered")
 
         self._msgbus.subscribe(
             topic=f"data.venue.close_price.{instrument_id.value}",
@@ -949,6 +963,7 @@ cdef class Actor(Component):
         """
         Condition.not_none(client_id, "client_id")
         Condition.not_none(data_type, "data_type")
+        Condition.true(self.trader_id is not None, "The actor has not been registered")
 
         self._msgbus.unsubscribe(topic=f"data.{data_type}", handler=self.handle_data)
 
@@ -978,6 +993,7 @@ cdef class Actor(Component):
 
         """
         Condition.not_none(data_type, "data_type")
+        Condition.true(self.trader_id is not None, "The actor has not been registered")
 
         self._msgbus.unsubscribe(
             topic=f"data.strategy.{data_type.__name__}.{strategy_id or '*'}",
@@ -998,6 +1014,7 @@ cdef class Actor(Component):
 
         """
         Condition.not_none(venue, "venue")
+        Condition.true(self.trader_id is not None, "The actor has not been registered")
 
         self._msgbus.unsubscribe(
             topic=f"data.instrument.{venue}.*",
@@ -1024,6 +1041,7 @@ cdef class Actor(Component):
 
         """
         Condition.not_none(instrument_id, "instrument_id")
+        Condition.true(self.trader_id is not None, "The actor has not been registered")
 
         self._msgbus.unsubscribe(
             topic=f"data.instrument"
@@ -1052,6 +1070,7 @@ cdef class Actor(Component):
 
         """
         Condition.not_none(instrument_id, "instrument_id")
+        Condition.true(self.trader_id is not None, "The actor has not been registered")
 
         self._msgbus.unsubscribe(
             topic=f"data.book.deltas"
@@ -1088,6 +1107,7 @@ cdef class Actor(Component):
 
         """
         Condition.not_none(instrument_id, "instrument_id")
+        Condition.true(self.trader_id is not None, "The actor has not been registered")
 
         self._msgbus.unsubscribe(
             topic=f"data.book.snapshots"
@@ -1120,6 +1140,7 @@ cdef class Actor(Component):
 
         """
         Condition.not_none(instrument_id, "instrument_id")
+        Condition.true(self.trader_id is not None, "The actor has not been registered")
 
         self._msgbus.unsubscribe(
             topic=f"data.tickers"
@@ -1148,6 +1169,7 @@ cdef class Actor(Component):
 
         """
         Condition.not_none(instrument_id, "instrument_id")
+        Condition.true(self.trader_id is not None, "The actor has not been registered")
 
         self._msgbus.unsubscribe(
             topic=f"data.quotes"
@@ -1176,6 +1198,7 @@ cdef class Actor(Component):
 
         """
         Condition.not_none(instrument_id, "instrument_id")
+        Condition.true(self.trader_id is not None, "The actor has not been registered")
 
         self._msgbus.unsubscribe(
             topic=f"data.trades"
@@ -1204,6 +1227,7 @@ cdef class Actor(Component):
 
         """
         Condition.not_none(bar_type, "bar_type")
+        Condition.true(self.trader_id is not None, "The actor has not been registered")
 
         self._msgbus.unsubscribe(
             topic=f"data.bars.{bar_type}",
@@ -1231,6 +1255,7 @@ cdef class Actor(Component):
 
         """
         Condition.not_none(data, "data")
+        Condition.true(self.trader_id is not None, "The actor has not been registered")
 
         self._msgbus.publish_c(
             topic=f"data.{type(data).__name__}.{type(self).__name__}",
@@ -1253,6 +1278,7 @@ cdef class Actor(Component):
         """
         Condition.not_none(client_id, "client_id")
         Condition.not_none(data_type, "data_type")
+        Condition.true(self.trader_id is not None, "The actor has not been registered")
 
         cdef DataRequest request = DataRequest(
             client_id=client_id,
@@ -1293,6 +1319,7 @@ cdef class Actor(Component):
         Condition.not_none(instrument_id, "instrument_id")
         if from_datetime is not None and to_datetime is not None:
             Condition.true(from_datetime < to_datetime, "from_datetime was >= to_datetime")
+        Condition.true(self.trader_id is not None, "The actor has not been registered")
 
         cdef DataRequest request = DataRequest(
             client_id=ClientId(instrument_id.venue.value),
@@ -1337,6 +1364,7 @@ cdef class Actor(Component):
         Condition.not_none(instrument_id, "instrument_id")
         if from_datetime is not None and to_datetime is not None:
             Condition.true(from_datetime < to_datetime, "from_datetime was >= to_datetime")
+        Condition.true(self.trader_id is not None, "The actor has not been registered")
 
         cdef DataRequest request = DataRequest(
             client_id=ClientId(instrument_id.venue.value),
@@ -1381,6 +1409,7 @@ cdef class Actor(Component):
         Condition.not_none(bar_type, "bar_type")
         if from_datetime is not None and to_datetime is not None:
             Condition.true(from_datetime < to_datetime, "from_datetime was >= to_datetime")
+        Condition.true(self.trader_id is not None, "The actor has not been registered")
 
         cdef DataRequest request = DataRequest(
             client_id=ClientId(bar_type.instrument_id.venue.value),
