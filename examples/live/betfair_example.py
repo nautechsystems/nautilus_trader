@@ -72,7 +72,7 @@ async def main(market_id: str):
     # Configure trading node
     config = TradingNodeConfig(
         timeout_connection=30.0,
-        log_level="INFO",
+        log_level="DEBUG",
         cache_database=CacheDatabaseConfig(type="in-memory"),
         data_clients={
             "BETFAIR": {

@@ -26,6 +26,7 @@ from nautilus_trader.adapters.betfair.client.core import BetfairClient
 from nautilus_trader.adapters.betfair.common import B2N_ORDER_STREAM_SIDE
 from nautilus_trader.adapters.betfair.common import BETFAIR_VENUE
 from nautilus_trader.adapters.betfair.common import price_to_probability
+from nautilus_trader.adapters.betfair.common import probability_to_price
 from nautilus_trader.adapters.betfair.parsing import betfair_account_to_account_state
 from nautilus_trader.adapters.betfair.parsing import generate_order_status_report
 from nautilus_trader.adapters.betfair.parsing import generate_trades_list
@@ -62,6 +63,7 @@ from nautilus_trader.model.identifiers import ExecutionId
 from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import VenueOrderId
 from nautilus_trader.model.objects import Money
+from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.orders.base import Order
 from nautilus_trader.msgbus.bus import MessageBus
@@ -473,8 +475,8 @@ class BetfairExecutionClient(LiveExecutionClient):
             # market_id = market["id"]
             for selection in market.get("orc", []):
                 if selection.get("fullImage", False):
-                    # TODO (bm) - need to replace orders for this selection
-                    self._log.warning("Received full order image, SKIPPING!")
+                    # TODO (bm) - need to replace orders for this selection - probably via a recon
+                    self._log.debug("Received full order image")
                 for order_update in selection.get("uo", []):
                     await self._check_order_update(order_update)
                     if order_update["status"] == "E":
@@ -529,6 +531,7 @@ class BetfairExecutionClient(LiveExecutionClient):
             execution_id = create_execution_id(update)
             if execution_id not in self.published_executions[client_order_id]:
                 fill_qty = update["sm"] - order.filled_qty
+                fill_price = self._determine_fill_price(update=update, order=order)
                 self.generate_order_filled(
                     strategy_id=order.strategy_id,
                     instrument_id=order.instrument_id,
@@ -539,7 +542,7 @@ class BetfairExecutionClient(LiveExecutionClient):
                     order_side=B2N_ORDER_STREAM_SIDE[update["side"]],
                     order_type=OrderType.LIMIT,
                     last_qty=Quantity(fill_qty, instrument.size_precision),
-                    last_px=price_to_probability(str(update["p"])),
+                    last_px=price_to_probability(str(fill_price)),
                     # avg_px=Decimal(order['avp']),
                     quote_currency=instrument.quote_currency,
                     commission=Money(0, self.base_currency),
@@ -547,6 +550,33 @@ class BetfairExecutionClient(LiveExecutionClient):
                     ts_event=millis_to_nanos(update["md"]),
                 )
                 self.published_executions[client_order_id].append(execution_id)
+
+    def _determine_fill_price(self, update: Dict, order: Order):
+        if "avp" not in update:
+            # We don't have any specifics about the fill, assume it was filled at our price
+            return update["p"]
+        if order.filled_qty == 0:
+            # New fill, simply return average price
+            return update["avp"]
+        else:
+            new_price = price_to_probability(str(update["avp"]))
+            prev_price = order.avg_px
+            if prev_price == new_price:
+                # Matched at same price
+                return update["avp"]
+            else:
+                prev_price = probability_to_price(order.avg_px)
+                prev_size = order.filled_qty
+                new_price = Price.from_str(update["avp"])
+                new_size = update["sm"] - prev_size
+                total_size = prev_size + new_size
+                price = (new_price - ((prev_price * (prev_size / total_size)))) / (
+                    new_size / total_size
+                )
+                self._log.debug(
+                    f"Calculating fill price {prev_price=} {prev_size=} {new_price=} {new_size=} == {price=}"
+                )
+                return price
 
     def _handle_stream_execution_complete_order_update(self, update: Dict) -> None:
         """
@@ -561,6 +591,8 @@ class BetfairExecutionClient(LiveExecutionClient):
             self._log.debug("")
             execution_id = create_execution_id(update)
             if execution_id not in self.published_executions[client_order_id]:
+                fill_qty = update["sm"] - order.filled_qty
+                fill_price = self._determine_fill_price(update=update, order=order)
                 # At least some part of this order has been filled
                 self.generate_order_filled(
                     strategy_id=order.strategy_id,
@@ -571,8 +603,8 @@ class BetfairExecutionClient(LiveExecutionClient):
                     execution_id=execution_id,
                     order_side=B2N_ORDER_STREAM_SIDE[update["side"]],
                     order_type=OrderType.LIMIT,
-                    last_qty=Quantity(update["sm"], instrument.size_precision),
-                    last_px=price_to_probability(str(update["p"])),
+                    last_qty=Quantity(fill_qty, instrument.size_precision),
+                    last_px=price_to_probability(str(fill_price)),
                     quote_currency=instrument.quote_currency,
                     # avg_px=order['avp'],
                     commission=Money(0, self.base_currency),

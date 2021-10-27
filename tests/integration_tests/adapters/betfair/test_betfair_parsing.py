@@ -19,6 +19,7 @@ from unittest.mock import patch
 import pytest
 
 from nautilus_trader.adapters.betfair.client.core import BetfairClient
+from nautilus_trader.adapters.betfair.parsing import _order_quantity_to_stake
 from nautilus_trader.adapters.betfair.parsing import betfair_account_to_account_state
 from nautilus_trader.adapters.betfair.parsing import build_market_update_messages
 from nautilus_trader.adapters.betfair.parsing import make_order
@@ -62,18 +63,20 @@ class TestBetfairParsing:
         "price, quantity, side, betfair_quantity",
         [
             ("0.20", "100", "BUY", "100.0"),
-            ("0.25", "100", "SELL", "33.0"),
-            ("0.80", "25", "SELL", "100.0"),
+            ("0.25", "375", "SELL", "125.0"),
+            ("0.80", "6.25", "SELL", "25.0"),
+            ("0.25", "100", "BUY", "100.0"),
+            ("0.50", "200", "SELL", "200.0"),
+            ("0.74", "20", "SELL", "57.0"),
         ],
     )
-    def test_nautilus_to_betfair_order_volumes(self, price, quantity, side, betfair_quantity):
-        order = BetfairTestStubs.limit_order(
-            side=OrderSideParser.from_str_py(side),
+    def test_order_quantity_to_stake(self, price, quantity, side, betfair_quantity):
+        result = _order_quantity_to_stake(
             price=Price.from_str(price),
             quantity=Quantity.from_str(quantity),
+            side=OrderSideParser.from_str_py(side),
         )
-        result = make_order(order=order)
-        assert result["limitOrder"]["size"] == betfair_quantity
+        assert result == betfair_quantity
 
     def test_order_submit_to_betfair(self):
         command = BetfairTestStubs.submit_order_command()
@@ -235,11 +238,17 @@ class TestBetfairParsing:
         }
         assert result == expected
 
-    def test_make_order_market_on_close(self):
-        order = BetfairTestStubs.market_order(time_in_force=TimeInForce.OC)
+    @pytest.mark.parametrize(
+        "side,liability",
+        [("BUY", "10.0"), ("SELL", "10.0")],
+    )
+    def test_make_order_market_on_close(self, side, liability):
+        order = BetfairTestStubs.market_order(
+            time_in_force=TimeInForce.OC, side=OrderSideParser.from_str_py(side)
+        )
         result = make_order(order)
         expected = {
-            "marketOnCloseOrder": {"liability": "10.0"},
+            "marketOnCloseOrder": {"liability": liability},
             "orderType": "MARKET_ON_CLOSE",
         }
         assert result == expected
