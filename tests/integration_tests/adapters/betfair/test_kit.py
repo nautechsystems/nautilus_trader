@@ -803,6 +803,53 @@ class BetfairStreaming:
     def market_updates():
         return BetfairStreaming.load("streaming_market_updates.json")
 
+    @staticmethod
+    def generate_order_update(
+        price=1.3,
+        size=20,
+        side="B",
+        status="EC",
+        sm=0,
+        sr=0,
+        sc=0,
+        avp=0,
+        order_id: str = "248485109136",
+    ):
+        assert side in ("B", "L"), "`side` should be 'B' or 'L'"
+        return {
+            "oc": [
+                {
+                    "orc": [
+                        {
+                            "uo": [
+                                {
+                                    "id": order_id,
+                                    "p": price,
+                                    "s": size,
+                                    "side": side,
+                                    "status": status,
+                                    "pt": "P",
+                                    "ot": "L",
+                                    "pd": 1635217893000,
+                                    "md": int(pd.Timestamp.utcnow().timestamp()),
+                                    "sm": sm,
+                                    "sr": sr,
+                                    "sl": 0,
+                                    "sc": sc,
+                                    "sv": 0,
+                                    "rac": "",
+                                    "rc": "REG_LGA",
+                                    "rfo": "O-20211026-031132-000",
+                                    "rfs": "TestStrategy-1.",
+                                    **({"avp": avp} if avp else {}),
+                                }
+                            ]
+                        }
+                    ]
+                }
+            ]
+        }
+
 
 class BetfairDataProvider:
     @staticmethod

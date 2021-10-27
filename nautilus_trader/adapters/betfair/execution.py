@@ -473,7 +473,7 @@ class BetfairExecutionClient(LiveExecutionClient):
             # market_id = market["id"]
             for selection in market.get("orc", []):
                 if selection.get("fullImage", False):
-                    # TODO (bm) - need to replace orders for this selection
+                    # TODO (bm) - need to replace orders for this selection - probably via a recon
                     self._log.warning("Received full order image, SKIPPING!")
                 for order_update in selection.get("uo", []):
                     await self._check_order_update(order_update)
@@ -529,6 +529,7 @@ class BetfairExecutionClient(LiveExecutionClient):
             execution_id = create_execution_id(update)
             if execution_id not in self.published_executions[client_order_id]:
                 fill_qty = update["sm"] - order.filled_qty
+                fill_price = self._determine_fill_price(update=update, order=order)
                 self.generate_order_filled(
                     strategy_id=order.strategy_id,
                     instrument_id=order.instrument_id,
@@ -539,7 +540,7 @@ class BetfairExecutionClient(LiveExecutionClient):
                     order_side=B2N_ORDER_STREAM_SIDE[update["side"]],
                     order_type=OrderType.LIMIT,
                     last_qty=Quantity(fill_qty, instrument.size_precision),
-                    last_px=price_to_probability(str(update["p"])),
+                    last_px=price_to_probability(str(fill_price)),
                     # avg_px=Decimal(order['avp']),
                     quote_currency=instrument.quote_currency,
                     commission=Money(0, self.base_currency),
@@ -547,6 +548,12 @@ class BetfairExecutionClient(LiveExecutionClient):
                     ts_event=millis_to_nanos(update["md"]),
                 )
                 self.published_executions[client_order_id].append(execution_id)
+
+    def _determine_fill_price(self, update: Dict, order: Order):
+        if "avp" not in update:
+            # We don't have any specifics about the fill, assume it was filled at our price
+            return update["p"]
+        return update["avp"]
 
     def _handle_stream_execution_complete_order_update(self, update: Dict) -> None:
         """
@@ -561,6 +568,8 @@ class BetfairExecutionClient(LiveExecutionClient):
             self._log.debug("")
             execution_id = create_execution_id(update)
             if execution_id not in self.published_executions[client_order_id]:
+                fill_qty = update["sm"] - order.filled_qty
+                fill_price = self._determine_fill_price(update=update, order=order)
                 # At least some part of this order has been filled
                 self.generate_order_filled(
                     strategy_id=order.strategy_id,
@@ -571,8 +580,8 @@ class BetfairExecutionClient(LiveExecutionClient):
                     execution_id=execution_id,
                     order_side=B2N_ORDER_STREAM_SIDE[update["side"]],
                     order_type=OrderType.LIMIT,
-                    last_qty=Quantity(update["sm"], instrument.size_precision),
-                    last_px=price_to_probability(str(update["p"])),
+                    last_qty=Quantity(fill_qty, instrument.size_precision),
+                    last_px=price_to_probability(str(fill_price)),
                     quote_currency=instrument.quote_currency,
                     # avg_px=order['avp'],
                     commission=Money(0, self.base_currency),
