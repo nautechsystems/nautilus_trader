@@ -211,7 +211,7 @@ class TestBetfairDataClient:
         logs = []
         self.logger.register_sink(logs.append)
         self.client._on_market_update(BetfairStreaming.mcm_latency())
-        warning, _ = logs
+        (warning,) = logs
         assert warning["level"] == "WRN"
         assert warning["msg"] == "Stream unhealthy, waiting for recover"
 
@@ -219,7 +219,7 @@ class TestBetfairDataClient:
         logs = []
         self.logger.register_sink(logs.append)
         self.client._on_market_update(BetfairStreaming.mcm_con_true())
-        warning, _ = logs
+        (warning,) = logs
         assert warning["level"] == "WRN"
         assert (
             warning["msg"]

@@ -20,6 +20,7 @@ from unittest.mock import patch
 import pytest
 
 from nautilus_trader.adapters.betfair.common import BETFAIR_VENUE
+from nautilus_trader.adapters.betfair.common import price_to_probability
 from nautilus_trader.adapters.betfair.execution import BetfairClient
 from nautilus_trader.adapters.betfair.execution import BetfairExecutionClient
 from nautilus_trader.adapters.betfair.parsing import betfair_account_to_account_state
@@ -377,11 +378,6 @@ class TestBetfairExecutionClient:
         assert result == expected
 
     @pytest.mark.asyncio
-    @pytest.mark.skip(reason="Not implemented")
-    async def test_streaming_orders_full_image_strategy(self):
-        pass
-
-    @pytest.mark.asyncio
     async def test_connection_account_state(self):
         # Arrange, Act, Assert
 
@@ -476,6 +472,45 @@ class TestBetfairExecutionClient:
         assert len(self.messages) == 2
         assert isinstance(self.messages[1], OrderFilled)
         assert self.messages[1].last_px == Price.from_str("0.9090909")
+
+    @pytest.mark.asyncio
+    async def test_order_stream_filled_multiple_prices(self):
+        # Arrange
+        await self._setup_account()
+        update1 = BetfairStreaming.generate_order_update(
+            price="1.50",
+            size=20,
+            side="B",
+            status="E",
+            sm=10,
+            avp="1.60",
+        )
+        self._setup_exec_client_and_cache(update1)
+        await self.client._handle_order_stream_update(update=update1)
+        await asyncio.sleep(0)
+        order = self.cache.order(client_order_id=ClientOrderId("0"))
+        event = self.messages[-1]
+        order.apply(event)
+
+        # Act
+        update2 = BetfairStreaming.generate_order_update(
+            price="1.50",
+            size=20,
+            side="B",
+            status="EC",
+            sm=20,
+            avp="1.55",
+        )
+        self._setup_exec_client_and_cache(update2)
+        await self.client._handle_order_stream_update(update=update2)
+        await asyncio.sleep(0)
+
+        # Assert
+        assert len(self.messages) == 3
+        assert isinstance(self.messages[1], OrderFilled)
+        assert isinstance(self.messages[2], OrderFilled)
+        assert self.messages[1].last_px == price_to_probability("1.60")
+        assert self.messages[2].last_px == price_to_probability("1.50")
 
     @pytest.mark.asyncio
     async def test_order_stream_mixed(self):
@@ -603,3 +638,51 @@ class TestBetfairExecutionClient:
         for upd in update["oc"][0]["orc"][0]["uo"]:
             self.client._handle_stream_execution_complete_order_update(update=upd)
             await asyncio.sleep(1)
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "price,size,side,status,updates",
+        [
+            ("1.50", "50", "B", "EC", [{"sm": 50}]),
+            ("1.50", "50", "B", "E", [{"sm": 10}, {"sm": 15}]),
+        ],
+    )
+    async def test_various_betfair_order_fill_scenarios(self, price, size, side, status, updates):
+        # Arrange
+        update = BetfairStreaming.ocm_filled_different_price()
+        self._setup_exec_client_and_cache(update)
+        await self._setup_account()
+
+        # Act
+        for raw in updates:
+            update = BetfairStreaming.generate_order_update(
+                price=price, size=size, side=side, status=status, **raw
+            )
+            await self.client._handle_order_stream_update(update=update)
+            await asyncio.sleep(0)
+
+        # Assert
+        assert len(self.messages) == 1 + len(updates)
+        for msg, raw in zip(self.messages[1:], updates):
+            assert isinstance(msg, OrderFilled)
+            assert msg.last_qty == raw["sm"]
+
+    @pytest.mark.asyncio
+    async def test_order_filled_avp_update(self):
+        # Arrange
+        update = BetfairStreaming.ocm_filled_different_price()
+        self._setup_exec_client_and_cache(update)
+        await self._setup_account()
+
+        # Act
+        update = BetfairStreaming.generate_order_update(
+            price="1.50", size=20, side="B", status="E", avp="1.50", sm=10
+        )
+        await self.client._handle_order_stream_update(update=update)
+        await asyncio.sleep(0)
+
+        update = BetfairStreaming.generate_order_update(
+            price="1.30", size=20, side="B", status="E", avp="1.50", sm=10
+        )
+        await self.client._handle_order_stream_update(update=update)
+        await asyncio.sleep(0)

@@ -116,22 +116,24 @@ def _probability_to_price(probability: Price, side: OrderSide):
     return probability_to_price(probability=tick_prob)
 
 
-def _order_to_liability(order: Union[LimitOrder, MarketOrder]) -> float:
-    if order.side == OrderSide.SELL:
-        # Orders are sent in "liability" terms, convert to stake
-        sell_price = _probability_to_price(probability=order.price, side=order.side)
-        liability = order.quantity * (sell_price - 1)
-        size = float(round(order.quantity / (liability / order.quantity), 0))
-    elif order.side == OrderSide.BUY:
-        size = float(order.quantity)
+def _order_quantity_to_stake(price: Price, quantity: Quantity, side: OrderSide) -> str:
+    """
+    Convert quantities from nautilus into liabilities in Betfair.
+    """
+    if side == OrderSide.BUY:
+        return str(float(quantity))
+    elif side == OrderSide.SELL:
+        # Orders are sent in "liability" terms, convert to "backers stake"
+        sell_price = _probability_to_price(probability=price, side=side)
+        liability = quantity * (sell_price - 1)
+        return str(float(round(quantity / (liability / quantity), 0)))
     else:  # pragma: no cover (design-time error)
-        raise ValueError(f"invalid OrderSide, was {order.side}")
-    return size
+        raise ValueError(f"invalid OrderSide, was {side}")
 
 
 def _make_limit_order(order: Union[LimitOrder, MarketOrder]):
     price = str(float(_probability_to_price(probability=order.price, side=order.side)))
-    size = str(_order_to_liability(order=order))
+    size = _order_quantity_to_stake(price=order.price, quantity=order.quantity, side=order.side)
 
     if order.time_in_force == TimeInForce.OC:
         return {
@@ -155,7 +157,9 @@ def _make_market_order(order: Union[LimitOrder, MarketOrder]):
     if order.time_in_force == TimeInForce.OC:
         return {
             "orderType": "MARKET_ON_CLOSE",
-            "marketOnCloseOrder": {"liability": str(_order_to_liability(order))},
+            "marketOnCloseOrder": {
+                "liability": str(order.quantity.as_double()),
+            },
         }
     else:
         # Betfair doesn't really support market orders, return a limit order with min/max price
