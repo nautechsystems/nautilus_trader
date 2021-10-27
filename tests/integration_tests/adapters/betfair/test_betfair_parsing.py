@@ -41,7 +41,6 @@ from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import VenueOrderId
 from nautilus_trader.model.objects import AccountBalance
 from nautilus_trader.model.objects import Money
-from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.orderbook.data import OrderBookDeltas
 from tests.integration_tests.adapters.betfair.test_kit import BetfairResponses
@@ -60,21 +59,17 @@ class TestBetfairParsing:
         self.uuid = UUID4()
 
     @pytest.mark.parametrize(
-        "price, quantity, side, betfair_quantity",
+        "quantity, betfair_quantity",
         [
-            ("0.20", "100", "BUY", "100.0"),
-            ("0.25", "375", "SELL", "125.0"),
-            ("0.80", "6.25", "SELL", "25.0"),
-            ("0.25", "100", "BUY", "100.0"),
-            ("0.50", "200", "SELL", "200.0"),
-            ("0.74", "20", "SELL", "57.0"),
+            ("100", "100.0"),
+            ("375", "375.0"),
+            ("6.25", "6.25"),
+            ("200", "200.0"),
         ],
     )
-    def test_order_quantity_to_stake(self, price, quantity, side, betfair_quantity):
+    def test_order_quantity_to_stake(self, quantity, betfair_quantity):
         result = _order_quantity_to_stake(
-            price=Price.from_str(price),
             quantity=Quantity.from_str(quantity),
-            side=OrderSideParser.from_str_py(side),
         )
         assert result == betfair_quantity
 

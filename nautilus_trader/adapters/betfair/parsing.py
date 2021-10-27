@@ -116,24 +116,16 @@ def _probability_to_price(probability: Price, side: OrderSide):
     return probability_to_price(probability=tick_prob)
 
 
-def _order_quantity_to_stake(price: Price, quantity: Quantity, side: OrderSide) -> str:
+def _order_quantity_to_stake(quantity: Quantity) -> str:
     """
     Convert quantities from nautilus into liabilities in Betfair.
     """
-    if side == OrderSide.BUY:
-        return str(float(quantity))
-    elif side == OrderSide.SELL:
-        # Orders are sent in "liability" terms, convert to "backers stake"
-        sell_price = _probability_to_price(probability=price, side=side)
-        liability = quantity * (sell_price - 1)
-        return str(float(round(quantity / (liability / quantity), 0)))
-    else:  # pragma: no cover (design-time error)
-        raise ValueError(f"invalid OrderSide, was {side}")
+    return str(quantity.as_double())
 
 
 def _make_limit_order(order: Union[LimitOrder, MarketOrder]):
     price = str(float(_probability_to_price(probability=order.price, side=order.side)))
-    size = _order_quantity_to_stake(price=order.price, quantity=order.quantity, side=order.side)
+    size = _order_quantity_to_stake(quantity=order.quantity)
 
     if order.time_in_force == TimeInForce.OC:
         return {
