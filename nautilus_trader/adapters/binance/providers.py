@@ -114,7 +114,7 @@ class BinanceInstrumentProvider(InstrumentProvider):
             native_symbol: str = info["symbol"]
 
             # Create base asset
-            base_asset = info["baseAsset"]
+            base_asset: str = info["baseAsset"]
             base_currency = Currency(
                 code=base_asset,
                 precision=info["baseAssetPrecision"],
@@ -124,7 +124,7 @@ class BinanceInstrumentProvider(InstrumentProvider):
             )
 
             # Create quote asset
-            quote_asset = info["quoteAsset"]
+            quote_asset: str = info["quoteAsset"]
             quote_currency = Currency(
                 code=quote_asset,
                 precision=info["quoteAssetPrecision"],
