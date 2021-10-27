@@ -351,16 +351,20 @@ class BetfairDataClient(LiveMarketDataClient):
     def _check_stream_unhealthy(self, update: Dict):
         conflated = update.get("con", False)  # Consuming data slower than the rate of deliver
         if conflated:
-            print("!conflated")
             self._log.warning(
                 "Conflated stream - consuming data too slow (data received is delayed)"
             )
         if update.get("status") == 503:
-            print("!503")
+            # TODO (bm/cs) - emit a ComponentStatus -> Degrading
             self._log.warning("Stream unhealthy, waiting for recover")
 
     def _handle_no_data(self, update):
         if update.get("op") == "connection" or update.get("connectionsAvailable"):
+            return
+        if update.get("status") == 503:
+            # handled in `_check_stream_unhealthy`
+            return
+        if update.get("ct") == "HEARTBEAT":
             return
         self._log.warning(f"Received message but parsed no updates: {update}")
         if update.get("statusCode") == "FAILURE" and update.get("connectionClosed"):

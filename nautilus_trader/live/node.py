@@ -703,7 +703,7 @@ class TradingNode:
             self._log.warning("Event loop still running during `cancel_all_tasks`.")
             return
 
-        finish_all_tasks: asyncio.Future = asyncio.tasks.gather(
+        finish_all_tasks: asyncio.Future = asyncio.tasks.gather(  # type: ignore
             *to_cancel,
             loop=self._loop,
             return_exceptions=True,
