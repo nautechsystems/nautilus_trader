@@ -26,6 +26,7 @@ from nautilus_trader.adapters.betfair.client.core import BetfairClient
 from nautilus_trader.adapters.betfair.common import B2N_ORDER_STREAM_SIDE
 from nautilus_trader.adapters.betfair.common import BETFAIR_VENUE
 from nautilus_trader.adapters.betfair.common import price_to_probability
+from nautilus_trader.adapters.betfair.common import probability_to_price
 from nautilus_trader.adapters.betfair.parsing import betfair_account_to_account_state
 from nautilus_trader.adapters.betfair.parsing import generate_order_status_report
 from nautilus_trader.adapters.betfair.parsing import generate_trades_list
@@ -62,6 +63,7 @@ from nautilus_trader.model.identifiers import ExecutionId
 from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import VenueOrderId
 from nautilus_trader.model.objects import Money
+from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.orders.base import Order
 from nautilus_trader.msgbus.bus import MessageBus
@@ -474,7 +476,7 @@ class BetfairExecutionClient(LiveExecutionClient):
             for selection in market.get("orc", []):
                 if selection.get("fullImage", False):
                     # TODO (bm) - need to replace orders for this selection - probably via a recon
-                    self._log.warning("Received full order image, SKIPPING!")
+                    self._log.debug("Received full order image")
                 for order_update in selection.get("uo", []):
                     await self._check_order_update(order_update)
                     if order_update["status"] == "E":
@@ -553,7 +555,29 @@ class BetfairExecutionClient(LiveExecutionClient):
         if "avp" not in update:
             # We don't have any specifics about the fill, assume it was filled at our price
             return update["p"]
-        return update["avp"]
+        if order.filled_qty == 0:
+            # New fill, simply return average price
+            return update["avp"]
+        else:
+            new_price = price_to_probability(str(update["avp"]))
+            prev_price = order.avg_px
+            if prev_price == new_price:
+                # Matched at same price
+                return update["avp"]
+            else:
+                # TODO (bm) - is it possibly we get multiple fills at different prices? Log here for now
+                self._log.warning(
+                    f"_determine_fill_price possibly returning incorrect fill price!"
+                    f" {order.avg_px=} {order.filled_qty=} {update['avp']=} {update['sm']=}"
+                )
+                prev_price = probability_to_price(order.avg_px)
+                prev_size = order.filled_qty
+                new_price = Price.from_str(update["avp"])
+                new_size = update["sm"] - prev_size
+                total_size = prev_size + new_size
+                return (new_price - ((prev_price * (prev_size / total_size)))) / (
+                    new_size / total_size
+                )
 
     def _handle_stream_execution_complete_order_update(self, update: Dict) -> None:
         """

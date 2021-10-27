@@ -378,11 +378,6 @@ class TestBetfairExecutionClient:
         assert result == expected
 
     @pytest.mark.asyncio
-    @pytest.mark.skip(reason="Not implemented")
-    async def test_streaming_orders_full_image_strategy(self):
-        pass
-
-    @pytest.mark.asyncio
     async def test_connection_account_state(self):
         # Arrange, Act, Assert
 
@@ -479,22 +474,43 @@ class TestBetfairExecutionClient:
         assert self.messages[1].last_px == Price.from_str("0.9090909")
 
     @pytest.mark.asyncio
-    async def test_order_stream_filled_better_price(self):
+    async def test_order_stream_filled_multiple_prices(self):
         # Arrange
-        update = BetfairStreaming.ocm_filled_different_price()
-        self._setup_exec_client_and_cache(update)
         await self._setup_account()
+        update1 = BetfairStreaming.generate_order_update(
+            price="1.50",
+            size=20,
+            side="B",
+            status="E",
+            sm=10,
+            avp="1.60",
+        )
+        self._setup_exec_client_and_cache(update1)
+        await self.client._handle_order_stream_update(update=update1)
+        await asyncio.sleep(0)
+        order = self.cache.order(client_order_id=ClientOrderId("0"))
+        event = self.messages[-1]
+        order.apply(event)
 
         # Act
-        await self.client._handle_order_stream_update(update=update)
+        update2 = BetfairStreaming.generate_order_update(
+            price="1.50",
+            size=20,
+            side="B",
+            status="EC",
+            sm=20,
+            avp="1.55",
+        )
+        self._setup_exec_client_and_cache(update2)
+        await self.client._handle_order_stream_update(update=update2)
         await asyncio.sleep(0)
 
         # Assert
-        assert len(self.messages) == 2
+        assert len(self.messages) == 3
         assert isinstance(self.messages[1], OrderFilled)
-        # We send an order to BUY @ 1.30, but get filled at 1.20
-        expected = price_to_probability("1.20")
-        assert self.messages[1].last_px == expected
+        assert isinstance(self.messages[2], OrderFilled)
+        assert self.messages[1].last_px == price_to_probability("1.60")
+        assert self.messages[2].last_px == price_to_probability("1.50")
 
     @pytest.mark.asyncio
     async def test_order_stream_mixed(self):
