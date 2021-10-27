@@ -126,7 +126,7 @@ def _order_quantity_to_stake(price: Price, quantity: Quantity, side: OrderSide) 
         # Orders are sent in "liability" terms, convert to "backers stake"
         sell_price = _probability_to_price(probability=price, side=side)
         liability = quantity * (sell_price - 1)
-        return str(float(liability))
+        return str(float(round(quantity / (liability / quantity), 0)))
     else:  # pragma: no cover (design-time error)
         raise ValueError(f"invalid OrderSide, was {side}")
 

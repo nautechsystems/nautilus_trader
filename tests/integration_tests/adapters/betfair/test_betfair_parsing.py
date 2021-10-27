@@ -63,10 +63,11 @@ class TestBetfairParsing:
         "price, quantity, side, betfair_quantity",
         [
             ("0.20", "100", "BUY", "100.0"),
-            ("0.25", "125", "SELL", "375.0"),
-            ("0.80", "25", "SELL", "6.25"),
+            ("0.25", "375", "SELL", "125.0"),
+            ("0.80", "6.25", "SELL", "25.0"),
             ("0.25", "100", "BUY", "100.0"),
             ("0.50", "200", "SELL", "200.0"),
+            ("0.74", "20", "SELL", "57.0"),
         ],
     )
     def test_order_quantity_to_stake(self, price, quantity, side, betfair_quantity):
