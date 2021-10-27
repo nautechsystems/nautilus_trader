@@ -88,7 +88,7 @@ class BinanceHttpClient(HttpClient):
         payload: Dict[str, Any] = None,
     ) -> bytes:
         """
-        Limit request is for those endpoints require API key in the header.
+        Limit request is for those endpoints requiring an API key in the header.
         """
         return await self.send_request(http_method, url_path, payload=payload)
 

@@ -161,7 +161,7 @@ class BetfairTestStubs:
         )
 
     @staticmethod
-    def risk_engine(event_loop, clock, live_logger, exec_engine):
+    def risk_engine(event_loop, clock, live_logger):
         return MockLiveRiskEngine(
             loop=event_loop,
             portfolio=TestStubs.portfolio(),
@@ -855,7 +855,7 @@ class BetfairDataProvider:
     @staticmethod
     def market_ids():
         """
-        A list of market_ids used by the tests. Used in `navigation_short` and `market_catalogue_short`
+        A list of market_ids used by the tests. Used in `navigation_short` and `market_catalogue_short`.
         """
         return (
             "1.148894697",
@@ -1039,7 +1039,7 @@ class BetfairDataProvider:
 @contextlib.contextmanager
 def mock_client_request(response):
     """
-    Patch BetfairClient.request with a correctly formatted `response`
+    Patch BetfairClient.request with a correctly formatted `response`.
     """
     mock_response = MagicMock(ClientResponse)
     mock_response.data = orjson.dumps(response)
