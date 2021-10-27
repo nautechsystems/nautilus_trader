@@ -565,19 +565,18 @@ class BetfairExecutionClient(LiveExecutionClient):
                 # Matched at same price
                 return update["avp"]
             else:
-                # TODO (bm) - is it possibly we get multiple fills at different prices? Log here for now
-                self._log.warning(
-                    f"_determine_fill_price possibly returning incorrect fill price!"
-                    f" {order.avg_px=} {order.filled_qty=} {update['avp']=} {update['sm']=}"
-                )
                 prev_price = probability_to_price(order.avg_px)
                 prev_size = order.filled_qty
                 new_price = Price.from_str(update["avp"])
                 new_size = update["sm"] - prev_size
                 total_size = prev_size + new_size
-                return (new_price - ((prev_price * (prev_size / total_size)))) / (
+                price = (new_price - ((prev_price * (prev_size / total_size)))) / (
                     new_size / total_size
                 )
+                self._log.debug(
+                    f"Calculating fill price {prev_price=} {prev_size=} {new_price=} {new_size=} == {price=}"
+                )
+                return price
 
     def _handle_stream_execution_complete_order_update(self, update: Dict) -> None:
         """
