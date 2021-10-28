@@ -14,7 +14,7 @@ jobs:
       fail-fast: false
       matrix:
         os: [ ubuntu-latest, macos-latest, windows-latest ]
-        python-version: [ 3.8, 3.9 ]
+        python-version: [ "3.8", "3.9" ]
     name: build - Python ${{ matrix.python-version }} (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
 
@@ -54,9 +54,8 @@ jobs:
         uses: actions/cache@v2
         with:
           path: ${{ steps.cache-poetry.outputs.dir }}
-          key: ${{ runner.os }}-${{ matrix.python-version }}-poetry-build${{ hashFiles('.github/workflows/*.yml', '**/poetry.lock') }}
+          key: ${{ runner.os }}-${{ matrix.python-version }}-poetry-${{ hashFiles('.github/workflows/*.yml', '**/poetry.lock') }}
           restore-keys: |
-            ${{ runner.os }}-${{ matrix.python-version }}-poetry-build$-
             ${{ runner.os }}-${{ matrix.python-version }}-poetry-
 
       # Install and run database dependencies

@@ -29,7 +29,6 @@ from platform import python_version
 import numpy as np
 import pandas as pd
 import psutil
-import scipy
 
 from nautilus_trader import __version__
 
@@ -544,7 +543,6 @@ cpdef void nautilus_header(LoggerAdapter logger) except *:
     logger.info(f"nautilus-trader {__version__}")
     logger.info(f"python {python_version()}")
     logger.info(f"numpy {np.__version__}")
-    logger.info(f"scipy {scipy.__version__}")
     logger.info(f"pandas {pd.__version__}")
 
 

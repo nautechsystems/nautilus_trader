@@ -30,12 +30,13 @@ repos:
         types_or: [python, cython, rst, markdown]
         exclude: "nautilus_trader/adapters/betfair/parsing.py|nautilus_trader/adapters/betfair/execution.py|tests/integration_tests/adapters/betfair/test_kit.py"
 
-  - repo: https://github.com/hadialqattan/pycln
-    rev: v1.0.3
-    hooks:
-      - id: pycln
-        name: pycln (Python unused imports)
-        exclude: "nautilus_trader/live/node.py|nautilus_trader/adapters/betfair/execution.py"
+# TODO(cs): Paused waiting for Python 3.10 support
+#  - repo: https://github.com/hadialqattan/pycln
+#    rev: v1.0.3
+#    hooks:
+#      - id: pycln
+#        name: pycln (Python unused imports)
+#        exclude: "nautilus_trader/live/node.py|nautilus_trader/adapters/betfair/execution.py"
 
   - repo: https://github.com/psf/black
     rev: 21.9b0
@@ -84,6 +85,7 @@ repos:
       - id: flake8
         name: flake8 (Python)
         additional_dependencies:
+          - flake8-2020
           - flake8-bandit
           - flake8-bugbear
           - flake8-coding
@@ -106,6 +108,7 @@ repos:
       - id: flake8
         name: flake8 (Cython)
         additional_dependencies:
+          - flake8-2020
           - flake8-bandit
           - flake8-bugbear
           - flake8-coding

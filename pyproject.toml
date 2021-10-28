@@ -13,6 +13,7 @@ classifiers = [
     "Development Status :: 4 - Beta",
     "Programming Language :: Python :: 3.8",
     "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
     "Topic :: Software Development :: Libraries",
     "Topic :: Software Development :: Libraries :: Python Modules",
     "Topic :: Scientific/Engineering",
@@ -31,7 +32,7 @@ include = [
 [build-system]
 requires = [
     "setuptools",
-    "poetry-core>=1.0.4",
+    "poetry-core>=1.0.7",
     "numpy>=1.21.3",
     "Cython>=3.0.0a9",
 ]
@@ -42,7 +43,7 @@ script = "build.py"
 generate-setup-file = false
 
 [tool.poetry.dependencies]
-python = ">=3.8,<3.10"
+python = ">=3.8,<3.11"
 cython = "^3.0.0a9"
 aiodns = "^3.0.0"
 aiohttp = "^3.7.4"
@@ -58,7 +59,6 @@ pydantic = "^1.8.2"
 pytz = "^2021.3"
 quantstats = "^0.0.36"
 redis = "^3.5.3"
-scipy = "^1.7.1"
 tabulate = "^0.8.9"
 tqdm = "^4.62.3"
 uvloop = { version = "^0.16.0", markers = "sys_platform != 'win32'" }
