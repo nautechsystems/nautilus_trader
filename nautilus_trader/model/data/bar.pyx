@@ -32,6 +32,7 @@ cdef class BarSpecification:
     Represents a bar aggregation specification including a step, aggregation
     method/rule and price type.
     """
+
     def __init__(
         self,
         int step,
