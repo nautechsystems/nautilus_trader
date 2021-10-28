@@ -174,7 +174,7 @@ cdef class Option(Instrument):
 
         Returns
         -------
-        Instrument
+        Option
 
         """
         return Option.from_dict_c(values)
