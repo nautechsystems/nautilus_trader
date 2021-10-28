@@ -143,6 +143,8 @@ class BetfairExecutionClient(LiveExecutionClient):
 
         AccountFactory.register_calculated_account(account_id.issuer)
 
+    # -- CONNECTION HANDLERS -----------------------------------------------------------------------
+
     def connect(self):
         """
         Connect the client.
@@ -180,10 +182,14 @@ class BetfairExecutionClient(LiveExecutionClient):
 
         # Ensure client closed
         self._log.info("Closing BetfairClient...")
-        self._client.disconnect()
+        await self._client.disconnect()
 
         self._set_connected(False)
         self._log.info("Disconnected.")
+
+    async def _reconnect(self):
+        if not self._client.connected:
+            await self._client.connect()
 
     # -- ACCOUNT HANDLERS --------------------------------------------------------------------------
 
@@ -203,12 +209,6 @@ class BetfairExecutionClient(LiveExecutionClient):
         self._log.debug("Initial Account state completed")
 
     # -- COMMAND HANDLERS --------------------------------------------------------------------------
-
-    # TODO (bm) - Do want to throttle updates into a bulk update if they're
-    #  coming faster than x / sec? Maybe this is for risk engine? We could use
-    #  some heuristics about the avg network latency an_check_order_updated add
-    #  an optional flag for throttle inserts etc. We actually typically know
-    #  when the match is happening - so we could do smart buffering.
 
     def submit_order(self, command: SubmitOrder) -> None:
         PyCondition.not_none(command, "command")
@@ -459,9 +459,6 @@ class BetfairExecutionClient(LiveExecutionClient):
 
     def client(self) -> BetfairClient:
         return self._client
-
-    def instrument_provider(self) -> BetfairInstrumentProvider:
-        return self._instrument_provider
 
     # -- ORDER STREAM API --------------------------------------------------------------------------
 
