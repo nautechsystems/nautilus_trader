@@ -145,7 +145,7 @@ cdef class TradingStateChanged(RiskEvent):
 
         Returns
         -------
-        AccountState
+        TradingStateChanged
 
         """
         return TradingStateChanged.from_dict_c(values)
