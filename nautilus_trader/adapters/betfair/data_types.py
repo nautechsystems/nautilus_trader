@@ -16,7 +16,6 @@
 from enum import Enum
 from typing import Dict
 
-import orjson
 import pyarrow as pa
 
 from nautilus_trader.core.data import Data
@@ -80,9 +79,8 @@ class BetfairTicker(Ticker):
         ts_init: int,
         last_traded_price: Price = None,
         traded_volume: Quantity = None,
-        info=None,
     ):
-        super().__init__(instrument_id=instrument_id, ts_event=ts_event, ts_init=ts_init, info=info)
+        super().__init__(instrument_id=instrument_id, ts_event=ts_event, ts_init=ts_init)
         self.last_traded_price = last_traded_price
         self.traded_volume = traded_volume
 
@@ -111,7 +109,6 @@ def betfair_ticker_from_dict(values: Dict):
         traded_volume=Quantity.from_str(values["traded_volume"])
         if values["traded_volume"]
         else None,
-        info=orjson.loads(values["info"]) if values.get("info") is not None else None,
     )
 
 
@@ -123,7 +120,6 @@ def betfair_ticker_to_dict(ticker: BetfairTicker):
         "ts_init": ticker.ts_init,
         "last_traded_price": str(ticker.last_traded_price) if ticker.last_traded_price else None,
         "traded_volume": str(ticker.traded_volume) if ticker.traded_volume else None,
-        "info": orjson.dumps(ticker.info) if ticker.info is not None else None,
     }
 
 

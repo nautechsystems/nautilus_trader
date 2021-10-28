@@ -72,7 +72,6 @@ NAUTILUS_PARQUET_SCHEMA = {
     Ticker: pa.schema(
         {
             "instrument_id": pa.dictionary(pa.int8(), pa.string()),
-            "info": pa.string(),
             "ts_event": pa.int64(),
             "ts_init": pa.int64(),
         },
