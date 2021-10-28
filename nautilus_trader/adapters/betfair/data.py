@@ -323,7 +323,6 @@ class BetfairDataClient(LiveMarketDataClient):
 
     def _on_market_update(self, update):
         if self._check_stream_unhealthy(update=update):
-            # TODO (bm) - emit warning ?
             pass
         updates = on_market_update(
             instrument_provider=self._instrument_provider,
@@ -355,8 +354,8 @@ class BetfairDataClient(LiveMarketDataClient):
                 "Conflated stream - consuming data too slow (data received is delayed)"
             )
         if update.get("status") == 503:
-            # TODO (bm/cs) - emit a ComponentStatus -> Degrading
             self._log.warning("Stream unhealthy, waiting for recover")
+            self.degrade()
 
     def _handle_no_data(self, update):
         if update.get("op") == "connection" or update.get("connectionsAvailable"):
@@ -365,6 +364,8 @@ class BetfairDataClient(LiveMarketDataClient):
             # handled in `_check_stream_unhealthy`
             return
         if update.get("ct") == "HEARTBEAT":
+            if self.is_degraded:
+                self.resume()
             return
         self._log.warning(f"Received message but parsed no updates: {update}")
         if update.get("statusCode") == "FAILURE" and update.get("connectionClosed"):
