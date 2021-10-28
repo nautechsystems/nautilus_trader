@@ -275,3 +275,10 @@ class TestBetfairClient:
         }
         result = req.call_args.kwargs["json"]
         assert result == expected
+
+    def test_api_error(self):
+        exc = BetfairAPIError(code="404", message="new error")
+        assert (
+            str(exc)
+            == "BetfairAPIError(code='404', message='new error', kind='None', reason='None')"
+        )
