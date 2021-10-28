@@ -75,6 +75,10 @@ ERROR_CODES = {
         "kind": "OperationForbidden",
         "reason": "The App Key sent with the request is not permitted to access the operation",
     },
+    "ANGX-0003": {
+        "kind": "INVALID_SESSION_INFORMATION",
+        "reason": "The session token hasn't been provided, is invalid or has expired. Login again to create a new session",
+    },
     "AANGX-0004": {
         "kind": "InvalidAppKey",
         "reason": "The App Key (or password) is not valid",
