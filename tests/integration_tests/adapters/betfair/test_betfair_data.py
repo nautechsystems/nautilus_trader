@@ -210,10 +210,12 @@ class TestBetfairDataClient:
     def test_stream_latency(self):
         logs = []
         self.logger.register_sink(logs.append)
+        self.client.start()
         self.client._on_market_update(BetfairStreaming.mcm_latency())
-        (warning,) = logs
+        warning, degrading, degraded = logs[2:]
         assert warning["level"] == "WRN"
         assert warning["msg"] == "Stream unhealthy, waiting for recover"
+        assert degraded["msg"] == "DEGRADED."
 
     def test_stream_con_true(self):
         logs = []
