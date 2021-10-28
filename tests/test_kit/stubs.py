@@ -233,6 +233,10 @@ class TestStubs:
         return BarSpecification(1, BarAggregation.MINUTE, PriceType.ASK)
 
     @staticmethod
+    def bar_spec_1min_last() -> BarSpecification:
+        return BarSpecification(1, BarAggregation.MINUTE, PriceType.LAST)
+
+    @staticmethod
     def bar_spec_1min_mid() -> BarSpecification:
         return BarSpecification(1, BarAggregation.MINUTE, PriceType.MID)
 
