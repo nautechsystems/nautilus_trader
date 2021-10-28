@@ -13,8 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import ast
-
+import orjson
 from libc.stdint cimport int64_t
 
 from nautilus_trader.common.c_enums.component_state cimport ComponentState
@@ -98,7 +97,7 @@ cdef class ComponentStateChanged(Event):
             component_id=ComponentId(values["component_id"]),
             component_type=values["component_type"],
             state=ComponentStateParser.from_str(values["state"]),
-            config=ast.literal_eval(values["config"]),
+            config=orjson.loads(values["config"]),
             event_id=UUID4(values["event_id"]),
             ts_event=values["ts_event"],
             ts_init=values["ts_init"],
@@ -113,7 +112,7 @@ cdef class ComponentStateChanged(Event):
             "component_id": obj.component_id.value,
             "component_type": obj.component_type,
             "state": ComponentStateParser.to_str(obj.state),
-            "config": str(obj.config),  # Convert config dict to string for safer serialization
+            "config": orjson.dumps(obj.config),
             "event_id": obj.id.value,
             "ts_event": obj.ts_event,
             "ts_init": obj.ts_init,
@@ -131,7 +130,7 @@ cdef class ComponentStateChanged(Event):
 
         Returns
         -------
-        AccountState
+        ComponentStateChanged
 
         """
         return ComponentStateChanged.from_dict_c(values)
