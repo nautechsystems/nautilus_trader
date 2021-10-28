@@ -275,15 +275,41 @@ class TestTestClock:
         assert clock.timestamp_ns() == initial_ns
         assert clock.is_test_clock
 
+    def test_timestamp_returns_expected_datetime(self):
+        # Arrange
+        clock = TestClock()
+        clock.advance_time(1_000_000_000)
+
+        # Act
+        result = clock.timestamp()
+
+        # Assert
+        assert isinstance(result, float)
+        assert result == 1.0
+
+    def test_timestamp_ms_returns_expected_datetime(self):
+        # Arrange
+        clock = TestClock()
+        clock.advance_time(1_000_000_000)
+
+        # Act
+        result = clock.timestamp_ms()
+
+        # Assert
+        assert isinstance(result, int)
+        assert result == 1000
+
     def test_timestamp_ns_returns_expected_datetime(self):
         # Arrange
         clock = TestClock()
+        clock.advance_time(1_000_000_000)
 
         # Act
         result = clock.timestamp_ns()
 
         # Assert
-        assert result == 0
+        assert isinstance(result, int)
+        assert result == 1_000_000_000
 
     def test_timestamp_returns_expected_double(self):
         # Arrange
@@ -552,6 +578,30 @@ class TestLiveClockWithThreadTimer:
         assert not self.clock.is_test_clock
         assert self.clock.timer_names() == []
 
+    def test_timestamp_returns_positive(self):
+        # Arrange, Act
+        result = self.clock.timestamp()
+
+        # Assert
+        assert isinstance(result, float)
+        assert result > 0.0
+
+    def test_timestamp_ms_returns_positive(self):
+        # Arrange, Act
+        result = self.clock.timestamp_ms()
+
+        # Assert
+        assert isinstance(result, int)
+        assert result > 0
+
+    def test_timestamp_ns_returns_positive(self):
+        # Arrange, Act
+        result = self.clock.timestamp_ns()
+
+        # Assert
+        assert isinstance(result, int)
+        assert result > 0
+
     def test_utc_now(self):
         # Arrange, Act
         result = self.clock.utc_now()
@@ -785,7 +835,7 @@ class TestLiveClockWithLoopTimer:
     def teardown(self):
         self.clock.cancel_timers()
 
-    def test_unix_timestamp(self):
+    def test_timestamp(self):
         # Arrange, Act
         result = self.clock.timestamp()
 
@@ -793,7 +843,15 @@ class TestLiveClockWithLoopTimer:
         assert isinstance(result, float)
         assert result > 0
 
-    def test_unix_timestamp_ns(self):
+    def test_timestamp_ms(self):
+        # Arrange, Act
+        result = self.clock.timestamp_ms()
+
+        # Assert
+        assert isinstance(result, int)
+        assert result > 0
+
+    def test_timestamp_ns(self):
         # Arrange, Act
         result = self.clock.timestamp_ns()
 

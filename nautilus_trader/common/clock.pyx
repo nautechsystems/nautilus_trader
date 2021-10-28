@@ -33,7 +33,9 @@ from nautilus_trader.common.uuid cimport UUIDFactory
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.datetime cimport nanos_to_secs
 from nautilus_trader.core.time cimport unix_timestamp
+from nautilus_trader.core.time cimport unix_timestamp_ms
 from nautilus_trader.core.time cimport unix_timestamp_ns
+from nautilus_trader.core.datetime import nanos_to_millis
 
 
 cdef class Clock:
@@ -77,9 +79,24 @@ cdef class Clock:
         """
         raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
+    cpdef int64_t timestamp_ms(self) except *:
+        """
+        Return the current UNIX time in milliseconds (ms).
+
+        Returns
+        -------
+        int64
+
+        References
+        ----------
+        https://en.wikipedia.org/wiki/Unix_time
+
+        """
+        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
+
     cpdef int64_t timestamp_ns(self) except *:
         """
-        Return the current UNIX time in nanoseconds.
+        Return the current UNIX time in nanoseconds (ns).
 
         Returns
         -------
@@ -575,6 +592,21 @@ cdef class TestClock(Clock):
         """
         return nanos_to_secs(self._time_ns)
 
+    cpdef int64_t timestamp_ms(self) except *:
+        """
+        Return the current UNIX time in milliseconds (ms).
+
+        Returns
+        -------
+        double
+
+        References
+        ----------
+        https://en.wikipedia.org/wiki/Unix_time
+
+        """
+        return nanos_to_millis(self._time_ns)
+
     cpdef int64_t timestamp_ns(self) except *:
         """
         Return the current UNIX time in nanoseconds (ns).
@@ -699,6 +731,21 @@ cdef class LiveClock(Clock):
 
         """
         return unix_timestamp()
+
+    cpdef int64_t timestamp_ms(self) except *:
+        """
+        Return the current UNIX time in milliseconds (ms).
+
+        Returns
+        -------
+        double
+
+        References
+        ----------
+        https://en.wikipedia.org/wiki/Unix_time
+
+        """
+        return unix_timestamp_ms()
 
     cpdef int64_t timestamp_ns(self) except *:
         """

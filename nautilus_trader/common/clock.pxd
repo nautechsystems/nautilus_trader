@@ -47,6 +47,7 @@ cdef class Clock:
     """The name of the next time event.\n\n:returns: `str`"""
 
     cpdef double timestamp(self) except *
+    cpdef int64_t timestamp_ms(self) except *
     cpdef int64_t timestamp_ns(self) except *
     cpdef datetime utc_now(self)
     cpdef datetime local_now(self, tzinfo tz=*)
