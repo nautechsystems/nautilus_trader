@@ -6,7 +6,7 @@ Released TBD | Update version badge
 None
 
 ## Enhancements
-None
+- Added `Clock.timestamp_ms()`.
 
 ## Fixes
 None

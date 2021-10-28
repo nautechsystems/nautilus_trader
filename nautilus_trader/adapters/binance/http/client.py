@@ -100,7 +100,7 @@ class BinanceHttpClient(HttpClient):
     ) -> bytes:
         if payload is None:
             payload = {}
-        payload["timestamp"] = str(int(self._clock.timestamp() * 1000))
+        payload["timestamp"] = str(self._clock.timestamp_ms())
         query_string = self._prepare_params(payload)
         signature = self._get_sign(query_string)
         payload["signature"] = signature
@@ -124,7 +124,7 @@ class BinanceHttpClient(HttpClient):
         """
         if payload is None:
             payload = {}
-        payload["timestamp"] = str(int(self._clock.timestamp() * 1000))
+        payload["timestamp"] = str(self._clock.timestamp_ms())
         query_string = self._prepare_params(payload)
         signature = self._get_sign(query_string)
         url_path = url_path + "?" + query_string + "&signature=" + signature

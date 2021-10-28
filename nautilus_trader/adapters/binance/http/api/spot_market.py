@@ -253,9 +253,9 @@ class BinanceSpotMarketHttpAPI:
         from_id : int, optional
             The trade ID to fetch from. Default gets most recent trades.
         start_time_ms : int, optional
-            The UNIX timestamp (ms) to get aggregate trades from INCLUSIVE.
+            The UNIX timestamp (milliseconds) to get aggregate trades from INCLUSIVE.
         end_time_ms: int, optional
-            The UNIX timestamp (ms) to get aggregate trades until INCLUSIVE.
+            The UNIX timestamp (milliseconds) to get aggregate trades until INCLUSIVE.
         limit : int, optional
             The limit for the response. Default 500; max 1000.
 
@@ -304,9 +304,9 @@ class BinanceSpotMarketHttpAPI:
         interval : str
             The interval of kline, e.g 1m, 5m, 1h, 1d, etc.
         start_time_ms : int, optional
-            The UNIX timestamp (ms) to get aggregate trades from INCLUSIVE.
+            The UNIX timestamp (milliseconds) to get aggregate trades from INCLUSIVE.
         end_time_ms: int, optional
-            The UNIX timestamp (ms) to get aggregate trades until INCLUSIVE.
+            The UNIX timestamp (milliseconds) to get aggregate trades until INCLUSIVE.
         limit : int, optional
             The limit for the response. Default 500; max 1000.
 
