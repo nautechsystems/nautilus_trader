@@ -14,6 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 import orjson
+
 from libc.stdint cimport int64_t
 
 from nautilus_trader.common.c_enums.component_state cimport ComponentState
@@ -23,6 +24,8 @@ from nautilus_trader.core.message cimport Event
 from nautilus_trader.core.uuid cimport UUID4
 from nautilus_trader.model.identifiers cimport ComponentId
 from nautilus_trader.model.identifiers cimport TraderId
+
+from nautilus_trader.serialization.json.default import Default
 
 
 cdef class ComponentStateChanged(Event):
@@ -112,7 +115,7 @@ cdef class ComponentStateChanged(Event):
             "component_id": obj.component_id.value,
             "component_type": obj.component_type,
             "state": ComponentStateParser.to_str(obj.state),
-            "config": orjson.dumps(obj.config),
+            "config": orjson.dumps(obj.config, default=Default.serialize),
             "event_id": obj.id.value,
             "ts_event": obj.ts_event,
             "ts_init": obj.ts_init,

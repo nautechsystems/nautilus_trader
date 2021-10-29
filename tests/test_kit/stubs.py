@@ -15,6 +15,7 @@
 
 import asyncio
 from datetime import datetime
+from decimal import Decimal
 from typing import List
 
 import pandas as pd
@@ -464,7 +465,7 @@ class TestStubs:
             component_id=ComponentId("MyActor-001"),
             component_type="MyActor",
             state=ComponentState.RUNNING,
-            config={"do_something": True},
+            config={"do_something": True, "trade_size": Decimal("10")},
             event_id=UUID4(),
             ts_event=0,
             ts_init=0,
