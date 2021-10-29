@@ -66,10 +66,6 @@ class BetfairClient(HttpClient):
         self.session_token: Optional[str] = None
 
     @property
-    def is_connected(self):
-        return self.session_token is not None
-
-    @property
     def headers(self):
         auth = {"X-Authentication": self.session_token} if self.session_token else {}
         return {
