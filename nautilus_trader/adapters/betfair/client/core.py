@@ -66,6 +66,10 @@ class BetfairClient(HttpClient):
         self.session_token: Optional[str] = None
 
     @property
+    def is_connected(self):
+        return self.session_token is not None
+
+    @property
     def headers(self):
         auth = {"X-Authentication": self.session_token} if self.session_token else {}
         return {
@@ -115,8 +119,10 @@ class BetfairClient(HttpClient):
         await self.login()
 
     async def disconnect(self):
+        self._log.info("Disconnecting..")
         self.session_token = None
         await super().disconnect()
+        self._log.info("Disconnected.")
 
     async def login(self):
         self._log.debug("BetfairClient login")

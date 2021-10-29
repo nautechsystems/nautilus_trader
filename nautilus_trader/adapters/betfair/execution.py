@@ -23,6 +23,7 @@ import orjson
 
 from nautilus_trader.accounting.factory import AccountFactory
 from nautilus_trader.adapters.betfair.client.core import BetfairClient
+from nautilus_trader.adapters.betfair.client.exceptions import BetfairAPIError
 from nautilus_trader.adapters.betfair.common import B2N_ORDER_STREAM_SIDE
 from nautilus_trader.adapters.betfair.common import BETFAIR_VENUE
 from nautilus_trader.adapters.betfair.common import price_to_probability
@@ -130,7 +131,7 @@ class BetfairExecutionClient(LiveExecutionClient):
             config={"name": "BetfairExecClient"},
         )
 
-        self._client = client
+        self._client: BetfairClient = client
         self.stream = BetfairOrderStreamClient(
             client=self._client,
             logger=logger,
@@ -170,7 +171,7 @@ class BetfairExecutionClient(LiveExecutionClient):
             self.check_account_currency(),
         ]
         await asyncio.gather(*aws)
-
+        self.create_task(self.watch_stream())
         self._set_connected(True)
         assert self.is_connected
         self._log.info("Connected.")
@@ -187,9 +188,21 @@ class BetfairExecutionClient(LiveExecutionClient):
         self._set_connected(False)
         self._log.info("Disconnected.")
 
-    async def _reconnect(self):
-        if not self._client.connected:
-            await self._client.connect()
+    async def watch_stream(self):
+        """Ensure socket stream is connected"""
+        while True:
+            if not self.stream.is_connected:
+                self.stream.connect()
+            await asyncio.sleep(1)
+
+    # -- ERROR HANDLING --------------------------------------------------------------------------
+    async def on_api_exception(self, exc: BetfairAPIError):
+        if exc.kind == "INVALID_SESSION_INFORMATION":
+            # Session is invalid, need to reconnect
+            self._log.warn("Invalid session error, reconnecting..")
+            await self._client.disconnect()
+            await self._connect()
+            self._log.info("Reconnected.")
 
     # -- ACCOUNT HANDLERS --------------------------------------------------------------------------
 
@@ -231,7 +244,19 @@ class BetfairExecutionClient(LiveExecutionClient):
         client_order_id = command.order.client_order_id
 
         place_order = order_submit_to_betfair(command=command, instrument=instrument)
-        result = await self._client.place_orders(**place_order)
+        try:
+            result = await self._client.place_orders(**place_order)
+        except BetfairAPIError as exc:
+            await self.on_api_exception(exc=exc)
+            self._log.warning("Submit failed - client disconnected")
+            self.generate_order_rejected(
+                strategy_id=command.strategy_id,
+                instrument_id=command.instrument_id,
+                client_order_id=client_order_id,
+                reason="client disconnected",  # type: ignore
+                ts_event=self._clock.timestamp_ns(),
+            )
+            return
 
         self._log.debug(f"result={result}")
         for report in result["instructionReports"]:
@@ -324,14 +349,26 @@ class BetfairExecutionClient(LiveExecutionClient):
         self.pending_update_order_client_ids.add(
             (command.client_order_id, existing_order.venue_order_id)
         )
-        result = await self._client.replace_orders(**kw)
+        try:
+            result = await self._client.replace_orders(**kw)
+        except BetfairAPIError as exc:
+            await self.on_api_exception(exc=exc)
+            self._log.warning("Submit failed - disconnected")
+            self.generate_order_rejected(
+                strategy_id=command.strategy_id,
+                instrument_id=command.instrument_id,
+                client_order_id=command.client_order_id,
+                reason="disconnected",
+                ts_event=self._clock.timestamp_ns(),
+            )
+            return
 
         self._log.debug(f"result={result}")
 
         for report in result["instructionReports"]:
             if report["status"] == "FAILURE":
                 reason = f"{result['errorCode']}: {report['errorCode']}"
-                self._log.warning(f"Submit failed - {reason}")
+                self._log.warning(f"replace failed - {reason}")
                 self.generate_order_rejected(
                     strategy_id=command.strategy_id,
                     instrument_id=command.instrument_id,
@@ -388,7 +425,20 @@ class BetfairExecutionClient(LiveExecutionClient):
         self._log.debug(f"cancel_orders {cancel_orders}")
 
         # Send to client
-        result = await self._client.cancel_orders(**cancel_orders)
+        try:
+            result = await self._client.cancel_orders(**cancel_orders)
+        except BetfairAPIError as exc:
+            await self.on_api_exception(exc=exc)
+            self._log.warning("Submit failed - client disconnected")
+            self.generate_order_cancel_rejected(
+                strategy_id=command.strategy_id,
+                instrument_id=command.instrument_id,
+                client_order_id=command.client_order_id,
+                venue_order_id=self.cache.venue_order_id(client_order_id=command.client_order_id),
+                reason="client disconnected",
+                ts_event=self._clock.timestamp_ns(),
+            )
+            return
         self._log.debug(f"result={result}")
 
         # Parse response
@@ -396,6 +446,7 @@ class BetfairExecutionClient(LiveExecutionClient):
             venue_order_id = VenueOrderId(report["instruction"]["betId"])
             if report["status"] == "FAILURE":
                 reason = f"{result.get('errorCode', 'Error')}: {report['errorCode']}"
+                self._log.warning(f"cancel failed - {reason}")
                 self.generate_order_cancel_rejected(
                     strategy_id=command.strategy_id,
                     instrument_id=command.instrument_id,
