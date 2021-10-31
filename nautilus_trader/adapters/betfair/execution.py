@@ -199,7 +199,7 @@ class BetfairExecutionClient(LiveExecutionClient):
     async def on_api_exception(self, exc: BetfairAPIError):
         if exc.kind == "INVALID_SESSION_INFORMATION":
             # Session is invalid, need to reconnect
-            self._log.warn("Invalid session error, reconnecting..")
+            self._log.warning("Invalid session error, reconnecting..")
             await self._client.disconnect()
             await self._connect()
             self._log.info("Reconnected.")
