@@ -342,7 +342,7 @@ class EMACross(TradingStrategy):
         self.unsubscribe_bars(self.bar_type)
 
 
-class OrderBookImbalanceConfig(TradingStrategyConfig):
+class OrderBookImbalanceStrategyConfig(TradingStrategyConfig):
     """
     Configuration for ``OrderBookImbalance`` instances.
 
@@ -379,7 +379,7 @@ class OrderBookImbalanceStrategy(TradingStrategy):
     Cancels all orders and flattens all positions on stop.
     """
 
-    def __init__(self, config: OrderBookImbalanceConfig):
+    def __init__(self, config: OrderBookImbalanceStrategyConfig):
         """
         Initialize a new instance of the ``OrderbookImbalance`` class.
 

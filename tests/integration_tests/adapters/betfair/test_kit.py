@@ -73,7 +73,7 @@ from tests.test_kit import PACKAGE_ROOT
 from tests.test_kit.mocks import MockLiveExecutionEngine
 from tests.test_kit.mocks import MockLiveRiskEngine
 from tests.test_kit.providers import TestDataProvider
-from tests.test_kit.strategies import OrderBookImbalanceConfig
+from tests.test_kit.strategies import OrderBookImbalanceStrategyConfig
 from tests.test_kit.stubs import TestStubs
 
 
@@ -545,7 +545,7 @@ class BetfairTestStubs:
             strategies=[
                 ImportableStrategyConfig(
                     path="tests.test_kit.strategies:OrderBookImbalanceStrategy",
-                    config=OrderBookImbalanceConfig(
+                    config=OrderBookImbalanceStrategyConfig(
                         instrument_id=instrument_id,
                         max_trade_size=50,
                     ),
