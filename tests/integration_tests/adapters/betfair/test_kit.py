@@ -44,6 +44,7 @@ from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.factories import OrderFactory
 from nautilus_trader.common.logging import LiveLogger
 from nautilus_trader.core.uuid import UUID4
+from nautilus_trader.examples.strategies.orderbook_imbalance import OrderBookImbalanceConfig
 from nautilus_trader.live.data_engine import LiveDataEngine
 from nautilus_trader.model.commands.trading import CancelOrder
 from nautilus_trader.model.commands.trading import ModifyOrder
@@ -73,7 +74,6 @@ from tests.test_kit import PACKAGE_ROOT
 from tests.test_kit.mocks import MockLiveExecutionEngine
 from tests.test_kit.mocks import MockLiveRiskEngine
 from tests.test_kit.providers import TestDataProvider
-from tests.test_kit.strategies import OrderBookImbalanceStrategyConfig
 from tests.test_kit.stubs import TestStubs
 
 
@@ -544,8 +544,8 @@ class BetfairTestStubs:
             else None,
             strategies=[
                 ImportableStrategyConfig(
-                    path="tests.test_kit.strategies:OrderBookImbalanceStrategy",
-                    config=OrderBookImbalanceStrategyConfig(
+                    path="nautilus_trader.examples.strategies.orderbook_imbalance:OrderBookImbalance",
+                    config=OrderBookImbalanceConfig(
                         instrument_id=instrument_id,
                         max_trade_size=50,
                     ),

@@ -25,13 +25,14 @@ sys.path.insert(
     0, str(os.path.abspath(__file__ + "/../../../"))
 )  # Allows relative imports from examples
 
-from examples.strategies.ema_cross_simple import EMACross
-from examples.strategies.ema_cross_simple import EMACrossConfig
+from nautilus_trader.backtest.data.providers import TestInstrumentProvider
 from nautilus_trader.backtest.data.wranglers import QuoteTickDataWrangler
 from nautilus_trader.backtest.engine import BacktestEngine
 from nautilus_trader.backtest.engine import BacktestEngineConfig
 from nautilus_trader.backtest.models import FillModel
 from nautilus_trader.backtest.modules import FXRolloverInterestModule
+from nautilus_trader.examples.strategies.ema_cross import EMACross
+from nautilus_trader.examples.strategies.ema_cross import EMACrossConfig
 from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import OMSType
@@ -40,7 +41,6 @@ from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.objects import Money
 from tests.test_kit import PACKAGE_ROOT
 from tests.test_kit.providers import TestDataProvider
-from tests.test_kit.providers import TestInstrumentProvider
 
 
 if __name__ == "__main__":
@@ -91,7 +91,7 @@ if __name__ == "__main__":
     # Configure your strategy
     config = EMACrossConfig(
         instrument_id=str(AUDUSD_SIM.id),
-        bar_type="AUD/USD.SIM-1-MINUTE-MID-INTERNAL",
+        bar_type="AUD/USD.SIM-100-TICK-MID-INTERNAL",
         fast_ema_period=10,
         slow_ema_period=20,
         trade_size=Decimal(1_000_000),

@@ -33,8 +33,6 @@ from nautilus_trader.model.objects cimport Money
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
 
-from nautilus_trader.adapters.betfair.common import BETFAIR_PRICE_PRECISION
-
 
 cdef class BettingInstrument(Instrument):
     """
@@ -64,7 +62,7 @@ cdef class BettingInstrument(Instrument):
         int64_t ts_event,
         int64_t ts_init,
         str tick_scheme_name="BETFAIR",
-        int price_precision=BETFAIR_PRICE_PRECISION,
+        int price_precision=7,  # TODO(bm): pending refactor
         Price min_price=None,
         Price max_price=None,
     ):

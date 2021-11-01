@@ -16,7 +16,6 @@
 
 import os
 import sys
-from datetime import datetime
 from decimal import Decimal
 
 import pandas as pd
@@ -26,13 +25,14 @@ sys.path.insert(
     0, str(os.path.abspath(__file__ + "/../../../"))
 )  # Allows relative imports from examples
 
-from examples.strategies.volatility_market_maker import VolatilityMarketMaker
-from examples.strategies.volatility_market_maker import VolatilityMarketMakerConfig
+from nautilus_trader.backtest.data.providers import TestInstrumentProvider
 from nautilus_trader.backtest.data.wranglers import QuoteTickDataWrangler
 from nautilus_trader.backtest.engine import BacktestEngine
 from nautilus_trader.backtest.engine import BacktestEngineConfig
 from nautilus_trader.backtest.models import FillModel
 from nautilus_trader.backtest.modules import FXRolloverInterestModule
+from nautilus_trader.examples.strategies.ema_cross import EMACross
+from nautilus_trader.examples.strategies.ema_cross import EMACrossConfig
 from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import OMSType
@@ -41,7 +41,6 @@ from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.objects import Money
 from tests.test_kit import PACKAGE_ROOT
 from tests.test_kit.providers import TestDataProvider
-from tests.test_kit.providers import TestInstrumentProvider
 
 
 if __name__ == "__main__":
@@ -55,15 +54,12 @@ if __name__ == "__main__":
 
     # Setup trading instruments
     SIM = Venue("SIM")
-    GBPUSD_SIM = TestInstrumentProvider.default_fx_ccy("GBP/USD", SIM)
+    AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy("AUD/USD", SIM)
 
     # Setup data
-    wrangler = QuoteTickDataWrangler(GBPUSD_SIM)
-    ticks = wrangler.process_bar_data(
-        bid_data=TestDataProvider.gbpusd_1min_bid(),
-        ask_data=TestDataProvider.gbpusd_1min_ask(),
-    )
-    engine.add_instrument(GBPUSD_SIM)
+    wrangler = QuoteTickDataWrangler(instrument=AUDUSD_SIM)
+    ticks = wrangler.process(TestDataProvider.audusd_ticks())
+    engine.add_instrument(AUDUSD_SIM)
     engine.add_ticks(ticks)
 
     # Create a fill model (optional)
@@ -79,36 +75,36 @@ if __name__ == "__main__":
     interest_rate_data = pd.read_csv(os.path.join(PACKAGE_ROOT, "data", "short-term-interest.csv"))
     fx_rollover_interest = FXRolloverInterestModule(rate_data=interest_rate_data)
 
-    # Add a trading venue (multiple venues possible)
+    # Add an exchange (multiple exchanges possible)
     # Add starting balances for single-currency or multi-currency accounts
     engine.add_venue(
         venue=SIM,
         venue_type=VenueType.ECN,
-        oms_type=OMSType.NETTING,
+        oms_type=OMSType.HEDGING,  # Venue will generate position_ids
         account_type=AccountType.MARGIN,
         base_currency=USD,  # Standard single-currency account
-        starting_balances=[Money(10_000_000, USD)],
+        starting_balances=[Money(1_000_000, USD)],
         fill_model=fill_model,
         modules=[fx_rollover_interest],
     )
 
     # Configure your strategy
-    config = VolatilityMarketMakerConfig(
-        instrument_id=str(GBPUSD_SIM.id),
-        bar_type="GBP/USD.SIM-5-MINUTE-BID-INTERNAL",
-        atr_period=20,
-        atr_multiple=3.0,
-        trade_size=Decimal(500_000),
+    config = EMACrossConfig(
+        instrument_id=str(AUDUSD_SIM.id),
+        bar_type="AUD/USD.SIM-1-MINUTE-MID-INTERNAL",
+        fast_ema_period=10,
+        slow_ema_period=20,
+        trade_size=Decimal(1_000_000),
         order_id_tag="001",
     )
     # Instantiate and add your strategy
-    strategy = VolatilityMarketMaker(config=config)
+    strategy = EMACross(config=config)
     engine.add_strategy(strategy=strategy)
 
     input("Press Enter to continue...")  # noqa (always Python 3)
 
     # Run the engine (from start to end of data)
-    engine.run(end=datetime(2012, 2, 10))
+    engine.run()
 
     # Optionally view reports
     with pd.option_context(

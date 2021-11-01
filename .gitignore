@@ -42,4 +42,4 @@ PERF.JSON
 *dask-worker-space*
 output.json
 .ipynb_checkpoints
-examples/backtest/notebooks/catalog
+nautilus_trader/examples/backtest/notebooks/catalog

@@ -22,6 +22,7 @@ import pandas as pd
 import pytz
 
 from nautilus_trader.accounting.factory import AccountFactory
+from nautilus_trader.backtest.data.providers import TestInstrumentProvider
 from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.enums import ComponentState
@@ -97,7 +98,6 @@ from tests.test_kit.mocks import MockLiveDataEngine
 from tests.test_kit.mocks import MockLiveExecutionEngine
 from tests.test_kit.mocks import MockLiveRiskEngine
 from tests.test_kit.mocks import NewsEventData
-from tests.test_kit.providers import TestInstrumentProvider
 
 
 # UNIX epoch is the UTC time at 00:00:00 on 1/1/1970

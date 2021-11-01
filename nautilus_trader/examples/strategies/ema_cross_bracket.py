@@ -14,24 +14,19 @@
 # -------------------------------------------------------------------------------------------------
 
 from decimal import Decimal
-from typing import Dict, Optional, Union
+from typing import Dict, Optional
 
 from nautilus_trader.common.logging import LogColor
 from nautilus_trader.core.data import Data
 from nautilus_trader.core.message import Event
 from nautilus_trader.indicators.atr import AverageTrueRange
+from nautilus_trader.indicators.average.ema import ExponentialMovingAverage
 from nautilus_trader.model.data.bar import Bar
 from nautilus_trader.model.data.bar import BarType
-from nautilus_trader.model.data.tick import QuoteTick
-from nautilus_trader.model.data.tick import TradeTick
-from nautilus_trader.model.enums import BookType
 from nautilus_trader.model.enums import OrderSide
-from nautilus_trader.model.enums import TimeInForce
-from nautilus_trader.model.events.order import OrderFilled
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.instruments.base import Instrument
-from nautilus_trader.model.orderbook.book import OrderBook
-from nautilus_trader.model.orders.limit import LimitOrder
+from nautilus_trader.model.orders.list import OrderList
 from nautilus_trader.trading.strategy import TradingStrategy
 from nautilus_trader.trading.strategy import TradingStrategyConfig
 
@@ -40,9 +35,9 @@ from nautilus_trader.trading.strategy import TradingStrategyConfig
 # *** IT IS NOT INTENDED TO BE USED TO TRADE LIVE WITH REAL MONEY. ***
 
 
-class VolatilityMarketMakerConfig(TradingStrategyConfig):
+class EMACrossBracketConfig(TradingStrategyConfig):
     """
-    Configuration for ``VolatilityMarketMaker`` instances.
+    Configuration for ``EMACrossBracket`` instances.
 
     instrument_id : InstrumentId
         The instrument ID for the strategy.
@@ -50,10 +45,14 @@ class VolatilityMarketMakerConfig(TradingStrategyConfig):
         The bar type for the strategy.
     atr_period : int
         The period for the ATR indicator.
-    atr_multiple : float
-        The ATR multiple for bracketing limit orders.
-    trade_size : Decimal
-        The position size per trade.
+    fast_ema_period : int
+        The fast EMA period.
+    slow_ema_period : int
+        The slow EMA period.
+    bracket_distance : float
+        The SL and TP bracket distance from entry ATR multiple.
+    trade_size : str
+        The position size per trade (interpreted as Decimal).
     order_id_tag : str
         The unique order ID tag for the strategy. Must be unique
         amongst all running strategies for a particular trader ID.
@@ -64,26 +63,30 @@ class VolatilityMarketMakerConfig(TradingStrategyConfig):
 
     instrument_id: str
     bar_type: str
-    atr_period: int
-    atr_multiple: float
-    trade_size: str
+    atr_period: int = 20
+    fast_ema_period: int = 10
+    slow_ema_period: int = 20
+    bracket_distance_atr: float = 3.0
+    trade_size: Decimal
 
 
-class VolatilityMarketMaker(TradingStrategy):
+class EMACrossBracket(TradingStrategy):
     """
-    A very dumb market maker which brackets the current market based on
-    volatility measured by an ATR indicator.
+    A simple moving average cross example strategy.
+
+    When the fast EMA crosses the slow EMA then enter a position in that
+    direction.
 
     Cancels all orders and flattens all positions on stop.
     """
 
-    def __init__(self, config: VolatilityMarketMakerConfig):
+    def __init__(self, config: EMACrossBracketConfig):
         """
-        Initialize a new instance of the ``VolatilityMarketMaker`` class.
+        Initialize a new instance of the ``EMACrossBracket`` class.
 
         Parameters
         ----------
-        config : VolatilityMarketMakerConfig
+        config : EMACrossConfig
             The configuration for the instance.
 
         """
@@ -92,17 +95,15 @@ class VolatilityMarketMaker(TradingStrategy):
         # Configuration
         self.instrument_id = InstrumentId.from_str(config.instrument_id)
         self.bar_type = BarType.from_str(config.bar_type)
+        self.bracket_distance_atr = config.bracket_distance_atr
         self.trade_size = Decimal(config.trade_size)
-        self.atr_multiple = config.atr_multiple
 
         # Create the indicators for the strategy
         self.atr = AverageTrueRange(config.atr_period)
+        self.fast_ema = ExponentialMovingAverage(config.fast_ema_period)
+        self.slow_ema = ExponentialMovingAverage(config.slow_ema_period)
 
         self.instrument: Optional[Instrument] = None  # Initialized in on_start
-
-        # Users order management variables
-        self.buy_order: Union[LimitOrder, None] = None
-        self.sell_order: Union[LimitOrder, None] = None
 
     def on_start(self):
         """Actions to be performed on strategy start."""
@@ -114,72 +115,14 @@ class VolatilityMarketMaker(TradingStrategy):
 
         # Register the indicators for updating
         self.register_indicator_for_bars(self.bar_type, self.atr)
+        self.register_indicator_for_bars(self.bar_type, self.fast_ema)
+        self.register_indicator_for_bars(self.bar_type, self.slow_ema)
 
         # Get historical data
         self.request_bars(self.bar_type)
 
         # Subscribe to live data
         self.subscribe_bars(self.bar_type)
-        self.subscribe_quote_ticks(self.instrument_id)
-        self.subscribe_order_book_snapshots(
-            self.instrument_id,
-            book_type=BookType.L2_MBP,
-            depth=10,
-            interval_ms=1000,
-        )  # For debugging
-        # self.subscribe_trade_ticks(self.instrument_id)  # For debugging
-
-    def on_instrument(self, instrument: Instrument):
-        """
-        Actions to be performed when the strategy is running and receives an
-        instrument.
-
-        Parameters
-        ----------
-        instrument : Instrument
-            The instrument received.
-
-        """
-        pass
-
-    def on_order_book(self, order_book: OrderBook):
-        """
-        Actions to be performed when the strategy is running and receives an order book.
-
-        Parameters
-        ----------
-        order_book : OrderBook
-            The order book received.
-
-        """
-        # self.log.info(str(order_book))  # For debugging (must add a subscription)
-        pass
-
-    def on_quote_tick(self, tick: QuoteTick):
-        """
-        Actions to be performed when the strategy is running and receives a quote tick.
-
-        Parameters
-        ----------
-        tick : QuoteTick
-            The quote tick received.
-
-        """
-        # self.log.info(f"Received {repr(tick)}")  # For debugging (must add a subscription)
-        pass
-
-    def on_trade_tick(self, tick: TradeTick):
-        """
-        Actions to be performed when the strategy is running and receives a trade tick.
-
-        Parameters
-        ----------
-        tick : TradeTick
-            The tick received.
-
-        """
-        # self.log.info(f"Received {repr(tick)}")  # For debugging (must add a subscription)
-        pass
 
     def on_bar(self, bar: Bar):
         """
@@ -201,56 +144,53 @@ class VolatilityMarketMaker(TradingStrategy):
             )
             return  # Wait for indicators to warm up...
 
-        last: QuoteTick = self.cache.quote_tick(self.instrument_id)
-        if last is None:
-            self.log.info("No quotes yet...")
-            return
+        # BUY LOGIC
+        if self.fast_ema.value >= self.slow_ema.value:
+            if self.portfolio.is_flat(self.instrument_id):
+                self.buy(bar)
+            elif self.portfolio.is_net_short(self.instrument_id):
+                self.flatten_all_positions(self.instrument_id)
+                self.cancel_all_orders(self.instrument_id)
+                self.buy(bar)
 
-        # Maintain buy orders
-        if self.buy_order and self.buy_order.is_working:
-            self.cancel_order(self.buy_order)
-        self.create_buy_order(last)
+        # SELL LOGIC
+        elif self.fast_ema.value < self.slow_ema.value:
+            if self.portfolio.is_flat(self.instrument_id):
+                self.sell(bar)
+            elif self.portfolio.is_net_long(self.instrument_id):
+                self.flatten_all_positions(self.instrument_id)
+                self.cancel_all_orders(self.instrument_id)
+                self.sell(bar)
 
-        # Maintain sell orders
-        if self.sell_order and self.sell_order.is_working:
-            self.cancel_order(self.sell_order)
-        self.create_sell_order(last)
-
-    def create_buy_order(self, last: QuoteTick):
+    def buy(self, last_bar: Bar):
         """
-        A market makers simple buy limit method (example).
+        Users bracket buy method (example).
         """
-        price: Decimal = last.bid - (self.atr.value * self.atr_multiple)
-        order: LimitOrder = self.order_factory.limit(
+        bracket_distance: float = self.bracket_distance_atr * self.atr.value
+        order_list: OrderList = self.order_factory.bracket_market(
             instrument_id=self.instrument_id,
             order_side=OrderSide.BUY,
             quantity=self.instrument.make_qty(self.trade_size),
-            price=self.instrument.make_price(price),
-            time_in_force=TimeInForce.GTC,
-            post_only=True,  # default value is True
-            hidden=False,  # default value is False
+            stop_loss=self.instrument.make_price(last_bar.close - bracket_distance),
+            take_profit=self.instrument.make_price(last_bar.close + bracket_distance),
         )
 
-        self.buy_order = order
-        self.submit_order(order)
+        self.submit_order_list(order_list)
 
-    def create_sell_order(self, last: QuoteTick):
+    def sell(self, last_bar: Bar):
         """
-        A market makers simple sell limit method (example).
+        Users bracket sell method (example).
         """
-        price: Decimal = last.ask + (self.atr.value * self.atr_multiple)
-        order: LimitOrder = self.order_factory.limit(
+        bracket_distance: float = self.bracket_distance_atr * self.atr.value
+        order_list: OrderList = self.order_factory.bracket_market(
             instrument_id=self.instrument_id,
             order_side=OrderSide.SELL,
             quantity=self.instrument.make_qty(self.trade_size),
-            price=self.instrument.make_price(price),
-            time_in_force=TimeInForce.GTC,
-            post_only=True,  # default value is True
-            hidden=False,  # default value is False
+            stop_loss=self.instrument.make_price(last_bar.close + bracket_distance),
+            take_profit=self.instrument.make_price(last_bar.close - bracket_distance),
         )
 
-        self.sell_order = order
-        self.submit_order(order)
+        self.submit_order_list(order_list)
 
     def on_data(self, data: Data):
         """
@@ -274,19 +214,7 @@ class VolatilityMarketMaker(TradingStrategy):
             The event received.
 
         """
-        last: QuoteTick = self.cache.quote_tick(self.instrument_id)
-        if last is None:
-            self.log.info("No quotes yet...")
-            return
-
-        # If order filled then replace order at atr multiple distance from the market
-        if isinstance(event, OrderFilled):
-            if event.order_side == OrderSide.BUY:
-                if self.buy_order.is_completed:
-                    self.create_buy_order(last)
-            elif event.order_side == OrderSide.SELL:
-                if self.sell_order.is_completed:
-                    self.create_sell_order(last)
+        pass
 
     def on_stop(self):
         """
@@ -297,16 +225,14 @@ class VolatilityMarketMaker(TradingStrategy):
 
         # Unsubscribe from data
         self.unsubscribe_bars(self.bar_type)
-        self.unsubscribe_quote_ticks(self.instrument_id)
-        self.unsubscribe_order_book_snapshots(self.instrument_id, interval_ms=1000)
-        # self.unsubscribe_trade_ticks(self.instrument_id)
 
     def on_reset(self):
         """
         Actions to be performed when the strategy is reset.
         """
         # Reset indicators here
-        self.atr.reset()
+        self.fast_ema.reset()
+        self.slow_ema.reset()
 
     def on_save(self) -> Dict[str, bytes]:
         """
