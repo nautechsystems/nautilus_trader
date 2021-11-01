@@ -31,7 +31,9 @@ jobs:
 
       # Install build dependencies
       - name: Install build dependencies
-        run: python -m pip install --upgrade pip setuptools wheel poetry pre-commit nox
+        run: |
+          python -m pip install --upgrade pip setuptools wheel pre-commit nox
+          python -m pip install poetry --pre
 
       # Test pip installation
       - name: Test pip installation
@@ -57,7 +59,9 @@ jobs:
 
       # Install build dependencies
       - name: Install build dependencies
-        run: python -m pip install --upgrade pip setuptools wheel poetry pre-commit nox
+        run: |
+          python -m pip install --upgrade pip setuptools wheel pre-commit nox
+          python -m pip install poetry --pre
 
       # Setup Poetry caching
       - name: Get Poetry cache dir
@@ -125,7 +129,9 @@ jobs:
 
       # Install build dependencies
       - name: Install build dependencies
-        run: python -m pip install --upgrade pip setuptools wheel poetry pre-commit nox
+        run: |
+          python -m pip install --upgrade pip setuptools wheel pre-commit nox
+          python -m pip install poetry --pre
 
       # Setup Poetry caching
       - name: Get Poetry cache dir
@@ -197,7 +203,9 @@ jobs:
 
       # Install build dependencies
       - name: Install build dependencies
-        run: python -m pip install --upgrade pip setuptools wheel poetry pre-commit nox
+        run: |
+          python -m pip install --upgrade pip setuptools wheel pre-commit nox
+          python -m pip install poetry --pre
 
       # Setup Poetry caching
       - name: Get Poetry cache dir
