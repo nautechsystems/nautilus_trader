@@ -20,11 +20,6 @@ from decimal import Decimal
 
 import pandas as pd
 
-
-sys.path.insert(
-    0, str(os.path.abspath(__file__ + "/../../../"))
-)  # Allows relative imports from examples
-
 from nautilus_trader.backtest.data.providers import TestInstrumentProvider
 from nautilus_trader.backtest.data.wranglers import QuoteTickDataWrangler
 from nautilus_trader.backtest.engine import BacktestEngine
@@ -39,6 +34,10 @@ from nautilus_trader.model.enums import OMSType
 from nautilus_trader.model.enums import VenueType
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.objects import Money
+
+
+# Import from tests
+sys.path.insert(0, str(os.path.abspath(__file__ + "/../../../")))
 from tests.test_kit import PACKAGE_ROOT
 from tests.test_kit.providers import TestDataProvider
 
@@ -91,7 +90,7 @@ if __name__ == "__main__":
     # Configure your strategy
     config = EMACrossConfig(
         instrument_id=str(AUDUSD_SIM.id),
-        bar_type="AUD/USD.SIM-100-TICK-MID-INTERNAL",
+        bar_type="AUD/USD.SIM-1-MINUTE-MID-INTERNAL",
         fast_ema_period=10,
         slow_ema_period=20,
         trade_size=Decimal(1_000_000),

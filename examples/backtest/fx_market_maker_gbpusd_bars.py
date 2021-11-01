@@ -14,26 +14,32 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+import os
+import sys
+from datetime import datetime
 from decimal import Decimal
 
 import pandas as pd
 
 from nautilus_trader.backtest.data.providers import TestInstrumentProvider
-from nautilus_trader.backtest.data.wranglers import TradeTickDataWrangler
+from nautilus_trader.backtest.data.wranglers import QuoteTickDataWrangler
 from nautilus_trader.backtest.engine import BacktestEngine
 from nautilus_trader.backtest.engine import BacktestEngineConfig
 from nautilus_trader.backtest.models import FillModel
-from nautilus_trader.examples.strategies.ema_cross import EMACross
-from nautilus_trader.examples.strategies.ema_cross import EMACrossConfig
-from nautilus_trader.model.currencies import ETH
-from nautilus_trader.model.currencies import USDT
+from nautilus_trader.backtest.modules import FXRolloverInterestModule
+from nautilus_trader.examples.strategies.volatility_market_maker import VolatilityMarketMaker
+from nautilus_trader.examples.strategies.volatility_market_maker import VolatilityMarketMakerConfig
+from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import OMSType
 from nautilus_trader.model.enums import VenueType
-from nautilus_trader.model.identifiers import InstrumentId
-from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.objects import Money
+
+
+# Import from tests
+sys.path.insert(0, str(os.path.abspath(__file__ + "/../../../")))
+from tests.test_kit import PACKAGE_ROOT
 from tests.test_kit.providers import TestDataProvider
 
 
@@ -46,14 +52,17 @@ if __name__ == "__main__":
     # Build the backtest engine
     engine = BacktestEngine(config=config)
 
-    BINANCE = Venue("BINANCE")
-    instrument_id = InstrumentId(symbol=Symbol("ETH/USDT"), venue=BINANCE)
-    ETHUSDT_BINANCE = TestInstrumentProvider.ethusdt_binance()
+    # Setup trading instruments
+    SIM = Venue("SIM")
+    GBPUSD_SIM = TestInstrumentProvider.default_fx_ccy("GBP/USD", SIM)
 
     # Setup data
-    wrangler = TradeTickDataWrangler(instrument=ETHUSDT_BINANCE)
-    ticks = wrangler.process(TestDataProvider.ethusdt_trades())
-    engine.add_instrument(ETHUSDT_BINANCE)
+    wrangler = QuoteTickDataWrangler(GBPUSD_SIM)
+    ticks = wrangler.process_bar_data(
+        bid_data=TestDataProvider.gbpusd_1min_bid(),
+        ask_data=TestDataProvider.gbpusd_1min_ask(),
+    )
+    engine.add_instrument(GBPUSD_SIM)
     engine.add_ticks(ticks)
 
     # Create a fill model (optional)
@@ -64,35 +73,41 @@ if __name__ == "__main__":
         random_seed=42,
     )
 
-    # Add an exchange (multiple exchanges possible)
+    # Optional plug in module to simulate rollover interest,
+    # the data is coming from packaged test data.
+    interest_rate_data = pd.read_csv(os.path.join(PACKAGE_ROOT, "data", "short-term-interest.csv"))
+    fx_rollover_interest = FXRolloverInterestModule(rate_data=interest_rate_data)
+
+    # Add a trading venue (multiple venues possible)
     # Add starting balances for single-currency or multi-currency accounts
     engine.add_venue(
-        venue=BINANCE,
-        venue_type=VenueType.EXCHANGE,
+        venue=SIM,
+        venue_type=VenueType.ECN,
         oms_type=OMSType.NETTING,
-        account_type=AccountType.CASH,  # Spot cash account
-        base_currency=None,  # Multi-currency account
-        starting_balances=[Money(1_000_000, USDT), Money(10, ETH)],
+        account_type=AccountType.MARGIN,
+        base_currency=USD,  # Standard single-currency account
+        starting_balances=[Money(10_000_000, USD)],
         fill_model=fill_model,
+        modules=[fx_rollover_interest],
     )
 
     # Configure your strategy
-    config = EMACrossConfig(
-        instrument_id=str(ETHUSDT_BINANCE.id),
-        bar_type="ETH/USDT.BINANCE-250-TICK-LAST-INTERNAL",
-        trade_size=Decimal("0.05"),
-        fast_ema=10,
-        slow_ema=20,
+    config = VolatilityMarketMakerConfig(
+        instrument_id=str(GBPUSD_SIM.id),
+        bar_type="GBP/USD.SIM-5-MINUTE-BID-INTERNAL",
+        atr_period=20,
+        atr_multiple=3.0,
+        trade_size=Decimal(500_000),
         order_id_tag="001",
     )
     # Instantiate and add your strategy
-    strategy = EMACross(config=config)
+    strategy = VolatilityMarketMaker(config=config)
     engine.add_strategy(strategy=strategy)
 
     input("Press Enter to continue...")  # noqa (always Python 3)
 
     # Run the engine (from start to end of data)
-    engine.run()
+    engine.run(end=datetime(2012, 2, 10))
 
     # Optionally view reports
     with pd.option_context(
@@ -103,12 +118,12 @@ if __name__ == "__main__":
         "display.width",
         300,
     ):
-        print(engine.trader.generate_account_report(BINANCE))
+        print(engine.trader.generate_account_report(SIM))
         print(engine.trader.generate_order_fills_report())
         print(engine.trader.generate_positions_report())
 
     # For repeated backtest runs make sure to reset the engine
     engine.reset()
 
-    # Good practice to dispose of the object
+    # Good practice to dispose of the object when done
     engine.dispose()

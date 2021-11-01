@@ -15,14 +15,7 @@
 # -------------------------------------------------------------------------------------------------
 
 import asyncio
-import os
-import sys
 import traceback
-
-
-sys.path.insert(
-    0, str(os.path.abspath(__file__ + "/../../../"))
-)  # Allows relative imports from examples
 
 from nautilus_trader.adapters.betfair.factories import BetfairLiveDataClientFactory
 from nautilus_trader.adapters.betfair.factories import BetfairLiveExecutionClientFactory
