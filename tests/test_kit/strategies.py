@@ -22,14 +22,11 @@ from nautilus_trader.adapters.betfair.common import MIN_BET_PROB
 from nautilus_trader.common.logging import LogColor
 from nautilus_trader.core.message import Event
 from nautilus_trader.indicators.average.ema import ExponentialMovingAverage
-from nautilus_trader.model.c_enums.instrument_status import InstrumentStatus
 from nautilus_trader.model.c_enums.order_side import OrderSide
 from nautilus_trader.model.data.bar import Bar
 from nautilus_trader.model.data.bar import BarType
 from nautilus_trader.model.data.tick import QuoteTick
 from nautilus_trader.model.data.tick import TradeTick
-from nautilus_trader.model.data.venue import InstrumentClosePrice
-from nautilus_trader.model.data.venue import InstrumentStatusUpdate
 from nautilus_trader.model.enums import BookType
 from nautilus_trader.model.events.order import OrderAccepted
 from nautilus_trader.model.events.order import OrderCanceled
@@ -351,40 +348,58 @@ class OrderBookImbalanceStrategyConfig(TradingStrategyConfig):
 
     instrument_id : InstrumentId
         The instrument ID for the strategy.
-    trade_size : Decimal
-        The position size per trade.
+    max_trade_size : str
+        The max position size per trade (volume on the level can be less).
+    trigger_min_size : float
+        The minimum size on the larger side to trigger an order.
+    trigger_imbalance_ratio : float
+        The ratio of bid:ask volume required to trigger an order (smaller
+        value / larger value) ie given a trigger_imbalance_ratio=0.2, and a
+        bid volume of 100, we will send a buy order if the ask volume is <
+        20).
+    order_id_tag : str
+        The unique order ID tag for the strategy. Must be unique
+        amongst all running strategies for a particular trader ID.
+    oms_type : OMSType
+        The order management system type for the strategy. This will determine
+        how the `ExecutionEngine` handles position IDs (see docs).
     """
 
     instrument_id: str
-    trade_size: Decimal
-    oms_type: str = "NETTING"
+    max_trade_size: str
+    trigger_min_size: float = 100.0
+    trigger_imbalance_ratio: float = 0.20
 
 
 class OrderBookImbalanceStrategy(TradingStrategy):
     """
-    A simple orderbook imbalance hitting strategy
+    A simple strategy that sends FAK limit orders when there is a bid/ask
+    imbalance in the order book.
+
+    Cancels all orders and flattens all positions on stop.
     """
 
     def __init__(self, config: OrderBookImbalanceStrategyConfig):
         """
-        Initialize a new instance of the ``OrderBookImbalanceStrategy`` class.
+        Initialize a new instance of the ``OrderbookImbalance`` class.
 
         Parameters
         ----------
-        config: OrderBookImbalanceStrategyConfig
+        config : OrderbookImbalanceConfig
             The configuration for the instance.
 
         """
+        assert 0 < config.trigger_imbalance_ratio < 1
         super().__init__(config)
 
         # Configuration
         self.instrument_id = InstrumentId.from_str(config.instrument_id)
-        self.trade_size = config.trade_size
+        self.max_trade_size = Decimal(config.max_trade_size)
+        self.trigger_min_size = config.trigger_min_size
+        self.trigger_imbalance_ratio = config.trigger_imbalance_ratio
 
-        self.instrument: Optional[Instrument] = None  # Initialized in on_start
-        self.instrument_status: Optional[InstrumentStatus] = None
-        self.close_price: Optional[InstrumentClosePrice] = None
-        self.book: Optional[OrderBook] = None
+        self.instrument: Optional[Instrument] = None
+        self._book = None  # type: Optional[OrderBook]
 
     def on_start(self):
         """Actions to be performed on strategy start."""
@@ -394,83 +409,60 @@ class OrderBookImbalanceStrategy(TradingStrategy):
             self.stop()
             return
 
-        # Create orderbook
-        self.book = OrderBook.create(instrument=self.instrument, book_type=BookType.L2_MBP)
-
-        # Subscribe to live data
-        self.subscribe_order_book_deltas(self.instrument_id)
-        self.subscribe_instrument_status_updates(self.instrument_id)
-        self.subscribe_instrument_close_prices(self.instrument_id)
-
-    def on_order_book_delta(self, delta: OrderBookData):
-        """
-        Actions to be performed when the strategy is running and receives an order book.
-
-        Parameters
-        ----------
-        delta : OrderBookDelta, OrderBookDeltas, OrderBookSnapshot
-            The order book delta received.
-
-        """
-        self.book.apply(delta)
-        bid_qty = self.book.best_bid_qty()
-        ask_qty = self.book.best_ask_qty()
-        if bid_qty and ask_qty:
-            imbalance = bid_qty / (bid_qty + ask_qty)
-            if imbalance > 0.90:
-                self.buy()
-            elif imbalance < 0.10:
-                self.sell()
-
-    def buy(self):
-        """
-        Users simple buy method (example).
-        """
-        order = self.order_factory.market(
-            instrument_id=self.instrument_id,
-            order_side=OrderSide.BUY,
-            quantity=self.instrument.make_qty(self.trade_size),
+        self.subscribe_order_book_deltas(
+            instrument_id=self.instrument.id,
+            book_type=BookType.L2_MBP,
+        )
+        self._book = OrderBook.create(
+            instrument=self.instrument,
+            book_type=BookType.L2_MBP,
         )
 
-        self.submit_order(order)
+    def on_order_book_delta(self, data: OrderBookData):
+        """Actions to be performed when a delta is received."""
+        self._book.apply(data)
+        if self._book.spread():
+            self.check_trigger()
 
-    def sell(self):
-        """
-        Users simple sell method (example).
-        """
-        order = self.order_factory.market(
-            instrument_id=self.instrument_id,
-            order_side=OrderSide.SELL,
-            quantity=self.instrument.make_qty(self.trade_size),
-        )
+    def on_order_book(self, order_book: OrderBook):
+        """Actions to be performed when an order book update is received."""
+        self._book = order_book
+        if self._book.spread():
+            self.check_trigger()
 
-        self.submit_order(order)
-
-    def on_data(self, data):
-        """
-        Actions to be performed when the strategy is running and receives a data object.
-
-        Parameters
-        ----------
-        data : object
-            The data object received.
-
-        """
-
-    def on_instrument_status_update(self, data: InstrumentStatusUpdate):
-        if data.status == InstrumentStatus.CLOSED:
-            self.instrument_status = data.status
-
-    def on_instrument_close_price(self, data: InstrumentClosePrice):
-        self.close_price = data.close_price
+    def check_trigger(self):
+        """Checking for trigger conditions."""
+        bid_volume = self._book.best_bid_qty()
+        ask_volume = self._book.best_ask_qty()
+        if not (bid_volume and ask_volume):
+            return
+        smaller = min(bid_volume, ask_volume)
+        larger = max(bid_volume, ask_volume)
+        ratio = smaller / larger
+        if larger > self.trigger_min_size and ratio < self.trigger_imbalance_ratio:
+            if bid_volume > ask_volume:
+                order = self.order_factory.limit(
+                    instrument_id=self.instrument.id,
+                    price=self.instrument.make_price(self._book.best_ask_price()),
+                    order_side=OrderSide.BUY,
+                    quantity=self.instrument.make_qty(ask_volume),
+                    post_only=False,
+                )
+                self.submit_order(order)
+            else:
+                order = self.order_factory.limit(
+                    instrument_id=self.instrument.id,
+                    price=self.instrument.make_price(self._book.best_bid_price()),
+                    order_side=OrderSide.SELL,
+                    quantity=self.instrument.make_qty(bid_volume),
+                    post_only=False,
+                )
+                self.submit_order(order)
 
     def on_stop(self):
-        """
-        Actions to be performed when the strategy is stopped.
-
-        """
-        self.cancel_all_orders(self.instrument_id)
-        self.flatten_all_positions(self.instrument_id)
+        """Actions to be performed when the strategy is stopped."""
+        self.cancel_all_orders(self.instrument.id)
+        self.flatten_all_positions(self.instrument.id)
 
 
 class MarketMaker(TradingStrategy):

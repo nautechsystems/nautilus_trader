@@ -28,7 +28,6 @@ import orjson
 import pandas as pd
 from aiohttp import ClientResponse
 
-from examples.strategies.orderbook_imbalance import OrderBookImbalanceConfig
 from nautilus_trader.adapters.betfair.client.core import BetfairClient
 from nautilus_trader.adapters.betfair.common import BETFAIR_VENUE
 from nautilus_trader.adapters.betfair.data import BetfairDataClient
@@ -74,6 +73,7 @@ from tests.test_kit import PACKAGE_ROOT
 from tests.test_kit.mocks import MockLiveExecutionEngine
 from tests.test_kit.mocks import MockLiveRiskEngine
 from tests.test_kit.providers import TestDataProvider
+from tests.test_kit.strategies import OrderBookImbalanceStrategyConfig
 from tests.test_kit.stubs import TestStubs
 
 
@@ -544,10 +544,9 @@ class BetfairTestStubs:
             else None,
             strategies=[
                 ImportableStrategyConfig(
-                    path="examples.strategies.orderbook_imbalance:OrderBookImbalance",
-                    config=OrderBookImbalanceConfig(
+                    path="tests.test_kit.strategies:OrderBookImbalanceStrategy",
+                    config=OrderBookImbalanceStrategyConfig(
                         instrument_id=instrument_id,
-                        trigger_min_size=30,
                         max_trade_size=50,
                     ),
                 )

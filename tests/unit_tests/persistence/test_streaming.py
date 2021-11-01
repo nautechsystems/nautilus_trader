@@ -77,18 +77,18 @@ class TestPersistenceStreaming:
         )
         result = dict(Counter([r.__class__.__name__ for r in result]))
         expected = {
-            "AccountState": 892,
+            "AccountState": 746,
             "BettingInstrument": 1,
             "ComponentStateChanged": 7,
-            "OrderAccepted": 396,
+            "OrderAccepted": 323,
             "OrderBookDeltas": 1077,
             "OrderBookSnapshot": 1,
-            "OrderDenied": 296,
-            "OrderFilled": 496,
-            "OrderInitialized": 792,
-            "OrderSubmitted": 496,
+            "OrderDenied": 223,
+            "OrderFilled": 423,
+            "OrderInitialized": 646,
+            "OrderSubmitted": 423,
             "PositionClosed": 100,
-            "PositionOpened": 396,
+            "PositionOpened": 323,
             "TradeTick": 198,
         }
         assert result == expected
