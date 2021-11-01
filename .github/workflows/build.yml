@@ -29,7 +29,9 @@ jobs:
 
       # Install build dependencies
       - name: Install build dependencies
-        run: python -m pip install --upgrade pip setuptools wheel poetry pre-commit nox
+        run: |
+          python -m pip install --upgrade pip setuptools wheel poetry pre-commit nox
+          poetry config experimental.new-installer false
 
       # Setup cached pre-commit
       - name: Setup cached pre-commit
