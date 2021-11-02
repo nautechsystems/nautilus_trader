@@ -115,8 +115,10 @@ class BetfairClient(HttpClient):
         await self.login()
 
     async def disconnect(self):
+        self._log.info("Disconnecting..")
         self.session_token = None
         await super().disconnect()
+        self._log.info("Disconnected.")
 
     async def login(self):
         self._log.debug("BetfairClient login")
