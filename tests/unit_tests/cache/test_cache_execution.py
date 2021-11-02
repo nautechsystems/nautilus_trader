@@ -15,6 +15,7 @@
 
 from decimal import Decimal
 
+from nautilus_trader.backtest.data.providers import TestInstrumentProvider
 from nautilus_trader.backtest.data.wranglers import QuoteTickDataWrangler
 from nautilus_trader.backtest.engine import BacktestEngine
 from nautilus_trader.backtest.engine import BacktestEngineConfig
@@ -22,6 +23,8 @@ from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.data.engine import DataEngine
+from nautilus_trader.examples.strategies.ema_cross import EMACross
+from nautilus_trader.examples.strategies.ema_cross import EMACrossConfig
 from nautilus_trader.execution.engine import ExecutionEngine
 from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.currency import Currency
@@ -43,9 +46,6 @@ from nautilus_trader.portfolio.portfolio import Portfolio
 from nautilus_trader.risk.engine import RiskEngine
 from nautilus_trader.trading.strategy import TradingStrategy
 from tests.test_kit.providers import TestDataProvider
-from tests.test_kit.providers import TestInstrumentProvider
-from tests.test_kit.strategies import EMACross
-from tests.test_kit.strategies import EMACrossConfig
 from tests.test_kit.stubs import TestStubs
 
 

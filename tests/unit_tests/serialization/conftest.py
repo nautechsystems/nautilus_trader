@@ -1,10 +1,10 @@
 from typing import Any, List
 
+from nautilus_trader.backtest.data.providers import TestInstrumentProvider
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.identifiers import ExecutionId
 from nautilus_trader.model.identifiers import PositionId
 from nautilus_trader.model.position import Position
-from tests.test_kit.providers import TestInstrumentProvider
 from tests.test_kit.stubs import TestStubs
 
 

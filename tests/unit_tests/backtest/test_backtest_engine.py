@@ -17,12 +17,15 @@ from decimal import Decimal
 
 import pandas as pd
 
+from nautilus_trader.backtest.data.providers import TestInstrumentProvider
 from nautilus_trader.backtest.data.wranglers import BarDataWrangler
 from nautilus_trader.backtest.data.wranglers import QuoteTickDataWrangler
 from nautilus_trader.backtest.data.wranglers import TradeTickDataWrangler
 from nautilus_trader.backtest.engine import BacktestEngine
 from nautilus_trader.backtest.engine import BacktestEngineConfig
 from nautilus_trader.backtest.models import FillModel
+from nautilus_trader.examples.strategies.ema_cross import EMACross
+from nautilus_trader.examples.strategies.ema_cross import EMACrossConfig
 from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.data.bar import BarSpecification
 from nautilus_trader.model.data.bar import BarType
@@ -50,9 +53,6 @@ from nautilus_trader.model.orderbook.data import OrderBookDeltas
 from nautilus_trader.model.orderbook.data import OrderBookSnapshot
 from nautilus_trader.trading.strategy import TradingStrategy
 from tests.test_kit.providers import TestDataProvider
-from tests.test_kit.providers import TestInstrumentProvider
-from tests.test_kit.strategies import EMACross
-from tests.test_kit.strategies import EMACrossConfig
 from tests.test_kit.stubs import MyData
 from tests.test_kit.stubs import TestStubs
 

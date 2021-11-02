@@ -14,23 +14,24 @@
 # -------------------------------------------------------------------------------------------------
 
 from decimal import Decimal
-from typing import Dict, Optional
+from typing import Dict, Optional, Union
 
 from nautilus_trader.common.logging import LogColor
 from nautilus_trader.core.data import Data
 from nautilus_trader.core.message import Event
 from nautilus_trader.indicators.atr import AverageTrueRange
-from nautilus_trader.indicators.average.ema import ExponentialMovingAverage
 from nautilus_trader.model.data.bar import Bar
 from nautilus_trader.model.data.bar import BarType
 from nautilus_trader.model.data.tick import QuoteTick
 from nautilus_trader.model.data.tick import TradeTick
+from nautilus_trader.model.enums import BookType
 from nautilus_trader.model.enums import OrderSide
+from nautilus_trader.model.enums import TimeInForce
 from nautilus_trader.model.events.order import OrderFilled
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.instruments.base import Instrument
 from nautilus_trader.model.orderbook.book import OrderBook
-from nautilus_trader.model.orders.stop_market import StopMarketOrder
+from nautilus_trader.model.orders.limit import LimitOrder
 from nautilus_trader.trading.strategy import TradingStrategy
 from nautilus_trader.trading.strategy import TradingStrategyConfig
 
@@ -39,24 +40,20 @@ from nautilus_trader.trading.strategy import TradingStrategyConfig
 # *** IT IS NOT INTENDED TO BE USED TO TRADE LIVE WITH REAL MONEY. ***
 
 
-class EMACrossStopEntryTrailConfig(TradingStrategyConfig):
+class VolatilityMarketMakerConfig(TradingStrategyConfig):
     """
-    Configuration for ``EMACross`` instances.
+    Configuration for ``VolatilityMarketMaker`` instances.
 
     instrument_id : InstrumentId
         The instrument ID for the strategy.
     bar_type : BarType
         The bar type for the strategy.
-    fast_ema_period : int
-        The fast EMA period.
-    slow_ema_period : int
-        The slow EMA period.
     atr_period : int
         The period for the ATR indicator.
-    trail_atr_multiple : float
-        The ATR multiple for the trailing stop.
-    trade_size : str
-        The position size per trade (interpreted as Decimal).
+    atr_multiple : float
+        The ATR multiple for bracketing limit orders.
+    trade_size : Decimal
+        The position size per trade.
     order_id_tag : str
         The unique order ID tag for the strategy. Must be unique
         amongst all running strategies for a particular trader ID.
@@ -67,35 +64,26 @@ class EMACrossStopEntryTrailConfig(TradingStrategyConfig):
 
     instrument_id: str
     bar_type: str
-    fast_ema_period: int = 10
-    slow_ema_period: int = 20
     atr_period: int
-    trail_atr_multiple: float
-    trade_size: str
+    atr_multiple: float
+    trade_size: Decimal
 
 
-class EMACrossStopEntryTrail(TradingStrategy):
+class VolatilityMarketMaker(TradingStrategy):
     """
-    A simple moving average cross example strategy with a stop-market entry and
-    trailing stop.
-
-    When the fast EMA crosses the slow EMA then submits a stop-market order one
-    tick above the current bar for BUY, or one tick below the current bar
-    for SELL.
-
-    If the entry order is filled then a trailing stop at a specified ATR
-    distance is submitted and managed.
+    A very dumb market maker which brackets the current market based on
+    volatility measured by an ATR indicator.
 
     Cancels all orders and flattens all positions on stop.
     """
 
-    def __init__(self, config: EMACrossStopEntryTrailConfig):
+    def __init__(self, config: VolatilityMarketMakerConfig):
         """
-        Initialize a new instance of the ``EMACrossStopEntryTrail`` class.
+        Initialize a new instance of the ``VolatilityMarketMaker`` class.
 
         Parameters
         ----------
-        config : EMACrossStopEntryTrailConfig
+        config : VolatilityMarketMakerConfig
             The configuration for the instance.
 
         """
@@ -105,19 +93,16 @@ class EMACrossStopEntryTrail(TradingStrategy):
         self.instrument_id = InstrumentId.from_str(config.instrument_id)
         self.bar_type = BarType.from_str(config.bar_type)
         self.trade_size = Decimal(config.trade_size)
-        self.trail_atr_multiple = config.trail_atr_multiple
+        self.atr_multiple = config.atr_multiple
 
         # Create the indicators for the strategy
-        self.fast_ema = ExponentialMovingAverage(config.fast_ema_period)
-        self.slow_ema = ExponentialMovingAverage(config.slow_ema_period)
         self.atr = AverageTrueRange(config.atr_period)
 
         self.instrument: Optional[Instrument] = None  # Initialized in on_start
-        self.tick_size = None  # Initialized in on_start
 
         # Users order management variables
-        self.entry = None
-        self.trailing_stop = None
+        self.buy_order: Union[LimitOrder, None] = None
+        self.sell_order: Union[LimitOrder, None] = None
 
     def on_start(self):
         """Actions to be performed on strategy start."""
@@ -127,11 +112,7 @@ class EMACrossStopEntryTrail(TradingStrategy):
             self.stop()
             return
 
-        self.tick_size = self.instrument.price_increment
-
         # Register the indicators for updating
-        self.register_indicator_for_bars(self.bar_type, self.fast_ema)
-        self.register_indicator_for_bars(self.bar_type, self.slow_ema)
         self.register_indicator_for_bars(self.bar_type, self.atr)
 
         # Get historical data
@@ -139,6 +120,14 @@ class EMACrossStopEntryTrail(TradingStrategy):
 
         # Subscribe to live data
         self.subscribe_bars(self.bar_type)
+        self.subscribe_quote_ticks(self.instrument_id)
+        self.subscribe_order_book_snapshots(
+            self.instrument_id,
+            book_type=BookType.L2_MBP,
+            depth=10,
+            interval_ms=1000,
+        )  # For debugging
+        # self.subscribe_trade_ticks(self.instrument_id)  # For debugging
 
     def on_instrument(self, instrument: Instrument):
         """
@@ -163,7 +152,8 @@ class EMACrossStopEntryTrail(TradingStrategy):
             The order book received.
 
         """
-        # self.log.info(f"Received {order_book}")  # For debugging (must add a subscription)
+        # self.log.info(str(order_book))  # For debugging (must add a subscription)
+        pass
 
     def on_quote_tick(self, tick: QuoteTick):
         """
@@ -175,6 +165,7 @@ class EMACrossStopEntryTrail(TradingStrategy):
             The quote tick received.
 
         """
+        # self.log.info(f"Received {repr(tick)}")  # For debugging (must add a subscription)
         pass
 
     def on_trade_tick(self, tick: TradeTick):
@@ -187,6 +178,7 @@ class EMACrossStopEntryTrail(TradingStrategy):
             The tick received.
 
         """
+        # self.log.info(f"Received {repr(tick)}")  # For debugging (must add a subscription)
         pass
 
     def on_bar(self, bar: Bar):
@@ -209,123 +201,56 @@ class EMACrossStopEntryTrail(TradingStrategy):
             )
             return  # Wait for indicators to warm up...
 
-        if self.portfolio.is_flat(self.instrument_id):
-            if self.entry is not None:
-                self.cancel_order(self.entry)
-            # BUY LOGIC
-            if self.fast_ema.value >= self.slow_ema.value:
-                self.entry_buy(bar)
-            else:  # fast_ema.value < self.slow_ema.value
-                self.entry_sell(bar)
-        else:
-            self.manage_trailing_stop(bar)
-
-    def entry_buy(self, last_bar: Bar):
-        """
-        Users simple buy entry method (example).
-        """
-        order: StopMarketOrder = self.order_factory.stop_market(
-            instrument_id=self.instrument_id,
-            order_side=OrderSide.BUY,
-            quantity=self.instrument.make_qty(self.trade_size),
-            price=self.instrument.make_price(last_bar.low + (self.tick_size * 2)),
-        )
-
-        self.entry = order
-        self.submit_order(order)
-
-    def entry_sell(self, last_bar: Bar):
-        """
-        Users simple sell entry method (example).
-
-        Parameters
-        ----------
-        last_bar : Bar
-            The last bar received.
-
-        """
-        order: StopMarketOrder = self.order_factory.stop_market(
-            instrument_id=self.instrument_id,
-            order_side=OrderSide.SELL,
-            quantity=self.instrument.make_qty(self.trade_size),
-            price=self.instrument.make_price(last_bar.low - (self.tick_size * 2)),
-        )
-
-        self.entry = order
-        self.submit_order(order)
-
-    def trailing_stop_buy(self, last_bar: Bar):
-        """
-        Users simple trailing stop BUY for (``SHORT`` positions).
-
-        Parameters
-        ----------
-        last_bar : Bar
-            The last bar received.
-
-        """
-        # Round price to nearest 0.5 (for XBT/USD)
-        price = round((last_bar.high + (self.atr.value * self.trail_atr_multiple)) * 2) / 2
-        order: StopMarketOrder = self.order_factory.stop_market(
-            instrument_id=self.instrument_id,
-            order_side=OrderSide.BUY,
-            quantity=self.instrument.make_qty(self.trade_size),
-            price=self.instrument.make_price(price),
-            reduce_only=True,
-        )
-
-        self.trailing_stop = order
-        self.submit_order(order)
-
-    def trailing_stop_sell(self, last_bar: Bar):
-        """
-        Users simple trailing stop SELL for (LONG positions).
-        """
-        # Round price to nearest 0.5 (for XBT/USD)
-        price = round((last_bar.low - (self.atr.value * self.trail_atr_multiple)) * 2) / 2
-        order: StopMarketOrder = self.order_factory.stop_market(
-            instrument_id=self.instrument_id,
-            order_side=OrderSide.SELL,
-            quantity=self.instrument.make_qty(self.trade_size),
-            price=self.instrument.make_price(price),
-            reduce_only=True,
-        )
-
-        self.trailing_stop = order
-        self.submit_order(order)
-
-    def manage_trailing_stop(self, last_bar: Bar):
-        """
-        Users simple trailing stop management method (example).
-
-        Parameters
-        ----------
-        last_bar : Bar
-            The last bar received.
-
-        """
-        self.log.info("Managing trailing stop...")
-        if not self.trailing_stop:
-            self.log.error("Trailing Stop order was None!")
-            self.flatten_all_positions(self.instrument_id)
+        last: QuoteTick = self.cache.quote_tick(self.instrument_id)
+        if last is None:
+            self.log.info("No quotes yet...")
             return
 
-        if self.trailing_stop.is_sell:
-            new_trailing_price = (
-                round((last_bar.low - (self.atr.value * self.trail_atr_multiple)) * 2) / 2
-            )
-            if new_trailing_price > self.trailing_stop.price:
-                self.log.info(f"Moving SELL trailing stop to {new_trailing_price}.")
-                self.cancel_order(self.trailing_stop)
-                self.trailing_stop_sell(last_bar)
-        else:  # trailing_stop.is_buy
-            new_trailing_price = (
-                round((last_bar.high + (self.atr.value * self.trail_atr_multiple)) * 2) / 2
-            )
-            if new_trailing_price < self.trailing_stop.price:
-                self.log.info(f"Moving BUY trailing stop to {new_trailing_price}.")
-                self.cancel_order(self.trailing_stop)
-                self.trailing_stop_buy(last_bar)
+        # Maintain buy orders
+        if self.buy_order and self.buy_order.is_working:
+            self.cancel_order(self.buy_order)
+        self.create_buy_order(last)
+
+        # Maintain sell orders
+        if self.sell_order and self.sell_order.is_working:
+            self.cancel_order(self.sell_order)
+        self.create_sell_order(last)
+
+    def create_buy_order(self, last: QuoteTick):
+        """
+        Market maker simple buy limit method (example).
+        """
+        price: Decimal = last.bid - (self.atr.value * self.atr_multiple)
+        order: LimitOrder = self.order_factory.limit(
+            instrument_id=self.instrument_id,
+            order_side=OrderSide.BUY,
+            quantity=self.instrument.make_qty(self.trade_size),
+            price=self.instrument.make_price(price),
+            time_in_force=TimeInForce.GTC,
+            post_only=True,  # default value is True
+            hidden=False,  # default value is False
+        )
+
+        self.buy_order = order
+        self.submit_order(order)
+
+    def create_sell_order(self, last: QuoteTick):
+        """
+        Market maker simple sell limit method (example).
+        """
+        price: Decimal = last.ask + (self.atr.value * self.atr_multiple)
+        order: LimitOrder = self.order_factory.limit(
+            instrument_id=self.instrument_id,
+            order_side=OrderSide.SELL,
+            quantity=self.instrument.make_qty(self.trade_size),
+            price=self.instrument.make_price(price),
+            time_in_force=TimeInForce.GTC,
+            post_only=True,  # default value is True
+            hidden=False,  # default value is False
+        )
+
+        self.sell_order = order
+        self.submit_order(order)
 
     def on_data(self, data: Data):
         """
@@ -349,17 +274,19 @@ class EMACrossStopEntryTrail(TradingStrategy):
             The event received.
 
         """
+        last: QuoteTick = self.cache.quote_tick(self.instrument_id)
+        if last is None:
+            self.log.info("No quotes yet...")
+            return
+
+        # If order filled then replace order at atr multiple distance from the market
         if isinstance(event, OrderFilled):
-            if self.entry:
-                if event.client_order_id == self.entry.client_order_id:
-                    last_bar = self.cache.bar(self.bar_type)
-                    if event.order_side == OrderSide.BUY:
-                        self.trailing_stop_sell(last_bar)
-                    elif event.order_side == OrderSide.SELL:
-                        self.trailing_stop_buy(last_bar)
-            if self.trailing_stop:
-                if event.client_order_id == self.trailing_stop.client_order_id:
-                    self.trailing_stop = None
+            if event.order_side == OrderSide.BUY:
+                if self.buy_order.is_completed:
+                    self.create_buy_order(last)
+            elif event.order_side == OrderSide.SELL:
+                if self.sell_order.is_completed:
+                    self.create_sell_order(last)
 
     def on_stop(self):
         """
@@ -370,14 +297,15 @@ class EMACrossStopEntryTrail(TradingStrategy):
 
         # Unsubscribe from data
         self.unsubscribe_bars(self.bar_type)
+        self.unsubscribe_quote_ticks(self.instrument_id)
+        self.unsubscribe_order_book_snapshots(self.instrument_id, interval_ms=1000)
+        # self.unsubscribe_trade_ticks(self.instrument_id)
 
     def on_reset(self):
         """
         Actions to be performed when the strategy is reset.
         """
         # Reset indicators here
-        self.fast_ema.reset()
-        self.slow_ema.reset()
         self.atr.reset()
 
     def on_save(self) -> Dict[str, bytes]:

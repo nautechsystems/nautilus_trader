@@ -13,8 +13,8 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from nautilus_trader.backtest.data.providers import TestInstrumentProvider
 from nautilus_trader.model.data.ticker import Ticker
-from tests.test_kit.providers import TestInstrumentProvider
 
 
 ETHUSDT_BINANCE = TestInstrumentProvider.ethusdt_binance()

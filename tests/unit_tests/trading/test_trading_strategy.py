@@ -20,6 +20,7 @@ from decimal import Decimal
 import pytest
 import pytz
 
+from nautilus_trader.backtest.data.providers import TestInstrumentProvider
 from nautilus_trader.backtest.data_client import BacktestMarketDataClient
 from nautilus_trader.backtest.exchange import SimulatedExchange
 from nautilus_trader.backtest.execution_client import BacktestExecClient
@@ -54,7 +55,6 @@ from nautilus_trader.trading.strategy import TradingStrategy
 from nautilus_trader.trading.strategy import TradingStrategyConfig
 from tests.test_kit.mocks import KaboomStrategy
 from tests.test_kit.mocks import MockStrategy
-from tests.test_kit.providers import TestInstrumentProvider
 from tests.test_kit.stubs import TestStubs
 
 

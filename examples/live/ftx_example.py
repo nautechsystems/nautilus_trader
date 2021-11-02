@@ -14,19 +14,12 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import os
-import sys
+from decimal import Decimal
 
-
-sys.path.insert(
-    0, str(os.path.abspath(__file__ + "/../../../"))
-)  # Allows relative imports from examples
-
-from examples.strategies.ema_cross_simple import Decimal
-from examples.strategies.ema_cross_simple import EMACross
-from examples.strategies.ema_cross_simple import EMACrossConfig
 from nautilus_trader.adapters.ftx.factories import FTXLiveDataClientFactory
 from nautilus_trader.adapters.ftx.factories import FTXLiveExecutionClientFactory
+from nautilus_trader.examples.strategies.ema_cross import EMACross
+from nautilus_trader.examples.strategies.ema_cross import EMACrossConfig
 from nautilus_trader.infrastructure.config import CacheDatabaseConfig
 from nautilus_trader.live.node import TradingNode
 from nautilus_trader.live.node import TradingNodeConfig
