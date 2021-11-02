@@ -22,6 +22,7 @@ from nautilus_trader.adapters.binance.common import BINANCE_VENUE
 from nautilus_trader.adapters.binance.http.client import BinanceHttpClient
 from nautilus_trader.adapters.binance.http.error import BinanceError
 from nautilus_trader.adapters.binance.providers import BinanceInstrumentProvider
+from nautilus_trader.adapters.binance.websocket.spot import BinanceSpotWebSocket
 from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.logging import Logger
@@ -32,9 +33,6 @@ from nautilus_trader.model.enums import BookType
 from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.msgbus.bus import MessageBus
-
-
-_SECONDS_IN_HOUR: int = 60 * 60
 
 
 class BinanceDataClient(LiveMarketDataClient):
@@ -85,7 +83,14 @@ class BinanceDataClient(LiveMarketDataClient):
 
         self._client = client
 
+        self._update_instrument_interval: int = 60 * 60  # Once per hour (hardcode)
         self._update_instruments_task: Optional[asyncio.Task] = None
+        self._ws_spot = BinanceSpotWebSocket(
+            loop=loop,
+            clock=clock,
+            logger=logger,
+            handler=self._handle_spot_ws_message,
+        )
 
     def connect(self):
         """
@@ -111,10 +116,13 @@ class BinanceDataClient(LiveMarketDataClient):
             return
 
         self._send_all_instruments_to_data_engine()
-        self._schedule_subscribed_instruments_update(_SECONDS_IN_HOUR)
+        self._schedule_subscribed_instruments_update(self._update_instrument_interval)
 
         self._set_connected(True)
         self._log.info("Connected.")
+
+    async def _connect_websockets(self):
+        pass
 
     async def _disconnect(self):
         if self._client.connected:
@@ -126,12 +134,24 @@ class BinanceDataClient(LiveMarketDataClient):
     # -- SUBSCRIPTIONS -----------------------------------------------------------------------------
 
     def subscribe_instruments(self):
-        """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
+        """
+        Subscribe to instrument data for the venue.
+
+        """
+        for instrument_id in list(self._instrument_provider.get_all().keys()):
+            self._add_subscription_instrument(instrument_id)
 
     def subscribe_instrument(self, instrument_id: InstrumentId):
-        """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
+        """
+        Subscribe to instrument data for the given instrument ID.
+
+        Parameters
+        ----------
+        instrument_id : InstrumentId
+            The instrument ID to subscribe to.
+
+        """
+        self._add_subscription_instrument(instrument_id)
 
     def subscribe_order_book_deltas(
         self, instrument_id: InstrumentId, book_type: BookType, kwargs: dict = None
@@ -178,12 +198,24 @@ class BinanceDataClient(LiveMarketDataClient):
         raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
     def unsubscribe_instruments(self):
-        """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
+        """
+        Unsubscribe from instrument data for the venue.
+
+        """
+        for instrument_id in list(self._instrument_provider.get_all().keys()):
+            self._remove_subscription_instrument(instrument_id)
 
     def unsubscribe_instrument(self, instrument_id: InstrumentId):
-        """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
+        """
+        Unsubscribe from instrument data for the given instrument ID.
+
+        Parameters
+        ----------
+        instrument_id : InstrumentId
+            The instrument ID to unsubscribe from.
+
+        """
+        self._remove_subscription_instrument(instrument_id)
 
     def unsubscribe_order_book_deltas(self, instrument_id: InstrumentId):
         """Abstract method (implement in subclass)."""
@@ -274,3 +306,6 @@ class BinanceDataClient(LiveMarketDataClient):
     def _schedule_subscribed_instruments_update(self, delay: int):
         update = self.run_after_delay(delay, self._subscribed_instruments_update(delay))
         self._update_instruments_task = self._loop.create_task(update)
+
+    def _handle_spot_ws_message(self, raw: bytes):
+        pass
