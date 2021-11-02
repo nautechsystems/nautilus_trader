@@ -87,6 +87,7 @@ cdef class SocketClient:
         self._encoding = encoding
         self._running = False
         self._stopped = False
+        self._incomplete_read_count = 0
         self.is_connected = False
 
     async def connect(self):
@@ -144,10 +145,15 @@ cdef class SocketClient:
                     partial = b""
                 self._log.debug("[RECV] " + raw.decode())
                 self._handler(raw.rstrip(self._crlf))
+                self._incomplete_read_count = 0
                 await self._sleep0()
             except asyncio.IncompleteReadError as ex:
                 partial = ex.partial
                 self._log.warning(str(ex))
+                self._incomplete_read_count += 1
+                if self._incomplete_read_count > 100:
+                    # Something probably wrong; disconnect and let upstream client handle reconnection logic
+                    await self.disconnect()
                 await self._sleep0()
                 continue
             except ConnectionResetError:
