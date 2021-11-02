@@ -28,7 +28,7 @@ from nautilus_trader.model.identifiers import Venue
 
 # *** THESE PRAGMA: NO COVER COMMENTS MUST BE REMOVED IN ANY IMPLEMENTATION. ***
 
-# Its recommended to have one constant for the venue
+# It's recommended to have one constant for the venue
 TEMPLATE_VENUE = Venue("TEMPLATE")
 
 
@@ -38,14 +38,14 @@ class TemplateInstrumentProvider(InstrumentProvider):
     which must be implemented for an integration to be complete.
     """
 
-    async def load_all_async(self):
+    async def load_all_async(self) -> None:
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
-    def load_all(self):
+    def load_all(self) -> None:
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
-    def load(self, instrument_id: InstrumentId, details: dict):
+    def load(self, instrument_id: InstrumentId, details: dict) -> None:
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover

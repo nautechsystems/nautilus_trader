@@ -14,7 +14,6 @@
 # -------------------------------------------------------------------------------------------------
 
 import itertools
-import logging
 import pickle
 from typing import List, Optional
 
@@ -30,25 +29,32 @@ from nautilus_trader.backtest.config import BacktestVenueConfig
 from nautilus_trader.backtest.engine import BacktestEngine
 from nautilus_trader.backtest.engine import BacktestEngineConfig
 from nautilus_trader.backtest.results import BacktestResult
+from nautilus_trader.common.actor import Actor
+from nautilus_trader.common.config import ActorFactory
+from nautilus_trader.common.config import ImportableActorConfig
 from nautilus_trader.core.datetime import maybe_dt_to_unix_nanos
+from nautilus_trader.core.inspect import is_nautilus_class
+from nautilus_trader.model.c_enums.book_type import BookTypeParser
 from nautilus_trader.model.currency import Currency
+from nautilus_trader.model.data.bar import Bar
 from nautilus_trader.model.data.tick import QuoteTick
 from nautilus_trader.model.data.tick import TradeTick
+from nautilus_trader.model.data.venue import InstrumentStatusUpdate
 from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import OMSType
 from nautilus_trader.model.enums import VenueType
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.instruments.base import Instrument
 from nautilus_trader.model.objects import Money
+from nautilus_trader.model.orderbook.data import OrderBookData
 from nautilus_trader.model.orderbook.data import OrderBookDelta
 from nautilus_trader.persistence.batching import batch_files
 from nautilus_trader.persistence.catalog import DataCatalog
+from nautilus_trader.persistence.config import PersistenceConfig
+from nautilus_trader.persistence.streaming import FeatherWriter
 from nautilus_trader.trading.config import ImportableStrategyConfig
 from nautilus_trader.trading.config import StrategyFactory
 from nautilus_trader.trading.strategy import TradingStrategy
-
-
-logger = logging.getLogger(__name__)
 
 
 class BacktestNode:
@@ -70,7 +76,7 @@ class BacktestNode:
 
         Parameters
         ----------
-        run_configs : List[BacktestRunConfig]
+        run_configs : list[BacktestRunConfig]
             The backtest run configurations.
 
         Returns
@@ -86,7 +92,9 @@ class BacktestNode:
                 run_config_id=config.id,
                 venue_configs=config.venues,
                 data_configs=config.data,
+                actor_configs=config.actors,
                 strategy_configs=config.strategies,
+                persistence=config.persistence,
                 batch_size_bytes=config.batch_size_bytes,
             )
             results.append(result)
@@ -99,12 +107,12 @@ class BacktestNode:
 
         Parameters
         ----------
-        run_configs : List[BacktestRunConfig]
+        run_configs : list[BacktestRunConfig]
             The backtest run configurations.
 
         Returns
         -------
-        Dict[str, Any]
+        list[BacktestResult]
             The results of the backtest runs.
 
         """
@@ -113,9 +121,12 @@ class BacktestNode:
             config.check()  # check all values set
             result = self._run(
                 run_config_id=config.id,
+                engine_config=config.engine,
                 venue_configs=config.venues,
                 data_configs=config.data,
+                actor_configs=config.actors,
                 strategy_configs=config.strategies,
+                persistence=config.persistence,
                 batch_size_bytes=config.batch_size_bytes,
             )
             results.append(result)
@@ -126,16 +137,22 @@ class BacktestNode:
     def _run_delayed(
         self,
         run_config_id: str,
+        engine_config: BacktestEngineConfig,
         venue_configs: List[BacktestVenueConfig],
         data_configs: List[BacktestDataConfig],
+        actor_configs: List[ImportableActorConfig],
         strategy_configs: List[ImportableStrategyConfig],
+        persistence: Optional[PersistenceConfig] = None,
         batch_size_bytes: Optional[int] = None,
     ) -> BacktestResult:
         return self._run(
             run_config_id=run_config_id,
+            engine_config=engine_config,
             venue_configs=venue_configs,
             data_configs=data_configs,
+            actor_configs=actor_configs,
             strategy_configs=strategy_configs,
+            persistence=persistence,
             batch_size_bytes=batch_size_bytes,
         )
 
@@ -146,21 +163,51 @@ class BacktestNode:
     def _run(
         self,
         run_config_id: str,
+        engine_config: BacktestEngineConfig,
         venue_configs: List[BacktestVenueConfig],
         data_configs: List[BacktestDataConfig],
+        actor_configs: List[ImportableActorConfig],
         strategy_configs: List[ImportableStrategyConfig],
+        persistence: Optional[PersistenceConfig] = None,
         batch_size_bytes: Optional[int] = None,
     ) -> BacktestResult:
         engine: BacktestEngine = self._create_engine(
+            config=engine_config,
             venue_configs=venue_configs,
             data_configs=data_configs,
         )
-        # Create strategies
-        strategies: List[TradingStrategy] = [
-            StrategyFactory.create(config) for config in strategy_configs
-        ]
 
-        engine.add_strategies(strategies)
+        # Setup persistence
+        writer = None
+        if persistence is not None:
+            catalog = persistence.as_catalog()
+            catalog.fs.mkdir(f"{persistence.catalog_path}/backtest/")
+            writer = FeatherWriter(
+                path=f"{persistence.catalog_path}/backtest/{run_config_id}.feather",
+                fs_protocol=persistence.fs_protocol,
+                flush_interval=persistence.flush_interval,
+            )
+            engine.trader.subscribe("*", writer.write)
+            # Manually write instruments
+            instrument_ids = set(filter(None, (data.instrument_id for data in data_configs)))
+            for instrument in catalog.instruments(
+                instrument_ids=list(instrument_ids), as_nautilus=True
+            ):
+                writer.write(instrument)
+
+        # Create actors
+        if actor_configs:
+            actors: List[Actor] = [ActorFactory.create(config) for config in actor_configs]
+            if actors:
+                engine.add_components(actors)
+
+        # Create strategies
+        if strategy_configs:
+            strategies: List[TradingStrategy] = [
+                StrategyFactory.create(config) for config in strategy_configs
+            ]
+            if strategies:
+                engine.add_strategies(strategies)
 
         # Run backtest
         backtest_runner(
@@ -173,19 +220,17 @@ class BacktestNode:
         result = engine.get_result()
 
         engine.dispose()
+        if writer is not None:
+            writer.close()
 
         return result
 
     def _create_engine(
         self,
+        config: BacktestEngineConfig,
         venue_configs: List[BacktestVenueConfig],
         data_configs: List[BacktestDataConfig],
     ):
-        # Configure backtest engine
-        config = BacktestEngineConfig(
-            bypass_logging=True,
-            run_analysis=True,
-        )
         # Build the backtest engine
         engine = BacktestEngine(config=config)
 
@@ -206,19 +251,24 @@ class BacktestNode:
                 account_type=AccountType[config.account_type],
                 base_currency=Currency.from_str(config.base_currency),
                 starting_balances=[Money.from_str(m) for m in config.starting_balances],
+                book_type=BookTypeParser.from_str_py(config.book_type),
             )
         return engine
 
 
 def _load_engine_data(engine: BacktestEngine, data):
-    if data["type"] == QuoteTick:
+    if data["type"] in (QuoteTick, TradeTick):
         engine.add_ticks(data=data["data"])
-    elif data["type"] == TradeTick:
-        engine.add_ticks(data=data["data"])
-    elif data["type"] == OrderBookDelta:
+    elif data["type"] == Bar:
+        engine.add_bars(data=data["data"])
+    elif data["type"] in (OrderBookDelta, OrderBookData):
         engine.add_order_book_data(data=data["data"])
-    else:
+    elif data["type"] in (InstrumentStatusUpdate,):
+        engine.add_data(data=data["data"])
+    elif not is_nautilus_class(data["type"]):
         engine.add_generic_data(client_id=data["client_id"], data=data["data"])
+    else:
+        raise ValueError(f"Data type {data['type']} not setup for loading into backtest engine")
 
 
 def backtest_runner(
@@ -227,7 +277,7 @@ def backtest_runner(
     data_configs: List[BacktestDataConfig],
     batch_size_bytes: Optional[int] = None,
 ):
-    """Execute a backtest run"""
+    """Execute a backtest run."""
     if batch_size_bytes is not None:
         return streaming_backtest_runner(
             run_config_id=run_config_id,

@@ -80,13 +80,20 @@ def instrument_list(mock_load_markets_metadata, loop: asyncio.AbstractEventLoop)
     instrument_provider = BetfairInstrumentProvider(client=client, logger=logger, market_filter={})
 
     # Load instruments
-    catalog = {r["marketId"]: r for r in BetfairResponses.betting_list_market_catalogue()["result"]}
+    market_ids = BetfairDataProvider.market_ids()
+    catalog = {
+        r["marketId"]: r
+        for r in BetfairResponses.betting_list_market_catalogue()["result"]
+        if r["marketId"] in market_ids
+    }
     mock_load_markets_metadata.return_value = catalog
-    t = loop.create_task(instrument_provider.load_all_async())
+    t = loop.create_task(
+        instrument_provider.load_all_async(market_filter={"market_id": market_ids})
+    )
     loop.run_until_complete(t)
 
     # Fill INSTRUMENTS global cache
-    INSTRUMENTS.extend(instrument_provider.list_instruments())
+    INSTRUMENTS.extend(instrument_provider.list_all())
     assert INSTRUMENTS
 
 
@@ -137,7 +144,11 @@ class TestBetfairDataClient:
         self.instrument_provider = BetfairTestStubs.instrument_provider(
             betfair_client=self.betfair_client
         )
-        self.instrument_provider.add_instruments(INSTRUMENTS)
+        # Add a subset of instruments
+        instruments = [
+            ins for ins in INSTRUMENTS if ins.market_id in BetfairDataProvider.market_ids()
+        ]
+        self.instrument_provider.add_bulk(instruments)
 
         self.client = BetfairDataClient(
             loop=self.loop,
@@ -179,6 +190,15 @@ class TestBetfairDataClient:
             endpoint="DataEngine.response", handler=partial(handler, endpoint="response")  # type: ignore
         )
 
+    @pytest.mark.asyncio
+    @patch("nautilus_trader.adapters.betfair.data.BetfairDataClient._post_connect_heartbeat")
+    @patch("nautilus_trader.adapters.betfair.data.BetfairMarketStreamClient.connect")
+    @patch("nautilus_trader.adapters.betfair.client.core.BetfairClient.connect")
+    async def test_connect(
+        self, mock_client_connect, mock_stream_connect, mock_post_connect_heartbeat
+    ):
+        await self.client._connect()
+
     def test_subscriptions(self):
         self.client.subscribe_trade_ticks(BetfairTestStubs.instrument_id())
         self.client.subscribe_instrument_status_updates(BetfairTestStubs.instrument_id())
@@ -190,16 +210,18 @@ class TestBetfairDataClient:
     def test_stream_latency(self):
         logs = []
         self.logger.register_sink(logs.append)
+        self.client.start()
         self.client._on_market_update(BetfairStreaming.mcm_latency())
-        warning, _ = logs
+        warning, degrading, degraded = logs[2:]
         assert warning["level"] == "WRN"
         assert warning["msg"] == "Stream unhealthy, waiting for recover"
+        assert degraded["msg"] == "DEGRADED."
 
     def test_stream_con_true(self):
         logs = []
         self.logger.register_sink(logs.append)
         self.client._on_market_update(BetfairStreaming.mcm_con_true())
-        warning, _ = logs
+        (warning,) = logs
         assert warning["level"] == "WRN"
         assert (
             warning["msg"]
@@ -222,18 +244,16 @@ class TestBetfairDataClient:
         )
         expected = set(
             [
-                0.02174,
-                0.39370,
-                0.36765,
-                0.21739,
-                0.00102,
-                0.17241,
-                0.00102,
-                0.55556,
-                0.45872,
-                0.21739,
-                0.00769,
-                0.02381,
+                0.0010204,
+                0.0076923,
+                0.0217391,
+                0.0238095,
+                0.1724138,
+                0.2173913,
+                0.3676471,
+                0.3937008,
+                0.4587156,
+                0.5555556,
             ]
         )
         assert result == expected
@@ -266,7 +286,7 @@ class TestBetfairDataClient:
         assert result == expected
         # Ensure order prices are coming through as probability
         update_op = self.messages[0].deltas[0]
-        assert update_op.order.price == 0.21277
+        assert update_op.order.price == 0.212766
 
     def test_market_update_md(self):
         self.client._on_market_update(BetfairStreaming.mcm_UPDATE_md())
@@ -295,7 +315,7 @@ class TestBetfairDataClient:
         for mc in update[0]["mc"]:
             market_def = {**mc["marketDefinition"], "marketId": mc["id"]}
             instruments = make_instruments(market_definition=market_def, currency="GBP")
-            provider.add_instruments(instruments)
+            provider.add_bulk(instruments)
 
         for update in update:
             self.client._on_market_update(update)
@@ -318,7 +338,7 @@ class TestBetfairDataClient:
         self.client.request(req, UUID4(str(self.uuid)))
         await asyncio.sleep(0)
         resp = self.messages[0]
-        assert len(resp.data.instruments) == 9416
+        assert len(resp.data.instruments) == 6800
 
     def test_orderbook_repr(self):
         self.client._on_market_update(BetfairStreaming.mcm_live_IMAGE())
@@ -326,8 +346,8 @@ class TestBetfairDataClient:
         ob = L2OrderBook(InstrumentId(Symbol("1"), BETFAIR_VENUE), 5, 5)
         ob.apply_snapshot(ob_snap)
         print(ob.pprint())
-        assert ob.best_ask_price() == 0.58824
-        assert ob.best_bid_price() == 0.58480
+        assert ob.best_ask_price() == 0.5882353
+        assert ob.best_bid_price() == 0.5847953
 
     def test_orderbook_updates(self):
         order_books = {}
@@ -438,7 +458,7 @@ class TestBetfairDataClient:
     def test_betfair_ticker(self):
         self.client._on_market_update(BetfairStreaming.mcm_UPDATE_tv())
         ticker: BetfairTicker = self.messages[1]
-        assert ticker.last_traded_price == Price.from_str("0.31746")
+        assert ticker.last_traded_price == Price.from_str("0.3174603")
         assert ticker.traded_volume == Quantity.from_str("364.45")
 
     def test_betfair_orderbook(self):

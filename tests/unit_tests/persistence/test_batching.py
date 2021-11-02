@@ -23,7 +23,6 @@ from dask.utils import parse_bytes
 from nautilus_trader.adapters.betfair.providers import BetfairInstrumentProvider
 from nautilus_trader.backtest.config import BacktestDataConfig
 from nautilus_trader.core.datetime import maybe_dt_to_unix_nanos
-from nautilus_trader.model.orderbook.data import OrderBookData
 from nautilus_trader.persistence.batching import batch_files
 from nautilus_trader.persistence.catalog import DataCatalog
 from nautilus_trader.persistence.external.core import process_files
@@ -58,7 +57,7 @@ class TestPersistenceBatching:
         base = BacktestDataConfig(
             catalog_path=str(self.catalog.path),
             catalog_fs_protocol=self.catalog.fs.protocol,
-            data_type=OrderBookData,
+            data_cls_path="nautilus_trader.model.orderbook.data.OrderBookData",
         )
 
         iter_batches = batch_files(

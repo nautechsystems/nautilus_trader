@@ -29,11 +29,12 @@ Alternative implementations can be written on top of the generic engine - which
 just need to override the `execute` and `process` methods.
 """
 
+from libc.stdint cimport int64_t
+
 from decimal import Decimal
 from typing import Optional
 
-import pydantic
-
+from nautilus.api.core cimport unix_timestamp_ms
 from nautilus_trader.cache.cache cimport Cache
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.component cimport Component
@@ -73,13 +74,7 @@ from nautilus_trader.model.objects cimport Quantity
 from nautilus_trader.model.orders.base cimport Order
 from nautilus_trader.msgbus.bus cimport MessageBus
 
-
-class ExecEngineConfig(pydantic.BaseModel):
-    """
-    Configuration for ``ExecutionEngine`` instances.
-    """
-
-    pass  # No configuration currently
+from nautilus_trader.execution.config import ExecEngineConfig
 
 
 cdef class ExecutionEngine(Component):
@@ -116,7 +111,7 @@ cdef class ExecutionEngine(Component):
         Raises
         ------
         TypeError
-            If config is not of type `ExecEngineConfig`.
+            If `config` is not of type `ExecEngineConfig`.
 
         """
         if config is None:
@@ -264,7 +259,7 @@ cdef class ExecutionEngine(Component):
         Raises
         ------
         ValueError
-            If client is already registered with the execution engine.
+            If `client` is already registered with the execution engine.
 
         """
         Condition.not_none(client, "client")
@@ -365,7 +360,7 @@ cdef class ExecutionEngine(Component):
         Raises
         ------
         ValueError
-            If client is not registered with the execution engine.
+            If `client` is not registered with the execution engine.
 
         """
         Condition.not_none(client, "client")
@@ -426,7 +421,7 @@ cdef class ExecutionEngine(Component):
         """
         Load the cache up from the execution database.
         """
-        ts = self._clock.timestamp()
+        cdef int64_t ts = unix_timestamp_ms()
 
         self._cache.cache_currencies()
         self._cache.cache_instruments()
@@ -437,7 +432,7 @@ cdef class ExecutionEngine(Component):
         self._cache.check_integrity()
         self._set_position_id_counts()
 
-        self._log.info(f"Loaded cache in {int((self._clock.timestamp() - ts) * 1000)}ms.")
+        self._log.info(f"Loaded cache in {(unix_timestamp_ms() - ts)}ms.")
 
     cpdef void execute(self, TradingCommand command) except *:
         """
@@ -645,6 +640,8 @@ cdef class ExecutionEngine(Component):
         elif oms_type == OMSType.NETTING:
             # Assign netted position ID singleton
             fill.position_id = PositionId(f"{fill.instrument_id.value}-{fill.strategy_id.value}")
+        else:  # pragma: no cover
+            raise ValueError(f"invalid OMSType, was {oms_type}")
 
     cdef void _handle_order_fill(self, OrderFilled fill, OMSType oms_type) except *:
         cdef Position position = self._cache.position(fill.position_id)
@@ -721,8 +718,10 @@ cdef class ExecutionEngine(Component):
         cdef Quantity difference = None
         if position.side == PositionSide.LONG:
             difference = Quantity(fill.last_qty - position.quantity, position.size_precision)
-        else:  # position.side == PositionSide.SHORT:
+        elif position.side == PositionSide.SHORT:
             difference = Quantity(abs(position.quantity - fill.last_qty), position.size_precision)
+        else:
+            difference = fill.last_qty
 
         # Split commission between two positions
         fill_percent: Decimal = position.quantity / fill.last_qty
@@ -730,30 +729,31 @@ cdef class ExecutionEngine(Component):
         cdef Money commission2 = Money(fill.commission - commission1, fill.commission.currency)
 
         cdef OrderFilled fill_split1 = None
-        # Split fill to close original position
-        fill_split1 = OrderFilled(
-            trader_id=fill.trader_id,
-            strategy_id=fill.strategy_id,
-            account_id=fill.account_id,
-            instrument_id=fill.instrument_id,
-            client_order_id=fill.client_order_id,
-            venue_order_id=fill.venue_order_id,
-            execution_id=fill.execution_id,
-            position_id=fill.position_id,
-            order_side=fill.order_side,
-            order_type=fill.order_type,
-            last_qty=position.quantity,  # Fill original position quantity remaining
-            last_px=fill.last_px,
-            currency=fill.currency,
-            commission=commission1,
-            liquidity_side=fill.liquidity_side,
-            event_id=fill.id,
-            ts_event=fill.ts_event,
-            ts_init=fill.ts_init,
-        )
+        if position.is_open_c():
+            # Split fill to close original position
+            fill_split1 = OrderFilled(
+                trader_id=fill.trader_id,
+                strategy_id=fill.strategy_id,
+                account_id=fill.account_id,
+                instrument_id=fill.instrument_id,
+                client_order_id=fill.client_order_id,
+                venue_order_id=fill.venue_order_id,
+                execution_id=fill.execution_id,
+                position_id=fill.position_id,
+                order_side=fill.order_side,
+                order_type=fill.order_type,
+                last_qty=position.quantity,  # Fill original position quantity remaining
+                last_px=fill.last_px,
+                currency=fill.currency,
+                commission=commission1,
+                liquidity_side=fill.liquidity_side,
+                event_id=fill.id,
+                ts_event=fill.ts_event,
+                ts_init=fill.ts_init,
+            )
 
-        # Close original position
-        self._update_position(position, fill_split1, oms_type)
+            # Close original position
+            self._update_position(position, fill_split1, oms_type)
 
         cdef PositionId position_id_flip = fill.position_id
         if oms_type == OMSType.HEDGING:

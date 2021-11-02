@@ -193,7 +193,7 @@ cdef class OrderBook:
         Raises
         ------
         ValueError
-            If delta.book_type is not equal to self.type.
+            If `delta.book_type` is not equal to `self.type`.
 
         """
         Condition.not_none(delta, "delta")
@@ -213,7 +213,7 @@ cdef class OrderBook:
         Raises
         ------
         ValueError
-            If snapshot.book_type is not equal to self.type.
+            If `snapshot.book_type` is not equal to `self.type`.
 
         """
         Condition.not_none(deltas, "deltas")
@@ -235,7 +235,7 @@ cdef class OrderBook:
         Raises
         ------
         ValueError
-            If snapshot.book_type is not equal to self.type.
+            If `snapshot.book_type` is not equal to `self.type`.
 
         """
         Condition.not_none(snapshot, "snapshot")
@@ -274,7 +274,7 @@ cdef class OrderBook:
         Raises
         ------
         ValueError
-            If data.level is not equal to self.type.
+            If `data.level` is not equal to `self.type`.
 
         """
         Condition(data.book_type, self.type, "data.book_type", "self.type")
@@ -675,7 +675,7 @@ cdef class OrderBook:
 cdef class L3OrderBook(OrderBook):
 
     """
-    Provides an L3_MBO order book.
+    Provides an L3 MBO (market by order) order book.
 
     A level 3 order books `Levels` can be made up of multiple orders.
     This class maps directly to the functionality of the base class.
@@ -702,9 +702,9 @@ cdef class L3OrderBook(OrderBook):
         Raises
         ------
         OverflowError
-            If price_precision is negative (< 0).
+            If `price_precision` is negative (< 0).
         OverflowError
-            If size_precision is negative (< 0).
+            If `size_precision` is negative (< 0).
 
         """
         super().__init__(
@@ -717,9 +717,9 @@ cdef class L3OrderBook(OrderBook):
 
 cdef class L2OrderBook(OrderBook):
     """
-    Provides a L2_MBP order book.
+    Provides a L2 MBP (market by price) order book.
 
-    The books `Levels` are only made up of a single order.
+    A level 2 order books `Levels` are only made up of a single order.
     """
 
     def __init__(
@@ -743,9 +743,9 @@ cdef class L2OrderBook(OrderBook):
         Raises
         ------
         OverflowError
-            If price_precision is negative (< 0).
+            If `price_precision` is negative (< 0).
         OverflowError
-            If size_precision is negative (< 0).
+            If `size_precision` is negative (< 0).
 
         """
         super().__init__(
@@ -840,7 +840,7 @@ cdef class L2OrderBook(OrderBook):
 
 cdef class L1OrderBook(OrderBook):
     """
-    Provides a L1_TBBO order book.
+    Provides a L1 TBBO (top of book best bid/offer) order book.
 
     A level 1 order book has a single (top) `Level`.
     """
@@ -866,9 +866,9 @@ cdef class L1OrderBook(OrderBook):
         Raises
         ------
         OverflowError
-            If price_precision is negative (< 0).
+            If `price_precision` is negative (< 0).
         OverflowError
-            If size_precision is negative (< 0).
+            If `size_precision` is negative (< 0).
 
         """
         super().__init__(
@@ -877,11 +877,6 @@ cdef class L1OrderBook(OrderBook):
             price_precision=price_precision,
             size_precision=size_precision,
         )
-
-        self._top_bid = None
-        self._top_ask = None
-        self._top_bid_level = None
-        self._top_ask_level = None
 
     cpdef void add(self, Order order) except *:
         """
@@ -938,7 +933,7 @@ cdef class L1OrderBook(OrderBook):
         """
         Check order book integrity.
 
-        For a L1_TBBO order book:
+        For a L1 TBBO order book:
         - There should be at most one level per side.
         - The bid side price should not be greater than or equal to the ask side price.
 

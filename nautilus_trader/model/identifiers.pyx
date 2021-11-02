@@ -37,7 +37,7 @@ cdef class Identifier:
         Raises
         ------
         ValueError
-            If value is not a valid string.
+            If `value` is not a valid string.
 
         """
         Condition.valid_string(value, "value")
@@ -93,7 +93,7 @@ cdef class Symbol(Identifier):
         Raises
         ------
         ValueError
-            If value is not a valid string.
+            If `value` is not a valid string.
 
         """
         super().__init__(value)
@@ -116,7 +116,7 @@ cdef class Venue(Identifier):
         Raises
         ------
         ValueError
-            If name is not a valid string.
+            If `name` is not a valid string.
 
         """
         super().__init__(name)
@@ -198,7 +198,7 @@ cdef class ComponentId(Identifier):
         Raises
         ------
         ValueError
-            If value is not a valid string.
+            If `value` is not a valid string.
 
         """
         super().__init__(value)
@@ -223,7 +223,7 @@ cdef class ClientId(ComponentId):
         Raises
         ------
         ValueError
-            If value is not a valid string.
+            If `value` is not a valid string.
 
         """
         super().__init__(value)
@@ -254,7 +254,7 @@ cdef class TraderId(ComponentId):
         Raises
         ------
         ValueError
-            If value is not a valid string containing a hyphen.
+            If `value` is not a valid string containing a hyphen.
 
         """
         Condition.true("-" in value, "ID incorrectly formatted (did not contain '-' hyphen)")
@@ -297,7 +297,7 @@ cdef class StrategyId(ComponentId):
         Raises
         ------
         ValueError
-            If value is not a valid string containing a hyphen.
+            If `value` is not a valid string containing a hyphen.
 
         """
         Condition.true("-" in value, "ID incorrectly formatted (did not contain '-' hyphen)")
@@ -336,9 +336,9 @@ cdef class AccountId(Identifier):
         Raises
         ------
         ValueError
-            If issuer is not a valid string.
+            If `issuer` is not a valid string.
         ValueError
-            If number is not a valid string.
+            If `number` is not a valid string.
 
         """
         Condition.valid_string(issuer, "issuer")
@@ -399,7 +399,7 @@ cdef class ClientOrderId(Identifier):
         Raises
         ------
         ValueError
-            If value is not a valid string.
+            If `value` is not a valid string.
 
         """
         super().__init__(value)
@@ -435,7 +435,7 @@ cdef class ClientOrderLinkId(Identifier):
         Raises
         ------
         ValueError
-            If value is not a valid string.
+            If `value` is not a valid string.
 
         """
         super().__init__(value)
@@ -458,7 +458,7 @@ cdef class VenueOrderId(Identifier):
         Raises
         ------
         ValueError
-            If value is not a valid string.
+            If `value` is not a valid string.
 
         """
         super().__init__(value)
@@ -481,7 +481,7 @@ cdef class OrderListId(Identifier):
         Raises
         ------
         ValueError
-            If value is not a valid string.
+            If `value` is not a valid string.
 
         """
         super().__init__(value)
@@ -504,7 +504,7 @@ cdef class PositionId(Identifier):
         Raises
         ------
         ValueError
-            If value is not a valid string.
+            If `value` is not a valid string.
 
         """
         super().__init__(value)
@@ -527,7 +527,7 @@ cdef class ExecutionId(Identifier):
         Raises
         ------
         ValueError
-            If value is not a valid string.
+            If `value` is not a valid string.
 
         """
         super().__init__(value)

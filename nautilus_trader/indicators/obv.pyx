@@ -38,7 +38,7 @@ cdef class OnBalanceVolume(Indicator):
         Raises
         ------
         ValueError
-            If period is negative (< 0).
+            If `period` is negative (< 0).
 
         """
         Condition.not_negative(period, "period")

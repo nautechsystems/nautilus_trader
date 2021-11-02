@@ -158,13 +158,6 @@ class TestMarketDataClient:
             logger=self.logger,
         )
 
-    def test_unavailable_methods_when_none_given_returns_empty_list(self):
-        # Arrange, Act
-        result = self.client.unavailable_methods()
-
-        # Assert
-        assert result == []
-
     def test_handle_instrument_sends_to_data_engine(self):
         # Arrange, Act
         self.client._handle_data_py(AUDUSD_SIM)

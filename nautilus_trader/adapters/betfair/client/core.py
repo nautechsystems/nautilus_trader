@@ -17,9 +17,11 @@ import asyncio
 import datetime
 import pathlib
 import ssl
-from typing import Dict, List, Optional, Union
+from typing import Dict, List, Optional
 
 import orjson
+from aiohttp import ClientResponse
+from aiohttp import ClientResponseError
 
 from nautilus_trader.adapters.betfair.client.enums import MarketProjection
 from nautilus_trader.adapters.betfair.client.enums import MarketSort
@@ -27,11 +29,14 @@ from nautilus_trader.adapters.betfair.client.exceptions import BetfairAPIError
 from nautilus_trader.adapters.betfair.client.exceptions import BetfairError
 from nautilus_trader.adapters.betfair.client.util import parse_params
 from nautilus_trader.common.logging import Logger
-from nautilus_trader.network.http_client import HTTPClient
-from nautilus_trader.network.http_client import ResponseException
+from nautilus_trader.network.http import HttpClient
 
 
-class BetfairClient(HTTPClient):
+class BetfairClient(HttpClient):
+    """
+    Provides a HTTP client for `Betfair`.
+    """
+
     IDENTITY_URL = "https://identitysso-cert.betfair.com/api/"
     BASE_URL = "https://api.betfair.com/exchange/"
     NAVIGATION_URL = BASE_URL + "betting/rest/v1/en/navigation/menu.json"
@@ -73,13 +78,15 @@ class BetfairClient(HTTPClient):
 
     @staticmethod
     def ssl_context(cert_dir):
-        certs = [p for p in pathlib.Path(cert_dir).glob("*") if p.suffix in (".crt", ".key")]
+        files = list(pathlib.Path(cert_dir).glob("*"))
+        cert_file = next((p for p in files if p.suffix == ".crt"))
+        key_file = next((p for p in files if p.suffix == ".key"))
         context = ssl.create_default_context()
-        context.load_cert_chain(*certs)
+        context.load_cert_chain(certfile=cert_file, keyfile=key_file)
         return context
 
-    # For testing purposes, can't mock HTTPClient.request due to cython
-    async def request(self, method, url, **kwargs) -> Union[bytes, List, Dict]:
+    # For testing purposes, can't mock HttpClient.request due to cython
+    async def request(self, method, url, **kwargs) -> ClientResponse:
         return await super().request(method=method, url=url, **kwargs)
 
     async def rpc_post(
@@ -88,22 +95,20 @@ class BetfairClient(HTTPClient):
         data = {**self.JSON_RPC_DEFAULTS, "method": method, **(data or {}), "params": params or {}}
         try:
             resp = await self.request(method="POST", url=url, headers=self.headers, json=data)
-            data = orjson.loads(resp.data)  # type: ignore
+            data = orjson.loads(resp.data)
             if "error" in data:
+                self._log.error(str(data))
                 raise BetfairAPIError(code=data["error"]["code"], message=data["error"]["message"])
             if isinstance(data, dict):
                 return data["result"]
             else:
                 raise TypeError("Unexpected type:" + str(resp))
-        except BetfairError as e:
-            self._log.error(str(e))
-            raise e
-
-        except ResponseException as e:
-            self._log.error(
-                f"Err on {method} status={e.resp.status}, message={e.client_response_error.message}"
-            )
-            raise e
+        except BetfairError as ex:
+            self._log.error(str(ex))
+            raise ex
+        except ClientResponseError as ex:
+            self._log.error(f"Err on {method} status={ex.status}, message={str(ex)}")
+            raise ex
 
     async def connect(self):
         await super().connect()
@@ -131,7 +136,7 @@ class BetfairClient(HTTPClient):
 
     async def list_navigation(self):
         """
-        List the tree (navigation) of all betfair markets
+        List the tree (navigation) of all betfair markets.
         """
         resp = await self.get(url=self.NAVIGATION_URL, headers=self.headers)
         return orjson.loads(resp.data)
@@ -145,7 +150,7 @@ class BetfairClient(HTTPClient):
         locale: str = None,
     ):
         """
-        Return specific data about markets
+        Return specific data about markets.
         """
         assert 0 < max_results <= 1000
 
@@ -183,7 +188,7 @@ class BetfairClient(HTTPClient):
         customer_strategy_ref: str = None,
     ):
         """
-        Place a new order
+        Place a new order.
         """
         params = parse_params(**locals())
         resp = await self.rpc_post(

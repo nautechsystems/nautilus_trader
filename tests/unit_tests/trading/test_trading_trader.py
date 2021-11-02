@@ -21,6 +21,7 @@ from nautilus_trader.backtest.execution_client import BacktestExecClient
 from nautilus_trader.backtest.models import FillModel
 from nautilus_trader.common.actor import Actor
 from nautilus_trader.common.clock import TestClock
+from nautilus_trader.common.config import ActorConfig
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.data.engine import DataEngine
 from nautilus_trader.execution.engine import ExecutionEngine
@@ -116,8 +117,6 @@ class TestTrader:
         self.exec_client = BacktestExecClient(
             exchange=self.exchange,
             account_id=self.account_id,
-            account_type=AccountType.MARGIN,
-            base_currency=USD,
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
@@ -193,32 +192,36 @@ class TestTrader:
 
     def test_add_component(self):
         # Arrange
-        component = Actor(ComponentId("MyPlugin-01"))
+        config = ActorConfig(component_id="MyPlugin-01")
+        component = Actor(config)
 
         # Act
         self.trader.add_component(component)
 
         # Assert
-        assert self.trader.components() == [component]
+        assert self.trader.component_ids() == [ComponentId("MyPlugin-01")]
 
     def test_add_plugins(self):
         # Arrange
         plugins = [
-            Actor(ComponentId("MyPlugin-01")),
-            Actor(ComponentId("MyPlugin-02")),
+            Actor(ActorConfig(component_id="MyPlugin-01")),
+            Actor(ActorConfig(component_id="MyPlugin-02")),
         ]
 
         # Act
         self.trader.add_components(plugins)
 
         # Assert
-        assert self.trader.components() == plugins
+        assert self.trader.component_ids() == [
+            ComponentId("MyPlugin-01"),
+            ComponentId("MyPlugin-02"),
+        ]
 
     def test_clear_plugins(self):
         # Arrange
         plugins = [
-            Actor(ComponentId("MyPlugin-01")),
-            Actor(ComponentId("MyPlugin-02")),
+            Actor(ActorConfig(component_id="MyPlugin-01")),
+            Actor(ActorConfig(component_id="MyPlugin-02")),
         ]
         self.trader.add_components(plugins)
 
@@ -226,7 +229,7 @@ class TestTrader:
         self.trader.clear_components()
 
         # Assert
-        assert self.trader.components() == []
+        assert self.trader.component_ids() == []
 
     def test_get_strategy_states(self):
         # Arrange

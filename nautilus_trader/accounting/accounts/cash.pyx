@@ -36,6 +36,7 @@ cdef class CashAccount(Account):
     """
     Provides a cash account.
     """
+    ACCOUNT_TYPE = AccountType.CASH  # required for BettingAccount subclass
 
     def __init__(
         self,
@@ -59,7 +60,7 @@ cdef class CashAccount(Account):
 
         """
         Condition.not_none(event, "event")
-        Condition.equal(event.account_type, AccountType.CASH, "event.account_type", "account_type")
+        Condition.equal(event.account_type, self.ACCOUNT_TYPE, "event.account_type", "account_type")
 
         super().__init__(event, calculate_account_state)
 
@@ -79,7 +80,7 @@ cdef class CashAccount(Account):
         Raises
         ------
         ValueError
-            If margin_init is negative (< 0).
+            If `margin_init` is negative (< 0).
 
         Warnings
         --------
@@ -242,11 +243,13 @@ cdef class CashAccount(Account):
                 price=price.as_decimal(),
                 inverse_as_quote=inverse_as_quote,
             ).as_decimal()
-        else:  # OrderSide.SELL
+        elif side == OrderSide.SELL:
             if base_currency is not None:
                 notional = quantity.as_decimal()
             else:
                 return None  # No balance to lock
+        else:  # pragma: no cover (design-time error)
+            raise RuntimeError("invalid order side")
 
         # Add expected commission
         locked: Decimal = notional
@@ -258,7 +261,7 @@ cdef class CashAccount(Account):
 
         if side == OrderSide.BUY:
             return Money(locked, quote_currency)
-        else:  # OrderSide.SELL
+        elif side == OrderSide.SELL:
             return Money(locked, base_currency)
 
     cpdef list calculate_pnls(
@@ -301,7 +304,7 @@ cdef class CashAccount(Account):
             if base_currency and not self.base_currency:
                 pnls[base_currency] = Money(fill_qty, base_currency)
             pnls[quote_currency] = Money(-(fill_px * fill_qty), quote_currency)
-        else:  # OrderSide.SELL
+        elif fill.order_side == OrderSide.SELL:
             if base_currency and not self.base_currency:
                 pnls[base_currency] = Money(-fill_qty, base_currency)
             pnls[quote_currency] = Money(fill_px * fill_qty, quote_currency)

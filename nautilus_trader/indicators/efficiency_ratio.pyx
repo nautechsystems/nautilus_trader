@@ -39,7 +39,7 @@ cdef class EfficiencyRatio(Indicator):
         Raises
         ------
         ValueError
-            If period is not >= 2.
+            If `period` is not >= 2.
 
         """
         Condition.true(period >= 2, "period was < 2")

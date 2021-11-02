@@ -394,7 +394,7 @@ class TestBacktestAcceptanceTestsOrderBookImbalance:
             account_type=AccountType.MARGIN,
             base_currency=None,
             oms_type=OMSType.NETTING,
-            starting_balances=[Money(10000, GBP)],
+            starting_balances=[Money(100_000, GBP)],
             book_type=BookType.L2_MBP,
         )
 
@@ -404,7 +404,8 @@ class TestBacktestAcceptanceTestsOrderBookImbalance:
     def test_run_order_book_imbalance(self):
         # Arrange
         config = OrderBookImbalanceStrategyConfig(
-            instrument_id=str(self.instrument.id), trade_size=Decimal(10)
+            instrument_id=str(self.instrument.id),
+            max_trade_size="20",
         )
         strategy = OrderBookImbalanceStrategy(config=config)
         self.engine.add_strategy(strategy)
@@ -452,7 +453,7 @@ class TestBacktestAcceptanceTestsMarketMaking:
             account_type=AccountType.MARGIN,
             base_currency=None,
             oms_type=OMSType.NETTING,
-            starting_balances=[Money(10000, GBP)],
+            starting_balances=[Money(10_000, GBP)],
             book_type=BookType.L2_MBP,
         )
 

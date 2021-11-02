@@ -14,13 +14,21 @@
 # -------------------------------------------------------------------------------------------------
 
 import dataclasses
+import importlib
 from datetime import datetime
 from typing import Dict, List, Optional, Union
 
 import pydantic
 from dask.base import tokenize
 
-from nautilus_trader.backtest.engine import BacktestEngineConfig
+from nautilus_trader.cache.cache import CacheConfig
+from nautilus_trader.common.config import ImportableActorConfig
+from nautilus_trader.data.engine import DataEngineConfig
+from nautilus_trader.execution.engine import ExecEngineConfig
+from nautilus_trader.infrastructure.cache import CacheDatabaseConfig
+from nautilus_trader.model.identifiers import ClientId
+from nautilus_trader.persistence.config import PersistenceConfig
+from nautilus_trader.risk.config import RiskEngineConfig
 from nautilus_trader.trading.config import ImportableStrategyConfig
 
 
@@ -83,7 +91,7 @@ class Partialable:
         return r
 
 
-@pydantic.dataclasses.dataclass()
+@pydantic.dataclasses.dataclass
 class BacktestVenueConfig(Partialable):
     """
     Represents the venue configuration for one specific backtest engine.
@@ -95,6 +103,7 @@ class BacktestVenueConfig(Partialable):
     account_type: str
     base_currency: Optional[str]
     starting_balances: List[str]
+    book_type: str = "L1_TBBO"
     # fill_model: Optional[FillModel] = None  # TODO(cs): Implement next iteration
     # modules: Optional[List[SimulationModule]] = None  # TODO(cs): Implement next iteration
 
@@ -111,21 +120,27 @@ class BacktestVenueConfig(Partialable):
         return tuple(values)
 
 
-@pydantic.dataclasses.dataclass()
+@pydantic.dataclasses.dataclass
 class BacktestDataConfig(Partialable):
     """
     Represents the data configuration for one specific backtest run.
     """
 
     catalog_path: str
-    data_type: type
-    catalog_fs_protocol: str = None
+    data_cls_path: Optional[str] = None
+    catalog_fs_protocol: Optional[str] = None
     catalog_fs_storage_options: Optional[Dict] = None
     instrument_id: Optional[str] = None
     start_time: Optional[Union[datetime, str, int]] = None
     end_time: Optional[Union[datetime, str, int]] = None
-    filters: Optional[dict] = None
+    filter_expr: Optional[str] = None
     client_id: Optional[str] = None
+
+    @property
+    def data_type(self):
+        mod_path, cls_name = self.data_cls_path.rsplit(".", maxsplit=1)
+        mod = importlib.import_module(mod_path)
+        return getattr(mod, cls_name)
 
     @property
     def query(self):
@@ -134,6 +149,7 @@ class BacktestDataConfig(Partialable):
             instrument_ids=[self.instrument_id] if self.instrument_id else None,
             start=self.start_time,
             end=self.end_time,
+            filter_expr=self.filter_expr,
             as_nautilus=True,
         )
 
@@ -152,6 +168,7 @@ class BacktestDataConfig(Partialable):
             {
                 "start": start_time or query["start"],
                 "end": end_time or query["end"],
+                "filter_expr": parse_filters_expr(query.pop("filter_expr", "None")),
             }
         )
 
@@ -161,12 +178,53 @@ class BacktestDataConfig(Partialable):
             "data": catalog.query(**query),
             "instrument": catalog.instruments(instrument_ids=self.instrument_id, as_nautilus=True)[
                 0
-            ],
-            "client_id": self.client_id,
+            ]
+            if self.instrument_id
+            else None,
+            "client_id": ClientId(self.client_id) if self.client_id else None,
         }
 
 
-@pydantic.dataclasses.dataclass()
+class BacktestEngineConfig(pydantic.BaseModel):
+    """
+    Configuration for ``BacktestEngine`` instances.
+
+    trader_id : str, default="BACKTESTER-000"
+        The trader ID.
+    log_level : str, default="INFO"
+        The minimum log level for logging messages to stdout.
+    cache : CacheConfig, optional
+        The configuration for the cache.
+    cache_database : CacheDatabaseConfig, optional
+        The configuration for the cache database.
+    data_engine : DataEngineConfig, optional
+        The configuration for the data engine.
+    risk_engine : RiskEngineConfig, optional
+        The configuration for the risk engine.
+    exec_engine : ExecEngineConfig, optional
+        The configuration for the execution engine.
+    bypass_logging : bool, default=False
+        If logging should be bypassed.
+    run_analysis : bool, default=True
+        If post backtest performance analysis should be run.
+
+    """
+
+    trader_id: str = "BACKTESTER-000"
+    log_level: str = "INFO"
+    cache: Optional[CacheConfig] = None
+    cache_database: Optional[CacheDatabaseConfig] = None
+    data_engine: Optional[DataEngineConfig] = None
+    risk_engine: Optional[RiskEngineConfig] = None
+    exec_engine: Optional[ExecEngineConfig] = None
+    bypass_logging: bool = False
+    run_analysis: bool = True
+
+    def __dask_tokenize__(self):
+        return tuple(self.dict().items())
+
+
+@pydantic.dataclasses.dataclass
 class BacktestRunConfig(Partialable):
     """
     Represents the configuration for one specific backtest run (a single set of
@@ -176,9 +234,42 @@ class BacktestRunConfig(Partialable):
     engine: Optional[BacktestEngineConfig] = None
     venues: Optional[List[BacktestVenueConfig]] = None
     data: Optional[List[BacktestDataConfig]] = None
+    actors: Optional[List[ImportableActorConfig]] = None
     strategies: Optional[List[ImportableStrategyConfig]] = None
-    batch_size_bytes: Optional[int] = None  # TODO(cs): Useful for cached batches
+    persistence: Optional[PersistenceConfig] = None
+    batch_size_bytes: Optional[int] = None
 
     @property
     def id(self):
         return tokenize(self)
+
+
+def parse_filters_expr(s: str):
+    # TODO (bm) - could we do this better, probably requires writing our own parser?
+    """
+    Parse a pyarrow.dataset filter expression from a string
+
+    >>> parse_filters_expr('field("Currency") == "CHF"')
+    <pyarrow.dataset.Expression (Currency == "CHF")>
+
+    >>> parse_filters_expr("print('hello')")
+
+    >>> parse_filters_expr("None")
+
+    """
+    from pyarrow.dataset import field
+
+    assert field  # required for eval.
+
+    if not s:
+        return
+
+    def safer_eval(input_string):
+        allowed_names = {"field": field}
+        code = compile(input_string, "<string>", "eval")
+        for name in code.co_names:
+            if name not in allowed_names:
+                raise NameError(f"Use of {name} not allowed")
+        return eval(code, {}, allowed_names)  # noqa: S307
+
+    return safer_eval(s)  # Only allow use of the field object

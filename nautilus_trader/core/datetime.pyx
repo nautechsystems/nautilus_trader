@@ -33,7 +33,7 @@ from nautilus_trader.core.math cimport lround
 
 # UNIX epoch is the UTC time at 00:00:00 on 1/1/1970
 # https://en.wikipedia.org/wiki/Unix_time
-cdef datetime UNIX_EPOCH = datetime(1970, 1, 1, 0, 0, 0, 0, tzinfo=pytz.utc)
+cdef datetime UNIX_EPOCH = pd.Timestamp("1970-01-01", tz="UTC")
 
 # Time unit conversion constants
 cdef int64_t MILLISECONDS_IN_SECOND = 1_000
@@ -146,7 +146,73 @@ cpdef int64_t nanos_to_micros(int64_t nanos) except *:
     return nanos // NANOSECONDS_IN_MICROSECOND
 
 
-cpdef maybe_dt_to_unix_nanos(datetime dt):
+cpdef unix_nanos_to_dt(int64_t nanos):
+    """
+    Return the datetime (UTC) from the given UNIX time (nanoseconds).
+
+    Parameters
+    ----------
+    nanos : int64
+        The UNIX time (nanoseconds) to convert.
+
+    Returns
+    -------
+    pd.Timestamp
+
+    """
+    return pd.Timestamp(nanos, unit="ns", tz="UTC")
+
+
+cpdef dt_to_unix_nanos(dt: pd.Timestamp):
+    """
+    Return the UNIX time (nanoseconds) from the given datetime (UTC).
+
+    Parameters
+    ----------
+    dt : pd.Timestamp, optional
+        The datetime to convert.
+
+    Returns
+    -------
+    int64 or ``None``
+
+    Warnings
+    --------
+    This function expects a pandas `Timestamp` as standard Python `datetime`
+    objects are only accurate to 1 microsecond (μs).
+
+    """
+    Condition.not_none(dt, "dt")
+
+    if not isinstance(dt, pd.Timestamp):
+        dt = pd.Timestamp(dt)
+
+    return int(dt.to_datetime64())
+
+
+cpdef maybe_unix_nanos_to_dt(nanos):
+    """
+    Return the datetime (UTC) from the given UNIX time (nanoseconds), or ``None``.
+
+    If nanos is ``None``, then will return None.
+
+    Parameters
+    ----------
+    nanos : int, optional
+        The UNIX time (nanoseconds) to convert.
+
+    Returns
+    -------
+    pd.Timestamp or ``None``
+
+    """
+    if nanos is None:
+        return None
+    else:
+        return pd.Timestamp(nanos, unit="ns", tz="UTC")
+
+
+cpdef maybe_dt_to_unix_nanos(dt: pd.Timestamp):
     """
     Return the UNIX time (nanoseconds) from the given datetime, or ``None``.
 
@@ -154,40 +220,26 @@ cpdef maybe_dt_to_unix_nanos(datetime dt):
 
     Parameters
     ----------
-    dt : datetime, optional
-        The datetime for the timestamp.
+    dt : pd.Timestamp, optional
+        The datetime to convert.
 
     Returns
     -------
     int64 or ``None``
+
+    Warnings
+    --------
+    If the input is not ``None`` then this function expects a pandas `Timestamp`
+    as standard Python `datetime` objects are only accurate to 1 microsecond (μs).
 
     """
     if dt is None:
         return None
-    else:
-        return int(pd.Timestamp(dt).to_datetime64())
 
+    if not isinstance(dt, pd.Timestamp):
+        dt = pd.Timestamp(dt)
 
-cpdef maybe_nanos_to_unix_dt(nanos):
-    """
-    Return the datetime in UTC from the given UNIX time (nanoseconds), or ``None``.
-
-    If nanos is ``None``, then will return None.
-
-    Parameters
-    ----------
-    nanos : int64, optional
-        The UNIX time (nanoseconds) to convert.
-
-    Returns
-    -------
-    int64 or ``None``
-
-    """
-    if nanos is None:
-        return None
-    else:
-        return pd.Timestamp(nanos, tz=pytz.utc)
+    return int(dt.to_datetime64())
 
 
 cpdef bint is_datetime_utc(datetime dt) except *:

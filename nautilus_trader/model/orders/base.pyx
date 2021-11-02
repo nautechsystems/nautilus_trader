@@ -588,8 +588,8 @@ cdef class Order:
             return OrderSide.SELL
         elif side == OrderSide.SELL:
             return OrderSide.BUY
-        else:
-            raise ValueError(f"side was invalid, was {side}")
+        else:  # pragma: no cover (design-time error)
+            raise ValueError(f"invalid OrderSide, was {side}")
 
     @staticmethod
     cdef OrderSide flatten_side_c(PositionSide side) except *:
@@ -597,8 +597,8 @@ cdef class Order:
             return OrderSide.SELL
         elif side == PositionSide.SHORT:
             return OrderSide.BUY
-        else:
-            raise ValueError(f"side was invalid, was {side}")
+        else:  # pragma: no cover (design-time error)
+            raise ValueError(f"invalid OrderSide, was {side}")
 
     @staticmethod
     def opposite_side(OrderSide side) -> OrderSide:
@@ -617,7 +617,7 @@ cdef class Order:
         Raises
         ------
         ValueError
-            If side is invalid.
+            If `side` is invalid.
 
         """
         return Order.opposite_side_c(side)
@@ -639,7 +639,7 @@ cdef class Order:
         Raises
         ------
         ValueError
-            If side is ``FLAT`` or invalid.
+            If `side` is ``FLAT`` or invalid.
 
         """
         return Order.flatten_side_c(side)
@@ -656,13 +656,13 @@ cdef class Order:
         Raises
         ------
         ValueError
-            If self.client_order_id is not equal to event.client_order_id.
+            If `self.client_order_id` is not equal to `event.client_order_id`.
         ValueError
-            If self.venue_order_id and event.venue_order_id are both not ``None``, and are not equal.
+            If `self.venue_order_id` and `event.venue_order_id` are both not ``None``, and are not equal.
         InvalidStateTrigger
-            If event is not a valid trigger from the current order.status.
+            If `event` is not a valid trigger from the current order status.
         KeyError
-            If event is OrderFilled and event.execution_id already applied to the order.
+            If `event` is `OrderFilled` and `event.execution_id` already applied to the order.
 
         """
         Condition.not_none(event, "event")
@@ -721,6 +721,8 @@ cdef class Order:
             else:
                 self._fsm.trigger(OrderStatus.FILLED)
             self._filled(event)
+        else:  # pragma: no cover (design-time error)
+            raise ValueError(f"invalid OrderEvent, was {type(event)}")
 
         # Update events last as FSM may raise InvalidStateTrigger
         self._events.append(event)
@@ -903,8 +905,17 @@ cdef class PassiveOrder(Order):
         self.execution_id = fill.execution_id
         self.liquidity_side = fill.liquidity_side
         filled_qty: Decimal = self.filled_qty.as_decimal() + fill.last_qty.as_decimal()
+        leaves_qty: Decimal = self.quantity.as_decimal() - filled_qty
+        if leaves_qty < 0:
+            raise ValueError(
+                f"invalid order.leaves_qty: was {leaves_qty}, "
+                f"order.quantity={self.quantity}, "
+                f"order.filled_qty={self.filled_qty}, "
+                f"fill.last_qty={fill.last_qty}, "
+                f"fill={fill}",
+            )
         self.filled_qty = Quantity(filled_qty, fill.last_qty.precision)
-        self.leaves_qty = Quantity(self.quantity.as_decimal() - filled_qty, fill.last_qty.precision)
+        self.leaves_qty = Quantity(leaves_qty, fill.last_qty.precision)
         self.ts_last = fill.ts_event
         self.avg_px = self._calculate_avg_px(fill.last_qty, fill.last_px)
         self._set_slippage()
@@ -912,5 +923,5 @@ cdef class PassiveOrder(Order):
     cdef void _set_slippage(self) except *:
         if self.side == OrderSide.BUY:
             self.slippage = self.avg_px - self.price
-        else:  # self.side == OrderSide.SELL:
+        elif self.side == OrderSide.SELL:
             self.slippage = self.price - self.avg_px

@@ -57,6 +57,7 @@ cdef class CurrencySpot(Instrument):
         taker_fee not None: Decimal,
         int64_t ts_event,
         int64_t ts_init,
+        str tick_scheme_name=None,
         dict info=None,
     ):
         """
@@ -104,37 +105,41 @@ cdef class CurrencySpot(Instrument):
             The UNIX timestamp (nanoseconds) when the data event occurred.
         ts_init: int64
             The UNIX timestamp (nanoseconds) when the data object was initialized.
+        tick_scheme_name : str, optional
+            The name of the tick scheme.
         info : dict[str, object], optional
             The additional instrument information.
 
         Raises
         ------
         ValueError
-            If price_precision is negative (< 0).
+            If `tick_scheme_name` is not a valid string.
         ValueError
-            If size_precision is negative (< 0).
+            If `price_precision` is negative (< 0).
         ValueError
-            If price_increment is not positive (> 0).
+            If `size_precision` is negative (< 0).
         ValueError
-            If size_increment is not positive (> 0).
+            If `price_increment` is not positive (> 0).
         ValueError
-            If price_precision is not equal to price_increment.precision.
+            If `size_increment` is not positive (> 0).
         ValueError
-            If size_increment is not equal to size_increment.precision.
+            If `price_precision` is not equal to price_increment.precision.
         ValueError
-            If lot size is not positive (> 0).
+            If `size_increment` is not equal to size_increment.precision.
         ValueError
-            If max_quantity is not positive (> 0).
+            If `lot_size` is not positive (> 0).
         ValueError
-            If min_quantity is negative (< 0).
+            If `max_quantity` is not positive (> 0).
         ValueError
-            If max_notional is not positive (> 0).
+            If `min_quantity` is negative (< 0).
         ValueError
-            If min_notional is negative (< 0).
+            If `max_notional` is not positive (> 0).
         ValueError
-            If max_price is not positive (> 0).
+            If `min_notional` is negative (< 0).
         ValueError
-            If min_price is negative (< 0).
+            If `max_price` is not positive (> 0).
+        ValueError
+            If `min_price` is negative (< 0).
 
         """
         # Determine asset class

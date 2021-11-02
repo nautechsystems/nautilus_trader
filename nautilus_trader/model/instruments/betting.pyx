@@ -33,6 +33,8 @@ from nautilus_trader.model.objects cimport Money
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
 
+from nautilus_trader.adapters.betfair.common import BETFAIR_PRICE_PRECISION
+
 
 cdef class BettingInstrument(Instrument):
     """
@@ -61,6 +63,10 @@ cdef class BettingInstrument(Instrument):
         str currency not None,
         int64_t ts_event,
         int64_t ts_init,
+        str tick_scheme_name="BETFAIR",
+        int price_precision=BETFAIR_PRICE_PRECISION,
+        Price min_price=None,
+        Price max_price=None,
     ):
         assert event_open_date.tzinfo is not None
         assert market_start_time.tzinfo is not None
@@ -77,14 +83,14 @@ cdef class BettingInstrument(Instrument):
         self.event_id = event_id
         self.event_name = event_name
         self.event_country_code = event_country_code
-        self.event_open_date = pd.Timestamp(event_open_date).tz_convert("UTC").to_pydatetime()
+        self.event_open_date = pd.Timestamp(event_open_date).tz_convert("UTC")
 
         # Market Info e.g. Match odds / Handicap
         self.betting_type = betting_type
         self.market_id = market_id
         self.market_type = market_type
         self.market_name = market_name
-        self.market_start_time = pd.Timestamp(market_start_time).tz_convert("UTC").to_pydatetime()
+        self.market_start_time = pd.Timestamp(market_start_time).tz_convert("UTC")
 
         # Selection/Runner (individual selection/runner) e.g. (LA Lakers)
         self.selection_id = selection_id
@@ -97,9 +103,9 @@ cdef class BettingInstrument(Instrument):
             asset_type=AssetType.SPOT,
             quote_currency=Currency.from_str_c(currency),
             is_inverse=False,
-            price_precision=5,
             size_precision=4,
-            price_increment=Price(1e-5, precision=5),
+            price_precision=price_precision,
+            price_increment=None,
             size_increment=Quantity(1e-4, precision=4),
             multiplier=Quantity.from_int_c(1),
             lot_size=Quantity.from_int_c(1),
@@ -115,8 +121,13 @@ cdef class BettingInstrument(Instrument):
             taker_fee=Decimal(0),
             ts_event=ts_event,
             ts_init=ts_init,
+            tick_scheme_name=tick_scheme_name,
             info=dict(),  # TODO - Add raw response?
         )
+        if not min_price and tick_scheme_name:
+            self.min_price = self._tick_scheme.min_price
+        if not max_price and tick_scheme_name:
+            self.max_price = self._tick_scheme.max_price
 
     @staticmethod
     cdef BettingInstrument from_dict_c(dict values):

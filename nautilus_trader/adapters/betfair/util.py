@@ -34,7 +34,7 @@ def flatten_tree(y: Dict, **filters):
         def _filter(k, v):
             if isinstance(v, str):
                 return k == v
-            elif isinstance(v, list):
+            elif isinstance(v, (tuple, list)):
                 return k in v
             else:
                 raise TypeError
@@ -101,10 +101,10 @@ def historical_instrument_provider_loader(instrument_provider, line):
         if "marketDefinition" in mc:
             market_def = {**mc["marketDefinition"], **{"marketId": mc["id"]}}
             instruments = make_instruments(market_definition=market_def, currency="GBP")
-            instrument_provider.add_instruments(instruments)
+            instrument_provider.add_bulk(instruments)
 
-    # By this point we should always have some instruments loaded from historical data.
-    if not instrument_provider.list_instruments():
+    # By this point we should always have some instruments loaded from historical data
+    if not instrument_provider.list_all():
         # TODO - Need to add historical search
         raise Exception("No instruments found")
 
@@ -121,7 +121,7 @@ def make_betfair_reader(instrument_provider=None, line_preprocessor=None) -> Tex
     instrument_provider = instrument_provider or BetfairInstrumentProvider.from_instruments([])
 
     return TextReader(
-        # use the standard `on_market_update` betfair parser that the adapter uses
+        # Use the standard `on_market_update` betfair parser that the adapter uses
         line_preprocessor=line_preprocessor,
         line_parser=partial(line_parser, instrument_provider=instrument_provider),
         instrument_provider_update=historical_instrument_provider_loader,

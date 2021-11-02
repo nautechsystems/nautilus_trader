@@ -14,10 +14,9 @@
 # -------------------------------------------------------------------------------------------------
 
 from decimal import Decimal
-from typing import Dict, Optional
+from typing import Optional
 
 import pandas as pd
-import pydantic
 
 from libc.stdint cimport int64_t
 
@@ -56,23 +55,7 @@ from nautilus_trader.model.position cimport Position
 from nautilus_trader.msgbus.bus cimport MessageBus
 from nautilus_trader.portfolio.base cimport PortfolioFacade
 
-
-class RiskEngineConfig(pydantic.BaseModel):
-    """
-    Configuration for ``RiskEngine`` instances.
-
-    bypass : bool
-        If True then all risk checks are bypassed (will still check for duplicate IDs).
-    max_order_rate : str, default=100/00:00:01
-        The maximum order rate per timedelta.
-    max_notional_per_order : Dict[str, str]
-        The maximum notional value of an order per instrument ID.
-        The value should be a valid decimal format.
-    """
-
-    bypass: bool = False
-    max_order_rate: pydantic.ConstrainedStr = "100/00:00:01"
-    max_notional_per_order: Dict[str, str] = {}
+from nautilus_trader.risk.config import RiskEngineConfig
 
 
 cdef class RiskEngine(Component):
@@ -119,7 +102,7 @@ cdef class RiskEngine(Component):
         Raises
         ------
         TypeError
-            If config is not of type `RiskEngineConfig`.
+            If `config` is not of type `RiskEngineConfig`.
 
         """
         if config is None:
@@ -277,9 +260,9 @@ cdef class RiskEngine(Component):
         Raises
         ------
         decimal.InvalidOperation
-            If new_value not a valid input for decimal.Decimal.
+            If `new_value` not a valid input for decimal.Decimal.
         ValueError
-            If new_value is not ``None`` and not positive.
+            If `new_value` is not ``None`` and not positive.
 
         """
         if new_value is not None:
@@ -638,8 +621,10 @@ cdef class RiskEngine(Component):
                 return False  # Denied
             if order.side == OrderSide.BUY:
                 price = last.ask
-            else:  # order.side == OrderSide.SELL
+            elif order.side == OrderSide.SELL:
                 price = last.bid
+            else:  # pragma: no cover (design-time error)
+                raise RuntimeError("invalid order side")
         else:
             price = order.price
 

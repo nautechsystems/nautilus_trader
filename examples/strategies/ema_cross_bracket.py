@@ -149,6 +149,7 @@ class EMACrossBracket(TradingStrategy):
                 self.buy(bar)
             elif self.portfolio.is_net_short(self.instrument_id):
                 self.flatten_all_positions(self.instrument_id)
+                self.cancel_all_orders(self.instrument_id)
                 self.buy(bar)
 
         # SELL LOGIC
@@ -157,6 +158,7 @@ class EMACrossBracket(TradingStrategy):
                 self.sell(bar)
             elif self.portfolio.is_net_long(self.instrument_id):
                 self.flatten_all_positions(self.instrument_id)
+                self.cancel_all_orders(self.instrument_id)
                 self.sell(bar)
 
     def buy(self, last_bar: Bar):

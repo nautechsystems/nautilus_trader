@@ -90,13 +90,13 @@ cdef class Trader(Component):
         Raises
         ------
         ValueError
-            If portfolio is not equal to the exec_engine._portfolio.
+            If `portfolio` is not equal to the `exec_engine` portfolio.
         ValueError
-            If strategies is ``None``.
+            If `strategies` is ``None``.
         ValueError
-            If strategies list is empty.
+            If `strategies` is empty.
         TypeError
-            If strategies list contains a type other than `TradingStrategy`.
+            If `strategies` contains a type other than `TradingStrategy`.
 
         """
         if config is None:
@@ -115,27 +115,16 @@ cdef class Trader(Component):
         self._risk_engine = risk_engine
         self._exec_engine = exec_engine
 
-        self._strategies = []
         self._components = []
+        self._strategies = []
 
         self.analyzer = PerformanceAnalyzer()
-
-    cdef list strategies_c(self):
-        return self._strategies
 
     cdef list components_c(self):
         return self._components
 
-    cpdef list strategy_ids(self):
-        """
-        Return the strategy IDs loaded in the trader.
-
-        Returns
-        -------
-        list[StrategyId]
-
-        """
-        return sorted([strategy.id for strategy in self._strategies])
+    cdef list strategies_c(self):
+        return self._strategies
 
     cpdef list component_ids(self):
         """
@@ -148,21 +137,16 @@ cdef class Trader(Component):
         """
         return sorted([component.id for component in self._components])
 
-    cpdef dict strategy_states(self):
+    cpdef list strategy_ids(self):
         """
-        Return the traders strategy states.
+        Return the strategy IDs loaded in the trader.
 
         Returns
         -------
-        dict[StrategyId, str]
+        list[StrategyId]
 
         """
-        cdef dict states = {}
-        cdef TradingStrategy strategy
-        for strategy in self._strategies:
-            states[strategy.id] = strategy.state_string_c()
-
-        return states
+        return sorted([strategy.id for strategy in self._strategies])
 
     cpdef dict component_states(self):
         """
@@ -180,16 +164,21 @@ cdef class Trader(Component):
 
         return states
 
-    cpdef list components(self):
+    cpdef dict strategy_states(self):
         """
-        Return the custom components loaded in the trader.
+        Return the traders strategy states.
 
         Returns
         -------
-        list[Actor]
+        dict[StrategyId, str]
 
         """
-        return self._components.copy()
+        cdef dict states = {}
+        cdef TradingStrategy strategy
+        for strategy in self._strategies:
+            states[strategy.id] = strategy.state_string_c()
+
+        return states
 
 # -- ACTION IMPLEMENTATIONS ------------------------------------------------------------------------
 
@@ -198,22 +187,15 @@ cdef class Trader(Component):
             self._log.error(f"No strategies loaded.")
             return
 
-        cdef TradingStrategy strategy
-        for strategy in self._strategies:
-            strategy.start()
-
         cdef Actor component
         for component in self._components:
             component.start()
 
-    cpdef void _stop(self) except *:
         cdef TradingStrategy strategy
         for strategy in self._strategies:
-            if strategy.is_running_c():
-                strategy.stop()
-            else:
-                self._log.warning(f"{strategy} already stopped.")
+            strategy.start()
 
+    cpdef void _stop(self) except *:
         cdef Actor component
         for component in self._components:
             if component.is_running_c():
@@ -221,26 +203,33 @@ cdef class Trader(Component):
             else:
                 self._log.warning(f"{component} already stopped.")
 
-    cpdef void _reset(self) except *:
         cdef TradingStrategy strategy
         for strategy in self._strategies:
-            strategy.reset()
+            if strategy.is_running_c():
+                strategy.stop()
+            else:
+                self._log.warning(f"{strategy} already stopped.")
 
+    cpdef void _reset(self) except *:
         cdef Actor component
         for component in self._components:
             component.reset()
+
+        cdef TradingStrategy strategy
+        for strategy in self._strategies:
+            strategy.reset()
 
         self._portfolio.reset()
         self.analyzer.reset()
 
     cpdef void _dispose(self) except *:
-        cdef TradingStrategy strategy
-        for strategy in self._strategies:
-            strategy.dispose()
-
         cdef Actor component
         for component in self._components:
             component.dispose()
+
+        cdef TradingStrategy strategy
+        for strategy in self._strategies:
+            strategy.dispose()
 
 # --------------------------------------------------------------------------------------------------
 
@@ -256,9 +245,9 @@ cdef class Trader(Component):
         Raises
         ------
         KeyError
-            If strategy.id already exists in the trader.
+            If `strategy.id` already exists in the trader.
         ValueError
-            If strategy.state is ``RUNNING`` or ``DISPOSED``.
+            If `strategy.state` is ``RUNNING`` or ``DISPOSED``.
 
         """
         Condition.not_none(strategy, "strategy")
@@ -297,7 +286,7 @@ cdef class Trader(Component):
         Raises
         ------
         ValueError
-            If strategies is ``None`` or empty.
+            If `strategies` is ``None`` or empty.
 
         """
         Condition.not_empty(strategies, "strategies")
@@ -318,9 +307,9 @@ cdef class Trader(Component):
         Raises
         ------
         KeyError
-            If component.id already exists in the trader.
+            If `component.id` already exists in the trader.
         ValueError
-            If component.state is ``RUNNING`` or ``DISPOSED``.
+            If `component.state` is ``RUNNING`` or ``DISPOSED``.
 
         """
         Condition.not_in(component, self._components, "component", "components")
@@ -356,7 +345,7 @@ cdef class Trader(Component):
         Raises
         ------
         ValueError
-            If components is ``None`` or empty.
+            If `components` is ``None`` or empty.
 
         """
         Condition.not_empty(components, "components")

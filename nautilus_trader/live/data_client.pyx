@@ -13,60 +13,22 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+"""
+The `LiveDataClient` class is responsible for interfacing with a particular API
+which may be presented directly by an exchange, or broker intermediary. It
+could also be possible to write clients for specialized data publishers.
+"""
+
 import asyncio
 
 from nautilus_trader.cache.cache cimport Cache
 from nautilus_trader.common.clock cimport LiveClock
-from nautilus_trader.common.logging cimport LiveLogger
 from nautilus_trader.common.logging cimport Logger
+from nautilus_trader.common.providers cimport InstrumentProvider
 from nautilus_trader.data.client cimport DataClient
 from nautilus_trader.data.client cimport MarketDataClient
 from nautilus_trader.model.identifiers cimport ClientId
 from nautilus_trader.msgbus.bus cimport MessageBus
-
-
-cdef class LiveDataClientFactory:
-    """
-    Provides a factory for creating `LiveDataClient` instances.
-    """
-
-    @staticmethod
-    def create(
-        str name not None,
-        dict config not None,
-        MessageBus msgbus not None,
-        Cache cache not None,
-        LiveClock clock not None,
-        LiveLogger logger not None,
-        client_cls=None,
-    ):
-        """
-        Return a new data client from the given parameters.
-
-        Parameters
-        ----------
-        name : str
-            The client name.
-        config : dict[str, object]
-            The configuration for the client.
-        msgbus : MessageBus
-            The message bus for the client.
-        cache : Cache
-            The cache for the client.
-        clock : LiveClock
-            The clock for the client.
-        logger : LiveLogger
-            The logger for the client.
-        client_cls : class, optional
-            The internal client constructor. This allows external library and
-            testing dependency injection.
-
-        Returns
-        -------
-        LiveDataClient
-
-        """
-        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
 
 cdef class LiveDataClient(DataClient):
@@ -128,6 +90,10 @@ cdef class LiveDataClient(DataClient):
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
+    async def run_after_delay(self, delay, coro):
+        await asyncio.sleep(delay)
+        return await coro
+
 
 cdef class LiveMarketDataClient(MarketDataClient):
     """
@@ -142,6 +108,7 @@ cdef class LiveMarketDataClient(MarketDataClient):
         self,
         loop not None: asyncio.AbstractEventLoop,
         ClientId client_id not None,
+        InstrumentProvider instrument_provider not None,
         MessageBus msgbus not None,
         Cache cache not None,
         LiveClock clock not None,
@@ -153,10 +120,12 @@ cdef class LiveMarketDataClient(MarketDataClient):
 
         Parameters
         ----------
-        loop : asyncio.AbstractEventLoop,
+        loop : asyncio.AbstractEventLoop
             The event loop for the client.
         client_id : ClientId
             The client ID.
+        instrument_provider : InstrumentProvider
+            The instrument provider for the client.
         msgbus : MessageBus
             The message bus for the client.
         cache : Cache
@@ -179,6 +148,7 @@ cdef class LiveMarketDataClient(MarketDataClient):
         )
 
         self._loop = loop
+        self._instrument_provider = instrument_provider
 
     def connect(self):
         """Abstract method (implement in subclass)."""
@@ -187,3 +157,7 @@ cdef class LiveMarketDataClient(MarketDataClient):
     def disconnect(self):
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
+
+    async def run_after_delay(self, delay, coro):
+        await asyncio.sleep(delay)
+        return await coro

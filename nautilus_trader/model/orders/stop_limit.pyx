@@ -17,7 +17,7 @@ from cpython.datetime cimport datetime
 from libc.stdint cimport int64_t
 
 from nautilus_trader.core.correctness cimport Condition
-from nautilus_trader.core.datetime cimport maybe_nanos_to_unix_dt
+from nautilus_trader.core.datetime cimport maybe_unix_nanos_to_dt
 from nautilus_trader.core.uuid cimport UUID4
 from nautilus_trader.model.c_enums.contingency_type cimport ContingencyType
 from nautilus_trader.model.c_enums.contingency_type cimport ContingencyTypeParser
@@ -119,13 +119,13 @@ cdef class StopLimitOrder(PassiveOrder):
         order_list_id : OrderListId, optional
             The order list ID associated with the order.
         parent_order_id : ClientOrderId, optional
-            The orders parent client order ID.
+            The order parent client order ID.
         child_order_ids : list[ClientOrderId], optional
-            The orders child client order ID(s).
+            The order child client order ID(s).
         contingency : ContingencyType
-            The orders contingency type.
+            The order contingency type.
         contingency_ids : list[ClientOrderId], optional
-            The orders contingency client order ID(s).
+            The order contingency client order ID(s).
         tags : str, optional
             The custom user tags for the order. These are optional and can
             contain any arbitrary delimiter if required.
@@ -133,11 +133,11 @@ cdef class StopLimitOrder(PassiveOrder):
         Raises
         ------
         ValueError
-            If quantity is not positive (> 0).
+            If `quantity` is not positive (> 0).
         ValueError
-            If time_in_force is ``GTD`` and the expire_time is ``None``.
+            If `time_in_force` is ``GTD`` and the expire_time is ``None``.
         ValueError
-            If post_only and hidden.
+            If `post_only` and `hidden`.
 
         """
         if post_only:
@@ -243,7 +243,7 @@ cdef class StopLimitOrder(PassiveOrder):
         Raises
         ------
         ValueError
-            If init.type is not equal to ``STOP_LIMIT``.
+            If `init.type` is not equal to ``STOP_LIMIT``.
 
         """
         Condition.not_none(init, "init")
@@ -259,7 +259,7 @@ cdef class StopLimitOrder(PassiveOrder):
             price=Price.from_str_c(init.options["price"]),
             trigger=Price.from_str_c(init.options["trigger"]),
             time_in_force=init.time_in_force,
-            expire_time=maybe_nanos_to_unix_dt(init.options.get("expire_time")),
+            expire_time=maybe_unix_nanos_to_dt(init.options.get("expire_time")),
             init_id=init.id,
             ts_init=init.ts_init,
             post_only=init.options["post_only"],

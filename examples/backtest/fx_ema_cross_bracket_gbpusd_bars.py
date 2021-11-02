@@ -64,8 +64,8 @@ if __name__ == "__main__":
     # Setup data
     wrangler = QuoteTickDataWrangler(instrument=GBPUSD_SIM)
     ticks = wrangler.process_bar_data(
-        bid_data=TestDataProvider.gbpusd_1min_bid()[:2000],
-        ask_data=TestDataProvider.gbpusd_1min_ask()[:2000],
+        bid_data=TestDataProvider.gbpusd_1min_bid(),
+        ask_data=TestDataProvider.gbpusd_1min_ask(),
     )
     engine.add_instrument(GBPUSD_SIM)
     engine.add_ticks(ticks)
@@ -91,7 +91,7 @@ if __name__ == "__main__":
         oms_type=OMSType.HEDGING,  # Venue will generate position_ids
         account_type=AccountType.MARGIN,
         base_currency=USD,  # Standard single-currency account
-        starting_balances=[Money(10_000_000, USD)],
+        starting_balances=[Money(1_000_000, USD)],
         fill_model=fill_model,
         modules=[fx_rollover_interest],
         bar_execution=True,  # Recommended for running on bar data

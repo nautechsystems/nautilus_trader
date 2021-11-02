@@ -16,10 +16,6 @@
 import asyncio
 from typing import Optional
 
-from pydantic import PositiveInt
-
-from nautilus_trader.risk.engine import RiskEngineConfig
-
 from nautilus_trader.cache.base cimport CacheFacade
 from nautilus_trader.common.clock cimport LiveClock
 from nautilus_trader.common.logging cimport Logger
@@ -32,13 +28,7 @@ from nautilus_trader.core.message cimport MessageCategory
 from nautilus_trader.msgbus.bus cimport MessageBus
 from nautilus_trader.portfolio.base cimport PortfolioFacade
 
-
-class LiveRiskEngineConfig(RiskEngineConfig):
-    """
-    Configuration for ``LiveRiskEngine`` instances.
-    """
-
-    qsize: PositiveInt = 10000
+from nautilus_trader.live.config import LiveRiskEngineConfig
 
 
 cdef class LiveRiskEngine(RiskEngine):
@@ -79,7 +69,7 @@ cdef class LiveRiskEngine(RiskEngine):
         Raises
         ------
         TypeError
-            If config is not of type `LiveRiskEngineConfig`.
+            If `config` is not of type `LiveRiskEngineConfig`.
 
         """
         if config is None:

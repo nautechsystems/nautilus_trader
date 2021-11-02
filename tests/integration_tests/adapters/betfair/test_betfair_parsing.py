@@ -19,6 +19,7 @@ from unittest.mock import patch
 import pytest
 
 from nautilus_trader.adapters.betfair.client.core import BetfairClient
+from nautilus_trader.adapters.betfair.parsing import _order_quantity_to_stake
 from nautilus_trader.adapters.betfair.parsing import betfair_account_to_account_state
 from nautilus_trader.adapters.betfair.parsing import build_market_update_messages
 from nautilus_trader.adapters.betfair.parsing import make_order
@@ -33,12 +34,14 @@ from nautilus_trader.model.data.tick import TradeTick
 from nautilus_trader.model.data.ticker import Ticker
 from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import OrderSide
+from nautilus_trader.model.enums import OrderSideParser
 from nautilus_trader.model.enums import TimeInForce
 from nautilus_trader.model.events.account import AccountState
 from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import VenueOrderId
 from nautilus_trader.model.objects import AccountBalance
 from nautilus_trader.model.objects import Money
+from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.orderbook.data import OrderBookDeltas
 from tests.integration_tests.adapters.betfair.test_kit import BetfairResponses
 from tests.integration_tests.adapters.betfair.test_kit import BetfairTestStubs
@@ -54,6 +57,21 @@ class TestBetfairParsing:
         self.client = BetfairTestStubs.betfair_client(loop=self.loop, logger=self.logger)
         self.provider = BetfairTestStubs.instrument_provider(self.client)
         self.uuid = UUID4()
+
+    @pytest.mark.parametrize(
+        "quantity, betfair_quantity",
+        [
+            ("100", "100.0"),
+            ("375", "375.0"),
+            ("6.25", "6.25"),
+            ("200", "200.0"),
+        ],
+    )
+    def test_order_quantity_to_stake(self, quantity, betfair_quantity):
+        result = _order_quantity_to_stake(
+            quantity=Quantity.from_str(quantity),
+        )
+        assert result == betfair_quantity
 
     def test_order_submit_to_betfair(self):
         command = BetfairTestStubs.submit_order_command()
@@ -143,18 +161,18 @@ class TestBetfairParsing:
 
     @pytest.mark.asyncio
     async def test_merge_order_book_deltas(self):
-        await self.provider.load_all_async()
+        await self.provider.load_all_async(market_filter={"market_id": "1.180759290"})
         raw = {
             "op": "mcm",
             "clk": "792361654",
             "pt": 1577575379148,
             "mc": [
                 {
-                    "id": "1.179082386",
+                    "id": "1.180759290",
                     "rc": [
-                        {"atl": [[3.15, 3.68]], "id": 50214},
-                        {"trd": [[3.15, 364.45]], "ltp": 3.15, "tv": 364.45, "id": 50214},
-                        {"atb": [[3.15, 0]], "id": 50214},
+                        {"atl": [[3.15, 3.68]], "id": 7659748},
+                        {"trd": [[3.15, 364.45]], "ltp": 3.15, "tv": 364.45, "id": 7659748},
+                        {"atb": [[3.15, 0]], "id": 7659748},
                     ],
                     "con": True,
                     "img": False,
@@ -215,11 +233,17 @@ class TestBetfairParsing:
         }
         assert result == expected
 
-    def test_make_order_market_on_close(self):
-        order = BetfairTestStubs.market_order(time_in_force=TimeInForce.OC)
+    @pytest.mark.parametrize(
+        "side,liability",
+        [("BUY", "10.0"), ("SELL", "10.0")],
+    )
+    def test_make_order_market_on_close(self, side, liability):
+        order = BetfairTestStubs.market_order(
+            time_in_force=TimeInForce.OC, side=OrderSideParser.from_str_py(side)
+        )
         result = make_order(order)
         expected = {
-            "marketOnCloseOrder": {"liability": "10.0"},
+            "marketOnCloseOrder": {"liability": liability},
             "orderType": "MARKET_ON_CLOSE",
         }
         assert result == expected

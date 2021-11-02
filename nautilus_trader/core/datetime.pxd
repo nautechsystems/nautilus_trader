@@ -13,6 +13,8 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+import pandas as pd
+
 from cpython.datetime cimport datetime
 from libc.stdint cimport int64_t
 
@@ -23,8 +25,10 @@ cpdef int64_t micros_to_nanos(double micros) except *
 cpdef double nanos_to_secs(double nanos) except *
 cpdef int64_t nanos_to_millis(int64_t nanos) except *
 cpdef int64_t nanos_to_micros(int64_t nanos) except *
-cpdef maybe_dt_to_unix_nanos(datetime dt)
-cpdef maybe_nanos_to_unix_dt(nanos)
+cpdef unix_nanos_to_dt(int64_t nanos)
+cpdef dt_to_unix_nanos(dt: pd.Timestamp)
+cpdef maybe_unix_nanos_to_dt(nanos)
+cpdef maybe_dt_to_unix_nanos(dt: pd.Timestamp)
 cpdef bint is_datetime_utc(datetime dt) except *
 cpdef bint is_tz_aware(time_object) except *
 cpdef bint is_tz_naive(time_object) except *

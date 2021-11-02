@@ -1,13 +1,52 @@
-# NautilusTrader 1.131.0 Beta - Release Notes
+# NautilusTrader 1.133.0 Beta - Release Notes
 
-Released **TBD**
+Released TBD | Update version badge
 
 ## Breaking Changes
+None
+
+## Enhancements
+- Added `Clock.timestamp_ms()`.
+
+## Fixes
+None
+
+---
+
+# NautilusTrader 1.132.0 Beta - Release Notes
+
+Released on 24th, October 2021
+
+## Breaking Changes
+- `Actor` constructor now takes `ActorConfig`.
+
+## Enhancements
+- Added `ActorConfig`.
+- Added `ImportableActorConfig`.
+- Added `ActorFactory`.
+- Added `actors` to `BacktestRunConfig`.
+- Improved network base classes.
+- Refine `InstrumentProvider`.
+
+## Fixes
+- Fixed persistence config for `BacktestNode`.
+- Various Betfair integration fixes.
+
+---
+
+# NautilusTrader 1.131.0 Beta - Release Notes
+
+Released on 10th, October 2021
+
+## Breaking Changes
+- Renamed `nanos_to_unix_dt` to `unix_nanos_to_dt` (more accurate name).
 - Changed `Clock.set_time_alert(...)` method signature.
 - Changed `Clock.set_timer(...)` method signature.
 - Removed `pd.Timestamp` from `TimeEvent`.
 
 ## Enhancements
+- `OrderList` submission and OTO, OCO contingencies now operational.
+- Added `Cache.orders_for_position(...)` method.
 - Added `Cache.position_for_order(...)` method.
 - Added `SimulatedExchange.get_working_bid_orders(...)` method.
 - Added `SimulatedExchange.get_working_ask_orders(...)` method.
@@ -21,6 +60,9 @@ Released **TBD**
 
 ## Fixes
 - Fixed `OrderUpdated` leaves quantity calculation.
+- Fixed contingency order logic at the exchange.
+- Fixed indexing of orders for a position in the cache.
+- Fixed flip logic for zero sized positions (not a flip).
 
 ---
 

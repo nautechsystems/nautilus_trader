@@ -13,15 +13,18 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+"""
+The `LiveExecutionClient` class is responsible for interfacing with a particular
+API which may be presented directly by an exchange, or broker intermediary.
+"""
+
 import asyncio
 
 import pandas as pd
-import pytz
 from cpython.datetime cimport datetime
 
 from nautilus_trader.cache.cache cimport Cache
 from nautilus_trader.common.clock cimport LiveClock
-from nautilus_trader.common.logging cimport LiveLogger
 from nautilus_trader.common.logging cimport LogColor
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.common.providers cimport InstrumentProvider
@@ -30,7 +33,6 @@ from nautilus_trader.execution.client cimport ExecutionClient
 from nautilus_trader.execution.messages cimport ExecutionMassStatus
 from nautilus_trader.execution.messages cimport ExecutionReport
 from nautilus_trader.execution.messages cimport OrderStatusReport
-from nautilus_trader.live.execution_engine cimport LiveExecutionEngine
 from nautilus_trader.model.c_enums.account_type cimport AccountType
 from nautilus_trader.model.c_enums.order_status cimport OrderStatus
 from nautilus_trader.model.c_enums.order_status cimport OrderStatusParser
@@ -43,50 +45,6 @@ from nautilus_trader.model.identifiers cimport VenueOrderId
 from nautilus_trader.model.instruments.base cimport Instrument
 from nautilus_trader.model.orders.base cimport Order
 from nautilus_trader.msgbus.bus cimport MessageBus
-
-
-cdef class LiveExecutionClientFactory:
-    """
-    Provides a factory for creating `LiveDataClient` instances.
-    """
-
-    @staticmethod
-    def create(
-        str name not None,
-        dict config not None,
-        LiveExecutionEngine engine not None,
-        Cache cache not None,
-        LiveClock clock not None,
-        LiveLogger logger not None,
-        client_cls=None,
-    ):
-        """
-        Return a new execution client from the given parameters.
-
-        Parameters
-        ----------
-        name : str
-            The client name.
-        config : dict[str, object]
-            The configuration for the client.
-        engine : LiveDataEngine
-            The engine for the client.
-        cache : Cache
-            The cache for the client.
-        clock : LiveClock
-            The clock for the client.
-        logger : LiveLogger
-            The logger for the client.
-        client_cls : class, optional
-            The internal client constructor. This allows external library and
-            testing dependency injection.
-
-        Returns
-        -------
-        LiveExecutionClient
-
-        """
-        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
 
 cdef class LiveExecutionClient(ExecutionClient):
@@ -102,11 +60,11 @@ cdef class LiveExecutionClient(ExecutionClient):
         self,
         loop not None: asyncio.AbstractEventLoop,
         ClientId client_id not None,
+        InstrumentProvider instrument_provider not None,
         VenueType venue_type,
         AccountId account_id not None,
         AccountType account_type,
         Currency base_currency,  # Can be None
-        InstrumentProvider instrument_provider not None,
         MessageBus msgbus not None,
         Cache cache not None,
         LiveClock clock not None,
@@ -122,6 +80,8 @@ cdef class LiveExecutionClient(ExecutionClient):
             The event loop for the client.
         client_id : ClientId
             The client ID.
+        instrument_provider : InstrumentProvider
+            The instrument provider for the client.
         venue_type : VenueType
             The client venue type.
         account_id : AccountId
@@ -130,8 +90,6 @@ cdef class LiveExecutionClient(ExecutionClient):
             The account type for the client.
         base_currency : Currency, optional
             The account base currency for the client. Use ``None`` for multi-currency accounts.
-        instrument_provider : InstrumentProvider
-            The instrument provider for the client.
         msgbus : MessageBus
             The message bus for the client.
         cache : Cache
@@ -168,38 +126,9 @@ cdef class LiveExecutionClient(ExecutionClient):
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
-    cpdef void reset(self) except *:
-        """
-        Reset the client.
-        """
-        if self.is_connected:
-            self._log.error("Cannot reset a connected execution client.")
-            return
-
-        self._log.info("Resetting...")
-
-        self._on_reset()
-
-        self._log.info("Reset.")
-
-    cdef void _on_reset(self) except *:
-        """
-        Actions to be performed when client is reset.
-        """
-        pass  # Optionally override in subclass
-
-    cpdef void dispose(self) except *:
-        """
-        Dispose the client.
-        """
-        if self.is_connected:
-            self._log.error("Cannot dispose a connected execution client.")
-            return
-
-        self._log.info("Disposing...")
-
-        # Nothing to dispose yet
-        self._log.info("Disposed.")
+    async def run_after_delay(self, delay, coro):
+        await asyncio.sleep(delay)
+        return await coro
 
     async def generate_order_status_report(self, Order order):
         """
@@ -287,7 +216,7 @@ cdef class LiveExecutionClient(ExecutionClient):
                 exec_reports = await self.generate_exec_reports(
                     venue_order_id=order.venue_order_id,
                     symbol=order.instrument_id.symbol,
-                    since=pd.Timestamp(order.ts_init, tz=pytz.utc),
+                    since=pd.Timestamp(order.ts_init, tz="UTC"),
                 )
                 mass_status.add_exec_reports(order.venue_order_id, exec_reports)
 
@@ -315,9 +244,9 @@ cdef class LiveExecutionClient(ExecutionClient):
         Raises
         ------
         ValueError
-            If report.client_order_id is not equal to order.client_order_id.
+            If `report.client_order_id` is not equal to `order.client_order_id`.
         ValueError
-            If report.venue_order_id is not equal to order.venue_order_id.
+            If `report.venue_order_id` is not equal to `order.venue_order_id`.
 
         Returns
         -------

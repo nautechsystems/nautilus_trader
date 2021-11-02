@@ -53,9 +53,9 @@ cdef class SimulatedL1OrderBook(L1OrderBook):
         Raises
         ------
         OverflowError
-            If price_precision is negative (< 0).
+            If `price_precision` is negative (< 0).
         OverflowError
-            If size_precision is negative (< 0).
+            If `size_precision` is negative (< 0).
 
         """
         super().__init__(
@@ -63,6 +63,11 @@ cdef class SimulatedL1OrderBook(L1OrderBook):
             price_precision=price_precision,
             size_precision=size_precision,
         )
+
+        self._top_bid = None
+        self._top_ask = None
+        self._top_bid_level = None
+        self._top_ask_level = None
 
     cpdef void add(self, Order order) except *:
         """
@@ -152,9 +157,9 @@ cdef class SimulatedL2OrderBook(L2OrderBook):
         Raises
         ------
         OverflowError
-            If price_precision is negative (< 0).
+            If `price_precision` is negative (< 0).
         OverflowError
-            If size_precision is negative (< 0).
+            If `size_precision` is negative (< 0).
 
         """
         super().__init__(
@@ -192,9 +197,9 @@ cdef class SimulatedL3OrderBook(L3OrderBook):
         Raises
         ------
         OverflowError
-            If price_precision is negative (< 0).
+            If `price_precision` is negative (< 0).
         OverflowError
-            If size_precision is negative (< 0).
+            If `size_precision` is negative (< 0).
 
         """
         super().__init__(

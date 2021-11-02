@@ -13,6 +13,8 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from libc.stdint cimport int64_t
+
 from nautilus_trader.model.data.bar cimport Bar
 from nautilus_trader.model.data.bar cimport BarType
 from nautilus_trader.model.data.tick cimport QuoteTick
@@ -23,18 +25,18 @@ from nautilus_trader.model.instruments.base cimport Instrument
 cdef class QuoteTickDataWrangler:
     cdef readonly Instrument instrument
 
-    cpdef QuoteTick _build_tick(self, double[:] values, double timestamp)
+    cpdef QuoteTick _build_tick(self, double[:] values, int64_t ts_event, int64_t ts_init_delta)
 
 
 cdef class TradeTickDataWrangler:
     cdef readonly Instrument instrument
     cdef readonly processed_data
 
-    cpdef TradeTick _build_tick(self, str[:] values, double timestamp)
+    cpdef TradeTick _build_tick(self, str[:] values, int64_t ts_event, int64_t ts_init_delta)
 
 
 cdef class BarDataWrangler:
     cdef readonly BarType bar_type
     cdef readonly Instrument instrument
 
-    cpdef Bar _build_bar(self, double[:] values, double timestamp)
+    cpdef Bar _build_bar(self, double[:] values, int64_t ts_event, int64_t ts_init_delta)

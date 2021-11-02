@@ -19,24 +19,8 @@ import pyarrow as pa
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.model.data.base cimport GenericData
-from nautilus_trader.model.data.venue cimport InstrumentClosePrice
-from nautilus_trader.model.events.account cimport AccountState
-from nautilus_trader.model.events.order cimport OrderFilled
-from nautilus_trader.model.events.order cimport OrderInitialized
-from nautilus_trader.model.events.position cimport PositionChanged
-from nautilus_trader.model.events.position cimport PositionClosed
-from nautilus_trader.model.events.position cimport PositionOpened
-from nautilus_trader.model.instruments.base cimport Instrument
-from nautilus_trader.model.orderbook.data cimport OrderBookData
 from nautilus_trader.serialization.base cimport _OBJECT_FROM_DICT_MAP
 from nautilus_trader.serialization.base cimport _OBJECT_TO_DICT_MAP
-
-from nautilus_trader.serialization.arrow.implementations import account_state
-from nautilus_trader.serialization.arrow.implementations import closing_prices
-from nautilus_trader.serialization.arrow.implementations import order_book
-from nautilus_trader.serialization.arrow.implementations import order_events
-from nautilus_trader.serialization.arrow.implementations import position_events
-from nautilus_trader.serialization.arrow.schema import NAUTILUS_PARQUET_SCHEMA
 
 
 cdef dict _PARQUET_TO_DICT_MAP = {}    # type: dict[type, object]
@@ -157,7 +141,7 @@ cdef class ParquetSerializer:
         Raises
         ------
         TypeError
-            If object cannot be serialized.
+            If `obj` cannot be serialized.
 
         """
         if isinstance(obj, GenericData):
@@ -194,7 +178,7 @@ cdef class ParquetSerializer:
         Raises
         ------
         TypeError
-            If chunk cannot be deserialized.
+            If `chunk` cannot be deserialized.
 
         """
         delegate = _PARQUET_FROM_DICT_MAP.get(cls)
@@ -210,42 +194,3 @@ cdef class ParquetSerializer:
             return delegate(chunk)
         else:
             return [delegate(c) for c in chunk]
-
-
-#################################################
-# Objects requiring special handling in parquet
-#################################################
-
-for cls in [OrderBookData] + OrderBookData.__subclasses__():
-    register_parquet(
-        cls=cls,
-        serializer=order_book.serialize,
-        deserializer=order_book.deserialize,
-        table=OrderBookData,
-        chunk=True,
-    )
-
-for cls in Instrument.__subclasses__():
-    register_parquet(cls, partition_keys=tuple())
-
-register_parquet(
-    AccountState,
-    serializer=account_state.serialize,
-    deserializer=account_state.deserialize,
-    chunk=True,
-)
-for cls in (PositionOpened, PositionChanged, PositionClosed):
-    register_parquet(
-        cls,
-        serializer=position_events.serialize,
-        deserializer=position_events.deserialize,
-    )
-
-register_parquet(OrderFilled, serializer=order_events.serialize)
-register_parquet(OrderInitialized, serializer=order_events.serialize_order_initialized)
-register_parquet(InstrumentClosePrice, serializer=closing_prices.serialize)
-
-
-# Other defined schemas
-for cls, schema in NAUTILUS_PARQUET_SCHEMA.items():
-    register_parquet(cls, schema=schema)

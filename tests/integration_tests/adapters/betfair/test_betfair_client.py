@@ -50,7 +50,7 @@ class TestBetfairClient:
         self.loop = asyncio.get_event_loop()
         self.clock = LiveClock()
         self.logger = LiveLogger(loop=self.loop, clock=self.clock)
-        self.client = BetfairClient(  # noqa: S106
+        self.client = BetfairClient(  # noqa: S106 (no hardcoded password)
             username="username",
             password="password",
             app_key="app_key",
@@ -275,3 +275,10 @@ class TestBetfairClient:
         }
         result = req.call_args.kwargs["json"]
         assert result == expected
+
+    def test_api_error(self):
+        exc = BetfairAPIError(code="404", message="new error")
+        assert (
+            str(exc)
+            == "BetfairAPIError(code='404', message='new error', kind='None', reason='None')"
+        )

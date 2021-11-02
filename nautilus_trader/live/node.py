@@ -22,15 +22,14 @@ import sys
 import time
 import warnings
 from datetime import timedelta
-from typing import Any, Callable, Dict, Optional
+from functools import partial
+from typing import Any, Callable, Dict, List, Optional
 
 import msgpack
-import pydantic
+import orjson
 import redis
-from pydantic import PositiveFloat
 
 from nautilus_trader.cache.cache import Cache
-from nautilus_trader.cache.cache import CacheConfig
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.logging import LiveLogger
 from nautilus_trader.common.logging import LogColor
@@ -39,17 +38,16 @@ from nautilus_trader.common.logging import LogLevelParser
 from nautilus_trader.common.logging import nautilus_header
 from nautilus_trader.common.uuid import UUIDFactory
 from nautilus_trader.core.correctness import PyCondition
-from nautilus_trader.infrastructure.cache import CacheDatabaseConfig
 from nautilus_trader.infrastructure.cache import RedisCacheDatabase
+from nautilus_trader.live.config import TradingNodeConfig
 from nautilus_trader.live.data_engine import LiveDataEngine
-from nautilus_trader.live.data_engine import LiveDataEngineConfig
-from nautilus_trader.live.execution_engine import LiveExecEngineConfig
 from nautilus_trader.live.execution_engine import LiveExecutionEngine
 from nautilus_trader.live.node_builder import TradingNodeBuilder
 from nautilus_trader.live.risk_engine import LiveRiskEngine
-from nautilus_trader.live.risk_engine import LiveRiskEngineConfig
 from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.msgbus.bus import MessageBus
+from nautilus_trader.persistence.config import PersistenceConfig
+from nautilus_trader.persistence.streaming import FeatherWriter
 from nautilus_trader.portfolio.portfolio import Portfolio
 from nautilus_trader.serialization.msgpack.serializer import MsgPackSerializer
 from nautilus_trader.trading.trader import Trader
@@ -63,65 +61,6 @@ try:
 except ImportError:  # pragma: no cover
     uvloop_version = None
     warnings.warn("uvloop is not available.")
-
-
-class TradingNodeConfig(pydantic.BaseModel):
-    """
-    Configuration for ``TradingNode`` instances.
-
-    trader_id : str, default="TRADER-000"
-        The trader ID for the node (must be a name and ID tag separated by a hyphen)
-    log_level : str, default="INFO"
-        The stdout log level for the node.
-    cache : CacheConfig, optional
-        The cache configuration.
-    cache_database : CacheDatabaseConfig, optional
-        The cache database configuration.
-    data_engine : LiveDataEngineConfig, optional
-        The live data engine configuration.
-    risk_engine : LiveRiskEngineConfig, optional
-        The live risk engine configuration.
-    exec_engine : LiveExecEngineConfig, optional
-        The live execution engine configuration.
-    loop_debug : bool, default=False
-        If the asyncio event loop should be in debug mode.
-    load_strategy_state : bool, default=True
-        If trading strategy state should be loaded from the database on start.
-    save_strategy_state : bool, default=True
-        If trading strategy state should be saved to the database on stop.
-    timeout_connection : PositiveFloat (seconds)
-        The timeout for all clients to connect and initialize.
-    timeout_reconciliation : PositiveFloat (seconds)
-        The timeout for execution state to reconcile.
-    timeout_portfolio : PositiveFloat (seconds)
-        The timeout for portfolio to initialize margins and unrealized PnLs.
-    timeout_disconnection : PositiveFloat (seconds)
-        The timeout for all engine clients to disconnect.
-    check_residuals_delay : PositiveFloat (seconds)
-        The delay after stopping the node to check residual state before final shutdown.
-    data_clients : Dict[str, Dict[str, Any]], optional
-        The data client configurations.
-    exec_clients : Dict[str, Dict[str, Any]], optional
-        The execution client configurations.
-    """
-
-    trader_id: str = "TRADER-000"
-    log_level: str = "INFO"
-    cache: Optional[CacheConfig] = None
-    cache_database: Optional[CacheDatabaseConfig] = None
-    data_engine: Optional[LiveDataEngineConfig] = None
-    risk_engine: Optional[LiveRiskEngineConfig] = None
-    exec_engine: Optional[LiveExecEngineConfig] = None
-    loop_debug: bool = False
-    load_strategy_state: bool = True
-    save_strategy_state: bool = True
-    timeout_connection: PositiveFloat = 10.0
-    timeout_reconciliation: PositiveFloat = 10.0
-    timeout_portfolio: PositiveFloat = 10.0
-    timeout_disconnection: PositiveFloat = 10.0
-    check_residuals_delay: PositiveFloat = 10.0
-    data_clients: Dict[str, Dict[str, Any]] = {}
-    exec_clients: Dict[str, Dict[str, Any]] = {}
 
 
 class TradingNode:
@@ -141,7 +80,7 @@ class TradingNode:
         Raises
         ------
         TypeError
-            If config is not of type `TradingNodeConfig`.
+            If `config` is not of type `TradingNodeConfig`.
 
         """
         if config is None:
@@ -273,6 +212,11 @@ class TradingNode:
         if config.load_strategy_state:
             self.trader.load()
 
+        # Setup persistence (requires trader)
+        self.persistence_writers: List[Any] = []
+        if config.persistence:
+            self._setup_persistence(config=config.persistence)
+
         self._builder = TradingNodeBuilder(
             loop=self._loop,
             data_engine=self._data_engine,
@@ -348,7 +292,7 @@ class TradingNode:
         Raises
         ------
         KeyError
-            If handler already registered.
+            If `handler` already registered.
 
         """
         self._logger.register_sink(handler=handler)
@@ -367,9 +311,9 @@ class TradingNode:
         Raises
         ------
         ValueError
-            If name is not a valid string.
+            If `name` is not a valid string.
         KeyError
-            If name has already been added.
+            If `name` has already been added.
 
         """
         self._builder.add_data_client_factory(name, factory)
@@ -388,9 +332,9 @@ class TradingNode:
         Raises
         ------
         ValueError
-            If name is not a valid string.
+            If `name` is not a valid string.
         KeyError
-            If name has already been added.
+            If `name` has already been added.
 
         """
         self._builder.add_exec_client_factory(name, factory)
@@ -406,7 +350,7 @@ class TradingNode:
         self._builder.build_exec_clients(self._config.exec_clients)
         self._is_built = True
 
-    def start(self) -> None:
+    def start(self) -> Optional[asyncio.Task]:
         """
         Start the trading node.
         """
@@ -418,12 +362,14 @@ class TradingNode:
 
         try:
             if self._loop.is_running():
-                self._loop.create_task(self._run())
+                return self._loop.create_task(self._run())
             else:
                 self._loop.run_until_complete(self._run())
+                return None
 
         except RuntimeError as ex:
             self._log.exception(ex)
+            return None
 
     def stop(self) -> None:
         """
@@ -527,6 +473,28 @@ class TradingNode:
             self._loop.add_signal_handler(sig, self._loop_sig_handler, sig)
         self._log.debug(f"Event loop {signals} handling setup.")
 
+    def _setup_persistence(self, config: PersistenceConfig) -> None:
+        # Setup persistence
+        path = f"{config.catalog_path}/live/{self.instance_id}.feather"
+        writer = FeatherWriter(
+            path=path, fs_protocol=config.fs_protocol, flush_interval=config.flush_interval
+        )
+        self.persistence_writers.append(writer)
+        self.trader.subscribe("*", writer.write)
+        self._log.info(f"Persisting data & events to {path=}")
+
+        # Setup logging
+        if config.persist_logs:
+
+            def sink(record, f):
+                f.write(orjson.dumps(record) + b"\n")
+
+            path = f"{config.catalog_path}/logs/{self.instance_id}.log"
+            log_sink = open(path, "wb")
+            self.persistence_writers.append(log_sink)
+            self._logger.register_sink(partial(sink, f=log_sink))
+            self._log.info(f"Persisting logs to {path=}")
+
     def _loop_sig_handler(self, sig) -> None:
         self._loop.remove_signal_handler(signal.SIGTERM)
         self._loop.add_signal_handler(signal.SIGINT, lambda: None)
@@ -544,6 +512,10 @@ class TradingNode:
             self._data_engine.start()
             self._exec_engine.start()
             self._risk_engine.start()
+
+            # Connect all clients
+            self._data_engine.connect()
+            self._exec_engine.connect()
 
             # Await engine connection and initialization
             self._log.info(
@@ -694,6 +666,10 @@ class TradingNode:
         for name in timer_names:
             self._log.info(f"Cancelled Timer(name={name}).")
 
+        # Clean up persistence
+        for writer in self.persistence_writers:
+            writer.close()
+
         self._log.info("STOPPED.")
         self._logger.stop()
         self._is_running = False
@@ -727,7 +703,7 @@ class TradingNode:
             self._log.warning("Event loop still running during `cancel_all_tasks`.")
             return
 
-        finish_all_tasks: asyncio.Future = asyncio.tasks.gather(
+        finish_all_tasks: asyncio.Future = asyncio.tasks.gather(  # type: ignore
             *to_cancel,
             loop=self._loop,
             return_exceptions=True,

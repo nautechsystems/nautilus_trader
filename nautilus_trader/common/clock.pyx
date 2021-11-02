@@ -25,6 +25,9 @@ from cpython.datetime cimport timedelta
 from cpython.datetime cimport tzinfo
 from libc.stdint cimport int64_t
 
+from nautilus.api.core cimport unix_timestamp
+from nautilus.api.core cimport unix_timestamp_ms
+from nautilus.api.core cimport unix_timestamp_ns
 from nautilus_trader.common.timer cimport LoopTimer
 from nautilus_trader.common.timer cimport TestTimer
 from nautilus_trader.common.timer cimport ThreadTimer
@@ -32,8 +35,7 @@ from nautilus_trader.common.timer cimport TimeEventHandler
 from nautilus_trader.common.uuid cimport UUIDFactory
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.datetime cimport nanos_to_secs
-from nautilus_trader.core.time cimport unix_timestamp
-from nautilus_trader.core.time cimport unix_timestamp_ns
+from nautilus_trader.core.datetime import nanos_to_millis
 
 
 cdef class Clock:
@@ -77,9 +79,24 @@ cdef class Clock:
         """
         raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
+    cpdef int64_t timestamp_ms(self) except *:
+        """
+        Return the current UNIX time in milliseconds (ms).
+
+        Returns
+        -------
+        int64
+
+        References
+        ----------
+        https://en.wikipedia.org/wiki/Unix_time
+
+        """
+        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
+
     cpdef int64_t timestamp_ns(self) except *:
         """
-        Return the current UNIX time in nanoseconds.
+        Return the current UNIX time in nanoseconds (ns).
 
         Returns
         -------
@@ -169,7 +186,7 @@ cdef class Clock:
         Raises
         ------
         ValueError
-            If name is not a valid string.
+            If `name` is not a valid string.
 
         """
         Condition.valid_string(name, "name")
@@ -186,7 +203,7 @@ cdef class Clock:
         Raises
         ------
         TypeError
-            If handler is not of type `Callable`.
+            If `handler` is not of type `Callable`.
 
         """
         Condition.callable(handler, "handler")
@@ -219,13 +236,13 @@ cdef class Clock:
         Raises
         ------
         ValueError
-            If name is not unique for this clock.
+            If `name` is not unique for this clock.
         ValueError
-            If alert_time is not >= the clocks current time.
+            If `alert_time` is not >= the clocks current time.
         TypeError
-            If handler is not of type `Callable` or ``None``.
+            If `handler` is not of type `Callable` or ``None``.
         ValueError
-            If handler is ``None`` and no default handler is registered.
+            If `handler` is ``None`` and no default handler is registered.
 
         """
         Condition.not_none(name, "name")
@@ -274,13 +291,13 @@ cdef class Clock:
         Raises
         ------
         ValueError
-            If name is not unique for this clock.
+            If `name` is not unique for this clock.
         ValueError
-            If alert_time is not >= the clocks current time.
+            If `alert_time` is not >= the clocks current time.
         TypeError
-            If callback is not of type `Callable` or ``None``.
+            If `callback` is not of type `Callable` or ``None``.
         ValueError
-            If callback is ``None`` and no default handler is registered.
+            If `callback` is ``None`` and no default handler is registered.
 
         """
         Condition.not_none(name, "name")
@@ -330,17 +347,17 @@ cdef class Clock:
         Raises
         ------
         ValueError
-            If name is not unique for this clock.
+            If `name` is not unique for this clock.
         ValueError
-            If interval is not positive (> 0).
+            If `interval` is not positive (> 0).
         ValueError
-            If stop_time is not ``None`` and stop_time < time_now.
+            If `stop_time` is not ``None`` and `stop_time` < time now.
         ValueError
-            If stop_time is not ``None`` and start_time + interval > stop_time.
+            If `stop_time` is not ``None`` and `start_time` + `interval` > `stop_time`.
         TypeError
-            If handler is not of type `Callable` or ``None``.
+            If `handler` is not of type `Callable` or ``None``.
         ValueError
-            If handler is ``None`` and no default handler is registered.
+            If `handler` is ``None`` and no default handler is registered.
 
         """
         cdef datetime now = self.utc_now()  # Call here for greater accuracy
@@ -405,17 +422,17 @@ cdef class Clock:
         Raises
         ------
         ValueError
-            If name is not unique for this clock.
+            If `name` is not unique for this clock.
         ValueError
-            If interval is not positive (> 0).
+            If `interval` is not positive (> 0).
         ValueError
-            If stop_time is not ``None`` and stop_time < time_now.
+            If `stop_time` is not ``None`` and `stop_time` < time now.
         ValueError
-            If stop_time is not ``None`` and start_time + interval > stop_time.
+            If `stop_time` is not ``None`` and `start_time` + interval > `stop_time`.
         TypeError
-            If callback is not of type `Callable` or ``None``.
+            If `callback` is not of type `Callable` or ``None``.
         ValueError
-            If callback is ``None`` and no default handler is registered.
+            If `callback` is ``None`` and no default handler is registered.
 
         """
         Condition.valid_string(name, "name")
@@ -554,7 +571,7 @@ cdef class TestClock(Clock):
 
         Returns
         -------
-        datetime
+        pd.Timestamp
             The current tz-aware UTC time of the clock.
 
         """
@@ -574,6 +591,21 @@ cdef class TestClock(Clock):
 
         """
         return nanos_to_secs(self._time_ns)
+
+    cpdef int64_t timestamp_ms(self) except *:
+        """
+        Return the current UNIX time in milliseconds (ms).
+
+        Returns
+        -------
+        double
+
+        References
+        ----------
+        https://en.wikipedia.org/wiki/Unix_time
+
+        """
+        return nanos_to_millis(self._time_ns)
 
     cpdef int64_t timestamp_ns(self) except *:
         """
@@ -619,7 +651,7 @@ cdef class TestClock(Clock):
         Raises
         ------
         ValueError
-            If to_time is < the clocks current time.
+            If `to_time` is < the clocks current time.
 
         """
         # Ensure monotonic
@@ -700,6 +732,21 @@ cdef class LiveClock(Clock):
         """
         return unix_timestamp()
 
+    cpdef int64_t timestamp_ms(self) except *:
+        """
+        Return the current UNIX time in milliseconds (ms).
+
+        Returns
+        -------
+        double
+
+        References
+        ----------
+        https://en.wikipedia.org/wiki/Unix_time
+
+        """
+        return unix_timestamp_ms()
+
     cpdef int64_t timestamp_ns(self) except *:
         """
         Return the current UNIX time in nanoseconds (ns) from the system clock.
@@ -721,11 +768,11 @@ cdef class LiveClock(Clock):
 
         Returns
         -------
-        datetime
+        pd.Timestamp
             The current tz-aware UTC time of the clock.
 
         """
-        return pd.Timestamp(unix_timestamp_ns(), tz=pytz.utc)
+        return pd.Timestamp.utcnow()
 
     cdef Timer _create_timer(
         self,

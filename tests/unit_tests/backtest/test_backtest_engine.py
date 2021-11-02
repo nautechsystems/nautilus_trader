@@ -28,11 +28,13 @@ from nautilus_trader.model.data.bar import BarSpecification
 from nautilus_trader.model.data.bar import BarType
 from nautilus_trader.model.data.base import DataType
 from nautilus_trader.model.data.base import GenericData
+from nautilus_trader.model.data.venue import InstrumentStatusUpdate
 from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import AggregationSource
 from nautilus_trader.model.enums import BarAggregation
 from nautilus_trader.model.enums import BookAction
 from nautilus_trader.model.enums import BookType
+from nautilus_trader.model.enums import InstrumentStatus
 from nautilus_trader.model.enums import OMSType
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import PriceType
@@ -232,7 +234,7 @@ class TestBacktestEngineData:
         log = "".join(capsys.readouterr())
         assert "Added 2 ETH/USDT.BINANCE OrderBookData elements." in log
 
-    def test_add_order_book_operations_adds_to_engine(self, capsys):
+    def test_add_order_book_deltas_adds_to_engine(self, capsys):
         # Arrange
         engine = BacktestEngine()
         engine.add_instrument(AUDUSD_SIM)
@@ -398,6 +400,34 @@ class TestBacktestEngineData:
         assert "Added USD/JPY.SIM Instrument." in log
         assert "Added 2,000 USD/JPY.SIM-1-MINUTE-BID-EXTERNAL Bar elements." in log
 
+    def test_add_instrument_status_to_engine(self, capsys):
+        # Arrange
+        engine = BacktestEngine()
+
+        data = [
+            InstrumentStatusUpdate(
+                instrument_id=USDJPY_SIM.id,
+                status=InstrumentStatus.CLOSED,
+                ts_init=0,
+                ts_event=0,
+            ),
+            InstrumentStatusUpdate(
+                instrument_id=USDJPY_SIM.id,
+                status=InstrumentStatus.OPEN,
+                ts_init=0,
+                ts_event=0,
+            ),
+        ]
+
+        # Act
+        engine.add_instrument(USDJPY_SIM)
+        engine.add_data(data=data)
+
+        # Assert
+        log = "".join(capsys.readouterr())
+        assert "Added USD/JPY.SIM Instrument." in log
+        assert "Added 2 USD/JPY.SIM InstrumentStatusUpdate elements." in log
+
 
 class TestBacktestWithAddedBars:
     def setup(self):
@@ -478,6 +508,38 @@ class TestBacktestWithAddedBars:
         self.engine.add_strategy(strategy)
 
         # Act
+        self.engine.run()
+
+        # Assert
+        assert strategy.fast_ema.count == 30117
+        assert self.engine.iteration == 180702
+        assert self.engine.portfolio.account(self.venue).balance_total(USD) == Money(977151.62, USD)
+
+    def test_dump_pickled_data(self):
+        # Arrange, # Act, # Assert
+        assert len(self.engine.dump_pickled_data()) == 34_700_594
+
+    def test_load_pickled_data(self):
+        # Arrange
+        bar_type = BarType(
+            instrument_id=GBPUSD_SIM.id,
+            bar_spec=TestStubs.bar_spec_1min_bid(),
+            aggregation_source=AggregationSource.EXTERNAL,  # <-- important
+        )
+        config = EMACrossConfig(
+            instrument_id=str(GBPUSD_SIM.id),
+            bar_type=str(bar_type),
+            trade_size=Decimal(100_000),
+            fast_ema=10,
+            slow_ema=20,
+        )
+        strategy = EMACross(config=config)
+        self.engine.add_strategy(strategy)
+
+        data = self.engine.dump_pickled_data()
+
+        # Act
+        self.engine.load_pickled_data(data)
         self.engine.run()
 
         # Assert

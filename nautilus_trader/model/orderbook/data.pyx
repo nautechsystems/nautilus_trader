@@ -293,7 +293,7 @@ cdef class OrderBookDelta(OrderBookData):
         Parameters
         ----------
         instrument_id : InstrumentId
-            The instrument ID.
+            The instrument ID for the book.
         book_type : BookType {``L1_TBBO``, ``L2_MBP``, ``L3_MBO``}
             The order book type.
         action : BookAction {``ADD``, ``UPDATED``, ``DELETE``, ``CLEAR``}

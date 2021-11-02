@@ -66,7 +66,7 @@ cdef class OrderFactory:
         Raises
         ------
         ValueError
-            If initial_count is negative (< 0).
+            If `initial_count` is negative (< 0).
 
         """
         Condition.not_negative_int(initial_count, "initial_count")
@@ -155,9 +155,9 @@ cdef class OrderFactory:
         Raises
         ------
         ValueError
-            If quantity is not positive (> 0).
+            If `quantity` is not positive (> 0).
         ValueError
-            If time_in_force is other than ``GTC``, ``IOC``, ``FOK`` or ``OC``.
+            If `time_in_force` is other than ``GTC``, ``IOC``, ``FOK`` or ``OC``.
 
         """
         return MarketOrder(
@@ -195,7 +195,7 @@ cdef class OrderFactory:
         """
         Create a new limit order.
 
-        If the time-in-force is GTD then a valid expire time must be given.
+        If the time-in-force is ``GTD`` then a valid expire time must be given.
 
         Parameters
         ----------
@@ -210,7 +210,7 @@ cdef class OrderFactory:
         time_in_force : TimeInForce, optional
             The orders time-in-force.
         expire_time : datetime, optional
-            The order expire time (for GTD orders).
+            The order expire time (for ``GTD`` orders).
         post_only : bool, optional
             If the order will only provide liquidity (make a market).
         reduce_only : bool, optional
@@ -228,13 +228,13 @@ cdef class OrderFactory:
         Raises
         ------
         ValueError
-            If quantity is not positive (> 0).
+            If `quantity` is not positive (> 0).
         ValueError
-            If time_in_force is GTD and expire_time is ``None``.
+            If `time_in_force` is ``GTD`` and `expire_time` is ``None``.
         ValueError
-            If post_only and hidden.
+            If `post_only` and `hidden`.
         ValueError
-            If hidden and post_only.
+            If `hidden` and `post_only`.
 
         """
         return LimitOrder(
@@ -274,7 +274,7 @@ cdef class OrderFactory:
         """
         Create a new stop-market order.
 
-        If the time-in-force is GTD then a valid expire time must be given.
+        If the time-in-force is ``GTD`` then a valid expire time must be given.
 
         Parameters
         ----------
@@ -289,7 +289,7 @@ cdef class OrderFactory:
         time_in_force : TimeInForce, optional
             The orders time-in-force.
         expire_time : datetime, optional
-            The order expire time (for GTD orders).
+            The order expire time (for ``GTD`` orders).
         reduce_only : bool,
             If the order carries the 'reduce-only' execution instruction.
         tags : str, optional
@@ -303,9 +303,9 @@ cdef class OrderFactory:
         Raises
         ------
         ValueError
-            If quantity is not positive (> 0).
+            If `quantity` is not positive (> 0).
         ValueError
-            If time_in_force is GTD and expire_time is ``None``.
+            If `time_in_force` is ``GTD`` and `expire_time` is ``None``.
 
         """
         return StopMarketOrder(
@@ -346,7 +346,7 @@ cdef class OrderFactory:
         """
         Create a new stop-limit order.
 
-        If the time-in-force is GTD then a valid expire time must be given.
+        If the time-in-force is ``GTD`` then a valid expire time must be given.
 
         Parameters
         ----------
@@ -363,7 +363,7 @@ cdef class OrderFactory:
         time_in_force : TimeInForce, optional
             The orders time-in-force.
         expire_time : datetime, optional
-            The order expire time (for GTD orders).
+            The order expire time (for ``GTD`` orders).
         post_only : bool, optional
             If the order will only provide liquidity (make a market).
         reduce_only : bool, optional
@@ -381,13 +381,13 @@ cdef class OrderFactory:
         Raises
         ------
         ValueError
-            If quantity is not positive (> 0).
+            If `quantity` is not positive (> 0).
         ValueError
-            If time_in_force is GTD and expire_time is ``None``.
+            If `time_in_force` is ``GTD`` and `expire_time` is ``None``.
         ValueError
-            If post_only and hidden.
+            If `post_only` and `hidden`.
         ValueError
-            If hidden and post_only.
+            If `hidden` and `post_only`.
 
         """
         return StopLimitOrder(
@@ -464,7 +464,7 @@ cdef class OrderFactory:
         # Validate prices
         if order_side == OrderSide.BUY:
             Condition.true(stop_loss < take_profit, "stop_loss was >= take_profit")
-        else:  # entry_order.side == OrderSide.SELL
+        elif order_side == OrderSide.SELL:
             Condition.true(stop_loss > take_profit, "stop_loss was <= take_profit")
 
         cdef OrderListId order_list_id = OrderListId(str(self._order_list_id))
@@ -551,6 +551,7 @@ cdef class OrderFactory:
         TimeInForce tif=TimeInForce.GTC,
         datetime expire_time=None,
         TimeInForce tif_bracket=TimeInForce.GTC,
+        bint post_only=False,
     ):
         """
         Create a bracket order with a LIMIT entry from the given parameters.
@@ -572,9 +573,11 @@ cdef class OrderFactory:
         tif : TimeInForce {``DAY``, ``GTC``}, optional
             The entry orders time-in-force .
         expire_time : datetime, optional
-            The order expire time (for GTD orders).
+            The order expire time (for ``GTD`` orders).
         tif_bracket : TimeInForce {``DAY``, ``GTC``}, optional
             The bracket orders time-in-force.
+        post_only : bool
+            If the entry order will only provide liquidity (make a market).
 
         Returns
         -------
@@ -583,7 +586,7 @@ cdef class OrderFactory:
         Raises
         ------
         ValueError
-            If `tif` is GTD and `expire_time` is ``None``.
+            If `tif` is ``GTD`` and `expire_time` is ``None``.
         ValueError
             If `tif_bracket` is not either ``DAY`` or ``GTC``.
         ValueError
@@ -603,7 +606,7 @@ cdef class OrderFactory:
             Condition.true(stop_loss < take_profit, "stop_loss was >= take_profit")
             Condition.true(entry > stop_loss, "BUY entry was <= stop_loss")
             Condition.true(entry < take_profit, "BUY entry was >= take_profit")
-        else:  # entry_order.side == OrderSide.SELL
+        elif order_side == OrderSide.SELL:
             Condition.true(stop_loss > take_profit, "stop_loss was <= take_profit")
             Condition.true(entry < stop_loss, "SELL entry was >= stop_loss")
             Condition.true(entry > take_profit, "SELL entry was <= take_profit")
@@ -626,6 +629,7 @@ cdef class OrderFactory:
             expire_time=expire_time,
             init_id=self._uuid_factory.generate(),
             ts_init=self._clock.timestamp_ns(),
+            post_only=post_only,
             order_list_id=order_list_id,
             parent_order_id=None,
             child_order_ids=[stop_loss_client_order_id, take_profit_client_order_id],

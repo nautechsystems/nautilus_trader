@@ -24,7 +24,6 @@ import pytz
 from nautilus_trader.accounting.calculators cimport RolloverInterestCalculator
 from nautilus_trader.backtest.exchange cimport SimulatedExchange
 from nautilus_trader.core.correctness cimport Condition
-from nautilus_trader.core.text cimport pad_string
 from nautilus_trader.model.c_enums.asset_class cimport AssetClass
 from nautilus_trader.model.c_enums.price_type cimport PriceType
 from nautilus_trader.model.currency cimport Currency
@@ -116,7 +115,7 @@ cdef class FXRolloverInterestModule(SimulationModule):
             The current time in the simulated exchange.
 
         """
-        cdef datetime now = pd.Timestamp(now_ns, tz=pytz.utc)
+        cdef datetime now = pd.Timestamp(now_ns, tz="UTC")
         cdef datetime rollover_local
         if self._day_number != now.day:
             # Set account statistics for new day
@@ -204,8 +203,7 @@ cdef class FXRolloverInterestModule(SimulationModule):
         account_balances_starting = ', '.join([b.to_str() for b in self._exchange.starting_balances])
         account_starting_length = len(account_balances_starting)
         rollover_totals = ', '.join([b.to_str() for b in self._rollover_totals.values()])
-        rollover_interest = pad_string(rollover_totals, account_starting_length)
-        log.info(f"Rollover interest (totals):  {rollover_interest}")
+        log.info(f"Rollover interest (totals): {rollover_totals}")
 
     cpdef void reset(self) except *:
         self._rollover_time = None  # Initialized at first rollover

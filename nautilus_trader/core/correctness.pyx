@@ -48,7 +48,7 @@ cdef class Condition:
         Raises
         -------
         ValueError
-            If predicate is False.
+            If `predicate` condition is False.
 
         """
         if predicate:
@@ -77,7 +77,7 @@ cdef class Condition:
         Raises
         -------
         ValueError
-            If predicate is True.
+            If `predicate` condition is True.
 
         """
         if not predicate:
@@ -99,14 +99,14 @@ cdef class Condition:
         argument : object
             The argument to check.
         param : str
-            The arguments parameter name.
+            The argument parameter name.
         ex_type : Exception, optional
             The custom exception type to be raised on a failed check.
 
         Raises
         -------
         TypeError
-            If argument is not ``None``.
+            If `argument` is not ``None``.
 
         """
         if argument is None:
@@ -128,14 +128,14 @@ cdef class Condition:
         argument : object
             The argument to check.
         param : str
-            The arguments parameter name.
+            The argument parameter name.
         ex_type : Exception, optional
             The custom exception type to be raised on a failed check.
 
         Raises
         -------
         TypeError
-            If argument is ``None``.
+            If `argument` is ``None``.
 
         """
         if argument is not None:
@@ -164,14 +164,14 @@ cdef class Condition:
         expected : object or tuple of objects
             The expected class type.
         param : str
-            The arguments parameter name.
+            The argument parameter name.
         ex_type : Exception, optional
             The custom exception type to be raised on a failed check.
 
         Raises
         -------
         TypeError
-            If object is not of the expected type.
+            If `object` is not of the expected type.
 
         """
         if isinstance(argument, expected):
@@ -200,14 +200,14 @@ cdef class Condition:
         expected : object
             The expected class type (if not ``None``).
         param : str
-            The arguments parameter name.
+            The argument parameter name.
         ex_type : Exception, optional
             The custom exception type to be raised on a failed check.
 
         Raises
         -------
         TypeError
-            If object is not ``None`` and not of the expected type.
+            If `object` is not ``None`` and not of the expected type.
 
         """
         if argument is None:
@@ -225,14 +225,14 @@ cdef class Condition:
         argument : object
             The object to check.
         param : str
-            The objects parameter name.
+            The object parameter name.
         ex_type : Exception, optional
             The custom exception type to be raised on a failed check.
 
         Raises
         -------
         TypeError
-            If argument is not of type `Callable`.
+            If `argument` is not of type `Callable`.
 
         """
         if PyCallable_Check(argument):
@@ -254,14 +254,14 @@ cdef class Condition:
         argument : object
             The object to check.
         param : str
-            The objects parameter name.
+            The object parameter name.
         ex_type : Exception, optional
             The custom exception type to be raised on a failed check.
 
         Raises
         -------
         TypeError
-            If argument is not ``None`` and not of type `Callable`.
+            If `argument` is not ``None`` and not of type `Callable`.
 
         """
         if argument is None:
@@ -367,14 +367,14 @@ cdef class Condition:
         expected_type : type
             The expected element type (if not empty).
         param : str
-            The lists parameter name.
+            The list parameter name.
         ex_type : Exception, optional
             The custom exception type to be raised on a failed check.
 
         Raises
         -------
         TypeError
-             If list is not empty and contains a type other than `expected_type`.
+             If `argument` is not empty and contains a type other than `expected_type`.
 
         """
         Condition.not_none(argument, param, ex_type)
@@ -409,15 +409,15 @@ cdef class Condition:
         value_type : type
             The expected type of the values (if not empty).
         param : str
-            The dictionaries parameter name.
+            The dictionary parameter name.
         ex_type : Exception, optional
             The custom exception type to be raised on a failed check.
 
         Raises
         -------
         TypeError
-            If dictionary is not empty and contains a key type other than `key_type`.
-            If dictionary is not empty and contains a value type other than `value_type`.
+            If `argument` is not empty and contains a key type other than `key_type`.
+            If `argument` is not empty and contains a value type other than `value_type`.
 
         """
         Condition.not_none(argument, param, ex_type)
@@ -451,7 +451,7 @@ cdef class Condition:
         Raises
         -------
         KeyError
-            If element is not contained in the collection.
+            If `element` is not contained in the `collection`.
 
         """
         Condition.not_none(collection, param2, ex_type)
@@ -493,7 +493,7 @@ cdef class Condition:
         Raises
         -------
         KeyError
-            If element is contained in the collection.
+            If `element` is contained in the `collection`.
 
         """
         Condition.not_none(collection, param2, ex_type)
@@ -518,14 +518,14 @@ cdef class Condition:
         collection : iterable
             The collection to check.
         param : str
-            The collections parameter name.
+            The collection parameter name.
         ex_type : Exception, optional
             The custom exception type to be raised on a failed check.
 
         Raises
         -------
         ValueError
-             If collection is empty.
+             If `collection` is empty.
 
         """
         Condition.not_none(collection, param, ex_type)
@@ -549,14 +549,14 @@ cdef class Condition:
         collection : iterable
             The collection to check.
         param : str
-            The collections parameter name.
+            The collection parameter name.
         ex_type : Exception, optional
             The custom exception type to be raised on a failed check.
 
         Raises
         -------
         ValueError
-             If collection is not empty.
+             If `collection` is not empty.
 
         """
         Condition.not_none(collection, param)
@@ -587,7 +587,7 @@ cdef class Condition:
         Raises
         -------
         ValueError
-             If value is not positive (> 0).
+             If `value` is not positive (> 0).
 
         """
         if value > 0:
@@ -616,7 +616,7 @@ cdef class Condition:
         Raises
         -------
         ValueError
-             If value is not positive (> 0).
+             If `value` is not positive (> 0).
 
         """
         if value > 0:
@@ -645,7 +645,7 @@ cdef class Condition:
         Raises
         -------
         ValueError
-              If value is negative (< 0).
+              If `value` is negative (< 0).
 
         """
         if value >= 0.0:
@@ -674,7 +674,7 @@ cdef class Condition:
         Raises
         -------
         ValueError
-              If value is negative (< 0).
+              If `value` is negative (< 0).
 
         """
         if value >= 0:
@@ -713,7 +713,7 @@ cdef class Condition:
         Raises
         -------
         ValueError
-              If value is not within the range (inclusive of the end points).
+              If `value` is not within the range (inclusive of the end points).
 
         """
         if start <= value <= end:
@@ -753,7 +753,7 @@ cdef class Condition:
         Raises
         -------
         ValueError
-              If value is not within the range (inclusive of the end points).
+              If `value` is not within the range (inclusive of the end points).
 
         """
         if start <= value <= end:
@@ -783,7 +783,7 @@ cdef class Condition:
         Raises
         -------
         ValueError
-              If argument is ``None``, empty or whitespace.
+              If `argument` is ``None``, empty or whitespace.
 
         """
         Condition.not_none(argument, param, ex_type)
@@ -818,7 +818,7 @@ class PyCondition:
         Raises
         -------
         ValueError
-            If condition predicate is False.
+            If `predicate` condition is False.
 
         """
         Condition.true(predicate, fail_msg, ex_type)
@@ -840,7 +840,7 @@ class PyCondition:
         Raises
         -------
         ValueError
-            If condition predicate is True.
+            If `predicate` condition is True.
 
         """
         Condition.false(predicate, fail_msg, ex_type)
@@ -862,7 +862,7 @@ class PyCondition:
         Raises
         -------
         TypeError
-            If argument is not ``None``.
+            If `argument` is not ``None``.
 
         """
         Condition.none(argument, param, ex_type)
@@ -884,7 +884,7 @@ class PyCondition:
         Raises
         -------
         TypeError
-            If argument is ``None``.
+            If `argument` is ``None``.
 
         """
         Condition.not_none(argument, param, ex_type)
@@ -908,7 +908,7 @@ class PyCondition:
         Raises
         -------
         TypeError
-            If object is not of the expected type.
+            If `argument` is not of the expected type.
 
         """
         Condition.type(argument, expected, param, ex_type)
@@ -932,7 +932,7 @@ class PyCondition:
         Raises
         -------
         TypeError
-            If object is not ``None`` and not of the expected type.
+            If `argument` is not ``None`` and not of the expected type.
 
         """
         Condition.type_or_none(argument, expected, param, ex_type)
@@ -954,7 +954,7 @@ class PyCondition:
         Raises
         -------
         TypeError
-            If argument is not of type `Callable`.
+            If `argument` is not of type `Callable`.
 
         """
         Condition.callable(argument, param, ex_type)
@@ -976,7 +976,7 @@ class PyCondition:
         Raises
         -------
         TypeError
-            If argument is not ``None`` and not of type `Callable`.
+            If `argument` is not ``None`` and not of type `Callable`.
 
         """
         Condition.callable_or_none(argument, param, ex_type)
@@ -1045,14 +1045,14 @@ class PyCondition:
         expected_type : type
             The expected element type (if not empty).
         param : str
-            The lists parameter name.
+            The list parameter name.
         ex_type : Exception, optional
             The custom exception type to be raised on a failed check.
 
         Raises
         -------
         TypeError
-             If list is not empty and contains a type other than `expected_type`.
+             If `argument` is not empty and contains a type other than `expected_type`.
 
         """
         Condition.list_type(argument, expected_type, param, ex_type)
@@ -1071,15 +1071,15 @@ class PyCondition:
         value_type : type
             The expected type of the values (if not empty).
         param : str
-            The dictionaries parameter name.
+            The dictionary parameter name.
         ex_type : Exception, optional
             The custom exception type to be raised on a failed check.
 
         Raises
         -------
         TypeError
-            If dictionary is not empty and contains a key type other than `key_type`.
-            If dictionary is not empty and contains a value type other than `value_type`.
+            If `argument` is not empty and contains a key type other than `key_type`.
+            If `argument` is not empty and contains a value type other than `value_type`.
 
         """
         Condition.dict_types(argument, key_type, value_type, param, ex_type)
@@ -1096,16 +1096,16 @@ class PyCondition:
         collection : iterable
             The collection to check.
         param1 : str
-            The elements parameter name.
+            The element parameter name.
         param2 : str
-            The collections name.
+            The collection name.
         ex_type : Exception, optional
             The custom exception type to be raised on a failed check.
 
         Raises
         -------
         KeyError
-            If element is not contained in the collection.
+            If `element` is not contained in the `collection`.
 
         """
         Condition.is_in(element, collection, param1, param2, ex_type)
@@ -1131,7 +1131,7 @@ class PyCondition:
         Raises
         -------
         KeyError
-            If element is contained in the collection.
+            If `element` is contained in the `collection`.
 
         """
         Condition.not_in(element, collection, param1, param2, ex_type)
@@ -1146,14 +1146,14 @@ class PyCondition:
         argument : iterable
             The collection to check.
         param : str
-            The collections parameter name.
+            The collection parameter name.
         ex_type : Exception, optional
             The custom exception type to be raised on a failed check.
 
         Raises
         -------
         ValueError
-             If collection is empty.
+             If `collection` is empty.
 
         """
         Condition.not_empty(argument, param, ex_type)
@@ -1168,14 +1168,14 @@ class PyCondition:
         argument : iterable
             The collection to check.
         param : str
-            The collections parameter name.
+            The collection parameter name.
         ex_type : Exception, optional
             The custom exception type to be raised on a failed check.
 
         Raises
         -------
         ValueError
-             If the collection is not empty.
+             If `collection` is not empty.
 
         """
         Condition.empty(argument, param, ex_type)
@@ -1190,14 +1190,14 @@ class PyCondition:
         value : scalar
             The value to check.
         param : str
-            The name of the values parameter.
+            The name of the value parameter.
         ex_type : Exception, optional
             The custom exception type to be raised on a failed check.
 
         Raises
         -------
         ValueError
-             If value is not positive (> 0).
+             If `value` is not positive (> 0).
 
         """
         Condition.positive(value, param, ex_type)
@@ -1212,14 +1212,14 @@ class PyCondition:
         value : int
             The value to check.
         param : str
-            The name of the values parameter.
+            The name of the value parameter.
         ex_type : Exception, optional
             The custom exception type to be raised on a failed check.
 
         Raises
         -------
         ValueError
-             If value is not positive (> 0).
+             If `value` is not positive (> 0).
 
         """
         Condition.positive_int(value, param, ex_type)
@@ -1234,14 +1234,14 @@ class PyCondition:
         value : scalar
             The value to check.
         param : str
-            The name of the values parameter.
+            The name of the value parameter.
         ex_type : Exception, optional
             The custom exception type to be raised on a failed check.
 
         Raises
         -------
         ValueError
-              If value is negative (< 0).
+              If `value` is negative (< 0).
 
         """
         Condition.not_negative(value, param, ex_type)
@@ -1256,14 +1256,14 @@ class PyCondition:
         value : int
             The value to check.
         param : str
-            The name of the values parameter.
+            The name of the value parameter.
         ex_type : Exception, optional
             The custom exception type to be raised on a failed check.
 
         Raises
         -------
         ValueError
-              If value is negative (< 0).
+              If `value` is negative (< 0).
 
         """
         Condition.not_negative_int(value, param, ex_type)
@@ -1282,14 +1282,14 @@ class PyCondition:
         end : scalar
             The end of the range.
         param : str
-            The name of the values parameter.
+            The name of the value parameter.
         ex_type : Exception, optional
             The custom exception type to be raised on a failed check.
 
         Raises
         -------
         ValueError
-              If value is not within the range (inclusive of the end points).
+              If `value` is not within the range (inclusive of the end points).
 
         """
         Condition.in_range(value, start, end, param, ex_type)
@@ -1308,14 +1308,14 @@ class PyCondition:
         end : int
             The end of the range.
         param : str
-            The name of the values parameter.
+            The name of the value parameter.
         ex_type : Exception, optional
             The custom exception type to be raised on a failed check.
 
         Raises
         -------
         ValueError
-              If value is not within the range (inclusive of the end points).
+              If `value` is not within the range (inclusive of the end points).
 
         """
         Condition.in_range_int(value, start, end, param, ex_type)
@@ -1330,14 +1330,14 @@ class PyCondition:
         argument : str
             The string argument to check.
         param : str
-            The arguments parameter name.
+            The argument parameter name.
         ex_type : Exception, optional
             The custom exception type to be raised on a failed check.
 
         Raises
         -------
         ValueError
-              If argument is ``None``, empty or whitespace.
+              If `argument` is ``None``, empty or whitespace.
 
         """
         Condition.valid_string(argument, param, ex_type)

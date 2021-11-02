@@ -51,9 +51,9 @@ cdef class Ladder:
         Raises
         ------
         OverflowError
-            If price_precision is negative (< 0).
+            If `price_precision` is negative (< 0).
         OverflowError
-            If size_precision is negative (< 0).
+            If `size_precision` is negative (< 0).
 
         """
         Condition.not_negative_int(price_precision, "price_precision")
@@ -144,7 +144,7 @@ cdef class Ladder:
         Raises
         ------
         KeyError
-            If order.id is not contained in the order_id_level_index.
+            If `order.id` is not contained in the order ID level index.
 
         """
         Condition.not_none(order, "order")
@@ -248,9 +248,10 @@ cdef class Ladder:
         cdef double cumulative_denominator = 0.0
         cdef double current = 0.0
         cdef double target = order.size if depth_type == DepthType.VOLUME else order.price * order.size
+        cdef double remainder = 0.0
+
         cdef Level level
         cdef Order book_order
-
         for level in self.levels:
             if self.reverse and level.price < order.price:
                 break

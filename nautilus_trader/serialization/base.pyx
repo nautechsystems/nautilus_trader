@@ -22,6 +22,7 @@ from nautilus_trader.model.commands.trading cimport CancelOrder
 from nautilus_trader.model.commands.trading cimport ModifyOrder
 from nautilus_trader.model.commands.trading cimport SubmitOrder
 from nautilus_trader.model.commands.trading cimport SubmitOrderList
+from nautilus_trader.model.data.bar cimport Bar
 from nautilus_trader.model.data.tick cimport QuoteTick
 from nautilus_trader.model.data.tick cimport TradeTick
 from nautilus_trader.model.data.ticker cimport Ticker
@@ -57,7 +58,7 @@ from nautilus_trader.model.instruments.option cimport Option
 
 # Default mappings for Nautilus objects
 
-_OBJECT_TO_DICT_MAP = {
+_OBJECT_TO_DICT_MAP: Dict[str, Callable[[None], Dict]] = {
     CancelOrder.__name__: CancelOrder.to_dict_c,
     SubmitOrder.__name__: SubmitOrder.to_dict_c,
     SubmitOrderList.__name__: SubmitOrderList.to_dict_c,
@@ -92,6 +93,7 @@ _OBJECT_TO_DICT_MAP = {
     TradeTick.__name__: TradeTick.to_dict_c,
     Ticker.__name__: Ticker.to_dict_c,
     QuoteTick.__name__: QuoteTick.to_dict_c,
+    Bar.__name__: Bar.to_dict_c,
     InstrumentStatusUpdate.__name__: InstrumentStatusUpdate.to_dict_c,
     VenueStatusUpdate.__name__: VenueStatusUpdate.to_dict_c,
     InstrumentClosePrice.__name__: InstrumentClosePrice.to_dict_c,
@@ -99,7 +101,7 @@ _OBJECT_TO_DICT_MAP = {
 
 
 # Default mappings for Nautilus objects
-_OBJECT_FROM_DICT_MAP = {
+_OBJECT_FROM_DICT_MAP: Dict[str, Callable[[Dict], Any]] = {
     CancelOrder.__name__: CancelOrder.from_dict_c,
     SubmitOrder.__name__: SubmitOrder.from_dict_c,
     SubmitOrderList.__name__: SubmitOrderList.from_dict_c,
@@ -134,6 +136,7 @@ _OBJECT_FROM_DICT_MAP = {
     TradeTick.__name__: TradeTick.from_dict_c,
     Ticker.__name__: Ticker.from_dict_c,
     QuoteTick.__name__: QuoteTick.from_dict_c,
+    Bar.__name__: Bar.from_dict_c,
     InstrumentStatusUpdate.__name__: InstrumentStatusUpdate.from_dict_c,
     VenueStatusUpdate.__name__: VenueStatusUpdate.from_dict_c,
     InstrumentClosePrice.__name__: InstrumentClosePrice.from_dict_c,
@@ -141,7 +144,7 @@ _OBJECT_FROM_DICT_MAP = {
 
 
 cpdef void register_serializable_object(
-    object obj,
+    obj,
     to_dict: Callable[[Any], Dict[str, Any]],
     from_dict: Callable[[Dict[str, Any]], Any],
 ) except *:

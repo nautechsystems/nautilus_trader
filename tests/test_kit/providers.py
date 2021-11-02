@@ -236,6 +236,42 @@ class TestInstrumentProvider:
     """
 
     @staticmethod
+    def adabtc_binance() -> CurrencySpot:
+        """
+        Return the Binance ADA/BTC instrument for backtesting.
+
+        Returns
+        -------
+        CurrencySpot
+
+        """
+        return CurrencySpot(
+            instrument_id=InstrumentId(
+                symbol=Symbol("ADA/BTC"),
+                venue=Venue("BINANCE"),
+            ),
+            base_currency=ADA,
+            quote_currency=BTC,
+            price_precision=8,
+            size_precision=0,
+            price_increment=Price(1e-08, precision=8),
+            size_increment=Quantity.from_int(1),
+            lot_size=None,
+            max_quantity=Quantity.from_int(90000000),
+            min_quantity=Quantity.from_int(1),
+            max_notional=None,
+            min_notional=Money(0.00010000, BTC),
+            max_price=Price(1000, precision=8),
+            min_price=Price(1e-8, precision=8),
+            margin_init=Decimal("0"),
+            margin_maint=Decimal("0"),
+            maker_fee=Decimal("0.0010"),
+            taker_fee=Decimal("0.0010"),
+            ts_event=0,
+            ts_init=0,
+        )
+
+    @staticmethod
     def btcusdt_binance() -> CurrencySpot:
         """
         Return the Binance BTC/USDT instrument for backtesting.
@@ -308,9 +344,9 @@ class TestInstrumentProvider:
         )
 
     @staticmethod
-    def adabtc_binance() -> CurrencySpot:
+    def ethusd_ftx() -> CurrencySpot:
         """
-        Return the Binance ADA/BTC instrument for backtesting.
+        Return the Binance ETH/USDT instrument for backtesting.
 
         Returns
         -------
@@ -319,26 +355,26 @@ class TestInstrumentProvider:
         """
         return CurrencySpot(
             instrument_id=InstrumentId(
-                symbol=Symbol("ADA/BTC"),
-                venue=Venue("BINANCE"),
+                symbol=Symbol("ETH/USD"),
+                venue=Venue("FTX"),
             ),
-            base_currency=ADA,
-            quote_currency=BTC,
-            price_precision=8,
-            size_precision=0,
-            price_increment=Price(1e-08, precision=8),
-            size_increment=Quantity.from_int(1),
+            base_currency=ETH,
+            quote_currency=USD,
+            price_precision=1,
+            size_precision=3,
+            price_increment=Price(1e-01, precision=1),
+            size_increment=Quantity(1e-03, precision=3),
             lot_size=None,
-            max_quantity=Quantity.from_int(90000000),
-            min_quantity=Quantity.from_int(1),
+            max_quantity=Quantity(9000, precision=3),
+            min_quantity=Quantity(1e-05, precision=3),
             max_notional=None,
-            min_notional=Money(0.00010000, BTC),
-            max_price=Price(1000, precision=8),
-            min_price=Price(1e-8, precision=8),
-            margin_init=Decimal("0"),
-            margin_maint=Decimal("0"),
-            maker_fee=Decimal("0.0010"),
-            taker_fee=Decimal("0.0010"),
+            min_notional=Money(10.00, USD),
+            max_price=None,
+            min_price=Price(0.1, precision=1),
+            margin_init=Decimal("0.9"),
+            margin_maint=Decimal("0.9"),
+            maker_fee=Decimal("0.0002"),
+            taker_fee=Decimal("0.0007"),
             ts_event=0,
             ts_init=0,
         )
@@ -436,7 +472,7 @@ class TestInstrumentProvider:
         Raises
         ------
         ValueError
-            If the instrument_id.instrument_id length is not in range [6, 7].
+            If `symbol` length is not in range [6, 7].
 
         """
         if venue is None:
@@ -491,12 +527,12 @@ class TestInstrumentProvider:
             event_country_code="GB",
             event_id="29678534",
             event_name="NFL",
-            event_open_date=pd.Timestamp("2022-02-07 23:30:00+00:00").to_pydatetime(),
+            event_open_date=pd.Timestamp("2022-02-07 23:30:00+00:00"),
             event_type_id="6423",
             event_type_name="American Football",
             market_id="1.179082386",
             market_name="AFC Conference Winner",
-            market_start_time=pd.Timestamp("2022-02-07 23:30:00+00:00").to_pydatetime(),
+            market_start_time=pd.Timestamp("2022-02-07 23:30:00+00:00"),
             market_type="SPECIAL",
             selection_handicap="",
             selection_id="50214",
@@ -504,6 +540,7 @@ class TestInstrumentProvider:
             currency="GBP",
             ts_event=0,
             ts_init=0,
+            tick_scheme_name="BETFAIR",
         )
 
     @staticmethod

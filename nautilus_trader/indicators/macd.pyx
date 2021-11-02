@@ -54,11 +54,11 @@ cdef class MovingAverageConvergenceDivergence(Indicator):
         Raises
         ------
         ValueError
-            If fast_period is not positive (> 0).
+            If `fast_period` is not positive (> 0).
         ValueError
-            If slow_period is not positive (> 0).
+            If `slow_period` is not positive (> 0).
         ValueError
-            If fast_period is not < slow_period.
+            If `fast_period` is not < `slow_period`.
 
         """
         Condition.positive_int(fast_period, "fast_period")

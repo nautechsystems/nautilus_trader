@@ -29,8 +29,6 @@ Alternative implementations can be written on top of the generic engine - which
 just need to override the `execute`, `process`, `send` and `receive` methods.
 """
 
-import pydantic
-
 from cpython.datetime cimport timedelta
 
 from typing import Callable, Optional
@@ -74,13 +72,7 @@ from nautilus_trader.model.orderbook.book cimport OrderBook
 from nautilus_trader.model.orderbook.data cimport OrderBookData
 from nautilus_trader.msgbus.bus cimport MessageBus
 
-
-class DataEngineConfig(pydantic.BaseModel):
-    """
-    Configuration for ``DataEngine`` instances.
-    """
-
-    pass  # No configuration currently
+from nautilus_trader.data.config import DataEngineConfig
 
 
 cdef class DataEngine(Component):
@@ -167,7 +159,7 @@ cdef class DataEngine(Component):
         Raises
         ------
         ValueError
-            If client is already registered.
+            If `client` is already registered.
 
         """
         Condition.not_none(client, "client")
@@ -1142,7 +1134,6 @@ cdef class DataEngine(Component):
                 clock=self._clock,
                 logger=self._log.get_logger(),
             )
-
             self._hydrate_aggregator(client, aggregator, bar_type)
         elif bar_type.spec.aggregation == BarAggregation.TICK:
             aggregator = TickBarAggregator(

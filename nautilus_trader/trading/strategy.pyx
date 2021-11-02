@@ -27,8 +27,6 @@ attempts to operate without a managing `Trader` instance.
 
 from typing import Optional
 
-import pydantic
-
 from nautilus_trader.cache.base cimport CacheFacade
 from nautilus_trader.common.actor cimport Actor
 from nautilus_trader.common.clock cimport Clock
@@ -70,21 +68,7 @@ from nautilus_trader.model.orders.market cimport MarketOrder
 from nautilus_trader.model.position cimport Position
 from nautilus_trader.msgbus.bus cimport MessageBus
 
-
-class TradingStrategyConfig(pydantic.BaseModel):
-    """
-    The base model for all trading strategy configurations.
-
-    order_id_tag : str
-        The unique order ID tag for the strategy. Must be unique
-        amongst all running strategies for a particular trader ID.
-    oms_type : OMSType
-        The order management system type for the strategy. This will determine
-        how the `ExecutionEngine` handles position IDs (see docs).
-    """
-
-    order_id_tag: str = "000"
-    oms_type: str = "HEDGING"
+from nautilus_trader.trading.config import TradingStrategyConfig
 
 
 cdef class TradingStrategy(Actor):
@@ -118,18 +102,19 @@ cdef class TradingStrategy(Actor):
         Raises
         ------
         TypeError
-            If config is not of type `TradingStrategyConfig`.
+            If `config` is not of type `TradingStrategyConfig`.
 
         """
         if config is None:
             config = TradingStrategyConfig()
         Condition.type(config, TradingStrategyConfig, "config")
 
-        self.oms_type = OMSTypeParser.from_str(config.oms_type)
+        super().__init__(config)
+        # Assign strategy ID after base class initialized
+        component_id = type(self).__name__ if config.component_id is None else config.component_id
+        self.id = StrategyId(f"{component_id}-{config.order_id_tag}")
 
-        # Assign strategy ID
-        strategy_id = StrategyId(f"{type(self).__name__}-{config.order_id_tag}")
-        super().__init__(component_id=strategy_id, config=config.dict())
+        self.oms_type = OMSTypeParser.from_str(config.oms_type)
 
         # Indicators
         self._indicators = []             # type: list[Indicator]
@@ -250,6 +235,9 @@ cdef class TradingStrategy(Actor):
 
         """
         Condition.not_none(trader_id, "trader_id")
+        Condition.not_none(portfolio, "portfolio")
+        Condition.not_none(msgbus, "msgbus")
+        Condition.not_none(cache, "cache")
         Condition.not_none(clock, "clock")
         Condition.not_none(logger, "logger")
 
@@ -393,7 +381,7 @@ cdef class TradingStrategy(Actor):
         Raises
         ------
         RuntimeError
-            If strategy is not registered with a trader.
+            If `strategy` is not registered with a trader.
 
         Warnings
         --------
@@ -431,7 +419,7 @@ cdef class TradingStrategy(Actor):
         Raises
         ------
         RuntimeError
-            If strategy is not registered with a trader.
+            If `strategy` is not registered with a trader.
 
         Warnings
         --------
@@ -465,6 +453,7 @@ cdef class TradingStrategy(Actor):
 
         """
         Condition.not_none(data, "data")
+        Condition.true(self.trader_id is not None, "The strategy has not been registered")
 
         self._msgbus.publish_c(
             topic=f"data.strategy.{type(data).__name__}.{self.id}",
@@ -493,7 +482,7 @@ cdef class TradingStrategy(Actor):
 
         """
         Condition.not_none(order, "order")
-        Condition.not_none(self.trader_id, "self.trader_id")
+        Condition.true(self.trader_id is not None, "The strategy has not been registered")
 
         # Publish initialized event
         self._msgbus.publish_c(
@@ -526,7 +515,7 @@ cdef class TradingStrategy(Actor):
 
         """
         Condition.not_none(order_list, "order_list")
-        Condition.not_none(self.trader_id, "self.trader_id")
+        Condition.true(self.trader_id is not None, "The strategy has not been registered")
 
         # Publish initialized events
         cdef Order order
@@ -579,7 +568,7 @@ cdef class TradingStrategy(Actor):
         Raises
         ------
         ValueError
-            If trigger is not ``None`` and order.type != ``STOP_LIMIT``.
+            If `trigger` is not ``None`` and `order.type` != ``STOP_LIMIT``.
 
         References
         ----------
@@ -587,9 +576,9 @@ cdef class TradingStrategy(Actor):
 
         """
         Condition.not_none(order, "order")
-        Condition.not_none(self.trader_id, "self.trader_id")
         if trigger is not None:
             Condition.equal(order.type, OrderType.STOP_LIMIT, "order.type", "STOP_LIMIT")
+        Condition.true(self.trader_id is not None, "The strategy has not been registered")
 
         cdef bint updating = False  # Set validation flag (must become true)
 
@@ -664,7 +653,7 @@ cdef class TradingStrategy(Actor):
 
         """
         Condition.not_none(order, "order")
-        Condition.not_none(self.trader_id, "self.trader_id")
+        Condition.true(self.trader_id is not None, "The strategy has not been registered")
 
         if order.venue_order_id is None:
             self.log.error(
@@ -704,6 +693,7 @@ cdef class TradingStrategy(Actor):
 
         """
         # instrument_id can be None
+        Condition.true(self.trader_id is not None, "The strategy has not been registered")
 
         cdef list working_orders = self.cache.orders_working(
             venue=None,  # Faster query filtering
@@ -740,6 +730,7 @@ cdef class TradingStrategy(Actor):
         Condition.not_none(position, "position")
         Condition.not_none(self.trader_id, "self.trader_id")
         Condition.not_none(self.order_factory, "self.order_factory")
+        Condition.true(self.trader_id is not None, "The strategy has not been registered")
 
         if position.is_closed_c():
             self.log.warning(
@@ -787,6 +778,7 @@ cdef class TradingStrategy(Actor):
 
         """
         # instrument_id can be None
+        Condition.true(self.trader_id is not None, "The strategy has not been registered")
 
         cdef list positions_open = self.cache.positions_open(
             venue=None,  # Faster query filtering

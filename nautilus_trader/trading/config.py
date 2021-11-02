@@ -20,11 +20,44 @@ from importlib.machinery import ModuleSpec
 from types import ModuleType
 from typing import Optional, Union
 
-import pydantic
-
+from nautilus_trader.common.config import ActorConfig
+from nautilus_trader.common.config import ImportableActorConfig
 from nautilus_trader.core.correctness import PyCondition
-from nautilus_trader.trading.strategy import TradingStrategy
-from nautilus_trader.trading.strategy import TradingStrategyConfig
+
+
+class TradingStrategyConfig(ActorConfig):
+    """
+    The base model for all trading strategy configurations.
+
+    component_id : str, optional
+        The unique component ID for the strategy. Will become the strategy ID if not None.
+    order_id_tag : str
+        The unique order ID tag for the strategy. Must be unique
+        amongst all running strategies for a particular trader ID.
+    oms_type : OMSType
+        The order management system type for the strategy. This will determine
+        how the `ExecutionEngine` handles position IDs (see docs).
+    """
+
+    order_id_tag: str = "000"
+    oms_type: str = "HEDGING"
+
+
+class ImportableStrategyConfig(ImportableActorConfig):
+    """
+    Represents a trading strategy configuration for one specific backtest run.
+
+    path : str, optional
+        The fully-qualified name of the module.
+    source : bytes, optional
+        The strategy source code.
+    config : Union[TradingStrategyConfig, str]
+
+    """
+
+    path: Optional[str]
+    source: Optional[bytes]
+    config: Union[TradingStrategyConfig, str]
 
 
 class StrategyFactory:
@@ -33,7 +66,7 @@ class StrategyFactory:
     """
 
     @staticmethod
-    def create(config: "ImportableStrategyConfig") -> TradingStrategy:
+    def create(config: ImportableStrategyConfig):
         """
         Create a trading strategy from the given configuration.
 
@@ -49,7 +82,7 @@ class StrategyFactory:
         Raises
         ------
         TypeError
-            If config is not of type `ImportableStrategyConfig`.
+            If `config` is not of type `ImportableStrategyConfig`.
 
         """
         PyCondition.type(config, ImportableStrategyConfig, "config")
@@ -69,34 +102,3 @@ class StrategyFactory:
 
             exec(config.source, module.__dict__)  # noqa
             sys.modules[config.module] = module
-
-
-class ImportableStrategyConfig(pydantic.BaseModel):
-    """
-    Represents the trading strategy configuration for one specific backtest run.
-
-    path : str, optional
-        The fully-qualified name of the module.
-    source : bytes, optional
-        The strategy source code.
-    config : Union[TradingStrategyConfig, str]
-
-    """
-
-    path: Optional[str]
-    source: Optional[bytes]
-    config: Union[TradingStrategyConfig, str]
-
-    def _check_path(self):
-        assert self.path, "`path` not set, can't parse module"
-        assert ":" in self.path, "Path variable should be of the form: path.to.module:class"
-
-    @property
-    def module(self):
-        self._check_path()
-        return self.path.rsplit(":")[0]
-
-    @property
-    def cls(self):
-        self._check_path()
-        return self.path.rsplit(":")[1]

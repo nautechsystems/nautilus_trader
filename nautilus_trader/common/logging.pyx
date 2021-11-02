@@ -15,8 +15,6 @@
 
 from typing import Optional
 
-import pytz
-
 from cpython.datetime cimport timedelta
 
 import asyncio
@@ -31,7 +29,6 @@ from platform import python_version
 import numpy as np
 import pandas as pd
 import psutil
-import scipy
 
 from nautilus_trader import __version__
 
@@ -162,7 +159,7 @@ cdef class Logger:
         Raises
         ------
         KeyError
-            If handler already registered.
+            If `handler` already registered.
 
         """
         Condition.not_none(handler, "handler")
@@ -254,7 +251,7 @@ cdef class Logger:
             color_cmd = _RED
 
         # Return the formatted log message from the given arguments
-        cdef str dt = format_iso8601_ns(pd.Timestamp(record["timestamp"], tz=pytz.utc))
+        cdef str dt = format_iso8601_ns(pd.Timestamp(record["timestamp"], tz="UTC"))
         cdef str trader_id_str = f"{self.trader_id.value}." if self.trader_id is not None else ""
         return (f"{_BOLD}{dt}{_ENDC} {color_cmd}"
                 f"[{LogLevelParser.to_str(level)}] "
@@ -546,7 +543,6 @@ cpdef void nautilus_header(LoggerAdapter logger) except *:
     logger.info(f"nautilus-trader {__version__}")
     logger.info(f"python {python_version()}")
     logger.info(f"numpy {np.__version__}")
-    logger.info(f"scipy {scipy.__version__}")
     logger.info(f"pandas {pd.__version__}")
 
 

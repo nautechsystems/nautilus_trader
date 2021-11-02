@@ -145,8 +145,7 @@ def scan_files(glob_path, compression="infer", **kw) -> List[OpenFile]:
 
 def split_and_serialize(objs: List) -> Dict[type, Dict[str, List]]:
     """
-    Given a list of Nautilus `objs`; serialize and split into dictionaries per
-    type / instrument ID.
+    Given a list of Nautilus `objs`; serialize and split into dictionaries per type / instrument ID.
     """
     # Split objects into their respective tables
     values: Dict[type, Dict[str, List]] = {}
@@ -166,7 +165,7 @@ def split_and_serialize(objs: List) -> Dict[type, Dict[str, List]]:
 
 def dicts_to_dataframes(dicts) -> Dict[type, Dict[str, pd.DataFrame]]:
     """
-    Convert dicts from `split_and_serialize` into sorted dataframes
+    Convert dicts from `split_and_serialize` into sorted dataframes.
     """
     # Turn dict of tables into dataframes
     tables: Dict[type, Dict[str, pd.DataFrame]] = {}
@@ -187,7 +186,7 @@ def dicts_to_dataframes(dicts) -> Dict[type, Dict[str, pd.DataFrame]]:
 
 def determine_partition_cols(cls: type, instrument_id: str = None) -> Union[List, None]:
     """
-    Determine partition columns (if any) for this type `cls`
+    Determine partition columns (if any) for this type `cls`.
     """
     partition_keys = get_partition_keys(cls)
     if partition_keys:
@@ -199,7 +198,9 @@ def determine_partition_cols(cls: type, instrument_id: str = None) -> Union[List
 
 def merge_existing_data(catalog: DataCatalog, cls: type, df: pd.DataFrame) -> pd.DataFrame:
     """
-    Handle existing data for instrument subclasses; instruments all live in a single file, so merge with existing data.
+    Handle existing data for instrument subclasses.
+
+    Instruments all live in a single file, so merge with existing data.
     For all other classes, simply return data unchanged.
     """
     if cls not in Instrument.__subclasses__():
@@ -318,7 +319,7 @@ def read_progress(func, total):
 
 def _parse_file_start_by_filename(fn: str):
     """
-    Parse start time by filename
+    Parse start time by filename.
 
     >>> _parse_file_start_by_filename('/data/test/sample.parquet/instrument_id=a/1577836800000000000-1578182400000000000-0.parquet')
     '1577836800000000000'

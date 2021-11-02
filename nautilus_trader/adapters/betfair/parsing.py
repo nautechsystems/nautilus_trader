@@ -18,7 +18,7 @@ import hashlib
 import itertools
 from collections import defaultdict
 from functools import lru_cache
-from typing import List, Optional, Union
+from typing import Dict, List, Optional, Union
 
 import orjson
 import pandas as pd
@@ -27,6 +27,7 @@ from nautilus_trader.adapters.betfair.common import B2N_MARKET_STREAM_SIDE
 from nautilus_trader.adapters.betfair.common import B_ASK_KINDS
 from nautilus_trader.adapters.betfair.common import B_BID_KINDS
 from nautilus_trader.adapters.betfair.common import B_SIDE_KINDS
+from nautilus_trader.adapters.betfair.common import BETFAIR_TICK_SCHEME
 from nautilus_trader.adapters.betfair.common import BETFAIR_VENUE
 from nautilus_trader.adapters.betfair.common import MAX_BET_PROB
 from nautilus_trader.adapters.betfair.common import MIN_BET_PROB
@@ -79,7 +80,6 @@ from nautilus_trader.model.orders.market import MarketOrder
 
 uuid_factory = UUIDFactory()
 MILLIS_TO_NANOS = 1_000_000
-SECS_TO_NANOS = 1_000_000_000
 
 
 def make_custom_order_ref(client_order_id, strategy_id):
@@ -106,10 +106,27 @@ def parse_betfair_timestamp(pt):
     return pt * MILLIS_TO_NANOS
 
 
+def _probability_to_price(probability: Price, side: OrderSide):
+    if side == OrderSide.BUY:
+        tick_prob = BETFAIR_TICK_SCHEME.next_bid_price(value=probability)
+    elif side == OrderSide.SELL:
+        tick_prob = BETFAIR_TICK_SCHEME.next_ask_price(value=probability)
+    else:
+        raise RuntimeError(f"invalid OrderSide, was {side}")
+    return probability_to_price(probability=tick_prob)
+
+
+def _order_quantity_to_stake(quantity: Quantity) -> str:
+    """
+    Convert quantities from nautilus into liabilities in Betfair.
+    """
+    return str(quantity.as_double())
+
+
 def _make_limit_order(order: Union[LimitOrder, MarketOrder]):
-    price = determine_order_price(order)
-    price = str(float(probability_to_price(probability=price, side=order.side)))
-    size = str(float(order.quantity))
+    price = str(float(_probability_to_price(probability=order.price, side=order.side)))
+    size = _order_quantity_to_stake(quantity=order.quantity)
+
     if order.time_in_force == TimeInForce.OC:
         return {
             "orderType": "LIMIT_ON_CLOSE",
@@ -132,7 +149,9 @@ def _make_market_order(order: Union[LimitOrder, MarketOrder]):
     if order.time_in_force == TimeInForce.OC:
         return {
             "orderType": "MARKET_ON_CLOSE",
-            "marketOnCloseOrder": {"liability": str(float(order.quantity))},
+            "marketOnCloseOrder": {
+                "liability": str(order.quantity.as_double()),
+            },
         }
     else:
         # Betfair doesn't really support market orders, return a limit order with min/max price
@@ -149,7 +168,11 @@ def _make_market_order(order: Union[LimitOrder, MarketOrder]):
             init_id=order.init_id,
             ts_init=order.ts_init,
         )
-        return _make_limit_order(order=limit_order)
+        limit_order = _make_limit_order(order=limit_order)
+        # We transform the size of a limit order inside `_make_limit_order` but for a market order we want to just use
+        # the size as is.
+        limit_order["limitOrder"]["size"] = str(order.quantity.as_double())
+        return limit_order
 
 
 def make_order(order: Union[LimitOrder, MarketOrder]):
@@ -161,7 +184,7 @@ def make_order(order: Union[LimitOrder, MarketOrder]):
         raise TypeError(f"Unknown order type: {type(order)}")
 
 
-def order_submit_to_betfair(command: SubmitOrder, instrument: BettingInstrument):
+def order_submit_to_betfair(command: SubmitOrder, instrument: BettingInstrument) -> Dict:
     """
     Convert a SubmitOrder command into the data required by BetfairClient
     """
@@ -205,7 +228,7 @@ def order_update_to_betfair(
         "instructions": [
             {
                 "betId": venue_order_id.value,
-                "newPrice": float(probability_to_price(probability=command.price, side=side)),
+                "newPrice": float(_probability_to_price(probability=command.price, side=side)),
             }
         ],
     }
@@ -236,7 +259,7 @@ def betfair_account_to_account_state(
     free = balance - locked
     return AccountState(
         account_id=AccountId(issuer=BETFAIR_VENUE.value, number=account_id),
-        account_type=AccountType.CASH,
+        account_type=AccountType.BETTING,
         base_currency=currency,
         reported=False,
         balances=[
@@ -290,8 +313,8 @@ def _handle_market_snapshot(selection, instrument, ts_event, ts_init):
         snapshot = OrderBookSnapshot(
             book_type=BookType.L2_MBP,
             instrument_id=instrument.id,
-            bids=[(price_to_probability(p, OrderSide.BUY), v) for p, v in asks],
-            asks=[(price_to_probability(p, OrderSide.SELL), v) for p, v in bids],
+            bids=[(price_to_probability(str(p)), v) for p, v in asks if p],
+            asks=[(price_to_probability(str(p)), v) for p, v in bids if p],
             ts_event=ts_event,
             ts_init=ts_init,
         )
@@ -333,7 +356,7 @@ def _handle_market_trades(
         trade_id = hash_json(data=(ts_event, price, volume))
         tick = TradeTick(
             instrument_id=instrument.id,
-            price=price_to_probability(price, force=True),  # Already wrapping in Price
+            price=price_to_probability(str(price)),
             size=Quantity(volume, precision=4),
             aggressor_side=AggressorSide.UNKNOWN,
             match_id=trade_id,
@@ -354,7 +377,7 @@ def _handle_bsp_updates(runner, instrument, ts_event, ts_init):
                 book_type=BookType.L2_MBP,
                 action=BookAction.DELETE if volume == 0 else BookAction.UPDATE,
                 order=Order(
-                    price=price_to_probability(price, side=B2N_MARKET_STREAM_SIDE[side]),
+                    price=price_to_probability(str(price)),
                     size=Quantity(volume, precision=8),
                     side=B2N_MARKET_STREAM_SIDE[side],
                 ),
@@ -374,13 +397,15 @@ def _handle_book_updates(runner, instrument, ts_event, ts_init):
                 _, price, volume = upd
             else:
                 price, volume = upd
+            if price == 0.0:
+                continue
             deltas.append(
                 OrderBookDelta(
                     instrument_id=instrument.id,
                     book_type=BookType.L2_MBP,
                     action=BookAction.DELETE if volume == 0 else BookAction.UPDATE,
                     order=Order(
-                        price=price_to_probability(price, side=B2N_MARKET_STREAM_SIDE[side]),
+                        price=price_to_probability(str(price)),
                         size=Quantity(volume, precision=8),
                         side=B2N_MARKET_STREAM_SIDE[side],
                     ),
@@ -503,7 +528,7 @@ def _handle_market_runners_status(instrument_provider, market, ts_event, ts_init
 def _handle_ticker(runner: dict, instrument: BettingInstrument, ts_event, ts_init):
     last_traded_price, traded_volume = None, None
     if "ltp" in runner:
-        last_traded_price = price_to_probability(runner["ltp"], side=B2N_MARKET_STREAM_SIDE["atb"])
+        last_traded_price = price_to_probability(str(runner["ltp"]))
     if "tv" in runner:
         traded_volume = Quantity(value=runner.get("tv"), precision=instrument.size_precision)
     return BetfairTicker(
@@ -665,7 +690,7 @@ async def generate_order_status_report(self, order) -> Optional[OrderStatusRepor
             venue_order_id=VenueOrderId(),
             order_status=OrderStatus(),
             filled_qty=Quantity.zero(),
-            ts_init=SECS_TO_NANOS * pd.Timestamp(order["timestamp"]).timestamp(),
+            ts_init=int(pd.Timestamp(order["timestamp"]).to_datetime64()),
         )
         for order in self.client().betting.list_current_orders()["currentOrders"]
     ]
@@ -681,7 +706,7 @@ async def generate_trades_list(
         self._log.warn(f"Found no existing order for {venue_order_id}")
         return []
     fill = filled["clearedOrders"][0]
-    ts_event = SECS_TO_NANOS * pd.Timestamp(fill["lastMatchedDate"]).timestamp()
+    ts_event = int(pd.Timestamp(fill["lastMatchedDate"]).to_datetime64())
     return [
         ExecutionReport(
             client_order_id=self.venue_order_id_to_client_order_id[venue_order_id],

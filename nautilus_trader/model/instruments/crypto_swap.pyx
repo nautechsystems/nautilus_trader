@@ -112,31 +112,31 @@ cdef class CryptoSwap(Instrument):
         Raises
         ------
         ValueError
-            If price_precision is negative (< 0).
+            If `price_precision` is negative (< 0).
         ValueError
-            If size_precision is negative (< 0).
+            If `size_precision` is negative (< 0).
         ValueError
-            If price_increment is not positive (> 0).
+            If `price_increment` is not positive (> 0).
         ValueError
-            If size_increment is not positive (> 0).
+            If `size_increment` is not positive (> 0).
         ValueError
-            If price_precision is not equal to price_increment.precision.
+            If `price_precision` is not equal to price_increment.precision.
         ValueError
-            If size_increment is not equal to size_increment.precision.
+            If `size_increment` is not equal to size_increment.precision.
         ValueError
-            If lot size is not positive (> 0).
+            If `lot size` is not positive (> 0).
         ValueError
-            If max_quantity is not positive (> 0).
+            If `max_quantity` is not positive (> 0).
         ValueError
-            If min_quantity is negative (< 0).
+            If `min_quantity` is negative (< 0).
         ValueError
-            If max_notional is not positive (> 0).
+            If `max_notional` is not positive (> 0).
         ValueError
-            If min_notional is negative (< 0).
+            If `min_notional` is negative (< 0).
         ValueError
-            If max_price is not positive (> 0).
+            If `max_price` is not positive (> 0).
         ValueError
-            If min_price is negative (< 0).
+            If `min_price` is negative (< 0).
 
         """
         super().__init__(

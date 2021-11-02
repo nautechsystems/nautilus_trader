@@ -25,6 +25,7 @@ from fsspec.implementations.memory import MemoryFileSystem
 from nautilus_trader.accounting.accounts.base import Account
 from nautilus_trader.cache.database import CacheDatabase
 from nautilus_trader.common.actor import Actor
+from nautilus_trader.common.config import ActorConfig
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.common.providers import InstrumentProvider
 from nautilus_trader.core.datetime import secs_to_nanos
@@ -58,6 +59,7 @@ from nautilus_trader.persistence.external.core import process_files
 from nautilus_trader.persistence.external.readers import CSVReader
 from nautilus_trader.persistence.external.readers import Reader
 from nautilus_trader.persistence.util import clear_singleton_instances
+from nautilus_trader.trading.filters import NewsEvent
 from nautilus_trader.trading.strategy import TradingStrategy
 
 
@@ -115,12 +117,12 @@ class MockActor(Actor):
     Provides a mock actor for testing.
     """
 
-    def __init__(self):
+    def __init__(self, config: ActorConfig = None):
         """
         Initialize a new instance of the ``MockActor`` class.
 
         """
-        super().__init__()
+        super().__init__(config)
 
         self.object_storer = ObjectStorer()
 
@@ -569,8 +571,8 @@ class MockLiveExecutionClient(LiveExecutionClient):
             logger=logger,
         )
 
-        self._order_status_reports = {}  # type: dict[VenueOrderId, OrderStatusReport]
-        self._trades_lists = {}  # type: dict[VenueOrderId, list[ExecutionReport]]
+        self._order_status_reports: Dict[VenueOrderId, OrderStatusReport] = {}
+        self._trades_lists: Dict[VenueOrderId, list[ExecutionReport]] = {}
 
         self.calls = []
         self.commands = []
@@ -640,11 +642,11 @@ class MockCacheDatabase(CacheDatabase):
         """
         super().__init__(logger)
 
-        self.currencies = {}  # type: dict[str, Currency]
-        self.instruments = {}  # type: dict[InstrumentId, Instrument]
-        self.accounts = {}  # type: dict[AccountId, Account]
-        self.orders = {}  # type: dict[ClientOrderId, Order]
-        self.positions = {}  # type: dict[PositionId, Position]
+        self.currencies: Dict[str, Currency] = {}
+        self.instruments: Dict[InstrumentId, Instrument] = {}
+        self.accounts: Dict[AccountId, Account] = {}
+        self.orders: Dict[ClientOrderId, Order] = {}
+        self.positions: Dict[PositionId, Position] = {}
 
     def flush(self) -> None:
         self.accounts.clear()
@@ -817,6 +819,12 @@ class MockLiveRiskEngine(LiveRiskEngine):
 class MockReader(Reader):
     def parse(self, block: bytes) -> Generator:
         yield block
+
+
+class NewsEventData(NewsEvent):
+    """Generic data NewsEvent, needs to be defined here due to `inspect.is_nautilus_class`"""
+
+    pass
 
 
 def data_catalog_setup():

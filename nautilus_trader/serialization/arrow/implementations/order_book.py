@@ -21,11 +21,12 @@ from nautilus_trader.model.enums import BookAction
 from nautilus_trader.model.enums import BookTypeParser
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.identifiers import InstrumentId
+from nautilus_trader.model.orderbook.data import Order
 from nautilus_trader.model.orderbook.data import OrderBookData
 from nautilus_trader.model.orderbook.data import OrderBookDelta
 from nautilus_trader.model.orderbook.data import OrderBookDeltas
 from nautilus_trader.model.orderbook.data import OrderBookSnapshot
-from nautilus_trader.model.orderbook.order import Order
+from nautilus_trader.serialization.arrow.serializer import register_parquet
 
 
 def _parse_delta(delta: OrderBookDelta, cls):
@@ -71,8 +72,8 @@ def serialize(data: OrderBookData):
                 for side, (price, volume) in orders
             ]
         )
-    else:
-        raise TypeError
+    else:  # pragma: no cover (design-time error)
+        raise TypeError(f"invalid OrderBookData type, was {type(data)}")
     # Add a "last" message to let downstream consumers know the end of this group of messages
     result[-1]["_last"] = True
     return result
@@ -128,3 +129,13 @@ def deserialize(data: List[Dict]):
         elif len(chunk) >= 1:  # type: ignore
             results.append(_build_order_book_deltas(values=chunk))
     return sorted(results, key=lambda x: x.ts_event)
+
+
+for cls in [OrderBookData] + OrderBookData.__subclasses__():
+    register_parquet(
+        cls=cls,
+        serializer=serialize,
+        deserializer=deserialize,
+        table=OrderBookData,
+        chunk=True,
+    )

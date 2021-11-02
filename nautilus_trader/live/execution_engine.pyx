@@ -16,8 +16,6 @@
 import asyncio
 from typing import Optional
 
-from pydantic import PositiveInt
-
 from cpython.datetime cimport datetime
 from cpython.datetime cimport timedelta
 
@@ -41,15 +39,7 @@ from nautilus_trader.model.identifiers cimport ClientOrderId
 from nautilus_trader.model.orders.base cimport Order
 from nautilus_trader.msgbus.bus cimport MessageBus
 
-from nautilus_trader.execution.engine import ExecEngineConfig
-
-
-class LiveExecEngineConfig(ExecEngineConfig):
-    """
-    Configuration for ``LiveExecEngine`` instances.
-    """
-
-    qsize: PositiveInt = 10000
+from nautilus_trader.live.config import LiveExecEngineConfig
 
 
 cdef class LiveExecutionEngine(ExecutionEngine):
@@ -88,7 +78,7 @@ cdef class LiveExecutionEngine(ExecutionEngine):
         Raises
         ------
         TypeError
-            If config is not of type `LiveExecEngineConfig`.
+            If `config` is not of type `LiveExecEngineConfig`.
 
         """
         if config is None:
@@ -107,6 +97,20 @@ cdef class LiveExecutionEngine(ExecutionEngine):
 
         self._run_queue_task = None
         self.is_running = False
+
+    def connect(self):
+        """
+        Connect the engine by calling connect on all registered clients.
+        """
+        for client in self._clients.values():
+            client.connect()
+
+    def disconnect(self):
+        """
+        Disconnect the engine by calling disconnect on all registered clients.
+        """
+        for client in self._clients.values():
+            client.disconnect()
 
     def get_run_queue_task(self) -> asyncio.Task:
         """
@@ -155,7 +159,7 @@ cdef class LiveExecutionEngine(ExecutionEngine):
         Raises
         ------
         ValueError
-            If timeout_secs is not positive (> 0).
+            If `timeout_secs` is not positive (> 0).
 
         """
         Condition.positive(timeout_secs, "timeout_secs")

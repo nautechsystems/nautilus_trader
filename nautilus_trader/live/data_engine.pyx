@@ -16,10 +16,6 @@
 import asyncio
 from typing import Optional
 
-from pydantic import PositiveInt
-
-from nautilus_trader.data.engine import DataEngineConfig
-
 from nautilus_trader.cache.cache cimport Cache
 from nautilus_trader.common.clock cimport LiveClock
 from nautilus_trader.common.logging cimport Logger
@@ -34,13 +30,7 @@ from nautilus_trader.data.messages cimport DataRequest
 from nautilus_trader.data.messages cimport DataResponse
 from nautilus_trader.msgbus.bus cimport MessageBus
 
-
-class LiveDataEngineConfig(DataEngineConfig):
-    """
-    Configuration for ``LiveDataEngine`` instances.
-    """
-
-    qsize: PositiveInt = 10000
+from nautilus_trader.live.config import LiveDataEngineConfig
 
 
 cdef class LiveDataEngine(DataEngine):
@@ -79,7 +69,7 @@ cdef class LiveDataEngine(DataEngine):
         Raises
         ------
         TypeError
-            If config is not of type `LiveDataEngineConfig`.
+            If `config` is not of type `LiveDataEngineConfig`.
 
         """
         if config is None:
@@ -99,6 +89,20 @@ cdef class LiveDataEngine(DataEngine):
 
         self._run_queues_task = None
         self.is_running = False
+
+    def connect(self):
+        """
+        Connect the engine by calling connect on all registered clients.
+        """
+        for client in self._clients.values():
+            client.connect()
+
+    def disconnect(self):
+        """
+        Disconnect the engine by calling disconnect on all registered clients.
+        """
+        for client in self._clients.values():
+            client.disconnect()
 
     def get_event_loop(self) -> asyncio.AbstractEventLoop:
         """

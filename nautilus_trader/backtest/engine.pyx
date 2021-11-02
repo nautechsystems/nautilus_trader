@@ -13,13 +13,12 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+import pickle
 import socket
 from decimal import Decimal
 from typing import Dict, List, Optional, Union
 
 import pandas as pd
-import pydantic
-import pytz
 
 from cpython.datetime cimport datetime
 from libc.stdint cimport int64_t
@@ -31,6 +30,7 @@ from nautilus_trader.backtest.execution_client cimport BacktestExecClient
 from nautilus_trader.backtest.models cimport FillModel
 from nautilus_trader.backtest.modules cimport SimulationModule
 from nautilus_trader.cache.cache cimport Cache
+from nautilus_trader.common.actor import Actor
 from nautilus_trader.common.clock cimport LiveClock
 from nautilus_trader.common.clock cimport TestClock
 from nautilus_trader.common.logging cimport Logger
@@ -42,6 +42,7 @@ from nautilus_trader.common.timer cimport TimeEventHandler
 from nautilus_trader.common.uuid cimport UUIDFactory
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.data cimport Data
+from nautilus_trader.core.datetime cimport unix_nanos_to_dt
 from nautilus_trader.execution.engine cimport ExecutionEngine
 from nautilus_trader.infrastructure.cache cimport RedisCacheDatabase
 from nautilus_trader.model.c_enums.account_type cimport AccountType
@@ -65,51 +66,8 @@ from nautilus_trader.serialization.msgpack.serializer cimport MsgPackSerializer
 from nautilus_trader.trading.strategy cimport TradingStrategy
 
 from nautilus_trader.analysis.performance import PerformanceAnalyzer
+from nautilus_trader.backtest.config import BacktestEngineConfig
 from nautilus_trader.backtest.results import BacktestResult
-from nautilus_trader.cache.cache import CacheConfig
-from nautilus_trader.data.engine import DataEngineConfig
-from nautilus_trader.execution.engine import ExecEngineConfig
-from nautilus_trader.infrastructure.cache import CacheDatabaseConfig
-from nautilus_trader.risk.engine import RiskEngineConfig
-
-
-class BacktestEngineConfig(pydantic.BaseModel):
-    """
-    Configuration for ``BacktestEngine`` instances.
-
-    trader_id : str, default="BACKTESTER-000"
-        The trader ID.
-    log_level : str, default="INFO"
-        The minimum log level for logging messages to stdout.
-    cache : CacheConfig, optional
-        The configuration for the cache.
-    cache_database : CacheDatabaseConfig, optional
-        The configuration for the cache database.
-    data_engine : DataEngineConfig, optional
-        The configuration for the data engine.
-    risk_engine : RiskEngineConfig, optional
-        The configuration for the risk engine.
-    exec_engine : ExecEngineConfig, optional
-        The configuration for the execution engine.
-    bypass_logging : bool, default=False
-        If logging should be bypassed.
-    run_analysis : bool, default=True
-        If post backtest performance analysis should be run.
-
-    """
-
-    trader_id: str = "BACKTESTER-000"
-    log_level: str = "INFO"
-    cache: Optional[CacheConfig] = None
-    cache_database: Optional[CacheDatabaseConfig] = None
-    data_engine: Optional[DataEngineConfig] = None
-    risk_engine: Optional[RiskEngineConfig] = None
-    exec_engine: Optional[ExecEngineConfig] = None
-    bypass_logging: bool = False
-    run_analysis: bool = True
-
-    def __dask_tokenize__(self):
-        return tuple(self.dict().items())
 
 
 cdef class BacktestEngine:
@@ -159,13 +117,13 @@ cdef class BacktestEngine:
         # Run IDs
         self.run_config_id = None
         self.run_id = None
+        self.iteration = 0
 
         # Timing
         self.run_started = None
         self.run_finished = None
         self.backtest_start = None
         self.backtest_end = None
-        self.iteration = 0
 
         self._logger = Logger(
             clock=LiveClock(),
@@ -348,8 +306,7 @@ cdef class BacktestEngine:
         self._add_market_data_client_if_not_exists(instrument.id.venue)
 
         # Add data
-        self._data_engine.process(instrument)
-        self._cache.add_instrument(instrument)
+        self._data_engine.process(instrument)  # Adds to cache
 
         self._log.info(f"Added {instrument.id} Instrument.")
 
@@ -425,6 +382,41 @@ cdef class BacktestEngine:
             f"{type(first).__name__} element{'' if len(data) == 1 else 's'}.",
         )
 
+    def add_data(self, list data) -> None:
+        """
+        Add the tick data to the backtest engine.
+
+        Parameters
+        ----------
+        data : list[Tick]
+            The tick data to add.
+
+        Raises
+        ------
+        ValueError
+            If `data` is empty.
+
+        """
+        Condition.not_empty(data, "data")
+        cdef Data first = data[0]
+        assert hasattr(first, 'instrument_id'), "added data must have an instrument_id property"
+        Condition.true(
+            first.instrument_id in self._cache.instrument_ids(),
+            "Instrument for given data not found in the cache. "
+            "Please call `add_instrument()` before adding related data.",
+        )
+
+        # Check client has been registered
+        self._add_market_data_client_if_not_exists(first.instrument_id.venue)
+
+        # Add data
+        self._data = sorted(self._data + data, key=lambda x: x.ts_init)
+
+        self._log.info(
+            f"Added {len(data):,} {first.instrument_id} "
+            f"{type(first).__name__} element{'' if len(data) == 1 else 's'}.",
+        )
+
     def add_bars(self, list data) -> None:
         """
         Add the built bar data objects to the backtest engines. Suitable for
@@ -470,6 +462,42 @@ cdef class BacktestEngine:
         self._log.info(
             f"Added {len(data):,} {first.type} "
             f"Bar element{'' if len(data) == 1 else 's'}.",
+        )
+
+    def dump_pickled_data(self) -> bytes:
+        """
+        Return the internal data stream pickled.
+
+        Returns
+        -------
+        bytes
+
+        """
+        return pickle.dumps(self._data)
+
+    def load_pickled_data(self, bytes data) -> None:
+        """
+        Load the given pickled data directly into the internal data stream.
+
+        It is highly advised to only pass data to this method which was obtained
+        through a call to `.dump_pickled_data()`.
+
+        Warnings
+        --------
+        This low-level direct access method makes the following assumptions:
+         - The data contains valid Nautilus objects only, which inherit from `Data`.
+         - The data was successfully pickled from a call to `pickle.dumps()`.
+         - The data was sorted prior to pickling.
+         - All required instruments have been added to the engine.
+
+        """
+        Condition.not_none(data, "data")
+
+        self._data = pickle.loads(data)
+
+        self._log.info(
+            f"Loaded {len(self._data):,} data "
+            f"element{'' if len(data) == 1 else 's'} from pickle.",
         )
 
     def add_venue(
@@ -568,8 +596,6 @@ cdef class BacktestEngine:
         exec_client = BacktestExecClient(
             exchange=exchange,
             account_id=AccountId(venue.value, "001"),
-            account_type=account_type,
-            base_currency=base_currency,
             msgbus=self._msgbus,
             cache=self._cache,
             clock=self._test_clock,
@@ -581,6 +607,40 @@ cdef class BacktestEngine:
         self._exec_engine.register_client(exec_client)
 
         self._log.info(f"Added {exchange}.")
+
+    def change_fill_model(self, Venue venue, FillModel model) -> None:
+        """
+        Change the fill model for the exchange of the given venue.
+
+        Parameters
+        ----------
+        venue : Venue
+            The venue of the simulated exchange.
+        model : FillModel
+            The fill model to change to.
+
+        """
+        Condition.not_none(venue, "venue")
+        Condition.not_none(model, "model")
+        Condition.is_in(venue, self._exchanges, "venue", "self._exchanges")
+
+        self._exchanges[venue].set_fill_model(model)
+
+    def add_component(self, component: Actor) -> None:
+        # Checked inside trader
+        self.trader.add_component(component)
+
+    def add_components(self, components: List[Actor]) -> None:
+        # Checked inside trader
+        self.trader.add_components(components)
+
+    def add_strategy(self, strategy: TradingStrategy) -> None:
+        # Checked inside trader
+        self.trader.add_strategy(strategy)
+
+    def add_strategies(self, strategies: List[TradingStrategy]) -> None:
+        # Checked inside trader
+        self.trader.add_strategies(strategies)
 
     def reset(self) -> None:
         """
@@ -653,36 +713,12 @@ cdef class BacktestEngine:
             self._data_engine.stop()
         if self._exec_engine.is_running_c():
             self._exec_engine.stop()
+        if self._risk_engine.is_running_c():
+            self._risk_engine.stop()
 
         self._data_engine.dispose()
         self._exec_engine.dispose()
         self._risk_engine.dispose()
-
-    def change_fill_model(self, Venue venue, FillModel model) -> None:
-        """
-        Change the fill model for the exchange of the given venue.
-
-        Parameters
-        ----------
-        venue : Venue
-            The venue of the simulated exchange.
-        model : FillModel
-            The fill model to change to.
-
-        """
-        Condition.not_none(venue, "venue")
-        Condition.not_none(model, "model")
-        Condition.is_in(venue, self._exchanges, "venue", "self._exchanges")
-
-        self._exchanges[venue].set_fill_model(model)
-
-    def add_strategy(self, strategy: TradingStrategy) -> None:
-        # Checked inside trader
-        self.trader.add_strategy(strategy)
-
-    def add_strategies(self, strategies: List[TradingStrategy]) -> None:
-        # Checked inside trader
-        self.trader.add_strategies(strategies)
 
     def run(
         self,
@@ -815,14 +851,14 @@ cdef class BacktestEngine:
         if start is None:
             # Set `start` to start of data
             start_ns = self._data[0].ts_init
-            start = pd.Timestamp(start_ns, tz=pytz.utc)
+            start = unix_nanos_to_dt(start_ns)
         else:
             start = pd.to_datetime(start, utc=True)
             start_ns = int(start.to_datetime64())
         if end is None:
             # Set `end` to end of data
             end_ns = self._data[-1].ts_init
-            end = pd.Timestamp(end_ns, tz=pytz.utc)
+            end = unix_nanos_to_dt(end_ns)
         else:
             end = pd.to_datetime(end, utc=True)
             end_ns = int(end.to_datetime64())
@@ -834,6 +870,7 @@ cdef class BacktestEngine:
         for strategy in self.trader.strategies_c():
             strategy.clock.set_time(start_ns)
 
+        cdef SimulatedExchange exchange
         if self.iteration == 0:
             # Initialize run
             self.run_config_id = run_config_id  # Can be None
@@ -847,18 +884,9 @@ cdef class BacktestEngine:
             self.trader.start()
             # Change logger clock for the run
             self._test_logger.change_clock_c(self._test_clock)
-            self._pre_run()
+            self._log_pre_run()
 
-        self._log.info("\033[36m=================================================================")
-        self._log.info("\033[36m BACKTEST RUN")
-        self._log.info("\033[36m=================================================================")
-        self._log.info(f"Run config ID:  {self.run_config_id}")
-        self._log.info(f"Run ID:         {self.run_id}")
-        self._log.info(f"Run started:    {self.run_started}")
-        self._log.info(f"Backtest start: {self.backtest_start}")
-        self._log.info(f"Batch start:    {start}.")
-        self._log.info(f"Batch end:      {end}.")
-        self._log.info("\033[36m-----------------------------------------------------------------")
+        self._log_run(start, end)
 
         # Set data stream length
         self._data_len = len(self._data)
@@ -900,7 +928,7 @@ cdef class BacktestEngine:
         self.run_finished = self._clock.utc_now()
         self.backtest_end = self._test_clock.utc_now()
 
-        self._post_run()
+        self._log_post_run()
 
     cdef Data _next(self):
         cdef int64_t cursor = self._index
@@ -919,7 +947,7 @@ cdef class BacktestEngine:
             event_handler.handle()
         self._test_clock.set_time(now_ns)
 
-    def _pre_run(self):
+    def _log_pre_run(self):
         log_memory(self._log)
 
         for exchange in self._exchanges.values():
@@ -936,7 +964,19 @@ cdef class BacktestEngine:
                 for b in account.starting_balances().values():
                     self._log.info(b.to_str())
 
-    def _post_run(self):
+    def _log_run(self, start: pd.Timestamp, end: pd.Timestamp):
+        self._log.info("\033[36m=================================================================")
+        self._log.info("\033[36m BACKTEST RUN")
+        self._log.info("\033[36m=================================================================")
+        self._log.info(f"Run config ID:  {self.run_config_id}")
+        self._log.info(f"Run ID:         {self.run_id}")
+        self._log.info(f"Run started:    {self.run_started}")
+        self._log.info(f"Backtest start: {self.backtest_start}")
+        self._log.info(f"Batch start:    {start}.")
+        self._log.info(f"Batch end:      {end}.")
+        self._log.info("\033[36m-----------------------------------------------------------------")
+
+    def _log_post_run(self):
         self._log.info("\033[36m=================================================================")
         self._log.info("\033[36m BACKTEST POST-RUN")
         self._log.info("\033[36m=================================================================")

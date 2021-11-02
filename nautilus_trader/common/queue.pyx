@@ -191,7 +191,7 @@ cdef class Queue:
         Raises
         ------
         IndexError
-            If index is out of range.
+            If `index` is out of range.
 
         """
         return self._queue[index]
@@ -209,9 +209,13 @@ cdef class Queue:
 
     @types.coroutine
     def _sleep0(self):
+        # Skip one event loop run cycle.
+        #
         # This is equivalent to `asyncio.sleep(0)` however avoids the overhead
         # of the pure Python function call and integer comparison <= 0.
-        # Skip one event loop run cycle
+        #
+        # Uses a bare 'yield' expression (which Task.__step knows how to handle)
+        # instead of creating a Future object.
         yield
 
     cdef int _qsize(self) except *:

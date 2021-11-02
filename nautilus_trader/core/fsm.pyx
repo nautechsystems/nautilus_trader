@@ -70,13 +70,13 @@ cdef class FiniteStateMachine:
         Raises
         ------
         ValueError
-            If state_transition_table is empty.
+            If `state_transition_table` is empty.
         ValueError
-            If state_transition_table key not tuple.
+            If `state_transition_table` key not tuple.
         ValueError
-            If trigger_parser not of type `Callable` or ``None``.
+            If `trigger_parser` not of type `Callable` or ``None``.
         ValueError
-            If state_parser not of type `Callable` or ``None``.
+            If `state_parser` not of type `Callable` or ``None``.
 
         """
         if trigger_parser is None:
@@ -111,7 +111,7 @@ cdef class FiniteStateMachine:
         Raises
         ------
         InvalidStateTrigger
-            If the state and trigger combination is not found in the transition table.
+            If the state and `trigger` combination is not found in the transition table.
 
         """
         cdef int next_state = self._state_transition_table.get((self.state, trigger), -1)

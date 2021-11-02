@@ -53,9 +53,9 @@ cdef class Position:
         Raises
         ------
         ValueError
-            If instrument.id is not equal to fill.instrument_id.
+            If `instrument.id` is not equal to `fill.instrument_id`.
         ValueError
-            If event.position_id is ``None``.
+            If `event.position_id` is ``None``.
 
         """
         Condition.equal(instrument.id, fill.instrument_id, "instrument.id", "fill.instrument_id")
@@ -412,7 +412,7 @@ cdef class Position:
         Raises
         ------
         KeyError
-            If fill.execution_id already applied to the position.
+            If `fill.execution_id` already applied to the position.
 
         """
         Condition.not_none(fill, "fill")
@@ -429,8 +429,10 @@ cdef class Position:
         # Calculate avg prices, points, return, PnL
         if fill.order_side == OrderSide.BUY:
             self._handle_buy_order_fill(fill)
-        else:  # event.order_side == OrderSide.SELL:
+        elif fill.order_side == OrderSide.SELL:
             self._handle_sell_order_fill(fill)
+        else:  # pragma: no cover
+            raise ValueError(f"invalid OrderSide, was {fill.order_side}")
 
         # Set quantities
         self.quantity = Quantity(abs(self.net_qty), self.size_precision)

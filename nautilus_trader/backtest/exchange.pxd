@@ -40,6 +40,7 @@ from nautilus_trader.model.identifiers cimport PositionId
 from nautilus_trader.model.identifiers cimport StrategyId
 from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.model.identifiers cimport VenueOrderId
+from nautilus_trader.model.instruments.base cimport Instrument
 from nautilus_trader.model.objects cimport Money
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
@@ -51,6 +52,7 @@ from nautilus_trader.model.orders.limit cimport LimitOrder
 from nautilus_trader.model.orders.market cimport MarketOrder
 from nautilus_trader.model.orders.stop_limit cimport StopLimitOrder
 from nautilus_trader.model.orders.stop_market cimport StopMarketOrder
+from nautilus_trader.model.position cimport Position
 
 
 cdef class SimulatedExchange:
@@ -129,19 +131,71 @@ cdef class SimulatedExchange:
     cpdef void process(self, int64_t now_ns) except *
     cpdef void reset(self) except *
 
-# -- IDENTIFIERS -----------------------------------------------------------------------------------
+# -- COMMAND HANDLING ------------------------------------------------------------------------------
+
+    cdef void _process_order(self, Order order) except *
+    cdef void _process_market_order(self, MarketOrder order) except *
+    cdef void _process_limit_order(self, LimitOrder order) except *
+    cdef void _process_stop_market_order(self, StopMarketOrder order) except *
+    cdef void _process_stop_limit_order(self, StopLimitOrder order) except *
+    cdef void _update_limit_order(self, LimitOrder order, Quantity qty, Price price) except *
+    cdef void _update_stop_market_order(self, StopMarketOrder order, Quantity qty, Price price) except *
+    cdef void _update_stop_limit_order(self, StopLimitOrder order, Quantity qty, Price price, Price trigger) except *
+
+# -- EVENT HANDLING --------------------------------------------------------------------------------
+
+    cdef void _accept_order(self, PassiveOrder order) except *
+    cdef void _update_order(self, PassiveOrder order, Quantity qty, Price price, Price trigger=*, bint update_ocos=*) except *
+    cdef void _update_oco_orders(self, PassiveOrder order) except *
+    cdef void _cancel_order(self, PassiveOrder order, bint cancel_ocos=*) except *
+    cdef void _cancel_oco_orders(self, PassiveOrder order) except *
+    cdef void _expire_order(self, PassiveOrder order) except *
+
+# -- ORDER MATCHING ENGINE -------------------------------------------------------------------------
+
+    cdef void _add_order(self, PassiveOrder order) except *
+    cdef void _delete_order(self, Order order) except *
+    cdef void _iterate_matching_engine(self, InstrumentId instrument_id, int64_t timestamp_ns) except *
+    cdef void _iterate_side(self, list orders, int64_t timestamp_ns) except *
+    cdef void _match_order(self, PassiveOrder order) except *
+    cdef void _match_limit_order(self, LimitOrder order) except *
+    cdef void _match_stop_market_order(self, StopMarketOrder order) except *
+    cdef void _match_stop_limit_order(self, StopLimitOrder order) except *
+    cdef bint _is_limit_marketable(self, InstrumentId instrument_id, OrderSide side, Price price) except *
+    cdef bint _is_limit_matched(self, InstrumentId instrument_id, OrderSide side, Price price) except *
+    cdef bint _is_stop_marketable(self, InstrumentId instrument_id, OrderSide side, Price price) except *
+    cdef bint _is_stop_triggered(self, InstrumentId instrument_id, OrderSide side, Price price) except *
+    cdef list _determine_limit_price_and_volume(self, PassiveOrder order)
+    cdef list _determine_market_price_and_volume(self, Order order)
+    cdef void _fill_limit_order(self, PassiveOrder order, LiquiditySide liquidity_side) except *
+    cdef void _fill_market_order(self, Order order, LiquiditySide liquidity_side) except *
+    cdef void _apply_fills(
+        self,
+        Order order,
+        LiquiditySide liquidity_side,
+        list fills,
+        PositionId position_id,
+        Position position,
+    ) except *
+    cdef void _fill_order(
+        self,
+        Instrument instrument,
+        Order order,
+        PositionId venue_position_id,
+        Position position,
+        Quantity last_qty,
+        Price last_px,
+        LiquiditySide liquidity_side,
+    ) except *
+
+# -- IDENTIFIER GENERATORS -------------------------------------------------------------------------
 
     cdef PositionId _get_position_id(self, Order order, bint generate=*)
     cdef PositionId _generate_venue_position_id(self, InstrumentId instrument_id)
     cdef VenueOrderId _generate_venue_order_id(self, InstrumentId instrument_id)
     cdef ExecutionId _generate_execution_id(self)
 
-# -- EVENT HANDLING --------------------------------------------------------------------------------
-
-    cdef void _reject_order(self, Order order, str reason) except *
-    cdef void _update_order(self, PassiveOrder order, Quantity qty, Price price, Price trigger) except *
-    cdef void _cancel_order(self, PassiveOrder order) except *
-    cdef void _expire_order(self, PassiveOrder order) except *
+# -- EVENT GENERATORS ------------------------------------------------------------------------------
 
     cdef void _generate_fresh_account_state(self) except *
     cdef void _generate_order_submitted(self, Order order) except *
@@ -169,35 +223,13 @@ cdef class SimulatedExchange:
     cdef void _generate_order_canceled(self, Order order) except *
     cdef void _generate_order_triggered(self, StopLimitOrder order) except *
     cdef void _generate_order_expired(self, PassiveOrder order) except *
-
-    cdef void _process_order(self, Order order) except *
-    cdef void _process_market_order(self, MarketOrder order) except *
-    cdef void _process_limit_order(self, LimitOrder order) except *
-    cdef void _process_stop_market_order(self, StopMarketOrder order) except *
-    cdef void _process_stop_limit_order(self, StopLimitOrder order) except *
-    cdef void _update_limit_order(self, LimitOrder order, Quantity qty, Price price) except *
-    cdef void _update_stop_market_order(self, StopMarketOrder order, Quantity qty, Price price) except *
-    cdef void _update_stop_limit_order(self, StopLimitOrder order, Quantity qty, Price price, Price trigger) except *
-
-# -- ORDER MATCHING ENGINE -------------------------------------------------------------------------
-
-    cdef void _add_order(self, PassiveOrder order) except *
-    cdef void _delete_order(self, Order order) except *
-    cdef void _iterate_matching_engine(self, InstrumentId instrument_id, int64_t timestamp_ns) except *
-    cdef void _iterate_side(self, list orders, int64_t timestamp_ns) except *
-    cdef void _match_order(self, PassiveOrder order) except *
-    cdef void _match_limit_order(self, LimitOrder order) except *
-    cdef void _match_stop_market_order(self, StopMarketOrder order) except *
-    cdef void _match_stop_limit_order(self, StopLimitOrder order) except *
-    cdef bint _is_limit_marketable(self, InstrumentId instrument_id, OrderSide side, Price price) except *
-    cdef bint _is_limit_matched(self, InstrumentId instrument_id, OrderSide side, Price price) except *
-    cdef bint _is_stop_marketable(self, InstrumentId instrument_id, OrderSide side, Price price) except *
-    cdef bint _is_stop_triggered(self, InstrumentId instrument_id, OrderSide side, Price price) except *
-    cdef list _determine_limit_price_and_volume(self, PassiveOrder order)
-    cdef list _determine_market_price_and_volume(self, Order order)
-
-# --------------------------------------------------------------------------------------------------
-
-    cdef void _passively_fill_order(self, PassiveOrder order, LiquiditySide liquidity_side) except *
-    cdef void _aggressively_fill_order(self, Order order, LiquiditySide liquidity_side) except *
-    cdef void _fill_order(self, Order order, Quantity last_qty, Price last_px, LiquiditySide liquidity_side, PositionId venue_position_id) except *
+    cdef void _generate_order_filled(
+        self,
+        Order order,
+        PositionId venue_position_id,
+        Quantity last_qty,
+        Price last_px,
+        Currency quote_currency,
+        Money commission,
+        LiquiditySide liquidity_side
+    ) except *

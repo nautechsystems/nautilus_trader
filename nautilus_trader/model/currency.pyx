@@ -52,11 +52,11 @@ cdef class Currency:
         Raises
         ------
         ValueError
-            If code is not a valid string.
+            If `code` is not a valid string.
         OverflowError
-            If precision is negative (< 0).
+            If `precision` is negative (< 0).
         ValueError
-            If name is not a valid string.
+            If `name` is not a valid string.
 
         """
         Condition.valid_string(code, "code")
@@ -166,7 +166,7 @@ cdef class Currency:
         Raises
         ------
         ValueError
-            If code is not a valid string.
+            If `code` is not a valid string.
 
         """
         Condition.valid_string(code, "code")
@@ -191,7 +191,7 @@ cdef class Currency:
         Raises
         ------
         ValueError
-            If code is not a valid string.
+            If `code` is not a valid string.
 
         """
         Condition.valid_string(code, "code")

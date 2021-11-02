@@ -44,9 +44,9 @@ cdef class Stochastics(Indicator):
         Raises
         ------
         ValueError
-            If the period_k is not positive (> 0).
+            If `period_k` is not positive (> 0).
         ValueError
-            If the period_d is not positive (> 0).
+            If `period_d` is not positive (> 0).
 
         """
         Condition.positive_int(period_k, "period_k")

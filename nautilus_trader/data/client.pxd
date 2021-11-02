@@ -27,12 +27,13 @@ from nautilus_trader.model.identifiers cimport InstrumentId
 
 
 cdef class DataClient(Component):
-    cdef Cache _cache
-
-    cdef dict _feeds_generic_data
+    cdef readonly Cache _cache
+    cdef set _subscriptions_generic
 
     cdef readonly bint is_connected
     """If the client is connected.\n\n:returns: `bool`"""
+
+    cpdef void _set_connected(self, bint value=*) except *
 
 # -- SUBSCRIPTIONS ---------------------------------------------------------------------------------
 
@@ -41,30 +42,31 @@ cdef class DataClient(Component):
     cpdef void subscribe(self, DataType data_type) except *
     cpdef void unsubscribe(self, DataType data_type) except *
 
+    cpdef void _add_subscription(self, DataType data_type) except *
+    cpdef void _remove_subscription(self, DataType data_type) except *
+
 # -- REQUEST HANDLERS ------------------------------------------------------------------------------
 
     cpdef void request(self, DataType data_type, UUID4 correlation_id) except *
 
 # -- DATA HANDLERS ---------------------------------------------------------------------------------
 
-    cdef void _handle_data(self, Data data) except *
-    cdef void _handle_data_response(self, DataType data_type, Data data, UUID4 correlation_id) except *
+    cpdef void _handle_data(self, Data data) except *
+    cpdef void _handle_data_response(self, DataType data_type, Data data, UUID4 correlation_id) except *
 
 
 cdef class MarketDataClient(DataClient):
-    cdef dict _feeds_order_book_delta
-    cdef dict _feeds_order_book_snapshot
-    cdef dict _feeds_ticker
-    cdef dict _feeds_quote_tick
-    cdef dict _feeds_trade_tick
-    cdef dict _feeds_bar
-    cdef dict _feeds_instrument_status_update
-    cdef dict _feeds_instrument_close_price
+    cdef set _subscriptions_order_book_delta
+    cdef set _subscriptions_order_book_snapshot
+    cdef set _subscriptions_ticker
+    cdef set _subscriptions_quote_tick
+    cdef set _subscriptions_trade_tick
+    cdef set _subscriptions_bar
+    cdef set _subscriptions_instrument_status_update
+    cdef set _subscriptions_instrument_close_price
+    cdef set _subscriptions_instrument
 
-    cdef set _feeds_instrument
     cdef object _update_instruments_task
-
-    cpdef list unavailable_methods(self)
 
 # -- SUBSCRIPTIONS ---------------------------------------------------------------------------------
 
@@ -86,7 +88,6 @@ cdef class MarketDataClient(DataClient):
     cpdef void subscribe_quote_ticks(self, InstrumentId instrument_id) except *
     cpdef void subscribe_trade_ticks(self, InstrumentId instrument_id) except *
     cpdef void subscribe_bars(self, BarType bar_type) except *
-    cpdef void subscribe_venue_status_updates(self, InstrumentId instrument_id) except *
     cpdef void subscribe_instrument_status_updates(self, InstrumentId instrument_id) except *
     cpdef void subscribe_instrument_close_prices(self, InstrumentId instrument_id) except *
     cpdef void unsubscribe_instruments(self) except *
@@ -97,9 +98,27 @@ cdef class MarketDataClient(DataClient):
     cpdef void unsubscribe_quote_ticks(self, InstrumentId instrument_id) except *
     cpdef void unsubscribe_trade_ticks(self, InstrumentId instrument_id) except *
     cpdef void unsubscribe_bars(self, BarType bar_type) except *
-    cpdef void unsubscribe_venue_status_updates(self, InstrumentId instrument_id) except *
     cpdef void unsubscribe_instrument_status_updates(self, InstrumentId instrument_id) except *
     cpdef void unsubscribe_instrument_close_prices(self, InstrumentId instrument_id) except *
+
+    cpdef void _add_subscription_instrument(self, InstrumentId instrument_id) except *
+    cpdef void _add_subscription_order_book_deltas(self, InstrumentId instrument_id) except *
+    cpdef void _add_subscription_order_book_snapshots(self, InstrumentId instrument_id) except *
+    cpdef void _add_subscription_ticker(self, InstrumentId instrument_id) except *
+    cpdef void _add_subscription_quote_ticks(self, InstrumentId instrument_id) except *
+    cpdef void _add_subscription_trade_ticks(self, InstrumentId instrument_id) except *
+    cpdef void _add_subscription_bars(self, BarType bar_type) except *
+    cpdef void _add_subscription_instrument_status_updates(self, InstrumentId instrument_id) except *
+    cpdef void _add_subscription_instrument_close_prices(self, InstrumentId instrument_id) except *
+    cpdef void _remove_subscription_instrument(self, InstrumentId instrument_id) except *
+    cpdef void _remove_subscription_order_book_deltas(self, InstrumentId instrument_id) except *
+    cpdef void _remove_subscription_order_book_snapshots(self, InstrumentId instrument_id) except *
+    cpdef void _remove_subscription_ticker(self, InstrumentId instrument_id) except *
+    cpdef void _remove_subscription_quote_ticks(self, InstrumentId instrument_id) except *
+    cpdef void _remove_subscription_trade_ticks(self, InstrumentId instrument_id) except *
+    cpdef void _remove_subscription_bars(self, BarType bar_type) except *
+    cpdef void _remove_subscription_instrument_status_updates(self, InstrumentId instrument_id) except *
+    cpdef void _remove_subscription_instrument_close_prices(self, InstrumentId instrument_id) except *
 
 # -- REQUEST HANDLERS ------------------------------------------------------------------------------
 
@@ -130,6 +149,6 @@ cdef class MarketDataClient(DataClient):
 
 # -- DATA HANDLERS ---------------------------------------------------------------------------------
 
-    cdef void _handle_quote_ticks(self, InstrumentId instrument_id, list ticks, UUID4 correlation_id) except *
-    cdef void _handle_trade_ticks(self, InstrumentId instrument_id, list ticks, UUID4 correlation_id) except *
-    cdef void _handle_bars(self, BarType bar_type, list bars, Bar partial, UUID4 correlation_id) except *
+    cpdef void _handle_quote_ticks(self, InstrumentId instrument_id, list ticks, UUID4 correlation_id) except *
+    cpdef void _handle_trade_ticks(self, InstrumentId instrument_id, list ticks, UUID4 correlation_id) except *
+    cpdef void _handle_bars(self, BarType bar_type, list bars, Bar partial, UUID4 correlation_id) except *
