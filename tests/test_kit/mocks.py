@@ -846,7 +846,7 @@ def data_catalog_setup():
 
 
 def aud_usd_data_loader():
-    from tests.test_kit.providers import TestInstrumentProvider
+    from nautilus_trader.backtest.data.providers import TestInstrumentProvider
     from tests.test_kit.stubs import TestStubs
     from tests.unit_tests.backtest.test_backtest_config import TEST_DATA_DIR
 

@@ -1,5 +1,5 @@
+from nautilus_trader.backtest.data.providers import TestInstrumentProvider
 from nautilus_trader.indicators.linear_regression import LinearRegression
-from tests.test_kit.providers import TestInstrumentProvider
 from tests.test_kit.stubs import TestStubs
 
 

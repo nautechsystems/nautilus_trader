@@ -15,23 +15,16 @@
 # -------------------------------------------------------------------------------------------------
 
 import asyncio
-import os
-import sys
 import traceback
 
-
-sys.path.insert(
-    0, str(os.path.abspath(__file__ + "/../../../"))
-)  # Allows relative imports from examples
-
-from examples.strategies.orderbook_imbalance import OrderBookImbalance
-from examples.strategies.orderbook_imbalance import OrderBookImbalanceConfig
 from nautilus_trader.adapters.betfair.factories import BetfairLiveDataClientFactory
 from nautilus_trader.adapters.betfair.factories import BetfairLiveExecutionClientFactory
 from nautilus_trader.adapters.betfair.factories import get_cached_betfair_client
 from nautilus_trader.adapters.betfair.factories import get_cached_betfair_instrument_provider
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.logging import LiveLogger
+from nautilus_trader.examples.strategies.orderbook_imbalance import OrderBookImbalance
+from nautilus_trader.examples.strategies.orderbook_imbalance import OrderBookImbalanceConfig
 from nautilus_trader.infrastructure.config import CacheDatabaseConfig
 from nautilus_trader.live.node import TradingNode
 from nautilus_trader.live.node import TradingNodeConfig
@@ -127,4 +120,4 @@ if __name__ == "__main__":
     # Update the market ID with something coming up in `Next Races` from
     # https://www.betfair.com.au/exchange/plus/
     # The market ID will appear in the browser query string.
-    asyncio.run(main(market_id="1.189677015"))
+    asyncio.run(main(market_id="1.190036127"))

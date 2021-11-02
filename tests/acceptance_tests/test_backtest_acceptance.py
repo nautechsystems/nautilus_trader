@@ -19,11 +19,17 @@ from decimal import Decimal
 import pandas as pd
 import pytest
 
+from nautilus_trader.backtest.data.providers import TestInstrumentProvider
 from nautilus_trader.backtest.data.wranglers import QuoteTickDataWrangler
 from nautilus_trader.backtest.data.wranglers import TradeTickDataWrangler
 from nautilus_trader.backtest.engine import BacktestEngine
 from nautilus_trader.backtest.engine import BacktestEngineConfig
 from nautilus_trader.backtest.modules import FXRolloverInterestModule
+from nautilus_trader.examples.strategies.ema_cross import EMACross
+from nautilus_trader.examples.strategies.ema_cross import EMACrossConfig
+from nautilus_trader.examples.strategies.market_maker import MarketMaker
+from nautilus_trader.examples.strategies.orderbook_imbalance import OrderBookImbalance
+from nautilus_trader.examples.strategies.orderbook_imbalance import OrderBookImbalanceConfig
 from nautilus_trader.model.currencies import AUD
 from nautilus_trader.model.currencies import GBP
 from nautilus_trader.model.currencies import USD
@@ -41,12 +47,6 @@ from tests.integration_tests.adapters.betfair.test_kit import BetfairDataProvide
 from tests.test_kit import PACKAGE_ROOT
 from tests.test_kit.mocks import data_catalog_setup
 from tests.test_kit.providers import TestDataProvider
-from tests.test_kit.providers import TestInstrumentProvider
-from tests.test_kit.strategies import EMACross
-from tests.test_kit.strategies import EMACrossConfig
-from tests.test_kit.strategies import MarketMaker
-from tests.test_kit.strategies import OrderBookImbalanceStrategy
-from tests.test_kit.strategies import OrderBookImbalanceStrategyConfig
 
 
 class TestBacktestAcceptanceTestsUSDJPY:
@@ -403,11 +403,11 @@ class TestBacktestAcceptanceTestsOrderBookImbalance:
 
     def test_run_order_book_imbalance(self):
         # Arrange
-        config = OrderBookImbalanceStrategyConfig(
+        config = OrderBookImbalanceConfig(
             instrument_id=str(self.instrument.id),
-            max_trade_size="20",
+            max_trade_size=20,
         )
-        strategy = OrderBookImbalanceStrategy(config=config)
+        strategy = OrderBookImbalance(config=config)
         self.engine.add_strategy(strategy)
 
         # Act
