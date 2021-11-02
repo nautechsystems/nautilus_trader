@@ -246,14 +246,15 @@ class BetfairExecutionClient(LiveExecutionClient):
         place_order = order_submit_to_betfair(command=command, instrument=instrument)
         try:
             result = await self._client.place_orders(**place_order)
-        except BetfairAPIError as exc:
-            await self.on_api_exception(exc=exc)
-            self._log.warning("Submit failed - client disconnected")
+        except Exception as exc:
+            if isinstance(exc, BetfairAPIError):
+                await self.on_api_exception(exc=exc)
+            self._log.warning(f"Submit failed: {exc}")
             self.generate_order_rejected(
                 strategy_id=command.strategy_id,
                 instrument_id=command.instrument_id,
                 client_order_id=client_order_id,
-                reason="client disconnected",  # type: ignore
+                reason="client error",  # type: ignore
                 ts_event=self._clock.timestamp_ns(),
             )
             return
@@ -351,14 +352,16 @@ class BetfairExecutionClient(LiveExecutionClient):
         )
         try:
             result = await self._client.replace_orders(**kw)
-        except BetfairAPIError as exc:
-            await self.on_api_exception(exc=exc)
-            self._log.warning("Submit failed - disconnected")
-            self.generate_order_rejected(
+        except Exception as exc:
+            if isinstance(exc, BetfairAPIError):
+                await self.on_api_exception(exc=exc)
+            self._log.warning(f"Modify failed: {exc}")
+            self.generate_order_modify_rejected(
                 strategy_id=command.strategy_id,
                 instrument_id=command.instrument_id,
                 client_order_id=command.client_order_id,
-                reason="disconnected",
+                venue_order_id=existing_order.venue_order_id,
+                reason="client error",
                 ts_event=self._clock.timestamp_ns(),
             )
             return
@@ -427,15 +430,16 @@ class BetfairExecutionClient(LiveExecutionClient):
         # Send to client
         try:
             result = await self._client.cancel_orders(**cancel_orders)
-        except BetfairAPIError as exc:
-            await self.on_api_exception(exc=exc)
-            self._log.warning("Submit failed - client disconnected")
+        except Exception as exc:
+            if isinstance(exc, BetfairAPIError):
+                await self.on_api_exception(exc=exc)
+            self._log.warning(f"Cancel failed: {exc}")
             self.generate_order_cancel_rejected(
                 strategy_id=command.strategy_id,
                 instrument_id=command.instrument_id,
                 client_order_id=command.client_order_id,
-                venue_order_id=self.cache.venue_order_id(client_order_id=command.client_order_id),
-                reason="client disconnected",
+                venue_order_id=command.venue_order_id,
+                reason="client error",
                 ts_event=self._clock.timestamp_ns(),
             )
             return
