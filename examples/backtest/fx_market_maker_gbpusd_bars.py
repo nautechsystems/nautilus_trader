@@ -14,13 +14,12 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import os
-import sys
 from datetime import datetime
 from decimal import Decimal
 
 import pandas as pd
 
+from nautilus_trader.backtest.data.providers import TestDataProvider
 from nautilus_trader.backtest.data.providers import TestInstrumentProvider
 from nautilus_trader.backtest.data.wranglers import QuoteTickDataWrangler
 from nautilus_trader.backtest.engine import BacktestEngine
@@ -37,12 +36,6 @@ from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.objects import Money
 
 
-# Import from tests
-sys.path.insert(0, str(os.path.abspath(__file__ + "/../../../")))
-from tests.test_kit import PACKAGE_ROOT
-from tests.test_kit.providers import TestDataProvider
-
-
 if __name__ == "__main__":
     # Configure backtest engine
     config = BacktestEngineConfig(
@@ -57,10 +50,11 @@ if __name__ == "__main__":
     GBPUSD_SIM = TestInstrumentProvider.default_fx_ccy("GBP/USD", SIM)
 
     # Setup data
+    provider = TestDataProvider()
     wrangler = QuoteTickDataWrangler(GBPUSD_SIM)
     ticks = wrangler.process_bar_data(
-        bid_data=TestDataProvider.gbpusd_1min_bid(),
-        ask_data=TestDataProvider.gbpusd_1min_ask(),
+        bid_data=provider.read_csv_bars("fxcm-gbpusd-m1-bid-2012.csv"),
+        ask_data=provider.read_csv_bars("fxcm-gbpusd-m1-ask-2012.csv"),
     )
     engine.add_instrument(GBPUSD_SIM)
     engine.add_ticks(ticks)
@@ -75,7 +69,7 @@ if __name__ == "__main__":
 
     # Optional plug in module to simulate rollover interest,
     # the data is coming from packaged test data.
-    interest_rate_data = pd.read_csv(os.path.join(PACKAGE_ROOT, "data", "short-term-interest.csv"))
+    interest_rate_data = provider.read_csv("short-term-interest.csv")
     fx_rollover_interest = FXRolloverInterestModule(rate_data=interest_rate_data)
 
     # Add a trading venue (multiple venues possible)
