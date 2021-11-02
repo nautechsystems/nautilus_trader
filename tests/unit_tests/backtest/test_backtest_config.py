@@ -31,6 +31,7 @@ from nautilus_trader.backtest.config import BacktestDataConfig
 from nautilus_trader.backtest.config import BacktestRunConfig
 from nautilus_trader.backtest.config import BacktestVenueConfig
 from nautilus_trader.backtest.config import Partialable
+from nautilus_trader.backtest.data.providers import TestInstrumentProvider
 from nautilus_trader.backtest.engine import BacktestEngineConfig
 from nautilus_trader.model.data.tick import QuoteTick
 from nautilus_trader.model.identifiers import ClientId
@@ -42,7 +43,6 @@ from tests.test_kit import PACKAGE_ROOT
 from tests.test_kit.mocks import NewsEventData
 from tests.test_kit.mocks import aud_usd_data_loader
 from tests.test_kit.mocks import data_catalog_setup
-from tests.test_kit.providers import TestInstrumentProvider
 from tests.test_kit.stubs import TestStubs
 
 

@@ -12,34 +12,3 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
-
-from nautilus_trader.backtest.data.providers import TestInstrumentProvider
-from nautilus_trader.serialization.base import register_serializable_object
-
-
-AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy("AUD/USD")
-
-
-class TestObject:
-    """
-    Represents some generic user object which implements serialization value dicts.
-    """
-
-    def __init__(self, value):
-        self.value = value
-
-    @staticmethod
-    def from_dict(values: dict):
-        return TestObject(values["value"])
-
-    @staticmethod
-    def to_dict(obj):
-        return {"value": obj.value}
-
-
-class TestSerializationBase:
-    def test_register_serializable_object(self):
-        # Arrange, Act, Assert
-        register_serializable_object(TestObject, TestObject.to_dict, TestObject.from_dict)
-
-        # Does not raise exception
