@@ -143,7 +143,7 @@ def scan_files(glob_path, compression="infer", **kw) -> List[OpenFile]:
     return [of for of in open_files]
 
 
-def split_and_serialize(objs: List) -> Dict[type, Dict[str, List]]:
+def split_and_serialize(objs: List) -> Dict[type, Dict[Optional[str], List]]:
     """
     Given a list of Nautilus `objs`; serialize and split into dictionaries per type / instrument ID.
     """
@@ -151,10 +151,10 @@ def split_and_serialize(objs: List) -> Dict[type, Dict[str, List]]:
     values: Dict[type, Dict[str, List]] = {}
     for obj in objs:
         cls = get_cls_table(type(obj))
-        if cls not in values:
-            values[cls] = {}
         if isinstance(obj, GenericData):
             cls = obj.data_type.type
+        if cls not in values:
+            values[cls] = {}
         for data in maybe_list(ParquetSerializer.serialize(obj)):
             instrument_id = data.get("instrument_id", None)
             if instrument_id not in values[cls]:
