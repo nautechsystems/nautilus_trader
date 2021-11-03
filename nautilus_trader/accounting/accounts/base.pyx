@@ -403,7 +403,7 @@ cdef class Account:
         cdef AccountBalance balance
         for balance in balances:
             if balance.total.as_decimal() <= 0:
-                raise RuntimeError("Account blow up (balance zero).")
+                raise RuntimeError("account blow up (balance zero).")
             self._balances[balance.currency] = balance
 
     cpdef void update_commissions(self, Money commission) except *:

@@ -313,7 +313,7 @@ cdef class MarginAccount(Account):
     cdef void _recalculate_balance(self, Currency currency) except *:
         cdef AccountBalance current_balance = self._balances.get(currency)
         if current_balance is None:
-            raise RuntimeError("Cannot recalculate balance when no current balance")
+            raise RuntimeError("cannot recalculate balance when no current balance")
 
         total_margin: Decimal = Decimal(0)
 
