@@ -76,7 +76,7 @@ cdef class WebSocketClient:
     ) -> None:
         Condition.valid_string(ws_url, "ws_url")
 
-        self._log.debug(f"Connecting to websocket: {ws_url}...")
+        self._log.debug(f"Connecting to {ws_url}")
         self._session = aiohttp.ClientSession(loop=self._loop)
         self._socket = await self._session.ws_connect(url=ws_url, **ws_kwargs)
         self._ws_url = ws_url

@@ -831,7 +831,7 @@ cdef class L2OrderBook(OrderBook):
 
     cdef void _remove_if_exists(self, Order order) except *:
         # For a L2OrderBook, an order update means a whole level update. If this
-        # level exists, remove it so we can insert the new level.
+        # level exists, remove it so that we can insert the new level.
         if order.side == OrderSide.BUY and order.price in self.bids.prices():
             self._delete(order)
         elif order.side == OrderSide.SELL and order.price in self.asks.prices():
