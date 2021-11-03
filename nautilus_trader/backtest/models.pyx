@@ -101,9 +101,7 @@ cdef class FillModel:
 
     cdef bint _event_success(self, double probability) except *:
         # Return a result indicating whether an event occurred based on the
-        # given probability.
-
-        # probability is the probability of the event occurring [0, 1].
+        # given probability of the event occurring [0, 1].
         if probability == 0:
             return False
         elif probability == 1:
