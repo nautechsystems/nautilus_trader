@@ -121,12 +121,12 @@ cdef class SimulatedExchangeLatency:
     def __init__(
         self,
         int base_latency_nanos = NANOSECONDS_IN_MILLISECOND,
-        int insert_latency_nanos = NANOSECONDS_IN_MILLISECOND,
-        int update_latency_nanos = NANOSECONDS_IN_MILLISECOND,
-        int cancel_latency_nanos = NANOSECONDS_IN_MILLISECOND,
+        insert_latency_nanos = None,
+        update_latency_nanos = None,
+        cancel_latency_nanos = None,
         # random_seed=None,
     ):
         self.base_latency_nanos = base_latency_nanos
-        self.insert_latency_nanos = insert_latency_nanos
-        self.update_latency_nanos = update_latency_nanos
-        self.cancel_latency_nanos = cancel_latency_nanos
+        self.insert_latency_nanos = insert_latency_nanos or base_latency_nanos
+        self.update_latency_nanos = update_latency_nanos or base_latency_nanos
+        self.cancel_latency_nanos = cancel_latency_nanos or base_latency_nanos

@@ -20,6 +20,7 @@ from nautilus_trader.backtest.data.providers import TestInstrumentProvider
 from nautilus_trader.backtest.exchange import SimulatedExchange
 from nautilus_trader.backtest.execution_client import BacktestExecClient
 from nautilus_trader.backtest.models import FillModel
+from nautilus_trader.backtest.models import SimulatedExchangeLatency
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.common.uuid import UUIDFactory
@@ -127,6 +128,7 @@ class TestSimulatedExchange:
             cache=self.cache,
             clock=self.clock,
             logger=self.logger,
+            simulated_latency=SimulatedExchangeLatency(0),
         )
 
         self.exec_client = BacktestExecClient(
@@ -217,7 +219,7 @@ class TestSimulatedExchange:
 
         # Act
         self.strategy.submit_order(order)
-        self.exchange.process(1_000_000)
+        self.exchange.process(0)
 
         # Assert
         assert order.status == OrderStatus.ACCEPTED
@@ -235,7 +237,7 @@ class TestSimulatedExchange:
 
         # Act
         self.strategy.submit_order(order)
-        self.exchange.process(1_000_000)
+        self.exchange.process(0)
 
         # Assert
         assert order.status == OrderStatus.ACCEPTED
@@ -252,7 +254,7 @@ class TestSimulatedExchange:
 
         # Act
         self.strategy.submit_order(order)
-        self.exchange.process(1_000_000)
+        self.exchange.process(0)
 
         # Assert
         assert order.status == OrderStatus.REJECTED
@@ -269,7 +271,7 @@ class TestSimulatedExchange:
 
         # Act
         self.strategy.submit_order(order)
-        self.exchange.process(1_000_000)
+        self.exchange.process(0)
 
         # Assert
         assert order.status == OrderStatus.REJECTED
@@ -295,7 +297,7 @@ class TestSimulatedExchange:
 
         # Act
         self.strategy.submit_order(order)
-        self.exchange.process(1_000_000)
+        self.exchange.process(0)
 
         # Assert
         assert order.status == OrderStatus.REJECTED
@@ -347,7 +349,7 @@ class TestSimulatedExchange:
 
         # Act
         self.strategy.submit_order(order)
-        self.exchange.process(1_000_000)
+        self.exchange.process(0)
 
         # Assert
         assert order.status == OrderStatus.FILLED
@@ -373,7 +375,7 @@ class TestSimulatedExchange:
 
         # Act
         self.strategy.submit_order(order)
-        self.exchange.process(1_000_000)
+        self.exchange.process(0)
 
         # Assert
         assert order.status == OrderStatus.REJECTED
@@ -425,7 +427,7 @@ class TestSimulatedExchange:
 
         # Act
         self.strategy.submit_order(order)
-        self.exchange.process(1_000_000)
+        self.exchange.process(0)
 
         # Assert
         assert order.status == OrderStatus.FILLED
@@ -452,7 +454,7 @@ class TestSimulatedExchange:
 
         # Act
         self.strategy.submit_order(order)
-        self.exchange.process(1_000_000)
+        self.exchange.process(0)
 
         # Assert
         assert order.status == OrderStatus.FILLED
@@ -478,7 +480,7 @@ class TestSimulatedExchange:
 
         # Act
         self.strategy.submit_order(order)
-        self.exchange.process(1_000_000)
+        self.exchange.process(0)
 
         # Assert
         assert order.status == OrderStatus.PARTIALLY_FILLED
@@ -503,7 +505,7 @@ class TestSimulatedExchange:
 
         # Act
         self.strategy.submit_order(order)
-        self.exchange.process(1_000_000)
+        self.exchange.process(0)
 
         # Assert
         assert order.status == OrderStatus.REJECTED
@@ -528,7 +530,7 @@ class TestSimulatedExchange:
 
         # Act
         self.strategy.submit_order(order)
-        self.exchange.process(1_000_000)
+        self.exchange.process(0)
 
         # Assert
         assert order.status == OrderStatus.ACCEPTED
@@ -555,7 +557,7 @@ class TestSimulatedExchange:
 
         # Act
         self.strategy.submit_order(order)
-        self.exchange.process(1_000_000)
+        self.exchange.process(0)
 
         # Assert
         assert order.status == OrderStatus.REJECTED
@@ -581,7 +583,7 @@ class TestSimulatedExchange:
 
         # Act
         self.strategy.submit_order(order)
-        self.exchange.process(1_000_000)
+        self.exchange.process(0)
 
         # Assert
         assert order.status == OrderStatus.ACCEPTED
@@ -607,7 +609,7 @@ class TestSimulatedExchange:
 
         # Act
         self.strategy.submit_order(order)
-        self.exchange.process(1_000_000)
+        self.exchange.process(0)
 
         # Assert
         assert order.status == OrderStatus.REJECTED
@@ -638,11 +640,11 @@ class TestSimulatedExchange:
         )
 
         self.strategy.submit_order(order1)
-        self.exchange.process(1_000_000)
+        self.exchange.process(0)
 
         # Act
         self.strategy.submit_order(order2)
-        self.exchange.process(1_000_000)
+        self.exchange.process(0)
 
         # Assert
         assert order1.status == OrderStatus.FILLED
@@ -667,11 +669,11 @@ class TestSimulatedExchange:
         )
 
         self.strategy.submit_order(order)
-        self.exchange.process(1_000_000)
+        self.exchange.process(0)
 
         # Act
         self.strategy.cancel_order(order)
-        self.exchange.process(1_000_000)
+        self.exchange.process(0)
 
         # Assert
         assert order.status == OrderStatus.CANCELED
@@ -691,7 +693,7 @@ class TestSimulatedExchange:
 
         # Act
         self.exchange.send(command)
-        self.exchange.process(1_000_000)
+        self.exchange.process(0)
 
         # Assert
         assert self.exec_engine.event_count == 1
@@ -713,7 +715,7 @@ class TestSimulatedExchange:
 
         # Act
         self.exchange.send(command)
-        self.exchange.process(1_000_000)
+        self.exchange.process(0)
 
         # Assert
         assert self.exec_engine.event_count == 1
@@ -737,11 +739,11 @@ class TestSimulatedExchange:
         )
 
         self.strategy.submit_order(order)
-        self.exchange.process(1_000_000)
+        self.exchange.process(0)
 
         # Act: Amending BUY LIMIT order limit price to ask will become marketable
         self.strategy.modify_order(order, Quantity.zero(), Price.from_str("90.001"))
-        self.exchange.process(1_000_000)
+        self.exchange.process(0)
 
         # Assert
         assert order.status == OrderStatus.ACCEPTED
@@ -767,11 +769,11 @@ class TestSimulatedExchange:
         )
 
         self.strategy.submit_order(order)
-        self.exchange.process(1_000_000)
+        self.exchange.process(0)
 
         # Act: Amending BUY LIMIT order limit price to ask will become marketable
         self.strategy.modify_order(order, order.quantity, Price.from_str("90.005"))
-        self.exchange.process(1_000_000)
+        self.exchange.process(0)
 
         # Assert
         assert order.status == OrderStatus.ACCEPTED
@@ -797,11 +799,11 @@ class TestSimulatedExchange:
         )
 
         self.strategy.submit_order(order)
-        self.exchange.process(1_000_000)
+        self.exchange.process(0)
 
         # Act: Amending BUY LIMIT order limit price to ask will become marketable
         self.strategy.modify_order(order, order.quantity, Price.from_str("90.005"))
-        self.exchange.process(1_000_000)
+        self.exchange.process(0)
 
         # Assert
         assert order.status == OrderStatus.FILLED
@@ -828,11 +830,11 @@ class TestSimulatedExchange:
         )
 
         self.strategy.submit_order(order)
-        self.exchange.process(1_000_000)
+        self.exchange.process(0)
 
         # Act
         self.strategy.modify_order(order, order.quantity, Price.from_str("90.005"))
-        self.exchange.process(1_000_000)
+        self.exchange.process(0)
 
         # Assert
         assert order.status == OrderStatus.ACCEPTED
@@ -857,11 +859,11 @@ class TestSimulatedExchange:
         )
 
         self.strategy.submit_order(order)
-        self.exchange.process(1_000_000)
+        self.exchange.process(0)
 
         # Act
         self.strategy.modify_order(order, order.quantity, Price.from_str("90.011"))
-        self.exchange.process(1_000_000)
+        self.exchange.process(0)
 
         # Assert
         assert order.status == OrderStatus.ACCEPTED
@@ -889,11 +891,11 @@ class TestSimulatedExchange:
         )
 
         self.strategy.submit_order(order)
-        self.exchange.process(1_000_000)
+        self.exchange.process(0)
 
         # Act
         self.strategy.modify_order(order, order.quantity, Price.from_str("90.005"))
-        self.exchange.process(1_000_000)
+        self.exchange.process(0)
 
         # Assert
         assert order.status == OrderStatus.ACCEPTED
@@ -919,11 +921,11 @@ class TestSimulatedExchange:
         )
 
         self.strategy.submit_order(order)
-        self.exchange.process(1_000_000)
+        self.exchange.process(0)
 
         # Act
         self.strategy.modify_order(order, order.quantity, Price.from_str("90.011"))
-        self.exchange.process(1_000_000)
+        self.exchange.process(0)
 
         # Assert
         assert order.status == OrderStatus.ACCEPTED
@@ -952,7 +954,7 @@ class TestSimulatedExchange:
         )
 
         self.strategy.submit_order(order)
-        self.exchange.process(1_000_000)
+        self.exchange.process(0)
 
         # Trigger order
         tick2 = TestStubs.quote_tick_3decimal(
@@ -965,7 +967,7 @@ class TestSimulatedExchange:
 
         # Act
         self.strategy.modify_order(order, order.quantity, Price.from_str("90.010"))
-        self.exchange.process(1_000_000)
+        self.exchange.process(0)
 
         # Assert
         assert order.status == OrderStatus.TRIGGERED
@@ -995,7 +997,7 @@ class TestSimulatedExchange:
         )
 
         self.strategy.submit_order(order)
-        self.exchange.process(1_000_000)
+        self.exchange.process(0)
 
         # Trigger order
         tick2 = TestStubs.quote_tick_3decimal(
@@ -1008,7 +1010,7 @@ class TestSimulatedExchange:
 
         # Act
         self.strategy.modify_order(order, order.quantity, Price.from_str("90.010"))
-        self.exchange.process(1_000_000)
+        self.exchange.process(0)
 
         # Assert
         assert order.status == OrderStatus.FILLED
@@ -1035,7 +1037,7 @@ class TestSimulatedExchange:
         )
 
         self.strategy.submit_order(order)
-        self.exchange.process(1_000_000)
+        self.exchange.process(0)
 
         # Trigger order
         tick2 = TestStubs.quote_tick_3decimal(
@@ -1048,7 +1050,7 @@ class TestSimulatedExchange:
 
         # Act
         self.strategy.modify_order(order, order.quantity, Price.from_str("90.005"))
-        self.exchange.process(1_000_000)
+        self.exchange.process(0)
 
         # Assert
         assert order.status == OrderStatus.TRIGGERED
@@ -1086,14 +1088,14 @@ class TestSimulatedExchange:
 
         # Act
         self.strategy.submit_order(order)
-        self.exchange.process(1_000_000)
+        self.exchange.process(0)
 
         position_id = PositionId("1-002")  # Generated by platform
 
         self.strategy.submit_order(top_up_order)
-        self.exchange.process(1_000_000)
+        self.exchange.process(0)
         self.strategy.submit_order(reduce_order, position_id=position_id)
-        self.exchange.process(1_000_000)
+        self.exchange.process(0)
         fill_event1 = self.strategy.object_storer.get_store()[2]
         fill_event2 = self.strategy.object_storer.get_store()[6]
         fill_event3 = self.strategy.object_storer.get_store()[10]
@@ -1125,7 +1127,7 @@ class TestSimulatedExchange:
         )
 
         self.strategy.submit_order(order)
-        self.exchange.process(1_000_000)
+        self.exchange.process(0)
 
         tick2 = QuoteTick(
             instrument_id=USDJPY_SIM.id,
@@ -1162,7 +1164,7 @@ class TestSimulatedExchange:
         )
 
         self.strategy.submit_order(order)
-        self.exchange.process(1_000_000)
+        self.exchange.process(0)
 
         # Act
         tick2 = QuoteTick(
@@ -1202,7 +1204,7 @@ class TestSimulatedExchange:
         )
 
         self.strategy.submit_order(order)
-        self.exchange.process(1_000_000)
+        self.exchange.process(0)
 
         # Act
         tick2 = QuoteTick(
@@ -1241,7 +1243,7 @@ class TestSimulatedExchange:
         )
 
         self.strategy.submit_order(order)
-        self.exchange.process(1_000_000)
+        self.exchange.process(0)
 
         # Act
         tick2 = QuoteTick(
@@ -1279,7 +1281,7 @@ class TestSimulatedExchange:
         )
 
         self.strategy.submit_order(order)
-        self.exchange.process(1_000_000)
+        self.exchange.process(0)
 
         tick2 = QuoteTick(
             instrument_id=USDJPY_SIM.id,
@@ -1327,7 +1329,7 @@ class TestSimulatedExchange:
         )
 
         self.strategy.submit_order(order)
-        self.exchange.process(1_000_000)
+        self.exchange.process(0)
 
         # Act
         tick2 = QuoteTick(
@@ -1366,7 +1368,7 @@ class TestSimulatedExchange:
         )
 
         self.strategy.submit_order(order)
-        self.exchange.process(1_000_000)
+        self.exchange.process(0)
 
         # Act
         tick2 = QuoteTick(
@@ -1405,7 +1407,7 @@ class TestSimulatedExchange:
         )
 
         self.strategy.submit_order(order)
-        self.exchange.process(1_000_000)
+        self.exchange.process(0)
 
         # Act
         tick2 = QuoteTick(
@@ -1444,7 +1446,7 @@ class TestSimulatedExchange:
 
         # Act
         self.strategy.submit_order(order)
-        self.exchange.process(1_000_000)
+        self.exchange.process(0)
         position = self.cache.positions_open()[0]
 
         # Assert
@@ -1469,7 +1471,7 @@ class TestSimulatedExchange:
 
         # Act 1
         self.strategy.submit_order(order_open)
-        self.exchange.process(1_000_000)
+        self.exchange.process(0)
 
         quote = QuoteTick(
             instrument_id=USDJPY_SIM.id,
@@ -1494,7 +1496,7 @@ class TestSimulatedExchange:
 
         # Act 2
         self.strategy.submit_order(order_reduce, position_id)
-        self.exchange.process(1_000_000)
+        self.exchange.process(0)
 
         # Assert
         position = self.cache.positions_open()[0]
@@ -1565,7 +1567,7 @@ class TestSimulatedExchange:
 
         # Act 1
         self.strategy.submit_order(order_open)
-        self.exchange.process(1_000_000)
+        self.exchange.process(0)
 
         reduce_quote = QuoteTick(
             instrument_id=USDJPY_SIM.id,
@@ -1588,7 +1590,7 @@ class TestSimulatedExchange:
 
         # Act 2
         self.strategy.submit_order(order_reduce, PositionId("1-001"))  # Generated by platform
-        self.exchange.process(1_000_000)
+        self.exchange.process(0)
 
         # Assert
         position_open = self.cache.positions_open()[0]
@@ -1618,7 +1620,7 @@ class TestSimulatedExchange:
             quantity=Quantity.from_int(200000),
         )
         self.strategy.submit_order(entry)
-        self.exchange.process(1_000_000)
+        self.exchange.process(0)
 
         exit = self.strategy.order_factory.market(
             instrument_id=USDJPY_SIM.id,
@@ -1627,7 +1629,7 @@ class TestSimulatedExchange:
             reduce_only=True,
         )
         self.strategy.submit_order(exit, position_id=PositionId("1-001"))
-        self.exchange.process(1_000_000)
+        self.exchange.process(0)
 
         # Assert
         assert exit.status == OrderStatus.FILLED
@@ -1653,7 +1655,7 @@ class TestSimulatedExchange:
             quantity=Quantity.from_int(200000),
         )
         self.strategy.submit_order(entry)
-        self.exchange.process(1_000_000)
+        self.exchange.process(0)
 
         exit = self.strategy.order_factory.limit(
             instrument_id=USDJPY_SIM.id,
@@ -1664,7 +1666,7 @@ class TestSimulatedExchange:
             reduce_only=True,
         )
         self.strategy.submit_order(exit, position_id=PositionId("1-001"))
-        self.exchange.process(1_000_000)
+        self.exchange.process(0)
 
         tick = QuoteTick(
             instrument_id=USDJPY_SIM.id,
@@ -1809,6 +1811,11 @@ class TestBitmexExchange:
             Quantity.from_int(100000),
         )
 
+        # Act
+        self.strategy.submit_order(order_market)
+        self.exchange.process(0)
+        self.clock.set_time(1)
+
         order_limit = self.strategy.order_factory.limit(
             XBTUSD_BITMEX.id,
             OrderSide.BUY,
@@ -1816,11 +1823,8 @@ class TestBitmexExchange:
             Price.from_str("11492.5"),
         )
 
-        # Act
-        self.strategy.submit_order(order_market)
-        self.exchange.process(1_000_000)
         self.strategy.submit_order(order_limit)
-        self.exchange.process(1_000_000)
+        self.exchange.process(1)
 
         quote2 = QuoteTick(
             instrument_id=XBTUSD_BITMEX.id,
@@ -1828,8 +1832,8 @@ class TestBitmexExchange:
             ask=Price.from_str("11491.5"),
             bid_size=Quantity.from_int(1500000),
             ask_size=Quantity.from_int(1500000),
-            ts_event=0,
-            ts_init=0,
+            ts_event=1,
+            ts_init=1,
         )
 
         self.exchange.process_tick(quote2)  # Fill the limit order

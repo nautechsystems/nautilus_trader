@@ -493,7 +493,6 @@ cdef class SimulatedExchange:
 
         """
         Condition.not_none(command, "command")
-        print(command)
         cdef tuple latency_command = self.generate_latency_command(command)
         heappush(self._inflight_queue, latency_command)
 
@@ -507,7 +506,7 @@ cdef class SimulatedExchange:
             ts = self.simulated_latency.cancel_latency_nanos
         else:
             raise ValueError(f"Unknown command {command=}")
-        return ts, command
+        return ts, command.ts_init, command
 
     cpdef void process_order_book(self, OrderBookData data) except *:
         """
@@ -608,16 +607,14 @@ cdef class SimulatedExchange:
             Order order
         # Check any inflight messages
         while len(self._inflight_queue):
-            print(self._inflight_queue[0])
             ts = self._inflight_queue[0][0]
             if ts <= now_ns:
-                self._message_queue.put_nowait(self._inflight_queue.pop()[1])
+                self._message_queue.put_nowait(self._inflight_queue.pop()[2])
             else:
                 break
 
         while self._message_queue.count > 0:
             command = self._message_queue.get_nowait()
-            print(command)
             if isinstance(command, SubmitOrder):
                 self._process_order(command.order)
             elif isinstance(command, SubmitOrderList):
