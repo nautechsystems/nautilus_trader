@@ -619,7 +619,7 @@ class BetfairExecutionClient(LiveExecutionClient):
             else:
                 prev_price = probability_to_price(order.avg_px)
                 prev_size = order.filled_qty
-                new_price = Price.from_str(update["avp"])
+                new_price = Price.from_str(str(update["avp"]))
                 new_size = update["sm"] - prev_size
                 total_size = prev_size + new_size
                 price = (new_price - ((prev_price * (prev_size / total_size)))) / (
@@ -717,9 +717,9 @@ class BetfairExecutionClient(LiveExecutionClient):
         start = self._clock.timestamp_ns()
         now = start
         while (now - start) < secs_to_nanos(timeout_seconds):
-            self._log.debug(
-                f"checking venue_order_id={venue_order_id} in {self.venue_order_id_to_client_order_id}"
-            )
+            # self._log.debug(
+            #     f"checking venue_order_id={venue_order_id} in {self.venue_order_id_to_client_order_id}"
+            # )
             if venue_order_id in self.venue_order_id_to_client_order_id:
                 client_order_id = self.venue_order_id_to_client_order_id[venue_order_id]
                 self._log.debug(
