@@ -14,6 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 from decimal import Decimal
+from heapq import heappush
 from typing import Dict
 
 from libc.limits cimport INT_MAX
@@ -23,6 +24,7 @@ from libc.stdint cimport int64_t
 from nautilus_trader.accounting.accounts.base cimport Account
 from nautilus_trader.backtest.execution_client cimport BacktestExecClient
 from nautilus_trader.backtest.models cimport FillModel
+from nautilus_trader.backtest.models cimport SimulatedExchangeLatency
 from nautilus_trader.backtest.modules cimport SimulationModule
 from nautilus_trader.cache.base cimport CacheFacade
 from nautilus_trader.common.clock cimport TestClock
@@ -96,6 +98,7 @@ cdef class SimulatedExchange:
         BookType book_type=BookType.L1_TBBO,
         bint bar_execution=False,
         bint reject_stop_orders=True,
+        SimulatedExchangeLatency simulated_latency=None
     ):
         """
         Initialize a new instance of the ``SimulatedExchange`` class.
@@ -187,6 +190,7 @@ cdef class SimulatedExchange:
         self.reject_stop_orders = reject_stop_orders
         self.bar_execution = bar_execution
         self.fill_model = fill_model
+        self.simulated_latency = simulated_latency or SimulatedExchangeLatency()
 
         # Load modules
         self.modules = []
@@ -221,6 +225,7 @@ cdef class SimulatedExchange:
         self._symbol_ord_count = {}  # type: dict[InstrumentId, int]
         self._executions_count = 0
         self._message_queue = Queue()
+        self._inflight_queue = []
 
     def __repr__(self) -> str:
         return (f"{type(self).__name__}("
@@ -488,8 +493,21 @@ cdef class SimulatedExchange:
 
         """
         Condition.not_none(command, "command")
+        print(command)
+        cdef tuple latency_command = self.generate_latency_command(command)
+        heappush(self._inflight_queue, latency_command)
 
-        self._message_queue.put_nowait(command)
+    cdef tuple generate_latency_command(self, TradingCommand command):
+        cdef int ts
+        if isinstance(command, (SubmitOrder, SubmitOrderList)):
+            ts = command.ts_init + self.simulated_latency.insert_latency_nanos
+        elif isinstance(command, ModifyOrder):
+            ts = self.simulated_latency.update_latency_nanos
+        elif isinstance(command, CancelOrder):
+            ts = self.simulated_latency.cancel_latency_nanos
+        else:
+            raise ValueError(f"Unknown command {command=}")
+        return ts, command
 
     cpdef void process_order_book(self, OrderBookData data) except *:
         """
@@ -588,8 +606,18 @@ cdef class SimulatedExchange:
         cdef:
             TradingCommand command
             Order order
+        # Check any inflight messages
+        while len(self._inflight_queue):
+            print(self._inflight_queue[0])
+            ts = self._inflight_queue[0][0]
+            if ts <= now_ns:
+                self._message_queue.put_nowait(self._inflight_queue.pop()[1])
+            else:
+                break
+
         while self._message_queue.count > 0:
             command = self._message_queue.get_nowait()
+            print(command)
             if isinstance(command, SubmitOrder):
                 self._process_order(command.order)
             elif isinstance(command, SubmitOrderList):

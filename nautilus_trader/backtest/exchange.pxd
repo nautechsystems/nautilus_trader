@@ -18,6 +18,7 @@ from libc.stdint cimport int64_t
 from nautilus_trader.accounting.accounts.base cimport Account
 from nautilus_trader.backtest.execution_client cimport BacktestExecClient
 from nautilus_trader.backtest.models cimport FillModel
+from nautilus_trader.backtest.models cimport SimulatedExchangeLatency
 from nautilus_trader.cache.cache cimport Cache
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.logging cimport LoggerAdapter
@@ -89,6 +90,8 @@ cdef class SimulatedExchange:
     """The fill model for the exchange.\n\n:returns: `FillModel`"""
     cdef readonly bint reject_stop_orders
     """If stop orders are rejected on submission if in the market.\n\n:returns: `bool`"""
+    cdef readonly SimulatedExchangeLatency simulated_latency
+    """If stop orders are rejected on submission if in the market.\n\n:returns: `bool`"""
     cdef readonly bint bar_execution
     """If the exchange execution dynamics is based on bar data.\n\n:returns: `bool`"""
     cdef readonly list modules
@@ -110,6 +113,7 @@ cdef class SimulatedExchange:
     cdef dict _symbol_ord_count
     cdef int _executions_count
     cdef Queue _message_queue
+    cdef list _inflight_queue
 
     cpdef Price best_bid_price(self, InstrumentId instrument_id)
     cpdef Price best_ask_price(self, InstrumentId instrument_id)
@@ -124,6 +128,7 @@ cdef class SimulatedExchange:
     cpdef void set_fill_model(self, FillModel fill_model) except *
     cpdef void initialize_account(self) except *
     cpdef void adjust_account(self, Money adjustment) except *
+    cdef tuple generate_latency_command(self, TradingCommand command)
     cpdef void send(self, TradingCommand command) except *
     cpdef void process_order_book(self, OrderBookData data) except *
     cpdef void process_tick(self, Tick tick) except *

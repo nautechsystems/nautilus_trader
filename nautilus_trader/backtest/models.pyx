@@ -12,10 +12,13 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
-
 import random
+from libc.stdint cimport int64_t
 
 from nautilus_trader.core.correctness cimport Condition
+
+
+cdef int64_t NANOSECONDS_IN_MILLISECOND = 1_000_000
 
 
 cdef class FillModel:
@@ -108,3 +111,22 @@ cdef class FillModel:
             return True
         else:
             return probability >= random.random()
+
+
+cdef class SimulatedExchangeLatency:
+    """
+    Delays messages coming from and going to the simulated exchange.
+    """
+
+    def __init__(
+        self,
+        int base_latency_nanos = NANOSECONDS_IN_MILLISECOND,
+        int insert_latency_nanos = NANOSECONDS_IN_MILLISECOND,
+        int update_latency_nanos = NANOSECONDS_IN_MILLISECOND,
+        int cancel_latency_nanos = NANOSECONDS_IN_MILLISECOND,
+        # random_seed=None,
+    ):
+        self.base_latency_nanos = base_latency_nanos
+        self.insert_latency_nanos = insert_latency_nanos
+        self.update_latency_nanos = update_latency_nanos
+        self.cancel_latency_nanos = cancel_latency_nanos
