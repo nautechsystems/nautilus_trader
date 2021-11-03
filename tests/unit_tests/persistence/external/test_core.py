@@ -494,4 +494,6 @@ class TestPersistenceCore:
         split = split_and_serialize(objs)
 
         # Assert
-        assert split
+        assert NewsEventData in split
+        assert None in split[NewsEventData]
+        assert len(split[NewsEventData][None]) == 22941
