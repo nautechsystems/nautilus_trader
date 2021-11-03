@@ -338,7 +338,7 @@ cdef class OrderBookDelta(OrderBookData):
         return OrderBookDelta(
             instrument_id=InstrumentId.from_str_c(values["instrument_id"]),
             book_type=BookTypeParser.from_str(values["book_type"]),
-            action=BookActionParser.from_str(values["action"]),
+            action=action,
             order=order,
             ts_event=values["ts_event"],
             ts_init=values["ts_init"],
