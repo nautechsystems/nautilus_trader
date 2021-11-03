@@ -497,3 +497,33 @@ class TestPersistenceCore:
         assert NewsEventData in split
         assert None in split[NewsEventData]
         assert len(split[NewsEventData][None]) == 22941
+
+    def test_catalog_generic_data_not_overwritten(self):
+        # Arrange
+        TestStubs.setup_news_event_persistence()
+        process_files(
+            glob_path=f"{TEST_DATA_DIR}/news_events.csv",
+            reader=CSVReader(block_parser=TestStubs.news_event_parser),
+            catalog=self.catalog,
+        )
+        objs = self.catalog.generic_data(
+            cls=NewsEventData, filter_expr=ds.field("currency") == "USD", as_nautilus=True
+        )
+
+        # Clear the catalog again
+        data_catalog_setup()
+        self.catalog = DataCatalog.from_env()
+
+        assert (
+            len(self.catalog.generic_data(NewsEventData, raise_on_empty=False, as_nautilus=True))
+            == 0
+        )
+
+        chunk1, chunk2 = objs[:10], objs[5:15]
+
+        # Act, Assert
+        write_objects(catalog=self.catalog, chunk=chunk1)
+        assert len(self.catalog.generic_data(NewsEventData)) == 10
+
+        write_objects(catalog=self.catalog, chunk=chunk2)
+        assert len(self.catalog.generic_data(NewsEventData)) == 15

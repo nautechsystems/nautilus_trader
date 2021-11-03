@@ -331,6 +331,8 @@ class DataCatalog(metaclass=Singleton):
     def generic_data(self, cls, filter_expr=None, as_nautilus=False, **kwargs):
         data = self._query(cls=cls, filter_expr=filter_expr, as_dataframe=not as_nautilus, **kwargs)
         if as_nautilus:
+            if data is None:
+                return []
             return [GenericData(data_type=DataType(cls), data=d) for d in data]
         return data
 
