@@ -43,9 +43,11 @@ from nautilus_trader.persistence.external.core import validate_data_catalog
 from nautilus_trader.persistence.external.core import write_objects
 from nautilus_trader.persistence.external.core import write_parquet
 from nautilus_trader.persistence.external.core import write_tables
+from nautilus_trader.persistence.external.readers import CSVReader
 from tests.integration_tests.adapters.betfair.test_kit import BetfairTestStubs
 from tests.test_kit import PACKAGE_ROOT
 from tests.test_kit.mocks import MockReader
+from tests.test_kit.mocks import NewsEventData
 from tests.test_kit.mocks import data_catalog_setup
 from tests.test_kit.stubs import TestStubs
 from tests.unit_tests.backtest.test_backtest_config import TEST_DATA_DIR
@@ -475,3 +477,21 @@ class TestPersistenceCore:
             f"/root/data/trade_tick.parquet/instrument_id={ins2}/20191220.parquet",
         ]
         assert new_partitions == expected
+
+    def test_split_and_serialize_generic_data_gets_correct_class(self):
+        # Arrange
+        TestStubs.setup_news_event_persistence()
+        process_files(
+            glob_path=f"{TEST_DATA_DIR}/news_events.csv",
+            reader=CSVReader(block_parser=TestStubs.news_event_parser),
+            catalog=self.catalog,
+        )
+        objs = self.catalog.generic_data(
+            cls=NewsEventData, filter_expr=ds.field("currency") == "USD", as_nautilus=True
+        )
+
+        # Act
+        split = split_and_serialize(objs)
+
+        # Assert
+        assert split
