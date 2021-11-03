@@ -193,7 +193,7 @@ class BinanceDataClient(LiveMarketDataClient):
             self._log.error(
                 "Cannot subscribe to order book deltas: "
                 "L3_MBO data is not published by Binance. "
-                "Valid book types are L1_TBBO, L2_MBP."
+                "Valid book types are L1_TBBO, L2_MBP.",
             )
             return
 
@@ -210,7 +210,7 @@ class BinanceDataClient(LiveMarketDataClient):
             self._log.error(
                 "Cannot subscribe to order book deltas: "
                 "L3_MBO data is not published by Binance. "
-                "Valid book types are L1_TBBO, L2_MBP."
+                "Valid book types are L1_TBBO, L2_MBP.",
             )
             return
 
@@ -246,13 +246,13 @@ class BinanceDataClient(LiveMarketDataClient):
 
         if not bar_type.spec.is_time_aggregated():
             self._log.error(
-                f"Cannot subscribe to {bar_type}: only time bars are aggregated by Binance."
+                f"Cannot subscribe to {bar_type}: only time bars are aggregated by Binance.",
             )
             return
 
         if bar_type.spec.aggregation == BarAggregation.SECOND:
             self._log.error(
-                f"Cannot subscribe to {bar_type}: second bars are not aggregated by Binance."
+                f"Cannot subscribe to {bar_type}: second bars are not aggregated by Binance.",
             )
             return
 
@@ -339,7 +339,7 @@ class BinanceDataClient(LiveMarketDataClient):
         correlation_id: UUID4,
     ):
         self._log.error(
-            "Cannot request historical quote ticks: " "not published by Binance.",
+            "Cannot request historical quote ticks: not published by Binance.",
         )
 
     def request_trade_ticks(
@@ -392,26 +392,26 @@ class BinanceDataClient(LiveMarketDataClient):
         if bar_type.is_internally_aggregated():
             self._log.error(
                 f"Cannot request {bar_type}: "
-                f"only historical bars with EXTERNAL aggregation available from Binance."
+                f"only historical bars with EXTERNAL aggregation available from Binance.",
             )
             return
 
         if not bar_type.spec.is_time_aggregated():
             self._log.error(
-                f"Cannot request {bar_type}: " f"only time bars are aggregated by Binance."
+                f"Cannot request {bar_type}: only time bars are aggregated by Binance.",
             )
             return
 
         if bar_type.spec.aggregation == BarAggregation.SECOND:
             self._log.error(
-                f"Cannot request {bar_type}: " f"second bars are not aggregated by Binance."
+                f"Cannot request {bar_type}: second bars are not aggregated by Binance.",
             )
             return
 
         if bar_type.spec.price_type != PriceType.LAST:
             self._log.error(
                 f"Cannot request {bar_type}: "
-                f"only historical bars for LAST price type available from Binance."
+                f"only historical bars for LAST price type available from Binance.",
             )
             return
 
