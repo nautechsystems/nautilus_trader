@@ -125,6 +125,7 @@ class TestBinanceDataTypes:
             close=Price.from_str("0.01577100"),
             volume=Quantity.from_str("148976.11427815"),
             quote_volume=Quantity.from_str("2434.19055334"),
+            count=100,
             taker_buy_base_volume=Quantity.from_str("1756.87402397"),
             taker_buy_quote_volume=Quantity.from_str("28.46694368"),
             ts_event=1500000000000,
@@ -134,7 +135,7 @@ class TestBinanceDataTypes:
         # Act, Assert
         assert (
             repr(bar)
-            == "BinanceBar(bar_type=BTC/USDT.BINANCE-1-MINUTE-LAST-EXTERNAL, open=0.01634790, high=0.80000000, low=0.01575800, close=0.01577100, volume=148976.11427815, quote_volume=2434.19055334, taker_buy_base_volume=1756.87402397, taker_buy_quote_volume=28.46694368, taker_sell_base_volume=147219.24025418, taker_sell_quote_volume=2405.72360966, ts_event=1500000000000,ts_init=1500000000000)"  # noqa
+            == "BinanceBar(bar_type=BTC/USDT.BINANCE-1-MINUTE-LAST-EXTERNAL, open=0.01634790, high=0.80000000, low=0.01575800, close=0.01577100, volume=148976.11427815, quote_volume=2434.19055334, count=100, taker_buy_base_volume=1756.87402397, taker_buy_quote_volume=28.46694368, taker_sell_base_volume=147219.24025418, taker_sell_quote_volume=2405.72360966, ts_event=1500000000000,ts_init=1500000000000)"  # noqa
         )
 
     def test_binance_bar_to_from_dict(self):
@@ -150,6 +151,7 @@ class TestBinanceDataTypes:
             close=Price.from_str("0.01577100"),
             volume=Quantity.from_str("148976.11427815"),
             quote_volume=Quantity.from_str("2434.19055334"),
+            count=100,
             taker_buy_base_volume=Quantity.from_str("1756.87402397"),
             taker_buy_quote_volume=Quantity.from_str("28.46694368"),
             ts_event=1500000000000,
@@ -170,6 +172,7 @@ class TestBinanceDataTypes:
             "close": "0.01577100",
             "volume": "148976.11427815",
             "quote_volume": "2434.19055334",
+            "count": 100,
             "taker_buy_base_volume": "1756.87402397",
             "taker_buy_quote_volume": "28.46694368",
             "ts_event": 1500000000000,

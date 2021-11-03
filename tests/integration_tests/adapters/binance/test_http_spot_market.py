@@ -181,7 +181,7 @@ class TestBinanceSpotMarketHttpAPI:
         request = mock_send_request.call_args.kwargs
         assert request["method"] == "GET"
         assert request["url"] == "https://api.binance.com/api/v3/klines"
-        assert request["params"] == "symbol=BTCUSDT&internal=1m&startTime=0&endTime=1&limit=1000"
+        assert request["params"] == "symbol=BTCUSDT&interval=1m&startTime=0&endTime=1&limit=1000"
 
     @pytest.mark.asyncio
     async def test_avg_price_sends_expected_request(self, mocker):
