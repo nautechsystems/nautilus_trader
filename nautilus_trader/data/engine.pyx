@@ -1070,7 +1070,7 @@ cdef class DataEngine(Component):
         self._cache.add_bars(bars)
 
         cdef TimeBarAggregator aggregator
-        if partial is not None:
+        if partial is not None and partial.type.is_internally_aggregated():
             # Update partial time bar
             aggregator = self._bar_aggregators.get(partial.type)
             if aggregator:
@@ -1195,11 +1195,6 @@ cdef class DataEngine(Component):
         BarType bar_type,
     ) except *:
         data_type = type(TradeTick) if bar_type.spec.price_type == PriceType.LAST else QuoteTick
-
-        if data_type == type(TradeTick) and "request_trade_ticks" in client.unavailable_methods():
-            return
-        elif data_type == type(QuoteTick) and "request_quote_ticks" in client.unavailable_methods():
-            return
 
         # Update aggregator with latest data
         bulk_updater = BulkTimeBarUpdater(aggregator)
