@@ -165,10 +165,6 @@ class FTXDataClient(LiveMarketDataClient):
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
-    def subscribe_venue_status_updates(self, instrument_id: InstrumentId):
-        """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
-
     def subscribe_instrument_status_updates(self, instrument_id: InstrumentId):
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
@@ -206,10 +202,6 @@ class FTXDataClient(LiveMarketDataClient):
         raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
     def unsubscribe_bars(self, bar_type: BarType):
-        """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
-
-    def unsubscribe_venue_status_updates(self, instrument_id: InstrumentId):
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
