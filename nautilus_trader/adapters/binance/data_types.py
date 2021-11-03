@@ -258,6 +258,7 @@ class BinanceBar(Bar):
         close: Price,
         volume: Quantity,
         quote_volume: Quantity,
+        count: int,
         taker_buy_base_volume: Quantity,
         taker_buy_quote_volume: Quantity,
         ts_event: int,
@@ -282,6 +283,8 @@ class BinanceBar(Bar):
             The bars volume.
         quote_volume : Quantity
             The bars quote asset volume.
+        count : int
+            The number of trades for the bar.
         taker_buy_base_volume : Quantity
             The liquidity taker volume on the buy side for the base asset.
         taker_buy_quote_volume : Quantity
@@ -304,6 +307,7 @@ class BinanceBar(Bar):
         )
 
         self.quote_volume = quote_volume
+        self.count = count
         self.taker_buy_base_volume = taker_buy_base_volume
         self.taker_buy_quote_volume = taker_buy_quote_volume
         taker_sell_base_volume: Decimal = self.volume - self.taker_buy_base_volume
@@ -321,6 +325,7 @@ class BinanceBar(Bar):
             f"close={self.close}, "
             f"volume={self.volume}, "
             f"quote_volume={self.quote_volume}, "
+            f"count={self.count}, "
             f"taker_buy_base_volume={self.taker_buy_base_volume}, "
             f"taker_buy_quote_volume={self.taker_buy_quote_volume}, "
             f"taker_sell_base_volume={self.taker_sell_base_volume}, "
@@ -352,6 +357,7 @@ class BinanceBar(Bar):
             close=Price.from_str(values["close"]),
             volume=Quantity.from_str(values["volume"]),
             quote_volume=Quantity.from_str(values["quote_volume"]),
+            count=values["count"],
             taker_buy_base_volume=Quantity.from_str(values["taker_buy_base_volume"]),
             taker_buy_quote_volume=Quantity.from_str(values["taker_buy_quote_volume"]),
             ts_event=values["ts_event"],
@@ -377,6 +383,7 @@ class BinanceBar(Bar):
             "close": str(obj.close),
             "volume": str(obj.volume),
             "quote_volume": str(obj.quote_volume),
+            "count": obj.count,
             "taker_buy_base_volume": str(obj.taker_buy_base_volume),
             "taker_buy_quote_volume": str(obj.taker_buy_quote_volume),
             "ts_event": obj.ts_event,

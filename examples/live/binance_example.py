@@ -50,14 +50,19 @@ config_node = TradingNodeConfig(
             "sandbox_mode": False,  # If client uses the testnet,
         },
     },
+    timeout_connection=5.0,
+    timeout_reconciliation=5.0,
+    timeout_portfolio=5.0,
+    timeout_disconnection=2.0,
+    check_residuals_delay=2.0,
 )
 # Instantiate the node with a configuration
 node = TradingNode(config=config_node)
 
 # Configure your strategy
 strat_config = EMACrossConfig(
-    instrument_id="ETH/USDT.BINANCE",
-    bar_type="ETH/USDT.BINANCE-1-MINUTE-LAST-INTERNAL",
+    instrument_id="ETHUSDT.BINANCE",
+    bar_type="ETHUSDT.BINANCE-1500-TICK-LAST-INTERNAL",
     fast_ema_period=10,
     slow_ema_period=20,
     trade_size=Decimal("0.01"),

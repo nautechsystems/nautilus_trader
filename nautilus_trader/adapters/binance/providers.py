@@ -111,7 +111,7 @@ class BinanceInstrumentProvider(InstrumentProvider):
         server_time_ns: int = millis_to_nanos(response["serverTime"])
 
         for info in response["symbols"]:
-            native_symbol: str = info["symbol"]
+            local_symbol: str = info["symbol"]
 
             # Create base asset
             base_asset: str = info["baseAsset"]
@@ -133,8 +133,8 @@ class BinanceInstrumentProvider(InstrumentProvider):
                 currency_type=CurrencyType.CRYPTO,
             )
 
-            symbol = Symbol(base_currency.code + "/" + quote_currency.code)
-            instrument_id = InstrumentId(symbol=symbol, venue=BINANCE_VENUE)
+            # symbol = Symbol(base_currency.code + "/" + quote_currency.code)
+            instrument_id = InstrumentId(symbol=Symbol(local_symbol), venue=BINANCE_VENUE)
 
             # Parse instrument filters
             symbol_filters = {f["filterType"]: f for f in info["filters"]}
@@ -157,7 +157,7 @@ class BinanceInstrumentProvider(InstrumentProvider):
                 min_notional = Money(min_notional_filter["minNotional"], currency=quote_currency)
             max_price = Price(float(price_filter["maxPrice"]), precision=price_precision)
             min_price = Price(float(price_filter["minPrice"]), precision=price_precision)
-            pair_fees = fees.get(native_symbol)
+            pair_fees = fees.get(local_symbol)
             maker_fee: Decimal = Decimal(0)
             taker_fee: Decimal = Decimal(0)
             if pair_fees:
