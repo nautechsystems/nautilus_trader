@@ -18,11 +18,16 @@ from typing import Dict
 
 import pyarrow as pa
 
+from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.core.data import Data
+from nautilus_trader.model.c_enums.book_action import BookAction
+from nautilus_trader.model.c_enums.book_action import BookActionParser
+from nautilus_trader.model.c_enums.book_type import BookTypeParser
 from nautilus_trader.model.data.ticker import Ticker
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
+from nautilus_trader.model.orderbook.data import Order
 from nautilus_trader.model.orderbook.data import OrderBookDelta
 from nautilus_trader.serialization.arrow.serializer import register_parquet
 from nautilus_trader.serialization.base import register_serializable_object
@@ -59,12 +64,35 @@ class BSPOrderBookDelta(OrderBookDelta):
     """
 
     @staticmethod
-    def from_dict(values):
-        return BSPOrderBookDelta.from_dict(values)
+    def from_dict(values) -> "BSPOrderBookDelta":
+        PyCondition.not_none(values, "values")
+        action: BookAction = BookActionParser.from_str_py(values["action"])
+        order: Order = (
+            Order.from_dict(
+                {
+                    "price": values["order_price"],
+                    "size": values["order_size"],
+                    "side": values["order_side"],
+                    "id": values["order_id"],
+                }
+            )
+            if values["action"] != "CLEAR"
+            else None
+        )
+        return BSPOrderBookDelta(
+            instrument_id=InstrumentId.from_str(values["instrument_id"]),
+            book_type=BookTypeParser.from_str_py(values["book_type"]),
+            action=action,
+            order=order,
+            ts_event=values["ts_event"],
+            ts_init=values["ts_init"],
+        )
 
     @staticmethod
-    def to_dict(obj):
-        return BSPOrderBookDelta.to_dict(obj)
+    def to_dict(obj) -> Dict:
+        values = OrderBookDelta.to_dict(obj)
+        values["type"] = obj.__class__.__name__
+        return values
 
 
 class BetfairTicker(Ticker):
