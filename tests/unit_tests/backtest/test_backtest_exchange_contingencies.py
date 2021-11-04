@@ -19,6 +19,7 @@ from nautilus_trader.backtest.data.providers import TestInstrumentProvider
 from nautilus_trader.backtest.exchange import SimulatedExchange
 from nautilus_trader.backtest.execution_client import BacktestExecClient
 from nautilus_trader.backtest.models import FillModel
+from nautilus_trader.backtest.models import SimulatedExchangeLatency
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.common.logging import LogLevel
@@ -114,6 +115,7 @@ class TestSimulatedExchangeContingencyAdvancedOrders:
             cache=self.cache,
             clock=self.clock,
             logger=self.logger,
+            simulated_latency=SimulatedExchangeLatency(0),
         )
 
         self.exec_client = BacktestExecClient(

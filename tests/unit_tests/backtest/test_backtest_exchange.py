@@ -20,9 +20,11 @@ from nautilus_trader.backtest.data.providers import TestInstrumentProvider
 from nautilus_trader.backtest.exchange import SimulatedExchange
 from nautilus_trader.backtest.execution_client import BacktestExecClient
 from nautilus_trader.backtest.models import FillModel
+from nautilus_trader.backtest.models import SimulatedExchangeLatency
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.common.uuid import UUIDFactory
+from nautilus_trader.core.datetime import secs_to_nanos
 from nautilus_trader.data.engine import DataEngine
 from nautilus_trader.execution.engine import ExecutionEngine
 from nautilus_trader.model.commands.trading import CancelOrder
@@ -127,6 +129,7 @@ class TestSimulatedExchange:
             cache=self.cache,
             clock=self.clock,
             logger=self.logger,
+            simulated_latency=SimulatedExchangeLatency(0),
         )
 
         self.exec_client = BacktestExecClient(
@@ -1682,6 +1685,24 @@ class TestSimulatedExchange:
         assert exit.filled_qty == Quantity.from_int(200000)
         assert exit.avg_px == Price.from_str("11.000")
 
+    def test_simulated_latency_submit_order(self):
+        # Arrange
+        self.exchange.change_simulated_latency(SimulatedExchangeLatency(secs_to_nanos(1)))
+        entry = self.strategy.order_factory.limit(
+            instrument_id=USDJPY_SIM.id,
+            order_side=OrderSide.BUY,
+            price=Price.from_int(100),
+            quantity=Quantity.from_int(200000),
+        )
+        self.strategy.submit_order(entry)
+        # Order still in submitted state
+        self.exchange.process(0)
+        assert entry.status == OrderStatus.SUBMITTED
+        self.exchange.process(secs_to_nanos(1))
+
+        # Assert
+        assert entry.status == OrderStatus.ACCEPTED
+
 
 XBTUSD_BITMEX = TestInstrumentProvider.xbtusd_bitmex()
 
@@ -1755,6 +1776,7 @@ class TestBitmexExchange:
             fill_model=FillModel(),
             clock=self.clock,
             logger=self.logger,
+            simulated_latency=SimulatedExchangeLatency(0),
         )
 
         self.exec_client = BacktestExecClient(
