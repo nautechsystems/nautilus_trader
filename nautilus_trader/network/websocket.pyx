@@ -151,7 +151,7 @@ cdef class WebSocketClient:
         await asyncio.sleep(backoff)
 
     async def start(self) -> None:
-        self._log.debug("Starting recv loop")
+        self._log.debug("Starting recv loop...")
         while not self._trigger_stop:
             try:
                 raw = await self.recv()
@@ -167,9 +167,12 @@ cdef class WebSocketClient:
         self._stopped = True
 
     async def close(self):
-        tasks = [task for task in asyncio.all_tasks() if task is not asyncio.current_task()]
-        list(map(lambda task: task.cancel(), tasks))
-        return await asyncio.gather(*tasks, return_exceptions=True)
+        for task in self._tasks:
+            task.cancel()
+
+        # tasks = [task for task in self._tasks]
+        # list(map(lambda task: task.cancel(), self._tasks))
+        # return await asyncio.gather(*tasks, return_exceptions=True)
 
     @types.coroutine
     def _sleep0(self):

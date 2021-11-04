@@ -6,6 +6,7 @@ Released TBD | Update version badge
 None
 
 ## Enhancements
+- Added `LatencyModel` for simulated exchange.
 - Added `Clock.timestamp_ms()`.
 
 ## Fixes

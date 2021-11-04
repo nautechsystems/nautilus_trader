@@ -95,6 +95,7 @@ class BinanceDataClient(LiveMarketDataClient):
             cache=cache,
             clock=clock,
             logger=logger,
+            config={"name": "BinanceDataClient"},
         )
 
         self._client = client
@@ -133,7 +134,7 @@ class BinanceDataClient(LiveMarketDataClient):
             return
 
         self._send_all_instruments_to_data_engine()
-        self._schedule_subscribed_instruments_update(self._update_instrument_interval)
+        # self._schedule_subscribed_instruments_update(self._update_instrument_interval)
 
         self._loop.create_task(self._connect_websockets())
 
@@ -153,7 +154,7 @@ class BinanceDataClient(LiveMarketDataClient):
 
         if self._ws_spot.is_connected:
             self._log.debug("Disconnecting websockets...")
-            self._ws_spot.disconnect()
+            await self._ws_spot.disconnect()
 
         if self._client.connected:
             await self._client.disconnect()
@@ -198,6 +199,7 @@ class BinanceDataClient(LiveMarketDataClient):
             return
 
         self._ws_spot.subscribe_diff_book_depth(instrument_id.symbol.value, speed=100)
+        self._add_subscription_order_book_deltas(instrument_id)
 
     def subscribe_order_book_snapshots(
         self,
@@ -231,15 +233,19 @@ class BinanceDataClient(LiveMarketDataClient):
             depth=depth,
             speed=100,
         )
+        self._add_subscription_order_book_snapshots(instrument_id)
 
     def subscribe_ticker(self, instrument_id: InstrumentId):
         self._ws_spot.subscribe_ticker(instrument_id.symbol.value)
+        self._add_subscription_ticker(instrument_id)
 
     def subscribe_quote_ticks(self, instrument_id: InstrumentId):
         self._ws_spot.subscribe_book_ticker(instrument_id.symbol.value)
+        self._add_subscription_quote_ticks(instrument_id)
 
     def subscribe_trade_ticks(self, instrument_id: InstrumentId):
         self._ws_spot.subscribe_trades(instrument_id.symbol.value)
+        self._add_subscription_trade_ticks(instrument_id)
 
     def subscribe_bars(self, bar_type: BarType):
         PyCondition.true(bar_type.is_externally_aggregated(), "aggregation_source is not EXTERNAL")
@@ -271,6 +277,7 @@ class BinanceDataClient(LiveMarketDataClient):
         self._ws_spot.subscribe_bars(
             symbol=bar_type.instrument_id.symbol.value, interval=f"{bar_type.spec.step}{resolution}"
         )
+        self._add_subscription_bars(bar_type)
 
     def subscribe_instrument_status_updates(self, instrument_id: InstrumentId):
         self._log.warning(
@@ -474,7 +481,7 @@ class BinanceDataClient(LiveMarketDataClient):
         self._send_all_instruments_to_data_engine()
 
         update = self.run_after_delay(delay, self._subscribed_instruments_update(delay))
-        self._update_instruments_task = self._loop.create_task(update)
+        self._update_instruments_task = self._loop.create_task(update, name="update_instruments")
 
     def _send_all_instruments_to_data_engine(self):
         for instrument in self._instrument_provider.get_all().values():

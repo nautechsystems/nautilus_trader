@@ -20,7 +20,7 @@ from nautilus_trader.backtest.data.providers import TestInstrumentProvider
 from nautilus_trader.backtest.exchange import SimulatedExchange
 from nautilus_trader.backtest.execution_client import BacktestExecClient
 from nautilus_trader.backtest.models import FillModel
-from nautilus_trader.backtest.models import SimulatedExchangeLatency
+from nautilus_trader.backtest.models import LatencyModel
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.common.uuid import UUIDFactory
@@ -129,7 +129,7 @@ class TestSimulatedExchange:
             cache=self.cache,
             clock=self.clock,
             logger=self.logger,
-            simulated_latency=SimulatedExchangeLatency(0),
+            latency_model=LatencyModel(0),
         )
 
         self.exec_client = BacktestExecClient(
@@ -1722,23 +1722,64 @@ class TestSimulatedExchange:
         assert exit.filled_qty == Quantity.from_int(200000)
         assert exit.avg_px == Price.from_str("11.000")
 
-    def test_simulated_latency_submit_order(self):
+    def test_latency_model_submit_order(self):
         # Arrange
-        self.exchange.change_simulated_latency(SimulatedExchangeLatency(secs_to_nanos(1)))
+        self.exchange.set_latency_model(LatencyModel(secs_to_nanos(1)))
         entry = self.strategy.order_factory.limit(
             instrument_id=USDJPY_SIM.id,
             order_side=OrderSide.BUY,
             price=Price.from_int(100),
             quantity=Quantity.from_int(200000),
         )
+
+        # Act
         self.strategy.submit_order(entry)
         # Order still in submitted state
         self.exchange.process(0)
-        assert entry.status == OrderStatus.SUBMITTED
         self.exchange.process(secs_to_nanos(1))
 
         # Assert
         assert entry.status == OrderStatus.ACCEPTED
+
+    def test_latency_model_cancel_order(self):
+        # Arrange
+        self.exchange.set_latency_model(LatencyModel(secs_to_nanos(1)))
+        entry = self.strategy.order_factory.limit(
+            instrument_id=USDJPY_SIM.id,
+            order_side=OrderSide.BUY,
+            price=Price.from_int(100),
+            quantity=Quantity.from_int(200000),
+        )
+
+        # Act
+        self.strategy.submit_order(entry)
+        self.exchange.process(secs_to_nanos(1))
+        self.strategy.cancel_order(entry)
+        self.strategy.cancel_order(entry)  # <-- handles multiple commands
+        self.exchange.process(secs_to_nanos(2))
+
+        # Assert
+        assert entry.status == OrderStatus.CANCELED
+
+    def test_latency_model_modify_order(self):
+        # Arrange
+        self.exchange.set_latency_model(LatencyModel(secs_to_nanos(1)))
+        entry = self.strategy.order_factory.limit(
+            instrument_id=USDJPY_SIM.id,
+            order_side=OrderSide.BUY,
+            price=Price.from_int(100),
+            quantity=Quantity.from_int(200000),
+        )
+
+        # Act
+        self.strategy.submit_order(entry)
+        self.exchange.process(secs_to_nanos(1))
+        self.strategy.modify_order(entry, quantity=Quantity.from_int(100000))
+        self.exchange.process(secs_to_nanos(2))
+
+        # Assert
+        assert entry.status == OrderStatus.ACCEPTED
+        assert entry.quantity == 100000
 
 
 XBTUSD_BITMEX = TestInstrumentProvider.xbtusd_bitmex()
@@ -1813,7 +1854,7 @@ class TestBitmexExchange:
             fill_model=FillModel(),
             clock=self.clock,
             logger=self.logger,
-            simulated_latency=SimulatedExchangeLatency(0),
+            latency_model=LatencyModel(0),
         )
 
         self.exec_client = BacktestExecClient(

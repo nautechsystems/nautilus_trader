@@ -20,7 +20,6 @@ from nautilus_trader.adapters.binance.factories import BinanceLiveDataClientFact
 from nautilus_trader.adapters.binance.factories import BinanceLiveExecutionClientFactory
 from nautilus_trader.examples.strategies.ema_cross import EMACross
 from nautilus_trader.examples.strategies.ema_cross import EMACrossConfig
-from nautilus_trader.infrastructure.config import CacheDatabaseConfig
 from nautilus_trader.live.node import TradingNode
 from nautilus_trader.live.node import TradingNodeConfig
 
@@ -32,8 +31,8 @@ from nautilus_trader.live.node import TradingNodeConfig
 # Configure the trading node
 config_node = TradingNodeConfig(
     trader_id="TESTER-001",
-    log_level="INFO",
-    cache_database=CacheDatabaseConfig(),  # Redis by default if provided
+    log_level="DEBUG",
+    cache_database=None,
     data_clients={
         "BINANCE": {
             # "api_key": "YOUR_BINANCE_API_KEY",
@@ -53,7 +52,7 @@ config_node = TradingNodeConfig(
     timeout_connection=5.0,
     timeout_reconciliation=5.0,
     timeout_portfolio=5.0,
-    timeout_disconnection=2.0,
+    timeout_disconnection=5.0,
     check_residuals_delay=2.0,
 )
 # Instantiate the node with a configuration
@@ -62,7 +61,7 @@ node = TradingNode(config=config_node)
 # Configure your strategy
 strat_config = EMACrossConfig(
     instrument_id="ETHUSDT.BINANCE",
-    bar_type="ETHUSDT.BINANCE-1500-TICK-LAST-INTERNAL",
+    bar_type="ETHUSDT.BINANCE-100-TICK-LAST-INTERNAL",
     fast_ema_period=10,
     slow_ema_period=20,
     trade_size=Decimal("0.01"),
