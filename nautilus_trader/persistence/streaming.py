@@ -45,6 +45,8 @@ class FeatherWriter:
         self.fs: fsspec.AbstractFileSystem = fsspec.filesystem(fs_protocol)
         self.path = str(self._check_path(path))
         if self.fs.exists(self.path) and replace:
+            for fn in self.fs.ls(self.path):
+                self.fs.rm(fn)
             self.fs.rmdir(self.path)
         self.fs.mkdir(self.path)
         self._schemas = list_schemas()
