@@ -496,6 +496,7 @@ cdef class SimulatedExchange:
         Condition.not_none(command, "command")
         cdef tuple latency_command = self.generate_latency_command(command)
         heappush(self._inflight_queue, latency_command)
+        print("SEND", self._inflight_queue)
 
     cdef tuple generate_latency_command(self, TradingCommand command):
         cdef int ts
@@ -612,8 +613,12 @@ cdef class SimulatedExchange:
             TradingCommand command
             Order order
         # Check any inflight messages
+        print("PROCESS", self._inflight_queue)
+        print("PROCESS", self._inflight_counter)
         while len(self._inflight_queue):
             ts = self._inflight_queue[0][0][0]
+            print(ts, now_ns)
+            print(f"{self._message_queue.to_list()=},\n{self._inflight_queue=}\n\n")
             if ts <= now_ns:
                 self._message_queue.put_nowait(self._inflight_queue.pop()[1])
                 if ts in self._inflight_counter:
@@ -695,6 +700,19 @@ cdef class SimulatedExchange:
         self._message_queue = Queue()
 
         self._log.info("Reset.")
+
+# -- TESTING ------------------------------------------------------------------------------
+    cpdef void change_simulated_latency(self, SimulatedExchangeLatency simulated_latency) except *:
+        """
+        Change the simulated_latency for this exchange.
+
+        Parameters
+        ----------
+        simulated_latency : SimulatedExchangeLatency
+            The simulated latency of the this exchange.
+        """
+        Condition.not_none(simulated_latency, "simulated_latency")
+        self.simulated_latency = simulated_latency
 
 # -- COMMAND HANDLING ------------------------------------------------------------------------------
 

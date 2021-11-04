@@ -137,6 +137,10 @@ cdef class SimulatedExchange:
     cpdef void process(self, int64_t now_ns) except *
     cpdef void reset(self) except *
 
+# -- TESTING ------------------------------------------------------------------------------
+
+    cpdef void change_simulated_latency(self, SimulatedExchangeLatency simulated_latency) except *
+
 # -- COMMAND HANDLING ------------------------------------------------------------------------------
 
     cdef void _process_order(self, Order order) except *
