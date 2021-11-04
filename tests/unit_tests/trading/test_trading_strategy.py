@@ -25,6 +25,7 @@ from nautilus_trader.backtest.data_client import BacktestMarketDataClient
 from nautilus_trader.backtest.exchange import SimulatedExchange
 from nautilus_trader.backtest.execution_client import BacktestExecClient
 from nautilus_trader.backtest.models import FillModel
+from nautilus_trader.backtest.models import SimulatedExchangeLatency
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.enums import ComponentState
 from nautilus_trader.common.enums import LogLevel
@@ -129,6 +130,7 @@ class TestTradingStrategy:
             fill_model=FillModel(),
             clock=self.clock,
             logger=self.logger,
+            simulated_latency=SimulatedExchangeLatency(0),
         )
 
         self.data_client = BacktestMarketDataClient(
