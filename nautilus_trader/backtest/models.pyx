@@ -12,6 +12,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+
 import random
 from libc.stdint cimport int64_t
 
@@ -113,20 +114,50 @@ cdef class FillModel:
             return probability >= random.random()
 
 
-cdef class SimulatedExchangeLatency:
+cdef class LatencyModel:
     """
-    Delays messages coming from and going to the simulated exchange.
+    Provides a latency model for messages coming from and going to a simulated exchange.
     """
 
     def __init__(
         self,
         int base_latency_nanos = NANOSECONDS_IN_MILLISECOND,
-        insert_latency_nanos = None,
-        update_latency_nanos = None,
-        cancel_latency_nanos = None,
-        # random_seed=None,
+        int insert_latency_nanos = 0,
+        int update_latency_nanos = 0,
+        int cancel_latency_nanos = 0,
     ):
+        """
+        Initialize a new instance of the ``LatencyModel`` class.
+
+        Parameters
+        ----------
+        base_latency_nanos : int
+            The base latency (nanoseconds) for the model.
+        insert_latency_nanos : int
+            The order insert latency (nanoseconds) for the model.
+        update_latency_nanos : int
+            The order update latency (nanoseconds) for the model.
+        cancel_latency_nanos : int
+            The order cancel latency (nanoseconds) for the model.
+
+        Raises
+        ------
+        ValueError
+            If `base_latency_nanos` is negative (< 0).
+        ValueError
+            If `insert_latency_nanos` is negative (< 0).
+        ValueError
+            If `update_latency_nanos` is negative (< 0).
+        ValueError
+            If `cancel_latency_nanos` is negative (< 0).
+
+        """
+        Condition.not_negative_int(base_latency_nanos, "base_latency_nanos")
+        Condition.not_negative_int(insert_latency_nanos, "insert_latency_nanos")
+        Condition.not_negative_int(update_latency_nanos, "update_latency_nanos")
+        Condition.not_negative_int(cancel_latency_nanos, "cancel_latency_nanos")
+
         self.base_latency_nanos = base_latency_nanos
-        self.insert_latency_nanos = insert_latency_nanos or base_latency_nanos
-        self.update_latency_nanos = update_latency_nanos or base_latency_nanos
-        self.cancel_latency_nanos = cancel_latency_nanos or base_latency_nanos
+        self.insert_latency_nanos = base_latency_nanos + insert_latency_nanos
+        self.update_latency_nanos = base_latency_nanos + update_latency_nanos
+        self.cancel_latency_nanos = base_latency_nanos + cancel_latency_nanos

@@ -14,7 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 from nautilus_trader.backtest.models import FillModel
-from nautilus_trader.backtest.models import SimulatedExchangeLatency
+from nautilus_trader.backtest.models import LatencyModel
 
 
 class TestFillModel:
@@ -71,7 +71,7 @@ class TestExchangeLatency:
     NANOSECONDS_IN_MILLISECOND = 1_000_000
 
     def test_instantiate_with_no_random_seed(self):
-        latency = SimulatedExchangeLatency()
+        latency = LatencyModel()
         assert latency.base_latency_nanos == self.NANOSECONDS_IN_MILLISECOND
         assert latency.insert_latency_nanos == self.NANOSECONDS_IN_MILLISECOND
         assert latency.update_latency_nanos == self.NANOSECONDS_IN_MILLISECOND
