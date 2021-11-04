@@ -18,7 +18,7 @@ from libc.stdint cimport int64_t
 from nautilus_trader.accounting.accounts.base cimport Account
 from nautilus_trader.backtest.execution_client cimport BacktestExecClient
 from nautilus_trader.backtest.models cimport FillModel
-from nautilus_trader.backtest.models cimport SimulatedExchangeLatency
+from nautilus_trader.backtest.models cimport LatencyModel
 from nautilus_trader.cache.cache cimport Cache
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.logging cimport LoggerAdapter
@@ -86,11 +86,11 @@ cdef class SimulatedExchange:
     """The accounts instrument specific leverage configuration.\n\n:returns: `dict[InstrumentId, Decimal]`"""
     cdef readonly bint is_frozen_account
     """If the account for the exchange is frozen.\n\n:returns: `bool`"""
+    cdef readonly LatencyModel latency_model
+    """The latency model for the exchange.\n\n:returns: `LatencyModel`"""
     cdef readonly FillModel fill_model
     """The fill model for the exchange.\n\n:returns: `FillModel`"""
     cdef readonly bint reject_stop_orders
-    """If stop orders are rejected on submission if in the market.\n\n:returns: `bool`"""
-    cdef readonly SimulatedExchangeLatency simulated_latency
     """If stop orders are rejected on submission if in the market.\n\n:returns: `bool`"""
     cdef readonly bint bar_execution
     """If the exchange execution dynamics is based on bar data.\n\n:returns: `bool`"""
@@ -127,6 +127,7 @@ cdef class SimulatedExchange:
 
     cpdef void register_client(self, BacktestExecClient client) except *
     cpdef void set_fill_model(self, FillModel fill_model) except *
+    cpdef void set_latency_model(self, LatencyModel latency_model) except *
     cpdef void initialize_account(self) except *
     cpdef void adjust_account(self, Money adjustment) except *
     cdef tuple generate_latency_command(self, TradingCommand command)
@@ -136,10 +137,6 @@ cdef class SimulatedExchange:
     cpdef void process_bar(self, Bar bar) except *
     cpdef void process(self, int64_t now_ns) except *
     cpdef void reset(self) except *
-
-# -- TESTING ------------------------------------------------------------------------------
-
-    cpdef void change_simulated_latency(self, SimulatedExchangeLatency simulated_latency) except *
 
 # -- COMMAND HANDLING ------------------------------------------------------------------------------
 

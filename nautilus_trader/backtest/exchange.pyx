@@ -24,7 +24,7 @@ from libc.stdint cimport int64_t
 from nautilus_trader.accounting.accounts.base cimport Account
 from nautilus_trader.backtest.execution_client cimport BacktestExecClient
 from nautilus_trader.backtest.models cimport FillModel
-from nautilus_trader.backtest.models cimport SimulatedExchangeLatency
+from nautilus_trader.backtest.models cimport LatencyModel
 from nautilus_trader.backtest.modules cimport SimulationModule
 from nautilus_trader.cache.base cimport CacheFacade
 from nautilus_trader.common.clock cimport TestClock
@@ -98,7 +98,7 @@ cdef class SimulatedExchange:
         BookType book_type=BookType.L1_TBBO,
         bint bar_execution=False,
         bint reject_stop_orders=True,
-        SimulatedExchangeLatency simulated_latency=None
+        LatencyModel latency_model=None
     ):
         """
         Initialize a new instance of the ``SimulatedExchange`` class.
@@ -137,6 +137,8 @@ cdef class SimulatedExchange:
             If the exchange execution dynamics is based on bar data.
         reject_stop_orders : bool
             If stop orders are rejected on submission if in the market.
+        latency_model : LatencyModel, optional
+            The latency model for the exchange.
 
         Raises
         ------
@@ -190,7 +192,7 @@ cdef class SimulatedExchange:
         self.reject_stop_orders = reject_stop_orders
         self.bar_execution = bar_execution
         self.fill_model = fill_model
-        self.simulated_latency = simulated_latency or SimulatedExchangeLatency()
+        self.latency_model = latency_model or LatencyModel()
 
         # Load modules
         self.modules = []
@@ -428,6 +430,8 @@ cdef class SimulatedExchange:
         """
         Set the fill model to the given model.
 
+        Parameters
+        ----------
         fill_model : FillModel
             The fill model to set.
 
@@ -437,6 +441,22 @@ cdef class SimulatedExchange:
         self.fill_model = fill_model
 
         self._log.info("Changed fill model.")
+
+    cpdef void set_latency_model(self, LatencyModel latency_model) except *:
+        """
+        Change the latency model for this exchange.
+
+        Parameters
+        ----------
+        latency_model : LatencyModel
+            The latency model to set.
+
+        """
+        Condition.not_none(latency_model, "latency_model")
+
+        self.latency_model = latency_model
+
+        self._log.info("Changed latency model.")
 
     cpdef void initialize_account(self) except *:
         """
@@ -501,16 +521,16 @@ cdef class SimulatedExchange:
         cdef int ts
         cdef (int64_t, int) key
         if isinstance(command, (SubmitOrder, SubmitOrderList)):
-            ts = command.ts_init + self.simulated_latency.insert_latency_nanos
+            ts = command.ts_init + self.latency_model.insert_latency_nanos
         elif isinstance(command, ModifyOrder):
-            ts = self.simulated_latency.update_latency_nanos
+            ts = command.ts_init +self.latency_model.update_latency_nanos
         elif isinstance(command, CancelOrder):
-            ts = self.simulated_latency.cancel_latency_nanos
-        else:
-            raise ValueError(f"Unknown command {command=}")
+            ts = command.ts_init + self.latency_model.cancel_latency_nanos
+        else:  # pragma: no cover (design-time error)
+            raise ValueError(f"invalid command, was {command}")
         if ts not in self._inflight_counter:
             self._inflight_counter[ts] = 0
-        self._inflight_counter[ts] +=1
+        self._inflight_counter[ts] += 1
         key = (ts, self._inflight_counter[ts])
         return key, command
 
@@ -611,6 +631,7 @@ cdef class SimulatedExchange:
         cdef:
             TradingCommand command
             Order order
+            int64_t ts
         # Check any inflight messages
         while len(self._inflight_queue):
             ts = self._inflight_queue[0][0][0]
@@ -693,21 +714,10 @@ cdef class SimulatedExchange:
         self._symbol_ord_count.clear()
         self._executions_count = 0
         self._message_queue = Queue()
+        self._inflight_queue.clear()
+        self._inflight_counter.clear()
 
         self._log.info("Reset.")
-
-# -- TESTING ------------------------------------------------------------------------------
-    cpdef void change_simulated_latency(self, SimulatedExchangeLatency simulated_latency) except *:
-        """
-        Change the simulated_latency for this exchange.
-
-        Parameters
-        ----------
-        simulated_latency : SimulatedExchangeLatency
-            The simulated latency of the this exchange.
-        """
-        Condition.not_none(simulated_latency, "simulated_latency")
-        self.simulated_latency = simulated_latency
 
 # -- COMMAND HANDLING ------------------------------------------------------------------------------
 
