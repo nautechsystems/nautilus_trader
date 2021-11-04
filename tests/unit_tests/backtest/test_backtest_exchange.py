@@ -164,45 +164,6 @@ class TestSimulatedExchange:
         self.exec_engine.start()
         self.strategy.start()
 
-    # def recreate_exchange(self, balance="1_000_000 USD", latency=0):
-    #     self.exchange = SimulatedExchange(
-    #         venue=Venue("SIM"),
-    #         venue_type=VenueType.ECN,
-    #         oms_type=OMSType.HEDGING,
-    #         account_type=AccountType.MARGIN,
-    #         base_currency=USD,
-    #         starting_balances=[Money.from_str(balance)],
-    #         default_leverage=Decimal(50),
-    #         leverages={},
-    #         is_frozen_account=False,
-    #         instruments=[USDJPY_SIM],
-    #         modules=[],
-    #         fill_model=FillModel(),
-    #         cache=self.cache,
-    #         clock=self.clock,
-    #         logger=self.logger,
-    #         simulated_latency=SimulatedExchangeLatency(latency),
-    #     )
-    #     self.exec_client = BacktestExecClient(
-    #         exchange=self.exchange,
-    #         account_id=self.account_id,
-    #         msgbus=self.msgbus,
-    #         cache=self.cache,
-    #         clock=self.clock,
-    #         logger=self.logger,
-    #     )
-    #     self.exchange.register_client(self.exec_client)
-    #     self.exchange.reset()
-    #     self.strategy.register(
-    #         trader_id=self.trader_id,
-    #         portfolio=self.portfolio,
-    #         msgbus=self.msgbus,
-    #         cache=self.cache,
-    #         clock=self.clock,
-    #         logger=self.logger,
-    #     )
-    #     self.strategy.reset()
-
     def test_repr(self):
         # Arrange, Act, Assert
         assert (
@@ -440,7 +401,7 @@ class TestSimulatedExchange:
 
         # Act
         self.strategy.submit_order(order)
-        self.exchange.process(1000000000)
+        self.exchange.process(0)
 
         # Assert
         assert order.status == OrderStatus.ACCEPTED
