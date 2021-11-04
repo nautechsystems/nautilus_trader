@@ -38,13 +38,15 @@ class FeatherWriter:
     Provides a stream writer of Nautilus objects into feather files.
     """
 
-    def __init__(self, path: str, fs_protocol: str = "file", flush_interval=None):
+    def __init__(self, path: str, fs_protocol: str = "file", flush_interval=None, replace=False):
         """
         Initialize a new instance of the ``FeatherWriter`` class.
         """
         self.fs: fsspec.AbstractFileSystem = fsspec.filesystem(fs_protocol)
-        self.path = self._check_path(path)
-        self.fs.mkdir(str(self.path), exist_ok=True)
+        self.path = str(self._check_path(path))
+        if self.fs.exists(self.path) and replace:
+            self.fs.rmdir(self.path)
+        self.fs.mkdir(self.path)
         self._schemas = list_schemas()
         self._schemas.update(
             {
@@ -74,7 +76,7 @@ class FeatherWriter:
                 continue
             prefix = "genericdata_" if not is_nautilus_class(cls) else ""
             schema = self._schemas[cls]
-            full_path = self.path.joinpath(f"{prefix}{table_name}.feather")
+            full_path = f"{self.path}/{prefix}{table_name}.feather"
             f = self.fs.open(str(full_path), "wb")
             self._files[cls] = f
             self._writers[table_name] = pa.ipc.new_stream(f, schema)

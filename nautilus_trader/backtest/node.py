@@ -181,11 +181,14 @@ class BacktestNode:
         writer = None
         if persistence is not None:
             catalog = persistence.as_catalog()
-            catalog.fs.mkdir(f"{persistence.catalog_path}/backtest/")
+            backtest_dir = f"{persistence.catalog_path.strip('/')}/backtest/"
+            if not catalog.fs.exists(backtest_dir):
+                catalog.fs.mkdir(backtest_dir)
             writer = FeatherWriter(
                 path=f"{persistence.catalog_path}/backtest/{run_config_id}.feather",
                 fs_protocol=persistence.fs_protocol,
                 flush_interval=persistence.flush_interval,
+                replace=persistence.replace_existing,
             )
             engine.trader.subscribe("*", writer.write)
             # Manually write instruments
@@ -236,11 +239,12 @@ class BacktestNode:
 
         # Add instruments
         for config in data_configs:
-            instruments = config.catalog().instruments(
-                instrument_ids=config.instrument_id, as_nautilus=True
-            )
-            for instrument in instruments or []:
-                engine.add_instrument(instrument)
+            if config.instrument_id:
+                instruments = config.catalog().instruments(
+                    instrument_ids=config.instrument_id, as_nautilus=True
+                )
+                for instrument in instruments or []:
+                    engine.add_instrument(instrument)
 
         # Add venues
         for config in venue_configs:
