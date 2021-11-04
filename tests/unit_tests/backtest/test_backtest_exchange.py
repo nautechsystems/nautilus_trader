@@ -487,6 +487,43 @@ class TestSimulatedExchange:
         assert order.status == OrderStatus.PARTIALLY_FILLED
         assert order.filled_qty == 1_000_000
 
+    def test_submit_limit_order_fills_at_most_order_volume(self):
+        # Arrange: Prepare market
+        tick = TestStubs.quote_tick_3decimal(
+            instrument_id=USDJPY_SIM.id,
+            ask=Price.from_str("90.005"),
+            ask_volume=Quantity.from_int(10_000),
+        )
+        self.data_engine.process(tick)
+        self.exchange.process_tick(tick)
+
+        order = self.strategy.order_factory.limit(
+            USDJPY_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(15_000),  # <-- Order volume greater than available ask volume
+            Price.from_str("90.010"),
+            post_only=False,  # <-- Can be liquidity TAKER
+        )
+
+        # Partially fill order
+        self.strategy.submit_order(order)
+        self.exchange.process(0)
+        assert order.status == OrderStatus.PARTIALLY_FILLED
+        assert order.filled_qty == 10_000
+
+        # Quantity is refreshed -> Ensure we don't trade the entire amount
+        tick = TestStubs.quote_tick_3decimal(
+            instrument_id=USDJPY_SIM.id,
+            ask=Price.from_str("90.005"),
+            ask_volume=Quantity.from_int(10_000),
+        )
+        self.data_engine.process(tick)
+        self.exchange.process_tick(tick)
+
+        # Assert
+        assert order.status == OrderStatus.FILLED
+        assert order.filled_qty == 15_000
+
     def test_submit_stop_market_order_inside_market_rejects(self):
         # Arrange: Prepare market
         tick = TestStubs.quote_tick_3decimal(

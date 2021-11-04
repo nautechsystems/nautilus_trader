@@ -1172,8 +1172,7 @@ cdef class SimulatedExchange:
                 self._last_asks[order.instrument_id] = order.price
             return [(order.price, order.leaves_qty)]
         cdef OrderBook book = self.get_book(order.instrument_id)
-        cdef OrderBookOrder submit_order = OrderBookOrder(price=order.price, size=order.quantity, side=order.side)
-
+        cdef OrderBookOrder submit_order = OrderBookOrder(price=order.price, size=order.leaves_qty, side=order.side)
         if order.is_buy_c():
             return book.asks.simulate_order_fills(order=submit_order, depth_type=DepthType.VOLUME)
         elif order.is_sell_c():
