@@ -226,6 +226,7 @@ cdef class SimulatedExchange:
         self._executions_count = 0
         self._message_queue = Queue()
         self._inflight_queue = []
+        self._inflight_counter = {}
 
     def __repr__(self) -> str:
         return (f"{type(self).__name__}("
@@ -498,6 +499,7 @@ cdef class SimulatedExchange:
 
     cdef tuple generate_latency_command(self, TradingCommand command):
         cdef int ts
+        cdef (int64_t, int) key
         if isinstance(command, (SubmitOrder, SubmitOrderList)):
             ts = command.ts_init + self.simulated_latency.insert_latency_nanos
         elif isinstance(command, ModifyOrder):
@@ -506,7 +508,11 @@ cdef class SimulatedExchange:
             ts = self.simulated_latency.cancel_latency_nanos
         else:
             raise ValueError(f"Unknown command {command=}")
-        return ts, command.ts_init, command
+        if ts not in self._inflight_counter:
+            self._inflight_counter[ts] = 0
+        self._inflight_counter[ts] +=1
+        key = (ts, self._inflight_counter[ts])
+        return key, command
 
     cpdef void process_order_book(self, OrderBookData data) except *:
         """
@@ -607,9 +613,11 @@ cdef class SimulatedExchange:
             Order order
         # Check any inflight messages
         while len(self._inflight_queue):
-            ts = self._inflight_queue[0][0]
+            ts = self._inflight_queue[0][0][0]
             if ts <= now_ns:
-                self._message_queue.put_nowait(self._inflight_queue.pop()[2])
+                self._message_queue.put_nowait(self._inflight_queue.pop()[1])
+                if ts in self._inflight_counter:
+                    del self._inflight_counter[ts]
             else:
                 break
 

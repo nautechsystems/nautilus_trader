@@ -114,6 +114,7 @@ cdef class SimulatedExchange:
     cdef int _executions_count
     cdef Queue _message_queue
     cdef list _inflight_queue
+    cdef dict _inflight_counter
 
     cpdef Price best_bid_price(self, InstrumentId instrument_id)
     cpdef Price best_ask_price(self, InstrumentId instrument_id)

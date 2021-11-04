@@ -24,6 +24,7 @@ from nautilus_trader.backtest.models import SimulatedExchangeLatency
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.common.uuid import UUIDFactory
+from nautilus_trader.core.datetime import secs_to_nanos
 from nautilus_trader.data.engine import DataEngine
 from nautilus_trader.execution.engine import ExecutionEngine
 from nautilus_trader.model.commands.trading import CancelOrder
@@ -162,6 +163,36 @@ class TestSimulatedExchange:
         self.data_engine.start()
         self.exec_engine.start()
         self.strategy.start()
+
+    def recreate_exchange(self, balance="1_000_000 USD", latency=0):
+        self.exchange = SimulatedExchange(
+            venue=Venue("SIM"),
+            venue_type=VenueType.ECN,
+            oms_type=OMSType.HEDGING,
+            account_type=AccountType.MARGIN,
+            base_currency=USD,
+            starting_balances=[Money.from_str(balance)],
+            default_leverage=Decimal(50),
+            leverages={},
+            is_frozen_account=False,
+            instruments=[USDJPY_SIM],
+            modules=[],
+            fill_model=FillModel(),
+            cache=self.cache,
+            clock=self.clock,
+            logger=self.logger,
+            simulated_latency=SimulatedExchangeLatency(latency),
+        )
+        self.exec_client = BacktestExecClient(
+            exchange=self.exchange,
+            account_id=self.account_id,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            logger=self.logger,
+        )
+        self.exchange.register_client(self.exec_client)
+        self.exchange.reset()
 
     def test_repr(self):
         # Arrange, Act, Assert
@@ -1684,6 +1715,21 @@ class TestSimulatedExchange:
         assert exit.filled_qty == Quantity.from_int(200000)
         assert exit.avg_px == Price.from_str("11.000")
 
+    def test_simulated_latency_submit_order(self):
+        # Arrange
+        self.recreate_exchange(latency=secs_to_nanos(1))
+        entry = self.strategy.order_factory.market(
+            instrument_id=USDJPY_SIM.id,
+            order_side=OrderSide.SELL,
+            quantity=Quantity.from_int(200000),
+        )
+        self.exchange.process(0)
+        self.strategy.submit_order(entry)
+        self.exchange.process(secs_to_nanos(2))
+
+        # Assert
+        assert entry.status == OrderStatus.ACCEPTED
+
 
 XBTUSD_BITMEX = TestInstrumentProvider.xbtusd_bitmex()
 
@@ -1757,6 +1803,7 @@ class TestBitmexExchange:
             fill_model=FillModel(),
             clock=self.clock,
             logger=self.logger,
+            simulated_latency=SimulatedExchangeLatency(0),
         )
 
         self.exec_client = BacktestExecClient(
@@ -1811,11 +1858,6 @@ class TestBitmexExchange:
             Quantity.from_int(100000),
         )
 
-        # Act
-        self.strategy.submit_order(order_market)
-        self.exchange.process(0)
-        self.clock.set_time(1)
-
         order_limit = self.strategy.order_factory.limit(
             XBTUSD_BITMEX.id,
             OrderSide.BUY,
@@ -1823,8 +1865,11 @@ class TestBitmexExchange:
             Price.from_str("11492.5"),
         )
 
+        # Act
+        self.strategy.submit_order(order_market)
+        self.exchange.process(0)
         self.strategy.submit_order(order_limit)
-        self.exchange.process(1)
+        self.exchange.process(0)
 
         quote2 = QuoteTick(
             instrument_id=XBTUSD_BITMEX.id,
@@ -1832,8 +1877,8 @@ class TestBitmexExchange:
             ask=Price.from_str("11491.5"),
             bid_size=Quantity.from_int(1500000),
             ask_size=Quantity.from_int(1500000),
-            ts_event=1,
-            ts_init=1,
+            ts_event=0,
+            ts_init=0,
         )
 
         self.exchange.process_tick(quote2)  # Fill the limit order
