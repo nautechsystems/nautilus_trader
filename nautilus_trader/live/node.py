@@ -645,6 +645,10 @@ class TradingNode:
         if self._risk_engine.is_running:
             self._risk_engine.stop()
 
+        # Disconnect all clients
+        self._data_engine.disconnect()
+        self._exec_engine.disconnect()
+
         self._log.info(
             f"Waiting for engines to disconnect "
             f"({self._config.timeout_disconnection}s timeout)...",
