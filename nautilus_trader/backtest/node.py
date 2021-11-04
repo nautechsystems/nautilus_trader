@@ -239,7 +239,7 @@ class BacktestNode:
 
         # Add instruments
         for config in data_configs:
-            if config.instrument_id:
+            if is_nautilus_class(config.data_type):
                 instruments = config.catalog().instruments(
                     instrument_ids=config.instrument_id, as_nautilus=True
                 )
