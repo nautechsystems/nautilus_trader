@@ -633,11 +633,12 @@ cdef class SimulatedExchange:
         cdef:
             int64_t ts
         while self._inflight_queue:
+            # Peek at timestamp of next inflight message
             ts = self._inflight_queue[0][0][0]
             if ts <= now_ns:
+                # Place message on queue to be processed
                 self._message_queue.put_nowait(self._inflight_queue.pop(0)[1])
-                if ts in self._inflight_counter:
-                    del self._inflight_counter[ts]
+                self._inflight_counter.pop(ts, None)
             else:
                 break
 
