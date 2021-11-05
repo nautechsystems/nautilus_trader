@@ -518,12 +518,12 @@ cdef class SimulatedExchange:
         heappush(self._inflight_queue, latency_command)
 
     cdef tuple generate_latency_command(self, TradingCommand command):
-        cdef int ts
-        cdef (int64_t, int) key
+        cdef int64_t ts
+        cdef (int64_t, int64_t) key
         if isinstance(command, (SubmitOrder, SubmitOrderList)):
             ts = command.ts_init + self.latency_model.insert_latency_nanos
         elif isinstance(command, ModifyOrder):
-            ts = command.ts_init +self.latency_model.update_latency_nanos
+            ts = command.ts_init + self.latency_model.update_latency_nanos
         elif isinstance(command, CancelOrder):
             ts = command.ts_init + self.latency_model.cancel_latency_nanos
         else:  # pragma: no cover (design-time error)
