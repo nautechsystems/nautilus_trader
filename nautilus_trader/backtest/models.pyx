@@ -14,6 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 import random
+
 from libc.stdint cimport int64_t
 
 from nautilus_trader.core.correctness cimport Condition
@@ -131,13 +132,13 @@ cdef class LatencyModel:
 
         Parameters
         ----------
-        base_latency_nanos : int
+        base_latency_nanos : int, default 1_000_000_000
             The base latency (nanoseconds) for the model.
-        insert_latency_nanos : int
+        insert_latency_nanos : int, default 0
             The order insert latency (nanoseconds) for the model.
-        update_latency_nanos : int
+        update_latency_nanos : int, default 0
             The order update latency (nanoseconds) for the model.
-        cancel_latency_nanos : int
+        cancel_latency_nanos : int, default 0
             The order cancel latency (nanoseconds) for the model.
 
         Raises

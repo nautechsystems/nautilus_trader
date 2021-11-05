@@ -192,7 +192,7 @@ cdef class SimulatedExchange:
         self.reject_stop_orders = reject_stop_orders
         self.bar_execution = bar_execution
         self.fill_model = fill_model
-        self.latency_model = latency_model or LatencyModel()
+        self.latency_model = latency_model
 
         # Load modules
         self.modules = []
@@ -514,16 +514,18 @@ cdef class SimulatedExchange:
 
         """
         Condition.not_none(command, "command")
-        cdef tuple latency_command = self.generate_latency_command(command)
-        heappush(self._inflight_queue, latency_command)
 
-    cdef tuple generate_latency_command(self, TradingCommand command):
-        cdef int ts
-        cdef (int64_t, int) key
+        if self.latency_model is None:
+            self._message_queue.put_nowait(command)
+        else:
+            heappush(self._inflight_queue, self.generate_inflight_command(command))
+
+    cdef tuple generate_inflight_command(self, TradingCommand command):
+        cdef int64_t ts
         if isinstance(command, (SubmitOrder, SubmitOrderList)):
             ts = command.ts_init + self.latency_model.insert_latency_nanos
         elif isinstance(command, ModifyOrder):
-            ts = command.ts_init +self.latency_model.update_latency_nanos
+            ts = command.ts_init + self.latency_model.update_latency_nanos
         elif isinstance(command, CancelOrder):
             ts = command.ts_init + self.latency_model.cancel_latency_nanos
         else:  # pragma: no cover (design-time error)
@@ -531,7 +533,7 @@ cdef class SimulatedExchange:
         if ts not in self._inflight_counter:
             self._inflight_counter[ts] = 0
         self._inflight_counter[ts] += 1
-        key = (ts, self._inflight_counter[ts])
+        cdef (int64_t, int64_t) key = (ts, self._inflight_counter[ts])
         return key, command
 
     cpdef void process_order_book(self, OrderBookData data) except *:
@@ -629,19 +631,19 @@ cdef class SimulatedExchange:
         self._clock.set_time(now_ns)
 
         cdef:
-            TradingCommand command
-            Order order
             int64_t ts
-        # Check any inflight messages
-        while len(self._inflight_queue):
+        while self._inflight_queue:
             ts = self._inflight_queue[0][0][0]
             if ts <= now_ns:
-                self._message_queue.put_nowait(self._inflight_queue.pop()[1])
+                self._message_queue.put_nowait(self._inflight_queue.pop(0)[1])
                 if ts in self._inflight_counter:
                     del self._inflight_counter[ts]
             else:
                 break
 
+        cdef:
+            TradingCommand command
+            Order order
         while self._message_queue.count > 0:
             command = self._message_queue.get_nowait()
             if isinstance(command, SubmitOrder):
