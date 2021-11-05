@@ -130,7 +130,7 @@ cdef class SimulatedExchange:
     cpdef void set_latency_model(self, LatencyModel latency_model) except *
     cpdef void initialize_account(self) except *
     cpdef void adjust_account(self, Money adjustment) except *
-    cdef tuple generate_latency_command(self, TradingCommand command)
+    cdef tuple generate_inflight_command(self, TradingCommand command)
     cpdef void send(self, TradingCommand command) except *
     cpdef void process_order_book(self, OrderBookData data) except *
     cpdef void process_tick(self, Tick tick) except *
