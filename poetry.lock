@@ -237,7 +237,7 @@ python-versions = ">=2.7, !=3.0.*, !=3.1.*, !=3.2.*, !=3.3.*"
 
 [[package]]
 name = "dask"
-version = "2021.10.0"
+version = "2021.11.0"
 description = "Parallel PyData with Task Scheduling"
 category = "main"
 optional = false
@@ -253,10 +253,10 @@ toolz = ">=0.8.2"
 
 [package.extras]
 array = ["numpy (>=1.18)"]
-complete = ["bokeh (>=1.0.0,!=2.0.0)", "distributed (==2021.10.0)", "jinja2", "numpy (>=1.18)", "pandas (>=1.0)"]
+complete = ["bokeh (>=1.0.0,!=2.0.0)", "distributed (==2021.11.0)", "jinja2", "numpy (>=1.18)", "pandas (>=1.0)"]
 dataframe = ["numpy (>=1.18)", "pandas (>=1.0)"]
 diagnostics = ["bokeh (>=1.0.0,!=2.0.0)", "jinja2"]
-distributed = ["distributed (==2021.10.0)"]
+distributed = ["distributed (==2021.11.0)"]
 test = ["pytest", "pytest-rerunfailures", "pytest-xdist", "pre-commit"]
 
 [[package]]
@@ -269,7 +269,7 @@ python-versions = "*"
 
 [[package]]
 name = "distributed"
-version = "2021.10.0"
+version = "2021.11.0"
 description = "Distributed scheduler for Dask"
 category = "main"
 optional = true
@@ -278,7 +278,7 @@ python-versions = ">=3.7"
 [package.dependencies]
 click = ">=6.6"
 cloudpickle = ">=1.5.0"
-dask = "2021.10.0"
+dask = "2021.11.0"
 jinja2 = "*"
 msgpack = ">=0.6.0"
 psutil = ">=5.0"
@@ -341,7 +341,7 @@ python-versions = ">=3.6"
 
 [[package]]
 name = "fsspec"
-version = "2021.10.1"
+version = "2021.11.0"
 description = "File-system specification"
 category = "main"
 optional = false
@@ -391,7 +391,7 @@ nest-asyncio = "*"
 
 [[package]]
 name = "identify"
-version = "2.3.3"
+version = "2.3.4"
 description = "File identification library for Python"
 category = "dev"
 optional = false
@@ -730,7 +730,7 @@ idna = ["idna (>=2.1)"]
 
 [[package]]
 name = "pycparser"
-version = "2.20"
+version = "2.21"
 description = "C parser in Python"
 category = "main"
 optional = false
@@ -954,14 +954,14 @@ use_chardet_on_py3 = ["chardet (>=3.0.2,<5)"]
 
 [[package]]
 name = "scipy"
-version = "1.6.1"
+version = "1.7.2"
 description = "SciPy: Scientific Library for Python"
 category = "main"
 optional = false
-python-versions = ">=3.7"
+python-versions = ">=3.7,<3.11"
 
 [package.dependencies]
-numpy = ">=1.16.5"
+numpy = ">=1.16.5,<1.23.0"
 
 [[package]]
 name = "seaborn"
@@ -1147,7 +1147,7 @@ python-versions = ">=2.6, !=3.0.*, !=3.1.*, !=3.2.*"
 
 [[package]]
 name = "toolz"
-version = "0.11.1"
+version = "0.11.2"
 description = "List processing tools and functional utilities"
 category = "main"
 optional = false
@@ -1276,7 +1276,7 @@ ib = ["ib_insync"]
 [metadata]
 lock-version = "1.1"
 python-versions = ">=3.8,<3.11"
-content-hash = "48b484c99ea554e044631619b50daea9cc1d4700377817a752b8218f937e78b0"
+content-hash = "c66d3cd1547f54b854d29f2b7de08a3e37cf934f0f738d4bf476185fabe75586"
 
 [metadata.files]
 aiodns = [
@@ -1553,16 +1553,16 @@ cython = [
     {file = "Cython-3.0.0a9.tar.gz", hash = "sha256:23931c45877432097cef9de2db2dc66322cbc4fc3ebbb42c476bb2c768cecff0"},
 ]
 dask = [
-    {file = "dask-2021.10.0-py3-none-any.whl", hash = "sha256:b678d802ea8126c0168a1b429182b7dc01ade8ad84cfd62b804c52c4c29b6fc3"},
-    {file = "dask-2021.10.0.tar.gz", hash = "sha256:a98b2e44acaad369bb21f79fc92f756532acfe62c3aeba3982006b7339d0d2e3"},
+    {file = "dask-2021.11.0-py3-none-any.whl", hash = "sha256:0244678de0bf52175aa75cedd7187dc6b55f8dbe0cc0f14b94065761cf4b4b59"},
+    {file = "dask-2021.11.0.tar.gz", hash = "sha256:007c400eab2b032717cd8d589351abfb0e79688fcc6cd033a12e506cb01066d7"},
 ]
 distlib = [
     {file = "distlib-0.3.3-py2.py3-none-any.whl", hash = "sha256:c8b54e8454e5bf6237cc84c20e8264c3e991e824ef27e8f1e81049867d861e31"},
     {file = "distlib-0.3.3.zip", hash = "sha256:d982d0751ff6eaaab5e2ec8e691d949ee80eddf01a62eaa96ddb11531fe16b05"},
 ]
 distributed = [
-    {file = "distributed-2021.10.0-py3-none-any.whl", hash = "sha256:16ed49c279d273444dea45cbd4436648a63190855dea187d8eda2baec29a926d"},
-    {file = "distributed-2021.10.0.tar.gz", hash = "sha256:ea27051fdb8351710978fd1beac49d5b9ad2b919328b4d348f5c58b1393dd84d"},
+    {file = "distributed-2021.11.0-py3-none-any.whl", hash = "sha256:a170e35c9a67315ebaf14d80bdcb34fefe9bf508b7343e65a7beed4fdd2e68c4"},
+    {file = "distributed-2021.11.0.tar.gz", hash = "sha256:4ecbb1e1d61a55d226a67146076686d5cb6091645732d5e14f7330820dcc682d"},
 ]
 docutils = [
     {file = "docutils-0.17.1-py2.py3-none-any.whl", hash = "sha256:cf316c8370a737a022b72b56874f6602acf974a37a9fba42ec2876387549fc61"},
@@ -1655,8 +1655,8 @@ frozenlist = [
     {file = "frozenlist-1.2.0.tar.gz", hash = "sha256:68201be60ac56aff972dc18085800b6ee07973c49103a8aba669dee3d71079de"},
 ]
 fsspec = [
-    {file = "fsspec-2021.10.1-py3-none-any.whl", hash = "sha256:7164a488f3f5bf6a0fb39674978b756dda84e011a5db411a79791b7c38a36ff7"},
-    {file = "fsspec-2021.10.1.tar.gz", hash = "sha256:c245626e3cb8de5cd91485840b215a385fa6f2b0f6ab87978305e99e2d842753"},
+    {file = "fsspec-2021.11.0-py3-none-any.whl", hash = "sha256:8843f31c7a7bb1afc4add371948f10701814594d407ee1b0bb4facec8b517efa"},
+    {file = "fsspec-2021.11.0.tar.gz", hash = "sha256:cbb7bafd59aa33684a92e843877f4adc0109fb0722b1a26e7d08f5a6e2500904"},
 ]
 heapdict = [
     {file = "HeapDict-1.0.1-py3-none-any.whl", hash = "sha256:6065f90933ab1bb7e50db403b90cab653c853690c5992e69294c2de2b253fc92"},
@@ -1667,8 +1667,8 @@ ib-insync = [
     {file = "ib_insync-0.9.69.tar.gz", hash = "sha256:b218c602dc9844c1d867448d14d29f12caa66657f56c48f0e96165b2edd07672"},
 ]
 identify = [
-    {file = "identify-2.3.3-py2.py3-none-any.whl", hash = "sha256:ffab539d9121b386ffdea84628ff3eefda15f520f392ce11b393b0a909632cdf"},
-    {file = "identify-2.3.3.tar.gz", hash = "sha256:b9ffbeb7ed87e96ce017c66b80ca04fda3adbceb5c74e54fc7d99281d27d0859"},
+    {file = "identify-2.3.4-py2.py3-none-any.whl", hash = "sha256:4de55a93e0ba72bf917c840b3794eb1055a67272a1732351c557c88ec42011b1"},
+    {file = "identify-2.3.4.tar.gz", hash = "sha256:595283a1c3a078ac5774ad4dc4d1bdd0c1602f60bcf11ae673b64cb2b1945762"},
 ]
 idna = [
     {file = "idna-3.3-py3-none-any.whl", hash = "sha256:84d9dd047ffa80596e0f246e2eab0b391788b0503584e8945f2368256d2735ff"},
@@ -2262,8 +2262,8 @@ pycares = [
     {file = "pycares-4.1.2.tar.gz", hash = "sha256:03490be0e7b51a0c8073f877bec347eff31003f64f57d9518d419d9369452837"},
 ]
 pycparser = [
-    {file = "pycparser-2.20-py2.py3-none-any.whl", hash = "sha256:7582ad22678f0fcd81102833f60ef8d0e57288b6b5fb00323d101be910e35705"},
-    {file = "pycparser-2.20.tar.gz", hash = "sha256:2d475327684562c3a96cc71adf7dc8c4f0565175cf86b6d7a404ff4c771f15f0"},
+    {file = "pycparser-2.21-py2.py3-none-any.whl", hash = "sha256:8ee45429555515e1f6b185e78100aea234072576aa43ab53aefcae078162fca9"},
+    {file = "pycparser-2.21.tar.gz", hash = "sha256:e644fdec12f7872f86c58ff790da456218b10f863970249516d60a5eaca77206"},
 ]
 pydantic = [
     {file = "pydantic-1.8.2-cp36-cp36m-macosx_10_9_x86_64.whl", hash = "sha256:05ddfd37c1720c392f4e0d43c484217b7521558302e7069ce8d318438d297739"},
@@ -2380,25 +2380,29 @@ requests = [
     {file = "requests-2.26.0.tar.gz", hash = "sha256:b8aa58f8cf793ffd8782d3d8cb19e66ef36f7aba4353eec859e74678b01b07a7"},
 ]
 scipy = [
-    {file = "scipy-1.6.1-cp37-cp37m-macosx_10_9_x86_64.whl", hash = "sha256:a15a1f3fc0abff33e792d6049161b7795909b40b97c6cc2934ed54384017ab76"},
-    {file = "scipy-1.6.1-cp37-cp37m-manylinux1_i686.whl", hash = "sha256:e79570979ccdc3d165456dd62041d9556fb9733b86b4b6d818af7a0afc15f092"},
-    {file = "scipy-1.6.1-cp37-cp37m-manylinux1_x86_64.whl", hash = "sha256:a423533c55fec61456dedee7b6ee7dce0bb6bfa395424ea374d25afa262be261"},
-    {file = "scipy-1.6.1-cp37-cp37m-manylinux2014_aarch64.whl", hash = "sha256:33d6b7df40d197bdd3049d64e8e680227151673465e5d85723b3b8f6b15a6ced"},
-    {file = "scipy-1.6.1-cp37-cp37m-win32.whl", hash = "sha256:6725e3fbb47da428794f243864f2297462e9ee448297c93ed1dcbc44335feb78"},
-    {file = "scipy-1.6.1-cp37-cp37m-win_amd64.whl", hash = "sha256:5fa9c6530b1661f1370bcd332a1e62ca7881785cc0f80c0d559b636567fab63c"},
-    {file = "scipy-1.6.1-cp38-cp38-macosx_10_9_x86_64.whl", hash = "sha256:bd50daf727f7c195e26f27467c85ce653d41df4358a25b32434a50d8870fc519"},
-    {file = "scipy-1.6.1-cp38-cp38-manylinux1_i686.whl", hash = "sha256:f46dd15335e8a320b0fb4685f58b7471702234cba8bb3442b69a3e1dc329c345"},
-    {file = "scipy-1.6.1-cp38-cp38-manylinux1_x86_64.whl", hash = "sha256:0e5b0ccf63155d90da576edd2768b66fb276446c371b73841e3503be1d63fb5d"},
-    {file = "scipy-1.6.1-cp38-cp38-manylinux2014_aarch64.whl", hash = "sha256:2481efbb3740977e3c831edfd0bd9867be26387cacf24eb5e366a6a374d3d00d"},
-    {file = "scipy-1.6.1-cp38-cp38-win32.whl", hash = "sha256:68cb4c424112cd4be886b4d979c5497fba190714085f46b8ae67a5e4416c32b4"},
-    {file = "scipy-1.6.1-cp38-cp38-win_amd64.whl", hash = "sha256:5f331eeed0297232d2e6eea51b54e8278ed8bb10b099f69c44e2558c090d06bf"},
-    {file = "scipy-1.6.1-cp39-cp39-macosx_10_9_x86_64.whl", hash = "sha256:0c8a51d33556bf70367452d4d601d1742c0e806cd0194785914daf19775f0e67"},
-    {file = "scipy-1.6.1-cp39-cp39-manylinux1_i686.whl", hash = "sha256:83bf7c16245c15bc58ee76c5418e46ea1811edcc2e2b03041b804e46084ab627"},
-    {file = "scipy-1.6.1-cp39-cp39-manylinux1_x86_64.whl", hash = "sha256:794e768cc5f779736593046c9714e0f3a5940bc6dcc1dba885ad64cbfb28e9f0"},
-    {file = "scipy-1.6.1-cp39-cp39-manylinux2014_aarch64.whl", hash = "sha256:5da5471aed911fe7e52b86bf9ea32fb55ae93e2f0fac66c32e58897cfb02fa07"},
-    {file = "scipy-1.6.1-cp39-cp39-win32.whl", hash = "sha256:8e403a337749ed40af60e537cc4d4c03febddcc56cd26e774c9b1b600a70d3e4"},
-    {file = "scipy-1.6.1-cp39-cp39-win_amd64.whl", hash = "sha256:a5193a098ae9f29af283dcf0041f762601faf2e595c0db1da929875b7570353f"},
-    {file = "scipy-1.6.1.tar.gz", hash = "sha256:c4fceb864890b6168e79b0e714c585dbe2fd4222768ee90bc1aa0f8218691b11"},
+    {file = "scipy-1.7.2-cp310-cp310-macosx_10_9_x86_64.whl", hash = "sha256:97eb573e361a73a553b915dc195c6f72a08249964b1a33f157f9659f3b6210d1"},
+    {file = "scipy-1.7.2-cp310-cp310-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:359b60a0cccd17723b9d5e329a5212a710e771a3ddde800e472fb93732756c46"},
+    {file = "scipy-1.7.2-cp310-cp310-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:82c5befebf54d799d77e5f0205c03030f57f69ba2541baa44d2e6ad138c28cd3"},
+    {file = "scipy-1.7.2-cp310-cp310-win_amd64.whl", hash = "sha256:54951f51d731c832b1b8885e0a92e89f33d087de7e40d02078bf0d49c7cbdbb5"},
+    {file = "scipy-1.7.2-cp37-cp37m-macosx_10_9_x86_64.whl", hash = "sha256:30bdda199667e74b50208a793eb1ba47a04e5e3fa16f5ff06c6f7969ae78e4da"},
+    {file = "scipy-1.7.2-cp37-cp37m-manylinux_2_12_i686.manylinux2010_i686.whl", hash = "sha256:e3efe7ef75dfe627b354ab0af0dbc918eadee97cc80ff1aabea6d3e01114ebdd"},
+    {file = "scipy-1.7.2-cp37-cp37m-manylinux_2_12_x86_64.manylinux2010_x86_64.whl", hash = "sha256:17fd991a275e4283453f89d404209aa92059ac68d76d804b4bc1716a3742e1b5"},
+    {file = "scipy-1.7.2-cp37-cp37m-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:74f518ce542533054695f743e4271cb8986b63f95bb51d70fcee4f3929cbff7d"},
+    {file = "scipy-1.7.2-cp37-cp37m-win32.whl", hash = "sha256:1437073f1d4664990879aa8f9547524764372e0fef84a077be4b19e82bba7a8d"},
+    {file = "scipy-1.7.2-cp37-cp37m-win_amd64.whl", hash = "sha256:39f838ea5ce8da868785193d88d05cf5a6d5c390804ec99de29a28e1dcdd53e6"},
+    {file = "scipy-1.7.2-cp38-cp38-macosx_10_9_x86_64.whl", hash = "sha256:e08b81fcd9bf98740b58dc6fdd7879e33a64dcb682201c1135f7d4a75216bb05"},
+    {file = "scipy-1.7.2-cp38-cp38-manylinux_2_12_i686.manylinux2010_i686.whl", hash = "sha256:7b1d0f5f524518f1a86f288443528e4ff4a739c0966db663af4129b7ac7849f8"},
+    {file = "scipy-1.7.2-cp38-cp38-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:cac71d5476a6f56b50459da21f6221707e0051ebd428b2137db32ef4a43bb15e"},
+    {file = "scipy-1.7.2-cp38-cp38-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:4d175ba93e00d8eef8f7cd70d4d88a9106a86800c82ea03cf2268c36d6545483"},
+    {file = "scipy-1.7.2-cp38-cp38-win32.whl", hash = "sha256:8b5726a0fedeaa6beb1095e4466998bdd1d1e960b28db9b5a16c89cbd7b2ebf1"},
+    {file = "scipy-1.7.2-cp38-cp38-win_amd64.whl", hash = "sha256:8482c8e45857ab0a5446eb7460d2307a27cbbe659d6d2257820c6d6eb950fd0f"},
+    {file = "scipy-1.7.2-cp39-cp39-macosx_10_9_x86_64.whl", hash = "sha256:1ea6233f5a365cb7945b4304bd06323ece3ece85d6a3fa8598d2f53e513467c9"},
+    {file = "scipy-1.7.2-cp39-cp39-manylinux_2_12_i686.manylinux2010_i686.whl", hash = "sha256:d86abd1ddf421dea5e9cebfeb4de0d205b3dc04e78249afedba9c6c3b2227ff2"},
+    {file = "scipy-1.7.2-cp39-cp39-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:2d25272c03ee3c0fe5e0dff1bb7889280bb6c9e1766fa9c7bde81ad8a5f78694"},
+    {file = "scipy-1.7.2-cp39-cp39-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:5273d832fb9cd5724ee0d335c16a903b923441107dd973d27fc4293075a9f4e3"},
+    {file = "scipy-1.7.2-cp39-cp39-win32.whl", hash = "sha256:87cf3964db0f1cce17aeed5bfc1b89a6b4b07dbfc48e50d21fa3549e00456803"},
+    {file = "scipy-1.7.2-cp39-cp39-win_amd64.whl", hash = "sha256:a80eb01c43fd98257ec7a49ff5cec0edba32031b5f86503f55399a48cb2c5379"},
+    {file = "scipy-1.7.2.tar.gz", hash = "sha256:fa2dbabaaecdb502641b0b3c00dec05fb475ae48655c66da16c9ed24eda1e711"},
 ]
 seaborn = [
     {file = "seaborn-0.11.2-py3-none-any.whl", hash = "sha256:85a6baa9b55f81a0623abddc4a26b334653ff4c6b18c418361de19dbba0ef283"},
@@ -2461,8 +2465,8 @@ toml = [
     {file = "toml-0.10.2.tar.gz", hash = "sha256:b3bda1d108d5dd99f4a20d24d9c348e91c4db7ab1b749200bded2f839ccbe68f"},
 ]
 toolz = [
-    {file = "toolz-0.11.1-py3-none-any.whl", hash = "sha256:1bc473acbf1a1db4e72a1ce587be347450e8f08324908b8a266b486f408f04d5"},
-    {file = "toolz-0.11.1.tar.gz", hash = "sha256:c7a47921f07822fe534fb1c01c9931ab335a4390c782bd28c6bcc7c2f71f3fbf"},
+    {file = "toolz-0.11.2-py3-none-any.whl", hash = "sha256:a5700ce83414c64514d82d60bcda8aabfde092d1c1a8663f9200c07fdcc6da8f"},
+    {file = "toolz-0.11.2.tar.gz", hash = "sha256:6b312d5e15138552f1bda8a4e66c30e236c831b612b2bf0005f8a1df10a4bc33"},
 ]
 tornado = [
     {file = "tornado-6.1-cp35-cp35m-macosx_10_9_x86_64.whl", hash = "sha256:d371e811d6b156d82aa5f9a4e08b58debf97c302a35714f6f45e35139c332e32"},
