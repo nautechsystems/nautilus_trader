@@ -638,16 +638,16 @@ class TradingNode:
         if self._config.save_strategy_state:
             self.trader.save()
 
+        # Disconnect all clients
+        self._data_engine.disconnect()
+        self._exec_engine.disconnect()
+
         if self._data_engine.is_running:
             self._data_engine.stop()
         if self._exec_engine.is_running:
             self._exec_engine.stop()
         if self._risk_engine.is_running:
             self._risk_engine.stop()
-
-        # Disconnect all clients
-        self._data_engine.disconnect()
-        self._exec_engine.disconnect()
 
         self._log.info(
             f"Waiting for engines to disconnect "
