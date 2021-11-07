@@ -24,6 +24,7 @@ from nautilus_trader.model.c_enums.asset_class cimport AssetClassParser
 from nautilus_trader.model.c_enums.asset_type cimport AssetType
 from nautilus_trader.model.currency cimport Currency
 from nautilus_trader.model.identifiers cimport InstrumentId
+from nautilus_trader.model.identifiers cimport Symbol
 from nautilus_trader.model.instruments.base cimport Instrument
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
@@ -37,6 +38,7 @@ cdef class Future(Instrument):
     def __init__(
         self,
         InstrumentId instrument_id not None,
+        Symbol local_symbol not None,
         AssetClass asset_class,
         Currency currency not None,
         int price_precision,
@@ -55,6 +57,8 @@ cdef class Future(Instrument):
         ----------
         instrument_id : InstrumentId
             The instrument ID.
+        local_symbol : Symbol
+            The local/native symbol on the exchange for the instrument.
         asset_class : AssetClass
             The futures contract asset class.
         currency : Currency
@@ -90,6 +94,7 @@ cdef class Future(Instrument):
         """
         super().__init__(
             instrument_id=instrument_id,
+            local_symbol=local_symbol,
             asset_class=asset_class,
             asset_type=AssetType.FUTURE,
             quote_currency=currency,
@@ -122,6 +127,7 @@ cdef class Future(Instrument):
         Condition.not_none(values, "values")
         return Future(
             instrument_id=InstrumentId.from_str_c(values["id"]),
+            local_symbol=Symbol(values["local_symbol"]),
             asset_class=AssetClassParser.from_str(values["asset_class"]),
             currency=Currency.from_str_c(values['currency']),
             price_precision=values['price_precision'],
@@ -140,6 +146,7 @@ cdef class Future(Instrument):
         return {
             "type": "Equity",
             "id": obj.id.value,
+            "local_symbol": obj.local_symbol.value,
             "asset_class": AssetClassParser.to_str(obj.asset_class),
             "currency": obj.quote_currency.code,
             "price_precision": obj.price_precision,

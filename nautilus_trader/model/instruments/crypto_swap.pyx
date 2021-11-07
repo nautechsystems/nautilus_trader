@@ -14,6 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 import orjson
+
 from libc.stdint cimport int64_t
 
 from decimal import Decimal
@@ -23,6 +24,7 @@ from nautilus_trader.model.c_enums.asset_class cimport AssetClass
 from nautilus_trader.model.c_enums.asset_type cimport AssetType
 from nautilus_trader.model.currency cimport Currency
 from nautilus_trader.model.identifiers cimport InstrumentId
+from nautilus_trader.model.identifiers cimport Symbol
 from nautilus_trader.model.instruments.base cimport Instrument
 from nautilus_trader.model.objects cimport Money
 from nautilus_trader.model.objects cimport Price
@@ -37,6 +39,7 @@ cdef class CryptoSwap(Instrument):
     def __init__(
         self,
         InstrumentId instrument_id not None,
+        Symbol local_symbol not None,
         Currency base_currency not None,
         Currency quote_currency not None,
         Currency settlement_currency not None,
@@ -66,6 +69,8 @@ cdef class CryptoSwap(Instrument):
         ----------
         instrument_id : InstrumentId
             The instrument ID for the instrument.
+        local_symbol : Symbol
+            The local/native symbol on the exchange for the instrument.
         base_currency : Currency, optional
             The base currency.
         quote_currency : Currency
@@ -141,6 +146,7 @@ cdef class CryptoSwap(Instrument):
         """
         super().__init__(
             instrument_id=instrument_id,
+            local_symbol=local_symbol,
             asset_class=AssetClass.CRYPTO,
             asset_type=AssetType.SWAP,
             quote_currency=quote_currency,
@@ -196,6 +202,7 @@ cdef class CryptoSwap(Instrument):
         cdef bytes info = values["info"]
         return CryptoSwap(
             instrument_id=InstrumentId.from_str_c(values["id"]),
+            local_symbol=Symbol(values["local_symbol"]),
             base_currency=Currency.from_str_c(values["base_currency"]),
             quote_currency=Currency.from_str_c(values["quote_currency"]),
             settlement_currency=Currency.from_str_c(values["settlement_currency"]),
@@ -225,6 +232,7 @@ cdef class CryptoSwap(Instrument):
         return {
             "type": "CryptoSwap",
             "id": obj.id.value,
+            "local_symbol": obj.local_symbol.value,
             "base_currency": obj.base_currency.code,
             "quote_currency": obj.quote_currency.code,
             "settlement_currency": obj.settlement_currency.code,
