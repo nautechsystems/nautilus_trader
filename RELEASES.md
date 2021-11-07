@@ -1,6 +1,6 @@
 # NautilusTrader 1.133.0 Beta - Release Notes
 
-Released TBD | Update version badge
+Released on 8th, November 2021
 
 ## Breaking Changes
 None
@@ -10,9 +10,12 @@ None
 - Added `Clock.timestamp_ms()`.
 - Added `depth` param when subscribing to order book deltas.
 - Added `TestDataProvider` and consolidate test data.
+- Added orjson default serializer for arrow.
 - Reorganized example strategies and launch scripts.
 
 ## Fixes
+- Fixed logic for partial fills in backtests.
+- Various Betfair integration fixes.
 - Various `BacktestNode` fixes.
 
 ---
