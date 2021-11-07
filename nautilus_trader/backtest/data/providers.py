@@ -70,6 +70,7 @@ class TestInstrumentProvider:
                 symbol=Symbol("ADA/BTC"),
                 venue=Venue("BINANCE"),
             ),
+            local_symbol=Symbol("ADABTC"),
             base_currency=ADA,
             quote_currency=BTC,
             price_precision=8,
@@ -106,6 +107,7 @@ class TestInstrumentProvider:
                 symbol=Symbol("BTC/USDT"),
                 venue=Venue("BINANCE"),
             ),
+            local_symbol=Symbol("BTCUSDT"),
             base_currency=BTC,
             quote_currency=USDT,
             price_precision=2,
@@ -142,6 +144,7 @@ class TestInstrumentProvider:
                 symbol=Symbol("ETH/USDT"),
                 venue=Venue("BINANCE"),
             ),
+            local_symbol=Symbol("ETHUSDT"),
             base_currency=ETH,
             quote_currency=USDT,
             price_precision=2,
@@ -166,7 +169,7 @@ class TestInstrumentProvider:
     @staticmethod
     def ethusd_ftx() -> CurrencySpot:
         """
-        Return the Binance ETH/USDT instrument for backtesting.
+        Return the FTX ETH/USD instrument for backtesting.
 
         Returns
         -------
@@ -178,6 +181,7 @@ class TestInstrumentProvider:
                 symbol=Symbol("ETH/USD"),
                 venue=Venue("FTX"),
             ),
+            local_symbol=Symbol("ETHUSD"),
             base_currency=ETH,
             quote_currency=USD,
             price_precision=1,
@@ -211,9 +215,10 @@ class TestInstrumentProvider:
         """
         return CryptoSwap(
             instrument_id=InstrumentId(
-                symbol=Symbol("XBT/USD"),
+                symbol=Symbol("BTC/USD"),
                 venue=Venue("BITMEX"),
             ),
+            local_symbol=Symbol("XBTUSD"),
             base_currency=BTC,
             quote_currency=USD,
             settlement_currency=BTC,
@@ -251,6 +256,7 @@ class TestInstrumentProvider:
                 symbol=Symbol("ETH/USD"),
                 venue=Venue("BITMEX"),
             ),
+            local_symbol=Symbol("ETHUSD"),
             base_currency=ETH,
             quote_currency=USD,
             settlement_currency=BTC,
@@ -316,6 +322,7 @@ class TestInstrumentProvider:
 
         return CurrencySpot(
             instrument_id=instrument_id,
+            local_symbol=Symbol(symbol),
             base_currency=Currency.from_str(base_currency),
             quote_currency=Currency.from_str(quote_currency),
             price_precision=price_precision,
@@ -367,6 +374,7 @@ class TestInstrumentProvider:
     def aapl_equity():
         return Equity(
             instrument_id=InstrumentId(symbol=Symbol("AAPL"), venue=Venue("NASDAQ")),
+            local_symbol=Symbol("AAPL"),
             currency=USD,
             price_precision=2,
             price_increment=Price.from_str("0.01"),
@@ -381,6 +389,7 @@ class TestInstrumentProvider:
     def es_future():
         return Future(
             instrument_id=InstrumentId(symbol=Symbol("ESZ21"), venue=Venue("CME")),
+            local_symbol=Symbol("ESZ21"),
             asset_class=AssetClass.INDEX,
             currency=USD,
             price_precision=2,
@@ -397,6 +406,7 @@ class TestInstrumentProvider:
     def aapl_option():
         return Option(
             instrument_id=InstrumentId(symbol=Symbol("AAPL211217C00150000"), venue=Venue("OPRA")),
+            local_symbol=Symbol("AAPL211217C00150000"),
             asset_class=AssetClass.EQUITY,
             currency=USD,
             price_precision=2,

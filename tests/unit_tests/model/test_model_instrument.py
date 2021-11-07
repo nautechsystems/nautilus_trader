@@ -85,6 +85,7 @@ class TestInstrument:
         assert result == {
             "type": "Instrument",
             "id": "BTC/USDT.BINANCE",
+            "local_symbol": "BTCUSDT",
             "asset_class": "CRYPTO",
             "asset_type": "SPOT",
             "quote_currency": "USDT",
@@ -115,6 +116,7 @@ class TestInstrument:
         values = {
             "type": "Instrument",
             "id": "BTC/USDT.BINANCE",
+            "local_symbol": "BTCUSDT",
             "asset_class": "CRYPTO",
             "asset_type": "SPOT",
             "quote_currency": "USDT",
@@ -154,7 +156,8 @@ class TestInstrument:
         assert CryptoSwap.from_dict(result) == XBTUSD_BITMEX
         assert result == {
             "type": "CryptoSwap",
-            "id": "XBT/USD.BITMEX",
+            "id": "BTC/USD.BITMEX",
+            "local_symbol": "XBTUSD",
             "base_currency": "BTC",
             "quote_currency": "USD",
             "settlement_currency": "BTC",

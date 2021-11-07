@@ -497,6 +497,7 @@ NAUTILUS_PARQUET_SCHEMA = {
     CurrencySpot: pa.schema(
         {
             "id": pa.dictionary(pa.int64(), pa.string()),
+            "local_symbol": pa.string(),
             "base_currency": pa.dictionary(pa.int8(), pa.string()),
             "quote_currency": pa.dictionary(pa.int8(), pa.string()),
             "price_precision": pa.int64(),
@@ -522,6 +523,7 @@ NAUTILUS_PARQUET_SCHEMA = {
     Equity: pa.schema(
         {
             "id": pa.dictionary(pa.int64(), pa.string()),
+            "local_symbol": pa.string(),
             "currency": pa.dictionary(pa.int8(), pa.string()),
             "price_precision": pa.int64(),
             "size_precision": pa.int64(),
@@ -539,6 +541,7 @@ NAUTILUS_PARQUET_SCHEMA = {
     Future: pa.schema(
         {
             "id": pa.dictionary(pa.int64(), pa.string()),
+            "local_symbol": pa.string(),
             "underlying": pa.dictionary(pa.int8(), pa.string()),
             "asset_class": pa.dictionary(pa.int8(), pa.string()),
             "currency": pa.dictionary(pa.int8(), pa.string()),
@@ -556,6 +559,7 @@ NAUTILUS_PARQUET_SCHEMA = {
     Option: pa.schema(
         {
             "id": pa.dictionary(pa.int64(), pa.string()),
+            "local_symbol": pa.string(),
             "underlying": pa.dictionary(pa.int8(), pa.string()),
             "asset_class": pa.dictionary(pa.int8(), pa.string()),
             "currency": pa.dictionary(pa.int8(), pa.string()),

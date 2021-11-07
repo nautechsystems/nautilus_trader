@@ -41,6 +41,7 @@ cdef class Instrument(Data):
     def __init__(
         self,
         InstrumentId instrument_id not None,
+        Symbol local_symbol not None,
         AssetClass asset_class,
         AssetType asset_type,
         Currency quote_currency not None,
@@ -73,6 +74,8 @@ cdef class Instrument(Data):
         ----------
         instrument_id : InstrumentId
             The instrument ID for the instrument.
+        local_symbol : Symbol
+            The local/native symbol on the exchange for the instrument.
         asset_class : AssetClass
             The instrument asset class.
         asset_type : AssetType
@@ -193,6 +196,7 @@ cdef class Instrument(Data):
         super().__init__(ts_event, ts_init)
 
         self.id = instrument_id
+        self.local_symbol = local_symbol
         self.asset_class = asset_class
         self.asset_type = asset_type
         self.quote_currency = quote_currency
@@ -229,7 +233,7 @@ cdef class Instrument(Data):
     def __repr__(self) -> str:  # TODO(cs): tick_scheme_name pending
         return (f"{type(self).__name__}"
                 f"(id={self.id.value}, "
-                f"symbol={self.id.symbol}, "
+                f"local_symbol={self.local_symbol}, "
                 f"asset_class={AssetClassParser.to_str(self.asset_class)}, "
                 f"asset_type={AssetTypeParser.to_str(self.asset_type)}, "
                 f"quote_currency={self.quote_currency}, "
@@ -258,6 +262,7 @@ cdef class Instrument(Data):
         cdef bytes info = values["info"]
         return Instrument(
             instrument_id=InstrumentId.from_str_c(values["id"]),
+            local_symbol=Symbol(values["local_symbol"]),
             asset_class=AssetClassParser.from_str(values["asset_class"]),
             asset_type=AssetTypeParser.from_str(values["asset_type"]),
             quote_currency=Currency.from_str_c(values["quote_currency"]),
@@ -288,6 +293,7 @@ cdef class Instrument(Data):
         return {
             "type": "Instrument",
             "id": obj.id.value,
+            "local_symbol": obj.local_symbol.value,
             "asset_class": AssetClassParser.to_str(obj.asset_class),
             "asset_type": AssetTypeParser.to_str(obj.asset_type),
             "quote_currency": obj.quote_currency.code,
