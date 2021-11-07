@@ -13,16 +13,18 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+import os
 import platform
 
 import pytest
 
+from nautilus_trader.backtest.data.loaders import ParquetTickDataLoader
 from nautilus_trader.backtest.data.providers import TestInstrumentProvider
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.objects import Price
-from tests.test_kit.providers import TestDataProvider
+from tests.test_kit import PACKAGE_ROOT
 
 
 class TestBacktestLoaders:
@@ -62,26 +64,28 @@ class TestBacktestLoaders:
 class TestParquetTickDataLoaders:
     def test_btcusdt_trade_ticks_from_parquet_loader_return_expected_row(self):
         # Arrange, Act
-        trade_ticks = TestDataProvider.parquet_btcusdt_trades()
+        path = os.path.join(PACKAGE_ROOT, "data", "binance-btcusdt-trades.parquet")
+        ticks = ParquetTickDataLoader.load(path)
 
         # Assert
-        assert len(trade_ticks), 2001
-        assert "trade_id" in trade_ticks.columns
-        assert "price" in trade_ticks.columns
-        assert "quantity" in trade_ticks.columns
-        assert "buyer_maker" in trade_ticks.columns
-        assert trade_ticks.iloc[0]["trade_id"] == 553287559
+        assert len(ticks), 2001
+        assert "trade_id" in ticks.columns
+        assert "price" in ticks.columns
+        assert "quantity" in ticks.columns
+        assert "buyer_maker" in ticks.columns
+        assert ticks.iloc[0]["trade_id"] == 553287559
 
     def test_btcusdt_quote_ticks_from_parquet_loader_return_expected_row(self):
         # Arrange, Act
-        quote_ticks = TestDataProvider.parquet_btcusdt_quotes()
+        path = os.path.join(PACKAGE_ROOT, "data", "binance-btcusdt-quotes.parquet")
+        ticks = ParquetTickDataLoader.load(path)
 
         # Assert
-        assert len(quote_ticks), 451
-        assert "symbol" in quote_ticks.columns
-        assert "ask_size" in quote_ticks.columns
-        assert "ask" in quote_ticks.columns
-        assert "bid_size" in quote_ticks.columns
-        assert "bid" in quote_ticks.columns
-        assert quote_ticks.iloc[0]["ask"] == 39433.62
-        assert quote_ticks.iloc[0]["bid"] == 39432.99
+        assert len(ticks), 451
+        assert "symbol" in ticks.columns
+        assert "ask_size" in ticks.columns
+        assert "ask" in ticks.columns
+        assert "bid_size" in ticks.columns
+        assert "bid" in ticks.columns
+        assert ticks.iloc[0]["ask"] == 39433.62
+        assert ticks.iloc[0]["bid"] == 39432.99

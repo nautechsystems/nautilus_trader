@@ -458,6 +458,11 @@ class TestDataProvider:
         elif isinstance(self.fs, GithubFileSystem):
             return f"github://{self.fs.org}:{self.fs.repo}@{self.branch}/{self.root}/{path}"
 
+    def read(self, path: str):
+        uri = self._make_uri(path=path)
+        with fsspec.open(uri) as f:
+            return f.read()
+
     def read_csv(self, path: str):
         uri = self._make_uri(path=path)
         with fsspec.open(uri) as f:

@@ -19,6 +19,7 @@ from decimal import Decimal
 import pandas as pd
 import pytest
 
+from nautilus_trader.backtest.data.providers import TestDataProvider
 from nautilus_trader.backtest.data.providers import TestInstrumentProvider
 from nautilus_trader.backtest.data.wranglers import QuoteTickDataWrangler
 from nautilus_trader.backtest.data.wranglers import TradeTickDataWrangler
@@ -46,7 +47,6 @@ from nautilus_trader.model.orderbook.data import OrderBookData
 from tests.integration_tests.adapters.betfair.test_kit import BetfairDataProvider
 from tests.test_kit import PACKAGE_ROOT
 from tests.test_kit.mocks import data_catalog_setup
-from tests.test_kit.providers import TestDataProvider
 
 
 class TestBacktestAcceptanceTestsUSDJPY:
@@ -63,9 +63,10 @@ class TestBacktestAcceptanceTestsUSDJPY:
 
         # Setup data
         wrangler = QuoteTickDataWrangler(instrument=self.usdjpy)
+        provider = TestDataProvider()
         ticks = wrangler.process_bar_data(
-            bid_data=TestDataProvider.usdjpy_1min_bid(),
-            ask_data=TestDataProvider.usdjpy_1min_ask(),
+            bid_data=provider.read_csv_bars("fxcm-usdjpy-m1-bid-2013.csv"),
+            ask_data=provider.read_csv_bars("fxcm-usdjpy-m1-ask-2013.csv"),
         )
         self.engine.add_instrument(self.usdjpy)
         self.engine.add_ticks(ticks)
@@ -183,9 +184,10 @@ class TestBacktestAcceptanceTestsGBPUSD:
 
         # Setup data
         wrangler = QuoteTickDataWrangler(self.gbpusd)
+        provider = TestDataProvider()
         ticks = wrangler.process_bar_data(
-            bid_data=TestDataProvider.gbpusd_1min_bid(),
-            ask_data=TestDataProvider.gbpusd_1min_ask(),
+            bid_data=provider.read_csv_bars("fxcm-gbpusd-m1-bid-2012.csv"),
+            ask_data=provider.read_csv_bars("fxcm-gbpusd-m1-ask-2012.csv"),
         )
         self.engine.add_instrument(self.gbpusd)
         self.engine.add_ticks(ticks)
@@ -243,13 +245,12 @@ class TestBacktestAcceptanceTestsAUDUSD:
 
         # Setup data
         wrangler = QuoteTickDataWrangler(self.audusd)
-        ticks = wrangler.process(TestDataProvider.audusd_ticks())
+        provider = TestDataProvider()
+        ticks = wrangler.process(provider.read_csv_ticks("truefx-audusd-ticks.csv"))
         self.engine.add_instrument(self.audusd)
         self.engine.add_ticks(ticks)
 
-        interest_rate_data = pd.read_csv(
-            os.path.join(PACKAGE_ROOT, "data", "short-term-interest.csv")
-        )
+        interest_rate_data = provider.read_csv("short-term-interest.csv")
         fx_rollover_interest = FXRolloverInterestModule(rate_data=interest_rate_data)
 
         self.engine.add_venue(
@@ -320,7 +321,8 @@ class TestBacktestAcceptanceTestsETHUSDT:
 
         # Setup data
         wrangler = TradeTickDataWrangler(instrument=self.ethusdt)
-        ticks = wrangler.process(TestDataProvider.ethusdt_trades())
+        provider = TestDataProvider()
+        ticks = wrangler.process(provider.read_csv_ticks("binance-ethusdt-trades.csv"))
         self.engine.add_instrument(self.ethusdt)
         self.engine.add_ticks(ticks)
 
