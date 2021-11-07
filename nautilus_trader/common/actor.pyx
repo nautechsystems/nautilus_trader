@@ -651,6 +651,7 @@ cdef class Actor(Component):
         self,
         InstrumentId instrument_id,
         BookType book_type=BookType.L2_MBP,
+        int depth=0,
         dict kwargs=None,
     ) except *:
         """
@@ -663,6 +664,8 @@ cdef class Actor(Component):
             The order book instrument ID to subscribe to.
         book_type : BookType {``L1_TBBO``, ``L2_MBP``, ``L3_MBO``}
             The order book type.
+        depth : int, optional
+            The maximum depth for the order book. A depth of 0 is maximum depth.
         kwargs : dict, optional
             The keyword arguments for exchange specific parameters.
 
@@ -682,6 +685,7 @@ cdef class Actor(Component):
             data_type=DataType(OrderBookData, metadata={
                 "instrument_id": instrument_id,
                 "book_type": book_type,
+                "depth": depth,
                 "kwargs": kwargs,
             }),
             command_id=self._uuid_factory.generate(),
@@ -730,6 +734,13 @@ cdef class Actor(Component):
         Condition.not_negative(depth, "depth")
         Condition.not_negative(interval_ms, "interval_ms")
         Condition.true(self.trader_id is not None, "The actor has not been registered")
+
+        if book_type == BookType.L1_TBBO and depth > 1:
+            self._log.error(
+                "Cannot subscribe to order book snapshots: "
+                f"L1 TBBO book subscription depth > 1, was {depth}",
+            )
+            return
 
         self._msgbus.subscribe(
             topic=f"data.book.snapshots"

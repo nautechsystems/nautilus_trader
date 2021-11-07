@@ -124,7 +124,7 @@ class EMACross(TradingStrategy):
         # self.subscribe_quote_ticks(self.instrument_id)  # For debugging
         # self.subscribe_trade_ticks(self.instrument_id)  # For debugging
         # self.subscribe_order_book_deltas(self.instrument_id)  # For debugging
-        # self.subscribe_order_book_snapshots(self.instrument_id)  # For debugging
+        # self.subscribe_order_book_snapshots(self.instrument_id, depth=20)  # For debugging
 
     def on_instrument(self, instrument: Instrument):
         """
@@ -162,6 +162,8 @@ class EMACross(TradingStrategy):
 
         """
         self.log.info(f"Received {repr(order_book)}")  # For debugging (must add a subscription)
+        self.log.info(f"Bid count = {len(order_book.bids.levels)}")
+        self.log.info(f"Ask count = {len(order_book.asks.levels)}")
 
     def on_ticker(self, ticker: Ticker):
         """

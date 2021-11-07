@@ -134,13 +134,21 @@ class FTXDataClient(LiveMarketDataClient):
         raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
     def subscribe_order_book_deltas(
-        self, instrument_id: InstrumentId, book_type: BookType, kwargs: dict = None
+        self,
+        instrument_id: InstrumentId,
+        book_type: BookType,
+        depth: Optional[int] = None,
+        kwargs: dict = None,
     ):
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
     def subscribe_order_book_snapshots(
-        self, instrument_id: InstrumentId, book_type: BookType, depth: int = 0, kwargs: dict = None
+        self,
+        instrument_id: InstrumentId,
+        book_type: BookType,
+        depth: Optional[int] = None,
+        kwargs: dict = None,
     ):
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover

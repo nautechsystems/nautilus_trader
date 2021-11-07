@@ -209,6 +209,7 @@ class BetfairDataClient(LiveMarketDataClient):
         self,
         instrument_id: InstrumentId,
         book_type: BookType,
+        depth: Optional[int] = None,
         kwargs=None,
     ):
         """
@@ -220,6 +221,8 @@ class BetfairDataClient(LiveMarketDataClient):
             The order book instrument to subscribe to.
         book_type : BookType {``L1_TBBO``, ``L2_MBP``, ``L3_MBO``}
             The order book type.
+        depth : int, optional, default None
+            The maximum depth for the subscription.
         kwargs : dict, optional
             The keyword arguments for exchange specific parameters.
 

@@ -16,7 +16,6 @@
 from decimal import Decimal
 from typing import Dict, List, Tuple
 
-from nautilus_trader.adapters.binance.common import BINANCE_VENUE
 from nautilus_trader.adapters.binance.data_types import BinanceBar
 from nautilus_trader.adapters.binance.data_types import BinanceTicker
 from nautilus_trader.core.datetime import millis_to_nanos
@@ -32,29 +31,45 @@ from nautilus_trader.model.enums import BookType
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import PriceType
 from nautilus_trader.model.identifiers import InstrumentId
-from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.orderbook.data import Order
 from nautilus_trader.model.orderbook.data import OrderBookDelta
 from nautilus_trader.model.orderbook.data import OrderBookDeltas
+from nautilus_trader.model.orderbook.data import OrderBookSnapshot
 
 
-def parse_diff_depth_stream_ws(msg: Dict, symbol: Symbol, ts_init: int) -> OrderBookDeltas:
-    inst_id = InstrumentId(symbol, venue=BINANCE_VENUE)
+def parse_book_snapshot_ws(
+    instrument_id: InstrumentId, msg: Dict, ts_init: int
+) -> OrderBookSnapshot:
+    ts_event: int = ts_init
+
+    return OrderBookSnapshot(
+        instrument_id=instrument_id,
+        book_type=BookType.L2_MBP,
+        bids=[[float(o[0]), float(o[1])] for o in msg.get("bids")],
+        asks=[[float(o[0]), float(o[1])] for o in msg.get("asks")],
+        ts_event=ts_event,
+        ts_init=ts_init,
+    )
+
+
+def parse_diff_depth_stream_ws(
+    instrument_id: InstrumentId, msg: Dict, ts_init: int
+) -> OrderBookDeltas:
     ts_event: int = millis_to_nanos(msg["E"])
 
     bid_deltas = [
-        parse_order_book_delta_ws(inst_id, OrderSide.BUY, d, ts_event, ts_init)
+        parse_book_delta_ws(instrument_id, OrderSide.BUY, d, ts_event, ts_init)
         for d in msg.get("b")
     ]
     ask_deltas = [
-        parse_order_book_delta_ws(inst_id, OrderSide.SELL, d, ts_event, ts_init)
+        parse_book_delta_ws(instrument_id, OrderSide.SELL, d, ts_event, ts_init)
         for d in msg.get("a")
     ]
 
     return OrderBookDeltas(
-        instrument_id=inst_id,
+        instrument_id=instrument_id,
         book_type=BookType.L2_MBP,
         deltas=bid_deltas + ask_deltas,
         ts_event=ts_event,
@@ -62,7 +77,7 @@ def parse_diff_depth_stream_ws(msg: Dict, symbol: Symbol, ts_init: int) -> Order
     )
 
 
-def parse_order_book_delta_ws(
+def parse_book_delta_ws(
     instrument_id: InstrumentId,
     side: OrderSide,
     delta: Tuple[str, str],
@@ -88,9 +103,9 @@ def parse_order_book_delta_ws(
     )
 
 
-def parse_ticker_ws(msg: Dict, symbol: Symbol, ts_init: int):
+def parse_ticker_ws(instrument_id: InstrumentId, msg: Dict, ts_init: int):
     return BinanceTicker(
-        instrument_id=InstrumentId(symbol, venue=BINANCE_VENUE),
+        instrument_id=instrument_id,
         price_change=Decimal(msg["p"]),
         price_change_percent=Decimal(msg["P"]),
         weighted_avg_price=Decimal(msg["w"]),
@@ -114,9 +129,9 @@ def parse_ticker_ws(msg: Dict, symbol: Symbol, ts_init: int):
     )
 
 
-def parse_quote_tick_ws(msg: Dict, symbol: Symbol, ts_init: int):
+def parse_quote_tick_ws(instrument_id: InstrumentId, msg: Dict, ts_init: int):
     return QuoteTick(
-        instrument_id=InstrumentId(symbol, venue=BINANCE_VENUE),
+        instrument_id=instrument_id,
         bid=Price.from_str(msg["b"]),
         ask=Price.from_str(msg["a"]),
         bid_size=Quantity.from_str(msg["B"]),
@@ -126,7 +141,7 @@ def parse_quote_tick_ws(msg: Dict, symbol: Symbol, ts_init: int):
     )
 
 
-def parse_trade_tick(msg: Dict, instrument_id: InstrumentId, ts_init: int):
+def parse_trade_tick(instrument_id: InstrumentId, msg: Dict, ts_init: int):
     return TradeTick(
         instrument_id=instrument_id,
         price=Price.from_str(msg["price"]),
@@ -138,9 +153,9 @@ def parse_trade_tick(msg: Dict, instrument_id: InstrumentId, ts_init: int):
     )
 
 
-def parse_trade_tick_ws(msg: Dict, symbol: Symbol, ts_init: int):
+def parse_trade_tick_ws(instrument_id: InstrumentId, msg: Dict, ts_init: int):
     return TradeTick(
-        instrument_id=InstrumentId(symbol, venue=BINANCE_VENUE),
+        instrument_id=instrument_id,
         price=Price.from_str(msg["p"]),
         size=Quantity.from_str(msg["q"]),
         aggressor_side=AggressorSide.SELL if msg["m"] else AggressorSide.BUY,
@@ -167,7 +182,7 @@ def parse_bar(bar_type: BarType, values: List, ts_init: int):
     )
 
 
-def parse_bar_ws(msg: Dict, kline: Dict, ts_init: int):
+def parse_bar_ws(instrument_id: InstrumentId, kline: Dict, ts_event: int, ts_init: int):
     interval = kline["i"]
     resolution = interval[1]
     if resolution == "m":
@@ -186,7 +201,7 @@ def parse_bar_ws(msg: Dict, kline: Dict, ts_init: int):
     )
 
     bar_type = BarType(
-        instrument_id=InstrumentId(Symbol(kline["s"]), venue=BINANCE_VENUE),
+        instrument_id=instrument_id,
         bar_spec=bar_spec,
         aggregation_source=AggregationSource.EXTERNAL,
     )
@@ -202,6 +217,6 @@ def parse_bar_ws(msg: Dict, kline: Dict, ts_init: int):
         count=kline["n"],
         taker_buy_base_volume=Quantity.from_str(kline["V"]),
         taker_buy_quote_volume=Quantity.from_str(kline["Q"]),
-        ts_event=millis_to_nanos(msg["E"]),
+        ts_event=ts_event,
         ts_init=ts_init,
     )

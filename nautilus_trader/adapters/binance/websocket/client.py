@@ -58,11 +58,7 @@ class BinanceWebSocketClient(WebSocketClient):
         else:
             return False
 
-    async def connect(
-        self,
-        start: bool = True,
-        **ws_kwargs,
-    ) -> None:
+    async def connect(self, start: bool = True, **ws_kwargs) -> None:
         if not self._streams:
             raise RuntimeError("No subscriptions for connection.")
 
