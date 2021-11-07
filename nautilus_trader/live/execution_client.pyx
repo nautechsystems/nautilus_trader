@@ -19,6 +19,7 @@ API which may be presented directly by an exchange, or broker intermediary.
 """
 
 import asyncio
+import types
 
 import pandas as pd
 from cpython.datetime cimport datetime
@@ -125,6 +126,17 @@ cdef class LiveExecutionClient(ExecutionClient):
     def disconnect(self):
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
+
+    @types.coroutine
+    def sleep0(self):
+        # Skip one event loop run cycle.
+        #
+        # This is equivalent to `asyncio.sleep(0)` however avoids the overhead
+        # of the pure Python function call and integer comparison <= 0.
+        #
+        # Uses a bare 'yield' expression (which Task.__step knows how to handle)
+        # instead of creating a Future object.
+        yield
 
     async def run_after_delay(self, delay, coro):
         await asyncio.sleep(delay)

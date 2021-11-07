@@ -617,6 +617,7 @@ cdef class DataEngine(Component):
         client.subscribe_order_book_deltas(
             instrument_id=instrument_id,
             book_type=metadata["book_type"],
+            depth=metadata["depth"],
             kwargs=metadata.get("kwargs"),
         )
 
@@ -668,15 +669,16 @@ cdef class DataEngine(Component):
             if instrument_id not in client.subscribed_order_book_deltas():
                 client.subscribe_order_book_deltas(
                     instrument_id=instrument_id,
-                    book_type=metadata.get("book_type"),
+                    book_type=metadata["book_type"],
+                    depth=metadata["depth"],
                     kwargs=metadata.get("kwargs"),
                 )
         except NotImplementedError:
             if instrument_id not in client.subscribed_order_book_snapshots():
                 client.subscribe_order_book_snapshots(
                     instrument_id=instrument_id,
-                    book_type=metadata.get("book_type"),
-                    depth=metadata.get("depth"),
+                    book_type=metadata["book_type"],
+                    depth=metadata["depth"],
                     kwargs=metadata.get("kwargs"),
                 )
 
@@ -1096,7 +1098,8 @@ cdef class DataEngine(Component):
         cdef OrderBook order_book = self._cache.order_book(data.instrument_id)
         if order_book is None:
             self._log.error(
-                f"Cannot maintain book: no book found for {data.instrument_id}."
+                f"Cannot maintain order book: "
+                f"no book found for {data.instrument_id}.",
             )
             return
 
@@ -1109,12 +1112,22 @@ cdef class DataEngine(Component):
 
         cdef OrderBook order_book = self._cache.order_book(instrument_id)
         if order_book:
+            if order_book.ts_last == 0:
+                self._log.debug("OrderBook not yet updated, skipping snapshot.")
+                return
+
             self._msgbus.publish_c(
                 topic=f"data.book.snapshots"
                       f".{instrument_id.venue}"
                       f".{instrument_id.symbol}"
                       f".{interval_ms}",
                 msg=order_book,
+            )
+
+        else:
+            self._log.error(
+                f"Cannot snapshot orderbook: "
+                f"no order book found, {snap_event}.",
             )
 
     cdef void _start_bar_aggregator(self, MarketDataClient client, BarType bar_type) except *:
@@ -1158,7 +1171,7 @@ cdef class DataEngine(Component):
             )
         else:  # pragma: no cover (design-time error)
             raise RuntimeError(
-                f"Cannot start aggregator, "
+                f"Cannot start aggregator: "
                 f"BarAggregation.{bar_type.spec.aggregation_string_c()} "
                 f"not currently supported in this version"
             )
@@ -1219,7 +1232,10 @@ cdef class DataEngine(Component):
     cdef void _stop_bar_aggregator(self, MarketDataClient client, BarType bar_type) except *:
         cdef aggregator = self._bar_aggregators.get(bar_type)
         if aggregator is None:
-            self._log.warning(f"No bar aggregator to stop for {bar_type}")
+            self._log.warning(
+                f"Cannot stop bar aggregator: "
+                f"no aggregator to stop for {bar_type}",
+            )
             return
 
         if isinstance(aggregator, TimeBarAggregator):

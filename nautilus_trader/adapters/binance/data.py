@@ -14,7 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 import asyncio
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple
 
 import orjson
 import pandas as pd
@@ -26,6 +26,7 @@ from nautilus_trader.adapters.binance.http.client import BinanceHttpClient
 from nautilus_trader.adapters.binance.http.error import BinanceError
 from nautilus_trader.adapters.binance.parsing import parse_bar
 from nautilus_trader.adapters.binance.parsing import parse_bar_ws
+from nautilus_trader.adapters.binance.parsing import parse_book_snapshot_ws
 from nautilus_trader.adapters.binance.parsing import parse_diff_depth_stream_ws
 from nautilus_trader.adapters.binance.parsing import parse_quote_tick_ws
 from nautilus_trader.adapters.binance.parsing import parse_ticker_ws
@@ -37,6 +38,7 @@ from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.core.correctness import PyCondition
+from nautilus_trader.core.datetime import millis_to_nanos
 from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.live.data_client import LiveMarketDataClient
 from nautilus_trader.model.c_enums.bar_aggregation import BarAggregationParser
@@ -48,6 +50,8 @@ from nautilus_trader.model.enums import PriceType
 from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import Symbol
+from nautilus_trader.model.orderbook.data import OrderBookDeltas
+from nautilus_trader.model.orderbook.data import OrderBookSnapshot
 from nautilus_trader.msgbus.bus import MessageBus
 
 
@@ -109,6 +113,8 @@ class BinanceDataClient(LiveMarketDataClient):
             logger=logger,
             handler=self._handle_spot_ws_message,
         )
+
+        self._book_buffer: Dict[InstrumentId, List[Tuple[int, OrderBookDeltas]]] = {}
 
     def connect(self):
         """
@@ -188,25 +194,41 @@ class BinanceDataClient(LiveMarketDataClient):
         self,
         instrument_id: InstrumentId,
         book_type: BookType,
+        depth: Optional[int] = None,
         kwargs: dict = None,
     ):
-        if book_type == BookType.L3_MBO:
-            self._log.error(
-                "Cannot subscribe to order book deltas: "
-                "L3_MBO data is not published by Binance. "
-                "Valid book types are L1_TBBO, L2_MBP.",
+        self._loop.create_task(
+            self._subscribe_order_book(
+                instrument_id=instrument_id,
+                book_type=book_type,
+                depth=depth,
             )
-            return
+        )
 
-        self._ws_spot.subscribe_diff_book_depth(instrument_id.symbol.value, speed=100)
         self._add_subscription_order_book_deltas(instrument_id)
 
     def subscribe_order_book_snapshots(
         self,
         instrument_id: InstrumentId,
         book_type: BookType,
-        depth: int = 0,
+        depth: Optional[int] = None,
         kwargs: dict = None,
+    ):
+        self._loop.create_task(
+            self._subscribe_order_book(
+                instrument_id=instrument_id,
+                book_type=book_type,
+                depth=depth,
+            )
+        )
+
+        self._add_subscription_order_book_snapshots(instrument_id)
+
+    async def _subscribe_order_book(
+        self,
+        instrument_id: InstrumentId,
+        book_type: BookType,
+        depth: Optional[int] = None,
     ):
         if book_type == BookType.L3_MBO:
             self._log.error(
@@ -216,24 +238,56 @@ class BinanceDataClient(LiveMarketDataClient):
             )
             return
 
-        if depth == 0:
-            # Convert to maximum depth
+        if depth is None or depth == 0:
             depth = 20
 
-        if depth not in (5, 10, 20):
-            self._log.error(
-                "Cannot subscribe to order book snapshots: "
-                f"invalid depth, was {depth}. "
-                "Valid depths are 0 (max), 5, 10, 20.",
-            )
-            return
+        # Add delta stream buffer
+        self._book_buffer[instrument_id] = []
 
-        self._ws_spot.subscribe_partial_book_depth(
-            symbol=instrument_id.symbol.value,
-            depth=depth,
-            speed=100,
+        if depth <= 20:
+            if depth not in (5, 10, 20):
+                self._log.error(
+                    "Cannot subscribe to order book snapshots: "
+                    f"invalid depth, was {depth}. "
+                    "Valid depths are 5, 10 or 20.",
+                )
+                return
+            self._ws_spot.subscribe_partial_book_depth(
+                symbol=instrument_id.symbol.value,
+                depth=depth,
+                speed=100,
+            )
+        else:
+            self._ws_spot.subscribe_diff_book_depth(
+                symbol=instrument_id.symbol.value,
+                speed=100,
+            )
+
+        while not self._ws_spot.is_connected:
+            await self.sleep0()
+
+        raw: bytes = await self._spot.depth(instrument_id.symbol.value, limit=depth)
+        data: Dict = orjson.loads(raw)
+
+        ts_event: int = self._clock.timestamp_ns()
+        last_update_id: int = data.get("lastUpdateId")
+
+        snapshot = OrderBookSnapshot(
+            instrument_id=instrument_id,
+            book_type=BookType.L2_MBP,
+            bids=[[float(o[0]), float(o[1])] for o in data.get("bids")],
+            asks=[[float(o[0]), float(o[1])] for o in data.get("asks")],
+            ts_event=ts_event,
+            ts_init=ts_event,
         )
-        self._add_subscription_order_book_snapshots(instrument_id)
+
+        self._handle_data(snapshot)
+
+        book_buffer = self._book_buffer.pop(instrument_id)
+        for update_id, deltas in book_buffer:
+            if update_id < last_update_id:
+                continue
+            self._handle_data(deltas)
 
     def subscribe_ticker(self, instrument_id: InstrumentId):
         self._ws_spot.subscribe_ticker(instrument_id.symbol.value)
@@ -312,28 +366,28 @@ class BinanceDataClient(LiveMarketDataClient):
         self._remove_subscription_instrument(instrument_id)
 
     def unsubscribe_order_book_deltas(self, instrument_id: InstrumentId):
-        self._remove_subscription_order_book_deltas(instrument_id)  # pragma: no cover
+        self._remove_subscription_order_book_deltas(instrument_id)
 
     def unsubscribe_order_book_snapshots(self, instrument_id: InstrumentId):
-        self._remove_subscription_order_book_snapshots(instrument_id)  # pragma: no cover
+        self._remove_subscription_order_book_snapshots(instrument_id)
 
     def unsubscribe_ticker(self, instrument_id: InstrumentId):
-        self._remove_subscription_ticker(instrument_id)  # pragma: no cover
+        self._remove_subscription_ticker(instrument_id)
 
     def unsubscribe_quote_ticks(self, instrument_id: InstrumentId):
-        self._remove_subscription_quote_ticks(instrument_id)  # pragma: no cover
+        self._remove_subscription_quote_ticks(instrument_id)
 
     def unsubscribe_trade_ticks(self, instrument_id: InstrumentId):
-        self._remove_subscription_trade_ticks(instrument_id)  # pragma: no cover
+        self._remove_subscription_trade_ticks(instrument_id)
 
     def unsubscribe_bars(self, bar_type: BarType):
-        self._remove_subscription_bars(bar_type)  # pragma: no cover
+        self._remove_subscription_bars(bar_type)
 
     def unsubscribe_instrument_status_updates(self, instrument_id: InstrumentId):
-        self._remove_subscription_instrument_status_updates(instrument_id)  # pragma: no cover
+        self._remove_subscription_instrument_status_updates(instrument_id)
 
     def unsubscribe_instrument_close_prices(self, instrument_id: InstrumentId):
-        self._remove_subscription_instrument_close_prices(instrument_id)  # pragma: no cover
+        self._remove_subscription_instrument_close_prices(instrument_id)
 
     # -- REQUESTS ----------------------------------------------------------------------------------
 
@@ -495,37 +549,85 @@ class BinanceDataClient(LiveMarketDataClient):
         self._update_instruments_task = self._loop.create_task(update)
 
     def _handle_spot_ws_message(self, raw: bytes):
-        msg: Dict = orjson.loads(raw).get("data")
+        msg: Dict = orjson.loads(raw)
+        msg_data = msg.get("data")
 
-        msg_type: str = msg.get("e")
+        msg_type: str = msg_data.get("e")
         if msg_type is None:
-            if "lastUpdateId" not in msg:
-                tick = parse_quote_tick_ws(
-                    msg, symbol=Symbol(msg["s"]), ts_init=self._clock.timestamp_ns()
+            if "lastUpdateId" in msg_data:
+                instrument_id = InstrumentId(
+                    symbol=Symbol(msg["stream"].partition("@")[0].upper()),
+                    venue=BINANCE_VENUE,
                 )
-                self._handle_data(tick)
+                data = parse_book_snapshot_ws(
+                    instrument_id=instrument_id,
+                    msg=msg_data,
+                    ts_init=self._clock.timestamp_ns(),
+                )
+                book_buffer = self._book_buffer.get(instrument_id)
+                if book_buffer is not None:
+                    book_buffer.append((msg_data.get("lastUpdateId"), data))
+                    return
+            else:
+                instrument_id = InstrumentId(
+                    symbol=Symbol(msg_data["s"]),
+                    venue=BINANCE_VENUE,
+                )
+                data = parse_quote_tick_ws(
+                    instrument_id=instrument_id,
+                    msg=msg_data,
+                    ts_init=self._clock.timestamp_ns(),
+                )
         elif msg_type == "depthUpdate":
-            deltas = parse_diff_depth_stream_ws(
-                msg, symbol=Symbol(msg["s"]), ts_init=self._clock.timestamp_ns()
+            instrument_id = InstrumentId(
+                symbol=Symbol(msg_data["s"]),
+                venue=BINANCE_VENUE,
             )
-            self._handle_data(deltas)
+            data = parse_diff_depth_stream_ws(
+                instrument_id=instrument_id,
+                msg=msg_data,
+                ts_init=self._clock.timestamp_ns(),
+            )
+            book_buffer = self._book_buffer.get(instrument_id)
+            if book_buffer is not None:
+                book_buffer.append((msg_data["U"], data))
+                return
         elif msg_type == "24hrTicker":
-            ticker = parse_ticker_ws(
-                msg,
-                symbol=Symbol(msg["s"]),
+            instrument_id = InstrumentId(
+                symbol=Symbol(msg_data["s"]),
+                venue=BINANCE_VENUE,
+            )
+            data = parse_ticker_ws(
+                instrument_id=instrument_id,
+                msg=msg_data,
                 ts_init=self._clock.timestamp_ns(),
             )
-            self._handle_data(ticker)
         elif msg_type == "trade":
-            tick = parse_trade_tick_ws(
-                msg,
-                symbol=Symbol(msg["s"]),
+            instrument_id = InstrumentId(
+                symbol=Symbol(msg_data["s"]),
+                venue=BINANCE_VENUE,
+            )
+            data = parse_trade_tick_ws(
+                instrument_id=instrument_id,
+                msg=msg_data,
                 ts_init=self._clock.timestamp_ns(),
             )
-            self._handle_data(tick)
         elif msg_type == "kline":
-            kline = msg["k"]
-            if msg["E"] < kline["T"]:
+            kline = msg_data["k"]
+            if msg_data["E"] < kline["T"]:
                 return  # Bar has not closed yet
-            bar = parse_bar_ws(msg, kline=kline, ts_init=self._clock.timestamp_ns())
-            self._handle_data(bar)
+            instrument_id = InstrumentId(
+                symbol=Symbol(kline["s"]),
+                venue=BINANCE_VENUE,
+            )
+            data = parse_bar_ws(
+                instrument_id=instrument_id,
+                kline=kline,
+                ts_event=millis_to_nanos(msg_data["E"]),
+                ts_init=self._clock.timestamp_ns(),
+            )
+        else:
+            self._log.error(f"Unrecognized websocket message type, was {msg_type}")
+            return
+
+        self._handle_data(data)

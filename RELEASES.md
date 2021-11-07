@@ -8,6 +8,7 @@ None
 ## Enhancements
 - Added `LatencyModel` for simulated exchange.
 - Added `Clock.timestamp_ms()`.
+- Added `depth` param when subscribing to order book deltas.
 
 ## Fixes
 None
