@@ -9,9 +9,11 @@ None
 - Added `LatencyModel` for simulated exchange.
 - Added `Clock.timestamp_ms()`.
 - Added `depth` param when subscribing to order book deltas.
+- Added `TestDataProvider` and consolidate test data.
+- Reorganized example strategies and launch scripts.
 
 ## Fixes
-None
+- Various `BacktestNode` fixes.
 
 ---
 

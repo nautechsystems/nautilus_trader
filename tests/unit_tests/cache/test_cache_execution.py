@@ -15,6 +15,7 @@
 
 from decimal import Decimal
 
+from nautilus_trader.backtest.data.providers import TestDataProvider
 from nautilus_trader.backtest.data.providers import TestInstrumentProvider
 from nautilus_trader.backtest.data.wranglers import QuoteTickDataWrangler
 from nautilus_trader.backtest.engine import BacktestEngine
@@ -45,7 +46,6 @@ from nautilus_trader.msgbus.bus import MessageBus
 from nautilus_trader.portfolio.portfolio import Portfolio
 from nautilus_trader.risk.engine import RiskEngine
 from nautilus_trader.trading.strategy import TradingStrategy
-from tests.test_kit.providers import TestDataProvider
 from tests.test_kit.stubs import TestStubs
 
 
@@ -1034,9 +1034,10 @@ class TestExecutionCacheIntegrityCheck:
 
         # Setup data
         wrangler = QuoteTickDataWrangler(self.usdjpy)
+        provider = TestDataProvider()
         ticks = wrangler.process_bar_data(
-            bid_data=TestDataProvider.usdjpy_1min_bid(),
-            ask_data=TestDataProvider.usdjpy_1min_ask(),
+            bid_data=provider.read_csv_bars("fxcm-usdjpy-m1-bid-2013.csv"),
+            ask_data=provider.read_csv_bars("fxcm-usdjpy-m1-ask-2013.csv"),
         )
         self.engine.add_instrument(self.usdjpy)
         self.engine.add_ticks(ticks)
