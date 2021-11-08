@@ -147,7 +147,7 @@ cdef class Component:
         Raises
         ------
         ValueError
-            If component_name is not a valid string.
+            If `component_name` is not a valid string.
 
         """
         if config is None:

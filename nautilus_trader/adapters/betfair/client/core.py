@@ -97,6 +97,7 @@ class BetfairClient(HttpClient):
             resp = await self.request(method="POST", url=url, headers=self.headers, json=data)
             data = orjson.loads(resp.data)
             if "error" in data:
+                self._log.error(str(data))
                 raise BetfairAPIError(code=data["error"]["code"], message=data["error"]["message"])
             if isinstance(data, dict):
                 return data["result"]
@@ -114,8 +115,10 @@ class BetfairClient(HttpClient):
         await self.login()
 
     async def disconnect(self):
+        self._log.info("Disconnecting..")
         self.session_token = None
         await super().disconnect()
+        self._log.info("Disconnected.")
 
     async def login(self):
         self._log.debug("BetfairClient login")

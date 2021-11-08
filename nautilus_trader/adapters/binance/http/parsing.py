@@ -22,4 +22,4 @@ import json
 def convert_list_to_json_array(symbols):
     if symbols is None:
         return symbols
-    return json.dumps(symbols).replace(" ", "")
+    return json.dumps(symbols).replace(" ", "").replace("/", "")

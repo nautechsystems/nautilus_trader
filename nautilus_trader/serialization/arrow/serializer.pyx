@@ -141,7 +141,7 @@ cdef class ParquetSerializer:
         Raises
         ------
         TypeError
-            If object cannot be serialized.
+            If `obj` cannot be serialized.
 
         """
         if isinstance(obj, GenericData):
@@ -178,7 +178,7 @@ cdef class ParquetSerializer:
         Raises
         ------
         TypeError
-            If chunk cannot be deserialized.
+            If `chunk` cannot be deserialized.
 
         """
         delegate = _PARQUET_FROM_DICT_MAP.get(cls)

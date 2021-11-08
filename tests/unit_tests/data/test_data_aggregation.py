@@ -18,6 +18,8 @@ from decimal import Decimal
 import pandas as pd
 import pytest
 
+from nautilus_trader.backtest.data.providers import TestDataProvider
+from nautilus_trader.backtest.data.providers import TestInstrumentProvider
 from nautilus_trader.backtest.data.wranglers import QuoteTickDataWrangler
 from nautilus_trader.backtest.data.wranglers import TradeTickDataWrangler
 from nautilus_trader.common.clock import TestClock
@@ -39,8 +41,6 @@ from nautilus_trader.model.enums import PriceType
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from tests.test_kit.mocks import ObjectStorer
-from tests.test_kit.providers import TestDataProvider
-from tests.test_kit.providers import TestInstrumentProvider
 from tests.test_kit.stubs import TestStubs
 
 
@@ -437,7 +437,8 @@ class TestTickBarAggregator:
 
         # Setup data
         wrangler = QuoteTickDataWrangler(instrument)
-        ticks = wrangler.process(TestDataProvider.audusd_ticks()[:1000])
+        provider = TestDataProvider()
+        ticks = wrangler.process(provider.read_csv_ticks("truefx-audusd-ticks.csv")[:1000])
 
         # Act
         for tick in ticks:
@@ -467,7 +468,8 @@ class TestTickBarAggregator:
         )
 
         wrangler = TradeTickDataWrangler(instrument=ETHUSDT_BINANCE)
-        ticks = wrangler.process(TestDataProvider.ethusdt_trades()[:10000])
+        provider = TestDataProvider()
+        ticks = wrangler.process(provider.read_csv_ticks("binance-ethusdt-trades.csv")[:10000])
 
         # Act
         for tick in ticks:
@@ -808,8 +810,9 @@ class TestVolumeBarAggregator:
 
         # Setup data
         wrangler = QuoteTickDataWrangler(instrument)
+        provider = TestDataProvider()
         ticks = wrangler.process(
-            data=TestDataProvider.audusd_ticks()[:10000],
+            data=provider.read_csv_ticks("truefx-audusd-ticks.csv")[:10000],
             default_volume=1,
         )
 
@@ -841,7 +844,8 @@ class TestVolumeBarAggregator:
         )
 
         wrangler = TradeTickDataWrangler(instrument=ETHUSDT_BINANCE)
-        ticks = wrangler.process(TestDataProvider.ethusdt_trades()[:10000])
+        provider = TestDataProvider()
+        ticks = wrangler.process(provider.read_csv_ticks("binance-ethusdt-trades.csv")[:10000])
 
         # Act
         for tick in ticks:
@@ -1057,8 +1061,9 @@ class TestTestValueBarAggregator:
 
         # Setup data
         wrangler = QuoteTickDataWrangler(AUDUSD_SIM)
+        provider = TestDataProvider()
         ticks = wrangler.process(
-            data=TestDataProvider.audusd_ticks()[:10000],
+            data=provider.read_csv_ticks("truefx-audusd-ticks.csv")[:10000],
             default_volume=1,
         )
 
@@ -1089,7 +1094,8 @@ class TestTestValueBarAggregator:
         )
 
         wrangler = TradeTickDataWrangler(instrument=ETHUSDT_BINANCE)
-        ticks = wrangler.process(TestDataProvider.ethusdt_trades()[:1000])
+        provider = TestDataProvider()
+        ticks = wrangler.process(provider.read_csv_ticks("binance-ethusdt-trades.csv")[:1000])
 
         # Act
         for tick in ticks:
@@ -1232,7 +1238,8 @@ class TestBulkTickBarBuilder:
         # Arrange
         instrument = TestInstrumentProvider.default_fx_ccy("USD/JPY")
         wrangler = QuoteTickDataWrangler(instrument)
-        ticks = wrangler.process(TestDataProvider.usdjpy_ticks())
+        provider = TestDataProvider()
+        ticks = wrangler.process(provider.read_csv_ticks("truefx-usdjpy-ticks.csv"))
 
         bar_store = ObjectStorer()
         handler = bar_store.store

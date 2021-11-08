@@ -18,6 +18,7 @@ from libc.stdint cimport int64_t
 from nautilus_trader.accounting.accounts.base cimport Account
 from nautilus_trader.backtest.execution_client cimport BacktestExecClient
 from nautilus_trader.backtest.models cimport FillModel
+from nautilus_trader.backtest.models cimport LatencyModel
 from nautilus_trader.cache.cache cimport Cache
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.logging cimport LoggerAdapter
@@ -85,6 +86,8 @@ cdef class SimulatedExchange:
     """The accounts instrument specific leverage configuration.\n\n:returns: `dict[InstrumentId, Decimal]`"""
     cdef readonly bint is_frozen_account
     """If the account for the exchange is frozen.\n\n:returns: `bool`"""
+    cdef readonly LatencyModel latency_model
+    """The latency model for the exchange.\n\n:returns: `LatencyModel`"""
     cdef readonly FillModel fill_model
     """The fill model for the exchange.\n\n:returns: `FillModel`"""
     cdef readonly bint reject_stop_orders
@@ -110,6 +113,8 @@ cdef class SimulatedExchange:
     cdef dict _symbol_ord_count
     cdef int _executions_count
     cdef Queue _message_queue
+    cdef list _inflight_queue
+    cdef dict _inflight_counter
 
     cpdef Price best_bid_price(self, InstrumentId instrument_id)
     cpdef Price best_ask_price(self, InstrumentId instrument_id)
@@ -122,8 +127,10 @@ cdef class SimulatedExchange:
 
     cpdef void register_client(self, BacktestExecClient client) except *
     cpdef void set_fill_model(self, FillModel fill_model) except *
+    cpdef void set_latency_model(self, LatencyModel latency_model) except *
     cpdef void initialize_account(self) except *
     cpdef void adjust_account(self, Money adjustment) except *
+    cdef tuple generate_inflight_command(self, TradingCommand command)
     cpdef void send(self, TradingCommand command) except *
     cpdef void process_order_book(self, OrderBookData data) except *
     cpdef void process_tick(self, Tick tick) except *

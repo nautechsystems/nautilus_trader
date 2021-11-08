@@ -17,6 +17,7 @@ import asyncio
 
 import pytest
 
+from nautilus_trader.backtest.data.providers import TestInstrumentProvider
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.factories import OrderFactory
 from nautilus_trader.common.logging import LiveLogger
@@ -43,7 +44,6 @@ from nautilus_trader.msgbus.bus import MessageBus
 from nautilus_trader.portfolio.portfolio import Portfolio
 from nautilus_trader.trading.strategy import TradingStrategy
 from tests.test_kit.mocks import MockLiveExecutionClient
-from tests.test_kit.providers import TestInstrumentProvider
 from tests.test_kit.stubs import TestStubs
 
 

@@ -61,6 +61,10 @@ cdef class BettingInstrument(Instrument):
         str currency not None,
         int64_t ts_event,
         int64_t ts_init,
+        str tick_scheme_name="BETFAIR",
+        int price_precision=7,  # TODO(bm): pending refactor
+        Price min_price=None,
+        Price max_price=None,
     ):
         assert event_open_date.tzinfo is not None
         assert market_start_time.tzinfo is not None
@@ -93,13 +97,14 @@ cdef class BettingInstrument(Instrument):
 
         super().__init__(
             instrument_id=InstrumentId(symbol=self.make_symbol(), venue=Venue(venue_name)),
+            local_symbol=Symbol(market_id),
             asset_class=AssetClass.BETTING,
             asset_type=AssetType.SPOT,
             quote_currency=Currency.from_str_c(currency),
             is_inverse=False,
-            price_precision=5,
             size_precision=4,
-            price_increment=Price(1e-5, precision=5),
+            price_precision=price_precision,
+            price_increment=None,
             size_increment=Quantity(1e-4, precision=4),
             multiplier=Quantity.from_int_c(1),
             lot_size=Quantity.from_int_c(1),
@@ -115,8 +120,13 @@ cdef class BettingInstrument(Instrument):
             taker_fee=Decimal(0),
             ts_event=ts_event,
             ts_init=ts_init,
+            tick_scheme_name=tick_scheme_name,
             info=dict(),  # TODO - Add raw response?
         )
+        if not min_price and tick_scheme_name:
+            self.min_price = self._tick_scheme.min_price
+        if not max_price and tick_scheme_name:
+            self.max_price = self._tick_scheme.max_price
 
     @staticmethod
     cdef BettingInstrument from_dict_c(dict values):

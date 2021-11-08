@@ -145,9 +145,9 @@ cdef class Timer:
         Raises
         ------
         ValueError
-            If name is not a valid string.
+            If `name` is not a valid string.
         TypeError
-            If callback is not of type `Callable`.
+            If `callback` is not of type `Callable`.
 
         """
         Condition.valid_string(name, "name")
@@ -299,11 +299,6 @@ cdef class TestTimer(Timer):
         -------
         TimeEvent
 
-        Raises
-        ------
-        ValueError
-            If the next event timestamp is not equal to the at_time.
-
         """
         cdef TimeEvent event = self.pop_event(
             event_id=self._uuid_factory.generate(),
@@ -359,7 +354,7 @@ cdef class LiveTimer(Timer):
         Raises
         ------
         TypeError
-            If callback is not of type `Callable`.
+            If `callback` is not of type `Callable`.
 
         """
         Condition.valid_string(name, "name")
@@ -431,7 +426,7 @@ cdef class ThreadTimer(LiveTimer):
         Raises
         ------
         TypeError
-            If callback is not of type `Callable`.
+            If `callback` is not of type `Callable`.
 
         """
         super().__init__(
@@ -493,7 +488,7 @@ cdef class LoopTimer(LiveTimer):
         Raises
         ------
         TypeError
-            If callback is not of type `Callable`.
+            If `callback` is not of type `Callable`.
 
         """
         Condition.valid_string(name, "name")

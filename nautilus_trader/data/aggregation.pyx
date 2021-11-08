@@ -63,7 +63,7 @@ cdef class BarBuilder:
         Raises
         ------
         ValueError
-            If instrument.id != bar_type.instrument_id.
+            If `instrument.id` != `bar_type.instrument_id`.
 
         """
         Condition.equal(instrument.id, bar_type.instrument_id, "instrument.id", "bar_type.instrument_id")
@@ -253,7 +253,7 @@ cdef class BarAggregator:
         Raises
         ------
         ValueError
-            If instrument.id != bar_type.instrument_id.
+            If `instrument.id` != `bar_type.instrument_id`.
 
         """
         Condition.equal(instrument.id, bar_type.instrument_id, "instrument.id", "bar_type.instrument_id")
@@ -349,7 +349,7 @@ cdef class TickBarAggregator(BarAggregator):
         Raises
         ------
         ValueError
-            If instrument.id != bar_type.instrument_id.
+            If `instrument.id` != `bar_type.instrument_id`.
 
         """
         super().__init__(
@@ -398,7 +398,7 @@ cdef class VolumeBarAggregator(BarAggregator):
         Raises
         ------
         ValueError
-            If instrument.id != bar_type.instrument_id.
+            If `instrument.id` != `bar_type.instrument_id`.
 
         """
         super().__init__(
@@ -469,7 +469,7 @@ cdef class ValueBarAggregator(BarAggregator):
         Raises
         ------
         ValueError
-            If instrument.id != bar_type.instrument_id.
+            If `instrument.id` != `bar_type.instrument_id`.
 
         """
         super().__init__(
@@ -559,7 +559,7 @@ cdef class TimeBarAggregator(BarAggregator):
         Raises
         ------
         ValueError
-            If instrument.id != bar_type.instrument_id.
+            If `instrument.id` != `bar_type.instrument_id`.
 
         """
         super().__init__(
@@ -757,9 +757,9 @@ cdef class BulkTickBarBuilder:
         Raises
         ------
         ValueError
-            If callback is not of type `Callable`.
+            If `callback` is not of type `Callable`.
         ValueError
-            If instrument.id != bar_type.instrument_id.
+            If `instrument.id` != `bar_type.instrument_id`.
 
         """
         Condition.callable(callback, "callback")

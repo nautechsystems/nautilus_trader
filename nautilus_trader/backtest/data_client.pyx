@@ -249,6 +249,7 @@ cdef class BacktestMarketDataClient(MarketDataClient):
         self,
         InstrumentId instrument_id,
         BookType book_type,
+        int depth=0,
         dict kwargs=None,
     ) except *:
         """
@@ -260,6 +261,8 @@ cdef class BacktestMarketDataClient(MarketDataClient):
             The order book instrument to subscribe to.
         book_type : BookType {``L1_TBBO``, ``L2_MBP``, ``L3_MBO``}
             The order book type.
+        depth : int, optional
+            The maximum depth for the order book. A depth of 0 is maximum depth.
         kwargs : dict, optional
             The keyword arguments for exchange specific parameters.
 

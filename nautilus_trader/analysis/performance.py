@@ -152,7 +152,7 @@ class PerformanceAnalyzer:
         Raises
         ------
         ValueError
-            If currency is ``None`` when analyzing multi-currency portfolios.
+            If `currency` is ``None`` when analyzing multi-currency portfolios.
 
         """
         if not self._realized_pnls:
@@ -183,9 +183,9 @@ class PerformanceAnalyzer:
         Raises
         ------
         ValueError
-            If currency is ``None`` when analyzing multi-currency portfolios.
+            If `currency` is ``None`` when analyzing multi-currency portfolios.
         ValueError
-            If currency is not contained in the tracked account balances.
+            If `currency` is not contained in the tracked account balances.
 
         """
         if not self._account_balances:
@@ -223,9 +223,9 @@ class PerformanceAnalyzer:
         Raises
         ------
         ValueError
-            If currency is ``None`` when analyzing multi-currency portfolios.
+            If `currency` is ``None`` when analyzing multi-currency portfolios.
         ValueError
-            If currency is not contained in the tracked account balances.
+            If `currency` is not contained in the tracked account balances.
 
         """
         if not self._account_balances:

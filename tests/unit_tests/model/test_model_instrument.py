@@ -17,6 +17,8 @@ from decimal import Decimal
 
 import pytest
 
+from nautilus_trader.backtest.data.providers import TestDataProvider
+from nautilus_trader.backtest.data.providers import TestInstrumentProvider
 from nautilus_trader.model.currencies import AUD
 from nautilus_trader.model.currencies import BTC
 from nautilus_trader.model.currencies import ETH
@@ -28,19 +30,19 @@ from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from tests.integration_tests.adapters.betfair.test_kit import BetfairTestStubs
-from tests.test_kit.providers import TestDataProvider
-from tests.test_kit.providers import TestInstrumentProvider
 
+
+provider = TestDataProvider()
 
 AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy("AUD/USD")
 USDJPY_SIM = TestInstrumentProvider.default_fx_ccy("USD/JPY")
 XBTUSD_BITMEX = TestInstrumentProvider.xbtusd_bitmex()
 BTCUSDT_BINANCE = TestInstrumentProvider.btcusdt_binance()
-BTCUSDT_BINANCE_INSTRUMENT = TestDataProvider.binance_btcusdt_instrument()
 ETHUSD_BITMEX = TestInstrumentProvider.ethusd_bitmex()
 AAPL_EQUITY = TestInstrumentProvider.aapl_equity()
 ES_FUTURE = TestInstrumentProvider.es_future()
 AAPL_OPTION = TestInstrumentProvider.aapl_option()
+NFL_INSTRUMENT = TestInstrumentProvider.betting_instrument()
 
 
 class TestInstrument:
@@ -62,8 +64,9 @@ class TestInstrument:
 
     def test_str_repr_returns_expected(self):
         # Arrange, Act, Assert
-        assert str(BTCUSDT_BINANCE) == BTCUSDT_BINANCE_INSTRUMENT
-        assert repr(BTCUSDT_BINANCE) == BTCUSDT_BINANCE_INSTRUMENT
+        expected = provider.read("binance-btcusdt-instrument-repr.txt").decode()
+        assert str(BTCUSDT_BINANCE) == expected
+        assert repr(BTCUSDT_BINANCE) == expected
 
     def test_hash(self):
         # Arrange, Act, Assert
@@ -82,6 +85,7 @@ class TestInstrument:
         assert result == {
             "type": "Instrument",
             "id": "BTC/USDT.BINANCE",
+            "local_symbol": "BTCUSDT",
             "asset_class": "CRYPTO",
             "asset_type": "SPOT",
             "quote_currency": "USDT",
@@ -112,6 +116,7 @@ class TestInstrument:
         values = {
             "type": "Instrument",
             "id": "BTC/USDT.BINANCE",
+            "local_symbol": "BTCUSDT",
             "asset_class": "CRYPTO",
             "asset_type": "SPOT",
             "quote_currency": "USDT",
@@ -151,7 +156,8 @@ class TestInstrument:
         assert CryptoSwap.from_dict(result) == XBTUSD_BITMEX
         assert result == {
             "type": "CryptoSwap",
-            "id": "XBT/USD.BITMEX",
+            "id": "BTC/USD.BITMEX",
+            "local_symbol": "XBTUSD",
             "base_currency": "BTC",
             "quote_currency": "USD",
             "settlement_currency": "BTC",
@@ -285,6 +291,34 @@ class TestInstrument:
         # Assert
         assert result == expected
 
+    @pytest.mark.parametrize(
+        "instrument, tick_scheme_name, value, n, expected",
+        [
+            (AUDUSD_SIM, "FixedTickScheme5Decimal", 0.727771, 0, "0.72777"),
+            (AUDUSD_SIM, "FixedTickScheme5Decimal", 0.9999, 0, "1.00000"),
+        ],
+    )
+    @pytest.mark.skip("Not implemented")
+    def test_next_ask_price(self, instrument, tick_scheme_name, value, n, expected):
+        instrument.tick_scheme_name = tick_scheme_name
+        result = instrument.next_ask_price(value, n=n)
+        expected = Price.from_str(expected)
+        assert result == expected
+
+    @pytest.mark.parametrize(
+        "instrument, tick_scheme_name, value, n, expected",
+        [
+            (AUDUSD_SIM, "FixedTickScheme5Decimal", 0.727771, 0, "0.72777"),
+            (AUDUSD_SIM, "FixedTickScheme5Decimal", 0.9999, 0, "1.00000"),
+        ],
+    )
+    @pytest.mark.skip("Not implemented")
+    def test_next_bid_price(self, instrument, tick_scheme_name, value, n, expected):
+        instrument.tick_scheme_name = tick_scheme_name
+        result = instrument.next_bid_price(value, n=n)
+        expected = Price.from_str(expected)
+        assert result == expected
+
 
 class TestBettingInstrument:
     def setup(self):
@@ -298,3 +332,29 @@ class TestBettingInstrument:
         ).as_decimal()
         # We are long 100 at 0.5 probability, aka 2.0 in odds terms
         assert notional == Decimal("200.0")
+
+    @pytest.mark.parametrize(
+        "value, n, expected",
+        [
+            (0.001, 0, "0.0010000"),
+        ],
+    )
+    def test_next_ask_price(self, value, n, expected):
+        result = self.instrument.next_ask_price(value, num_ticks=n)
+        expected = Price.from_str(expected)
+        assert result == expected
+
+    @pytest.mark.parametrize(
+        "value, n, expected",
+        [
+            (0.501, 0, "0.5000000"),
+        ],
+    )
+    def test_next_bid_price(self, value, n, expected):
+        result = self.instrument.next_bid_price(value, num_ticks=n)
+        expected = Price.from_str(expected)
+        assert result == expected
+
+    def test_min_max_price(self):
+        assert self.instrument.min_price == Price.from_str("0.0010000")
+        assert self.instrument.max_price == Price.from_str("0.9900990")

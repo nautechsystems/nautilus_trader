@@ -16,14 +16,18 @@
 from enum import Enum
 from typing import Dict
 
-import orjson
 import pyarrow as pa
 
+from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.core.data import Data
+from nautilus_trader.model.c_enums.book_action import BookAction
+from nautilus_trader.model.c_enums.book_action import BookActionParser
+from nautilus_trader.model.c_enums.book_type import BookTypeParser
 from nautilus_trader.model.data.ticker import Ticker
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
+from nautilus_trader.model.orderbook.data import Order
 from nautilus_trader.model.orderbook.data import OrderBookDelta
 from nautilus_trader.serialization.arrow.serializer import register_parquet
 from nautilus_trader.serialization.base import register_serializable_object
@@ -60,12 +64,35 @@ class BSPOrderBookDelta(OrderBookDelta):
     """
 
     @staticmethod
-    def from_dict(values):
-        return BSPOrderBookDelta.from_dict(values)
+    def from_dict(values) -> "BSPOrderBookDelta":
+        PyCondition.not_none(values, "values")
+        action: BookAction = BookActionParser.from_str_py(values["action"])
+        order: Order = (
+            Order.from_dict(
+                {
+                    "price": values["order_price"],
+                    "size": values["order_size"],
+                    "side": values["order_side"],
+                    "id": values["order_id"],
+                }
+            )
+            if values["action"] != "CLEAR"
+            else None
+        )
+        return BSPOrderBookDelta(
+            instrument_id=InstrumentId.from_str(values["instrument_id"]),
+            book_type=BookTypeParser.from_str_py(values["book_type"]),
+            action=action,
+            order=order,
+            ts_event=values["ts_event"],
+            ts_init=values["ts_init"],
+        )
 
     @staticmethod
-    def to_dict(obj):
-        return BSPOrderBookDelta.to_dict(obj)
+    def to_dict(obj) -> Dict:
+        values = OrderBookDelta.to_dict(obj)
+        values["type"] = obj.__class__.__name__
+        return values
 
 
 class BetfairTicker(Ticker):
@@ -80,9 +107,8 @@ class BetfairTicker(Ticker):
         ts_init: int,
         last_traded_price: Price = None,
         traded_volume: Quantity = None,
-        info=None,
     ):
-        super().__init__(instrument_id=instrument_id, ts_event=ts_event, ts_init=ts_init, info=info)
+        super().__init__(instrument_id=instrument_id, ts_event=ts_event, ts_init=ts_init)
         self.last_traded_price = last_traded_price
         self.traded_volume = traded_volume
 
@@ -111,7 +137,6 @@ def betfair_ticker_from_dict(values: Dict):
         traded_volume=Quantity.from_str(values["traded_volume"])
         if values["traded_volume"]
         else None,
-        info=orjson.loads(values["info"]) if values.get("info") is not None else None,
     )
 
 
@@ -123,7 +148,6 @@ def betfair_ticker_to_dict(ticker: BetfairTicker):
         "ts_init": ticker.ts_init,
         "last_traded_price": str(ticker.last_traded_price) if ticker.last_traded_price else None,
         "traded_volume": str(ticker.traded_volume) if ticker.traded_volume else None,
-        "info": orjson.dumps(ticker.info) if ticker.info is not None else None,
     }
 
 

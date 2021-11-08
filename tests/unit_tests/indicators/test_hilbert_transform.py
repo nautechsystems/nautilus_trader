@@ -15,8 +15,8 @@
 
 import sys
 
+from nautilus_trader.backtest.data.providers import TestInstrumentProvider
 from nautilus_trader.indicators.hilbert_transform import HilbertTransform
-from tests.test_kit.providers import TestInstrumentProvider
 from tests.test_kit.stubs import TestStubs
 
 

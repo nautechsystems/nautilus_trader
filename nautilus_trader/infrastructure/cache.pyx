@@ -89,7 +89,7 @@ cdef class RedisCacheDatabase(CacheDatabase):
         Raises
         ------
         TypeError
-            If config is not of type `CacheDatabaseConfig`.
+            If `config` is not of type `CacheDatabaseConfig`.
 
         """
         if config is None:

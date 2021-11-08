@@ -16,6 +16,7 @@
 import pandas as pd
 import pytest
 
+from nautilus_trader.backtest.data.providers import TestInstrumentProvider
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.model.enums import BookAction
 from nautilus_trader.model.enums import BookType
@@ -31,7 +32,6 @@ from nautilus_trader.model.orderbook.data import OrderBookDelta
 from nautilus_trader.model.orderbook.data import OrderBookDeltas
 from nautilus_trader.model.orderbook.data import OrderBookSnapshot
 from nautilus_trader.model.orderbook.ladder import Ladder
-from tests.test_kit.providers import TestInstrumentProvider
 from tests.test_kit.stubs import TestStubs
 
 

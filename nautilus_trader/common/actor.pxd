@@ -99,6 +99,7 @@ cdef class Actor(Component):
         self,
         InstrumentId instrument_id,
         BookType book_type=*,
+        int depth=*,
         dict kwargs=*,
     ) except *
     cpdef void subscribe_order_book_snapshots(

@@ -358,7 +358,7 @@ cdef class MarketDataClient(DataClient):
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
-    cpdef void subscribe_order_book_deltas(self, InstrumentId instrument_id, BookType book_type, dict kwargs=None) except *:
+    cpdef void subscribe_order_book_deltas(self, InstrumentId instrument_id, BookType book_type, int depth=0, dict kwargs=None) except *:
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 

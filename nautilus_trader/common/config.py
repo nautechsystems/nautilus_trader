@@ -91,7 +91,7 @@ class ActorFactory:
         Raises
         ------
         TypeError
-            If config is not of type `ImportableActorConfig`.
+            If `config` is not of type `ImportableActorConfig`.
 
         """
         PyCondition.type(config, ImportableActorConfig, "config")

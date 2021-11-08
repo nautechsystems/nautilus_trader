@@ -71,7 +71,7 @@ class EMACrossWithTrailingStopConfig(TradingStrategyConfig):
     slow_ema_period: int = 20
     atr_period: int
     trail_atr_multiple: float
-    trade_size: str
+    trade_size: Decimal
 
 
 class EMACrossWithTrailingStop(TradingStrategy):

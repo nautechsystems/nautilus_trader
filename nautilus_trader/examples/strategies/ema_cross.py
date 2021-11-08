@@ -19,37 +19,38 @@ from typing import Dict, Optional
 from nautilus_trader.common.logging import LogColor
 from nautilus_trader.core.data import Data
 from nautilus_trader.core.message import Event
-
-# *** THIS IS A TEST STRATEGY WITH NO ALPHA ADVANTAGE WHATSOEVER. ***
-# *** IT IS NOT INTENDED TO BE USED TO TRADE LIVE WITH REAL MONEY. ***
-from nautilus_trader.indicators.atr import AverageTrueRange
 from nautilus_trader.indicators.average.ema import ExponentialMovingAverage
 from nautilus_trader.model.data.bar import Bar
 from nautilus_trader.model.data.bar import BarType
+from nautilus_trader.model.data.tick import QuoteTick
+from nautilus_trader.model.data.tick import TradeTick
+from nautilus_trader.model.data.ticker import Ticker
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.instruments.base import Instrument
-from nautilus_trader.model.orders.list import OrderList
+from nautilus_trader.model.orderbook.book import OrderBook
+from nautilus_trader.model.orderbook.data import OrderBookData
+from nautilus_trader.model.orders.market import MarketOrder
 from nautilus_trader.trading.strategy import TradingStrategy
 from nautilus_trader.trading.strategy import TradingStrategyConfig
 
 
-class EMACrossBracketConfig(TradingStrategyConfig):
+# *** THIS IS A TEST STRATEGY WITH NO ALPHA ADVANTAGE WHATSOEVER. ***
+# *** IT IS NOT INTENDED TO BE USED TO TRADE LIVE WITH REAL MONEY. ***
+
+
+class EMACrossConfig(TradingStrategyConfig):
     """
-    Configuration for ``EMACrossBracket`` instances.
+    Configuration for ``EMACross`` instances.
 
     instrument_id : InstrumentId
         The instrument ID for the strategy.
     bar_type : BarType
         The bar type for the strategy.
-    atr_period : int
-        The period for the ATR indicator.
     fast_ema_period : int
         The fast EMA period.
     slow_ema_period : int
         The slow EMA period.
-    bracket_distance : float
-        The SL and TP bracket distance from entry ATR multiple.
     trade_size : str
         The position size per trade (interpreted as Decimal).
     order_id_tag : str
@@ -62,14 +63,12 @@ class EMACrossBracketConfig(TradingStrategyConfig):
 
     instrument_id: str
     bar_type: str
-    atr_period: int = 20
     fast_ema_period: int = 10
     slow_ema_period: int = 20
-    bracket_distance_atr: float = 3.0
-    trade_size: str
+    trade_size: Decimal
 
 
-class EMACrossBracket(TradingStrategy):
+class EMACross(TradingStrategy):
     """
     A simple moving average cross example strategy.
 
@@ -79,9 +78,9 @@ class EMACrossBracket(TradingStrategy):
     Cancels all orders and flattens all positions on stop.
     """
 
-    def __init__(self, config: EMACrossBracketConfig):
+    def __init__(self, config: EMACrossConfig):
         """
-        Initialize a new instance of the ``EMACrossBracket`` class.
+        Initialize a new instance of the ``EMACross`` class.
 
         Parameters
         ----------
@@ -94,11 +93,9 @@ class EMACrossBracket(TradingStrategy):
         # Configuration
         self.instrument_id = InstrumentId.from_str(config.instrument_id)
         self.bar_type = BarType.from_str(config.bar_type)
-        self.bracket_distance_atr = config.bracket_distance_atr
         self.trade_size = Decimal(config.trade_size)
 
         # Create the indicators for the strategy
-        self.atr = AverageTrueRange(config.atr_period)
         self.fast_ema = ExponentialMovingAverage(config.fast_ema_period)
         self.slow_ema = ExponentialMovingAverage(config.slow_ema_period)
 
@@ -113,15 +110,96 @@ class EMACrossBracket(TradingStrategy):
             return
 
         # Register the indicators for updating
-        self.register_indicator_for_bars(self.bar_type, self.atr)
         self.register_indicator_for_bars(self.bar_type, self.fast_ema)
         self.register_indicator_for_bars(self.bar_type, self.slow_ema)
 
         # Get historical data
-        self.request_bars(self.bar_type)
+        # self.request_bars(self.bar_type)
+        # self.request_quote_ticks(self.instrument_id)
+        # self.request_trade_ticks(self.instrument_id)
 
         # Subscribe to live data
-        self.subscribe_bars(self.bar_type)
+        self.subscribe_bars(self.bar_type)  # For debugging
+        # self.subscribe_ticker(self.instrument_id)  # For debugging
+        # self.subscribe_quote_ticks(self.instrument_id)  # For debugging
+        # self.subscribe_trade_ticks(self.instrument_id)  # For debugging
+        # self.subscribe_order_book_deltas(self.instrument_id, depth=20)  # For debugging
+        # self.subscribe_order_book_snapshots(self.instrument_id, depth=20)  # For debugging
+
+    def on_instrument(self, instrument: Instrument):
+        """
+        Actions to be performed when the strategy is running and receives an
+        instrument.
+
+        Parameters
+        ----------
+        instrument : Instrument
+            The instrument received.
+
+        """
+        pass
+
+    def on_order_book_delta(self, data: OrderBookData):
+        """
+        Actions to be performed when the strategy is running and receives order data.
+
+        Parameters
+        ----------
+        data : OrderBookData
+            The order book data received.
+
+        """
+        self.log.info(f"Received {repr(data)}")  # For debugging (must add a subscription)
+
+    def on_order_book(self, order_book: OrderBook):
+        """
+        Actions to be performed when the strategy is running and receives an order book.
+
+        Parameters
+        ----------
+        order_book : OrderBook
+            The order book received.
+
+        """
+        self.log.info(f"Received {repr(order_book)}")  # For debugging (must add a subscription)
+        self.log.info(f"Bid count = {len(order_book.bids.levels)}")
+        self.log.info(f"Ask count = {len(order_book.asks.levels)}")
+
+    def on_ticker(self, ticker: Ticker):
+        """
+        Actions to be performed when the strategy is running and receives a ticker.
+
+        Parameters
+        ----------
+        ticker : Ticker
+            The ticker received.
+
+        """
+        self.log.info(f"Received {repr(ticker)}")  # For debugging (must add a subscription)
+
+    def on_quote_tick(self, tick: QuoteTick):
+        """
+        Actions to be performed when the strategy is running and receives a quote tick.
+
+        Parameters
+        ----------
+        tick : QuoteTick
+            The quote tick received.
+
+        """
+        self.log.info(f"Received {repr(tick)}")  # For debugging (must add a subscription)
+
+    def on_trade_tick(self, tick: TradeTick):
+        """
+        Actions to be performed when the strategy is running and receives a trade tick.
+
+        Parameters
+        ----------
+        tick : TradeTick
+            The tick received.
+
+        """
+        self.log.info(f"Received {repr(tick)}")  # For debugging (must add a subscription)
 
     def on_bar(self, bar: Bar):
         """
@@ -146,50 +224,44 @@ class EMACrossBracket(TradingStrategy):
         # BUY LOGIC
         if self.fast_ema.value >= self.slow_ema.value:
             if self.portfolio.is_flat(self.instrument_id):
-                self.buy(bar)
+                self.buy()
             elif self.portfolio.is_net_short(self.instrument_id):
                 self.flatten_all_positions(self.instrument_id)
-                self.cancel_all_orders(self.instrument_id)
-                self.buy(bar)
+                self.buy()
 
         # SELL LOGIC
         elif self.fast_ema.value < self.slow_ema.value:
             if self.portfolio.is_flat(self.instrument_id):
-                self.sell(bar)
+                self.sell()
             elif self.portfolio.is_net_long(self.instrument_id):
                 self.flatten_all_positions(self.instrument_id)
-                self.cancel_all_orders(self.instrument_id)
-                self.sell(bar)
+                self.sell()
 
-    def buy(self, last_bar: Bar):
+    def buy(self):
         """
-        Users bracket buy method (example).
+        Users simple buy method (example).
         """
-        bracket_distance: float = self.bracket_distance_atr * self.atr.value
-        order_list: OrderList = self.order_factory.bracket_market(
+        order: MarketOrder = self.order_factory.market(
             instrument_id=self.instrument_id,
             order_side=OrderSide.BUY,
             quantity=self.instrument.make_qty(self.trade_size),
-            stop_loss=self.instrument.make_price(last_bar.close - bracket_distance),
-            take_profit=self.instrument.make_price(last_bar.close + bracket_distance),
+            # time_in_force=TimeInForce.FOK,
         )
 
-        self.submit_order_list(order_list)
+        self.submit_order(order)
 
-    def sell(self, last_bar: Bar):
+    def sell(self):
         """
-        Users bracket sell method (example).
+        Users simple sell method (example).
         """
-        bracket_distance: float = self.bracket_distance_atr * self.atr.value
-        order_list: OrderList = self.order_factory.bracket_market(
+        order: MarketOrder = self.order_factory.market(
             instrument_id=self.instrument_id,
             order_side=OrderSide.SELL,
             quantity=self.instrument.make_qty(self.trade_size),
-            stop_loss=self.instrument.make_price(last_bar.close + bracket_distance),
-            take_profit=self.instrument.make_price(last_bar.close - bracket_distance),
+            # time_in_force=TimeInForce.FOK,
         )
 
-        self.submit_order_list(order_list)
+        self.submit_order(order)
 
     def on_data(self, data: Data):
         """
@@ -223,7 +295,12 @@ class EMACrossBracket(TradingStrategy):
         self.flatten_all_positions(self.instrument_id)
 
         # Unsubscribe from data
+        # self.unsubscribe_ticker(self.instrument_id)
+        # self.unsubscribe_order_book_deltas(self.instrument_id)
         self.unsubscribe_bars(self.bar_type)
+        # self.unsubscribe_order_book_snapshots(self.instrument_id)
+        # self.unsubscribe_quote_ticks(self.instrument_id)
+        # self.unsubscribe_trade_ticks(self.instrument_id)
 
     def on_reset(self):
         """

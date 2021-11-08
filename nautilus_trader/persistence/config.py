@@ -40,6 +40,7 @@ class PersistenceConfig(pydantic.BaseModel):
     fs_storage_options: Optional[Dict] = None
     persist_logs: bool = False
     flush_interval: Optional[int] = None
+    replace_existing: bool = False
 
     @classmethod
     def from_catalog(cls, catalog: DataCatalog, **kwargs):

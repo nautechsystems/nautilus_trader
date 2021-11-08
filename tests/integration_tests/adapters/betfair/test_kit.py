@@ -28,7 +28,6 @@ import orjson
 import pandas as pd
 from aiohttp import ClientResponse
 
-from examples.strategies.orderbook_imbalance import OrderBookImbalanceConfig
 from nautilus_trader.adapters.betfair.client.core import BetfairClient
 from nautilus_trader.adapters.betfair.common import BETFAIR_VENUE
 from nautilus_trader.adapters.betfair.data import BetfairDataClient
@@ -41,10 +40,12 @@ from nautilus_trader.backtest.config import BacktestDataConfig
 from nautilus_trader.backtest.config import BacktestEngineConfig
 from nautilus_trader.backtest.config import BacktestRunConfig
 from nautilus_trader.backtest.config import BacktestVenueConfig
+from nautilus_trader.backtest.data.providers import TestDataProvider
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.factories import OrderFactory
 from nautilus_trader.common.logging import LiveLogger
 from nautilus_trader.core.uuid import UUID4
+from nautilus_trader.examples.strategies.orderbook_imbalance import OrderBookImbalanceConfig
 from nautilus_trader.live.data_engine import LiveDataEngine
 from nautilus_trader.model.commands.trading import CancelOrder
 from nautilus_trader.model.commands.trading import ModifyOrder
@@ -67,12 +68,12 @@ from nautilus_trader.persistence.config import PersistenceConfig
 from nautilus_trader.persistence.external.core import make_raw_files
 from nautilus_trader.persistence.external.readers import TextReader
 from nautilus_trader.portfolio.portfolio import Portfolio
+from nautilus_trader.risk.config import RiskEngineConfig
 from nautilus_trader.trading.config import ImportableStrategyConfig
 from tests import TESTS_PACKAGE_ROOT
 from tests.test_kit import PACKAGE_ROOT
 from tests.test_kit.mocks import MockLiveExecutionEngine
 from tests.test_kit.mocks import MockLiveRiskEngine
-from tests.test_kit.providers import TestDataProvider
 from tests.test_kit.stubs import TestStubs
 
 
@@ -160,7 +161,7 @@ class BetfairTestStubs:
         )
 
     @staticmethod
-    def risk_engine(event_loop, clock, live_logger, exec_engine):
+    def risk_engine(event_loop, clock, live_logger):
         return MockLiveRiskEngine(
             loop=event_loop,
             portfolio=TestStubs.portfolio(),
@@ -516,14 +517,17 @@ class BetfairTestStubs:
         catalog_fs_protocol: str = "memory",
         persist=True,
         add_strategy=True,
+        bypass_risk=False,
     ) -> BacktestRunConfig:
+        engine_config = BacktestEngineConfig(
+            log_level="INFO", risk_engine=RiskEngineConfig(bypass=bypass_risk)
+        )
         base_data_config = BacktestDataConfig(  # type: ignore
             catalog_path=catalog_path,
             catalog_fs_protocol=catalog_fs_protocol,
         )
-
         run_config = BacktestRunConfig(  # type: ignore
-            engine=BacktestEngineConfig(),
+            engine=engine_config,
             venues=[BetfairTestStubs.betfair_venue_config()],
             data=[
                 base_data_config.replace(
@@ -540,10 +544,9 @@ class BetfairTestStubs:
             else None,
             strategies=[
                 ImportableStrategyConfig(
-                    path="examples.strategies.orderbook_imbalance:OrderBookImbalance",
+                    path="nautilus_trader.examples.strategies.orderbook_imbalance:OrderBookImbalance",
                     config=OrderBookImbalanceConfig(
                         instrument_id=instrument_id,
-                        trigger_min_size=30,
                         max_trade_size=50,
                     ),
                 )
@@ -728,6 +731,10 @@ class BetfairStreaming:
         return BetfairStreaming.load("streaming_ocm_FILLED.json")
 
     @staticmethod
+    def ocm_filled_different_price():
+        return BetfairStreaming.load("streaming_ocm_filled_different_price.json")
+
+    @staticmethod
     def ocm_MIXED():
         return BetfairStreaming.load("streaming_ocm_MIXED.json")
 
@@ -795,12 +802,59 @@ class BetfairStreaming:
     def market_updates():
         return BetfairStreaming.load("streaming_market_updates.json")
 
+    @staticmethod
+    def generate_order_update(
+        price=1.3,
+        size=20,
+        side="B",
+        status="EC",
+        sm=0,
+        sr=0,
+        sc=0,
+        avp=0,
+        order_id: str = "248485109136",
+    ):
+        assert side in ("B", "L"), "`side` should be 'B' or 'L'"
+        return {
+            "oc": [
+                {
+                    "orc": [
+                        {
+                            "uo": [
+                                {
+                                    "id": order_id,
+                                    "p": price,
+                                    "s": size,
+                                    "side": side,
+                                    "status": status,
+                                    "pt": "P",
+                                    "ot": "L",
+                                    "pd": 1635217893000,
+                                    "md": int(pd.Timestamp.utcnow().timestamp()),
+                                    "sm": sm,
+                                    "sr": sr,
+                                    "sl": 0,
+                                    "sc": sc,
+                                    "sv": 0,
+                                    "rac": "",
+                                    "rc": "REG_LGA",
+                                    "rfo": "O-20211026-031132-000",
+                                    "rfs": "TestStrategy-1.",
+                                    **({"avp": avp} if avp else {}),
+                                }
+                            ]
+                        }
+                    ]
+                }
+            ]
+        }
+
 
 class BetfairDataProvider:
     @staticmethod
     def market_ids():
         """
-        A list of market_ids used by the tests. Used in `navigation_short` and `market_catalogue_short`
+        A list of market_ids used by the tests. Used in `navigation_short` and `market_catalogue_short`.
         """
         return (
             "1.148894697",
@@ -984,7 +1038,7 @@ class BetfairDataProvider:
 @contextlib.contextmanager
 def mock_client_request(response):
     """
-    Patch BetfairClient.request with a correctly formatted `response`
+    Patch BetfairClient.request with a correctly formatted `response`.
     """
     mock_response = MagicMock(ClientResponse)
     mock_response.data = orjson.dumps(response)

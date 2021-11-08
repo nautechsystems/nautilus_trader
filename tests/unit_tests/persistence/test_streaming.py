@@ -22,6 +22,7 @@ from nautilus_trader.adapters.betfair.providers import BetfairInstrumentProvider
 from nautilus_trader.backtest.config import BacktestDataConfig
 from nautilus_trader.backtest.config import BacktestRunConfig
 from nautilus_trader.backtest.node import BacktestNode
+from nautilus_trader.model.data.venue import InstrumentStatusUpdate
 from nautilus_trader.persistence.catalog import DataCatalog
 from nautilus_trader.persistence.external.core import process_files
 from nautilus_trader.persistence.external.readers import CSVReader
@@ -77,18 +78,18 @@ class TestPersistenceStreaming:
         )
         result = dict(Counter([r.__class__.__name__ for r in result]))
         expected = {
-            "AccountState": 892,
+            "AccountState": 746,
             "BettingInstrument": 1,
             "ComponentStateChanged": 7,
-            "OrderAccepted": 396,
+            "OrderAccepted": 323,
             "OrderBookDeltas": 1077,
             "OrderBookSnapshot": 1,
-            "OrderDenied": 296,
-            "OrderInitialized": 792,
-            "OrderFilled": 496,
-            "OrderSubmitted": 496,
-            "PositionOpened": 396,
+            "OrderDenied": 223,
+            "OrderFilled": 423,
+            "OrderInitialized": 646,
+            "OrderSubmitted": 423,
             "PositionClosed": 100,
+            "PositionOpened": 323,
             "TradeTick": 198,
         }
         assert result == expected
@@ -107,8 +108,14 @@ class TestPersistenceStreaming:
             data_cls_path=f"{NewsEventData.__module__}.NewsEventData",
             client_id="NewsClient",
         )
+        # Add some arbitrary instrument data to appease BacktestEngine
+        instrument_data_config = BacktestDataConfig(
+            catalog_path="/root/",
+            catalog_fs_protocol="memory",
+            data_cls_path=f"{InstrumentStatusUpdate.__module__}.InstrumentStatusUpdate",
+        )
         run_config = BacktestRunConfig(
-            data=[data_config],
+            data=[data_config, instrument_data_config],
             persistence=BetfairTestStubs.persistence_config(catalog_path=self.catalog.path),
             venues=[BetfairTestStubs.betfair_venue_config()],
             strategies=[],

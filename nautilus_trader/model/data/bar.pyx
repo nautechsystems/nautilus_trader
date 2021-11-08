@@ -32,6 +32,7 @@ cdef class BarSpecification:
     Represents a bar aggregation specification including a step, aggregation
     method/rule and price type.
     """
+
     def __init__(
         self,
         int step,
@@ -53,7 +54,7 @@ cdef class BarSpecification:
         Raises
         ------
         ValueError
-            If step is not positive (> 0).
+            If `step` is not positive (> 0).
 
         """
         Condition.positive_int(step, 'step')
@@ -156,7 +157,7 @@ cdef class BarSpecification:
         Raises
         ------
         ValueError
-            If value is not a valid string.
+            If `value` is not a valid string.
 
         """
         return BarSpecification.from_str_c(value)
@@ -360,7 +361,7 @@ cdef class BarType:
         Raises
         ------
         ValueError
-            If value is not a valid string.
+            If `value` is not a valid string.
 
         """
         return BarType.from_str_c(value)
@@ -432,11 +433,11 @@ cdef class Bar(Data):
         Raises
         ------
         ValueError
-            If check True and the high is not >= low.
+            If `check` True and the `high` is not >= `low`.
         ValueError
-            If check True and the high is not >= close.
+            If `check` True and the `high` is not >= `close`.
         ValueError
-            If check True and the low is not <= close.
+            If `check` True and the `low` is not <= `close`.
 
         """
         if check:

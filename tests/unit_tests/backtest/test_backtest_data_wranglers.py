@@ -13,6 +13,12 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+import os
+
+from nautilus_trader.backtest.data.loaders import TardisQuoteDataLoader
+from nautilus_trader.backtest.data.loaders import TardisTradeDataLoader
+from nautilus_trader.backtest.data.providers import TestDataProvider
+from nautilus_trader.backtest.data.providers import TestInstrumentProvider
 from nautilus_trader.backtest.data.wranglers import BarDataWrangler
 from nautilus_trader.backtest.data.wranglers import QuoteTickDataWrangler
 from nautilus_trader.backtest.data.wranglers import TradeTickDataWrangler
@@ -20,8 +26,7 @@ from nautilus_trader.common.clock import TestClock
 from nautilus_trader.model.enums import AggressorSide
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
-from tests.test_kit.providers import TestDataProvider
-from tests.test_kit.providers import TestInstrumentProvider
+from tests.test_kit import PACKAGE_ROOT
 from tests.test_kit.stubs import TestStubs
 
 
@@ -35,7 +40,8 @@ class TestQuoteTickDataWrangler:
 
     def test_tick_data(self):
         # Arrange, Act
-        ticks = TestDataProvider.usdjpy_ticks()
+        provider = TestDataProvider()
+        ticks = provider.read_csv_ticks("truefx-usdjpy-ticks.csv")
 
         # Assert
         assert len(ticks) == 1000
@@ -45,10 +51,11 @@ class TestQuoteTickDataWrangler:
         usdjpy = TestInstrumentProvider.default_fx_ccy("USD/JPY")
 
         wrangler = QuoteTickDataWrangler(instrument=usdjpy)
+        provider = TestDataProvider()
 
         # Act
         ticks = wrangler.process(
-            data=TestDataProvider.usdjpy_ticks(),
+            data=provider.read_csv_ticks("truefx-usdjpy-ticks.csv"),
             default_volume=1000000,
         )
 
@@ -67,10 +74,11 @@ class TestQuoteTickDataWrangler:
         usdjpy = TestInstrumentProvider.default_fx_ccy("USD/JPY")
 
         wrangler = QuoteTickDataWrangler(instrument=usdjpy)
+        provider = TestDataProvider()
 
         # Act
         ticks = wrangler.process(
-            data=TestDataProvider.usdjpy_ticks(),
+            data=provider.read_csv_ticks("truefx-usdjpy-ticks.csv"),
             default_volume=1000000,
             ts_init_delta=1_000_500,
         )
@@ -88,8 +96,9 @@ class TestQuoteTickDataWrangler:
     def test_pre_process_bar_data_with_delta(self):
         # Arrange
         usdjpy = TestInstrumentProvider.default_fx_ccy("USD/JPY")
-        bid_data = TestDataProvider.usdjpy_1min_bid()[:100]
-        ask_data = TestDataProvider.usdjpy_1min_ask()[:100]
+        provider = TestDataProvider()
+        bid_data = provider.read_csv_bars("fxcm-usdjpy-m1-bid-2013.csv")[:100]
+        ask_data = provider.read_csv_bars("fxcm-usdjpy-m1-ask-2013.csv")[:100]
 
         wrangler = QuoteTickDataWrangler(instrument=usdjpy)
 
@@ -119,7 +128,7 @@ class TestTradeTickDataWrangler:
 
     def test_tick_data(self):
         # Arrange, Act
-        ticks = TestDataProvider.ethusdt_trades()[:100]
+        ticks = TestDataProvider().read_csv_ticks("binance-ethusdt-trades.csv")[:100]
 
         # Assert
         assert len(ticks) == 100
@@ -128,9 +137,10 @@ class TestTradeTickDataWrangler:
         # Arrange
         ethusdt = TestInstrumentProvider.ethusdt_binance()
         wrangler = TradeTickDataWrangler(instrument=ethusdt)
+        provider = TestDataProvider()
 
         # Act
-        ticks = wrangler.process(TestDataProvider.ethusdt_trades()[:100])
+        ticks = wrangler.process(provider.read_csv_ticks("binance-ethusdt-trades.csv")[:100])
 
         # Assert
         assert len(ticks) == 100
@@ -145,10 +155,11 @@ class TestTradeTickDataWrangler:
         # Arrange
         ethusdt = TestInstrumentProvider.ethusdt_binance()
         wrangler = TradeTickDataWrangler(instrument=ethusdt)
+        provider = TestDataProvider()
 
         # Act
         ticks = wrangler.process(
-            TestDataProvider.ethusdt_trades()[:100],
+            provider.read_csv_ticks("binance-ethusdt-trades.csv")[:100],
             ts_init_delta=1_000_500,
         )
 
@@ -174,7 +185,8 @@ class TestBarDataWrangler:
 
     def test_process(self):
         # Arrange, Act
-        bars = self.wrangler.process(TestDataProvider.gbpusd_1min_bid()[:1000])
+        provider = TestDataProvider()
+        bars = self.wrangler.process(provider.read_csv_bars("fxcm-gbpusd-m1-bid-2012.csv")[:1000])
 
         # Assert
         assert len(bars) == 1000
@@ -188,8 +200,9 @@ class TestBarDataWrangler:
 
     def test_process_with_default_volume_and_delta(self):
         # Arrange, Act
+        provider = TestDataProvider()
         bars = self.wrangler.process(
-            data=TestDataProvider.gbpusd_1min_bid()[:1000],
+            data=provider.read_csv_bars("fxcm-gbpusd-m1-bid-2012.csv")[:1000],
             default_volume=10,
             ts_init_delta=1_000_500,
         )
@@ -212,7 +225,8 @@ class TestTardisQuoteDataWrangler:
 
     def test_tick_data(self):
         # Arrange, Act
-        ticks = TestDataProvider.tardis_quotes()
+        path = os.path.join(PACKAGE_ROOT, "data", "tardis_quotes.csv")
+        ticks = TardisQuoteDataLoader.load(path)
 
         # Assert
         assert len(ticks) == 9999
@@ -221,10 +235,12 @@ class TestTardisQuoteDataWrangler:
         # Arrange
         instrument = TestInstrumentProvider.btcusdt_binance()
         wrangler = QuoteTickDataWrangler(instrument=instrument)
+        path = os.path.join(PACKAGE_ROOT, "data", "tardis_quotes.csv")
+        data = TardisQuoteDataLoader.load(path)
 
         # Act
         ticks = wrangler.process(
-            TestDataProvider.tardis_quotes(),
+            data,
             ts_init_delta=1_000_501,
         )
 
@@ -245,7 +261,8 @@ class TestTardisTradeDataWrangler:
 
     def test_tick_data(self):
         # Arrange, Act
-        ticks = TestDataProvider.tardis_trades()
+        path = os.path.join(PACKAGE_ROOT, "data", "tardis_trades.csv")
+        ticks = TardisTradeDataLoader.load(path)
 
         # Assert
         assert len(ticks) == 9999
@@ -254,9 +271,11 @@ class TestTardisTradeDataWrangler:
         # Arrange
         instrument = TestInstrumentProvider.btcusdt_binance()
         wrangler = TradeTickDataWrangler(instrument=instrument)
+        path = os.path.join(PACKAGE_ROOT, "data", "tardis_trades.csv")
+        data = TardisTradeDataLoader.load(path)
 
         # Act
-        ticks = wrangler.process(TestDataProvider.tardis_trades())
+        ticks = wrangler.process(data)
 
         # Assert
         assert len(ticks) == 9999

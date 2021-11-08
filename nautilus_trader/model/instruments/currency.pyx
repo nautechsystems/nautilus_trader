@@ -14,6 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 import orjson
+
 from libc.stdint cimport int64_t
 
 from decimal import Decimal
@@ -24,6 +25,7 @@ from nautilus_trader.model.c_enums.asset_type cimport AssetType
 from nautilus_trader.model.c_enums.currency_type cimport CurrencyType
 from nautilus_trader.model.currency cimport Currency
 from nautilus_trader.model.identifiers cimport InstrumentId
+from nautilus_trader.model.identifiers cimport Symbol
 from nautilus_trader.model.instruments.base cimport Instrument
 from nautilus_trader.model.objects cimport Money
 from nautilus_trader.model.objects cimport Price
@@ -38,6 +40,7 @@ cdef class CurrencySpot(Instrument):
     def __init__(
         self,
         InstrumentId instrument_id not None,
+        Symbol local_symbol not None,
         Currency base_currency not None,
         Currency quote_currency not None,
         int price_precision,
@@ -57,6 +60,7 @@ cdef class CurrencySpot(Instrument):
         taker_fee not None: Decimal,
         int64_t ts_event,
         int64_t ts_init,
+        str tick_scheme_name=None,
         dict info=None,
     ):
         """
@@ -66,6 +70,8 @@ cdef class CurrencySpot(Instrument):
         ----------
         instrument_id : InstrumentId
             The instrument ID for the instrument.
+        local_symbol : Symbol
+            The local/native symbol on the exchange for the instrument.
         base_currency : Currency, optional
             The base currency.
         quote_currency : Currency
@@ -104,37 +110,41 @@ cdef class CurrencySpot(Instrument):
             The UNIX timestamp (nanoseconds) when the data event occurred.
         ts_init: int64
             The UNIX timestamp (nanoseconds) when the data object was initialized.
+        tick_scheme_name : str, optional
+            The name of the tick scheme.
         info : dict[str, object], optional
             The additional instrument information.
 
         Raises
         ------
         ValueError
-            If price_precision is negative (< 0).
+            If `tick_scheme_name` is not a valid string.
         ValueError
-            If size_precision is negative (< 0).
+            If `price_precision` is negative (< 0).
         ValueError
-            If price_increment is not positive (> 0).
+            If `size_precision` is negative (< 0).
         ValueError
-            If size_increment is not positive (> 0).
+            If `price_increment` is not positive (> 0).
         ValueError
-            If price_precision is not equal to price_increment.precision.
+            If `size_increment` is not positive (> 0).
         ValueError
-            If size_increment is not equal to size_increment.precision.
+            If `price_precision` is not equal to price_increment.precision.
         ValueError
-            If lot size is not positive (> 0).
+            If `size_increment` is not equal to size_increment.precision.
         ValueError
-            If max_quantity is not positive (> 0).
+            If `lot_size` is not positive (> 0).
         ValueError
-            If min_quantity is negative (< 0).
+            If `max_quantity` is not positive (> 0).
         ValueError
-            If max_notional is not positive (> 0).
+            If `min_quantity` is negative (< 0).
         ValueError
-            If min_notional is negative (< 0).
+            If `max_notional` is not positive (> 0).
         ValueError
-            If max_price is not positive (> 0).
+            If `min_notional` is negative (< 0).
         ValueError
-            If min_price is negative (< 0).
+            If `max_price` is not positive (> 0).
+        ValueError
+            If `min_price` is negative (< 0).
 
         """
         # Determine asset class
@@ -147,6 +157,7 @@ cdef class CurrencySpot(Instrument):
             asset_class = AssetClass.FX
         super().__init__(
             instrument_id=instrument_id,
+            local_symbol=local_symbol,
             asset_class=asset_class,
             asset_type=AssetType.SPOT,
             quote_currency=quote_currency,
@@ -198,6 +209,7 @@ cdef class CurrencySpot(Instrument):
         cdef bytes info = values["info"]
         return CurrencySpot(
             instrument_id=InstrumentId.from_str_c(values["id"]),
+            local_symbol=Symbol(values["local_symbol"]),
             base_currency=Currency.from_str_c(values["base_currency"]),
             quote_currency=Currency.from_str_c(values["quote_currency"]),
             price_precision=values["price_precision"],
@@ -226,6 +238,7 @@ cdef class CurrencySpot(Instrument):
         return {
             "type": "CurrencySpot",
             "id": obj.id.value,
+            "local_symbol": obj.local_symbol.value,
             "base_currency": obj.base_currency.code,
             "quote_currency": obj.quote_currency.code,
             "price_precision": obj.price_precision,

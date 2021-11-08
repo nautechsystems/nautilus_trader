@@ -207,11 +207,6 @@ cdef class ExecutionMassStatus:
         ts_init : int64
             The UNIX timestamp (nanoseconds) when the object was initialized.
 
-        Raises
-        ------
-        ValueError
-            If client is not a valid string.
-
         """
         self.client_id = client_id
         self.account_id = account_id
@@ -291,7 +286,7 @@ cdef class ExecutionMassStatus:
         Raises
         -------
         TypeError
-            If trades contains a type other than `ExecutionReport`.
+            If `trades` contains a type other than `ExecutionReport`.
 
         """
         Condition.not_none(venue_order_id, "venue_order_id")

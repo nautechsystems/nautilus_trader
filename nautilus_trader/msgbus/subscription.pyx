@@ -53,11 +53,11 @@ cdef class Subscription:
         Raises
         ------
         ValueError
-            If topic is not a valid string.
+            If `topic` is not a valid string.
         ValueError
-            If handler is not of type `Callable`.
+            If `handler` is not of type `Callable`.
         ValueError
-            If priority is negative (< 0).
+            If `priority` is negative (< 0).
 
         """
         Condition.valid_string(topic, "topic")

@@ -69,7 +69,7 @@ class EMACrossConfig(TradingStrategyConfig):
     bar_type: str
     fast_ema_period: int = 10
     slow_ema_period: int = 20
-    trade_size: str
+    trade_size: Decimal
 
 
 cdef class EMACross(TradingStrategy):

@@ -15,23 +15,16 @@
 # -------------------------------------------------------------------------------------------------
 
 import asyncio
-import os
-import sys
 import traceback
 
-
-sys.path.insert(
-    0, str(os.path.abspath(__file__ + "/../../../"))
-)  # Allows relative imports from examples
-
-from examples.strategies.orderbook_imbalance import OrderBookImbalance
-from examples.strategies.orderbook_imbalance import OrderBookImbalanceConfig
 from nautilus_trader.adapters.betfair.factories import BetfairLiveDataClientFactory
 from nautilus_trader.adapters.betfair.factories import BetfairLiveExecutionClientFactory
 from nautilus_trader.adapters.betfair.factories import get_cached_betfair_client
 from nautilus_trader.adapters.betfair.factories import get_cached_betfair_instrument_provider
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.logging import LiveLogger
+from nautilus_trader.examples.strategies.orderbook_imbalance import OrderBookImbalance
+from nautilus_trader.examples.strategies.orderbook_imbalance import OrderBookImbalanceConfig
 from nautilus_trader.infrastructure.config import CacheDatabaseConfig
 from nautilus_trader.live.node import TradingNode
 from nautilus_trader.live.node import TradingNodeConfig
@@ -72,24 +65,24 @@ async def main(market_id: str):
     # Configure trading node
     config = TradingNodeConfig(
         timeout_connection=30.0,
-        log_level="INFO",
+        log_level="DEBUG",
         cache_database=CacheDatabaseConfig(type="in-memory"),
         data_clients={
             "BETFAIR": {
-                "username": "YOUR_BETFAIR_USERNAME",
-                "password": "YOUR_BETFAIR_PASSWORD",
-                "app_key": "YOUR_BETFAIR_APP_KEY",
-                "cert_dir": "YOUR_BETFAIR_CERT_DIR",
+                # "username": "YOUR_BETFAIR_USERNAME",
+                # "password": "YOUR_BETFAIR_PASSWORD",
+                # "app_key": "YOUR_BETFAIR_APP_KEY",
+                # "cert_dir": "YOUR_BETFAIR_CERT_DIR",
                 "market_filter": market_filter,
             },
         },
         exec_clients={
             "BETFAIR": {
                 "base_currency": account["currencyCode"],
-                "username": "YOUR_BETFAIR_USERNAME",
-                "password": "YOUR_BETFAIR_PASSWORD",
-                "app_key": "YOUR_BETFAIR_APP_KEY",
-                "cert_dir": "YOUR_BETFAIR_CERT_DIR",
+                # "username": "YOUR_BETFAIR_USERNAME",
+                # "password": "YOUR_BETFAIR_PASSWORD",
+                # "app_key": "YOUR_BETFAIR_APP_KEY",
+                # "cert_dir": "YOUR_BETFAIR_CERT_DIR",
                 "market_filter": market_filter,
             },
         },
@@ -124,4 +117,7 @@ async def main(market_id: str):
 
 
 if __name__ == "__main__":
-    asyncio.run(main(market_id="1.189009581"))
+    # Update the market ID with something coming up in `Next Races` from
+    # https://www.betfair.com.au/exchange/plus/
+    # The market ID will appear in the browser query string.
+    asyncio.run(main(market_id="1.190036127"))

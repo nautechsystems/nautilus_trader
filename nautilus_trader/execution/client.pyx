@@ -106,7 +106,7 @@ cdef class ExecutionClient(Component):
         Raises
         ------
         ValueError
-            If client_id is not equal to account_id.issuer.
+            If `client_id` is not equal to `account_id.issuer`.
 
         """
         Condition.equal(client_id.value, account_id.issuer, "client_id.value", "account_id.issuer")

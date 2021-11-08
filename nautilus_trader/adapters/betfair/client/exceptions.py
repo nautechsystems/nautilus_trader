@@ -31,11 +31,11 @@ class BetfairAPIError(BetfairError):
         super().__init__()
         self.code = code
         self.message = message
-        self.kind = ERROR_CODES[message]["kind"]
-        self.reason = ERROR_CODES[message]["reason"]
+        self.kind = ERROR_CODES.get(message, {}).get("kind")
+        self.reason = ERROR_CODES.get(message, {}).get("reason")
 
     def __str__(self):
-        return f"BetfairAPIError(code={self.code}, message={self.message}, kind='{self.kind}', reason='{self.reason}')"
+        return f"BetfairAPIError(code='{self.code}', message='{self.message}', kind='{self.kind}', reason='{self.reason}')"
 
 
 ERROR_CODES = {
@@ -74,6 +74,10 @@ ERROR_CODES = {
     "DSC-0038": {
         "kind": "OperationForbidden",
         "reason": "The App Key sent with the request is not permitted to access the operation",
+    },
+    "ANGX-0003": {
+        "kind": "INVALID_SESSION_INFORMATION",
+        "reason": "The session token hasn't been provided, is invalid or has expired. Login again to create a new session",
     },
     "AANGX-0004": {
         "kind": "InvalidAppKey",

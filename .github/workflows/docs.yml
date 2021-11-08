@@ -16,11 +16,13 @@ jobs:
       - name: Set up Python environment
         uses: actions/setup-python@v2
         with:
-          python-version: 3.9
+          python-version: "3.9"
 
       # Install build dependencies
       - name: Install build dependencies
-        run: python -m pip install --upgrade pip setuptools poetry
+        run: |
+          python -m pip install --upgrade pip setuptools wheel poetry pre-commit nox
+          poetry config experimental.new-installer false
 
       # Export package requirements
       - name: Export package requirements

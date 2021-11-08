@@ -14,7 +14,6 @@
 # -------------------------------------------------------------------------------------------------
 
 import asyncio
-import hashlib
 import os
 from functools import lru_cache
 from typing import Any, Dict, Optional
@@ -72,12 +71,10 @@ def get_cached_binance_http_client(
     """
     global HTTP_CLIENTS
 
-    if key is None:
-        key = os.environ["BINANCE_API_KEY"]
-    if secret is None:
-        secret = os.environ["BINANCE_API_SECRET"]
+    key = key or os.environ["BINANCE_API_KEY"]
+    secret = secret or os.environ["BINANCE_API_SECRET"]
 
-    client_key: str = hashlib.sha256("|".join((key, secret)).encode()).hexdigest()
+    client_key: str = "|".join((key, secret))
     if client_key not in HTTP_CLIENTS:
         client = BinanceHttpClient(
             loop=loop,
@@ -120,7 +117,7 @@ def get_cached_binance_instrument_provider(
 
 class BinanceLiveDataClientFactory(LiveDataClientFactory):
     """
-    Provides a `Betfair` live data client factory.
+    Provides a `Binance` live data client factory.
     """
 
     @staticmethod
@@ -187,7 +184,7 @@ class BinanceLiveDataClientFactory(LiveDataClientFactory):
 
 class BinanceLiveExecutionClientFactory(LiveExecutionClientFactory):
     """
-    Provides data and execution clients for Betfair.
+    Provides a `Binance` live execution client factory.
     """
 
     @staticmethod

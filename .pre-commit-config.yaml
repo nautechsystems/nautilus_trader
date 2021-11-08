@@ -28,7 +28,7 @@ repos:
       - id: codespell
         description: Checks for common misspellings.
         types_or: [python, cython, rst, markdown]
-        exclude: "nautilus_trader/adapters/betfair/parsing.py|nautilus_trader/adapters/betfair/execution.py"
+        exclude: "nautilus_trader/adapters/betfair/parsing.py|nautilus_trader/adapters/betfair/execution.py|tests/integration_tests/adapters/betfair/test_kit.py"
 
   - repo: https://github.com/hadialqattan/pycln
     rev: v1.0.3
@@ -38,15 +38,15 @@ repos:
         exclude: "nautilus_trader/live/node.py|nautilus_trader/adapters/betfair/execution.py"
 
   - repo: https://github.com/psf/black
-    rev: 21.9b0
+    rev: 21.10b0
     hooks:
       - id: black
         args: [
             --line-length=100,
         ]
 
-  - repo: https://github.com/PyCQA/isort
-    rev: 5.9.3
+  - repo: https://github.com/pycqa/isort
+    rev: 5.10.0
     hooks:
       - id: isort
         args: [
@@ -84,6 +84,7 @@ repos:
       - id: flake8
         name: flake8 (Python)
         additional_dependencies:
+          - flake8-2020
           - flake8-bandit
           - flake8-bugbear
           - flake8-coding
@@ -106,6 +107,7 @@ repos:
       - id: flake8
         name: flake8 (Cython)
         additional_dependencies:
+          - flake8-2020
           - flake8-bandit
           - flake8-bugbear
           - flake8-coding
@@ -136,10 +138,10 @@ repos:
         additional_dependencies:
           - toml
 
-  - repo: https://github.com/kynan/nbstripout
-    rev: 0.5.0
-    hooks:
-      - id: nbstripout
+#  - repo: https://github.com/kynan/nbstripout
+#    rev: 0.5.0
+#    hooks:
+#      - id: nbstripout
 
 
 # flake8 ignore justifications

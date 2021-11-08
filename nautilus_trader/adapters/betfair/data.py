@@ -209,6 +209,7 @@ class BetfairDataClient(LiveMarketDataClient):
         self,
         instrument_id: InstrumentId,
         book_type: BookType,
+        depth: Optional[int] = None,
         kwargs=None,
     ):
         """
@@ -220,6 +221,8 @@ class BetfairDataClient(LiveMarketDataClient):
             The order book instrument to subscribe to.
         book_type : BookType {``L1_TBBO``, ``L2_MBP``, ``L3_MBO``}
             The order book type.
+        depth : int, optional, default None
+            The maximum depth for the subscription.
         kwargs : dict, optional
             The keyword arguments for exchange specific parameters.
 
@@ -323,7 +326,6 @@ class BetfairDataClient(LiveMarketDataClient):
 
     def _on_market_update(self, update):
         if self._check_stream_unhealthy(update=update):
-            # TODO (bm) - emit warning ?
             pass
         updates = on_market_update(
             instrument_provider=self._instrument_provider,
@@ -351,16 +353,22 @@ class BetfairDataClient(LiveMarketDataClient):
     def _check_stream_unhealthy(self, update: Dict):
         conflated = update.get("con", False)  # Consuming data slower than the rate of deliver
         if conflated:
-            print("!conflated")
             self._log.warning(
                 "Conflated stream - consuming data too slow (data received is delayed)"
             )
         if update.get("status") == 503:
-            print("!503")
             self._log.warning("Stream unhealthy, waiting for recover")
+            self.degrade()
 
     def _handle_no_data(self, update):
         if update.get("op") == "connection" or update.get("connectionsAvailable"):
+            return
+        if update.get("status") == 503:
+            # handled in `_check_stream_unhealthy`
+            return
+        if update.get("ct") == "HEARTBEAT":
+            if self.is_degraded:
+                self.resume()
             return
         self._log.warning(f"Received message but parsed no updates: {update}")
         if update.get("statusCode") == "FAILURE" and update.get("connectionClosed"):

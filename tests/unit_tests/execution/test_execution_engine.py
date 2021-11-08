@@ -14,6 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 from nautilus_trader.accounting.accounts.cash import CashAccount
+from nautilus_trader.backtest.data.providers import TestInstrumentProvider
 from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.factories import OrderFactory
@@ -53,7 +54,6 @@ from nautilus_trader.trading.strategy import TradingStrategy
 from nautilus_trader.trading.strategy import TradingStrategyConfig
 from tests.test_kit.mocks import MockCacheDatabase
 from tests.test_kit.mocks import MockExecutionClient
-from tests.test_kit.providers import TestInstrumentProvider
 from tests.test_kit.stubs import TestStubs
 
 
