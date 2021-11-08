@@ -55,7 +55,7 @@ cdef class PositionSizer:
         Raises
         ------
         ValueError
-            If instrument does not equal the currently held instrument.
+            If `instrument` does not equal the currently held instrument.
 
         """
         Condition.not_none(instrument, "instrument")
@@ -151,17 +151,17 @@ cdef class FixedRiskSizer(PositionSizer):
         Raises
         ------
         ValueError
-            If the risk_bp is not positive (> 0).
+            If `risk_bp` is not positive (> 0).
         ValueError
-            If the xrate is not positive (> 0).
+            If `xrate` is not positive (> 0).
         ValueError
-            If the commission_rate is negative (< 0).
+            If `commission_rate` is negative (< 0).
         ValueError
-            If hard_limit is not ``None`` and is not positive (> 0).
+            If `hard_limit` is not ``None`` and is not positive (> 0).
         ValueError
-            If the unit_batch_size is not positive (> 0).
+            If `unit_batch_size` is not positive (> 0).
         ValueError
-            If the units is not positive (> 0).
+            If `units` is not positive (> 0).
 
         Returns
         -------

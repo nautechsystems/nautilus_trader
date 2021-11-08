@@ -48,7 +48,7 @@ cdef class UUID4:
         Raises
         ------
         ValueError
-            If value is not ``None`` and not a valid UUID.
+            If `value` is not ``None`` and not a valid UUID.
 
         """
         if value is not None:

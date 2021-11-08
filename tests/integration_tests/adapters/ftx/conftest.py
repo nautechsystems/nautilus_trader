@@ -13,26 +13,37 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+import asyncio
 
-cdef class CSVTickDataLoader:
-    pass
+import pytest
 
-
-cdef class CSVBarDataLoader:
-    pass
-
-
-cdef class TardisTradeDataLoader:
-    pass
+from nautilus_trader.adapters.ftx.http.client import FTXHttpClient
+from nautilus_trader.common.clock import LiveClock
+from nautilus_trader.common.logging import Logger
 
 
-cdef class TardisQuoteDataLoader:
-    pass
+@pytest.fixture(scope="session")
+def loop():
+    return asyncio.get_event_loop()
 
 
-cdef class ParquetTickDataLoader:
-    pass
+@pytest.fixture(scope="session")
+def live_clock():
+    return LiveClock()
 
 
-cdef class ParquetBarDataLoader:
-    pass
+@pytest.fixture(scope="session")
+def live_logger(live_clock):
+    return Logger(clock=live_clock)
+
+
+@pytest.fixture(scope="session")
+def ftx_http_client(loop, live_clock, live_logger):
+    client = FTXHttpClient(  # noqa: S106 (no hardcoded password)
+        loop=asyncio.get_event_loop(),
+        clock=live_clock,
+        logger=live_logger,
+        key="SOME_FTX_API_KEY",
+        secret="SOME_FTX_API_SECRET",
+    )
+    return client

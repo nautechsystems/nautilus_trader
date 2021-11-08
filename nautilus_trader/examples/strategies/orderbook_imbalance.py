@@ -54,7 +54,7 @@ class OrderBookImbalanceConfig(TradingStrategyConfig):
     """
 
     instrument_id: str
-    max_trade_size: str
+    max_trade_size: Decimal
     trigger_min_size: float = 100.0
     trigger_imbalance_ratio: float = 0.20
 
@@ -119,7 +119,7 @@ class OrderBookImbalance(TradingStrategy):
             self.check_trigger()
 
     def check_trigger(self):
-        """Checking for trigger conditions."""
+        """Check for trigger conditions."""
         bid_volume = self._book.best_bid_qty()
         ask_volume = self._book.best_ask_qty()
         if not (bid_volume and ask_volume):

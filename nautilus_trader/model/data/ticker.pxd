@@ -20,8 +20,6 @@ from nautilus_trader.model.identifiers cimport InstrumentId
 cdef class Ticker(Data):
     cdef readonly InstrumentId instrument_id
     """The ticker instrument ID.\n\n:returns: `InstrumentId`"""
-    cdef readonly dict info
-    """The additional ticker information.\n\n:returns: `dict[str, object]`"""
 
     @staticmethod
     cdef Ticker from_dict_c(dict values)

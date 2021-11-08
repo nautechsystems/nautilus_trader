@@ -14,23 +14,18 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import os
-import sys
 from decimal import Decimal
 
 import pandas as pd
 
-
-sys.path.insert(
-    0, str(os.path.abspath(__file__ + "/../../../"))
-)  # Allows relative imports from examples
-
-from examples.strategies.ema_cross_simple import EMACross
-from examples.strategies.ema_cross_simple import EMACrossConfig
+from nautilus_trader.backtest.data.providers import TestDataProvider
+from nautilus_trader.backtest.data.providers import TestInstrumentProvider
 from nautilus_trader.backtest.data.wranglers import TradeTickDataWrangler
 from nautilus_trader.backtest.engine import BacktestEngine
 from nautilus_trader.backtest.engine import BacktestEngineConfig
 from nautilus_trader.backtest.models import FillModel
+from nautilus_trader.examples.strategies.ema_cross import EMACross
+from nautilus_trader.examples.strategies.ema_cross import EMACrossConfig
 from nautilus_trader.model.currencies import ETH
 from nautilus_trader.model.currencies import USDT
 from nautilus_trader.model.enums import AccountType
@@ -40,8 +35,6 @@ from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.objects import Money
-from tests.test_kit.providers import TestDataProvider
-from tests.test_kit.providers import TestInstrumentProvider
 
 
 if __name__ == "__main__":
@@ -58,8 +51,9 @@ if __name__ == "__main__":
     ETHUSDT_BINANCE = TestInstrumentProvider.ethusdt_binance()
 
     # Setup data
+    provider = TestDataProvider()
     wrangler = TradeTickDataWrangler(instrument=ETHUSDT_BINANCE)
-    ticks = wrangler.process(TestDataProvider.ethusdt_trades())
+    ticks = wrangler.process(provider.read_csv_ticks("binance-ethusdt-trades.csv"))
     engine.add_instrument(ETHUSDT_BINANCE)
     engine.add_ticks(ticks)
 

@@ -35,7 +35,6 @@ cdef class Ticker(Data):
         InstrumentId instrument_id not None,
         int64_t ts_event,
         int64_t ts_init,
-        dict info=None,
     ):
         """
         Initialize a new instance of the ``Ticker`` class.
@@ -48,14 +47,11 @@ cdef class Ticker(Data):
             The UNIX timestamp (nanoseconds) when the ticker event occurred.
         ts_init : int64
             The UNIX timestamp (nanoseconds) when the object was initialized.
-        info : dict[str, object]
-            The additional ticker information.
 
         """
         super().__init__(ts_event, ts_init)
 
         self.instrument_id = instrument_id
-        self.info = info
 
     def __eq__(self, Ticker other) -> bool:
         return self.instrument_id.value == other.instrument_id.value
@@ -66,18 +62,15 @@ cdef class Ticker(Data):
     def __repr__(self) -> str:
         return (f"{type(self).__name__}"
                 f"(instrument_id={self.instrument_id.value}, "
-                f"ts_event={self.ts_event}, "
-                f"info={self.info})")
+                f"ts_event={self.ts_event})")
 
     @staticmethod
     cdef Ticker from_dict_c(dict values):
         Condition.not_none(values, "values")
-        cdef bytes info = values["info"]
         return Ticker(
             instrument_id=InstrumentId.from_str_c(values["instrument_id"]),
             ts_event=values["ts_event"],
             ts_init=values["ts_init"],
-            info=orjson.loads(info) if info is not None else None,
         )
 
     @staticmethod
@@ -88,7 +81,6 @@ cdef class Ticker(Data):
             "instrument_id": obj.instrument_id.value,
             "ts_event": obj.ts_event,
             "ts_init": obj.ts_init,
-            "info": orjson.dumps(obj.info) if obj.info is not None else None,
         }
 
     @staticmethod

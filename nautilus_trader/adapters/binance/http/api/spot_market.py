@@ -18,6 +18,7 @@
 
 from typing import Dict, Optional
 
+from nautilus_trader.adapters.binance.common import format_symbol
 from nautilus_trader.adapters.binance.http.client import BinanceHttpClient
 from nautilus_trader.adapters.binance.http.parsing import convert_list_to_json_array
 from nautilus_trader.core.correctness import PyCondition
@@ -113,7 +114,7 @@ class BinanceSpotMarketHttpAPI:
 
         payload: Dict[str, str] = {}
         if symbol is not None:
-            payload["symbol"] = symbol
+            payload["symbol"] = format_symbol(symbol).upper()
         if symbols is not None:
             payload["symbols"] = convert_list_to_json_array(symbols)
 
@@ -146,7 +147,7 @@ class BinanceSpotMarketHttpAPI:
         https://binance-docs.github.io/apidocs/spot/en/#order-book
 
         """
-        payload: Dict[str, str] = {"symbol": symbol}
+        payload: Dict[str, str] = {"symbol": format_symbol(symbol).upper()}
         if limit is not None:
             payload["limit"] = str(limit)
 
@@ -180,7 +181,7 @@ class BinanceSpotMarketHttpAPI:
         https://binance-docs.github.io/apidocs/spot/en/#recent-trades-list
 
         """
-        payload: Dict[str, str] = {"symbol": symbol}
+        payload: Dict[str, str] = {"symbol": format_symbol(symbol).upper()}
         if limit is not None:
             payload["limit"] = str(limit)
 
@@ -221,7 +222,7 @@ class BinanceSpotMarketHttpAPI:
         https://binance-docs.github.io/apidocs/spot/en/#old-trade-lookup
 
         """
-        payload: Dict[str, str] = {"symbol": symbol}
+        payload: Dict[str, str] = {"symbol": format_symbol(symbol).upper()}
         if limit is not None:
             payload["limit"] = str(limit)
         if from_id is not None:
@@ -253,9 +254,9 @@ class BinanceSpotMarketHttpAPI:
         from_id : int, optional
             The trade ID to fetch from. Default gets most recent trades.
         start_time_ms : int, optional
-            The UNIX timestamp (ms) to get aggregate trades from INCLUSIVE.
+            The UNIX timestamp (milliseconds) to get aggregate trades from INCLUSIVE.
         end_time_ms: int, optional
-            The UNIX timestamp (ms) to get aggregate trades until INCLUSIVE.
+            The UNIX timestamp (milliseconds) to get aggregate trades until INCLUSIVE.
         limit : int, optional
             The limit for the response. Default 500; max 1000.
 
@@ -269,7 +270,7 @@ class BinanceSpotMarketHttpAPI:
         https://binance-docs.github.io/apidocs/spot/en/#compressed-aggregate-trades-list
 
         """
-        payload: Dict[str, str] = {"symbol": symbol}
+        payload: Dict[str, str] = {"symbol": format_symbol(symbol).upper()}
         if from_id is not None:
             payload["fromId"] = str(from_id)
         if start_time_ms is not None:
@@ -304,9 +305,9 @@ class BinanceSpotMarketHttpAPI:
         interval : str
             The interval of kline, e.g 1m, 5m, 1h, 1d, etc.
         start_time_ms : int, optional
-            The UNIX timestamp (ms) to get aggregate trades from INCLUSIVE.
+            The UNIX timestamp (milliseconds) to get aggregate trades from INCLUSIVE.
         end_time_ms: int, optional
-            The UNIX timestamp (ms) to get aggregate trades until INCLUSIVE.
+            The UNIX timestamp (milliseconds) to get aggregate trades until INCLUSIVE.
         limit : int, optional
             The limit for the response. Default 500; max 1000.
 
@@ -315,7 +316,10 @@ class BinanceSpotMarketHttpAPI:
         https://binance-docs.github.io/apidocs/spot/en/#kline-candlestick-data
 
         """
-        payload: Dict[str, str] = {"symbol": symbol, "internal": interval}
+        payload: Dict[str, str] = {
+            "symbol": format_symbol(symbol).upper(),
+            "interval": interval,
+        }
         if start_time_ms is not None:
             payload["startTime"] = str(start_time_ms)
         if end_time_ms is not None:
@@ -349,7 +353,7 @@ class BinanceSpotMarketHttpAPI:
         https://binance-docs.github.io/apidocs/spot/en/#current-average-price
 
         """
-        payload: Dict[str, str] = {"symbol": symbol}
+        payload: Dict[str, str] = {"symbol": format_symbol(symbol).upper()}
 
         return await self.client.query(
             url_path=self.BASE_ENDPOINT + "avgPrice",
@@ -379,7 +383,7 @@ class BinanceSpotMarketHttpAPI:
         """
         payload: Dict[str, str] = {}
         if symbol is not None:
-            payload["symbol"] = symbol
+            payload["symbol"] = format_symbol(symbol).upper()
 
         return await self.client.query(
             url_path=self.BASE_ENDPOINT + "ticker/24hr",
@@ -409,7 +413,7 @@ class BinanceSpotMarketHttpAPI:
         """
         payload: Dict[str, str] = {}
         if symbol is not None:
-            payload["symbol"] = symbol
+            payload["symbol"] = format_symbol(symbol).upper()
 
         return await self.client.query(
             url_path=self.BASE_ENDPOINT + "ticker/price",
@@ -439,7 +443,7 @@ class BinanceSpotMarketHttpAPI:
         """
         payload: Dict[str, str] = {}
         if symbol is not None:
-            payload["symbol"] = symbol
+            payload["symbol"] = format_symbol(symbol).upper()
 
         return await self.client.query(
             url_path=self.BASE_ENDPOINT + "ticker/bookTicker",

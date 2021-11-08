@@ -88,7 +88,7 @@ class BinanceHttpClient(HttpClient):
         payload: Dict[str, Any] = None,
     ) -> bytes:
         """
-        Limit request is for those endpoints require API key in the header.
+        Limit request is for those endpoints requiring an API key in the header.
         """
         return await self.send_request(http_method, url_path, payload=payload)
 
@@ -100,7 +100,7 @@ class BinanceHttpClient(HttpClient):
     ) -> bytes:
         if payload is None:
             payload = {}
-        payload["timestamp"] = str(int(self._clock.timestamp() * 1000))
+        payload["timestamp"] = str(self._clock.timestamp_ms())
         query_string = self._prepare_params(payload)
         signature = self._get_sign(query_string)
         payload["signature"] = signature
@@ -124,7 +124,7 @@ class BinanceHttpClient(HttpClient):
         """
         if payload is None:
             payload = {}
-        payload["timestamp"] = str(int(self._clock.timestamp() * 1000))
+        payload["timestamp"] = str(self._clock.timestamp_ms())
         query_string = self._prepare_params(payload)
         signature = self._get_sign(query_string)
         url_path = url_path + "?" + query_string + "&signature=" + signature

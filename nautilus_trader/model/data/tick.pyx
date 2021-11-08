@@ -182,7 +182,7 @@ cdef class QuoteTick(Tick):
         Parameters
         ----------
         price_type : PriceType
-            The price type to extraction.
+            The price type to extract.
 
         Returns
         -------
@@ -205,7 +205,7 @@ cdef class QuoteTick(Tick):
         Parameters
         ----------
         price_type : PriceType
-            The price type for extraction.
+            The price type to extract.
 
         Returns
         -------
@@ -260,7 +260,7 @@ cdef class TradeTick(Tick):
         Raises
         ------
         ValueError
-            If match_id is not a valid string.
+            If `match_id` is not a valid string.
 
         """
         Condition.valid_string(match_id, "match_id")

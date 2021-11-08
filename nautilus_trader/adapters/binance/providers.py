@@ -50,7 +50,7 @@ class BinanceInstrumentProvider(InstrumentProvider):
         logger: Logger,
     ):
         """
-        Initialize a new instance of the ``BetfairInstrumentProvider`` class.
+        Initialize a new instance of the ``BinanceInstrumentProvider`` class.
 
         Parameters
         ----------
@@ -75,7 +75,8 @@ class BinanceInstrumentProvider(InstrumentProvider):
 
     async def load_all_or_wait_async(self) -> None:
         """
-        Load all instruments into the provider asynchronously, or await loading.
+        Load the latest Binance instruments into the provider asynchronously, or
+        await loading.
 
         If `load_async` has been previously called then will immediately return.
         """
@@ -85,6 +86,7 @@ class BinanceInstrumentProvider(InstrumentProvider):
         if not self._loading:
             self._log.debug("Loading instruments...")
             await self.load_all_async()
+            self._log.info(f"Loaded {self.count} instruments.")
         else:
             self._log.debug("Awaiting loading...")
             while self._loading:
@@ -109,10 +111,10 @@ class BinanceInstrumentProvider(InstrumentProvider):
         server_time_ns: int = millis_to_nanos(response["serverTime"])
 
         for info in response["symbols"]:
-            native_symbol: str = info["symbol"]
+            local_symbol = Symbol(info["symbol"])
 
             # Create base asset
-            base_asset = info["baseAsset"]
+            base_asset: str = info["baseAsset"]
             base_currency = Currency(
                 code=base_asset,
                 precision=info["baseAssetPrecision"],
@@ -122,7 +124,7 @@ class BinanceInstrumentProvider(InstrumentProvider):
             )
 
             # Create quote asset
-            quote_asset = info["quoteAsset"]
+            quote_asset: str = info["quoteAsset"]
             quote_currency = Currency(
                 code=quote_asset,
                 precision=info["quoteAssetPrecision"],
@@ -131,8 +133,8 @@ class BinanceInstrumentProvider(InstrumentProvider):
                 currency_type=CurrencyType.CRYPTO,
             )
 
-            symbol = Symbol(base_currency.code + "/" + quote_currency.code)
-            instrument_id = InstrumentId(symbol=symbol, venue=BINANCE_VENUE)
+            # symbol = Symbol(base_currency.code + "/" + quote_currency.code)
+            instrument_id = InstrumentId(symbol=local_symbol, venue=BINANCE_VENUE)
 
             # Parse instrument filters
             symbol_filters = {f["filterType"]: f for f in info["filters"]}
@@ -155,7 +157,7 @@ class BinanceInstrumentProvider(InstrumentProvider):
                 min_notional = Money(min_notional_filter["minNotional"], currency=quote_currency)
             max_price = Price(float(price_filter["maxPrice"]), precision=price_precision)
             min_price = Price(float(price_filter["minPrice"]), precision=price_precision)
-            pair_fees = fees.get(native_symbol)
+            pair_fees = fees.get(local_symbol.value)
             maker_fee: Decimal = Decimal(0)
             taker_fee: Decimal = Decimal(0)
             if pair_fees:
@@ -165,6 +167,7 @@ class BinanceInstrumentProvider(InstrumentProvider):
             # Create instrument
             instrument = CurrencySpot(
                 instrument_id=instrument_id,
+                local_symbol=local_symbol,
                 base_currency=base_currency,
                 quote_currency=quote_currency,
                 price_precision=price_precision,

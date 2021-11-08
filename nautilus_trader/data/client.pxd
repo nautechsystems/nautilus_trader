@@ -82,7 +82,7 @@ cdef class MarketDataClient(DataClient):
 
     cpdef void subscribe_instruments(self) except *
     cpdef void subscribe_instrument(self, InstrumentId instrument_id) except *
-    cpdef void subscribe_order_book_deltas(self, InstrumentId instrument_id, BookType book_type, dict kwargs=*) except *
+    cpdef void subscribe_order_book_deltas(self, InstrumentId instrument_id, BookType book_type, int depth=*, dict kwargs=*) except *
     cpdef void subscribe_order_book_snapshots(self, InstrumentId instrument_id, BookType book_type, int depth=*, dict kwargs=*) except *
     cpdef void subscribe_ticker(self, InstrumentId instrument_id) except *
     cpdef void subscribe_quote_ticks(self, InstrumentId instrument_id) except *

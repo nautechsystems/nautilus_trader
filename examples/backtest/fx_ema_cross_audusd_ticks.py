@@ -14,33 +14,25 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import os
-import sys
 from decimal import Decimal
 
 import pandas as pd
 
-
-sys.path.insert(
-    0, str(os.path.abspath(__file__ + "/../../../"))
-)  # Allows relative imports from examples
-
-from examples.strategies.ema_cross_simple import EMACross
-from examples.strategies.ema_cross_simple import EMACrossConfig
+from nautilus_trader.backtest.data.providers import TestDataProvider
+from nautilus_trader.backtest.data.providers import TestInstrumentProvider
 from nautilus_trader.backtest.data.wranglers import QuoteTickDataWrangler
 from nautilus_trader.backtest.engine import BacktestEngine
 from nautilus_trader.backtest.engine import BacktestEngineConfig
 from nautilus_trader.backtest.models import FillModel
 from nautilus_trader.backtest.modules import FXRolloverInterestModule
+from nautilus_trader.examples.strategies.ema_cross import EMACross
+from nautilus_trader.examples.strategies.ema_cross import EMACrossConfig
 from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import OMSType
 from nautilus_trader.model.enums import VenueType
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.objects import Money
-from tests.test_kit import PACKAGE_ROOT
-from tests.test_kit.providers import TestDataProvider
-from tests.test_kit.providers import TestInstrumentProvider
 
 
 if __name__ == "__main__":
@@ -57,8 +49,9 @@ if __name__ == "__main__":
     AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy("AUD/USD", SIM)
 
     # Setup data
+    provider = TestDataProvider()
     wrangler = QuoteTickDataWrangler(instrument=AUDUSD_SIM)
-    ticks = wrangler.process(TestDataProvider.audusd_ticks())
+    ticks = wrangler.process(provider.read_csv_ticks("truefx-audusd-ticks.csv"))
     engine.add_instrument(AUDUSD_SIM)
     engine.add_ticks(ticks)
 
@@ -72,7 +65,7 @@ if __name__ == "__main__":
 
     # Optional plug in module to simulate rollover interest,
     # the data is coming from packaged test data.
-    interest_rate_data = pd.read_csv(os.path.join(PACKAGE_ROOT, "data", "short-term-interest.csv"))
+    interest_rate_data = provider.read_csv("short-term-interest.csv")
     fx_rollover_interest = FXRolloverInterestModule(rate_data=interest_rate_data)
 
     # Add an exchange (multiple exchanges possible)
@@ -80,7 +73,7 @@ if __name__ == "__main__":
     engine.add_venue(
         venue=SIM,
         venue_type=VenueType.ECN,
-        oms_type=OMSType.HEDGING,  # Venue will generate position_ids
+        oms_type=OMSType.HEDGING,  # Venue will generate position IDs
         account_type=AccountType.MARGIN,
         base_currency=USD,  # Standard single-currency account
         starting_balances=[Money(1_000_000, USD)],

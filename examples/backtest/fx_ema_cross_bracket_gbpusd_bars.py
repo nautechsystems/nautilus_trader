@@ -14,33 +14,25 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import os
-import sys
 from decimal import Decimal
 
 import pandas as pd
 
-
-sys.path.insert(
-    0, str(os.path.abspath(__file__ + "/../../../"))
-)  # Allows relative imports from examples
-
-from examples.strategies.ema_cross_bracket import EMACrossBracket
-from examples.strategies.ema_cross_bracket import EMACrossBracketConfig
+from nautilus_trader.backtest.data.providers import TestDataProvider
+from nautilus_trader.backtest.data.providers import TestInstrumentProvider
 from nautilus_trader.backtest.data.wranglers import QuoteTickDataWrangler
 from nautilus_trader.backtest.engine import BacktestEngine
 from nautilus_trader.backtest.engine import BacktestEngineConfig
 from nautilus_trader.backtest.models import FillModel
 from nautilus_trader.backtest.modules import FXRolloverInterestModule
+from nautilus_trader.examples.strategies.ema_cross_bracket import EMACrossBracket
+from nautilus_trader.examples.strategies.ema_cross_bracket import EMACrossBracketConfig
 from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import OMSType
 from nautilus_trader.model.enums import VenueType
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.objects import Money
-from tests.test_kit import PACKAGE_ROOT
-from tests.test_kit.providers import TestDataProvider
-from tests.test_kit.providers import TestInstrumentProvider
 
 
 if __name__ == "__main__":
@@ -62,10 +54,11 @@ if __name__ == "__main__":
     GBPUSD_SIM = TestInstrumentProvider.default_fx_ccy("GBP/USD", SIM)
 
     # Setup data
+    provider = TestDataProvider()
     wrangler = QuoteTickDataWrangler(instrument=GBPUSD_SIM)
     ticks = wrangler.process_bar_data(
-        bid_data=TestDataProvider.gbpusd_1min_bid(),
-        ask_data=TestDataProvider.gbpusd_1min_ask(),
+        bid_data=provider.read_csv_bars("fxcm-gbpusd-m1-bid-2012.csv"),
+        ask_data=provider.read_csv_bars("fxcm-gbpusd-m1-ask-2012.csv"),
     )
     engine.add_instrument(GBPUSD_SIM)
     engine.add_ticks(ticks)
@@ -80,7 +73,7 @@ if __name__ == "__main__":
 
     # Optional plug in module to simulate rollover interest,
     # the data is coming from packaged test data.
-    interest_rate_data = pd.read_csv(os.path.join(PACKAGE_ROOT, "data", "short-term-interest.csv"))
+    interest_rate_data = provider.read_csv("short-term-interest.csv")
     fx_rollover_interest = FXRolloverInterestModule(rate_data=interest_rate_data)
 
     # Add an exchange (multiple exchanges possible)
@@ -88,7 +81,7 @@ if __name__ == "__main__":
     engine.add_venue(
         venue=SIM,
         venue_type=VenueType.ECN,
-        oms_type=OMSType.HEDGING,  # Venue will generate position_ids
+        oms_type=OMSType.HEDGING,  # Venue will generate position IDs
         account_type=AccountType.MARGIN,
         base_currency=USD,  # Standard single-currency account
         starting_balances=[Money(1_000_000, USD)],

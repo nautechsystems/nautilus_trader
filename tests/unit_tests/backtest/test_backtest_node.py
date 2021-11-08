@@ -11,11 +11,11 @@ from nautilus_trader.backtest.config import BacktestVenueConfig
 from nautilus_trader.backtest.engine import BacktestEngineConfig
 from nautilus_trader.backtest.node import BacktestNode
 from nautilus_trader.backtest.results import BacktestResult
+from nautilus_trader.examples.strategies.ema_cross import EMACrossConfig
 from nautilus_trader.persistence.catalog import DataCatalog
 from nautilus_trader.trading.config import ImportableStrategyConfig
 from tests.test_kit.mocks import aud_usd_data_loader
 from tests.test_kit.mocks import data_catalog_setup
-from tests.test_kit.strategies import EMACrossConfig
 
 
 pytestmark = pytest.mark.skipif(sys.platform == "win32", reason="test path broken on windows")
@@ -51,7 +51,7 @@ class TestBacktestNode:
         ]
         self.strategies = [
             ImportableStrategyConfig(
-                path="tests.test_kit.strategies:EMACross",
+                path="nautilus_trader.examples.strategies.ema_cross:EMACross",
                 config=EMACrossConfig(
                     instrument_id="AUD/USD.SIM",
                     bar_type="AUD/USD.SIM-100-TICK-MID-INTERNAL",

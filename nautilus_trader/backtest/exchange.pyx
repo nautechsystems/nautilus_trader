@@ -14,6 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 from decimal import Decimal
+from heapq import heappush
 from typing import Dict
 
 from libc.limits cimport INT_MAX
@@ -23,6 +24,7 @@ from libc.stdint cimport int64_t
 from nautilus_trader.accounting.accounts.base cimport Account
 from nautilus_trader.backtest.execution_client cimport BacktestExecClient
 from nautilus_trader.backtest.models cimport FillModel
+from nautilus_trader.backtest.models cimport LatencyModel
 from nautilus_trader.backtest.modules cimport SimulationModule
 from nautilus_trader.cache.base cimport CacheFacade
 from nautilus_trader.common.clock cimport TestClock
@@ -96,6 +98,7 @@ cdef class SimulatedExchange:
         BookType book_type=BookType.L1_TBBO,
         bint bar_execution=False,
         bint reject_stop_orders=True,
+        LatencyModel latency_model=None
     ):
         """
         Initialize a new instance of the ``SimulatedExchange`` class.
@@ -134,21 +137,23 @@ cdef class SimulatedExchange:
             If the exchange execution dynamics is based on bar data.
         reject_stop_orders : bool
             If stop orders are rejected on submission if in the market.
+        latency_model : LatencyModel, optional
+            The latency model for the exchange.
 
         Raises
         ------
         ValueError
-            If instruments is empty.
+            If `instruments` is empty.
         ValueError
-            If instruments contains a type other than `Instrument`.
+            If `instruments` contains a type other than `Instrument`.
         ValueError
-            If starting_balances is empty.
+            If `starting_balances` is empty.
         ValueError
-            If starting_balances contains a type other than `Money`.
+            If `starting_balances` contains a type other than `Money`.
         ValueError
-            If base currency and multiple starting balances.
+            If `base_currency` and multiple starting balances.
         ValueError
-            If modules contains a type other than `SimulationModule`.
+            If `modules` contains a type other than `SimulationModule`.
 
         """
         Condition.not_empty(instruments, "instruments")
@@ -187,6 +192,7 @@ cdef class SimulatedExchange:
         self.reject_stop_orders = reject_stop_orders
         self.bar_execution = bar_execution
         self.fill_model = fill_model
+        self.latency_model = latency_model
 
         # Load modules
         self.modules = []
@@ -221,6 +227,8 @@ cdef class SimulatedExchange:
         self._symbol_ord_count = {}  # type: dict[InstrumentId, int]
         self._executions_count = 0
         self._message_queue = Queue()
+        self._inflight_queue = []
+        self._inflight_counter = {}
 
     def __repr__(self) -> str:
         return (f"{type(self).__name__}("
@@ -422,6 +430,8 @@ cdef class SimulatedExchange:
         """
         Set the fill model to the given model.
 
+        Parameters
+        ----------
         fill_model : FillModel
             The fill model to set.
 
@@ -431,6 +441,22 @@ cdef class SimulatedExchange:
         self.fill_model = fill_model
 
         self._log.info("Changed fill model.")
+
+    cpdef void set_latency_model(self, LatencyModel latency_model) except *:
+        """
+        Change the latency model for this exchange.
+
+        Parameters
+        ----------
+        latency_model : LatencyModel
+            The latency model to set.
+
+        """
+        Condition.not_none(latency_model, "latency_model")
+
+        self.latency_model = latency_model
+
+        self._log.info("Changed latency model.")
 
     cpdef void initialize_account(self) except *:
         """
@@ -489,7 +515,26 @@ cdef class SimulatedExchange:
         """
         Condition.not_none(command, "command")
 
-        self._message_queue.put_nowait(command)
+        if self.latency_model is None:
+            self._message_queue.put_nowait(command)
+        else:
+            heappush(self._inflight_queue, self.generate_inflight_command(command))
+
+    cdef tuple generate_inflight_command(self, TradingCommand command):
+        cdef int64_t ts
+        if isinstance(command, (SubmitOrder, SubmitOrderList)):
+            ts = command.ts_init + self.latency_model.insert_latency_nanos
+        elif isinstance(command, ModifyOrder):
+            ts = command.ts_init + self.latency_model.update_latency_nanos
+        elif isinstance(command, CancelOrder):
+            ts = command.ts_init + self.latency_model.cancel_latency_nanos
+        else:  # pragma: no cover (design-time error)
+            raise ValueError(f"invalid command, was {command}")
+        if ts not in self._inflight_counter:
+            self._inflight_counter[ts] = 0
+        self._inflight_counter[ts] += 1
+        cdef (int64_t, int64_t) key = (ts, self._inflight_counter[ts])
+        return key, command
 
     cpdef void process_order_book(self, OrderBookData data) except *:
         """
@@ -586,6 +631,18 @@ cdef class SimulatedExchange:
         self._clock.set_time(now_ns)
 
         cdef:
+            int64_t ts
+        while self._inflight_queue:
+            # Peek at timestamp of next inflight message
+            ts = self._inflight_queue[0][0][0]
+            if ts <= now_ns:
+                # Place message on queue to be processed
+                self._message_queue.put_nowait(self._inflight_queue.pop(0)[1])
+                self._inflight_counter.pop(ts, None)
+            else:
+                break
+
+        cdef:
             TradingCommand command
             Order order
         while self._message_queue.count > 0:
@@ -660,6 +717,8 @@ cdef class SimulatedExchange:
         self._symbol_ord_count.clear()
         self._executions_count = 0
         self._message_queue = Queue()
+        self._inflight_queue.clear()
+        self._inflight_counter.clear()
 
         self._log.info("Reset.")
 
@@ -1126,8 +1185,7 @@ cdef class SimulatedExchange:
                 self._last_asks[order.instrument_id] = order.price
             return [(order.price, order.leaves_qty)]
         cdef OrderBook book = self.get_book(order.instrument_id)
-        cdef OrderBookOrder submit_order = OrderBookOrder(price=order.price, size=order.quantity, side=order.side)
-
+        cdef OrderBookOrder submit_order = OrderBookOrder(price=order.price, size=order.leaves_qty, side=order.side)
         if order.is_buy_c():
             return book.asks.simulate_order_fills(order=submit_order, depth_type=DepthType.VOLUME)
         elif order.is_sell_c():
@@ -1152,7 +1210,7 @@ cdef class SimulatedExchange:
                     self._last_bids[order.instrument_id] = order.price
                 return [(order.price, order.leaves_qty)]
         price = Price.from_int_c(INT_MAX if order.side == OrderSide.BUY else INT_MIN)
-        cdef OrderBookOrder submit_order = OrderBookOrder(price=price, size=order.quantity, side=order.side)
+        cdef OrderBookOrder submit_order = OrderBookOrder(price=price, size=order.leaves_qty, side=order.side)
         cdef OrderBook book = self.get_book(order.instrument_id)
         if order.is_buy_c():
             return book.asks.simulate_order_fills(order=submit_order)

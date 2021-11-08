@@ -27,6 +27,7 @@ import pytest
 
 from nautilus_trader.adapters.betfair.providers import BetfairInstrumentProvider
 from nautilus_trader.adapters.betfair.util import make_betfair_reader
+from nautilus_trader.backtest.data.providers import TestInstrumentProvider
 from nautilus_trader.model.data.tick import QuoteTick
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
@@ -42,11 +43,12 @@ from nautilus_trader.persistence.external.core import validate_data_catalog
 from nautilus_trader.persistence.external.core import write_objects
 from nautilus_trader.persistence.external.core import write_parquet
 from nautilus_trader.persistence.external.core import write_tables
+from nautilus_trader.persistence.external.readers import CSVReader
 from tests.integration_tests.adapters.betfair.test_kit import BetfairTestStubs
 from tests.test_kit import PACKAGE_ROOT
 from tests.test_kit.mocks import MockReader
+from tests.test_kit.mocks import NewsEventData
 from tests.test_kit.mocks import data_catalog_setup
-from tests.test_kit.providers import TestInstrumentProvider
 from tests.test_kit.stubs import TestStubs
 from tests.unit_tests.backtest.test_backtest_config import TEST_DATA_DIR
 
@@ -449,7 +451,6 @@ class TestPersistenceCore:
         ]
         assert new_partitions == expected
 
-    @pytest.mark.skip(reason="bm to fix")
     def test_validate_data_catalog(self):
         # Arrange
         self._loaded_data_into_catalog()
@@ -463,10 +464,11 @@ class TestPersistenceCore:
         ]
         ins1, ins2 = self.catalog.instruments()["id"].tolist()
 
+        today_str = pd.Timestamp.utcnow().strftime("%Y%m%d")
         expected = [
             f"/root/data/betfair_ticker.parquet/instrument_id={ins1}/20191220.parquet",
             f"/root/data/betfair_ticker.parquet/instrument_id={ins2}/20191220.parquet",
-            "/root/data/betting_instrument.parquet/20210922.parquet",
+            f"/root/data/betting_instrument.parquet/{today_str}.parquet",
             f"/root/data/instrument_status_update.parquet/instrument_id={ins1}/20191220.parquet",
             f"/root/data/instrument_status_update.parquet/instrument_id={ins2}/20191220.parquet",
             f"/root/data/order_book_data.parquet/instrument_id={ins1}/20191220.parquet",
@@ -475,3 +477,53 @@ class TestPersistenceCore:
             f"/root/data/trade_tick.parquet/instrument_id={ins2}/20191220.parquet",
         ]
         assert new_partitions == expected
+
+    def test_split_and_serialize_generic_data_gets_correct_class(self):
+        # Arrange
+        TestStubs.setup_news_event_persistence()
+        process_files(
+            glob_path=f"{TEST_DATA_DIR}/news_events.csv",
+            reader=CSVReader(block_parser=TestStubs.news_event_parser),
+            catalog=self.catalog,
+        )
+        objs = self.catalog.generic_data(
+            cls=NewsEventData, filter_expr=ds.field("currency") == "USD", as_nautilus=True
+        )
+
+        # Act
+        split = split_and_serialize(objs)
+
+        # Assert
+        assert NewsEventData in split
+        assert None in split[NewsEventData]
+        assert len(split[NewsEventData][None]) == 22941
+
+    def test_catalog_generic_data_not_overwritten(self):
+        # Arrange
+        TestStubs.setup_news_event_persistence()
+        process_files(
+            glob_path=f"{TEST_DATA_DIR}/news_events.csv",
+            reader=CSVReader(block_parser=TestStubs.news_event_parser),
+            catalog=self.catalog,
+        )
+        objs = self.catalog.generic_data(
+            cls=NewsEventData, filter_expr=ds.field("currency") == "USD", as_nautilus=True
+        )
+
+        # Clear the catalog again
+        data_catalog_setup()
+        self.catalog = DataCatalog.from_env()
+
+        assert (
+            len(self.catalog.generic_data(NewsEventData, raise_on_empty=False, as_nautilus=True))
+            == 0
+        )
+
+        chunk1, chunk2 = objs[:10], objs[5:15]
+
+        # Act, Assert
+        write_objects(catalog=self.catalog, chunk=chunk1)
+        assert len(self.catalog.generic_data(NewsEventData)) == 10
+
+        write_objects(catalog=self.catalog, chunk=chunk2)
+        assert len(self.catalog.generic_data(NewsEventData)) == 15

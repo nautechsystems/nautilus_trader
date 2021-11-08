@@ -14,31 +14,28 @@
 # -------------------------------------------------------------------------------------------------
 
 import datetime
-import os
+import pathlib
 from decimal import Decimal
-from typing import List
+from typing import Optional
 
-import orjson
+import fsspec
 import pandas as pd
-from pandas import DataFrame
+from fsspec.implementations.github import GithubFileSystem
+from fsspec.implementations.local import LocalFileSystem
 
 from nautilus_trader.adapters.betfair.common import BETFAIR_VENUE
 from nautilus_trader.backtest.data.loaders import CSVBarDataLoader
 from nautilus_trader.backtest.data.loaders import CSVTickDataLoader
+from nautilus_trader.backtest.data.loaders import ParquetBarDataLoader
 from nautilus_trader.backtest.data.loaders import ParquetTickDataLoader
-from nautilus_trader.backtest.data.loaders import TardisQuoteDataLoader
-from nautilus_trader.backtest.data.loaders import TardisTradeDataLoader
 from nautilus_trader.core.correctness import PyCondition
-from nautilus_trader.core.datetime import millis_to_nanos
 from nautilus_trader.model.currencies import ADA
 from nautilus_trader.model.currencies import BTC
 from nautilus_trader.model.currencies import ETH
 from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.currencies import USDT
 from nautilus_trader.model.currency import Currency
-from nautilus_trader.model.data.tick import TradeTick
 from nautilus_trader.model.enums import AssetClass
-from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import Venue
@@ -51,183 +48,6 @@ from nautilus_trader.model.instruments.option import Option
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
-from nautilus_trader.model.orderbook.data import Order
-from tests.test_kit import PACKAGE_ROOT
-
-
-class TestDataProvider:
-    @staticmethod
-    def ethusdt_trades() -> DataFrame:
-        path = os.path.join(PACKAGE_ROOT, "data", "binance-ethusdt-trades.csv")
-        return CSVTickDataLoader.load(path)
-
-    @staticmethod
-    def audusd_ticks() -> DataFrame:
-        path = os.path.join(PACKAGE_ROOT, "data", "truefx-audusd-ticks.csv")
-        return CSVTickDataLoader.load(path)
-
-    @staticmethod
-    def usdjpy_ticks() -> DataFrame:
-        path = os.path.join(PACKAGE_ROOT, "data", "truefx-usdjpy-ticks.csv")
-        return CSVTickDataLoader.load(path)
-
-    @staticmethod
-    def gbpusd_1min_bid() -> DataFrame:
-        path = os.path.join(PACKAGE_ROOT, "data", "fxcm-gbpusd-m1-bid-2012.csv")
-        return CSVBarDataLoader.load(path)
-
-    @staticmethod
-    def gbpusd_1min_ask() -> DataFrame:
-        path = os.path.join(PACKAGE_ROOT, "data", "fxcm-gbpusd-m1-ask-2012.csv")
-        return CSVBarDataLoader.load(path)
-
-    @staticmethod
-    def usdjpy_1min_bid() -> DataFrame:
-        path = os.path.join(PACKAGE_ROOT, "data", "fxcm-usdjpy-m1-bid-2013.csv")
-        return CSVBarDataLoader.load(path)
-
-    @staticmethod
-    def usdjpy_1min_ask() -> DataFrame:
-        path = os.path.join(PACKAGE_ROOT, "data", "fxcm-usdjpy-m1-ask-2013.csv")
-        return CSVBarDataLoader.load(path)
-
-    @staticmethod
-    def tardis_trades() -> DataFrame:
-        path = os.path.join(PACKAGE_ROOT, "data", "tardis_trades.csv")
-        return TardisTradeDataLoader.load(path)
-
-    @staticmethod
-    def tardis_quotes() -> DataFrame:
-        path = os.path.join(PACKAGE_ROOT, "data", "tardis_quotes.csv")
-        return TardisQuoteDataLoader.load(path)
-
-    @staticmethod
-    def parquet_btcusdt_trades() -> DataFrame:
-        path = os.path.join(PACKAGE_ROOT, "data", "binance-btcusdt-trades.parquet")
-        return ParquetTickDataLoader.load(path)
-
-    @staticmethod
-    def parquet_btcusdt_quotes() -> DataFrame:
-        path = os.path.join(PACKAGE_ROOT, "data", "binance-btcusdt-quotes.parquet")
-        return ParquetTickDataLoader.load(path)
-
-    @staticmethod
-    def binance_btcusdt_instrument():
-        path = os.path.join(PACKAGE_ROOT, "data", "binance-btcusdt-instrument-repr.txt")
-        with open(path, "r") as f:
-            return f.readline()
-
-    @staticmethod
-    def l1_feed():
-        updates = []
-        for _, row in TestDataProvider.usdjpy_ticks().iterrows():
-            for side, order_side in zip(("bid", "ask"), (OrderSide.BUY, OrderSide.SELL)):
-                updates.append(
-                    {
-                        "op": "update",
-                        "order": Order(
-                            price=Price(row[side], precision=6),
-                            size=Quantity(1e9, precision=2),
-                            side=order_side,
-                        ),
-                    }
-                )
-        return updates
-
-    @staticmethod
-    def l2_feed() -> List:
-        def parse_line(d):
-            if "status" in d:
-                return {}
-            elif "close_price" in d:
-                # return {'timestamp': d['remote_timestamp'], "close_price": d['close_price']}
-                return {}
-            if "trade" in d:
-                return {
-                    "timestamp": d["remote_timestamp"],
-                    "op": "trade",
-                    "trade": TradeTick(
-                        instrument_id=InstrumentId(Symbol("TEST"), Venue("BETFAIR")),
-                        price=Price(d["trade"]["price"], 4),
-                        size=Quantity(d["trade"]["volume"], 4),
-                        aggressor_side=d["trade"]["side"],
-                        match_id=(d["trade"]["trade_id"]),
-                        ts_event=millis_to_nanos(pd.Timestamp(d["remote_timestamp"]).timestamp()),
-                        ts_init=millis_to_nanos(
-                            pd.Timestamp(
-                                d["remote_timestamp"]
-                            ).timestamp()  # TODO(cs): Hardcoded identical for now
-                        ),
-                    ),
-                }
-            elif "level" in d and d["level"]["orders"][0]["volume"] == 0:
-                op = "delete"
-            else:
-                op = "update"
-            order_like = d["level"]["orders"][0] if op != "trade" else d["trade"]
-            return {
-                "timestamp": d["remote_timestamp"],
-                "op": op,
-                "order": Order(
-                    price=Price(order_like["price"], precision=6),
-                    size=Quantity(abs(order_like["volume"]), precision=4),
-                    # Betting sides are reversed
-                    side={2: OrderSide.BUY, 1: OrderSide.SELL}[order_like["side"]],
-                    id=str(order_like["order_id"]),
-                ),
-            }
-
-        return [
-            parse_line(line)
-            for line in orjson.loads(open(PACKAGE_ROOT + "/data/L2_feed.json").read())
-        ]
-
-    @staticmethod
-    def l3_feed():
-        def parser(data):
-            parsed = data
-            if not isinstance(parsed, list):
-                # print(parsed)
-                return
-            elif isinstance(parsed, list):
-                channel, updates = parsed
-                if not isinstance(updates[0], list):
-                    updates = [updates]
-            else:
-                raise KeyError()
-            if isinstance(updates, int):
-                print("Err", updates)
-                return
-            for values in updates:
-                keys = ("order_id", "price", "size")
-                data = dict(zip(keys, values))
-                side = OrderSide.BUY if data["size"] >= 0 else OrderSide.SELL
-                if data["price"] == 0:
-                    yield dict(
-                        op="delete",
-                        order=Order(
-                            price=Price(data["price"], precision=10),
-                            size=Quantity(abs(data["size"]), precision=10),
-                            side=side,
-                            id=str(data["order_id"]),
-                        ),
-                    )
-                else:
-                    yield dict(
-                        op="update",
-                        order=Order(
-                            price=Price(data["price"], precision=10),
-                            size=Quantity(abs(data["size"]), precision=10),
-                            side=side,
-                            id=str(data["order_id"]),
-                        ),
-                    )
-
-        return [
-            msg
-            for data in orjson.loads(open(PACKAGE_ROOT + "/data/L3_feed.json").read())
-            for msg in parser(data)
-        ]
 
 
 class TestInstrumentProvider:
@@ -250,6 +70,7 @@ class TestInstrumentProvider:
                 symbol=Symbol("ADA/BTC"),
                 venue=Venue("BINANCE"),
             ),
+            local_symbol=Symbol("ADABTC"),
             base_currency=ADA,
             quote_currency=BTC,
             price_precision=8,
@@ -286,6 +107,7 @@ class TestInstrumentProvider:
                 symbol=Symbol("BTC/USDT"),
                 venue=Venue("BINANCE"),
             ),
+            local_symbol=Symbol("BTCUSDT"),
             base_currency=BTC,
             quote_currency=USDT,
             price_precision=2,
@@ -322,6 +144,7 @@ class TestInstrumentProvider:
                 symbol=Symbol("ETH/USDT"),
                 venue=Venue("BINANCE"),
             ),
+            local_symbol=Symbol("ETHUSDT"),
             base_currency=ETH,
             quote_currency=USDT,
             price_precision=2,
@@ -346,7 +169,7 @@ class TestInstrumentProvider:
     @staticmethod
     def ethusd_ftx() -> CurrencySpot:
         """
-        Return the Binance ETH/USDT instrument for backtesting.
+        Return the FTX ETH/USD instrument for backtesting.
 
         Returns
         -------
@@ -358,6 +181,7 @@ class TestInstrumentProvider:
                 symbol=Symbol("ETH/USD"),
                 venue=Venue("FTX"),
             ),
+            local_symbol=Symbol("ETHUSD"),
             base_currency=ETH,
             quote_currency=USD,
             price_precision=1,
@@ -391,9 +215,10 @@ class TestInstrumentProvider:
         """
         return CryptoSwap(
             instrument_id=InstrumentId(
-                symbol=Symbol("XBT/USD"),
+                symbol=Symbol("BTC/USD"),
                 venue=Venue("BITMEX"),
             ),
+            local_symbol=Symbol("XBTUSD"),
             base_currency=BTC,
             quote_currency=USD,
             settlement_currency=BTC,
@@ -431,6 +256,7 @@ class TestInstrumentProvider:
                 symbol=Symbol("ETH/USD"),
                 venue=Venue("BITMEX"),
             ),
+            local_symbol=Symbol("ETHUSD"),
             base_currency=ETH,
             quote_currency=USD,
             settlement_currency=BTC,
@@ -472,7 +298,7 @@ class TestInstrumentProvider:
         Raises
         ------
         ValueError
-            If the instrument_id.instrument_id length is not in range [6, 7].
+            If `symbol` length is not in range [6, 7].
 
         """
         if venue is None:
@@ -496,6 +322,7 @@ class TestInstrumentProvider:
 
         return CurrencySpot(
             instrument_id=instrument_id,
+            local_symbol=Symbol(symbol),
             base_currency=Currency.from_str(base_currency),
             quote_currency=Currency.from_str(quote_currency),
             price_precision=price_precision,
@@ -540,12 +367,14 @@ class TestInstrumentProvider:
             currency="GBP",
             ts_event=0,
             ts_init=0,
+            tick_scheme_name="BETFAIR",
         )
 
     @staticmethod
     def aapl_equity():
         return Equity(
             instrument_id=InstrumentId(symbol=Symbol("AAPL"), venue=Venue("NASDAQ")),
+            local_symbol=Symbol("AAPL"),
             currency=USD,
             price_precision=2,
             price_increment=Price.from_str("0.01"),
@@ -560,6 +389,7 @@ class TestInstrumentProvider:
     def es_future():
         return Future(
             instrument_id=InstrumentId(symbol=Symbol("ESZ21"), venue=Venue("CME")),
+            local_symbol=Symbol("ESZ21"),
             asset_class=AssetClass.INDEX,
             currency=USD,
             price_precision=2,
@@ -576,6 +406,7 @@ class TestInstrumentProvider:
     def aapl_option():
         return Option(
             instrument_id=InstrumentId(symbol=Symbol("AAPL211217C00150000"), venue=Venue("OPRA")),
+            local_symbol=Symbol("AAPL211217C00150000"),
             asset_class=AssetClass.EQUITY,
             currency=USD,
             price_precision=2,
@@ -588,3 +419,81 @@ class TestInstrumentProvider:
             ts_event=0,
             ts_init=0,
         )
+
+
+class TestDataProvider:
+    """
+    Provides an API to load data from either the 'test/' directory or GitHub repo.
+    """
+
+    def __init__(self, branch="develop"):
+        """
+        Initialize a new instance of the ``TestDataProvider`` class.
+
+        Parameters
+        ----------
+        branch : str
+            The NautilusTrader GitHub branch for the path.
+
+        """
+        self.fs: Optional[fsspec.AbstractFileSystem] = None
+        self.root: Optional[str] = None
+        self._determine_filesystem()
+        self.branch = branch
+
+    @staticmethod
+    def _test_data_directory() -> Optional[str]:
+        # Determine if the test data directory exists (i.e. this is a checkout of the source code).
+        source_root = pathlib.Path(__file__).parent.parent.parent
+        assert source_root.stem == "nautilus_trader"
+        test_data_dir = source_root.parent.joinpath("tests", "test_kit", "data")
+        if test_data_dir.exists():
+            return str(test_data_dir)
+        else:
+            return None
+
+    def _determine_filesystem(self):
+        test_data_dir = TestDataProvider._test_data_directory()
+        if test_data_dir:
+            self.root = test_data_dir
+            self.fs = fsspec.filesystem("file")
+        else:
+            print("Couldn't find test data directory, test data will be pulled from GitHub")
+            self.root = "tests/test_kit/data"
+            self.fs = fsspec.filesystem("github", org="nautechsystems", repo="nautilus_trader")
+
+    def _make_uri(self, path: str):
+        if isinstance(self.fs, LocalFileSystem):
+            return f"file://{self.root}/{path}"
+        elif isinstance(self.fs, GithubFileSystem):
+            return f"github://{self.fs.org}:{self.fs.repo}@{self.branch}/{self.root}/{path}"
+
+    def read(self, path: str):
+        uri = self._make_uri(path=path)
+        with fsspec.open(uri) as f:
+            return f.read()
+
+    def read_csv(self, path: str):
+        uri = self._make_uri(path=path)
+        with fsspec.open(uri) as f:
+            return pd.read_csv(f)
+
+    def read_csv_ticks(self, path: str):
+        uri = self._make_uri(path=path)
+        with fsspec.open(uri) as f:
+            return CSVTickDataLoader.load(file_path=f)
+
+    def read_csv_bars(self, path: str):
+        uri = self._make_uri(path=path)
+        with fsspec.open(uri) as f:
+            return CSVBarDataLoader.load(file_path=f)
+
+    def read_parquet_ticks(self, path: str):
+        uri = self._make_uri(path=path)
+        with fsspec.open(uri) as f:
+            return ParquetTickDataLoader.load(file_path=f)
+
+    def read_parquet_bars(self, path: str):
+        uri = self._make_uri(path=path)
+        with fsspec.open(uri) as f:
+            return ParquetBarDataLoader.load(file_path=f)

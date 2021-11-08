@@ -80,7 +80,7 @@ class TradingNode:
         Raises
         ------
         TypeError
-            If config is not of type `TradingNodeConfig`.
+            If `config` is not of type `TradingNodeConfig`.
 
         """
         if config is None:
@@ -292,7 +292,7 @@ class TradingNode:
         Raises
         ------
         KeyError
-            If handler already registered.
+            If `handler` already registered.
 
         """
         self._logger.register_sink(handler=handler)
@@ -311,9 +311,9 @@ class TradingNode:
         Raises
         ------
         ValueError
-            If name is not a valid string.
+            If `name` is not a valid string.
         KeyError
-            If name has already been added.
+            If `name` has already been added.
 
         """
         self._builder.add_data_client_factory(name, factory)
@@ -332,9 +332,9 @@ class TradingNode:
         Raises
         ------
         ValueError
-            If name is not a valid string.
+            If `name` is not a valid string.
         KeyError
-            If name has already been added.
+            If `name` has already been added.
 
         """
         self._builder.add_exec_client_factory(name, factory)
@@ -638,6 +638,10 @@ class TradingNode:
         if self._config.save_strategy_state:
             self.trader.save()
 
+        # Disconnect all clients
+        self._data_engine.disconnect()
+        self._exec_engine.disconnect()
+
         if self._data_engine.is_running:
             self._data_engine.stop()
         if self._exec_engine.is_running:
@@ -703,7 +707,7 @@ class TradingNode:
             self._log.warning("Event loop still running during `cancel_all_tasks`.")
             return
 
-        finish_all_tasks: asyncio.Future = asyncio.tasks.gather(
+        finish_all_tasks: asyncio.Future = asyncio.tasks.gather(  # type: ignore
             *to_cancel,
             loop=self._loop,
             return_exceptions=True,

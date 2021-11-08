@@ -133,24 +133,28 @@ class BinanceSpotExecutionClient(LiveExecutionClient):
     # -- COMMAND HANDLERS --------------------------------------------------------------------------
 
     def submit_order(self, command: SubmitOrder) -> None:
-        """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
+        self._log.error(  # pragma: no cover
+            "Cannot submit order: not yet implemented.",
+        )
 
     def submit_order_list(self, command: SubmitOrderList) -> None:
-        """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
+        self._log.error(  # pragma: no cover
+            "Cannot submit order list: not yet implemented.",
+        )
 
     def modify_order(self, command: ModifyOrder) -> None:
-        """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
+        self._log.error(  # pragma: no cover
+            "Cannot modify order: not yet implemented.",
+        )
 
     def cancel_order(self, command: CancelOrder) -> None:
-        """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
+        self._log.error(  # pragma: no cover
+            "Cannot cancel order: not yet implemented.",
+        )
 
     # -- RECONCILIATION ----------------------------------------------------------------------------
 
-    async def generate_order_status_report(self, order: Order) -> OrderStatusReport:
+    async def generate_order_status_report(self, order: Order) -> OrderStatusReport:  # type: ignore
         """
         Generate an order status report for the given order.
 
@@ -166,14 +170,16 @@ class BinanceSpotExecutionClient(LiveExecutionClient):
         OrderStatusReport or ``None``
 
         """
-        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
+        self._log.error(  # pragma: no cover
+            "Cannot generate order status report: not yet implemented.",
+        )
 
     async def generate_exec_reports(
         self,
         venue_order_id: VenueOrderId,
         symbol: Symbol,
         since: datetime = None,
-    ) -> List[ExecutionReport]:
+    ) -> List[ExecutionReport]:  # type: ignore
         """
         Generate a list of execution reports.
 
@@ -193,4 +199,8 @@ class BinanceSpotExecutionClient(LiveExecutionClient):
         list[ExecutionReport]
 
         """
-        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
+        self._log.error(  # pragma: no cover
+            "Cannot generate execution report: not yet implemented.",
+        )
+
+        return []

@@ -1,3 +1,27 @@
+# NautilusTrader 1.133.0 Beta - Release Notes
+
+Released on 8th, November 2021
+
+## Breaking Changes
+None
+
+## Enhancements
+- Added `LatencyModel` for simulated exchange.
+- Added `last_update_id` to order books.
+- Added `update_id` to order book data.
+- Added `depth` param when subscribing to order book deltas.
+- Added `Clock.timestamp_ms()`.
+- Added `TestDataProvider` and consolidate test data.
+- Added orjson default serializer for arrow.
+- Reorganized example strategies and launch scripts.
+
+## Fixes
+- Fixed logic for partial fills in backtests.
+- Various Betfair integration fixes.
+- Various `BacktestNode` fixes.
+
+---
+
 # NautilusTrader 1.132.0 Beta - Release Notes
 
 Released on 24th, October 2021

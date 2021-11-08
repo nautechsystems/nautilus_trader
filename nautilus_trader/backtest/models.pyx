@@ -15,7 +15,12 @@
 
 import random
 
+from libc.stdint cimport int64_t
+
 from nautilus_trader.core.correctness cimport Condition
+
+
+cdef int64_t NANOSECONDS_IN_MILLISECOND = 1_000_000
 
 
 cdef class FillModel:
@@ -50,7 +55,7 @@ cdef class FillModel:
         ValueError
             If any probability argument is not within range [0, 1].
         TypeError
-            If random_seed is not None and not of type `int`.
+            If `random_seed` is not None and not of type `int`.
 
         """
         Condition.in_range(prob_fill_on_limit, 0.0, 1.0, "prob_fill_on_limit")
@@ -101,12 +106,59 @@ cdef class FillModel:
 
     cdef bint _event_success(self, double probability) except *:
         # Return a result indicating whether an event occurred based on the
-        # given probability.
-
-        # probability is the probability of the event occurring [0, 1].
+        # given probability of the event occurring [0, 1].
         if probability == 0:
             return False
         elif probability == 1:
             return True
         else:
             return probability >= random.random()
+
+
+cdef class LatencyModel:
+    """
+    Provides a latency model for messages coming from and going to a simulated exchange.
+    """
+
+    def __init__(
+        self,
+        int base_latency_nanos = NANOSECONDS_IN_MILLISECOND,
+        int insert_latency_nanos = 0,
+        int update_latency_nanos = 0,
+        int cancel_latency_nanos = 0,
+    ):
+        """
+        Initialize a new instance of the ``LatencyModel`` class.
+
+        Parameters
+        ----------
+        base_latency_nanos : int, default 1_000_000_000
+            The base latency (nanoseconds) for the model.
+        insert_latency_nanos : int, default 0
+            The order insert latency (nanoseconds) for the model.
+        update_latency_nanos : int, default 0
+            The order update latency (nanoseconds) for the model.
+        cancel_latency_nanos : int, default 0
+            The order cancel latency (nanoseconds) for the model.
+
+        Raises
+        ------
+        ValueError
+            If `base_latency_nanos` is negative (< 0).
+        ValueError
+            If `insert_latency_nanos` is negative (< 0).
+        ValueError
+            If `update_latency_nanos` is negative (< 0).
+        ValueError
+            If `cancel_latency_nanos` is negative (< 0).
+
+        """
+        Condition.not_negative_int(base_latency_nanos, "base_latency_nanos")
+        Condition.not_negative_int(insert_latency_nanos, "insert_latency_nanos")
+        Condition.not_negative_int(update_latency_nanos, "update_latency_nanos")
+        Condition.not_negative_int(cancel_latency_nanos, "cancel_latency_nanos")
+
+        self.base_latency_nanos = base_latency_nanos
+        self.insert_latency_nanos = base_latency_nanos + insert_latency_nanos
+        self.update_latency_nanos = base_latency_nanos + update_latency_nanos
+        self.cancel_latency_nanos = base_latency_nanos + cancel_latency_nanos

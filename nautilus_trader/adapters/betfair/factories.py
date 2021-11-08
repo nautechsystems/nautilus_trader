@@ -14,7 +14,6 @@
 # -------------------------------------------------------------------------------------------------
 
 import asyncio
-import hashlib
 import os
 from functools import lru_cache
 from typing import Any, Dict, Optional
@@ -80,18 +79,12 @@ def get_cached_betfair_client(
     """
     global CLIENTS
 
-    if username is None:
-        username = os.environ["BETFAIR_USERNAME"]
-    if password is None:
-        password = os.environ["BETFAIR_PASSWORD"]
-    if app_key is None:
-        app_key = os.environ["BETFAIR_APP_KEY"]
-    if cert_dir is None:
-        cert_dir = os.environ["BETFAIR_CERT_DIR"]
+    username = username or os.environ["BETFAIR_USERNAME"]
+    password = password or os.environ["BETFAIR_PASSWORD"]
+    app_key = app_key or os.environ["BETFAIR_APP_KEY"]
+    cert_dir = cert_dir or os.environ["BETFAIR_CERT_DIR"]
 
-    key: str = hashlib.sha256(
-        "|".join((username, password, app_key, cert_dir)).encode()
-    ).hexdigest()
+    key: str = "|".join((username, password, app_key, cert_dir))
     if key not in CLIENTS:
         LoggerAdapter("BetfairFactory", logger).warning(
             "Creating new instance of BetfairClient",

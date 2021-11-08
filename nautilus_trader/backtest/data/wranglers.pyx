@@ -258,7 +258,7 @@ cdef class TradeTickDataWrangler:
         Raises
         ------
         ValueError
-            If data is empty.
+            If `data` is empty.
 
         """
         Condition.not_none(data, "data")
@@ -360,7 +360,7 @@ cdef class BarDataWrangler:
         Raises
         ------
         ValueError
-            If data is empty.
+            If `data` is empty.
 
         """
         Condition.not_none(data, "data")

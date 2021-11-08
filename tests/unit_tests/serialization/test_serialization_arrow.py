@@ -21,6 +21,7 @@ from typing import Any
 import pytest
 from fsspec.implementations.memory import MemoryFileSystem
 
+from nautilus_trader.backtest.data.providers import TestInstrumentProvider
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.events.risk import TradingStateChanged
 from nautilus_trader.common.events.system import ComponentStateChanged
@@ -41,7 +42,6 @@ from nautilus_trader.model.position import Position
 from nautilus_trader.persistence.catalog import DataCatalog
 from nautilus_trader.persistence.external.core import write_objects
 from nautilus_trader.serialization.arrow.serializer import ParquetSerializer
-from tests.test_kit.providers import TestInstrumentProvider
 from tests.test_kit.stubs import TestStubs
 from tests.unit_tests.serialization.conftest import nautilus_objects
 

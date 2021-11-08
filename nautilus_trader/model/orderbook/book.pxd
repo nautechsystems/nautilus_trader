@@ -15,6 +15,7 @@
 
 from libc.stdint cimport int64_t
 from libc.stdint cimport uint8_t
+from libc.stdint cimport uint64_t
 
 from nautilus_trader.model.c_enums.book_type cimport BookType
 from nautilus_trader.model.data.tick cimport TradeTick
@@ -41,12 +42,14 @@ cdef class OrderBook:
     """The order books bids.\n\n:returns: `Ladder`"""
     cdef readonly Ladder asks
     """The order books asks.\n\n:returns: `Ladder`"""
+    cdef readonly int last_update_id
+    """The last update ID.\n\n:returns: `int`"""
     cdef readonly int64_t ts_last
     """The UNIX timestamp (nanoseconds) when the order book was last updated.\n\n:returns: `int64`"""
 
-    cpdef void add(self, Order order) except *
-    cpdef void update(self, Order order) except *
-    cpdef void delete(self, Order order) except *
+    cpdef void add(self, Order order, uint64_t update_id=*) except *
+    cpdef void update(self, Order order, uint64_t update_id=*) except *
+    cpdef void delete(self, Order order, uint64_t update_id=*) except *
     cpdef void apply_delta(self, OrderBookDelta delta) except *
     cpdef void apply_deltas(self, OrderBookDeltas deltas) except *
     cpdef void apply_snapshot(self, OrderBookSnapshot snapshot) except *
@@ -55,10 +58,11 @@ cdef class OrderBook:
     cpdef void clear_asks(self) except *
     cpdef void clear(self) except *
     cpdef void check_integrity(self) except *
+    cdef void _add(self, Order order, int update_id) except *
+    cdef void _update(self, Order order, int update_id) except *
+    cdef void _delete(self, Order order, int update_id) except *
     cdef void _apply_delta(self, OrderBookDelta delta) except *
-    cdef void _add(self, Order order) except *
-    cdef void _update(self, Order order) except *
-    cdef void _delete(self, Order order) except *
+    cdef void _apply_update_id(self, int update_id) except *
     cdef void _check_integrity(self) except *
 
     cpdef Level best_bid_level(self)
@@ -91,7 +95,7 @@ cdef class L3OrderBook(OrderBook):
 
 cdef class L2OrderBook(OrderBook):
     cdef void _process_order(self, Order order)
-    cdef void _remove_if_exists(self, Order order) except *
+    cdef void _remove_if_exists(self, Order order, int update_id) except *
 
 
 cdef class L1OrderBook(OrderBook):

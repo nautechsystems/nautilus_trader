@@ -27,3 +27,14 @@ cdef class FillModel:
     cpdef bint is_slipped(self) except *
 
     cdef bint _event_success(self, double probability) except *
+
+
+cdef class LatencyModel:
+    cdef readonly int base_latency_nanos
+    """The default latency to the exchange.\n\n:returns: `int`"""
+    cdef readonly int insert_latency_nanos
+    """The latency (nanoseconds) for order insert messages to reach the exchange.\n\n:returns: `int`"""
+    cdef readonly int update_latency_nanos
+    """The latency (nanoseconds) for order update messages to reach the exchange.\n\n:returns: `int`"""
+    cdef readonly int cancel_latency_nanos
+    """The latency (nanoseconds) for order cancel messages to reach the exchange.\n\n:returns: `int`"""

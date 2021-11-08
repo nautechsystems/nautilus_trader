@@ -64,9 +64,9 @@ cdef class ExchangeRateCalculator:
         Raises
         ------
         ValueError
-            If bid_quotes length is not equal to ask_quotes length.
+            If `bid_quotes` length is not equal to `ask_quotes` length.
         ValueError
-            If price_type is ``LAST``.
+            If `price_type` is ``LAST``.
 
         Notes
         -----
@@ -248,7 +248,7 @@ cdef class RolloverInterestCalculator:
         Raises
         ------
         ValueError
-            If instrument_id.symbol length is not in range [6, 7].
+            If `instrument_id.symbol` length is not in range [6, 7].
 
         Notes
         -----

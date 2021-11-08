@@ -35,7 +35,8 @@ cdef class DataType:
         Raises
         ------
         TypeError
-            If metadata contains a key or value which is not hashable.
+            If `metadata` contains a key or value which is not hashable.
+
         Warnings
         --------
         This class may be used as a key in hash maps throughout the system, thus

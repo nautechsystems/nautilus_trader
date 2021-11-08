@@ -13,9 +13,9 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from nautilus_trader.backtest.data.providers import TestInstrumentProvider
 from nautilus_trader.indicators.average.moving_average import MovingAverageType
 from nautilus_trader.indicators.keltner_channel import KeltnerChannel
-from tests.test_kit.providers import TestInstrumentProvider
 from tests.test_kit.stubs import TestStubs
 
 

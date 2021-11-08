@@ -22,6 +22,7 @@ import pandas as pd
 import pytest
 
 from nautilus_trader.adapters.betfair.providers import BetfairInstrumentProvider
+from nautilus_trader.backtest.data.providers import TestInstrumentProvider
 from nautilus_trader.backtest.data.wranglers import QuoteTickDataWrangler
 from nautilus_trader.model.instruments.currency import CurrencySpot
 from nautilus_trader.persistence.catalog import DataCatalog
@@ -37,7 +38,6 @@ from tests.integration_tests.adapters.betfair.test_kit import BetfairTestStubs
 from tests.test_kit import PACKAGE_ROOT
 from tests.test_kit.mocks import MockReader
 from tests.test_kit.mocks import data_catalog_setup
-from tests.test_kit.providers import TestInstrumentProvider
 from tests.test_kit.stubs import TestStubs
 
 
@@ -126,6 +126,7 @@ class TestPersistenceParsers:
             # Replace str repr with "fully qualified" string we can `eval`
             replacements = {
                 b"id=BTC/USDT.BINANCE": b"instrument_id=InstrumentId(Symbol('BTC/USDT'), venue=Venue('BINANCE'))",
+                b"local_symbol=BTCUSDT": b"local_symbol=Symbol('BTCUSDT')",
                 b"price_increment=0.01": b"price_increment=Price.from_str('0.01')",
                 b"size_increment=0.000001": b"size_increment=Quantity.from_str('0.000001')",
                 b"margin_init=0": b"margin_init=Decimal(0)",

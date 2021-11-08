@@ -17,12 +17,16 @@ from decimal import Decimal
 
 import pandas as pd
 
+from nautilus_trader.backtest.data.providers import TestDataProvider
+from nautilus_trader.backtest.data.providers import TestInstrumentProvider
 from nautilus_trader.backtest.data.wranglers import BarDataWrangler
 from nautilus_trader.backtest.data.wranglers import QuoteTickDataWrangler
 from nautilus_trader.backtest.data.wranglers import TradeTickDataWrangler
 from nautilus_trader.backtest.engine import BacktestEngine
 from nautilus_trader.backtest.engine import BacktestEngineConfig
 from nautilus_trader.backtest.models import FillModel
+from nautilus_trader.examples.strategies.ema_cross import EMACross
+from nautilus_trader.examples.strategies.ema_cross import EMACrossConfig
 from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.data.bar import BarSpecification
 from nautilus_trader.model.data.bar import BarType
@@ -49,10 +53,6 @@ from nautilus_trader.model.orderbook.data import OrderBookDelta
 from nautilus_trader.model.orderbook.data import OrderBookDeltas
 from nautilus_trader.model.orderbook.data import OrderBookSnapshot
 from nautilus_trader.trading.strategy import TradingStrategy
-from tests.test_kit.providers import TestDataProvider
-from tests.test_kit.providers import TestInstrumentProvider
-from tests.test_kit.strategies import EMACross
-from tests.test_kit.strategies import EMACrossConfig
 from tests.test_kit.stubs import MyData
 from tests.test_kit.stubs import TestStubs
 
@@ -72,9 +72,10 @@ class TestBacktestEngine:
 
         # Setup data
         wrangler = QuoteTickDataWrangler(self.usdjpy)
+        provider = TestDataProvider()
         ticks = wrangler.process_bar_data(
-            bid_data=TestDataProvider.usdjpy_1min_bid()[:2000],
-            ask_data=TestDataProvider.usdjpy_1min_ask()[:2000],
+            bid_data=provider.read_csv_bars("fxcm-usdjpy-m1-bid-2013.csv")[:2000],
+            ask_data=provider.read_csv_bars("fxcm-usdjpy-m1-ask-2013.csv")[:2000],
         )
         self.engine.add_instrument(USDJPY_SIM)
         self.engine.add_ticks(ticks)
@@ -345,7 +346,8 @@ class TestBacktestEngineData:
         # Setup data
         engine.add_instrument(AUDUSD_SIM)
         wrangler = QuoteTickDataWrangler(AUDUSD_SIM)
-        ticks = wrangler.process(TestDataProvider.audusd_ticks())
+        provider = TestDataProvider()
+        ticks = wrangler.process(provider.read_csv_ticks("truefx-audusd-ticks.csv"))
 
         # Act
         engine.add_ticks(ticks)
@@ -360,7 +362,8 @@ class TestBacktestEngineData:
         engine.add_instrument(ETHUSDT_BINANCE)
 
         wrangler = TradeTickDataWrangler(ETHUSDT_BINANCE)
-        ticks = wrangler.process(TestDataProvider.ethusdt_trades())
+        provider = TestDataProvider()
+        ticks = wrangler.process(provider.read_csv_ticks("binance-ethusdt-trades.csv"))
 
         # Act
         engine.add_ticks(ticks)
@@ -389,7 +392,8 @@ class TestBacktestEngineData:
             bar_type=bar_type,
             instrument=USDJPY_SIM,
         )
-        bars = wrangler.process(TestDataProvider.usdjpy_1min_bid()[:2000])
+        provider = TestDataProvider()
+        bars = wrangler.process(provider.read_csv_bars("fxcm-usdjpy-m1-bid-2013.csv")[:2000])
 
         # Act
         engine.add_instrument(USDJPY_SIM)
@@ -462,8 +466,9 @@ class TestBacktestWithAddedBars:
             instrument=GBPUSD_SIM,
         )
 
-        bid_bars = bid_wrangler.process(TestDataProvider.gbpusd_1min_bid())
-        ask_bars = ask_wrangler.process(TestDataProvider.gbpusd_1min_ask())
+        provider = TestDataProvider()
+        bid_bars = bid_wrangler.process(provider.read_csv_bars("fxcm-gbpusd-m1-bid-2012.csv"))
+        ask_bars = ask_wrangler.process(provider.read_csv_bars("fxcm-gbpusd-m1-ask-2012.csv"))
 
         self.engine.add_instrument(GBPUSD_SIM)
         self.engine.add_bars(bid_bars)
@@ -472,8 +477,8 @@ class TestBacktestWithAddedBars:
         # Setup data
         wrangler = QuoteTickDataWrangler(GBPUSD_SIM)
         ticks = wrangler.process_bar_data(
-            bid_data=TestDataProvider.gbpusd_1min_bid(),
-            ask_data=TestDataProvider.gbpusd_1min_ask(),
+            bid_data=provider.read_csv_bars("fxcm-gbpusd-m1-bid-2012.csv"),
+            ask_data=provider.read_csv_bars("fxcm-gbpusd-m1-ask-2012.csv"),
         )
         self.engine.add_instrument(GBPUSD_SIM)
         self.engine.add_ticks(ticks)

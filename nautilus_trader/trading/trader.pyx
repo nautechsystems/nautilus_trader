@@ -90,13 +90,13 @@ cdef class Trader(Component):
         Raises
         ------
         ValueError
-            If portfolio is not equal to the exec_engine._portfolio.
+            If `portfolio` is not equal to the `exec_engine` portfolio.
         ValueError
-            If strategies is ``None``.
+            If `strategies` is ``None``.
         ValueError
-            If strategies list is empty.
+            If `strategies` is empty.
         TypeError
-            If strategies list contains a type other than `TradingStrategy`.
+            If `strategies` contains a type other than `TradingStrategy`.
 
         """
         if config is None:
@@ -245,9 +245,9 @@ cdef class Trader(Component):
         Raises
         ------
         KeyError
-            If strategy.id already exists in the trader.
+            If `strategy.id` already exists in the trader.
         ValueError
-            If strategy.state is ``RUNNING`` or ``DISPOSED``.
+            If `strategy.state` is ``RUNNING`` or ``DISPOSED``.
 
         """
         Condition.not_none(strategy, "strategy")
@@ -286,7 +286,7 @@ cdef class Trader(Component):
         Raises
         ------
         ValueError
-            If strategies is ``None`` or empty.
+            If `strategies` is ``None`` or empty.
 
         """
         Condition.not_empty(strategies, "strategies")
@@ -307,9 +307,9 @@ cdef class Trader(Component):
         Raises
         ------
         KeyError
-            If component.id already exists in the trader.
+            If `component.id` already exists in the trader.
         ValueError
-            If component.state is ``RUNNING`` or ``DISPOSED``.
+            If `component.state` is ``RUNNING`` or ``DISPOSED``.
 
         """
         Condition.not_in(component, self._components, "component", "components")
@@ -345,7 +345,7 @@ cdef class Trader(Component):
         Raises
         ------
         ValueError
-            If components is ``None`` or empty.
+            If `components` is ``None`` or empty.
 
         """
         Condition.not_empty(components, "components")

@@ -13,8 +13,8 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from nautilus_trader.backtest.data.providers import TestInstrumentProvider
 from nautilus_trader.model.data.ticker import Ticker
-from tests.test_kit.providers import TestInstrumentProvider
 
 
 ETHUSDT_BINANCE = TestInstrumentProvider.ethusdt_binance()
@@ -31,12 +31,8 @@ class TestTicker:
 
         # Act, Assert
         assert isinstance(hash(ticker), int)
-        assert (
-            str(ticker) == "Ticker(instrument_id=ETH/USDT.BINANCE, ts_event=0, info=None)"  # noqa
-        )
-        assert (
-            repr(ticker) == "Ticker(instrument_id=ETH/USDT.BINANCE, ts_event=0, info=None)"  # noqa
-        )
+        assert str(ticker) == "Ticker(instrument_id=ETH/USDT.BINANCE, ts_event=0)"  # noqa
+        assert repr(ticker) == "Ticker(instrument_id=ETH/USDT.BINANCE, ts_event=0)"  # noqa
 
     def test_to_dict_returns_expected_dict(self):
         # Arrange
@@ -55,7 +51,6 @@ class TestTicker:
             "instrument_id": "ETH/USDT.BINANCE",
             "ts_event": 0,
             "ts_init": 0,
-            "info": None,
         }
 
     def test_from_dict_returns_expected_tick(self):

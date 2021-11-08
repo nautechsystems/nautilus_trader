@@ -58,20 +58,12 @@ class BinanceWebSocketClient(WebSocketClient):
         else:
             return False
 
-    async def connect(
-        self,
-        start: bool = True,
-        **ws_kwargs,
-    ) -> None:
+    async def connect(self, start: bool = True, **ws_kwargs) -> None:
         if not self._streams:
             raise RuntimeError("No subscriptions for connection.")
 
-        if len(self._streams) == 1:
-            ws_url = self._base_url + "/ws/" + self._streams[0]
-        else:
-            ws_url = self._base_url + "/stream?streams=" + "/".join(self._streams)
-
-        self._log.info(f"Connecting to {ws_url}")
+        # Always connecting combined streams for consistency
+        ws_url = self._base_url + "/stream?streams=" + "/".join(self._streams)
         await super().connect(ws_url=ws_url, start=start, **ws_kwargs)
 
     def _add_stream(self, stream: str):

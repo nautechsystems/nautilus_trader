@@ -102,7 +102,7 @@ cdef class TradingStrategy(Actor):
         Raises
         ------
         TypeError
-            If config is not of type `TradingStrategyConfig`.
+            If `config` is not of type `TradingStrategyConfig`.
 
         """
         if config is None:
@@ -235,6 +235,9 @@ cdef class TradingStrategy(Actor):
 
         """
         Condition.not_none(trader_id, "trader_id")
+        Condition.not_none(portfolio, "portfolio")
+        Condition.not_none(msgbus, "msgbus")
+        Condition.not_none(cache, "cache")
         Condition.not_none(clock, "clock")
         Condition.not_none(logger, "logger")
 
@@ -378,7 +381,7 @@ cdef class TradingStrategy(Actor):
         Raises
         ------
         RuntimeError
-            If strategy is not registered with a trader.
+            If `strategy` is not registered with a trader.
 
         Warnings
         --------
@@ -416,7 +419,7 @@ cdef class TradingStrategy(Actor):
         Raises
         ------
         RuntimeError
-            If strategy is not registered with a trader.
+            If `strategy` is not registered with a trader.
 
         Warnings
         --------
@@ -450,6 +453,7 @@ cdef class TradingStrategy(Actor):
 
         """
         Condition.not_none(data, "data")
+        Condition.true(self.trader_id is not None, "The strategy has not been registered")
 
         self._msgbus.publish_c(
             topic=f"data.strategy.{type(data).__name__}.{self.id}",
@@ -478,7 +482,7 @@ cdef class TradingStrategy(Actor):
 
         """
         Condition.not_none(order, "order")
-        Condition.not_none(self.trader_id, "self.trader_id")
+        Condition.true(self.trader_id is not None, "The strategy has not been registered")
 
         # Publish initialized event
         self._msgbus.publish_c(
@@ -511,7 +515,7 @@ cdef class TradingStrategy(Actor):
 
         """
         Condition.not_none(order_list, "order_list")
-        Condition.not_none(self.trader_id, "self.trader_id")
+        Condition.true(self.trader_id is not None, "The strategy has not been registered")
 
         # Publish initialized events
         cdef Order order
@@ -564,7 +568,7 @@ cdef class TradingStrategy(Actor):
         Raises
         ------
         ValueError
-            If trigger is not ``None`` and order.type != ``STOP_LIMIT``.
+            If `trigger` is not ``None`` and `order.type` != ``STOP_LIMIT``.
 
         References
         ----------
@@ -572,9 +576,9 @@ cdef class TradingStrategy(Actor):
 
         """
         Condition.not_none(order, "order")
-        Condition.not_none(self.trader_id, "self.trader_id")
         if trigger is not None:
             Condition.equal(order.type, OrderType.STOP_LIMIT, "order.type", "STOP_LIMIT")
+        Condition.true(self.trader_id is not None, "The strategy has not been registered")
 
         cdef bint updating = False  # Set validation flag (must become true)
 
@@ -649,7 +653,7 @@ cdef class TradingStrategy(Actor):
 
         """
         Condition.not_none(order, "order")
-        Condition.not_none(self.trader_id, "self.trader_id")
+        Condition.true(self.trader_id is not None, "The strategy has not been registered")
 
         if order.venue_order_id is None:
             self.log.error(
@@ -689,6 +693,7 @@ cdef class TradingStrategy(Actor):
 
         """
         # instrument_id can be None
+        Condition.true(self.trader_id is not None, "The strategy has not been registered")
 
         cdef list working_orders = self.cache.orders_working(
             venue=None,  # Faster query filtering
@@ -725,6 +730,7 @@ cdef class TradingStrategy(Actor):
         Condition.not_none(position, "position")
         Condition.not_none(self.trader_id, "self.trader_id")
         Condition.not_none(self.order_factory, "self.order_factory")
+        Condition.true(self.trader_id is not None, "The strategy has not been registered")
 
         if position.is_closed_c():
             self.log.warning(
@@ -772,6 +778,7 @@ cdef class TradingStrategy(Actor):
 
         """
         # instrument_id can be None
+        Condition.true(self.trader_id is not None, "The strategy has not been registered")
 
         cdef list positions_open = self.cache.positions_open(
             venue=None,  # Faster query filtering

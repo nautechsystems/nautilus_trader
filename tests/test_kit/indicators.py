@@ -50,7 +50,7 @@ class PyExponentialMovingAverage(Indicator):
         Raises
         ------
         ValueError
-            If period is not positive (> 0).
+            If `period` is not positive (> 0).
 
         """
         PyCondition.positive_int(period, "period")

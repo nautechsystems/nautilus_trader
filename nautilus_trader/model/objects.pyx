@@ -67,7 +67,7 @@ cdef class BaseDecimal:
         Raises
         ------
         OverflowError
-            If precision is negative (< 0).
+            If `precision` is negative (< 0).
 
         """
         if isinstance(value, decimal.Decimal):
@@ -259,9 +259,9 @@ cdef class Quantity(BaseDecimal):
         Raises
         ------
         ValueError
-            If value is negative (< 0).
+            If `value` is negative (< 0).
         OverflowError
-            If precision is negative (< 0).
+            If `precision` is negative (< 0).
 
         """
         super().__init__(value, precision)
@@ -296,7 +296,7 @@ cdef class Quantity(BaseDecimal):
         Raises
         ------
         OverflowError
-            If precision is negative (< 0).
+            If `precision` is negative (< 0).
 
         Warnings
         --------
@@ -391,7 +391,7 @@ cdef class Price(BaseDecimal):
         Raises
         ------
         OverflowError
-            If precision is negative (< 0).
+            If `precision` is negative (< 0).
 
         """
         super().__init__(value, precision)
@@ -520,7 +520,7 @@ cdef class Money(BaseDecimal):
         Raises
         ------
         ValueError
-            If value is malformed.
+            If `value` is malformed.
 
         """
         Condition.not_none(value, "value")
@@ -571,9 +571,9 @@ cdef class AccountBalance:
         Raises
         ------
         ValueError
-            If any money.currency does not equal currency.
+            If any money currency does not equal `currency`.
         ValueError
-            If total - locked != free.
+            If `total` - `locked` != `free`.
 
         """
         Condition.equal(currency, total.currency, "currency", "total.currency")

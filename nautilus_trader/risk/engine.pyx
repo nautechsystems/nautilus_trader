@@ -102,7 +102,7 @@ cdef class RiskEngine(Component):
         Raises
         ------
         TypeError
-            If config is not of type `RiskEngineConfig`.
+            If `config` is not of type `RiskEngineConfig`.
 
         """
         if config is None:
@@ -260,9 +260,9 @@ cdef class RiskEngine(Component):
         Raises
         ------
         decimal.InvalidOperation
-            If new_value not a valid input for decimal.Decimal.
+            If `new_value` not a valid input for decimal.Decimal.
         ValueError
-            If new_value is not ``None`` and not positive.
+            If `new_value` is not ``None`` and not positive.
 
         """
         if new_value is not None:

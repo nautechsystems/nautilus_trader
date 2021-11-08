@@ -20,10 +20,12 @@ from decimal import Decimal
 import pytest
 import pytz
 
+from nautilus_trader.backtest.data.providers import TestInstrumentProvider
 from nautilus_trader.backtest.data_client import BacktestMarketDataClient
 from nautilus_trader.backtest.exchange import SimulatedExchange
 from nautilus_trader.backtest.execution_client import BacktestExecClient
 from nautilus_trader.backtest.models import FillModel
+from nautilus_trader.backtest.models import LatencyModel
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.enums import ComponentState
 from nautilus_trader.common.enums import LogLevel
@@ -54,7 +56,6 @@ from nautilus_trader.trading.strategy import TradingStrategy
 from nautilus_trader.trading.strategy import TradingStrategyConfig
 from tests.test_kit.mocks import KaboomStrategy
 from tests.test_kit.mocks import MockStrategy
-from tests.test_kit.providers import TestInstrumentProvider
 from tests.test_kit.stubs import TestStubs
 
 
@@ -129,6 +130,7 @@ class TestTradingStrategy:
             fill_model=FillModel(),
             clock=self.clock,
             logger=self.logger,
+            latency_model=LatencyModel(0),
         )
 
         self.data_client = BacktestMarketDataClient(
