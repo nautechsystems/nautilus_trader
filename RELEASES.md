@@ -7,8 +7,10 @@ None
 
 ## Enhancements
 - Added `LatencyModel` for simulated exchange.
-- Added `Clock.timestamp_ms()`.
+- Added `last_update_id` to order books.
+- Added `update_id` to order book data.
 - Added `depth` param when subscribing to order book deltas.
+- Added `Clock.timestamp_ms()`.
 - Added `TestDataProvider` and consolidate test data.
 - Added orjson default serializer for arrow.
 - Reorganized example strategies and launch scripts.

@@ -14,7 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 import asyncio
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional
 
 import orjson
 import pandas as pd
@@ -50,7 +50,7 @@ from nautilus_trader.model.enums import PriceType
 from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import Symbol
-from nautilus_trader.model.orderbook.data import OrderBookDeltas
+from nautilus_trader.model.orderbook.data import OrderBookData
 from nautilus_trader.model.orderbook.data import OrderBookSnapshot
 from nautilus_trader.msgbus.bus import MessageBus
 
@@ -114,7 +114,7 @@ class BinanceDataClient(LiveMarketDataClient):
             handler=self._handle_spot_ws_message,
         )
 
-        self._book_buffer: Dict[InstrumentId, List[Tuple[int, OrderBookDeltas]]] = {}
+        self._book_buffer: Dict[InstrumentId, List[OrderBookData]] = {}
 
     def connect(self):
         """
@@ -279,13 +279,14 @@ class BinanceDataClient(LiveMarketDataClient):
             asks=[[float(o[0]), float(o[1])] for o in data.get("asks")],
             ts_event=ts_event,
             ts_init=ts_event,
+            update_id=last_update_id,
         )
 
         self._handle_data(snapshot)
 
         book_buffer = self._book_buffer.pop(instrument_id)
-        for update_id, deltas in book_buffer:
-            if update_id < last_update_id:
+        for deltas in book_buffer:
+            if deltas.update_id <= last_update_id:
                 continue
             self._handle_data(deltas)
 
@@ -554,7 +555,8 @@ class BinanceDataClient(LiveMarketDataClient):
 
         msg_type: str = msg_data.get("e")
         if msg_type is None:
-            if "lastUpdateId" in msg_data:
+            last_update_id = msg_data.get("lastUpdateId")
+            if last_update_id is not None:
                 instrument_id = InstrumentId(
                     symbol=Symbol(msg["stream"].partition("@")[0].upper()),
                     venue=BINANCE_VENUE,
@@ -562,11 +564,12 @@ class BinanceDataClient(LiveMarketDataClient):
                 data = parse_book_snapshot_ws(
                     instrument_id=instrument_id,
                     msg=msg_data,
+                    update_id=last_update_id,
                     ts_init=self._clock.timestamp_ns(),
                 )
                 book_buffer = self._book_buffer.get(instrument_id)
                 if book_buffer is not None:
-                    book_buffer.append((msg_data.get("lastUpdateId"), data))
+                    book_buffer.append(data)
                     return
             else:
                 instrument_id = InstrumentId(
@@ -590,7 +593,7 @@ class BinanceDataClient(LiveMarketDataClient):
             )
             book_buffer = self._book_buffer.get(instrument_id)
             if book_buffer is not None:
-                book_buffer.append((msg_data["U"], data))
+                book_buffer.append(data)
                 return
         elif msg_type == "24hrTicker":
             instrument_id = InstrumentId(
