@@ -40,7 +40,7 @@ from nautilus_trader.model.orderbook.data import OrderBookSnapshot
 
 
 def parse_book_snapshot_ws(
-    instrument_id: InstrumentId, msg: Dict, ts_init: int
+    instrument_id: InstrumentId, msg: Dict, update_id: int, ts_init: int
 ) -> OrderBookSnapshot:
     ts_event: int = ts_init
 
@@ -51,6 +51,7 @@ def parse_book_snapshot_ws(
         asks=[[float(o[0]), float(o[1])] for o in msg.get("asks")],
         ts_event=ts_event,
         ts_init=ts_init,
+        update_id=update_id,
     )
 
 
@@ -58,13 +59,14 @@ def parse_diff_depth_stream_ws(
     instrument_id: InstrumentId, msg: Dict, ts_init: int
 ) -> OrderBookDeltas:
     ts_event: int = millis_to_nanos(msg["E"])
+    update_id: int = msg["U"]
 
     bid_deltas = [
-        parse_book_delta_ws(instrument_id, OrderSide.BUY, d, ts_event, ts_init)
+        parse_book_delta_ws(instrument_id, OrderSide.BUY, d, ts_event, ts_init, update_id)
         for d in msg.get("b")
     ]
     ask_deltas = [
-        parse_book_delta_ws(instrument_id, OrderSide.SELL, d, ts_event, ts_init)
+        parse_book_delta_ws(instrument_id, OrderSide.SELL, d, ts_event, ts_init, update_id)
         for d in msg.get("a")
     ]
 
@@ -74,6 +76,7 @@ def parse_diff_depth_stream_ws(
         deltas=bid_deltas + ask_deltas,
         ts_event=ts_event,
         ts_init=ts_init,
+        update_id=update_id,
     )
 
 
@@ -83,6 +86,7 @@ def parse_book_delta_ws(
     delta: Tuple[str, str],
     ts_event: int,
     ts_init: int,
+    update_id: int,
 ) -> OrderBookDelta:
     price = float(delta[0])
     size = float(delta[1])
@@ -100,6 +104,7 @@ def parse_book_delta_ws(
         order=order,
         ts_event=ts_event,
         ts_init=ts_init,
+        update_id=update_id,
     )
 
 

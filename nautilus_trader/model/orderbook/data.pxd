@@ -13,6 +13,8 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from libc.stdint cimport uint64_t
+
 from nautilus_trader.core.data cimport Data
 from nautilus_trader.model.c_enums.book_action cimport BookAction
 from nautilus_trader.model.c_enums.book_type cimport BookType
@@ -25,6 +27,8 @@ cdef class OrderBookData(Data):
     """The instrument ID for the order book.\n\n:returns: `InstrumentId`"""
     cdef readonly BookType book_type
     """The order book type (L1_TBBO, L2_MBP, L3_MBO).\n\n:returns: `BookType`"""
+    cdef readonly uint64_t update_id
+    """The update ID.\n\n:returns: `uint64`"""
 
 
 cdef class OrderBookSnapshot(OrderBookData):

@@ -14,6 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 from libc.stdint cimport int64_t
+from libc.stdint cimport uint64_t
 
 import uuid
 
@@ -42,6 +43,7 @@ cdef class OrderBookData(Data):
         self,
         InstrumentId instrument_id not None,
         BookType book_type,
+        uint64_t update_id,
         int64_t ts_event,
         int64_t ts_init,
     ):
@@ -54,6 +56,8 @@ cdef class OrderBookData(Data):
             The instrument ID for the book.
         book_type : BookType {``L1_TBBO``, ``L2_MBP``, ``L3_MBO``}
             The order book type.
+        update_id : uint64, default 0
+            The unique ID for the data.
         ts_event: int64
             The UNIX timestamp (nanoseconds) when the data event occurred.
         ts_init: int64
@@ -64,6 +68,7 @@ cdef class OrderBookData(Data):
 
         self.instrument_id = instrument_id
         self.book_type = book_type
+        self.update_id = update_id
 
 
 cdef class OrderBookSnapshot(OrderBookData):
@@ -79,6 +84,7 @@ cdef class OrderBookSnapshot(OrderBookData):
         list asks not None,
         int64_t ts_event,
         int64_t ts_init,
+        uint64_t update_id=0,
     ):
         """
         Initialize a new instance of the ``OrderBookSnapshot`` class.
@@ -97,9 +103,11 @@ cdef class OrderBookSnapshot(OrderBookData):
             The UNIX timestamp (nanoseconds) when the data event occurred.
         ts_init: int64
             The UNIX timestamp (nanoseconds) when the data object was initialized.
+        update_id : uint64, default 0
+            The unique ID for the data. If zero then order book will maintain ID internally.
 
         """
-        super().__init__(instrument_id, book_type, ts_event, ts_init)
+        super().__init__(instrument_id, book_type, update_id, ts_event, ts_init)
 
         self.bids = bids
         self.asks = asks
@@ -116,6 +124,8 @@ cdef class OrderBookSnapshot(OrderBookData):
                 f"book_type={BookTypeParser.to_str(self.book_type)}, "
                 f"bids={self.bids}, "
                 f"asks={self.asks}, "
+                f"update_id={self.update_id}, "
+                f"ts_event={self.ts_event}, "
                 f"ts_init={self.ts_init})")
 
     @staticmethod
@@ -128,6 +138,7 @@ cdef class OrderBookSnapshot(OrderBookData):
             asks=orjson.loads(values["asks"]),
             ts_event=values["ts_event"],
             ts_init=values["ts_init"],
+            update_id=values.get("update_id", 0),
         )
 
     @staticmethod
@@ -137,6 +148,7 @@ cdef class OrderBookSnapshot(OrderBookData):
             "type": "OrderBookSnapshot",
             "instrument_id": obj.instrument_id.value,
             "book_type": BookTypeParser.to_str(obj.book_type),
+            "update_id": obj.update_id,
             "bids": orjson.dumps(obj.bids),
             "asks": orjson.dumps(obj.asks),
             "ts_event": obj.ts_event,
@@ -185,6 +197,7 @@ cdef class OrderBookDeltas(OrderBookData):
         list deltas not None,
         int64_t ts_event,
         int64_t ts_init,
+        uint64_t update_id=0,
     ):
         """
         Initialize a new instance of the ``OrderBookDeltas`` class.
@@ -201,9 +214,11 @@ cdef class OrderBookDeltas(OrderBookData):
             The UNIX timestamp (nanoseconds) when the data event occurred.
         ts_init: int64
             The UNIX timestamp (nanoseconds) when the data object was initialized.
+        update_id : uint64, default 0
+            The unique ID for the data. If zero then order book will maintain ID internally.
 
         """
-        super().__init__(instrument_id, book_type, ts_event, ts_init)
+        super().__init__(instrument_id, book_type, update_id, ts_event, ts_init)
 
         self.deltas = deltas
 
@@ -218,6 +233,8 @@ cdef class OrderBookDeltas(OrderBookData):
                 f"'{self.instrument_id}', "
                 f"book_type={BookTypeParser.to_str(self.book_type)}, "
                 f"{self.deltas}, "
+                f"update_id={self.update_id}, "
+                f"ts_event={self.ts_event}, "
                 f"ts_init={self.ts_init})")
 
     @staticmethod
@@ -229,6 +246,7 @@ cdef class OrderBookDeltas(OrderBookData):
             deltas=[OrderBookDelta.from_dict_c(d) for d in orjson.loads(values["deltas"])],
             ts_event=values["ts_event"],
             ts_init=values["ts_init"],
+            update_id=values.get("update_id", 0),
         )
 
     @staticmethod
@@ -239,6 +257,7 @@ cdef class OrderBookDeltas(OrderBookData):
             "instrument_id": obj.instrument_id.value,
             "book_type": BookTypeParser.to_str(obj.book_type),
             "deltas": orjson.dumps([OrderBookDelta.to_dict_c(d) for d in obj.deltas]),
+            "update_id": obj.update_id,
             "ts_event": obj.ts_event,
             "ts_init": obj.ts_init,
         }
@@ -286,6 +305,7 @@ cdef class OrderBookDelta(OrderBookData):
         Order order,
         int64_t ts_event,
         int64_t ts_init,
+        uint64_t update_id=0,
     ):
         """
         Initialize a new instance of the ``OrderBookDelta`` class.
@@ -304,9 +324,11 @@ cdef class OrderBookDelta(OrderBookData):
             The UNIX timestamp (nanoseconds) when the data event occurred.
         ts_init: int64
             The UNIX timestamp (nanoseconds) when the data object was initialized.
+        update_id : uint64, default 0
+            The unique ID for the data. If zero then order book will maintain ID internally.
 
         """
-        super().__init__(instrument_id, book_type, ts_event, ts_init)
+        super().__init__(instrument_id, book_type, update_id, ts_event, ts_init)
 
         self.action = action
         self.order = order
@@ -323,6 +345,8 @@ cdef class OrderBookDelta(OrderBookData):
                 f"book_type={BookTypeParser.to_str(self.book_type)}, "
                 f"action={BookActionParser.to_str(self.action)}, "
                 f"order={self.order}, "
+                f"update_id={self.update_id}, "
+                f"ts_event={self.ts_event}, "
                 f"ts_init={self.ts_init})")
 
     @staticmethod
@@ -342,6 +366,7 @@ cdef class OrderBookDelta(OrderBookData):
             order=order,
             ts_event=values["ts_event"],
             ts_init=values["ts_init"],
+            update_id=values.get("update_id", 0),
         )
 
     @staticmethod
@@ -356,6 +381,7 @@ cdef class OrderBookDelta(OrderBookData):
             "order_size": obj.order.size if obj.order else None,
             "order_side": OrderSideParser.to_str(obj.order.side) if obj.order else None,
             "order_id": obj.order.id if obj.order else None,
+            "update_id": obj.update_id,
             "ts_event": obj.ts_event,
             "ts_init": obj.ts_init,
         }
