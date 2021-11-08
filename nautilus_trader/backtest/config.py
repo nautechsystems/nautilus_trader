@@ -205,6 +205,8 @@ class BacktestEngineConfig(pydantic.BaseModel):
         The configuration for the risk engine.
     exec_engine : ExecEngineConfig, optional
         The configuration for the execution engine.
+    custom_summaries: dict, default=None
+        A dictionary of name:callbacks to be called to add custom summaries to the BacktestResult
     bypass_logging : bool, default=False
         If logging should be bypassed.
     run_analysis : bool, default=True
