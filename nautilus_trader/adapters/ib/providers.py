@@ -12,7 +12,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
-
+import datetime
 import time
 from typing import Dict, List
 
@@ -119,7 +119,7 @@ class IBInstrumentProvider(InstrumentProvider):
             contract_details=contract_details[0],
         )
 
-        self._instruments[instrument_id] = instrument
+        self.add(instrument)
 
     def _parse_instrument(
         self,
@@ -163,16 +163,10 @@ class IBInstrumentProvider(InstrumentProvider):
             price_increment=Price(details.minTick, price_precision),
             multiplier=Quantity.from_int(int(details.contract.multiplier)),
             lot_size=Quantity.from_int(1),
-            expiry=details.contract.lastTradeDateOrContractMonth,
-            contract_id=details.contract.conId,
-            trading_class=details.contract.tradingClass,
-            market_name=details.marketName,
-            long_name=details.longName,
-            contract_month=details.contractMonth,
-            time_zone_id=details.timeZoneId,
-            trading_hours=details.tradingHours,
-            liquid_hours=details.liquidHours,
-            last_trade_time=details.lastTradeTime,
+            underlying=details.underSymbol,
+            expiry_date=datetime.datetime.strptime(
+                details.contract.lastTradeDateOrContractMonth, "%Y%m%d"
+            ).date(),
             ts_event=timestamp,
             ts_init=timestamp,
         )
@@ -196,14 +190,15 @@ class IBInstrumentProvider(InstrumentProvider):
                 int(details.contract.multiplier or details.mdSizeMultiplier)
             ),  # is this right?
             lot_size=Quantity.from_int(1),
-            contract_id=details.contract.conId,
-            trading_class=details.contract.tradingClass,
-            market_name=details.contract.primaryExchange,
-            long_name=details.longName,
-            time_zone_id=details.timeZoneId,
-            trading_hours=details.tradingHours,
-            last_trade_time=details.lastTradeTime,
+            isin=_extract_isin(details),
             ts_event=timestamp,
             ts_init=timestamp,
         )
         return equity
+
+
+def _extract_isin(details: ContractDetails):
+    for tag_value in details.secIdList:
+        if tag_value.tag == "ISIN":
+            return tag_value.value
+    raise ValueError("No ISIN found")
