@@ -199,7 +199,7 @@ python-versions = ">=2.7, !=3.0.*, !=3.1.*, !=3.2.*, !=3.3.*, !=3.4.*"
 
 [[package]]
 name = "colorlog"
-version = "6.5.0"
+version = "6.6.0"
 description = "Add colours to the output of Python's logging module."
 category = "dev"
 optional = false
@@ -237,7 +237,7 @@ python-versions = ">=2.7, !=3.0.*, !=3.1.*, !=3.2.*, !=3.3.*"
 
 [[package]]
 name = "dask"
-version = "2021.11.0"
+version = "2021.11.1"
 description = "Parallel PyData with Task Scheduling"
 category = "main"
 optional = false
@@ -253,10 +253,10 @@ toolz = ">=0.8.2"
 
 [package.extras]
 array = ["numpy (>=1.18)"]
-complete = ["bokeh (>=1.0.0,!=2.0.0)", "distributed (==2021.11.0)", "jinja2", "numpy (>=1.18)", "pandas (>=1.0)"]
+complete = ["bokeh (>=1.0.0,!=2.0.0)", "distributed (==2021.11.1)", "jinja2", "numpy (>=1.18)", "pandas (>=1.0)"]
 dataframe = ["numpy (>=1.18)", "pandas (>=1.0)"]
 diagnostics = ["bokeh (>=1.0.0,!=2.0.0)", "jinja2"]
-distributed = ["distributed (==2021.11.0)"]
+distributed = ["distributed (==2021.11.1)"]
 test = ["pytest", "pytest-rerunfailures", "pytest-xdist", "pre-commit"]
 
 [[package]]
@@ -269,7 +269,7 @@ python-versions = "*"
 
 [[package]]
 name = "distributed"
-version = "2021.11.0"
+version = "2021.11.1"
 description = "Distributed scheduler for Dask"
 category = "main"
 optional = true
@@ -278,7 +278,7 @@ python-versions = ">=3.7"
 [package.dependencies]
 click = ">=6.6"
 cloudpickle = ">=1.5.0"
-dask = "2021.11.0"
+dask = "2021.11.1"
 jinja2 = "*"
 msgpack = ">=0.6.0"
 psutil = ">=5.0"
@@ -1276,7 +1276,7 @@ ib = ["ib_insync"]
 [metadata]
 lock-version = "1.1"
 python-versions = ">=3.8,<3.11"
-content-hash = "c66d3cd1547f54b854d29f2b7de08a3e37cf934f0f738d4bf476185fabe75586"
+content-hash = "4f73dd98c0517031066db4c19f5b375441b400808a92573a179b071ae81797f1"
 
 [metadata.files]
 aiodns = [
@@ -1470,8 +1470,8 @@ colorama = [
     {file = "colorama-0.4.4.tar.gz", hash = "sha256:5941b2b48a20143d2267e95b1c2a7603ce057ee39fd88e7329b0c292aa16869b"},
 ]
 colorlog = [
-    {file = "colorlog-6.5.0-py2.py3-none-any.whl", hash = "sha256:d334b1b8dae5989b786232f05586a7a0111feb24ff9cfc8310c3347a91388717"},
-    {file = "colorlog-6.5.0.tar.gz", hash = "sha256:cf62a8e389d5660d0d22be17937b25b9abef9497ddc940197d1773aa1f604339"},
+    {file = "colorlog-6.6.0-py2.py3-none-any.whl", hash = "sha256:351c51e866c86c3217f08e4b067a7974a678be78f07f85fc2d55b8babde6d94e"},
+    {file = "colorlog-6.6.0.tar.gz", hash = "sha256:344f73204009e4c83c5b6beb00b3c45dc70fcdae3c80db919e0a4171d006fde8"},
 ]
 coverage = [
     {file = "coverage-4.5.4-cp26-cp26m-macosx_10_12_x86_64.whl", hash = "sha256:eee64c616adeff7db37cc37da4180a3a5b6177f5c46b187894e633f088fb5b28"},
@@ -1553,16 +1553,16 @@ cython = [
     {file = "Cython-3.0.0a9.tar.gz", hash = "sha256:23931c45877432097cef9de2db2dc66322cbc4fc3ebbb42c476bb2c768cecff0"},
 ]
 dask = [
-    {file = "dask-2021.11.0-py3-none-any.whl", hash = "sha256:0244678de0bf52175aa75cedd7187dc6b55f8dbe0cc0f14b94065761cf4b4b59"},
-    {file = "dask-2021.11.0.tar.gz", hash = "sha256:007c400eab2b032717cd8d589351abfb0e79688fcc6cd033a12e506cb01066d7"},
+    {file = "dask-2021.11.1-py3-none-any.whl", hash = "sha256:42b33401fdfc653cc84c2a2ae49af3f0c8a062875c82c2330bec28dfa40a3fa5"},
+    {file = "dask-2021.11.1.tar.gz", hash = "sha256:4fbdf45bc074e76f49a6e09e254b4ba5cf58f3af263de9446c82ec0710e00200"},
 ]
 distlib = [
     {file = "distlib-0.3.3-py2.py3-none-any.whl", hash = "sha256:c8b54e8454e5bf6237cc84c20e8264c3e991e824ef27e8f1e81049867d861e31"},
     {file = "distlib-0.3.3.zip", hash = "sha256:d982d0751ff6eaaab5e2ec8e691d949ee80eddf01a62eaa96ddb11531fe16b05"},
 ]
 distributed = [
-    {file = "distributed-2021.11.0-py3-none-any.whl", hash = "sha256:a170e35c9a67315ebaf14d80bdcb34fefe9bf508b7343e65a7beed4fdd2e68c4"},
-    {file = "distributed-2021.11.0.tar.gz", hash = "sha256:4ecbb1e1d61a55d226a67146076686d5cb6091645732d5e14f7330820dcc682d"},
+    {file = "distributed-2021.11.1-py3-none-any.whl", hash = "sha256:59f58d841f3cfb58c711d632329418f70134b5f44909fa39579ed6782974afe7"},
+    {file = "distributed-2021.11.1.tar.gz", hash = "sha256:9350a40ba84c4c75b140b5e9ee5f6adaef737f16aaf2e5cf013744f29614fd0a"},
 ]
 docutils = [
     {file = "docutils-0.17.1-py2.py3-none-any.whl", hash = "sha256:cf316c8370a737a022b72b56874f6602acf974a37a9fba42ec2876387549fc61"},
