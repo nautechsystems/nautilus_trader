@@ -820,6 +820,11 @@ cdef class BacktestEngine:
         for currency in self.analyzer.currencies:
             stats_pnls[currency.code] = self.analyzer.get_performance_stats_pnls(currency)
 
+        # Handle any custom functions the user has passed
+        custom_summaries = {}
+        for name, cb in self._config.custom_summaries.items():
+            custom_summaries[name] = cb(self)
+
         return BacktestResult(
             trader_id=self.trader_id.value,
             machine_id=self.machine_id,
@@ -837,6 +842,7 @@ cdef class BacktestEngine:
             total_positions=self.cache.positions_total_count(),
             stats_pnls=stats_pnls,
             stats_returns=self.analyzer.get_performance_stats_returns(),
+            custom_summaries=custom_summaries
         )
 
     def _run(

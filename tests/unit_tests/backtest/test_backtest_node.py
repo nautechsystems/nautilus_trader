@@ -12,6 +12,7 @@ from nautilus_trader.backtest.engine import BacktestEngineConfig
 from nautilus_trader.backtest.node import BacktestNode
 from nautilus_trader.backtest.results import BacktestResult
 from nautilus_trader.examples.strategies.ema_cross import EMACrossConfig
+from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.persistence.catalog import DataCatalog
 from nautilus_trader.trading.config import ImportableStrategyConfig
 from tests.test_kit.mocks import aud_usd_data_loader
@@ -188,3 +189,19 @@ class TestBacktestNode:
         #     str(results[0])
         #     == "BacktestResult(backtest-2432fd8e1f2bb4b85ce7383712a66edf, SIM[USD]=996365.88)"
         # )
+
+    def test_backtest_run_custom_summary(self):
+        # Arrange
+        def buy_count(engine):
+            return {"buys": len([o for o in engine.cache.orders() if o.side == OrderSide.BUY])}
+
+        backtest_configs_strategies = self.backtest_configs_strategies[0].replace(
+            engine=BacktestEngineConfig(custom_summaries={"buy_count": buy_count})
+        )
+        node = BacktestNode()
+
+        # Act
+        results = node.run_sync([backtest_configs_strategies])
+
+        # Assert
+        assert results[0].custom_summaries["buy_count"] == {"buys": 48}

@@ -15,11 +15,13 @@
 
 import dataclasses
 import importlib
+import inspect
 from datetime import datetime
-from typing import Dict, List, Optional, Union
+from typing import Callable, Dict, List, Optional, Union
 
 import pydantic
 from dask.base import tokenize
+from pydantic import validator
 
 from nautilus_trader.cache.cache import CacheConfig
 from nautilus_trader.common.config import ImportableActorConfig
@@ -217,8 +219,18 @@ class BacktestEngineConfig(pydantic.BaseModel):
     data_engine: Optional[DataEngineConfig] = None
     risk_engine: Optional[RiskEngineConfig] = None
     exec_engine: Optional[ExecEngineConfig] = None
+    custom_summaries: Optional[Dict[str, Callable]]
     bypass_logging: bool = False
     run_analysis: bool = True
+
+    @validator("custom_summaries")
+    def validate_custom_summaries_signature(cls, v, values):
+        for name, cb in v.items():
+            sig = inspect.signature(cb)
+            assert (
+                "engine" in sig.parameters
+            ), f"`custom_summaries` callback (name={name}, cb={cb.__name__}) should take a single `engine` argument"
+        return v
 
     def __dask_tokenize__(self):
         return tuple(self.dict().items())

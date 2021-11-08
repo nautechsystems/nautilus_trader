@@ -40,6 +40,7 @@ class BacktestResult:
     total_positions: int
     stats_pnls: Dict[str, Dict[str, float]]
     stats_returns: Dict[str, float]
+    custom_summaries: Dict[str, Dict]
 
     # account_balances: pd.DataFrame
     # fills_report: pd.DataFrame

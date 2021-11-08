@@ -22,6 +22,7 @@ import sys
 from typing import Optional
 
 import dask
+import pydantic
 import pytest
 from dask.base import tokenize
 from pydantic import BaseModel
@@ -34,6 +35,7 @@ from nautilus_trader.backtest.config import Partialable
 from nautilus_trader.backtest.data.providers import TestInstrumentProvider
 from nautilus_trader.backtest.engine import BacktestEngineConfig
 from nautilus_trader.model.data.tick import QuoteTick
+from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.persistence.catalog import DataCatalog
 from nautilus_trader.persistence.external.core import process_files
@@ -311,3 +313,29 @@ class TestBacktestConfig:
     )
     def test_models_to_json(self, model: BaseModel):
         print(json.dumps(model, indent=4, default=pydantic_encoder))
+
+    def test_custom_summary_valid(self):
+        # Arrange
+        def buy_count(engine):
+            return {"buys": len([o for o in engine.cache.orders() if o.side == OrderSide.BUY])}
+
+        # Act
+        self.backtest_config = self.backtest_config.replace(
+            engine=BacktestEngineConfig(custom_summaries={"order_count": buy_count})
+        )
+
+        # Assert
+        assert self.backtest_config.engine.custom_summaries
+
+    def test_custom_summary_invalid(self):
+        # Arrange
+        def invalid_cb():
+            return
+
+        # Act, Assert
+        with pytest.raises(pydantic.ValidationError) as e:
+            self.backtest_config = self.backtest_config.replace(
+                engine=BacktestEngineConfig(custom_summaries={"bad_cb": invalid_cb})
+            )
+        expected = "`custom_summaries` callback (name=bad_cb, cb=invalid_cb) should take a single `engine` argument"
+        assert e.value.raw_errors[0].exc.args[0] == expected
