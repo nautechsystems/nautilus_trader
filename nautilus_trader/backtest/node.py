@@ -90,6 +90,7 @@ class BacktestNode:
             config.check()  # check all values set
             result = self._run_delayed(
                 run_config_id=config.id,
+                engine_config=config.engine,
                 venue_configs=config.venues,
                 data_configs=config.data,
                 actor_configs=config.actors,
@@ -157,8 +158,8 @@ class BacktestNode:
         )
 
     @dask.delayed
-    def _gather_delayed(self, *results):
-        return results
+    def _gather_delayed(self, *results) -> List[BacktestResult]:
+        return [r for result in results for r in result]
 
     def _run(
         self,
