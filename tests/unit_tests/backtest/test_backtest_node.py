@@ -45,7 +45,7 @@ class TestBacktestNode:
         )
         self.backtest_configs = [
             BacktestRunConfig(
-                engine=BacktestEngineConfig(),
+                engine=BacktestEngineConfig(bypass_logging=True),
                 venues=[self.venue_config],
                 data=[self.data_config],
             )
@@ -196,7 +196,7 @@ class TestBacktestNode:
             return {"buys": len([o for o in engine.cache.orders() if o.side == OrderSide.BUY])}
 
         backtest_configs_strategies = self.backtest_configs_strategies[0].replace(
-            engine=BacktestEngineConfig(custom_summaries={"buy_count": buy_count})
+            engine=BacktestEngineConfig(custom_summaries=(("buy_count", buy_count),))
         )
         node = BacktestNode()
 

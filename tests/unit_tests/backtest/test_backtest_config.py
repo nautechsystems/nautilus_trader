@@ -67,7 +67,7 @@ class TestBacktestConfig:
         aud_usd_data_loader()
         self.catalog = DataCatalog.from_env()
         self.backtest_config = BacktestRunConfig(
-            engine=BacktestEngineConfig(),
+            engine=BacktestEngineConfig(bypass_logging=True),
             venues=[
                 BacktestVenueConfig(
                     name="SIM",
@@ -148,7 +148,7 @@ class TestBacktestConfig:
         result = tokenize(venue)
 
         # Assert
-        assert result == "d2f74877f3aeeba2f89b95807a8ced02"
+        assert result == "929e4f4f526a79fbe27d73fb17762d1d"
 
     def test_data_config_tokenization(self):
         # Arrange, Act
@@ -158,7 +158,7 @@ class TestBacktestConfig:
         result = tokenize(data_config)
 
         # Assert
-        assert result == "a3bac111f5e433648a505aa156a85f32"
+        assert result == "fafc01d1d11d502599034ab80d3e213b"
 
     def test_engine_config_tokenization(self):
         # Arrange,
@@ -168,14 +168,14 @@ class TestBacktestConfig:
         result = tokenize(engine_config)
 
         # Assert
-        assert result == "22d84218139004f8b662d2c6d3dccb4a"
+        assert result == "cf1a057fa354b8b043337a39bc0e1640"
 
     def test_tokenization_config(self):
         # Arrange, Act
         result = tokenize(self.backtest_config)
 
         # Assert
-        assert result == "5a2c9290bb73a4b5884ffce50673e538"
+        assert result == "83aecc5500d48e6dbcce5f23a7fc56bf"
 
     def test_backtest_data_config_load(self):
         instrument = TestInstrumentProvider.default_fx_ccy("AUD/USD")

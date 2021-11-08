@@ -221,12 +221,14 @@ class BacktestEngineConfig(pydantic.BaseModel):
     data_engine: Optional[DataEngineConfig] = None
     risk_engine: Optional[RiskEngineConfig] = None
     exec_engine: Optional[ExecEngineConfig] = None
-    custom_summaries: Optional[Dict[str, Callable]]
+    custom_summaries: Optional[Dict[str, Callable]] = None
     bypass_logging: bool = False
     run_analysis: bool = True
 
-    @validator("custom_summaries")
+    @validator("custom_summaries", always=True)
     def validate_custom_summaries_signature(cls, v, values):
+        if v is None:
+            v = {}
         for name, cb in v.items():
             sig = inspect.signature(cb)
             assert (

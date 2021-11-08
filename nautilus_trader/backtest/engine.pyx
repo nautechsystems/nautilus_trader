@@ -822,7 +822,7 @@ cdef class BacktestEngine:
 
         # Handle any custom functions the user has passed
         custom_summaries = {}
-        for name, cb in self._config.custom_summaries.items():
+        for name, cb in (self._config.custom_summaries or {}).items():
             custom_summaries[name] = cb(self)
 
         return BacktestResult(
