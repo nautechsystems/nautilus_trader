@@ -107,7 +107,7 @@ class FTXDataClient(LiveMarketDataClient):
         try:
             await self._instrument_provider.load_all_or_wait_async()
         except FTXError as ex:
-            self._log.ex(ex)
+            self._log.exception(ex)
             return
 
         self._send_all_instruments_to_data_engine()
