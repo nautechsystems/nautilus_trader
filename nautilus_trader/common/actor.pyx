@@ -1854,7 +1854,7 @@ cdef class Actor(Component):
                 raise
 
     cpdef void _handle_data_response(self, DataResponse response) except *:
-        self.handle_bars(response.data)
+        self.handle_data(response.data)
 
     cpdef void _handle_quote_ticks_response(self, DataResponse response) except *:
         self.handle_quote_ticks(response.data)
