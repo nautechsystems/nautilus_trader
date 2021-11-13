@@ -28,9 +28,10 @@ from nautilus_trader.backtest.data_client cimport BacktestMarketDataClient
 from nautilus_trader.backtest.exchange cimport SimulatedExchange
 from nautilus_trader.backtest.execution_client cimport BacktestExecClient
 from nautilus_trader.backtest.models cimport FillModel
+from nautilus_trader.backtest.models cimport LatencyModel
 from nautilus_trader.backtest.modules cimport SimulationModule
 from nautilus_trader.cache.cache cimport Cache
-from nautilus_trader.common.actor import Actor
+from nautilus_trader.common.actor cimport Actor
 from nautilus_trader.common.clock cimport LiveClock
 from nautilus_trader.common.clock cimport TestClock
 from nautilus_trader.common.logging cimport Logger
@@ -513,6 +514,7 @@ cdef class BacktestEngine:
         bint is_frozen_account=False,
         list modules=None,
         FillModel fill_model=None,
+        LatencyModel latency_model=None,
         BookType book_type=BookType.L1_TBBO,
         bar_execution: bool=False,
         reject_stop_orders: bool=True,
@@ -544,7 +546,9 @@ cdef class BacktestEngine:
         modules : list[SimulationModule, optional
             The simulation modules to load into the exchange.
         fill_model : FillModel, optional
-            The fill model for the exchange (if None then no probabilistic fills).
+            The fill model for the exchange.
+        latency_model : LatencyModel, optional
+            The latency model for the exchange.
         book_type : BookType
             The default order book type for fill modelling.
         bar_execution : bool
@@ -583,6 +587,7 @@ cdef class BacktestEngine:
             modules=modules,
             cache=self._cache,
             fill_model=fill_model,
+            latency_model=latency_model,
             book_type=book_type,
             clock=self._test_clock,
             logger=self._test_logger,
