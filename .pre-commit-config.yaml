@@ -31,14 +31,14 @@ repos:
         exclude: "nautilus_trader/adapters/betfair/parsing.py|nautilus_trader/adapters/betfair/execution.py|tests/integration_tests/adapters/betfair/test_kit.py"
 
   - repo: https://github.com/hadialqattan/pycln
-    rev: v1.0.3
+    rev: v1.1.0
     hooks:
       - id: pycln
         name: pycln (Python unused imports)
         exclude: "nautilus_trader/live/node.py|nautilus_trader/adapters/betfair/execution.py"
 
   - repo: https://github.com/psf/black
-    rev: 21.10b0
+    rev: 21.11b0
     hooks:
       - id: black
         args: [
@@ -46,7 +46,7 @@ repos:
         ]
 
   - repo: https://github.com/pycqa/isort
-    rev: 5.10.0
+    rev: 5.10.1
     hooks:
       - id: isort
         args: [
