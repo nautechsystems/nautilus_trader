@@ -945,6 +945,8 @@ cdef class BacktestEngine:
         cdef TradingStrategy strategy
         cdef TimeEventHandler event_handler
         cdef list time_events = []  # type: list[TimeEventHandler]
+        for actor in self.trader.components_c():
+            time_events += actor.clock.advance_time(now_ns)
         for strategy in self.trader.strategies_c():
             time_events += strategy.clock.advance_time(now_ns)
         for event_handler in sorted(time_events):
