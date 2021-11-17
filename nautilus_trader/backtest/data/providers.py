@@ -36,6 +36,7 @@ from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.currencies import USDT
 from nautilus_trader.model.currency import Currency
 from nautilus_trader.model.enums import AssetClass
+from nautilus_trader.model.enums import OptionKind
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import Venue
@@ -414,6 +415,7 @@ class TestInstrumentProvider:
             multiplier=Quantity.from_int(100),
             lot_size=Quantity.from_int(1),
             underlying="AAPL",
+            kind=OptionKind.CALL,
             expiry_date=datetime.date(2021, 12, 17),
             strike_price=Price.from_str("149.00"),
             ts_event=0,
