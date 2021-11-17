@@ -22,6 +22,7 @@ from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.model.c_enums.asset_class cimport AssetClass
 from nautilus_trader.model.c_enums.asset_class cimport AssetClassParser
 from nautilus_trader.model.c_enums.asset_type cimport AssetType
+from nautilus_trader.model.c_enums.option_kind cimport OptionKind
 from nautilus_trader.model.currency cimport Currency
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.identifiers cimport Symbol
@@ -48,6 +49,7 @@ cdef class Option(Instrument):
         Price strike_price not None,
         str underlying,
         date expiry_date,
+        OptionKind kind,
         int64_t ts_event,
         int64_t ts_init,
     ):
@@ -123,8 +125,10 @@ cdef class Option(Instrument):
             ts_init=ts_init,
             info={},
         )
+        self.underlying = underlying
         self.expiry_date = expiry_date
         self.strike_price = strike_price
+        self.kind = kind
 
     @staticmethod
     cdef Option from_dict_c(dict values):
