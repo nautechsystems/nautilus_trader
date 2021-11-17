@@ -571,6 +571,7 @@ NAUTILUS_PARQUET_SCHEMA = {
             "lot_size": pa.dictionary(pa.int8(), pa.string()),
             "expiry_date": pa.dictionary(pa.int64(), pa.string()),
             "strike_price": pa.dictionary(pa.int64(), pa.string()),
+            "kind": pa.dictionary(pa.int8(), pa.string()),
             "ts_init": pa.int64(),
             "ts_event": pa.int64(),
         }
