@@ -69,10 +69,12 @@ class DataCatalog(metaclass=Singleton):
             The fs storage options.
 
         """
-        self.fs: fsspec.AbstractFileSystem = fsspec.filesystem(
-            fs_protocol, **(fs_storage_options or {})
-        )
         self.path = pathlib.Path(path)
+        self.fs_protocol = fs_protocol
+        self.fs_storage_options = fs_storage_options or {}
+        self.fs: fsspec.AbstractFileSystem = fsspec.filesystem(
+            self.fs_protocol, **self.fs_storage_options
+        )
 
     @classmethod
     def from_env(cls):
