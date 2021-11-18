@@ -631,13 +631,13 @@ cdef class BacktestEngine:
 
         self._exchanges[venue].set_fill_model(model)
 
-    def add_component(self, component: Actor) -> None:
+    def add_actor(self, actor: Actor) -> None:
         # Checked inside trader
-        self.trader.add_component(component)
+        self.trader.add_actor(actor)
 
-    def add_components(self, components: List[Actor]) -> None:
+    def add_actors(self, actors: List[Actor]) -> None:
         # Checked inside trader
-        self.trader.add_components(components)
+        self.trader.add_actors(actors)
 
     def add_strategy(self, strategy: TradingStrategy) -> None:
         # Checked inside trader
@@ -872,6 +872,8 @@ cdef class BacktestEngine:
 
         # Set clocks
         self._test_clock.set_time(start_ns)
+        for actor in self.trader.actors_c():
+            actor.clock.set_time(start_ns)
         for strategy in self.trader.strategies_c():
             strategy.clock.set_time(start_ns)
 
@@ -942,10 +944,12 @@ cdef class BacktestEngine:
             return self._data[cursor]
 
     cdef void _advance_time(self, int64_t now_ns) except *:
-        cdef TradingStrategy strategy
-        cdef TimeEventHandler event_handler
         cdef list time_events = []  # type: list[TimeEventHandler]
-        for actor in self.trader.components_c():
+        cdef:
+            Actor actor
+            TradingStrategy strategy
+            cdef TimeEventHandler event_handler
+        for actor in self.trader.actors_c():
             time_events += actor.clock.advance_time(now_ns)
         for strategy in self.trader.strategies_c():
             time_events += strategy.clock.advance_time(now_ns)
