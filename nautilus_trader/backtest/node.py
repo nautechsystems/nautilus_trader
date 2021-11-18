@@ -202,7 +202,7 @@ class BacktestNode:
         if actor_configs:
             actors: List[Actor] = [ActorFactory.create(config) for config in actor_configs]
             if actors:
-                engine.add_components(actors)
+                engine.add_actors(actors)
 
         # Create strategies
         if strategy_configs:
