@@ -45,7 +45,7 @@ class BinanceSpotAccountHttpAPI:
 
         self.client = client
 
-    def new_order_test(
+    async def new_order_test(
         self,
         symbol: str,
         side: str,
@@ -59,7 +59,7 @@ class BinanceSpotAccountHttpAPI:
         iceberg_qty: Optional[str] = None,
         new_order_resp_type: NewOrderRespType = None,
         recv_window: Optional[int] = None,
-    ):
+    ) -> bytes:
         """
         Test new order creation and signature/recvWindow.
 
@@ -99,6 +99,11 @@ class BinanceSpotAccountHttpAPI:
         recv_window : int, optional
             The response receive window for the request (cannot be greater than 60000).
 
+        Returns
+        -------
+        bytes
+            The raw response content.
+
         References
         ----------
         https://binance-docs.github.io/apidocs/spot/en/#test-new-order-trade
@@ -128,13 +133,13 @@ class BinanceSpotAccountHttpAPI:
         if recv_window is not None:
             payload["recvWindow"] = str(recv_window)
 
-        return self.client.sign_request(
+        return await self.client.sign_request(
             http_method="POST",
             url_path=self.BASE_ENDPOINT + "order/test",
             payload=payload,
         )
 
-    def new_order(
+    async def new_order(
         self,
         symbol: str,
         side: str,
@@ -148,7 +153,7 @@ class BinanceSpotAccountHttpAPI:
         iceberg_qty: Optional[str] = None,
         new_order_resp_type: NewOrderRespType = None,
         recv_window: Optional[int] = None,
-    ):
+    ) -> bytes:
         """
         Submit a new order.
 
@@ -186,6 +191,11 @@ class BinanceSpotAccountHttpAPI:
         recv_window : int, optional
             The response receive window for the request (cannot be greater than 60000).
 
+        Returns
+        -------
+        bytes
+            The raw response content.
+
         References
         ----------
         https://binance-docs.github.io/apidocs/spot/en/#new-order-trade
@@ -215,20 +225,20 @@ class BinanceSpotAccountHttpAPI:
         if recv_window is not None:
             payload["recvWindow"] = str(recv_window)
 
-        return self.client.sign_request(
+        return await self.client.sign_request(
             http_method="POST",
             url_path=self.BASE_ENDPOINT + "order",
             payload=payload,
         )
 
-    def cancel_order(
+    async def cancel_order(
         self,
         symbol: str,
         order_id: Optional[str] = None,
         orig_client_order_id: Optional[str] = None,
         new_client_order_id: Optional[str] = None,
         recv_window: Optional[int] = None,
-    ):
+    ) -> bytes:
         """
         Cancel an active order.
 
@@ -248,6 +258,11 @@ class BinanceSpotAccountHttpAPI:
         recv_window : int, optional
             The response receive window for the request (cannot be greater than 60000).
 
+        Returns
+        -------
+        bytes
+            The raw response content.
+
         References
         ----------
         https://binance-docs.github.io/apidocs/spot/en/#cancel-order-trade
@@ -263,13 +278,13 @@ class BinanceSpotAccountHttpAPI:
         if recv_window is not None:
             payload["recvWindow"] = str(recv_window)
 
-        return self.client.sign_request(
+        return await self.client.sign_request(
             http_method="DELETE",
             url_path=self.BASE_ENDPOINT + "order",
             payload=payload,
         )
 
-    def cancel_open_orders(self, symbol: str, recv_window: Optional[int] = None):
+    async def cancel_open_orders(self, symbol: str, recv_window: Optional[int] = None) -> bytes:
         """
         Cancel all active orders on a symbol. This includes OCO orders.
 
@@ -292,19 +307,19 @@ class BinanceSpotAccountHttpAPI:
         if recv_window is not None:
             payload["recvWindow"] = str(recv_window)
 
-        return self.client.sign_request(
+        return await self.client.sign_request(
             http_method="DELETE",
             url_path=self.BASE_ENDPOINT + "openOrders",
             payload=payload,
         )
 
-    def get_order(
+    async def get_order(
         self,
         symbol: str,
         order_id: Optional[str] = None,
         orig_client_order_id: Optional[str] = None,
         recv_window: Optional[int] = None,
-    ):
+    ) -> bytes:
         """
         Check an order's status.
 
@@ -322,6 +337,11 @@ class BinanceSpotAccountHttpAPI:
         recv_window : int, optional
             The response receive window for the request (cannot be greater than 60000).
 
+        Returns
+        -------
+        bytes
+            The raw response content.
+
         References
         ----------
         https://binance-docs.github.io/apidocs/spot/en/#query-order-user_data
@@ -335,17 +355,17 @@ class BinanceSpotAccountHttpAPI:
         if recv_window is not None:
             payload["recvWindow"] = str(recv_window)
 
-        return self.client.sign_request(
+        return await self.client.sign_request(
             http_method="GET",
             url_path=self.BASE_ENDPOINT + "order",
             payload=payload,
         )
 
-    def get_open_orders(
+    async def get_open_orders(
         self,
         symbol: Optional[str] = None,
         recv_window: Optional[int] = None,
-    ):
+    ) -> bytes:
         """
         Get all open orders on a symbol.
 
@@ -359,6 +379,11 @@ class BinanceSpotAccountHttpAPI:
         recv_window : int, optional
             The response receive window for the request (cannot be greater than 60000).
 
+        Returns
+        -------
+        bytes
+            The raw response content.
+
         References
         ----------
         https://binance-docs.github.io/apidocs/spot/en/#current-open-orders-user_data
@@ -370,13 +395,13 @@ class BinanceSpotAccountHttpAPI:
         if recv_window is not None:
             payload["recvWindow"] = str(recv_window)
 
-        return self.client.sign_request(
+        return await self.client.sign_request(
             http_method="GET",
             url_path=self.BASE_ENDPOINT + "openOrders",
             payload=payload,
         )
 
-    def get_orders(
+    async def get_orders(
         self,
         symbol: str,
         order_id: Optional[str] = None,
@@ -384,7 +409,7 @@ class BinanceSpotAccountHttpAPI:
         end_time: Optional[int] = None,
         limit: Optional[int] = None,
         recv_window: Optional[int] = None,
-    ):
+    ) -> bytes:
         """
         Get all account orders; active, canceled, or filled.
 
@@ -406,6 +431,11 @@ class BinanceSpotAccountHttpAPI:
         recv_window : int, optional
             The response receive window for the request (cannot be greater than 60000).
 
+        Returns
+        -------
+        bytes
+            The raw response content.
+
         References
         ----------
         https://binance-docs.github.io/apidocs/spot/en/#all-orders-user_data
@@ -423,13 +453,13 @@ class BinanceSpotAccountHttpAPI:
         if recv_window is not None:
             payload["recvWindow"] = str(recv_window)
 
-        return self.client.sign_request(
+        return await self.client.sign_request(
             http_method="GET",
             url_path=self.BASE_ENDPOINT + "allOrders",
             payload=payload,
         )
 
-    def new_oco_order(
+    async def new_oco_order(
         self,
         symbol: str,
         side: str,
@@ -445,7 +475,7 @@ class BinanceSpotAccountHttpAPI:
         stop_limit_time_in_force: Optional[str] = None,
         new_order_resp_type: NewOrderRespType = None,
         recv_window: Optional[int] = None,
-    ):
+    ) -> bytes:
         """
         Submit a new OCO order.
 
@@ -484,6 +514,11 @@ class BinanceSpotAccountHttpAPI:
         recv_window : int, optional
             The response receive window for the request (cannot be greater than 60000).
 
+        Returns
+        -------
+        bytes
+            The raw response content.
+
         References
         ----------
         https://binance-docs.github.io/apidocs/spot/en/#new-oco-trade
@@ -515,20 +550,20 @@ class BinanceSpotAccountHttpAPI:
         if recv_window is not None:
             payload["recvWindow"] = str(recv_window)
 
-        return self.client.sign_request(
+        return await self.client.sign_request(
             http_method="POST",
             url_path=self.BASE_ENDPOINT + "order/oco",
             payload=payload,
         )
 
-    def cancel_oco_order(
+    async def cancel_oco_order(
         self,
         symbol: str,
         order_list_id: Optional[str] = None,
         list_client_order_id: Optional[str] = None,
         new_client_order_id: Optional[str] = None,
         recv_window: Optional[int] = None,
-    ):
+    ) -> bytes:
         """
         Cancel an entire Order List.
 
@@ -550,6 +585,11 @@ class BinanceSpotAccountHttpAPI:
         recv_window : int, optional
             The response receive window for the request (cannot be greater than 60000).
 
+        Returns
+        -------
+        bytes
+            The raw response content.
+
         References
         ----------
         https://binance-docs.github.io/apidocs/spot/en/#cancel-oco-trade
@@ -565,18 +605,18 @@ class BinanceSpotAccountHttpAPI:
         if recv_window is not None:
             payload["recvWindow"] = str(recv_window)
 
-        return self.client.sign_request(
+        return await self.client.sign_request(
             http_method="DELETE",
             url_path=self.BASE_ENDPOINT + "orderList",
             payload=payload,
         )
 
-    def get_oco_order(
+    async def get_oco_order(
         self,
         order_list_id: Optional[str],
         orig_client_order_id: Optional[str],
         recv_window: Optional[int] = None,
-    ):
+    ) -> bytes:
         """
         Retrieve a specific OCO based on provided optional parameters.
 
@@ -594,6 +634,11 @@ class BinanceSpotAccountHttpAPI:
         recv_window : int, optional
             The response receive window for the request (cannot be greater than 60000).
 
+        Returns
+        -------
+        bytes
+            The raw response content.
+
         References
         ----------
         https://binance-docs.github.io/apidocs/spot/en/#query-oco-user_data
@@ -607,20 +652,20 @@ class BinanceSpotAccountHttpAPI:
         if recv_window is not None:
             payload["recvWindow"] = str(recv_window)
 
-        return self.client.sign_request(
+        return await self.client.sign_request(
             http_method="GET",
             url_path=self.BASE_ENDPOINT + "orderList",
             payload=payload,
         )
 
-    def get_oco_orders(
+    async def get_oco_orders(
         self,
         from_id: Optional[str] = None,
         start_time: Optional[int] = None,
         end_time: Optional[int] = None,
         limit: Optional[int] = None,
         recv_window: Optional[int] = None,
-    ):
+    ) -> bytes:
         """
         Retrieve all OCO based on provided optional parameters.
 
@@ -643,6 +688,11 @@ class BinanceSpotAccountHttpAPI:
         recv_window : int, optional
             The response receive window for the request (cannot be greater than 60000).
 
+        Returns
+        -------
+        bytes
+            The raw response content.
+
         References
         ----------
         https://binance-docs.github.io/apidocs/spot/en/#query-all-oco-user_data
@@ -660,13 +710,13 @@ class BinanceSpotAccountHttpAPI:
         if recv_window is not None:
             payload["recvWindow"] = str(recv_window)
 
-        return self.client.sign_request(
+        return await self.client.sign_request(
             http_method="GET",
             url_path=self.BASE_ENDPOINT + "allOrderList",
             payload=payload,
         )
 
-    def get_oco_open_orders(self, recv_window: Optional[int] = None):
+    async def get_oco_open_orders(self, recv_window: Optional[int] = None) -> bytes:
         """
         Get all open OCO orders.
 
@@ -678,6 +728,11 @@ class BinanceSpotAccountHttpAPI:
         recv_window : int, optional
             The response receive window for the request (cannot be greater than 60000).
 
+        Returns
+        -------
+        bytes
+            The raw response content.
+
         References
         ----------
         https://binance-docs.github.io/apidocs/spot/en/#query-open-oco-user_data
@@ -687,13 +742,13 @@ class BinanceSpotAccountHttpAPI:
         if recv_window is not None:
             payload["recvWindow"] = str(recv_window)
 
-        return self.client.sign_request(
+        return await self.client.sign_request(
             http_method="GET",
             url_path=self.BASE_ENDPOINT + "openOrderList",
             payload=payload,
         )
 
-    def account(self, recv_window: Optional[int] = None):
+    async def account(self, recv_window: Optional[int] = None) -> bytes:
         """
         Get current account information.
 
@@ -705,6 +760,11 @@ class BinanceSpotAccountHttpAPI:
         recv_window : int, optional
             The response receive window for the request (cannot be greater than 60000).
 
+        Returns
+        -------
+        bytes
+            The raw response content.
+
         References
         ----------
         https://binance-docs.github.io/apidocs/spot/en/#account-information-user_data
@@ -714,13 +774,13 @@ class BinanceSpotAccountHttpAPI:
         if recv_window is not None:
             payload["recvWindow"] = str(recv_window)
 
-        return self.client.sign_request(
+        return await self.client.sign_request(
             http_method="GET",
             url_path=self.BASE_ENDPOINT + "account",
             payload=payload,
         )
 
-    def my_trades(
+    async def my_trades(
         self,
         symbol: str,
         from_id: Optional[str] = None,
@@ -729,7 +789,7 @@ class BinanceSpotAccountHttpAPI:
         end_time: Optional[int] = None,
         limit: Optional[int] = None,
         recv_window: Optional[int] = None,
-    ):
+    ) -> bytes:
         """
         Get trades for a specific account and symbol.
 
@@ -753,6 +813,11 @@ class BinanceSpotAccountHttpAPI:
         recv_window : int, optional
             The response receive window for the request (cannot be greater than 60000).
 
+        Returns
+        -------
+        bytes
+            The raw response content.
+
         References
         ----------
         https://binance-docs.github.io/apidocs/spot/en/#account-trade-list-user_data
@@ -773,13 +838,13 @@ class BinanceSpotAccountHttpAPI:
         if recv_window is not None:
             payload["recvWindow"] = str(recv_window)
 
-        return self.client.sign_request(
+        return await self.client.sign_request(
             http_method="GET",
             url_path=self.BASE_ENDPOINT + "myTrades",
             payload=payload,
         )
 
-    async def get_order_rate_limit(self, recv_window: Optional[int] = None):
+    async def get_order_rate_limit(self, recv_window: Optional[int] = None) -> bytes:
         """
         Get the user's current order count usage for all intervals.
 
@@ -790,6 +855,11 @@ class BinanceSpotAccountHttpAPI:
         ----------
         recv_window : int, optional
             The response receive window for the request (cannot be greater than 60000).
+
+        Returns
+        -------
+        bytes
+            The raw response content.
 
         References
         ----------
