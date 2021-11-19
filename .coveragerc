@@ -1,7 +1,7 @@
 [run]
 plugins = Cython.Coverage
 source = nautilus_trader
-omit = adapters/binance*,adapters/ftx*,adapters/ib*
+omit = nautilus_trader/adapters/binance*,nautilus_trader/adapters/ftx*,nautilus_trader/adapters/ib*
 
 [report]
 fail_under = 0
