@@ -40,9 +40,22 @@ async def test_binance_spot_account_http_client():
     await client.connect()
 
     account = BinanceSpotAccountHttpAPI(client=client)
-    response = await account.new_order_test(
-        symbol="ETHUSDT", side="BUY", type="MARKET", recv_window=5000
+    response = await account.new_order(
+        symbol="ETHUSDT",
+        side="SELL",
+        type="LIMIT",
+        time_in_force="GTC",
+        quantity="0.01",
+        price="5000",
+        # new_client_order_id=str(uuid.uuid4()),
+        recv_window=5000,
     )
+    # response = await account.cancel_order(
+    #     symbol="ETHUSDT",
+    #     orig_client_order_id="oN6xVmPpaUe0Awk7KFGIv3",
+    #     #new_client_order_id=str(uuid.uuid4()),
+    #     recv_window=5000,
+    # )
     print(json.dumps(json.loads(response), indent=4))
 
     await client.disconnect()

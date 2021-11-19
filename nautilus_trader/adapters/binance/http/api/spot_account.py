@@ -61,27 +61,43 @@ class BinanceSpotAccountHttpAPI:
         recv_window: Optional[int] = None,
     ):
         """
+        Test new order creation and signature/recvWindow.
+
+        Creates and validates a new order but does not send it into the matching engine.
+
         Test New Order (TRADE).
-
-        Test new order creation and signature/recvWindow. Creates and validates
-        a new order but does not send it into the matching engine.
-
         `POST /api/v3/order/test`.
 
-        Args:
-            symbol (str)
-            side (str)
-            type (str)
-            timeInForce (str, optional)
-            quantity (float, optional)
-            quoteOrderQty (float, optional)
-            price (float, optional)
-            newClientOrderId (str, optional): A unique id among open orders. Automatically generated if not sent.
-            stopPrice (float, optional): Used with STOP_LOSS, STOP_LOSS_LIMIT, TAKE_PROFIT, and TAKE_PROFIT_LIMIT orders.
-            icebergQty (float, optional): Used with LIMIT, STOP_LOSS_LIMIT, and TAKE_PROFIT_LIMIT to create an iceberg order.
-            newOrderRespType (str, optional): Set the response JSON. ACK, RESULT, or FULL;
-                    MARKET and LIMIT order types default to FULL, all other orders default to ACK.
-            recvWindow (int, optional): The value cannot be greater than 60000
+        Parameters
+        ----------
+        symbol : str
+            The symbol for the request.
+        side : str
+            The order side for the request.
+        type : str
+            The order type for the request.
+        time_in_force : str, optional
+            The order time in force for the request.
+        quantity : str, optional
+            The order quantity in base asset units for the request.
+        quote_order_qty : str, optional
+            The order quantity in quote asset units for the request.
+        price : str, optional
+            The order price for the request.
+        new_client_order_id : str, optional
+            The client order ID for the request. A unique ID among open orders.
+            Automatically generated if not provided.
+        stop_price : str, optional
+            The order stop price for the request.
+            Used with STOP_LOSS, STOP_LOSS_LIMIT, TAKE_PROFIT, and TAKE_PROFIT_LIMIT orders.
+        iceberg_qty : str, optional
+            The order iceberg (display) quantity for the request.
+            Used with LIMIT, STOP_LOSS_LIMIT, and TAKE_PROFIT_LIMIT to create an iceberg order.
+        new_order_resp_type : NewOrderRespType, optional
+            The response type for the order request.
+            MARKET and LIMIT order types default to FULL, all other orders default to ACK.
+        recv_window : int, optional
+            The response receive window for the request (cannot be greater than 60000).
 
         References
         ----------
@@ -134,26 +150,41 @@ class BinanceSpotAccountHttpAPI:
         recv_window: Optional[int] = None,
     ):
         """
+        Submit a new order.
+
         Submit New Order (TRADE).
-
-        Post a new order.
-
         `POST /api/v3/order`.
 
-        Args:
-            symbol (str)
-            side (str)
-            type (str)
-            timeInForce (str, optional)
-            quantity (float, optional)
-            quoteOrderQty (float, optional)
-            price (float, optional)
-            newClientOrderId (str, optional): A unique id among open orders. Automatically generated if not sent.
-            stopPrice (float, optional): Used with STOP_LOSS, STOP_LOSS_LIMIT, TAKE_PROFIT, and TAKE_PROFIT_LIMIT orders.
-            icebergQty (float, optional): Used with LIMIT, STOP_LOSS_LIMIT, and TAKE_PROFIT_LIMIT to create an iceberg order.
-            newOrderRespType (str, optional): Set the response JSON. ACK, RESULT, or FULL;
-                    MARKET and LIMIT order types default to FULL, all other orders default to ACK.
-            recvWindow (int, optional): The value cannot be greater than 60000
+        Parameters
+        ----------
+        symbol : str
+            The symbol for the request.
+        side : str
+            The order side for the request.
+        type : str
+            The order type for the request.
+        time_in_force : str, optional
+            The order time in force for the request.
+        quantity : str, optional
+            The order quantity in base asset units for the request.
+        quote_order_qty : str, optional
+            The order quantity in quote asset units for the request.
+        price : str, optional
+            The order price for the request.
+        new_client_order_id : str, optional
+            The client order ID for the request. A unique ID among open orders.
+            Automatically generated if not provided.
+        stop_price : str, optional
+            The order stop price for the request.
+            Used with STOP_LOSS, STOP_LOSS_LIMIT, TAKE_PROFIT, and TAKE_PROFIT_LIMIT orders.
+        iceberg_qty : str, optional
+            The order iceberg (display) quantity for the request.
+            Used with LIMIT, STOP_LOSS_LIMIT, and TAKE_PROFIT_LIMIT to create an iceberg order.
+        new_order_resp_type : NewOrderRespType, optional
+            The response type for the order request.
+            MARKET and LIMIT order types default to FULL, all other orders default to ACK.
+        recv_window : int, optional
+            The response receive window for the request (cannot be greater than 60000).
 
         References
         ----------
@@ -199,18 +230,23 @@ class BinanceSpotAccountHttpAPI:
         recv_window: Optional[int] = None,
     ):
         """
-        Cancel Order (TRADE).
-
         Cancel an active order.
 
+        Cancel Order (TRADE).
         `DELETE /api/v3/order`.
 
-        Args:
-            symbol (str)
-            orderId (int, optional)
-            origClientOrderId (str, optional)
-            newClientOrderId (str, optional)
-            recvWindow (int, optional): The value cannot be greater than 60000
+        Parameters
+        ----------
+        symbol : str
+            The symbol for the request.
+        order_id : str, optional
+            The order ID to cancel.
+        orig_client_order_id : str, optional
+            The original client order ID to cancel.
+        new_client_order_id : str, optional
+            The new client order ID to uniquely identify this request.
+        recv_window : int, optional
+            The response receive window for the request (cannot be greater than 60000).
 
         References
         ----------
@@ -233,21 +269,19 @@ class BinanceSpotAccountHttpAPI:
             payload=payload,
         )
 
-    def cancel_open_orders(
-        self,
-        symbol: str,
-        recv_window: Optional[int] = None,
-    ):
+    def cancel_open_orders(self, symbol: str, recv_window: Optional[int] = None):
         """
+        Cancel all active orders on a symbol. This includes OCO orders.
+
         Cancel all Open Orders on a Symbol (TRADE).
-
-        Cancels all active orders on a symbol. This includes OCO orders.
-
         `DELETE api/v3/openOrders`.
 
-        Args:
-            symbol (str)
-            recvWindow (int, optional): The value cannot be greater than 60000
+        Parameters
+        ----------
+        symbol : str
+            The symbol for the request.
+        recv_window : int, optional
+            The response receive window for the request (cannot be greater than 60000).
 
         References
         ----------
@@ -272,17 +306,21 @@ class BinanceSpotAccountHttpAPI:
         recv_window: Optional[int] = None,
     ):
         """
-        Query Order (USER_DATA).
-
         Check an order's status.
 
+        Query Order (USER_DATA).
         `GET /api/v3/order`.
 
-        Args:
-            symbol (str)
-            orderId (int, optional)
-            origClientOrderId (str, optional)
-            recvWindow (int, optional): The value cannot be greater than 60000
+        Parameters
+        ----------
+        symbol : str
+            The symbol for the request.
+        order_id : str, optional
+            The order ID for the request.
+        orig_client_order_id : str, optional
+            The original client order ID for the request.
+        recv_window : int, optional
+            The response receive window for the request (cannot be greater than 60000).
 
         References
         ----------
@@ -309,15 +347,17 @@ class BinanceSpotAccountHttpAPI:
         recv_window: Optional[int] = None,
     ):
         """
-        Query Current Open Orders (USER_DATA).
-
         Get all open orders on a symbol.
 
+        Query Current Open Orders (USER_DATA).
         `GET /api/v3/openOrders`.
 
-        Args:
-            symbol (str, optional)
-            recvWindow (int, optional): The value cannot be greater than 60000
+        Parameters
+        ----------
+        symbol : str, optional
+            The symbol for the request.
+        recv_window : int, optional
+            The response receive window for the request (cannot be greater than 60000).
 
         References
         ----------
@@ -346,19 +386,25 @@ class BinanceSpotAccountHttpAPI:
         recv_window: Optional[int] = None,
     ):
         """
-        All Orders (USER_DATA).
-
         Get all account orders; active, canceled, or filled.
 
+        All Orders (USER_DATA).
         `GET /api/v3/allOrders`.
 
-        Args:
-            symbol (str)
-            orderId (int, optional)
-            startTime (int, optional)
-            endTime (int, optional)
-            limit (int, optional): Default 500; max 1000.
-            recvWindow (int, optional): The value cannot be greater than 60000
+        Parameters
+        ----------
+        symbol : str
+            The symbol for the request.
+        order_id : str, optional
+            The order ID for the request.
+        start_time : int, optional
+            The start time (UNIX milliseconds) filter for the request.
+        end_time : int, optional
+            The end time (UNIX milliseconds) filter for the request.
+        limit : int, optional
+            The limit for the response.
+        recv_window : int, optional
+            The response receive window for the request (cannot be greater than 60000).
 
         References
         ----------
@@ -390,31 +436,53 @@ class BinanceSpotAccountHttpAPI:
         quantity: str,
         price: str,
         stop_price: str,
+        list_client_order_id: Optional[str] = None,
+        limit_client_order_id: Optional[str] = None,
+        limit_iceberg_qty: Optional[str] = None,
+        stop_client_order_id: Optional[str] = None,
+        stop_limit_price: Optional[str] = None,
+        stop_iceberg_qty: Optional[str] = None,
+        stop_limit_time_in_force: Optional[str] = None,
+        new_order_resp_type: NewOrderRespType = None,
         recv_window: Optional[int] = None,
     ):
         """
+        Submit a new OCO order.
+
         Submit New OCO (TRADE).
-
-        Post a new oco order.
-
         `POST /api/v3/order/oco`.
 
-        Args:
-            symbol (str)
-            side (str)
-            quantity (float)
-            price (float)
-            stopPrice (float)
-        Keyword Args:
-            listClientOrderId (str, optional): A unique Id for the entire orderList
-            limitClientOrderId (str, optional)
-            limitIcebergQty (float, optional)
-            stopClientOrderId (str, optional)
-            stopLimitPrice (float, optional)
-            stopIcebergQty (float, optional)
-            stopLimitTimeInForce (str, optional)
-            newOrderRespType (str, optional): Set the response JSON.
-            recvWindow (int, optional): The value cannot be greater than 60000
+        Parameters
+        ----------
+        symbol : str
+            The symbol for the request.
+        side : str
+            The order side for the request.
+        quantity : str
+            The order quantity for the request.
+        price : str
+            The order price for the request.
+        stop_price : str
+            The order stop price for the request.
+        list_client_order_id : str, optional
+            The list client order ID for the request.
+        limit_client_order_id : str, optional
+            The LIMIT client order ID for the request.
+        limit_iceberg_qty : str, optional
+            The LIMIT order display quantity for the request.
+        stop_client_order_id : str, optional
+            The STOP order client order ID for the request.
+        stop_limit_price : str, optional
+            The STOP_LIMIT price for the request.
+        stop_iceberg_qty : str, optional
+            The STOP order display quantity for the request.
+        stop_limit_time_in_force : str, optional
+            The STOP_LIMIT time_in_force for the request.
+        new_order_resp_type : NewOrderRespType, optional
+            The response type for the order request.
+            MARKET and LIMIT order types default to FULL, all other orders default to ACK.
+        recv_window : int, optional
+            The response receive window for the request (cannot be greater than 60000).
 
         References
         ----------
@@ -428,6 +496,22 @@ class BinanceSpotAccountHttpAPI:
             "price": price,
             "stopPrice": stop_price,
         }
+        if list_client_order_id is not None:
+            payload["listClientOrderId"] = list_client_order_id
+        if limit_client_order_id is not None:
+            payload["limitClientOrderId"] = limit_client_order_id
+        if limit_iceberg_qty is not None:
+            payload["limitIcebergQty"] = limit_iceberg_qty
+        if stop_client_order_id is not None:
+            payload["stopClientOrderId"] = stop_client_order_id
+        if stop_limit_price is not None:
+            payload["stopLimitPrice"] = stop_limit_price
+        if stop_iceberg_qty is not None:
+            payload["stopIcebergQty"] = stop_iceberg_qty
+        if stop_limit_time_in_force is not None:
+            payload["stopLimitTimeInForce"] = stop_limit_time_in_force
+        if new_order_resp_type is not None:
+            payload["new_order_resp_type"] = new_order_resp_type.value
         if recv_window is not None:
             payload["recvWindow"] = str(recv_window)
 
@@ -440,21 +524,31 @@ class BinanceSpotAccountHttpAPI:
     def cancel_oco_order(
         self,
         symbol: str,
+        order_list_id: Optional[str] = None,
+        list_client_order_id: Optional[str] = None,
+        new_client_order_id: Optional[str] = None,
         recv_window: Optional[int] = None,
     ):
         """
-        Cancel OCO (TRADE).
-
         Cancel an entire Order List.
 
+        Either `order_list_id` or `list_client_order_id` must be provided.
+
+        Cancel OCO (TRADE).
         `DELETE /api/v3/orderList`.
 
-        Args:
-            symbol (str)
-            orderListId (int, optional): Either orderListId or listClientOrderId must be provided
-            listClientOrderId (str, optional): Either orderListId or listClientOrderId must be provided
-            newClientOrderId (str, optional): Used to uniquely identify this cancel. Automatically generated by default.
-            recvWindow (int, optional): The value cannot be greater than 60000
+        Parameters
+        ----------
+        symbol : str
+            The symbol for the request.
+        order_list_id : str, optional
+            The order list ID for the request.
+        list_client_order_id : str, optional
+            The list client order ID for the request.
+        new_client_order_id : str, optional
+            The new client order ID to uniquely identify this request.
+        recv_window : int, optional
+            The response receive window for the request (cannot be greater than 60000).
 
         References
         ----------
@@ -462,6 +556,12 @@ class BinanceSpotAccountHttpAPI:
 
         """
         payload: Dict[str, str] = {"symbol": format_symbol(symbol).upper()}
+        if order_list_id is not None:
+            payload["orderListId"] = order_list_id
+        if list_client_order_id is not None:
+            payload["listClientOrderId"] = list_client_order_id
+        if new_client_order_id is not None:
+            payload["newClientOrderId"] = new_client_order_id
         if recv_window is not None:
             payload["recvWindow"] = str(recv_window)
 
@@ -473,19 +573,26 @@ class BinanceSpotAccountHttpAPI:
 
     def get_oco_order(
         self,
+        order_list_id: Optional[str],
+        orig_client_order_id: Optional[str],
         recv_window: Optional[int] = None,
     ):
         """
+        Retrieve a specific OCO based on provided optional parameters.
+
+        Either `order_list_id` or `orig_client_order_id` must be provided.
+
         Query OCO (USER_DATA).
-
-        Retrieves a specific OCO based on provided optional parameters.
-
         `GET /api/v3/orderList`.
 
-        Keyword Args:
-            orderListId (int, optional): Either orderListId or listClientOrderId must be provided
-            origClientOrderId (str, optional): Either orderListId or listClientOrderId must be provided.
-            recvWindow (int, optional): The value cannot be greater than 60000
+        Parameters
+        ----------
+        order_list_id : str, optional
+            The order list ID for the request.
+        orig_client_order_id : str, optional
+            The original client order ID for the request.
+        recv_window : int, optional
+            The response receive window for the request (cannot be greater than 60000).
 
         References
         ----------
@@ -493,6 +600,10 @@ class BinanceSpotAccountHttpAPI:
 
         """
         payload: Dict[str, str] = {}
+        if order_list_id is not None:
+            payload["orderListId"] = order_list_id
+        if orig_client_order_id is not None:
+            payload["origClientOrderId"] = orig_client_order_id
         if recv_window is not None:
             payload["recvWindow"] = str(recv_window)
 
@@ -504,21 +615,33 @@ class BinanceSpotAccountHttpAPI:
 
     def get_oco_orders(
         self,
+        from_id: Optional[str] = None,
+        start_time: Optional[int] = None,
+        end_time: Optional[int] = None,
+        limit: Optional[int] = None,
         recv_window: Optional[int] = None,
     ):
         """
+        Retrieve all OCO based on provided optional parameters.
+
+        If `from_id` is provided then neither `start_time` nor `end_time` can be
+        provided.
+
         Query all OCO (USER_DATA).
-
-        Retrieves all OCO based on provided optional parameters.
-
         `GET /api/v3/allOrderList`.
 
-        Keyword Args:
-            fromId (int, optional): If supplied, neither startTime or endTime can be provided
-            startTime (int, optional)
-            endTime (int, optional)
-            limit (int, optional): Default Value: 500; Max Value: 1000
-            recvWindow (int, optional): The value cannot be greater than 60000
+        Parameters
+        ----------
+        from_id : int, optional
+            The order ID filter for the request.
+        start_time : int, optional
+            The start time (UNIX milliseconds) filter for the request.
+        end_time : int, optional
+            The end time (UNIX milliseconds) filter for the request.
+        limit : int, optional
+            The limit for the response.
+        recv_window : int, optional
+            The response receive window for the request (cannot be greater than 60000).
 
         References
         ----------
@@ -526,6 +649,14 @@ class BinanceSpotAccountHttpAPI:
 
         """
         payload: Dict[str, str] = {}
+        if from_id is not None:
+            payload["fromId"] = from_id
+        if start_time is not None:
+            payload["startTime"] = str(start_time)
+        if end_time is not None:
+            payload["endTime"] = str(end_time)
+        if limit is not None:
+            payload["limit"] = str(limit)
         if recv_window is not None:
             payload["recvWindow"] = str(recv_window)
 
@@ -535,17 +666,17 @@ class BinanceSpotAccountHttpAPI:
             payload=payload,
         )
 
-    def get_oco_open_orders(
-        self,
-        recv_window: Optional[int] = None,
-    ):
+    def get_oco_open_orders(self, recv_window: Optional[int] = None):
         """
-        Query Open OCO (USER_DATA).
+        Get all open OCO orders.
 
+        Query Open OCO (USER_DATA).
         GET /api/v3/openOrderList.
 
-        Keyword Args:
-            recvWindow (int, optional): The value cannot be greater than 60000
+        Parameters
+        ----------
+        recv_window : int, optional
+            The response receive window for the request (cannot be greater than 60000).
 
         References
         ----------
@@ -562,19 +693,17 @@ class BinanceSpotAccountHttpAPI:
             payload=payload,
         )
 
-    def account(
-        self,
-        recv_window: Optional[int] = None,
-    ):
+    def account(self, recv_window: Optional[int] = None):
         """
-        Account Information (USER_DATA).
-
         Get current account information.
 
+        Account Information (USER_DATA).
         `GET /api/v3/account`.
 
-        Keyword Args:
-            recvWindow (int, optional): The value cannot be greater than 60000
+        Parameters
+        ----------
+        recv_window : int, optional
+            The response receive window for the request (cannot be greater than 60000).
 
         References
         ----------
@@ -594,23 +723,35 @@ class BinanceSpotAccountHttpAPI:
     def my_trades(
         self,
         symbol: str,
+        from_id: Optional[str] = None,
+        order_id: Optional[str] = None,
+        start_time: Optional[int] = None,
+        end_time: Optional[int] = None,
+        limit: Optional[int] = None,
         recv_window: Optional[int] = None,
     ):
         """
-        Account Trade List (USER_DATA)
-
         Get trades for a specific account and symbol.
 
+        Account Trade List (USER_DATA)
         `GET /api/v3/myTrades`.
 
-        Args:
-            symbol (str)
-            fromId (int, optional): TradeId to fetch from. Default gets most recent trades.
-            orderId (int, optional): This can only be used in combination with symbol
-            startTime (int, optional)
-            endTime (int, optional)
-            limit (int, optional): Default Value: 500; Max Value: 1000
-            recvWindow (int, optional): The value cannot be greater than 60000
+        Parameters
+        ----------
+        symbol : str
+            The symbol for the request.
+        from_id : str, optional
+            The trade match ID to query from.
+        order_id : str, optional
+            The order ID for the trades. This can only be used in combination with symbol.
+        start_time : int, optional
+            The start time (UNIX milliseconds) filter for the request.
+        end_time : int, optional
+            The end time (UNIX milliseconds) filter for the request.
+        limit : int, optional
+            The limit for the response.
+        recv_window : int, optional
+            The response receive window for the request (cannot be greater than 60000).
 
         References
         ----------
@@ -619,6 +760,16 @@ class BinanceSpotAccountHttpAPI:
 
         """
         payload: Dict[str, str] = {"symbol": format_symbol(symbol).upper()}
+        if from_id is not None:
+            payload["fromId"] = from_id
+        if order_id is not None:
+            payload["orderId"] = order_id
+        if start_time is not None:
+            payload["startTime"] = str(start_time)
+        if end_time is not None:
+            payload["endTime"] = str(end_time)
+        if limit is not None:
+            payload["limit"] = str(limit)
         if recv_window is not None:
             payload["recvWindow"] = str(recv_window)
 
@@ -630,10 +781,9 @@ class BinanceSpotAccountHttpAPI:
 
     async def get_order_rate_limit(self, recv_window: Optional[int] = None):
         """
+        Get the user's current order count usage for all intervals.
+
         Query Current Order Count Usage (TRADE).
-
-        Displays the user's current order count usage for all intervals.
-
         `GET /api/v3/rateLimit/order`.
 
         Parameters
