@@ -287,7 +287,7 @@ def parse_order_type(order_type: str) -> OrderType:
         return OrderTypeParser.from_str_py(order_type)
 
 
-def binance_order_type(order: Order, market_price: Price = None) -> str:  # noqa
+def binance_order_type(order: Order, market_price: Decimal = None) -> str:  # noqa
     if order.type == OrderType.LIMIT:
         if order.is_post_only:
             return "LIMIT_MAKER"
@@ -296,25 +296,25 @@ def binance_order_type(order: Order, market_price: Price = None) -> str:  # noqa
     elif order.type == OrderType.STOP_MARKET:
         if order.side == OrderSide.BUY:
             if order.price < market_price:
-                return "STOP_LOSS"
-            else:
                 return "TAKE_PROFIT"
+            else:
+                return "STOP_LOSS"
         else:  # OrderSide.SELL
             if order.price > market_price:
-                return "STOP_LOSS"
-            else:
                 return "TAKE_PROFIT"
+            else:
+                return "STOP_LOSS"
     elif order.type == OrderType.STOP_LIMIT:
         if order.side == OrderSide.BUY:
             if order.trigger < market_price:
-                return "STOP_LOSS_LIMIT"
-            else:
                 return "TAKE_PROFIT_LIMIT"
+            else:
+                return "STOP_LOSS_LIMIT"
         else:  # OrderSide.SELL
             if order.trigger > market_price:
-                return "STOP_LOSS_LIMIT"
-            else:
                 return "TAKE_PROFIT_LIMIT"
+            else:
+                return "STOP_LOSS_LIMIT"
     elif order.type == OrderType.MARKET:
         return "MARKET"
     else:  # pragma: no cover (design-time error)

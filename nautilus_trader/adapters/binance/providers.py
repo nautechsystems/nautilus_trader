@@ -24,6 +24,7 @@ from nautilus_trader.adapters.binance.common import BINANCE_VENUE
 from nautilus_trader.adapters.binance.http.api.spot_market import BinanceSpotMarketHttpAPI
 from nautilus_trader.adapters.binance.http.api.wallet import BinanceWalletHttpAPI
 from nautilus_trader.adapters.binance.http.client import BinanceHttpClient
+from nautilus_trader.adapters.binance.http.error import BinanceClientError
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.common.logging import LoggerAdapter
 from nautilus_trader.common.providers import InstrumentProvider
@@ -102,8 +103,15 @@ class BinanceInstrumentProvider(InstrumentProvider):
         self._loading = True
 
         # Get current commission rates
-        raw: bytes = await self._wallet.trade_fee()
-        fees: Dict[str, Dict[str, str]] = {s["symbol"]: s for s in orjson.loads(raw)}
+        try:
+            raw: bytes = await self._wallet.trade_fee()
+            fees: Dict[str, Dict[str, str]] = {s["symbol"]: s for s in orjson.loads(raw)}
+        except BinanceClientError:
+            self._log.error(
+                "Cannot load instruments: API key authentication failed "
+                "(this is needed to fetch the applicable account fee tier).",
+            )
+            return
 
         # Get exchange info for all assets
         raw = await self._spot_market.exchange_info()
