@@ -177,9 +177,3 @@ class BinanceFuturesWebSocket(BinanceWebSocketClient):
 
         """
         self._add_stream(f"{symbol.lower()}@depth@{speed}ms")
-
-    def subscribe_user_data(self, listen_key: str):
-        """
-        Listen to user data by provided `listenkey`.
-        """
-        self._add_stream(listen_key)

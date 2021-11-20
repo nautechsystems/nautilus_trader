@@ -3,7 +3,11 @@
 Released TBD
 
 ## Breaking Changes
-None
+- Renamed `Trader.component_ids()` to `Trader.actor_ids()`.
+- Renamed `Trader.component_states()` to `Trader.actor_states()`.
+- Renamed `Trader.add_component()` to `Trader.add_actor()`.
+- Renamed `Trader.add_components()` to `Trader.add_actors()`.
+- Renamed `Trader.clear_components()` to `Trader.clear_actors()`.
 
 ## Enhancements
 None

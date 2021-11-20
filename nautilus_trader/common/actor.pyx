@@ -115,6 +115,7 @@ cdef class Actor(Component):
         self.trader_id = None  # Initialized when registered
         self.msgbus = None     # Initialized when registered
         self.cache = None      # Initialized when registered
+        self.clock = None      # Initialized when registered
 
 # -- ABSTRACT METHODS ------------------------------------------------------------------------------
 
@@ -464,6 +465,7 @@ cdef class Actor(Component):
         self.trader_id = trader_id
         self.msgbus = msgbus
         self.cache = cache
+        self.clock = self._clock
 
     cpdef void register_warning_event(self, type event):
         """

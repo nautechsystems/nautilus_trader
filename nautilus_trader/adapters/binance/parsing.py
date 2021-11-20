@@ -19,6 +19,8 @@ from typing import Dict, List, Tuple
 from nautilus_trader.adapters.binance.data_types import BinanceBar
 from nautilus_trader.adapters.binance.data_types import BinanceTicker
 from nautilus_trader.core.datetime import millis_to_nanos
+from nautilus_trader.model.c_enums.order_type import OrderTypeParser
+from nautilus_trader.model.currency import Currency
 from nautilus_trader.model.data.bar import BarSpecification
 from nautilus_trader.model.data.bar import BarType
 from nautilus_trader.model.data.tick import QuoteTick
@@ -29,14 +31,17 @@ from nautilus_trader.model.enums import BarAggregation
 from nautilus_trader.model.enums import BookAction
 from nautilus_trader.model.enums import BookType
 from nautilus_trader.model.enums import OrderSide
+from nautilus_trader.model.enums import OrderType
 from nautilus_trader.model.enums import PriceType
 from nautilus_trader.model.identifiers import InstrumentId
+from nautilus_trader.model.objects import AccountBalance
+from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
-from nautilus_trader.model.orderbook.data import Order
 from nautilus_trader.model.orderbook.data import OrderBookDelta
 from nautilus_trader.model.orderbook.data import OrderBookDeltas
 from nautilus_trader.model.orderbook.data import OrderBookSnapshot
+from nautilus_trader.model.orders.base import Order
 
 
 def parse_book_snapshot_ws(
@@ -108,7 +113,7 @@ def parse_book_delta_ws(
     )
 
 
-def parse_ticker_ws(instrument_id: InstrumentId, msg: Dict, ts_init: int):
+def parse_ticker_ws(instrument_id: InstrumentId, msg: Dict, ts_init: int) -> BinanceTicker:
     return BinanceTicker(
         instrument_id=instrument_id,
         price_change=Decimal(msg["p"]),
@@ -134,7 +139,7 @@ def parse_ticker_ws(instrument_id: InstrumentId, msg: Dict, ts_init: int):
     )
 
 
-def parse_quote_tick_ws(instrument_id: InstrumentId, msg: Dict, ts_init: int):
+def parse_quote_tick_ws(instrument_id: InstrumentId, msg: Dict, ts_init: int) -> QuoteTick:
     return QuoteTick(
         instrument_id=instrument_id,
         bid=Price.from_str(msg["b"]),
@@ -146,7 +151,7 @@ def parse_quote_tick_ws(instrument_id: InstrumentId, msg: Dict, ts_init: int):
     )
 
 
-def parse_trade_tick(instrument_id: InstrumentId, msg: Dict, ts_init: int):
+def parse_trade_tick(instrument_id: InstrumentId, msg: Dict, ts_init: int) -> TradeTick:
     return TradeTick(
         instrument_id=instrument_id,
         price=Price.from_str(msg["price"]),
@@ -158,7 +163,7 @@ def parse_trade_tick(instrument_id: InstrumentId, msg: Dict, ts_init: int):
     )
 
 
-def parse_trade_tick_ws(instrument_id: InstrumentId, msg: Dict, ts_init: int):
+def parse_trade_tick_ws(instrument_id: InstrumentId, msg: Dict, ts_init: int) -> TradeTick:
     return TradeTick(
         instrument_id=instrument_id,
         price=Price.from_str(msg["p"]),
@@ -170,7 +175,7 @@ def parse_trade_tick_ws(instrument_id: InstrumentId, msg: Dict, ts_init: int):
     )
 
 
-def parse_bar(bar_type: BarType, values: List, ts_init: int):
+def parse_bar(bar_type: BarType, values: List, ts_init: int) -> BinanceBar:
     return BinanceBar(
         bar_type=bar_type,
         open=Price.from_str(values[1]),
@@ -187,7 +192,12 @@ def parse_bar(bar_type: BarType, values: List, ts_init: int):
     )
 
 
-def parse_bar_ws(instrument_id: InstrumentId, kline: Dict, ts_event: int, ts_init: int):
+def parse_bar_ws(
+    instrument_id: InstrumentId,
+    kline: Dict,
+    ts_event: int,
+    ts_init: int,
+) -> BinanceBar:
     interval = kline["i"]
     resolution = interval[1]
     if resolution == "m":
@@ -225,3 +235,87 @@ def parse_bar_ws(instrument_id: InstrumentId, kline: Dict, ts_event: int, ts_ini
         ts_event=ts_event,
         ts_init=ts_init,
     )
+
+
+def parse_account_balances(raw_balances: List[Dict[str, str]]) -> List[AccountBalance]:
+    return _parse_balances(raw_balances, "asset", "free", "locked")
+
+
+def parse_account_balances_ws(raw_balances: List[Dict[str, str]]) -> List[AccountBalance]:
+    return _parse_balances(raw_balances, "a", "f", "l")
+
+
+def _parse_balances(
+    raw_balances: List[Dict[str, str]],
+    asset_key: str,
+    free_key: str,
+    locked_key: str,
+) -> List[AccountBalance]:
+    parsed_balances: Dict[Currency, Tuple[Decimal, Decimal, Decimal]] = {}
+    for b in raw_balances:
+        currency = Currency.from_str(b[asset_key])
+        free = Decimal(b[free_key])
+        locked = Decimal(b[locked_key])
+        total: Decimal = free + locked
+        parsed_balances[currency] = (total, locked, free)
+
+    balances: List[AccountBalance] = [
+        AccountBalance(
+            currency=currency,
+            total=Money(values[0], currency),
+            locked=Money(values[1], currency),
+            free=Money(values[2], currency),
+        )
+        for currency, values in parsed_balances.items()
+    ]
+
+    return balances
+
+
+def parse_order_type(order_type: str) -> OrderType:
+    if order_type == "STOP_LOSS":
+        return OrderType.STOP_MARKET
+    elif order_type == "STOP_LOSS_LIMIT":
+        return OrderType.STOP_LIMIT
+    elif order_type == "TAKE_PROFIT":
+        return OrderType.LIMIT
+    elif order_type == "TAKE_PROFIT_LIMIT":
+        return OrderType.STOP_LIMIT
+    elif order_type == "LIMIT_MAKER":
+        return OrderType.LIMIT
+    else:
+        return OrderTypeParser.from_str_py(order_type)
+
+
+def binance_order_type(order: Order, market_price: Price = None) -> str:  # noqa
+    if order.type == OrderType.LIMIT:
+        if order.is_post_only:
+            return "LIMIT_MAKER"
+        else:
+            return "LIMIT"
+    elif order.type == OrderType.STOP_MARKET:
+        if order.side == OrderSide.BUY:
+            if order.price < market_price:
+                return "STOP_LOSS"
+            else:
+                return "TAKE_PROFIT"
+        else:  # OrderSide.SELL
+            if order.price > market_price:
+                return "STOP_LOSS"
+            else:
+                return "TAKE_PROFIT"
+    elif order.type == OrderType.STOP_LIMIT:
+        if order.side == OrderSide.BUY:
+            if order.trigger < market_price:
+                return "STOP_LOSS_LIMIT"
+            else:
+                return "TAKE_PROFIT_LIMIT"
+        else:  # OrderSide.SELL
+            if order.trigger > market_price:
+                return "STOP_LOSS_LIMIT"
+            else:
+                return "TAKE_PROFIT_LIMIT"
+    elif order.type == OrderType.MARKET:
+        return "MARKET"
+    else:  # pragma: no cover (design-time error)
+        raise RuntimeError("invalid order type")

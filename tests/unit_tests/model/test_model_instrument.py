@@ -24,6 +24,7 @@ from nautilus_trader.model.currencies import BTC
 from nautilus_trader.model.currencies import ETH
 from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.currencies import USDT
+from nautilus_trader.model.enums import OptionKindParser
 from nautilus_trader.model.instruments.base import Instrument
 from nautilus_trader.model.instruments.crypto_swap import CryptoSwap
 from nautilus_trader.model.objects import Money
@@ -318,6 +319,10 @@ class TestInstrument:
         result = instrument.next_bid_price(value, n=n)
         expected = Price.from_str(expected)
         assert result == expected
+
+    def test_option_attributes(self):
+        assert AAPL_OPTION.underlying == "AAPL"
+        assert AAPL_OPTION.kind == OptionKindParser.from_str_py("CALL")
 
 
 class TestBettingInstrument:
