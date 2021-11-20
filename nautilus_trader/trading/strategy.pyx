@@ -249,7 +249,6 @@ cdef class TradingStrategy(Actor):
             logger=logger,
         )
 
-        self.clock = self._clock
         self.log = self._log
         self.portfolio = portfolio  # Assigned as PortfolioFacade
 

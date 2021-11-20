@@ -117,7 +117,7 @@ cdef class FillModel:
 
 cdef class LatencyModel:
     """
-    Provides a latency model for messages coming from and going to a simulated exchange.
+    Provides a latency model for simulated exchange message I/O.
     """
 
     def __init__(

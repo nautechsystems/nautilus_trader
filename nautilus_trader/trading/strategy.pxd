@@ -43,8 +43,6 @@ cdef class TradingStrategy(Actor):
     cdef dict _indicators_for_trades
     cdef dict _indicators_for_bars
 
-    cdef readonly Clock clock
-    """The trading strategies clock.\n\n:returns: `Clock`"""
     cdef readonly UUIDFactory uuid_factory
     """The trading strategies UUID4 factory.\n\n:returns: `UUIDFactory`"""
     cdef readonly LoggerAdapter log

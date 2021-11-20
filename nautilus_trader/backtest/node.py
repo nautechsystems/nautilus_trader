@@ -203,7 +203,7 @@ class BacktestNode:
         if actor_configs:
             actors: List[Actor] = [ActorFactory.create(config) for config in actor_configs]
             if actors:
-                engine.add_components(actors)
+                engine.add_actors(actors)
 
         # Create strategies
         if strategy_configs:
@@ -294,6 +294,12 @@ def backtest_runner(
     # Load data
     for config in data_configs:
         d = config.load()
+        if config.instrument_id and d["instrument"] is None:
+            print(f"Requested instrument_id={d['instrument']} from data_config not found catalog")
+            continue
+        if not d["data"]:
+            print(f"No data found for {config}")
+            continue
         _load_engine_data(engine=engine, data=d)
 
     return engine.run(run_config_id=run_config_id)

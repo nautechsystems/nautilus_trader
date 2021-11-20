@@ -13,21 +13,16 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from cpython.datetime cimport date
 
-from nautilus_trader.model.c_enums.option_kind cimport OptionKind
-from nautilus_trader.model.instruments.base cimport Instrument
-from nautilus_trader.model.objects cimport Price
+cpdef enum OptionKind:
+    CALL = 1
+    PUT = 2
 
 
-cdef class Option(Instrument):
-    cdef readonly str underlying
-    cdef readonly date expiry_date
-    cdef readonly Price strike_price
-    cdef readonly OptionKind kind
+cdef class OptionKindParser:
 
     @staticmethod
-    cdef Option from_dict_c(dict values)
+    cdef str to_str(int value)
 
     @staticmethod
-    cdef dict to_dict_c(Option obj)
+    cdef OptionKind from_str(str value) except *

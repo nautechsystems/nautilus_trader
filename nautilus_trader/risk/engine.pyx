@@ -45,6 +45,7 @@ from nautilus_trader.model.commands.trading cimport SubmitOrder
 from nautilus_trader.model.commands.trading cimport SubmitOrderList
 from nautilus_trader.model.commands.trading cimport TradingCommand
 from nautilus_trader.model.events.order cimport OrderDenied
+from nautilus_trader.model.identifiers import ComponentId
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.instruments.base cimport Instrument
 from nautilus_trader.model.objects cimport Price
@@ -111,6 +112,7 @@ cdef class RiskEngine(Component):
         super().__init__(
             clock=clock,
             logger=logger,
+            component_id=ComponentId("RiskEngine"),
             msgbus=msgbus,
             config=config.dict(),
         )

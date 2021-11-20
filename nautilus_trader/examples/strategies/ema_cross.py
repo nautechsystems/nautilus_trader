@@ -114,7 +114,7 @@ class EMACross(TradingStrategy):
         self.register_indicator_for_bars(self.bar_type, self.slow_ema)
 
         # Get historical data
-        # self.request_bars(self.bar_type)
+        self.request_bars(self.bar_type)
         # self.request_quote_ticks(self.instrument_id)
         # self.request_trade_ticks(self.instrument_id)
 
@@ -123,7 +123,7 @@ class EMACross(TradingStrategy):
         # self.subscribe_ticker(self.instrument_id)  # For debugging
         # self.subscribe_quote_ticks(self.instrument_id)  # For debugging
         # self.subscribe_trade_ticks(self.instrument_id)  # For debugging
-        # self.subscribe_order_book_deltas(self.instrument_id)  # For debugging
+        # self.subscribe_order_book_deltas(self.instrument_id, depth=20)  # For debugging
         # self.subscribe_order_book_snapshots(self.instrument_id, depth=20)  # For debugging
 
     def on_instrument(self, instrument: Instrument):

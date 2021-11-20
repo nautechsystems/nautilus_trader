@@ -1,3 +1,22 @@
+# NautilusTrader 1.134.0 Beta - Release Notes
+
+Released TBD
+
+## Breaking Changes
+- Renamed `Trader.component_ids()` to `Trader.actor_ids()`.
+- Renamed `Trader.component_states()` to `Trader.actor_states()`.
+- Renamed `Trader.add_component()` to `Trader.add_actor()`.
+- Renamed `Trader.add_components()` to `Trader.add_actors()`.
+- Renamed `Trader.clear_components()` to `Trader.clear_actors()`.
+
+## Enhancements
+None
+
+## Fixes
+None
+
+---
+
 # NautilusTrader 1.133.0 Beta - Release Notes
 
 Released on 8th, November 2021
@@ -7,8 +26,10 @@ None
 
 ## Enhancements
 - Added `LatencyModel` for simulated exchange.
-- Added `Clock.timestamp_ms()`.
+- Added `last_update_id` to order books.
+- Added `update_id` to order book data.
 - Added `depth` param when subscribing to order book deltas.
+- Added `Clock.timestamp_ms()`.
 - Added `TestDataProvider` and consolidate test data.
 - Added orjson default serializer for arrow.
 - Reorganized example strategies and launch scripts.
