@@ -381,7 +381,7 @@ cdef class Account:
         self._events.append(event)
         self.update_balances(event.balances)
 
-    cpdef void update_balances(self, list balances) except *:
+    cpdef void update_balances(self, list balances, bint allow_zero=True) except *:
         """
         Update the account balances.
 
@@ -391,6 +391,9 @@ cdef class Account:
         Parameters
         ----------
         balances : list[AccountBalance]
+            The balances for the update.
+        allow_zero : bool, default True
+            If zero balances are allowed (will then just clear the assets balance).
 
         Raises
         ------
@@ -402,8 +405,19 @@ cdef class Account:
 
         cdef AccountBalance balance
         for balance in balances:
-            if balance.total.as_decimal() <= 0:
-                raise RuntimeError("account blow up (balance zero).")
+            total: Decimal = balance.total.as_decimal()
+            if total <= 0:
+                if total < 0:
+                    raise RuntimeError(
+                        f"account blow up (balance was {balance.total}).",
+                    )
+                if total == 0 and not allow_zero:
+                    raise RuntimeError(
+                        f"account blow up (balance was {balance.total}).",
+                    )
+                else:
+                    # Clear asset balance
+                    self._balances.pop(balance.currency, None)
             self._balances[balance.currency] = balance
 
     cpdef void update_commissions(self, Money commission) except *:
