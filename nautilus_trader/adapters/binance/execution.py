@@ -15,6 +15,7 @@
 
 import asyncio
 from datetime import datetime
+from decimal import Decimal
 from typing import Any, Dict, List, Optional
 
 import orjson
@@ -57,11 +58,13 @@ from nautilus_trader.model.identifiers import ExecutionId
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import VenueOrderId
+from nautilus_trader.model.instruments.base import Instrument
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.orders.base import Order
 from nautilus_trader.model.orders.limit import LimitOrder
+from nautilus_trader.model.orders.market import MarketOrder
 from nautilus_trader.model.orders.stop_limit import StopLimitOrder
 from nautilus_trader.msgbus.bus import MessageBus
 
@@ -124,6 +127,9 @@ class BinanceSpotExecutionClient(LiveExecutionClient):
         )
 
         self._client = client
+
+        # Hot caches
+        self._instrument_ids: Dict[str, InstrumentId] = {}
 
         # HTTP API
         self._account_spot = BinanceSpotAccountHttpAPI(client=self._client)
@@ -233,6 +239,18 @@ class BinanceSpotExecutionClient(LiveExecutionClient):
     # -- COMMAND HANDLERS --------------------------------------------------------------------------
 
     def submit_order(self, command: SubmitOrder) -> None:
+        if command.order.type == OrderType.STOP_MARKET:
+            self._log.error(
+                "Cannot submit order: "
+                "STOP_MARKET orders not supported by the exchange for SPOT markets. "
+                "Use any of MARKET, LIMIT, STOP_LIMIT."
+            )
+            return
+        elif command.order.type == OrderType.STOP_LIMIT:
+            self._log.warning(
+                "STOP_LIMIT `post_only` orders not supported by the exchange. "
+                "This order may become a liquidity TAKER."
+            )
         if command.order.time_in_force not in VALID_TIF:
             self._log.error(
                 f"Cannot submit order: "
@@ -256,76 +274,84 @@ class BinanceSpotExecutionClient(LiveExecutionClient):
     async def _submit_order(self, command: SubmitOrder) -> None:
         self._log.debug(f"Submitting {command.order}.")
 
-        try:
-            order: Order = command.order
-            if order.type == OrderType.MARKET:
-                await self._account_spot.new_order(
-                    symbol=order.instrument_id.symbol.value,
-                    side=OrderSideParser.to_str_py(order.side),
-                    type="MARKET",
-                    quantity=str(order.quantity),
-                    new_client_order_id=order.client_order_id.value,
-                    # new_order_resp_type=NewOrderRespType.ACK,  # Just acknowledge order
-                    recv_window=5000,
-                )
-            else:
-                if order.type != OrderType.LIMIT:
-                    # Must determine current market price to form order type
-                    raw: bytes = await self._market_spot.ticker_price(
-                        order.instrument_id.symbol.value
-                    )
-                    response: Dict[str, Any] = orjson.loads(raw)
-                    market_price = Price.from_str(response["price"])
-                else:
-                    market_price = None
-
-                # Determine prices
-                price = None
-                stop_price = None
-                if order.type == OrderType.STOP_MARKET:
-                    stop_price = str(order.price)
-                if order.type == OrderType.STOP_LIMIT:
-                    price = str(order.price)
-                    stop_price = str(order.trigger)
-
-                iceberg_qty = None
-                if isinstance(order, (LimitOrder, StopLimitOrder)) and order.is_hidden:
-                    # TODO(cs): Implement display_qty
-                    iceberg_qty = "0"  # Hidden
-
-                raw = await self._account_spot.new_order(
-                    symbol=order.instrument_id.symbol.value,
-                    side=OrderSideParser.to_str_py(order.side),
-                    type=binance_order_type(order=order, market_price=market_price),
-                    time_in_force=TimeInForceParser.to_str_py(order.time_in_force),
-                    quantity=str(order.quantity),
-                    price=price,
-                    stop_price=stop_price,
-                    iceberg_qty=iceberg_qty,
-                    new_client_order_id=order.client_order_id.value,
-                    # new_order_resp_type=NewOrderRespType.ACK,  # Just acknowledge order
-                    recv_window=5000,
-                )
-                response = orjson.loads(raw)
-                self.generate_order_accepted(
-                    strategy_id=command.strategy_id,
-                    instrument_id=command.instrument_id,
-                    client_order_id=command.order.client_order_id,
-                    venue_order_id=VenueOrderId(str(response["orderId"])),
-                    ts_event=millis_to_nanos(response["transactTime"]),
-                )
-        except BinanceError as ex:
-            self._order_submitted(command)
-            self.generate_order_rejected(
-                strategy_id=command.strategy_id,
-                instrument_id=command.instrument_id,
-                client_order_id=command.order.client_order_id,
-                reason=ex.message,  # type: ignore  # TODO(cs): Improve errors
-                ts_event=self._clock.timestamp_ns(),  # TODO(cs): Parse from response
-            )
-            return
-
+        # Generate event here to ensure correct ordering of events
         self._order_submitted(command)
+
+        if command.order.type == OrderType.MARKET:
+            await self._submit_market_order(command)
+        elif command.order.type == OrderType.LIMIT:
+            await self._submit_limit_order(command)
+        elif command.order.type == OrderType.STOP_LIMIT:
+            await self._submit_stop_limit_order(command)
+
+    async def _submit_market_order(self, command: SubmitOrder):
+        try:
+            order: MarketOrder = command.order
+            await self._account_spot.new_order(
+                symbol=order.instrument_id.symbol.value,
+                side=OrderSideParser.to_str_py(order.side),
+                type="MARKET",
+                quantity=str(order.quantity),
+                new_client_order_id=order.client_order_id.value,
+                recv_window=5000,
+            )
+        except BinanceError as ex:
+            self._reject_order(command, ex)
+
+    async def _submit_limit_order(self, command: SubmitOrder):
+        try:
+            order: LimitOrder = command.order
+            if order.is_post_only:
+                time_in_force = None
+            else:
+                time_in_force = TimeInForceParser.to_str_py(order.time_in_force)
+
+            await self._account_spot.new_order(
+                symbol=order.instrument_id.symbol.value,
+                side=OrderSideParser.to_str_py(order.side),
+                type=binance_order_type(order=order),
+                time_in_force=time_in_force,
+                quantity=str(order.quantity),
+                price=str(order.price),
+                iceberg_qty="0" if order.is_hidden else None,
+                new_client_order_id=order.client_order_id.value,
+                recv_window=5000,
+            )
+        except BinanceError as ex:
+            self._reject_order(command, ex)
+
+    async def _submit_stop_limit_order(self, command: SubmitOrder):
+        try:
+            order: StopLimitOrder = command.order
+
+            # Get current market price
+            raw: bytes = await self._market_spot.ticker_price(order.instrument_id.symbol.value)
+            response: Dict[str, Any] = orjson.loads(raw)
+            market_price = Decimal(response["price"])
+
+            await self._account_spot.new_order(
+                symbol=order.instrument_id.symbol.value,
+                side=OrderSideParser.to_str_py(order.side),
+                type=binance_order_type(order=order, market_price=market_price),
+                time_in_force=TimeInForceParser.to_str_py(order.time_in_force),
+                quantity=str(order.quantity),
+                price=str(order.price),
+                stop_price=str(order.trigger),
+                iceberg_qty="0" if order.is_hidden else None,
+                new_client_order_id=order.client_order_id.value,
+                recv_window=5000,
+            )
+        except BinanceError as ex:
+            self._reject_order(command, ex)
+
+    def _reject_order(self, command: SubmitOrder, ex: BinanceError):
+        self.generate_order_rejected(
+            strategy_id=command.strategy_id,
+            instrument_id=command.instrument_id,
+            client_order_id=command.order.client_order_id,
+            reason=ex.message,  # type: ignore  # TODO(cs): Improve errors
+            ts_event=self._clock.timestamp_ns(),  # TODO(cs): Parse from response
+        )
 
     def _order_submitted(self, command: SubmitOrder):
         # Generate event
@@ -406,75 +432,96 @@ class BinanceSpotExecutionClient(LiveExecutionClient):
         return []
 
     def _handle_user_ws_message(self, raw: bytes):
-        msg: Dict = orjson.loads(raw)
-        msg_data = msg.get("data")
+        msg: Dict[str, Any] = orjson.loads(raw)
+        data: Dict[str, Any] = msg.get("data")
 
         # TODO(cs): Uncomment for development
         # self._log.info(str(json.dumps(msg, indent=4)), color=LogColor.GREEN)
 
         try:
-            msg_type: str = msg_data.get("e")
+            msg_type: str = data.get("e")
             if msg_type == "outboundAccountPosition":
-                self.generate_account_state(
-                    balances=parse_account_balances_ws(raw_balances=msg_data["B"]),
-                    reported=True,
-                    ts_event=msg_data["u"],
-                )
+                self._handle_account_position(data)
             elif msg_type == "executionReport":
-                execution_type: str = msg_data["x"]
-                instrument_id = InstrumentId(Symbol(msg_data["s"]), BINANCE_VENUE)
-                instrument = self._instrument_provider.find(instrument_id=instrument_id)
-                client_order_id = ClientOrderId(msg_data["c"])
-                venue_order_id = VenueOrderId(str(msg_data["i"]))
-                strategy_id = self._cache.strategy_id_for_order(client_order_id)
-                if strategy_id is None:
-                    # TODO(cs): Implement external order handling
-                    self._log.error(
-                        f"Cannot handle execution report: "
-                        f"strategy ID for {client_order_id} not found.",
-                    )
-                    return
-
-                order_type_str = msg_data["o"]
-                ts_event: int = millis_to_nanos(msg_data["E"])
-
-                if execution_type == "TRADE":
-                    commission_asset = msg_data["N"]
-                    commission_amount = msg_data["n"]
-                    if commission_asset is not None:
-                        commission = Money.from_str(f"{commission_amount} {commission_asset}")
-                    else:
-                        # Binance typically charges commission as base asset or BNB
-                        commission = Money(0, instrument.base_currency)
-
-                    liquidity_side = LiquiditySide.TAKER
-                    if order_type_str == "LIMIT_MAKER":
-                        liquidity_side = LiquiditySide.MAKER
-
-                    self.generate_order_filled(
-                        strategy_id=strategy_id,
-                        instrument_id=instrument_id,
-                        client_order_id=client_order_id,
-                        venue_order_id=venue_order_id,
-                        venue_position_id=None,  # NETTING accounts
-                        execution_id=ExecutionId(str(msg_data["t"])),  # Trade ID
-                        order_side=OrderSideParser.from_str_py(msg_data["S"]),
-                        order_type=parse_order_type(order_type_str),
-                        last_qty=Quantity.from_str(msg_data["l"]),
-                        last_px=Price.from_str(msg_data["L"]),
-                        quote_currency=instrument.quote_currency,
-                        commission=commission,
-                        liquidity_side=liquidity_side,
-                        ts_event=ts_event,
-                    )
-                elif execution_type == "CANCELED" or execution_type == "EXPIRED":
-                    self.generate_order_canceled(
-                        strategy_id=strategy_id,
-                        instrument_id=instrument_id,
-                        client_order_id=client_order_id,
-                        venue_order_id=venue_order_id,
-                        ts_event=ts_event,
-                    )
-
+                self._handle_execution_report(data)
         except Exception as ex:
             self._log.exception(ex)
+
+    def _handle_account_position(self, data: Dict[str, Any]):
+        self.generate_account_state(
+            balances=parse_account_balances_ws(raw_balances=data["B"]),
+            reported=True,
+            ts_event=data["u"],
+        )
+
+    def _handle_execution_report(self, data: Dict[str, Any]):
+        execution_type: str = data["x"]
+
+        # Parse instrument ID
+        symbol: str = data["s"]
+        instrument_id: Optional[InstrumentId] = self._instrument_ids.get(symbol)
+        if not instrument_id:
+            instrument_id = InstrumentId(Symbol(symbol), BINANCE_VENUE)
+            self._instrument_ids[symbol] = instrument_id
+
+        # Parse client order ID
+        client_order_id_str: str = data["c"]
+        if not client_order_id_str or not client_order_id_str.startswith("O"):
+            client_order_id_str = data["C"]
+        client_order_id = ClientOrderId(client_order_id_str)
+
+        # Fetch strategy ID
+        strategy_id = self._cache.strategy_id_for_order(client_order_id)
+        if strategy_id is None:
+            # TODO(cs): Implement external order handling
+            self._log.error(
+                f"Cannot handle execution report: " f"strategy ID for {client_order_id} not found.",
+            )
+            return
+
+        venue_order_id = VenueOrderId(str(data["i"]))
+        order_type_str: str = data["o"]
+        ts_event: int = millis_to_nanos(data["E"])
+
+        if execution_type == "NEW":
+            self.generate_order_accepted(
+                strategy_id=strategy_id,
+                instrument_id=instrument_id,
+                client_order_id=client_order_id,
+                venue_order_id=venue_order_id,
+                ts_event=ts_event,
+            )
+        elif execution_type == "TRADE":
+            commission_asset: str = data["N"]
+            commission_amount: str = data["n"]
+            if commission_asset is not None:
+                commission = Money.from_str(f"{commission_amount} {commission_asset}")
+            else:
+                instrument: Instrument = self._instrument_provider.find(instrument_id=instrument_id)
+                # Binance typically charges commission as base asset or BNB
+                commission = Money(0, instrument.base_currency)
+
+            self.generate_order_filled(
+                strategy_id=strategy_id,
+                instrument_id=instrument_id,
+                client_order_id=client_order_id,
+                venue_order_id=venue_order_id,
+                venue_position_id=None,  # NETTING accounts
+                execution_id=ExecutionId(str(data["t"])),  # Trade ID
+                order_side=OrderSideParser.from_str_py(data["S"]),
+                order_type=parse_order_type(order_type_str),
+                last_qty=Quantity.from_str(data["l"]),
+                last_px=Price.from_str(data["L"]),
+                quote_currency=instrument.quote_currency,
+                commission=commission,
+                liquidity_side=LiquiditySide.MAKER if data["m"] else LiquiditySide.TAKER,
+                ts_event=ts_event,
+            )
+        elif execution_type == "CANCELED" or execution_type == "EXPIRED":
+            self.generate_order_canceled(
+                strategy_id=strategy_id,
+                instrument_id=instrument_id,
+                client_order_id=client_order_id,
+                venue_order_id=venue_order_id,
+                ts_event=ts_event,
+            )

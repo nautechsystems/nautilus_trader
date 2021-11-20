@@ -140,6 +140,8 @@ class BinanceHttpClient(HttpClient):
         url_path: str,
         payload: Dict[str, str] = None,
     ) -> bytes:
+        # TODO(cs): Uncomment for development
+        # print(f"{http_method} {url_path} {payload}")
         if payload is None:
             payload = {}
         try:

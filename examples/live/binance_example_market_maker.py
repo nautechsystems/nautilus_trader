@@ -27,8 +27,6 @@ from nautilus_trader.live.node import TradingNodeConfig
 # *** THIS IS A TEST STRATEGY WITH NO ALPHA ADVANTAGE WHATSOEVER. ***
 # *** IT IS NOT INTENDED TO BE USED TO TRADE LIVE WITH REAL MONEY. ***
 
-# TODO(cs): We're nearly there, this strategy isn't currently working though
-
 # Configure the trading node
 config_node = TradingNodeConfig(
     trader_id="TESTER-001",
@@ -64,8 +62,8 @@ strat_config = VolatilityMarketMakerConfig(
     instrument_id="ETHUSDT.BINANCE",
     bar_type="ETHUSDT.BINANCE-1-MINUTE-LAST-EXTERNAL",
     atr_period=20,
-    atr_multiple=3.0,
-    trade_size=Decimal("0.005"),
+    atr_multiple=6.0,
+    trade_size=Decimal("0.01"),
 )
 # Instantiate your strategy
 strategy = VolatilityMarketMaker(config=strat_config)

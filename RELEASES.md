@@ -10,10 +10,10 @@ Released TBD
 - Renamed `Trader.clear_components()` to `Trader.clear_actors()`.
 
 ## Enhancements
-None
+- Add initial implementation of Binance SPOT integration (beta stage testing).
 
 ## Fixes
-None
+- Fixed `Actor` clock time advancement in backtest engine.
 
 ---
 

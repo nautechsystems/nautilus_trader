@@ -39,6 +39,7 @@ async def test_binance_spot_account_http_client():
     )
     await client.connect()
 
+    print(os.getenv("BINANCE_API_KEY"))
     account = BinanceSpotAccountHttpAPI(client=client)
     # response = await account.account(recv_window=5000)
     # print(json.dumps(json.loads(response), indent=4))
@@ -46,10 +47,12 @@ async def test_binance_spot_account_http_client():
     response = await account.new_order(
         symbol="ETHUSDT",
         side="BUY",
-        type="MARKET",
-        # time_in_force="GTC",
-        quantity="100.01",
-        # price="5000",
+        type="LIMIT",
+        quantity="0.01",
+        time_in_force="GTC",
+        price="4300",
+        iceberg_qty="0.005",
+        # stop_price="4200",
         # new_client_order_id="O-20211120-021300-001-001-1",
         recv_window=5000,
     )
