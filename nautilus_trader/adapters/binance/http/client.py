@@ -75,6 +75,10 @@ class BinanceHttpClient(HttpClient):
         # TODO(cs): Implement limit usage
 
     @property
+    def api_key(self) -> str:
+        return self._key
+
+    @property
     def headers(self):
         return self._headers
 
@@ -136,8 +140,6 @@ class BinanceHttpClient(HttpClient):
         url_path: str,
         payload: Dict[str, str] = None,
     ) -> bytes:
-        # TODO(cs): Uncomment for development
-        # print(f"\nRequest: {http_method}, {url_path}, {self._headers}, {payload}")
         if payload is None:
             payload = {}
         try:

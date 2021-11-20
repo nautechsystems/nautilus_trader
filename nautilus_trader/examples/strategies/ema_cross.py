@@ -114,7 +114,7 @@ class EMACross(TradingStrategy):
         self.register_indicator_for_bars(self.bar_type, self.slow_ema)
 
         # Get historical data
-        # self.request_bars(self.bar_type)
+        self.request_bars(self.bar_type)
         # self.request_quote_ticks(self.instrument_id)
         # self.request_trade_ticks(self.instrument_id)
 

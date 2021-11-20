@@ -498,7 +498,7 @@ cpdef void nautilus_header(LoggerAdapter logger) except *:
     Condition.not_none(logger, "logger")
     print("")  # New line to begin
     logger.info("\033[36m=================================================================")
-    logger.info(f"\033[36m NAUTILUS TRADER - Algorithmic Trading Platform")
+    logger.info(f"\033[36m NAUTILUS TRADER - Automated Algorithmic Trading Platform")
     logger.info(f"\033[36m by Nautech Systems Pty Ltd.")
     logger.info(f"\033[36m Copyright (C) 2015-2021. All rights reserved.")
     logger.info("\033[36m=================================================================")
