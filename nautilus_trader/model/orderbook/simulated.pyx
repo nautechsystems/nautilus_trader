@@ -14,6 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 from libc.stdint cimport uint8_t
+from libc.stdint cimport uint64_t
 
 from nautilus_trader.model.c_enums.aggressor_side cimport AggressorSide
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
@@ -69,7 +70,7 @@ cdef class SimulatedL1OrderBook(L1OrderBook):
         self._top_bid_level = None
         self._top_ask_level = None
 
-    cpdef void add(self, Order order) except *:
+    cpdef void add(self, Order order, uint64_t update_id=0) except *:
         """
         NotImplemented (Use `update(order)` for SimulatedOrderBook).
         """
@@ -110,7 +111,7 @@ cdef class SimulatedL1OrderBook(L1OrderBook):
         cdef Order bid
         if self._top_bid is None:
             bid = self._process_order(Order(price, size, OrderSide.BUY))
-            self._add(bid)
+            self._add(bid, update_id=0)
             self._top_bid = bid
             self._top_bid_level = self.bids.top()
         else:
@@ -122,7 +123,7 @@ cdef class SimulatedL1OrderBook(L1OrderBook):
         cdef Order ask
         if self._top_ask is None:
             ask = self._process_order(Order(price, size, OrderSide.SELL))
-            self._add(ask)
+            self._add(ask, update_id=0)
             self._top_ask = ask
             self._top_ask_level = self.asks.top()
         else:

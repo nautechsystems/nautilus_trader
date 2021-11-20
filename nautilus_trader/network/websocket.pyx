@@ -86,7 +86,7 @@ cdef class WebSocketClient:
             task: Task = self._loop.create_task(self.start())
             self._tasks.append(task)
         self.is_connected = True
-        self._log.debug("Websocket connected.")
+        self._log.debug("WebSocket connected.")
 
     async def post_connect(self):
         """
@@ -103,7 +103,7 @@ cdef class WebSocketClient:
         while not self._stopped:
             await self._sleep0()
         self.is_connected = False
-        self._log.debug("Websocket closed.")
+        self._log.debug("WebSocket closed.")
 
     async def send(self, raw: bytes) -> None:
         self._log.debug(f"[SEND] {raw}")
@@ -120,7 +120,7 @@ cdef class WebSocketClient:
                 if self._trigger_stop is True:
                     return
                 self._log.warning(f"Received closing msg {msg}.")
-                raise ConnectionAbortedError("Websocket error or closed")
+                raise ConnectionAbortedError("WebSocket error or closed")
             else:
                 self._log.warning(
                     f"Received unknown data type: {msg.type} data: {msg.data}.",

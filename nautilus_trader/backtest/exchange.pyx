@@ -92,13 +92,13 @@ cdef class SimulatedExchange:
         list instruments not None,
         list modules not None,
         CacheFacade cache not None,
-        FillModel fill_model not None,
         TestClock clock not None,
         Logger logger not None,
+        FillModel fill_model not None,
+        LatencyModel latency_model=None,
         BookType book_type=BookType.L1_TBBO,
         bint bar_execution=False,
         bint reject_stop_orders=True,
-        LatencyModel latency_model=None
     ):
         """
         Initialize a new instance of the ``SimulatedExchange`` class.
@@ -127,6 +127,8 @@ cdef class SimulatedExchange:
             The read-only cache for the exchange.
         fill_model : FillModel
             The fill model for the exchange.
+        latency_model : LatencyModel, optional
+            The latency model for the exchange.
         clock : TestClock
             The clock for the exchange.
         logger : Logger
@@ -137,8 +139,6 @@ cdef class SimulatedExchange:
             If the exchange execution dynamics is based on bar data.
         reject_stop_orders : bool
             If stop orders are rejected on submission if in the market.
-        latency_model : LatencyModel, optional
-            The latency model for the exchange.
 
         Raises
         ------

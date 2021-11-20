@@ -65,10 +65,9 @@ class BinanceSpotMarketHttpAPI:
 
     async def time(self) -> bytes:
         """
-        Check Server Time.
-
         Test connectivity to the Rest API and get the current server time.
 
+        Check Server Time.
         `GET /api/v3/time`
 
         Returns
@@ -85,11 +84,10 @@ class BinanceSpotMarketHttpAPI:
 
     async def exchange_info(self, symbol: str = None, symbols: list = None) -> bytes:
         """
-        Exchange Information.
-
-        Current exchange trading rules and symbol information.
+        Get current exchange trading rules and symbol information.
         Only either `symbol` or `symbols` should be passed.
 
+        Exchange Information.
         `GET /api/v3/exchangeinfo`
 
         Parameters
@@ -158,10 +156,9 @@ class BinanceSpotMarketHttpAPI:
 
     async def trades(self, symbol: str, limit: Optional[int] = None) -> bytes:
         """
+        Get recent market trades.
+
         Recent Trades List.
-
-        Get recent trades (up to last 500).
-
         `GET /api/v3/trades`
 
         Parameters
@@ -197,10 +194,9 @@ class BinanceSpotMarketHttpAPI:
         limit: Optional[int] = None,
     ) -> bytes:
         """
-        Old Trade Lookup.
-
         Get older market trades.
 
+        Old Trade Lookup.
         `GET /api/v3/historicalTrades`
 
         Parameters
@@ -243,8 +239,9 @@ class BinanceSpotMarketHttpAPI:
         limit: Optional[int] = None,
     ) -> bytes:
         """
-        Compressed/Aggregate Trades List.
+        Get recent aggregated market trades.
 
+        Compressed/Aggregate Trades List.
         `GET /api/v3/aggTrades`
 
         Parameters

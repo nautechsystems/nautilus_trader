@@ -175,14 +175,13 @@ class BacktestDataConfig(Partialable):
         )
 
         catalog = self.catalog()
+        instruments = catalog.instruments(instrument_ids=self.instrument_id, as_nautilus=True)
+        if not instruments:
+            return {"data": [], "instrument": None}
         return {
             "type": query["cls"],
             "data": catalog.query(**query),
-            "instrument": catalog.instruments(instrument_ids=self.instrument_id, as_nautilus=True)[
-                0
-            ]
-            if self.instrument_id
-            else None,
+            "instrument": instruments[0] if self.instrument_id else None,
             "client_id": ClientId(self.client_id) if self.client_id else None,
         }
 

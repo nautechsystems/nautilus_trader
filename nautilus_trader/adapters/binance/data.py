@@ -14,7 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 import asyncio
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional
 
 import orjson
 import pandas as pd
@@ -50,7 +50,7 @@ from nautilus_trader.model.enums import PriceType
 from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import Symbol
-from nautilus_trader.model.orderbook.data import OrderBookDeltas
+from nautilus_trader.model.orderbook.data import OrderBookData
 from nautilus_trader.model.orderbook.data import OrderBookSnapshot
 from nautilus_trader.msgbus.bus import MessageBus
 
@@ -106,7 +106,11 @@ class BinanceDataClient(LiveMarketDataClient):
 
         self._update_instrument_interval: int = 60 * 60  # Once per hour (hardcode)
         self._update_instruments_task: Optional[asyncio.Task] = None
+
+        # HTTP API
         self._spot = BinanceSpotMarketHttpAPI(client=self._client)
+
+        # WebSocket API
         self._ws_spot = BinanceSpotWebSocket(
             loop=loop,
             clock=clock,
@@ -114,7 +118,7 @@ class BinanceDataClient(LiveMarketDataClient):
             handler=self._handle_spot_ws_message,
         )
 
-        self._book_buffer: Dict[InstrumentId, List[Tuple[int, OrderBookDeltas]]] = {}
+        self._book_buffer: Dict[InstrumentId, List[OrderBookData]] = {}
 
     def connect(self):
         """
@@ -131,17 +135,19 @@ class BinanceDataClient(LiveMarketDataClient):
         self._loop.create_task(self._disconnect())
 
     async def _connect(self):
+        # Connect HTTP client
         if not self._client.connected:
             await self._client.connect()
         try:
             await self._instrument_provider.load_all_or_wait_async()
         except BinanceError as ex:
-            self._log.ex(ex)
+            self._log.exception(ex)
             return
 
         self._send_all_instruments_to_data_engine()
-        # self._schedule_subscribed_instruments_update(self._update_instrument_interval)
+        self._update_instruments_task = self._loop.create_task(self._update_instruments())
 
+        # Connect WebSocket clients
         self._loop.create_task(self._connect_websockets())
 
         self._set_connected(True)
@@ -153,15 +159,27 @@ class BinanceDataClient(LiveMarketDataClient):
         if self._ws_spot.has_subscriptions:
             await self._ws_spot.connect()
 
+    async def _update_instruments(self):
+        while True:
+            self._log.debug(
+                f"Scheduled update instruments to run in " f"{self._update_instruments_interval}s."
+            )
+            await asyncio.sleep(self._update_instruments_interval)
+            await self._instrument_provider.load_all_async()
+            self._send_all_instruments_to_data_engine()
+
     async def _disconnect(self):
+        # Cancel tasks
         if self._update_instruments_task:
             self._log.debug("Canceling update instruments task...")
             self._update_instruments_task.cancel()
 
+        # Disconnect WebSocket clients
         if self._ws_spot.is_connected:
             self._log.debug("Disconnecting websockets...")
             await self._ws_spot.disconnect()
 
+        # Disconnect HTTP client
         if self._client.connected:
             await self._client.disconnect()
 
@@ -279,13 +297,14 @@ class BinanceDataClient(LiveMarketDataClient):
             asks=[[float(o[0]), float(o[1])] for o in data.get("asks")],
             ts_event=ts_event,
             ts_init=ts_event,
+            update_id=last_update_id,
         )
 
         self._handle_data(snapshot)
 
         book_buffer = self._book_buffer.pop(instrument_id)
-        for update_id, deltas in book_buffer:
-            if update_id < last_update_id:
+        for deltas in book_buffer:
+            if deltas.update_id <= last_update_id:
                 continue
             self._handle_data(deltas)
 
@@ -529,14 +548,6 @@ class BinanceDataClient(LiveMarketDataClient):
 
         self._handle_bars(bar_type, bars, partial, correlation_id)
 
-    async def _subscribed_instruments_update(self, delay):
-        await self._instrument_provider.load_all_async()
-
-        self._send_all_instruments_to_data_engine()
-
-        update = self.run_after_delay(delay, self._subscribed_instruments_update(delay))
-        self._update_instruments_task = self._loop.create_task(update, name="update_instruments")
-
     def _send_all_instruments_to_data_engine(self):
         for instrument in self._instrument_provider.get_all().values():
             self._handle_data(instrument)
@@ -544,17 +555,14 @@ class BinanceDataClient(LiveMarketDataClient):
         for currency in self._instrument_provider.currencies().values():
             self._cache.add_currency(currency)
 
-    def _schedule_subscribed_instruments_update(self, delay: int):
-        update = self.run_after_delay(delay, self._subscribed_instruments_update(delay))
-        self._update_instruments_task = self._loop.create_task(update)
-
     def _handle_spot_ws_message(self, raw: bytes):
         msg: Dict = orjson.loads(raw)
         msg_data = msg.get("data")
 
         msg_type: str = msg_data.get("e")
         if msg_type is None:
-            if "lastUpdateId" in msg_data:
+            last_update_id = msg_data.get("lastUpdateId")
+            if last_update_id is not None:
                 instrument_id = InstrumentId(
                     symbol=Symbol(msg["stream"].partition("@")[0].upper()),
                     venue=BINANCE_VENUE,
@@ -562,11 +570,12 @@ class BinanceDataClient(LiveMarketDataClient):
                 data = parse_book_snapshot_ws(
                     instrument_id=instrument_id,
                     msg=msg_data,
+                    update_id=last_update_id,
                     ts_init=self._clock.timestamp_ns(),
                 )
                 book_buffer = self._book_buffer.get(instrument_id)
                 if book_buffer is not None:
-                    book_buffer.append((msg_data.get("lastUpdateId"), data))
+                    book_buffer.append(data)
                     return
             else:
                 instrument_id = InstrumentId(
@@ -590,7 +599,7 @@ class BinanceDataClient(LiveMarketDataClient):
             )
             book_buffer = self._book_buffer.get(instrument_id)
             if book_buffer is not None:
-                book_buffer.append((msg_data["U"], data))
+                book_buffer.append(data)
                 return
         elif msg_type == "24hrTicker":
             instrument_id = InstrumentId(

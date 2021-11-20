@@ -32,24 +32,24 @@ cdef class Trader(Component):
     cdef DataEngine _data_engine
     cdef RiskEngine _risk_engine
     cdef ExecutionEngine _exec_engine
-    cdef list _components
+    cdef list _actors
     cdef list _strategies
 
     cdef readonly analyzer
     """The traders performance analyzer.\n\n:returns: `PerformanceAnalyzer`"""
 
-    cdef list components_c(self)
+    cdef list actors_c(self)
     cdef list strategies_c(self)
 
-    cpdef list component_ids(self)
+    cpdef list actor_ids(self)
     cpdef list strategy_ids(self)
-    cpdef dict component_states(self)
+    cpdef dict actor_states(self)
     cpdef dict strategy_states(self)
-    cpdef void add_component(self, Actor component) except *
-    cpdef void add_components(self, list component) except *
+    cpdef void add_actor(self, Actor actor) except *
+    cpdef void add_actors(self, list actors) except *
     cpdef void add_strategy(self, TradingStrategy strategy) except *
     cpdef void add_strategies(self, list strategies) except *
-    cpdef void clear_components(self) except *
+    cpdef void clear_actors(self) except *
     cpdef void clear_strategies(self) except *
     cpdef void subscribe(self, str topic, handler: Callable[[Any], None]) except *
     cpdef void unsubscribe(self, str topic, handler: Callable[[Any], None]) except *
