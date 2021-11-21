@@ -48,7 +48,7 @@ cython = "^3.0.0a9"
 aiodns = "^3.0.0"
 aiohttp = "^3.8.1"
 hiredis = "^2.0.0"
-dask = "^2021.11.1"
+dask = "^2021.11.2"
 fsspec = "^2021.11.0"
 msgpack = "^1.0.2"
 numpy = "^1.21.4"
@@ -65,7 +65,7 @@ toml = "^0.10.2"
 tqdm = "^4.62.3"
 uvloop = { version = "^0.16.0", markers = "sys_platform != 'win32'" }
 bokeh = { version = "^2.4.1", optional = true }
-distributed = { version = "^2021.11.1", optional = true }
+distributed = { version = "^2021.11.2", optional = true }
 ib_insync = { version = "^0.9.66", optional = true }
 
 [tool.poetry.dev-dependencies]
