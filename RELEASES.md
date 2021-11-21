@@ -1,6 +1,6 @@
 # NautilusTrader 1.134.0 Beta - Release Notes
 
-Released TBD
+Released on 21st, November 2021
 
 ## Breaking Changes
 - Changed `hidden` order option to `display_qty` to support iceberg orders.
