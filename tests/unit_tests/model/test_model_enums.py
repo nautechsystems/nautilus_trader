@@ -45,6 +45,8 @@ from nautilus_trader.model.enums import LiquiditySide
 from nautilus_trader.model.enums import LiquiditySideParser
 from nautilus_trader.model.enums import OMSType
 from nautilus_trader.model.enums import OMSTypeParser
+from nautilus_trader.model.enums import OptionKind
+from nautilus_trader.model.enums import OptionKindParser
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import OrderSideParser
 from nautilus_trader.model.enums import OrderStatus
@@ -452,6 +454,44 @@ class TestDepthType:
     def test_depth_type_from_str(self, string, expected):
         # Arrange, Act
         result = DepthTypeParser.from_str_py(string)
+
+        # Assert
+        assert expected == result
+
+
+class TestOptionKind:
+    def test_option_kind_parser_given_invalid_value_raises_value_error(self):
+        # Arrange, Act, Assert
+        with pytest.raises(ValueError):
+            OptionKindParser.to_str_py(0)
+
+        with pytest.raises(ValueError):
+            OptionKindParser.from_str_py("")
+
+    @pytest.mark.parametrize(
+        "enum, expected",
+        [
+            [OptionKind.CALL, "CALL"],
+            [OptionKind.PUT, "PUT"],
+        ],
+    )
+    def test_option_kind_to_str(self, enum, expected):
+        # Arrange, Act
+        result = OptionKindParser.to_str_py(enum)
+
+        # Assert
+        assert expected == result
+
+    @pytest.mark.parametrize(
+        "string, expected",
+        [
+            ["CALL", OptionKind.CALL],
+            ["PUT", OptionKind.PUT],
+        ],
+    )
+    def test_option_kind_from_str(self, string, expected):
+        # Arrange, Act
+        result = OptionKindParser.from_str_py(string)
 
         # Assert
         assert expected == result

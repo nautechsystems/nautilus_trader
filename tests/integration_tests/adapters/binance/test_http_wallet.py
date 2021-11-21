@@ -14,33 +14,40 @@
 # -------------------------------------------------------------------------------------------------
 
 import asyncio
-import json
-import os
 
 import pytest
 
-from nautilus_trader.adapters.binance.factories import get_cached_binance_http_client
 from nautilus_trader.adapters.binance.http.api.wallet import BinanceWalletHttpAPI
+from nautilus_trader.adapters.binance.http.client import BinanceHttpClient
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.logging import Logger
 
 
-@pytest.mark.asyncio
-async def test_binance_spot_wallet_http_client():
-    loop = asyncio.get_event_loop()
-    clock = LiveClock()
+class TestBinanceUserHttpAPI:
+    def setup(self):
+        # Fixture Setup
+        clock = LiveClock()
+        logger = Logger(clock=clock)
+        self.client = BinanceHttpClient(  # noqa: S106 (no hardcoded password)
+            loop=asyncio.get_event_loop(),
+            clock=clock,
+            logger=logger,
+            key="SOME_BINANCE_API_KEY",
+            secret="SOME_BINANCE_API_SECRET",
+        )
 
-    client = get_cached_binance_http_client(
-        loop=loop,
-        clock=clock,
-        logger=Logger(clock=clock),
-        key=os.getenv("BINANCE_API_KEY"),
-        secret=os.getenv("BINANCE_API_SECRET"),
-    )
+        self.api = BinanceWalletHttpAPI(self.client)
 
-    wallet = BinanceWalletHttpAPI(client=client)
-    await client.connect()
-    response = await wallet.trade_fee(symbol="BTCUSDT")
-    print(json.dumps(response, indent=4))
+    @pytest.mark.asyncio
+    async def test_trade_fee(self, mocker):
+        # Arrange
+        await self.client.connect()
+        mock_send_request = mocker.patch(target="aiohttp.client.ClientSession.request")
 
-    await client.disconnect()
+        # Act
+        await self.api.trade_fee()
+
+        # Assert
+        request = mock_send_request.call_args.kwargs
+        assert request["method"] == "GET"
+        assert request["url"] == "https://api.binance.com/sapi/v1/asset/tradeFee"

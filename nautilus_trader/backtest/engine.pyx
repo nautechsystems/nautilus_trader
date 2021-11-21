@@ -28,9 +28,10 @@ from nautilus_trader.backtest.data_client cimport BacktestMarketDataClient
 from nautilus_trader.backtest.exchange cimport SimulatedExchange
 from nautilus_trader.backtest.execution_client cimport BacktestExecClient
 from nautilus_trader.backtest.models cimport FillModel
+from nautilus_trader.backtest.models cimport LatencyModel
 from nautilus_trader.backtest.modules cimport SimulationModule
 from nautilus_trader.cache.cache cimport Cache
-from nautilus_trader.common.actor import Actor
+from nautilus_trader.common.actor cimport Actor
 from nautilus_trader.common.clock cimport LiveClock
 from nautilus_trader.common.clock cimport TestClock
 from nautilus_trader.common.logging cimport Logger
@@ -242,7 +243,7 @@ cdef class BacktestEngine:
 
         Returns
         -------
-        List[Venue]
+        list[Venue]
 
         """
         return list(self._exchanges)
@@ -513,6 +514,7 @@ cdef class BacktestEngine:
         bint is_frozen_account=False,
         list modules=None,
         FillModel fill_model=None,
+        LatencyModel latency_model=None,
         BookType book_type=BookType.L1_TBBO,
         bar_execution: bool=False,
         reject_stop_orders: bool=True,
@@ -544,7 +546,9 @@ cdef class BacktestEngine:
         modules : list[SimulationModule, optional
             The simulation modules to load into the exchange.
         fill_model : FillModel, optional
-            The fill model for the exchange (if None then no probabilistic fills).
+            The fill model for the exchange.
+        latency_model : LatencyModel, optional
+            The latency model for the exchange.
         book_type : BookType
             The default order book type for fill modelling.
         bar_execution : bool
@@ -583,6 +587,7 @@ cdef class BacktestEngine:
             modules=modules,
             cache=self._cache,
             fill_model=fill_model,
+            latency_model=latency_model,
             book_type=book_type,
             clock=self._test_clock,
             logger=self._test_logger,
@@ -626,13 +631,13 @@ cdef class BacktestEngine:
 
         self._exchanges[venue].set_fill_model(model)
 
-    def add_component(self, component: Actor) -> None:
+    def add_actor(self, actor: Actor) -> None:
         # Checked inside trader
-        self.trader.add_component(component)
+        self.trader.add_actor(actor)
 
-    def add_components(self, components: List[Actor]) -> None:
+    def add_actors(self, actors: List[Actor]) -> None:
         # Checked inside trader
-        self.trader.add_components(components)
+        self.trader.add_actors(actors)
 
     def add_strategy(self, strategy: TradingStrategy) -> None:
         # Checked inside trader
@@ -867,6 +872,8 @@ cdef class BacktestEngine:
 
         # Set clocks
         self._test_clock.set_time(start_ns)
+        for actor in self.trader.actors_c():
+            actor.clock.set_time(start_ns)
         for strategy in self.trader.strategies_c():
             strategy.clock.set_time(start_ns)
 
@@ -937,9 +944,13 @@ cdef class BacktestEngine:
             return self._data[cursor]
 
     cdef void _advance_time(self, int64_t now_ns) except *:
-        cdef TradingStrategy strategy
-        cdef TimeEventHandler event_handler
         cdef list time_events = []  # type: list[TimeEventHandler]
+        cdef:
+            Actor actor
+            TradingStrategy strategy
+            cdef TimeEventHandler event_handler
+        for actor in self.trader.actors_c():
+            time_events += actor.clock.advance_time(now_ns)
         for strategy in self.trader.strategies_c():
             time_events += strategy.clock.advance_time(now_ns)
         for event_handler in sorted(time_events):

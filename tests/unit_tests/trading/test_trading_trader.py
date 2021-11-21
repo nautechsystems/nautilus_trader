@@ -190,46 +190,46 @@ class TestTrader:
         # Assert
         assert self.trader.strategy_states() == {}
 
-    def test_add_component(self):
+    def test_add_actor(self):
         # Arrange
         config = ActorConfig(component_id="MyPlugin-01")
-        component = Actor(config)
+        actor = Actor(config)
 
         # Act
-        self.trader.add_component(component)
+        self.trader.add_actor(actor)
 
         # Assert
-        assert self.trader.component_ids() == [ComponentId("MyPlugin-01")]
+        assert self.trader.actor_ids() == [ComponentId("MyPlugin-01")]
 
-    def test_add_plugins(self):
+    def test_add_actors(self):
         # Arrange
-        plugins = [
+        actors = [
             Actor(ActorConfig(component_id="MyPlugin-01")),
             Actor(ActorConfig(component_id="MyPlugin-02")),
         ]
 
         # Act
-        self.trader.add_components(plugins)
+        self.trader.add_actors(actors)
 
         # Assert
-        assert self.trader.component_ids() == [
+        assert self.trader.actor_ids() == [
             ComponentId("MyPlugin-01"),
             ComponentId("MyPlugin-02"),
         ]
 
-    def test_clear_plugins(self):
+    def test_clear_actors(self):
         # Arrange
-        plugins = [
+        actors = [
             Actor(ActorConfig(component_id="MyPlugin-01")),
             Actor(ActorConfig(component_id="MyPlugin-02")),
         ]
-        self.trader.add_components(plugins)
+        self.trader.add_actors(actors)
 
         # Act
-        self.trader.clear_components()
+        self.trader.clear_actors()
 
         # Assert
-        assert self.trader.component_ids() == []
+        assert self.trader.actor_ids() == []
 
     def test_get_strategy_states(self):
         # Arrange

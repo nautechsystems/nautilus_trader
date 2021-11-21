@@ -31,8 +31,8 @@ from nautilus_trader.live.node import TradingNodeConfig
 # Configure the trading node
 config_node = TradingNodeConfig(
     trader_id="TESTER-001",
-    log_level="DEBUG",
-    cache_database=None,
+    log_level="INFO",
+    # cache_database=CacheDatabaseConfig(),
     data_clients={
         "BINANCE": {
             # "api_key": "YOUR_BINANCE_API_KEY",
@@ -61,10 +61,10 @@ node = TradingNode(config=config_node)
 # Configure your strategy
 strat_config = EMACrossConfig(
     instrument_id="ETHUSDT.BINANCE",
-    bar_type="ETHUSDT.BINANCE-100-TICK-LAST-INTERNAL",
+    bar_type="ETHUSDT.BINANCE-1-MINUTE-LAST-EXTERNAL",
     fast_ema_period=10,
     slow_ema_period=20,
-    trade_size=Decimal("0.01"),
+    trade_size=Decimal("0.005"),
     order_id_tag="001",
 )
 # Instantiate your strategy

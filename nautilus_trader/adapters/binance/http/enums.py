@@ -20,6 +20,16 @@ from enum import Enum
 from enum import auto
 
 
+class NewOrderRespType(Enum):
+    """
+    Represents a `Binance` newOrderRespType.
+    """
+
+    ACK = "ACK"
+    RESULT = "RESULT"
+    FULL = "FULL"
+
+
 class AutoName(Enum):
     """
     Represents a `Binance` auto name.
