@@ -492,12 +492,14 @@ class BinanceSpotExecutionClient(LiveExecutionClient):
                 ts_event=ts_event,
             )
         elif execution_type == "TRADE":
+            instrument: Instrument = self._instrument_provider.find(instrument_id=instrument_id)
+
+            # Determine commission
             commission_asset: str = data["N"]
             commission_amount: str = data["n"]
             if commission_asset is not None:
                 commission = Money.from_str(f"{commission_amount} {commission_asset}")
             else:
-                instrument: Instrument = self._instrument_provider.find(instrument_id=instrument_id)
                 # Binance typically charges commission as base asset or BNB
                 commission = Money(0, instrument.base_currency)
 
