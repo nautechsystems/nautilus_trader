@@ -161,6 +161,7 @@ class TestMsgPackSerializer:
             Quantity(100000, precision=0),
             Price(1.00000, precision=5),
             TimeInForce.DAY,
+            display_qty=Quantity(50000, precision=0),
         )
 
         # Act

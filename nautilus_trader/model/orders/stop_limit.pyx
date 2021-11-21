@@ -73,7 +73,7 @@ cdef class StopLimitOrder(PassiveOrder):
         int64_t ts_init,
         bint post_only=False,
         bint reduce_only=False,
-        bint hidden=False,
+        Quantity display_qty=None,
         OrderListId order_list_id=None,
         ClientOrderId parent_order_id=None,
         list child_order_ids=None,
@@ -114,8 +114,8 @@ cdef class StopLimitOrder(PassiveOrder):
             If the `LIMIT` order will only provide liquidity (once triggered).
         reduce_only : bool, optional
             If the `LIMIT` order carries the 'reduce-only' execution instruction.
-        hidden : bool, optional
-            If the `LIMIT` order should be hidden from the public book (once triggered).
+        display_qty : Quantity, optional
+            The quantity of the `LIMIT` order to display on the public book (iceberg).
         order_list_id : OrderListId, optional
             The order list ID associated with the order.
         parent_order_id : ClientOrderId, optional
@@ -137,11 +137,10 @@ cdef class StopLimitOrder(PassiveOrder):
         ValueError
             If `time_in_force` is ``GTD`` and the expire_time is ``None``.
         ValueError
-            If `post_only` and `hidden`.
+            If `display_qty` is negative (< 0) or greater than `quantity`.
 
         """
-        if post_only:
-            Condition.false(hidden, "A post-only order cannot be hidden")
+        Condition.true(display_qty is None or 0 <= display_qty <= quantity, "display_qty was negative or greater than order quantity")  # noqa
         super().__init__(
             trader_id=trader_id,
             strategy_id=strategy_id,
@@ -157,7 +156,7 @@ cdef class StopLimitOrder(PassiveOrder):
             options={
                 "trigger": str(trigger),
                 "post_only": post_only,
-                "hidden": hidden,
+                "display_qty": str(display_qty) if display_qty is not None else None,
             },
             order_list_id=order_list_id,
             parent_order_id=parent_order_id,
@@ -172,7 +171,7 @@ cdef class StopLimitOrder(PassiveOrder):
         self.trigger = trigger
         self.is_triggered = False
         self.is_post_only = post_only
-        self.is_hidden = hidden
+        self.display_qty = display_qty
 
     def __repr__(self) -> str:
         cdef str id_string = f", id={self.venue_order_id.value})" if self.venue_order_id is not None else ")"
@@ -215,7 +214,7 @@ cdef class StopLimitOrder(PassiveOrder):
             "status": self._fsm.state_string_c(),
             "is_post_only": self.is_post_only,
             "is_reduce_only": self.is_reduce_only,
-            "is_hidden": self.is_hidden,
+            "display_qty": str(self.display_qty) if self.display_qty is not None else None,
             "order_list_id": self.order_list_id,
             "parent_order_id": self.parent_order_id,
             "child_order_ids": ",".join([o.value for o in self.child_order_ids]) if self.child_order_ids is not None else None,  # noqa
@@ -249,6 +248,11 @@ cdef class StopLimitOrder(PassiveOrder):
         Condition.not_none(init, "init")
         Condition.equal(init.type, OrderType.STOP_LIMIT, "init.type", "OrderType")
 
+        # Parse display quantity
+        cdef str display_qty_str = init.options["display_qty"]
+        cdef Quantity display_qty = None
+        if display_qty_str is not None:
+            display_qty = Quantity.from_str_c(display_qty_str)
         return StopLimitOrder(
             trader_id=init.trader_id,
             strategy_id=init.strategy_id,
@@ -264,7 +268,7 @@ cdef class StopLimitOrder(PassiveOrder):
             ts_init=init.ts_init,
             post_only=init.options["post_only"],
             reduce_only=init.reduce_only,
-            hidden=init.options["hidden"],
+            display_qty=display_qty,
             order_list_id=init.order_list_id,
             parent_order_id=init.parent_order_id,
             child_order_ids=init.child_order_ids,

@@ -3,6 +3,7 @@
 Released TBD
 
 ## Breaking Changes
+- Changed `hidden` order option to `display_qty` to support iceberg orders.
 - Renamed `Trader.component_ids()` to `Trader.actor_ids()`.
 - Renamed `Trader.component_states()` to `Trader.actor_states()`.
 - Renamed `Trader.add_component()` to `Trader.add_actor()`.
@@ -10,7 +11,8 @@ Released TBD
 - Renamed `Trader.clear_components()` to `Trader.clear_actors()`.
 
 ## Enhancements
-- Add initial implementation of Binance SPOT integration (beta stage testing).
+- Added initial implementation of Binance SPOT integration (beta stage testing).
+- Added support for display quantity/iceberg orders.
 
 ## Fixes
 - Fixed `Actor` clock time advancement in backtest engine.
