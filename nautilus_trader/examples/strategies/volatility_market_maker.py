@@ -220,7 +220,7 @@ class VolatilityMarketMaker(TradingStrategy):
             price=self.instrument.make_price(price),
             time_in_force=TimeInForce.GTC,
             post_only=True,  # default value is True
-            hidden=False,  # default value is False
+            display_qty=self.instrument.make_qty(self.trade_size / 2),  # iceberg
         )
 
         self.buy_order = order
@@ -238,7 +238,7 @@ class VolatilityMarketMaker(TradingStrategy):
             price=self.instrument.make_price(price),
             time_in_force=TimeInForce.GTC,
             post_only=True,  # default value is True
-            hidden=False,  # default value is False
+            display_qty=self.instrument.make_qty(self.trade_size / 2),  # iceberg
         )
 
         self.sell_order = order
