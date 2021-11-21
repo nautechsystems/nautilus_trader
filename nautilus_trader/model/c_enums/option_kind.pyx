@@ -13,16 +13,31 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from nautilus_trader.model.events.order cimport OrderInitialized
-from nautilus_trader.model.objects cimport Quantity
-from nautilus_trader.model.orders.base cimport PassiveOrder
 
-
-cdef class LimitOrder(PassiveOrder):
-    cdef readonly bint is_post_only
-    """If the order will only provide liquidity (make a market).\n\n:returns: `bool`"""
-    cdef readonly Quantity display_qty
-    """The quantity of the order to display on the public book (iceberg).\n\n:returns: `Quantity` or ``None``"""
+cdef class OptionKindParser:
 
     @staticmethod
-    cdef LimitOrder create(OrderInitialized init)
+    cdef str to_str(int value):
+        if value == 1:
+            return "CALL"
+        elif value == 2:
+            return "PUT"
+        else:
+            raise ValueError(f"value was invalid, was {value}")
+
+    @staticmethod
+    cdef OptionKind from_str(str value) except *:
+        if value == "CALL":
+            return OptionKind.CALL
+        elif value == "PUT":
+            return OptionKind.PUT
+        else:
+            raise ValueError(f"value was invalid, was {value}")
+
+    @staticmethod
+    def to_str_py(int value):
+        return OptionKindParser.to_str(value)
+
+    @staticmethod
+    def from_str_py(str value):
+        return OptionKindParser.from_str(value)

@@ -302,7 +302,6 @@ class BetfairTestStubs:
             ts_init=0,
             post_only=False,
             reduce_only=False,
-            hidden=False,
         )
 
     @staticmethod

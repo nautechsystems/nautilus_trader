@@ -252,8 +252,8 @@ class TestLiveLogger:
         logger_adapter.info("A log message.")  # <-- blocks
 
         await asyncio.sleep(0.3)  # <-- processes all log messages
-        self.logger.stop()
+        logger.stop()
         await asyncio.sleep(0.3)
 
         # Assert
-        assert not self.logger.is_running
+        assert not logger.is_running

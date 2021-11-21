@@ -20,14 +20,13 @@ import os
 import pytest
 
 from nautilus_trader.adapters.binance.factories import get_cached_binance_http_client
-from nautilus_trader.adapters.binance.http.api.spot_market import BinanceSpotMarketHttpAPI
-from nautilus_trader.adapters.binance.providers import BinanceInstrumentProvider
+from nautilus_trader.adapters.binance.http.api.user import BinanceUserDataHttpAPI
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.logging import Logger
 
 
 @pytest.mark.asyncio
-async def test_binance_spot_market_http_client():
+async def test_binance_spot_account_http_client():
     loop = asyncio.get_event_loop()
     clock = LiveClock()
 
@@ -40,17 +39,9 @@ async def test_binance_spot_market_http_client():
     )
     await client.connect()
 
-    market = BinanceSpotMarketHttpAPI(client=client)
-    response = await market.exchange_info(symbols=["BTCUSDT", "ETHUSDT"])
+    user = BinanceUserDataHttpAPI(client=client)
+    response = await user.create_listen_key_spot()
+
     print(json.dumps(response, indent=4))
-
-    provider = BinanceInstrumentProvider(
-        client=client,
-        logger=Logger(clock=clock),
-    )
-
-    await provider.load_all_async()
-
-    print(provider.count)
 
     await client.disconnect()

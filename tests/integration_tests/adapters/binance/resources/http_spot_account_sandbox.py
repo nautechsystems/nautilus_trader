@@ -20,14 +20,13 @@ import os
 import pytest
 
 from nautilus_trader.adapters.binance.factories import get_cached_binance_http_client
-from nautilus_trader.adapters.binance.http.api.spot_market import BinanceSpotMarketHttpAPI
-from nautilus_trader.adapters.binance.providers import BinanceInstrumentProvider
+from nautilus_trader.adapters.binance.http.api.spot_account import BinanceSpotAccountHttpAPI
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.logging import Logger
 
 
 @pytest.mark.asyncio
-async def test_binance_spot_market_http_client():
+async def test_binance_spot_account_http_client():
     loop = asyncio.get_event_loop()
     clock = LiveClock()
 
@@ -40,17 +39,29 @@ async def test_binance_spot_market_http_client():
     )
     await client.connect()
 
-    market = BinanceSpotMarketHttpAPI(client=client)
-    response = await market.exchange_info(symbols=["BTCUSDT", "ETHUSDT"])
-    print(json.dumps(response, indent=4))
+    print(os.getenv("BINANCE_API_KEY"))
+    account = BinanceSpotAccountHttpAPI(client=client)
+    # response = await account.account(recv_window=5000)
+    # print(json.dumps(response, indent=4))
 
-    provider = BinanceInstrumentProvider(
-        client=client,
-        logger=Logger(clock=clock),
+    response = await account.new_order(
+        symbol="ETHUSDT",
+        side="BUY",
+        type="LIMIT",
+        quantity="0.01",
+        time_in_force="GTC",
+        price="4300",
+        iceberg_qty="0.005",
+        # stop_price="4200",
+        # new_client_order_id="O-20211120-021300-001-001-1",
+        recv_window=5000,
     )
-
-    await provider.load_all_async()
-
-    print(provider.count)
+    # response = await account.cancel_order(
+    #     symbol="ETHUSDT",
+    #     orig_client_order_id="oN6xVmPpaUe0Awk7KFGIv3",
+    #     #new_client_order_id=str(uuid.uuid4()),
+    #     recv_window=5000,
+    # )
+    print(json.dumps(json.loads(response), indent=4))
 
     await client.disconnect()

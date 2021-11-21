@@ -15,6 +15,7 @@
 
 from nautilus_trader.model.events.order cimport OrderInitialized
 from nautilus_trader.model.objects cimport Price
+from nautilus_trader.model.objects cimport Quantity
 from nautilus_trader.model.orders.base cimport PassiveOrder
 
 
@@ -25,8 +26,8 @@ cdef class StopLimitOrder(PassiveOrder):
     """If the order has been triggered.\n\n:returns: `bool`"""
     cdef readonly bint is_post_only
     """If the order will only provide liquidity (make a market).\n\n:returns: `bool`"""
-    cdef readonly bint is_hidden
-    """If the order should be hidden from the public book.\n\n:returns: `bool`"""
+    cdef readonly Quantity display_qty
+    """The quantity of the `LIMIT` order to display on the public book (iceberg).\n\n:returns: `Quantity` or ``None``"""  # noqa
 
     @staticmethod
     cdef StopLimitOrder create(OrderInitialized init)

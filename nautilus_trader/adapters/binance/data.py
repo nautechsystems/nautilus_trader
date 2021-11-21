@@ -14,13 +14,14 @@
 # -------------------------------------------------------------------------------------------------
 
 import asyncio
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional
 
 import orjson
 import pandas as pd
 
 from nautilus_trader.adapters.binance.common import BINANCE_VENUE
 from nautilus_trader.adapters.binance.data_types import BinanceBar
+from nautilus_trader.adapters.binance.data_types import BinanceTicker
 from nautilus_trader.adapters.binance.http.api.spot_market import BinanceSpotMarketHttpAPI
 from nautilus_trader.adapters.binance.http.client import BinanceHttpClient
 from nautilus_trader.adapters.binance.http.error import BinanceError
@@ -43,6 +44,7 @@ from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.live.data_client import LiveMarketDataClient
 from nautilus_trader.model.c_enums.bar_aggregation import BarAggregationParser
 from nautilus_trader.model.data.bar import BarType
+from nautilus_trader.model.data.tick import QuoteTick
 from nautilus_trader.model.data.tick import TradeTick
 from nautilus_trader.model.enums import BarAggregation
 from nautilus_trader.model.enums import BookType
@@ -51,6 +53,7 @@ from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.orderbook.data import OrderBookData
+from nautilus_trader.model.orderbook.data import OrderBookDeltas
 from nautilus_trader.model.orderbook.data import OrderBookSnapshot
 from nautilus_trader.msgbus.bus import MessageBus
 
@@ -106,7 +109,11 @@ class BinanceDataClient(LiveMarketDataClient):
 
         self._update_instrument_interval: int = 60 * 60  # Once per hour (hardcode)
         self._update_instruments_task: Optional[asyncio.Task] = None
+
+        # HTTP API
         self._spot = BinanceSpotMarketHttpAPI(client=self._client)
+
+        # WebSocket API
         self._ws_spot = BinanceSpotWebSocket(
             loop=loop,
             clock=clock,
@@ -131,17 +138,19 @@ class BinanceDataClient(LiveMarketDataClient):
         self._loop.create_task(self._disconnect())
 
     async def _connect(self):
+        # Connect HTTP client
         if not self._client.connected:
             await self._client.connect()
         try:
             await self._instrument_provider.load_all_or_wait_async()
         except BinanceError as ex:
-            self._log.ex(ex)
+            self._log.exception(ex)
             return
 
         self._send_all_instruments_to_data_engine()
-        # self._schedule_subscribed_instruments_update(self._update_instrument_interval)
+        self._update_instruments_task = self._loop.create_task(self._update_instruments())
 
+        # Connect WebSocket clients
         self._loop.create_task(self._connect_websockets())
 
         self._set_connected(True)
@@ -153,15 +162,27 @@ class BinanceDataClient(LiveMarketDataClient):
         if self._ws_spot.has_subscriptions:
             await self._ws_spot.connect()
 
+    async def _update_instruments(self):
+        while True:
+            self._log.debug(
+                f"Scheduled `update_instruments` to run in "
+                f"{self._update_instruments_interval}s."
+            )
+            await asyncio.sleep(self._update_instruments_interval)
+            await self._instrument_provider.load_all_async()
+            self._send_all_instruments_to_data_engine()
+
     async def _disconnect(self):
+        # Cancel tasks
         if self._update_instruments_task:
-            self._log.debug("Canceling update instruments task...")
+            self._log.debug("Canceling `update_instruments` task...")
             self._update_instruments_task.cancel()
 
+        # Disconnect WebSocket clients
         if self._ws_spot.is_connected:
-            self._log.debug("Disconnecting websockets...")
             await self._ws_spot.disconnect()
 
+        # Disconnect HTTP client
         if self._client.connected:
             await self._client.disconnect()
 
@@ -266,8 +287,10 @@ class BinanceDataClient(LiveMarketDataClient):
         while not self._ws_spot.is_connected:
             await self.sleep0()
 
-        raw: bytes = await self._spot.depth(instrument_id.symbol.value, limit=depth)
-        data: Dict = orjson.loads(raw)
+        data: Dict[str, Any] = await self._spot.depth(
+            symbol=instrument_id.symbol.value,
+            limit=depth,
+        )
 
         ts_event: int = self._clock.timestamp_ns()
         last_update_id: int = data.get("lastUpdateId")
@@ -330,7 +353,8 @@ class BinanceDataClient(LiveMarketDataClient):
             )
 
         self._ws_spot.subscribe_bars(
-            symbol=bar_type.instrument_id.symbol.value, interval=f"{bar_type.spec.step}{resolution}"
+            symbol=bar_type.instrument_id.symbol.value,
+            interval=f"{bar_type.spec.step}{resolution}",
         )
         self._add_subscription_bars(bar_type)
 
@@ -429,8 +453,7 @@ class BinanceDataClient(LiveMarketDataClient):
         limit: int,
         correlation_id: UUID4,
     ):
-        data: bytes = await self._spot.trades(instrument_id.symbol.value, limit)
-        response: List = orjson.loads(data)
+        response: List[Dict[str, Any]] = await self._spot.trades(instrument_id.symbol.value, limit)
 
         ticks: List[TradeTick] = [
             parse_trade_tick(
@@ -513,7 +536,7 @@ class BinanceDataClient(LiveMarketDataClient):
         start_time_ms = from_datetime.to_datetime64() * 1000 if from_datetime is not None else None
         end_time_ms = to_datetime.to_datetime64() * 1000 if to_datetime is not None else None
 
-        data: bytes = await self._spot.klines(
+        data: List[List[Any]] = await self._spot.klines(
             symbol=bar_type.instrument_id.symbol.value,
             interval=f"{bar_type.spec.step}{resolution}",
             start_time_ms=start_time_ms,
@@ -521,22 +544,12 @@ class BinanceDataClient(LiveMarketDataClient):
             limit=limit,
         )
 
-        response: List = orjson.loads(data)
-
         bars: List[BinanceBar] = [
-            parse_bar(bar_type, values=b, ts_init=self._clock.timestamp_ns()) for b in response
+            parse_bar(bar_type, values=b, ts_init=self._clock.timestamp_ns()) for b in data
         ]
         partial: BinanceBar = bars.pop()
 
         self._handle_bars(bar_type, bars, partial, correlation_id)
-
-    async def _subscribed_instruments_update(self, delay):
-        await self._instrument_provider.load_all_async()
-
-        self._send_all_instruments_to_data_engine()
-
-        update = self.run_after_delay(delay, self._subscribed_instruments_update(delay))
-        self._update_instruments_task = self._loop.create_task(update, name="update_instruments")
 
     def _send_all_instruments_to_data_engine(self):
         for instrument in self._instrument_provider.get_all().values():
@@ -545,92 +558,122 @@ class BinanceDataClient(LiveMarketDataClient):
         for currency in self._instrument_provider.currencies().values():
             self._cache.add_currency(currency)
 
-    def _schedule_subscribed_instruments_update(self, delay: int):
-        update = self.run_after_delay(delay, self._subscribed_instruments_update(delay))
-        self._update_instruments_task = self._loop.create_task(update)
-
     def _handle_spot_ws_message(self, raw: bytes):
-        msg: Dict = orjson.loads(raw)
-        msg_data = msg.get("data")
+        msg: Dict[str, Any] = orjson.loads(raw)
+        data: Dict[str, Any] = msg.get("data")
 
-        msg_type: str = msg_data.get("e")
+        msg_type: str = data.get("e")
         if msg_type is None:
-            last_update_id = msg_data.get("lastUpdateId")
-            if last_update_id is not None:
-                instrument_id = InstrumentId(
-                    symbol=Symbol(msg["stream"].partition("@")[0].upper()),
-                    venue=BINANCE_VENUE,
-                )
-                data = parse_book_snapshot_ws(
-                    instrument_id=instrument_id,
-                    msg=msg_data,
-                    update_id=last_update_id,
-                    ts_init=self._clock.timestamp_ns(),
-                )
-                book_buffer = self._book_buffer.get(instrument_id)
-                if book_buffer is not None:
-                    book_buffer.append(data)
-                    return
-            else:
-                instrument_id = InstrumentId(
-                    symbol=Symbol(msg_data["s"]),
-                    venue=BINANCE_VENUE,
-                )
-                data = parse_quote_tick_ws(
-                    instrument_id=instrument_id,
-                    msg=msg_data,
-                    ts_init=self._clock.timestamp_ns(),
-                )
+            self._handle_market_update(msg, data)
         elif msg_type == "depthUpdate":
-            instrument_id = InstrumentId(
-                symbol=Symbol(msg_data["s"]),
-                venue=BINANCE_VENUE,
-            )
-            data = parse_diff_depth_stream_ws(
-                instrument_id=instrument_id,
-                msg=msg_data,
-                ts_init=self._clock.timestamp_ns(),
-            )
-            book_buffer = self._book_buffer.get(instrument_id)
-            if book_buffer is not None:
-                book_buffer.append(data)
-                return
+            self._handle_depth_update(data)
         elif msg_type == "24hrTicker":
-            instrument_id = InstrumentId(
-                symbol=Symbol(msg_data["s"]),
-                venue=BINANCE_VENUE,
-            )
-            data = parse_ticker_ws(
-                instrument_id=instrument_id,
-                msg=msg_data,
-                ts_init=self._clock.timestamp_ns(),
-            )
+            self._handle_24hr_ticker(data)
         elif msg_type == "trade":
-            instrument_id = InstrumentId(
-                symbol=Symbol(msg_data["s"]),
-                venue=BINANCE_VENUE,
-            )
-            data = parse_trade_tick_ws(
-                instrument_id=instrument_id,
-                msg=msg_data,
-                ts_init=self._clock.timestamp_ns(),
-            )
+            self._handle_trade(data)
         elif msg_type == "kline":
-            kline = msg_data["k"]
-            if msg_data["E"] < kline["T"]:
-                return  # Bar has not closed yet
-            instrument_id = InstrumentId(
-                symbol=Symbol(kline["s"]),
-                venue=BINANCE_VENUE,
-            )
-            data = parse_bar_ws(
-                instrument_id=instrument_id,
-                kline=kline,
-                ts_event=millis_to_nanos(msg_data["E"]),
-                ts_init=self._clock.timestamp_ns(),
-            )
+            self._handle_kline(data)
         else:
             self._log.error(f"Unrecognized websocket message type, was {msg_type}")
             return
 
-        self._handle_data(data)
+    def _handle_market_update(self, msg: Dict[str, Any], data: Dict[str, Any]):
+        last_update_id: int = data.get("lastUpdateId")
+        if last_update_id is not None:
+            self._handle_book_snapshot(
+                data=data,
+                last_update_id=last_update_id,
+                symbol=msg["stream"].partition("@")[0].upper(),
+            )
+        else:
+            self._handle_quote_tick(data)
+
+    def _handle_book_snapshot(
+        self,
+        data: Dict[str, Any],
+        symbol: str,
+        last_update_id: int,
+    ):
+        instrument_id = InstrumentId(
+            symbol=Symbol(symbol),
+            venue=BINANCE_VENUE,
+        )
+        book_snapshot: OrderBookSnapshot = parse_book_snapshot_ws(
+            instrument_id=instrument_id,
+            msg=data,
+            update_id=last_update_id,
+            ts_init=self._clock.timestamp_ns(),
+        )
+        book_buffer: List[OrderBookData] = self._book_buffer.get(instrument_id)
+        if book_buffer is not None:
+            book_buffer.append(book_snapshot)
+            return
+        self._handle_data(book_snapshot)
+
+    def _handle_quote_tick(self, data: Dict[str, Any]):
+        instrument_id = InstrumentId(
+            symbol=Symbol(data["s"]),
+            venue=BINANCE_VENUE,
+        )
+        quote_tick: QuoteTick = parse_quote_tick_ws(
+            instrument_id=instrument_id,
+            msg=data,
+            ts_init=self._clock.timestamp_ns(),
+        )
+        self._handle_data(quote_tick)
+
+    def _handle_depth_update(self, data: Dict[str, Any]):
+        instrument_id = InstrumentId(
+            symbol=Symbol(data["s"]),
+            venue=BINANCE_VENUE,
+        )
+        book_deltas: OrderBookDeltas = parse_diff_depth_stream_ws(
+            instrument_id=instrument_id,
+            msg=data,
+            ts_init=self._clock.timestamp_ns(),
+        )
+        book_buffer: List[OrderBookData] = self._book_buffer.get(instrument_id)
+        if book_buffer is not None:
+            book_buffer.append(book_deltas)
+            return
+        self._handle_data(book_deltas)
+
+    def _handle_24hr_ticker(self, data: Dict[str, Any]):
+        instrument_id = InstrumentId(
+            symbol=Symbol(data["s"]),
+            venue=BINANCE_VENUE,
+        )
+        ticker: BinanceTicker = parse_ticker_ws(
+            instrument_id=instrument_id,
+            msg=data,
+            ts_init=self._clock.timestamp_ns(),
+        )
+        self._handle_data(ticker)
+
+    def _handle_trade(self, data: Dict[str, Any]):
+        instrument_id = InstrumentId(
+            symbol=Symbol(data["s"]),
+            venue=BINANCE_VENUE,
+        )
+        trade_tick: TradeTick = parse_trade_tick_ws(
+            instrument_id=instrument_id,
+            msg=data,
+            ts_init=self._clock.timestamp_ns(),
+        )
+        self._handle_data(trade_tick)
+
+    def _handle_kline(self, data: Dict[str, Any]):
+        kline = data["k"]
+        if data["E"] < kline["T"]:
+            return  # Bar has not closed yet
+        instrument_id = InstrumentId(
+            symbol=Symbol(kline["s"]),
+            venue=BINANCE_VENUE,
+        )
+        bar: BinanceBar = parse_bar_ws(
+            instrument_id=instrument_id,
+            kline=kline,
+            ts_event=millis_to_nanos(data["E"]),
+            ts_init=self._clock.timestamp_ns(),
+        )
+        self._handle_data(bar)

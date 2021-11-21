@@ -1,3 +1,24 @@
+# NautilusTrader 1.134.0 Beta - Release Notes
+
+Released on 22nd, November 2021
+
+## Breaking Changes
+- Changed `hidden` order option to `display_qty` to support iceberg orders.
+- Renamed `Trader.component_ids()` to `Trader.actor_ids()`.
+- Renamed `Trader.component_states()` to `Trader.actor_states()`.
+- Renamed `Trader.add_component()` to `Trader.add_actor()`.
+- Renamed `Trader.add_components()` to `Trader.add_actors()`.
+- Renamed `Trader.clear_components()` to `Trader.clear_actors()`.
+
+## Enhancements
+- Added initial implementation of Binance SPOT integration (beta stage testing).
+- Added support for display quantity/iceberg orders.
+
+## Fixes
+- Fixed `Actor` clock time advancement in backtest engine.
+
+---
+
 # NautilusTrader 1.133.0 Beta - Release Notes
 
 Released on 8th, November 2021

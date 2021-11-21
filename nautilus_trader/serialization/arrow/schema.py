@@ -193,7 +193,7 @@ NAUTILUS_PARQUET_SCHEMA = {
             "reduce_only": pa.bool_(),
             # -- Options fields -- #
             "post_only": pa.bool_(),
-            "hidden": pa.bool_(),
+            "display_qty": pa.string(),
             "price": pa.float64(),
             "trigger": pa.bool_(),
             # --------------------- #
@@ -206,7 +206,7 @@ NAUTILUS_PARQUET_SCHEMA = {
             "event_id": pa.string(),
             "ts_init": pa.int64(),
         },
-        metadata={"options_fields": orjson.dumps(["post_only", "hidden", "price", "trigger"])},
+        metadata={"options_fields": orjson.dumps(["post_only", "display_qty", "price", "trigger"])},
     ),
     OrderDenied: pa.schema(
         {
@@ -569,8 +569,9 @@ NAUTILUS_PARQUET_SCHEMA = {
             "size_increment": pa.dictionary(pa.int8(), pa.string()),
             "multiplier": pa.dictionary(pa.int8(), pa.string()),
             "lot_size": pa.dictionary(pa.int8(), pa.string()),
-            "expiry_date": pa.dictionary(pa.int8(), pa.string()),
-            "strike_price": pa.dictionary(pa.int16(), pa.string()),
+            "expiry_date": pa.dictionary(pa.int64(), pa.string()),
+            "strike_price": pa.dictionary(pa.int64(), pa.string()),
+            "kind": pa.dictionary(pa.int8(), pa.string()),
             "ts_init": pa.int64(),
             "ts_event": pa.int64(),
         }
