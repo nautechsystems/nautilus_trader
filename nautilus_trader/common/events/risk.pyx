@@ -80,8 +80,8 @@ cdef class TradingStateChanged(RiskEvent):
             The trader ID associated with the event.
         state : TradingState
             The trading state for the event.
-        config: dict
-            The configuration for the event.
+        config : dict
+            The configuration of the risk engine.
         event_id : UUID4
             The event ID.
         ts_event : int64
