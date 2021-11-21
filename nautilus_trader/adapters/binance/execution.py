@@ -56,6 +56,7 @@ from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import ClientOrderId
 from nautilus_trader.model.identifiers import ExecutionId
 from nautilus_trader.model.identifiers import InstrumentId
+from nautilus_trader.model.identifiers import StrategyId
 from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import VenueOrderId
 from nautilus_trader.model.instruments.base import Instrument
@@ -176,15 +177,14 @@ class BinanceSpotExecutionClient(LiveExecutionClient):
             return
 
         # Authenticate API key and update account(s)
-        raw: bytes = await self._account_spot.account(recv_window=5000)
-        response: Dict[str, Any] = orjson.loads(raw)
+        response: Dict[str, Any] = await self._account_spot.account(recv_window=5000)
 
         self._authenticate_api_key(response=response)
         self._update_account_state(response=response)
 
         # Get listen keys
-        raw = await self._user.create_listen_key_spot()
-        self._listen_key_spot = orjson.loads(raw)["listenKey"]
+        response = await self._user.create_listen_key_spot()
+        self._listen_key_spot = response["listenKey"]
         self._ping_listen_keys_task = self._loop.create_task(self._ping_listen_keys())
 
         # Connect WebSocket clients
@@ -211,7 +211,7 @@ class BinanceSpotExecutionClient(LiveExecutionClient):
     async def _ping_listen_keys(self):
         while True:
             self._log.debug(
-                f"Scheduled ping listen keys to run in " f"{self._ping_listen_keys_interval}s."
+                f"Scheduled `ping_listen_keys` to run in " f"{self._ping_listen_keys_interval}s."
             )
             await asyncio.sleep(self._ping_listen_keys_interval)
             if self._listen_key_spot:
@@ -221,12 +221,11 @@ class BinanceSpotExecutionClient(LiveExecutionClient):
     async def _disconnect(self) -> None:
         # Cancel tasks
         if self._ping_listen_keys_task:
-            self._log.debug("Canceling ping listen keys task...")
+            self._log.debug("Canceling `ping_listen_keys` task...")
             self._ping_listen_keys_task.cancel()
 
         # Disconnect WebSocket clients
         if self._ws_user_spot.is_connected:
-            self._log.debug("Disconnecting websockets...")
             await self._ws_user_spot.disconnect()
 
         # Disconnect HTTP client
@@ -275,91 +274,79 @@ class BinanceSpotExecutionClient(LiveExecutionClient):
         self._log.debug(f"Submitting {command.order}.")
 
         # Generate event here to ensure correct ordering of events
-        self._order_submitted(command)
-
-        if command.order.type == OrderType.MARKET:
-            await self._submit_market_order(command)
-        elif command.order.type == OrderType.LIMIT:
-            await self._submit_limit_order(command)
-        elif command.order.type == OrderType.STOP_LIMIT:
-            await self._submit_stop_limit_order(command)
-
-    async def _submit_market_order(self, command: SubmitOrder):
-        try:
-            order: MarketOrder = command.order
-            await self._account_spot.new_order(
-                symbol=order.instrument_id.symbol.value,
-                side=OrderSideParser.to_str_py(order.side),
-                type="MARKET",
-                quantity=str(order.quantity),
-                new_client_order_id=order.client_order_id.value,
-                recv_window=5000,
-            )
-        except BinanceError as ex:
-            self._reject_order(command, ex)
-
-    async def _submit_limit_order(self, command: SubmitOrder):
-        try:
-            order: LimitOrder = command.order
-            if order.is_post_only:
-                time_in_force = None
-            else:
-                time_in_force = TimeInForceParser.to_str_py(order.time_in_force)
-
-            await self._account_spot.new_order(
-                symbol=order.instrument_id.symbol.value,
-                side=OrderSideParser.to_str_py(order.side),
-                type=binance_order_type(order=order),
-                time_in_force=time_in_force,
-                quantity=str(order.quantity),
-                price=str(order.price),
-                iceberg_qty=str(order.display_qty) if order.display_qty is not None else None,
-                new_client_order_id=order.client_order_id.value,
-                recv_window=5000,
-            )
-        except BinanceError as ex:
-            self._reject_order(command, ex)
-
-    async def _submit_stop_limit_order(self, command: SubmitOrder):
-        try:
-            order: StopLimitOrder = command.order
-
-            # Get current market price
-            raw: bytes = await self._market_spot.ticker_price(order.instrument_id.symbol.value)
-            response: Dict[str, Any] = orjson.loads(raw)
-            market_price = Decimal(response["price"])
-
-            await self._account_spot.new_order(
-                symbol=order.instrument_id.symbol.value,
-                side=OrderSideParser.to_str_py(order.side),
-                type=binance_order_type(order=order, market_price=market_price),
-                time_in_force=TimeInForceParser.to_str_py(order.time_in_force),
-                quantity=str(order.quantity),
-                price=str(order.price),
-                stop_price=str(order.trigger),
-                iceberg_qty=str(order.display_qty) if order.display_qty is not None else None,
-                new_client_order_id=order.client_order_id.value,
-                recv_window=5000,
-            )
-        except BinanceError as ex:
-            self._reject_order(command, ex)
-
-    def _reject_order(self, command: SubmitOrder, ex: BinanceError):
-        self.generate_order_rejected(
-            strategy_id=command.strategy_id,
-            instrument_id=command.instrument_id,
-            client_order_id=command.order.client_order_id,
-            reason=ex.message,  # type: ignore  # TODO(cs): Improve errors
-            ts_event=self._clock.timestamp_ns(),  # TODO(cs): Parse from response
-        )
-
-    def _order_submitted(self, command: SubmitOrder):
-        # Generate event
         self.generate_order_submitted(
             strategy_id=command.strategy_id,
             instrument_id=command.instrument_id,
             client_order_id=command.order.client_order_id,
             ts_event=self._clock.timestamp_ns(),
+        )
+
+        try:
+            if command.order.type == OrderType.MARKET:
+                await self._submit_market_order(command)
+            elif command.order.type == OrderType.LIMIT:
+                await self._submit_limit_order(command)
+            elif command.order.type == OrderType.STOP_LIMIT:
+                await self._submit_stop_limit_order(command)
+        except BinanceError as ex:
+            self.generate_order_rejected(
+                strategy_id=command.strategy_id,
+                instrument_id=command.instrument_id,
+                client_order_id=command.order.client_order_id,
+                reason=ex.message,  # type: ignore  # TODO(cs): Improve errors
+                ts_event=self._clock.timestamp_ns(),  # TODO(cs): Parse from response
+            )
+
+    async def _submit_market_order(self, command: SubmitOrder):
+        order: MarketOrder = command.order
+        await self._account_spot.new_order(
+            symbol=order.instrument_id.symbol.value,
+            side=OrderSideParser.to_str_py(order.side),
+            type="MARKET",
+            quantity=str(order.quantity),
+            new_client_order_id=order.client_order_id.value,
+            recv_window=5000,
+        )
+
+    async def _submit_limit_order(self, command: SubmitOrder):
+        order: LimitOrder = command.order
+        if order.is_post_only:
+            time_in_force = None
+        else:
+            time_in_force = TimeInForceParser.to_str_py(order.time_in_force)
+
+        await self._account_spot.new_order(
+            symbol=order.instrument_id.symbol.value,
+            side=OrderSideParser.to_str_py(order.side),
+            type=binance_order_type(order=order),
+            time_in_force=time_in_force,
+            quantity=str(order.quantity),
+            price=str(order.price),
+            iceberg_qty=str(order.display_qty) if order.display_qty is not None else None,
+            new_client_order_id=order.client_order_id.value,
+            recv_window=5000,
+        )
+
+    async def _submit_stop_limit_order(self, command: SubmitOrder):
+        order: StopLimitOrder = command.order
+
+        # Get current market price
+        response: Dict[str, Any] = await self._market_spot.ticker_price(
+            order.instrument_id.symbol.value
+        )
+        market_price = Decimal(response["price"])
+
+        await self._account_spot.new_order(
+            symbol=order.instrument_id.symbol.value,
+            side=OrderSideParser.to_str_py(order.side),
+            type=binance_order_type(order=order, market_price=market_price),
+            time_in_force=TimeInForceParser.to_str_py(order.time_in_force),
+            quantity=str(order.quantity),
+            price=str(order.price),
+            stop_price=str(order.trigger),
+            iceberg_qty=str(order.display_qty) if order.display_qty is not None else None,
+            new_client_order_id=order.client_order_id.value,
+            recv_window=5000,
         )
 
     async def _submit_order_list(self, command: SubmitOrderList) -> None:
@@ -451,7 +438,7 @@ class BinanceSpotExecutionClient(LiveExecutionClient):
         self.generate_account_state(
             balances=parse_account_balances_ws(raw_balances=data["B"]),
             reported=True,
-            ts_event=data["u"],
+            ts_event=millis_to_nanos(data["u"]),
         )
 
     def _handle_execution_report(self, data: Dict[str, Any]):
@@ -471,7 +458,7 @@ class BinanceSpotExecutionClient(LiveExecutionClient):
         client_order_id = ClientOrderId(client_order_id_str)
 
         # Fetch strategy ID
-        strategy_id = self._cache.strategy_id_for_order(client_order_id)
+        strategy_id: StrategyId = self._cache.strategy_id_for_order(client_order_id)
         if strategy_id is None:
             # TODO(cs): Implement external order handling
             self._log.error(

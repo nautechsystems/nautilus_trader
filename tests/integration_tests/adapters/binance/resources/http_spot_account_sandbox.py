@@ -42,7 +42,7 @@ async def test_binance_spot_account_http_client():
     print(os.getenv("BINANCE_API_KEY"))
     account = BinanceSpotAccountHttpAPI(client=client)
     # response = await account.account(recv_window=5000)
-    # print(json.dumps(json.loads(response), indent=4))
+    # print(json.dumps(response, indent=4))
 
     response = await account.new_order(
         symbol="ETHUSDT",

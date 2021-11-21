@@ -16,7 +16,7 @@
 #  Original author: Jeremy https://github.com/2pd
 # -------------------------------------------------------------------------------------------------
 
-from typing import Dict, Optional
+from typing import Dict, List, Optional
 
 from nautilus_trader.adapters.binance.http.client import BinanceHttpClient
 from nautilus_trader.core.correctness import PyCondition
@@ -47,7 +47,7 @@ class BinanceWalletHttpAPI:
         self,
         symbol: Optional[str] = None,
         recv_window: Optional[int] = None,
-    ) -> bytes:
+    ) -> List[Dict[str, str]]:
         """
         Fetch trade fee.
 
@@ -62,8 +62,7 @@ class BinanceWalletHttpAPI:
 
         Returns
         -------
-        bytes
-            The raw response content.
+        list[dict[str, str]]
 
         References
         ----------

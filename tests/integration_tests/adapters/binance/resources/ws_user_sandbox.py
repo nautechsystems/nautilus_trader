@@ -16,7 +16,6 @@
 import asyncio
 import os
 
-import orjson
 import pytest
 
 from nautilus_trader.adapters.binance.factories import get_cached_binance_http_client
@@ -43,7 +42,7 @@ async def test_binance_websocket_client():
 
     user = BinanceUserDataHttpAPI(client=client)
     response = await user.create_listen_key_spot()
-    key = orjson.loads(response)["listenKey"]
+    key = response["listenKey"]
 
     ws = BinanceUserDataWebSocket(
         loop=loop,

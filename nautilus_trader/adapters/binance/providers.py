@@ -16,9 +16,7 @@
 import asyncio
 import time
 from decimal import Decimal
-from typing import Dict
-
-import orjson
+from typing import Any, Dict, List
 
 from nautilus_trader.adapters.binance.common import BINANCE_VENUE
 from nautilus_trader.adapters.binance.http.api.spot_market import BinanceSpotMarketHttpAPI
@@ -104,8 +102,8 @@ class BinanceInstrumentProvider(InstrumentProvider):
 
         # Get current commission rates
         try:
-            raw: bytes = await self._wallet.trade_fee()
-            fees: Dict[str, Dict[str, str]] = {s["symbol"]: s for s in orjson.loads(raw)}
+            fee_res: List[Dict[str, str]] = await self._wallet.trade_fee()
+            fees: Dict[str, Dict[str, str]] = {s["symbol"]: s for s in fee_res}
         except BinanceClientError:
             self._log.error(
                 "Cannot load instruments: API key authentication failed "
@@ -114,11 +112,10 @@ class BinanceInstrumentProvider(InstrumentProvider):
             return
 
         # Get exchange info for all assets
-        raw = await self._spot_market.exchange_info()
-        response = orjson.loads(raw)
-        server_time_ns: int = millis_to_nanos(response["serverTime"])
+        assets_res: Dict[str, Any] = await self._spot_market.exchange_info()
+        server_time_ns: int = millis_to_nanos(assets_res["serverTime"])
 
-        for info in response["symbols"]:
+        for info in assets_res["symbols"]:
             local_symbol = Symbol(info["symbol"])
 
             # Create base asset
