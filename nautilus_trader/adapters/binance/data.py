@@ -21,6 +21,7 @@ import pandas as pd
 
 from nautilus_trader.adapters.binance.common import BINANCE_VENUE
 from nautilus_trader.adapters.binance.data_types import BinanceBar
+from nautilus_trader.adapters.binance.data_types import BinanceTicker
 from nautilus_trader.adapters.binance.http.api.spot_market import BinanceSpotMarketHttpAPI
 from nautilus_trader.adapters.binance.http.client import BinanceHttpClient
 from nautilus_trader.adapters.binance.http.error import BinanceError
@@ -631,7 +632,7 @@ class BinanceDataClient(LiveMarketDataClient):
             msg=data,
             ts_init=self._clock.timestamp_ns(),
         )
-        book_buffer = self._book_buffer.get(instrument_id)
+        book_buffer: List[OrderBookData] = self._book_buffer.get(instrument_id)
         if book_buffer is not None:
             book_buffer.append(book_deltas)
             return
@@ -642,7 +643,7 @@ class BinanceDataClient(LiveMarketDataClient):
             symbol=Symbol(data["s"]),
             venue=BINANCE_VENUE,
         )
-        ticker = parse_ticker_ws(
+        ticker: BinanceTicker = parse_ticker_ws(
             instrument_id=instrument_id,
             msg=data,
             ts_init=self._clock.timestamp_ns(),
@@ -654,7 +655,7 @@ class BinanceDataClient(LiveMarketDataClient):
             symbol=Symbol(data["s"]),
             venue=BINANCE_VENUE,
         )
-        trade_tick = parse_trade_tick_ws(
+        trade_tick: TradeTick = parse_trade_tick_ws(
             instrument_id=instrument_id,
             msg=data,
             ts_init=self._clock.timestamp_ns(),
@@ -669,7 +670,7 @@ class BinanceDataClient(LiveMarketDataClient):
             symbol=Symbol(kline["s"]),
             venue=BINANCE_VENUE,
         )
-        bar = parse_bar_ws(
+        bar: BinanceBar = parse_bar_ws(
             instrument_id=instrument_id,
             kline=kline,
             ts_event=millis_to_nanos(data["E"]),
