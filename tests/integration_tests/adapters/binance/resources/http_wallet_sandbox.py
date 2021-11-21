@@ -41,6 +41,6 @@ async def test_binance_spot_wallet_http_client():
     wallet = BinanceWalletHttpAPI(client=client)
     await client.connect()
     response = await wallet.trade_fee(symbol="BTCUSDT")
-    print(json.dumps(json.loads(response), indent=4))
+    print(json.dumps(response, indent=4))
 
     await client.disconnect()

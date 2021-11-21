@@ -21,6 +21,7 @@ import hashlib
 import hmac
 from typing import Any, Dict
 
+import orjson
 from aiohttp import ClientResponse
 from aiohttp import ClientResponseError
 
@@ -82,7 +83,7 @@ class BinanceHttpClient(HttpClient):
     def headers(self):
         return self._headers
 
-    async def query(self, url_path, payload: Dict[str, str] = None) -> bytes:
+    async def query(self, url_path, payload: Dict[str, str] = None) -> Any:
         return await self.send_request("GET", url_path, payload=payload)
 
     async def limit_request(
@@ -90,7 +91,7 @@ class BinanceHttpClient(HttpClient):
         http_method: str,
         url_path: str,
         payload: Dict[str, Any] = None,
-    ) -> bytes:
+    ) -> Any:
         """
         Limit request is for those endpoints requiring an API key in the header.
         """
@@ -101,7 +102,7 @@ class BinanceHttpClient(HttpClient):
         http_method: str,
         url_path: str,
         payload: Dict[str, str] = None,
-    ) -> bytes:
+    ) -> Any:
         if payload is None:
             payload = {}
         payload["timestamp"] = str(self._clock.timestamp_ms())
@@ -115,7 +116,7 @@ class BinanceHttpClient(HttpClient):
         http_method: str,
         url_path: str,
         payload: Dict[str, str] = None,
-    ) -> bytes:
+    ) -> Any:
         """
         Limit encoded sign request.
 
@@ -139,7 +140,7 @@ class BinanceHttpClient(HttpClient):
         http_method: str,
         url_path: str,
         payload: Dict[str, str] = None,
-    ) -> bytes:
+    ) -> Any:
         # TODO(cs): Uncomment for development
         # print(f"{http_method} {url_path} {payload}")
         if payload is None:
@@ -153,6 +154,7 @@ class BinanceHttpClient(HttpClient):
             )
         except ClientResponseError as ex:
             await self._handle_exception(ex)
+            return
 
         if self._show_limit_usage:
             limit_usage = {}
@@ -165,7 +167,10 @@ class BinanceHttpClient(HttpClient):
                 ):
                     limit_usage[key] = resp.headers[key]
 
-        return resp.data
+        try:
+            return orjson.loads(resp.data)
+        except orjson.JSONDecodeError:
+            self._log.error(f"Could not decode data to JSON: {resp.data}.")
 
     def _prepare_params(self, params: Dict[str, str]) -> str:
         return "&".join([k + "=" + v for k, v in params.items()])

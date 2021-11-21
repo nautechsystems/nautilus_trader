@@ -164,7 +164,8 @@ class BinanceDataClient(LiveMarketDataClient):
     async def _update_instruments(self):
         while True:
             self._log.debug(
-                f"Scheduled update instruments to run in " f"{self._update_instruments_interval}s."
+                f"Scheduled `update_instruments` to run in "
+                f"{self._update_instruments_interval}s."
             )
             await asyncio.sleep(self._update_instruments_interval)
             await self._instrument_provider.load_all_async()
@@ -173,12 +174,11 @@ class BinanceDataClient(LiveMarketDataClient):
     async def _disconnect(self):
         # Cancel tasks
         if self._update_instruments_task:
-            self._log.debug("Canceling update instruments task...")
+            self._log.debug("Canceling `update_instruments` task...")
             self._update_instruments_task.cancel()
 
         # Disconnect WebSocket clients
         if self._ws_spot.is_connected:
-            self._log.debug("Disconnecting websockets...")
             await self._ws_spot.disconnect()
 
         # Disconnect HTTP client
@@ -286,8 +286,10 @@ class BinanceDataClient(LiveMarketDataClient):
         while not self._ws_spot.is_connected:
             await self.sleep0()
 
-        raw: bytes = await self._spot.depth(instrument_id.symbol.value, limit=depth)
-        data: Dict = orjson.loads(raw)
+        data: Dict[str, Any] = await self._spot.depth(
+            symbol=instrument_id.symbol.value,
+            limit=depth,
+        )
 
         ts_event: int = self._clock.timestamp_ns()
         last_update_id: int = data.get("lastUpdateId")
@@ -350,7 +352,8 @@ class BinanceDataClient(LiveMarketDataClient):
             )
 
         self._ws_spot.subscribe_bars(
-            symbol=bar_type.instrument_id.symbol.value, interval=f"{bar_type.spec.step}{resolution}"
+            symbol=bar_type.instrument_id.symbol.value,
+            interval=f"{bar_type.spec.step}{resolution}",
         )
         self._add_subscription_bars(bar_type)
 
@@ -449,8 +452,7 @@ class BinanceDataClient(LiveMarketDataClient):
         limit: int,
         correlation_id: UUID4,
     ):
-        data: bytes = await self._spot.trades(instrument_id.symbol.value, limit)
-        response: List = orjson.loads(data)
+        response: List[Dict[str, Any]] = await self._spot.trades(instrument_id.symbol.value, limit)
 
         ticks: List[TradeTick] = [
             parse_trade_tick(
@@ -533,7 +535,7 @@ class BinanceDataClient(LiveMarketDataClient):
         start_time_ms = from_datetime.to_datetime64() * 1000 if from_datetime is not None else None
         end_time_ms = to_datetime.to_datetime64() * 1000 if to_datetime is not None else None
 
-        data: bytes = await self._spot.klines(
+        data: List[List[Any]] = await self._spot.klines(
             symbol=bar_type.instrument_id.symbol.value,
             interval=f"{bar_type.spec.step}{resolution}",
             start_time_ms=start_time_ms,
@@ -541,10 +543,8 @@ class BinanceDataClient(LiveMarketDataClient):
             limit=limit,
         )
 
-        response: List = orjson.loads(data)
-
         bars: List[BinanceBar] = [
-            parse_bar(bar_type, values=b, ts_init=self._clock.timestamp_ns()) for b in response
+            parse_bar(bar_type, values=b, ts_init=self._clock.timestamp_ns()) for b in data
         ]
         partial: BinanceBar = bars.pop()
 

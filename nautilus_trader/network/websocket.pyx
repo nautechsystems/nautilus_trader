@@ -76,7 +76,7 @@ cdef class WebSocketClient:
     ) -> None:
         Condition.valid_string(ws_url, "ws_url")
 
-        self._log.debug(f"Connecting to {ws_url}")
+        self._log.debug(f"Connecting WebSocket to {ws_url}")
         self._session = aiohttp.ClientSession(loop=self._loop)
         self._socket = await self._session.ws_connect(url=ws_url, **ws_kwargs)
         self._ws_url = ws_url
@@ -98,6 +98,7 @@ cdef class WebSocketClient:
         pass
 
     async def disconnect(self) -> None:
+        self._log.debug("Closing WebSocket...")
         self._trigger_stop = True
         await self._socket.close()
         while not self._stopped:

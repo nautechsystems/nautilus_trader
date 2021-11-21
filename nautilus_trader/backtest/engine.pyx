@@ -243,7 +243,7 @@ cdef class BacktestEngine:
 
         Returns
         -------
-        List[Venue]
+        list[Venue]
 
         """
         return list(self._exchanges)
