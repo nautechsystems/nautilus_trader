@@ -31,7 +31,7 @@ from nautilus_trader.live.node import TradingNodeConfig
 # Configure the trading node
 config_node = TradingNodeConfig(
     trader_id="TESTER-001",
-    log_level="DEBUG",
+    log_level="INFO",
     # cache_database=CacheDatabaseConfig(),
     data_clients={
         "BINANCE": {
