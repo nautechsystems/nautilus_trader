@@ -526,7 +526,7 @@ cpdef void nautilus_header(LoggerAdapter logger) except *:
     logger.info(f"CPU architecture: {platform.processor()}")
     try:
         cpu_freq_str = f"@ {int(psutil.cpu_freq()[2])} MHz"
-    except (TypeError, NotImplementedError):
+    except (FileNotFoundError, TypeError, NotImplementedError):
         cpu_freq_str = None
     logger.info(f"CPU(s): {psutil.cpu_count()} {cpu_freq_str}")
     logger.info(f"OS: {platform.platform()}")
