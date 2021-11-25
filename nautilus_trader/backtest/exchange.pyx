@@ -41,11 +41,11 @@ from nautilus_trader.model.c_enums.liquidity_side cimport LiquiditySide
 from nautilus_trader.model.c_enums.oms_type cimport OMSType
 from nautilus_trader.model.c_enums.oms_type cimport OMSTypeParser
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
-from nautilus_trader.model.c_enums.order_side cimport OrderSideParser
 from nautilus_trader.model.c_enums.order_status cimport OrderStatus
 from nautilus_trader.model.c_enums.order_type cimport OrderType
 from nautilus_trader.model.c_enums.venue_type cimport VenueType
 from nautilus_trader.model.c_enums.venue_type cimport VenueTypeParser
+from nautilus_trader.model.commands.trading cimport CancelAllOrders
 from nautilus_trader.model.commands.trading cimport CancelOrder
 from nautilus_trader.model.commands.trading cimport ModifyOrder
 from nautilus_trader.model.commands.trading cimport SubmitOrder
@@ -527,7 +527,7 @@ cdef class SimulatedExchange:
             ts = command.ts_init + self.latency_model.insert_latency_nanos
         elif isinstance(command, ModifyOrder):
             ts = command.ts_init + self.latency_model.update_latency_nanos
-        elif isinstance(command, CancelOrder):
+        elif isinstance(command, (CancelOrder, CancelAllOrders)):
             ts = command.ts_init + self.latency_model.cancel_latency_nanos
         else:  # pragma: no cover (design-time error)
             raise ValueError(f"invalid command, was {command}")
@@ -646,6 +646,7 @@ cdef class SimulatedExchange:
         cdef:
             TradingCommand command
             Order order
+            list orders
         while self._message_queue.count > 0:
             command = self._message_queue.get_nowait()
             if isinstance(command, SubmitOrder):
@@ -653,20 +654,6 @@ cdef class SimulatedExchange:
             elif isinstance(command, SubmitOrderList):
                 for order in command.list.orders:
                     self._process_order(order)
-            elif isinstance(command, CancelOrder):
-                order = self._order_index.pop(command.client_order_id, None)
-                if order is None:
-                    self._generate_order_cancel_rejected(
-                        command.strategy_id,
-                        command.instrument_id,
-                        command.client_order_id,
-                        command.venue_order_id,
-                        f"{repr(command.client_order_id)} not found",
-                    )
-                    continue
-                if order.is_active_c():
-                    self._generate_order_pending_cancel(order)
-                    self._cancel_order(order)
             elif isinstance(command, ModifyOrder):
                 order = self._order_index.get(command.client_order_id)
                 if order is None:
@@ -685,6 +672,29 @@ cdef class SimulatedExchange:
                     command.price,
                     command.trigger,
                 )
+            elif isinstance(command, CancelOrder):
+                order = self._order_index.pop(command.client_order_id, None)
+                if order is None:
+                    self._generate_order_cancel_rejected(
+                        command.strategy_id,
+                        command.instrument_id,
+                        command.client_order_id,
+                        command.venue_order_id,
+                        f"{repr(command.client_order_id)} not found",
+                    )
+                    continue
+                if order.is_active_c():
+                    self._generate_order_pending_cancel(order)
+                    self._cancel_order(order)
+            elif isinstance(command, CancelAllOrders):
+                orders = (
+                    self._orders_bid.get(command.instrument_id, [])
+                    + self._orders_ask.get(command.instrument_id, [])
+                )
+                for order in orders:
+                    if order.is_active_c():
+                        self._generate_order_pending_cancel(order)
+                        self._cancel_order(order)
 
         # Iterate over modules
         cdef SimulationModule module

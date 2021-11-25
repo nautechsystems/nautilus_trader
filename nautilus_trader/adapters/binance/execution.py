@@ -45,6 +45,7 @@ from nautilus_trader.model.c_enums.order_side import OrderSideParser
 from nautilus_trader.model.c_enums.order_type import OrderType
 from nautilus_trader.model.c_enums.time_in_force import TimeInForceParser
 from nautilus_trader.model.c_enums.venue_type import VenueType
+from nautilus_trader.model.commands.trading import CancelAllOrders
 from nautilus_trader.model.commands.trading import CancelOrder
 from nautilus_trader.model.commands.trading import ModifyOrder
 from nautilus_trader.model.commands.trading import SubmitOrder
@@ -238,26 +239,27 @@ class BinanceSpotExecutionClient(LiveExecutionClient):
     # -- COMMAND HANDLERS --------------------------------------------------------------------------
 
     def submit_order(self, command: SubmitOrder) -> None:
-        if command.order.type == OrderType.STOP_MARKET:
+        order: Order = command.order
+        if order.type == OrderType.STOP_MARKET:
             self._log.error(
                 "Cannot submit order: "
                 "STOP_MARKET orders not supported by the exchange for SPOT markets. "
                 "Use any of MARKET, LIMIT, STOP_LIMIT."
             )
             return
-        elif command.order.type == OrderType.STOP_LIMIT:
+        elif order.type == OrderType.STOP_LIMIT:
             self._log.warning(
                 "STOP_LIMIT `post_only` orders not supported by the exchange. "
                 "This order may become a liquidity TAKER."
             )
-        if command.order.time_in_force not in VALID_TIF:
+        if order.time_in_force not in VALID_TIF:
             self._log.error(
                 f"Cannot submit order: "
-                f"{TimeInForceParser.to_str_py(command.order.time_in_force)} "
+                f"{TimeInForceParser.to_str_py(order.time_in_force)} "
                 f"not supported by the exchange. Use any of {VALID_TIF}.",
             )
             return
-        self._loop.create_task(self._submit_order(command))
+        self._loop.create_task(self._submit_order(order))
 
     def submit_order_list(self, command: SubmitOrderList) -> None:
         self._loop.create_task(self._submit_order_list(command))
@@ -270,35 +272,37 @@ class BinanceSpotExecutionClient(LiveExecutionClient):
     def cancel_order(self, command: CancelOrder) -> None:
         self._loop.create_task(self._cancel_order(command))
 
-    async def _submit_order(self, command: SubmitOrder) -> None:
-        self._log.debug(f"Submitting {command.order}.")
+    def cancel_all_orders(self, command: CancelAllOrders) -> None:
+        self._loop.create_task(self._cancel_all_orders(command))
+
+    async def _submit_order(self, order: Order) -> None:
+        self._log.debug(f"Submitting {order}.")
 
         # Generate event here to ensure correct ordering of events
         self.generate_order_submitted(
-            strategy_id=command.strategy_id,
-            instrument_id=command.instrument_id,
-            client_order_id=command.order.client_order_id,
+            strategy_id=order.strategy_id,
+            instrument_id=order.instrument_id,
+            client_order_id=order.client_order_id,
             ts_event=self._clock.timestamp_ns(),
         )
 
         try:
-            if command.order.type == OrderType.MARKET:
-                await self._submit_market_order(command)
-            elif command.order.type == OrderType.LIMIT:
-                await self._submit_limit_order(command)
-            elif command.order.type == OrderType.STOP_LIMIT:
-                await self._submit_stop_limit_order(command)
+            if order.type == OrderType.MARKET:
+                await self._submit_market_order(order)
+            elif order.type == OrderType.LIMIT:
+                await self._submit_limit_order(order)
+            elif order.type == OrderType.STOP_LIMIT:
+                await self._submit_stop_limit_order(order)
         except BinanceError as ex:
             self.generate_order_rejected(
-                strategy_id=command.strategy_id,
-                instrument_id=command.instrument_id,
-                client_order_id=command.order.client_order_id,
+                strategy_id=order.strategy_id,
+                instrument_id=order.instrument_id,
+                client_order_id=order.client_order_id,
                 reason=ex.message,  # type: ignore  # TODO(cs): Improve errors
                 ts_event=self._clock.timestamp_ns(),  # TODO(cs): Parse from response
             )
 
-    async def _submit_market_order(self, command: SubmitOrder):
-        order: MarketOrder = command.order
+    async def _submit_market_order(self, order: MarketOrder):
         await self._account_spot.new_order(
             symbol=order.instrument_id.symbol.value,
             side=OrderSideParser.to_str_py(order.side),
@@ -308,8 +312,7 @@ class BinanceSpotExecutionClient(LiveExecutionClient):
             recv_window=5000,
         )
 
-    async def _submit_limit_order(self, command: SubmitOrder):
-        order: LimitOrder = command.order
+    async def _submit_limit_order(self, order: LimitOrder):
         if order.is_post_only:
             time_in_force = None
         else:
@@ -327,9 +330,7 @@ class BinanceSpotExecutionClient(LiveExecutionClient):
             recv_window=5000,
         )
 
-    async def _submit_stop_limit_order(self, command: SubmitOrder):
-        order: StopLimitOrder = command.order
-
+    async def _submit_stop_limit_order(self, order: StopLimitOrder):
         # Get current market price
         response: Dict[str, Any] = await self._market_spot.ticker_price(
             order.instrument_id.symbol.value
@@ -350,9 +351,10 @@ class BinanceSpotExecutionClient(LiveExecutionClient):
         )
 
     async def _submit_order_list(self, command: SubmitOrderList) -> None:
-        self._log.error(  # pragma: no cover
-            "Cannot submit order list: not yet implemented.",
-        )
+        for order in command.list:
+            if order.contingency_ids:  # TODO(cs): Implement
+                self._log.warning(f"Cannot yet handle contingency orders, {order}.")
+            await self._submit_order(order)
 
     async def _cancel_order(self, command: CancelOrder) -> None:
         self._log.debug(f"Canceling order {command.client_order_id.value}.")
@@ -361,6 +363,16 @@ class BinanceSpotExecutionClient(LiveExecutionClient):
             await self._account_spot.cancel_order(
                 symbol=command.instrument_id.symbol.value,
                 orig_client_order_id=command.client_order_id.value,
+            )
+        except BinanceError as ex:
+            self._log.error(ex.message)  # type: ignore  # TODO(cs): Improve errors
+
+    async def _cancel_all_orders(self, command: CancelAllOrders) -> None:
+        self._log.debug(f"Canceling all orders for {command.instrument_id.value}.")
+
+        try:
+            await self._account_spot.cancel_open_orders(
+                symbol=command.instrument_id.symbol.value,
             )
         except BinanceError as ex:
             self._log.error(ex.message)  # type: ignore  # TODO(cs): Improve errors

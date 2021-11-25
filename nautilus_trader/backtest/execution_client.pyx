@@ -19,6 +19,7 @@ from nautilus_trader.common.clock cimport TestClock
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.execution.client cimport ExecutionClient
+from nautilus_trader.model.commands.trading cimport CancelAllOrders
 from nautilus_trader.model.commands.trading cimport CancelOrder
 from nautilus_trader.model.commands.trading cimport ModifyOrder
 from nautilus_trader.model.commands.trading cimport SubmitOrder
@@ -157,11 +158,25 @@ cdef class BacktestExecClient(ExecutionClient):
 
     cpdef void cancel_order(self, CancelOrder command) except *:
         """
-        Cancel the order with the `ClientOrderId` contained in the given command.
+        Cancel the order with the client order ID contained in the given command.
 
         Parameters
         ----------
         command : CancelOrder
+            The command to execute.
+
+        """
+        Condition.true(self.is_connected, "not connected")
+
+        self._exchange.send(command)
+
+    cpdef void cancel_all_orders(self, CancelAllOrders command) except *:
+        """
+        Cancel all orders for the instrument ID contained in the given command.
+
+        Parameters
+        ----------
+        command : CancelAllOrders
             The command to execute.
 
         """

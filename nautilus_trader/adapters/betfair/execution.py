@@ -31,6 +31,7 @@ from nautilus_trader.adapters.betfair.common import probability_to_price
 from nautilus_trader.adapters.betfair.parsing import betfair_account_to_account_state
 from nautilus_trader.adapters.betfair.parsing import generate_order_status_report
 from nautilus_trader.adapters.betfair.parsing import generate_trades_list
+from nautilus_trader.adapters.betfair.parsing import order_cancel_all_to_betfair
 from nautilus_trader.adapters.betfair.parsing import order_cancel_to_betfair
 from nautilus_trader.adapters.betfair.parsing import order_submit_to_betfair
 from nautilus_trader.adapters.betfair.parsing import order_update_to_betfair
@@ -51,6 +52,7 @@ from nautilus_trader.model.c_enums.account_type import AccountType
 from nautilus_trader.model.c_enums.liquidity_side import LiquiditySide
 from nautilus_trader.model.c_enums.order_type import OrderType
 from nautilus_trader.model.c_enums.venue_type import VenueType
+from nautilus_trader.model.commands.trading import CancelAllOrders
 from nautilus_trader.model.commands.trading import CancelOrder
 from nautilus_trader.model.commands.trading import ModifyOrder
 from nautilus_trader.model.commands.trading import SubmitOrder
@@ -460,6 +462,82 @@ class BetfairExecutionClient(LiveExecutionClient):
                     ts_event=self._clock.timestamp_ns(),
                 )
                 return
+
+            self._log.debug(
+                f"Matching venue_order_id: {venue_order_id} to client_order_id: {command.client_order_id}"
+            )
+            self.venue_order_id_to_client_order_id[venue_order_id] = command.client_order_id  # type: ignore
+            self.generate_order_canceled(
+                strategy_id=command.strategy_id,
+                instrument_id=command.instrument_id,
+                client_order_id=command.client_order_id,
+                venue_order_id=venue_order_id,  # type: ignore
+                ts_event=self._clock.timestamp_ns(),
+            )
+            self._log.debug("Sent order cancel")
+
+    def cancel_all_orders(self, command: CancelAllOrders) -> None:
+        PyCondition.not_none(command, "command")
+
+        instrument = self._cache.instrument(command.instrument_id)
+        PyCondition.not_none(instrument, "instrument")
+
+        # Format
+        cancel_orders = order_cancel_all_to_betfair(instrument=instrument)  # type: ignore
+        self._log.debug(f"cancel_orders {cancel_orders}")
+
+        self.create_task(self._cancel_order(command))
+
+    async def _cancel_all_orders(self, command: CancelAllOrders) -> None:
+        # TODO(cs): I've had to duplicate the logic as couldn't refactor and tease
+        #  apart the cancel rejects and execution report. This will possibly fail
+        #  badly if there are any API errors...
+        self._log.debug(f"Received cancel all orders: {command}")
+
+        instrument = self._cache.instrument(command.instrument_id)
+        PyCondition.not_none(instrument, "instrument")
+
+        # Format
+        cancel_orders = order_cancel_all_to_betfair(instrument=instrument)  # type: ignore
+        self._log.debug(f"cancel_orders {cancel_orders}")
+
+        # Send to client
+        try:
+            result = await self._client.cancel_orders(**cancel_orders)
+        except Exception as exc:
+            if isinstance(exc, BetfairAPIError):
+                await self.on_api_exception(exc=exc)
+            self._log.error(f"Cancel failed: {exc}")
+            # TODO(cs): Will probably just need to recover the client order ID
+            #  and order ID from the execution report?
+            # self.generate_order_cancel_rejected(
+            #     strategy_id=command.strategy_id,
+            #     instrument_id=command.instrument_id,
+            #     client_order_id=command.client_order_id,
+            #     venue_order_id=command.venue_order_id,
+            #     reason="client error",
+            #     ts_event=self._clock.timestamp_ns(),
+            # )
+            return
+        self._log.debug(f"result={result}")
+
+        # Parse response
+        for report in result["instructionReports"]:
+            venue_order_id = VenueOrderId(report["instruction"]["betId"])
+            if report["status"] == "FAILURE":
+                reason = f"{result.get('errorCode', 'Error')}: {report['errorCode']}"
+                self._log.error(f"cancel failed - {reason}")
+                # TODO(cs): Will probably just need to recover the client order ID
+                #  and order ID from the execution report?
+                # self.generate_order_cancel_rejected(
+                #     strategy_id=command.strategy_id,
+                #     instrument_id=command.instrument_id,
+                #     client_order_id=command.client_order_id,
+                #     venue_order_id=venue_order_id,
+                #     reason=reason,
+                #     ts_event=self._clock.timestamp_ns(),
+                # )
+                # return
 
             self._log.debug(
                 f"Matching venue_order_id: {venue_order_id} to client_order_id: {command.client_order_id}"
