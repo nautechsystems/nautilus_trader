@@ -1210,11 +1210,6 @@ cdef class SimulatedExchange:
                 elif order.is_sell_c():
                     self._last_bids[order.instrument_id] = order.price
                 return [(order.price, order.leaves_qty)]
-            raise RuntimeError(
-                "Insufficient data to fill order at market "
-                f"(no market on the {OrderSideParser.to_str(Order.opposite_side_c(order.side))} "
-                f"side of the book for {order.instrument_id.value})."
-            )
         price = Price.from_int_c(INT_MAX if order.side == OrderSide.BUY else INT_MIN)
         cdef OrderBookOrder submit_order = OrderBookOrder(price=price, size=order.leaves_qty, side=order.side)
         cdef OrderBook book = self.get_book(order.instrument_id)
