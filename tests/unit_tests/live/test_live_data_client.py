@@ -57,13 +57,6 @@ class TestLiveDataClientTests:
 
         self.cache = TestStubs.cache()
 
-        self.portfolio = Portfolio(
-            msgbus=self.msgbus,
-            cache=self.cache,
-            clock=self.clock,
-            logger=self.logger,
-        )
-
         self.engine = LiveDataEngine(
             loop=self.loop,
             msgbus=self.msgbus,
