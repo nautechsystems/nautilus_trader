@@ -12,6 +12,7 @@ None
 
 ## Fixes
 - Fixed handling of `cpu_freq` call in logging for ARM architecture.
+- Fixed market order fill edge case for bar data
 
 ---
 

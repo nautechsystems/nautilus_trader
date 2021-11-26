@@ -1208,12 +1208,24 @@ cdef class SimulatedExchange:
             if order.type == OrderType.MARKET:
                 if order.is_buy_c():
                     price = self._last_asks.get(order.instrument_id)
+                    if price is None:
+                        price = self.best_ask_price(order.instrument_id)
                     if price is not None:
                         return [(price, order.leaves_qty)]
+                    else:  # pragma: no cover (design-time error)
+                        raise RuntimeError(
+                            "Market best ASK price was None when filling MARKET order",
+                        )
                 elif order.is_sell_c():
                     price = self._last_bids.get(order.instrument_id)
+                    if price is None:
+                        price = self.best_bid_price(order.instrument_id)
                     if price is not None:
                         return [(price, order.leaves_qty)]
+                    else:  # pragma: no cover (design-time error)
+                        raise RuntimeError(
+                            "Market best BID price was None when filling MARKET order",
+                        )
             else:
                 if order.is_buy_c():
                     self._last_asks[order.instrument_id] = order.price
