@@ -180,3 +180,16 @@ cdef class HttpClient:
             headers=headers,
             **kwargs,
         )
+
+    async def delete(
+        self,
+        url: str,
+        headers: Optional[Dict[str, str]]=None,
+        **kwargs,
+    ) -> ClientResponse:
+        return await self.request(
+            method="DELETE",
+            url=url,
+            headers=headers,
+            **kwargs,
+        )
