@@ -24,10 +24,15 @@ import pytest
 from nautilus_trader.adapters.betfair.providers import BetfairInstrumentProvider
 from nautilus_trader.backtest.data.providers import TestInstrumentProvider
 from nautilus_trader.backtest.data.wranglers import QuoteTickDataWrangler
+from nautilus_trader.backtest.data.wranglers import BarDataWrangler
+from nautilus_trader.model.identifiers import InstrumentId, Symbol, Venue
+from nautilus_trader.model.enums import BarAggregation, PriceType
+from nautilus_trader.model.data.bar import BarSpecification, BarType
 from nautilus_trader.model.instruments.currency import CurrencySpot
 from nautilus_trader.persistence.catalog import DataCatalog
 from nautilus_trader.persistence.external.core import make_raw_files
 from nautilus_trader.persistence.external.core import process_raw_file
+from nautilus_trader.persistence.external.core import process_files
 from nautilus_trader.persistence.external.readers import ByteReader
 from nautilus_trader.persistence.external.readers import CSVReader
 from nautilus_trader.persistence.external.readers import LinePreprocessor
@@ -159,6 +164,26 @@ class TestPersistenceParsers:
         raw_file = make_raw_files(glob_path=f"{TEST_DATA_DIR}/truefx-audusd-ticks.csv")[0]
         result = process_raw_file(catalog=self.catalog, raw_file=raw_file, reader=reader)
         assert result == 100000
+
+    def test_csv_reader_headless_dataframe(self):
+        adabtc_id = InstrumentId(Symbol("ADA/BTC"), Venue("BINANCE"))
+        bar_spec_1min_last = BarSpecification(1, BarAggregation.MINUTE, PriceType.LAST)
+        bar_type = BarType(adabtc_id, bar_spec_1min_last)
+        instrument = TestInstrumentProvider.adabtc_binance()
+        wrangler = BarDataWrangler(bar_type, instrument)
+        def parser(data):
+            data['timestamp'] = data['timestamp'].astype('datetime64[ms]')#.view('int64')
+            data = data[['timestamp', 'open', 'high', 'low', 'close', 'volume']]
+            bars = wrangler.process(data.set_index("timestamp"))
+            return bars
+        binance_spot_header = ['timestamp','open','high','low','close', 'volume',
+                               'ts_close', 'quote_volume', 'n_trades',
+                               'taker_buy_base_volume', 'taker_buy_quote_volume',
+                               'ignore']
+        reader = CSVReader(block_parser=parser, header=binance_spot_header)
+        in_ = process_files(glob_path=f"{TEST_DATA_DIR}/ADABTC-1m-2021-11-*.zip",
+                            reader=reader, catalog=self.catalog)
+        assert sum(in_.values()) == 2880
 
     def test_text_reader(self):
         provider = BetfairInstrumentProvider.from_instruments([])
