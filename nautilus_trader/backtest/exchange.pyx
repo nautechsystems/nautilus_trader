@@ -1339,7 +1339,7 @@ cdef class SimulatedExchange:
             and self.book_type == BookType.L1_TBBO
             and (order.type == OrderType.MARKET or order.type == OrderType.STOP_MARKET)
         ):
-            # Exhausted simulated book volume - continue aggressive filling into next level)
+            # Exhausted simulated book volume (continue aggressive filling into next level)
             fill_px = fills[-1][0]
             if order.side == OrderSide.BUY:
                 fill_px = Price(fill_px + instrument.price_increment, instrument.price_precision)
