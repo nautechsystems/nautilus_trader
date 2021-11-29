@@ -475,10 +475,10 @@ class TestDataProvider:
         with fsspec.open(uri) as f:
             return f.read()
 
-    def read_csv(self, path: str):
+    def read_csv(self, path: str, **kwargs):
         uri = self._make_uri(path=path)
         with fsspec.open(uri) as f:
-            return pd.read_csv(f)
+            return pd.read_csv(f, **kwargs)
 
     def read_csv_ticks(self, path: str):
         uri = self._make_uri(path=path)

@@ -138,6 +138,10 @@ class TestStubs:
         return InstrumentId(Symbol("BTC/USDT"), Venue("BINANCE"))
 
     @staticmethod
+    def adabtc_binance_id() -> InstrumentId:
+        return InstrumentId(Symbol("ADA/BTC"), Venue("BINANCE"))
+
+    @staticmethod
     def ethusdt_binance_id() -> InstrumentId:
         return InstrumentId(Symbol("ETH/USDT"), Venue("BINANCE"))
 
@@ -284,6 +288,10 @@ class TestStubs:
     @staticmethod
     def bartype_btcusdt_binance_100tick_last() -> BarType:
         return BarType(TestStubs.btcusdt_binance_id(), TestStubs.bar_spec_100tick_last())
+
+    @staticmethod
+    def bartype_adabtc_binance_1min_last() -> BarType:
+        return BarType(TestStubs.adabtc_binance_id(), TestStubs.bar_spec_1min_last())
 
     @staticmethod
     def bar_5decimal() -> Bar:

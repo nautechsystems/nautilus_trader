@@ -172,8 +172,7 @@ class TestPersistenceParsers:
         instrument = TestInstrumentProvider.adabtc_binance()
         wrangler = BarDataWrangler(bar_type, instrument)
         def parser(data):
-            data['timestamp'] = data['timestamp'].astype('datetime64[ms]')#.view('int64')
-            data = data[['timestamp', 'open', 'high', 'low', 'close', 'volume']]
+            data['timestamp'] = data['timestamp'].astype('datetime64[ms]')
             bars = wrangler.process(data.set_index("timestamp"))
             return bars
         binance_spot_header = ['timestamp','open','high','low','close', 'volume',
