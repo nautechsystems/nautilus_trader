@@ -218,7 +218,7 @@ class TestBarDataWrangler:
         assert bars[0].ts_init == 1328054400001000500  # <-- delta diff
 
 
-class TestBarDataWranglerHeadless:
+class TestBarDataWranglerHeaderless:
     def setup(self):
         # Fixture Setup
         instrument = TestInstrumentProvider.adabtc_binance()
@@ -246,7 +246,7 @@ class TestBarDataWranglerHeadless:
         assert bars[0].high == Price.from_str("0.00002854")
         assert bars[0].low == Price.from_str("0.00002851")
         assert bars[0].close == Price.from_str("0.00002854")
-        assert bars[0].volume == Quantity.from_str("36304")
+        assert bars[0].volume == Quantity.from_str("36304.2")
         assert bars[0].ts_event == 1637971200000000000
         assert bars[0].ts_init == 1637971200000000000
 
