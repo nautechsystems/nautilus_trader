@@ -235,13 +235,13 @@ class TestBarDataWranglerHeaderless:
                             'ts_close', 'quote_volume', 'n_trades',
                             'taker_buy_base_volume', 'taker_buy_quote_volume',
                             'ignore']}
-        data = provider.read_csv("ADABTC-1m-2021-11-27.zip", **config)[:1000]
+        data = provider.read_csv("ADABTC-1m-2021-11-27.zip", **config)
         data['timestamp'] = data['timestamp'].astype('datetime64[ms]')
         data = data.set_index('timestamp')
         bars = self.wrangler.process(data)
 
         # Assert
-        assert len(bars) == 1000
+        assert len(bars) == 1440
         assert bars[0].open == Price.from_str("0.00002853")
         assert bars[0].high == Price.from_str("0.00002854")
         assert bars[0].low == Price.from_str("0.00002851")
