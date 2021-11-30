@@ -371,7 +371,6 @@ cdef class BarDataWrangler:
 
         if "volume" not in data:
             data["volume"] = float(default_volume)
-#        data = data.reindex(columns=['open', 'high', 'low', 'close', 'volume'])
 
         cdef int64_t[:] ts_events = np.ascontiguousarray([secs_to_nanos(dt.timestamp()) for dt in data.index], dtype=np.int64)  # noqa
         cdef int64_t[:] ts_inits = np.ascontiguousarray([ts_event + ts_init_delta for ts_event in ts_events], dtype=np.int64)  # noqa
