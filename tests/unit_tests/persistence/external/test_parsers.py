@@ -162,7 +162,7 @@ class TestPersistenceParsers:
         result = process_raw_file(catalog=self.catalog, raw_file=raw_file, reader=reader)
         assert result == 100000
 
-    def test_csv_reader_headless_dataframe(self):
+    def test_csv_reader_headerless_dataframe(self):
         bar_type = TestStubs.bartype_adabtc_binance_1min_last()
         instrument = TestInstrumentProvider.adabtc_binance()
         wrangler = BarDataWrangler(bar_type, instrument)
