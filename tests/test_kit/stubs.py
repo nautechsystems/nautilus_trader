@@ -138,10 +138,6 @@ class TestStubs:
         return InstrumentId(Symbol("BTC/USDT"), Venue("BINANCE"))
 
     @staticmethod
-    def adabtc_binance_id() -> InstrumentId:
-        return InstrumentId(Symbol("ADA/BTC"), Venue("BINANCE"))
-
-    @staticmethod
     def ethusdt_binance_id() -> InstrumentId:
         return InstrumentId(Symbol("ETH/USDT"), Venue("BINANCE"))
 
