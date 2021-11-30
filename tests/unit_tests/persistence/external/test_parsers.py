@@ -25,9 +25,6 @@ from nautilus_trader.adapters.betfair.providers import BetfairInstrumentProvider
 from nautilus_trader.backtest.data.providers import TestInstrumentProvider
 from nautilus_trader.backtest.data.wranglers import QuoteTickDataWrangler
 from nautilus_trader.backtest.data.wranglers import BarDataWrangler
-from nautilus_trader.model.identifiers import InstrumentId, Symbol, Venue
-from nautilus_trader.model.enums import BarAggregation, PriceType
-from nautilus_trader.model.data.bar import BarSpecification, BarType
 from nautilus_trader.model.instruments.currency import CurrencySpot
 from nautilus_trader.persistence.catalog import DataCatalog
 from nautilus_trader.persistence.external.core import make_raw_files
@@ -166,9 +163,7 @@ class TestPersistenceParsers:
         assert result == 100000
 
     def test_csv_reader_headless_dataframe(self):
-        adabtc_id = InstrumentId(Symbol("ADA/BTC"), Venue("BINANCE"))
-        bar_spec_1min_last = BarSpecification(1, BarAggregation.MINUTE, PriceType.LAST)
-        bar_type = BarType(adabtc_id, bar_spec_1min_last)
+        bar_type = TestStubs.bartype_adabtc_binance_1min_last()
         instrument = TestInstrumentProvider.adabtc_binance()
         wrangler = BarDataWrangler(bar_type, instrument)
         def parser(data):
