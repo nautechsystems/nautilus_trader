@@ -33,6 +33,7 @@ jobs:
       - name: Install build dependencies
         run: |
           python -m pip install --upgrade pip setuptools wheel poetry pre-commit nox
+          python -m pip install -i https://pypi.anaconda.org/scipy-wheels-nightly/simple numpy
           poetry config experimental.new-installer false
 
       # Test pip installation
@@ -61,6 +62,7 @@ jobs:
       - name: Install build dependencies
         run: |
           python -m pip install --upgrade pip setuptools wheel poetry pre-commit nox
+          python -m pip install -i https://pypi.anaconda.org/scipy-wheels-nightly/simple numpy
           poetry config experimental.new-installer false
 
       # Setup Poetry caching
@@ -131,6 +133,7 @@ jobs:
       - name: Install build dependencies
         run: |
           python -m pip install --upgrade pip setuptools wheel poetry pre-commit nox
+          python -m pip install -i https://pypi.anaconda.org/scipy-wheels-nightly/simple numpy
           poetry config experimental.new-installer false
 
       # Setup Poetry caching
@@ -205,6 +208,7 @@ jobs:
       - name: Install build dependencies
         run: |
           python -m pip install --upgrade pip setuptools wheel poetry pre-commit nox
+          python -m pip install -i https://pypi.anaconda.org/scipy-wheels-nightly/simple numpy
           poetry config experimental.new-installer false
 
       # Setup Poetry caching
