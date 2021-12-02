@@ -17,6 +17,7 @@ from nautilus_trader.backtest.data.providers import TestInstrumentProvider
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.factories import OrderFactory
 from nautilus_trader.common.uuid import UUIDFactory
+from nautilus_trader.model.commands.trading import CancelAllOrders
 from nautilus_trader.model.commands.trading import CancelOrder
 from nautilus_trader.model.commands.trading import ModifyOrder
 from nautilus_trader.model.commands.trading import SubmitOrder
@@ -162,4 +163,24 @@ class TestCommands:
         assert (
             repr(command)
             == f"CancelOrder(trader_id=TRADER-001, strategy_id=S-001, instrument_id=AUD/USD.SIM, client_order_id=O-123456, venue_order_id=001, command_id={uuid}, ts_init=0)"  # noqa
+        )
+
+    def test_cancel_all_orders_command_to_from_dict_and_str_repr(self):
+        # Arrange
+        uuid = self.uuid_factory.generate()
+
+        command = CancelAllOrders(
+            trader_id=TraderId("TRADER-001"),
+            strategy_id=StrategyId("S-001"),
+            instrument_id=AUDUSD_SIM.id,
+            command_id=uuid,
+            ts_init=self.clock.timestamp_ns(),
+        )
+
+        # Act, Assert
+        assert CancelAllOrders.from_dict(CancelAllOrders.to_dict(command)) == command
+        assert str(command) == "CancelAllOrders(instrument_id=AUD/USD.SIM)"  # noqa
+        assert (
+            repr(command)
+            == f"CancelAllOrders(trader_id=TRADER-001, strategy_id=S-001, instrument_id=AUD/USD.SIM, command_id={uuid}, ts_init=0)"  # noqa
         )

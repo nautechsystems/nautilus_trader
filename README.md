@@ -116,6 +116,9 @@ To install the latest binary wheel from PyPI:
 
     pip install -U nautilus_trader
 
+To install on ARM architectures such as MacBook Pro M1 / Apple Silicon, this stackoverflow thread is useful:
+https://stackoverflow.com/questions/65745683/how-to-install-scipy-on-apple-silicon-arm-m1
+
 Refer to the [Installation Guide](https://docs.nautilustrader.io/getting-started/installation) for other options and further details.
 
 ## Examples

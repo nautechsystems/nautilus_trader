@@ -335,7 +335,7 @@ class TestBetfairDataClient:
             type=InstrumentSearch,
             metadata={"event_type_id": "7"},
         )
-        self.client.request(req, UUID4(str(self.uuid)))
+        self.client.request(req, self.uuid)
         await asyncio.sleep(0)
         resp = self.messages[0]
         assert len(resp.data.instruments) == 6800

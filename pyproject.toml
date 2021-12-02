@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "nautilus_trader"
-version = "1.134.0"
+version = "1.135.0"
 description = "A high-performance algorithmic trading platform and event-driven backtester"
 authors = ["Nautech Systems <info@nautechsystems.io>"]
 license = "LGPL-3.0-or-later"
@@ -47,10 +47,10 @@ python = ">=3.8,<3.11"
 cython = "^3.0.0a9"
 aiodns = "^3.0.0"
 aiohttp = "^3.8.1"
-hiredis = "^2.0.0"
 dask = "^2021.11.2"
-fsspec = "^2021.11.0"
-msgpack = "^1.0.2"
+fsspec = "^2021.11.1"
+hiredis = "^2.0.0"
+msgpack = "^1.0.3"
 numpy = "^1.21.4"
 orjson = "^3.6.4"
 pandas = "^1.3.4"
@@ -59,21 +59,21 @@ pyarrow = ">=4.0.0,<6.0.0"
 pydantic = "^1.8.2"
 pytz = "^2021.3"
 quantstats = "^0.0.46"
-redis = "^4.0.1"
+redis = "^4.0.2"
 tabulate = "^0.8.9"
 toml = "^0.10.2"
 tqdm = "^4.62.3"
 uvloop = { version = "^0.16.0", markers = "sys_platform != 'win32'" }
-bokeh = { version = "^2.4.1", optional = true }
+bokeh = { version = "^2.4.2", optional = true }
 distributed = { version = "^2021.11.2", optional = true }
-ib_insync = { version = "^0.9.66", optional = true }
+ib_insync = { version = "^0.9.70", optional = true }
 
 [tool.poetry.dev-dependencies]
 # coverage 5.x is currently broken for Cython
 # https://github.com/cython/cython/issues/3515
 coverage = "4.5.4"  # Pinned at 4.5.4 due Cython 3.0.0a9
 nox = "^2021.10.1"
-pre-commit = "^2.15.0"
+pre-commit = "^2.16.0"
 pytest = "^6.2.5"
 pytest-asyncio = "^0.16.0"
 pytest-benchmark = "^3.4.1"
