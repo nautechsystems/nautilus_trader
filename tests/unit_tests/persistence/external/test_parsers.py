@@ -192,7 +192,7 @@ class TestPersistenceParsers:
             reader=reader,
             catalog=self.catalog,
         )
-        assert sum(in_.values()) == 2880
+        assert sum(in_.values()) == 21
 
     def test_text_reader(self):
         provider = BetfairInstrumentProvider.from_instruments([])
