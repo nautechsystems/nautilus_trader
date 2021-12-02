@@ -236,7 +236,7 @@ class CSVReader(Reader):
         block_parser: Callable,
         instrument_provider: Optional[InstrumentProvider] = None,
         instrument_provider_update=None,
-        header : Optional[List[str]] = None,
+        header: Optional[List[str]] = None,
         chunked=True,
         as_dataframe=True,
     ):
