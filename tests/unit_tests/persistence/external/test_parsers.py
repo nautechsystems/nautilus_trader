@@ -188,7 +188,7 @@ class TestPersistenceParsers:
         ]
         reader = CSVReader(block_parser=parser, header=binance_spot_header)
         in_ = process_files(
-            glob_path=f"{TEST_DATA_DIR}/ADABTC-1m-2021-11-*.zip",
+            glob_path=f"{TEST_DATA_DIR}/ADABTC-1m-2021-11-*.csv",
             reader=reader,
             catalog=self.catalog,
         )
