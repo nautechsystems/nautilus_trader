@@ -589,3 +589,106 @@ cdef class CancelOrder(TradingCommand):
 
         """
         return CancelOrder.to_dict_c(obj)
+
+
+cdef class CancelAllOrders(TradingCommand):
+    """
+    Represents a command to cancel all orders for an instrument.
+    """
+
+    def __init__(
+        self,
+        TraderId trader_id not None,
+        StrategyId strategy_id not None,
+        InstrumentId instrument_id not None,
+        UUID4 command_id not None,
+        int64_t ts_init,
+    ):
+        """
+        Initialize a new instance of the ``CancelAllOrders`` class.
+
+        Parameters
+        ----------
+        trader_id : TraderId
+            The trader ID for the command.
+        strategy_id : StrategyId
+            The strategy ID for the command.
+        instrument_id : InstrumentId
+            The instrument ID for the command.
+        command_id : UUID4
+            The command ID.
+        ts_init : int64
+            The UNIX timestamp (nanoseconds) when the object was initialized.
+
+        """
+        super().__init__(
+            trader_id=trader_id,
+            strategy_id=strategy_id,
+            instrument_id=instrument_id,
+            command_id=command_id,
+            ts_init=ts_init,
+        )
+
+    def __str__(self) -> str:
+        return (f"{type(self).__name__}("
+                f"instrument_id={self.instrument_id.value})")
+
+    def __repr__(self) -> str:
+        return (f"{type(self).__name__}("
+                f"trader_id={self.trader_id.value}, "
+                f"strategy_id={self.strategy_id.value}, "
+                f"instrument_id={self.instrument_id.value}, "
+                f"command_id={self.id.value}, "
+                f"ts_init={self.ts_init})")
+
+    @staticmethod
+    cdef CancelAllOrders from_dict_c(dict values):
+        Condition.not_none(values, "values")
+        return CancelAllOrders(
+            trader_id=TraderId(values["trader_id"]),
+            strategy_id=StrategyId(values["strategy_id"]),
+            instrument_id=InstrumentId.from_str_c(values["instrument_id"]),
+            command_id=UUID4(values["command_id"]),
+            ts_init=values["ts_init"],
+        )
+
+    @staticmethod
+    cdef dict to_dict_c(CancelAllOrders obj):
+        Condition.not_none(obj, "obj")
+        return {
+            "type": "CancelAllOrders",
+            "trader_id": obj.trader_id.value,
+            "strategy_id": obj.strategy_id.value,
+            "instrument_id": obj.instrument_id.value,
+            "command_id": obj.id.value,
+            "ts_init": obj.ts_init,
+        }
+
+    @staticmethod
+    def from_dict(dict values) -> CancelAllOrders:
+        """
+        Return a cancel order command from the given dict values.
+
+        Parameters
+        ----------
+        values : dict[str, object]
+            The values for initialization.
+
+        Returns
+        -------
+        CancelAllOrders
+
+        """
+        return CancelAllOrders.from_dict_c(values)
+
+    @staticmethod
+    def to_dict(CancelAllOrders obj):
+        """
+        Return a dictionary representation of this object.
+
+        Returns
+        -------
+        dict[str, object]
+
+        """
+        return CancelAllOrders.to_dict_c(obj)
