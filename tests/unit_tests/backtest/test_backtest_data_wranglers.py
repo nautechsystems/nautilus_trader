@@ -231,13 +231,25 @@ class TestBarDataWranglerHeaderless:
     def test_process(self):
         # Arrange, Act
         provider = TestDataProvider()
-        config = {'names': ['timestamp','open','high','low','close', 'volume',
-                            'ts_close', 'quote_volume', 'n_trades',
-                            'taker_buy_base_volume', 'taker_buy_quote_volume',
-                            'ignore']}
+        config = {
+            "names": [
+                "timestamp",
+                "open",
+                "high",
+                "low",
+                "close",
+                "volume",
+                "ts_close",
+                "quote_volume",
+                "n_trades",
+                "taker_buy_base_volume",
+                "taker_buy_quote_volume",
+                "ignore",
+            ]
+        }
         data = provider.read_csv("ADABTC-1m-2021-11-27.zip", **config)
-        data['timestamp'] = data['timestamp'].astype('datetime64[ms]')
-        data = data.set_index('timestamp')
+        data["timestamp"] = data["timestamp"].astype("datetime64[ms]")
+        data = data.set_index("timestamp")
         bars = self.wrangler.process(data)
 
         # Assert
