@@ -25,6 +25,7 @@ import pyarrow.parquet as pq
 from pyarrow import ArrowInvalid
 
 from nautilus_trader.core.inspect import is_nautilus_class
+from nautilus_trader.model.data.bar import Bar
 from nautilus_trader.model.data.base import DataType
 from nautilus_trader.model.data.base import GenericData
 from nautilus_trader.model.data.tick import QuoteTick
@@ -312,9 +313,18 @@ class DataCatalog(metaclass=Singleton):
             **kwargs,
         )
 
-    def ticker(self, instrument_ids=None, filter_expr=None, as_nautilus=False, **kwargs):
+    def tickers(self, instrument_ids=None, filter_expr=None, as_nautilus=False, **kwargs):
         return self._query_subclasses(
             base_cls=Ticker,
+            filter_expr=filter_expr,
+            instrument_ids=instrument_ids,
+            as_nautilus=as_nautilus,
+            **kwargs,
+        )
+
+    def bars(self, instrument_ids=None, filter_expr=None, as_nautilus=False, **kwargs):
+        return self._query_subclasses(
+            base_cls=Bar,
             filter_expr=filter_expr,
             instrument_ids=instrument_ids,
             as_nautilus=as_nautilus,
