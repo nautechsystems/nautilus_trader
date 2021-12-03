@@ -236,6 +236,7 @@ class CSVReader(Reader):
         block_parser: Callable,
         instrument_provider: Optional[InstrumentProvider] = None,
         instrument_provider_update=None,
+        header: Optional[List[str]] = None,
         chunked=True,
         as_dataframe=True,
     ):
@@ -250,6 +251,9 @@ class CSVReader(Reader):
             The readers instrument provider.
         instrument_provider_update
             Optional hook to call before `parser` for the purpose of loading instruments into an InstrumentProvider
+        header: List[str], default=None
+            If first row contains names of columns, header has to be set to `None`.
+            If data starts right at the first row, header has to be provided the list of column names.
         chunked: bool, default=True
             If chunked=False, each CSV line will be passed to `block_parser` individually, if chunked=True, the data
             passed will potentially contain many lines (a block).
@@ -262,7 +266,8 @@ class CSVReader(Reader):
             instrument_provider_update=instrument_provider_update,
         )
         self.block_parser = block_parser
-        self.header: Optional[List[str]] = None
+        self.header = header
+        self.header_in_first_row = not header
         self.chunked = chunked
         self.as_dataframe = as_dataframe
 
@@ -296,7 +301,8 @@ class CSVReader(Reader):
             yield from self.block_parser(chunk)
 
     def on_file_complete(self):
-        self.header = None
+        if self.header_in_first_row:
+            self.header = None
         self.buffer = b""
 
 
