@@ -188,11 +188,11 @@ class TestPersistenceParsers:
         ]
         reader = CSVReader(block_parser=parser, header=binance_spot_header)
         in_ = process_files(
-            glob_path=f"{TEST_DATA_DIR}/ADABTC-1m-2021-11-*.zip",
+            glob_path=f"{TEST_DATA_DIR}/ADABTC-1m-2021-11-*.csv",
             reader=reader,
             catalog=self.catalog,
         )
-        assert sum(in_.values()) == 2880
+        assert sum(in_.values()) == 21
 
     def test_text_reader(self):
         provider = BetfairInstrumentProvider.from_instruments([])

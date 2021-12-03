@@ -13,30 +13,35 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+import asyncio
+import json
+import os
 
-class FTXError(Exception):
-    """
-    The base class for all `FTX` specific errors.
-    """
+import pytest
 
-
-class FTXServerError(FTXError):
-    """
-    Represents a `FTX` specific 500 series HTTP error.
-    """
-
-    def __init__(self, status, message, headers):
-        self.status = status
-        self.message = message
-        self.headers = headers
+from nautilus_trader.adapters.ftx.factories import get_cached_ftx_http_client
+from nautilus_trader.adapters.ftx.http.client import FTXHttpClient
+from nautilus_trader.common.clock import LiveClock
+from nautilus_trader.common.logging import Logger
 
 
-class FTXClientError(FTXError):
-    """
-    Represents a `FTX` specific 400 series HTTP error.
-    """
+@pytest.mark.asyncio
+async def test_ftx_http_client():
+    loop = asyncio.get_event_loop()
+    clock = LiveClock()
 
-    def __init__(self, status, message, headers):
-        self.status = status
-        self.message = message
-        self.headers = headers
+    client: FTXHttpClient = get_cached_ftx_http_client(
+        loop=loop,
+        clock=clock,
+        logger=Logger(clock=clock),
+        key=os.getenv("FTX_API_KEY"),
+        secret=os.getenv("FTX_API_SECRET"),
+    )
+    await client.connect()
+
+    response = await client.get_order_history(
+        market="ETH-PERP",
+    )
+    print(json.dumps(response, indent=4))
+
+    await client.disconnect()
