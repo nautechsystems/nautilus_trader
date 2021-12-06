@@ -78,7 +78,7 @@ class TestPersistenceCore:
             + self.catalog.instrument_status_updates(as_nautilus=True)
             + self.catalog.trade_ticks(as_nautilus=True)
             + self.catalog.order_book_deltas(as_nautilus=True)
-            + self.catalog.ticker(as_nautilus=True)
+            + self.catalog.tickers(as_nautilus=True)
         )
         return data
 
