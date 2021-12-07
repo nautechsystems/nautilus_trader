@@ -36,8 +36,8 @@ def dataset_batches(
     file_meta: FileMeta, fs: fsspec.AbstractFileSystem, n_rows: int
 ) -> Iterator[pd.DataFrame]:
     d: ds.Dataset = ds.dataset(file_meta.filename, filesystem=fs)
-    filter_expr = (ds.field("ts_event") >= (file_meta.start or 0)) & (
-        ds.field("ts_event") <= (file_meta.end or sys.maxsize)
+    filter_expr = (ds.field("ts_event") >= file_meta.start) & (
+        ds.field("ts_event") <= file_meta.end
     )
     scanner: ds.Scanner = d.scanner(filter=filter_expr, batch_size=n_rows)
     for batch in scanner.to_batches():
@@ -63,8 +63,8 @@ def build_filenames(catalog: DataCatalog, data_configs: List[BacktestDataConfig]
                 datatype=config.data_type,
                 instrument_id=config.instrument_id,
                 client_id=config.client_id,
-                start=config.start_time,
-                end=config.end_time,
+                start=config.start_time_nanos,
+                end=config.end_time_nanos,
             )
         )
     return files

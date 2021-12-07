@@ -15,14 +15,17 @@
 
 import dataclasses
 import importlib
+import sys
 from datetime import datetime
 from typing import Dict, List, Optional, Union
 
+import pandas as pd
 import pydantic
 from dask.base import tokenize
 
 from nautilus_trader.cache.cache import CacheConfig
 from nautilus_trader.common.config import ImportableActorConfig
+from nautilus_trader.core.datetime import maybe_dt_to_unix_nanos
 from nautilus_trader.data.engine import DataEngineConfig
 from nautilus_trader.execution.engine import ExecEngineConfig
 from nautilus_trader.infrastructure.cache import CacheDatabaseConfig
@@ -152,6 +155,18 @@ class BacktestDataConfig(Partialable):
             filter_expr=self.filter_expr,
             as_nautilus=True,
         )
+
+    @property
+    def start_time_nanos(self) -> int:
+        if self.start_time is None:
+            return 0
+        return maybe_dt_to_unix_nanos(pd.Timestamp(self.start_time))
+
+    @property
+    def end_time_nanos(self) -> int:
+        if self.end_time is None:
+            return sys.maxsize
+        return maybe_dt_to_unix_nanos(pd.Timestamp(self.end_time))
 
     def catalog(self):
         from nautilus_trader.persistence.catalog import DataCatalog
