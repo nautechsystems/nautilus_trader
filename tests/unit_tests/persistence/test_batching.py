@@ -16,19 +16,23 @@
 import sys
 
 import fsspec
-import pandas as pd
 import pytest
 from dask.utils import parse_bytes
 
 from nautilus_trader.adapters.betfair.providers import BetfairInstrumentProvider
 from nautilus_trader.backtest.config import BacktestDataConfig
-from nautilus_trader.core.datetime import maybe_dt_to_unix_nanos
+from nautilus_trader.backtest.config import BacktestRunConfig
+from nautilus_trader.backtest.node import BacktestNode
+from nautilus_trader.model.data.venue import InstrumentStatusUpdate
 from nautilus_trader.persistence.batching import batch_files
 from nautilus_trader.persistence.catalog import DataCatalog
 from nautilus_trader.persistence.external.core import process_files
+from nautilus_trader.persistence.external.readers import CSVReader
 from tests.integration_tests.adapters.betfair.test_kit import BetfairTestStubs
 from tests.test_kit import PACKAGE_ROOT
+from tests.test_kit.mocks import NewsEventData
 from tests.test_kit.mocks import data_catalog_setup
+from tests.test_kit.stubs import TestStubs
 
 
 TEST_DATA_DIR = PACKAGE_ROOT + "/data"
@@ -66,8 +70,6 @@ class TestPersistenceBatching:
                 base.replace(instrument_id=instrument_ids[0]),
                 base.replace(instrument_id=instrument_ids[1]),
             ],
-            start_time=maybe_dt_to_unix_nanos(pd.Timestamp("2019-12-20")),
-            end_time=maybe_dt_to_unix_nanos(pd.Timestamp("2019-12-21")),
             target_batch_size_bytes=parse_bytes("10kib"),
             read_num_rows=300,
         )
@@ -83,3 +85,39 @@ class TestPersistenceBatching:
             assert max(timestamps) > latest_timestamp
             latest_timestamp = max(timestamps)
             assert timestamps == sorted(timestamps)
+
+    def test_batch_generic_data(self):
+        # Arrange
+        TestStubs.setup_news_event_persistence()
+        process_files(
+            glob_path=f"{PACKAGE_ROOT}/data/news_events.csv",
+            reader=CSVReader(block_parser=TestStubs.news_event_parser),
+            catalog=self.catalog,
+        )
+        data_config = BacktestDataConfig(
+            catalog_path="/root/",
+            catalog_fs_protocol="memory",
+            data_cls_path=f"{NewsEventData.__module__}.NewsEventData",
+            client_id="NewsClient",
+        )
+        # Add some arbitrary instrument data to appease BacktestEngine
+        instrument_data_config = BacktestDataConfig(
+            catalog_path="/root/",
+            catalog_fs_protocol="memory",
+            instrument_id=self.catalog.instruments(as_nautilus=True)[0].id.value,
+            data_cls_path=f"{InstrumentStatusUpdate.__module__}.InstrumentStatusUpdate",
+        )
+        run_config = BacktestRunConfig(
+            data=[data_config, instrument_data_config],
+            persistence=BetfairTestStubs.persistence_config(catalog_path=self.catalog.path),
+            venues=[BetfairTestStubs.betfair_venue_config()],
+            strategies=[],
+            batch_size_bytes=parse_bytes("1mib"),
+        )
+
+        # Act
+        node = BacktestNode()
+        node.run_sync([run_config])
+
+        # Assert
+        assert node
