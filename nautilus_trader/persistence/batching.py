@@ -36,9 +36,7 @@ def dataset_batches(
     file_meta: FileMeta, fs: fsspec.AbstractFileSystem, n_rows: int
 ) -> Iterator[pd.DataFrame]:
     d: ds.Dataset = ds.dataset(file_meta.filename, filesystem=fs)
-    filter_expr = (ds.field("ts_event") >= file_meta.start) & (
-        ds.field("ts_event") <= file_meta.end
-    )
+    filter_expr = (ds.field("ts_init") >= file_meta.start) & (ds.field("ts_init") <= file_meta.end)
     scanner: ds.Scanner = d.scanner(filter=filter_expr, batch_size=n_rows)
     for batch in scanner.to_batches():
         if batch.num_rows == 0:
@@ -99,7 +97,7 @@ def batch_files(
                 buffer[fn] = buffer[fn].append(next_buf)
 
         # Determine minimum timestamp
-        max_ts_per_frame = [df["ts_event"].max() for df in buffer.values() if not df.empty]
+        max_ts_per_frame = [df["ts_init"].max() for df in buffer.values() if not df.empty]
         if not max_ts_per_frame:
             continue
         min_ts = min(max_ts_per_frame)
@@ -110,7 +108,7 @@ def batch_files(
             df = buffer[f.filename]
             if df.empty:
                 continue
-            ts_filter = df["ts_event"] <= min_ts
+            ts_filter = df["ts_init"] <= min_ts
             batch = df[ts_filter]
             buffer[f.filename] = df[~ts_filter]
             # print(f"{f.filename} batch={len(batch)} buffer={len(buffer)}")
@@ -119,7 +117,7 @@ def batch_files(
             bytes_read += sum([sys.getsizeof(x) for x in objs])
 
         # Merge ticks
-        values.extend(list(heapq.merge(*batches, key=lambda x: x.ts_event)))
+        values.extend(list(heapq.merge(*batches, key=lambda x: x.ts_init)))
         # print(f"iter complete, {bytes_read=}, flushing at target={target_batch_size_bytes}")
         if bytes_read > target_batch_size_bytes:
             yield values
