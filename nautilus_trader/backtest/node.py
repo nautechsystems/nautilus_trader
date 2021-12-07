@@ -355,7 +355,7 @@ def streaming_backtest_runner(
                 # Generic data - manually re-add client_id as it gets lost in the streaming join
                 data.update({"client_id": ClientId(data_client_ids[data["type"]])})
                 data["data"] = [GenericData(data_type=DataType(cls), data=d) for d in data["data"]]
-        _load_engine_data(engine=engine, data=data)
+            _load_engine_data(engine=engine, data=data)
         engine.run_streaming(run_config_id=run_config_id)
     engine.end_streaming()
 
