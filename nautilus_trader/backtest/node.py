@@ -15,11 +15,10 @@
 
 import itertools
 import pickle
-from typing import List, Optional
+from typing import Dict, List, Optional
 
 import cloudpickle
 import dask
-import pandas as pd
 from dask.base import normalize_token
 from dask.delayed import Delayed
 
@@ -32,17 +31,19 @@ from nautilus_trader.backtest.results import BacktestResult
 from nautilus_trader.common.actor import Actor
 from nautilus_trader.common.config import ActorFactory
 from nautilus_trader.common.config import ImportableActorConfig
-from nautilus_trader.core.datetime import maybe_dt_to_unix_nanos
 from nautilus_trader.core.inspect import is_nautilus_class
 from nautilus_trader.model.c_enums.book_type import BookTypeParser
 from nautilus_trader.model.currency import Currency
 from nautilus_trader.model.data.bar import Bar
+from nautilus_trader.model.data.base import DataType
+from nautilus_trader.model.data.base import GenericData
 from nautilus_trader.model.data.tick import QuoteTick
 from nautilus_trader.model.data.tick import TradeTick
 from nautilus_trader.model.data.venue import InstrumentStatusUpdate
 from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import OMSType
 from nautilus_trader.model.enums import VenueType
+from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.instruments.base import Instrument
 from nautilus_trader.model.objects import Money
@@ -317,6 +318,21 @@ def groupby_datatype(data):
     ]
 
 
+def _extract_generic_data_client_id(data_configs: List[BacktestDataConfig]) -> Dict:
+    """
+    Extract a mapping of data_type : client_id from the list of `data_configs`. In the process of merging the streaming
+    data, we lose the client_id for generic data, we need to inject this back in so the backtest engine can be
+    correctly loaded.
+    """
+    data_client_ids = [
+        (config.data_type, config.client_id) for config in data_configs if config.client_id
+    ]
+    assert len(set(data_client_ids)) == len(
+        dict(data_client_ids)
+    ), "data_type found with multiple client_ids"
+    return dict(data_client_ids)
+
+
 def streaming_backtest_runner(
     run_config_id: str,
     engine: BacktestEngine,
@@ -325,19 +341,21 @@ def streaming_backtest_runner(
 ):
     config = data_configs[0]
     catalog: DataCatalog = config.catalog()
-    start_time = maybe_dt_to_unix_nanos(pd.Timestamp(min(dc.start_time for dc in data_configs)))
-    end_time = maybe_dt_to_unix_nanos(pd.Timestamp(max(dc.end_time for dc in data_configs)))
+
+    data_client_ids = _extract_generic_data_client_id(data_configs=data_configs)
 
     for data in batch_files(
         catalog=catalog,
         data_configs=data_configs,
-        start_time=start_time,
-        end_time=end_time,
         target_batch_size_bytes=batch_size_bytes,
     ):
         engine.clear_data()
         for data in groupby_datatype(data):
-            _load_engine_data(engine=engine, data=data)
+            if data["type"] in data_client_ids:
+                # Generic data - manually re-add client_id as it gets lost in the streaming join
+                data.update({"client_id": ClientId(data_client_ids[data["type"]])})
+                data["data"] = [GenericData(data_type=DataType(cls), data=d) for d in data["data"]]
+        _load_engine_data(engine=engine, data=data)
         engine.run_streaming(run_config_id=run_config_id)
     engine.end_streaming()
 
