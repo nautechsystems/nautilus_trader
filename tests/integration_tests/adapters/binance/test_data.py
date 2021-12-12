@@ -305,3 +305,60 @@ class TestBinanceDataClient:
 
         assert self.data_engine.data_count == 3
         assert len(handler) == 1  # <-- handler received tick
+
+    @pytest.mark.asyncio
+    async def test_subscribe_trade_ticks(self, monkeypatch):
+        # Arrange: prepare data for monkey patch
+        response1 = pkgutil.get_data(
+            package="tests.integration_tests.adapters.binance.resources.responses",
+            resource="wallet_trading_fee.json",
+        )
+
+        response2 = pkgutil.get_data(
+            package="tests.integration_tests.adapters.binance.resources.responses",
+            resource="spot_market_exchange_info.json",
+        )
+
+        responses = [response2, response1]
+
+        # Mock coroutine for patch
+        async def mock_send_request(
+            self,  # noqa (needed for mock)
+            http_method: str,  # noqa (needed for mock)
+            url_path: str,  # noqa (needed for mock)
+            payload: Dict[str, str],  # noqa (needed for mock)
+        ) -> bytes:
+            return orjson.loads(responses.pop())
+
+        # Apply mock coroutine to client
+        monkeypatch.setattr(
+            target=BinanceHttpClient,
+            name="send_request",
+            value=mock_send_request,
+        )
+
+        ethusdt = InstrumentId.from_str("ETHUSDT.BINANCE")
+
+        handler = []
+        self.msgbus.subscribe(
+            topic="data.trades.BINANCE.ETHUSDT",
+            handler=handler.append,
+        )
+
+        self.data_client.connect()
+        await asyncio.sleep(1)
+
+        # Act
+        self.data_client.subscribe_trade_ticks(ethusdt)
+
+        raw_trade = pkgutil.get_data(
+            package="tests.integration_tests.adapters.binance.resources.streaming",
+            resource="ws_trade.json",
+        )
+
+        # Assert
+        self.data_client._handle_spot_ws_message(raw_trade)
+        await asyncio.sleep(1)
+
+        assert self.data_engine.data_count == 3
+        assert len(handler) == 1  # <-- handler received tick
