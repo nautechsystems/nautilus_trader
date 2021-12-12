@@ -30,11 +30,17 @@ NautilusTrader is an open-source, high-performance, production-grade algorithmic
 providing quantitative traders with the ability to backtest portfolios of automated trading strategies
 on historical data with an event-driven engine, and also deploy those same strategies live.
 
-NautilusTrader is AI/ML first, designed to deploy models for algorithmic trading strategies developed
+The platform is AI-first, designed to deploy models for algorithmic trading strategies developed
 using the Python ecosystem - within a highly performant and robust Python native environment.
+This addresses the challenge of keeping the research/backtest environment consistent with the production
+live trading environment.
 
-The platform aims to be universal - with any REST/WebSocket/FIX API able to be integrated via modular
-adapters. Thus the platform can handle high-frequency trading operations for any asset classes
+NautilusTraders design and implementation philosophy holds software correctness and safety at the
+highest level, with the aim of supporting Python native mission-critical trading system backtesting
+and live deployment workloads.
+
+The platform is also universal and asset class agnostic - with any REST, WebSocket or FIX API able to be integrated via modular
+adapters. Thus it can handle high-frequency trading operations for any asset classes
 including FX, Equities, Futures, Options, CFDs, Crypto and Betting - across multiple venues simultaneously.
 
 ## Features
@@ -42,7 +48,7 @@ including FX, Equities, Futures, Options, CFDs, Crypto and Betting - across mult
 - **Fast:** C-level speed through Cython. Asynchronous networking with `uvloop`.
 - **Reliable:** Type safety through Cython. Redis backed performant state persistence.
 - **Flexible:** OS independent, runs on Linux, macOS, Windows. Deploy using Docker.
-- **Integrated:** Modular adapters mean any REST/FIX/WebSocket API can be integrated.
+- **Integrated:** Modular adapters mean any REST, WebSocket, or FIX API can be integrated.
 - **Advanced:** Time-in-force options `GTD`, `IOC`, `FOK` etc, advanced order types and triggers, `post-only`, `reduce-only`, and icebergs. Contingency order lists including `OCO`, `OTO` etc.
 - **Backtesting:** Run with multiple venues, instruments and strategies simultaneously using historical quote tick, trade tick, bar, order book and custom data with nanosecond resolution.
 - **Multi-venue:** Multiple venue capabilities facilitate market making and statistical arbitrage strategies.
@@ -51,22 +57,15 @@ including FX, Equities, Futures, Options, CFDs, Crypto and Betting - across mult
 
 ## Why NautilusTrader?
 
-One of the key value propositions of NautilusTrader is that it addresses the challenge of keeping
-the research/backtest environment consistent with the production live trading environment.
+Traditionally, trading strategy research and backtesting might be conducted in Python (or other suitable language), with
+the models and/or strategies then needing to be reimplemented in C++/C#/Java or other statically
+typed language(s). The reasoning here is to utilize the performance and type safety a compiled language can offer,
+which has historically made these languages more suitable for large enterprise systems.
 
-Normally research and backtesting may be conducted in Python (or other suitable language), with
-trading strategies traditionally then needing to be reimplemented in C++/C#/Java or other statically
-typed language(s). The reasoning here is to enjoy the performance a compiled language can offer,
-along with the tooling and support which has made these languages historically more suitable for
-large enterprise systems.
-
-The value of NautilusTrader here is that this re-implementation step is circumvented, as the
-platform was designed from the ground up to hold its own in terms of performance and quality.
-
-Python has simply caught up in performance (via Cython offering C-level speed) and general tooling,
-making it a suitable language for building a large system such as this. The benefit being that a
-Python native environment can be offered, suitable for professional quantitative traders and trading
-firms.
+The value of NautilusTrader here is that this reimplementation step is circumvented - as the core performance critical components of the platform
+have all been written entirely in Cython. Because Cython can generate efficient C code, which then compiles to C-extension modules as native binaries,
+Python can effectively be used as a high-performance systems programming language - with the benefit then being that a Python native environment can be offered which is suitable for
+professional quantitative traders and trading firms.
 
 ## Why Python?
 
