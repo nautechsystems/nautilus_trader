@@ -63,7 +63,7 @@ typed language(s). The reasoning here is to utilize the performance and type saf
 which has historically made these languages more suitable for large enterprise systems.
 
 The value of NautilusTrader here is that this reimplementation step is circumvented - as the core performance critical components of the platform
-have all been written entirely in Cython. Because Cython can generate efficient C code, which then compiles to C-extension modules as native binaries,
+have all been written entirely in Cython. Because Cython can generate efficient C code, which then compiles to C extension modules as native binaries,
 Python can effectively be used as a high-performance systems programming language - with the benefit then being that a Python native environment can be offered which is suitable for
 professional quantitative traders and trading firms.
 
