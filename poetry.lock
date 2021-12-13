@@ -1359,7 +1359,7 @@ ib = ["ib_insync"]
 [metadata]
 lock-version = "1.1"
 python-versions = ">=3.8,<3.11"
-content-hash = "77026aa96c3f89b2e7ed212efacdeef47a206ea0df2dbbdd093b187e23fd949f"
+content-hash = "7e249ba1b7e6086603b79a51f7c898699fd24e4a1dae76839f0f464c133b43c9"
 
 [metadata.files]
 aiodns = [
