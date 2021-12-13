@@ -32,15 +32,15 @@ on historical data with an event-driven engine, and also deploy those same strat
 
 The platform is AI-first, designed to deploy models for algorithmic trading strategies developed
 using the Python ecosystem - within a highly performant and robust Python native environment.
-This addresses the challenge of keeping the research/backtest environment consistent with the production
+This helps to address the challenge of keeping the research/backtest environment consistent with the production
 live trading environment.
 
-NautilusTraders design and implementation philosophy holds software correctness and safety at the
-highest level, with the aim of supporting Python native mission-critical trading system backtesting
+NautilusTraders design, architecture and implementation philosophy holds software correctness and safety at the
+highest level, with the aim of supporting Python native, mission-critical, trading system backtesting
 and live deployment workloads.
 
 The platform is also universal and asset class agnostic - with any REST, WebSocket or FIX API able to be integrated via modular
-adapters. Thus it can handle high-frequency trading operations for any asset classes
+adapters. Thus, it can handle high-frequency trading operations for any asset classes
 including FX, Equities, Futures, Options, CFDs, Crypto and Betting - across multiple venues simultaneously.
 
 ## Features
@@ -58,24 +58,24 @@ including FX, Equities, Futures, Options, CFDs, Crypto and Betting - across mult
 ## Why NautilusTrader?
 
 Traditionally, trading strategy research and backtesting might be conducted in Python (or other suitable language), with
-the models and/or strategies then needing to be reimplemented in C++/C#/Java or other statically
+the models and/or strategies then needing to be reimplemented in C, C++, C#, Java or other statically
 typed language(s). The reasoning here is to utilize the performance and type safety a compiled language can offer,
-which has historically made these languages more suitable for large enterprise systems.
+which has historically made these languages more suitable for large trading systems.
 
-The value of NautilusTrader here is that this reimplementation step is circumvented - as the core performance critical components of the platform
-have all been written entirely in Cython. Because Cython can generate efficient C code, which then compiles to C extension modules as native binaries,
-Python can effectively be used as a high-performance systems programming language - with the benefit then being that a Python native environment can be offered which is suitable for
+The value of NautilusTrader here is that this reimplementation step is circumvented - as the critical core components of the platform
+have all been written entirely in Cython. Because Cython can generate efficient C code (which then compiles to C extension modules as native binaries),
+Python can effectively be used as a high-performance systems programming language - with the benefit being that a Python native environment can be offered which is suitable for
 professional quantitative traders and trading firms.
 
 ## Why Python?
 
 Python was originally created decades ago as a simple scripting language with a clean straight
 forward syntax. It has since evolved into a fully fledged general purpose object-oriented
-programming language. Not only that, Python has become the _de facto lingua franca_ of data science,
-machine learning, and artificial intelligence.
+programming language. Based on the TIOBE index, Python is currently the most popular programming language in the world. 
+Not only that, Python has become the _de facto lingua franca_ of data science, machine learning, and artificial intelligence.
 
 The language out of the box is not without its drawbacks however, especially in the context of
-implementing large systems. Cython has addressed a lot of these issues, offering all the advantages
+implementing large performance-critical systems. Cython has addressed a lot of these issues, offering all the advantages
 of a statically typed language, embedded into Pythons rich ecosystem of software libraries and
 developer/user communities.
 
