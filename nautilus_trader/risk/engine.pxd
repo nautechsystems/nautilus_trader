@@ -21,6 +21,7 @@ from nautilus_trader.common.throttler cimport Throttler
 from nautilus_trader.core.message cimport Command
 from nautilus_trader.core.message cimport Event
 from nautilus_trader.model.c_enums.trading_state cimport TradingState
+from nautilus_trader.model.commands.trading cimport CancelAllOrders
 from nautilus_trader.model.commands.trading cimport CancelOrder
 from nautilus_trader.model.commands.trading cimport ModifyOrder
 from nautilus_trader.model.commands.trading cimport SubmitOrder
@@ -76,6 +77,7 @@ cdef class RiskEngine(Component):
     cdef void _handle_submit_order_list(self, SubmitOrderList command) except *
     cdef void _handle_modify_order(self, ModifyOrder command) except *
     cdef void _handle_cancel_order(self, CancelOrder command) except *
+    cdef void _handle_cancel_all_orders(self, CancelAllOrders command) except *
 
 # -- PRE-TRADE CHECKS ------------------------------------------------------------------------------
 

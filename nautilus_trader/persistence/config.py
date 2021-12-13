@@ -24,6 +24,8 @@ class PersistenceConfig(pydantic.BaseModel):
     """
     Configuration for persisting live or backtest runs to the catalog in feather format.
 
+    Parameters
+    ----------
     catalog_path : str
         The path to the data catalog
     fs_protocol : str

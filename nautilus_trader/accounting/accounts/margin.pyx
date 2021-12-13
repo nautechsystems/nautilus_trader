@@ -32,6 +32,18 @@ from nautilus_trader.model.position cimport Position
 cdef class MarginAccount(Account):
     """
     Provides a margin account.
+
+    Parameters
+    ----------
+    event : AccountState
+        The initial account state event.
+    calculate_account_state : bool, optional
+        If the account state should be calculated from order fills.
+
+    Raises
+    ------
+    ValueError
+        If `event.account_type` is not equal to ``MARGIN``.
     """
 
     def __init__(
@@ -39,22 +51,6 @@ cdef class MarginAccount(Account):
         AccountState event,
         bint calculate_account_state=False,
     ):
-        """
-        Initialize a new instance of the ``MarginAccount`` class.
-
-        Parameters
-        ----------
-        event : AccountState
-            The initial account state event.
-        calculate_account_state : bool, optional
-            If the account state should be calculated from order fills.
-
-        Raises
-        ------
-        ValueError
-            If `event.account_type` is not equal to ``MARGIN``.
-
-        """
         Condition.not_none(event, "event")
         Condition.equal(event.account_type, AccountType.MARGIN, "event.account_type", "account_type")
 

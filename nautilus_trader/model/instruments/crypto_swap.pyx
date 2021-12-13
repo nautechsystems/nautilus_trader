@@ -34,6 +34,84 @@ from nautilus_trader.model.objects cimport Quantity
 cdef class CryptoSwap(Instrument):
     """
     Represents a crypto perpetual swap instrument.
+
+    Parameters
+    ----------
+    instrument_id : InstrumentId
+        The instrument ID for the instrument.
+    local_symbol : Symbol
+        The local/native symbol on the exchange for the instrument.
+    base_currency : Currency, optional
+        The base currency.
+    quote_currency : Currency
+        The quote currency.
+    quote_currency : Currency
+        The settlement currency.
+    is_inverse : Currency
+        If the instrument costing is inverse (quantity expressed in quote currency units).
+    price_precision : int
+        The price decimal precision.
+    size_precision : int
+        The trading size decimal precision.
+    price_increment : Price
+        The minimum price increment (tick size).
+    size_increment : Price
+        The minimum size increment.
+    max_quantity : Quantity, optional
+        The maximum allowable order quantity.
+    min_quantity : Quantity, optional
+        The minimum allowable order quantity.
+    max_notional : Money, optional
+        The maximum allowable order notional value.
+    min_notional : Money, optional
+        The minimum allowable order notional value.
+    max_price : Price, optional
+        The maximum allowable printed price.
+    min_price : Price, optional
+        The minimum allowable printed price.
+    margin_init : Decimal
+        The initial (order) margin requirement in percentage of order value.
+    margin_maint : Decimal
+        The maintenance (position) margin in percentage of position value.
+    maker_fee : Decimal
+        The fee rate for liquidity makers as a percentage of order value.
+    taker_fee : Decimal
+        The fee rate for liquidity takers as a percentage of order value.
+    ts_event: int64
+        The UNIX timestamp (nanoseconds) when the data event occurred.
+    ts_init: int64
+        The UNIX timestamp (nanoseconds) when the data object was initialized.
+    info : dict[str, object], optional
+        The additional instrument information.
+
+    Raises
+    ------
+    ValueError
+        If `price_precision` is negative (< 0).
+    ValueError
+        If `size_precision` is negative (< 0).
+    ValueError
+        If `price_increment` is not positive (> 0).
+    ValueError
+        If `size_increment` is not positive (> 0).
+    ValueError
+        If `price_precision` is not equal to price_increment.precision.
+    ValueError
+        If `size_increment` is not equal to size_increment.precision.
+    ValueError
+        If `lot size` is not positive (> 0).
+    ValueError
+        If `max_quantity` is not positive (> 0).
+    ValueError
+        If `min_quantity` is negative (< 0).
+    ValueError
+        If `max_notional` is not positive (> 0).
+    ValueError
+        If `min_notional` is negative (< 0).
+    ValueError
+        If `max_price` is not positive (> 0).
+    ValueError
+        If `min_price` is negative (< 0).
     """
 
     def __init__(
@@ -62,88 +140,6 @@ cdef class CryptoSwap(Instrument):
         int64_t ts_init,
         dict info=None,
     ):
-        """
-        Initialize a new instance of the ``CryptoSwap` instrument class.
-
-        Parameters
-        ----------
-        instrument_id : InstrumentId
-            The instrument ID for the instrument.
-        local_symbol : Symbol
-            The local/native symbol on the exchange for the instrument.
-        base_currency : Currency, optional
-            The base currency.
-        quote_currency : Currency
-            The quote currency.
-        quote_currency : Currency
-            The settlement currency.
-        is_inverse : Currency
-            If the instrument costing is inverse (quantity expressed in quote currency units).
-        price_precision : int
-            The price decimal precision.
-        size_precision : int
-            The trading size decimal precision.
-        price_increment : Price
-            The minimum price increment (tick size).
-        size_increment : Price
-            The minimum size increment.
-        max_quantity : Quantity, optional
-            The maximum allowable order quantity.
-        min_quantity : Quantity, optional
-            The minimum allowable order quantity.
-        max_notional : Money, optional
-            The maximum allowable order notional value.
-        min_notional : Money, optional
-            The minimum allowable order notional value.
-        max_price : Price, optional
-            The maximum allowable printed price.
-        min_price : Price, optional
-            The minimum allowable printed price.
-        margin_init : Decimal
-            The initial (order) margin requirement in percentage of order value.
-        margin_maint : Decimal
-            The maintenance (position) margin in percentage of position value.
-        maker_fee : Decimal
-            The fee rate for liquidity makers as a percentage of order value.
-        taker_fee : Decimal
-            The fee rate for liquidity takers as a percentage of order value.
-        ts_event: int64
-            The UNIX timestamp (nanoseconds) when the data event occurred.
-        ts_init: int64
-            The UNIX timestamp (nanoseconds) when the data object was initialized.
-        info : dict[str, object], optional
-            The additional instrument information.
-
-        Raises
-        ------
-        ValueError
-            If `price_precision` is negative (< 0).
-        ValueError
-            If `size_precision` is negative (< 0).
-        ValueError
-            If `price_increment` is not positive (> 0).
-        ValueError
-            If `size_increment` is not positive (> 0).
-        ValueError
-            If `price_precision` is not equal to price_increment.precision.
-        ValueError
-            If `size_increment` is not equal to size_increment.precision.
-        ValueError
-            If `lot size` is not positive (> 0).
-        ValueError
-            If `max_quantity` is not positive (> 0).
-        ValueError
-            If `min_quantity` is negative (< 0).
-        ValueError
-            If `max_notional` is not positive (> 0).
-        ValueError
-            If `min_notional` is negative (< 0).
-        ValueError
-            If `max_price` is not positive (> 0).
-        ValueError
-            If `min_price` is negative (< 0).
-
-        """
         super().__init__(
             instrument_id=instrument_id,
             local_symbol=local_symbol,

@@ -22,18 +22,14 @@ cdef class Level:
     Represents an `OrderBook` level.
 
     A price level on one side of the `OrderBook` with one or more individual orders.
+
+    Parameters
+    ----------
+    price : double
+        The price for the level.
     """
 
     def __init__(self, double price):
-        """
-        Initialize a new instance of the ``Level`` class.
-
-        Parameters
-        ----------
-        price : double
-            The price for the level.
-
-        """
         self.price = price
         self.orders = []
 

@@ -96,7 +96,7 @@ NAUTILUS_PARQUET_SCHEMA = {
             "price": pa.string(),
             "size": pa.string(),
             "aggressor_side": pa.dictionary(pa.int8(), pa.string()),
-            "match_id": pa.string(),
+            "trade_id": pa.string(),
             "ts_event": pa.int64(),
             "ts_init": pa.int64(),
         },

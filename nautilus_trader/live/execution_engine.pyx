@@ -47,6 +47,26 @@ from nautilus_trader.live.config import LiveExecEngineConfig
 cdef class LiveExecutionEngine(ExecutionEngine):
     """
     Provides a high-performance asynchronous live execution engine.
+
+    Parameters
+    ----------
+    loop : asyncio.AbstractEventLoop
+        The event loop for the engine.
+    msgbus : MessageBus
+        The message bus for the engine.
+    cache : Cache
+        The cache for the engine.
+    clock : Clock
+        The clock for the engine.
+    logger : Logger
+        The logger for the engine.
+    config : LiveExecEngineConfig, optional
+        The configuration for the instance.
+
+    Raises
+    ------
+    TypeError
+        If `config` is not of type `LiveExecEngineConfig`.
     """
     _sentinel = None
 
@@ -59,30 +79,6 @@ cdef class LiveExecutionEngine(ExecutionEngine):
         Logger logger not None,
         config: Optional[LiveExecEngineConfig]=None,
     ):
-        """
-        Initialize a new instance of the ``LiveExecutionEngine`` class.
-
-        Parameters
-        ----------
-        loop : asyncio.AbstractEventLoop
-            The event loop for the engine.
-        msgbus : MessageBus
-            The message bus for the engine.
-        cache : Cache
-            The cache for the engine.
-        clock : Clock
-            The clock for the engine.
-        logger : Logger
-            The logger for the engine.
-        config : LiveExecEngineConfig, optional
-            The configuration for the instance.
-
-        Raises
-        ------
-        TypeError
-            If `config` is not of type `LiveExecEngineConfig`.
-
-        """
         if config is None:
             config = LiveExecEngineConfig()
         Condition.type(config, LiveExecEngineConfig, "config")

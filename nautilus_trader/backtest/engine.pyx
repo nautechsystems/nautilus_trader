@@ -75,23 +75,19 @@ cdef class BacktestEngine:
     """
     Provides a backtest engine to run a portfolio of strategies over historical
     data.
+
+    Parameters
+    ----------
+    config : BacktestEngineConfig, optional
+        The configuration for the instance.
+
+    Raises
+    ------
+    TypeError
+        If `config` is not of type `BacktestEngineConfig`.
     """
 
     def __init__(self, config: Optional[BacktestEngineConfig]=None):
-        """
-        Initialize a new instance of the ``BacktestEngine`` class.
-
-        Parameters
-        ----------
-        config : BacktestEngineConfig, optional
-            The configuration for the instance.
-
-        Raises
-        ------
-        TypeError
-            If `config` is not of type `BacktestEngineConfig`.
-
-        """
         if config is None:
             config = BacktestEngineConfig()
         Condition.type(config, BacktestEngineConfig, "config")
@@ -771,12 +767,12 @@ cdef class BacktestEngine:
         If more data than can fit in memory is to be run through the backtest
         engine, then streaming mode can be utilized. The expected sequence is as
         follows:
-         - Add initial data batch and strategies.
-         - Call `run_streaming()`.
-         - Call `clear_data()`.
-         - Add next batch of data stream.
-         - Call `run_streaming()`.
-         - Call `end_streaming()` when there is no more data to run on.
+        - Add initial data batch and strategies.
+        - Call `run_streaming()`.
+        - Call `clear_data()`.
+        - Add next batch of data stream.
+        - Call `run_streaming()`.
+        - Call `end_streaming()` when there is no more data to run on.
 
         Parameters
         ----------

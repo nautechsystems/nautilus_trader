@@ -23,6 +23,7 @@ from nautilus_trader.model.c_enums.liquidity_side cimport LiquiditySide
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
 from nautilus_trader.model.c_enums.order_type cimport OrderType
 from nautilus_trader.model.c_enums.venue_type cimport VenueType
+from nautilus_trader.model.commands.trading cimport CancelAllOrders
 from nautilus_trader.model.commands.trading cimport CancelOrder
 from nautilus_trader.model.commands.trading cimport ModifyOrder
 from nautilus_trader.model.commands.trading cimport SubmitOrder
@@ -70,6 +71,7 @@ cdef class ExecutionClient(Component):
     cpdef void submit_order_list(self, SubmitOrderList command) except *
     cpdef void modify_order(self, ModifyOrder command) except *
     cpdef void cancel_order(self, CancelOrder command) except *
+    cpdef void cancel_all_orders(self, CancelAllOrders command) except *
 
 # -- EVENT HANDLERS --------------------------------------------------------------------------------
 

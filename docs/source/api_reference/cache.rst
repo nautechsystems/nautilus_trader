@@ -21,6 +21,15 @@ Cache
    :members:
    :member-order: bysource
 
+Config
+------
+
+.. automodule:: nautilus_trader.cache.config
+   :show-inheritance:
+   :inherited-members:
+   :members:
+   :member-order: bysource
+
 Database
 --------
 

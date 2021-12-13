@@ -3,6 +3,42 @@ Backtest
 
 .. automodule:: nautilus_trader.backtest
 
+Loaders
+-------
+
+.. automodule:: nautilus_trader.backtest.data.loaders
+   :show-inheritance:
+   :inherited-members:
+   :members:
+   :member-order: bysource
+
+Providers
+---------
+
+.. automodule:: nautilus_trader.backtest.data.providers
+   :show-inheritance:
+   :inherited-members:
+   :members:
+   :member-order: bysource
+
+Wranglers
+---------
+
+.. automodule:: nautilus_trader.backtest.data.wranglers
+   :show-inheritance:
+   :inherited-members:
+   :members:
+   :member-order: bysource
+
+Config
+------
+
+.. automodule:: nautilus_trader.backtest.config
+   :show-inheritance:
+   :inherited-members:
+   :members:
+   :member-order: bysource
+
 Data Client
 -----------
 
@@ -39,15 +75,6 @@ Execution
    :members:
    :member-order: bysource
 
-Loaders
--------
-
-.. automodule:: nautilus_trader.backtest.data.loaders
-   :show-inheritance:
-   :inherited-members:
-   :members:
-   :member-order: bysource
-
 Models
 ------
 
@@ -66,10 +93,19 @@ Modules
    :members:
    :member-order: bysource
 
-Wranglers
----------
+Backtest Node
+-------------
 
-.. automodule:: nautilus_trader.data.wranglers
+.. automodule:: nautilus_trader.backtest.node
+   :show-inheritance:
+   :inherited-members:
+   :members:
+   :member-order: bysource
+
+Results
+-------
+
+.. automodule:: nautilus_trader.backtest.results
    :show-inheritance:
    :inherited-members:
    :members:

@@ -52,6 +52,7 @@ from nautilus_trader.model.c_enums.oms_type cimport OMSTypeParser
 from nautilus_trader.model.c_enums.position_side cimport PositionSide
 from nautilus_trader.model.c_enums.venue_type cimport VenueType
 from nautilus_trader.model.c_enums.venue_type cimport VenueTypeParser
+from nautilus_trader.model.commands.trading cimport CancelAllOrders
 from nautilus_trader.model.commands.trading cimport CancelOrder
 from nautilus_trader.model.commands.trading cimport ModifyOrder
 from nautilus_trader.model.commands.trading cimport SubmitOrder
@@ -82,6 +83,24 @@ cdef class ExecutionEngine(Component):
     Provides a high-performance execution engine for the management of many
     `ExecutionClient` instances, and the asynchronous ingest and distribution of
     trading commands and events.
+
+    Parameters
+    ----------
+    msgbus : MessageBus
+        The message bus for the engine.
+    cache : Cache
+        The cache for the engine.
+    clock : Clock
+        The clock for the engine.
+    logger : Logger
+        The logger for the engine.
+    config : ExecEngineConfig, optional
+        The configuration for the instance.
+
+    Raises
+    ------
+    TypeError
+        If `config` is not of type `ExecEngineConfig`.
     """
 
     def __init__(
@@ -92,28 +111,6 @@ cdef class ExecutionEngine(Component):
         Logger logger not None,
         config: Optional[ExecEngineConfig]=None,
     ):
-        """
-        Initialize a new instance of the ``ExecutionEngine`` class.
-
-        Parameters
-        ----------
-        msgbus : MessageBus
-            The message bus for the engine.
-        cache : Cache
-            The cache for the engine.
-        clock : Clock
-            The clock for the engine.
-        logger : Logger
-            The logger for the engine.
-        config : ExecEngineConfig, optional
-            The configuration for the instance.
-
-        Raises
-        ------
-        TypeError
-            If `config` is not of type `ExecEngineConfig`.
-
-        """
         if config is None:
             config = ExecEngineConfig()
         Condition.type(config, ExecEngineConfig, "config")
@@ -522,6 +519,8 @@ cdef class ExecutionEngine(Component):
             self._handle_modify_order(client, command)
         elif isinstance(command, CancelOrder):
             self._handle_cancel_order(client, command)
+        elif isinstance(command, CancelAllOrders):
+            self._handle_cancel_all_orders(client, command)
         else:
             self._log.error(f"Cannot handle command: unrecognized {command}.")
 
@@ -546,6 +545,9 @@ cdef class ExecutionEngine(Component):
 
     cdef void _handle_cancel_order(self, ExecutionClient client, CancelOrder command) except *:
         client.cancel_order(command)
+
+    cdef void _handle_cancel_all_orders(self, ExecutionClient client, CancelAllOrders command) except *:
+        client.cancel_all_orders(command)
 
 # -- EVENT HANDLERS --------------------------------------------------------------------------------
 

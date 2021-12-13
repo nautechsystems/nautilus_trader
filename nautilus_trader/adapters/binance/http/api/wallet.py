@@ -25,20 +25,16 @@ from nautilus_trader.core.correctness import PyCondition
 class BinanceWalletHttpAPI:
     """
     Provides access to the `Binance Wallet` HTTP REST API.
+
+    Parameters
+    ----------
+    client : BinanceHttpClient
+        The Binance REST API client.
     """
 
     BASE_ENDPOINT = "/sapi/v1/"
 
     def __init__(self, client: BinanceHttpClient):
-        """
-        Initialize a new instance of the ``BinanceWalletHttpAPI`` class.
-
-        Parameters
-        ----------
-        client : BinanceHttpClient
-            The Binance REST API client.
-
-        """
         PyCondition.not_none(client, "client")
 
         self.client = client

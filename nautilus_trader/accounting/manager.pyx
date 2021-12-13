@@ -37,6 +37,15 @@ from nautilus_trader.model.position cimport Position
 cdef class AccountsManager:
     """
     Provides account management services for a ``Portfolio``.
+
+    Parameters
+    ----------
+    cache : CacheFacade
+        The read-only cache for the manager.
+    log : LoggerAdapter
+        The logger for the manager.
+    clock : Clock
+        The clock for the manager.
     """
 
     def __init__(
@@ -45,19 +54,6 @@ cdef class AccountsManager:
         LoggerAdapter log not None,
         Clock clock not None,
     ):
-        """
-        Initialize a new instance of the ``AccountsManager`` class.
-
-        Parameters
-        ----------
-        cache : CacheFacade
-            The read-only cache for the manager.
-        log : LoggerAdapter
-            The logger for the manager.
-        clock : Clock
-            The clock for the manager.
-
-        """
         self._clock = clock
         self._uuid_factory = UUIDFactory()
         self._log = log

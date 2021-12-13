@@ -30,6 +30,27 @@ from nautilus_trader.model.objects cimport AccountBalance
 cdef class AccountState(Event):
     """
     Represents an event which includes information on the state of the account.
+
+    Parameters
+    ----------
+    account_id : AccountId
+        The account ID.
+    account_type : AccountId
+        The account type for the event.
+    base_currency : Currency, optional
+        The account base currency. Use None for multi-currency accounts.
+    reported : bool
+        If the state is reported from the exchange (otherwise system calculated).
+    balances : list[AccountBalance]
+        The account balances
+    info : dict [str, object]
+        The additional implementation specific account information.
+    event_id : UUID4
+        The event ID.
+    ts_event : int64
+        The UNIX timestamp (nanoseconds) when the account state event occurred.
+    ts_init : int64
+        The UNIX timestamp (nanoseconds) when the object was initialized.
     """
 
     def __init__(
@@ -44,31 +65,6 @@ cdef class AccountState(Event):
         int64_t ts_event,
         int64_t ts_init,
     ):
-        """
-        Initialize a new instance of the ``AccountState`` class.
-
-        Parameters
-        ----------
-        account_id : AccountId
-            The account ID.
-        account_type : AccountId
-            The account type for the event.
-        base_currency : Currency, optional
-            The account base currency. Use None for multi-currency accounts.
-        reported : bool
-            If the state is reported from the exchange (otherwise system calculated).
-        balances : list[AccountBalance]
-            The account balances
-        info : dict [str, object]
-            The additional implementation specific account information.
-        event_id : UUID4
-            The event ID.
-        ts_event : int64
-            The UNIX timestamp (nanoseconds) when the account state event occurred.
-        ts_init : int64
-            The UNIX timestamp (nanoseconds) when the object was initialized.
-
-        """
         Condition.not_empty(balances, "balances")
         super().__init__(event_id, ts_event, ts_init)
 

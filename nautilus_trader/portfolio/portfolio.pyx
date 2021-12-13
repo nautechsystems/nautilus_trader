@@ -76,6 +76,17 @@ cdef class Portfolio(PortfolioFacade):
 
     Currently there is a limitation of one account per ``ExecutionClient``
     instance.
+
+    Parameters
+    ----------
+    msgbus : MessageBus
+        The message bus for the engine.
+    cache : CacheFacade
+        The read-only cache for the portfolio.
+    clock : Clock
+        The clock for the portfolio.
+    logger : Logger
+        The logger for the portfolio.
     """
 
     def __init__(
@@ -85,21 +96,6 @@ cdef class Portfolio(PortfolioFacade):
         Clock clock not None,
         Logger logger=None,
     ):
-        """
-        Initialize a new instance of the ``Portfolio`` class.
-
-        Parameters
-        ----------
-        msgbus : MessageBus
-            The message bus for the engine.
-        cache : CacheFacade
-            The read-only cache for the portfolio.
-        clock : Clock
-            The clock for the portfolio.
-        logger : Logger
-            The logger for the portfolio.
-
-        """
         self._clock = clock
         self._uuid_factory = UUIDFactory()
         self._log = LoggerAdapter(component_name=type(self).__name__, logger=logger)

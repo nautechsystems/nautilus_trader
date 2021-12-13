@@ -75,9 +75,9 @@ class TestInstrumentProvider:
             base_currency=ADA,
             quote_currency=BTC,
             price_precision=8,
-            size_precision=0,
+            size_precision=8,
             price_increment=Price(1e-08, precision=8),
-            size_increment=Quantity.from_int(1),
+            size_increment=Quantity(1e-08, precision=8),
             lot_size=None,
             max_quantity=Quantity.from_int(90000000),
             min_quantity=Quantity.from_int(1),
@@ -426,18 +426,14 @@ class TestInstrumentProvider:
 class TestDataProvider:
     """
     Provides an API to load data from either the 'test/' directory or GitHub repo.
+
+    Parameters
+    ----------
+    branch : str
+        The NautilusTrader GitHub branch for the path.
     """
 
     def __init__(self, branch="develop"):
-        """
-        Initialize a new instance of the ``TestDataProvider`` class.
-
-        Parameters
-        ----------
-        branch : str
-            The NautilusTrader GitHub branch for the path.
-
-        """
         self.fs: Optional[fsspec.AbstractFileSystem] = None
         self.root: Optional[str] = None
         self._determine_filesystem()
@@ -475,10 +471,10 @@ class TestDataProvider:
         with fsspec.open(uri) as f:
             return f.read()
 
-    def read_csv(self, path: str):
+    def read_csv(self, path: str, **kwargs):
         uri = self._make_uri(path=path)
         with fsspec.open(uri) as f:
-            return pd.read_csv(f)
+            return pd.read_csv(f, **kwargs)
 
     def read_csv_ticks(self, path: str):
         uri = self._make_uri(path=path)

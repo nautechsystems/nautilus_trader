@@ -35,6 +35,24 @@ cdef int ONE_DAY = 86_400
 cdef class HttpClient:
     """
     Provides an asynchronous HTTP client.
+
+    Parameters
+    ----------
+    loop : asyncio.AbstractEventLoop
+        The event loop for the client.
+    logger : Logger
+        The logger for the client.
+    ttl_dns_cache : int
+        The time to live for the DNS cache.
+    ssl: Union[None, bool, Fingerprint, SSLContext], default=False
+        The ssl context to use for HTTPS.
+    connector_kwargs : dict, optional
+        The connector key word arguments.
+
+    Raises
+    ------
+    ValueError
+        If `ttl_dns_cache` is not positive (> 0).
     """
 
     def __init__(
@@ -47,28 +65,6 @@ cdef class HttpClient:
         ssl: Union[None, bool, Fingerprint, SSLContext]=False,
         dict connector_kwargs=None,
     ):
-        """
-        Initialize a new instance of the ``HttpClient`` class.
-
-        Parameters
-        ----------
-        loop : asyncio.AbstractEventLoop
-            The event loop for the client.
-        logger : Logger
-            The logger for the client.
-        ttl_dns_cache : int
-            The time to live for the DNS cache.
-        ssl: Union[None, bool, Fingerprint, SSLContext], default=False
-            The ssl context to use for HTTPS.
-        connector_kwargs : dict, optional
-            The connector key word arguments.
-
-        Raises
-        ------
-        ValueError
-            If `ttl_dns_cache` is not positive (> 0).
-
-        """
         Condition.positive(ttl_dns_cache, "ttl_dns_cache")
 
         self._loop = loop
@@ -176,6 +172,19 @@ cdef class HttpClient:
     ) -> ClientResponse:
         return await self.request(
             method="POST",
+            url=url,
+            headers=headers,
+            **kwargs,
+        )
+
+    async def delete(
+        self,
+        url: str,
+        headers: Optional[Dict[str, str]]=None,
+        **kwargs,
+    ) -> ClientResponse:
+        return await self.request(
+            method="DELETE",
             url=url,
             headers=headers,
             **kwargs,

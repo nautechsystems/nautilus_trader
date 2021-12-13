@@ -190,18 +190,14 @@ cdef class RolloverInterestCalculator:
 
     If rate_data_csv_path is empty then will default to the included short-term
     interest rate data csv (data since 1956).
+
+    Parameters
+    ----------
+    data : str
+        The short term interest rate data.
     """
 
     def __init__(self, data not None: pd.DataFrame):
-        """
-        Initialize a new instance of the ``RolloverInterestCalculator`` class.
-
-        Parameters
-        ----------
-        data : str
-            The short term interest rate data.
-
-        """
         self._rate_data = {
             "AUD": data.loc[data["LOCATION"] == "AUS"],
             "CAD": data.loc[data["LOCATION"] == "CAN"],

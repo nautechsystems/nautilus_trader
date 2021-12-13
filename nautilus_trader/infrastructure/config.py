@@ -20,6 +20,8 @@ class CacheDatabaseConfig(pydantic.BaseModel):
     """
     Configuration for ``CacheDatabase`` instances.
 
+    Parameters
+    ----------
     type : str
         The database type.
     host : str

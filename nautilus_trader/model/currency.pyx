@@ -23,6 +23,28 @@ cdef class Currency:
     """
     Represents a medium of exchange in a specified denomination with a fixed
     decimal precision.
+
+    Parameters
+    ----------
+    code : str
+        The currency code.
+    precision : uint8
+        The currency decimal precision.
+    iso4217 : uint16
+        The currency ISO 4217 code.
+    name : str
+        The currency name.
+    currency_type : CurrencyType
+        The currency type.
+
+    Raises
+    ------
+    ValueError
+        If `code` is not a valid string.
+    OverflowError
+        If `precision` is negative (< 0).
+    ValueError
+        If `name` is not a valid string.
     """
 
     def __init__(
@@ -33,32 +55,6 @@ cdef class Currency:
         str name,
         CurrencyType currency_type,
     ):
-        """
-        Initialize a new instance of the ``Currency`` class.
-
-        Parameters
-        ----------
-        code : str
-            The currency code.
-        precision : uint8
-            The currency decimal precision.
-        iso4217 : uint16
-            The currency ISO 4217 code.
-        name : str
-            The currency name.
-        currency_type : CurrencyType
-            The currency type.
-
-        Raises
-        ------
-        ValueError
-            If `code` is not a valid string.
-        OverflowError
-            If `precision` is negative (< 0).
-        ValueError
-            If `name` is not a valid string.
-
-        """
         Condition.valid_string(code, "code")
         Condition.valid_string(name, "name")
         Condition.not_negative_int(precision, "precision")

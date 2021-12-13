@@ -29,25 +29,21 @@ from nautilus_trader.model.data.tick cimport TradeTick
 cdef class SimpleMovingAverage(MovingAverage):
     """
     An indicator which calculates a simple moving average across a rolling window.
+
+    Parameters
+    ----------
+    period : int
+        The rolling window period for the indicator (> 0).
+    price_type : PriceType
+        The specified price type for extracting values from quote ticks.
+
+    Raises
+    ------
+    ValueError
+        If `period` is not positive (> 0).
     """
 
     def __init__(self, int period, PriceType price_type=PriceType.LAST):
-        """
-        Initialize a new instance of the ``SimpleMovingAverage`` class.
-
-        Parameters
-        ----------
-        period : int
-            The rolling window period for the indicator (> 0).
-        price_type : PriceType
-            The specified price type for extracting values from quote ticks.
-
-        Raises
-        ------
-        ValueError
-            If `period` is not positive (> 0).
-
-        """
         Condition.positive_int(period, "period")
         super().__init__(period, params=[period], price_type=price_type)
 

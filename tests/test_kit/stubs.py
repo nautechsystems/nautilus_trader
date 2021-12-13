@@ -142,6 +142,10 @@ class TestStubs:
         return InstrumentId(Symbol("ETH/USDT"), Venue("BINANCE"))
 
     @staticmethod
+    def adabtc_binance_id() -> InstrumentId:
+        return InstrumentId(Symbol("ADA/BTC"), Venue("BINANCE"))
+
+    @staticmethod
     def audusd_id() -> InstrumentId:
         return InstrumentId(Symbol("AUD/USD"), Venue("SIM"))
 
@@ -207,7 +211,7 @@ class TestStubs:
             price=price or Price.from_str("1.001"),
             size=quantity or Quantity.from_int(100000),
             aggressor_side=aggressor_side or AggressorSide.BUY,
-            match_id="123456",
+            trade_id="123456",
             ts_event=0,
             ts_init=0,
         )
@@ -224,7 +228,7 @@ class TestStubs:
             price=price or Price.from_str("1.00001"),
             size=quantity or Quantity.from_int(100000),
             aggressor_side=aggressor_side or AggressorSide.BUY,
-            match_id="123456",
+            trade_id="123456",
             ts_event=0,
             ts_init=0,
         )
@@ -284,6 +288,10 @@ class TestStubs:
     @staticmethod
     def bartype_btcusdt_binance_100tick_last() -> BarType:
         return BarType(TestStubs.btcusdt_binance_id(), TestStubs.bar_spec_100tick_last())
+
+    @staticmethod
+    def bartype_adabtc_binance_1min_last() -> BarType:
+        return BarType(TestStubs.adabtc_binance_id(), TestStubs.bar_spec_1min_last())
 
     @staticmethod
     def bar_5decimal() -> Bar:
@@ -915,7 +923,7 @@ class TestStubs:
                         price=Price(d["trade"]["price"], 4),
                         size=Quantity(d["trade"]["volume"], 4),
                         aggressor_side=d["trade"]["side"],
-                        match_id=(d["trade"]["trade_id"]),
+                        trade_id=(d["trade"]["trade_id"]),
                         ts_event=ts,
                         ts_init=ts,
                     ),

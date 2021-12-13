@@ -147,7 +147,7 @@ class TestTradeTickDataWrangler:
         assert ticks[0].price == Price.from_str("423.760")
         assert ticks[0].size == Quantity.from_str("2.67900")
         assert ticks[0].aggressor_side == AggressorSide.SELL
-        assert ticks[0].match_id == "148568980"
+        assert ticks[0].trade_id == "148568980"
         assert ticks[0].ts_event == 1597399200223000064
         assert ticks[0].ts_init == 1597399200223000064
 
@@ -168,7 +168,7 @@ class TestTradeTickDataWrangler:
         assert ticks[0].price == Price.from_str("423.760")
         assert ticks[0].size == Quantity.from_str("2.67900")
         assert ticks[0].aggressor_side == AggressorSide.SELL
-        assert ticks[0].match_id == "148568980"
+        assert ticks[0].trade_id == "148568980"
         assert ticks[0].ts_event == 1597399200223000064
         assert ticks[0].ts_init == 1597399200224000564  # <-- delta diff
 
@@ -216,6 +216,51 @@ class TestBarDataWrangler:
         assert bars[0].volume == Quantity.from_int(10)  # <-- default volume
         assert bars[0].ts_event == 1328054400000000000
         assert bars[0].ts_init == 1328054400001000500  # <-- delta diff
+
+
+class TestBarDataWranglerHeaderless:
+    def setup(self):
+        # Fixture Setup
+        instrument = TestInstrumentProvider.adabtc_binance()
+        bar_type = TestStubs.bartype_adabtc_binance_1min_last()
+        self.wrangler = BarDataWrangler(
+            bar_type=bar_type,
+            instrument=instrument,
+        )
+
+    def test_process(self):
+        # Arrange, Act
+        provider = TestDataProvider()
+        config = {
+            "names": [
+                "timestamp",
+                "open",
+                "high",
+                "low",
+                "close",
+                "volume",
+                "ts_close",
+                "quote_volume",
+                "n_trades",
+                "taker_buy_base_volume",
+                "taker_buy_quote_volume",
+                "ignore",
+            ]
+        }
+        data = provider.read_csv("ADABTC-1m-2021-11-27.csv", **config)
+        data["timestamp"] = data["timestamp"].astype("datetime64[ms]")
+        data = data.set_index("timestamp")
+        bars = self.wrangler.process(data)
+
+        # Assert
+        assert len(bars) == 10
+        assert bars[0].open == Price.from_str("0.00002853")
+        assert bars[0].high == Price.from_str("0.00002854")
+        assert bars[0].low == Price.from_str("0.00002851")
+        assert bars[0].close == Price.from_str("0.00002854")
+        assert bars[0].volume == Quantity.from_str("36304.2")
+        assert bars[0].ts_event == 1637971200000000000
+        assert bars[0].ts_init == 1637971200000000000
 
 
 class TestTardisQuoteDataWrangler:
@@ -282,6 +327,6 @@ class TestTardisTradeDataWrangler:
         assert ticks[0].price == Price.from_str("9682.00")
         assert ticks[0].size == Quantity.from_str("0.132000")
         assert ticks[0].aggressor_side == AggressorSide.BUY
-        assert ticks[0].match_id == "42377944"
+        assert ticks[0].trade_id == "42377944"
         assert ticks[0].ts_event == 1582329602418379008
         assert ticks[0].ts_init == 1582329602418379008

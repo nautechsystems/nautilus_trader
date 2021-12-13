@@ -52,9 +52,6 @@ class LinePreprocessor:
     """
 
     def __init__(self):
-        """
-        Initialize a new instance of the ``LinePreprocessor`` class.
-        """
         self.state = {}
         self.line = None
 
@@ -92,9 +89,6 @@ class Reader:
         instrument_provider: Optional[InstrumentProvider] = None,
         instrument_provider_update: Callable = None,
     ):
-        """
-        Initialize a new instance of the ``Reader`` class.
-        """
         self.instrument_provider = instrument_provider
         self.instrument_provider_update = instrument_provider_update
         self.buffer = b""
@@ -126,6 +120,16 @@ class ByteReader(Reader):
     """
     A Reader subclass for reading blocks of raw bytes; `byte_parser` will be
     passed a blocks of raw bytes.
+
+    Parameters
+    ----------
+    block_parser : Callable
+        The handler which takes a blocks of bytes and yields Nautilus objects.
+    instrument_provider : InstrumentProvider, optional
+        The instrument provider for the reader.
+    instrument_provider_update : Callable , optional
+        An optional hook/callable to update instrument provider before data is passed to `byte_parser`
+        (in many cases instruments need to be known ahead of parsing).
     """
 
     def __init__(
@@ -134,20 +138,6 @@ class ByteReader(Reader):
         instrument_provider: Optional[InstrumentProvider] = None,
         instrument_provider_update: Callable = None,
     ):
-        """
-        Initialize a new instance of the ``ByteReader`` class.
-
-        Parameters
-        ----------
-        block_parser : Callable
-            The handler which takes a blocks of bytes and yields Nautilus objects.
-        instrument_provider : InstrumentProvider, optional
-            The instrument provider for the reader.
-        instrument_provider_update : Callable , optional
-            An optional hook/callable to update instrument provider before data is passed to `byte_parser`
-            (in many cases instruments need to be known ahead of parsing).
-
-        """
         super().__init__(
             instrument_provider_update=instrument_provider_update,
             instrument_provider=instrument_provider,
@@ -166,6 +156,22 @@ class TextReader(ByteReader):
     """
     A Reader subclass for reading lines of a text-like file; `line_parser` will
     be passed a single row of bytes.
+
+    Parameters
+    ----------
+    line_parser : Callable
+        The handler which takes byte strings and yields Nautilus objects.
+    line_preprocessor : Callable, optional
+        The context manager for preprocessing (cleaning log lines) of lines
+        before json.loads is called. Nautilus objects are returned to the
+        context manager for any post-processing also (for example, setting
+        the `ts_init`).
+    instrument_provider : InstrumentProvider, optional
+        The instrument provider for the reader.
+    instrument_provider_update : Callable, optional
+        An optional hook/callable to update instrument provider before
+        data is passed to `line_parser` (in many cases instruments need to
+        be known ahead of parsing).
     """
 
     def __init__(
@@ -175,26 +181,6 @@ class TextReader(ByteReader):
         instrument_provider: Optional[InstrumentProvider] = None,
         instrument_provider_update: Optional[Callable] = None,
     ):
-        """
-        Initialize a new instance of the ``TextReader`` class.
-
-        Parameters
-        ----------
-        line_parser : Callable
-            The handler which takes byte strings and yields Nautilus objects.
-        line_preprocessor : Callable, optional
-            The context manager for preprocessing (cleaning log lines) of lines
-            before json.loads is called. Nautilus objects are returned to the
-            context manager for any post-processing also (for example, setting
-            the `ts_init`).
-        instrument_provider : InstrumentProvider, optional
-            The instrument provider for the reader.
-        instrument_provider_update : Callable, optional
-            An optional hook/callable to update instrument provider before
-            data is passed to `line_parser` (in many cases instruments need to
-            be known ahead of parsing).
-
-        """
         assert line_preprocessor is None or isinstance(line_preprocessor, LinePreprocessor)
         super().__init__(
             instrument_provider_update=instrument_provider_update,
@@ -229,6 +215,23 @@ class TextReader(ByteReader):
 class CSVReader(Reader):
     """
     Provides parsing of CSV formatted bytes strings to Nautilus objects.
+
+    Parameters
+    ----------
+    block_parser : callable
+        The handler which takes byte strings and yields Nautilus objects.
+    instrument_provider : InstrumentProvider, optional
+        The readers instrument provider.
+    instrument_provider_update
+        Optional hook to call before `parser` for the purpose of loading instruments into an InstrumentProvider
+    header: List[str], default=None
+        If first row contains names of columns, header has to be set to `None`.
+        If data starts right at the first row, header has to be provided the list of column names.
+    chunked: bool, default=True
+        If chunked=False, each CSV line will be passed to `block_parser` individually, if chunked=True, the data
+        passed will potentially contain many lines (a block).
+    as_dataframe: bool, default=False
+        If as_dataframe=True, the passes block will be parsed into a DataFrame before passing to `block_parser`.
     """
 
     def __init__(
@@ -236,33 +239,17 @@ class CSVReader(Reader):
         block_parser: Callable,
         instrument_provider: Optional[InstrumentProvider] = None,
         instrument_provider_update=None,
+        header: Optional[List[str]] = None,
         chunked=True,
         as_dataframe=True,
     ):
-        """
-        Initialize a new instance of the ``CSVReader`` class.
-
-        Parameters
-        ----------
-        block_parser : callable
-            The handler which takes byte strings and yields Nautilus objects.
-        instrument_provider : InstrumentProvider, optional
-            The readers instrument provider.
-        instrument_provider_update
-            Optional hook to call before `parser` for the purpose of loading instruments into an InstrumentProvider
-        chunked: bool, default=True
-            If chunked=False, each CSV line will be passed to `block_parser` individually, if chunked=True, the data
-            passed will potentially contain many lines (a block).
-        as_dataframe: bool, default=False
-            If as_dataframe=True, the passes block will be parsed into a DataFrame before passing to `block_parser`
-
-        """
         super().__init__(
             instrument_provider=instrument_provider,
             instrument_provider_update=instrument_provider_update,
         )
         self.block_parser = block_parser
-        self.header: Optional[List[str]] = None
+        self.header = header
+        self.header_in_first_row = not header
         self.chunked = chunked
         self.as_dataframe = as_dataframe
 
@@ -296,13 +283,24 @@ class CSVReader(Reader):
             yield from self.block_parser(chunk)
 
     def on_file_complete(self):
-        self.header = None
+        if self.header_in_first_row:
+            self.header = None
         self.buffer = b""
 
 
 class ParquetReader(ByteReader):
     """
     Provides parsing of parquet specification bytes to Nautilus objects.
+
+    Parameters
+    ----------
+    parser : Callable
+        The parser.
+    instrument_provider : InstrumentProvider, optional
+        The readers instrument provider.
+    instrument_provider_update : Callable , optional
+        An optional hook/callable to update instrument provider before data is passed to `byte_parser`
+        (in many cases instruments need to be known ahead of parsing).
     """
 
     def __init__(
@@ -311,20 +309,6 @@ class ParquetReader(ByteReader):
         instrument_provider: Optional[InstrumentProvider] = None,
         instrument_provider_update: Callable = None,
     ):
-        """
-        Initialize a new instance of the ``ParquetParser`` class.
-
-        Parameters
-        ----------
-        parser : Callable
-            The parser.
-        instrument_provider : InstrumentProvider, optional
-            The readers instrument provider.
-        instrument_provider_update : Callable , optional
-            An optional hook/callable to update instrument provider before data is passed to `byte_parser`
-            (in many cases instruments need to be known ahead of parsing).
-
-        """
         super().__init__(
             block_parser=parser,
             instrument_provider_update=instrument_provider_update,
