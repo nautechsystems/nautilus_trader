@@ -368,7 +368,7 @@ def _handle_market_trades(
             price=price_to_probability(str(price)),
             size=Quantity(volume, precision=4),
             aggressor_side=AggressorSide.UNKNOWN,
-            match_id=trade_id,
+            trade_id=trade_id,
             ts_event=ts_event,
             ts_init=ts_init,
         )

@@ -175,7 +175,7 @@ class TestTradeTick:
             price=Price.from_str("1.00000"),
             size=Quantity.from_int(50000),
             aggressor_side=AggressorSide.BUY,
-            match_id="123456789",
+            trade_id="123456789",
             ts_event=0,
             ts_init=0,
         )
@@ -192,7 +192,7 @@ class TestTradeTick:
             price=Price.from_str("1.00000"),
             size=Quantity.from_int(10000),
             aggressor_side=AggressorSide.BUY,
-            match_id="123456789",
+            trade_id="123456789",
             ts_event=0,
             ts_init=0,
         )
@@ -207,7 +207,7 @@ class TestTradeTick:
             "price": "1.00000",
             "size": "10000",
             "aggressor_side": "BUY",
-            "match_id": "123456789",
+            "trade_id": "123456789",
             "ts_event": 0,
             "ts_init": 0,
         }
@@ -219,7 +219,7 @@ class TestTradeTick:
             price=Price.from_str("1.00000"),
             size=Quantity.from_int(10000),
             aggressor_side=AggressorSide.BUY,
-            match_id="123456789",
+            trade_id="123456789",
             ts_event=0,
             ts_init=0,
         )

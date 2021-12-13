@@ -233,7 +233,7 @@ cdef class TradeTick(Tick):
         Price price not None,
         Quantity size not None,
         AggressorSide aggressor_side,
-        str match_id not None,
+        str trade_id not None,
         int64_t ts_event,
         int64_t ts_init,
     ):
@@ -250,7 +250,7 @@ cdef class TradeTick(Tick):
             The traded size.
         aggressor_side : AggressorSide
             The trade aggressor side.
-        match_id : str
+        trade_id : str
             The trade match ID.
         ts_event: int64
             The UNIX timestamp (nanoseconds) when the tick event occurred.
@@ -260,16 +260,16 @@ cdef class TradeTick(Tick):
         Raises
         ------
         ValueError
-            If `match_id` is not a valid string.
+            If `trade_id` is not a valid string.
 
         """
-        Condition.valid_string(match_id, "match_id")
+        Condition.valid_string(trade_id, "trade_id")
         super().__init__(instrument_id, ts_event, ts_init)
 
         self.price = price
         self.size = size
         self.aggressor_side = aggressor_side
-        self.match_id = match_id
+        self.trade_id = trade_id
 
     def __eq__(self, TradeTick other) -> bool:
         return TradeTick.to_dict_c(self) == TradeTick.to_dict_c(other)
@@ -282,7 +282,7 @@ cdef class TradeTick(Tick):
                 f"{self.price},"
                 f"{self.size},"
                 f"{AggressorSideParser.to_str(self.aggressor_side)},"
-                f"{self.match_id},"
+                f"{self.trade_id},"
                 f"{self.ts_event}")
 
     def __repr__(self) -> str:
@@ -296,7 +296,7 @@ cdef class TradeTick(Tick):
             price=Price.from_str_c(values["price"]),
             size=Quantity.from_str_c(values["size"]),
             aggressor_side=AggressorSideParser.from_str(values["aggressor_side"]),
-            match_id=values["match_id"],
+            trade_id=values["trade_id"],
             ts_event=values["ts_event"],
             ts_init=values["ts_init"],
         )
@@ -310,7 +310,7 @@ cdef class TradeTick(Tick):
             "price": str(obj.price),
             "size": str(obj.size),
             "aggressor_side": AggressorSideParser.to_str(obj.aggressor_side),
-            "match_id": obj.match_id,
+            "trade_id": obj.trade_id,
             "ts_event": obj.ts_event,
             "ts_init": obj.ts_init,
         }

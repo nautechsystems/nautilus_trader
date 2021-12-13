@@ -120,7 +120,7 @@ class TestPersistenceCatalog:
             price=Price.from_str("2.0"),
             size=Quantity.from_int(10),
             aggressor_side=AggressorSide.UNKNOWN,
-            match_id="1",
+            trade_id="1",
             ts_event=0,
             ts_init=0,
         )

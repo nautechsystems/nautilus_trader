@@ -211,7 +211,7 @@ class TestStubs:
             price=price or Price.from_str("1.001"),
             size=quantity or Quantity.from_int(100000),
             aggressor_side=aggressor_side or AggressorSide.BUY,
-            match_id="123456",
+            trade_id="123456",
             ts_event=0,
             ts_init=0,
         )
@@ -228,7 +228,7 @@ class TestStubs:
             price=price or Price.from_str("1.00001"),
             size=quantity or Quantity.from_int(100000),
             aggressor_side=aggressor_side or AggressorSide.BUY,
-            match_id="123456",
+            trade_id="123456",
             ts_event=0,
             ts_init=0,
         )
@@ -923,7 +923,7 @@ class TestStubs:
                         price=Price(d["trade"]["price"], 4),
                         size=Quantity(d["trade"]["volume"], 4),
                         aggressor_side=d["trade"]["side"],
-                        match_id=(d["trade"]["trade_id"]),
+                        trade_id=(d["trade"]["trade_id"]),
                         ts_event=ts,
                         ts_init=ts,
                     ),

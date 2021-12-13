@@ -270,7 +270,7 @@ cdef class TradeTickDataWrangler:
         processed["price"] = data["price"].apply(lambda x: f'{x:.{self.instrument.price_precision}f}')
         processed["quantity"] = data["quantity"].apply(lambda x: f'{x:.{self.instrument.size_precision}f}')
         processed["aggressor_side"] = self._create_side_if_not_exist(data)
-        processed["match_id"] = data["trade_id"].apply(str)
+        processed["trade_id"] = data["trade_id"].apply(str)
 
         cdef int64_t[:] ts_events = np.ascontiguousarray([secs_to_nanos(dt.timestamp()) for dt in data.index], dtype=np.int64)  # noqa
         cdef int64_t[:] ts_inits = np.ascontiguousarray([ts_event + ts_init_delta for ts_event in ts_events], dtype=np.int64)  # noqa
@@ -297,7 +297,7 @@ cdef class TradeTickDataWrangler:
             price=Price(values[0], self.instrument.price_precision),
             size=Quantity(values[1], self.instrument.size_precision),
             aggressor_side=AggressorSideParser.from_str(values[2]),
-            match_id=values[3],
+            trade_id=values[3],
             ts_event=ts_event,
             ts_init=ts_init,
         )

@@ -1338,7 +1338,7 @@ class TestDataEngine:
             price=Price.from_str("1050.00000"),
             size=Quantity.from_int(100),
             aggressor_side=AggressorSide.BUY,
-            match_id="123456789",
+            trade_id="123456789",
             ts_event=0,
             ts_init=0,
         )
@@ -1383,7 +1383,7 @@ class TestDataEngine:
             price=Price.from_str("1050.00000"),
             size=Quantity.from_int(100),
             aggressor_side=AggressorSide.BUY,
-            match_id="123456789",
+            trade_id="123456789",
             ts_event=0,
             ts_init=0,
         )

@@ -296,7 +296,7 @@ class TestTickBarAggregator:
             price=Price.from_str("1.00001"),
             size=Quantity.from_int(1),
             aggressor_side=AggressorSide.BUY,
-            match_id="123456",
+            trade_id="123456",
             ts_event=0,
             ts_init=0,
         )
@@ -383,7 +383,7 @@ class TestTickBarAggregator:
             price=Price.from_str("1.00001"),
             size=Quantity.from_int(1),
             aggressor_side=AggressorSide.BUY,
-            match_id="123456",
+            trade_id="123456",
             ts_event=0,
             ts_init=0,
         )
@@ -393,7 +393,7 @@ class TestTickBarAggregator:
             price=Price.from_str("1.00002"),
             size=Quantity.from_int(1),
             aggressor_side=AggressorSide.BUY,
-            match_id="123457",
+            trade_id="123457",
             ts_event=0,
             ts_init=0,
         )
@@ -403,7 +403,7 @@ class TestTickBarAggregator:
             price=Price.from_str("1.00000"),
             size=Quantity.from_int(1),
             aggressor_side=AggressorSide.BUY,
-            match_id="123458",
+            trade_id="123458",
             ts_event=0,
             ts_init=0,
         )
@@ -535,7 +535,7 @@ class TestVolumeBarAggregator:
             price=Price.from_str("1.00001"),
             size=Quantity.from_int(1),
             aggressor_side=AggressorSide.BUY,
-            match_id="123456",
+            trade_id="123456",
             ts_event=0,
             ts_init=0,
         )
@@ -622,7 +622,7 @@ class TestVolumeBarAggregator:
             price=Price.from_str("1.00001"),
             size=Quantity.from_int(3000),
             aggressor_side=AggressorSide.BUY,
-            match_id="123456",
+            trade_id="123456",
             ts_event=0,
             ts_init=0,
         )
@@ -632,7 +632,7 @@ class TestVolumeBarAggregator:
             price=Price.from_str("1.00002"),
             size=Quantity.from_int(4000),
             aggressor_side=AggressorSide.BUY,
-            match_id="123457",
+            trade_id="123457",
             ts_event=0,
             ts_init=0,
         )
@@ -642,7 +642,7 @@ class TestVolumeBarAggregator:
             price=Price.from_str("1.00000"),
             size=Quantity.from_int(3000),
             aggressor_side=AggressorSide.BUY,
-            match_id="123458",
+            trade_id="123458",
             ts_event=0,
             ts_init=0,
         )
@@ -746,7 +746,7 @@ class TestVolumeBarAggregator:
             price=Price.from_str("1.00001"),
             size=Quantity.from_int(2000),
             aggressor_side=AggressorSide.BUY,
-            match_id="123456",
+            trade_id="123456",
             ts_event=0,
             ts_init=0,
         )
@@ -756,7 +756,7 @@ class TestVolumeBarAggregator:
             price=Price.from_str("1.00002"),
             size=Quantity.from_int(3000),
             aggressor_side=AggressorSide.BUY,
-            match_id="123457",
+            trade_id="123457",
             ts_event=0,
             ts_init=0,
         )
@@ -766,7 +766,7 @@ class TestVolumeBarAggregator:
             price=Price.from_str("1.00000"),
             size=Quantity.from_int(25000),
             aggressor_side=AggressorSide.BUY,
-            match_id="123458",
+            trade_id="123458",
             ts_event=0,
             ts_init=0,
         )
@@ -912,7 +912,7 @@ class TestTestValueBarAggregator:
             price=Price.from_str("15000.00"),
             size=Quantity.from_str("3.5"),
             aggressor_side=AggressorSide.BUY,
-            match_id="123456",
+            trade_id="123456",
             ts_event=0,
             ts_init=0,
         )
@@ -1001,7 +1001,7 @@ class TestTestValueBarAggregator:
             price=Price.from_str("20.00001"),
             size=Quantity.from_str("3000.00"),
             aggressor_side=AggressorSide.BUY,
-            match_id="123456",
+            trade_id="123456",
             ts_event=0,
             ts_init=0,
         )
@@ -1011,7 +1011,7 @@ class TestTestValueBarAggregator:
             price=Price.from_str("20.00002"),
             size=Quantity.from_str("4000.00"),
             aggressor_side=AggressorSide.BUY,
-            match_id="123457",
+            trade_id="123457",
             ts_event=0,
             ts_init=0,
         )
@@ -1021,7 +1021,7 @@ class TestTestValueBarAggregator:
             price=Price.from_str("20.00000"),
             size=Quantity.from_str("5000.00"),
             aggressor_side=AggressorSide.BUY,
-            match_id="123458",
+            trade_id="123458",
             ts_event=0,
             ts_init=0,
         )
