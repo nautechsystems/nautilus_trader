@@ -25,6 +25,15 @@ cdef class Ticker(Data):
     """
     The base class for all tickers.
 
+    Parameters
+    ----------
+    instrument_id : InstrumentId
+        The instrument ID.
+    ts_event : int64
+        The UNIX timestamp (nanoseconds) when the ticker event occurred.
+    ts_init : int64
+        The UNIX timestamp (nanoseconds) when the object was initialized.
+
     Warnings
     --------
     This class should not be used directly, but through a concrete subclass.
@@ -36,19 +45,6 @@ cdef class Ticker(Data):
         int64_t ts_event,
         int64_t ts_init,
     ):
-        """
-        Initialize a new instance of the ``Ticker`` class.
-
-        Parameters
-        ----------
-        instrument_id : InstrumentId
-            The instrument ID.
-        ts_event : int64
-            The UNIX timestamp (nanoseconds) when the ticker event occurred.
-        ts_init : int64
-            The UNIX timestamp (nanoseconds) when the object was initialized.
-
-        """
         super().__init__(ts_event, ts_init)
 
         self.instrument_id = instrument_id

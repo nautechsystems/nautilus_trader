@@ -86,26 +86,22 @@ cdef class TradingStrategy(Actor):
      - ``NETTING``: There will only ever be a single position for the strategy
        per instrument. The position ID will be `{instrument_id}-{strategy_id}`.
 
+    Parameters
+    ----------
+    config : TradingStrategyConfig, optional
+        The trading strategy configuration.
+
+    Raises
+    ------
+    TypeError
+        If `config` is not of type `TradingStrategyConfig`.
+
     Warnings
     --------
     This class should not be used directly, but through a concrete subclass.
     """
 
     def __init__(self, config: Optional[TradingStrategyConfig]=None):
-        """
-        Initialize a new instance of the ``TradingStrategy`` class.
-
-        Parameters
-        ----------
-        config : TradingStrategyConfig, optional
-            The trading strategy configuration.
-
-        Raises
-        ------
-        TypeError
-            If `config` is not of type `TradingStrategyConfig`.
-
-        """
         if config is None:
             config = TradingStrategyConfig()
         Condition.type(config, TradingStrategyConfig, "config")

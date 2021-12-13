@@ -106,21 +106,17 @@ cdef class Order:
     """
     The abstract base class for all orders.
 
+    Parameters
+    ----------
+    init : OrderInitialized
+        The order initialized event.
+
     Warnings
     --------
     This class should not be used directly, but through a concrete subclass.
     """
 
     def __init__(self, OrderInitialized init not None):
-        """
-        Initialize a new instance of the ``Order`` class.
-
-        Parameters
-        ----------
-        init : OrderInitialized
-            The order initialized event.
-
-        """
         self._events = [init]       # type: list[OrderEvent]
         self._venue_order_ids = []  # type: list[VenueOrderId]
         self._execution_ids = []    # type: list[ExecutionId]

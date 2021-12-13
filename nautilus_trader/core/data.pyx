@@ -20,23 +20,19 @@ cdef class Data:
     """
     The abstract base class for all data.
 
+    Parameters
+    ----------
+    ts_event : int64
+        The UNIX timestamp (nanoseconds) when the data event occurred.
+    ts_init : int64
+        The UNIX timestamp (nanoseconds) when the object was initialized.
+
     Warnings
     --------
     This class should not be used directly, but through a concrete subclass.
     """
 
     def __init__(self, int64_t ts_event, int64_t ts_init):
-        """
-        Initialize a new instance of the ``Data`` class.
-
-        Parameters
-        ----------
-        ts_event : int64
-            The UNIX timestamp (nanoseconds) when the data event occurred.
-        ts_init : int64
-            The UNIX timestamp (nanoseconds) when the object was initialized.
-
-        """
         # Design-time invariant: correct ordering of timestamps
         assert ts_event <= ts_init
         self.ts_event = ts_event

@@ -83,6 +83,24 @@ cdef class ExecutionEngine(Component):
     Provides a high-performance execution engine for the management of many
     `ExecutionClient` instances, and the asynchronous ingest and distribution of
     trading commands and events.
+
+    Parameters
+    ----------
+    msgbus : MessageBus
+        The message bus for the engine.
+    cache : Cache
+        The cache for the engine.
+    clock : Clock
+        The clock for the engine.
+    logger : Logger
+        The logger for the engine.
+    config : ExecEngineConfig, optional
+        The configuration for the instance.
+
+    Raises
+    ------
+    TypeError
+        If `config` is not of type `ExecEngineConfig`.
     """
 
     def __init__(
@@ -93,28 +111,6 @@ cdef class ExecutionEngine(Component):
         Logger logger not None,
         config: Optional[ExecEngineConfig]=None,
     ):
-        """
-        Initialize a new instance of the ``ExecutionEngine`` class.
-
-        Parameters
-        ----------
-        msgbus : MessageBus
-            The message bus for the engine.
-        cache : Cache
-            The cache for the engine.
-        clock : Clock
-            The clock for the engine.
-        logger : Logger
-            The logger for the engine.
-        config : ExecEngineConfig, optional
-            The configuration for the instance.
-
-        Raises
-        ------
-        TypeError
-            If `config` is not of type `ExecEngineConfig`.
-
-        """
         if config is None:
             config = ExecEngineConfig()
         Condition.type(config, ExecEngineConfig, "config")

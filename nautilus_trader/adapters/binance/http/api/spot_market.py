@@ -27,20 +27,16 @@ from nautilus_trader.core.correctness import PyCondition
 class BinanceSpotMarketHttpAPI:
     """
     Provides access to the `Binance SPOT Market` HTTP REST API.
+
+    Parameters
+    ----------
+    client : BinanceHttpClient
+        The Binance REST API client.
     """
 
     BASE_ENDPOINT = "/api/v3/"
 
     def __init__(self, client: BinanceHttpClient):
-        """
-        Initialize a new instance of the ``BinanceSpotMarketHttpAPI`` class.
-
-        Parameters
-        ----------
-        client : BinanceHttpClient
-            The Binance REST API client.
-
-        """
         PyCondition.not_none(client, "client")
 
         self.client = client

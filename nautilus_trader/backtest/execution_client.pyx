@@ -35,6 +35,23 @@ from nautilus_trader.accounting.factory import AccountFactory
 cdef class BacktestExecClient(ExecutionClient):
     """
     Provides an execution client for the `BacktestEngine`.
+
+    Parameters
+    ----------
+    exchange : SimulatedExchange
+        The simulated exchange for the backtest.
+    account_id : AccountId
+        The account ID for the client.
+    msgbus : MessageBus
+        The message bus for the client.
+    cache : Cache
+        The cache for the client.
+    clock : TestClock
+        The clock for the client.
+    logger : Logger
+        The logger for the client.
+    is_frozen_account : bool
+        If the backtest run account is frozen.
     """
 
     def __init__(
@@ -47,27 +64,6 @@ cdef class BacktestExecClient(ExecutionClient):
         Logger logger not None,
         bint is_frozen_account=False,
     ):
-        """
-        Initialize a new instance of the ``BacktestExecClient`` class.
-
-        Parameters
-        ----------
-        exchange : SimulatedExchange
-            The simulated exchange for the backtest.
-        account_id : AccountId
-            The account ID for the client.
-        msgbus : MessageBus
-            The message bus for the client.
-        cache : Cache
-            The cache for the client.
-        clock : TestClock
-            The clock for the client.
-        logger : Logger
-            The logger for the client.
-        is_frozen_account : bool
-            If the backtest run account is frozen.
-
-        """
         super().__init__(
             client_id=ClientId(exchange.id.value),
             venue_type=exchange.venue_type,

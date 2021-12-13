@@ -44,6 +44,25 @@ from nautilus_trader.msgbus.bus import MessageBus
 class FTXExecutionClient(LiveExecutionClient):
     """
     Provides an execution client for Binance SPOT markets.
+
+    Parameters
+    ----------
+    loop : asyncio.AbstractEventLoop
+        The event loop for the client.
+    client : FTXHttpClient
+        The FTX HTTP client.
+    account_id : AccountId
+        The account ID for the client.
+    msgbus : MessageBus
+        The message bus for the client.
+    cache : Cache
+        The cache for the client.
+    clock : LiveClock
+        The clock for the client.
+    logger : Logger
+        The logger for the client.
+    instrument_provider : FTXInstrumentProvider
+        The instrument provider.
     """
 
     def __init__(
@@ -57,29 +76,6 @@ class FTXExecutionClient(LiveExecutionClient):
         logger: Logger,
         instrument_provider: FTXInstrumentProvider,
     ):
-        """
-        Initialize a new instance of the ``FTXExecutionClient`` class.
-
-        Parameters
-        ----------
-        loop : asyncio.AbstractEventLoop
-            The event loop for the client.
-        client : FTXHttpClient
-            The FTX HTTP client.
-        account_id : AccountId
-            The account ID for the client.
-        msgbus : MessageBus
-            The message bus for the client.
-        cache : Cache
-            The cache for the client.
-        clock : LiveClock
-            The clock for the client.
-        logger : Logger
-            The logger for the client.
-        instrument_provider : FTXInstrumentProvider
-            The instrument provider.
-
-        """
         super().__init__(
             loop=loop,
             client_id=ClientId(FTX_VENUE.value),

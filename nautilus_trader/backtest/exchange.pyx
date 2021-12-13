@@ -77,6 +77,58 @@ from nautilus_trader.model.position cimport Position
 cdef class SimulatedExchange:
     """
     Provides a simulated financial market exchange.
+
+    Parameters
+    ----------
+    venue : Venue
+        The venue to simulate.
+    venue_type : VenueType
+        The venues type.
+    oms_type : OMSType {``HEDGING``, ``NETTING``}
+        The order management system type used by the exchange.
+    account_type : AccountType
+        The account type for the client.
+    base_currency : Currency, optional
+        The account base currency for the client. Use ``None`` for multi-currency accounts.
+    starting_balances : list[Money]
+        The starting balances for the exchange.
+    default_leverage : Decimal
+        The account default leverage (for margin accounts).
+    leverages : Dict[InstrumentId, Decimal]
+        The instrument specific leverage configuration (for margin accounts).
+    is_frozen_account : bool
+        If the account for this exchange is frozen (balances will not change).
+    cache : CacheFacade
+        The read-only cache for the exchange.
+    fill_model : FillModel
+        The fill model for the exchange.
+    latency_model : LatencyModel, optional
+        The latency model for the exchange.
+    clock : TestClock
+        The clock for the exchange.
+    logger : Logger
+        The logger for the exchange.
+    book_type : BookType
+        The order book type for the exchange.
+    bar_execution : bool
+        If the exchange execution dynamics is based on bar data.
+    reject_stop_orders : bool
+        If stop orders are rejected on submission if in the market.
+
+    Raises
+    ------
+    ValueError
+        If `instruments` is empty.
+    ValueError
+        If `instruments` contains a type other than `Instrument`.
+    ValueError
+        If `starting_balances` is empty.
+    ValueError
+        If `starting_balances` contains a type other than `Money`.
+    ValueError
+        If `base_currency` and multiple starting balances.
+    ValueError
+        If `modules` contains a type other than `SimulationModule`.
     """
 
     def __init__(
@@ -101,62 +153,6 @@ cdef class SimulatedExchange:
         bint bar_execution=False,
         bint reject_stop_orders=True,
     ):
-        """
-        Initialize a new instance of the ``SimulatedExchange`` class.
-
-        Parameters
-        ----------
-        venue : Venue
-            The venue to simulate.
-        venue_type : VenueType
-            The venues type.
-        oms_type : OMSType {``HEDGING``, ``NETTING``}
-            The order management system type used by the exchange.
-        account_type : AccountType
-            The account type for the client.
-        base_currency : Currency, optional
-            The account base currency for the client. Use ``None`` for multi-currency accounts.
-        starting_balances : list[Money]
-            The starting balances for the exchange.
-        default_leverage : Decimal
-            The account default leverage (for margin accounts).
-        leverages : Dict[InstrumentId, Decimal]
-            The instrument specific leverage configuration (for margin accounts).
-        is_frozen_account : bool
-            If the account for this exchange is frozen (balances will not change).
-        cache : CacheFacade
-            The read-only cache for the exchange.
-        fill_model : FillModel
-            The fill model for the exchange.
-        latency_model : LatencyModel, optional
-            The latency model for the exchange.
-        clock : TestClock
-            The clock for the exchange.
-        logger : Logger
-            The logger for the exchange.
-        book_type : BookType
-            The order book type for the exchange.
-        bar_execution : bool
-            If the exchange execution dynamics is based on bar data.
-        reject_stop_orders : bool
-            If stop orders are rejected on submission if in the market.
-
-        Raises
-        ------
-        ValueError
-            If `instruments` is empty.
-        ValueError
-            If `instruments` contains a type other than `Instrument`.
-        ValueError
-            If `starting_balances` is empty.
-        ValueError
-            If `starting_balances` contains a type other than `Money`.
-        ValueError
-            If `base_currency` and multiple starting balances.
-        ValueError
-            If `modules` contains a type other than `SimulationModule`.
-
-        """
         Condition.not_empty(instruments, "instruments")
         Condition.list_type(instruments, Instrument, "instruments", "Instrument")
         Condition.not_empty(starting_balances, "starting_balances")

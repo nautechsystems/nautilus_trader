@@ -25,6 +25,20 @@ from nautilus_trader.model.objects cimport Quantity
 cdef class Bet:
     """
     Represents a bet "order" or "trade" in price space (not probability).
+
+    Parameters
+    ----------
+    price : Price
+        The price of the bet
+    quantity : Quantity
+        The size of the bet.
+    side : OrderSide
+        The side ( OrderSide.BUY = BACK, OrderSide.SELL = LAY ) of the bet
+
+    Raises
+    ------
+    ValueError
+        If `price` is less than 1.0.
     """
 
     def __init__(
@@ -33,24 +47,6 @@ cdef class Bet:
         Quantity quantity,
         OrderSide side,
     ):
-        """
-        Initialize a new instance of the ``Bet`` class.
-
-        Parameters
-        ----------
-        price : Price
-            The price of the bet
-        quantity : Quantity
-            The size of the bet.
-        side : OrderSide
-            The side ( OrderSide.BUY = BACK, OrderSide.SELL = LAY ) of the bet
-
-        Raises
-        ------
-        ValueError
-            If `price` is less than 1.0.
-
-        """
         Condition.in_range_int(price, 1, 1000, "price")
 
         self.price = price

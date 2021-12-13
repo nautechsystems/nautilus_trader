@@ -4,6 +4,15 @@ Risk
 .. automodule:: nautilus_trader.risk
 
 
+Config
+------
+
+.. automodule:: nautilus_trader.risk.config
+   :show-inheritance:
+   :inherited-members:
+   :members:
+   :member-order: bysource
+
 Engine
 ------
 

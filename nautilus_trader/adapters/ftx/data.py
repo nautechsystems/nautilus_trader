@@ -40,6 +40,23 @@ _SECONDS_IN_HOUR: int = 60 * 60
 class FTXDataClient(LiveMarketDataClient):
     """
     Provides a data client for the FTX exchange.
+
+    Parameters
+    ----------
+    loop : asyncio.AbstractEventLoop
+        The event loop for the client.
+    client : FTXHttpClient
+        The FTX HTTP client.
+    msgbus : MessageBus
+        The message bus for the client.
+    cache : Cache
+        The cache for the client.
+    clock : LiveClock
+        The clock for the client.
+    logger : Logger
+        The logger for the client.
+    instrument_provider : FTXInstrumentProvider
+        The instrument provider.
     """
 
     def __init__(
@@ -52,27 +69,6 @@ class FTXDataClient(LiveMarketDataClient):
         logger: Logger,
         instrument_provider: FTXInstrumentProvider,
     ):
-        """
-        Initialize a new instance of the ``FTXDataClient`` class.
-
-        Parameters
-        ----------
-        loop : asyncio.AbstractEventLoop
-            The event loop for the client.
-        client : FTXHttpClient
-            The FTX HTTP client.
-        msgbus : MessageBus
-            The message bus for the client.
-        cache : Cache
-            The cache for the client.
-        clock : LiveClock
-            The clock for the client.
-        logger : Logger
-            The logger for the client.
-        instrument_provider : FTXInstrumentProvider
-            The instrument provider.
-
-        """
         super().__init__(
             loop=loop,
             client_id=ClientId(FTX_VENUE.value),

@@ -23,6 +23,8 @@ class RiskEngineConfig(pydantic.BaseModel):
     """
     Configuration for ``RiskEngine`` instances.
 
+    Parameters
+    ----------
     bypass : bool
         If True then all risk checks are bypassed (will still check for duplicate IDs).
     max_order_rate : str, default=100/00:00:01

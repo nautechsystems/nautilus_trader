@@ -29,18 +29,14 @@ cdef class HilbertPeriod(Indicator):
     phase has a constant rate of change, i.e. A 10 bar cycle changes phase at
     the rate of 36 degrees per bar so that 360 degrees of phase is completed
     (one full cycle) every 10 bars.
+
+    Parameters
+    ----------
+    period : int
+        The rolling window period for the indicator (> 0).
     """
 
     def __init__(self, int period=7):
-        """
-        Initialize a new instance of the HilbertPeriod class.
-
-        Parameters
-        ----------
-        period : int
-            The rolling window period for the indicator (> 0).
-
-        """
         Condition.positive_int(period, "period")
         super().__init__(params=[period])
 

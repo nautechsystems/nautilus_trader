@@ -87,18 +87,14 @@ class EMACrossStopEntryTrail(TradingStrategy):
     distance is submitted and managed.
 
     Cancels all orders and flattens all positions on stop.
+
+    Parameters
+    ----------
+    config : EMACrossStopEntryTrailConfig
+        The configuration for the instance.
     """
 
     def __init__(self, config: EMACrossStopEntryTrailConfig):
-        """
-        Initialize a new instance of the ``EMACrossStopEntryTrail`` class.
-
-        Parameters
-        ----------
-        config : EMACrossStopEntryTrailConfig
-            The configuration for the instance.
-
-        """
         super().__init__(config)
 
         # Configuration

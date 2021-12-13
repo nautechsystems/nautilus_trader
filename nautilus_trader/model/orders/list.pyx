@@ -21,6 +21,20 @@ from nautilus_trader.model.orders.base cimport Order
 cdef class OrderList:
     """
     Represents a list of bulk or related parent-child contingent orders.
+
+    Parameters
+    ----------
+    list_id : OrderListId
+        The order list ID.
+    orders : list[Order]
+        The order bulk for the list.
+
+    Raises
+    ------
+    ValueError
+        If `orders` is empty.
+    ValueError
+        If `orders` contains a type other than `Order`.
     """
 
     def __init__(
@@ -28,24 +42,6 @@ cdef class OrderList:
         OrderListId list_id not None,
         list orders not None,
     ):
-        """
-        Initialize a new instance of the ``OrderList`` class.
-
-        Parameters
-        ----------
-        list_id : OrderListId
-            The order list ID.
-        orders : list[Order]
-            The order bulk for the list.
-
-        Raises
-        ------
-        ValueError
-            If `orders` is empty.
-        ValueError
-            If `orders` contains a type other than `Order`.
-
-        """
         Condition.not_empty(orders, "orders")
         Condition.list_type(orders, Order, "orders")
 

@@ -46,18 +46,14 @@ class MyStrategyConfig(TradingStrategyConfig):
 class MyStrategy(TradingStrategy):
     """
     A blank template strategy.
+
+    Parameters
+    ----------
+    config : MyStrategyConfig
+        The configuration for the instance.
     """
 
     def __init__(self, config: MyStrategyConfig):
-        """
-        Initialize a new instance of the ``MyStrategy`` class.
-
-        Parameters
-        ----------
-        config : MyStrategyConfig
-            The configuration for the instance.
-
-        """
         super().__init__(config)
 
         # Configuration

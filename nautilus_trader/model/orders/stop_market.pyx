@@ -51,6 +51,53 @@ cdef class StopMarketOrder(PassiveOrder):
     or protect a profit on a long stock position. A Buy Stop order is always
     placed above the current market price. It is typically used to limit a loss
     or help protect a profit on a short sale.
+
+    Parameters
+    ----------
+    trader_id : TraderId
+        The trader ID associated with the order.
+    strategy_id : StrategyId
+        The strategy ID associated with the order.
+    instrument_id : InstrumentId
+        The order instrument ID.
+    client_order_id : ClientOrderId
+        The client order ID.
+    order_side : OrderSide {``BUY``, ``SELL``}
+        The order side.
+    quantity : Quantity
+        The order quantity (> 0).
+    price : Price
+        The order stop price.
+    time_in_force : TimeInForce
+        The order time-in-force.
+    expire_time : datetime, optional
+        The order expiry time.
+    init_id : UUID4
+        The order initialization event ID.
+    ts_init : int64
+        The UNIX timestamp (nanoseconds) when the object was initialized.
+    reduce_only : bool, optional
+        If the order carries the 'reduce-only' execution instruction.
+    order_list_id : OrderListId, optional
+        The order list ID associated with the order.
+    parent_order_id : ClientOrderId, optional
+        The order parent client order ID.
+    child_order_ids : list[ClientOrderId], optional
+        The order child client order ID(s).
+    contingency : ContingencyType
+        The order contingency type.
+    contingency_ids : list[ClientOrderId], optional
+        The order contingency client order ID(s).
+    tags : str, optional
+        The custom user tags for the order. These are optional and can
+        contain any arbitrary delimiter if required.
+
+    Raises
+    ------
+    ValueError
+        If `quantity` is not positive (> 0).
+    ValueError
+        If `time_in_force` is ``GTD`` and the expire_time is ``None``.
     """
     def __init__(
         self,
@@ -73,57 +120,6 @@ cdef class StopMarketOrder(PassiveOrder):
         list contingency_ids=None,
         str tags=None,
     ):
-        """
-        Initialize a new instance of the ``StopMarketOrder`` class.
-
-        Parameters
-        ----------
-        trader_id : TraderId
-            The trader ID associated with the order.
-        strategy_id : StrategyId
-            The strategy ID associated with the order.
-        instrument_id : InstrumentId
-            The order instrument ID.
-        client_order_id : ClientOrderId
-            The client order ID.
-        order_side : OrderSide {``BUY``, ``SELL``}
-            The order side.
-        quantity : Quantity
-            The order quantity (> 0).
-        price : Price
-            The order stop price.
-        time_in_force : TimeInForce
-            The order time-in-force.
-        expire_time : datetime, optional
-            The order expiry time.
-        init_id : UUID4
-            The order initialization event ID.
-        ts_init : int64
-            The UNIX timestamp (nanoseconds) when the object was initialized.
-        reduce_only : bool, optional
-            If the order carries the 'reduce-only' execution instruction.
-        order_list_id : OrderListId, optional
-            The order list ID associated with the order.
-        parent_order_id : ClientOrderId, optional
-            The order parent client order ID.
-        child_order_ids : list[ClientOrderId], optional
-            The order child client order ID(s).
-        contingency : ContingencyType
-            The order contingency type.
-        contingency_ids : list[ClientOrderId], optional
-            The order contingency client order ID(s).
-        tags : str, optional
-            The custom user tags for the order. These are optional and can
-            contain any arbitrary delimiter if required.
-
-        Raises
-        ------
-        ValueError
-            If `quantity` is not positive (> 0).
-        ValueError
-            If `time_in_force` is ``GTD`` and the expire_time is ``None``.
-
-        """
         super().__init__(
             trader_id=trader_id,
             strategy_id=strategy_id,

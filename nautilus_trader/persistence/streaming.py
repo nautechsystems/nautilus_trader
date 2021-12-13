@@ -39,9 +39,6 @@ class FeatherWriter:
     """
 
     def __init__(self, path: str, fs_protocol: str = "file", flush_interval=None, replace=False):
-        """
-        Initialize a new instance of the ``FeatherWriter`` class.
-        """
         self.fs: fsspec.AbstractFileSystem = fsspec.filesystem(fs_protocol)
         self.path = str(self._check_path(path))
         if self.fs.exists(self.path) and replace:

@@ -24,6 +24,15 @@ from nautilus_trader.indicators.base.indicator cimport Indicator
 cdef class HilbertSignalNoiseRatio(Indicator):
     """
     An indicator which calculates the amplitude of a signal.
+
+    Parameters
+    ----------
+    period : int
+        The rolling window period for the indicator (> 0).
+    range_floor : double
+        The floor value for range calculations.
+    amplitude_floor : double
+        The floor value for amplitude calculations (0.001 from paper).
     """
 
     def __init__(
@@ -32,19 +41,6 @@ cdef class HilbertSignalNoiseRatio(Indicator):
         double range_floor=0.00001,
         double amplitude_floor=0.001,
     ):
-        """
-        Initialize a new instance of the HilbertSignalNoiseRatio class.
-
-        Parameters
-        ----------
-        period : int
-            The rolling window period for the indicator (> 0).
-        range_floor : double
-            The floor value for range calculations.
-        amplitude_floor : double
-            The floor value for amplitude calculations (0.001 from paper).
-
-        """
         Condition.positive_int(period, "period")
         Condition.not_negative(range_floor, "range_floor")
         Condition.not_negative(amplitude_floor, "amplitude_floor")

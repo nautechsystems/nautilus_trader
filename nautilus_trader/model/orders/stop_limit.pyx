@@ -56,7 +56,63 @@ cdef class StopLimitOrder(PassiveOrder):
     the execution price cannot be guaranteed, but exposes the trader to the
     risk that the order may never fill even if the stop price is reached. The
     trader could "miss the market" altogether.
+
+    Parameters
+    ----------
+    trader_id : TraderId
+        The trader ID associated with the order.
+    strategy_id : StrategyId
+        The strategy ID associated with the order.
+    instrument_id : InstrumentId
+        The order instrument ID.
+    client_order_id : ClientOrderId
+        The client order ID.
+    order_side : OrderSide {``BUY``, ``SELL``}
+        The order side.
+    quantity : Quantity
+        The order quantity (> 0).
+    price : Price
+        The order limit price.
+    trigger : Price
+        The order stop trigger price.
+    time_in_force : TimeInForce
+        The order time-in-force.
+    expire_time : datetime, optional
+        The order expiry time.
+    init_id : UUID4
+        The order initialization event ID.
+    ts_init : int64
+        The UNIX timestamp (nanoseconds) when the object was initialized.
+    post_only : bool, optional
+        If the `LIMIT` order will only provide liquidity (once triggered).
+    reduce_only : bool, optional
+        If the `LIMIT` order carries the 'reduce-only' execution instruction.
+    display_qty : Quantity, optional
+        The quantity of the `LIMIT` order to display on the public book (iceberg).
+    order_list_id : OrderListId, optional
+        The order list ID associated with the order.
+    parent_order_id : ClientOrderId, optional
+        The order parent client order ID.
+    child_order_ids : list[ClientOrderId], optional
+        The order child client order ID(s).
+    contingency : ContingencyType
+        The order contingency type.
+    contingency_ids : list[ClientOrderId], optional
+        The order contingency client order ID(s).
+    tags : str, optional
+        The custom user tags for the order. These are optional and can
+        contain any arbitrary delimiter if required.
+
+    Raises
+    ------
+    ValueError
+        If `quantity` is not positive (> 0).
+    ValueError
+        If `time_in_force` is ``GTD`` and the expire_time is ``None``.
+    ValueError
+        If `display_qty` is negative (< 0) or greater than `quantity`.
     """
+
     def __init__(
         self,
         TraderId trader_id not None,
@@ -81,65 +137,6 @@ cdef class StopLimitOrder(PassiveOrder):
         list contingency_ids=None,
         str tags=None,
     ):
-        """
-        Initialize a new instance of the ``StopLimitOrder`` class.
-
-        Parameters
-        ----------
-        trader_id : TraderId
-            The trader ID associated with the order.
-        strategy_id : StrategyId
-            The strategy ID associated with the order.
-        instrument_id : InstrumentId
-            The order instrument ID.
-        client_order_id : ClientOrderId
-            The client order ID.
-        order_side : OrderSide {``BUY``, ``SELL``}
-            The order side.
-        quantity : Quantity
-            The order quantity (> 0).
-        price : Price
-            The order limit price.
-        trigger : Price
-            The order stop trigger price.
-        time_in_force : TimeInForce
-            The order time-in-force.
-        expire_time : datetime, optional
-            The order expiry time.
-        init_id : UUID4
-            The order initialization event ID.
-        ts_init : int64
-            The UNIX timestamp (nanoseconds) when the object was initialized.
-        post_only : bool, optional
-            If the `LIMIT` order will only provide liquidity (once triggered).
-        reduce_only : bool, optional
-            If the `LIMIT` order carries the 'reduce-only' execution instruction.
-        display_qty : Quantity, optional
-            The quantity of the `LIMIT` order to display on the public book (iceberg).
-        order_list_id : OrderListId, optional
-            The order list ID associated with the order.
-        parent_order_id : ClientOrderId, optional
-            The order parent client order ID.
-        child_order_ids : list[ClientOrderId], optional
-            The order child client order ID(s).
-        contingency : ContingencyType
-            The order contingency type.
-        contingency_ids : list[ClientOrderId], optional
-            The order contingency client order ID(s).
-        tags : str, optional
-            The custom user tags for the order. These are optional and can
-            contain any arbitrary delimiter if required.
-
-        Raises
-        ------
-        ValueError
-            If `quantity` is not positive (> 0).
-        ValueError
-            If `time_in_force` is ``GTD`` and the expire_time is ``None``.
-        ValueError
-            If `display_qty` is negative (< 0) or greater than `quantity`.
-
-        """
         Condition.true(display_qty is None or 0 <= display_qty <= quantity, "display_qty was negative or greater than order quantity")  # noqa
         super().__init__(
             trader_id=trader_id,

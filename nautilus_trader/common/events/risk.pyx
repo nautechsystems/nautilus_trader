@@ -28,6 +28,17 @@ from nautilus_trader.model.identifiers cimport TraderId
 cdef class RiskEvent(Event):
     """
     The base class for all risk events.
+
+    Parameters
+    ----------
+    trader_id : TraderId
+        The trader ID associated with the event.
+    event_id : UUID4
+        The event ID.
+    ts_event : int64
+        The UNIX timestamp (nanoseconds) when the component state event occurred.
+    ts_init : int64
+        The UNIX timestamp (nanoseconds) when the object was initialized.
     """
 
     def __init__(
@@ -37,21 +48,6 @@ cdef class RiskEvent(Event):
         int64_t ts_event,
         int64_t ts_init,
     ):
-        """
-        Initialize a new instance of the ``RiskEvent`` class.
-
-        Parameters
-        ----------
-        trader_id : TraderId
-            The trader ID associated with the event.
-        event_id : UUID4
-            The event ID.
-        ts_event : int64
-            The UNIX timestamp (nanoseconds) when the component state event occurred.
-        ts_init : int64
-            The UNIX timestamp (nanoseconds) when the object was initialized.
-
-        """
         super().__init__(event_id, ts_event, ts_init)
 
         self.trader_id = trader_id
@@ -60,6 +56,21 @@ cdef class RiskEvent(Event):
 cdef class TradingStateChanged(RiskEvent):
     """
     Represents an event where trading state has changed at the `RiskEngine`.
+
+    Parameters
+    ----------
+    trader_id : TraderId
+        The trader ID associated with the event.
+    state : TradingState
+        The trading state for the event.
+    config : dict
+        The configuration of the risk engine.
+    event_id : UUID4
+        The event ID.
+    ts_event : int64
+        The UNIX timestamp (nanoseconds) when the component state event occurred.
+    ts_init : int64
+        The UNIX timestamp (nanoseconds) when the object was initialized.
     """
 
     def __init__(
@@ -71,25 +82,6 @@ cdef class TradingStateChanged(RiskEvent):
         int64_t ts_event,
         int64_t ts_init,
     ):
-        """
-        Initialize a new instance of the ``RiskEvent`` class.
-
-        Parameters
-        ----------
-        trader_id : TraderId
-            The trader ID associated with the event.
-        state : TradingState
-            The trading state for the event.
-        config : dict
-            The configuration of the risk engine.
-        event_id : UUID4
-            The event ID.
-        ts_event : int64
-            The UNIX timestamp (nanoseconds) when the component state event occurred.
-        ts_init : int64
-            The UNIX timestamp (nanoseconds) when the object was initialized.
-
-        """
         super().__init__(trader_id, event_id, ts_event, ts_init)
 
         self.state = state

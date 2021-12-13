@@ -72,6 +72,26 @@ cdef class RiskEngine(Component):
      - ``ACTIVE`` (trading is enabled).
      - ``REDUCING`` (only new orders or updates which reduce an open position are allowed).
      - ``HALTED`` (all trading commands except cancels are denied).
+
+    Parameters
+    ----------
+    portfolio : PortfolioFacade
+        The portfolio for the engine.
+    msgbus : MessageBus
+        The message bus for the engine.
+    cache : CacheFacade
+        The read-only cache for the engine.
+    clock : Clock
+        The clock for the engine.
+    logger : Logger
+        The logger for the engine.
+    config : RiskEngineConfig, optional
+        The configuration for the instance.
+
+    Raises
+    ------
+    TypeError
+        If `config` is not of type `RiskEngineConfig`.
     """
 
     def __init__(
@@ -83,30 +103,6 @@ cdef class RiskEngine(Component):
         Logger logger not None,
         config: Optional[RiskEngineConfig]=None,
     ):
-        """
-        Initialize a new instance of the ``RiskEngine`` class.
-
-        Parameters
-        ----------
-        portfolio : PortfolioFacade
-            The portfolio for the engine.
-        msgbus : MessageBus
-            The message bus for the engine.
-        cache : CacheFacade
-            The read-only cache for the engine.
-        clock : Clock
-            The clock for the engine.
-        logger : Logger
-            The logger for the engine.
-        config : RiskEngineConfig, optional
-            The configuration for the instance.
-
-        Raises
-        ------
-        TypeError
-            If `config` is not of type `RiskEngineConfig`.
-
-        """
         if config is None:
             config = RiskEngineConfig()
         Condition.type(config, RiskEngineConfig, "config")

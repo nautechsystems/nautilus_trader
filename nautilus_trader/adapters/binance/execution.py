@@ -77,6 +77,25 @@ VALID_TIF = (TimeInForce.GTC, TimeInForce.FOK, TimeInForce.IOC)
 class BinanceSpotExecutionClient(LiveExecutionClient):
     """
     Provides an execution client for Binance SPOT markets.
+
+    Parameters
+    ----------
+    loop : asyncio.AbstractEventLoop
+        The event loop for the client.
+    client : BinanceHttpClient
+        The binance HTTP client.
+    account_id : AccountId
+        The account ID for the client.
+    msgbus : MessageBus
+        The message bus for the client.
+    cache : Cache
+        The cache for the client.
+    clock : LiveClock
+        The clock for the client.
+    logger : Logger
+        The logger for the client.
+    instrument_provider : BinanceInstrumentProvider
+        The instrument provider.
     """
 
     def __init__(
@@ -90,29 +109,6 @@ class BinanceSpotExecutionClient(LiveExecutionClient):
         logger: Logger,
         instrument_provider: BinanceInstrumentProvider,
     ):
-        """
-        Initialize a new instance of the ``BinanceSpotExecutionClient`` class.
-
-        Parameters
-        ----------
-        loop : asyncio.AbstractEventLoop
-            The event loop for the client.
-        client : BinanceHttpClient
-            The binance HTTP client.
-        account_id : AccountId
-            The account ID for the client.
-        msgbus : MessageBus
-            The message bus for the client.
-        cache : Cache
-            The cache for the client.
-        clock : LiveClock
-            The clock for the client.
-        logger : Logger
-            The logger for the client.
-        instrument_provider : BinanceInstrumentProvider
-            The instrument provider.
-
-        """
         super().__init__(
             loop=loop,
             client_id=ClientId(BINANCE_VENUE.value),

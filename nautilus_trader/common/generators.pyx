@@ -67,6 +67,22 @@ cdef class IdentifierGenerator:
 cdef class ClientOrderIdGenerator(IdentifierGenerator):
     """
     Provides a generator for unique ClientOrderId(s).
+
+    Parameters
+    ----------
+    trader_id : TraderId
+        The trader ID for the generator.
+    strategy_id : StrategyId
+        The strategy ID for the generator.
+    clock : Clock
+        The clock for the generator.
+    initial_count : int
+        The initial count for the generator.
+
+    Raises
+    ------
+    ValueError
+        If `initial_count` is negative (< 0).
     """
 
     def __init__(
@@ -76,26 +92,6 @@ cdef class ClientOrderIdGenerator(IdentifierGenerator):
         Clock clock not None,
         int initial_count=0,
     ):
-        """
-        Initialize a new instance of the ``ClientOrderIdGenerator`` class.
-
-        Parameters
-        ----------
-        trader_id : TraderId
-            The trader ID for the generator.
-        strategy_id : StrategyId
-            The strategy ID for the generator.
-        clock : Clock
-            The clock for the generator.
-        initial_count : int
-            The initial count for the generator.
-
-        Raises
-        ------
-        ValueError
-            If `initial_count` is negative (< 0).
-
-        """
         Condition.not_negative_int(initial_count, "initial_count")
         super().__init__(trader_id, clock)
 
@@ -145,18 +141,14 @@ cdef class ClientOrderIdGenerator(IdentifierGenerator):
 cdef class PositionIdGenerator(IdentifierGenerator):
     """
     Provides a generator for unique PositionId(s).
+
+    Parameters
+    ----------
+    trader_id : TraderId
+        The trader ID tag for the generator.
     """
 
     def __init__(self, TraderId trader_id not None, Clock clock not None):
-        """
-        Initialize a new instance of the ``PositionIdGenerator`` class.
-
-        Parameters
-        ----------
-        trader_id : TraderId
-            The trader ID tag for the generator.
-
-        """
         super().__init__(trader_id, clock)
 
         self._counts = {}  # type: dict[StrategyId, int]

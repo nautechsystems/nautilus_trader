@@ -53,6 +53,20 @@ from nautilus_trader.cache.config import CacheConfig
 cdef class Cache(CacheFacade):
     """
     Provides a common object cache for market and execution related data.
+
+    Parameters
+    ----------
+    database : CacheDatabase, optional
+        The database for the cache. If ``None`` then will bypass persistence.
+    logger : Logger
+        The logger for the cache.
+    config : CacheConfig, optional
+        The cache configuration.
+
+    Raises
+    ------
+    TypeError
+        If `config` is not of type `CacheConfig`.
     """
 
     def __init__(
@@ -61,24 +75,6 @@ cdef class Cache(CacheFacade):
         Logger logger not None,
         config: Optional[CacheConfig]=None,
     ):
-        """
-        Initialize a new instance of the ``Cache`` class.
-
-        Parameters
-        ----------
-        database : CacheDatabase, optional
-            The database for the cache. If ``None`` then will bypass persistence.
-        logger : Logger
-            The logger for the cache.
-        config : CacheConfig, optional
-            The cache configuration.
-
-        Raises
-        ------
-        TypeError
-            If `config` is not of type `CacheConfig`.
-
-        """
         if config is None:
             config = CacheConfig()
         Condition.type(config, CacheConfig, "config")

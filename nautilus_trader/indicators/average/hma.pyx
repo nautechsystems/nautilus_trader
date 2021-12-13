@@ -29,25 +29,21 @@ cdef class HullMovingAverage(MovingAverage):
     An indicator which calculates a Hull Moving Average (HMA) across a rolling
     window. The HMA, developed by Alan Hull, is an extremely fast and smooth
     moving average.
+
+    Parameters
+    ----------
+    period : int
+        The rolling window period for the indicator (> 0).
+    price_type : PriceType
+        The specified price type for extracting values from quote ticks.
+
+    Raises
+    ------
+    ValueError
+        If `period` is not positive (> 0).
     """
 
     def __init__(self, int period, PriceType price_type=PriceType.LAST):
-        """
-        Initialize a new instance of the ``HullMovingAverage`` class.
-
-        Parameters
-        ----------
-        period : int
-            The rolling window period for the indicator (> 0).
-        price_type : PriceType
-            The specified price type for extracting values from quote ticks.
-
-        Raises
-        ------
-        ValueError
-            If `period` is not positive (> 0).
-
-        """
         Condition.positive_int(period, "period")
         super().__init__(period, params=[period], price_type=price_type)
 

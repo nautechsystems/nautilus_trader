@@ -40,6 +40,22 @@ cdef class OrderFactory:
 
     The `TraderId` tag and `StrategyId` tag will be inserted into all
     IDs generated.
+
+    Parameters
+    ----------
+    trader_id : TraderId
+        The trader ID (only numerical tag sent to venue).
+    strategy_id : StrategyId
+        The strategy ID (only numerical tag sent to venue).
+    clock : Clock
+        The clock for the factory.
+    initial_count : int, optional
+        The initial order count for the factory.
+
+    Raises
+    ------
+    ValueError
+        If `initial_count` is negative (< 0).
     """
 
     def __init__(
@@ -49,26 +65,6 @@ cdef class OrderFactory:
         Clock clock not None,
         int initial_count=0,
     ):
-        """
-        Initialize a new instance of the ``OrderFactory`` class.
-
-        Parameters
-        ----------
-        trader_id : TraderId
-            The trader ID (only numerical tag sent to venue).
-        strategy_id : StrategyId
-            The strategy ID (only numerical tag sent to venue).
-        clock : Clock
-            The clock for the factory.
-        initial_count : int, optional
-            The initial order count for the factory.
-
-        Raises
-        ------
-        ValueError
-            If `initial_count` is negative (< 0).
-
-        """
         Condition.not_negative_int(initial_count, "initial_count")
 
         self._clock = clock

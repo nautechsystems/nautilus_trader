@@ -34,6 +34,19 @@ cdef class TradingCommand(Command):
     """
     The abstract base class for all trading related commands.
 
+    Parameters
+    ----------
+    trader_id : TraderId
+        The trader ID for the command.
+    strategy_id : StrategyId
+        The strategy ID for the command.
+    instrument_id : InstrumentId
+        The instrument ID for the command.
+    command_id : UUID4
+        The commands ID.
+    ts_init : int64
+        The UNIX timestamp (nanoseconds) when the object was initialized.
+
     Warnings
     --------
     This class should not be used directly, but through a concrete subclass.
@@ -47,23 +60,6 @@ cdef class TradingCommand(Command):
         UUID4 command_id not None,
         int64_t ts_init,
     ):
-        """
-        Initialize a new instance of the ``TradingCommand`` class.
-
-        Parameters
-        ----------
-        trader_id : TraderId
-            The trader ID for the command.
-        strategy_id : StrategyId
-            The strategy ID for the command.
-        instrument_id : InstrumentId
-            The instrument ID for the command.
-        command_id : UUID4
-            The commands ID.
-        ts_init : int64
-            The UNIX timestamp (nanoseconds) when the object was initialized.
-
-        """
         super().__init__(command_id, ts_init)
 
         self.trader_id = trader_id
@@ -74,6 +70,21 @@ cdef class TradingCommand(Command):
 cdef class SubmitOrder(TradingCommand):
     """
     Represents a command to submit the given order.
+
+    Parameters
+    ----------
+    trader_id : TraderId
+        The trader ID for the command.
+    strategy_id : StrategyId
+        The strategy ID for the command.
+    position_id : PositionId, optional
+        The position ID for the command.
+    order : Order
+        The order to submit.
+    command_id : UUID4
+        The commands ID.
+    ts_init : int64
+        The UNIX timestamp (nanoseconds) when the object was initialized.
 
     References
     ----------
@@ -89,25 +100,6 @@ cdef class SubmitOrder(TradingCommand):
         UUID4 command_id not None,
         int64_t ts_init,
     ):
-        """
-        Initialize a new instance of the ``SubmitOrder`` class.
-
-        Parameters
-        ----------
-        trader_id : TraderId
-            The trader ID for the command.
-        strategy_id : StrategyId
-            The strategy ID for the command.
-        position_id : PositionId, optional
-            The position ID for the command.
-        order : Order
-            The order to submit.
-        command_id : UUID4
-            The commands ID.
-        ts_init : int64
-            The UNIX timestamp (nanoseconds) when the object was initialized.
-
-        """
         super().__init__(
             trader_id=trader_id,
             strategy_id=strategy_id,
@@ -202,6 +194,19 @@ cdef class SubmitOrderList(TradingCommand):
     This command can correspond to a `NewOrderList <E> message` for the FIX
     protocol.
 
+    Parameters
+    ----------
+    trader_id : TraderId
+        The trader ID for the command.
+    strategy_id : StrategyId
+        The strategy ID for the command.
+    order_list : OrderList
+        The order list to submit.
+    command_id : UUID4
+        The command ID.
+    ts_init : int64
+        The UNIX timestamp (nanoseconds) when the object was initialized.
+
     References
     ----------
     https://www.onixs.biz/fix-dictionary/5.0.SP2/msgType_E_69.html
@@ -215,23 +220,6 @@ cdef class SubmitOrderList(TradingCommand):
         UUID4 command_id not None,
         int64_t ts_init,
     ):
-        """
-        Initialize a new instance of the ``SubmitOrderList`` class.
-
-        Parameters
-        ----------
-        trader_id : TraderId
-            The trader ID for the command.
-        strategy_id : StrategyId
-            The strategy ID for the command.
-        order_list : OrderList
-            The order list to submit.
-        command_id : UUID4
-            The command ID.
-        ts_init : int64
-            The UNIX timestamp (nanoseconds) when the object was initialized.
-
-        """
         super().__init__(
             trader_id=trader_id,
             strategy_id=strategy_id,
@@ -320,6 +308,29 @@ cdef class ModifyOrder(TradingCommand):
     """
     Represents a command to modify the properties of an existing order.
 
+    Parameters
+    ----------
+    trader_id : TraderId
+        The trader ID for the command.
+    strategy_id : StrategyId
+        The strategy ID for the command.
+    instrument_id : InstrumentId
+        The instrument ID for the command.
+    client_order_id : VenueOrderId
+        The client order ID to update.
+    venue_order_id : VenueOrderId
+        The venue order ID to update.
+    quantity : Quantity, optional
+        The quantity for the order update.
+    price : Price, optional
+        The price for the order update.
+    trigger : Price, optional
+        The trigger price for the order update.
+    command_id : UUID4
+        The command ID.
+    ts_init : int64
+        The UNIX timestamp (nanoseconds) when the object was initialized.
+
     References
     ----------
     https://www.onixs.biz/fix-dictionary/5.0.SP2/msgType_G_71.html
@@ -338,33 +349,6 @@ cdef class ModifyOrder(TradingCommand):
         UUID4 command_id not None,
         int64_t ts_init,
     ):
-        """
-        Initialize a new instance of the ``ModifyOrder`` class.
-
-        Parameters
-        ----------
-        trader_id : TraderId
-            The trader ID for the command.
-        strategy_id : StrategyId
-            The strategy ID for the command.
-        instrument_id : InstrumentId
-            The instrument ID for the command.
-        client_order_id : VenueOrderId
-            The client order ID to update.
-        venue_order_id : VenueOrderId
-            The venue order ID to update.
-        quantity : Quantity, optional
-            The quantity for the order update.
-        price : Price, optional
-            The price for the order update.
-        trigger : Price, optional
-            The trigger price for the order update.
-        command_id : UUID4
-            The command ID.
-        ts_init : int64
-            The UNIX timestamp (nanoseconds) when the object was initialized.
-
-        """
         super().__init__(
             trader_id=trader_id,
             strategy_id=strategy_id,
@@ -471,6 +455,23 @@ cdef class CancelOrder(TradingCommand):
     """
     Represents a command to cancel an order.
 
+    Parameters
+    ----------
+    trader_id : TraderId
+        The trader ID for the command.
+    strategy_id : StrategyId
+        The strategy ID for the command.
+    instrument_id : InstrumentId
+        The instrument ID for the command.
+    client_order_id : ClientOrderId
+        The client order ID to cancel.
+    venue_order_id : VenueOrderId
+        The venue order ID to cancel.
+    command_id : UUID4
+        The command ID.
+    ts_init : int64
+        The UNIX timestamp (nanoseconds) when the object was initialized.
+
     References
     ----------
     https://www.onixs.biz/fix-dictionary/5.0.SP2/msgType_F_70.html
@@ -486,27 +487,6 @@ cdef class CancelOrder(TradingCommand):
         UUID4 command_id not None,
         int64_t ts_init,
     ):
-        """
-        Initialize a new instance of the ``CancelOrder`` class.
-
-        Parameters
-        ----------
-        trader_id : TraderId
-            The trader ID for the command.
-        strategy_id : StrategyId
-            The strategy ID for the command.
-        instrument_id : InstrumentId
-            The instrument ID for the command.
-        client_order_id : ClientOrderId
-            The client order ID to cancel.
-        venue_order_id : VenueOrderId
-            The venue order ID to cancel.
-        command_id : UUID4
-            The command ID.
-        ts_init : int64
-            The UNIX timestamp (nanoseconds) when the object was initialized.
-
-        """
         super().__init__(
             trader_id=trader_id,
             strategy_id=strategy_id,
@@ -594,6 +574,19 @@ cdef class CancelOrder(TradingCommand):
 cdef class CancelAllOrders(TradingCommand):
     """
     Represents a command to cancel all orders for an instrument.
+
+    Parameters
+    ----------
+    trader_id : TraderId
+        The trader ID for the command.
+    strategy_id : StrategyId
+        The strategy ID for the command.
+    instrument_id : InstrumentId
+        The instrument ID for the command.
+    command_id : UUID4
+        The command ID.
+    ts_init : int64
+        The UNIX timestamp (nanoseconds) when the object was initialized.
     """
 
     def __init__(
@@ -604,23 +597,6 @@ cdef class CancelAllOrders(TradingCommand):
         UUID4 command_id not None,
         int64_t ts_init,
     ):
-        """
-        Initialize a new instance of the ``CancelAllOrders`` class.
-
-        Parameters
-        ----------
-        trader_id : TraderId
-            The trader ID for the command.
-        strategy_id : StrategyId
-            The strategy ID for the command.
-        instrument_id : InstrumentId
-            The instrument ID for the command.
-        command_id : UUID4
-            The command ID.
-        ts_init : int64
-            The UNIX timestamp (nanoseconds) when the object was initialized.
-
-        """
         super().__init__(
             trader_id=trader_id,
             strategy_id=strategy_id,

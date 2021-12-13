@@ -52,6 +52,33 @@ cdef class LiveExecutionClient(ExecutionClient):
     """
     The abstract base class for all live execution clients.
 
+    Parameters
+    ----------
+    loop : asyncio.AbstractEventLoop
+        The event loop for the client.
+    client_id : ClientId
+        The client ID.
+    instrument_provider : InstrumentProvider
+        The instrument provider for the client.
+    venue_type : VenueType
+        The client venue type.
+    account_id : AccountId
+        The account ID for the client.
+    account_type : AccountType
+        The account type for the client.
+    base_currency : Currency, optional
+        The account base currency for the client. Use ``None`` for multi-currency accounts.
+    msgbus : MessageBus
+        The message bus for the client.
+    cache : Cache
+        The cache for the client.
+    clock : LiveClock
+        The clock for the client.
+    logger : Logger
+        The logger for the client.
+    config : dict[str, object], optional
+        The configuration for the instance.
+
     Warnings
     --------
     This class should not be used directly, but through a concrete subclass.
@@ -72,37 +99,6 @@ cdef class LiveExecutionClient(ExecutionClient):
         Logger logger not None,
         dict config=None,
     ):
-        """
-        Initialize a new instance of the ``LiveExecutionClient`` class.
-
-        Parameters
-        ----------
-        loop : asyncio.AbstractEventLoop
-            The event loop for the client.
-        client_id : ClientId
-            The client ID.
-        instrument_provider : InstrumentProvider
-            The instrument provider for the client.
-        venue_type : VenueType
-            The client venue type.
-        account_id : AccountId
-            The account ID for the client.
-        account_type : AccountType
-            The account type for the client.
-        base_currency : Currency, optional
-            The account base currency for the client. Use ``None`` for multi-currency accounts.
-        msgbus : MessageBus
-            The message bus for the client.
-        cache : Cache
-            The cache for the client.
-        clock : LiveClock
-            The clock for the client.
-        logger : Logger
-            The logger for the client.
-        config : dict[str, object], optional
-            The configuration for the instance.
-
-        """
         super().__init__(
             client_id=client_id,
             venue_type=venue_type,
