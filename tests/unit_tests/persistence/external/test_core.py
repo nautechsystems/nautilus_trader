@@ -348,7 +348,7 @@ class TestPersistenceCore:
             "price": "DataType",
             "size": "DataType",
             "aggressor_side": "DictionaryType",
-            "match_id": "DataType",
+            "trade_id": "DataType",
             "ts_event": "DataType",
             "ts_init": "DataType",
         }

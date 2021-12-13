@@ -147,7 +147,7 @@ class TestTradeTickDataWrangler:
         assert ticks[0].price == Price.from_str("423.760")
         assert ticks[0].size == Quantity.from_str("2.67900")
         assert ticks[0].aggressor_side == AggressorSide.SELL
-        assert ticks[0].match_id == "148568980"
+        assert ticks[0].trade_id == "148568980"
         assert ticks[0].ts_event == 1597399200223000064
         assert ticks[0].ts_init == 1597399200223000064
 
@@ -168,7 +168,7 @@ class TestTradeTickDataWrangler:
         assert ticks[0].price == Price.from_str("423.760")
         assert ticks[0].size == Quantity.from_str("2.67900")
         assert ticks[0].aggressor_side == AggressorSide.SELL
-        assert ticks[0].match_id == "148568980"
+        assert ticks[0].trade_id == "148568980"
         assert ticks[0].ts_event == 1597399200223000064
         assert ticks[0].ts_init == 1597399200224000564  # <-- delta diff
 
@@ -327,6 +327,6 @@ class TestTardisTradeDataWrangler:
         assert ticks[0].price == Price.from_str("9682.00")
         assert ticks[0].size == Quantity.from_str("0.132000")
         assert ticks[0].aggressor_side == AggressorSide.BUY
-        assert ticks[0].match_id == "42377944"
+        assert ticks[0].trade_id == "42377944"
         assert ticks[0].ts_event == 1582329602418379008
         assert ticks[0].ts_init == 1582329602418379008
