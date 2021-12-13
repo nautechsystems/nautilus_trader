@@ -82,10 +82,7 @@ def _build_extensions() -> List[Extension]:
             language="c",
             extra_compile_args=extra_compile_args,
         )
-        for pyx in itertools.chain(
-            Path("examples").rglob("*.pyx"),
-            Path("nautilus_trader").rglob("*.pyx"),
-        )
+        for pyx in itertools.chain(Path("nautilus_trader").rglob("*.pyx"))
     ]
 
 
