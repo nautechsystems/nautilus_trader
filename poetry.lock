@@ -911,7 +911,7 @@ dev = ["pre-commit", "tox", "pytest-asyncio"]
 
 [[package]]
 name = "pytest-xdist"
-version = "2.4.0"
+version = "2.5.0"
 description = "pytest xdist plugin for distributed testing and loop-on-failing modes"
 category = "dev"
 optional = false
@@ -920,7 +920,7 @@ python-versions = ">=3.6"
 [package.dependencies]
 execnet = ">=1.1"
 psutil = {version = ">=3.0", optional = true, markers = "extra == \"psutil\""}
-pytest = ">=6.0.0"
+pytest = ">=6.2.0"
 pytest-forked = "*"
 
 [package.extras]
@@ -1359,7 +1359,7 @@ ib = ["ib_insync"]
 [metadata]
 lock-version = "1.1"
 python-versions = ">=3.8,<3.11"
-content-hash = "aad4e35762a4092a57a07297dcb00d25e4cd8fedf753526b9ec5ded720f76e1a"
+content-hash = "77026aa96c3f89b2e7ed212efacdeef47a206ea0df2dbbdd093b187e23fd949f"
 
 [metadata.files]
 aiodns = [
@@ -2478,8 +2478,8 @@ pytest-mock = [
     {file = "pytest_mock-3.6.1-py3-none-any.whl", hash = "sha256:30c2f2cc9759e76eee674b81ea28c9f0b94f8f0445a1b87762cadf774f0df7e3"},
 ]
 pytest-xdist = [
-    {file = "pytest-xdist-2.4.0.tar.gz", hash = "sha256:89b330316f7fc475f999c81b577c2b926c9569f3d397ae432c0c2e2496d61ff9"},
-    {file = "pytest_xdist-2.4.0-py3-none-any.whl", hash = "sha256:7b61ebb46997a0820a263553179d6d1e25a8c50d8a8620cd1aa1e20e3be99168"},
+    {file = "pytest-xdist-2.5.0.tar.gz", hash = "sha256:4580deca3ff04ddb2ac53eba39d76cb5dd5edeac050cb6fbc768b0dd712b4edf"},
+    {file = "pytest_xdist-2.5.0-py3-none-any.whl", hash = "sha256:6fe5c74fec98906deb8f2d2b616b5c782022744978e7bd4695d39c8f42d0ce65"},
 ]
 python-dateutil = [
     {file = "python-dateutil-2.8.2.tar.gz", hash = "sha256:0123cacc1627ae19ddf3c27a5de5bd67ee4586fbdd6440d9748f8abb483d3e86"},
