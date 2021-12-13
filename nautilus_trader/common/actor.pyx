@@ -73,26 +73,22 @@ cdef class Actor(Component):
     """
     The abstract base class for all actor components.
 
+    Parameters
+    ----------
+    config : ActorConfig, optional
+        The actor configuration.
+
+    Raises
+    ------
+    TypeError
+        If `config` is not of type `ActorConfig`.
+
     Warnings
     --------
     This class should not be used directly, but through a concrete subclass.
     """
 
     def __init__(self, config: Optional[ActorConfig]=None):
-        """
-        Initialize a new instance of the ``Actor`` class.
-
-        Parameters
-        ----------
-        config : ActorConfig, optional
-            The actor configuration.
-
-        Raises
-        ------
-        TypeError
-            If `config` is not of type `ActorConfig`.
-
-        """
         if config is None:
             config = ActorConfig()
         Condition.type(config, ActorConfig, "config")

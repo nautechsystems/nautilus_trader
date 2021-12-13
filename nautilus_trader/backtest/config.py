@@ -203,6 +203,8 @@ class BacktestEngineConfig(pydantic.BaseModel):
     """
     Configuration for ``BacktestEngine`` instances.
 
+    Parameters
+    ----------
     trader_id : str, default="BACKTESTER-000"
         The trader ID.
     log_level : str, default="INFO"

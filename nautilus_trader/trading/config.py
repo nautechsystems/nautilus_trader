@@ -29,6 +29,8 @@ class TradingStrategyConfig(ActorConfig):
     """
     The base model for all trading strategy configurations.
 
+    Parameters
+    ----------
     component_id : str, optional
         The unique component ID for the strategy. Will become the strategy ID if not None.
     order_id_tag : str
@@ -37,6 +39,7 @@ class TradingStrategyConfig(ActorConfig):
     oms_type : OMSType
         The order management system type for the strategy. This will determine
         how the `ExecutionEngine` handles position IDs (see docs).
+
     """
 
     order_id_tag: str = "000"
@@ -47,6 +50,8 @@ class ImportableStrategyConfig(ImportableActorConfig):
     """
     Represents a trading strategy configuration for one specific backtest run.
 
+    Parameters
+    ----------
     path : str, optional
         The fully-qualified name of the module.
     source : bytes, optional

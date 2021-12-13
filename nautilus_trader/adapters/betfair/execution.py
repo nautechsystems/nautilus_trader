@@ -75,6 +75,29 @@ from nautilus_trader.msgbus.bus import MessageBus
 class BetfairExecutionClient(LiveExecutionClient):
     """
     Provides an execution client for Betfair.
+
+    Parameters
+    ----------
+    loop : asyncio.AbstractEventLoop
+        The event loop for the client.
+    client : BetfairClient
+        The Betfair HttpClient.
+    account_id : AccountId
+        The account ID for the client.
+    base_currency : Currency
+        The account base currency for the client.
+    msgbus : MessageBus
+        The message bus for the client.
+    cache : Cache
+        The cache for the client.
+    clock : LiveClock
+        The clock for the client.
+    logger : Logger
+        The logger for the client.
+    market_filter : dict
+        The market filter.
+    instrument_provider : BetfairInstrumentProvider, optional
+        The instrument provider.
     """
 
     def __init__(
@@ -90,33 +113,6 @@ class BetfairExecutionClient(LiveExecutionClient):
         market_filter: Dict,
         instrument_provider: BetfairInstrumentProvider,
     ):
-        """
-        Initialize a new instance of the ``BetfairExecutionClient`` class.
-
-        Parameters
-        ----------
-        loop : asyncio.AbstractEventLoop
-            The event loop for the client.
-        client : BetfairClient
-            The Betfair HttpClient.
-        account_id : AccountId
-            The account ID for the client.
-        base_currency : Currency
-            The account base currency for the client.
-        msgbus : MessageBus
-            The message bus for the client.
-        cache : Cache
-            The cache for the client.
-        clock : LiveClock
-            The clock for the client.
-        logger : Logger
-            The logger for the client.
-        market_filter : dict
-            The market filter.
-        instrument_provider : BetfairInstrumentProvider, optional
-            The instrument provider.
-
-        """
         super().__init__(
             loop=loop,
             client_id=ClientId(BETFAIR_VENUE.value),

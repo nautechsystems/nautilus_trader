@@ -76,18 +76,14 @@ class EMACross(TradingStrategy):
     direction.
 
     Cancels all orders and flattens all positions on stop.
+
+    Parameters
+    ----------
+    config : EMACrossConfig
+        The configuration for the instance.
     """
 
     def __init__(self, config: EMACrossConfig):
-        """
-        Initialize a new instance of the ``EMACross`` class.
-
-        Parameters
-        ----------
-        config : EMACrossConfig
-            The configuration for the instance.
-
-        """
         super().__init__(config)
 
         # Configuration

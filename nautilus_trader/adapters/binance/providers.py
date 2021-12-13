@@ -41,6 +41,13 @@ from nautilus_trader.model.objects import Quantity
 class BinanceInstrumentProvider(InstrumentProvider):
     """
     Provides a means of loading `Instrument` from the Binance API.
+
+    Parameters
+    ----------
+    client : APIClient
+        The client for the provider.
+    logger : Logger
+        The logger for the provider.
     """
 
     def __init__(
@@ -48,17 +55,6 @@ class BinanceInstrumentProvider(InstrumentProvider):
         client: BinanceHttpClient,
         logger: Logger,
     ):
-        """
-        Initialize a new instance of the ``BinanceInstrumentProvider`` class.
-
-        Parameters
-        ----------
-        client : APIClient
-            The client for the provider.
-        logger : Logger
-            The logger for the provider.
-
-        """
         super().__init__()
 
         self.venue = BINANCE_VENUE

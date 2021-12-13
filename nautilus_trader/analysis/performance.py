@@ -36,9 +36,6 @@ class PerformanceAnalyzer:
     """
 
     def __init__(self):
-        """
-        Initialize a new instance of the ``PerformanceAnalyzer`` class.
-        """
         self._account_balances_starting = {}  # type: dict[Currency, Money]
         self._account_balances = {}  # type: dict[Currency, Money]
         self._realized_pnls = {}  # type: dict[Currency, pd.Series]

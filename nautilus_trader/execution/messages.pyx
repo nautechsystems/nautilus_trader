@@ -33,6 +33,19 @@ from nautilus_trader.model.objects cimport Quantity
 cdef class OrderStatusReport:
     """
     Represents an orders state at a point in time.
+
+    Parameters
+    ----------
+    client_order_id : ClientOrderId
+        The reported client order ID.
+    venue_order_id : VenueOrderId
+        The reported order ID.
+    order_status : OrderStatus
+        The reported order status at the exchange.
+    filled_qty : Quantity
+        The reported filled quantity at the exchange.
+    ts_init : int64
+        The UNIX timestamp (nanoseconds) when the object was initialized.
     """
     def __init__(
         self,
@@ -42,23 +55,6 @@ cdef class OrderStatusReport:
         Quantity filled_qty not None,
         int64_t ts_init,
     ):
-        """
-        Initializes a new instance of the `OrderStatusReport`` class.
-
-        Parameters
-        ----------
-        client_order_id : ClientOrderId
-            The reported client order ID.
-        venue_order_id : VenueOrderId
-            The reported order ID.
-        order_status : OrderStatus
-            The reported order status at the exchange.
-        filled_qty : Quantity
-            The reported filled quantity at the exchange.
-        ts_init : int64
-            The UNIX timestamp (nanoseconds) when the object was initialized.
-
-        """
         self.client_order_id = client_order_id
         self.venue_order_id = venue_order_id
         self.order_status = order_status
@@ -77,6 +73,17 @@ cdef class OrderStatusReport:
 cdef class PositionStatusReport:
     """
     Represents a positions state at a point in time.
+
+    Parameters
+    ----------
+    instrument_id : InstrumentId
+        The reported instrument ID.
+    position_side : PositionSide
+        The reported position side at the exchange.
+    qty : Quantity
+        The reported position quantity at the exchange.
+    ts_init : int64
+        The UNIX timestamp (nanoseconds) when the object was initialized.
     """
     def __init__(
         self,
@@ -85,21 +92,6 @@ cdef class PositionStatusReport:
         Quantity qty not None,
         int64_t ts_init,
     ):
-        """
-        Initializes a new instance of the `PositionStatusReport`` class.
-
-        Parameters
-        ----------
-        instrument_id : InstrumentId
-            The reported instrument ID.
-        position_side : PositionSide
-            The reported position side at the exchange.
-        qty : Quantity
-            The reported position quantity at the exchange.
-        ts_init : int64
-            The UNIX timestamp (nanoseconds) when the object was initialized.
-
-        """
         self.instrument_id = instrument_id
         self.side = position_side
         self.qty = qty
@@ -116,6 +108,30 @@ cdef class PositionStatusReport:
 cdef class ExecutionReport:
     """
     Represents a report of execution state by order ID.
+
+    Parameters
+    ----------
+    client_order_id : ClientOrderId
+        The client order ID.
+    venue_order_id : VenueOrderId
+        The venue order ID.
+    venue_position_id : PositionId, optional
+        The venue position ID associated with the order. If the trading
+        venue has assigned a position ID / ticket then pass that here,
+        otherwise pass ``None`` and the execution engine OMS will handle
+        position ID resolution.
+    execution_id : ExecutionId
+        The execution ID for the trade.
+    last_qty : Quantity
+        The quantity of the last fill.
+    last_px : Price
+        The price of the last fill.
+    commission : Money, optional
+        The commission for the transaction (can be None).
+    liquidity_side : LiquiditySide
+        The liquidity side for the fill.
+    ts_event : int64
+        The UNIX timestamp (nanoseconds) when the execution event occurred.
     """
 
     def __init__(
@@ -131,34 +147,6 @@ cdef class ExecutionReport:
         int64_t ts_event,
         int64_t ts_init,
     ):
-        """
-        Initializes a new instance of the `ExecutionReport`` class.
-
-        Parameters
-        ----------
-        client_order_id : ClientOrderId
-            The client order ID.
-        venue_order_id : VenueOrderId
-            The venue order ID.
-        venue_position_id : PositionId, optional
-            The venue position ID associated with the order. If the trading
-            venue has assigned a position ID / ticket then pass that here,
-            otherwise pass ``None`` and the execution engine OMS will handle
-            position ID resolution.
-        execution_id : ExecutionId
-            The execution ID for the trade.
-        last_qty : Quantity
-            The quantity of the last fill.
-        last_px : Price
-            The price of the last fill.
-        commission : Money, optional
-            The commission for the transaction (can be None).
-        liquidity_side : LiquiditySide
-            The liquidity side for the fill.
-        ts_event : int64
-            The UNIX timestamp (nanoseconds) when the execution event occurred.
-
-        """
         self.client_order_id = client_order_id
         self.venue_order_id = venue_order_id
         self.venue_position_id = venue_position_id
@@ -187,6 +175,15 @@ cdef class ExecutionReport:
 cdef class ExecutionMassStatus:
     """
     Represents a mass status report of execution status.
+
+    Parameters
+    ----------
+    client_id : ClientId
+        The client ID for the report.
+    account_id : AccountId
+        The account ID for the report.
+    ts_init : int64
+        The UNIX timestamp (nanoseconds) when the object was initialized.
     """
 
     def __init__(
@@ -195,19 +192,6 @@ cdef class ExecutionMassStatus:
         AccountId account_id not None,
         int64_t ts_init,
     ):
-        """
-        Initializes a new instance of the `ExecutionMassStatus`` class.
-
-        Parameters
-        ----------
-        client_id : ClientId
-            The client ID for the report.
-        account_id : AccountId
-            The account ID for the report.
-        ts_init : int64
-            The UNIX timestamp (nanoseconds) when the object was initialized.
-
-        """
         self.client_id = client_id
         self.account_id = account_id
         self.ts_init = ts_init

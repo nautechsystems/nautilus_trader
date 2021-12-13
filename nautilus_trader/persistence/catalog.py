@@ -49,6 +49,15 @@ from nautilus_trader.serialization.arrow.util import dict_of_lists_to_list_of_di
 class DataCatalog(metaclass=Singleton):
     """
     Provides a queryable data catalogue.
+
+    Parameters
+    ----------
+    path : str
+        The root path to the data.
+    fs_protocol : str
+        The file system protocol to use.
+    fs_storage_options : Dict, optional
+        The fs storage options.
     """
 
     def __init__(
@@ -57,19 +66,6 @@ class DataCatalog(metaclass=Singleton):
         fs_protocol: str = "file",
         fs_storage_options: Optional[Dict] = None,
     ):
-        """
-        Initialize a new instance of the ``DataCatalog`` class.
-
-        Parameters
-        ----------
-        path : str
-            The root path to the data.
-        fs_protocol : str
-            The file system protocol to use.
-        fs_storage_options : Dict, optional
-            The fs storage options.
-
-        """
         self.path = pathlib.Path(path)
         self.fs_protocol = fs_protocol
         self.fs_storage_options = fs_storage_options or {}

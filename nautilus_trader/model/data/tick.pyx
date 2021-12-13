@@ -30,6 +30,15 @@ cdef class Tick(Data):
     """
     The abstract base class for all ticks.
 
+    Parameters
+    ----------
+    instrument_id : InstrumentId
+        The ticks instrument ID.
+    ts_event: int64
+        The UNIX timestamp (nanoseconds) when the tick event occurred.
+    ts_init : int64
+        The UNIX timestamp (nanoseconds) when the object was initialized.
+
     Warnings
     --------
     This class should not be used directly, but through a concrete subclass.
@@ -41,19 +50,6 @@ cdef class Tick(Data):
         int64_t ts_event,
         int64_t ts_init,
     ):
-        """
-        Initialize a new instance of the ``Tick`` class.
-
-        Parameters
-        ----------
-        instrument_id : InstrumentId
-            The ticks instrument ID.
-        ts_event: int64
-            The UNIX timestamp (nanoseconds) when the tick event occurred.
-        ts_init : int64
-            The UNIX timestamp (nanoseconds) when the object was initialized.
-
-        """
         super().__init__(ts_event, ts_init)
 
         self.instrument_id = instrument_id
@@ -62,6 +58,25 @@ cdef class Tick(Data):
 cdef class QuoteTick(Tick):
     """
     Represents a single quote tick in a financial market.
+
+    Contains information about the best top of book bid and ask.
+
+    Parameters
+    ----------
+    instrument_id : InstrumentId
+        The quotes instrument ID.
+    bid : Price
+        The top of book bid price.
+    ask : Price
+        The top of book ask price.
+    bid_size : Quantity
+        The top of book bid size.
+    ask_size : Quantity
+        The top of book ask size.
+    ts_event: int64
+        The UNIX timestamp (nanoseconds) when the tick event occurred.
+    ts_init: int64
+        The UNIX timestamp (nanoseconds) when the data object was initialized.
     """
 
     def __init__(
@@ -74,27 +89,6 @@ cdef class QuoteTick(Tick):
         int64_t ts_event,
         int64_t ts_init,
     ):
-        """
-        Initialize a new instance of the ``QuoteTick`` class.
-
-        Parameters
-        ----------
-        instrument_id : InstrumentId
-            The quotes instrument ID.
-        bid : Price
-            The top of book bid price.
-        ask : Price
-            The top of book ask price.
-        bid_size : Quantity
-            The top of book bid size.
-        ask_size : Quantity
-            The top of book ask size.
-        ts_event: int64
-            The UNIX timestamp (nanoseconds) when the tick event occurred.
-        ts_init: int64
-            The UNIX timestamp (nanoseconds) when the data object was initialized.
-
-        """
         super().__init__(instrument_id, ts_event, ts_init)
 
         self.bid = bid
@@ -225,6 +219,31 @@ cdef class QuoteTick(Tick):
 cdef class TradeTick(Tick):
     """
     Represents a single trade tick in a financial market.
+
+    Contains information about a single unique trade which matched buyer and
+    seller counterparties.
+
+    Parameters
+    ----------
+    instrument_id : InstrumentId
+        The trade instrument ID.
+    price : Price
+        The traded price.
+    size : Quantity
+        The traded size.
+    aggressor_side : AggressorSide
+        The trade aggressor side.
+    trade_id : str
+        The trade match ID.
+    ts_event: int64
+        The UNIX timestamp (nanoseconds) when the tick event occurred.
+    ts_init: int64
+        The UNIX timestamp (nanoseconds) when the data object was initialized.
+
+    Raises
+    ------
+    ValueError
+        If `trade_id` is not a valid string.
     """
 
     def __init__(
@@ -237,32 +256,6 @@ cdef class TradeTick(Tick):
         int64_t ts_event,
         int64_t ts_init,
     ):
-        """
-        Initialize a new instance of the ``TradeTick`` class.
-
-        Parameters
-        ----------
-        instrument_id : InstrumentId
-            The trade instrument ID.
-        price : Price
-            The traded price.
-        size : Quantity
-            The traded size.
-        aggressor_side : AggressorSide
-            The trade aggressor side.
-        trade_id : str
-            The trade match ID.
-        ts_event: int64
-            The UNIX timestamp (nanoseconds) when the tick event occurred.
-        ts_init: int64
-            The UNIX timestamp (nanoseconds) when the data object was initialized.
-
-        Raises
-        ------
-        ValueError
-            If `trade_id` is not a valid string.
-
-        """
         Condition.valid_string(trade_id, "trade_id")
         super().__init__(instrument_id, ts_event, ts_init)
 

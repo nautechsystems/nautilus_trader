@@ -27,6 +27,24 @@ cdef class FillModel:
     """
     Provides probabilistic modeling for order fill dynamics including probability
     of fills and slippage by order type.
+
+    Parameters
+    ----------
+    prob_fill_on_limit : double
+        The probability of limit order filling if the market rests on its price.
+    prob_fill_on_stop : double
+        The probability of stop orders filling if the market rests on its price.
+    prob_slippage : double
+        The probability of order fill prices slipping by one tick.
+    random_seed : int, optional
+        The random seed (if None then no random seed).
+
+    Raises
+    ------
+    ValueError
+        If any probability argument is not within range [0, 1].
+    TypeError
+        If `random_seed` is not None and not of type `int`.
     """
 
     def __init__(
@@ -36,28 +54,6 @@ cdef class FillModel:
         double prob_slippage=0.0,
         random_seed=None,
     ):
-        """
-        Initialize a new instance of the ``FillModel`` class.
-
-        Parameters
-        ----------
-        prob_fill_on_limit : double
-            The probability of limit order filling if the market rests on its price.
-        prob_fill_on_stop : double
-            The probability of stop orders filling if the market rests on its price.
-        prob_slippage : double
-            The probability of order fill prices slipping by one tick.
-        random_seed : int, optional
-            The random seed (if None then no random seed).
-
-        Raises
-        ------
-        ValueError
-            If any probability argument is not within range [0, 1].
-        TypeError
-            If `random_seed` is not None and not of type `int`.
-
-        """
         Condition.in_range(prob_fill_on_limit, 0.0, 1.0, "prob_fill_on_limit")
         Condition.in_range(prob_fill_on_stop, 0.0, 1.0, "prob_fill_on_stop")
         Condition.in_range(prob_slippage, 0.0, 1.0, "prob_slippage")
@@ -118,6 +114,28 @@ cdef class FillModel:
 cdef class LatencyModel:
     """
     Provides a latency model for simulated exchange message I/O.
+
+    Parameters
+    ----------
+    base_latency_nanos : int, default 1_000_000_000
+        The base latency (nanoseconds) for the model.
+    insert_latency_nanos : int, default 0
+        The order insert latency (nanoseconds) for the model.
+    update_latency_nanos : int, default 0
+        The order update latency (nanoseconds) for the model.
+    cancel_latency_nanos : int, default 0
+        The order cancel latency (nanoseconds) for the model.
+
+    Raises
+    ------
+    ValueError
+        If `base_latency_nanos` is negative (< 0).
+    ValueError
+        If `insert_latency_nanos` is negative (< 0).
+    ValueError
+        If `update_latency_nanos` is negative (< 0).
+    ValueError
+        If `cancel_latency_nanos` is negative (< 0).
     """
 
     def __init__(
@@ -127,32 +145,6 @@ cdef class LatencyModel:
         int update_latency_nanos = 0,
         int cancel_latency_nanos = 0,
     ):
-        """
-        Initialize a new instance of the ``LatencyModel`` class.
-
-        Parameters
-        ----------
-        base_latency_nanos : int, default 1_000_000_000
-            The base latency (nanoseconds) for the model.
-        insert_latency_nanos : int, default 0
-            The order insert latency (nanoseconds) for the model.
-        update_latency_nanos : int, default 0
-            The order update latency (nanoseconds) for the model.
-        cancel_latency_nanos : int, default 0
-            The order cancel latency (nanoseconds) for the model.
-
-        Raises
-        ------
-        ValueError
-            If `base_latency_nanos` is negative (< 0).
-        ValueError
-            If `insert_latency_nanos` is negative (< 0).
-        ValueError
-            If `update_latency_nanos` is negative (< 0).
-        ValueError
-            If `cancel_latency_nanos` is negative (< 0).
-
-        """
         Condition.not_negative_int(base_latency_nanos, "base_latency_nanos")
         Condition.not_negative_int(insert_latency_nanos, "insert_latency_nanos")
         Condition.not_negative_int(update_latency_nanos, "update_latency_nanos")

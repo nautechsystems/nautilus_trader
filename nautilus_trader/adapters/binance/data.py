@@ -61,6 +61,23 @@ from nautilus_trader.msgbus.bus import MessageBus
 class BinanceDataClient(LiveMarketDataClient):
     """
     Provides a data client for the Binance exchange.
+
+    Parameters
+    ----------
+    loop : asyncio.AbstractEventLoop
+        The event loop for the client.
+    client : BinanceHttpClient
+        The binance HTTP client.
+    msgbus : MessageBus
+        The message bus for the client.
+    cache : Cache
+        The cache for the client.
+    clock : LiveClock
+        The clock for the client.
+    logger : Logger
+        The logger for the client.
+    instrument_provider : BinanceInstrumentProvider
+        The instrument provider.
     """
 
     def __init__(
@@ -73,27 +90,6 @@ class BinanceDataClient(LiveMarketDataClient):
         logger: Logger,
         instrument_provider: BinanceInstrumentProvider,
     ):
-        """
-        Initialize a new instance of the ``BinanceDataClient`` class.
-
-        Parameters
-        ----------
-        loop : asyncio.AbstractEventLoop
-            The event loop for the client.
-        client : BinanceHttpClient
-            The binance HTTP client.
-        msgbus : MessageBus
-            The message bus for the client.
-        cache : Cache
-            The cache for the client.
-        clock : LiveClock
-            The clock for the client.
-        logger : Logger
-            The logger for the client.
-        instrument_provider : BinanceInstrumentProvider
-            The instrument provider.
-
-        """
         super().__init__(
             loop=loop,
             client_id=ClientId(BINANCE_VENUE.value),

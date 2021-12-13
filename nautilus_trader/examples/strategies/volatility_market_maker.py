@@ -74,18 +74,14 @@ class VolatilityMarketMaker(TradingStrategy):
     volatility measured by an ATR indicator.
 
     Cancels all orders and flattens all positions on stop.
+
+    Parameters
+    ----------
+    config : VolatilityMarketMakerConfig
+        The configuration for the instance.
     """
 
     def __init__(self, config: VolatilityMarketMakerConfig):
-        """
-        Initialize a new instance of the ``VolatilityMarketMaker`` class.
-
-        Parameters
-        ----------
-        config : VolatilityMarketMakerConfig
-            The configuration for the instance.
-
-        """
         super().__init__(config)
 
         # Configuration

@@ -22,6 +22,20 @@ cdef class TickScheme:
     Represents an instrument tick scheme.
 
     Maps the valid prices available for an instrument.
+
+    Parameters
+    ----------
+    name : str
+        The name of the tick scheme.
+    min_tick : Price
+        The minimum possible tick `Price`.
+    max_tick: Price
+        The maximum possible tick `Price`.
+
+    Raises
+    ------
+    ValueError
+        If `name` is not a valid string.
     """
 
     def __init__(
@@ -30,24 +44,6 @@ cdef class TickScheme:
         Price min_tick not None,
         Price max_tick not None,
     ):
-        """
-        Initialize a new instance of the `TickScheme` class.
-
-        Parameters
-        ----------
-        name : str
-            The name of the tick scheme.
-        min_tick : Price
-            The minimum possible tick `Price`.
-        max_tick: Price
-            The maximum possible tick `Price`.
-
-        Raises
-        ------
-        ValueError
-            If `name` is not a valid string.
-
-        """
         Condition.valid_string(name, "name")
 
         self.name = name

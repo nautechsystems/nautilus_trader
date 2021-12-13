@@ -187,10 +187,6 @@ cdef class Serializer:
     """
 
     def __init__(self):
-        """
-        Initialize a new instance of the ``Serializer`` class.
-
-        """
         super().__init__()
 
     cpdef bytes serialize(self, object obj):

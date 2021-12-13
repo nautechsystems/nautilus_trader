@@ -65,18 +65,14 @@ class OrderBookImbalance(TradingStrategy):
     imbalance in the order book.
 
     Cancels all orders and flattens all positions on stop.
+
+    Parameters
+    ----------
+    config : OrderbookImbalanceConfig
+        The configuration for the instance.
     """
 
     def __init__(self, config: OrderBookImbalanceConfig):
-        """
-        Initialize a new instance of the ``OrderbookImbalance`` class.
-
-        Parameters
-        ----------
-        config : OrderbookImbalanceConfig
-            The configuration for the instance.
-
-        """
         assert 0 < config.trigger_imbalance_ratio < 1
         super().__init__(config)
 

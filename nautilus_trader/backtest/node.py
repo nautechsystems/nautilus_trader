@@ -66,11 +66,6 @@ class BacktestNode:
     graph for execution by a dask executor.
     """
 
-    def __init__(self):
-        """
-        Initialize a new instance of the ``BacktestNode`` class.
-        """
-
     def build_graph(self, run_configs: List[BacktestRunConfig]) -> Delayed:
         """
         Build a `Delayed` graph from `backtest_configs` which can be passed to a dask executor.

@@ -21,6 +21,8 @@ class CacheConfig(pydantic.BaseModel):
     """
     Configuration for ``Cache`` instances.
 
+    Parameters
+    ----------
     tick_capacity : int
         The maximum length for internal tick deques.
     bar_capacity : int

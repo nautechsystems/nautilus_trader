@@ -4,6 +4,15 @@ Trading
 .. automodule:: nautilus_trader.trading
 
 
+Config
+------
+
+.. automodule:: nautilus_trader.trading.config
+   :show-inheritance:
+   :inherited-members:
+   :members:
+   :member-order: bysource
+
 Filters
 -------
 

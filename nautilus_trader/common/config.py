@@ -29,6 +29,8 @@ class ActorConfig(pydantic.BaseModel):
     """
     The base model for all actor configurations.
 
+    Parameters
+    ----------
     component_id : str, optional
         The component ID. If ``None`` then the identifier will be taken from
         `type(self).__name__`.
@@ -42,6 +44,8 @@ class ImportableActorConfig(pydantic.BaseModel):
     """
     Represents an actor configuration for one specific backtest run.
 
+    Parameters
+    ----------
     path : str, optional
         The fully-qualified name of the module.
     source : bytes, optional

@@ -426,18 +426,14 @@ class TestInstrumentProvider:
 class TestDataProvider:
     """
     Provides an API to load data from either the 'test/' directory or GitHub repo.
+
+    Parameters
+    ----------
+    branch : str
+        The NautilusTrader GitHub branch for the path.
     """
 
     def __init__(self, branch="develop"):
-        """
-        Initialize a new instance of the ``TestDataProvider`` class.
-
-        Parameters
-        ----------
-        branch : str
-            The NautilusTrader GitHub branch for the path.
-
-        """
         self.fs: Optional[fsspec.AbstractFileSystem] = None
         self.root: Optional[str] = None
         self._determine_filesystem()

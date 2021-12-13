@@ -38,6 +38,17 @@ from nautilus_trader.model.objects import Quantity
 class IBInstrumentProvider(InstrumentProvider):
     """
     Provides a means of loading `Instrument` objects through Interactive Brokers.
+
+    Parameters
+    ----------
+    client : ib_insync.IB
+        The Interactive Brokers client.
+    host : str
+        The client host name or IP address.
+    port : str
+        The client port number.
+    client_id : int
+        The unique client ID number for the connection.
     """
 
     def __init__(
@@ -47,21 +58,6 @@ class IBInstrumentProvider(InstrumentProvider):
         port: int = 7497,
         client_id: int = 1,
     ):
-        """
-        Initialize a new instance of the ``IBInstrumentProvider`` class.
-
-        Parameters
-        ----------
-        client : ib_insync.IB
-            The Interactive Brokers client.
-        host : str
-            The client host name or IP address.
-        port : str
-            The client port number.
-        client_id : int
-            The unique client ID number for the connection.
-
-        """
         super().__init__()
 
         self._client = client

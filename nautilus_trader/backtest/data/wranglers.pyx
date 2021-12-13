@@ -35,18 +35,14 @@ from nautilus_trader.model.objects cimport Quantity
 cdef class QuoteTickDataWrangler:
     """
     Provides a means of building lists of Nautilus `QuoteTick` objects.
+
+    Parameters
+    ----------
+    instrument : Instrument
+        The instrument for the data wrangler.
     """
 
     def __init__(self, Instrument instrument not None):
-        """
-        Initialize a new instance of the ``QuoteTickDataWrangler`` class.
-
-        Parameters
-        ----------
-        instrument : Instrument
-            The instrument for the data wrangler.
-
-        """
         self.instrument = instrument
 
     def process(
@@ -228,18 +224,14 @@ cdef class QuoteTickDataWrangler:
 cdef class TradeTickDataWrangler:
     """
     Provides a means of building lists of Nautilus `TradeTick` objects.
+
+    Parameters
+    ----------
+    instrument : Instrument
+        The instrument for the data wrangler.
     """
 
     def __init__(self, Instrument instrument not None):
-        """
-        Initialize a new instance of the ``TradeTickDataWrangler`` class.
-
-        Parameters
-        ----------
-        instrument : Instrument
-            The instrument for the data wrangler.
-
-        """
         self.instrument = instrument
 
     def process(self, data: pd.DataFrame, ts_init_delta: int=0):
@@ -306,6 +298,13 @@ cdef class TradeTickDataWrangler:
 cdef class BarDataWrangler:
     """
     Provides a means of building lists of Nautilus `Bar` objects.
+
+    Parameters
+    ----------
+    bar_type : BarType
+        The bar type for the wrangler.
+    instrument : Instrument
+        The instrument for the wrangler.
     """
 
     def __init__(
@@ -313,17 +312,6 @@ cdef class BarDataWrangler:
         BarType bar_type not None,
         Instrument instrument not None,
     ):
-        """
-        Initialize a new instance of the ``BarDataWrangler`` class.
-
-        Parameters
-        ----------
-        bar_type : BarType
-            The bar type for the wrangler.
-        instrument : Instrument
-            The instrument for the wrangler.
-
-        """
         Condition.not_none(bar_type, "bar_type")
         Condition.not_none(instrument, "instrument")
 

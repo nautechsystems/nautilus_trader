@@ -27,6 +27,21 @@ cdef class KeltnerPosition(Indicator):
     An indicator which calculates the relative position of the given price
     within a defined Keltner channel. This provides a measure of the relative
     'extension' of a market from the mean, as a multiple of volatility.
+
+    Parameters
+    ----------
+    period : int
+        The rolling window period for the indicator (> 0).
+    k_multiplier : double
+        The multiplier for the ATR (> 0).
+    ma_type : MovingAverageType
+        The moving average type for the middle band (cannot be None).
+    ma_type_atr : MovingAverageType
+        The moving average type for the internal ATR (cannot be None).
+    use_previous : bool
+        The boolean flag indicating whether previous price values should be used.
+    atr_floor : double
+        The ATR floor (minimum) output value for the indicator (>= 0).
     """
 
     def __init__(
@@ -38,25 +53,6 @@ cdef class KeltnerPosition(Indicator):
         bint use_previous=True,
         double atr_floor=0,
     ):
-        """
-        Initialize a new instance of the ``KeltnerChannel`` class.
-
-        Parameters
-        ----------
-        period : int
-            The rolling window period for the indicator (> 0).
-        k_multiplier : double
-            The multiplier for the ATR (> 0).
-        ma_type : MovingAverageType
-            The moving average type for the middle band (cannot be None).
-        ma_type_atr : MovingAverageType
-            The moving average type for the internal ATR (cannot be None).
-        use_previous : bool
-            The boolean flag indicating whether previous price values should be used.
-        atr_floor : double
-            The ATR floor (minimum) output value for the indicator (>= 0).
-
-        """
         Condition.positive_int(period, "period")
         Condition.positive(k_multiplier, "k_multiplier")
         Condition.not_negative(atr_floor, "atr_floor")
