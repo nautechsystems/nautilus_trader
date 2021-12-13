@@ -426,12 +426,12 @@ class BetfairExecutionClient(LiveExecutionClient):
         PyCondition.not_none(instrument, "instrument")
 
         # Format
-        cancel_orders = order_cancel_to_betfair(command=command, instrument=instrument)  # type: ignore
-        self._log.debug(f"cancel_orders {cancel_orders}")
+        cancel_order = order_cancel_to_betfair(command=command, instrument=instrument)  # type: ignore
+        self._log.debug(f"cancel_order {cancel_order}")
 
         # Send to client
         try:
-            result = await self._client.cancel_orders(**cancel_orders)
+            result = await self._client.cancel_orders(**cancel_order)
         except Exception as exc:
             if isinstance(exc, BetfairAPIError):
                 await self.on_api_exception(exc=exc)
@@ -479,15 +479,30 @@ class BetfairExecutionClient(LiveExecutionClient):
     def cancel_all_orders(self, command: CancelAllOrders) -> None:
         PyCondition.not_none(command, "command")
 
-        instrument = self._cache.instrument(command.instrument_id)
-        PyCondition.not_none(instrument, "instrument")
+        working_orders = self._cache.working_orders(instrument_id=command.instrument_id)
 
+        # TODO(cs): Temporary solution generating individual cancels for all working orders
+        for order in working_orders:
+            command = CancelOrder(
+                trader_id=command.trader_id,
+                strategy_id=command.strategy_id,
+                instrument_id=command.instrument_id,
+                client_order_id=order.client_order_id,
+                venue_order_id=order.venue_order_id,
+                command_id=self._uuid_factory.generate(),
+                ts_init=self._clock.timestamp_ns(),
+            )
+
+            self.cancel_order(command)
+
+        # TODO(cs): Relates to below _cancel_all_orders
         # Format
-        cancel_orders = order_cancel_all_to_betfair(instrument=instrument)  # type: ignore
-        self._log.debug(f"cancel_orders {cancel_orders}")
+        # cancel_orders = order_cancel_all_to_betfair(instrument=instrument)  # type: ignore
+        # self._log.debug(f"cancel_orders {cancel_orders}")
+        #
+        # self.create_task(self._cancel_order(command))
 
-        self.create_task(self._cancel_order(command))
-
+    # TODO(cs): Currently not in use as old behavior restored to cancel orders individually
     async def _cancel_all_orders(self, command: CancelAllOrders) -> None:
         # TODO(cs): I've had to duplicate the logic as couldn't refactor and tease
         #  apart the cancel rejects and execution report. This will possibly fail
