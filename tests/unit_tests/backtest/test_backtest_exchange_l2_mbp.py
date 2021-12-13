@@ -327,7 +327,7 @@ class TestL2OrderBookExchange:
             price=Price.from_str("14.0"),
             size=Quantity.from_int(1000),
             aggressor_side=AggressorSide.SELL,
-            match_id="123456789",
+            trade_id="123456789",
             ts_event=0,
             ts_init=0,
         )

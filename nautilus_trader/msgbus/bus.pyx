@@ -45,6 +45,22 @@ cdef class MessageBus:
     "camp" and "comp." The question mark can also be used more than once.
     For example, "c??p" would match both of the above examples and "coop."
 
+    Parameters
+    ----------
+    trader_id : TraderId
+        The trader ID associated with the message bus.
+    clock : Clock
+        The clock for the message bus.
+    logger : Logger
+        The logger for the message bus.
+    name : str, optional
+        The custom name for the message bus.
+
+    Raises
+    ------
+    ValueError
+        If `name` is not ``None`` and not a valid string.
+
     Warnings
     --------
     This message bus is not thread-safe and must be called from the same thread
@@ -58,26 +74,6 @@ cdef class MessageBus:
         Logger logger not None,
         str name=None,
     ):
-        """
-        Initialize a new instance of the ``MessageBus`` class.
-
-        Parameters
-        ----------
-        trader_id : TraderId
-            The trader ID associated with the message bus.
-        clock : Clock
-            The clock for the message bus.
-        logger : Logger
-            The logger for the message bus.
-        name : str, optional
-            The custom name for the message bus.
-
-        Raises
-        ------
-        ValueError
-            If `name` is not ``None`` and not a valid string.
-
-        """
         if name is None:
             name = "MessageBus"
         Condition.valid_string(name, "name")

@@ -78,13 +78,3 @@ html_theme = "sphinx_rtd_theme"
 html_static_path = ["_static"]
 html_style = "css/nautilus.css"
 html_logo = "_static/img/nautilus-black.png"
-
-
-def skip(app, what, name, obj, would_skip, options):  # noqa
-    if name == "__init__":
-        return False
-    return would_skip
-
-
-def setup(app):  # noqa
-    app.connect("autodoc-skip-member", skip)

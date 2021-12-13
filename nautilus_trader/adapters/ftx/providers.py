@@ -25,6 +25,13 @@ from nautilus_trader.common.providers import InstrumentProvider
 class FTXInstrumentProvider(InstrumentProvider):
     """
     Provides a means of loading `Instrument` from the FTX API.
+
+    Parameters
+    ----------
+    client : APIClient
+        The client for the provider.
+    logger : Logger
+        The logger for the provider.
     """
 
     def __init__(
@@ -32,17 +39,6 @@ class FTXInstrumentProvider(InstrumentProvider):
         client: FTXHttpClient,
         logger: Logger,
     ):
-        """
-        Initialize a new instance of the ``FTXInstrumentProvider`` class.
-
-        Parameters
-        ----------
-        client : APIClient
-            The client for the provider.
-        logger : Logger
-            The logger for the provider.
-
-        """
         super().__init__()
 
         self.venue = FTX_VENUE

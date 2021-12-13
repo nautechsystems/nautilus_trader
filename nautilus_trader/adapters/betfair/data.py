@@ -45,6 +45,27 @@ from nautilus_trader.msgbus.bus import MessageBus
 class BetfairDataClient(LiveMarketDataClient):
     """
     Provides a data client for the Betfair API.
+
+    Parameters
+    ----------
+    loop : asyncio.AbstractEventLoop
+        The event loop for the client.
+    client : BetfairClient
+        The betfair HttpClient
+    msgbus : MessageBus
+        The message bus for the client.
+    cache : Cache
+        The cache for the client.
+    clock : LiveClock
+        The clock for the client.
+    logger : Logger
+        The logger for the client.
+    market_filter : dict
+        The market filter.
+    instrument_provider : BetfairInstrumentProvider, optional
+        The instrument provider.
+    strict_handling : bool
+        If strict handling mode is enabled.
     """
 
     def __init__(
@@ -59,31 +80,6 @@ class BetfairDataClient(LiveMarketDataClient):
         instrument_provider: Optional[BetfairInstrumentProvider] = None,
         strict_handling: bool = False,
     ):
-        """
-        Initialize a new instance of the ``BetfairDataClient`` class.
-
-        Parameters
-        ----------
-        loop : asyncio.AbstractEventLoop
-            The event loop for the client.
-        client : BetfairClient
-            The betfair HttpClient
-        msgbus : MessageBus
-            The message bus for the client.
-        cache : Cache
-            The cache for the client.
-        clock : LiveClock
-            The clock for the client.
-        logger : Logger
-            The logger for the client.
-        market_filter : dict
-            The market filter.
-        instrument_provider : BetfairInstrumentProvider, optional
-            The instrument provider.
-        strict_handling : bool
-            If strict handling mode is enabled.
-
-        """
         super().__init__(
             loop=loop,
             client_id=ClientId(BETFAIR_VENUE.value),

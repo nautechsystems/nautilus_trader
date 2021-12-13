@@ -25,6 +25,30 @@ cdef class VolatilityRatio(Indicator):
     """
     An indicator which calculates the ratio of different ranges of volatility.
     Different moving average types can be selected for the inner ATR calculations.
+
+    Parameters
+    ----------
+    fast_period : int
+        The period for the fast ATR (> 0).
+    slow_period : int
+        The period for the slow ATR (> 0 & > fast_period).
+    ma_type : MovingAverageType
+        The moving average type for the ATR calculations.
+    use_previous : bool
+        The boolean flag indicating whether previous price values should be used.
+    value_floor : double
+        The floor (minimum) output value for the indicator (>= 0).
+
+    Raises
+    ------
+    ValueError
+        If `fast_period` is not positive (> 0).
+    ValueError
+        If `slow_period` is not positive (> 0).
+    ValueError
+        If `fast_period` is not < `slow_period`.
+    ValueError
+        If `value_floor` is negative (< 0).
     """
 
     def __init__(
@@ -35,34 +59,6 @@ cdef class VolatilityRatio(Indicator):
         bint use_previous=True,
         double value_floor=0,
     ):
-        """
-        Initialize a new instance of the ``MovingAverageConvergenceDivergence`` class.
-
-        Parameters
-        ----------
-        fast_period : int
-            The period for the fast ATR (> 0).
-        slow_period : int
-            The period for the slow ATR (> 0 & > fast_period).
-        ma_type : MovingAverageType
-            The moving average type for the ATR calculations.
-        use_previous : bool
-            The boolean flag indicating whether previous price values should be used.
-        value_floor : double
-            The floor (minimum) output value for the indicator (>= 0).
-
-        Raises
-        ------
-        ValueError
-            If `fast_period` is not positive (> 0).
-        ValueError
-            If `slow_period` is not positive (> 0).
-        ValueError
-            If `fast_period` is not < `slow_period`.
-        ValueError
-            If `value_floor` is negative (< 0).
-
-        """
         Condition.positive_int(fast_period, "fast_period")
         Condition.positive_int(slow_period, "slow_period")
         Condition.true(fast_period < slow_period, "fast_period was >= slow_period")

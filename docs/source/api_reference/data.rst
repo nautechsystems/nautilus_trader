@@ -22,6 +22,15 @@ Client
    :members:
    :member-order: bysource
 
+Config
+------
+
+.. automodule:: nautilus_trader.data.config
+   :show-inheritance:
+   :inherited-members:
+   :members:
+   :member-order: bysource
+
 Engine
 ------
 

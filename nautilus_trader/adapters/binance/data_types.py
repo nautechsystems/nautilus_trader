@@ -30,10 +30,56 @@ class BinanceTicker(Ticker):
 
     This data type includes the raw data provided by `Binance`.
 
+    Parameters
+    ----------
+    instrument_id : InstrumentId
+        The instrument ID.
+    price_change : Decimal
+        The price change.
+    price_change_percent : Decimal
+        The price change percent.
+    weighted_avg_price : Decimal
+        The weighted average price.
+    prev_close_price : Decimal
+        The previous close price.
+    last_price : Decimal
+        The last price.
+    last_qty : Decimal
+        The last quantity.
+    bid_price : Decimal
+        The bid price.
+    ask_price : Decimal
+        The ask price.
+    open_price : Decimal
+        The open price.
+    high_price : Decimal
+        The high price.
+    low_price : Decimal
+        The low price.
+    volume : Decimal
+        The volume.
+    quote_volume : Decimal
+        The quote volume.
+    open_time_ms : int
+        The UNIX timestamp (milliseconds) when the ticker opened.
+    close_time_ms : int
+        The UNIX timestamp (milliseconds) when the ticker closed.
+    close_time_ms : int
+        The UNIX timestamp (milliseconds) when the ticker closed.
+    first_id : int
+        The first trade match ID for the ticker.
+    last_id : int
+        The last trade match ID for the ticker.
+    count : int
+        The count of trades over the tickers time range.
+    ts_event : int64
+        The UNIX timestamp (nanoseconds) when the ticker event occurred.
+    ts_init : int64
+        The UNIX timestamp (nanoseconds) when the object was initialized.
+
     References
     ----------
     https://binance-docs.github.io/apidocs/spot/en/#24hr-ticker-price-change-statistics
-
     """
 
     def __init__(
@@ -60,57 +106,6 @@ class BinanceTicker(Ticker):
         ts_event: int,
         ts_init: int,
     ):
-        """
-        Initialize a new instance of the ``BinanceTicker`` class.
-
-        Parameters
-        ----------
-        instrument_id : InstrumentId
-            The instrument ID.
-        price_change : Decimal
-            The price change.
-        price_change_percent : Decimal
-            The price change percent.
-        weighted_avg_price : Decimal
-            The weighted average price.
-        prev_close_price : Decimal
-            The previous close price.
-        last_price : Decimal
-            The last price.
-        last_qty : Decimal
-            The last quantity.
-        bid_price : Decimal
-            The bid price.
-        ask_price : Decimal
-            The ask price.
-        open_price : Decimal
-            The open price.
-        high_price : Decimal
-            The high price.
-        low_price : Decimal
-            The low price.
-        volume : Decimal
-            The volume.
-        quote_volume : Decimal
-            The quote volume.
-        open_time_ms : int
-            The UNIX timestamp (milliseconds) when the ticker opened.
-        close_time_ms : int
-            The UNIX timestamp (milliseconds) when the ticker closed.
-        close_time_ms : int
-            The UNIX timestamp (milliseconds) when the ticker closed.
-        first_id : int
-            The first trade match ID for the ticker.
-        last_id : int
-            The last trade match ID for the ticker.
-        count : int
-            The count of trades over the tickers time range.
-        ts_event : int64
-            The UNIX timestamp (nanoseconds) when the ticker event occurred.
-        ts_init : int64
-            The UNIX timestamp (nanoseconds) when the object was initialized.
-
-        """
         super().__init__(
             instrument_id=instrument_id,
             ts_event=ts_event,
@@ -243,10 +238,36 @@ class BinanceBar(Bar):
 
     This data type includes the raw data provided by `Binance`.
 
+    Parameters
+    ----------
+    bar_type : BarType
+        The bar type for this bar.
+    open : Price
+        The bars open price.
+    high : Price
+        The bars high price.
+    low : Price
+        The bars low price.
+    close : Price
+        The bars close price.
+    volume : Quantity
+        The bars volume.
+    quote_volume : Quantity
+        The bars quote asset volume.
+    count : int
+        The number of trades for the bar.
+    taker_buy_base_volume : Quantity
+        The liquidity taker volume on the buy side for the base asset.
+    taker_buy_quote_volume : Quantity
+        The liquidity taker volume on the buy side for the quote asset.
+    ts_event : int64
+        The UNIX timestamp (nanoseconds) when the data event occurred.
+    ts_init: int64
+        The UNIX timestamp (nanoseconds) when the data object was initialized.
+
     References
     ----------
     https://binance-docs.github.io/apidocs/spot/en/#kline-candlestick-data
-
     """
 
     def __init__(
@@ -264,37 +285,6 @@ class BinanceBar(Bar):
         ts_event: int,
         ts_init: int,
     ):
-        """
-        Initialize a new instance of the ``BinanceBar`` class.
-
-        Parameters
-        ----------
-        bar_type : BarType
-            The bar type for this bar.
-        open : Price
-            The bars open price.
-        high : Price
-            The bars high price.
-        low : Price
-            The bars low price.
-        close : Price
-            The bars close price.
-        volume : Quantity
-            The bars volume.
-        quote_volume : Quantity
-            The bars quote asset volume.
-        count : int
-            The number of trades for the bar.
-        taker_buy_base_volume : Quantity
-            The liquidity taker volume on the buy side for the base asset.
-        taker_buy_quote_volume : Quantity
-            The liquidity taker volume on the buy side for the quote asset.
-        ts_event : int64
-            The UNIX timestamp (nanoseconds) when the data event occurred.
-        ts_init: int64
-            The UNIX timestamp (nanoseconds) when the data object was initialized.
-
-        """
         super().__init__(
             bar_type=bar_type,
             open=open,

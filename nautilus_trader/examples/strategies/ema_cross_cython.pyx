@@ -80,6 +80,11 @@ cdef class EMACross(TradingStrategy):
     direction.
 
     Cancels all orders and flattens all positions on stop.
+
+    Parameters
+    ----------
+    config : EMACrossConfig
+        The configuration for the instance.
     """
     # Backing fields are necessary
     cdef InstrumentId instrument_id
@@ -89,15 +94,6 @@ cdef class EMACross(TradingStrategy):
     cdef ExponentialMovingAverage slow_ema
 
     def __init__(self, config not None: EMACrossConfig):
-        """
-        Initialize a new instance of the ``EMACross`` class.
-
-        Parameters
-        ----------
-        config : EMACrossConfig
-            The configuration for the instance.
-
-        """
         super().__init__(config)
 
         # Configuration

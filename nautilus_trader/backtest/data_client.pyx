@@ -39,6 +39,21 @@ from nautilus_trader.msgbus.bus cimport MessageBus
 cdef class BacktestDataClient(DataClient):
     """
     Provides an implementation of `DataClient` for backtesting.
+
+    Parameters
+    ----------
+    client_id : ClientId
+        The data client ID.
+    msgbus : MessageBus
+        The message bus for the client.
+    cache : Cache
+        The cache for the client.
+    clock : Clock
+        The clock for the client.
+    logger : Logger
+        The logger for the client.
+    config : dict[str, object], optional
+        The configuration for the instance.
     """
 
     def __init__(
@@ -50,25 +65,6 @@ cdef class BacktestDataClient(DataClient):
         Logger logger not None,
         dict config=None,
     ):
-        """
-        Initialize a new instance of the ``BacktestDataClient`` class.
-
-        Parameters
-        ----------
-        client_id : ClientId
-            The data client ID.
-        msgbus : MessageBus
-            The message bus for the client.
-        cache : Cache
-            The cache for the client.
-        clock : Clock
-            The clock for the client.
-        logger : Logger
-            The logger for the client.
-        config : dict[str, object], optional
-            The configuration for the instance.
-
-        """
         super().__init__(
             client_id=client_id,
             msgbus=msgbus,
@@ -144,6 +140,19 @@ cdef class BacktestDataClient(DataClient):
 cdef class BacktestMarketDataClient(MarketDataClient):
     """
     Provides an implementation of `MarketDataClient` for backtesting.
+
+    Parameters
+    ----------
+    client_id : ClientId
+        The data client ID.
+    msgbus : MessageBus
+        The message bus for the client.
+    cache : Cache
+        The cache for the client.
+    clock : Clock
+        The clock for the client.
+    logger : Logger
+        The logger for the client.
     """
 
     def __init__(
@@ -154,23 +163,6 @@ cdef class BacktestMarketDataClient(MarketDataClient):
         Clock clock not None,
         Logger logger not None,
     ):
-        """
-        Initialize a new instance of the ``BacktestMarketDataClient`` class.
-
-        Parameters
-        ----------
-        client_id : ClientId
-            The data client ID.
-        msgbus : MessageBus
-            The message bus for the client.
-        cache : Cache
-            The cache for the client.
-        clock : Clock
-            The clock for the client.
-        logger : Logger
-            The logger for the client.
-
-        """
         super().__init__(
             client_id=client_id,
             msgbus=msgbus,

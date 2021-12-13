@@ -29,10 +29,6 @@ cdef class InstrumentProvider:
     """
 
     def __init__(self):
-        """
-        Initialize a new instance of the ``InstrumentProvider`` class.
-
-        """
         self._instruments = {}  # type: dict[InstrumentId, Instrument]
         self._currencies = {}   # type: dict[str, Currency]
 

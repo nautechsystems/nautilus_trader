@@ -79,6 +79,19 @@ cdef class DataEngine(Component):
     """
     Provides a high-performance data engine for managing many `DataClient`
     instances, for the asynchronous ingest of data.
+
+    Parameters
+    ----------
+    msgbus : MessageBus
+        The message bus for the engine.
+    cache : Cache
+        The cache for the engine.
+    clock : Clock
+        The clock for the engine.
+    logger : Logger
+        The logger for the engine.
+    config : DataEngineConfig, optional
+        The configuration for the instance.
     """
 
     def __init__(
@@ -89,23 +102,6 @@ cdef class DataEngine(Component):
         Logger logger not None,
         config: Optional[DataEngineConfig]=None,
     ):
-        """
-        Initialize a new instance of the ``DataEngine`` class.
-
-        Parameters
-        ----------
-        msgbus : MessageBus
-            The message bus for the engine.
-        cache : Cache
-            The cache for the engine.
-        clock : Clock
-            The clock for the engine.
-        logger : Logger
-            The logger for the engine.
-        config : DataEngineConfig, optional
-            The configuration for the instance.
-
-        """
         if config is None:
             config = DataEngineConfig()
         Condition.type(config, DataEngineConfig, "config")

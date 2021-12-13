@@ -89,3 +89,12 @@ cdef class CancelOrder(TradingCommand):
 
     @staticmethod
     cdef dict to_dict_c(CancelOrder obj)
+
+
+cdef class CancelAllOrders(TradingCommand):
+
+    @staticmethod
+    cdef CancelAllOrders from_dict_c(dict values)
+
+    @staticmethod
+    cdef dict to_dict_c(CancelAllOrders obj)

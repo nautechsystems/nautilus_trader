@@ -30,6 +30,15 @@ from nautilus_trader.core.correctness cimport Condition
 cdef class WebSocketClient:
     """
     Provides a low-level web socket base client.
+
+    Parameters
+    ----------
+    loop : asyncio.AbstractEventLoop
+        The event loop for the client.
+    logger : LoggerAdapter
+        The logger adapter for the client.
+    handler : Callable[[bytes], None]
+        The handler for receiving raw data.
     """
 
     def __init__(
@@ -39,19 +48,6 @@ cdef class WebSocketClient:
         handler not None: Callable[[bytes], None],
         max_retry_connection=0,
     ):
-        """
-        Initialize a new instance of the ``WebSocketClient`` class.
-
-        Parameters
-        ----------
-        loop : asyncio.AbstractEventLoop
-            The event loop for the client.
-        logger : LoggerAdapter
-            The logger adapter for the client.
-        handler : Callable[[bytes], None]
-            The handler for rece    ived raw data.
-
-        """
         self._loop = loop
         self._log = LoggerAdapter(component_name=type(self).__name__, logger=logger)
         self._handler = handler

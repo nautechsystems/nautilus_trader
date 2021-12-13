@@ -34,6 +34,19 @@ cdef class OrderBookData(Data):
     """
     The abstract base class for all `OrderBook` data.
 
+    Parameters
+    ----------
+    instrument_id : InstrumentId
+        The instrument ID for the book.
+    book_type : BookType {``L1_TBBO``, ``L2_MBP``, ``L3_MBO``}
+        The order book type.
+    update_id : uint64, default 0
+        The unique ID for the data.
+    ts_event: int64
+        The UNIX timestamp (nanoseconds) when the data event occurred.
+    ts_init: int64
+        The UNIX timestamp (nanoseconds) when the data object was initialized.
+
     Warnings
     --------
     This class should not be used directly, but through a concrete subclass.
@@ -47,23 +60,6 @@ cdef class OrderBookData(Data):
         int64_t ts_event,
         int64_t ts_init,
     ):
-        """
-        Initialize a new instance of the ``OrderBookData`` class.
-
-        Parameters
-        ----------
-        instrument_id : InstrumentId
-            The instrument ID for the book.
-        book_type : BookType {``L1_TBBO``, ``L2_MBP``, ``L3_MBO``}
-            The order book type.
-        update_id : uint64, default 0
-            The unique ID for the data.
-        ts_event: int64
-            The UNIX timestamp (nanoseconds) when the data event occurred.
-        ts_init: int64
-            The UNIX timestamp (nanoseconds) when the data object was initialized.
-
-        """
         super().__init__(ts_event, ts_init)
 
         self.instrument_id = instrument_id
@@ -74,6 +70,23 @@ cdef class OrderBookData(Data):
 cdef class OrderBookSnapshot(OrderBookData):
     """
     Represents a snapshot in time for an `OrderBook`.
+
+    Parameters
+    ----------
+    instrument_id : InstrumentId
+        The instrument ID for the book.
+    book_type : BookType {``L1_TBBO``, ``L2_MBP``, ``L3_MBO``}
+        The order book type.
+    bids : list
+        The bids for the snapshot.
+    asks : list
+        The asks for the snapshot.
+    ts_event: int64
+        The UNIX timestamp (nanoseconds) when the data event occurred.
+    ts_init: int64
+        The UNIX timestamp (nanoseconds) when the data object was initialized.
+    update_id : uint64, default 0
+        The unique ID for the data. If zero then order book will maintain ID internally.
     """
 
     def __init__(
@@ -86,27 +99,6 @@ cdef class OrderBookSnapshot(OrderBookData):
         int64_t ts_init,
         uint64_t update_id=0,
     ):
-        """
-        Initialize a new instance of the ``OrderBookSnapshot`` class.
-
-        Parameters
-        ----------
-        instrument_id : InstrumentId
-            The instrument ID for the book.
-        book_type : BookType {``L1_TBBO``, ``L2_MBP``, ``L3_MBO``}
-            The order book type.
-        bids : list
-            The bids for the snapshot.
-        asks : list
-            The asks for the snapshot.
-        ts_event: int64
-            The UNIX timestamp (nanoseconds) when the data event occurred.
-        ts_init: int64
-            The UNIX timestamp (nanoseconds) when the data object was initialized.
-        update_id : uint64, default 0
-            The unique ID for the data. If zero then order book will maintain ID internally.
-
-        """
         super().__init__(instrument_id, book_type, update_id, ts_event, ts_init)
 
         self.bids = bids
@@ -188,6 +180,21 @@ cdef class OrderBookSnapshot(OrderBookData):
 cdef class OrderBookDeltas(OrderBookData):
     """
     Represents bulk changes for an `OrderBook`.
+
+    Parameters
+    ----------
+    instrument_id : InstrumentId
+        The instrument ID for the book.
+    book_type : BookType {``L1_TBBO``, ``L2_MBP``, ``L3_MBO``}
+        The order book type.
+    deltas : list[OrderBookDelta]
+        The list of order book changes.
+    ts_event: int64
+        The UNIX timestamp (nanoseconds) when the data event occurred.
+    ts_init: int64
+        The UNIX timestamp (nanoseconds) when the data object was initialized.
+    update_id : uint64, default 0
+        The unique ID for the data. If zero then order book will maintain ID internally.
     """
 
     def __init__(
@@ -199,25 +206,6 @@ cdef class OrderBookDeltas(OrderBookData):
         int64_t ts_init,
         uint64_t update_id=0,
     ):
-        """
-        Initialize a new instance of the ``OrderBookDeltas`` class.
-
-        Parameters
-        ----------
-        instrument_id : InstrumentId
-            The instrument ID for the book.
-        book_type : BookType {``L1_TBBO``, ``L2_MBP``, ``L3_MBO``}
-            The order book type.
-        deltas : list[OrderBookDelta]
-            The list of order book changes.
-        ts_event: int64
-            The UNIX timestamp (nanoseconds) when the data event occurred.
-        ts_init: int64
-            The UNIX timestamp (nanoseconds) when the data object was initialized.
-        update_id : uint64, default 0
-            The unique ID for the data. If zero then order book will maintain ID internally.
-
-        """
         super().__init__(instrument_id, book_type, update_id, ts_event, ts_init)
 
         self.deltas = deltas
@@ -295,6 +283,23 @@ cdef class OrderBookDeltas(OrderBookData):
 cdef class OrderBookDelta(OrderBookData):
     """
     Represents a single difference on an `OrderBook`.
+
+    Parameters
+    ----------
+    instrument_id : InstrumentId
+        The instrument ID for the book.
+    book_type : BookType {``L1_TBBO``, ``L2_MBP``, ``L3_MBO``}
+        The order book type.
+    action : BookAction {``ADD``, ``UPDATED``, ``DELETE``, ``CLEAR``}
+        The order book delta action.
+    order : Order
+        The order to apply.
+    ts_event: int64
+        The UNIX timestamp (nanoseconds) when the data event occurred.
+    ts_init: int64
+        The UNIX timestamp (nanoseconds) when the data object was initialized.
+    update_id : uint64, default 0
+        The unique ID for the data. If zero then order book will maintain ID internally.
     """
 
     def __init__(
@@ -307,27 +312,6 @@ cdef class OrderBookDelta(OrderBookData):
         int64_t ts_init,
         uint64_t update_id=0,
     ):
-        """
-        Initialize a new instance of the ``OrderBookDelta`` class.
-
-        Parameters
-        ----------
-        instrument_id : InstrumentId
-            The instrument ID for the book.
-        book_type : BookType {``L1_TBBO``, ``L2_MBP``, ``L3_MBO``}
-            The order book type.
-        action : BookAction {``ADD``, ``UPDATED``, ``DELETE``, ``CLEAR``}
-            The order book delta action.
-        order : Order
-            The order to apply.
-        ts_event: int64
-            The UNIX timestamp (nanoseconds) when the data event occurred.
-        ts_init: int64
-            The UNIX timestamp (nanoseconds) when the data object was initialized.
-        update_id : uint64, default 0
-            The unique ID for the data. If zero then order book will maintain ID internally.
-
-        """
         super().__init__(instrument_id, book_type, update_id, ts_event, ts_init)
 
         self.action = action
@@ -419,6 +403,17 @@ cdef class OrderBookDelta(OrderBookData):
 cdef class Order:
     """
     Represents an order in a book.
+
+    Parameters
+    ----------
+    price : double
+        The order price.
+    size : double
+        The order size.
+    side : OrderSide
+        The order side.
+    id : str
+        The order ID.
     """
 
     def __init__(
@@ -428,21 +423,6 @@ cdef class Order:
         OrderSide side,
         str id=None,  # noqa (shadows built-in name)
     ):
-        """
-        Initialize a new instance of the ``Order`` class.
-
-        Parameters
-        ----------
-        price : double
-            The order price.
-        size : double
-            The order size.
-        side : OrderSide
-            The order side.
-        id : str
-            The order ID.
-
-        """
         self.price = price
         self.size = size
         self.side = side

@@ -23,6 +23,7 @@ from nautilus_trader.model.c_enums.liquidity_side cimport LiquiditySide
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
 from nautilus_trader.model.c_enums.order_type cimport OrderType
 from nautilus_trader.model.c_enums.venue_type cimport VenueType
+from nautilus_trader.model.commands.trading cimport CancelAllOrders
 from nautilus_trader.model.commands.trading cimport CancelOrder
 from nautilus_trader.model.commands.trading cimport ModifyOrder
 from nautilus_trader.model.commands.trading cimport SubmitOrder
@@ -59,6 +60,34 @@ cdef class ExecutionClient(Component):
     """
     The abstract base class for all execution clients.
 
+    Parameters
+    ----------
+    client_id : ClientId
+        The client ID.
+    venue_type : VenueType
+        The venue type for the client (determines venue -> client_id mapping).
+    account_id : AccountId
+        The account ID for the client.
+    account_type : AccountType
+        The account type for the client.
+    base_currency : Currency, optional
+        The account base currency. Use ``None`` for multi-currency accounts.
+    msgbus : MessageBus
+        The message bus for the client.
+    cache : Cache
+        The cache for the client.
+    clock : Clock
+        The clock for the client.
+    logger : Logger
+        The logger for the client.
+    config : dict[str, object], optional
+        The configuration for the instance.
+
+    Raises
+    ------
+    ValueError
+        If `client_id` is not equal to `account_id.issuer`.
+
     Warnings
     --------
     This class should not be used directly, but through a concrete subclass.
@@ -77,38 +106,6 @@ cdef class ExecutionClient(Component):
         Logger logger not None,
         dict config=None,
     ):
-        """
-        Initialize a new instance of the ``ExecutionClient`` class.
-
-        Parameters
-        ----------
-        client_id : ClientId
-            The client ID.
-        venue_type : VenueType
-            The venue type for the client (determines venue -> client_id mapping).
-        account_id : AccountId
-            The account ID for the client.
-        account_type : AccountType
-            The account type for the client.
-        base_currency : Currency, optional
-            The account base currency. Use ``None`` for multi-currency accounts.
-        msgbus : MessageBus
-            The message bus for the client.
-        cache : Cache
-            The cache for the client.
-        clock : Clock
-            The clock for the client.
-        logger : Logger
-            The logger for the client.
-        config : dict[str, object], optional
-            The configuration for the instance.
-
-        Raises
-        ------
-        ValueError
-            If `client_id` is not equal to `account_id.issuer`.
-
-        """
         Condition.equal(client_id.value, account_id.issuer, "client_id.value", "account_id.issuer")
 
         if config is None:
@@ -186,6 +183,10 @@ cdef class ExecutionClient(Component):
         raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
     cpdef void cancel_order(self, CancelOrder command) except *:
+        """Abstract method (implement in subclass)."""
+        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
+
+    cpdef void cancel_all_orders(self, CancelAllOrders command) except *:
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
