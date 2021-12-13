@@ -1,11 +1,13 @@
 # NautilusTrader 1.135.0 Beta - Release Notes
 
-Released TBD
+Released 13th, December 2021
 
 ## Breaking Changes
-None
+- Renamed `match_id` to `trade_id`.
 
 ## Enhancements
+- Added bars method to `DataCatalog`.
+- Improved parsing of Binance historical bars data.
 - Added `CancelAllOrders` command.
 - Added bulk cancel capability to Binance integration.
 - Added bulk cancel capability to Betfair integration.
@@ -13,6 +15,7 @@ None
 ## Fixes
 - Fixed handling of `cpu_freq` call in logging for ARM architecture.
 - Fixed market order fill edge case for bar data
+- Fixed handling of `GenericData` in backtests.
 
 ---
 
