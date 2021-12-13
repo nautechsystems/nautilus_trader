@@ -199,7 +199,7 @@ class TestLiveExecutionClient:
         )
 
         # Act
-        result = await self.client.reconcile_state(report, order)
+        result = self.client.reconcile_state(report, order)
 
         # Assert
         assert result
@@ -252,7 +252,7 @@ class TestLiveExecutionClient:
         )
 
         # Act
-        result = await self.client.reconcile_state(report, order)
+        result = self.client.reconcile_state(report, order)
 
         # Assert
         assert result
@@ -305,7 +305,7 @@ class TestLiveExecutionClient:
         )
 
         # Act
-        result = await self.client.reconcile_state(report, order)
+        result = self.client.reconcile_state(report, order)
 
         # Assert
         assert result
