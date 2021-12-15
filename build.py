@@ -130,7 +130,7 @@ def _copy_build_dir_to_project(cmd: build_ext) -> None:
     print("Copied all compiled '.so' dynamic library files into source")
 
 
-def build(setup_kwargs):
+def build() -> None:
     """Construct the extensions and distribution."""  # noqa
     # Create C Extensions to feed into cythonize()
     extensions = _build_extensions()
@@ -144,10 +144,9 @@ def build(setup_kwargs):
     cmd.ensure_finalized()
     cmd.run()
 
-    # Copy the build back into the project for packaging
-    _copy_build_dir_to_project(cmd)
-
-    return setup_kwargs
+    if not SKIP_BUILD_COPY:
+        # Copy the build back into the project for development and packaging
+        _copy_build_dir_to_project(cmd)
 
 
 if __name__ == "__main__":
@@ -156,7 +155,7 @@ if __name__ == "__main__":
     print("Nautilus Builder")
     print("=====================================================================\033[0m")
 
-    start_ts = datetime.utcnow()
+    ts_start = datetime.utcnow()
 
     # Work around a Cython problem in Python 3.8.x on macOS
     # https://github.com/cython/cython/issues/3262
@@ -190,6 +189,6 @@ if __name__ == "__main__":
     print(f"SKIP_BUILD_COPY={SKIP_BUILD_COPY}")
     print("")
 
-    build({})
-    print(f"Build time: {datetime.utcnow() - start_ts}")
+    build()
+    print(f"Build time: {datetime.utcnow() - ts_start}")
     print("\033[32m" + "Build completed" + "\033[0m")
