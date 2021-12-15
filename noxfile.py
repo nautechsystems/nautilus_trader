@@ -83,8 +83,6 @@ def _setup_poetry(session: Session, *args, **kwargs) -> None:
         # Ensure deterministic builds by disabling parallelism
         env["PARALLEL_BUILD"] = ""  # Empty string parsed as false
 
-    # Skip the build copy when using Nox
-    env["SKIP_BUILD_COPY"] = "true"
     kwargs["env"] = env
 
     # Install poetry, then install the project (with its dependencies)
