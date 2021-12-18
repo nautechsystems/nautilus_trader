@@ -31,7 +31,7 @@ class TestDataType:
         assert str(data_type) == "<str> {'type': 'NEWS_WIRE'}"
         assert repr(data_type) == "DataType(type=str, metadata={'type': 'NEWS_WIRE'})"
 
-    def test_data_equality_and_hash(self):
+    def test_data_type_equality_and_hash(self):
         # Arrange, Act
         data_type1 = DataType(str, {"type": "NEWS_WIRE", "topic": "Earthquake"})
         data_type2 = DataType(str, {"type": "NEWS_WIRE", "topic": "Flood"})
@@ -43,6 +43,18 @@ class TestDataType:
         assert data_type1 != data_type2
         assert data_type1 != data_type3
         assert isinstance(hash(data_type1), int)
+
+    def test_data_type_comparison(self):
+        # Arrange, Act
+        data_type1 = DataType(str, {"type": "NEWS_WIRE", "topic": "Earthquake"})
+        data_type2 = DataType(str, {"type": "NEWS_WIRE", "topic": "Flood"})
+        data_type3 = DataType(int, {"type": "FED_DATA", "topic": "NonFarmPayroll"})
+
+        # Assert
+        assert data_type1 <= data_type1
+        assert data_type1 < data_type2
+        assert data_type2 > data_type1
+        assert data_type1 >= data_type3
 
     def test_data_type_as_key_in_dict(self):
         # Arrange, Act
