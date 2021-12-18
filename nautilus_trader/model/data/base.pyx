@@ -50,6 +50,18 @@ cdef class DataType:
     def __eq__(self, DataType other) -> bool:
         return self.type == other.type and self._key == other._key  # noqa
 
+    def __lt__(self, DataType other) -> bool:
+        return str(self) < str(other)
+
+    def __le__(self, DataType other) -> bool:
+        return str(self) <= str(other)
+
+    def __gt__(self, DataType other) -> bool:
+        return str(self) > str(other)
+
+    def __ge__(self, DataType other) -> bool:
+        return str(self) >= str(other)
+
     def __hash__(self) -> int:
         return self._hash
 
