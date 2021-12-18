@@ -48,7 +48,7 @@ class BacktestResult:
     # def final_balances(self):
     #     return self.account_balances.groupby(["venue", "currency"])["total"].last()
     #
-    # def __repr__(self):
+    # def __repr__(self) -> str:
     #     def repr_balance():
     #         items = [
     #             (venue, currency, balance)
