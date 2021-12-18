@@ -62,12 +62,14 @@ cdef class OrderStatusReport:
         self.ts_init = ts_init
 
     def __repr__(self) -> str:
-        return (f"{type(self).__name__}("
-                f"client_order_id={self.client_order_id.value}, "
-                f"venue_order_id={self.venue_order_id}, "
-                f"order_status={OrderStatusParser.to_str(self.order_status)}, "
-                f"filled_qty={self.filled_qty}, "
-                f"ts_init={self.ts_init})")
+        return (
+            f"{type(self).__name__}("
+            f"client_order_id={self.client_order_id.value}, "
+            f"venue_order_id={self.venue_order_id}, "
+            f"order_status={OrderStatusParser.to_str(self.order_status)}, "
+            f"filled_qty={self.filled_qty}, "
+            f"ts_init={self.ts_init})"
+        )
 
 
 cdef class PositionStatusReport:
@@ -98,11 +100,13 @@ cdef class PositionStatusReport:
         self.ts_init = ts_init
 
     def __repr__(self) -> str:
-        return (f"{type(self).__name__}("
-                f"instrument_id={self.instrument_id}, "
-                f"side={PositionSideParser.to_str(self.side)}, "
-                f"qty={self.qty}, "
-                f"ts_init={self.ts_init})")
+        return (
+            f"{type(self).__name__}("
+            f"instrument_id={self.instrument_id}, "
+            f"side={PositionSideParser.to_str(self.side)}, "
+            f"qty={self.qty}, "
+            f"ts_init={self.ts_init})"
+        )
 
 
 cdef class ExecutionReport:
@@ -159,17 +163,19 @@ cdef class ExecutionReport:
         self.ts_init = ts_init
 
     def __repr__(self) -> str:
-        return (f"{type(self).__name__}("
-                f"client_order_id={self.client_order_id.value}, "
-                f"venue_order_id={self.venue_order_id}, "
-                f"venue_position_id={self.venue_position_id}, "
-                f"id={self.id.value}, "
-                f"last_qty={self.last_qty}, "
-                f"last_px={self.last_px}, "
-                f"commission={self.commission.to_str()}, "
-                f"liquidity_side={LiquiditySideParser.to_str(self.liquidity_side)}, "
-                f"ts_event={self.ts_event}, "
-                f"ts_init={self.ts_init})")
+        return (
+            f"{type(self).__name__}("
+            f"client_order_id={self.client_order_id.value}, "
+            f"venue_order_id={self.venue_order_id}, "
+            f"venue_position_id={self.venue_position_id}, "
+            f"id={self.id.value}, "
+            f"last_qty={self.last_qty}, "
+            f"last_px={self.last_px}, "
+            f"commission={self.commission.to_str()}, "
+            f"liquidity_side={LiquiditySideParser.to_str(self.liquidity_side)}, "
+            f"ts_event={self.ts_event}, "
+            f"ts_init={self.ts_init})"
+        )
 
 
 cdef class ExecutionMassStatus:
@@ -201,13 +207,15 @@ cdef class ExecutionMassStatus:
         self._position_reports = {}  # type: dict[InstrumentId, PositionStatusReport]
 
     def __repr__(self) -> str:
-        return (f"{type(self).__name__}("
-                f"client_id={self.client_id}, "
-                f"account_id={self.account_id}, "
-                f"order_reports={self._order_reports}, "
-                f"exec_reports={self._exec_reports}, "
-                f"position_reports={self._position_reports}, "
-                f"ts_init={self.ts_init})")
+        return (
+            f"{type(self).__name__}("
+            f"client_id={self.client_id}, "
+            f"account_id={self.account_id}, "
+            f"order_reports={self._order_reports}, "
+            f"exec_reports={self._exec_reports}, "
+            f"position_reports={self._position_reports}, "
+            f"ts_init={self.ts_init})"
+        )
 
     cpdef dict order_reports(self):
         """

@@ -56,9 +56,11 @@ cdef class Ticker(Data):
         return hash(self.instrument_id.value)
 
     def __repr__(self) -> str:
-        return (f"{type(self).__name__}"
-                f"(instrument_id={self.instrument_id.value}, "
-                f"ts_event={self.ts_event})")
+        return (
+            f"{type(self).__name__}"
+            f"(instrument_id={self.instrument_id.value}, "
+            f"ts_event={self.ts_event})"
+        )
 
     @staticmethod
     cdef Ticker from_dict_c(dict values):

@@ -84,7 +84,9 @@ cdef class Subscription:
         return hash((self.topic, str(self.handler)))
 
     def __repr__(self) -> str:
-        return (f"{type(self).__name__}("
-                f"topic={self.topic}, "
-                f"handler={self.handler}, "
-                f"priority={self.priority})")
+        return (
+            f"{type(self).__name__}("
+            f"topic={self.topic}, "
+            f"handler={self.handler}, "
+            f"priority={self.priority})"
+        )
