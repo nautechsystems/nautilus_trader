@@ -728,11 +728,18 @@ cdef class RiskEngine(Component):
     cdef void _execution_gateway(self, Instrument instrument, TradingCommand command, Order order) except *:
         # Check TradingState
         if self.trading_state == TradingState.HALTED:
-            self._deny_order_list(
-                order_list=command.list,
-                reason="TradingState.HALTED",
-            )
-            return  # Denied
+            if isinstance(command, SubmitOrder):
+                self._deny_command(
+                    command=command,
+                    reason=f"TradingState.HALTED",
+                )
+                return  # Denied
+            elif isinstance(command, SubmitOrderList):
+                self._deny_order_list(
+                    order_list=command.list,
+                    reason="TradingState.HALTED",
+                )
+                return  # Denied
         elif self.trading_state == TradingState.REDUCING:
             if order.is_buy_c() and self._portfolio.is_net_long(instrument.id):
                 self._deny_command(
