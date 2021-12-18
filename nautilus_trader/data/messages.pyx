@@ -57,10 +57,12 @@ cdef class DataCommand(Command):
         return f"{type(self).__name__}({self.data_type})"
 
     def __repr__(self) -> str:
-        return (f"{type(self).__name__}("
-                f"client_id={self.client_id.value}, "
-                f"data_type={self.data_type}, "
-                f"id={self.id})")
+        return (
+            f"{type(self).__name__}("
+            f"client_id={self.client_id.value}, "
+            f"data_type={self.data_type}, "
+            f"id={self.id})"
+        )
 
 
 cdef class Subscribe(DataCommand):
@@ -164,11 +166,13 @@ cdef class DataRequest(Request):
         return f"{type(self).__name__}({self.data_type})"
 
     def __repr__(self) -> str:
-        return (f"{type(self).__name__}("
-                f"client_id={self.client_id.value}, "
-                f"data_type={self.data_type}, "
-                f"callback={self.callback}, "
-                f"id={self.id})")
+        return (
+            f"{type(self).__name__}("
+            f"client_id={self.client_id.value}, "
+            f"data_type={self.data_type}, "
+            f"callback={self.callback}, "
+            f"id={self.id})"
+        )
 
 
 cdef class DataResponse(Response):
@@ -214,8 +218,10 @@ cdef class DataResponse(Response):
         return f"{type(self).__name__}({self.data_type})"
 
     def __repr__(self) -> str:
-        return (f"{type(self).__name__}("
-                f"client_id={self.client_id.value}, "
-                f"data_type={self.data_type}, "
-                f"correlation_id={self.correlation_id}, "
-                f"id={self.id})")
+        return (
+            f"{type(self).__name__}("
+            f"client_id={self.client_id.value}, "
+            f"data_type={self.data_type}, "
+            f"correlation_id={self.correlation_id}, "
+            f"id={self.id})"
+        )

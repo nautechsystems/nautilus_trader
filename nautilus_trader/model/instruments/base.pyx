@@ -227,24 +227,26 @@ cdef class Instrument(Data):
         return hash(self.id.value)
 
     def __repr__(self) -> str:  # TODO(cs): tick_scheme_name pending
-        return (f"{type(self).__name__}"
-                f"(id={self.id.value}, "
-                f"local_symbol={self.local_symbol}, "
-                f"asset_class={AssetClassParser.to_str(self.asset_class)}, "
-                f"asset_type={AssetTypeParser.to_str(self.asset_type)}, "
-                f"quote_currency={self.quote_currency}, "
-                f"is_inverse={self.is_inverse}, "
-                f"price_precision={self.price_precision}, "
-                f"price_increment={self.price_increment}, "
-                f"size_precision={self.size_precision}, "
-                f"size_increment={self.size_increment}, "
-                f"multiplier={self.multiplier}, "
-                f"lot_size={self.lot_size}, "
-                f"margin_init={self.margin_init}, "
-                f"margin_maint={self.margin_maint}, "
-                f"maker_fee={self.maker_fee}, "
-                f"taker_fee={self.taker_fee}, "
-                f"info={self.info})")
+        return (
+            f"{type(self).__name__}"
+            f"(id={self.id.value}, "
+            f"local_symbol={self.local_symbol}, "
+            f"asset_class={AssetClassParser.to_str(self.asset_class)}, "
+            f"asset_type={AssetTypeParser.to_str(self.asset_type)}, "
+            f"quote_currency={self.quote_currency}, "
+            f"is_inverse={self.is_inverse}, "
+            f"price_precision={self.price_precision}, "
+            f"price_increment={self.price_increment}, "
+            f"size_precision={self.size_precision}, "
+            f"size_increment={self.size_increment}, "
+            f"multiplier={self.multiplier}, "
+            f"lot_size={self.lot_size}, "
+            f"margin_init={self.margin_init}, "
+            f"margin_maint={self.margin_maint}, "
+            f"maker_fee={self.maker_fee}, "
+            f"taker_fee={self.taker_fee}, "
+            f"info={self.info})"
+        )
 
     @staticmethod
     cdef Instrument base_from_dict_c(dict values):

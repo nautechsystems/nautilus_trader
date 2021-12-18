@@ -169,12 +169,14 @@ cdef class Order:
         return hash(self.client_order_id.value)
 
     def __repr__(self) -> str:
-        return (f"{type(self).__name__}("
-                f"{self.info()}, "
-                f"status={self._fsm.state_string_c()}, "
-                f"client_order_id={self.client_order_id.value}, "
-                f"venue_order_id={self.venue_order_id}, "
-                f"tags={self.tags})")
+        return (
+            f"{type(self).__name__}("
+            f"{self.info()}, "
+            f"status={self._fsm.state_string_c()}, "
+            f"client_order_id={self.client_order_id.value}, "
+            f"venue_order_id={self.venue_order_id}, "
+            f"tags={self.tags})"
+        )
 
     cpdef str info(self):
         """
@@ -849,9 +851,11 @@ cdef class PassiveOrder(Order):
 
         """
         cdef str expire_time = "" if self.expire_time is None else f" {format_iso8601(self.expire_time)}"
-        return (f"{OrderSideParser.to_str(self.side)} {self.quantity.to_str()} {self.instrument_id} "
-                f"{OrderTypeParser.to_str(self.type)} @ {self.price} "
-                f"{TimeInForceParser.to_str(self.time_in_force)}{expire_time}")
+        return (
+            f"{OrderSideParser.to_str(self.side)} {self.quantity.to_str()} {self.instrument_id} "
+            f"{OrderTypeParser.to_str(self.type)} @ {self.price} "
+            f"{TimeInForceParser.to_str(self.time_in_force)}{expire_time}"
+        )
 
     cpdef dict to_dict(self):
         """
