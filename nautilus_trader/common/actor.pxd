@@ -88,8 +88,8 @@ cdef class Actor(Component):
         Logger logger,
     ) except *
 
-    cpdef void register_warning_event(self, type event)
-    cpdef void deregister_warning_event(self, type event)
+    cpdef void register_warning_event(self, type event) except *
+    cpdef void deregister_warning_event(self, type event) except *
 
 # -- SUBSCRIPTIONS ---------------------------------------------------------------------------------
 
