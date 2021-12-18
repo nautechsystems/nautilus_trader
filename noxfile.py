@@ -51,7 +51,7 @@ def performance_tests(session: Session) -> None:
 @nox.session
 def coverage(session: Session) -> None:
     """Run with test coverage."""
-    _setup_poetry(session, "--extras", ALL_EXTRAS, env={"PROFILING_MODE": "true"})
+    _setup_poetry(session, "--extras", ALL_EXTRAS, env={"DEBUG_MODE": "true"})
     _run_coverage(session)
 
 
