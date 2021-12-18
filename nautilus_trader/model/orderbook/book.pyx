@@ -838,7 +838,7 @@ cdef class L2OrderBook(OrderBook):
             if num_orders != 1:
                 raise BookIntegrityError(f"Number of orders on {level} != 1, was {num_orders}")
 
-    cdef void _process_order(self, Order order):
+    cdef void _process_order(self, Order order) except *:
         # Because a L2OrderBook only has one order per level, we replace the
         # order.id with a price level, which will let us easily process the
         # order in the base class.

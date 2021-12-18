@@ -23,10 +23,10 @@ from nautilus_trader.model.orderbook.book cimport L3OrderBook
 
 cdef class SimulatedL1OrderBook(L1OrderBook):
     cpdef void update_tick(self, Tick tick) except *
-    cdef void _update_quote_tick(self, QuoteTick tick)
-    cdef void _update_trade_tick(self, TradeTick tick)
-    cdef void _update_bid(self, double price, double size)
-    cdef void _update_ask(self, double price, double size)
+    cdef void _update_quote_tick(self, QuoteTick tick) except *
+    cdef void _update_trade_tick(self, TradeTick tick) except *
+    cdef void _update_bid(self, double price, double size) except *
+    cdef void _update_ask(self, double price, double size) except *
 
 
 cdef class SimulatedL2OrderBook(L2OrderBook):

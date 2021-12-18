@@ -40,7 +40,7 @@ cdef class BaseDecimal:
     providing a decimal.Context. The `BaseDecimal` type and its subclasses are
     also able to be used as operands for mathematical operations with `float`
     objects. Return values are floats if one of the operands is a float, else
-    a decimal.Decimal.
+    a `decimal.Decimal`.
 
     Parameters
     ----------

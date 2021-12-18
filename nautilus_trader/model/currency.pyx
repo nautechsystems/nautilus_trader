@@ -85,7 +85,7 @@ cdef class Currency:
         )
 
     @staticmethod
-    cdef void register_c(Currency currency, bint overwrite=False):
+    cdef void register_c(Currency currency, bint overwrite=False) except *:
         if not overwrite and currency.code in _CURRENCY_MAP:
             return
         _CURRENCY_MAP[currency.code] = currency
