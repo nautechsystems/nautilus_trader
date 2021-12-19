@@ -17,7 +17,7 @@ from nautilus_trader.model.currency cimport Currency
 from nautilus_trader.model.instruments.base cimport Instrument
 
 
-cdef class CryptoSwap(Instrument):
+cdef class CryptoPerpetual(Instrument):
     cdef readonly Currency base_currency
     """The base currency for the instrument.\n\n:returns: `Currency`"""
     cdef readonly Currency settlement_currency
@@ -26,7 +26,7 @@ cdef class CryptoSwap(Instrument):
     """If the instrument is quanto.\n\n:returns: `bool`"""
 
     @staticmethod
-    cdef CryptoSwap from_dict_c(dict values)
+    cdef CryptoPerpetual from_dict_c(dict values)
 
     @staticmethod
-    cdef dict to_dict_c(CryptoSwap obj)
+    cdef dict to_dict_c(CryptoPerpetual obj)

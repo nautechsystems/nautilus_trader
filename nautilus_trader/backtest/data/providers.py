@@ -41,7 +41,7 @@ from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.instruments.betting import BettingInstrument
-from nautilus_trader.model.instruments.crypto_swap import CryptoSwap
+from nautilus_trader.model.instruments.crypto_perp import CryptoPerpetual
 from nautilus_trader.model.instruments.currency import CurrencySpot
 from nautilus_trader.model.instruments.equity import Equity
 from nautilus_trader.model.instruments.future import Future
@@ -205,16 +205,16 @@ class TestInstrumentProvider:
         )
 
     @staticmethod
-    def xbtusd_bitmex() -> CryptoSwap:
+    def xbtusd_bitmex() -> CryptoPerpetual:
         """
         Return the BitMEX XBT/USD perpetual contract for backtesting.
 
         Returns
         -------
-        CryptoSwap
+        CryptoPerpetual
 
         """
-        return CryptoSwap(
+        return CryptoPerpetual(
             instrument_id=InstrumentId(
                 symbol=Symbol("BTC/USD"),
                 venue=Venue("BITMEX"),
@@ -243,16 +243,16 @@ class TestInstrumentProvider:
         )
 
     @staticmethod
-    def ethusd_bitmex() -> CryptoSwap:
+    def ethusd_bitmex() -> CryptoPerpetual:
         """
         Return the BitMEX ETH/USD perpetual swap contract for backtesting.
 
         Returns
         -------
-        CryptoSwap
+        CryptoPerpetual
 
         """
-        return CryptoSwap(
+        return CryptoPerpetual(
             instrument_id=InstrumentId(
                 symbol=Symbol("ETH/USD"),
                 venue=Venue("BITMEX"),
