@@ -1,3 +1,18 @@
+# NautilusTrader 1.136.0 Beta - Release Notes
+
+Released TBD
+
+## Breaking Changes
+- Renamed `CryptoSwap` to `CryptoPerpetual`.
+
+## Enhancements
+None
+
+## Fixes
+- Implemented comparisons for `DataType`, `BarSpecification` and `BarType`.
+
+---
+
 # NautilusTrader 1.135.0 Beta - Release Notes
 
 Released 13th, December 2021
