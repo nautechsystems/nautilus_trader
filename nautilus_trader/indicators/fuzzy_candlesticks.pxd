@@ -62,7 +62,7 @@ cdef class FuzzyCandlesticks(Indicator):
         double high,
         double low,
         double close,
-    )
+    ) except *
 
     cdef CandleDirection _fuzzify_direction(self, double open, double close)
     cdef CandleSize _fuzzify_size(self, double length, double mean_length, double sd_lengths)

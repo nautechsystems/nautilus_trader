@@ -172,12 +172,14 @@ cdef class StopLimitOrder(PassiveOrder):
 
     def __repr__(self) -> str:
         cdef str id_string = f", id={self.venue_order_id.value})" if self.venue_order_id is not None else ")"
-        return (f"{type(self).__name__}("
-                f"{self.info()}, "
-                f"trigger={self.trigger}, "
-                f"status={self._fsm.state_string_c()}, "
-                f"client_order_id={self.client_order_id.value}"
-                f"{id_string}")
+        return (
+            f"{type(self).__name__}("
+            f"{self.info()}, "
+            f"trigger={self.trigger}, "
+            f"status={self._fsm.state_string_c()}, "
+            f"client_order_id={self.client_order_id.value}"
+            f"{id_string}"
+        )
 
     cpdef dict to_dict(self):
         """

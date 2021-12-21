@@ -234,9 +234,11 @@ cdef class MarketOrder(Order):
         str
 
         """
-        return (f"{OrderSideParser.to_str(self.side)} {self.quantity.to_str()} {self.instrument_id} "
-                f"{OrderTypeParser.to_str(self.type)} "
-                f"{TimeInForceParser.to_str(self.time_in_force)}")
+        return (
+            f"{OrderSideParser.to_str(self.side)} {self.quantity.to_str()} {self.instrument_id} "
+            f"{OrderTypeParser.to_str(self.type)} "
+            f"{TimeInForceParser.to_str(self.time_in_force)}"
+        )
 
     cdef void _filled(self, OrderFilled fill) except *:
         self.venue_order_id = fill.venue_order_id

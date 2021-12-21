@@ -103,12 +103,14 @@ cdef class QuoteTick(Tick):
         return hash(frozenset(QuoteTick.to_dict_c(self)))
 
     def __str__(self) -> str:
-        return (f"{self.instrument_id},"
-                f"{self.bid},"
-                f"{self.ask},"
-                f"{self.bid_size},"
-                f"{self.ask_size},"
-                f"{self.ts_event}")
+        return (
+            f"{self.instrument_id},"
+            f"{self.bid},"
+            f"{self.ask},"
+            f"{self.bid_size},"
+            f"{self.ask_size},"
+            f"{self.ts_event}"
+        )
 
     def __repr__(self) -> str:
         return f"{type(self).__name__}({self})"
@@ -271,12 +273,14 @@ cdef class TradeTick(Tick):
         return hash(frozenset(TradeTick.to_dict_c(self)))
 
     def __str__(self) -> str:
-        return (f"{self.instrument_id},"
-                f"{self.price},"
-                f"{self.size},"
-                f"{AggressorSideParser.to_str(self.aggressor_side)},"
-                f"{self.trade_id},"
-                f"{self.ts_event}")
+        return (
+            f"{self.instrument_id},"
+            f"{self.price},"
+            f"{self.size},"
+            f"{AggressorSideParser.to_str(self.aggressor_side)},"
+            f"{self.trade_id},"
+            f"{self.ts_event}"
+        )
 
     def __repr__(self) -> str:
         return f"{type(self).__name__}({self})"

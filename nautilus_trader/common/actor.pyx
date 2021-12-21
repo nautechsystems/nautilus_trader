@@ -463,7 +463,7 @@ cdef class Actor(Component):
         self.cache = cache
         self.clock = self._clock
 
-    cpdef void register_warning_event(self, type event):
+    cpdef void register_warning_event(self, type event) except *:
         """
         Register the given event type for warning log levels.
 
@@ -479,7 +479,7 @@ cdef class Actor(Component):
 
         self._log.debug(f"Registered `{event.__name__}` for warning log levels.")
 
-    cpdef void deregister_warning_event(self, type event):
+    cpdef void deregister_warning_event(self, type event) except *:
         """
         Deregister the given event type from warning log levels.
 

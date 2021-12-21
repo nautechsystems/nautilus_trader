@@ -34,7 +34,7 @@ class BetfairAPIError(BetfairError):
         self.kind = ERROR_CODES.get(message, {}).get("kind")
         self.reason = ERROR_CODES.get(message, {}).get("reason")
 
-    def __str__(self):
+    def __str__(self) -> str:
         return f"BetfairAPIError(code='{self.code}', message='{self.message}', kind='{self.kind}', reason='{self.reason}')"
 
 

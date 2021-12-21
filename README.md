@@ -30,7 +30,7 @@ NautilusTrader is an open-source, high-performance, production-grade algorithmic
 providing quantitative traders with the ability to backtest portfolios of automated trading strategies
 on historical data with an event-driven engine, and also deploy those same strategies live.
 
-The platform is AI-first, designed to deploy models for algorithmic trading strategies developed
+The platform is 'AI-first', designed to deploy models for algorithmic trading strategies developed
 using the Python ecosystem - within a highly performant and robust Python native environment.
 This helps to address the challenge of keeping the research/backtest environment consistent with the production
 live trading environment.
