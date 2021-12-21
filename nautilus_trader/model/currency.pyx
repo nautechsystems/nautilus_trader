@@ -75,15 +75,17 @@ cdef class Currency:
         return self.code
 
     def __repr__(self) -> str:
-        return (f"{type(self).__name__}("
-                f"code={self.code}, "
-                f"name={self.name}, "
-                f"precision={self.precision}, "
-                f"iso4217={self.iso4217}, "
-                f"type={CurrencyTypeParser.to_str(self.currency_type)})")
+        return (
+            f"{type(self).__name__}("
+            f"code={self.code}, "
+            f"name={self.name}, "
+            f"precision={self.precision}, "
+            f"iso4217={self.iso4217}, "
+            f"type={CurrencyTypeParser.to_str(self.currency_type)})"
+        )
 
     @staticmethod
-    cdef void register_c(Currency currency, bint overwrite=False):
+    cdef void register_c(Currency currency, bint overwrite=False) except *:
         if not overwrite and currency.code in _CURRENCY_MAP:
             return
         _CURRENCY_MAP[currency.code] = currency

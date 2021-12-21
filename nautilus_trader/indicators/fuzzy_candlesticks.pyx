@@ -160,7 +160,7 @@ cdef class FuzzyCandlesticks(Indicator):
         double high,
         double low,
         double close,
-    ):
+    ) except *:
         """
         Update the indicator with the given raw values.
 

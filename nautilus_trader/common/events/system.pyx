@@ -70,23 +70,27 @@ cdef class ComponentStateChanged(Event):
         self.config = config
 
     def __str__(self) -> str:
-        return (f"{type(self).__name__}("
-                f"trader_id={self.trader_id.value}, "
-                f"component_id={self.component_id}, "
-                f"component_type={self.component_type}, "
-                f"state={ComponentStateParser.to_str(self.state)}, "
-                f"config={self.config}, "
-                f"event_id={self.id})")
+        return (
+            f"{type(self).__name__}("
+            f"trader_id={self.trader_id.value}, "
+            f"component_id={self.component_id}, "
+            f"component_type={self.component_type}, "
+            f"state={ComponentStateParser.to_str(self.state)}, "
+            f"config={self.config}, "
+            f"event_id={self.id})"
+        )
 
     def __repr__(self) -> str:
-        return (f"{type(self).__name__}("
-                f"trader_id={self.trader_id.value}, "
-                f"component_id={self.component_id}, "
-                f"component_type={self.component_type}, "
-                f"state={ComponentStateParser.to_str(self.state)}, "
-                f"config={self.config}, "
-                f"event_id={self.id}, "
-                f"ts_init={self.ts_init})")
+        return (
+            f"{type(self).__name__}("
+            f"trader_id={self.trader_id.value}, "
+            f"component_id={self.component_id}, "
+            f"component_type={self.component_type}, "
+            f"state={ComponentStateParser.to_str(self.state)}, "
+            f"config={self.config}, "
+            f"event_id={self.id}, "
+            f"ts_init={self.ts_init})"
+        )
 
     @staticmethod
     cdef ComponentStateChanged from_dict_c(dict values):

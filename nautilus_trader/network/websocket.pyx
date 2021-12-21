@@ -26,6 +26,8 @@ from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.common.logging cimport LoggerAdapter
 from nautilus_trader.core.correctness cimport Condition
 
+from nautilus_trader.network.error import MaxRetriesExceeded
+
 
 cdef class WebSocketClient:
     """
@@ -182,7 +184,3 @@ cdef class WebSocketClient:
         # Uses a bare 'yield' expression (which Task.__step knows how to handle)
         # instead of creating a Future object.
         yield
-
-
-class MaxRetriesExceeded(ConnectionError):
-    pass

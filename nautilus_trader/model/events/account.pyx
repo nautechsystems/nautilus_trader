@@ -76,13 +76,15 @@ cdef class AccountState(Event):
         self.info = info
 
     def __repr__(self) -> str:
-        return (f"{type(self).__name__}("
-                f"account_id={self.account_id.value}, "
-                f"account_type={AccountTypeParser.to_str(self.account_type)}, "
-                f"base_currency={self.base_currency}, "
-                f"is_reported={self.is_reported}, "
-                f"balances=[{', '.join([str(b) for b in self.balances])}], "
-                f"event_id={self.id})")
+        return (
+            f"{type(self).__name__}("
+            f"account_id={self.account_id.value}, "
+            f"account_type={AccountTypeParser.to_str(self.account_type)}, "
+            f"base_currency={self.base_currency}, "
+            f"is_reported={self.is_reported}, "
+            f"balances=[{', '.join([str(b) for b in self.balances])}], "
+            f"event_id={self.id})"
+        )
 
     @staticmethod
     cdef AccountState from_dict_c(dict values):

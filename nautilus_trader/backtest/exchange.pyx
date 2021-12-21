@@ -228,11 +228,13 @@ cdef class SimulatedExchange:
         self._inflight_counter = {}
 
     def __repr__(self) -> str:
-        return (f"{type(self).__name__}("
-                f"id={self.id}, "
-                f"venue_type={VenueTypeParser.to_str(self.venue_type)}, "
-                f"oms_type={OMSTypeParser.to_str(self.oms_type)}, "
-                f"account_type={AccountTypeParser.to_str(self.account_type)})")
+        return (
+            f"{type(self).__name__}("
+            f"id={self.id}, "
+            f"venue_type={VenueTypeParser.to_str(self.venue_type)}, "
+            f"oms_type={OMSTypeParser.to_str(self.oms_type)}, "
+            f"account_type={AccountTypeParser.to_str(self.account_type)})"
+        )
 
     cpdef Price best_bid_price(self, InstrumentId instrument_id):
         """

@@ -26,7 +26,7 @@ from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.currencies import USDT
 from nautilus_trader.model.enums import OptionKindParser
 from nautilus_trader.model.instruments.base import Instrument
-from nautilus_trader.model.instruments.crypto_swap import CryptoSwap
+from nautilus_trader.model.instruments.crypto_perp import CryptoPerpetual
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
@@ -151,12 +151,12 @@ class TestInstrument:
 
     def test_crypto_swap_instrument_to_dict(self):
         # Arrange, Act
-        result = CryptoSwap.to_dict(XBTUSD_BITMEX)
+        result = CryptoPerpetual.to_dict(XBTUSD_BITMEX)
 
         # Assert
-        assert CryptoSwap.from_dict(result) == XBTUSD_BITMEX
+        assert CryptoPerpetual.from_dict(result) == XBTUSD_BITMEX
         assert result == {
-            "type": "CryptoSwap",
+            "type": "CryptoPerpetual",
             "id": "BTC/USD.BITMEX",
             "local_symbol": "XBTUSD",
             "base_currency": "BTC",

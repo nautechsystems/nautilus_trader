@@ -48,6 +48,18 @@ class TestBarSpecification:
         assert bar_spec1 == bar_spec2
         assert bar_spec1 != bar_spec3
 
+    def test_bar_spec_comparison(self):
+        # Arrange
+        bar_spec1 = BarSpecification(1, BarAggregation.MINUTE, PriceType.BID)
+        bar_spec2 = BarSpecification(1, BarAggregation.MINUTE, PriceType.BID)
+        bar_spec3 = BarSpecification(1, BarAggregation.MINUTE, PriceType.ASK)
+
+        # Act, Assert
+        assert bar_spec1 <= bar_spec2
+        assert bar_spec3 < bar_spec1
+        assert bar_spec1 > bar_spec3
+        assert bar_spec1 >= bar_spec3
+
     def test_bar_spec_hash_str_and_repr(self):
         # Arrange
         bar_spec = BarSpecification(1, BarAggregation.MINUTE, PriceType.BID)
@@ -158,6 +170,21 @@ class TestBarType:
         assert bar_type1 == bar_type1
         assert bar_type1 == bar_type2
         assert bar_type1 != bar_type3
+
+    def test_bar_type_comparison(self):
+        # Arrange
+        instrument_id1 = InstrumentId(Symbol("AUD/USD"), Venue("SIM"))
+        instrument_id2 = InstrumentId(Symbol("GBP/USD"), Venue("SIM"))
+        bar_spec = BarSpecification(1, BarAggregation.MINUTE, PriceType.BID)
+        bar_type1 = BarType(instrument_id1, bar_spec)
+        bar_type2 = BarType(instrument_id1, bar_spec)
+        bar_type3 = BarType(instrument_id2, bar_spec)
+
+        # Act, Assert
+        assert bar_type1 <= bar_type2
+        assert bar_type1 < bar_type3
+        assert bar_type3 > bar_type1
+        assert bar_type3 >= bar_type1
 
     def test_bar_type_hash_str_and_repr(self):
         # Arrange

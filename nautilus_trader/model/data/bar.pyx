@@ -66,6 +66,18 @@ cdef class BarSpecification:
             and self.price_type == other.price_type
         )
 
+    def __lt__(self, BarSpecification other) -> bool:
+        return str(self) < str(other)
+
+    def __le__(self, BarSpecification other) -> bool:
+        return str(self) <= str(other)
+
+    def __gt__(self, BarSpecification other) -> bool:
+        return str(self) > str(other)
+
+    def __ge__(self, BarSpecification other) -> bool:
+        return str(self) >= str(other)
+
     def __hash__(self) -> int:
         return hash((self.step, self.aggregation, self.price_type))
 
@@ -303,6 +315,18 @@ cdef class BarType:
             and self.spec == other.spec
             and self.aggregation_source == other.aggregation_source
         )
+
+    def __lt__(self, BarType other) -> bool:
+        return str(self) < str(other)
+
+    def __le__(self, BarType other) -> bool:
+        return str(self) <= str(other)
+
+    def __gt__(self, BarType other) -> bool:
+        return str(self) > str(other)
+
+    def __ge__(self, BarType other) -> bool:
+        return str(self) >= str(other)
 
     def __hash__(self) -> int:
         return hash((self.instrument_id, self.spec))
