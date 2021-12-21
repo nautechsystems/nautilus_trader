@@ -177,7 +177,7 @@ class BacktestNode:
         writer = None
         if persistence is not None:
             catalog = persistence.as_catalog()
-            backtest_dir = f"{persistence.catalog_path.strip('/')}/backtest/"
+            backtest_dir = f"{persistence.catalog_path.rstrip('/')}/backtest/"
             if not catalog.fs.exists(backtest_dir):
                 catalog.fs.mkdir(backtest_dir)
             writer = FeatherWriter(
