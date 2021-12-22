@@ -651,12 +651,6 @@ cdef class TradingStrategy(Actor):
         Condition.not_none(order, "order")
         Condition.true(self.trader_id is not None, "The strategy has not been registered")
 
-        if order.venue_order_id is None:
-            self.log.error(
-                f"Cannot cancel order: no venue_order_id assigned yet, {order}.",
-            )
-            return  # Cannot send command
-
         if order.is_completed_c() or order.is_pending_cancel_c():
             self.log.warning(
                 f"Cannot cancel order: state is {order.status_string_c()}, {order}.",
