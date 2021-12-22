@@ -31,6 +31,20 @@ cdef class BarSpecification:
     """
     Represents a bar aggregation specification including a step, aggregation
     method/rule and price type.
+
+    Parameters
+    ----------
+    step : int
+        The step for binning samples for bar aggregation (> 0).
+    aggregation : BarAggregation
+        The type of bar aggregation.
+    price_type : PriceType
+        The price type to use for aggregation.
+
+    Raises
+    ------
+    ValueError
+        If `step` is not positive (> 0).
     """
 
     def __init__(
@@ -39,24 +53,6 @@ cdef class BarSpecification:
         BarAggregation aggregation,
         PriceType price_type,
     ):
-        """
-        Initialize a new instance of the ``BarSpecification`` class.
-
-        Parameters
-        ----------
-        step : int
-            The step for binning samples for bar aggregation (> 0).
-        aggregation : BarAggregation
-            The type of bar aggregation.
-        price_type : PriceType
-            The price type to use for aggregation.
-
-        Raises
-        ------
-        ValueError
-            If `step` is not positive (> 0).
-
-        """
         Condition.positive_int(step, 'step')
 
         self.step = step
@@ -69,6 +65,18 @@ cdef class BarSpecification:
             and self.aggregation == other.aggregation
             and self.price_type == other.price_type
         )
+
+    def __lt__(self, BarSpecification other) -> bool:
+        return str(self) < str(other)
+
+    def __le__(self, BarSpecification other) -> bool:
+        return str(self) <= str(other)
+
+    def __gt__(self, BarSpecification other) -> bool:
+        return str(self) > str(other)
+
+    def __ge__(self, BarSpecification other) -> bool:
+        return str(self) >= str(other)
 
     def __hash__(self) -> int:
         return hash((self.step, self.aggregation, self.price_type))
@@ -273,6 +281,18 @@ cdef class BarType:
     Represents a bar type including the instrument ID, bar specification and
     aggregation source.
 
+    Parameters
+    ----------
+    instrument_id : InstrumentId
+        The bar types instrument ID.
+    bar_spec : BarSpecification
+        The bar types specification.
+    aggregation_source : AggregationSource, default=EXTERNAL
+        The bar type aggregation source. If ``INTERNAL`` the `DataEngine`
+        will subscribe to the necessary ticks and aggregate bars accordingly.
+        Else if ``EXTERNAL`` then bars will be subscribed to directly from
+        the data publisher.
+
     Notes
     -----
     It is expected that all bar aggregation methods other than time will be
@@ -285,22 +305,6 @@ cdef class BarType:
         BarSpecification bar_spec not None,
         AggregationSource aggregation_source=AggregationSource.EXTERNAL,
     ):
-        """
-        Initialize a new instance of the ``BarType`` class.
-
-        Parameters
-        ----------
-        instrument_id : InstrumentId
-            The bar types instrument ID.
-        bar_spec : BarSpecification
-            The bar types specification.
-        aggregation_source : AggregationSource, default=EXTERNAL
-            The bar type aggregation source. If ``INTERNAL`` the `DataEngine`
-            will subscribe to the necessary ticks and aggregate bars accordingly.
-            Else if ``EXTERNAL`` then bars will be subscribed to directly from
-            the data publisher.
-
-        """
         self.instrument_id = instrument_id
         self.spec = bar_spec
         self.aggregation_source = aggregation_source
@@ -311,6 +315,18 @@ cdef class BarType:
             and self.spec == other.spec
             and self.aggregation_source == other.aggregation_source
         )
+
+    def __lt__(self, BarType other) -> bool:
+        return str(self) < str(other)
+
+    def __le__(self, BarType other) -> bool:
+        return str(self) <= str(other)
+
+    def __gt__(self, BarType other) -> bool:
+        return str(self) > str(other)
+
+    def __ge__(self, BarType other) -> bool:
+        return str(self) >= str(other)
 
     def __hash__(self) -> int:
         return hash((self.instrument_id, self.spec))
@@ -392,6 +408,36 @@ cdef class BarType:
 cdef class Bar(Data):
     """
     Represents an aggregated bar.
+
+    Parameters
+    ----------
+    bar_type : BarType
+        The bar type for this bar.
+    open : Price
+        The bars open price.
+    high : Price
+        The bars high price.
+    low : Price
+        The bars low price.
+    close : Price
+        The bars close price.
+    volume : Quantity
+        The bars volume.
+    ts_event : int64
+        The UNIX timestamp (nanoseconds) when the data event occurred.
+    ts_init: int64
+        The UNIX timestamp (nanoseconds) when the data object was initialized.
+    check : bool
+        If bar parameters should be checked valid.
+
+    Raises
+    ------
+    ValueError
+        If `check` True and the `high` is not >= `low`.
+    ValueError
+        If `check` True and the `high` is not >= `close`.
+    ValueError
+        If `check` True and the `low` is not <= `close`.
     """
 
     def __init__(
@@ -406,40 +452,6 @@ cdef class Bar(Data):
         int64_t ts_init,
         bint check=False,
     ):
-        """
-        Initialize a new instance of the ``Bar`` class.
-
-        Parameters
-        ----------
-        bar_type : BarType
-            The bar type for this bar.
-        open : Price
-            The bars open price.
-        high : Price
-            The bars high price.
-        low : Price
-            The bars low price.
-        close : Price
-            The bars close price.
-        volume : Quantity
-            The bars volume.
-        ts_event : int64
-            The UNIX timestamp (nanoseconds) when the data event occurred.
-        ts_init: int64
-            The UNIX timestamp (nanoseconds) when the data object was initialized.
-        check : bool
-            If bar parameters should be checked valid.
-
-        Raises
-        ------
-        ValueError
-            If `check` True and the `high` is not >= `low`.
-        ValueError
-            If `check` True and the `high` is not >= `close`.
-        ValueError
-            If `check` True and the `low` is not <= `close`.
-
-        """
         if check:
             Condition.true(high >= low, 'high was < low')
             Condition.true(high >= close, 'high was < close')

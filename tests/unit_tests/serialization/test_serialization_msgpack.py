@@ -18,6 +18,7 @@ from base64 import b64encode
 import msgpack
 import pytest
 
+from nautilus_trader.backtest.data.providers import TestInstrumentProvider
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.enums import ComponentState
 from nautilus_trader.common.events.system import ComponentStateChanged
@@ -72,7 +73,6 @@ from nautilus_trader.model.orders.stop_market import StopMarketOrder
 from nautilus_trader.model.orders.unpacker import OrderUnpacker
 from nautilus_trader.model.position import Position
 from nautilus_trader.serialization.msgpack.serializer import MsgPackSerializer
-from tests.test_kit.providers import TestInstrumentProvider
 from tests.test_kit.stubs import UNIX_EPOCH
 from tests.test_kit.stubs import TestStubs
 
@@ -161,6 +161,7 @@ class TestMsgPackSerializer:
             Quantity(100000, precision=0),
             Price(1.00000, precision=5),
             TimeInForce.DAY,
+            display_qty=Quantity(50000, precision=0),
         )
 
         # Act

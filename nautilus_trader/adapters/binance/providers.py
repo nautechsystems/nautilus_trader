@@ -16,14 +16,13 @@
 import asyncio
 import time
 from decimal import Decimal
-from typing import Dict
-
-import orjson
+from typing import Any, Dict, List
 
 from nautilus_trader.adapters.binance.common import BINANCE_VENUE
 from nautilus_trader.adapters.binance.http.api.spot_market import BinanceSpotMarketHttpAPI
 from nautilus_trader.adapters.binance.http.api.wallet import BinanceWalletHttpAPI
 from nautilus_trader.adapters.binance.http.client import BinanceHttpClient
+from nautilus_trader.adapters.binance.http.error import BinanceClientError
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.common.logging import LoggerAdapter
 from nautilus_trader.common.providers import InstrumentProvider
@@ -42,6 +41,13 @@ from nautilus_trader.model.objects import Quantity
 class BinanceInstrumentProvider(InstrumentProvider):
     """
     Provides a means of loading `Instrument` from the Binance API.
+
+    Parameters
+    ----------
+    client : APIClient
+        The client for the provider.
+    logger : Logger
+        The logger for the provider.
     """
 
     def __init__(
@@ -49,17 +55,6 @@ class BinanceInstrumentProvider(InstrumentProvider):
         client: BinanceHttpClient,
         logger: Logger,
     ):
-        """
-        Initialize a new instance of the ``BinanceInstrumentProvider`` class.
-
-        Parameters
-        ----------
-        client : APIClient
-            The client for the provider.
-        logger : Logger
-            The logger for the provider.
-
-        """
         super().__init__()
 
         self.venue = BINANCE_VENUE
@@ -102,16 +97,22 @@ class BinanceInstrumentProvider(InstrumentProvider):
         self._loading = True
 
         # Get current commission rates
-        raw: bytes = await self._wallet.trade_fee()
-        fees: Dict[str, Dict[str, str]] = {s["symbol"]: s for s in orjson.loads(raw)}
+        try:
+            fee_res: List[Dict[str, str]] = await self._wallet.trade_fee()
+            fees: Dict[str, Dict[str, str]] = {s["symbol"]: s for s in fee_res}
+        except BinanceClientError:
+            self._log.error(
+                "Cannot load instruments: API key authentication failed "
+                "(this is needed to fetch the applicable account fee tier).",
+            )
+            return
 
         # Get exchange info for all assets
-        raw = await self._spot_market.exchange_info()
-        response = orjson.loads(raw)
-        server_time_ns: int = millis_to_nanos(response["serverTime"])
+        assets_res: Dict[str, Any] = await self._spot_market.exchange_info()
+        server_time_ns: int = millis_to_nanos(assets_res["serverTime"])
 
-        for info in response["symbols"]:
-            native_symbol: str = info["symbol"]
+        for info in assets_res["symbols"]:
+            local_symbol = Symbol(info["symbol"])
 
             # Create base asset
             base_asset: str = info["baseAsset"]
@@ -133,8 +134,8 @@ class BinanceInstrumentProvider(InstrumentProvider):
                 currency_type=CurrencyType.CRYPTO,
             )
 
-            symbol = Symbol(base_currency.code + "/" + quote_currency.code)
-            instrument_id = InstrumentId(symbol=symbol, venue=BINANCE_VENUE)
+            # symbol = Symbol(base_currency.code + "/" + quote_currency.code)
+            instrument_id = InstrumentId(symbol=local_symbol, venue=BINANCE_VENUE)
 
             # Parse instrument filters
             symbol_filters = {f["filterType"]: f for f in info["filters"]}
@@ -157,7 +158,7 @@ class BinanceInstrumentProvider(InstrumentProvider):
                 min_notional = Money(min_notional_filter["minNotional"], currency=quote_currency)
             max_price = Price(float(price_filter["maxPrice"]), precision=price_precision)
             min_price = Price(float(price_filter["minPrice"]), precision=price_precision)
-            pair_fees = fees.get(native_symbol)
+            pair_fees = fees.get(local_symbol.value)
             maker_fee: Decimal = Decimal(0)
             taker_fee: Decimal = Decimal(0)
             if pair_fees:
@@ -167,6 +168,7 @@ class BinanceInstrumentProvider(InstrumentProvider):
             # Create instrument
             instrument = CurrencySpot(
                 instrument_id=instrument_id,
+                local_symbol=local_symbol,
                 base_currency=base_currency,
                 quote_currency=quote_currency,
                 price_precision=price_precision,

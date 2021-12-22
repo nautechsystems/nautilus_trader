@@ -46,6 +46,40 @@ from nautilus_trader.analysis.reports import ReportProvider
 cdef class Trader(Component):
     """
     Provides a trader for managing a portfolio of trading strategies.
+
+    Parameters
+    ----------
+    trader_id : TraderId
+        The ID for the trader.
+    msgbus : MessageBus
+        The message bus for the trader.
+    cache : Cache
+        The cache for the trader.
+    portfolio : Portfolio
+        The portfolio for the trader.
+    data_engine : DataEngine
+        The data engine for the trader.
+    risk_engine : RiskEngine
+        The risk engine for the trader.
+    exec_engine : ExecutionEngine
+        The execution engine for the trader.
+    clock : Clock
+        The clock for the trader.
+    logger : Logger
+        The logger for the trader.
+    config : dict[str, Any]
+        The configuration for the trader.
+
+    Raises
+    ------
+    ValueError
+        If `portfolio` is not equal to the `exec_engine` portfolio.
+    ValueError
+        If `strategies` is ``None``.
+    ValueError
+        If `strategies` is empty.
+    TypeError
+        If `strategies` contains a type other than `TradingStrategy`.
     """
 
     def __init__(
@@ -61,44 +95,6 @@ cdef class Trader(Component):
         Logger logger not None,
         dict config=None,
     ):
-        """
-        Initialize a new instance of the ``Trader`` class.
-
-        Parameters
-        ----------
-        trader_id : TraderId
-            The ID for the trader.
-        msgbus : MessageBus
-            The message bus for the trader.
-        cache : Cache
-            The cache for the trader.
-        portfolio : Portfolio
-            The portfolio for the trader.
-        data_engine : DataEngine
-            The data engine for the trader.
-        risk_engine : RiskEngine
-            The risk engine for the trader.
-        exec_engine : ExecutionEngine
-            The execution engine for the trader.
-        clock : Clock
-            The clock for the trader.
-        logger : Logger
-            The logger for the trader.
-        config : dict[str, Any]
-            The configuration for the trader.
-
-        Raises
-        ------
-        ValueError
-            If `portfolio` is not equal to the `exec_engine` portfolio.
-        ValueError
-            If `strategies` is ``None``.
-        ValueError
-            If `strategies` is empty.
-        TypeError
-            If `strategies` contains a type other than `TradingStrategy`.
-
-        """
         if config is None:
             config = {}
         super().__init__(
@@ -115,27 +111,27 @@ cdef class Trader(Component):
         self._risk_engine = risk_engine
         self._exec_engine = exec_engine
 
-        self._components = []
+        self._actors = []
         self._strategies = []
 
         self.analyzer = PerformanceAnalyzer()
 
-    cdef list components_c(self):
-        return self._components
+    cdef list actors_c(self):
+        return self._actors
 
     cdef list strategies_c(self):
         return self._strategies
 
-    cpdef list component_ids(self):
+    cpdef list actor_ids(self):
         """
-        Return the custom component IDs loaded in the trader.
+        Return the actor IDs loaded in the trader.
 
         Returns
         -------
         list[ComponentId]
 
         """
-        return sorted([component.id for component in self._components])
+        return sorted([actor.id for actor in self._actors])
 
     cpdef list strategy_ids(self):
         """
@@ -148,21 +144,17 @@ cdef class Trader(Component):
         """
         return sorted([strategy.id for strategy in self._strategies])
 
-    cpdef dict component_states(self):
+    cpdef dict actor_states(self):
         """
-        Return the traders custom component states.
+        Return the traders actor states.
 
         Returns
         -------
         dict[ComponentId, str]
 
         """
-        cdef dict states = {}
-        cdef Actor component
-        for component in self._components:
-            states[component.id] = component.state_string_c()
-
-        return states
+        cdef Actor a
+        return {a.id: a.state_string_c() for a in self._actors}
 
     cpdef dict strategy_states(self):
         """
@@ -173,12 +165,8 @@ cdef class Trader(Component):
         dict[StrategyId, str]
 
         """
-        cdef dict states = {}
-        cdef TradingStrategy strategy
-        for strategy in self._strategies:
-            states[strategy.id] = strategy.state_string_c()
-
-        return states
+        cdef TradingStrategy s
+        return {s.id: s.state_string_c() for s in self._strategies}
 
 # -- ACTION IMPLEMENTATIONS ------------------------------------------------------------------------
 
@@ -187,21 +175,21 @@ cdef class Trader(Component):
             self._log.error(f"No strategies loaded.")
             return
 
-        cdef Actor component
-        for component in self._components:
-            component.start()
+        cdef Actor actor
+        for actor in self._actors:
+            actor.start()
 
         cdef TradingStrategy strategy
         for strategy in self._strategies:
             strategy.start()
 
     cpdef void _stop(self) except *:
-        cdef Actor component
-        for component in self._components:
-            if component.is_running_c():
-                component.stop()
+        cdef Actor actor
+        for actor in self._actors:
+            if actor.is_running_c():
+                actor.stop()
             else:
-                self._log.warning(f"{component} already stopped.")
+                self._log.warning(f"{actor} already stopped.")
 
         cdef TradingStrategy strategy
         for strategy in self._strategies:
@@ -211,9 +199,9 @@ cdef class Trader(Component):
                 self._log.warning(f"{strategy} already stopped.")
 
     cpdef void _reset(self) except *:
-        cdef Actor component
-        for component in self._components:
-            component.reset()
+        cdef Actor actor
+        for actor in self._actors:
+            actor.reset()
 
         cdef TradingStrategy strategy
         for strategy in self._strategies:
@@ -223,9 +211,9 @@ cdef class Trader(Component):
         self.analyzer.reset()
 
     cpdef void _dispose(self) except *:
-        cdef Actor component
-        for component in self._components:
-            component.dispose()
+        cdef Actor actor
+        for actor in self._actors:
+            actor.dispose()
 
         cdef TradingStrategy strategy
         for strategy in self._strategies:
@@ -295,14 +283,14 @@ cdef class Trader(Component):
         for strategy in strategies:
             self.add_strategy(strategy)
 
-    cpdef void add_component(self, Actor component) except *:
+    cpdef void add_actor(self, Actor actor) except *:
         """
         Add the given custom component to the trader.
 
         Parameters
         ----------
-        component : Actor
-            The custom component to add and register.
+        actor : Actor
+            The actor to add and register.
 
         Raises
         ------
@@ -312,16 +300,16 @@ cdef class Trader(Component):
             If `component.state` is ``RUNNING`` or ``DISPOSED``.
 
         """
-        Condition.not_in(component, self._components, "component", "components")
-        Condition.true(not component.is_running_c(), "strategy.state was RUNNING")
-        Condition.true(not component.is_disposed_c(), "strategy.state was DISPOSED")
+        Condition.not_in(actor, self._actors, "actor", "actors")
+        Condition.true(not actor.is_running_c(), "actor.state was RUNNING")
+        Condition.true(not actor.is_disposed_c(), "actor.state was DISPOSED")
 
         if self.is_running_c():
             self._log.error("Cannot add component to a running trader.")
             return
 
         # Wire component into trader
-        component.register_base(
+        actor.register_base(
             trader_id=self.id,
             msgbus=self._msgbus,
             cache=self._cache,
@@ -329,30 +317,30 @@ cdef class Trader(Component):
             logger=self._log.get_logger(),
         )
 
-        self._components.append(component)
+        self._actors.append(actor)
 
-        self._log.info(f"Registered Component {component}.")
+        self._log.info(f"Registered Component {actor}.")
 
-    cpdef void add_components(self, list components: [Actor]) except *:
+    cpdef void add_actors(self, list actors: [Actor]) except *:
         """
-        Add the given custom components to the trader.
+        Add the given actors to the trader.
 
         Parameters
         ----------
-        components : list[TradingStrategies]
-            The custom components to add and register.
+        actors : list[TradingStrategies]
+            The actors to add and register.
 
         Raises
         ------
         ValueError
-            If `components` is ``None`` or empty.
+            If `actors` is ``None`` or empty.
 
         """
-        Condition.not_empty(components, "components")
+        Condition.not_empty(actors, "actors")
 
-        cdef Actor component
-        for component in components:
-            self.add_component(component)
+        cdef Actor actor
+        for actor in actors:
+            self.add_actor(actor)
 
     cpdef void clear_strategies(self) except *:
         """
@@ -373,9 +361,9 @@ cdef class Trader(Component):
 
         self._strategies.clear()
 
-    cpdef void clear_components(self) except *:
+    cpdef void clear_actors(self) except *:
         """
-        Dispose and clear all custom components held by the trader.
+        Dispose and clear all actors held by the trader.
 
         Raises
         ------
@@ -384,13 +372,13 @@ cdef class Trader(Component):
 
         """
         if self.is_running_c():
-            self._log.error("Cannot clear the components of a running trader.")
+            self._log.error("Cannot clear the actors of a running trader.")
             return
 
-        for component in self._components:
-            component.dispose()
+        for actor in self._actors:
+            actor.dispose()
 
-        self._components.clear()
+        self._actors.clear()
 
     cpdef void subscribe(self, str topic, handler: Callable[[Any], None]) except *:
         """

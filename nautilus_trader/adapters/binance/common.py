@@ -17,3 +17,7 @@ from nautilus_trader.model.identifiers import Venue
 
 
 BINANCE_VENUE = Venue("BINANCE")
+
+
+def format_symbol(symbol: str):
+    return symbol.lower().replace("/", "")

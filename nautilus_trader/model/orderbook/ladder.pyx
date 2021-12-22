@@ -29,33 +29,30 @@ from nautilus_trader.model.orderbook.level cimport Level
 cdef class Ladder:
     """
     Represents a ladder of orders in a book.
+
+    Parameters
+    ----------
+    reverse : bool
+        If the ladder should be represented in reverse order of price (bids).
+    price_precision : uint8
+        The price precision of the books orders.
+    size_precision : uint8
+        The size precision of the books orders.
+
+    Raises
+    ------
+    OverflowError
+        If `price_precision` is negative (< 0).
+    OverflowError
+        If `size_precision` is negative (< 0).
     """
+
     def __init__(
         self,
         bint reverse,
         uint8_t price_precision,
         uint8_t size_precision,
     ):
-        """
-        Initialize a new instance of the ``Ladder`` class.
-
-        Parameters
-        ----------
-        reverse : bool
-            If the ladder should be represented in reverse order of price (bids).
-        price_precision : uint8
-            The price precision of the books orders.
-        size_precision : uint8
-            The size precision of the books orders.
-
-        Raises
-        ------
-        OverflowError
-            If `price_precision` is negative (< 0).
-        OverflowError
-            If `size_precision` is negative (< 0).
-
-        """
         Condition.not_negative_int(price_precision, "price_precision")
         Condition.not_negative_int(size_precision, "size_precision")
 

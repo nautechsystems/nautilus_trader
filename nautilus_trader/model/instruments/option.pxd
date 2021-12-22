@@ -15,6 +15,7 @@
 
 from cpython.datetime cimport date
 
+from nautilus_trader.model.c_enums.option_kind cimport OptionKind
 from nautilus_trader.model.instruments.base cimport Instrument
 from nautilus_trader.model.objects cimport Price
 
@@ -23,6 +24,7 @@ cdef class Option(Instrument):
     cdef readonly str underlying
     cdef readonly date expiry_date
     cdef readonly Price strike_price
+    cdef readonly OptionKind kind
 
     @staticmethod
     cdef Option from_dict_c(dict values)

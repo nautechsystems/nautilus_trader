@@ -17,26 +17,28 @@ from decimal import Decimal
 
 import pytest
 
+from nautilus_trader.backtest.data.providers import TestDataProvider
+from nautilus_trader.backtest.data.providers import TestInstrumentProvider
 from nautilus_trader.model.currencies import AUD
 from nautilus_trader.model.currencies import BTC
 from nautilus_trader.model.currencies import ETH
 from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.currencies import USDT
+from nautilus_trader.model.enums import OptionKindParser
 from nautilus_trader.model.instruments.base import Instrument
-from nautilus_trader.model.instruments.crypto_swap import CryptoSwap
+from nautilus_trader.model.instruments.crypto_perp import CryptoPerpetual
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from tests.integration_tests.adapters.betfair.test_kit import BetfairTestStubs
-from tests.test_kit.providers import TestDataProvider
-from tests.test_kit.providers import TestInstrumentProvider
 
+
+provider = TestDataProvider()
 
 AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy("AUD/USD")
 USDJPY_SIM = TestInstrumentProvider.default_fx_ccy("USD/JPY")
 XBTUSD_BITMEX = TestInstrumentProvider.xbtusd_bitmex()
 BTCUSDT_BINANCE = TestInstrumentProvider.btcusdt_binance()
-BTCUSDT_BINANCE_INSTRUMENT = TestDataProvider.binance_btcusdt_instrument()
 ETHUSD_BITMEX = TestInstrumentProvider.ethusd_bitmex()
 AAPL_EQUITY = TestInstrumentProvider.aapl_equity()
 ES_FUTURE = TestInstrumentProvider.es_future()
@@ -63,8 +65,9 @@ class TestInstrument:
 
     def test_str_repr_returns_expected(self):
         # Arrange, Act, Assert
-        assert str(BTCUSDT_BINANCE) == BTCUSDT_BINANCE_INSTRUMENT
-        assert repr(BTCUSDT_BINANCE) == BTCUSDT_BINANCE_INSTRUMENT
+        expected = provider.read("binance-btcusdt-instrument-repr.txt").decode()
+        assert str(BTCUSDT_BINANCE) == expected
+        assert repr(BTCUSDT_BINANCE) == expected
 
     def test_hash(self):
         # Arrange, Act, Assert
@@ -83,6 +86,7 @@ class TestInstrument:
         assert result == {
             "type": "Instrument",
             "id": "BTC/USDT.BINANCE",
+            "local_symbol": "BTCUSDT",
             "asset_class": "CRYPTO",
             "asset_type": "SPOT",
             "quote_currency": "USDT",
@@ -113,6 +117,7 @@ class TestInstrument:
         values = {
             "type": "Instrument",
             "id": "BTC/USDT.BINANCE",
+            "local_symbol": "BTCUSDT",
             "asset_class": "CRYPTO",
             "asset_type": "SPOT",
             "quote_currency": "USDT",
@@ -146,13 +151,14 @@ class TestInstrument:
 
     def test_crypto_swap_instrument_to_dict(self):
         # Arrange, Act
-        result = CryptoSwap.to_dict(XBTUSD_BITMEX)
+        result = CryptoPerpetual.to_dict(XBTUSD_BITMEX)
 
         # Assert
-        assert CryptoSwap.from_dict(result) == XBTUSD_BITMEX
+        assert CryptoPerpetual.from_dict(result) == XBTUSD_BITMEX
         assert result == {
-            "type": "CryptoSwap",
-            "id": "XBT/USD.BITMEX",
+            "type": "CryptoPerpetual",
+            "id": "BTC/USD.BITMEX",
+            "local_symbol": "XBTUSD",
             "base_currency": "BTC",
             "quote_currency": "USD",
             "settlement_currency": "BTC",
@@ -313,6 +319,10 @@ class TestInstrument:
         result = instrument.next_bid_price(value, n=n)
         expected = Price.from_str(expected)
         assert result == expected
+
+    def test_option_attributes(self):
+        assert AAPL_OPTION.underlying == "AAPL"
+        assert AAPL_OPTION.kind == OptionKindParser.from_str_py("CALL")
 
 
 class TestBettingInstrument:

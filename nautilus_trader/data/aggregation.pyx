@@ -43,6 +43,18 @@ from nautilus_trader.model.objects cimport Quantity
 cdef class BarBuilder:
     """
     Provides a generic bar builder for aggregation.
+
+    Parameters
+    ----------
+    instrument : Instrument
+        The instrument for the builder.
+    bar_type : BarType
+        The bar type for the builder.
+
+    Raises
+    ------
+    ValueError
+        If `instrument.id` != `bar_type.instrument_id`.
     """
 
     def __init__(
@@ -50,22 +62,6 @@ cdef class BarBuilder:
         Instrument instrument not None,
         BarType bar_type not None,
     ):
-        """
-        Initialize a new instance of the ``BarBuilder`` class.
-
-        Parameters
-        ----------
-        instrument : Instrument
-            The instrument for the builder.
-        bar_type : BarType
-            The bar type for the builder.
-
-        Raises
-        ------
-        ValueError
-            If `instrument.id` != `bar_type.instrument_id`.
-
-        """
         Condition.equal(instrument.id, bar_type.instrument_id, "instrument.id", "bar_type.instrument_id")
 
         self._bar_type = bar_type
@@ -85,13 +81,15 @@ cdef class BarBuilder:
         self.volume = Decimal(0)
 
     def __repr__(self) -> str:
-        return (f"{type(self).__name__}("
-                f"{self._bar_type},"
-                f"{self._open},"
-                f"{self._high},"
-                f"{self._low},"
-                f"{self._close},"
-                f"{self.volume})")
+        return (
+            f"{type(self).__name__}("
+            f"{self._bar_type},"
+            f"{self._open},"
+            f"{self._high},"
+            f"{self._low},"
+            f"{self._close},"
+            f"{self.volume})"
+        )
 
     cpdef void set_partial(self, Bar partial_bar) except *:
         """
@@ -227,6 +225,22 @@ cdef class BarBuilder:
 cdef class BarAggregator:
     """
     Provides a means of aggregating specified bars and sending to a registered handler.
+
+    Parameters
+    ----------
+    instrument : Instrument
+        The instrument for the aggregator.
+    bar_type : BarType
+        The bar type for the aggregator.
+    handler : Callable[[Bar], None]
+        The bar handler for the aggregator.
+    logger : Logger
+        The logger for the aggregator.
+
+    Raises
+    ------
+    ValueError
+        If `instrument.id` != `bar_type.instrument_id`.
     """
 
     def __init__(
@@ -236,26 +250,6 @@ cdef class BarAggregator:
         handler not None: Callable[[Bar], None],
         Logger logger not None,
     ):
-        """
-        Initialize a new instance of the ``BarAggregator`` class.
-
-        Parameters
-        ----------
-        instrument : Instrument
-            The instrument for the aggregator.
-        bar_type : BarType
-            The bar type for the aggregator.
-        handler : Callable[[Bar], None]
-            The bar handler for the aggregator.
-        logger : Logger
-            The logger for the aggregator.
-
-        Raises
-        ------
-        ValueError
-            If `instrument.id` != `bar_type.instrument_id`.
-
-        """
         Condition.equal(instrument.id, bar_type.instrument_id, "instrument.id", "bar_type.instrument_id")
 
         self.bar_type = bar_type
@@ -323,6 +317,22 @@ cdef class TickBarAggregator(BarAggregator):
 
     When received tick count reaches the step threshold of the bar
     specification, then a bar is created and sent to the handler.
+
+    Parameters
+    ----------
+    instrument : Instrument
+        The instrument for the aggregator.
+    bar_type : BarType
+        The bar type for the aggregator.
+    handler : Callable[[Bar], None]
+        The bar handler for the aggregator.
+    logger : Logger
+        The logger for the aggregator.
+
+    Raises
+    ------
+    ValueError
+        If `instrument.id` != `bar_type.instrument_id`.
     """
 
     def __init__(
@@ -332,26 +342,6 @@ cdef class TickBarAggregator(BarAggregator):
         handler not None: Callable[[Bar], None],
         Logger logger not None,
     ):
-        """
-        Initialize a new instance of the ``TickBarAggregator`` class.
-
-        Parameters
-        ----------
-        instrument : Instrument
-            The instrument for the aggregator.
-        bar_type : BarType
-            The bar type for the aggregator.
-        handler : Callable[[Bar], None]
-            The bar handler for the aggregator.
-        logger : Logger
-            The logger for the aggregator.
-
-        Raises
-        ------
-        ValueError
-            If `instrument.id` != `bar_type.instrument_id`.
-
-        """
         super().__init__(
             instrument=instrument,
             bar_type=bar_type,
@@ -372,6 +362,22 @@ cdef class VolumeBarAggregator(BarAggregator):
 
     When received volume reaches the step threshold of the bar
     specification, then a bar is created and sent to the handler.
+
+    Parameters
+    ----------
+    instrument : Instrument
+        The instrument for the aggregator.
+    bar_type : BarType
+        The bar type for the aggregator.
+    handler : Callable[[Bar], None]
+        The bar handler for the aggregator.
+    logger : Logger
+        The logger for the aggregator.
+
+    Raises
+    ------
+    ValueError
+        If `instrument.id` != `bar_type.instrument_id`.
     """
 
     def __init__(
@@ -381,26 +387,6 @@ cdef class VolumeBarAggregator(BarAggregator):
         handler not None: Callable[[Bar], None],
         Logger logger not None,
     ):
-        """
-        Initialize a new instance of the ``TickBarAggregator`` class.
-
-        Parameters
-        ----------
-        instrument : Instrument
-            The instrument for the aggregator.
-        bar_type : BarType
-            The bar type for the aggregator.
-        handler : Callable[[Bar], None]
-            The bar handler for the aggregator.
-        logger : Logger
-            The logger for the aggregator.
-
-        Raises
-        ------
-        ValueError
-            If `instrument.id` != `bar_type.instrument_id`.
-
-        """
         super().__init__(
             instrument=instrument,
             bar_type=bar_type,
@@ -443,6 +429,22 @@ cdef class ValueBarAggregator(BarAggregator):
 
     When received value reaches the step threshold of the bar
     specification, then a bar is created and sent to the handler.
+
+    Parameters
+    ----------
+    instrument : Instrument
+        The instrument for the aggregator.
+    bar_type : BarType
+        The bar type for the aggregator.
+    handler : Callable[[Bar], None]
+        The bar handler for the aggregator.
+    logger : Logger
+        The logger for the aggregator.
+
+    Raises
+    ------
+    ValueError
+        If `instrument.id` != `bar_type.instrument_id`.
     """
 
     def __init__(
@@ -452,26 +454,6 @@ cdef class ValueBarAggregator(BarAggregator):
         handler not None: Callable[[Bar], None],
         Logger logger not None,
     ):
-        """
-        Initialize a new instance of the ``TickBarAggregator`` class.
-
-        Parameters
-        ----------
-        instrument : Instrument
-            The instrument for the aggregator.
-        bar_type : BarType
-            The bar type for the aggregator.
-        handler : Callable[[Bar], None]
-            The bar handler for the aggregator.
-        logger : Logger
-            The logger for the aggregator.
-
-        Raises
-        ------
-        ValueError
-            If `instrument.id` != `bar_type.instrument_id`.
-
-        """
         super().__init__(
             instrument=instrument,
             bar_type=bar_type,
@@ -531,6 +513,24 @@ cdef class TimeBarAggregator(BarAggregator):
 
     When the time reaches the next time interval of the bar specification, then
     a bar is created and sent to the handler.
+
+    Parameters
+    ----------
+    instrument : Instrument
+        The instrument for the aggregator.
+    bar_type : BarType
+        The bar type for the aggregator.
+    handler : Callable[[Bar], None]
+        The bar handler for the aggregator.
+    clock : Clock
+        The clock for the aggregator.
+    logger : Logger
+        The logger for the aggregator.
+
+    Raises
+    ------
+    ValueError
+        If `instrument.id` != `bar_type.instrument_id`.
     """
     def __init__(
         self,
@@ -540,28 +540,6 @@ cdef class TimeBarAggregator(BarAggregator):
         Clock clock not None,
         Logger logger not None,
     ):
-        """
-        Initialize a new instance of the ``TimeBarAggregator`` class.
-
-        Parameters
-        ----------
-        instrument : Instrument
-            The instrument for the aggregator.
-        bar_type : BarType
-            The bar type for the aggregator.
-        handler : Callable[[Bar], None]
-            The bar handler for the aggregator.
-        clock : Clock
-            The clock for the aggregator.
-        logger : Logger
-            The logger for the aggregator.
-
-        Raises
-        ------
-        ValueError
-            If `instrument.id` != `bar_type.instrument_id`.
-
-        """
         super().__init__(
             instrument=instrument,
             bar_type=bar_type,
@@ -731,6 +709,24 @@ cdef class TimeBarAggregator(BarAggregator):
 cdef class BulkTickBarBuilder:
     """
     Provides a temporary builder for tick bars from a bulk tick order.
+
+    Parameters
+    ----------
+    instrument : Instrument
+        The instrument for the aggregator.
+    bar_type : BarType
+        The bar_type to build.
+    logger : Logger
+        The logger for the bar aggregator.
+    callback : Callable[[Bar], None]
+        The delegate to call with the built bars.
+
+    Raises
+    ------
+    ValueError
+        If `callback` is not of type `Callable`.
+    ValueError
+        If `instrument.id` != `bar_type.instrument_id`.
     """
 
     def __init__(
@@ -740,28 +736,6 @@ cdef class BulkTickBarBuilder:
         Logger logger not None,
         callback not None: Callable[[Bar], None],
     ):
-        """
-        Initialize a new instance of the ``BulkTickBarBuilder`` class.
-
-        Parameters
-        ----------
-        instrument : Instrument
-            The instrument for the aggregator.
-        bar_type : BarType
-            The bar_type to build.
-        logger : Logger
-            The logger for the bar aggregator.
-        callback : Callable[[Bar], None]
-            The delegate to call with the built bars.
-
-        Raises
-        ------
-        ValueError
-            If `callback` is not of type `Callable`.
-        ValueError
-            If `instrument.id` != `bar_type.instrument_id`.
-
-        """
         Condition.callable(callback, "callback")
 
         self.bars = []
@@ -800,18 +774,14 @@ cdef class BulkTickBarBuilder:
 cdef class BulkTimeBarUpdater:
     """
     Provides a temporary updater for time bars from a bulk tick order.
+
+    Parameters
+    ----------
+    aggregator : TimeBarAggregator
+        The time bar aggregator to update.
     """
 
     def __init__(self, TimeBarAggregator aggregator not None):
-        """
-        Initialize a new instance of the ``BulkTimeBarUpdater`` class.
-
-        Parameters
-        ----------
-        aggregator : TimeBarAggregator
-            The time bar aggregator to update.
-
-        """
         self.aggregator = aggregator
         self.start_time_ns = self.aggregator.next_close_ns - self.aggregator.interval_ns
 

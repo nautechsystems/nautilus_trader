@@ -31,6 +31,11 @@ cdef class Queue:
     with qsize(), since your single-threaded asyncio application won't be
     interrupted between calling qsize() and doing an operation on the Queue.
 
+    Parameters
+    ----------
+    maxsize : int
+        The maximum capacity of the queue before blocking.
+
     Warnings
     --------
     This queue is not thread-safe and must be called from the same thread as the
@@ -38,15 +43,6 @@ cdef class Queue:
     """
 
     def __init__(self, int maxsize=0):
-        """
-        Initialize a new instance of the ``Queue`` class.
-
-        Parameters
-        ----------
-        maxsize : int
-            The maximum capacity of the queue before blocking.
-
-        """
         self.maxsize = maxsize
         self.count = 0
 

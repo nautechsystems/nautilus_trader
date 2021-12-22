@@ -19,6 +19,7 @@
 import asyncio
 from typing import Callable
 
+from nautilus_trader.adapters.binance.common import format_symbol
 from nautilus_trader.adapters.binance.websocket.client import BinanceWebSocketClient
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.logging import Logger
@@ -53,7 +54,7 @@ class BinanceSpotWebSocket(BinanceWebSocketClient):
         Update Speed: Real-time
 
         """
-        self._add_stream(f"{symbol.lower()}@aggTrade")
+        self._add_stream(f"{format_symbol(symbol)}@aggTrade")
 
     def subscribe_trades(self, symbol: str):
         """
@@ -64,7 +65,7 @@ class BinanceSpotWebSocket(BinanceWebSocketClient):
         Update Speed: Real-time
 
         """
-        self._add_stream(f"{symbol.lower()}@trade")
+        self._add_stream(f"{format_symbol(symbol)}@trade")
 
     def subscribe_bars(self, symbol: str, interval: str):
         """
@@ -92,7 +93,7 @@ class BinanceSpotWebSocket(BinanceWebSocketClient):
         Update Speed: 2000ms
 
         """
-        self._add_stream(f"{symbol.lower()}@kline_{interval}")
+        self._add_stream(f"{format_symbol(symbol)}@kline_{interval}")
 
     def subscribe_mini_ticker(self, symbol: str = None):
         """
@@ -108,7 +109,7 @@ class BinanceSpotWebSocket(BinanceWebSocketClient):
         if symbol is None:
             self._add_stream("!miniTicker@arr")
         else:
-            self._add_stream(f"{symbol.lower()}@miniTicker")
+            self._add_stream(f"{format_symbol(symbol)}@miniTicker")
 
     def subscribe_ticker(self, symbol: str = None):
         """
@@ -124,7 +125,7 @@ class BinanceSpotWebSocket(BinanceWebSocketClient):
         if symbol is None:
             self._add_stream("!ticker@arr")
         else:
-            self._add_stream(f"{symbol.lower()}@ticker")
+            self._add_stream(f"{format_symbol(symbol)}@ticker")
 
     def subscribe_book_ticker(self, symbol: str = None):
         """
@@ -139,7 +140,7 @@ class BinanceSpotWebSocket(BinanceWebSocketClient):
         if symbol is None:
             self._add_stream("!bookTicker")
         else:
-            self._add_stream(f"{symbol.lower()}@bookTicker")
+            self._add_stream(f"{format_symbol(symbol)}@bookTicker")
 
     def subscribe_partial_book_depth(self, symbol: str, depth: int, speed: int):
         """
@@ -150,7 +151,7 @@ class BinanceSpotWebSocket(BinanceWebSocketClient):
         Update Speed: 1000ms or 100ms
 
         """
-        self._add_stream(f"{symbol.lower()}@depth{depth}@{speed}ms")
+        self._add_stream(f"{format_symbol(symbol)}@depth{depth}@{speed}ms")
 
     def subscribe_diff_book_depth(self, symbol: str, speed: int):
         """
@@ -161,10 +162,4 @@ class BinanceSpotWebSocket(BinanceWebSocketClient):
         Order book price and quantity depth updates used to locally manage an order book.
 
         """
-        self._add_stream(f"{symbol.lower()}@depth@{speed}ms")
-
-    def subscribe_user_data(self, listen_key: str):
-        """
-        Listen to user data by provided `listenkey`.
-        """
-        self._add_stream(listen_key)
+        self._add_stream(f"{format_symbol(symbol)}@depth@{speed}ms")

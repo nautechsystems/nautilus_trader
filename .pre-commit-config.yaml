@@ -39,14 +39,14 @@ repos:
         args: ["--manifest-path", "nautilus/Cargo.toml"]
 
   - repo: https://github.com/hadialqattan/pycln
-    rev: v1.0.3
+    rev: v1.1.0
     hooks:
       - id: pycln
         name: pycln (Python unused imports)
         exclude: "nautilus_trader/live/node.py|nautilus_trader/adapters/betfair/execution.py"
 
   - repo: https://github.com/psf/black
-    rev: 21.10b0
+    rev: 21.12b0
     hooks:
       - id: black
         args: [
@@ -54,7 +54,7 @@ repos:
         ]
 
   - repo: https://github.com/pycqa/isort
-    rev: 5.9.3
+    rev: 5.10.1
     hooks:
       - id: isort
         args: [
@@ -142,14 +142,14 @@ repos:
       - id: pydocstyle
         files: ^nautilus_trader/
         args:
-        - "--ignore=D100,D102,D103,D104,D107,D105,D200,D203,D205,D212,D400,D415"
+        - "--ignore=D100,D102,D103,D104,D107,D105,D200,D203,D205,D212,D400,D413,D415"
         additional_dependencies:
           - toml
 
-  - repo: https://github.com/kynan/nbstripout
-    rev: 0.5.0
-    hooks:
-      - id: nbstripout
+#  - repo: https://github.com/kynan/nbstripout
+#    rev: 0.5.0
+#    hooks:
+#      - id: nbstripout
 
 
 # flake8 ignore justifications
@@ -179,4 +179,5 @@ repos:
 # D205: 1 blank line required between summary line and description (optional style)
 # D212: Multi-line docstring summary should start at the first line (optional style)
 # D400: First line should end with a period (not always a first line)
+# D413: Missing blank line after last section ('Parameters')
 # D415: First line should end with a period, question mark, or exclamation point (not always a first line)

@@ -21,6 +21,8 @@ import pyarrow.dataset as ds
 import pytest
 
 from nautilus_trader.adapters.betfair.providers import BetfairInstrumentProvider
+from nautilus_trader.backtest.data.providers import TestInstrumentProvider
+from nautilus_trader.backtest.data.wranglers import BarDataWrangler
 from nautilus_trader.model.data.base import GenericData
 from nautilus_trader.model.data.tick import QuoteTick
 from nautilus_trader.model.data.tick import TradeTick
@@ -40,7 +42,6 @@ from tests.integration_tests.adapters.betfair.test_kit import BetfairTestStubs
 from tests.test_kit import PACKAGE_ROOT
 from tests.test_kit.mocks import NewsEventData
 from tests.test_kit.mocks import data_catalog_setup
-from tests.test_kit.providers import TestInstrumentProvider
 from tests.test_kit.stubs import TestStubs
 
 
@@ -119,7 +120,7 @@ class TestPersistenceCatalog:
             price=Price.from_str("2.0"),
             size=Quantity.from_int(10),
             aggressor_side=AggressorSide.UNKNOWN,
-            match_id="1",
+            trade_id="1",
             ts_event=0,
             ts_init=0,
         )
@@ -191,7 +192,7 @@ class TestPersistenceCatalog:
         filtered_deltas = self.catalog.order_book_deltas(filter_expr=ds.field("action") == "DELETE")
         assert len(filtered_deltas) == 351
 
-    def test_data_loader_generic_data(self):
+    def test_data_catalog_generic_data(self):
         TestStubs.setup_news_event_persistence()
         process_files(
             glob_path=f"{TEST_DATA_DIR}/news_events.csv",
@@ -204,3 +205,41 @@ class TestPersistenceCatalog:
             cls=NewsEventData, filter_expr=ds.field("currency") == "CHF", as_nautilus=True
         )
         assert len(data) == 2745 and isinstance(data[0], GenericData)
+
+    def test_data_catalog_bars(self):
+        # Arrange
+        bar_type = TestStubs.bartype_adabtc_binance_1min_last()
+        instrument = TestInstrumentProvider.adabtc_binance()
+        wrangler = BarDataWrangler(bar_type, instrument)
+
+        def parser(data):
+            data["timestamp"] = data["timestamp"].astype("datetime64[ms]")
+            bars = wrangler.process(data.set_index("timestamp"))
+            return bars
+
+        binance_spot_header = [
+            "timestamp",
+            "open",
+            "high",
+            "low",
+            "close",
+            "volume",
+            "ts_close",
+            "quote_volume",
+            "n_trades",
+            "taker_buy_base_volume",
+            "taker_buy_quote_volume",
+            "ignore",
+        ]
+        reader = CSVReader(block_parser=parser, header=binance_spot_header)
+
+        # Act
+        _ = process_files(
+            glob_path=f"{TEST_DATA_DIR}/ADABTC-1m-2021-11-*.csv",
+            reader=reader,
+            catalog=self.catalog,
+        )
+
+        # Assert
+        bars = self.catalog.bars()
+        assert len(bars) == 21

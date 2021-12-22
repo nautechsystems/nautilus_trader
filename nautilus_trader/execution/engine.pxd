@@ -18,6 +18,7 @@ from nautilus_trader.common.component cimport Component
 from nautilus_trader.common.generators cimport PositionIdGenerator
 from nautilus_trader.execution.client cimport ExecutionClient
 from nautilus_trader.model.c_enums.oms_type cimport OMSType
+from nautilus_trader.model.commands.trading cimport CancelAllOrders
 from nautilus_trader.model.commands.trading cimport CancelOrder
 from nautilus_trader.model.commands.trading cimport ModifyOrder
 from nautilus_trader.model.commands.trading cimport SubmitOrder
@@ -81,6 +82,7 @@ cdef class ExecutionEngine(Component):
     cdef void _handle_submit_order_list(self, ExecutionClient client, SubmitOrderList command) except *
     cdef void _handle_modify_order(self, ExecutionClient client, ModifyOrder command) except *
     cdef void _handle_cancel_order(self, ExecutionClient client, CancelOrder command) except *
+    cdef void _handle_cancel_all_orders(self, ExecutionClient client, CancelAllOrders command) except *
 
 # -- EVENT HANDLERS --------------------------------------------------------------------------------
 

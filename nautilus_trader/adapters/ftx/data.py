@@ -40,6 +40,23 @@ _SECONDS_IN_HOUR: int = 60 * 60
 class FTXDataClient(LiveMarketDataClient):
     """
     Provides a data client for the FTX exchange.
+
+    Parameters
+    ----------
+    loop : asyncio.AbstractEventLoop
+        The event loop for the client.
+    client : FTXHttpClient
+        The FTX HTTP client.
+    msgbus : MessageBus
+        The message bus for the client.
+    cache : Cache
+        The cache for the client.
+    clock : LiveClock
+        The clock for the client.
+    logger : Logger
+        The logger for the client.
+    instrument_provider : FTXInstrumentProvider
+        The instrument provider.
     """
 
     def __init__(
@@ -52,27 +69,6 @@ class FTXDataClient(LiveMarketDataClient):
         logger: Logger,
         instrument_provider: FTXInstrumentProvider,
     ):
-        """
-        Initialize a new instance of the ``FTXDataClient`` class.
-
-        Parameters
-        ----------
-        loop : asyncio.AbstractEventLoop
-            The event loop for the client.
-        client : FTXHttpClient
-            The FTX HTTP client.
-        msgbus : MessageBus
-            The message bus for the client.
-        cache : Cache
-            The cache for the client.
-        clock : LiveClock
-            The clock for the client.
-        logger : Logger
-            The logger for the client.
-        instrument_provider : FTXInstrumentProvider
-            The instrument provider.
-
-        """
         super().__init__(
             loop=loop,
             client_id=ClientId(FTX_VENUE.value),
@@ -107,7 +103,7 @@ class FTXDataClient(LiveMarketDataClient):
         try:
             await self._instrument_provider.load_all_or_wait_async()
         except FTXError as ex:
-            self._log.ex(ex)
+            self._log.exception(ex)
             return
 
         self._send_all_instruments_to_data_engine()
@@ -134,13 +130,21 @@ class FTXDataClient(LiveMarketDataClient):
         raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
     def subscribe_order_book_deltas(
-        self, instrument_id: InstrumentId, book_type: BookType, kwargs: dict = None
+        self,
+        instrument_id: InstrumentId,
+        book_type: BookType,
+        depth: Optional[int] = None,
+        kwargs: dict = None,
     ):
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
     def subscribe_order_book_snapshots(
-        self, instrument_id: InstrumentId, book_type: BookType, depth: int = 0, kwargs: dict = None
+        self,
+        instrument_id: InstrumentId,
+        book_type: BookType,
+        depth: Optional[int] = None,
+        kwargs: dict = None,
     ):
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
@@ -162,10 +166,6 @@ class FTXDataClient(LiveMarketDataClient):
         raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
     def subscribe_bars(self, bar_type: BarType):
-        """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
-
-    def subscribe_venue_status_updates(self, instrument_id: InstrumentId):
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
@@ -206,10 +206,6 @@ class FTXDataClient(LiveMarketDataClient):
         raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
     def unsubscribe_bars(self, bar_type: BarType):
-        """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
-
-    def unsubscribe_venue_status_updates(self, instrument_id: InstrumentId):
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 

@@ -2,6 +2,7 @@
   {
     "type": "CurrencySpot",
     "id": "XRP/USD.bitfinex",
+    "local_symbol": "XRPUSD",
     "base_currency": "XRP",
     "quote_currency": "USD",
     "price_precision": 5,
@@ -26,6 +27,7 @@
   {
     "type": "CurrencySpot",
     "id": "BTC/USD.bitfinex",
+    "local_symbol": "BTCUSD",
     "base_currency": "BTC",
     "quote_currency": "USD",
     "price_precision": 5,
@@ -50,6 +52,7 @@
   {
     "type": "CurrencySpot",
     "id": "ETH/USD.bitfinex",
+    "local_symbol": "ETHUSD",
     "base_currency": "ETH",
     "quote_currency": "USD",
     "price_precision": 5,
@@ -74,6 +77,7 @@
   {
     "type": "CurrencySpot",
     "id": "BTC/AUD.btcmarkets",
+    "local_symbol": "BTCAUD",
     "base_currency": "BTC",
     "quote_currency": "AUD",
     "price_precision": 5,
@@ -98,6 +102,7 @@
   {
     "type": "CurrencySpot",
     "id": "XRP/AUD.btcmarkets",
+    "local_symbol": "XRPAUD",
     "base_currency": "XRP",
     "quote_currency": "AUD",
     "price_precision": 5,
@@ -122,6 +127,7 @@
   {
     "type": "CurrencySpot",
     "id": "ETH/AUD.btcmarkets",
+    "local_symbol": "ETHAUD",
     "base_currency": "ETH",
     "quote_currency": "AUD",
     "price_precision": 5,

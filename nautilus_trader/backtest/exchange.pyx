@@ -14,6 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 from decimal import Decimal
+from heapq import heappush
 from typing import Dict
 
 from libc.limits cimport INT_MAX
@@ -23,6 +24,7 @@ from libc.stdint cimport int64_t
 from nautilus_trader.accounting.accounts.base cimport Account
 from nautilus_trader.backtest.execution_client cimport BacktestExecClient
 from nautilus_trader.backtest.models cimport FillModel
+from nautilus_trader.backtest.models cimport LatencyModel
 from nautilus_trader.backtest.modules cimport SimulationModule
 from nautilus_trader.cache.base cimport CacheFacade
 from nautilus_trader.common.clock cimport TestClock
@@ -43,6 +45,7 @@ from nautilus_trader.model.c_enums.order_status cimport OrderStatus
 from nautilus_trader.model.c_enums.order_type cimport OrderType
 from nautilus_trader.model.c_enums.venue_type cimport VenueType
 from nautilus_trader.model.c_enums.venue_type cimport VenueTypeParser
+from nautilus_trader.model.commands.trading cimport CancelAllOrders
 from nautilus_trader.model.commands.trading cimport CancelOrder
 from nautilus_trader.model.commands.trading cimport ModifyOrder
 from nautilus_trader.model.commands.trading cimport SubmitOrder
@@ -74,6 +77,58 @@ from nautilus_trader.model.position cimport Position
 cdef class SimulatedExchange:
     """
     Provides a simulated financial market exchange.
+
+    Parameters
+    ----------
+    venue : Venue
+        The venue to simulate.
+    venue_type : VenueType
+        The venues type.
+    oms_type : OMSType {``HEDGING``, ``NETTING``}
+        The order management system type used by the exchange.
+    account_type : AccountType
+        The account type for the client.
+    base_currency : Currency, optional
+        The account base currency for the client. Use ``None`` for multi-currency accounts.
+    starting_balances : list[Money]
+        The starting balances for the exchange.
+    default_leverage : Decimal
+        The account default leverage (for margin accounts).
+    leverages : Dict[InstrumentId, Decimal]
+        The instrument specific leverage configuration (for margin accounts).
+    is_frozen_account : bool
+        If the account for this exchange is frozen (balances will not change).
+    cache : CacheFacade
+        The read-only cache for the exchange.
+    fill_model : FillModel
+        The fill model for the exchange.
+    latency_model : LatencyModel, optional
+        The latency model for the exchange.
+    clock : TestClock
+        The clock for the exchange.
+    logger : Logger
+        The logger for the exchange.
+    book_type : BookType
+        The order book type for the exchange.
+    bar_execution : bool
+        If the exchange execution dynamics is based on bar data.
+    reject_stop_orders : bool
+        If stop orders are rejected on submission if in the market.
+
+    Raises
+    ------
+    ValueError
+        If `instruments` is empty.
+    ValueError
+        If `instruments` contains a type other than `Instrument`.
+    ValueError
+        If `starting_balances` is empty.
+    ValueError
+        If `starting_balances` contains a type other than `Money`.
+    ValueError
+        If `base_currency` and multiple starting balances.
+    ValueError
+        If `modules` contains a type other than `SimulationModule`.
     """
 
     def __init__(
@@ -90,67 +145,14 @@ cdef class SimulatedExchange:
         list instruments not None,
         list modules not None,
         CacheFacade cache not None,
-        FillModel fill_model not None,
         TestClock clock not None,
         Logger logger not None,
+        FillModel fill_model not None,
+        LatencyModel latency_model=None,
         BookType book_type=BookType.L1_TBBO,
         bint bar_execution=False,
         bint reject_stop_orders=True,
     ):
-        """
-        Initialize a new instance of the ``SimulatedExchange`` class.
-
-        Parameters
-        ----------
-        venue : Venue
-            The venue to simulate.
-        venue_type : VenueType
-            The venues type.
-        oms_type : OMSType {``HEDGING``, ``NETTING``}
-            The order management system type used by the exchange.
-        account_type : AccountType
-            The account type for the client.
-        base_currency : Currency, optional
-            The account base currency for the client. Use ``None`` for multi-currency accounts.
-        starting_balances : list[Money]
-            The starting balances for the exchange.
-        default_leverage : Decimal
-            The account default leverage (for margin accounts).
-        leverages : Dict[InstrumentId, Decimal]
-            The instrument specific leverage configuration (for margin accounts).
-        is_frozen_account : bool
-            If the account for this exchange is frozen (balances will not change).
-        cache : CacheFacade
-            The read-only cache for the exchange.
-        fill_model : FillModel
-            The fill model for the exchange.
-        clock : TestClock
-            The clock for the exchange.
-        logger : Logger
-            The logger for the exchange.
-        book_type : BookType
-            The order book type for the exchange.
-        bar_execution : bool
-            If the exchange execution dynamics is based on bar data.
-        reject_stop_orders : bool
-            If stop orders are rejected on submission if in the market.
-
-        Raises
-        ------
-        ValueError
-            If `instruments` is empty.
-        ValueError
-            If `instruments` contains a type other than `Instrument`.
-        ValueError
-            If `starting_balances` is empty.
-        ValueError
-            If `starting_balances` contains a type other than `Money`.
-        ValueError
-            If `base_currency` and multiple starting balances.
-        ValueError
-            If `modules` contains a type other than `SimulationModule`.
-
-        """
         Condition.not_empty(instruments, "instruments")
         Condition.list_type(instruments, Instrument, "instruments", "Instrument")
         Condition.not_empty(starting_balances, "starting_balances")
@@ -187,6 +189,7 @@ cdef class SimulatedExchange:
         self.reject_stop_orders = reject_stop_orders
         self.bar_execution = bar_execution
         self.fill_model = fill_model
+        self.latency_model = latency_model
 
         # Load modules
         self.modules = []
@@ -221,13 +224,17 @@ cdef class SimulatedExchange:
         self._symbol_ord_count = {}  # type: dict[InstrumentId, int]
         self._executions_count = 0
         self._message_queue = Queue()
+        self._inflight_queue = []
+        self._inflight_counter = {}
 
     def __repr__(self) -> str:
-        return (f"{type(self).__name__}("
-                f"id={self.id}, "
-                f"venue_type={VenueTypeParser.to_str(self.venue_type)}, "
-                f"oms_type={OMSTypeParser.to_str(self.oms_type)}, "
-                f"account_type={AccountTypeParser.to_str(self.account_type)})")
+        return (
+            f"{type(self).__name__}("
+            f"id={self.id}, "
+            f"venue_type={VenueTypeParser.to_str(self.venue_type)}, "
+            f"oms_type={OMSTypeParser.to_str(self.oms_type)}, "
+            f"account_type={AccountTypeParser.to_str(self.account_type)})"
+        )
 
     cpdef Price best_bid_price(self, InstrumentId instrument_id):
         """
@@ -422,6 +429,8 @@ cdef class SimulatedExchange:
         """
         Set the fill model to the given model.
 
+        Parameters
+        ----------
         fill_model : FillModel
             The fill model to set.
 
@@ -431,6 +440,22 @@ cdef class SimulatedExchange:
         self.fill_model = fill_model
 
         self._log.info("Changed fill model.")
+
+    cpdef void set_latency_model(self, LatencyModel latency_model) except *:
+        """
+        Change the latency model for this exchange.
+
+        Parameters
+        ----------
+        latency_model : LatencyModel
+            The latency model to set.
+
+        """
+        Condition.not_none(latency_model, "latency_model")
+
+        self.latency_model = latency_model
+
+        self._log.info("Changed latency model.")
 
     cpdef void initialize_account(self) except *:
         """
@@ -489,7 +514,26 @@ cdef class SimulatedExchange:
         """
         Condition.not_none(command, "command")
 
-        self._message_queue.put_nowait(command)
+        if self.latency_model is None:
+            self._message_queue.put_nowait(command)
+        else:
+            heappush(self._inflight_queue, self.generate_inflight_command(command))
+
+    cdef tuple generate_inflight_command(self, TradingCommand command):
+        cdef int64_t ts
+        if isinstance(command, (SubmitOrder, SubmitOrderList)):
+            ts = command.ts_init + self.latency_model.insert_latency_nanos
+        elif isinstance(command, ModifyOrder):
+            ts = command.ts_init + self.latency_model.update_latency_nanos
+        elif isinstance(command, (CancelOrder, CancelAllOrders)):
+            ts = command.ts_init + self.latency_model.cancel_latency_nanos
+        else:  # pragma: no cover (design-time error)
+            raise ValueError(f"invalid command, was {command}")
+        if ts not in self._inflight_counter:
+            self._inflight_counter[ts] = 0
+        self._inflight_counter[ts] += 1
+        cdef (int64_t, int64_t) key = (ts, self._inflight_counter[ts])
+        return key, command
 
     cpdef void process_order_book(self, OrderBookData data) except *:
         """
@@ -586,8 +630,21 @@ cdef class SimulatedExchange:
         self._clock.set_time(now_ns)
 
         cdef:
+            int64_t ts
+        while self._inflight_queue:
+            # Peek at timestamp of next inflight message
+            ts = self._inflight_queue[0][0][0]
+            if ts <= now_ns:
+                # Place message on queue to be processed
+                self._message_queue.put_nowait(self._inflight_queue.pop(0)[1])
+                self._inflight_counter.pop(ts, None)
+            else:
+                break
+
+        cdef:
             TradingCommand command
             Order order
+            list orders
         while self._message_queue.count > 0:
             command = self._message_queue.get_nowait()
             if isinstance(command, SubmitOrder):
@@ -595,20 +652,6 @@ cdef class SimulatedExchange:
             elif isinstance(command, SubmitOrderList):
                 for order in command.list.orders:
                     self._process_order(order)
-            elif isinstance(command, CancelOrder):
-                order = self._order_index.pop(command.client_order_id, None)
-                if order is None:
-                    self._generate_order_cancel_rejected(
-                        command.strategy_id,
-                        command.instrument_id,
-                        command.client_order_id,
-                        command.venue_order_id,
-                        f"{repr(command.client_order_id)} not found",
-                    )
-                    continue
-                if order.is_active_c():
-                    self._generate_order_pending_cancel(order)
-                    self._cancel_order(order)
             elif isinstance(command, ModifyOrder):
                 order = self._order_index.get(command.client_order_id)
                 if order is None:
@@ -627,6 +670,29 @@ cdef class SimulatedExchange:
                     command.price,
                     command.trigger,
                 )
+            elif isinstance(command, CancelOrder):
+                order = self._order_index.pop(command.client_order_id, None)
+                if order is None:
+                    self._generate_order_cancel_rejected(
+                        command.strategy_id,
+                        command.instrument_id,
+                        command.client_order_id,
+                        command.venue_order_id,
+                        f"{repr(command.client_order_id)} not found",
+                    )
+                    continue
+                if order.is_active_c():
+                    self._generate_order_pending_cancel(order)
+                    self._cancel_order(order)
+            elif isinstance(command, CancelAllOrders):
+                orders = (
+                    self._orders_bid.get(command.instrument_id, [])
+                    + self._orders_ask.get(command.instrument_id, [])
+                )
+                for order in orders:
+                    if order.is_active_c():
+                        self._generate_order_pending_cancel(order)
+                        self._cancel_order(order)
 
         # Iterate over modules
         cdef SimulationModule module
@@ -660,6 +726,8 @@ cdef class SimulatedExchange:
         self._symbol_ord_count.clear()
         self._executions_count = 0
         self._message_queue = Queue()
+        self._inflight_queue.clear()
+        self._inflight_counter.clear()
 
         self._log.info("Reset.")
 
@@ -1126,8 +1194,7 @@ cdef class SimulatedExchange:
                 self._last_asks[order.instrument_id] = order.price
             return [(order.price, order.leaves_qty)]
         cdef OrderBook book = self.get_book(order.instrument_id)
-        cdef OrderBookOrder submit_order = OrderBookOrder(price=order.price, size=order.quantity, side=order.side)
-
+        cdef OrderBookOrder submit_order = OrderBookOrder(price=order.price, size=order.leaves_qty, side=order.side)
         if order.is_buy_c():
             return book.asks.simulate_order_fills(order=submit_order, depth_type=DepthType.VOLUME)
         elif order.is_sell_c():
@@ -1139,12 +1206,24 @@ cdef class SimulatedExchange:
             if order.type == OrderType.MARKET:
                 if order.is_buy_c():
                     price = self._last_asks.get(order.instrument_id)
+                    if price is None:
+                        price = self.best_ask_price(order.instrument_id)
                     if price is not None:
                         return [(price, order.leaves_qty)]
+                    else:  # pragma: no cover (design-time error)
+                        raise RuntimeError(
+                            "Market best ASK price was None when filling MARKET order",
+                        )
                 elif order.is_sell_c():
                     price = self._last_bids.get(order.instrument_id)
+                    if price is None:
+                        price = self.best_bid_price(order.instrument_id)
                     if price is not None:
                         return [(price, order.leaves_qty)]
+                    else:  # pragma: no cover (design-time error)
+                        raise RuntimeError(
+                            "Market best BID price was None when filling MARKET order",
+                        )
             else:
                 if order.is_buy_c():
                     self._last_asks[order.instrument_id] = order.price
@@ -1152,7 +1231,7 @@ cdef class SimulatedExchange:
                     self._last_bids[order.instrument_id] = order.price
                 return [(order.price, order.leaves_qty)]
         price = Price.from_int_c(INT_MAX if order.side == OrderSide.BUY else INT_MIN)
-        cdef OrderBookOrder submit_order = OrderBookOrder(price=price, size=order.quantity, side=order.side)
+        cdef OrderBookOrder submit_order = OrderBookOrder(price=price, size=order.leaves_qty, side=order.side)
         cdef OrderBook book = self.get_book(order.instrument_id)
         if order.is_buy_c():
             return book.asks.simulate_order_fills(order=submit_order)
@@ -1258,7 +1337,7 @@ cdef class SimulatedExchange:
             and self.book_type == BookType.L1_TBBO
             and (order.type == OrderType.MARKET or order.type == OrderType.STOP_MARKET)
         ):
-            # Exhausted simulated book volume - continue aggressive filling into next level)
+            # Exhausted simulated book volume (continue aggressive filling into next level)
             fill_px = fills[-1][0]
             if order.side == OrderSide.BUY:
                 fill_px = Price(fill_px + instrument.price_increment, instrument.price_precision)

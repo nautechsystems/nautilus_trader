@@ -45,9 +45,6 @@ cdef class SimulationModule:
     """
 
     def __init__(self):
-        """
-        Initialize a new instance of the ``SimulationModule`` class.
-        """
         self._exchange = None  # Must be registered
 
     def __repr__(self) -> str:
@@ -85,18 +82,14 @@ _TZ_US_EAST = pytz.timezone("US/Eastern")
 cdef class FXRolloverInterestModule(SimulationModule):
     """
     Provides an FX rollover interest simulation module.
+
+    Parameters
+    ----------
+    rate_data : pd.DataFrame
+        The interest rate data for the internal rollover interest calculator.
     """
 
     def __init__(self, rate_data not None: pd.DataFrame):
-        """
-        Initialize a new instance of the ``FXRolloverInterestModule`` class.
-
-        Parameters
-        ----------
-        rate_data : pd.DataFrame
-            The interest rate data for the internal rollover interest calculator.
-
-        """
         super().__init__()
 
         self._calculator = RolloverInterestCalculator(data=rate_data)

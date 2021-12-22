@@ -48,9 +48,6 @@ cdef class Clock:
     """
 
     def __init__(self):
-        """
-        Initialize a new instance of the ``Clock`` class.
-        """
         self._uuid_factory = UUIDFactory()
         self._timers = {}    # type: dict[str, Timer]
         self._handlers = {}  # type: dict[str, Callable[[TimeEvent], None]]
@@ -547,19 +544,15 @@ cdef class Clock:
 cdef class TestClock(Clock):
     """
     Provides a monotonic clock for backtesting and unit testing.
+
+    Parameters
+    ----------
+    initial_ns : int64
+        The initial UNIX time (nanoseconds) for the clock.
     """
     __test__ = False
 
     def __init__(self, int64_t initial_ns=0):
-        """
-        Initialize a new instance of the ``TestClock`` class.
-
-        Parameters
-        ----------
-        initial_ns : int64
-            The initial UNIX time (nanoseconds) for the clock.
-
-        """
         super().__init__()
 
         self._time_ns = initial_ns
@@ -699,20 +692,14 @@ cdef class TestClock(Clock):
 cdef class LiveClock(Clock):
     """
     Provides a clock for live trading. All times are timezone aware UTC.
+
+    Parameters
+    ----------
+    loop : asyncio.AbstractEventLoop
+        The event loop for the clocks timers.
     """
 
     def __init__(self, loop=None):
-        """
-        Initialize a new instance of the ``LiveClock`` class.
-
-        If loop is ``None`` then threads will be used for timers.
-
-        Parameters
-        ----------
-        loop : asyncio.AbstractEventLoop
-            The event loop for the clocks timers.
-
-        """
         super().__init__()
 
         self._loop = loop

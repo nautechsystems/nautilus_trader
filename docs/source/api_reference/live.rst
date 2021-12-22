@@ -4,6 +4,15 @@ Live
 .. automodule:: nautilus_trader.live
 
 
+Config
+------
+
+.. automodule:: nautilus_trader.live.config
+   :show-inheritance:
+   :inherited-members:
+   :members:
+   :member-order: bysource
+
 Data Client
 -----------
 

@@ -19,30 +19,26 @@ from nautilus_trader.core.data cimport Data
 cdef class DataType:
     """
     Represents a data type including metadata.
+
+    Parameters
+    ----------
+    type : type
+        The ``Data`` type of the data.
+    metadata : dict
+        The data types metadata.
+
+    Raises
+    ------
+    TypeError
+        If `metadata` contains a key or value which is not hashable.
+
+    Warnings
+    --------
+    This class may be used as a key in hash maps throughout the system, thus
+    the key and value contents of metadata must themselves be hashable.
     """
 
     def __init__(self, type type not None, dict metadata=None):    # noqa (shadows built-in type)
-        """
-        Initialize a new instance of the ``DataType`` class.
-
-        Parameters
-        ----------
-        type : type
-            The ``Data`` type of the data.
-        metadata : dict
-            The data types metadata.
-
-        Raises
-        ------
-        TypeError
-            If `metadata` contains a key or value which is not hashable.
-
-        Warnings
-        --------
-        This class may be used as a key in hash maps throughout the system, thus
-        the key and value contents of metadata must themselves be hashable.
-
-        """
         if metadata is None:
             metadata = {}
 
@@ -53,6 +49,18 @@ cdef class DataType:
 
     def __eq__(self, DataType other) -> bool:
         return self.type == other.type and self._key == other._key  # noqa
+
+    def __lt__(self, DataType other) -> bool:
+        return str(self) < str(other)
+
+    def __le__(self, DataType other) -> bool:
+        return str(self) <= str(other)
+
+    def __gt__(self, DataType other) -> bool:
+        return str(self) > str(other)
+
+    def __ge__(self, DataType other) -> bool:
+        return str(self) >= str(other)
 
     def __hash__(self) -> int:
         return self._hash
@@ -67,6 +75,13 @@ cdef class DataType:
 cdef class GenericData(Data):
     """
     Provides a generic data wrapper which includes data type information.
+
+    Parameters
+    ----------
+    data_type : DataType
+        The data type.
+    data : Data
+        The data object to wrap.
     """
 
     def __init__(
@@ -74,17 +89,6 @@ cdef class GenericData(Data):
         DataType data_type not None,
         Data data not None,
     ):
-        """
-        Initialize a new instance of the ``GenericData`` class.
-
-        Parameters
-        ----------
-        data_type : DataType
-            The data type.
-        data : Data
-            The data object to wrap.
-
-        """
         super().__init__(data.ts_event, data.ts_init)
         self.data_type = data_type
         self.data = data

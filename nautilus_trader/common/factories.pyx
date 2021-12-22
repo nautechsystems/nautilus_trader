@@ -40,6 +40,22 @@ cdef class OrderFactory:
 
     The `TraderId` tag and `StrategyId` tag will be inserted into all
     IDs generated.
+
+    Parameters
+    ----------
+    trader_id : TraderId
+        The trader ID (only numerical tag sent to venue).
+    strategy_id : StrategyId
+        The strategy ID (only numerical tag sent to venue).
+    clock : Clock
+        The clock for the factory.
+    initial_count : int, optional
+        The initial order count for the factory.
+
+    Raises
+    ------
+    ValueError
+        If `initial_count` is negative (< 0).
     """
 
     def __init__(
@@ -49,26 +65,6 @@ cdef class OrderFactory:
         Clock clock not None,
         int initial_count=0,
     ):
-        """
-        Initialize a new instance of the ``OrderFactory`` class.
-
-        Parameters
-        ----------
-        trader_id : TraderId
-            The trader ID (only numerical tag sent to venue).
-        strategy_id : StrategyId
-            The strategy ID (only numerical tag sent to venue).
-        clock : Clock
-            The clock for the factory.
-        initial_count : int, optional
-            The initial order count for the factory.
-
-        Raises
-        ------
-        ValueError
-            If `initial_count` is negative (< 0).
-
-        """
         Condition.not_negative_int(initial_count, "initial_count")
 
         self._clock = clock
@@ -189,7 +185,7 @@ cdef class OrderFactory:
         datetime expire_time=None,
         bint post_only=False,
         bint reduce_only=False,
-        bint hidden=False,
+        Quantity display_qty=None,
         str tags=None,
     ):
         """
@@ -215,8 +211,8 @@ cdef class OrderFactory:
             If the order will only provide liquidity (make a market).
         reduce_only : bool, optional
             If the order carries the 'reduce-only' execution instruction.
-        hidden : bool, optional
-            If the order should be hidden from the public book.
+        display_qty : Quantity, optional
+            The quantity of the order to display on the public book (iceberg).
         tags : str, optional
             The custom user tags for the order. These are optional and can
             contain any arbitrary delimiter if required.
@@ -232,9 +228,7 @@ cdef class OrderFactory:
         ValueError
             If `time_in_force` is ``GTD`` and `expire_time` is ``None``.
         ValueError
-            If `post_only` and `hidden`.
-        ValueError
-            If `hidden` and `post_only`.
+            If `display_qty` is negative (< 0) or greater than `quantity`.
 
         """
         return LimitOrder(
@@ -251,7 +245,7 @@ cdef class OrderFactory:
             ts_init=self._clock.timestamp_ns(),
             post_only=post_only,
             reduce_only=reduce_only,
-            hidden=hidden,
+            display_qty=display_qty,
             order_list_id=None,
             parent_order_id=None,
             child_order_ids=None,
@@ -340,7 +334,7 @@ cdef class OrderFactory:
         datetime expire_time=None,
         bint post_only=False,
         bint reduce_only=False,
-        bint hidden=False,
+        Quantity display_qty=None,
         str tags=None,
     ):
         """
@@ -368,8 +362,8 @@ cdef class OrderFactory:
             If the order will only provide liquidity (make a market).
         reduce_only : bool, optional
             If the order carries the 'reduce-only' execution instruction.
-        hidden : bool, optional
-            If the order should be hidden from the public book.
+        display_qty : Quantity, optional
+            The quantity of the order to display on the public book (iceberg).
         tags : str, optional
             The custom user tags for the order. These are optional and can
             contain any arbitrary delimiter if required.
@@ -385,9 +379,7 @@ cdef class OrderFactory:
         ValueError
             If `time_in_force` is ``GTD`` and `expire_time` is ``None``.
         ValueError
-            If `post_only` and `hidden`.
-        ValueError
-            If `hidden` and `post_only`.
+            If `display_qty` is negative (< 0) or greater than `quantity`.
 
         """
         return StopLimitOrder(
@@ -405,7 +397,7 @@ cdef class OrderFactory:
             ts_init=self._clock.timestamp_ns(),
             post_only=post_only,
             reduce_only=reduce_only,
-            hidden=hidden,
+            display_qty=display_qty,
             order_list_id=None,
             parent_order_id=None,
             child_order_ids=None,
@@ -526,7 +518,6 @@ cdef class OrderFactory:
             ts_init=self._clock.timestamp_ns(),
             post_only=True,
             reduce_only=True,
-            hidden=False,
             order_list_id=order_list_id,
             parent_order_id=entry_client_order_id,
             child_order_ids=None,
@@ -673,10 +664,9 @@ cdef class OrderFactory:
             ts_init=self._clock.timestamp_ns(),
             post_only=True,
             reduce_only=True,
-            hidden=False,
+            display_qty=None,
             order_list_id=order_list_id,
             parent_order_id=entry_client_order_id,
-            child_order_ids=None,
             contingency=ContingencyType.OCO,
             contingency_ids=[stop_loss_client_order_id],
             tags="TAKE_PROFIT",

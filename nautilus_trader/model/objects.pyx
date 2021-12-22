@@ -40,7 +40,20 @@ cdef class BaseDecimal:
     providing a decimal.Context. The `BaseDecimal` type and its subclasses are
     also able to be used as operands for mathematical operations with `float`
     objects. Return values are floats if one of the operands is a float, else
-    a decimal.Decimal.
+    a `decimal.Decimal`.
+
+    Parameters
+    ----------
+    value : integer, float, string or Decimal
+        The value of the decimal.
+    precision : uint8
+        The precision for the decimal. Use a precision of 0 for whole numbers
+        (no fractional units).
+
+    Raises
+    ------
+    OverflowError
+        If `precision` is negative (< 0).
 
     Warnings
     --------
@@ -52,24 +65,6 @@ cdef class BaseDecimal:
     """
 
     def __init__(self, value, uint8_t precision):
-        """
-        Initialize a new instance of the ``BaseDecimal`` class.
-
-        Use a precision of 0 for whole numbers (no fractional units).
-
-        Parameters
-        ----------
-        value : integer, float, string or Decimal
-            The value of the decimal.
-        precision : uint8
-            The precision for the decimal.
-
-        Raises
-        ------
-        OverflowError
-            If `precision` is negative (< 0).
-
-        """
         if isinstance(value, decimal.Decimal):
             self._value = round(value, precision)
         else:
@@ -238,32 +233,27 @@ cdef class Quantity(BaseDecimal):
     decimal places for non-share quantity asset classes (securities denominated
     in fractional units).
 
+    Parameters
+    ----------
+    value : integer, float, string, Decimal
+        The value of the quantity.
+    precision : uint8
+        The precision for the quantity. Use a precision of 0 for whole numbers
+        (no fractional units).
+
+    Raises
+    ------
+    ValueError
+        If `value` is negative (< 0).
+    OverflowError
+        If `precision` is negative (< 0).
+
     References
     ----------
     https://www.onixs.biz/fix-dictionary/5.0.SP2/index.html#Qty
     """
 
     def __init__(self, value, uint8_t precision):
-        """
-        Initialize a new instance of the ``Quantity`` class.
-
-        Use a precision of 0 for whole numbers (no fractional units).
-
-        Parameters
-        ----------
-        value : integer, float, string, Decimal
-            The value of the quantity.
-        precision : uint8
-            The precision for the quantity.
-
-        Raises
-        ------
-        ValueError
-            If `value` is negative (< 0).
-        OverflowError
-            If `precision` is negative (< 0).
-
-        """
         super().__init__(value, precision)
 
         # Post-condition
@@ -370,30 +360,25 @@ cdef class Price(BaseDecimal):
     be negative values. For example, prices for options strategies can be
     negative under certain market conditions.
 
+    Parameters
+    ----------
+    value : integer, float, string or Decimal
+        The value of the price.
+    precision : uint8
+        The precision for the price. Use a precision of 0 for whole numbers
+        (no fractional units).
+
+    Raises
+    ------
+    OverflowError
+        If `precision` is negative (< 0).
+
     References
     ----------
     https://www.onixs.biz/fix-dictionary/5.0.SP2/index.html#Price
     """
 
     def __init__(self, value, uint8_t precision):
-        """
-        Initialize a new instance of the ``Price`` class.
-
-        Use a precision of 0 for whole numbers (no fractional units).
-
-        Parameters
-        ----------
-        value : integer, float, string or Decimal
-            The value of the price.
-        precision : uint8
-            The precision for the price.
-
-        Raises
-        ------
-        OverflowError
-            If `precision` is negative (< 0).
-
-        """
         super().__init__(value, precision)
 
     @staticmethod
@@ -448,20 +433,16 @@ cdef class Price(BaseDecimal):
 cdef class Money(BaseDecimal):
     """
     Represents an amount of money including currency type.
+
+    Parameters
+    ----------
+    value : integer, float, string or Decimal
+        The amount of money in the currency denomination.
+    currency : Currency
+        The currency of the money.
     """
 
     def __init__(self, value, Currency currency not None):
-        """
-        Initialize a new instance of the ``Money`` class.
-
-        Parameters
-        ----------
-        value : integer, float, string or Decimal
-            The amount of money in the currency denomination.
-        currency : Currency
-            The currency of the money.
-
-        """
         if value is None:
             value = 0
         super().__init__(value, currency.precision)
@@ -547,6 +528,22 @@ cdef class Money(BaseDecimal):
 cdef class AccountBalance:
     """
     Represents an account balance in a particular currency.
+
+    Parameters
+    ----------
+    total : Money
+        The total account balance.
+    locked : Money
+        The account balance locked (assigned to pending orders).
+    free : Money
+        The account balance free for trading.
+
+    Raises
+    ------
+    ValueError
+        If any money currency does not equal `currency`.
+    ValueError
+        If `total` - `locked` != `free`.
     """
 
     def __init__(
@@ -556,26 +553,6 @@ cdef class AccountBalance:
         Money locked not None,
         Money free not None,
     ):
-        """
-        Initialize a new instance of the ``AccountBalance`` class.
-
-        Parameters
-        ----------
-        total : Money
-            The total account balance.
-        locked : Money
-            The account balance locked (assigned to pending orders).
-        free : Money
-            The account balance free for trading.
-
-        Raises
-        ------
-        ValueError
-            If any money currency does not equal `currency`.
-        ValueError
-            If `total` - `locked` != `free`.
-
-        """
         Condition.equal(currency, total.currency, "currency", "total.currency")
         Condition.equal(currency, locked.currency, "currency", "locked.currency")
         Condition.equal(currency, free.currency, "currency", "free.currency")

@@ -67,7 +67,7 @@ cdef class Account:
 # -- COMMANDS --------------------------------------------------------------------------------------
 
     cpdef void apply(self, AccountState event) except *
-    cpdef void update_balances(self, list balances) except *
+    cpdef void update_balances(self, list balances, bint allow_zero=*) except *
     cpdef void update_commissions(self, Money commission) except *
 
 # -- CALCULATIONS ----------------------------------------------------------------------------------

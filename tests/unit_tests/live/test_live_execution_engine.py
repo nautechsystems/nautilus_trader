@@ -17,6 +17,7 @@ import asyncio
 
 import pytest
 
+from nautilus_trader.backtest.data.providers import TestInstrumentProvider
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.factories import OrderFactory
 from nautilus_trader.common.logging import Logger
@@ -48,7 +49,6 @@ from nautilus_trader.msgbus.bus import MessageBus
 from nautilus_trader.portfolio.portfolio import Portfolio
 from nautilus_trader.trading.strategy import TradingStrategy
 from tests.test_kit.mocks import MockLiveExecutionClient
-from tests.test_kit.providers import TestInstrumentProvider
 from tests.test_kit.stubs import TestStubs
 
 
@@ -146,7 +146,8 @@ class TestLiveExecutionEngine:
     def teardown(self):
         self.exec_engine.dispose()
 
-    def test_start_when_loop_not_running_logs(self):
+    @pytest.mark.asyncio
+    async def test_start_when_loop_not_running_logs(self):
         # Arrange, Act
         self.exec_engine.start()
 
@@ -154,7 +155,8 @@ class TestLiveExecutionEngine:
         assert True  # No exceptions raised
         self.exec_engine.stop()
 
-    def test_message_qsize_at_max_blocks_on_put_command(self):
+    @pytest.mark.asyncio
+    async def test_message_qsize_at_max_blocks_on_put_command(self):
         # Arrange
         # Deregister test fixture ExecutionEngine from msgbus)
         self.msgbus.deregister(endpoint="ExecEngine.execute", handler=self.exec_engine.execute)
@@ -197,12 +199,14 @@ class TestLiveExecutionEngine:
         # Act
         self.exec_engine.execute(submit_order)
         self.exec_engine.execute(submit_order)
+        await asyncio.sleep(0.1)
 
         # Assert
         assert self.exec_engine.qsize() == 1
         assert self.exec_engine.command_count == 0
 
-    def test_message_qsize_at_max_blocks_on_put_event(self):
+    @pytest.mark.asyncio
+    async def test_message_qsize_at_max_blocks_on_put_event(self):
         # Arrange
         # Deregister test fixture ExecutionEngine from msgbus)
         self.msgbus.deregister(endpoint="ExecEngine.execute", handler=self.exec_engine.execute)
@@ -247,6 +251,7 @@ class TestLiveExecutionEngine:
         # Act
         self.exec_engine.execute(submit_order)
         self.exec_engine.process(event)  # Add over max size
+        await asyncio.sleep(0.1)
 
         # Assert
         assert self.exec_engine.qsize() == 1
@@ -341,6 +346,7 @@ class TestLiveExecutionEngine:
         # Act
         await self.exec_engine.reconcile_state(timeout_secs=10)
         self.exec_engine.stop()
+        await asyncio.sleep(0.1)
 
         # Assert
         assert True  # No exceptions raised

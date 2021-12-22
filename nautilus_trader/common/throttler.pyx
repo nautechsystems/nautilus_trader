@@ -38,6 +38,37 @@ cdef class Throttler:
     would exceed the rate limit. Otherwise will buffer messages until within
     the rate limit, then send.
 
+    Parameters
+    ----------
+    name : str
+        The unique name of the throttler.
+    limit : int
+        The limit setting for the throttling.
+    interval : timedelta
+        The interval setting for the throttling.
+    output_send : Callable[[Any], None]
+        The output handler to send messages from the throttler.
+    output_drop : Callable[[Any], None], optional
+        The output handler to drop messages from the throttler.
+        If ``None`` then messages will be buffered.
+    clock : Clock
+        The clock for the throttler.
+    logger : Logger
+        The logger for the throttler.
+
+    Raises
+    ------
+    ValueError
+        If `name` is not a valid string.
+    ValueError
+        If `limit` is not positive (> 0).
+    ValueError
+        If `interval` is not positive (> 0).
+    ValueError
+        If `output_send` is not of type `Callable`.
+    ValueError
+        If `output_drop` is not of type `Callable` or ``None``.
+
     Warnings
     --------
     This throttler is not thread-safe and must be called from the same thread as
@@ -57,41 +88,6 @@ cdef class Throttler:
         Clock clock not None,
         Logger logger not None,
     ):
-        """
-        Initialize a new instance of the ``Throttler`` class.
-
-        Parameters
-        ----------
-        name : str
-            The unique name of the throttler.
-        limit : int
-            The limit setting for the throttling.
-        interval : timedelta
-            The interval setting for the throttling.
-        output_send : Callable[[Any], None]
-            The output handler to send messages from the throttler.
-        output_drop : Callable[[Any], None], optional
-            The output handler to drop messages from the throttler.
-            If ``None`` then messages will be buffered.
-        clock : Clock
-            The clock for the throttler.
-        logger : Logger
-            The logger for the throttler.
-
-        Raises
-        ------
-        ValueError
-            If `name` is not a valid string.
-        ValueError
-            If `limit` is not positive (> 0).
-        ValueError
-            If `interval` is not positive (> 0).
-        ValueError
-            If `output_send` is not of type `Callable`.
-        ValueError
-            If `output_drop` is not of type `Callable` or ``None``.
-
-        """
         Condition.valid_string(name, "name")
         Condition.positive_int(limit, "limit")
         Condition.positive(interval.total_seconds(), "interval.total_seconds()")

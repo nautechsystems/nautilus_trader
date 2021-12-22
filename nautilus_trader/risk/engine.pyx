@@ -39,12 +39,14 @@ from nautilus_trader.model.c_enums.order_status cimport OrderStatus
 from nautilus_trader.model.c_enums.order_type cimport OrderType
 from nautilus_trader.model.c_enums.trading_state cimport TradingState
 from nautilus_trader.model.c_enums.trading_state cimport TradingStateParser
+from nautilus_trader.model.commands.trading cimport CancelAllOrders
 from nautilus_trader.model.commands.trading cimport CancelOrder
 from nautilus_trader.model.commands.trading cimport ModifyOrder
 from nautilus_trader.model.commands.trading cimport SubmitOrder
 from nautilus_trader.model.commands.trading cimport SubmitOrderList
 from nautilus_trader.model.commands.trading cimport TradingCommand
 from nautilus_trader.model.events.order cimport OrderDenied
+from nautilus_trader.model.identifiers cimport ComponentId
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.instruments.base cimport Instrument
 from nautilus_trader.model.objects cimport Price
@@ -70,6 +72,26 @@ cdef class RiskEngine(Component):
      - ``ACTIVE`` (trading is enabled).
      - ``REDUCING`` (only new orders or updates which reduce an open position are allowed).
      - ``HALTED`` (all trading commands except cancels are denied).
+
+    Parameters
+    ----------
+    portfolio : PortfolioFacade
+        The portfolio for the engine.
+    msgbus : MessageBus
+        The message bus for the engine.
+    cache : CacheFacade
+        The read-only cache for the engine.
+    clock : Clock
+        The clock for the engine.
+    logger : Logger
+        The logger for the engine.
+    config : RiskEngineConfig, optional
+        The configuration for the instance.
+
+    Raises
+    ------
+    TypeError
+        If `config` is not of type `RiskEngineConfig`.
     """
 
     def __init__(
@@ -81,36 +103,13 @@ cdef class RiskEngine(Component):
         Logger logger not None,
         config: Optional[RiskEngineConfig]=None,
     ):
-        """
-        Initialize a new instance of the ``RiskEngine`` class.
-
-        Parameters
-        ----------
-        portfolio : PortfolioFacade
-            The portfolio for the engine.
-        msgbus : MessageBus
-            The message bus for the engine.
-        cache : CacheFacade
-            The read-only cache for the engine.
-        clock : Clock
-            The clock for the engine.
-        logger : Logger
-            The logger for the engine.
-        config : RiskEngineConfig, optional
-            The configuration for the instance.
-
-        Raises
-        ------
-        TypeError
-            If `config` is not of type `RiskEngineConfig`.
-
-        """
         if config is None:
             config = RiskEngineConfig()
         Condition.type(config, RiskEngineConfig, "config")
         super().__init__(
             clock=clock,
             logger=logger,
+            component_id=ComponentId("RiskEngine"),
             msgbus=msgbus,
             config=config.dict(),
         )
@@ -260,7 +259,7 @@ cdef class RiskEngine(Component):
         Raises
         ------
         decimal.InvalidOperation
-            If `new_value` not a valid input for decimal.Decimal.
+            If `new_value` not a valid input for `decimal.Decimal`.
         ValueError
             If `new_value` is not ``None`` and not positive.
 
@@ -358,6 +357,8 @@ cdef class RiskEngine(Component):
             self._handle_modify_order(command)
         elif isinstance(command, CancelOrder):
             self._handle_cancel_order(command)
+        elif isinstance(command, CancelAllOrders):
+            self._handle_cancel_all_orders(command)
         else:
             self._log.error(f"Cannot handle command: unrecognized {command}.")
 
@@ -546,6 +547,13 @@ cdef class RiskEngine(Component):
         # All checks passed: send for execution
         self._msgbus.send(endpoint="ExecEngine.execute", msg=command)
 
+    cdef void _handle_cancel_all_orders(self, CancelAllOrders command) except *:
+        ########################################################################
+        # Validate command
+        ########################################################################
+        # Currently no further checks: send for execution
+        self._msgbus.send(endpoint="ExecEngine.execute", msg=command)
+
 # -- PRE-TRADE CHECKS ------------------------------------------------------------------------------
 
     cdef bint _check_order_id(self, Order order) except *:
@@ -677,7 +685,7 @@ cdef class RiskEngine(Component):
         elif isinstance(command, CancelOrder):
             self._log.error(f"CancelOrder DENIED: {reason}.")
 
-    cpdef _deny_new_order(self, TradingCommand command):
+    cpdef void _deny_new_order(self, TradingCommand command) except *:
         if isinstance(command, SubmitOrder):
             self._deny_order(command.order, reason="Exceeded MAX_ORDER_RATE")
         elif isinstance(command, SubmitOrderList):
@@ -717,14 +725,21 @@ cdef class RiskEngine(Component):
 
 # -- EGRESS ----------------------------------------------------------------------------------------
 
-    cdef void _execution_gateway(self, Instrument instrument, TradingCommand command, Order order):
+    cdef void _execution_gateway(self, Instrument instrument, TradingCommand command, Order order) except *:
         # Check TradingState
         if self.trading_state == TradingState.HALTED:
-            self._deny_order_list(
-                order_list=command.list,
-                reason="TradingState.HALTED",
-            )
-            return  # Denied
+            if isinstance(command, SubmitOrder):
+                self._deny_command(
+                    command=command,
+                    reason=f"TradingState.HALTED",
+                )
+                return  # Denied
+            elif isinstance(command, SubmitOrderList):
+                self._deny_order_list(
+                    order_list=command.list,
+                    reason="TradingState.HALTED",
+                )
+                return  # Denied
         elif self.trading_state == TradingState.REDUCING:
             if order.is_buy_c() and self._portfolio.is_net_long(instrument.id):
                 self._deny_command(
@@ -742,7 +757,7 @@ cdef class RiskEngine(Component):
         # All checks passed: send to ORDER_RATE throttler
         self._order_throttler.send(command)
 
-    cpdef _send_command(self, TradingCommand command):
+    cpdef void _send_command(self, TradingCommand command) except *:
         self._msgbus.send(endpoint="ExecEngine.execute", msg=command)
 
 # -- EVENT HANDLERS --------------------------------------------------------------------------------

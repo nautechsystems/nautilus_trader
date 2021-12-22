@@ -35,6 +35,18 @@ from nautilus_trader.model.position cimport Position
 cdef class CashAccount(Account):
     """
     Provides a cash account.
+
+    Parameters
+    ----------
+    event : AccountState
+        The initial account state event.
+    calculate_account_state : bool, optional
+        If the account state should be calculated from order fills.
+
+    Raises
+    ------
+    ValueError
+        If `event.account_type` is not equal to ``CASH``.
     """
     ACCOUNT_TYPE = AccountType.CASH  # required for BettingAccount subclass
 
@@ -43,22 +55,6 @@ cdef class CashAccount(Account):
         AccountState event,
         bint calculate_account_state=False,
     ):
-        """
-        Initialize a new instance of the ``CashAccount`` class.
-
-        Parameters
-        ----------
-        event : AccountState
-            The initial account state event.
-        calculate_account_state : bool, optional
-            If the account state should be calculated from order fills.
-
-        Raises
-        ------
-        ValueError
-            If `event.account_type` is not equal to ``CASH``.
-
-        """
         Condition.not_none(event, "event")
         Condition.equal(event.account_type, self.ACCOUNT_TYPE, "event.account_type", "account_type")
 
@@ -115,7 +111,7 @@ cdef class CashAccount(Account):
     cdef void _recalculate_balance(self, Currency currency) except *:
         cdef AccountBalance current_balance = self._balances.get(currency)
         if current_balance is None:
-            raise RuntimeError("Cannot recalculate balance when no current balance")
+            raise RuntimeError("cannot recalculate balance when no current balance")
 
         total_locked: Decimal = Decimal(0)
 

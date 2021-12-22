@@ -35,6 +35,19 @@ from nautilus_trader.model.data.bar cimport Bar
 cdef class FuzzyCandle:
     """
     Represents a fuzzy candle.
+
+    Parameters
+    ----------
+    direction : CandleDirection
+        The candle direction.
+    size : CandleSize
+        The candle fuzzy size.
+    body_size : CandleBodySize
+        The candle fuzzy body size.
+    upper_wick_size : CandleWickSize
+        The candle fuzzy upper wick size.
+    lower_wick_size : CandleWickSize
+        The candle fuzzy lower wick size.
     """
     def __init__(
         self,
@@ -44,22 +57,6 @@ cdef class FuzzyCandle:
         CandleWickSize upper_wick_size,
         CandleWickSize lower_wick_size,
     ):
-        """
-        Initialize a new instance of the ``FuzzyCandle`` class.
-
-        Parameters
-        ----------
-        direction : CandleDirection
-            The candle direction.
-        size : CandleSize
-            The candle fuzzy size.
-        body_size : CandleBodySize
-            The candle fuzzy body size.
-        upper_wick_size : CandleWickSize
-            The candle fuzzy upper wick size.
-        lower_wick_size : CandleWickSize
-            The candle fuzzy lower wick size.
-        """
         self.direction = direction
         self.size = size
         self.body_size = body_size
@@ -84,6 +81,19 @@ cdef class FuzzyCandlesticks(Indicator):
     """
     An indicator which fuzzifies bar data to produce fuzzy candlesticks.
     Bar data is dimensionally reduced via fuzzy feature extraction.
+
+    Parameters
+    ----------
+    period : int
+        The rolling window period for the indicator (> 0).
+    threshold1 : float
+        The membership function x threshold1 (>= 0).
+    threshold2 : float
+        The membership function x threshold2 (> threshold1).
+    threshold3 : float
+        The membership function x threshold3 (> threshold2).
+    threshold4 : float
+        The membership function x threshold4 (> threshold3).
     """
 
     def __init__(
@@ -94,23 +104,6 @@ cdef class FuzzyCandlesticks(Indicator):
         double threshold3=2.0,
         double threshold4=3.0,
     ):
-        """
-        Initialize a new instance of the ``FuzzyCandlesticks`` class.
-
-        Parameters
-        ----------
-        period : int
-            The rolling window period for the indicator (> 0).
-        threshold1 : float
-            The membership function x threshold1 (>= 0).
-        threshold2 : float
-            The membership function x threshold2 (> threshold1).
-        threshold3 : float
-            The membership function x threshold3 (> threshold2).
-        threshold4 : float
-            The membership function x threshold4 (> threshold3).
-
-        """
         Condition.positive_int(period, "period")
         Condition.positive(threshold1, "threshold1")
         Condition.true(threshold2 > threshold1, "threshold2 was <= threshold1")
@@ -167,7 +160,7 @@ cdef class FuzzyCandlesticks(Indicator):
         double high,
         double low,
         double close,
-    ):
+    ) except *:
         """
         Update the indicator with the given raw values.
 

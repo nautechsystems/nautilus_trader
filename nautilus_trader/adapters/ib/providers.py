@@ -12,7 +12,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
-
+import datetime
 import time
 from typing import Dict, List
 
@@ -27,6 +27,7 @@ from nautilus_trader.model.c_enums.asset_type import AssetType
 from nautilus_trader.model.c_enums.asset_type import AssetTypeParser
 from nautilus_trader.model.currency import Currency
 from nautilus_trader.model.identifiers import InstrumentId
+from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.instruments.base import Instrument
 from nautilus_trader.model.instruments.equity import Equity
 from nautilus_trader.model.instruments.future import Future
@@ -37,6 +38,17 @@ from nautilus_trader.model.objects import Quantity
 class IBInstrumentProvider(InstrumentProvider):
     """
     Provides a means of loading `Instrument` objects through Interactive Brokers.
+
+    Parameters
+    ----------
+    client : ib_insync.IB
+        The Interactive Brokers client.
+    host : str
+        The client host name or IP address.
+    port : str
+        The client port number.
+    client_id : int
+        The unique client ID number for the connection.
     """
 
     def __init__(
@@ -46,21 +58,6 @@ class IBInstrumentProvider(InstrumentProvider):
         port: int = 7497,
         client_id: int = 1,
     ):
-        """
-        Initialize a new instance of the ``IBInstrumentProvider`` class.
-
-        Parameters
-        ----------
-        client : ib_insync.IB
-            The Interactive Brokers client.
-        host : str
-            The client host name or IP address.
-        port : str
-            The client port number.
-        client_id : int
-            The unique client ID number for the connection.
-
-        """
         super().__init__()
 
         self._client = client
@@ -112,13 +109,13 @@ class IBInstrumentProvider(InstrumentProvider):
             )
 
         instrument: Instrument = self._parse_instrument(
-            asset_type=AssetTypeParser.from_str(details.get("asset_type")),
+            asset_type=AssetTypeParser.from_str_py(details.get("asset_type")),
             instrument_id=instrument_id,
             details=details,
             contract_details=contract_details[0],
         )
 
-        self._instruments[instrument_id] = instrument
+        self.add(instrument)
 
     def _parse_instrument(
         self,
@@ -131,7 +128,7 @@ class IBInstrumentProvider(InstrumentProvider):
             PyCondition.is_in("asset_class", details, "asset_class", "details")
             return self._parse_futures_contract(
                 instrument_id=instrument_id,
-                asset_class=AssetClassParser.from_str(details["asset_class"]),
+                asset_class=AssetClassParser.from_str_py(details["asset_class"]),
                 details=contract_details,
             )
         elif asset_type == AssetType.SPOT:
@@ -155,23 +152,17 @@ class IBInstrumentProvider(InstrumentProvider):
         timestamp = time.time_ns()
         future = Future(
             instrument_id=instrument_id,
+            local_symbol=Symbol(details.contract.localSymbol),
             asset_class=asset_class,
-            currency=Currency.from_str_c(details.contract.currency),
+            currency=Currency.from_str(details.contract.currency),
             price_precision=price_precision,
             price_increment=Price(details.minTick, price_precision),
-            multiplier=Quantity.from_int_c(int(details.contract.multiplier)),
-            lot_size=Quantity.from_int_c(1),
-            expiry=details.contract.lastTradeDateOrContractMonth,
-            contract_id=details.contract.conId,
-            local_symbol=details.contract.localSymbol,
-            trading_class=details.contract.tradingClass,
-            market_name=details.marketName,
-            long_name=details.longName,
-            contract_month=details.contractMonth,
-            time_zone_id=details.timeZoneId,
-            trading_hours=details.tradingHours,
-            liquid_hours=details.liquidHours,
-            last_trade_time=details.lastTradeTime,
+            multiplier=Quantity.from_int(int(details.contract.multiplier)),
+            lot_size=Quantity.from_int(1),
+            underlying=details.underSymbol,
+            expiry_date=datetime.datetime.strptime(
+                details.contract.lastTradeDateOrContractMonth, "%Y%m%d"
+            ).date(),
             ts_event=timestamp,
             ts_init=timestamp,
         )
@@ -187,22 +178,23 @@ class IBInstrumentProvider(InstrumentProvider):
         timestamp = time.time_ns()
         equity = Equity(
             instrument_id=instrument_id,
-            currency=Currency.from_str_c(details.contract.currency),
+            local_symbol=Symbol(details.contract.localSymbol),
+            currency=Currency.from_str(details.contract.currency),
             price_precision=price_precision,
             price_increment=Price(details.minTick, price_precision),
-            multiplier=Quantity.from_int_c(
+            multiplier=Quantity.from_int(
                 int(details.contract.multiplier or details.mdSizeMultiplier)
             ),  # is this right?
-            lot_size=Quantity.from_int_c(1),
-            contract_id=details.contract.conId,
-            local_symbol=details.contract.localSymbol,
-            trading_class=details.contract.tradingClass,
-            market_name=details.contract.primaryExchange,
-            long_name=details.longName,
-            time_zone_id=details.timeZoneId,
-            trading_hours=details.tradingHours,
-            last_trade_time=details.lastTradeTime,
+            lot_size=Quantity.from_int(1),
+            isin=_extract_isin(details),
             ts_event=timestamp,
             ts_init=timestamp,
         )
         return equity
+
+
+def _extract_isin(details: ContractDetails):
+    for tag_value in details.secIdList:
+        if tag_value.tag == "ISIN":
+            return tag_value.value
+    raise ValueError("No ISIN found")

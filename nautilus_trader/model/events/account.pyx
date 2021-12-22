@@ -30,6 +30,27 @@ from nautilus_trader.model.objects cimport AccountBalance
 cdef class AccountState(Event):
     """
     Represents an event which includes information on the state of the account.
+
+    Parameters
+    ----------
+    account_id : AccountId
+        The account ID.
+    account_type : AccountId
+        The account type for the event.
+    base_currency : Currency, optional
+        The account base currency. Use None for multi-currency accounts.
+    reported : bool
+        If the state is reported from the exchange (otherwise system calculated).
+    balances : list[AccountBalance]
+        The account balances
+    info : dict [str, object]
+        The additional implementation specific account information.
+    event_id : UUID4
+        The event ID.
+    ts_event : int64
+        The UNIX timestamp (nanoseconds) when the account state event occurred.
+    ts_init : int64
+        The UNIX timestamp (nanoseconds) when the object was initialized.
     """
 
     def __init__(
@@ -44,31 +65,6 @@ cdef class AccountState(Event):
         int64_t ts_event,
         int64_t ts_init,
     ):
-        """
-        Initialize a new instance of the ``AccountState`` class.
-
-        Parameters
-        ----------
-        account_id : AccountId
-            The account ID.
-        account_type : AccountId
-            The account type for the event.
-        base_currency : Currency, optional
-            The account base currency. Use None for multi-currency accounts.
-        reported : bool
-            If the state is reported from the exchange (otherwise system calculated).
-        balances : list[AccountBalance]
-            The account balances
-        info : dict [str, object]
-            The additional implementation specific account information.
-        event_id : UUID4
-            The event ID.
-        ts_event : int64
-            The UNIX timestamp (nanoseconds) when the account state event occurred.
-        ts_init : int64
-            The UNIX timestamp (nanoseconds) when the object was initialized.
-
-        """
         Condition.not_empty(balances, "balances")
         super().__init__(event_id, ts_event, ts_init)
 
@@ -80,13 +76,15 @@ cdef class AccountState(Event):
         self.info = info
 
     def __repr__(self) -> str:
-        return (f"{type(self).__name__}("
-                f"account_id={self.account_id.value}, "
-                f"account_type={AccountTypeParser.to_str(self.account_type)}, "
-                f"base_currency={self.base_currency}, "
-                f"is_reported={self.is_reported}, "
-                f"balances=[{', '.join([str(b) for b in self.balances])}], "
-                f"event_id={self.id})")
+        return (
+            f"{type(self).__name__}("
+            f"account_id={self.account_id.value}, "
+            f"account_type={AccountTypeParser.to_str(self.account_type)}, "
+            f"base_currency={self.base_currency}, "
+            f"is_reported={self.is_reported}, "
+            f"balances=[{', '.join([str(b) for b in self.balances])}], "
+            f"event_id={self.id})"
+        )
 
     @staticmethod
     cdef AccountState from_dict_c(dict values):

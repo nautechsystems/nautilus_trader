@@ -32,6 +32,26 @@ class TestBetfairPersistence:
         self.fs = self.catalog.fs
         self.reader = BetfairTestStubs.betfair_reader()
 
+    def test_bsp_delta_serialize(self):
+        # Arrange
+        bsp_delta = BSPOrderBookDelta.from_dict(
+            {
+                "type": "BSPOrderBookDelta",
+                "instrument_id": "HorseRacing,,31027998,20211027-060000,ODDS,WIN,1.189740277,41465918,0.0.BETFAIR",
+                "book_type": "L2_MBP",
+                "action": "UPDATE",
+                "order_price": 0.990099,
+                "order_size": 60.07,
+                "order_side": "BUY",
+                "order_id": "f7ed1f20-8c1d-40c6-9d63-bd45f7cc0a86",
+                "ts_event": 1635313844283000000,
+                "ts_init": 1635313844283000000,
+            }
+        )
+        values = bsp_delta.to_dict(bsp_delta)
+        assert bsp_delta.from_dict(values) == bsp_delta
+        assert values["type"] == "BSPOrderBookDelta"
+
     @pytest.mark.skip("compression broken in github ci")
     def test_bsp_deltas(self):
         rf = RawFile(

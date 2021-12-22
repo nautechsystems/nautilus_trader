@@ -12,6 +12,7 @@ clean:
 	rm -rf .nox
 	rm -rf .pytest_cache
 	rm -rf build
+	rm -rf cython_debug
 	rm -rf dist
 	rm -rf docs/build
 	find . -name target -type d -exec rm -rf {} +

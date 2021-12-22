@@ -22,6 +22,7 @@ from nautilus_trader.model.c_enums.asset_class cimport AssetClass
 from nautilus_trader.model.c_enums.asset_type cimport AssetType
 from nautilus_trader.model.currency cimport Currency
 from nautilus_trader.model.identifiers cimport InstrumentId
+from nautilus_trader.model.identifiers cimport Symbol
 from nautilus_trader.model.instruments.base cimport Instrument
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
@@ -30,11 +31,46 @@ from nautilus_trader.model.objects cimport Quantity
 cdef class Equity(Instrument):
     """
     Represents an Equity instrument.
+
+    Parameters
+    ----------
+    instrument_id : InstrumentId
+        The instrument ID.
+    local_symbol : Symbol
+        The local/native symbol on the exchange for the instrument.
+    currency : Currency
+        The futures contract currency.
+    price_precision : int
+        The price decimal precision.
+    price_increment : Decimal
+        The minimum price increment (tick size).
+    multiplier : Decimal
+        The contract value multiplier (determines tick value).
+    lot_size : Quantity
+        The rounded lot unit size (standard/board).
+    isin : str
+        The International Securities Identification Number (ISIN).
+    ts_event: int64
+        The UNIX timestamp (nanoseconds) when the data event occurred.
+    ts_init: int64
+        The UNIX timestamp (nanoseconds) when the data object was initialized.
+
+    Raises
+    ------
+    ValueError
+        If `multiplier` is not positive (> 0).
+    ValueError
+        If `price_precision` is negative (< 0).
+    ValueError
+        If `tick_size` is not positive (> 0).
+    ValueError
+        If `lot_size` is not positive (> 0).
     """
 
     def __init__(
         self,
         InstrumentId instrument_id not None,
+        Symbol local_symbol not None,
         Currency currency not None,
         int price_precision,
         Price price_increment not None,
@@ -44,44 +80,9 @@ cdef class Equity(Instrument):
         int64_t ts_event,
         int64_t ts_init,
     ):
-        """
-        Initialize a new instance of the ``Equity`` class.
-
-        Parameters
-        ----------
-        instrument_id : InstrumentId
-            The instrument ID.
-        currency : Currency
-            The futures contract currency.
-        price_precision : int
-            The price decimal precision.
-        price_increment : Decimal
-            The minimum price increment (tick size).
-        multiplier : Decimal
-            The contract value multiplier (determines tick value).
-        lot_size : Quantity
-            The rounded lot unit size (standard/board).
-        isin : str
-            The International Securities Identification Number (ISIN).
-        ts_event: int64
-            The UNIX timestamp (nanoseconds) when the data event occurred.
-        ts_init: int64
-            The UNIX timestamp (nanoseconds) when the data object was initialized.
-
-        Raises
-        ------
-        ValueError
-            If `multiplier` is not positive (> 0).
-        ValueError
-            If `price_precision` is negative (< 0).
-        ValueError
-            If `tick_size` is not positive (> 0).
-        ValueError
-            If `lot_size` is not positive (> 0).
-
-        """
         super().__init__(
             instrument_id=instrument_id,
+            local_symbol=local_symbol,
             asset_class=AssetClass.EQUITY,
             asset_type=AssetType.SPOT,
             quote_currency=currency,
@@ -113,6 +114,7 @@ cdef class Equity(Instrument):
         Condition.not_none(values, "values")
         return Equity(
             instrument_id=InstrumentId.from_str_c(values["id"]),
+            local_symbol=Symbol(values["local_symbol"]),
             currency=Currency.from_str_c(values['currency']),
             price_precision=values['price_precision'],
             price_increment=Price.from_str(values['price_increment']),
@@ -129,6 +131,7 @@ cdef class Equity(Instrument):
         return {
             "type": "Equity",
             "id": obj.id.value,
+            "local_symbol": obj.local_symbol.value,
             "currency": obj.quote_currency.code,
             "price_precision": obj.price_precision,
             "price_increment": str(obj.price_increment),

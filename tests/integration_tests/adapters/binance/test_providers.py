@@ -16,11 +16,14 @@
 import pkgutil
 from typing import Dict
 
+import orjson
 import pytest
 
 from nautilus_trader.adapters.binance.http.client import BinanceHttpClient
 from nautilus_trader.adapters.binance.providers import BinanceInstrumentProvider
-from tests.test_kit.stubs import TestStubs
+from nautilus_trader.model.identifiers import InstrumentId
+from nautilus_trader.model.identifiers import Symbol
+from nautilus_trader.model.identifiers import Venue
 
 
 class TestBinanceInstrumentProvider:
@@ -51,7 +54,7 @@ class TestBinanceInstrumentProvider:
             url_path: str,  # noqa (needed for mock)
             payload: Dict[str, str],  # noqa (needed for mock)
         ) -> bytes:
-            return responses.pop()
+            return orjson.loads(responses.pop())
 
         # Apply mock coroutine to client
         monkeypatch.setattr(
@@ -70,8 +73,8 @@ class TestBinanceInstrumentProvider:
 
         # Assert
         assert self.provider.count == 2
-        assert self.provider.find(TestStubs.btcusdt_binance_id()) is not None
-        assert self.provider.find(TestStubs.ethusdt_binance_id()) is not None
+        assert self.provider.find(InstrumentId(Symbol("BTCUSDT"), Venue("BINANCE"))) is not None
+        assert self.provider.find(InstrumentId(Symbol("ETHUSDT"), Venue("BINANCE"))) is not None
         assert len(self.provider.currencies()) == 3
         assert "BTC" in self.provider.currencies()
         assert "ETH" in self.provider.currencies()

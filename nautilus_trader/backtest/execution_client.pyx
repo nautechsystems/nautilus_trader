@@ -19,6 +19,7 @@ from nautilus_trader.common.clock cimport TestClock
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.execution.client cimport ExecutionClient
+from nautilus_trader.model.commands.trading cimport CancelAllOrders
 from nautilus_trader.model.commands.trading cimport CancelOrder
 from nautilus_trader.model.commands.trading cimport ModifyOrder
 from nautilus_trader.model.commands.trading cimport SubmitOrder
@@ -34,6 +35,23 @@ from nautilus_trader.accounting.factory import AccountFactory
 cdef class BacktestExecClient(ExecutionClient):
     """
     Provides an execution client for the `BacktestEngine`.
+
+    Parameters
+    ----------
+    exchange : SimulatedExchange
+        The simulated exchange for the backtest.
+    account_id : AccountId
+        The account ID for the client.
+    msgbus : MessageBus
+        The message bus for the client.
+    cache : Cache
+        The cache for the client.
+    clock : TestClock
+        The clock for the client.
+    logger : Logger
+        The logger for the client.
+    is_frozen_account : bool
+        If the backtest run account is frozen.
     """
 
     def __init__(
@@ -46,27 +64,6 @@ cdef class BacktestExecClient(ExecutionClient):
         Logger logger not None,
         bint is_frozen_account=False,
     ):
-        """
-        Initialize a new instance of the ``BacktestExecClient`` class.
-
-        Parameters
-        ----------
-        exchange : SimulatedExchange
-            The simulated exchange for the backtest.
-        account_id : AccountId
-            The account ID for the client.
-        msgbus : MessageBus
-            The message bus for the client.
-        cache : Cache
-            The cache for the client.
-        clock : TestClock
-            The clock for the client.
-        logger : Logger
-            The logger for the client.
-        is_frozen_account : bool
-            If the backtest run account is frozen.
-
-        """
         super().__init__(
             client_id=ClientId(exchange.id.value),
             venue_type=exchange.venue_type,
@@ -157,11 +154,25 @@ cdef class BacktestExecClient(ExecutionClient):
 
     cpdef void cancel_order(self, CancelOrder command) except *:
         """
-        Cancel the order with the `ClientOrderId` contained in the given command.
+        Cancel the order with the client order ID contained in the given command.
 
         Parameters
         ----------
         command : CancelOrder
+            The command to execute.
+
+        """
+        Condition.true(self.is_connected, "not connected")
+
+        self._exchange.send(command)
+
+    cpdef void cancel_all_orders(self, CancelAllOrders command) except *:
+        """
+        Cancel all orders for the instrument ID contained in the given command.
+
+        Parameters
+        ----------
+        command : CancelAllOrders
             The command to execute.
 
         """

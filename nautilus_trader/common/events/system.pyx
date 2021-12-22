@@ -31,6 +31,23 @@ from nautilus_trader.serialization.json.default import Default
 cdef class ComponentStateChanged(Event):
     """
     Represents an event which includes information on the state of a component.
+
+    Parameters
+    ----------
+    trader_id : TraderId
+        The trader ID associated with the event.
+    component_id : ComponentId
+        The component ID associated with the event.
+    component_type : str
+        The component type.
+    state : ComponentState
+        The component state.
+    event_id : UUID4
+        The event ID.
+    ts_event : int64
+        The UNIX timestamp (nanoseconds) when the component state event occurred.
+    ts_init : int64
+        The UNIX timestamp (nanoseconds) when the object was initialized.
     """
 
     def __init__(
@@ -44,27 +61,6 @@ cdef class ComponentStateChanged(Event):
         int64_t ts_event,
         int64_t ts_init,
     ):
-        """
-        Initialize a new instance of the ``ComponentStateEvent`` class.
-
-        Parameters
-        ----------
-        trader_id : TraderId
-            The trader ID associated with the event.
-        component_id : ComponentId
-            The component ID associated with the event.
-        component_type : str
-            The component type.
-        state : ComponentState
-            The component state.
-        event_id : UUID4
-            The event ID.
-        ts_event : int64
-            The UNIX timestamp (nanoseconds) when the component state event occurred.
-        ts_init : int64
-            The UNIX timestamp (nanoseconds) when the object was initialized.
-
-        """
         super().__init__(event_id, ts_event, ts_init)
 
         self.trader_id = trader_id
@@ -74,23 +70,27 @@ cdef class ComponentStateChanged(Event):
         self.config = config
 
     def __str__(self) -> str:
-        return (f"{type(self).__name__}("
-                f"trader_id={self.trader_id.value}, "
-                f"component_id={self.component_id}, "
-                f"component_type={self.component_type}, "
-                f"state={ComponentStateParser.to_str(self.state)}, "
-                f"config={self.config}, "
-                f"event_id={self.id})")
+        return (
+            f"{type(self).__name__}("
+            f"trader_id={self.trader_id.value}, "
+            f"component_id={self.component_id}, "
+            f"component_type={self.component_type}, "
+            f"state={ComponentStateParser.to_str(self.state)}, "
+            f"config={self.config}, "
+            f"event_id={self.id})"
+        )
 
     def __repr__(self) -> str:
-        return (f"{type(self).__name__}("
-                f"trader_id={self.trader_id.value}, "
-                f"component_id={self.component_id}, "
-                f"component_type={self.component_type}, "
-                f"state={ComponentStateParser.to_str(self.state)}, "
-                f"config={self.config}, "
-                f"event_id={self.id}, "
-                f"ts_init={self.ts_init})")
+        return (
+            f"{type(self).__name__}("
+            f"trader_id={self.trader_id.value}, "
+            f"component_id={self.component_id}, "
+            f"component_type={self.component_type}, "
+            f"state={ComponentStateParser.to_str(self.state)}, "
+            f"config={self.config}, "
+            f"event_id={self.id}, "
+            f"ts_init={self.ts_init})"
+        )
 
     @staticmethod
     cdef ComponentStateChanged from_dict_c(dict values):

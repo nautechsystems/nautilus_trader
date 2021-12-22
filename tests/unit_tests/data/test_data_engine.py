@@ -15,6 +15,7 @@
 
 import pytest
 
+from nautilus_trader.backtest.data.providers import TestInstrumentProvider
 from nautilus_trader.backtest.data_client import BacktestMarketDataClient
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.enums import LogLevel
@@ -54,7 +55,6 @@ from nautilus_trader.model.orderbook.data import OrderBookSnapshot
 from nautilus_trader.msgbus.bus import MessageBus
 from nautilus_trader.portfolio.portfolio import Portfolio
 from tests.test_kit.mocks import ObjectStorer
-from tests.test_kit.providers import TestInstrumentProvider
 from tests.test_kit.stubs import TestStubs
 
 
@@ -887,6 +887,42 @@ class TestDataEngine:
         # Assert
         assert self.data_engine.subscribed_order_book_snapshots() == []
 
+    def test_order_book_snapshots_when_book_not_updated_does_not_send_(self):
+        # Arrange
+        self.data_engine.register_client(self.binance_client)
+        self.binance_client.start()
+
+        self.data_engine.process(ETHUSDT_BINANCE)  # <-- add necessary instrument for test
+
+        handler = []
+        self.msgbus.subscribe(
+            topic="data.book.snapshots.BINANCE.ETH/USDT.1000", handler=handler.append
+        )
+
+        subscribe = Subscribe(
+            client_id=ClientId(BINANCE.value),
+            data_type=DataType(
+                OrderBook,
+                {
+                    "instrument_id": ETHUSDT_BINANCE.id,
+                    "book_type": BookType.L2_MBP,
+                    "depth": 20,
+                    "interval_ms": 1000,  # Streaming
+                },
+            ),
+            command_id=self.uuid_factory.generate(),
+            ts_init=self.clock.timestamp_ns(),
+        )
+
+        self.data_engine.execute(subscribe)
+
+        # Act
+        events = self.clock.advance_time(1_000_000_000)
+        events[0].handle()
+
+        # Assert
+        assert len(handler) == 0
+
     def test_process_order_book_snapshot_when_one_subscriber_then_sends_to_registered_handler(
         self,
     ):
@@ -923,8 +959,8 @@ class TestDataEngine:
             book_type=BookType.L2_MBP,
             bids=[[1000, 1]],
             asks=[[1001, 1]],
-            ts_event=0,
-            ts_init=0,
+            ts_event=1_000_000,
+            ts_init=1_000_000,
         )
 
         # Act
@@ -1033,8 +1069,8 @@ class TestDataEngine:
             book_type=BookType.L2_MBP,
             bids=[[1000, 1]],
             asks=[[1001, 1]],
-            ts_event=0,
-            ts_init=0,
+            ts_event=1_000_000,
+            ts_init=1_000_000,
         )
 
         self.data_engine.process(snapshot)
@@ -1302,7 +1338,7 @@ class TestDataEngine:
             price=Price.from_str("1050.00000"),
             size=Quantity.from_int(100),
             aggressor_side=AggressorSide.BUY,
-            match_id="123456789",
+            trade_id="123456789",
             ts_event=0,
             ts_init=0,
         )
@@ -1347,7 +1383,7 @@ class TestDataEngine:
             price=Price.from_str("1050.00000"),
             size=Quantity.from_int(100),
             aggressor_side=AggressorSide.BUY,
-            match_id="123456789",
+            trade_id="123456789",
             ts_event=0,
             ts_init=0,
         )

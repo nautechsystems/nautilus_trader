@@ -22,10 +22,13 @@ import pandas as pd
 import pytest
 
 from nautilus_trader.adapters.betfair.providers import BetfairInstrumentProvider
+from nautilus_trader.backtest.data.providers import TestInstrumentProvider
+from nautilus_trader.backtest.data.wranglers import BarDataWrangler
 from nautilus_trader.backtest.data.wranglers import QuoteTickDataWrangler
 from nautilus_trader.model.instruments.currency import CurrencySpot
 from nautilus_trader.persistence.catalog import DataCatalog
 from nautilus_trader.persistence.external.core import make_raw_files
+from nautilus_trader.persistence.external.core import process_files
 from nautilus_trader.persistence.external.core import process_raw_file
 from nautilus_trader.persistence.external.readers import ByteReader
 from nautilus_trader.persistence.external.readers import CSVReader
@@ -37,7 +40,6 @@ from tests.integration_tests.adapters.betfair.test_kit import BetfairTestStubs
 from tests.test_kit import PACKAGE_ROOT
 from tests.test_kit.mocks import MockReader
 from tests.test_kit.mocks import data_catalog_setup
-from tests.test_kit.providers import TestInstrumentProvider
 from tests.test_kit.stubs import TestStubs
 
 
@@ -126,6 +128,7 @@ class TestPersistenceParsers:
             # Replace str repr with "fully qualified" string we can `eval`
             replacements = {
                 b"id=BTC/USDT.BINANCE": b"instrument_id=InstrumentId(Symbol('BTC/USDT'), venue=Venue('BINANCE'))",
+                b"local_symbol=BTCUSDT": b"local_symbol=Symbol('BTCUSDT')",
                 b"price_increment=0.01": b"price_increment=Price.from_str('0.01')",
                 b"size_increment=0.000001": b"size_increment=Quantity.from_str('0.000001')",
                 b"margin_init=0": b"margin_init=Decimal(0)",
@@ -158,6 +161,38 @@ class TestPersistenceParsers:
         raw_file = make_raw_files(glob_path=f"{TEST_DATA_DIR}/truefx-audusd-ticks.csv")[0]
         result = process_raw_file(catalog=self.catalog, raw_file=raw_file, reader=reader)
         assert result == 100000
+
+    def test_csv_reader_headerless_dataframe(self):
+        bar_type = TestStubs.bartype_adabtc_binance_1min_last()
+        instrument = TestInstrumentProvider.adabtc_binance()
+        wrangler = BarDataWrangler(bar_type, instrument)
+
+        def parser(data):
+            data["timestamp"] = data["timestamp"].astype("datetime64[ms]")
+            bars = wrangler.process(data.set_index("timestamp"))
+            return bars
+
+        binance_spot_header = [
+            "timestamp",
+            "open",
+            "high",
+            "low",
+            "close",
+            "volume",
+            "ts_close",
+            "quote_volume",
+            "n_trades",
+            "taker_buy_base_volume",
+            "taker_buy_quote_volume",
+            "ignore",
+        ]
+        reader = CSVReader(block_parser=parser, header=binance_spot_header)
+        in_ = process_files(
+            glob_path=f"{TEST_DATA_DIR}/ADABTC-1m-2021-11-*.csv",
+            reader=reader,
+            catalog=self.catalog,
+        )
+        assert sum(in_.values()) == 21
 
     def test_text_reader(self):
         provider = BetfairInstrumentProvider.from_instruments([])

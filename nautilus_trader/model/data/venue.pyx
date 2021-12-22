@@ -32,6 +32,13 @@ cdef class StatusUpdate(Data):
     """
     The abstract base class for all status updates.
 
+    Parameters
+    ----------
+    ts_event : int64
+        The UNIX timestamp (nanoseconds) when the status update event occurred.
+    ts_init : int64
+        The UNIX timestamp (nanoseconds) when the object was initialized.
+
     Warnings
     --------
     This class should not be used directly, but through a concrete subclass.
@@ -42,23 +49,21 @@ cdef class StatusUpdate(Data):
         int64_t ts_event,
         int64_t ts_init,
     ):
-        """
-        Initialize a new instance of the ``StatusUpdate`` base class.
-
-        Parameters
-        ----------
-        ts_event : int64
-            The UNIX timestamp (nanoseconds) when the status update event occurred.
-        ts_init : int64
-            The UNIX timestamp (nanoseconds) when the object was initialized.
-
-        """
         super().__init__(ts_event, ts_init)
 
 
 cdef class VenueStatusUpdate(StatusUpdate):
     """
     Represents an update that indicates a change in a Venue status.
+
+    Parameters
+    ----------
+    status : VenueStatus
+        The venue status.
+    ts_event : int64
+        The UNIX timestamp (nanoseconds) when the status update event occurred.
+    ts_init : int64
+        The UNIX timestamp (nanoseconds) when the object was initialized.
     """
 
     def __init__(
@@ -68,19 +73,6 @@ cdef class VenueStatusUpdate(StatusUpdate):
         int64_t ts_event,
         int64_t ts_init,
     ):
-        """
-        Initialize a new instance of the ``VenueStatusUpdate`` class.
-
-        Parameters
-        ----------
-        status : VenueStatus
-            The venue status.
-        ts_event : int64
-            The UNIX timestamp (nanoseconds) when the status update event occurred.
-        ts_init : int64
-            The UNIX timestamp (nanoseconds) when the object was initialized.
-
-        """
         super().__init__(ts_event, ts_init)
         self.venue = venue
         self.status = status
@@ -92,9 +84,11 @@ cdef class VenueStatusUpdate(StatusUpdate):
         return hash(frozenset(VenueStatusUpdate.to_dict_c(self)))
 
     def __repr__(self) -> str:
-        return (f"{type(self).__name__}("
-                f"venue={self.venue}, "
-                f"status={VenueStatusParser.to_str(self.status)})")
+        return (
+            f"{type(self).__name__}("
+            f"venue={self.venue}, "
+            f"status={VenueStatusParser.to_str(self.status)})"
+        )
 
     @staticmethod
     cdef VenueStatusUpdate from_dict_c(dict values):
@@ -150,6 +144,15 @@ cdef class VenueStatusUpdate(StatusUpdate):
 cdef class InstrumentStatusUpdate(StatusUpdate):
     """
     Represents an event that indicates a change in an instrument status.
+
+    Parameters
+    ----------
+    status : InstrumentStatus
+        The instrument status.
+    ts_event : int64
+        The UNIX timestamp (nanoseconds) when the status update event occurred.
+    ts_init : int64
+        The UNIX timestamp (nanoseconds) when the object was initialized.
     """
 
     def __init__(
@@ -159,19 +162,6 @@ cdef class InstrumentStatusUpdate(StatusUpdate):
         int64_t ts_event,
         int64_t ts_init,
     ):
-        """
-        Initialize a new instance of the ``InstrumentStatusUpdate`` class.
-
-        Parameters
-        ----------
-        status : InstrumentStatus
-            The instrument status.
-        ts_event : int64
-            The UNIX timestamp (nanoseconds) when the status update event occurred.
-        ts_init : int64
-            The UNIX timestamp (nanoseconds) when the object was initialized.
-
-        """
         super().__init__(ts_event, ts_init,)
         self.instrument_id = instrument_id
         self.status = status
@@ -183,9 +173,11 @@ cdef class InstrumentStatusUpdate(StatusUpdate):
         return hash(frozenset(InstrumentStatusUpdate.to_dict_c(self)))
 
     def __repr__(self) -> str:
-        return (f"{type(self).__name__}("
-                f"instrument_id={self.instrument_id}, "
-                f"status={InstrumentStatusParser.to_str(self.status)})")
+        return (
+            f"{type(self).__name__}("
+            f"instrument_id={self.instrument_id}, "
+            f"status={InstrumentStatusParser.to_str(self.status)})"
+        )
 
     @staticmethod
     cdef InstrumentStatusUpdate from_dict_c(dict values):
@@ -241,6 +233,17 @@ cdef class InstrumentStatusUpdate(StatusUpdate):
 cdef class InstrumentClosePrice(Data):
     """
     Represents an instruments closing price at a venue.
+
+    Parameters
+    ----------
+    close_price : Price
+        The closing price for the instrument.
+    close_type : InstrumentCloseType
+        The type of closing price.
+    ts_event : int64
+        The UNIX timestamp (nanoseconds) when the close price event occurred.
+    ts_init : int64
+        The UNIX timestamp (nanoseconds) when the object was initialized.
     """
 
     def __init__(
@@ -251,21 +254,6 @@ cdef class InstrumentClosePrice(Data):
         int64_t ts_event,
         int64_t ts_init,
     ):
-        """
-        Initialize a new instance of the ``InstrumentClosePrice`` class.
-
-        Parameters
-        ----------
-        close_price : Price
-            The closing price for the instrument.
-        close_type : InstrumentCloseType
-            The type of closing price.
-        ts_event : int64
-            The UNIX timestamp (nanoseconds) when the close price event occurred.
-        ts_init : int64
-            The UNIX timestamp (nanoseconds) when the object was initialized.
-
-        """
         super().__init__(ts_event, ts_init,)
         self.instrument_id = instrument_id
         self.close_price = close_price
@@ -278,10 +266,12 @@ cdef class InstrumentClosePrice(Data):
         return hash(frozenset(InstrumentClosePrice.to_dict_c(self)))
 
     def __repr__(self) -> str:
-        return (f"{type(self).__name__}("
-                f"instrument_id={self.instrument_id}, "
-                f"close_price={self.close_price}, "
-                f"close_type={InstrumentCloseTypeParser.to_str(self.close_type)})")
+        return (
+            f"{type(self).__name__}("
+            f"instrument_id={self.instrument_id}, "
+            f"close_price={self.close_price}, "
+            f"close_type={InstrumentCloseTypeParser.to_str(self.close_type)})"
+        )
 
     @staticmethod
     cdef InstrumentClosePrice from_dict_c(dict values):

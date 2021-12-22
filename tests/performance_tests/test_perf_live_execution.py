@@ -17,6 +17,7 @@ import asyncio
 
 import pytest
 
+from nautilus_trader.backtest.data.providers import TestInstrumentProvider
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.common.uuid import UUIDFactory
@@ -36,7 +37,6 @@ from nautilus_trader.portfolio.portfolio import Portfolio
 from nautilus_trader.trading.strategy import TradingStrategy
 from tests.test_kit.mocks import MockExecutionClient
 from tests.test_kit.performance import PerformanceHarness
-from tests.test_kit.providers import TestInstrumentProvider
 from tests.test_kit.stubs import TestStubs
 
 
@@ -135,6 +135,7 @@ class TestLiveExecutionPerformance(PerformanceHarness):
 
         self.strategy.submit_order(order)
 
+    @pytest.mark.skip(reason="for development, plus event loop issue")
     def test_execute_command(self):
         order = self.strategy.order_factory.market(
             BTCUSDT_BINANCE.id,

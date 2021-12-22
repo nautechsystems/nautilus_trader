@@ -79,6 +79,19 @@ cdef class DataEngine(Component):
     """
     Provides a high-performance data engine for managing many `DataClient`
     instances, for the asynchronous ingest of data.
+
+    Parameters
+    ----------
+    msgbus : MessageBus
+        The message bus for the engine.
+    cache : Cache
+        The cache for the engine.
+    clock : Clock
+        The clock for the engine.
+    logger : Logger
+        The logger for the engine.
+    config : DataEngineConfig, optional
+        The configuration for the instance.
     """
 
     def __init__(
@@ -89,23 +102,6 @@ cdef class DataEngine(Component):
         Logger logger not None,
         config: Optional[DataEngineConfig]=None,
     ):
-        """
-        Initialize a new instance of the ``DataEngine`` class.
-
-        Parameters
-        ----------
-        msgbus : MessageBus
-            The message bus for the engine.
-        cache : Cache
-            The cache for the engine.
-        clock : Clock
-            The clock for the engine.
-        logger : Logger
-            The logger for the engine.
-        config : DataEngineConfig, optional
-            The configuration for the instance.
-
-        """
         if config is None:
             config = DataEngineConfig()
         Condition.type(config, DataEngineConfig, "config")
@@ -617,6 +613,7 @@ cdef class DataEngine(Component):
         client.subscribe_order_book_deltas(
             instrument_id=instrument_id,
             book_type=metadata["book_type"],
+            depth=metadata["depth"],
             kwargs=metadata.get("kwargs"),
         )
 
@@ -668,15 +665,16 @@ cdef class DataEngine(Component):
             if instrument_id not in client.subscribed_order_book_deltas():
                 client.subscribe_order_book_deltas(
                     instrument_id=instrument_id,
-                    book_type=metadata.get("book_type"),
+                    book_type=metadata["book_type"],
+                    depth=metadata["depth"],
                     kwargs=metadata.get("kwargs"),
                 )
         except NotImplementedError:
             if instrument_id not in client.subscribed_order_book_snapshots():
                 client.subscribe_order_book_snapshots(
                     instrument_id=instrument_id,
-                    book_type=metadata.get("book_type"),
-                    depth=metadata.get("depth"),
+                    book_type=metadata["book_type"],
+                    depth=metadata["depth"],
                     kwargs=metadata.get("kwargs"),
                 )
 
@@ -1070,7 +1068,7 @@ cdef class DataEngine(Component):
         self._cache.add_bars(bars)
 
         cdef TimeBarAggregator aggregator
-        if partial is not None:
+        if partial is not None and partial.type.is_internally_aggregated():
             # Update partial time bar
             aggregator = self._bar_aggregators.get(partial.type)
             if aggregator:
@@ -1096,7 +1094,8 @@ cdef class DataEngine(Component):
         cdef OrderBook order_book = self._cache.order_book(data.instrument_id)
         if order_book is None:
             self._log.error(
-                f"Cannot maintain book: no book found for {data.instrument_id}."
+                f"Cannot maintain order book: "
+                f"no book found for {data.instrument_id}.",
             )
             return
 
@@ -1109,12 +1108,22 @@ cdef class DataEngine(Component):
 
         cdef OrderBook order_book = self._cache.order_book(instrument_id)
         if order_book:
+            if order_book.ts_last == 0:
+                self._log.debug("OrderBook not yet updated, skipping snapshot.")
+                return
+
             self._msgbus.publish_c(
                 topic=f"data.book.snapshots"
                       f".{instrument_id.venue}"
                       f".{instrument_id.symbol}"
                       f".{interval_ms}",
                 msg=order_book,
+            )
+
+        else:
+            self._log.error(
+                f"Cannot snapshot orderbook: "
+                f"no order book found, {snap_event}.",
             )
 
     cdef void _start_bar_aggregator(self, MarketDataClient client, BarType bar_type) except *:
@@ -1158,7 +1167,7 @@ cdef class DataEngine(Component):
             )
         else:  # pragma: no cover (design-time error)
             raise RuntimeError(
-                f"Cannot start aggregator, "
+                f"Cannot start aggregator: "
                 f"BarAggregation.{bar_type.spec.aggregation_string_c()} "
                 f"not currently supported in this version"
             )
@@ -1196,11 +1205,6 @@ cdef class DataEngine(Component):
     ) except *:
         data_type = type(TradeTick) if bar_type.spec.price_type == PriceType.LAST else QuoteTick
 
-        if data_type == type(TradeTick) and "request_trade_ticks" in client.unavailable_methods():
-            return
-        elif data_type == type(QuoteTick) and "request_quote_ticks" in client.unavailable_methods():
-            return
-
         # Update aggregator with latest data
         bulk_updater = BulkTimeBarUpdater(aggregator)
 
@@ -1224,7 +1228,10 @@ cdef class DataEngine(Component):
     cdef void _stop_bar_aggregator(self, MarketDataClient client, BarType bar_type) except *:
         cdef aggregator = self._bar_aggregators.get(bar_type)
         if aggregator is None:
-            self._log.warning(f"No bar aggregator to stop for {bar_type}")
+            self._log.warning(
+                f"Cannot stop bar aggregator: "
+                f"no aggregator to stop for {bar_type}",
+            )
             return
 
         if isinstance(aggregator, TimeBarAggregator):

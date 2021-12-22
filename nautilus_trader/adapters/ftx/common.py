@@ -16,4 +16,4 @@
 from nautilus_trader.model.identifiers import Venue
 
 
-FTX_VENUE = Venue("FTX_VENUE")
+FTX_VENUE = Venue("FTX")

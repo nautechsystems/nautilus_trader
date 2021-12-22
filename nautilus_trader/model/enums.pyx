@@ -43,6 +43,8 @@ from nautilus_trader.model.c_enums.liquidity_side import LiquiditySide          
 from nautilus_trader.model.c_enums.liquidity_side import LiquiditySideParser               # noqa F401 (being used)
 from nautilus_trader.model.c_enums.oms_type import OMSType                                 # noqa F401 (being used)
 from nautilus_trader.model.c_enums.oms_type import OMSTypeParser                           # noqa F401 (being used)
+from nautilus_trader.model.c_enums.option_kind import OptionKind                           # noqa F401 (being used)
+from nautilus_trader.model.c_enums.option_kind import OptionKindParser                     # noqa F401 (being used)
 from nautilus_trader.model.c_enums.order_side import OrderSide                             # noqa F401 (being used)
 from nautilus_trader.model.c_enums.order_side import OrderSideParser                       # noqa F401 (being used)
 from nautilus_trader.model.c_enums.order_status import OrderStatus                         # noqa F401 (being used)

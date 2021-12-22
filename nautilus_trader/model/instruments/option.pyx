@@ -22,8 +22,11 @@ from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.model.c_enums.asset_class cimport AssetClass
 from nautilus_trader.model.c_enums.asset_class cimport AssetClassParser
 from nautilus_trader.model.c_enums.asset_type cimport AssetType
+from nautilus_trader.model.c_enums.option_kind cimport OptionKind
+from nautilus_trader.model.c_enums.option_kind cimport OptionKindParser
 from nautilus_trader.model.currency cimport Currency
 from nautilus_trader.model.identifiers cimport InstrumentId
+from nautilus_trader.model.identifiers cimport Symbol
 from nautilus_trader.model.instruments.base cimport Instrument
 from nautilus_trader.model.instruments.base cimport Price
 from nautilus_trader.model.objects cimport Quantity
@@ -32,11 +35,52 @@ from nautilus_trader.model.objects cimport Quantity
 cdef class Option(Instrument):
     """
     Represents an options instrument.
+
+    Parameters
+    ----------
+    instrument_id : InstrumentId
+        The instrument ID.
+    local_symbol : Symbol
+        The local/native symbol on the exchange for the instrument.
+    asset_class : AssetClass
+        The futures contract asset class.
+    currency : Currency
+        The futures contract currency.
+    price_precision : int
+        The price decimal precision.
+    price_increment : Price
+        The minimum price increment (tick size).
+    multiplier : Quantity
+        The option multiplier.
+    lot_size : Quantity
+        The rounded lot unit size (standard/board).
+    strike_price : Price
+        The option strike price.
+    underlying : str
+        The underlying asset.
+    expiry_date : date
+        The option expiry date.
+    ts_event: int64
+        The UNIX timestamp (nanoseconds) when the data event occurred.
+    ts_init: int64
+        The UNIX timestamp (nanoseconds) when the data object was initialized.
+
+    Raises
+    ------
+    ValueError
+        If `multiplier` is not positive (> 0).
+    ValueError
+        If `price_precision` is negative (< 0).
+    ValueError
+        If `tick_size` is not positive (> 0).
+    ValueError
+        If `lot_size` is not positive (> 0).
     """
 
     def __init__(
         self,
         InstrumentId instrument_id not None,
+        Symbol local_symbol not None,
         AssetClass asset_class,
         Currency currency not None,
         int price_precision,
@@ -46,54 +90,14 @@ cdef class Option(Instrument):
         Price strike_price not None,
         str underlying,
         date expiry_date,
+        OptionKind kind,
         int64_t ts_event,
         int64_t ts_init,
     ):
-        """
-        Initialize a new instance of the ``Option`` class.
-
-        Parameters
-        ----------
-        instrument_id : InstrumentId
-            The instrument ID.
-        asset_class : AssetClass
-            The futures contract asset class.
-        currency : Currency
-            The futures contract currency.
-        price_precision : int
-            The price decimal precision.
-        price_increment : Price
-            The minimum price increment (tick size).
-        multiplier : Quantity
-            The option multiplier.
-        lot_size : Quantity
-            The rounded lot unit size (standard/board).
-        strike_price : Price
-            The option strike price.
-        underlying : str
-            The underlying asset.
-        expiry_date : date
-            The option expiry date.
-        ts_event: int64
-            The UNIX timestamp (nanoseconds) when the data event occurred.
-        ts_init: int64
-            The UNIX timestamp (nanoseconds) when the data object was initialized.
-
-        Raises
-        ------
-        ValueError
-            If `multiplier` is not positive (> 0).
-        ValueError
-            If `price_precision` is negative (< 0).
-        ValueError
-            If `tick_size` is not positive (> 0).
-        ValueError
-            If `lot_size` is not positive (> 0).
-
-        """
         Condition.positive_int(multiplier, "multiplier")
         super().__init__(
             instrument_id=instrument_id,
+            local_symbol=local_symbol,
             asset_class=asset_class,
             asset_type=AssetType.OPTION,
             quote_currency=currency,
@@ -118,25 +122,29 @@ cdef class Option(Instrument):
             ts_init=ts_init,
             info={},
         )
+        self.underlying = underlying
         self.expiry_date = expiry_date
         self.strike_price = strike_price
+        self.kind = kind
 
     @staticmethod
     cdef Option from_dict_c(dict values):
         Condition.not_none(values, "values")
         return Option(
             instrument_id=InstrumentId.from_str_c(values["id"]),
+            local_symbol=Symbol(values["local_symbol"]),
             asset_class=AssetClassParser.from_str(values["asset_class"]),
-            currency=Currency.from_str_c(values['currency']),
-            price_precision=values['price_precision'],
-            price_increment=Price.from_str(values['price_increment']),
-            multiplier=Quantity.from_str(values['multiplier']),
-            lot_size=Quantity.from_str(values['lot_size']),
+            currency=Currency.from_str_c(values["currency"]),
+            price_precision=values["price_precision"],
+            price_increment=Price.from_str(values["price_increment"]),
+            multiplier=Quantity.from_str(values["multiplier"]),
+            lot_size=Quantity.from_str(values["lot_size"]),
             underlying=values['underlying'],
-            expiry_date=date.fromisoformat(values['expiry_date']),
-            strike_price=Price.from_str(values['strike_price']),
-            ts_event=values['ts_event'],
-            ts_init=values['ts_init'],
+            expiry_date=date.fromisoformat(values["expiry_date"]),
+            strike_price=Price.from_str(values["strike_price"]),
+            kind=OptionKindParser.from_str(values["kind"]),
+            ts_event=values["ts_event"],
+            ts_init=values["ts_init"],
         )
 
     @staticmethod
@@ -145,6 +153,7 @@ cdef class Option(Instrument):
         return {
             "type": "Equity",
             "id": obj.id.value,
+            "local_symbol": obj.local_symbol.value,
             "asset_class": AssetClassParser.to_str(obj.asset_class),
             "currency": obj.quote_currency.code,
             "price_precision": obj.price_precision,
@@ -158,6 +167,7 @@ cdef class Option(Instrument):
             "strike_price": str(obj.strike_price),
             "margin_init": str(obj.margin_init),
             "margin_maint": str(obj.margin_maint),
+            "kind": OptionKindParser.to_str(obj.kind),
             "ts_event": obj.ts_event,
             "ts_init": obj.ts_init,
         }

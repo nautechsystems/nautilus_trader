@@ -1,15 +1,87 @@
+# NautilusTrader 1.136.0 Beta - Release Notes
+
+Released TBD
+
+## Breaking Changes
+- Renamed `CryptoSwap` to `CryptoPerpetual`.
+
+## Enhancements
+- Can now modify or cancel in-flight orders live and backtest.
+- Updated `CancelOrder` to allow None `venue_order_id`.
+- Updated `ModifyOrder` to allow None `venue_order_id`.
+- Updated `OrderPendingUpdate` to allow None `venue_order_id`.
+- Updated `OrderPendingCancel` to allow None `venue_order_id`.
+- Updated `OrderCancelRejected` to allow None `venue_order_id`.
+- Updated `OrderModifyRejected` to allow None `venue_order_id`.
+
+## Fixes
+- Implemented comparisons for `DataType`, `BarSpecification` and `BarType`.
+
+---
+
+# NautilusTrader 1.135.0 Beta - Release Notes
+
+Released 13th, December 2021
+
+## Breaking Changes
+- Renamed `match_id` to `trade_id`.
+
+## Enhancements
+- Added bars method to `DataCatalog`.
+- Improved parsing of Binance historical bars data.
+- Added `CancelAllOrders` command.
+- Added bulk cancel capability to Binance integration.
+- Added bulk cancel capability to Betfair integration.
+
+## Fixes
+- Fixed handling of `cpu_freq` call in logging for ARM architecture.
+- Fixed market order fill edge case for bar data
+- Fixed handling of `GenericData` in backtests.
+
+---
+
+# NautilusTrader 1.134.0 Beta - Release Notes
+
+Released on 22nd, November 2021
+
+## Breaking Changes
+- Changed `hidden` order option to `display_qty` to support iceberg orders.
+- Renamed `Trader.component_ids()` to `Trader.actor_ids()`.
+- Renamed `Trader.component_states()` to `Trader.actor_states()`.
+- Renamed `Trader.add_component()` to `Trader.add_actor()`.
+- Renamed `Trader.add_components()` to `Trader.add_actors()`.
+- Renamed `Trader.clear_components()` to `Trader.clear_actors()`.
+
+## Enhancements
+- Added initial implementation of Binance SPOT integration (beta stage testing).
+- Added support for display quantity/iceberg orders.
+
+## Fixes
+- Fixed `Actor` clock time advancement in backtest engine.
+
+---
+
 # NautilusTrader 1.133.0 Beta - Release Notes
 
-Released TBD | Update version badge
+Released on 8th, November 2021
 
 ## Breaking Changes
 None
 
 ## Enhancements
+- Added `LatencyModel` for simulated exchange.
+- Added `last_update_id` to order books.
+- Added `update_id` to order book data.
+- Added `depth` param when subscribing to order book deltas.
 - Added `Clock.timestamp_ms()`.
+- Added `TestDataProvider` and consolidate test data.
+- Added orjson default serializer for arrow.
+- Reorganized example strategies and launch scripts.
 
 ## Fixes
-None
+- Fixed logic for partial fills in backtests.
+- Various Betfair integration fixes.
+- Various `BacktestNode` fixes.
 
 ---
 

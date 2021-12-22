@@ -17,6 +17,7 @@ import asyncio
 
 import pytest
 
+from nautilus_trader.backtest.data.providers import TestInstrumentProvider
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.common.uuid import UUIDFactory
@@ -34,7 +35,6 @@ from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.msgbus.bus import MessageBus
 from nautilus_trader.portfolio.portfolio import Portfolio
-from tests.test_kit.providers import TestInstrumentProvider
 from tests.test_kit.stubs import TestStubs
 
 
@@ -83,7 +83,8 @@ class TestLiveDataEngine:
     def teardown(self):
         self.engine.dispose()
 
-    def test_start_when_loop_not_running_logs(self):
+    @pytest.mark.asyncio
+    async def test_start_when_loop_not_running_logs(self):
         # Arrange, Act
         self.engine.start()
 
@@ -91,7 +92,8 @@ class TestLiveDataEngine:
         assert True  # No exceptions raised
         self.engine.stop()
 
-    def test_message_qsize_at_max_blocks_on_put_data_command(self):
+    @pytest.mark.asyncio
+    async def test_message_qsize_at_max_blocks_on_put_data_command(self):
         # Arrange
         self.msgbus.deregister(endpoint="DataEngine.execute", handler=self.engine.execute)
         self.msgbus.deregister(endpoint="DataEngine.process", handler=self.engine.process)
@@ -117,12 +119,14 @@ class TestLiveDataEngine:
         # Act
         self.engine.execute(subscribe)
         self.engine.execute(subscribe)
+        await asyncio.sleep(0.1)
 
         # Assert
         assert self.engine.message_qsize() == 1
         assert self.engine.command_count == 0
 
-    def test_message_qsize_at_max_blocks_on_send_request(self):
+    @pytest.mark.asyncio
+    async def test_message_qsize_at_max_blocks_on_send_request(self):
         # Arrange
         self.msgbus.deregister(endpoint="DataEngine.execute", handler=self.engine.execute)
         self.msgbus.deregister(endpoint="DataEngine.process", handler=self.engine.process)
@@ -158,12 +162,14 @@ class TestLiveDataEngine:
         # Act
         self.engine.request(request)
         self.engine.request(request)
+        await asyncio.sleep(0.1)
 
         # Assert
         assert self.engine.message_qsize() == 1
         assert self.engine.command_count == 0
 
-    def test_message_qsize_at_max_blocks_on_receive_response(self):
+    @pytest.mark.asyncio
+    async def test_message_qsize_at_max_blocks_on_receive_response(self):
         # Arrange
         self.msgbus.deregister(endpoint="DataEngine.execute", handler=self.engine.execute)
         self.msgbus.deregister(endpoint="DataEngine.process", handler=self.engine.process)
@@ -191,12 +197,14 @@ class TestLiveDataEngine:
         # Act
         self.engine.response(response)
         self.engine.response(response)  # Add over max size
+        await asyncio.sleep(0.1)
 
         # Assert
         assert self.engine.message_qsize() == 1
         assert self.engine.command_count == 0
 
-    def test_data_qsize_at_max_blocks_on_put_data(self):
+    @pytest.mark.asyncio
+    async def test_data_qsize_at_max_blocks_on_put_data(self):
         # Arrange
         self.msgbus.deregister(endpoint="DataEngine.execute", handler=self.engine.execute)
         self.msgbus.deregister(endpoint="DataEngine.process", handler=self.engine.process)
@@ -217,6 +225,7 @@ class TestLiveDataEngine:
         # Act
         self.engine.process(data)
         self.engine.process(data)  # Add over max size
+        await asyncio.sleep(0.1)
 
         # Assert
         assert self.engine.data_qsize() == 1

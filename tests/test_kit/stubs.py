@@ -18,10 +18,13 @@ from datetime import datetime
 from decimal import Decimal
 from typing import List
 
+import orjson
 import pandas as pd
 import pytz
 
 from nautilus_trader.accounting.factory import AccountFactory
+from nautilus_trader.backtest.data.providers import TestDataProvider
+from nautilus_trader.backtest.data.providers import TestInstrumentProvider
 from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.enums import ComponentState
@@ -31,6 +34,7 @@ from nautilus_trader.common.logging import LiveLogger
 from nautilus_trader.common.logging import LogLevelParser
 from nautilus_trader.core.data import Data
 from nautilus_trader.core.datetime import maybe_dt_to_unix_nanos
+from nautilus_trader.core.datetime import millis_to_nanos
 from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.model.currencies import GBP
 from nautilus_trader.model.currencies import USD
@@ -93,11 +97,11 @@ from nautilus_trader.portfolio.portfolio import Portfolio
 from nautilus_trader.serialization.arrow.serializer import register_parquet
 from nautilus_trader.trading.filters import NewsImpact
 from nautilus_trader.trading.strategy import TradingStrategy
+from tests.test_kit import PACKAGE_ROOT
 from tests.test_kit.mocks import MockLiveDataEngine
 from tests.test_kit.mocks import MockLiveExecutionEngine
 from tests.test_kit.mocks import MockLiveRiskEngine
 from tests.test_kit.mocks import NewsEventData
-from tests.test_kit.providers import TestInstrumentProvider
 
 
 # UNIX epoch is the UTC time at 00:00:00 on 1/1/1970
@@ -136,6 +140,10 @@ class TestStubs:
     @staticmethod
     def ethusdt_binance_id() -> InstrumentId:
         return InstrumentId(Symbol("ETH/USDT"), Venue("BINANCE"))
+
+    @staticmethod
+    def adabtc_binance_id() -> InstrumentId:
+        return InstrumentId(Symbol("ADA/BTC"), Venue("BINANCE"))
 
     @staticmethod
     def audusd_id() -> InstrumentId:
@@ -203,7 +211,7 @@ class TestStubs:
             price=price or Price.from_str("1.001"),
             size=quantity or Quantity.from_int(100000),
             aggressor_side=aggressor_side or AggressorSide.BUY,
-            match_id="123456",
+            trade_id="123456",
             ts_event=0,
             ts_init=0,
         )
@@ -220,7 +228,7 @@ class TestStubs:
             price=price or Price.from_str("1.00001"),
             size=quantity or Quantity.from_int(100000),
             aggressor_side=aggressor_side or AggressorSide.BUY,
-            match_id="123456",
+            trade_id="123456",
             ts_event=0,
             ts_init=0,
         )
@@ -280,6 +288,10 @@ class TestStubs:
     @staticmethod
     def bartype_btcusdt_binance_100tick_last() -> BarType:
         return BarType(TestStubs.btcusdt_binance_id(), TestStubs.bar_spec_100tick_last())
+
+    @staticmethod
+    def bartype_adabtc_binance_1min_last() -> BarType:
+        return BarType(TestStubs.adabtc_binance_id(), TestStubs.bar_spec_1min_last())
 
     @staticmethod
     def bar_5decimal() -> Bar:
@@ -874,3 +886,113 @@ class TestStubs:
                 ts_event=maybe_dt_to_unix_nanos(pd.Timestamp(row["Start"])),
                 ts_init=maybe_dt_to_unix_nanos(pd.Timestamp(row["Start"])),
             )
+
+    @staticmethod
+    def l1_feed():
+        provider = TestDataProvider()
+        updates = []
+        for _, row in provider.read_csv_ticks("truefx-usdjpy-ticks.csv").iterrows():
+            for side, order_side in zip(("bid", "ask"), (OrderSide.BUY, OrderSide.SELL)):
+                updates.append(
+                    {
+                        "op": "update",
+                        "order": Order(
+                            price=Price(row[side], precision=6),
+                            size=Quantity(1e9, precision=2),
+                            side=order_side,
+                        ),
+                    }
+                )
+        return updates
+
+    @staticmethod
+    def l2_feed() -> List:
+        def parse_line(d):
+            if "status" in d:
+                return {}
+            elif "close_price" in d:
+                # return {'timestamp': d['remote_timestamp'], "close_price": d['close_price']}
+                return {}
+            if "trade" in d:
+                ts = millis_to_nanos(pd.Timestamp(d["remote_timestamp"]).timestamp())
+                return {
+                    "timestamp": d["remote_timestamp"],
+                    "op": "trade",
+                    "trade": TradeTick(
+                        instrument_id=InstrumentId(Symbol("TEST"), Venue("BETFAIR")),
+                        price=Price(d["trade"]["price"], 4),
+                        size=Quantity(d["trade"]["volume"], 4),
+                        aggressor_side=d["trade"]["side"],
+                        trade_id=(d["trade"]["trade_id"]),
+                        ts_event=ts,
+                        ts_init=ts,
+                    ),
+                }
+            elif "level" in d and d["level"]["orders"][0]["volume"] == 0:
+                op = "delete"
+            else:
+                op = "update"
+            order_like = d["level"]["orders"][0] if op != "trade" else d["trade"]
+            return {
+                "timestamp": d["remote_timestamp"],
+                "op": op,
+                "order": Order(
+                    price=Price(order_like["price"], precision=6),
+                    size=Quantity(abs(order_like["volume"]), precision=4),
+                    # Betting sides are reversed
+                    side={2: OrderSide.BUY, 1: OrderSide.SELL}[order_like["side"]],
+                    id=str(order_like["order_id"]),
+                ),
+            }
+
+        return [
+            parse_line(line)
+            for line in orjson.loads(open(PACKAGE_ROOT + "/data/L2_feed.json").read())
+        ]
+
+    @staticmethod
+    def l3_feed():
+        def parser(data):
+            parsed = data
+            if not isinstance(parsed, list):
+                # print(parsed)
+                return
+            elif isinstance(parsed, list):
+                channel, updates = parsed
+                if not isinstance(updates[0], list):
+                    updates = [updates]
+            else:
+                raise KeyError()
+            if isinstance(updates, int):
+                print("Err", updates)
+                return
+            for values in updates:
+                keys = ("order_id", "price", "size")
+                data = dict(zip(keys, values))
+                side = OrderSide.BUY if data["size"] >= 0 else OrderSide.SELL
+                if data["price"] == 0:
+                    yield dict(
+                        op="delete",
+                        order=Order(
+                            price=Price(data["price"], precision=10),
+                            size=Quantity(abs(data["size"]), precision=10),
+                            side=side,
+                            id=str(data["order_id"]),
+                        ),
+                    )
+                else:
+                    yield dict(
+                        op="update",
+                        order=Order(
+                            price=Price(data["price"], precision=10),
+                            size=Quantity(abs(data["size"]), precision=10),
+                            side=side,
+                            id=str(data["order_id"]),
+                        ),
+                    )
+
+        return [
+            msg
+            for data in orjson.loads(open(PACKAGE_ROOT + "/data/L3_feed.json").read())
+            for msg in parser(data)
+        ]

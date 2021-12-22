@@ -32,7 +32,7 @@ cdef class Currency:
     """The currency type {``FIAT``, ``CRYPTO``}.\n\n:returns: `CurrencyType`"""
 
     @staticmethod
-    cdef void register_c(Currency currency, bint overwrite=*)
+    cdef void register_c(Currency currency, bint overwrite=*) except *
 
     @staticmethod
     cdef Currency from_str_c(str code)

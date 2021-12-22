@@ -13,7 +13,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import orjson
 from libc.stdint cimport int64_t
 
 from nautilus_trader.core.correctness cimport Condition
@@ -24,6 +23,15 @@ from nautilus_trader.model.identifiers cimport InstrumentId
 cdef class Ticker(Data):
     """
     The base class for all tickers.
+
+    Parameters
+    ----------
+    instrument_id : InstrumentId
+        The instrument ID.
+    ts_event : int64
+        The UNIX timestamp (nanoseconds) when the ticker event occurred.
+    ts_init : int64
+        The UNIX timestamp (nanoseconds) when the object was initialized.
 
     Warnings
     --------
@@ -36,19 +44,6 @@ cdef class Ticker(Data):
         int64_t ts_event,
         int64_t ts_init,
     ):
-        """
-        Initialize a new instance of the ``Ticker`` class.
-
-        Parameters
-        ----------
-        instrument_id : InstrumentId
-            The instrument ID.
-        ts_event : int64
-            The UNIX timestamp (nanoseconds) when the ticker event occurred.
-        ts_init : int64
-            The UNIX timestamp (nanoseconds) when the object was initialized.
-
-        """
         super().__init__(ts_event, ts_init)
 
         self.instrument_id = instrument_id
@@ -60,9 +55,11 @@ cdef class Ticker(Data):
         return hash(self.instrument_id.value)
 
     def __repr__(self) -> str:
-        return (f"{type(self).__name__}"
-                f"(instrument_id={self.instrument_id.value}, "
-                f"ts_event={self.ts_event})")
+        return (
+            f"{type(self).__name__}"
+            f"(instrument_id={self.instrument_id.value}, "
+            f"ts_event={self.ts_event})"
+        )
 
     @staticmethod
     cdef Ticker from_dict_c(dict values):

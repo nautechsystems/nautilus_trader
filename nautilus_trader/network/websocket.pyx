@@ -26,10 +26,21 @@ from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.common.logging cimport LoggerAdapter
 from nautilus_trader.core.correctness cimport Condition
 
+from nautilus_trader.network.error import MaxRetriesExceeded
+
 
 cdef class WebSocketClient:
     """
     Provides a low-level web socket base client.
+
+    Parameters
+    ----------
+    loop : asyncio.AbstractEventLoop
+        The event loop for the client.
+    logger : LoggerAdapter
+        The logger adapter for the client.
+    handler : Callable[[bytes], None]
+        The handler for receiving raw data.
     """
 
     def __init__(
@@ -39,19 +50,6 @@ cdef class WebSocketClient:
         handler not None: Callable[[bytes], None],
         max_retry_connection=0,
     ):
-        """
-        Initialize a new instance of the ``WebSocketClient`` class.
-
-        Parameters
-        ----------
-        loop : asyncio.AbstractEventLoop
-            The event loop for the client.
-        logger : LoggerAdapter
-            The logger adapter for the client.
-        handler : Callable[[bytes], None]
-            The handler for rece    ived raw data.
-
-        """
         self._loop = loop
         self._log = LoggerAdapter(component_name=type(self).__name__, logger=logger)
         self._handler = handler
@@ -76,7 +74,7 @@ cdef class WebSocketClient:
     ) -> None:
         Condition.valid_string(ws_url, "ws_url")
 
-        self._log.debug(f"Connecting to websocket: {ws_url}...")
+        self._log.debug(f"Connecting WebSocket to {ws_url}")
         self._session = aiohttp.ClientSession(loop=self._loop)
         self._socket = await self._session.ws_connect(url=ws_url, **ws_kwargs)
         self._ws_url = ws_url
@@ -86,6 +84,7 @@ cdef class WebSocketClient:
             task: Task = self._loop.create_task(self.start())
             self._tasks.append(task)
         self.is_connected = True
+        self._log.debug("WebSocket connected.")
 
     async def post_connect(self):
         """
@@ -97,29 +96,33 @@ cdef class WebSocketClient:
         pass
 
     async def disconnect(self) -> None:
+        self._log.debug("Closing WebSocket...")
         self._trigger_stop = True
+        await self._socket.close()
         while not self._stopped:
             await self._sleep0()
-        await self._socket.close()
-        self._log.debug("Websocket closed")
+        self.is_connected = False
+        self._log.debug("WebSocket closed.")
 
     async def send(self, raw: bytes) -> None:
-        self._log.debug("SEND:" + str(raw))
+        self._log.debug(f"[SEND] {raw}")
         await self._socket.send_bytes(raw)
 
     async def recv(self) -> Optional[bytes]:
         try:
-            resp: WSMessage = await self._socket.receive()
-            if resp.type == WSMsgType.TEXT:
-                return resp.data.encode()
-            elif resp.type == WSMsgType.BINARY:
-                return resp.data
-            elif resp.type in (WSMsgType.ERROR, WSMsgType.CLOSE, WSMsgType.CLOSING, WSMsgType.CLOSED):
-                self._log.warning(f"Received closing msg {resp}")
-                raise ConnectionAbortedError("Websocket error or closed")
+            msg: WSMessage = await self._socket.receive()
+            if msg.type == WSMsgType.TEXT:
+                return msg.data.encode()
+            elif msg.type == WSMsgType.BINARY:
+                return msg.data
+            elif msg.type in (WSMsgType.ERROR, WSMsgType.CLOSE, WSMsgType.CLOSING, WSMsgType.CLOSED):
+                if self._trigger_stop is True:
+                    return
+                self._log.warning(f"Received closing msg {msg}.")
+                raise ConnectionAbortedError("WebSocket error or closed")
             else:
                 self._log.warning(
-                    f"Received unknown data type: {resp.type} data: {resp.data}",
+                    f"Received unknown data type: {msg.type} data: {msg.data}.",
                 )
                 self._unknown_message_count += 1
                 if self._unknown_message_count > 20:
@@ -133,12 +136,12 @@ cdef class WebSocketClient:
                 f"{self._max_retry_connection=}",
             )
             if self._connection_retry_count > self._max_retry_connection:
-                raise MaxRetriesExceeded(f"Max retries of {self._max_retry_connection} exceeded")
+                raise MaxRetriesExceeded(f"Max retries of {self._max_retry_connection} exceeded.")
             await self._reconnect_backoff()
             self._connection_retry_count += 1
             self._log.debug(
                 f"Attempting reconnect "
-                f"(attempt: {self._connection_retry_count}) after exception",
+                f"(attempt: {self._connection_retry_count}) after exception.",
             )
             await self.connect(ws_url=self._ws_url, start=False, **self._ws_kwargs)
 
@@ -151,7 +154,7 @@ cdef class WebSocketClient:
         await asyncio.sleep(backoff)
 
     async def start(self) -> None:
-        self._log.debug("Starting recv loop")
+        self._log.debug("Starting recv loop...")
         while not self._trigger_stop:
             try:
                 raw = await self.recv()
@@ -163,13 +166,13 @@ cdef class WebSocketClient:
             except Exception as ex:
                 # TODO - Handle disconnect? Should we reconnect or throw?
                 self._log.exception(ex)
-        self._log.debug("Stopped")
+        self._log.debug("Stopped.")
         self._stopped = True
 
     async def close(self):
-        tasks = [task for task in asyncio.all_tasks() if task is not asyncio.current_task()]
-        list(map(lambda task: task.cancel(), tasks))
-        return await asyncio.gather(*tasks, return_exceptions=True)
+        for task in self._tasks:
+            self._log.debug(f"Canceling {task}...")
+            task.cancel()
 
     @types.coroutine
     def _sleep0(self):
@@ -181,7 +184,3 @@ cdef class WebSocketClient:
         # Uses a bare 'yield' expression (which Task.__step knows how to handle)
         # instead of creating a Future object.
         yield
-
-
-class MaxRetriesExceeded(ConnectionError):
-    pass

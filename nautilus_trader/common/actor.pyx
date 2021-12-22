@@ -73,26 +73,22 @@ cdef class Actor(Component):
     """
     The abstract base class for all actor components.
 
+    Parameters
+    ----------
+    config : ActorConfig, optional
+        The actor configuration.
+
+    Raises
+    ------
+    TypeError
+        If `config` is not of type `ActorConfig`.
+
     Warnings
     --------
     This class should not be used directly, but through a concrete subclass.
     """
 
     def __init__(self, config: Optional[ActorConfig]=None):
-        """
-        Initialize a new instance of the ``Actor`` class.
-
-        Parameters
-        ----------
-        config : ActorConfig, optional
-            The actor configuration.
-
-        Raises
-        ------
-        TypeError
-            If `config` is not of type `ActorConfig`.
-
-        """
         if config is None:
             config = ActorConfig()
         Condition.type(config, ActorConfig, "config")
@@ -115,6 +111,7 @@ cdef class Actor(Component):
         self.trader_id = None  # Initialized when registered
         self.msgbus = None     # Initialized when registered
         self.cache = None      # Initialized when registered
+        self.clock = None      # Initialized when registered
 
 # -- ABSTRACT METHODS ------------------------------------------------------------------------------
 
@@ -464,8 +461,9 @@ cdef class Actor(Component):
         self.trader_id = trader_id
         self.msgbus = msgbus
         self.cache = cache
+        self.clock = self._clock
 
-    cpdef void register_warning_event(self, type event):
+    cpdef void register_warning_event(self, type event) except *:
         """
         Register the given event type for warning log levels.
 
@@ -481,7 +479,7 @@ cdef class Actor(Component):
 
         self._log.debug(f"Registered `{event.__name__}` for warning log levels.")
 
-    cpdef void deregister_warning_event(self, type event):
+    cpdef void deregister_warning_event(self, type event) except *:
         """
         Deregister the given event type from warning log levels.
 
@@ -651,6 +649,7 @@ cdef class Actor(Component):
         self,
         InstrumentId instrument_id,
         BookType book_type=BookType.L2_MBP,
+        int depth=0,
         dict kwargs=None,
     ) except *:
         """
@@ -663,6 +662,8 @@ cdef class Actor(Component):
             The order book instrument ID to subscribe to.
         book_type : BookType {``L1_TBBO``, ``L2_MBP``, ``L3_MBO``}
             The order book type.
+        depth : int, optional
+            The maximum depth for the order book. A depth of 0 is maximum depth.
         kwargs : dict, optional
             The keyword arguments for exchange specific parameters.
 
@@ -682,6 +683,7 @@ cdef class Actor(Component):
             data_type=DataType(OrderBookData, metadata={
                 "instrument_id": instrument_id,
                 "book_type": book_type,
+                "depth": depth,
                 "kwargs": kwargs,
             }),
             command_id=self._uuid_factory.generate(),
@@ -730,6 +732,13 @@ cdef class Actor(Component):
         Condition.not_negative(depth, "depth")
         Condition.not_negative(interval_ms, "interval_ms")
         Condition.true(self.trader_id is not None, "The actor has not been registered")
+
+        if book_type == BookType.L1_TBBO and depth > 1:
+            self._log.error(
+                "Cannot subscribe to order book snapshots: "
+                f"L1 TBBO book subscription depth > 1, was {depth}",
+            )
+            return
 
         self._msgbus.subscribe(
             topic=f"data.book.snapshots"
@@ -1843,7 +1852,7 @@ cdef class Actor(Component):
                 raise
 
     cpdef void _handle_data_response(self, DataResponse response) except *:
-        self.handle_bars(response.data)
+        self.handle_data(response.data)
 
     cpdef void _handle_quote_ticks_response(self, DataResponse response) except *:
         self.handle_quote_ticks(response.data)

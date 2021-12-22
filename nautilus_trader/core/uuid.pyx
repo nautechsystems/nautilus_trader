@@ -14,7 +14,6 @@
 # -------------------------------------------------------------------------------------------------
 
 import re
-
 from nautilus.api.core cimport uuid4_free
 from nautilus.api.core cimport uuid4_free_raw
 from nautilus.api.core cimport uuid4_from_raw
@@ -31,26 +30,26 @@ cdef class UUID4:
     Represents a pseudo-random UUID (universally unique identifier) version 4
     based on a 128-bit label as specified in RFC 4122.
 
+    Implemented under the hood with the `fastuuid` library which provides
+    CPython bindings to Rusts UUID library. Benched ~3x faster to instantiate
+    this class vs the Python standard `uuid.uuid4()` function.
+
+    Parameters
+    ----------
+    value : str, optional
+        The UUID value. If ``None`` then a value will be generated.
+
+    Raises
+    ------
+    ValueError
+        If `value` is not ``None`` and not a valid UUID.
+
     References
     ----------
     https://en.wikipedia.org/wiki/Universally_unique_identifier
     """
 
     def __init__(self, str value=None):
-        """
-        Initialize a new instance of the ``UUID4`` class.
-
-        Parameters
-        ----------
-        value : str, optional
-            The UUID value. If ``None`` then a value will be generated.
-
-        Raises
-        ------
-        ValueError
-            If `value` is not ``None`` and not a valid UUID.
-
-        """
         if value is None:
             # Create a new UUID4 from rust
             self._uuid4 = uuid4_new()  # `self._uuid4` owned from rust
@@ -58,7 +57,14 @@ cdef class UUID4:
 
         Condition.true(_UUID_REGEX.match(value), "value is not a valid UUID")
         cdef bytes encoded = value.encode("utf-8") + b"\x00"
-        self._uuid4 = uuid4_from_raw(<char *>encoded)  # `ptr` moved to rust, `self._uuid4` owned from rust
+        self._uuid4 = uuid4_from_raw(<char *>encoded)  # `encoded` moved to rust, `uuid4` owned from rust
+
+    def __getstate__(self):
+        return self.value
+
+    def __setstate__(self, value):
+        cdef bytes encoded = value.encode("utf-8") + b"\x00"
+        self._uuid4 = uuid4_from_raw(<char *>encoded)  # `encoded` moved to rust, `uuid4` owned from rust
 
     def __eq__(self, UUID4 other) -> bool:
         return self.value == other.value

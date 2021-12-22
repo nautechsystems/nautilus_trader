@@ -7,7 +7,7 @@ Network
 HTTP Client
 -----------
 
-.. automodule:: nautilus_trader.network.http_client
+.. automodule:: nautilus_trader.network.http
    :show-inheritance:
    :inherited-members:
    :members:
@@ -25,7 +25,7 @@ Socket
 WebSocket Client
 ----------------
 
-.. automodule:: nautilus_trader.network.ws_client
+.. automodule:: nautilus_trader.network.websocket
    :show-inheritance:
    :inherited-members:
    :members:

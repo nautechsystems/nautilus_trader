@@ -48,6 +48,8 @@ from nautilus_trader.msgbus.bus cimport MessageBus
 cdef class Actor(Component):
     cdef set _warning_events
 
+    cdef readonly Clock clock
+    """The actors clock.\n\n:returns: `Clock`"""
     cdef readonly MessageBus msgbus
     """The message bus for the actor (if registered).\n\n:returns: `MessageBus` or ``None``"""
     cdef readonly CacheFacade cache
@@ -86,8 +88,8 @@ cdef class Actor(Component):
         Logger logger,
     ) except *
 
-    cpdef void register_warning_event(self, type event)
-    cpdef void deregister_warning_event(self, type event)
+    cpdef void register_warning_event(self, type event) except *
+    cpdef void deregister_warning_event(self, type event) except *
 
 # -- SUBSCRIPTIONS ---------------------------------------------------------------------------------
 
@@ -99,6 +101,7 @@ cdef class Actor(Component):
         self,
         InstrumentId instrument_id,
         BookType book_type=*,
+        int depth=*,
         dict kwargs=*,
     ) except *
     cpdef void subscribe_order_book_snapshots(

@@ -31,6 +31,17 @@ cdef class AdaptiveMovingAverage(MovingAverage):
     designed to account for market noise and volatility. The AMA will closely
     follow prices when the price swings are relatively small and the noise is
     low. The AMA will increase lag when the price swings increase.
+
+    Parameters
+    ----------
+    period_er : int
+        The period for the internal `EfficiencyRatio` indicator (> 0).
+    period_alpha_fast : int
+        The period for the fast smoothing constant (> 0).
+    period_alpha_slow : int
+        The period for the slow smoothing constant (> 0 < alpha_fast).
+    price_type : PriceType
+        The specified price type for extracting values from quote ticks.
     """
 
     def __init__(
@@ -40,21 +51,6 @@ cdef class AdaptiveMovingAverage(MovingAverage):
         int period_alpha_slow,
         PriceType price_type=PriceType.LAST,
     ):
-        """
-        Initialize a new instance of the ``AdaptiveMovingAverage`` class.
-
-        Parameters
-        ----------
-        period_er : int
-            The period for the internal `EfficiencyRatio` indicator (> 0).
-        period_alpha_fast : int
-            The period for the fast smoothing constant (> 0).
-        period_alpha_slow : int
-            The period for the slow smoothing constant (> 0 < alpha_fast).
-        price_type : PriceType
-            The specified price type for extracting values from quote ticks.
-
-        """
         Condition.positive_int(period_er, "period_er")
         Condition.positive_int(period_alpha_fast, "period_alpha_fast")
         Condition.positive_int(period_alpha_slow, "period_alpha_slow")

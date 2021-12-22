@@ -66,23 +66,19 @@ except ImportError:  # pragma: no cover
 class TradingNode:
     """
     Provides an asynchronous network node for live trading.
+
+    Parameters
+    ----------
+    config : TradingNodeConfig, optional
+        The configuration for the instance.
+
+    Raises
+    ------
+    TypeError
+        If `config` is not of type `TradingNodeConfig`.
     """
 
     def __init__(self, config: Optional[TradingNodeConfig] = None):
-        """
-        Initialize a new instance of the TradingNode class.
-
-        Parameters
-        ----------
-        config : TradingNodeConfig, optional
-            The configuration for the instance.
-
-        Raises
-        ------
-        TypeError
-            If `config` is not of type `TradingNodeConfig`.
-
-        """
         if config is None:
             config = TradingNodeConfig()
         PyCondition.not_none(config, "config")
@@ -637,6 +633,10 @@ class TradingNode:
 
         if self._config.save_strategy_state:
             self.trader.save()
+
+        # Disconnect all clients
+        self._data_engine.disconnect()
+        self._exec_engine.disconnect()
 
         if self._data_engine.is_running:
             self._data_engine.stop()

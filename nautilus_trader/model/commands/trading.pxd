@@ -63,7 +63,7 @@ cdef class ModifyOrder(TradingCommand):
     cdef readonly ClientOrderId client_order_id
     """The client order ID associated with the command.\n\n:returns: `ClientOrderId`"""
     cdef readonly VenueOrderId venue_order_id
-    """The venue order ID associated with the command.\n\n:returns: `VenueOrderId`"""
+    """The venue order ID associated with the command.\n\n:returns: `VenueOrderId` or ``None``"""
     cdef readonly Quantity quantity
     """The updated quantity for the command.\n\n:returns: `Quantity` or ``None``"""
     cdef readonly Price price
@@ -82,10 +82,19 @@ cdef class CancelOrder(TradingCommand):
     cdef readonly ClientOrderId client_order_id
     """The client order ID associated with the command.\n\n:returns: `ClientOrderId`"""
     cdef readonly VenueOrderId venue_order_id
-    """The venue order ID associated with the command.\n\n:returns: `VenueOrderId`"""
+    """The venue order ID associated with the command.\n\n:returns: `VenueOrderId` or ``None``"""
 
     @staticmethod
     cdef CancelOrder from_dict_c(dict values)
 
     @staticmethod
     cdef dict to_dict_c(CancelOrder obj)
+
+
+cdef class CancelAllOrders(TradingCommand):
+
+    @staticmethod
+    cdef CancelAllOrders from_dict_c(dict values)
+
+    @staticmethod
+    cdef dict to_dict_c(CancelAllOrders obj)

@@ -22,6 +22,7 @@ from nautilus_trader.adapters.betfair.providers import BetfairInstrumentProvider
 from nautilus_trader.backtest.config import BacktestDataConfig
 from nautilus_trader.backtest.config import BacktestRunConfig
 from nautilus_trader.backtest.node import BacktestNode
+from nautilus_trader.model.data.venue import InstrumentStatusUpdate
 from nautilus_trader.persistence.catalog import DataCatalog
 from nautilus_trader.persistence.external.core import process_files
 from nautilus_trader.persistence.external.readers import CSVReader
@@ -54,7 +55,7 @@ class TestPersistenceStreaming:
             + self.catalog.instrument_status_updates(as_nautilus=True)
             + self.catalog.trade_ticks(as_nautilus=True)
             + self.catalog.order_book_deltas(as_nautilus=True)
-            + self.catalog.ticker(as_nautilus=True)
+            + self.catalog.tickers(as_nautilus=True)
         )
         return data
 
@@ -107,8 +108,14 @@ class TestPersistenceStreaming:
             data_cls_path=f"{NewsEventData.__module__}.NewsEventData",
             client_id="NewsClient",
         )
+        # Add some arbitrary instrument data to appease BacktestEngine
+        instrument_data_config = BacktestDataConfig(
+            catalog_path="/root/",
+            catalog_fs_protocol="memory",
+            data_cls_path=f"{InstrumentStatusUpdate.__module__}.InstrumentStatusUpdate",
+        )
         run_config = BacktestRunConfig(
-            data=[data_config],
+            data=[data_config, instrument_data_config],
             persistence=BetfairTestStubs.persistence_config(catalog_path=self.catalog.path),
             venues=[BetfairTestStubs.betfair_venue_config()],
             strategies=[],

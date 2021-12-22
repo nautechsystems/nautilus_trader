@@ -15,14 +15,17 @@
 
 import dataclasses
 import importlib
+import sys
 from datetime import datetime
 from typing import Dict, List, Optional, Union
 
+import pandas as pd
 import pydantic
 from dask.base import tokenize
 
 from nautilus_trader.cache.cache import CacheConfig
 from nautilus_trader.common.config import ImportableActorConfig
+from nautilus_trader.core.datetime import maybe_dt_to_unix_nanos
 from nautilus_trader.data.engine import DataEngineConfig
 from nautilus_trader.execution.engine import ExecEngineConfig
 from nautilus_trader.infrastructure.cache import CacheDatabaseConfig
@@ -81,7 +84,7 @@ class Partialable:
     def __dask_tokenize__(self):
         return tuple(self.fields())
 
-    def __repr__(self):
+    def __repr__(self):  # Adding -> causes error: Module has no attribute "_repr_fn"
         dataclass_repr_func = dataclasses._repr_fn(
             fields=list(self.fields().values()), globals=self.__dict__
         )
@@ -153,6 +156,18 @@ class BacktestDataConfig(Partialable):
             as_nautilus=True,
         )
 
+    @property
+    def start_time_nanos(self) -> int:
+        if self.start_time is None:
+            return 0
+        return maybe_dt_to_unix_nanos(pd.Timestamp(self.start_time))
+
+    @property
+    def end_time_nanos(self) -> int:
+        if self.end_time is None:
+            return sys.maxsize
+        return maybe_dt_to_unix_nanos(pd.Timestamp(self.end_time))
+
     def catalog(self):
         from nautilus_trader.persistence.catalog import DataCatalog
 
@@ -173,14 +188,13 @@ class BacktestDataConfig(Partialable):
         )
 
         catalog = self.catalog()
+        instruments = catalog.instruments(instrument_ids=self.instrument_id, as_nautilus=True)
+        if not instruments:
+            return {"data": [], "instrument": None}
         return {
             "type": query["cls"],
             "data": catalog.query(**query),
-            "instrument": catalog.instruments(instrument_ids=self.instrument_id, as_nautilus=True)[
-                0
-            ]
-            if self.instrument_id
-            else None,
+            "instrument": instruments[0] if self.instrument_id else None,
             "client_id": ClientId(self.client_id) if self.client_id else None,
         }
 
@@ -189,6 +203,8 @@ class BacktestEngineConfig(pydantic.BaseModel):
     """
     Configuration for ``BacktestEngine`` instances.
 
+    Parameters
+    ----------
     trader_id : str, default="BACKTESTER-000"
         The trader ID.
     log_level : str, default="INFO"

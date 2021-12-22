@@ -42,7 +42,7 @@ async def test_binance_spot_market_http_client():
 
     market = BinanceSpotMarketHttpAPI(client=client)
     response = await market.exchange_info(symbols=["BTCUSDT", "ETHUSDT"])
-    print(json.dumps(json.loads(response), indent=4))
+    print(json.dumps(response, indent=4))
 
     provider = BinanceInstrumentProvider(
         client=client,

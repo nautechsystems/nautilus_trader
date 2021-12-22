@@ -11,3 +11,12 @@ Cache
    :inherited-members:
    :members:
    :member-order: bysource
+
+Config
+------
+
+.. automodule:: nautilus_trader.infrastructure.config
+   :show-inheritance:
+   :inherited-members:
+   :members:
+   :member-order: bysource

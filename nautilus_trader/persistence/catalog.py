@@ -25,6 +25,7 @@ import pyarrow.parquet as pq
 from pyarrow import ArrowInvalid
 
 from nautilus_trader.core.inspect import is_nautilus_class
+from nautilus_trader.model.data.bar import Bar
 from nautilus_trader.model.data.base import DataType
 from nautilus_trader.model.data.base import GenericData
 from nautilus_trader.model.data.tick import QuoteTick
@@ -48,6 +49,15 @@ from nautilus_trader.serialization.arrow.util import dict_of_lists_to_list_of_di
 class DataCatalog(metaclass=Singleton):
     """
     Provides a queryable data catalogue.
+
+    Parameters
+    ----------
+    path : str
+        The root path to the data.
+    fs_protocol : str
+        The file system protocol to use.
+    fs_storage_options : Dict, optional
+        The fs storage options.
     """
 
     def __init__(
@@ -56,23 +66,12 @@ class DataCatalog(metaclass=Singleton):
         fs_protocol: str = "file",
         fs_storage_options: Optional[Dict] = None,
     ):
-        """
-        Initialize a new instance of the ``DataCatalog`` class.
-
-        Parameters
-        ----------
-        path : str
-            The root path to the data.
-        fs_protocol : str
-            The file system protocol to use.
-        fs_storage_options : Dict, optional
-            The fs storage options.
-
-        """
-        self.fs: fsspec.AbstractFileSystem = fsspec.filesystem(
-            fs_protocol, **(fs_storage_options or {})
-        )
         self.path = pathlib.Path(path)
+        self.fs_protocol = fs_protocol
+        self.fs_storage_options = fs_storage_options or {}
+        self.fs: fsspec.AbstractFileSystem = fsspec.filesystem(
+            self.fs_protocol, **self.fs_storage_options
+        )
 
     @classmethod
     def from_env(cls):
@@ -151,10 +150,7 @@ class DataCatalog(metaclass=Singleton):
 
         if df.empty and raise_on_empty:
             local_vars = dict(locals())
-            kw = [
-                f"{k}={local_vars[k]}"
-                for k in ("path", "filter_expr", "instrument_ids", "start", "end")
-            ]
+            kw = [f"{k}={local_vars[k]}" for k in ("filter_expr", "instrument_ids", "start", "end")]
             raise ValueError(f"Data empty for {kw}")
         if sort_columns:
             df = df.sort_values(sort_columns)
@@ -310,9 +306,18 @@ class DataCatalog(metaclass=Singleton):
             **kwargs,
         )
 
-    def ticker(self, instrument_ids=None, filter_expr=None, as_nautilus=False, **kwargs):
+    def tickers(self, instrument_ids=None, filter_expr=None, as_nautilus=False, **kwargs):
         return self._query_subclasses(
             base_cls=Ticker,
+            filter_expr=filter_expr,
+            instrument_ids=instrument_ids,
+            as_nautilus=as_nautilus,
+            **kwargs,
+        )
+
+    def bars(self, instrument_ids=None, filter_expr=None, as_nautilus=False, **kwargs):
+        return self._query_subclasses(
+            base_cls=Bar,
             filter_expr=filter_expr,
             instrument_ids=instrument_ids,
             as_nautilus=as_nautilus,
@@ -331,6 +336,8 @@ class DataCatalog(metaclass=Singleton):
     def generic_data(self, cls, filter_expr=None, as_nautilus=False, **kwargs):
         data = self._query(cls=cls, filter_expr=filter_expr, as_dataframe=not as_nautilus, **kwargs)
         if as_nautilus:
+            if data is None:
+                return []
             return [GenericData(data_type=DataType(cls), data=d) for d in data]
         return data
 

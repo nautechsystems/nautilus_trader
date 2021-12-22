@@ -18,8 +18,8 @@ import pytest
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
+from nautilus_trader.model.orderbook.data import Order
 from nautilus_trader.model.orderbook.ladder import Ladder
-from nautilus_trader.model.orderbook.order import Order
 from tests.test_kit.stubs import TestStubs
 
 

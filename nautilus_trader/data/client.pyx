@@ -36,6 +36,19 @@ cdef class DataClient(Component):
     """
     The abstract base class for all data clients.
 
+    Parameters
+    ----------
+    client_id : ClientId
+        The data client ID.
+    msgbus : MessageBus
+        The message bus for the client.
+    clock : Clock
+        The clock for the client.
+    logger : Logger
+        The logger for the client.
+    config : dict[str, object], optional
+        The configuration for the instance.
+
     Warnings
     --------
     This class should not be used directly, but through a concrete subclass.
@@ -50,23 +63,6 @@ cdef class DataClient(Component):
         Logger logger not None,
         dict config=None,
     ):
-        """
-        Initialize a new instance of the ``DataClient`` class.
-
-        Parameters
-        ----------
-        client_id : ClientId
-            The data client ID.
-        msgbus : MessageBus
-            The message bus for the client.
-        clock : Clock
-            The clock for the client.
-        logger : Logger
-            The logger for the client.
-        config : dict[str, object], optional
-            The configuration for the instance.
-
-        """
         if config is None:
             config = {}
         super().__init__(
@@ -185,6 +181,21 @@ cdef class MarketDataClient(DataClient):
     """
     The abstract base class for all market data clients.
 
+    Parameters
+    ----------
+    client_id : ClientId
+        The data client ID (normally the venue).
+    msgbus : MessageBus
+        The message bus for the client.
+    cache : Cache
+        The cache for the client.
+    clock : Clock
+        The clock for the client.
+    logger : Logger
+        The logger for the client.
+    config : dict[str, object], optional
+        The configuration for the instance.
+
     Warnings
     --------
     This class should not be used directly, but through a concrete subclass.
@@ -199,25 +210,6 @@ cdef class MarketDataClient(DataClient):
         Logger logger not None,
         dict config=None,
     ):
-        """
-        Initialize a new instance of the ``MarketDataClient`` class.
-
-        Parameters
-        ----------
-        client_id : ClientId
-            The data client ID (normally the venue).
-        msgbus : MessageBus
-            The message bus for the client.
-        cache : Cache
-            The cache for the client.
-        clock : Clock
-            The clock for the client.
-        logger : Logger
-            The logger for the client.
-        config : dict[str, object], optional
-            The configuration for the instance.
-
-        """
         super().__init__(
             client_id=client_id,
             msgbus=msgbus,
@@ -358,7 +350,7 @@ cdef class MarketDataClient(DataClient):
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
-    cpdef void subscribe_order_book_deltas(self, InstrumentId instrument_id, BookType book_type, dict kwargs=None) except *:
+    cpdef void subscribe_order_book_deltas(self, InstrumentId instrument_id, BookType book_type, int depth=0, dict kwargs=None) except *:
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 

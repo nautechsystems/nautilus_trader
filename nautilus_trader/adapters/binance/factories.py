@@ -44,7 +44,7 @@ def get_cached_binance_http_client(
     logger: Logger,
 ) -> BinanceHttpClient:
     """
-    Cache and return a Binance HTTP client with the given key or secret.
+    Cache and return a Binance HTTP client with the given key and secret.
 
     If a cached client with matching key and secret already exists, then that
     cached client will be returned.

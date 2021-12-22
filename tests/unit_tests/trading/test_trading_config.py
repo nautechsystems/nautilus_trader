@@ -17,10 +17,10 @@ import pkgutil
 
 import pytest
 
+from nautilus_trader.examples.strategies.ema_cross import EMACross
+from nautilus_trader.examples.strategies.ema_cross import EMACrossConfig
 from nautilus_trader.trading.config import ImportableStrategyConfig
 from nautilus_trader.trading.config import StrategyFactory
-from tests.test_kit.strategies import EMACross
-from tests.test_kit.strategies import EMACrossConfig
 
 
 class TestStrategyFactory:
@@ -33,7 +33,7 @@ class TestStrategyFactory:
             trade_size=1_000_000,
         )
 
-        source = pkgutil.get_data("tests.test_kit", "strategies.py")
+        source = pkgutil.get_data("nautilus_trader.examples.strategies", "ema_cross.py")
         importable = ImportableStrategyConfig(
             module="my_ema_cross",
             source=source,
@@ -47,7 +47,7 @@ class TestStrategyFactory:
         assert isinstance(strategy, EMACross)
         assert (
             repr(config)
-            == "EMACrossConfig(order_id_tag='000', oms_type='HEDGING', instrument_id='AUD/USD.SIM', bar_type='AUD/USD.SIM-1000-TICK-MID-INTERNAL', trade_size=Decimal('1000000'), fast_ema_period=10, slow_ema_period=20)"  # noqa
+            == "EMACrossConfig(order_id_tag='000', oms_type='HEDGING', instrument_id='AUD/USD.SIM', bar_type='AUD/USD.SIM-1000-TICK-MID-INTERNAL', fast_ema_period=10, slow_ema_period=20, trade_size=Decimal('1000000'))"  # noqa
         )
 
     def test_create_from_path(self):
@@ -60,7 +60,7 @@ class TestStrategyFactory:
             slow_ema_period=20,
         )
         importable = ImportableStrategyConfig(
-            path="tests.test_kit.strategies:EMACross",
+            path="nautilus_trader.examples.strategies.ema_cross:EMACross",
             config=config,
         )
 
@@ -73,5 +73,5 @@ class TestStrategyFactory:
             repr(config)
             == "EMACrossConfig(component_id=None, order_id_tag='000', oms_type='HEDGING', "
             "instrument_id='AUD/USD.SIM', bar_type='AUD/USD.SIM-15-MINUTE-BID-EXTERNAL', "
-            "trade_size=Decimal('1000000'), fast_ema_period=10, slow_ema_period=20)"  # noqa
+            "fast_ema_period=10, slow_ema_period=20, trade_size=Decimal('1000000'))"  # noqa
         )

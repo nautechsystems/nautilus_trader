@@ -70,10 +70,10 @@ from nautilus_trader.model.objects import AccountBalance
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
+from nautilus_trader.model.orderbook.data import Order
 from nautilus_trader.model.orderbook.data import OrderBookDelta
 from nautilus_trader.model.orderbook.data import OrderBookDeltas
 from nautilus_trader.model.orderbook.data import OrderBookSnapshot
-from nautilus_trader.model.orderbook.order import Order
 from nautilus_trader.model.orders.limit import LimitOrder
 from nautilus_trader.model.orders.market import MarketOrder
 
@@ -186,7 +186,7 @@ def make_order(order: Union[LimitOrder, MarketOrder]):
 
 def order_submit_to_betfair(command: SubmitOrder, instrument: BettingInstrument) -> Dict:
     """
-    Convert a SubmitOrder command into the data required by BetfairClient
+    Convert a SubmitOrder command into the data required by BetfairClient.
     """
     order = make_order(command.order)
 
@@ -220,7 +220,7 @@ def order_update_to_betfair(
     instrument: BettingInstrument,
 ):
     """
-    Convert an ModifyOrder command into the data required by BetfairClient
+    Convert an ModifyOrder command into the data required by BetfairClient.
     """
     return {
         "market_id": instrument.market_id,
@@ -236,12 +236,21 @@ def order_update_to_betfair(
 
 def order_cancel_to_betfair(command: CancelOrder, instrument: BettingInstrument):
     """
-    Convert a SubmitOrder command into the data required by BetfairClient
+    Convert a CancelOrder command into the data required by BetfairClient.
     """
     return {
         "market_id": instrument.market_id,
         "customer_ref": command.id.value.replace("-", ""),
         "instructions": [{"betId": command.venue_order_id.value}],
+    }
+
+
+def order_cancel_all_to_betfair(instrument: BettingInstrument):
+    """
+    Convert a CancelAllOrders command into the data required by BetfairClient.
+    """
+    return {
+        "market_id": instrument.market_id,
     }
 
 
@@ -359,7 +368,7 @@ def _handle_market_trades(
             price=price_to_probability(str(price)),
             size=Quantity(volume, precision=4),
             aggressor_side=AggressorSide.UNKNOWN,
-            match_id=trade_id,
+            trade_id=trade_id,
             ts_event=ts_event,
             ts_init=ts_init,
         )
@@ -726,7 +735,7 @@ async def generate_trades_list(
 @lru_cache(None)
 def parse_handicap(x) -> str:
     """
-    Ensure consistent parsing of the various handicap sources we get
+    Ensure consistent parsing of the various handicap sources we get.
     """
     if x in (None, ""):
         return "0.0"

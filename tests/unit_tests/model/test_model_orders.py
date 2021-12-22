@@ -17,6 +17,7 @@ from decimal import Decimal
 
 import pytest
 
+from nautilus_trader.backtest.data.providers import TestInstrumentProvider
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.factories import OrderFactory
 from nautilus_trader.core.uuid import UUID4
@@ -45,7 +46,6 @@ from nautilus_trader.model.orders.base import Order
 from nautilus_trader.model.orders.market import MarketOrder
 from nautilus_trader.model.orders.stop_limit import StopLimitOrder
 from nautilus_trader.model.orders.stop_market import StopMarketOrder
-from tests.test_kit.providers import TestInstrumentProvider
 from tests.test_kit.stubs import UNIX_EPOCH
 from tests.test_kit.stubs import TestStubs
 
@@ -370,6 +370,7 @@ class TestOrders:
             OrderSide.BUY,
             Quantity.from_int(100000),
             Price.from_str("1.00000"),
+            display_qty=Quantity.from_int(20000),
         )
 
         # Act
@@ -398,7 +399,7 @@ class TestOrders:
             "status": "INITIALIZED",
             "is_post_only": False,
             "is_reduce_only": False,
-            "is_hidden": False,
+            "display_qty": "20000",
             "order_list_id": None,
             "parent_order_id": None,
             "child_order_ids": None,
@@ -567,7 +568,7 @@ class TestOrders:
             "status": "INITIALIZED",
             "is_post_only": False,
             "is_reduce_only": False,
-            "is_hidden": False,
+            "display_qty": None,
             "order_list_id": None,
             "parent_order_id": None,
             "child_order_ids": None,

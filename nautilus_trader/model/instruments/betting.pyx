@@ -14,7 +14,6 @@
 # -------------------------------------------------------------------------------------------------
 
 import pandas as pd
-
 from libc.stdint cimport int64_t
 
 from decimal import Decimal
@@ -32,8 +31,6 @@ from nautilus_trader.model.instruments.base cimport Instrument
 from nautilus_trader.model.objects cimport Money
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
-
-from nautilus_trader.adapters.betfair.common import BETFAIR_PRICE_PRECISION
 
 
 cdef class BettingInstrument(Instrument):
@@ -64,7 +61,7 @@ cdef class BettingInstrument(Instrument):
         int64_t ts_event,
         int64_t ts_init,
         str tick_scheme_name="BETFAIR",
-        int price_precision=BETFAIR_PRICE_PRECISION,
+        int price_precision=7,  # TODO(bm): pending refactor
         Price min_price=None,
         Price max_price=None,
     ):
@@ -99,6 +96,7 @@ cdef class BettingInstrument(Instrument):
 
         super().__init__(
             instrument_id=InstrumentId(symbol=self.make_symbol(), venue=Venue(venue_name)),
+            local_symbol=Symbol(market_id),
             asset_class=AssetClass.BETTING,
             asset_type=AssetType.SPOT,
             quote_currency=Currency.from_str_c(currency),
