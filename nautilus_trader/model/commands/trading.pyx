@@ -326,7 +326,7 @@ cdef class ModifyOrder(TradingCommand):
         The instrument ID for the command.
     client_order_id : VenueOrderId
         The client order ID to update.
-    venue_order_id : VenueOrderId
+    venue_order_id : VenueOrderId, optional
         The venue order ID to update.
     quantity : Quantity, optional
         The quantity for the order update.
@@ -350,7 +350,7 @@ cdef class ModifyOrder(TradingCommand):
         StrategyId strategy_id not None,
         InstrumentId instrument_id not None,
         ClientOrderId client_order_id not None,
-        VenueOrderId venue_order_id not None,
+        VenueOrderId venue_order_id,  # Can be None
         Quantity quantity,  # Can be None
         Price price,  # Can be None
         Price trigger,  # Can be None
@@ -376,7 +376,7 @@ cdef class ModifyOrder(TradingCommand):
             f"{type(self).__name__}("
             f"instrument_id={self.instrument_id.value}, "
             f"client_order_id={self.client_order_id.value}, "
-            f"venue_order_id={self.venue_order_id.value}, "
+            f"venue_order_id={self.venue_order_id}, "  # Can be None
             f"quantity={self.quantity.to_str()}, "
             f"price={self.price}, "
             f"trigger={self.trigger})"
@@ -389,7 +389,7 @@ cdef class ModifyOrder(TradingCommand):
             f"strategy_id={self.strategy_id.value}, "
             f"instrument_id={self.instrument_id.value}, "
             f"client_order_id={self.client_order_id.value}, "
-            f"venue_order_id={self.venue_order_id.value}, "
+            f"venue_order_id={self.venue_order_id}, "  # Can be None
             f"quantity={self.quantity.to_str()}, "
             f"price={self.price}, "
             f"trigger={self.trigger}, "
@@ -400,6 +400,7 @@ cdef class ModifyOrder(TradingCommand):
     @staticmethod
     cdef ModifyOrder from_dict_c(dict values):
         Condition.not_none(values, "values")
+        cdef str v = values["venue_order_id"]
         cdef str q = values["quantity"]
         cdef str p = values["price"]
         cdef str t = values["trigger"]
@@ -408,7 +409,7 @@ cdef class ModifyOrder(TradingCommand):
             strategy_id=StrategyId(values["strategy_id"]),
             instrument_id=InstrumentId.from_str_c(values["instrument_id"]),
             client_order_id=ClientOrderId(values["client_order_id"]),
-            venue_order_id=VenueOrderId(values["venue_order_id"]),
+            venue_order_id=VenueOrderId(v) if v is not None else None,
             quantity=Quantity.from_str_c(q) if q is not None else None,
             price=Price.from_str_c(p) if p is not None else None,
             trigger=Price.from_str_c(t) if t is not None else None,
@@ -425,7 +426,7 @@ cdef class ModifyOrder(TradingCommand):
             "strategy_id": obj.strategy_id.value,
             "instrument_id": obj.instrument_id.value,
             "client_order_id": obj.client_order_id.value,
-            "venue_order_id": obj.venue_order_id.value,
+            "venue_order_id": obj.venue_order_id.value if obj.venue_order_id is not None else None,
             "quantity": str(obj.quantity) if obj.quantity is not None else None,
             "price": str(obj.price) if obj.price is not None else None,
             "trigger": str(obj.trigger) if obj.trigger is not None else None,
@@ -477,7 +478,7 @@ cdef class CancelOrder(TradingCommand):
         The instrument ID for the command.
     client_order_id : ClientOrderId
         The client order ID to cancel.
-    venue_order_id : VenueOrderId
+    venue_order_id : VenueOrderId, optional
         The venue order ID to cancel.
     command_id : UUID4
         The command ID.
@@ -495,7 +496,7 @@ cdef class CancelOrder(TradingCommand):
         StrategyId strategy_id not None,
         InstrumentId instrument_id not None,
         ClientOrderId client_order_id not None,
-        VenueOrderId venue_order_id not None,
+        VenueOrderId venue_order_id,  # Can be None
         UUID4 command_id not None,
         int64_t ts_init,
     ):
@@ -515,7 +516,7 @@ cdef class CancelOrder(TradingCommand):
             f"{type(self).__name__}("
             f"instrument_id={self.instrument_id.value}, "
             f"client_order_id={self.client_order_id.value}, "
-            f"venue_order_id={self.venue_order_id.value})"
+            f"venue_order_id={self.venue_order_id})"  # Can be None
         )
 
     def __repr__(self) -> str:
@@ -525,7 +526,7 @@ cdef class CancelOrder(TradingCommand):
             f"strategy_id={self.strategy_id.value}, "
             f"instrument_id={self.instrument_id.value}, "
             f"client_order_id={self.client_order_id.value}, "
-            f"venue_order_id={self.venue_order_id.value}, "
+            f"venue_order_id={self.venue_order_id}, "  # Can be None
             f"command_id={self.id.value}, "
             f"ts_init={self.ts_init})"
         )
@@ -533,12 +534,13 @@ cdef class CancelOrder(TradingCommand):
     @staticmethod
     cdef CancelOrder from_dict_c(dict values):
         Condition.not_none(values, "values")
+        cdef str v = values["venue_order_id"]
         return CancelOrder(
             trader_id=TraderId(values["trader_id"]),
             strategy_id=StrategyId(values["strategy_id"]),
             instrument_id=InstrumentId.from_str_c(values["instrument_id"]),
             client_order_id=ClientOrderId(values["client_order_id"]),
-            venue_order_id=VenueOrderId(values["venue_order_id"]),
+            venue_order_id=VenueOrderId(v) if v is not None else None,
             command_id=UUID4(values["command_id"]),
             ts_init=values["ts_init"],
         )
@@ -552,7 +554,7 @@ cdef class CancelOrder(TradingCommand):
             "strategy_id": obj.strategy_id.value,
             "instrument_id": obj.instrument_id.value,
             "client_order_id": obj.client_order_id.value,
-            "venue_order_id": obj.venue_order_id.value,
+            "venue_order_id": obj.venue_order_id.value if obj.venue_order_id is not None else None,
             "command_id": obj.id.value,
             "ts_init": obj.ts_init,
         }

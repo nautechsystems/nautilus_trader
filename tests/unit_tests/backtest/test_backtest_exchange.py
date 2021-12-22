@@ -356,6 +356,57 @@ class TestSimulatedExchange:
         assert order.status == OrderStatus.FILLED
         assert order.avg_px == Decimal("90.005")  # No slippage
 
+    def test_submit_market_order_then_immediately_cancel_submits_and_fills(self):
+        # Arrange: Prepare market
+        tick = TestStubs.quote_tick_3decimal(
+            instrument_id=USDJPY_SIM.id,
+            bid=Price.from_str("90.002"),
+            ask=Price.from_str("90.005"),
+        )
+        self.data_engine.process(tick)
+        self.exchange.process_tick(tick)
+
+        # Create order
+        order = self.strategy.order_factory.market(
+            USDJPY_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100000),
+        )
+
+        # Act
+        self.strategy.submit_order(order)
+        self.strategy.cancel_order(order)
+        self.exchange.process(0)
+
+        # Assert
+        assert order.status == OrderStatus.FILLED
+
+    def test_submit_limit_order_then_immediately_cancel_submits_then_cancels(self):
+        # Arrange: Prepare market
+        tick = TestStubs.quote_tick_3decimal(
+            instrument_id=USDJPY_SIM.id,
+            bid=Price.from_str("90.002"),
+            ask=Price.from_str("90.005"),
+        )
+        self.data_engine.process(tick)
+        self.exchange.process_tick(tick)
+
+        order = self.strategy.order_factory.limit(
+            USDJPY_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100000),
+            Price.from_str("90.000"),
+        )
+
+        # Act
+        self.strategy.submit_order(order)
+        self.strategy.cancel_order(order)
+        self.exchange.process(0)
+
+        # Assert
+        assert order.status == OrderStatus.CANCELED
+        assert len(self.exchange.get_working_orders()) == 0
+
     def test_submit_post_only_limit_order_when_marketable_then_rejects(self):
         # Arrange: Prepare market
         tick = TestStubs.quote_tick_3decimal(
@@ -758,7 +809,7 @@ class TestSimulatedExchange:
         # Assert
         assert self.exec_engine.event_count == 1
 
-    def test_update_order_with_zero_quantity_rejects_amendment(self):
+    def test_modify_order_with_zero_quantity_rejects_modify(self):
         # Arrange: Prepare market
         tick = TestStubs.quote_tick_3decimal(
             instrument_id=USDJPY_SIM.id,
@@ -788,7 +839,7 @@ class TestSimulatedExchange:
         assert len(self.exchange.get_working_orders()) == 1  # Order still working
         assert order.price == Price.from_str("90.001")  # Did not update
 
-    def test_update_post_only_limit_order_when_marketable_then_rejects_amendment(self):
+    def test_modify_post_only_limit_order_when_marketable_then_rejects_modify(self):
         # Arrange: Prepare market
         tick = TestStubs.quote_tick_3decimal(
             instrument_id=USDJPY_SIM.id,
@@ -818,7 +869,7 @@ class TestSimulatedExchange:
         assert len(self.exchange.get_working_orders()) == 1  # Order still working
         assert order.price == Price.from_str("90.001")  # Did not update
 
-    def test_update_limit_order_when_marketable_then_fills_order(self):
+    def test_modify_limit_order_when_marketable_then_fills_order(self):
         # Arrange: Prepare market
         tick = TestStubs.quote_tick_3decimal(
             instrument_id=USDJPY_SIM.id,
@@ -848,7 +899,7 @@ class TestSimulatedExchange:
         assert len(self.exchange.get_working_orders()) == 0
         assert order.avg_px == Price.from_str("90.005")
 
-    def test_update_stop_market_order_when_price_inside_market_then_rejects_amendment(
+    def test_modify_stop_market_order_when_price_inside_market_then_rejects_modify(
         self,
     ):
         # Arrange: Prepare market
@@ -879,7 +930,7 @@ class TestSimulatedExchange:
         assert len(self.exchange.get_working_orders()) == 1
         assert order.price == Price.from_str("90.010")
 
-    def test_update_stop_market_order_when_price_valid_then_amends(self):
+    def test_modify_stop_market_order_when_price_valid_then_updates(self):
         # Arrange: Prepare market
         tick = TestStubs.quote_tick_3decimal(
             instrument_id=USDJPY_SIM.id,
@@ -908,7 +959,7 @@ class TestSimulatedExchange:
         assert len(self.exchange.get_working_orders()) == 1
         assert order.price == Price.from_str("90.011")
 
-    def test_update_untriggered_stop_limit_order_when_price_inside_market_then_rejects_amendment(
+    def test_modify_untriggered_stop_limit_order_when_price_inside_market_then_rejects_modify(
         self,
     ):
         # Arrange: Prepare market
@@ -940,7 +991,7 @@ class TestSimulatedExchange:
         assert len(self.exchange.get_working_orders()) == 1
         assert order.trigger == Price.from_str("90.010")
 
-    def test_update_untriggered_stop_limit_order_when_price_valid_then_amends(self):
+    def test_modify_untriggered_stop_limit_order_when_price_valid_then_amends(self):
         # Arrange: Prepare market
         tick = TestStubs.quote_tick_3decimal(
             instrument_id=USDJPY_SIM.id,
@@ -970,7 +1021,7 @@ class TestSimulatedExchange:
         assert len(self.exchange.get_working_orders()) == 1
         assert order.trigger == Price.from_str("90.011")
 
-    def test_update_triggered_post_only_stop_limit_order_when_price_inside_market_then_rejects_amendment(
+    def test_modify_triggered_post_only_stop_limit_order_when_price_inside_market_then_rejects_modify(
         self,
     ):
         # Arrange: Prepare market
@@ -1013,7 +1064,7 @@ class TestSimulatedExchange:
         assert len(self.exchange.get_working_orders()) == 1
         assert order.price == Price.from_str("90.000")
 
-    def test_update_triggered_stop_limit_order_when_price_inside_market_then_fills(
+    def test_modify_triggered_stop_limit_order_when_price_inside_market_then_fills(
         self,
     ):
         # Arrange: Prepare market
@@ -1056,7 +1107,7 @@ class TestSimulatedExchange:
         assert len(self.exchange.get_working_orders()) == 0
         assert order.price == Price.from_str("90.010")
 
-    def test_update_triggered_stop_limit_order_when_price_valid_then_amends(self):
+    def test_modify_triggered_stop_limit_order_when_price_valid_then_amends(self):
         # Arrange: Prepare market
         tick = TestStubs.quote_tick_3decimal(
             instrument_id=USDJPY_SIM.id,

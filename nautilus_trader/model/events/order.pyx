@@ -1302,7 +1302,7 @@ cdef class OrderPendingUpdate(OrderEvent):
         The instrument ID.
     client_order_id : ClientOrderId
         The client order ID.
-    venue_order_id : VenueOrderId
+    venue_order_id : VenueOrderId, optional
         The venue order ID.
     event_id : UUID4
         The event ID.
@@ -1319,7 +1319,7 @@ cdef class OrderPendingUpdate(OrderEvent):
         AccountId account_id not None,
         InstrumentId instrument_id not None,
         ClientOrderId client_order_id not None,
-        VenueOrderId venue_order_id not None,
+        VenueOrderId venue_order_id,  # Can be None
         UUID4 event_id not None,
         int64_t ts_event,
         int64_t ts_init,
@@ -1342,7 +1342,7 @@ cdef class OrderPendingUpdate(OrderEvent):
             f"account_id={self.account_id.value}, "
             f"instrument_id={self.instrument_id.value}, "
             f"client_order_id={self.client_order_id.value}, "
-            f"venue_order_id={self.venue_order_id.value}, "
+            f"venue_order_id={self.venue_order_id}, "  # Can be None
             f"ts_event={self.ts_event})"
         )
 
@@ -1354,7 +1354,7 @@ cdef class OrderPendingUpdate(OrderEvent):
             f"account_id={self.account_id.value}, "
             f"instrument_id={self.instrument_id.value}, "
             f"client_order_id={self.client_order_id.value}, "
-            f"venue_order_id={self.venue_order_id.value}, "
+            f"venue_order_id={self.venue_order_id}, "  # Can be None
             f"event_id={self.id}, "
             f"ts_event={self.ts_event}, "
             f"ts_init={self.ts_init})"
@@ -1363,13 +1363,14 @@ cdef class OrderPendingUpdate(OrderEvent):
     @staticmethod
     cdef OrderPendingUpdate from_dict_c(dict values):
         Condition.not_none(values, "values")
+        cdef str v = values["venue_order_id"]
         return OrderPendingUpdate(
             trader_id=TraderId(values["trader_id"]),
             strategy_id=StrategyId(values["strategy_id"]),
             account_id=AccountId.from_str_c(values["account_id"]),
             instrument_id=InstrumentId.from_str_c(values["instrument_id"]),
             client_order_id=ClientOrderId(values["client_order_id"]),
-            venue_order_id=VenueOrderId(values["venue_order_id"]),
+            venue_order_id=VenueOrderId(v) if v is not None else None,
             event_id=UUID4(values["event_id"]),
             ts_event=values["ts_event"],
             ts_init=values["ts_init"],
@@ -1385,7 +1386,7 @@ cdef class OrderPendingUpdate(OrderEvent):
             "account_id": obj.account_id.value,
             "instrument_id": obj.instrument_id.value,
             "client_order_id": obj.client_order_id.value,
-            "venue_order_id": obj.venue_order_id.value,
+            "venue_order_id": obj.venue_order_id.value if obj.venue_order_id is not None else None,
             "event_id": obj.id.value,
             "ts_event": obj.ts_event,
             "ts_init": obj.ts_init,
@@ -1438,7 +1439,7 @@ cdef class OrderPendingCancel(OrderEvent):
         The instrument ID.
     client_order_id : ClientOrderId
         The client order ID.
-    venue_order_id : VenueOrderId
+    venue_order_id : VenueOrderId, optional
         The venue order ID.
     event_id : UUID4
         The event ID.
@@ -1455,7 +1456,7 @@ cdef class OrderPendingCancel(OrderEvent):
         AccountId account_id not None,
         InstrumentId instrument_id not None,
         ClientOrderId client_order_id not None,
-        VenueOrderId venue_order_id not None,
+        VenueOrderId venue_order_id,  # Can be None
         UUID4 event_id not None,
         int64_t ts_event,
         int64_t ts_init,
@@ -1478,7 +1479,7 @@ cdef class OrderPendingCancel(OrderEvent):
             f"account_id={self.account_id.value}, "
             f"instrument_id={self.instrument_id.value}, "
             f"client_order_id={self.client_order_id.value}, "
-            f"venue_order_id={self.venue_order_id.value}, "
+            f"venue_order_id={self.venue_order_id}, "  # Can be None
             f"ts_event={self.ts_event})"
         )
 
@@ -1490,7 +1491,7 @@ cdef class OrderPendingCancel(OrderEvent):
             f"account_id={self.account_id.value}, "
             f"instrument_id={self.instrument_id.value}, "
             f"client_order_id={self.client_order_id.value}, "
-            f"venue_order_id={self.venue_order_id.value}, "
+            f"venue_order_id={self.venue_order_id}, "  # Can be None
             f"event_id={self.id}, "
             f"ts_event={self.ts_event}, "
             f"ts_init={self.ts_init})"
@@ -1499,13 +1500,14 @@ cdef class OrderPendingCancel(OrderEvent):
     @staticmethod
     cdef OrderPendingCancel from_dict_c(dict values):
         Condition.not_none(values, "values")
+        cdef str v = values["venue_order_id"]
         return OrderPendingCancel(
             trader_id=TraderId(values["trader_id"]),
             strategy_id=StrategyId(values["strategy_id"]),
             account_id=AccountId.from_str_c(values["account_id"]),
             instrument_id=InstrumentId.from_str_c(values["instrument_id"]),
             client_order_id=ClientOrderId(values["client_order_id"]),
-            venue_order_id=VenueOrderId(values["venue_order_id"]),
+            venue_order_id=VenueOrderId(v) if v is not None else None,
             event_id=UUID4(values["event_id"]),
             ts_event=values["ts_event"],
             ts_init=values["ts_init"],
@@ -1521,7 +1523,7 @@ cdef class OrderPendingCancel(OrderEvent):
             "account_id": obj.account_id.value,
             "instrument_id": obj.instrument_id.value,
             "client_order_id": obj.client_order_id.value,
-            "venue_order_id": obj.venue_order_id.value,
+            "venue_order_id": obj.venue_order_id.value if obj.venue_order_id is not None else None,
             "event_id": obj.id.value,
             "ts_event": obj.ts_event,
             "ts_init": obj.ts_init,
@@ -1574,7 +1576,7 @@ cdef class OrderModifyRejected(OrderEvent):
         The instrument ID.
     client_order_id : ClientOrderId
         The client order ID.
-    venue_order_id : VenueOrderId
+    venue_order_id : VenueOrderId, optional
         The venue order ID.
     reason : str
         The order update rejected reason.
@@ -1598,7 +1600,7 @@ cdef class OrderModifyRejected(OrderEvent):
         AccountId account_id not None,
         InstrumentId instrument_id not None,
         ClientOrderId client_order_id not None,
-        VenueOrderId venue_order_id not None,
+        VenueOrderId venue_order_id,  # Can be None
         str reason not None,
         UUID4 event_id not None,
         int64_t ts_event,
@@ -1625,7 +1627,7 @@ cdef class OrderModifyRejected(OrderEvent):
             f"account_id={self.account_id.value}, "
             f"instrument_id={self.instrument_id.value}, "
             f"client_order_id={self.client_order_id.value}, "
-            f"venue_order_id={self.venue_order_id.value}, "
+            f"venue_order_id={self.venue_order_id}, "  # Can be None
             f"reason={self.reason}, "
             f"ts_event={self.ts_event})"
         )
@@ -1638,7 +1640,7 @@ cdef class OrderModifyRejected(OrderEvent):
             f"account_id={self.account_id.value}, "
             f"instrument_id={self.instrument_id.value}, "
             f"client_order_id={self.client_order_id.value}, "
-            f"venue_order_id={self.venue_order_id.value}, "
+            f"venue_order_id={self.venue_order_id}, "  # Can be None
             f"reason={self.reason}, "
             f"event_id={self.id}, "
             f"ts_event={self.ts_event}, "
@@ -1648,13 +1650,14 @@ cdef class OrderModifyRejected(OrderEvent):
     @staticmethod
     cdef OrderModifyRejected from_dict_c(dict values):
         Condition.not_none(values, "values")
+        cdef str v = values["venue_order_id"]
         return OrderModifyRejected(
             trader_id=TraderId(values["trader_id"]),
             strategy_id=StrategyId(values["strategy_id"]),
             account_id=AccountId.from_str_c(values["account_id"]),
             instrument_id=InstrumentId.from_str_c(values["instrument_id"]),
             client_order_id=ClientOrderId(values["client_order_id"]),
-            venue_order_id=VenueOrderId(values["venue_order_id"]),
+            venue_order_id=VenueOrderId(v) if v is not None else None,
             reason=values["reason"],
             event_id=UUID4(values["event_id"]),
             ts_event=values["ts_event"],
@@ -1671,7 +1674,7 @@ cdef class OrderModifyRejected(OrderEvent):
             "strategy_id": obj.strategy_id.value,
             "instrument_id": obj.instrument_id.value,
             "client_order_id": obj.client_order_id.value,
-            "venue_order_id": obj.venue_order_id.value,
+            "venue_order_id": obj.venue_order_id.value if obj.venue_order_id is not None else None,
             "reason": obj.reason,
             "event_id": obj.id.value,
             "ts_event": obj.ts_event,
@@ -1749,7 +1752,7 @@ cdef class OrderCancelRejected(OrderEvent):
         AccountId account_id not None,
         InstrumentId instrument_id not None,
         ClientOrderId client_order_id not None,
-        VenueOrderId venue_order_id not None,
+        VenueOrderId venue_order_id,  # Can be None
         str reason not None,
         UUID4 event_id not None,
         int64_t ts_event,
@@ -1776,7 +1779,7 @@ cdef class OrderCancelRejected(OrderEvent):
             f"account_id={self.account_id.value}, "
             f"instrument_id={self.instrument_id.value}, "
             f"client_order_id={self.client_order_id.value}, "
-            f"venue_order_id={self.venue_order_id.value}, "
+            f"venue_order_id={self.venue_order_id}, "  # Can be None
             f"reason={self.reason}, "
             f"ts_event={self.ts_event})"
         )
@@ -1789,7 +1792,7 @@ cdef class OrderCancelRejected(OrderEvent):
             f"account_id={self.account_id.value}, "
             f"instrument_id={self.instrument_id.value}, "
             f"client_order_id={self.client_order_id.value}, "
-            f"venue_order_id={self.venue_order_id.value}, "
+            f"venue_order_id={self.venue_order_id}, "  # Can be None
             f"reason={self.reason}, "
             f"event_id={self.id}, "
             f"ts_event={self.ts_event}, "
@@ -1799,13 +1802,14 @@ cdef class OrderCancelRejected(OrderEvent):
     @staticmethod
     cdef OrderCancelRejected from_dict_c(dict values):
         Condition.not_none(values, "values")
+        cdef str v = values["venue_order_id"]
         return OrderCancelRejected(
             trader_id=TraderId(values["trader_id"]),
             strategy_id=StrategyId(values["strategy_id"]),
             account_id=AccountId.from_str_c(values["account_id"]),
             instrument_id=InstrumentId.from_str_c(values["instrument_id"]),
             client_order_id=ClientOrderId(values["client_order_id"]),
-            venue_order_id=VenueOrderId(values["venue_order_id"]),
+            venue_order_id=VenueOrderId(v) if v is not None else None,
             reason=values["reason"],
             event_id=UUID4(values["event_id"]),
             ts_event=values["ts_event"],
@@ -1822,7 +1826,7 @@ cdef class OrderCancelRejected(OrderEvent):
             "account_id": obj.account_id.value,
             "instrument_id": obj.instrument_id.value,
             "client_order_id": obj.client_order_id.value,
-            "venue_order_id": obj.venue_order_id.value,
+            "venue_order_id": obj.venue_order_id.value if obj.venue_order_id is not None else None,
             "reason": obj.reason,
             "event_id": obj.id.value,
             "ts_event": obj.ts_event,

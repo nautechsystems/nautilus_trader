@@ -6,7 +6,13 @@ Released TBD
 - Renamed `CryptoSwap` to `CryptoPerpetual`.
 
 ## Enhancements
-None
+- Can now modify or cancel in-flight orders live and backtest.
+- Updated `CancelOrder` to allow None `venue_order_id`.
+- Updated `ModifyOrder` to allow None `venue_order_id`.
+- Updated `OrderPendingUpdate` to allow None `venue_order_id`.
+- Updated `OrderPendingCancel` to allow None `venue_order_id`.
+- Updated `OrderCancelRejected` to allow None `venue_order_id`.
+- Updated `OrderModifyRejected` to allow None `venue_order_id`.
 
 ## Fixes
 - Implemented comparisons for `DataType`, `BarSpecification` and `BarType`.
