@@ -19,7 +19,7 @@ cpdef bint is_matching(str topic, str pattern) except *:
     Return a value indicating whether the topic matches with the pattern.
 
     Given a topic and pattern potentially containing wildcard characters, i.e.
-    '*' and '?', where '?' can match any single character in the topic, and '*'
+    `*` and `?`, where `?` can match any single character in the topic, and `*`
     can match any number of characters including zero characters.
 
     Parameters
