@@ -28,7 +28,7 @@ cdef class Subscription:
     Parameters
     ----------
     topic : str
-        The topic for the subscription. May include wildcard characters '*' and '?'.
+        The topic for the subscription. May include wildcard characters `*` and `?`.
     handler : Callable[[Message], None]
         The handler for the subscription.
     priority : int

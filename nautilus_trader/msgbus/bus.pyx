@@ -123,7 +123,7 @@ cdef class MessageBus:
         Parameters
         ----------
         topic : str, optional
-            The topic filter. May include wildcard characters '*' and '?'.
+            The topic filter. May include wildcard characters `*` and `?`.
             If ``None`` then query is for ALL topics.
 
         Returns
@@ -144,7 +144,7 @@ cdef class MessageBus:
         Parameters
         ----------
         topic : str, optional
-            The topic filter. May include wildcard characters '*' and '?'.
+            The topic filter. May include wildcard characters `*` and `?`.
             If ``None`` then query is for ALL topics.
 
         Returns
@@ -192,7 +192,7 @@ cdef class MessageBus:
         endpoint : str
             The endpoint address to deregister.
         handler : Callable[[Any], None]
-            The handler for the de-registration.
+            The handler to deregister.
 
         Raises
         ------
