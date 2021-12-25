@@ -331,9 +331,9 @@ cdef class MessageBus:
 
         Warnings
         --------
-        Assigning priority handling is an advanced feature which shouldn't
-        normally be needed by most users. Only assign a higher priority to the
-        subscription if you are certain of what you're doing. If an inappropriate
+        Assigning priority handling is an advanced feature which *shouldn't
+        normally be needed by most users*. **Only assign a higher priority to the
+        subscription if you are certain of what you're doing**. If an inappropriate
         priority is assigned then the handler may receive messages before core
         system components have been able to process necessary calculations and 
         produce potential side effects for logically sound behaviour.
