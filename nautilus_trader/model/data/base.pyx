@@ -38,7 +38,7 @@ cdef class DataType:
     the key and value contents of metadata must themselves be hashable.
     """
 
-    def __init__(self, type type not None, dict metadata=None):    # noqa (shadows built-in type)
+    def __init__(self, type type not None, dict metadata=None):  # noqa (shadows built-in type)
         if metadata is None:
             metadata = {}
 
