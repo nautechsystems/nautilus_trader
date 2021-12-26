@@ -59,7 +59,7 @@ cdef class MessageBus:
     Raises
     ------
     ValueError
-        If `name` is not ``None`` and not a valid string.
+        If `name` is not [`None`] and not a valid string.
 
     Warnings
     --------
@@ -124,7 +124,7 @@ cdef class MessageBus:
         ----------
         topic : str, optional
             The topic filter. May include wildcard characters `*` and `?`.
-            If ``None`` then query is for ALL topics.
+            If [`None`] then query is for **all** topics.
 
         Returns
         -------
@@ -145,7 +145,7 @@ cdef class MessageBus:
         ----------
         topic : str, optional
             The topic filter. May include wildcard characters `*` and `?`.
-            If ``None`` then query is for ALL topics.
+            If [`None`] then query is for **all** topics.
 
         Returns
         -------
@@ -314,7 +314,7 @@ cdef class MessageBus:
         ----------
         topic : str
             The topic for the subscription. May include wildcard characters 
-            ``*`` and ``?``.
+            `*` and `?`.
         handler : Callable[[Any], None]
             The handler for the subscription.
         priority : int, optional
@@ -378,8 +378,8 @@ cdef class MessageBus:
         Parameters
         ----------
         topic : str, optional
-            The topic to unsubscribe from. May include wildcard characters ``*`` 
-            and ``?``.
+            The topic to unsubscribe from. May include wildcard characters `*`
+            and `?`.
         handler : Callable[[Any], None]
             The handler for the subscription.
 
