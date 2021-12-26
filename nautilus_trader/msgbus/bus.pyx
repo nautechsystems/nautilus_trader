@@ -59,7 +59,7 @@ cdef class MessageBus:
     Raises
     ------
     ValueError
-        If `name` is not [`None`] and not a valid string.
+        If `name` is not ``None`` and not a valid string.
 
     Warnings
     --------
@@ -124,7 +124,7 @@ cdef class MessageBus:
         ----------
         topic : str, optional
             The topic filter. May include wildcard characters `*` and `?`.
-            If [`None`] then query is for **all** topics.
+            If ``None`` then query is for **all** topics.
 
         Returns
         -------
@@ -145,7 +145,7 @@ cdef class MessageBus:
         ----------
         topic : str, optional
             The topic filter. May include wildcard characters `*` and `?`.
-            If [`None`] then query is for **all** topics.
+            If ``None`` then query is for **all** topics.
 
         Returns
         -------
