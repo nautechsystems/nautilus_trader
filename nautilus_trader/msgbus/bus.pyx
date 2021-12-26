@@ -313,7 +313,7 @@ cdef class MessageBus:
         Parameters
         ----------
         topic : str
-            The topic for the subscription. May include wildcard characters 
+            The topic for the subscription. May include wildcard characters
             `*` and `?`.
         handler : Callable[[Any], None]
             The handler for the subscription.
@@ -335,7 +335,7 @@ cdef class MessageBus:
         normally be needed by most users*. **Only assign a higher priority to the
         subscription if you are certain of what you're doing**. If an inappropriate
         priority is assigned then the handler may receive messages before core
-        system components have been able to process necessary calculations and 
+        system components have been able to process necessary calculations and
         produce potential side effects for logically sound behaviour.
 
         """
