@@ -47,7 +47,6 @@ cdef class Subscription:
     -----
     The subscription equality is determined by the topic and handler,
     priority is not considered (and could change).
-
     """
 
     def __init__(
