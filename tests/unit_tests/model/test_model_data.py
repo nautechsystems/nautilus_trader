@@ -39,6 +39,7 @@ class TestDataType:
         # Assert
         assert data_type.type == str
         assert data_type.metadata == {}
+        assert data_type.topic == "str*"
         assert str(data_type) == "str"
         assert repr(data_type) == "DataType(type=str, metadata={})"  # noqa (P103??)
 

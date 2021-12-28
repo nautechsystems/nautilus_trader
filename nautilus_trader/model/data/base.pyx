@@ -41,17 +41,12 @@ cdef class DataType:
     def __init__(self, type type not None, dict metadata=None):  # noqa (shadows built-in type)
         self.type = type
         self.metadata = metadata or {}
+        self.topic = self.type.__name__ + '.' + '.'.join([
+            f'{k}={v if v is not None else "*"}' for k, v in self.metadata.items()
+        ]) if self.metadata else self.type.__name__ + "*"
 
         self._key = frozenset(self.metadata.items())
         self._hash = hash((self.type, self._key))  # Assign hash for improved time complexity
-
-        # Build metadata string
-        cdef str metadata_str = ""
-        if self.metadata:
-            metadata_str = '.' + '.'.join([f'{k}={v if v is not None else "*"}' for k, v in self.metadata.items()])
-
-        # Build topic string
-        self.topic = self.type.__name__ + metadata_str
 
     def __eq__(self, DataType other) -> bool:
         return self.type == other.type and self._key == other._key  # noqa
