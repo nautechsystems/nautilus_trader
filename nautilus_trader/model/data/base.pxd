@@ -19,6 +19,7 @@ from nautilus_trader.core.data cimport Data
 cdef class DataType:
     cdef frozenset _key
     cdef int _hash
+    cdef str _metadata_str
 
     cdef readonly type type
     """The `Data` type of the data.\n\n:returns: `type`"""

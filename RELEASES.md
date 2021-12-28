@@ -3,6 +3,12 @@
 Released TBD
 
 ## Breaking Changes
+- Changed `subscribe_data(...)` method (`client_id` now optional).
+- Changed `unsubscribe_data(...)` method (`client_id` now optional).
+- Changed `publish_data(...)` method (added `data_type`).
+- Removed `subscribe_strategy_data(...)` method.
+- Removed `unsubscribe_strategy_data(...)` method.
+- Removed `publish_strategy_data(...) method`.
 - Renamed `CryptoSwap` to `CryptoPerpetual`.
 
 ## Enhancements

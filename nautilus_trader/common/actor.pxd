@@ -36,7 +36,6 @@ from nautilus_trader.model.data.venue cimport InstrumentStatusUpdate
 from nautilus_trader.model.data.venue cimport VenueStatusUpdate
 from nautilus_trader.model.identifiers cimport ClientId
 from nautilus_trader.model.identifiers cimport InstrumentId
-from nautilus_trader.model.identifiers cimport StrategyId
 from nautilus_trader.model.identifiers cimport TraderId
 from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.model.instruments.base cimport Instrument
@@ -93,8 +92,7 @@ cdef class Actor(Component):
 
 # -- SUBSCRIPTIONS ---------------------------------------------------------------------------------
 
-    cpdef void subscribe_data(self, ClientId client_id, DataType data_type) except *
-    cpdef void subscribe_strategy_data(self, type data_type=*, StrategyId strategy_id=*) except *
+    cpdef void subscribe_data(self, DataType data_type, ClientId client_id=*) except *
     cpdef void subscribe_instruments(self, Venue venue) except *
     cpdef void subscribe_instrument(self, InstrumentId instrument_id) except *
     cpdef void subscribe_order_book_deltas(
@@ -119,8 +117,7 @@ cdef class Actor(Component):
     cpdef void subscribe_venue_status_updates(self, Venue venue) except *
     cpdef void subscribe_instrument_status_updates(self, InstrumentId instrument_id) except *
     cpdef void subscribe_instrument_close_prices(self, InstrumentId instrument_id) except *
-    cpdef void unsubscribe_data(self, ClientId client_id, DataType data_type) except *
-    cpdef void unsubscribe_strategy_data(self, type data_type, StrategyId strategy_id=*) except *
+    cpdef void unsubscribe_data(self, DataType data_type, ClientId client_id=*) except *
     cpdef void unsubscribe_instruments(self, Venue venue) except *
     cpdef void unsubscribe_instrument(self, InstrumentId instrument_id) except *
     cpdef void unsubscribe_order_book_deltas(self, InstrumentId instrument_id) except *
@@ -129,7 +126,7 @@ cdef class Actor(Component):
     cpdef void unsubscribe_quote_ticks(self, InstrumentId instrument_id) except *
     cpdef void unsubscribe_trade_ticks(self, InstrumentId instrument_id) except *
     cpdef void unsubscribe_bars(self, BarType bar_type) except *
-    cpdef void publish_data(self, Data data) except *
+    cpdef void publish_data(self, DataType data_type, Data data) except *
 
 # -- REQUESTS --------------------------------------------------------------------------------------
 
