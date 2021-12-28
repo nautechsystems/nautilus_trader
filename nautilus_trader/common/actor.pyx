@@ -544,7 +544,7 @@ cdef class Actor(Component):
         Condition.true(self.trader_id is not None, "The actor has not been registered")
 
         self._msgbus.subscribe(
-            topic=f"data.{data_type}",
+            topic=f"data.{data_type.topic}",
             handler=self.handle_data,
         )
 
@@ -945,7 +945,10 @@ cdef class Actor(Component):
         Condition.not_none(data_type, "data_type")
         Condition.true(self.trader_id is not None, "The actor has not been registered")
 
-        self._msgbus.unsubscribe(topic=f"data.{data_type}", handler=self.handle_data)
+        self._msgbus.unsubscribe(
+            topic=f"data.{data_type.topic}",
+            handler=self.handle_data,
+        )
 
         if client_id is None:
             return
@@ -1217,7 +1220,7 @@ cdef class Actor(Component):
         Condition.type(data, data_type.type, "data", "data.type")
         Condition.true(self.trader_id is not None, "The actor has not been registered")
 
-        self._msgbus.publish_c(topic=f"data.{data_type}", msg=data)
+        self._msgbus.publish_c(topic=f"data.{data_type.topic}", msg=data)
 
 # -- REQUESTS --------------------------------------------------------------------------------------
 

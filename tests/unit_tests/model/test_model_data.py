@@ -28,7 +28,8 @@ class TestDataType:
         # Assert
         assert data_type.type == str
         assert data_type.metadata == {"type": "NEWS_WIRE"}
-        assert str(data_type) == "str|type=NEWS_WIRE"
+        assert data_type.topic == "str.type=NEWS_WIRE"
+        assert str(data_type) == "str{'type': 'NEWS_WIRE'}"
         assert repr(data_type) == "DataType(type=str, metadata={'type': 'NEWS_WIRE'})"
 
     def test_data_type_instantiation_when_no_metadata(self):
@@ -40,6 +41,17 @@ class TestDataType:
         assert data_type.metadata == {}
         assert str(data_type) == "str"
         assert repr(data_type) == "DataType(type=str, metadata={})"  # noqa (P103??)
+
+    def test_data_type_instantiation_with_multiple_metadata(self):
+        # Arrange, Act
+        data_type = DataType(str, {"b": 2, "a": 1, "c": None})
+
+        # Assert
+        assert data_type.type == str
+        assert data_type.metadata == {"a": 1, "b": 2, "c": None}
+        assert data_type.topic == "str.b=2.a=1.c=*"
+        assert str(data_type) == "str{'b': 2, 'a': 1, 'c': None}"
+        assert repr(data_type) == "DataType(type=str, metadata={'b': 2, 'a': 1, 'c': None})"
 
     def test_data_type_equality_and_hash(self):
         # Arrange, Act
@@ -136,5 +148,5 @@ class TestDataType:
 
         # Act, Assert
         assert isinstance(hash(data_type), int)
-        assert str(data_type) == "str|category=1|code=0"
+        assert str(data_type) == "str{'category': 1, 'code': 0}"
         assert repr(data_type) == "DataType(type=str, metadata={'category': 1, 'code': 0})"
