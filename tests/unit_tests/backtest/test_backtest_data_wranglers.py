@@ -120,6 +120,33 @@ class TestQuoteTickDataWrangler:
         assert ticks[0].ts_event == 1359676799700000000
         assert ticks[0].ts_init == 1359676799701000500  # <-- delta diff
 
+    def test_pre_process_bar_data_with_random_seed(self):
+        # Arrange
+        usdjpy = TestInstrumentProvider.default_fx_ccy("USD/JPY")
+        provider = TestDataProvider()
+        bid_data = provider.read_csv_bars("fxcm-usdjpy-m1-bid-2013.csv")[:100]
+        ask_data = provider.read_csv_bars("fxcm-usdjpy-m1-ask-2013.csv")[:100]
+
+        wrangler = QuoteTickDataWrangler(instrument=usdjpy)
+
+        # Act
+        ticks = wrangler.process_bar_data(
+            bid_data=bid_data,
+            ask_data=ask_data,
+            default_volume=1000000,
+            random_seed=42,  # <-- with random seed
+        )
+
+        # Assert
+        assert ticks[0].bid == Price.from_str("91.715")
+        assert ticks[0].ask == Price.from_str("91.717")
+        assert ticks[1].bid == Price.from_str("91.653")
+        assert ticks[1].ask == Price.from_str("91.655")
+        assert ticks[2].bid == Price.from_str("91.715")
+        assert ticks[2].ask == Price.from_str("91.717")
+        assert ticks[3].bid == Price.from_str("91.653")
+        assert ticks[3].ask == Price.from_str("91.655")
+
 
 class TestTradeTickDataWrangler:
     def setup(self):
