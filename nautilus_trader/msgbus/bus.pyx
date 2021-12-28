@@ -116,14 +116,14 @@ cdef class MessageBus:
         """
         return sorted(set([s.topic for s in self._subscriptions.keys()]))
 
-    cpdef list subscriptions(self, str topic=None):
+    cpdef list subscriptions(self, str pattern=None):
         """
-        Return all subscriptions matching the given `topic`.
+        Return all subscriptions matching the given topic `pattern`.
 
         Parameters
         ----------
-        topic : str, optional
-            The topic filter. May include wildcard characters `*` and `?`.
+        pattern : str, optional
+            The topic pattern filter. May include wildcard characters `*` and `?`.
             If ``None`` then query is for **all** topics.
 
         Returns
@@ -131,19 +131,19 @@ cdef class MessageBus:
         list[Subscription]
 
         """
-        if topic is None:
-            topic = "*"  # Wildcard
-        Condition.valid_string(topic, "topic")
+        if pattern is None:
+            pattern = "*"  # Wildcard
+        Condition.valid_string(pattern, "pattern")
 
-        return [s for s in self._subscriptions if is_matching(s.topic, topic)]
+        return [s for s in self._subscriptions if is_matching(s.topic, pattern)]
 
-    cpdef bint has_subscribers(self, str topic=None):
+    cpdef bint has_subscribers(self, str pattern=None):
         """
-        If the message bus has subscribers for the give `topic`.
+        If the message bus has subscribers for the give topic `pattern`.
 
         Parameters
         ----------
-        topic : str, optional
+        pattern : str, optional
             The topic filter. May include wildcard characters `*` and `?`.
             If ``None`` then query is for **all** topics.
 
@@ -152,7 +152,7 @@ cdef class MessageBus:
         bool
 
         """
-        return len(self.subscriptions(topic)) > 0
+        return len(self.subscriptions(pattern)) > 0
 
     cpdef void register(self, str endpoint, handler: Callable[[Any], None]) except *:
         """

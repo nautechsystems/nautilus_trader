@@ -1117,7 +1117,7 @@ class TestActor:
 
         # Assert
         assert self.data_engine.command_count == 0
-        assert actor.msgbus.subscriptions()[0].topic == "data.str|type=NEWS_WIRE|topic=Earthquake"
+        assert actor.msgbus.subscriptions()[0].topic == "data.str.type=NEWS_WIRE.topic=Earthquake"
 
     def test_subscribe_custom_data_with_client_id(self):
         # Arrange
@@ -1137,7 +1137,7 @@ class TestActor:
 
         # Assert
         assert self.data_engine.command_count == 1
-        assert actor.msgbus.subscriptions()[0].topic == "data.str|type=NEWS_WIRE|topic=Earthquake"
+        assert actor.msgbus.subscriptions()[0].topic == "data.str.type=NEWS_WIRE.topic=Earthquake"
 
     def test_unsubscribe_custom_data(self):
         # Arrange
