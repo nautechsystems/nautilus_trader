@@ -39,7 +39,6 @@ from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import ComponentId
 from nautilus_trader.model.identifiers import InstrumentId
-from nautilus_trader.model.identifiers import StrategyId
 from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.msgbus.bus import MessageBus
@@ -1114,10 +1113,31 @@ class TestActor:
         data_type = DataType(str, {"type": "NEWS_WIRE", "topic": "Earthquake"})
 
         # Act
-        actor.subscribe_data(ClientId("QUANDL"), data_type)
+        actor.subscribe_data(data_type)
+
+        # Assert
+        assert self.data_engine.command_count == 0
+        assert actor.msgbus.subscriptions()[0].topic == "data.str|type=NEWS_WIRE|topic=Earthquake"
+
+    def test_subscribe_custom_data_with_client_id(self):
+        # Arrange
+        actor = MockActor()
+        actor.register_base(
+            trader_id=self.trader_id,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            logger=self.logger,
+        )
+
+        data_type = DataType(str, {"type": "NEWS_WIRE", "topic": "Earthquake"})
+
+        # Act
+        actor.subscribe_data(data_type, ClientId("QUANDL"))
 
         # Assert
         assert self.data_engine.command_count == 1
+        assert actor.msgbus.subscriptions()[0].topic == "data.str|type=NEWS_WIRE|topic=Earthquake"
 
     def test_unsubscribe_custom_data(self):
         # Arrange
@@ -1131,13 +1151,35 @@ class TestActor:
         )
 
         data_type = DataType(str, {"type": "NEWS_WIRE", "topic": "Earthquake"})
-        actor.subscribe_data(ClientId("QUANDL"), data_type)
+        actor.subscribe_data(data_type)
 
         # Act
-        actor.unsubscribe_data(ClientId("QUANDL"), data_type)
+        actor.unsubscribe_data(data_type)
+
+        # Assert
+        assert self.data_engine.command_count == 0
+        assert actor.msgbus.subscriptions() == []
+
+    def test_unsubscribe_custom_data_with_client_id(self):
+        # Arrange
+        actor = MockActor()
+        actor.register_base(
+            trader_id=self.trader_id,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            logger=self.logger,
+        )
+
+        data_type = DataType(str, {"type": "NEWS_WIRE", "topic": "Earthquake"})
+        actor.subscribe_data(data_type, ClientId("QUANDL"))
+
+        # Act
+        actor.unsubscribe_data(data_type, ClientId("QUANDL"))
 
         # Assert
         assert self.data_engine.command_count == 2
+        assert actor.msgbus.subscriptions() == []
 
     def test_subscribe_order_book(self):
         # Arrange
@@ -1407,87 +1449,6 @@ class TestActor:
         assert self.data_engine.subscribed_trade_ticks() == []
         assert self.data_engine.command_count == 2
 
-    def test_subscribe_strategy_data(self):
-        # Arrange
-        actor = MockActor()
-        actor.register_base(
-            trader_id=self.trader_id,
-            msgbus=self.msgbus,
-            cache=self.cache,
-            clock=self.clock,
-            logger=self.logger,
-        )
-
-        # Act
-        actor.subscribe_strategy_data(data_type=Data)
-
-        # Assert
-        assert self.msgbus.has_subscribers("data.strategy.Data.*")
-
-    def test_subscribe_strategy_data_with_strategy_filter(self):
-        # Arrange
-        actor = MockActor()
-        actor.register_base(
-            trader_id=self.trader_id,
-            msgbus=self.msgbus,
-            cache=self.cache,
-            clock=self.clock,
-            logger=self.logger,
-        )
-
-        # Act
-        actor.subscribe_strategy_data(
-            data_type=Data,
-            strategy_id=StrategyId("Monitor-002"),
-        )
-
-        # Assert
-        assert self.msgbus.has_subscribers("data.strategy.Data.Monitor-002")
-
-    def test_unsubscribe_strategy_data(self):
-        # Arrange
-        actor = MockActor()
-        actor.register_base(
-            trader_id=self.trader_id,
-            msgbus=self.msgbus,
-            cache=self.cache,
-            clock=self.clock,
-            logger=self.logger,
-        )
-
-        actor.subscribe_strategy_data(data_type=Data)
-
-        # Act
-        actor.unsubscribe_strategy_data(data_type=Data)
-
-        # Assert
-        assert not self.msgbus.has_subscribers("data.strategy.Data.*")
-
-    def test_unsubscribe_strategy_data_with_strategy_filter(self):
-        # Arrange
-        actor = MockActor()
-        actor.register_base(
-            trader_id=self.trader_id,
-            msgbus=self.msgbus,
-            cache=self.cache,
-            clock=self.clock,
-            logger=self.logger,
-        )
-
-        actor.subscribe_strategy_data(
-            data_type=Data,
-            strategy_id=StrategyId("Monitor-002"),
-        )
-
-        # Act
-        actor.unsubscribe_strategy_data(
-            data_type=Data,
-            strategy_id=StrategyId("Monitor-002"),
-        )
-
-        # Assert
-        assert not self.msgbus.has_subscribers("data.strategy.Data.Monitor-002")
-
     def test_publish_data_sends_to_subscriber(self):
         # Arrange
         actor = MockActor()
@@ -1510,7 +1471,7 @@ class TestActor:
             ts_event=self.clock.timestamp_ns(),
             ts_init=self.clock.timestamp_ns(),
         )
-        actor.publish_data(data=data)
+        actor.publish_data(data_type=DataType(Data), data=data)
 
         # Assert
         assert data in handler

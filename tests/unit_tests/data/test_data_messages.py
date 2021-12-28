@@ -48,13 +48,13 @@ class TestDataMessage:
         )
 
         # Assert
-        assert str(command) == "Subscribe(<str> {'type': 'newswire'})"
-        assert (
+        assert str(command) == "Subscribe(str|type=newswire)"
+        assert repr(command) == (
             f"Subscribe("
             f"client_id=BINANCE, "
-            f"data_type=<str> {{'type': 'newswire'}}, "
+            f"data_type=str|type=newswire, "
             f"id={command_id})"
-        ) == repr(command)
+        )
 
     def test_data_request_message_str_and_repr(self):
         # Arrange, Act
@@ -79,20 +79,16 @@ class TestDataMessage:
 
         # Assert
         assert (
-            "DataRequest("
-            "<str> {'instrument_id': InstrumentId('SOMETHING.RANDOM'), "
-            "'from_datetime': None, 'to_datetime': None, 'limit': 1000})"
-        ) == str(request)
-        assert (
+            str(request)
+            == "DataRequest(str|instrument_id=SOMETHING.RANDOM|from_datetime=None|to_datetime=None|limit=1000)"
+        )
+        assert repr(request) == (
             f"DataRequest("
             f"client_id=BINANCE, "
-            f"data_type=<str> {{'instrument_id': InstrumentId('SOMETHING.RANDOM'), "
-            f"'from_datetime': None, "
-            f"'to_datetime': None, "
-            f"'limit': 1000}}, "
+            f"data_type=str|instrument_id=SOMETHING.RANDOM|from_datetime=None|to_datetime=None|limit=1000, "
             f"callback={repr(handler)}, "
             f"id={request_id})"
-        ) == repr(request)
+        )
 
     def test_data_response_message_str_and_repr(self):
         # Arrange, Act
@@ -110,14 +106,11 @@ class TestDataMessage:
         )
 
         # Assert
-        assert (
-            "DataResponse(<QuoteTick> {'instrument_id': InstrumentId('AUD/USD.IDEALPRO')})"
-            == str(response)
-        )
-        assert (
+        assert str(response) == "DataResponse(QuoteTick|instrument_id=AUD/USD.IDEALPRO)"
+        assert repr(response) == (
             f"DataResponse("
             f"client_id=BINANCE, "
-            f"data_type=<QuoteTick> {{'instrument_id': InstrumentId('AUD/USD.IDEALPRO')}}, "
+            f"data_type=QuoteTick|instrument_id=AUD/USD.IDEALPRO, "
             f"correlation_id={correlation_id}, "
             f"id={response_id})"
-        ) == repr(response)
+        )
