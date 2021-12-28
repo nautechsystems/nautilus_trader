@@ -22,6 +22,7 @@ Released TBD
 
 ## Fixes
 - Implemented comparisons for `DataType`, `BarSpecification` and `BarType`.
+- Fixed `QuoteTickDataWrangler.process_bar_data` with `random_seed`.
 
 ---
 
