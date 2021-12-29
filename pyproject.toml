@@ -31,7 +31,7 @@ include = [
 
 [build-system]
 requires = [
-    "setuptools",
+    "setuptools==59.8.0",
     "poetry-core>=1.0.7",
     "numpy>=1.21.5",
     "Cython>=3.0.0a9",
