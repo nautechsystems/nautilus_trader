@@ -1,6 +1,6 @@
 # NautilusTrader 1.136.0 Beta - Release Notes
 
-Released TBD
+Released 29th, December 2021
 
 ## Breaking Changes
 - Changed `subscribe_data(...)` method (`client_id` now optional).
@@ -10,7 +10,7 @@ Released TBD
 - Renamed `MessageBus.has_subscribers` method param to `pattern`.`
 - Removed `subscribe_strategy_data(...)` method.
 - Removed `unsubscribe_strategy_data(...)` method.
-- Removed `publish_strategy_data(...) method`.
+- Removed `publish_strategy_data(...)` method.
 - Renamed `CryptoSwap` to `CryptoPerpetual`.
 
 ## Enhancements
