@@ -1275,7 +1275,7 @@ test = ["aiohttp", "flake8 (>=3.9.2,<3.10.0)", "psutil", "pycodestyle (>=2.7.0,<
 
 [[package]]
 name = "virtualenv"
-version = "20.11.0"
+version = "20.11.1"
 description = "Virtual Python Environment builder"
 category = "dev"
 optional = false
@@ -2691,8 +2691,8 @@ uvloop = [
     {file = "uvloop-0.16.0.tar.gz", hash = "sha256:f74bc20c7b67d1c27c72601c78cf95be99d5c2cdd4514502b4f3eb0933ff1228"},
 ]
 virtualenv = [
-    {file = "virtualenv-20.11.0-py2.py3-none-any.whl", hash = "sha256:eb0cb34160f32c6596405308ee6a8a4abbf3247b2b9794ae655a156d43abf48e"},
-    {file = "virtualenv-20.11.0.tar.gz", hash = "sha256:2f15b9226cb74b59c21e8236dd791c395bee08cdd33b99cddd18e1f866cdb098"},
+    {file = "virtualenv-20.11.1-py2.py3-none-any.whl", hash = "sha256:43973fb93cf1d04ec00a190f5e062919798a0fec94daaafcb4db1eda1aa8f340"},
+    {file = "virtualenv-20.11.1.tar.gz", hash = "sha256:17f26e9d0c4350d9df713d41077b2b3344cba59e104306e4105c8c75deeddcf7"},
 ]
 wrapt = [
     {file = "wrapt-1.13.3-cp27-cp27m-macosx_10_9_x86_64.whl", hash = "sha256:e05e60ff3b2b0342153be4d1b597bbcfd8330890056b9619f4ad6b8d5c96a81a"},
