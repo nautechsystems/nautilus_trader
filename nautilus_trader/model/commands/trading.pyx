@@ -112,22 +112,26 @@ cdef class SubmitOrder(TradingCommand):
         self.order = order
 
     def __str__(self) -> str:
-        return (f"{type(self).__name__}("
-                f"instrument_id={self.instrument_id.value}, "
-                f"client_order_id={self.order.client_order_id.value}, "
-                f"position_id={self.position_id}, "
-                f"order={self.order.info()})")
+        return (
+            f"{type(self).__name__}("
+            f"instrument_id={self.instrument_id.value}, "
+            f"client_order_id={self.order.client_order_id.value}, "
+            f"position_id={self.position_id}, "
+            f"order={self.order.info()})"
+        )
 
     def __repr__(self) -> str:
-        return (f"{type(self).__name__}("
-                f"trader_id={self.trader_id.value}, "
-                f"strategy_id={self.strategy_id.value}, "
-                f"instrument_id={self.instrument_id.value}, "
-                f"client_order_id={self.order.client_order_id.value}, "
-                f"position_id={self.position_id}, "
-                f"order={self.order.info()}, "
-                f"command_id={self.id.value}, "
-                f"ts_init={self.ts_init})")
+        return (
+            f"{type(self).__name__}("
+            f"trader_id={self.trader_id.value}, "
+            f"strategy_id={self.strategy_id.value}, "
+            f"instrument_id={self.instrument_id.value}, "
+            f"client_order_id={self.order.client_order_id.value}, "
+            f"position_id={self.position_id}, "
+            f"order={self.order.info()}, "
+            f"command_id={self.id.value}, "
+            f"ts_init={self.ts_init})"
+        )
 
     @staticmethod
     cdef SubmitOrder from_dict_c(dict values):
@@ -231,18 +235,22 @@ cdef class SubmitOrderList(TradingCommand):
         self.list = order_list
 
     def __str__(self) -> str:
-        return (f"{type(self).__name__}("
-                f"instrument_id={self.instrument_id.value}, "
-                f"order_list={self.list})")
+        return (
+            f"{type(self).__name__}("
+            f"instrument_id={self.instrument_id.value}, "
+            f"order_list={self.list})"
+        )
 
     def __repr__(self) -> str:
-        return (f"{type(self).__name__}("
-                f"trader_id={self.trader_id.value}, "
-                f"strategy_id={self.strategy_id.value}, "
-                f"instrument_id={self.instrument_id.value}, "
-                f"order_list={self.list}, "
-                f"command_id={self.id.value}, "
-                f"ts_init={self.ts_init})")
+        return (
+            f"{type(self).__name__}("
+            f"trader_id={self.trader_id.value}, "
+            f"strategy_id={self.strategy_id.value}, "
+            f"instrument_id={self.instrument_id.value}, "
+            f"order_list={self.list}, "
+            f"command_id={self.id.value}, "
+            f"ts_init={self.ts_init})"
+        )
 
     @staticmethod
     cdef SubmitOrderList from_dict_c(dict values):
@@ -318,7 +326,7 @@ cdef class ModifyOrder(TradingCommand):
         The instrument ID for the command.
     client_order_id : VenueOrderId
         The client order ID to update.
-    venue_order_id : VenueOrderId
+    venue_order_id : VenueOrderId, optional
         The venue order ID to update.
     quantity : Quantity, optional
         The quantity for the order update.
@@ -342,7 +350,7 @@ cdef class ModifyOrder(TradingCommand):
         StrategyId strategy_id not None,
         InstrumentId instrument_id not None,
         ClientOrderId client_order_id not None,
-        VenueOrderId venue_order_id not None,
+        VenueOrderId venue_order_id,  # Can be None
         Quantity quantity,  # Can be None
         Price price,  # Can be None
         Price trigger,  # Can be None
@@ -364,30 +372,35 @@ cdef class ModifyOrder(TradingCommand):
         self.trigger = trigger
 
     def __str__(self) -> str:
-        return (f"{type(self).__name__}("
-                f"instrument_id={self.instrument_id.value}, "
-                f"client_order_id={self.client_order_id.value}, "
-                f"venue_order_id={self.venue_order_id.value}, "
-                f"quantity={self.quantity.to_str()}, "
-                f"price={self.price}, "
-                f"trigger={self.trigger})")
+        return (
+            f"{type(self).__name__}("
+            f"instrument_id={self.instrument_id.value}, "
+            f"client_order_id={self.client_order_id.value}, "
+            f"venue_order_id={self.venue_order_id}, "  # Can be None
+            f"quantity={self.quantity.to_str()}, "
+            f"price={self.price}, "
+            f"trigger={self.trigger})"
+        )
 
     def __repr__(self) -> str:
-        return (f"{type(self).__name__}("
-                f"trader_id={self.trader_id.value}, "
-                f"strategy_id={self.strategy_id.value}, "
-                f"instrument_id={self.instrument_id.value}, "
-                f"client_order_id={self.client_order_id.value}, "
-                f"venue_order_id={self.venue_order_id.value}, "
-                f"quantity={self.quantity.to_str()}, "
-                f"price={self.price}, "
-                f"trigger={self.trigger}, "
-                f"command_id={self.id.value}, "
-                f"ts_init={self.ts_init})")
+        return (
+            f"{type(self).__name__}("
+            f"trader_id={self.trader_id.value}, "
+            f"strategy_id={self.strategy_id.value}, "
+            f"instrument_id={self.instrument_id.value}, "
+            f"client_order_id={self.client_order_id.value}, "
+            f"venue_order_id={self.venue_order_id}, "  # Can be None
+            f"quantity={self.quantity.to_str()}, "
+            f"price={self.price}, "
+            f"trigger={self.trigger}, "
+            f"command_id={self.id.value}, "
+            f"ts_init={self.ts_init})"
+        )
 
     @staticmethod
     cdef ModifyOrder from_dict_c(dict values):
         Condition.not_none(values, "values")
+        cdef str v = values["venue_order_id"]
         cdef str q = values["quantity"]
         cdef str p = values["price"]
         cdef str t = values["trigger"]
@@ -396,7 +409,7 @@ cdef class ModifyOrder(TradingCommand):
             strategy_id=StrategyId(values["strategy_id"]),
             instrument_id=InstrumentId.from_str_c(values["instrument_id"]),
             client_order_id=ClientOrderId(values["client_order_id"]),
-            venue_order_id=VenueOrderId(values["venue_order_id"]),
+            venue_order_id=VenueOrderId(v) if v is not None else None,
             quantity=Quantity.from_str_c(q) if q is not None else None,
             price=Price.from_str_c(p) if p is not None else None,
             trigger=Price.from_str_c(t) if t is not None else None,
@@ -413,7 +426,7 @@ cdef class ModifyOrder(TradingCommand):
             "strategy_id": obj.strategy_id.value,
             "instrument_id": obj.instrument_id.value,
             "client_order_id": obj.client_order_id.value,
-            "venue_order_id": obj.venue_order_id.value,
+            "venue_order_id": obj.venue_order_id.value if obj.venue_order_id is not None else None,
             "quantity": str(obj.quantity) if obj.quantity is not None else None,
             "price": str(obj.price) if obj.price is not None else None,
             "trigger": str(obj.trigger) if obj.trigger is not None else None,
@@ -465,7 +478,7 @@ cdef class CancelOrder(TradingCommand):
         The instrument ID for the command.
     client_order_id : ClientOrderId
         The client order ID to cancel.
-    venue_order_id : VenueOrderId
+    venue_order_id : VenueOrderId, optional
         The venue order ID to cancel.
     command_id : UUID4
         The command ID.
@@ -483,7 +496,7 @@ cdef class CancelOrder(TradingCommand):
         StrategyId strategy_id not None,
         InstrumentId instrument_id not None,
         ClientOrderId client_order_id not None,
-        VenueOrderId venue_order_id not None,
+        VenueOrderId venue_order_id,  # Can be None
         UUID4 command_id not None,
         int64_t ts_init,
     ):
@@ -499,30 +512,35 @@ cdef class CancelOrder(TradingCommand):
         self.venue_order_id = venue_order_id
 
     def __str__(self) -> str:
-        return (f"{type(self).__name__}("
-                f"instrument_id={self.instrument_id.value}, "
-                f"client_order_id={self.client_order_id.value}, "
-                f"venue_order_id={self.venue_order_id.value})")
+        return (
+            f"{type(self).__name__}("
+            f"instrument_id={self.instrument_id.value}, "
+            f"client_order_id={self.client_order_id.value}, "
+            f"venue_order_id={self.venue_order_id})"  # Can be None
+        )
 
     def __repr__(self) -> str:
-        return (f"{type(self).__name__}("
-                f"trader_id={self.trader_id.value}, "
-                f"strategy_id={self.strategy_id.value}, "
-                f"instrument_id={self.instrument_id.value}, "
-                f"client_order_id={self.client_order_id.value}, "
-                f"venue_order_id={self.venue_order_id.value}, "
-                f"command_id={self.id.value}, "
-                f"ts_init={self.ts_init})")
+        return (
+            f"{type(self).__name__}("
+            f"trader_id={self.trader_id.value}, "
+            f"strategy_id={self.strategy_id.value}, "
+            f"instrument_id={self.instrument_id.value}, "
+            f"client_order_id={self.client_order_id.value}, "
+            f"venue_order_id={self.venue_order_id}, "  # Can be None
+            f"command_id={self.id.value}, "
+            f"ts_init={self.ts_init})"
+        )
 
     @staticmethod
     cdef CancelOrder from_dict_c(dict values):
         Condition.not_none(values, "values")
+        cdef str v = values["venue_order_id"]
         return CancelOrder(
             trader_id=TraderId(values["trader_id"]),
             strategy_id=StrategyId(values["strategy_id"]),
             instrument_id=InstrumentId.from_str_c(values["instrument_id"]),
             client_order_id=ClientOrderId(values["client_order_id"]),
-            venue_order_id=VenueOrderId(values["venue_order_id"]),
+            venue_order_id=VenueOrderId(v) if v is not None else None,
             command_id=UUID4(values["command_id"]),
             ts_init=values["ts_init"],
         )
@@ -536,7 +554,7 @@ cdef class CancelOrder(TradingCommand):
             "strategy_id": obj.strategy_id.value,
             "instrument_id": obj.instrument_id.value,
             "client_order_id": obj.client_order_id.value,
-            "venue_order_id": obj.venue_order_id.value,
+            "venue_order_id": obj.venue_order_id.value if obj.venue_order_id is not None else None,
             "command_id": obj.id.value,
             "ts_init": obj.ts_init,
         }
@@ -606,16 +624,20 @@ cdef class CancelAllOrders(TradingCommand):
         )
 
     def __str__(self) -> str:
-        return (f"{type(self).__name__}("
-                f"instrument_id={self.instrument_id.value})")
+        return (
+            f"{type(self).__name__}("
+            f"instrument_id={self.instrument_id.value})"
+        )
 
     def __repr__(self) -> str:
-        return (f"{type(self).__name__}("
-                f"trader_id={self.trader_id.value}, "
-                f"strategy_id={self.strategy_id.value}, "
-                f"instrument_id={self.instrument_id.value}, "
-                f"command_id={self.id.value}, "
-                f"ts_init={self.ts_init})")
+        return (
+            f"{type(self).__name__}("
+            f"trader_id={self.trader_id.value}, "
+            f"strategy_id={self.strategy_id.value}, "
+            f"instrument_id={self.instrument_id.value}, "
+            f"command_id={self.id.value}, "
+            f"ts_init={self.ts_init})"
+        )
 
     @staticmethod
     cdef CancelAllOrders from_dict_c(dict values):

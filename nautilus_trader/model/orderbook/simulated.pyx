@@ -87,11 +87,11 @@ cdef class SimulatedL1OrderBook(L1OrderBook):
         elif isinstance(tick, TradeTick):
             self._update_trade_tick(tick)
 
-    cdef void _update_quote_tick(self, QuoteTick tick):
+    cdef void _update_quote_tick(self, QuoteTick tick) except *:
         self._update_bid(tick.bid, tick.bid_size)
         self._update_ask(tick.ask, tick.ask_size)
 
-    cdef void _update_trade_tick(self, TradeTick tick):
+    cdef void _update_trade_tick(self, TradeTick tick) except *:
         if tick.aggressor_side == AggressorSide.SELL:  # TAKER hit the bid
             self._update_bid(tick.price, tick.size)
             if self._top_ask and self._top_bid.price >= self._top_ask.price:
@@ -103,7 +103,7 @@ cdef class SimulatedL1OrderBook(L1OrderBook):
                 self._top_bid.price = self._top_ask.price
                 self._top_bid_level.price = self._top_ask.price
 
-    cdef void _update_bid(self, double price, double size):
+    cdef void _update_bid(self, double price, double size) except *:
         cdef Order bid
         if self._top_bid is None:
             bid = self._process_order(Order(price, size, OrderSide.BUY))
@@ -115,7 +115,7 @@ cdef class SimulatedL1OrderBook(L1OrderBook):
             self._top_bid.update_price(price)
             self._top_bid.update_size(size)
 
-    cdef void _update_ask(self, double price, double size):
+    cdef void _update_ask(self, double price, double size) except *:
         cdef Order ask
         if self._top_ask is None:
             ask = self._process_order(Order(price, size, OrderSide.SELL))

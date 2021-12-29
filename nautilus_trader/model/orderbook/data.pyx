@@ -111,14 +111,16 @@ cdef class OrderBookSnapshot(OrderBookData):
         return hash(frozenset(OrderBookSnapshot.to_dict_c(self)))
 
     def __repr__(self) -> str:
-        return (f"{type(self).__name__}("
-                f"'{self.instrument_id}', "
-                f"book_type={BookTypeParser.to_str(self.book_type)}, "
-                f"bids={self.bids}, "
-                f"asks={self.asks}, "
-                f"update_id={self.update_id}, "
-                f"ts_event={self.ts_event}, "
-                f"ts_init={self.ts_init})")
+        return (
+            f"{type(self).__name__}("
+            f"'{self.instrument_id}', "
+            f"book_type={BookTypeParser.to_str(self.book_type)}, "
+            f"bids={self.bids}, "
+            f"asks={self.asks}, "
+            f"update_id={self.update_id}, "
+            f"ts_event={self.ts_event}, "
+            f"ts_init={self.ts_init})"
+        )
 
     @staticmethod
     cdef OrderBookSnapshot from_dict_c(dict values):
@@ -217,13 +219,15 @@ cdef class OrderBookDeltas(OrderBookData):
         return hash(frozenset(OrderBookDeltas.to_dict_c(self)))
 
     def __repr__(self) -> str:
-        return (f"{type(self).__name__}("
-                f"'{self.instrument_id}', "
-                f"book_type={BookTypeParser.to_str(self.book_type)}, "
-                f"{self.deltas}, "
-                f"update_id={self.update_id}, "
-                f"ts_event={self.ts_event}, "
-                f"ts_init={self.ts_init})")
+        return (
+            f"{type(self).__name__}("
+            f"'{self.instrument_id}', "
+            f"book_type={BookTypeParser.to_str(self.book_type)}, "
+            f"{self.deltas}, "
+            f"update_id={self.update_id}, "
+            f"ts_event={self.ts_event}, "
+            f"ts_init={self.ts_init})"
+        )
 
     @staticmethod
     cdef OrderBookDeltas from_dict_c(dict values):
@@ -324,14 +328,16 @@ cdef class OrderBookDelta(OrderBookData):
         return hash(frozenset(OrderBookDelta.to_dict_c(self)))
 
     def __repr__(self) -> str:
-        return (f"{type(self).__name__}("
-                f"'{self.instrument_id}', "
-                f"book_type={BookTypeParser.to_str(self.book_type)}, "
-                f"action={BookActionParser.to_str(self.action)}, "
-                f"order={self.order}, "
-                f"update_id={self.update_id}, "
-                f"ts_event={self.ts_event}, "
-                f"ts_init={self.ts_init})")
+        return (
+            f"{type(self).__name__}("
+            f"'{self.instrument_id}', "
+            f"book_type={BookTypeParser.to_str(self.book_type)}, "
+            f"action={BookActionParser.to_str(self.action)}, "
+            f"order={self.order}, "
+            f"update_id={self.update_id}, "
+            f"ts_event={self.ts_event}, "
+            f"ts_init={self.ts_init})"
+        )
 
     @staticmethod
     cdef OrderBookDelta from_dict_c(dict values):

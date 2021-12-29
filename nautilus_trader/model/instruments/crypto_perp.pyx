@@ -31,7 +31,7 @@ from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
 
 
-cdef class CryptoSwap(Instrument):
+cdef class CryptoPerpetual(Instrument):
     """
     Represents a crypto perpetual swap instrument.
 
@@ -187,7 +187,7 @@ cdef class CryptoSwap(Instrument):
         return self.base_currency
 
     @staticmethod
-    cdef CryptoSwap from_dict_c(dict values):
+    cdef CryptoPerpetual from_dict_c(dict values):
         Condition.not_none(values, "values")
         cdef str max_q = values["max_quantity"]
         cdef str min_q = values["min_quantity"]
@@ -196,7 +196,7 @@ cdef class CryptoSwap(Instrument):
         cdef str max_p = values["max_price"]
         cdef str min_p = values["min_price"]
         cdef bytes info = values["info"]
-        return CryptoSwap(
+        return CryptoPerpetual(
             instrument_id=InstrumentId.from_str_c(values["id"]),
             local_symbol=Symbol(values["local_symbol"]),
             base_currency=Currency.from_str_c(values["base_currency"]),
@@ -223,10 +223,10 @@ cdef class CryptoSwap(Instrument):
         )
 
     @staticmethod
-    cdef dict to_dict_c(CryptoSwap obj):
+    cdef dict to_dict_c(CryptoPerpetual obj):
         Condition.not_none(obj, "obj")
         return {
-            "type": "CryptoSwap",
+            "type": "CryptoPerpetual",
             "id": obj.id.value,
             "local_symbol": obj.local_symbol.value,
             "base_currency": obj.base_currency.code,
@@ -253,7 +253,7 @@ cdef class CryptoSwap(Instrument):
         }
 
     @staticmethod
-    def from_dict(dict values) -> CryptoSwap:
+    def from_dict(dict values) -> CryptoPerpetual:
         """
         Return an instrument from the given initialization values.
 
@@ -264,13 +264,13 @@ cdef class CryptoSwap(Instrument):
 
         Returns
         -------
-        CryptoSwap
+        CryptoPerpetual
 
         """
-        return CryptoSwap.from_dict_c(values)
+        return CryptoPerpetual.from_dict_c(values)
 
     @staticmethod
-    def to_dict(CryptoSwap obj):
+    def to_dict(CryptoPerpetual obj):
         """
         Return a dictionary representation of this object.
 
@@ -279,4 +279,4 @@ cdef class CryptoSwap(Instrument):
         dict[str, object]
 
         """
-        return CryptoSwap.to_dict_c(obj)
+        return CryptoPerpetual.to_dict_c(obj)

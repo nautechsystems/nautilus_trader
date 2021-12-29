@@ -162,7 +162,7 @@ class FTXHttpClient(HttpClient):
             url_path=f"markets/{market}/trades",
         )
 
-    async def get_account_info(self) -> dict:
+    async def get_account_info(self) -> Dict[str, Any]:
         return await self._sign_request(http_method="GET", url_path="account")
 
     async def get_open_orders(self, market: str = None) -> List[dict]:

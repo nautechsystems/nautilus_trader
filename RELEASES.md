@@ -1,3 +1,34 @@
+# NautilusTrader 1.136.0 Beta - Release Notes
+
+Released 29th, December 2021
+
+## Breaking Changes
+- Changed `subscribe_data(...)` method (`client_id` now optional).
+- Changed `unsubscribe_data(...)` method (`client_id` now optional).
+- Changed `publish_data(...)` method (added `data_type`).
+- Renamed `MessageBus.subscriptions` method param to `pattern`.
+- Renamed `MessageBus.has_subscribers` method param to `pattern`.`
+- Removed `subscribe_strategy_data(...)` method.
+- Removed `unsubscribe_strategy_data(...)` method.
+- Removed `publish_strategy_data(...)` method.
+- Renamed `CryptoSwap` to `CryptoPerpetual`.
+
+## Enhancements
+- Can now modify or cancel in-flight orders live and backtest.
+- Updated `CancelOrder` to allow None `venue_order_id`.
+- Updated `ModifyOrder` to allow None `venue_order_id`.
+- Updated `OrderPendingUpdate` to allow None `venue_order_id`.
+- Updated `OrderPendingCancel` to allow None `venue_order_id`.
+- Updated `OrderCancelRejected` to allow None `venue_order_id`.
+- Updated `OrderModifyRejected` to allow None `venue_order_id`.
+- Added `DataType.topic` string for improved message bus handling.
+
+## Fixes
+- Implemented comparisons for `DataType`, `BarSpecification` and `BarType`.
+- Fixed `QuoteTickDataWrangler.process_bar_data` with `random_seed`.
+
+---
+
 # NautilusTrader 1.135.0 Beta - Release Notes
 
 Released 13th, December 2021

@@ -84,9 +84,11 @@ cdef class VenueStatusUpdate(StatusUpdate):
         return hash(frozenset(VenueStatusUpdate.to_dict_c(self)))
 
     def __repr__(self) -> str:
-        return (f"{type(self).__name__}("
-                f"venue={self.venue}, "
-                f"status={VenueStatusParser.to_str(self.status)})")
+        return (
+            f"{type(self).__name__}("
+            f"venue={self.venue}, "
+            f"status={VenueStatusParser.to_str(self.status)})"
+        )
 
     @staticmethod
     cdef VenueStatusUpdate from_dict_c(dict values):
@@ -171,9 +173,11 @@ cdef class InstrumentStatusUpdate(StatusUpdate):
         return hash(frozenset(InstrumentStatusUpdate.to_dict_c(self)))
 
     def __repr__(self) -> str:
-        return (f"{type(self).__name__}("
-                f"instrument_id={self.instrument_id}, "
-                f"status={InstrumentStatusParser.to_str(self.status)})")
+        return (
+            f"{type(self).__name__}("
+            f"instrument_id={self.instrument_id}, "
+            f"status={InstrumentStatusParser.to_str(self.status)})"
+        )
 
     @staticmethod
     cdef InstrumentStatusUpdate from_dict_c(dict values):
@@ -262,10 +266,12 @@ cdef class InstrumentClosePrice(Data):
         return hash(frozenset(InstrumentClosePrice.to_dict_c(self)))
 
     def __repr__(self) -> str:
-        return (f"{type(self).__name__}("
-                f"instrument_id={self.instrument_id}, "
-                f"close_price={self.close_price}, "
-                f"close_type={InstrumentCloseTypeParser.to_str(self.close_type)})")
+        return (
+            f"{type(self).__name__}("
+            f"instrument_id={self.instrument_id}, "
+            f"close_price={self.close_price}, "
+            f"close_type={InstrumentCloseTypeParser.to_str(self.close_type)})"
+        )
 
     @staticmethod
     cdef InstrumentClosePrice from_dict_c(dict values):

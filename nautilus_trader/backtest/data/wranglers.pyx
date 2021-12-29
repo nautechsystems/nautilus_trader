@@ -13,6 +13,8 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from copy import copy
+
 import numpy as np
 from libc.stdint cimport int64_t
 
@@ -189,10 +191,10 @@ cdef class QuoteTickDataWrangler:
         # Randomly shift high low prices
         if random_seed is not None:
             random.seed(random_seed)
-            for i in range(0, len(df_ticks_o), 4):
+            for i in range(0, len(df_ticks_final), 4):
                 if random.getrandbits(1):
-                    high = df_ticks_h.iloc[i]
-                    low = df_ticks_l.iloc[i]
+                    high = copy(df_ticks_final.iloc[i + 1])
+                    low = copy(df_ticks_final.iloc[i + 2])
                     df_ticks_final.iloc[i + 1] = low
                     df_ticks_final.iloc[i + 2] = high
 

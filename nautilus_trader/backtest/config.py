@@ -84,7 +84,7 @@ class Partialable:
     def __dask_tokenize__(self):
         return tuple(self.fields())
 
-    def __repr__(self):
+    def __repr__(self):  # Adding -> causes error: Module has no attribute "_repr_fn"
         dataclass_repr_func = dataclasses._repr_fn(
             fields=list(self.fields().values()), globals=self.__dict__
         )
