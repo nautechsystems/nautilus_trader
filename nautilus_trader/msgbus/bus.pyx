@@ -30,20 +30,20 @@ cdef class MessageBus:
     """
     Provides a generic message bus to facilitate various messaging patterns.
 
-    The bus provides both a producer and consumer API for PUB/SUB, REQ/REP as
+    The bus provides both a producer and consumer API for PUB/SUB, REQ/REP, as
     well as direct point-to-point messaging to registered endpoints.
 
     PUB/SUB wildcard patterns for hierarchical topics are possible:
-     - '*' asterisk represents one or more characters in a pattern.
-     - '?' question mark represents a single character in a pattern.
+     - `*` asterisk represents one or more characters in a pattern.
+     - `?` question mark represents a single character in a pattern.
 
     The asterisk in a wildcard matches any character zero or more times. For
-    example, "comp*" matches anything beginning with "comp" which means "comp,"
-    "complete," and "computer" are all matched.
+    example, `comp*` matches anything beginning with `comp` which means `comp`,
+    `complete`, and `computer` are all matched.
 
-    A question mark matches a single character once. For example, "c?mp" matches
-    "camp" and "comp." The question mark can also be used more than once.
-    For example, "c??p" would match both of the above examples and "coop."
+    A question mark matches a single character once. For example, `c?mp` matches
+    `camp` and `comp`. The question mark can also be used more than once.
+    For example, `c??p` would match both of the above examples and `coop`.
 
     Parameters
     ----------
@@ -75,7 +75,7 @@ cdef class MessageBus:
         str name=None,
     ):
         if name is None:
-            name = "MessageBus"
+            name = type(self).__name__
         Condition.valid_string(name, "name")
 
         self.trader_id = trader_id
@@ -116,47 +116,47 @@ cdef class MessageBus:
         """
         return sorted(set([s.topic for s in self._subscriptions.keys()]))
 
-    cpdef list subscriptions(self, str topic=None):
+    cpdef list subscriptions(self, str pattern=None):
         """
-        Return all subscriptions matching the given topic.
+        Return all subscriptions matching the given topic `pattern`.
 
         Parameters
         ----------
-        topic : str, optional
-            The topic filter. May include wildcard characters '*' and '?'.
-            If ``None`` then query is for ALL topics.
+        pattern : str, optional
+            The topic pattern filter. May include wildcard characters `*` and `?`.
+            If ``None`` then query is for **all** topics.
 
         Returns
         -------
         list[Subscription]
 
         """
-        if topic is None:
-            topic = "*"  # Wildcard
-        Condition.valid_string(topic, "topic")
+        if pattern is None:
+            pattern = "*"  # Wildcard
+        Condition.valid_string(pattern, "pattern")
 
-        return [s for s in self._subscriptions if is_matching(s.topic, topic)]
+        return [s for s in self._subscriptions if is_matching(s.topic, pattern)]
 
-    cpdef bint has_subscribers(self, str topic=None):
+    cpdef bint has_subscribers(self, str pattern=None):
         """
-        If the message bus has subscribers for the give topic.
+        If the message bus has subscribers for the give topic `pattern`.
 
         Parameters
         ----------
-        topic : str, optional
-            The topic filter. May include wildcard characters '*' and '?'.
-            If ``None`` then query is for ALL topics.
+        pattern : str, optional
+            The topic filter. May include wildcard characters `*` and `?`.
+            If ``None`` then query is for **all** topics.
 
         Returns
         -------
         bool
 
         """
-        return len(self.subscriptions(topic)) > 0
+        return len(self.subscriptions(pattern)) > 0
 
     cpdef void register(self, str endpoint, handler: Callable[[Any], None]) except *:
         """
-        Register the given handler to receive messages at the endpoint address.
+        Register the given `handler` to receive messages at the `endpoint` address.
 
         Parameters
         ----------
@@ -185,14 +185,14 @@ cdef class MessageBus:
 
     cpdef void deregister(self, str endpoint, handler: Callable[[Any], None]) except *:
         """
-        De-register the given handler from the endpoint address.
+        Deregister the given `handler` from the `endpoint` address.
 
         Parameters
         ----------
         endpoint : str
             The endpoint address to deregister.
         handler : Callable[[Any], None]
-            The handler for the de-registration.
+            The handler to deregister.
 
         Raises
         ------
@@ -217,7 +217,7 @@ cdef class MessageBus:
 
     cpdef void send(self, str endpoint, msg: Any) except *:
         """
-        Send the given message to the given endpoint address.
+        Send the given message to the given `endpoint` address.
 
         Parameters
         ----------
@@ -242,7 +242,7 @@ cdef class MessageBus:
 
     cpdef void request(self, str endpoint, Request request) except *:
         """
-        Handle the given request.
+        Handle the given `request`.
 
         Will log an error if the correlation ID already exists.
 
@@ -278,7 +278,7 @@ cdef class MessageBus:
 
     cpdef void response(self, Response response) except *:
         """
-        Handle the given response.
+        Handle the given `response`.
 
         Will log an error if the correlation ID is not found.
 
@@ -308,12 +308,13 @@ cdef class MessageBus:
         int priority=0,
     ) except *:
         """
-        Subscribe to the given message topic with the given callback handler.
+        Subscribe to the given message `topic` with the given callback `handler`.
 
         Parameters
         ----------
         topic : str
-            The topic for the subscription. May include wildcard characters '*' and '?'.
+            The topic for the subscription. May include wildcard characters
+            `*` and `?`.
         handler : Callable[[Any], None]
             The handler for the subscription.
         priority : int, optional
@@ -330,12 +331,12 @@ cdef class MessageBus:
 
         Warnings
         --------
-        Assigning priority handling is an advanced feature which shouldn't
-        normally be needed by most users. Only assign a higher priority to the
-        subscription if you are certain of what you're doing. If an inappropriate
+        Assigning priority handling is an advanced feature which *shouldn't
+        normally be needed by most users*. **Only assign a higher priority to the
+        subscription if you are certain of what you're doing**. If an inappropriate
         priority is assigned then the handler may receive messages before core
-        system components have been able to produce side effects and conduct the
-        necessary calculations for logically sound behaviour.
+        system components have been able to process necessary calculations and
+        produce potential side effects for logically sound behaviour.
 
         """
         Condition.valid_string(topic, "topic")
@@ -372,12 +373,13 @@ cdef class MessageBus:
 
     cpdef void unsubscribe(self, str topic, handler: Callable[[Any], None]) except *:
         """
-        Unsubscribe the given callback handler from the given message topic.
+        Unsubscribe the given callback `handler` from the given message `topic`.
 
         Parameters
         ----------
         topic : str, optional
-            The topic to unsubscribe from. May include wildcard characters '*' and '?'.
+            The topic to unsubscribe from. May include wildcard characters `*`
+            and `?`.
         handler : Callable[[Any], None]
             The handler for the subscription.
 
@@ -414,7 +416,7 @@ cdef class MessageBus:
 
     cpdef void publish(self, str topic, msg: Any) except *:
         """
-        Publish the given message.
+        Publish the given message for the given `topic`.
 
         Subscription handlers will receive the message in priority order
         (highest first).

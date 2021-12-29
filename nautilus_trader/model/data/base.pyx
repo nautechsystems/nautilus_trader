@@ -38,14 +38,15 @@ cdef class DataType:
     the key and value contents of metadata must themselves be hashable.
     """
 
-    def __init__(self, type type not None, dict metadata=None):    # noqa (shadows built-in type)
-        if metadata is None:
-            metadata = {}
-
-        self._key = frozenset(metadata.items())
-        self._hash = hash((self.type, self._key))  # Assign hash for improved time complexity
+    def __init__(self, type type not None, dict metadata=None):  # noqa (shadows built-in type)
         self.type = type
-        self.metadata = metadata
+        self.metadata = metadata or {}
+        self.topic = self.type.__name__ + '.' + '.'.join([
+            f'{k}={v if v is not None else "*"}' for k, v in self.metadata.items()
+        ]) if self.metadata else self.type.__name__ + "*"
+
+        self._key = frozenset(self.metadata.items())
+        self._hash = hash((self.type, self._key))  # Assign hash for improved time complexity
 
     def __eq__(self, DataType other) -> bool:
         return self.type == other.type and self._key == other._key  # noqa
@@ -66,7 +67,7 @@ cdef class DataType:
         return self._hash
 
     def __str__(self) -> str:
-        return f"<{self.type.__name__}> {self.metadata}"
+        return f"{self.type.__name__}{self.metadata if self.metadata else ''}"
 
     def __repr__(self) -> str:
         return f"{type(self).__name__}(type={self.type.__name__}, metadata={self.metadata})"

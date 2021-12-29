@@ -121,11 +121,24 @@ cdef class TradingStateChanged(RiskEvent):
     @staticmethod
     cdef dict to_dict_c(TradingStateChanged obj):
         Condition.not_none(obj, "obj")
+        cdef bytes config_bytes = None
+        try:
+            config_bytes = orjson.dumps(obj.config)
+        except TypeError as ex:
+            if str(ex).startswith("Type is not JSON serializable"):
+                type_str = str(ex).split(":")[1].strip()
+                raise TypeError(
+                    f"Cannot serialize config as {ex}. "
+                    f"You can register a new serializer for `{type_str}` through "
+                    f"`Default.register_serializer`.",
+                )
+            else:
+                raise ex
         return {
             "type": "TradingStateChanged",
             "trader_id": obj.trader_id.value,
             "state": TradingStateParser.to_str(obj.state),
-            "config": orjson.dumps(obj.config),
+            "config": config_bytes,
             "event_id": obj.id.value,
             "ts_event": obj.ts_event,
             "ts_init": obj.ts_init,

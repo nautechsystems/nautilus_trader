@@ -13,6 +13,11 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from typing import List
+
+import pytest
+
+from nautilus_trader.common.config import ActorConfig
 from nautilus_trader.common.enums import ComponentState
 from nautilus_trader.common.events.risk import TradingStateChanged
 from nautilus_trader.common.events.system import ComponentStateChanged
@@ -48,6 +53,35 @@ class TestCommonEvents:
             == f"ComponentStateChanged(trader_id=TESTER-000, component_id=MyActor-001, component_type=MyActor, state=RUNNING, config={{'do_something': True}}, event_id={uuid}, ts_init=0)"  # noqa
         )
 
+    def test_serializing_component_state_changed_with_unserializable_config_raises_helpful_exception(
+        self,
+    ):
+        # Arrange
+
+        class MyType(ActorConfig):
+            values: List[int]
+
+        config = {"key": MyType(values=[1, 2, 3])}
+        event = ComponentStateChanged(
+            trader_id=TestStubs.trader_id(),
+            component_id=ComponentId("MyActor-001"),
+            component_type="MyActor",
+            state=ComponentState.RUNNING,
+            config=config,
+            event_id=UUID4(),
+            ts_event=0,
+            ts_init=0,
+        )
+
+        # Act
+        with pytest.raises(TypeError) as ex:
+            TradingStateChanged.to_dict(event)
+
+            # Assert
+            assert ex.value == TypeError(
+                "Cannot serialize config as Type is not JSON serializable: MyType. You can register a new serializer for `MyType` through `Default.register_serializer`."  # noqa
+            )  # noqa
+
     def test_trading_state_changed(self):
         # Arrange
         uuid = UUID4()
@@ -70,3 +104,30 @@ class TestCommonEvents:
             repr(event)
             == f"TradingStateChanged(trader_id=TESTER-000, state=HALTED, config={{'max_order_rate': '100/00:00:01'}}, event_id={uuid}, ts_init=0)"  # noqa
         )
+
+    def test_serializing_trading_state_changed_with_unserializable_config_raises_helpful_exception(
+        self,
+    ):
+        # Arrange
+
+        class MyType(ActorConfig):
+            values: List[int]
+
+        config = {"key": MyType(values=[1, 2, 3])}
+        event = TradingStateChanged(
+            trader_id=TestStubs.trader_id(),
+            state=TradingState.HALTED,
+            config=config,
+            event_id=UUID4(),
+            ts_event=0,
+            ts_init=0,
+        )
+
+        # Act
+        with pytest.raises(TypeError) as ex:
+            TradingStateChanged.to_dict(event)
+
+            # Assert
+            assert ex.value == TypeError(
+                "Cannot serialize config as Type is not JSON serializable: MyType. You can register a new serializer for `MyType` through `Default.register_serializer`."  # noqa
+            )

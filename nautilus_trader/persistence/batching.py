@@ -22,6 +22,7 @@ import fsspec
 import pandas as pd
 import pyarrow.dataset as ds
 from dask.utils import parse_bytes
+from pyarrow.lib import ArrowInvalid
 
 from nautilus_trader.backtest.config import BacktestDataConfig
 from nautilus_trader.persistence.catalog import DataCatalog
@@ -35,7 +36,10 @@ FileMeta = namedtuple("FileMeta", "filename datatype instrument_id client_id sta
 def dataset_batches(
     file_meta: FileMeta, fs: fsspec.AbstractFileSystem, n_rows: int
 ) -> Iterator[pd.DataFrame]:
-    d: ds.Dataset = ds.dataset(file_meta.filename, filesystem=fs)
+    try:
+        d: ds.Dataset = ds.dataset(file_meta.filename, filesystem=fs)
+    except ArrowInvalid:
+        return
     filter_expr = (ds.field("ts_init") >= file_meta.start) & (ds.field("ts_init") <= file_meta.end)
     scanner: ds.Scanner = d.scanner(filter=filter_expr, batch_size=n_rows)
     for batch in scanner.to_batches():

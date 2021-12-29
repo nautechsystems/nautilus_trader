@@ -22,7 +22,8 @@
 
 - **Website:** https://nautilustrader.io
 - **Docs:** https://docs.nautilustrader.io
-- **Support:** info@nautechsystems.io
+- **Support:** [support@nautilustrader.io](mailto:support@nautilustrader.io)
+- **Discord:** https://discord.gg/VXv6byZZ
 
 ## Introduction
 

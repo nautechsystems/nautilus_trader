@@ -1034,7 +1034,7 @@ cdef class DataEngine(Component):
         self._msgbus.publish_c(topic=f"data.venue.close_price.{data.instrument_id}", msg=data)
 
     cdef void _handle_generic_data(self, GenericData data) except *:
-        self._msgbus.publish_c(topic=f"data.{data.data_type}", msg=data)
+        self._msgbus.publish_c(topic=f"data.{data.data_type.topic}", msg=data)
 
 # -- RESPONSE HANDLERS -----------------------------------------------------------------------------
 
@@ -1177,12 +1177,11 @@ cdef class DataEngine(Component):
         self._log.debug(f"Added {aggregator} for {bar_type} bars.")
 
         # Subscribe to required data
-        instrument_id = bar_type.instrument_id
         if bar_type.spec.price_type == PriceType.LAST:
             self._msgbus.subscribe(
                 topic=f"data.trades"
-                      f".{instrument_id.venue}"
-                      f".{instrument_id.symbol}",
+                      f".{bar_type.instrument_id.venue}"
+                      f".{bar_type.instrument_id.symbol}",
                 handler=aggregator.handle_trade_tick,
                 priority=5,
             )
@@ -1190,8 +1189,8 @@ cdef class DataEngine(Component):
         else:
             self._msgbus.subscribe(
                 topic=f"data.quotes"
-                      f".{instrument_id.venue}"
-                      f".{instrument_id.symbol}",
+                      f".{bar_type.instrument_id.venue}"
+                      f".{bar_type.instrument_id.symbol}",
                 handler=aggregator.handle_quote_tick,
                 priority=5,
             )
@@ -1238,20 +1237,19 @@ cdef class DataEngine(Component):
             aggregator.stop()
 
         # Unsubscribe from update ticks
-        instrument_id = bar_type.instrument_id
         if bar_type.spec.price_type == PriceType.LAST:
             self._msgbus.unsubscribe(
                 topic=f"data.trades"
-                      f".{instrument_id.venue}"
-                      f".{instrument_id.symbol}",
+                      f".{bar_type.instrument_id.venue}"
+                      f".{bar_type.instrument_id.symbol}",
                 handler=aggregator.handle_trade_tick,
             )
             self._handle_unsubscribe_trade_ticks(client, bar_type.instrument_id)
         else:
             self._msgbus.unsubscribe(
                 topic=f"data.quotes"
-                      f".{instrument_id.venue}"
-                      f".{instrument_id.symbol}",
+                      f".{bar_type.instrument_id.venue}"
+                      f".{bar_type.instrument_id.symbol}",
                 handler=aggregator.handle_quote_tick,
             )
             self._handle_unsubscribe_quote_ticks(client, bar_type.instrument_id)

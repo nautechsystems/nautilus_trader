@@ -3,6 +3,14 @@
 Released TBD
 
 ## Breaking Changes
+- Changed `subscribe_data(...)` method (`client_id` now optional).
+- Changed `unsubscribe_data(...)` method (`client_id` now optional).
+- Changed `publish_data(...)` method (added `data_type`).
+- Renamed `MessageBus.subscriptions` method param to `pattern`.
+- Renamed `MessageBus.has_subscribers` method param to `pattern`.`
+- Removed `subscribe_strategy_data(...)` method.
+- Removed `unsubscribe_strategy_data(...)` method.
+- Removed `publish_strategy_data(...) method`.
 - Renamed `CryptoSwap` to `CryptoPerpetual`.
 
 ## Enhancements
@@ -13,9 +21,11 @@ Released TBD
 - Updated `OrderPendingCancel` to allow None `venue_order_id`.
 - Updated `OrderCancelRejected` to allow None `venue_order_id`.
 - Updated `OrderModifyRejected` to allow None `venue_order_id`.
+- Added `DataType.topic` string for improved message bus handling.
 
 ## Fixes
 - Implemented comparisons for `DataType`, `BarSpecification` and `BarType`.
+- Fixed `QuoteTickDataWrangler.process_bar_data` with `random_seed`.
 
 ---
 
