@@ -259,7 +259,7 @@ cdef class RiskEngine(Component):
         Raises
         ------
         decimal.InvalidOperation
-            If `new_value` not a valid input for decimal.Decimal.
+            If `new_value` not a valid input for `decimal.Decimal`.
         ValueError
             If `new_value` is not ``None`` and not positive.
 
@@ -685,7 +685,7 @@ cdef class RiskEngine(Component):
         elif isinstance(command, CancelOrder):
             self._log.error(f"CancelOrder DENIED: {reason}.")
 
-    cpdef _deny_new_order(self, TradingCommand command):
+    cpdef void _deny_new_order(self, TradingCommand command) except *:
         if isinstance(command, SubmitOrder):
             self._deny_order(command.order, reason="Exceeded MAX_ORDER_RATE")
         elif isinstance(command, SubmitOrderList):
@@ -725,14 +725,21 @@ cdef class RiskEngine(Component):
 
 # -- EGRESS ----------------------------------------------------------------------------------------
 
-    cdef void _execution_gateway(self, Instrument instrument, TradingCommand command, Order order):
+    cdef void _execution_gateway(self, Instrument instrument, TradingCommand command, Order order) except *:
         # Check TradingState
         if self.trading_state == TradingState.HALTED:
-            self._deny_order_list(
-                order_list=command.list,
-                reason="TradingState.HALTED",
-            )
-            return  # Denied
+            if isinstance(command, SubmitOrder):
+                self._deny_command(
+                    command=command,
+                    reason=f"TradingState.HALTED",
+                )
+                return  # Denied
+            elif isinstance(command, SubmitOrderList):
+                self._deny_order_list(
+                    order_list=command.list,
+                    reason="TradingState.HALTED",
+                )
+                return  # Denied
         elif self.trading_state == TradingState.REDUCING:
             if order.is_buy_c() and self._portfolio.is_net_long(instrument.id):
                 self._deny_command(
@@ -750,7 +757,7 @@ cdef class RiskEngine(Component):
         # All checks passed: send to ORDER_RATE throttler
         self._order_throttler.send(command)
 
-    cpdef _send_command(self, TradingCommand command):
+    cpdef void _send_command(self, TradingCommand command) except *:
         self._msgbus.send(endpoint="ExecEngine.execute", msg=command)
 
 # -- EVENT HANDLERS --------------------------------------------------------------------------------

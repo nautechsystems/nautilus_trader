@@ -19,11 +19,14 @@ from nautilus_trader.core.data cimport Data
 cdef class DataType:
     cdef frozenset _key
     cdef int _hash
+    cdef str _metadata_str
 
     cdef readonly type type
     """The `Data` type of the data.\n\n:returns: `type`"""
     cdef readonly dict metadata
     """The data types metadata.\n\n:returns: `dict[str, object]`"""
+    cdef readonly str topic
+    """The data types topic string.\n\n:returns: `str`"""
 
 
 cdef class GenericData(Data):

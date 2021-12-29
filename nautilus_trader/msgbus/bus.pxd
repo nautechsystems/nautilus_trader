@@ -42,8 +42,8 @@ cdef class MessageBus:
 
     cpdef list endpoints(self)
     cpdef list topics(self)
-    cpdef list subscriptions(self, str topic=*)
-    cpdef bint has_subscribers(self, str topic=*)
+    cpdef list subscriptions(self, str pattern=*)
+    cpdef bint has_subscribers(self, str pattern=*)
 
     cpdef void register(self, str endpoint, handler) except *
     cpdef void deregister(self, str endpoint, handler) except *

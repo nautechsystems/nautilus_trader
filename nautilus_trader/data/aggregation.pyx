@@ -81,13 +81,15 @@ cdef class BarBuilder:
         self.volume = Decimal(0)
 
     def __repr__(self) -> str:
-        return (f"{type(self).__name__}("
-                f"{self._bar_type},"
-                f"{self._open},"
-                f"{self._high},"
-                f"{self._low},"
-                f"{self._close},"
-                f"{self.volume})")
+        return (
+            f"{type(self).__name__}("
+            f"{self._bar_type},"
+            f"{self._open},"
+            f"{self._high},"
+            f"{self._low},"
+            f"{self._close},"
+            f"{self.volume})"
+        )
 
     cpdef void set_partial(self, Bar partial_bar) except *:
         """

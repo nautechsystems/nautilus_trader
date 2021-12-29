@@ -961,6 +961,62 @@ class TestRiskEngine:
         # Assert
         assert self.risk_engine.command_count == 1  # <-- command never reaches engine
 
+    def test_submit_order_list_when_trading_halted_then_denies_orders(self):
+        # Arrange
+        self.exec_engine.start()
+
+        strategy = TradingStrategy()
+        strategy.register(
+            trader_id=self.trader_id,
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            logger=self.logger,
+        )
+
+        entry = strategy.order_factory.market(
+            AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100000),
+        )
+
+        stop_loss = strategy.order_factory.stop_market(  # <-- duplicate
+            AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100000),
+            Price.from_str("1.00000"),
+        )
+
+        take_profit = strategy.order_factory.limit(
+            AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100000),
+            Price.from_str("1.10000"),
+        )
+
+        bracket = OrderList(
+            list_id=OrderListId("1"),
+            orders=[entry, stop_loss, take_profit],
+        )
+
+        submit_bracket = SubmitOrderList(
+            self.trader_id,
+            strategy.id,
+            bracket,
+            self.uuid_factory.generate(),
+            self.clock.timestamp_ns(),
+        )
+
+        # Halt trading
+        self.risk_engine.set_trading_state(TradingState.HALTED)
+
+        # Act
+        self.risk_engine.execute(submit_bracket)
+
+        # Assert
+        assert self.risk_engine.command_count == 1  # <-- command never reaches engine
+
     # -- SUBMIT BRACKET ORDER TESTS ----------------------------------------------------------------
 
     def test_submit_bracket_with_default_settings_sends_to_client(self):

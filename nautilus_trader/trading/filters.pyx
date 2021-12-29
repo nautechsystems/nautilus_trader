@@ -32,9 +32,9 @@ from nautilus_trader.core.datetime cimport is_datetime_utc
 
 @unique
 class ForexSession(Enum):
-    SYDNEY = 1,
-    TOKYO = 2,
-    LONDON = 3,
+    SYDNEY = 1
+    TOKYO = 2
+    LONDON = 3
     NEW_YORK = 4
 
 

@@ -38,7 +38,6 @@ from nautilus_trader.common.logging cimport SENT
 from nautilus_trader.common.logging cimport LogColor
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.core.correctness cimport Condition
-from nautilus_trader.core.data cimport Data
 from nautilus_trader.core.message cimport Event
 from nautilus_trader.indicators.base.indicator cimport Indicator
 from nautilus_trader.model.c_enums.oms_type cimport OMSTypeParser
@@ -436,26 +435,6 @@ cdef class TradingStrategy(Actor):
             self.log.exception(ex)
             raise
 
-# -- SUBSCRIPTIONS ---------------------------------------------------------------------------------
-
-    cpdef void publish_data(self, Data data) except *:
-        """
-        Publish the strategy data to the message bus.
-
-        Parameters
-        ----------
-        data : Data
-            The strategy data to publish.
-
-        """
-        Condition.not_none(data, "data")
-        Condition.true(self.trader_id is not None, "The strategy has not been registered")
-
-        self._msgbus.publish_c(
-            topic=f"data.strategy.{type(data).__name__}.{self.id}",
-            msg=data,
-        )
-
 # -- TRADING COMMANDS ------------------------------------------------------------------------------
 
     cpdef void submit_order(
@@ -650,12 +629,6 @@ cdef class TradingStrategy(Actor):
         """
         Condition.not_none(order, "order")
         Condition.true(self.trader_id is not None, "The strategy has not been registered")
-
-        if order.venue_order_id is None:
-            self.log.error(
-                f"Cannot cancel order: no venue_order_id assigned yet, {order}.",
-            )
-            return  # Cannot send command
 
         if order.is_completed_c() or order.is_pending_cancel_c():
             self.log.warning(

@@ -894,7 +894,7 @@ class TestExecutionEngine:
         # Assert
         assert order.status == OrderStatus.FILLED
 
-    def test_update_order_for_already_completed_order_logs_and_does_nothing(self):
+    def test_modify_order_for_already_completed_order_logs_and_does_nothing(self):
         # Arrange
         self.exec_engine.start()
 
