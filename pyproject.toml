@@ -73,6 +73,8 @@ ib_insync = { version = "^0.9.70", optional = true }
 # https://github.com/cython/cython/issues/3515
 coverage = "4.5.4"  # Pinned at 4.5.4 due Cython 3.0.0a9
 nox = "^2021.10.1"
+numpydoc = "^1.1.0"
+jupyter-book = "^0.12.1"
 pre-commit = "^2.16.0"
 pytest = "^6.2.5"
 pytest-asyncio = "^0.16.0"
@@ -80,13 +82,9 @@ pytest-benchmark = "^3.4.1"
 pytest-cov = "2.10.1"  # Pinned at 2.10.1 due coverage 4.5.4
 pytest-mock = "^3.6.1"
 pytest-xdist = { version = "^2.5.0", extras = ["psutil"] }
-jupyter-book = { version = "^0.12.1", optional = true }
-numpydoc = { version = "^1.1.0", optional = true }
-
 
 [tool.poetry.extras]
 distributed = ["distributed", "bokeh"]
-docs = ["jupyter-book", "numpydoc"]
 ib = ["ib_insync"]
 
 
