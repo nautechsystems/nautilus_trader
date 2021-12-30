@@ -1,4 +1,4 @@
-EXTRAS?=	"distributed docs ib"
+EXTRAS?=	"distributed ib"
 .PHONY: build clean docs
 
 install:

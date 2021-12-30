@@ -4,7 +4,7 @@ import nox
 from nox.sessions import Session
 
 
-ALL_EXTRAS = "distributed docs ib"
+ALL_EXTRAS = "distributed ib"
 
 
 # Ensure everything runs within Poetry venvs
