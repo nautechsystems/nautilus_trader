@@ -16,9 +16,10 @@
 import asyncio
 import types
 from asyncio import Task
-from typing import Callable, List, Optional
+from typing import Callable, Dict, List, Optional
 
 import aiohttp
+import orjson
 from aiohttp import WSMessage
 from aiohttp import WSMsgType
 
@@ -103,6 +104,9 @@ cdef class WebSocketClient:
             await self._sleep0()
         self.is_connected = False
         self._log.debug("WebSocket closed.")
+
+    async def send_json(self, msg: Dict) -> None:
+        await self.send(orjson.dumps(msg))
 
     async def send(self, raw: bytes) -> None:
         self._log.debug(f"[SEND] {raw}")

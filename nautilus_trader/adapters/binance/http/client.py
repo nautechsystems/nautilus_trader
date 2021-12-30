@@ -19,7 +19,7 @@
 import asyncio
 import hashlib
 import hmac
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
 import orjson
 from aiohttp import ClientResponse
@@ -48,11 +48,11 @@ class BinanceHttpClient(HttpClient):
         loop: asyncio.AbstractEventLoop,
         clock: LiveClock,
         logger: Logger,
-        key=None,
-        secret=None,
-        base_url=None,
-        timeout=None,
-        show_limit_usage=False,
+        key: Optional[str] = None,
+        secret: Optional[str] = None,
+        base_url: Optional[str] = None,
+        timeout: Optional[int] = None,
+        show_limit_usage: bool = False,
     ):
         super().__init__(
             loop=loop,
@@ -64,7 +64,7 @@ class BinanceHttpClient(HttpClient):
         self._base_url = base_url or self.BASE_URL
         self._show_limit_usage = show_limit_usage
         self._proxies = None
-        self._headers: Dict[str, str] = {
+        self._headers: Dict[str, Any] = {
             "Content-Type": "application/json;charset=utf-8",
             "User-Agent": "nautilus-trader/" + NAUTILUS_VERSION,
             "X-MBX-APIKEY": key,
