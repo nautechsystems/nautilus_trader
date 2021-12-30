@@ -24,21 +24,9 @@ jobs:
           python -m pip install --upgrade pip setuptools wheel poetry pre-commit nox
           poetry config experimental.new-installer false
 
-      # Export package requirements
-      - name: Export package requirements
-        run: poetry export --extras docs --without-hashes -f requirements.txt > requirements.txt
-
-      # Install package dependencies
-      - name: Install package dependencies
-        run: pip install -r requirements.txt
-
-      # Install extra docs dependencies
-      - name: Install extra docs dependencies
-        run: pip install toml numpydoc sphinx sphinx-rtd-theme
-
       # Build project
       - name: Build project
-        run: python build.py
+        run: poetry install --extras docs
 
       # Build docs
       - name: Build docs
@@ -52,8 +40,8 @@ jobs:
       - name: Add CNAME
         run: echo "docs.nautilustrader.io" >> docs/_build/CNAME
 
-      # Publish API docs
-      - name: Publish API docs
+      # Publish docs
+      - name: Publish docs
         uses: s0/git-publish-subdir-action@develop
         env:
           REPO: self
