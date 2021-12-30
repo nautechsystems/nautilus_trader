@@ -281,6 +281,8 @@ def write_parquet(
         if partition_cols
         else None
     )
+    if pa.__version__ >= "6.0.0":
+        kwargs.update(existing_data_behavior="overwrite_or_ignore")
     ds.write_dataset(
         data=table,
         base_dir=path,
