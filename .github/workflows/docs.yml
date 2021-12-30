@@ -32,11 +32,11 @@ jobs:
 
       # Add nojeckyll
       - name: Add nojeckyll
-        run: touch docs/_build/.nojekyll
+        run: touch docs/_build/html/.nojekyll
 
       # Add CNAME
       - name: Add CNAME
-        run: echo "docs.nautilustrader.io" >> docs/_build/CNAME
+        run: echo "docs.nautilustrader.io" >> docs/_build/html/CNAME
 
       # Publish docs
       - name: Publish docs
@@ -44,6 +44,6 @@ jobs:
         env:
           REPO: self
           BRANCH: gh-pages
-          FOLDER: docs/_build
+          FOLDER: docs/_build/html
           SQUASH_HISTORY: false
           GITHUB_TOKEN: ${{ secrets.GHPAGES_ACCESS }}
