@@ -74,8 +74,10 @@ class FTXHttpClient(HttpClient):
         signature_payload: str = f"{ts}{http_method}/api/{url_path}"
         if payload:
             signature_payload += "?" + self._prepare_params(payload)
-        signature = hmac.new(
-            self._secret.encode(), signature_payload.encode(), "sha256"
+        signature: str = hmac.new(
+            self._secret.encode(),
+            signature_payload.encode(),
+            "sha256",
         ).hexdigest()
         headers = {
             "FTX-KEY": self._key,
