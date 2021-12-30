@@ -135,6 +135,7 @@ class TestLiveExecutionPerformance(PerformanceHarness):
 
         self.strategy.submit_order(order)
 
+    @pytest.mark.skip(reason="For development only, event loop issue")
     def test_execute_command(self):
         order = self.strategy.order_factory.market(
             BTCUSDT_BINANCE.id,

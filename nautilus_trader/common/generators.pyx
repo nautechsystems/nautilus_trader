@@ -55,13 +55,15 @@ cdef class IdentifierGenerator:
 
         """
         cdef datetime utc_now = self._clock.utc_now()
-        return (f"{utc_now.year}"
-                f"{utc_now.month:02d}"
-                f"{utc_now.day:02d}"
-                f"-"
-                f"{utc_now.hour:02d}"
-                f"{utc_now.minute:02d}"
-                f"{utc_now.second:02d}")
+        return (
+            f"{utc_now.year}"
+            f"{utc_now.month:02d}"
+            f"{utc_now.day:02d}"
+            f"-"
+            f"{utc_now.hour:02d}"
+            f"{utc_now.minute:02d}"
+            f"{utc_now.second:02d}"
+        )
 
 
 cdef class ClientOrderIdGenerator(IdentifierGenerator):

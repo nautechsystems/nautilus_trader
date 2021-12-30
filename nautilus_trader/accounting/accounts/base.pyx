@@ -51,10 +51,12 @@ cdef class Account:
 
     def __repr__(self) -> str:
         cdef str base_str = self.base_currency.code if self.base_currency is not None else None
-        return (f"{type(self).__name__}("
-                f"id={self.id.value}, "
-                f"type={AccountTypeParser.to_str(self.type)}, "
-                f"base={base_str})")
+        return (
+            f"{type(self).__name__}("
+            f"id={self.id.value}, "
+            f"type={AccountTypeParser.to_str(self.type)}, "
+            f"base={base_str})"
+        )
 
 # -- QUERIES ---------------------------------------------------------------------------------------
 

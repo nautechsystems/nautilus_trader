@@ -39,6 +39,8 @@ cdef class Data:
         self.ts_init = ts_init
 
     def __repr__(self) -> str:
-        return (f"{type(self).__name__}("
-                f"ts_event={self.ts_event}, "
-                f"ts_init{self.ts_init})")
+        return (
+            f"{type(self).__name__}("
+            f"ts_event={self.ts_event}, "
+            f"ts_init={self.ts_init})"
+        )

@@ -58,9 +58,11 @@ cdef class TimeEvent(Event):
         return self.name == other.name
 
     def __repr__(self) -> str:
-        return (f"{type(self).__name__}("
-                f"name={self.name}, "
-                f"id={self.id})")
+        return (
+            f"{type(self).__name__}("
+            f"name={self.name}, "
+            f"id={self.id})"
+        )
 
 
 cdef class TimeEventHandler:
@@ -101,8 +103,10 @@ cdef class TimeEventHandler:
         return self.event.ts_event >= other.event.ts_event
 
     def __repr__(self) -> str:
-        return (f"{type(self).__name__}("
-                f"event={self.event})")
+        return (
+            f"{type(self).__name__}("
+            f"event={self.event})"
+        )
 
 
 cdef class Timer:
@@ -163,13 +167,15 @@ cdef class Timer:
         return hash(self.name)
 
     def __repr__(self) -> str:
-        return (f"{type(self).__name__}("
-                f"name={self.name}, "
-                f"interval_ns={self.interval_ns}, "
-                f"start_time_ns={self.start_time_ns}, "
-                f"next_time_ns={self.next_time_ns}, "
-                f"stop_time_ns={self.stop_time_ns}, "
-                f"is_expired={self.is_expired})")
+        return (
+            f"{type(self).__name__}("
+            f"name={self.name}, "
+            f"interval_ns={self.interval_ns}, "
+            f"start_time_ns={self.start_time_ns}, "
+            f"next_time_ns={self.next_time_ns}, "
+            f"stop_time_ns={self.stop_time_ns}, "
+            f"is_expired={self.is_expired})"
+        )
 
     cpdef TimeEvent pop_event(self, UUID4 event_id, int64_t ts_init):
         """

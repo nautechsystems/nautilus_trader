@@ -177,7 +177,7 @@ class BacktestNode:
         writer = None
         if persistence is not None:
             catalog = persistence.as_catalog()
-            backtest_dir = f"{persistence.catalog_path.strip('/')}/backtest/"
+            backtest_dir = f"{persistence.catalog_path.rstrip('/')}/backtest/"
             if not catalog.fs.exists(backtest_dir):
                 catalog.fs.mkdir(backtest_dir)
             writer = FeatherWriter(
@@ -349,7 +349,9 @@ def streaming_backtest_runner(
             if data["type"] in data_client_ids:
                 # Generic data - manually re-add client_id as it gets lost in the streaming join
                 data.update({"client_id": ClientId(data_client_ids[data["type"]])})
-                data["data"] = [GenericData(data_type=DataType(cls), data=d) for d in data["data"]]
+                data["data"] = [
+                    GenericData(data_type=DataType(data["type"]), data=d) for d in data["data"]
+                ]
             _load_engine_data(engine=engine, data=data)
         engine.run_streaming(run_config_id=run_config_id)
     engine.end_streaming()

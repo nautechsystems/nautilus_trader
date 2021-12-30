@@ -92,14 +92,14 @@ cdef class RiskEngine(Component):
 # -- DENIALS ---------------------------------------------------------------------------------------
 
     cdef void _deny_command(self, TradingCommand command, str reason) except *
-    cpdef _deny_new_order(self, TradingCommand command)
+    cpdef void _deny_new_order(self, TradingCommand command) except *
     cdef void _deny_order(self, Order order, str reason) except *
     cdef void _deny_order_list(self, OrderList order_list, str reason) except *
 
 # -- EGRESS ----------------------------------------------------------------------------------------
 
-    cdef void _execution_gateway(self, Instrument instrument, TradingCommand command, Order order)
-    cpdef _send_command(self, TradingCommand command)
+    cdef void _execution_gateway(self, Instrument instrument, TradingCommand command, Order order) except *
+    cpdef void _send_command(self, TradingCommand command) except *
 
 # -- EVENT HANDLERS --------------------------------------------------------------------------------
 

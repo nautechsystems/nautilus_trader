@@ -28,12 +28,12 @@ cdef class Bet:
 
     Parameters
     ----------
-    price : Price
-        The price of the bet
+    price : Price or decimal.Decimal
+        The price of the bet.
     quantity : Quantity
         The size of the bet.
     side : OrderSide
-        The side ( OrderSide.BUY = BACK, OrderSide.SELL = LAY ) of the bet
+        The side ( OrderSide.BUY = BACK, OrderSide.SELL = LAY ) of the bet.
 
     Raises
     ------
