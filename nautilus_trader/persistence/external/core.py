@@ -287,6 +287,7 @@ def write_parquet(
         filesystem=fs,
         partitioning=partitions,
         format="parquet",
+        existing_data_behavior="overwrite_or_ignore",
         **kwargs,
     )
     # Write the ``_common_metadata`` parquet file without row groups statistics
