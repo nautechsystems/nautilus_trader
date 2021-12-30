@@ -42,15 +42,15 @@ jobs:
 
       # Build docs
       - name: Build docs
-        run: catchsegv sphinx-build docs/source docs/build
+        run: sphinx-build docs docs/_build/html -b html
 
       # Add nojeckyll
       - name: Add nojeckyll
-        run: touch docs/build/.nojekyll
+        run: touch docs/_build/.nojekyll
 
       # Add CNAME
       - name: Add CNAME
-        run: echo "api.nautilustrader.io" >> docs/build/CNAME
+        run: echo "docs.nautilustrader.io" >> docs/_build/CNAME
 
       # Publish API docs
       - name: Publish API docs
@@ -58,6 +58,6 @@ jobs:
         env:
           REPO: self
           BRANCH: gh-pages
-          FOLDER: docs/build
+          FOLDER: docs/_build
           SQUASH_HISTORY: false
           GITHUB_TOKEN: ${{ secrets.GHPAGES_ACCESS }}
