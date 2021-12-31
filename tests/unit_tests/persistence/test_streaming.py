@@ -67,6 +67,7 @@ class TestPersistenceStreaming:
             catalog_fs_protocol=self.catalog.fs.protocol,
             instrument_id=instrument.id.value,
         )
+        run_config.persistence.flush_interval = 5000
         node = BacktestNode()
 
         # Act

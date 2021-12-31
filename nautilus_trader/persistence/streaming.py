@@ -15,7 +15,7 @@
 
 import datetime
 import pathlib
-from typing import BinaryIO, Dict
+from typing import BinaryIO, Dict, Optional
 
 import fsspec
 import pyarrow as pa
@@ -38,7 +38,13 @@ class FeatherWriter:
     Provides a stream writer of Nautilus objects into feather files.
     """
 
-    def __init__(self, path: str, fs_protocol: str = "file", flush_interval=None, replace=False):
+    def __init__(
+        self,
+        path: str,
+        fs_protocol: str = "file",
+        flush_interval: Optional[int] = None,
+        replace=False,
+    ):
         self.fs: fsspec.AbstractFileSystem = fsspec.filesystem(fs_protocol)
         self.path = str(self._check_path(path))
         if self.fs.exists(self.path) and replace:
@@ -57,7 +63,7 @@ class FeatherWriter:
         self._files: Dict[type, BinaryIO] = {}
         self._writers: Dict[type, RecordBatchStreamWriter] = {}
         self._create_writers()
-        self.flush_interval = flush_interval or datetime.timedelta(milliseconds=1000)
+        self.flush_interval = datetime.timedelta(milliseconds=flush_interval or 1000)
         self._last_flush = datetime.datetime(1970, 1, 1)
 
     def _check_path(self, p):
