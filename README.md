@@ -106,7 +106,7 @@ written in Cython, however the libraries can be accessed from both pure Python a
 NautilusTrader is designed to work with modular adapters which provide integrations with data
 publishers and/or trading venues (exchanges/brokers).
 
-Refer to the [integrations](https://docs.nautilustrader.io/integrations) documentation for further details.
+Refer to the [integrations](https://docs.nautilustrader.io/4_integrations/0_index.html) documentation for further details.
 
 ## Installation
 
@@ -119,7 +119,7 @@ To install the latest binary wheel from PyPI:
 To install on ARM architectures such as MacBook Pro M1 / Apple Silicon, this stackoverflow thread is useful:
 https://stackoverflow.com/questions/65745683/how-to-install-scipy-on-apple-silicon-arm-m1
 
-Refer to the [Installation Guide](https://docs.nautilustrader.io/getting-started/installation) for other options and further details.
+Refer to the [Installation Guide](https://docs.nautilustrader.io/1_getting_started/1_installation.html) for other options and further details.
 
 ## Examples
 
@@ -138,7 +138,7 @@ NautilusTrader is currently following a bi-weekly release schedule.
 
 We aim to make the developer experience for this hybrid codebase of Cython and Python
 as pleasant as possible.
-Please refer to the [Developer Guide](https://docs.nautilustrader.io/developer-guide) for helpful information.
+Please refer to the [Developer Guide](https://docs.nautilustrader.io/5_developer_guide/0_index.html) for helpful information.
 
 ## Makefile
 
