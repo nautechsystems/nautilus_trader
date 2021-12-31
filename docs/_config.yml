@@ -18,10 +18,3 @@ launch_buttons:
 html:
   use_issues_button: true
   use_repository_button: true
-
-sphinx:
-  config:
-    nb_custom_formats:
-      .ipynb:
-        - nbformat.reads
-        - as_version: 4

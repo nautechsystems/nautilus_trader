@@ -79,7 +79,7 @@ suppress_warnings = ["myst.domains"]
 use_jupyterbook_latex = True
 use_multitoc_numbering = True
 
-source_suffix = [".rst", ".md", ".ipynb"]
+source_suffix = [".rst", ".md"]
 
 # The name of the Pygments (syntax highlighting) style to use
 pygments_style = "friendly"
