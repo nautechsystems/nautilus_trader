@@ -14,5 +14,6 @@
 # -------------------------------------------------------------------------------------------------
 
 """
-The `instruments` subpackage defines various instrument types.
+Defines categories of trading instruments with specific properties dependent
+on the asset class and asset type.
 """

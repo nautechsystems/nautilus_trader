@@ -14,7 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 """
-The `risk` subpackage groups all risk specific components and tooling.
+Defines all risk specific components and tooling.
 
 Base classes are defined which enable users to register `RiskModule` implementations
 with an `ExecutionEngine`, and write `PositionSizer` components.

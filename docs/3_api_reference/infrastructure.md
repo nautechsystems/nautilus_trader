@@ -1,22 +1,25 @@
-Infrastructure
-==============
+# Infrastructure
 
+```{eval-rst}
 .. automodule:: nautilus_trader.infrastructure
+```
 
-Cache
------
+## Cache
 
+```{eval-rst}
 .. automodule:: nautilus_trader.infrastructure.cache
    :show-inheritance:
    :inherited-members:
    :members:
    :member-order: bysource
+```
 
-Config
-------
+## Config
 
+```{eval-rst}
 .. automodule:: nautilus_trader.infrastructure.config
    :show-inheritance:
    :inherited-members:
    :members:
    :member-order: bysource
+```

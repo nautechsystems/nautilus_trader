@@ -7,6 +7,7 @@ chapters:
   - file: 2_user_guide/0_index
     sections:
     - file: 2_user_guide/1_core_concepts
+    - file: 2_user_guide/2_backtest_example
   - file: 3_api_reference/0_index
     sections:
     - file: 3_api_reference/accounting
@@ -20,7 +21,19 @@ chapters:
     - file: 3_api_reference/indicators
     - file: 3_api_reference/infrastructure
     - file: 3_api_reference/live
-    - file: 3_api_reference/model
+    - file: 3_api_reference/model/0_index
+      sections:
+      - file: 3_api_reference/model/commands
+      - file: 3_api_reference/model/currency
+      - file: 3_api_reference/model/data
+      - file: 3_api_reference/model/events
+      - file: 3_api_reference/model/identifiers
+      - file: 3_api_reference/model/instruments
+      - file: 3_api_reference/model/objects
+      - file: 3_api_reference/model/orderbook
+      - file: 3_api_reference/model/orders
+      - file: 3_api_reference/model/position
+      - file: 3_api_reference/model/tick_scheme
     - file: 3_api_reference/msgbus
     - file: 3_api_reference/network
     - file: 3_api_reference/portfolio

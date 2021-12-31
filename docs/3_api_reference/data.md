@@ -1,50 +1,55 @@
-Data
-====
+# Data
 
+```{eval-rst}
 .. automodule:: nautilus_trader.data
+```
 
+## Aggregation
 
-Aggregation
------------
-
+```{eval-rst}
 .. automodule:: nautilus_trader.data.aggregation
    :show-inheritance:
    :inherited-members:
    :members:
    :member-order: bysource
+```
 
-Client
-------
+## Client
 
+```{eval-rst}
 .. automodule:: nautilus_trader.data.client
    :show-inheritance:
    :inherited-members:
    :members:
    :member-order: bysource
+```
 
-Config
-------
+## Config
 
+```{eval-rst}
 .. automodule:: nautilus_trader.data.config
    :show-inheritance:
    :inherited-members:
    :members:
    :member-order: bysource
+```
 
-Engine
-------
+## Engine
 
+```{eval-rst}
 .. automodule:: nautilus_trader.data.engine
    :show-inheritance:
    :inherited-members:
    :members:
    :member-order: bysource
+```
 
-Messages
---------
+## Messages
 
+```{eval-rst}
 .. automodule:: nautilus_trader.data.messages
    :show-inheritance:
    :inherited-members:
    :members:
    :member-order: bysource
+```

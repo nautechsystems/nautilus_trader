@@ -1,23 +1,25 @@
-Analysis
-========
+# Analysis
 
+```{eval-rst}
 .. automodule:: nautilus_trader.analysis
+```
 
+## Performance
 
-Performance
------------
-
+```{eval-rst}
 .. automodule:: nautilus_trader.analysis.performance
    :show-inheritance:
    :inherited-members:
    :members:
    :member-order: bysource
+```
 
-Reports
--------
+## Reports
 
+```{eval-rst}
 .. automodule:: nautilus_trader.analysis.reports
    :show-inheritance:
    :inherited-members:
    :members:
    :member-order: bysource
+```

@@ -12,3 +12,8 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+
+"""
+Defines fundamental machinery necessary to build and maintain full real-time and
+simulated order books.
+"""
