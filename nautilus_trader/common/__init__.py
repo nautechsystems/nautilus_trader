@@ -14,7 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 """
-The `common` subpackage provides common parts for assembling the frameworks various components.
+The `common` subpackage provides generic/common parts for assembling the frameworks various components.
 
 More domain specific concepts are introduced above the `core` base layer. The
 ID cache is implemented, a base `Clock` with `Test` and `Live`

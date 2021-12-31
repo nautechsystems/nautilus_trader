@@ -14,7 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 """
-The `core` subpackage groups core constants, functions and components used throughout the framework.
+The `core` subpackage groups core constants, functions and low-level components used throughout the framework.
 
 The main focus here is on efficiency and re-usability as this forms the base
 layer of the entire framework. Message passing is a core design philosophy and
