@@ -30,7 +30,7 @@ clean:
 clean-build: clean build
 
 docs:
-	poetry run sphinx-build docs/source docs/build
+	poetry run sphinx-build docs docs/build/html -b html
 
 pre-commit:
 	pre-commit run --all-files
