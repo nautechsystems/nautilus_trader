@@ -8,7 +8,7 @@ sys.path.insert(0, os.path.abspath("../.."))
 
 author = "Nautech Systems Pty Ltd."
 comments_config = {"hypothesis": False, "utterances": False}
-copyright = "2015-2021"
+copyright = "2015-2022"
 exclude_patterns = ["**.ipynb_checkpoints", ".DS_Store", "Thumbs.db", "_build"]
 execution_allow_errors = False
 execution_excludepatterns: List[Any] = []
