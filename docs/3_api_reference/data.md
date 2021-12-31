@@ -24,16 +24,6 @@
    :member-order: bysource
 ```
 
-## Config
-
-```{eval-rst}
-.. automodule:: nautilus_trader.data.config
-   :show-inheritance:
-   :inherited-members:
-   :members:
-   :member-order: bysource
-```
-
 ## Engine
 
 ```{eval-rst}
@@ -48,6 +38,16 @@
 
 ```{eval-rst}
 .. automodule:: nautilus_trader.data.messages
+   :show-inheritance:
+   :inherited-members:
+   :members:
+   :member-order: bysource
+```
+
+## Config
+
+```{eval-rst}
+.. automodule:: nautilus_trader.data.config
    :show-inheritance:
    :inherited-members:
    :members:

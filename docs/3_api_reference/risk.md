@@ -4,16 +4,6 @@
 .. automodule:: nautilus_trader.risk
 ```
 
-## Config
-
-```{eval-rst}
-.. automodule:: nautilus_trader.risk.config
-   :show-inheritance:
-   :inherited-members:
-   :members:
-   :member-order: bysource
-```
-
 ## Engine
 
 ```{eval-rst}
@@ -28,6 +18,16 @@
 
 ```{eval-rst}
 .. automodule:: nautilus_trader.risk.sizing
+   :show-inheritance:
+   :inherited-members:
+   :members:
+   :member-order: bysource
+```
+
+## Config
+
+```{eval-rst}
+.. automodule:: nautilus_trader.risk.config
    :show-inheritance:
    :inherited-members:
    :members:

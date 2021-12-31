@@ -14,21 +14,12 @@
 # -------------------------------------------------------------------------------------------------
 
 """
-The `common` subpackage provides common parts for the frameworks components.
+The `common` subpackage provides common parts for assembling the frameworks various components.
 
 More domain specific concepts are introduced above the `core` base layer. The
 ID cache is implemented, a base `Clock` with `Test` and `Live`
 implementations which can control many `Timer` instances.
 
-System level commands and enums.
-
-The base `Component`` class.
-
 Trading domain specific components for generating `Order` and `Identifier` objects.
-
-Common logging components.
-
-A high performance `Queue`.
-
-Common `UUID4` factory.
+Common logging components. A high performance `Queue`. Common `UUID4` factory.
 """

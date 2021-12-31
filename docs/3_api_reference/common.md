@@ -34,16 +34,6 @@
    :member-order: bysource
 ```
 
-## Config
-
-```{eval-rst}
-.. automodule:: nautilus_trader.common.config
-   :show-inheritance:
-   :inherited-members:
-   :members:
-   :member-order: bysource
-```
-
 ## Factories
 
 ```{eval-rst}
@@ -118,6 +108,16 @@
 
 ```{eval-rst}
 .. automodule:: nautilus_trader.common.uuid
+   :show-inheritance:
+   :inherited-members:
+   :members:
+   :member-order: bysource
+```
+
+## Config
+
+```{eval-rst}
+.. automodule:: nautilus_trader.common.config
    :show-inheritance:
    :inherited-members:
    :members:

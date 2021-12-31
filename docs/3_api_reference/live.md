@@ -4,16 +4,6 @@
 .. automodule:: nautilus_trader.live
 ```
 
-## Config
-
-```{eval-rst}
-.. automodule:: nautilus_trader.live.config
-   :show-inheritance:
-   :inherited-members:
-   :members:
-   :member-order: bysource
-```
-
 ## Data Client
 
 ```{eval-rst}
@@ -78,6 +68,16 @@
 
 ```{eval-rst}
 .. automodule:: nautilus_trader.live.node_builder
+   :show-inheritance:
+   :inherited-members:
+   :members:
+   :member-order: bysource
+```
+
+## Config
+
+```{eval-rst}
+.. automodule:: nautilus_trader.live.config
    :show-inheritance:
    :inherited-members:
    :members:

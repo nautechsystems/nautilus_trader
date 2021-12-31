@@ -13,4 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-"""Defines a universal message bus for connecting system components in a loosely coupled way."""
+"""
+The `msgbus` subpackage provides a universal message bus for connecting system components in a
+loosely coupled way.
+"""
