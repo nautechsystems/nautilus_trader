@@ -273,3 +273,23 @@
    :members:
    :member-order: bysource
 ```
+
+## Moving Average (Base)
+
+```{eval-rst}
+.. automodule:: nautilus_trader.indicators.average.moving_average
+   :show-inheritance:
+   :inherited-members:
+   :members:
+   :member-order: bysource
+```
+
+## Indicator (Base)
+
+```{eval-rst}
+.. automodule:: nautilus_trader.indicators.base.indicator
+   :show-inheritance:
+   :inherited-members:
+   :members:
+   :member-order: bysource
+```

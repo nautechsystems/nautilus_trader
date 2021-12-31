@@ -15,4 +15,6 @@
 
 """
 The `infrastructure` subpackage provides technology specific implementations.
+
+Out of the box a `Redis <https://redis.io/>`_ backed cache is implemented.
 """

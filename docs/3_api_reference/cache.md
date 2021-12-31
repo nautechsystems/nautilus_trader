@@ -4,20 +4,20 @@
 .. automodule:: nautilus_trader.cache
 ```
 
-## Base
+## Cache
 
 ```{eval-rst}
-.. automodule:: nautilus_trader.cache.base
+.. automodule:: nautilus_trader.cache.cache
    :show-inheritance:
    :inherited-members:
    :members:
    :member-order: bysource
 ```
 
-## Cache
+## Database
 
 ```{eval-rst}
-.. automodule:: nautilus_trader.cache.cache
+.. automodule:: nautilus_trader.cache.database
    :show-inheritance:
    :inherited-members:
    :members:
@@ -34,10 +34,10 @@
    :member-order: bysource
 ```
 
-## Database
+## Base
 
 ```{eval-rst}
-.. automodule:: nautilus_trader.cache.database
+.. automodule:: nautilus_trader.cache.base
    :show-inheritance:
    :inherited-members:
    :members:

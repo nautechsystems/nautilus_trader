@@ -24,7 +24,7 @@
    :member-order: bysource
 ```
 
-## Base Classes
+## Base
 
 ```{eval-rst}
 .. automodule:: nautilus_trader.model.tick_scheme.base

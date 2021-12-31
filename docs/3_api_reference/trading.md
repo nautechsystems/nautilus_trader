@@ -4,16 +4,6 @@
 .. automodule:: nautilus_trader.trading
 ```
 
-## Config
-
-```{eval-rst}
-.. automodule:: nautilus_trader.trading.config
-   :show-inheritance:
-   :inherited-members:
-   :members:
-   :member-order: bysource
-```
-
 ## Filters
 
 ```{eval-rst}
@@ -38,6 +28,16 @@
 
 ```{eval-rst}
 .. automodule:: nautilus_trader.trading.trader
+   :show-inheritance:
+   :inherited-members:
+   :members:
+   :member-order: bysource
+```
+
+## Config
+
+```{eval-rst}
+.. automodule:: nautilus_trader.trading.config
    :show-inheritance:
    :inherited-members:
    :members:

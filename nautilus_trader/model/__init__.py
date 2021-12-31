@@ -13,4 +13,10 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-"""Defines a rich trading domain model."""
+"""
+The `model` subpackage defines a rich trading domain model.
+
+The domain model is agnostic of any system design, seeking to represent the logic
+and state transitions of trading in a generic way. Many system implementations could
+be built around this domain model.
+"""
