@@ -30,7 +30,6 @@ clean:
 clean-build: clean build
 
 docs:
-	poetry run jupytext --to markdown docs/**.ipynb
 	poetry run sphinx-build docs/source docs/build
 
 pre-commit:
