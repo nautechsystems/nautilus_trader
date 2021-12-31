@@ -1,32 +1,35 @@
-Serialization
-=============
+# Serialization
 
+```{eval-rst}
 .. automodule:: nautilus_trader.serialization
+```
 
+## Base
 
-Base
-----
-
+```{eval-rst}
 .. automodule:: nautilus_trader.serialization.base
    :show-inheritance:
    :inherited-members:
    :members:
    :member-order: bysource
+```
 
-MsgPack
--------
+## MsgPack
 
+```{eval-rst}
 .. automodule:: nautilus_trader.serialization.msgpack.serializer
    :show-inheritance:
    :inherited-members:
    :members:
    :member-order: bysource
+```
 
-Arrow
------
+## Arrow
 
+```{eval-rst}
 .. automodule:: nautilus_trader.serialization.arrow.serializer
    :show-inheritance:
    :inherited-members:
    :members:
    :member-order: bysource
+```

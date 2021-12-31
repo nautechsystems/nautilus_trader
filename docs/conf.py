@@ -15,17 +15,18 @@ execution_excludepatterns: List[Any] = []
 execution_in_temp = False
 execution_timeout = 30
 extensions = [
-    "sphinx.ext.autodoc",
-    "sphinx.ext.napoleon",
+    "jupyter_book",
+    # "myst_nb",
+    "myst_parser",
     "numpydoc",
+    "sphinx.ext.autodoc",
+    "sphinx.ext.intersphinx",
+    "sphinx.ext.napoleon",
     "sphinx_togglebutton",
     "sphinx_copybutton",
-    "myst_nb",
-    "jupyter_book",
     "sphinx_thebe",
     "sphinx_comments",
     "sphinx_external_toc",
-    "sphinx.ext.intersphinx",
     "sphinx_panels",
     "sphinx_book_theme",
     "sphinx_jupyterbook_latex",
@@ -62,17 +63,23 @@ jupyter_cache = ""
 jupyter_execute_notebooks = "force"
 language = None
 latex_engine = "pdflatex"
-myst_enable_extensions = ["colon_fence", "dollarmath", "linkify", "substitution", "tasklist"]
+myst_enable_extensions = [
+    "colon_fence",
+    "dollarmath",
+    "linkify",
+    "substitution",
+    "tasklist",
+]
 myst_url_schemes = ["mailto", "http", "https"]
 nb_output_stderr = "show"
 numfig = True
-panels_add_bootstrap_css = False
+panels_add_bootstrap_css = True
 pygments_style = "sphinx"
 suppress_warnings = ["myst.domains"]
 use_jupyterbook_latex = True
 use_multitoc_numbering = True
 
-source_suffix = [".rst", ".md"]
+source_suffix = [".rst", ".md", ".ipynb"]
 
 # The name of the Pygments (syntax highlighting) style to use
 pygments_style = "friendly"
