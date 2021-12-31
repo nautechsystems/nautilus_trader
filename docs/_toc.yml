@@ -7,7 +7,8 @@ chapters:
   - file: 2_user_guide/0_index
     sections:
     - file: 2_user_guide/1_core_concepts
-    - file: 2_user_guide/2_backtest_example
+    - file: 2_user_guide/2_backtesting
+    - file: 2_user_guide/3_backtest_example
   - file: 3_api_reference/0_index
     sections:
     - file: 3_api_reference/accounting
