@@ -4,7 +4,7 @@
 .. automodule:: nautilus_trader.portfolio
 ```
 
-# Portfolio
+## Portfolio
 
 ```{eval-rst}
 .. automodule:: nautilus_trader.portfolio.portfolio
@@ -14,7 +14,7 @@
    :member-order: bysource
 ```
 
-# Base Classes
+## Base Classes
 
 ```{eval-rst}
 .. automodule:: nautilus_trader.portfolio.base

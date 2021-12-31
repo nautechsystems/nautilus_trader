@@ -30,9 +30,10 @@ for each of these subpackages from the left menu.
 
 ### Core / Low-level
 - `core`: constants, functions and low-level components used throughout the framework.
-- `common`: generic/common parts for assembling the frameworks various components.
+- `common`: common parts for assembling the frameworks various components.
 - `network`: low-level base components for networking clients.
 - `serialization`: serialization base components and serializer implementations.
+- `model`: defines a rich trading domain model.
 
 ### System Components
 - `accounting`: different account types and account management machinery.
