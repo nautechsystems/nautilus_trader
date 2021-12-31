@@ -48,3 +48,11 @@ chapters:
     - file: 4_integrations/ftx
     - file: 4_integrations/ib
   - file: 5_developer_guide/0_index
+    sections:
+    - file: 5_developer_guide/1_environment_setup
+    - file: 5_developer_guide/2_coding_standards
+    - file: 5_developer_guide/3_cython
+    - file: 5_developer_guide/4_testing
+    - file: 5_developer_guide/5_packaged_data
+    - url: https://github.com/nautechsystems/nautilus_trader/blob/develop/CONTRIBUTING.md
+      title: Contributing
