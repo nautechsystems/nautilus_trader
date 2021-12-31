@@ -36,6 +36,7 @@ chapters:
       - file: 3_api_reference/model/tick_scheme
     - file: 3_api_reference/msgbus
     - file: 3_api_reference/network
+    - file: 3_api_reference/persistence
     - file: 3_api_reference/portfolio
     - file: 3_api_reference/risk
     - file: 3_api_reference/serialization
