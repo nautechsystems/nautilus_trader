@@ -14,7 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 """
-The `network` subpackage provides generic components for networking clients.
+The `network` subpackage provides low-level base components for networking clients.
 
 The base classes can be inherited to assist with writing adapters for integrations with exchanges,
 brokerages, data providers/feeds and other venues or services.

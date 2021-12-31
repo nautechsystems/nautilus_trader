@@ -14,7 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 """
-The `data` subpackage groups components relating to the data stack for the platform.
+The `data` subpackage groups components relating to the data stack and data tooling for the platform.
 
 The layered architecture of the data stack somewhat mirrors the
 execution stack with a central engine, cache layer beneath, database layer
