@@ -8,9 +8,9 @@ jupyter:
       format_version: '1.3'
       jupytext_version: 1.11.5
   kernelspec:
-    display_name: Python (nautilus_trader_gh)
+    display_name: Python (nautilus_trader)
     language: python
-    name: nautilus_trader_gh
+    name: nautilus_trader
 ---
 
 # Complete Backtest Example
