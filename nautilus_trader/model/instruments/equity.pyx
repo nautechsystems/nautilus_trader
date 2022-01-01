@@ -120,7 +120,7 @@ cdef class Equity(Instrument):
             price_increment=Price.from_str(values['price_increment']),
             multiplier=Quantity.from_str(values['multiplier']),
             lot_size=Quantity.from_str(values['lot_size']),
-            isin=values['isin'],
+            isin=values.get('isin'),  # Can be None
             ts_event=values['ts_event'],
             ts_init=values['ts_init'],
         )
