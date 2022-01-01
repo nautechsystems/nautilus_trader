@@ -35,7 +35,6 @@ class LiveDataClientFactory:
         cache: Cache,
         clock: LiveClock,
         logger: LiveLogger,
-        client_cls=None,
     ):
         """
         Return a new data client from the given parameters.
@@ -56,9 +55,6 @@ class LiveDataClientFactory:
             The clock for the client.
         logger : LiveLogger
             The logger for the client.
-        client_cls : class, optional
-            The internal client constructor. This allows external library and
-            testing dependency injection.
 
         Returns
         -------
@@ -82,7 +78,6 @@ class LiveExecutionClientFactory:
         cache: Cache,
         clock: LiveClock,
         logger: LiveLogger,
-        client_cls=None,
     ):
         """
         Return a new execution client from the given parameters.
@@ -103,9 +98,6 @@ class LiveExecutionClientFactory:
             The clock for the client.
         logger : LiveLogger
             The logger for the client.
-        client_cls : class, optional
-            The internal client constructor. This allows external library and
-            testing dependency injection.
 
         Returns
         -------
