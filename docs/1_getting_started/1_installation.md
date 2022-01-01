@@ -35,7 +35,7 @@ as specified in the `pyproject.toml`. However, we highly recommend installing us
        poetry install --no-dev
 
 ```{note}
-Because of jupyter-book, the project requires a large number of development dependencies (which is the
+Because of `jupyter-book`, the project requires a large number of development dependencies (which is the
 reason for passing the `--no-dev` option above). If you'll be running tests, or developing with the codebase
 in general then remove that option flag when installing. It's also possible to simply run `make` from the
 top-level directory.
