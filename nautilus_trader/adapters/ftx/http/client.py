@@ -61,6 +61,10 @@ class FTXHttpClient(HttpClient):
     def api_key(self) -> str:
         return self._key
 
+    @property
+    def api_secret(self) -> str:
+        return self._secret
+
     def _prepare_params(self, params: Dict[str, str]) -> str:
         return "&".join([k + "=" + v for k, v in params.items()])
 
@@ -103,7 +107,7 @@ class FTXHttpClient(HttpClient):
         payload: Dict[str, str] = None,
     ) -> Any:
         # TODO(cs): Uncomment for development
-        print(f"{http_method} {url_path} {headers} {payload}")
+        # print(f"{http_method} {url_path} {headers} {payload}")
         if payload is None:
             payload = {}
         try:
@@ -141,13 +145,13 @@ class FTXHttpClient(HttpClient):
                 headers=error.headers,
             )
 
-    async def list_futures(self) -> List[dict]:
+    async def list_futures(self) -> List[Dict[str, Any]]:
         return await self._send_request(http_method="GET", url_path="futures")
 
-    async def list_markets(self) -> List[dict]:
+    async def list_markets(self) -> List[Dict[str, Any]]:
         return await self._send_request(http_method="GET", url_path="markets")
 
-    async def get_orderbook(self, market: str, depth: int = None) -> dict:
+    async def get_orderbook(self, market: str, depth: int = None) -> Dict[str, Any]:
         payload: Dict[str, str] = {}
         if depth is not None:
             payload = {"depth": str(depth)}
@@ -158,7 +162,7 @@ class FTXHttpClient(HttpClient):
             payload=payload,
         )
 
-    async def get_trades(self, market: str) -> dict:
+    async def get_trades(self, market: str) -> Dict[str, Any]:
         return await self._send_request(
             http_method="GET",
             url_path=f"markets/{market}/trades",
@@ -167,7 +171,7 @@ class FTXHttpClient(HttpClient):
     async def get_account_info(self) -> Dict[str, Any]:
         return await self._sign_request(http_method="GET", url_path="account")
 
-    async def get_open_orders(self, market: str = None) -> List[dict]:
+    async def get_open_orders(self, market: str = None) -> List[Dict[str, Any]]:
         return await self._sign_request(
             http_method="GET",
             url_path="orders",
@@ -181,7 +185,7 @@ class FTXHttpClient(HttpClient):
         order_type: str = None,
         start_time: int = None,
         end_time: int = None,
-    ) -> List[dict]:
+    ) -> List[Dict[str, Any]]:
         payload: Dict[str, str] = {}
         if market is not None:
             payload["market"] = market
@@ -207,7 +211,7 @@ class FTXHttpClient(HttpClient):
         order_type: str = None,
         start_time: float = None,
         end_time: float = None,
-    ) -> List[dict]:
+    ) -> List[Dict[str, Any]]:
         payload: Dict[str, str] = {}
         if market is not None:
             payload["market"] = market
@@ -283,7 +287,7 @@ class FTXHttpClient(HttpClient):
         reduce_only: bool = False,
         ioc: bool = False,
         post_only: bool = False,
-    ) -> dict:
+    ) -> Dict[str, Any]:
         payload: Dict[str, Any] = {
             "market": market,
             "side": side,
@@ -308,13 +312,13 @@ class FTXHttpClient(HttpClient):
         market: str,
         side: str,
         size: float,
-        type: str = "stop",
+        type: str,
         limit_price: float = None,
         reduce_only: bool = False,
         cancel: bool = True,
         trigger_price: float = None,
         trail_value: float = None,
-    ) -> dict:
+    ) -> Dict[str, Any]:
         """
         To send a Stop Market order, set type='stop' and supply a trigger_price
         To send a Stop Limit order, also supply a limit_price
@@ -343,7 +347,7 @@ class FTXHttpClient(HttpClient):
             },
         )
 
-    async def cancel_order(self, order_id: str) -> dict:
+    async def cancel_order(self, order_id: str) -> Dict[str, Any]:
         return await self._sign_request(
             http_method="DELETE",
             url_path=f"orders/{order_id}",
@@ -354,7 +358,7 @@ class FTXHttpClient(HttpClient):
         market_name: str = None,
         conditional_orders: bool = False,
         limit_orders: bool = False,
-    ) -> dict:
+    ) -> Dict[str, Any]:
         payload: Dict[str, Any] = {
             "conditional_orders": conditional_orders,
             "limit_orders": limit_orders,

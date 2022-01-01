@@ -140,3 +140,27 @@ class FTXWebSocketClient(WebSocketClient):
     async def subscribe_orderbook(self, market: str) -> None:
         subscription = {"channel": "orderbook", "market": market}
         await self._subscribe(subscription)
+
+    async def unsubscribe_markets(self) -> None:
+        subscription = {"channel": "markets"}
+        await self._unsubscribe(subscription)
+
+    async def unsubscribe_ticker(self, market: str) -> None:
+        subscription = {"channel": "ticker", "market": market}
+        await self._unsubscribe(subscription)
+
+    async def unsubscribe_trades(self, market: str) -> None:
+        subscription = {"channel": "trades", "market": market}
+        await self._unsubscribe(subscription)
+
+    async def unsubscribe_fills(self) -> None:
+        subscription = {"channel": "fills"}
+        await self._unsubscribe(subscription)
+
+    async def unsubscribe_orders(self) -> None:
+        subscription = {"channel": "orders"}
+        await self._unsubscribe(subscription)
+
+    async def unsubscribe_orderbook(self, market: str) -> None:
+        subscription = {"channel": "orderbook", "market": market}
+        await self._unsubscribe(subscription)
