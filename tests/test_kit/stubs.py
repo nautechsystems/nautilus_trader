@@ -134,6 +134,10 @@ class TestStubs:
         return InstrumentId(Symbol("ETH/USD"), Venue("BITMEX"))
 
     @staticmethod
+    def ethusd_ftx_id() -> InstrumentId:
+        return InstrumentId(Symbol("ETH-PERP"), Venue("FTX"))
+
+    @staticmethod
     def btcusdt_binance_id() -> InstrumentId:
         return InstrumentId(Symbol("BTC/USDT"), Venue("BINANCE"))
 

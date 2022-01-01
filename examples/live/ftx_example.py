@@ -50,6 +50,11 @@ config_node = TradingNodeConfig(
             "sandbox_mode": False,  # If client uses the testnet,
         },
     },
+    timeout_connection=5.0,
+    timeout_reconciliation=5.0,
+    timeout_portfolio=5.0,
+    timeout_disconnection=5.0,
+    check_residuals_delay=2.0,
 )
 # Instantiate the node with a configuration
 node = TradingNode(config=config_node)

@@ -39,8 +39,8 @@ async def test_ftx_websocket_client():
 
     await client.connect(start=True)
 
-    await client.subscribe_markets()
-    await client.subscribe_orderbook("ETH-PERP")
-    await asyncio.sleep(4)
+    # await client.subscribe_markets()
+    await client.subscribe_ticker("ETH-PERP")
+    await asyncio.sleep(2)
     await client.disconnect()
     await client.close()
