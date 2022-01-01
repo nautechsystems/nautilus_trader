@@ -215,7 +215,7 @@ class TestBarType:
                     InstrumentId(Symbol("AUD/USD"), Venue("IDEALPRO")),
                     BarSpecification(1, BarAggregation.MINUTE, PriceType.BID),
                 ),
-            ],  # noqa
+            ],
             [
                 "GBP/USD.SIM-1000-TICK-MID-INTERNAL",
                 BarType(
@@ -223,7 +223,7 @@ class TestBarType:
                     BarSpecification(1000, BarAggregation.TICK, PriceType.MID),
                     AggregationSource.INTERNAL,
                 ),
-            ],  # noqa
+            ],
             [
                 "AAPL.NYSE-1-HOUR-MID-INTERNAL",
                 BarType(
@@ -231,7 +231,7 @@ class TestBarType:
                     BarSpecification(1, BarAggregation.HOUR, PriceType.MID),
                     AggregationSource.INTERNAL,
                 ),
-            ],  # noqa
+            ],
             [
                 "BTC/USDT.BINANCE-100-TICK-LAST-INTERNAL",
                 BarType(
@@ -240,7 +240,15 @@ class TestBarType:
                     AggregationSource.INTERNAL,
                 ),
             ],
-        ],  # noqa
+            [
+                "ETH-PERP.FTX-100-TICK-LAST-INTERNAL",
+                BarType(
+                    InstrumentId(Symbol("ETH-PERP"), Venue("FTX")),
+                    BarSpecification(100, BarAggregation.TICK, PriceType.LAST),
+                    AggregationSource.INTERNAL,
+                ),
+            ],
+        ],
     )
     def test_from_str_given_various_valid_string_returns_expected_specification(
         self, value, expected
