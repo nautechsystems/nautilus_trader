@@ -67,6 +67,7 @@ cdef class InstrumentProvider:
 
         """
         self._currencies[currency.code] = currency
+        Currency.register_c(currency, overwrite=False)
 
     cpdef void add(self, Instrument instrument) except *:
         """

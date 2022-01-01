@@ -121,6 +121,9 @@ class FTXInstrumentProvider(InstrumentProvider):
                     name=base_asset,
                     currency_type=CurrencyType.CRYPTO,
                 )
+                # Check if perpetual swap
+                if native_symbol.value.endswith("-PERP"):
+                    self.add_currency(currency=base_currency)
 
                 quote_currency: Currency = USD
             elif asset_type == "spot":
@@ -132,8 +135,9 @@ class FTXInstrumentProvider(InstrumentProvider):
                     name=base_asset,
                     currency_type=CurrencyType.CRYPTO,
                 )
-                if not info.get("tokenizedEquity"):
-                    self.add_currency(currency=base_currency)
+                self.add_currency(currency=base_currency)  # TODO: Temporary until tokenized equity
+                # if not info.get("tokenizedEquity"):
+                #     self.add_currency(currency=base_currency)
 
                 # Create quote asset
                 quote_asset: str = info["quoteCurrency"]
