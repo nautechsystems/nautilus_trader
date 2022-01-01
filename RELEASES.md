@@ -1,3 +1,18 @@
+# NautilusTrader 1.137.0 Beta - Release Notes
+
+Released TBD
+
+## Breaking Changes
+- Renamed `local_symbol` to `native_symbol`.
+
+## Enhancements
+None
+
+## Fixes
+- Fixed parsing of `BarType` with symbols including hyphens `-`.
+- Fixed `BinanceTicker` `__repr__` (was missing whitespace after a comma).
+---
+
 # NautilusTrader 1.136.0 Beta - Release Notes
 
 Released 29th, December 2021

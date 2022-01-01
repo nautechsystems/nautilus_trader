@@ -170,7 +170,7 @@ class FTXInstrumentProvider(InstrumentProvider):
                 # Create instrument
                 instrument = CurrencySpot(
                     instrument_id=instrument_id,
-                    local_symbol=native_symbol,
+                    native_symbol=native_symbol,
                     base_currency=base_currency,
                     quote_currency=quote_currency,
                     price_precision=price_precision,
@@ -197,7 +197,7 @@ class FTXInstrumentProvider(InstrumentProvider):
                 if info["name"].endswith("-PERP"):
                     instrument = CryptoPerpetual(
                         instrument_id=instrument_id,
-                        local_symbol=native_symbol,
+                        native_symbol=native_symbol,
                         base_currency=base_currency,
                         quote_currency=quote_currency,
                         settlement_currency=USD,
@@ -223,7 +223,7 @@ class FTXInstrumentProvider(InstrumentProvider):
                 else:
                     instrument = Future(
                         instrument_id=instrument_id,
-                        local_symbol=native_symbol,
+                        native_symbol=native_symbol,
                         asset_class=AssetClass.CRYPTO,
                         currency=USD,
                         price_precision=price_precision,

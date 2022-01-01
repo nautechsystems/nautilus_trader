@@ -40,7 +40,7 @@ cdef class Option(Instrument):
     ----------
     instrument_id : InstrumentId
         The instrument ID.
-    local_symbol : Symbol
+    native_symbol : Symbol
         The local/native symbol on the exchange for the instrument.
     asset_class : AssetClass
         The futures contract asset class.
@@ -80,7 +80,7 @@ cdef class Option(Instrument):
     def __init__(
         self,
         InstrumentId instrument_id not None,
-        Symbol local_symbol not None,
+        Symbol native_symbol not None,
         AssetClass asset_class,
         Currency currency not None,
         int price_precision,
@@ -97,7 +97,7 @@ cdef class Option(Instrument):
         Condition.positive_int(multiplier, "multiplier")
         super().__init__(
             instrument_id=instrument_id,
-            local_symbol=local_symbol,
+            native_symbol=native_symbol,
             asset_class=asset_class,
             asset_type=AssetType.OPTION,
             quote_currency=currency,
@@ -132,7 +132,7 @@ cdef class Option(Instrument):
         Condition.not_none(values, "values")
         return Option(
             instrument_id=InstrumentId.from_str_c(values["id"]),
-            local_symbol=Symbol(values["local_symbol"]),
+            native_symbol=Symbol(values["native_symbol"]),
             asset_class=AssetClassParser.from_str(values["asset_class"]),
             currency=Currency.from_str_c(values["currency"]),
             price_precision=values["price_precision"],
@@ -153,7 +153,7 @@ cdef class Option(Instrument):
         return {
             "type": "Equity",
             "id": obj.id.value,
-            "local_symbol": obj.local_symbol.value,
+            "native_symbol": obj.native_symbol.value,
             "asset_class": AssetClassParser.to_str(obj.asset_class),
             "currency": obj.quote_currency.code,
             "price_precision": obj.price_precision,
