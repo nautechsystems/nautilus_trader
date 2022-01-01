@@ -28,7 +28,7 @@ The codebase is organized around both layering of abstraction levels, and genera
 grouped into logical subpackages of cohesive concepts. You can navigate to the documentation
 for each of these subpackages from the left menu.
 
-### Core / Low-level
+### Core / Low-Level
 - `core`: constants, functions and low-level components used throughout the framework.
 - `common`: common parts for assembling the frameworks various components.
 - `network`: low-level base components for networking clients.
