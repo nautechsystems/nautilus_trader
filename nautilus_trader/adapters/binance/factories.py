@@ -129,7 +129,6 @@ class BinanceLiveDataClientFactory(LiveDataClientFactory):
         cache: Cache,
         clock: LiveClock,
         logger: LiveLogger,
-        client_cls=None,
     ) -> BinanceDataClient:
         """
         Create a new Binance data client.
@@ -150,8 +149,6 @@ class BinanceLiveDataClientFactory(LiveDataClientFactory):
             The clock for the client.
         logger : LiveLogger
             The logger for the client.
-        client_cls : class, optional
-            The class to call to return a new internal client.
 
         Returns
         -------
@@ -196,7 +193,6 @@ class BinanceLiveExecutionClientFactory(LiveExecutionClientFactory):
         cache: Cache,
         clock: LiveClock,
         logger: LiveLogger,
-        client_cls=None,
     ) -> BinanceSpotExecutionClient:
         """
         Create a new Binance execution client.
@@ -217,9 +213,6 @@ class BinanceLiveExecutionClientFactory(LiveExecutionClientFactory):
             The clock for the client.
         logger : LiveLogger
             The logger for the client.
-        client_cls : class, optional
-            The internal client constructor. This allows external library and
-            testing dependency injection.
 
         Returns
         -------

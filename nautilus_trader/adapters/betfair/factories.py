@@ -148,7 +148,6 @@ class BetfairLiveDataClientFactory(LiveDataClientFactory):
         cache: Cache,
         clock: LiveClock,
         logger: LiveLogger,
-        client_cls=None,
     ) -> BetfairDataClient:
         """
         Create a new Betfair data client.
@@ -169,8 +168,6 @@ class BetfairLiveDataClientFactory(LiveDataClientFactory):
             The clock for the client.
         logger : LiveLogger
             The logger for the client.
-        client_cls : class, optional
-            The class to call to return a new internal client.
 
         Returns
         -------
@@ -219,7 +216,6 @@ class BetfairLiveExecutionClientFactory(LiveExecutionClientFactory):
         cache: Cache,
         clock: LiveClock,
         logger: LiveLogger,
-        client_cls=None,
     ) -> BetfairExecutionClient:
         """
         Create a new Betfair execution client.
@@ -240,9 +236,6 @@ class BetfairLiveExecutionClientFactory(LiveExecutionClientFactory):
             The clock for the client.
         logger : LiveLogger
             The logger for the client.
-        client_cls : class, optional
-            The internal client constructor. This allows external library and
-            testing dependency injection.
 
         Returns
         -------

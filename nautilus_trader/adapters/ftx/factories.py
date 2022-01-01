@@ -129,7 +129,6 @@ class FTXLiveDataClientFactory(LiveDataClientFactory):
         cache: Cache,
         clock: LiveClock,
         logger: LiveLogger,
-        client_cls=None,
     ) -> FTXDataClient:
         """
         Create a new FTX data client.
@@ -150,8 +149,6 @@ class FTXLiveDataClientFactory(LiveDataClientFactory):
             The clock for the client.
         logger : LiveLogger
             The logger for the client.
-        client_cls : class, optional
-            The class to call to return a new internal client.
 
         Returns
         -------
@@ -196,7 +193,6 @@ class FTXLiveExecutionClientFactory(LiveExecutionClientFactory):
         cache: Cache,
         clock: LiveClock,
         logger: LiveLogger,
-        client_cls=None,
     ) -> FTXExecutionClient:
         """
         Create a new FTX execution client.
@@ -217,9 +213,6 @@ class FTXLiveExecutionClientFactory(LiveExecutionClientFactory):
             The clock for the client.
         logger : LiveLogger
             The logger for the client.
-        client_cls : class, optional
-            The internal client constructor. This allows external library and
-            testing dependency injection.
 
         Returns
         -------
