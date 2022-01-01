@@ -19,7 +19,7 @@ So there you could say we are “handcrafting towards”  *Black* stylistic conv
 3- Also ensure multiple hanging parameters or arguments end with a trailing comma:
 
 ```python
-long_method(
+long_method_with_many_params(
     some_arg1,
     some_arg2,
     some_arg3,  # <-- trailing comma
@@ -32,13 +32,17 @@ One notable departure is that Python truthiness is not always taken advantage of
 
 There are two reasons for this;
 
-1- Cython can generate more efficient C code from is None and is not None, rather than entering the Python runtime to check the PyObject truthiness.
+1- Cython can generate more efficient C code from `is None` and `is not None`, rather than entering the Python runtime to check the `PyObject` truthiness.
 
-2- As per the [Google Python Style Guide](https://google.github.io/styleguide/pyguide.html) - it’s discouraged to use truthiness to check if an argument is/is not None, when there is a chance an unexpected object could be passed into the function or method which will yield an unexpected truthiness evaluation (which could result in a logical error type bug).
+2- As per the [Google Python Style Guide](https://google.github.io/styleguide/pyguide.html) - it’s discouraged to use truthiness to check if an argument is/is not `None`, when there is a chance an unexpected object could be passed into the function or method which will yield an unexpected truthiness evaluation (which could result in a logical error type bug).
 
 *“Always use if foo is None: (or is not None) to check for a None value. E.g., when testing whether a variable or argument that defaults to None was set to some other value. The other value might be a value that’s false in a boolean context!”*
 
-Having said all of this there are still areas of the codebase which aren’t as performance-critical where it is safe to use Python truthiness to check for `None`. To be clear, it's still encouraged to use Python truthiness `is` and `not` to check if collections are `None` or empty.
+Having said all of this there are still areas of the codebase which aren’t as performance-critical where it is safe to use Python truthiness to check for `None`. 
+
+```{note}
+To be clear, it's still encouraged to use Python truthiness `is` and `not` to check if collections are `None` or empty.
+```
 
 We welcome all feedback on where the codebase departs from PEP-8 for no apparent reason.
 
