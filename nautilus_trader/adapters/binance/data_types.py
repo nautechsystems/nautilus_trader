@@ -153,7 +153,7 @@ class BinanceTicker(Ticker):
             f"first_id={self.first_id}, "
             f"last_id={self.last_id}, "
             f"count={self.count}, "
-            f"ts_event={self.ts_event},"
+            f"ts_event={self.ts_event}, "
             f"ts_init={self.ts_init})"
         )
 
