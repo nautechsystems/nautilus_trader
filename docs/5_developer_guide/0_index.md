@@ -20,13 +20,13 @@ potential to extract several orders of magnitude greater runtime performance thr
 dynamic libraries.
 
 The main development and runtime environment we are working in is of course Python. However with the 
-introduction of Cython syntax throughout the production codebase in .pyx and .pxd files - it’s 
+introduction of Cython syntax throughout the production codebase in `.pyx` and `.pxd` files - it’s 
 important to be aware of how the CPython implementation of Python interacts with the underlying 
 CPython API, and the NautilusTrader C extension modules which Cython produces.
 
 We recommend a thorough review of the [Cython docs](https://cython.readthedocs.io/en/latest/) to familiarize yourself with some of its core 
 concepts, and where C typing is being introduced.
 
-It's not necessary to become a C language expert, however how Cython C syntax is used in function 
-and method definitions, in local code blocks, and the common primitive C types and how these map to 
-their corresponding PyObject types - should be well understood.
+It's not necessary to become a C language expert, however it's helpful to understand how Cython C 
+syntax is used in function and method definitions, in local code blocks, and the common primitive C 
+types and how these map to their corresponding `PyObject` types.
