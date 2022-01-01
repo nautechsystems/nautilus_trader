@@ -152,7 +152,7 @@ class IBInstrumentProvider(InstrumentProvider):
         timestamp = time.time_ns()
         future = Future(
             instrument_id=instrument_id,
-            local_symbol=Symbol(details.contract.localSymbol),
+            native_symbol=Symbol(details.contract.localSymbol),
             asset_class=asset_class,
             currency=Currency.from_str(details.contract.currency),
             price_precision=price_precision,
@@ -178,7 +178,7 @@ class IBInstrumentProvider(InstrumentProvider):
         timestamp = time.time_ns()
         equity = Equity(
             instrument_id=instrument_id,
-            local_symbol=Symbol(details.contract.localSymbol),
+            native_symbol=Symbol(details.contract.localSymbol),
             currency=Currency.from_str(details.contract.currency),
             price_precision=price_precision,
             price_increment=Price(details.minTick, price_precision),

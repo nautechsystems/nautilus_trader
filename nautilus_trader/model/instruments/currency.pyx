@@ -40,7 +40,7 @@ cdef class CurrencySpot(Instrument):
     ----------
     instrument_id : InstrumentId
         The instrument ID for the instrument.
-    local_symbol : Symbol
+    native_symbol : Symbol
         The local/native symbol on the exchange for the instrument.
     base_currency : Currency, optional
         The base currency.
@@ -120,7 +120,7 @@ cdef class CurrencySpot(Instrument):
     def __init__(
         self,
         InstrumentId instrument_id not None,
-        Symbol local_symbol not None,
+        Symbol native_symbol not None,
         Currency base_currency not None,
         Currency quote_currency not None,
         int price_precision,
@@ -153,7 +153,7 @@ cdef class CurrencySpot(Instrument):
             asset_class = AssetClass.FX
         super().__init__(
             instrument_id=instrument_id,
-            local_symbol=local_symbol,
+            native_symbol=native_symbol,
             asset_class=asset_class,
             asset_type=AssetType.SPOT,
             quote_currency=quote_currency,
@@ -205,7 +205,7 @@ cdef class CurrencySpot(Instrument):
         cdef bytes info = values["info"]
         return CurrencySpot(
             instrument_id=InstrumentId.from_str_c(values["id"]),
-            local_symbol=Symbol(values["local_symbol"]),
+            native_symbol=Symbol(values["native_symbol"]),
             base_currency=Currency.from_str_c(values["base_currency"]),
             quote_currency=Currency.from_str_c(values["quote_currency"]),
             price_precision=values["price_precision"],
@@ -234,7 +234,7 @@ cdef class CurrencySpot(Instrument):
         return {
             "type": "CurrencySpot",
             "id": obj.id.value,
-            "local_symbol": obj.local_symbol.value,
+            "native_symbol": obj.native_symbol.value,
             "base_currency": obj.base_currency.code,
             "quote_currency": obj.quote_currency.code,
             "price_precision": obj.price_precision,
