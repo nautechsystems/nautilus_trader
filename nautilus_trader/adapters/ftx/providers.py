@@ -15,28 +15,18 @@
 
 import asyncio
 import time
-from datetime import datetime
-from decimal import Decimal
 from typing import Any, Dict, List
 
 from nautilus_trader.adapters.ftx.common import FTX_VENUE
 from nautilus_trader.adapters.ftx.http.client import FTXHttpClient
 from nautilus_trader.adapters.ftx.http.error import FTXClientError
+from nautilus_trader.adapters.ftx.parsing import parse_market
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.common.logging import LoggerAdapter
 from nautilus_trader.common.providers import InstrumentProvider
-from nautilus_trader.core.text import precision_from_str
-from nautilus_trader.model.currencies import USD
-from nautilus_trader.model.currency import Currency
-from nautilus_trader.model.enums import AssetClass
-from nautilus_trader.model.enums import CurrencyType
-from nautilus_trader.model.identifiers import InstrumentId
-from nautilus_trader.model.identifiers import Symbol
-from nautilus_trader.model.instruments.crypto_perp import CryptoPerpetual
+from nautilus_trader.model.instruments.base import Instrument
 from nautilus_trader.model.instruments.currency import CurrencySpot
 from nautilus_trader.model.instruments.future import Future
-from nautilus_trader.model.objects import Price
-from nautilus_trader.model.objects import Quantity
 
 
 class FTXInstrumentProvider(InstrumentProvider):
@@ -86,7 +76,7 @@ class FTXInstrumentProvider(InstrumentProvider):
                 # Wait 100ms
                 await asyncio.sleep(0.1)
 
-    async def load_all_async(self) -> None:  # noqa  # TODO(cs): WIP
+    async def load_all_async(self) -> None:
         """
         Load the latest FTX instruments into the provider asynchronously.
 
@@ -94,8 +84,8 @@ class FTXInstrumentProvider(InstrumentProvider):
         # Set async loading flag
         self._loading = True
 
-        # Get current commission rates
         try:
+            # Get current commission rates
             account_info: Dict[str, Any] = await self._client.get_account_info()
         except FTXClientError:
             self._log.error(
@@ -106,141 +96,24 @@ class FTXInstrumentProvider(InstrumentProvider):
 
         assets_res: List[Dict[str, Any]] = await self._client.list_markets()
 
-        for info in assets_res:
-            native_symbol = Symbol(info["name"])
+        for data in assets_res:
+            instrument: Instrument = parse_market(
+                account_info=account_info,
+                data=data,
+                ts_init=time.time_ns(),
+            )
 
-            asset_type = info["type"]
+            if isinstance(instrument, Future):
+                if instrument.native_symbol.value.endswith("-PERP"):
+                    self.add_currency(currency=instrument.get_base_currency())
+            elif isinstance(instrument, CurrencySpot):
+                self.add_currency(
+                    currency=instrument.get_base_currency()
+                )  # TODO: Temporary until tokenized equity
+                # if not instrument.info.get("tokenizedEquity"):
+                #     self.add_currency(currency=instrument.get_base_currency())
 
-            # Create base asset
-            if asset_type == "future":
-                base_asset: str = info["underlying"]
-                base_currency = Currency(
-                    code=base_asset,
-                    precision=8,
-                    iso4217=0,  # Currently undetermined for crypto assets
-                    name=base_asset,
-                    currency_type=CurrencyType.CRYPTO,
-                )
-                # Check if perpetual swap
-                if native_symbol.value.endswith("-PERP"):
-                    self.add_currency(currency=base_currency)
-
-                quote_currency: Currency = USD
-            elif asset_type == "spot":
-                base_asset = info["baseCurrency"]
-                base_currency = Currency(
-                    code=base_asset,
-                    precision=8,
-                    iso4217=0,  # Currently undetermined for crypto assets
-                    name=base_asset,
-                    currency_type=CurrencyType.CRYPTO,
-                )
-                self.add_currency(currency=base_currency)  # TODO: Temporary until tokenized equity
-                # if not info.get("tokenizedEquity"):
-                #     self.add_currency(currency=base_currency)
-
-                # Create quote asset
-                quote_asset: str = info["quoteCurrency"]
-                quote_currency = Currency.from_str(quote_asset)
-                if quote_currency is None:
-                    quote_currency = Currency(
-                        code=quote_asset,
-                        precision=precision_from_str(str(info["priceIncrement"])),
-                        iso4217=0,  # Currently undetermined for crypto assets
-                        name=quote_asset,
-                        currency_type=CurrencyType.CRYPTO,
-                    )
-            else:  # pragma: no cover (design-time error)
-                raise RuntimeError(f"unknown asset type, was {asset_type}")
-
-            # symbol = Symbol(base_currency.code + "/" + quote_currency.code)
-            instrument_id = InstrumentId(symbol=native_symbol, venue=FTX_VENUE)
-
-            price_precision = precision_from_str(str(info["priceIncrement"]))
-            size_precision = precision_from_str(str(info["sizeIncrement"]))
-            price_increment = Price.from_str(str(info["priceIncrement"]))
-            size_increment = Quantity.from_str(str(info["sizeIncrement"]))
-            lot_size = Quantity.from_str(str(info["minProvideSize"]))
-            margin_init = Decimal(str(account_info["initialMarginRequirement"]))
-            margin_maint = Decimal(str(account_info["maintenanceMarginRequirement"]))
-            maker_fee = Decimal(str(account_info.get("makerFee")))
-            taker_fee = Decimal(str(account_info.get("takerFee")))
-
-            if asset_type == "spot":
-                # Create instrument
-                instrument = CurrencySpot(
-                    instrument_id=instrument_id,
-                    native_symbol=native_symbol,
-                    base_currency=base_currency,
-                    quote_currency=quote_currency,
-                    price_precision=price_precision,
-                    size_precision=size_precision,
-                    price_increment=price_increment,
-                    size_increment=size_increment,
-                    lot_size=lot_size,
-                    max_quantity=None,
-                    min_quantity=None,
-                    max_notional=None,
-                    min_notional=None,
-                    max_price=None,
-                    min_price=None,
-                    margin_init=margin_init,
-                    margin_maint=margin_maint,
-                    maker_fee=maker_fee,
-                    taker_fee=taker_fee,
-                    ts_event=time.time_ns(),
-                    ts_init=time.time_ns(),
-                    info=info,
-                )
-            elif asset_type == "future":
-                # Create instrument
-                if info["name"].endswith("-PERP"):
-                    instrument = CryptoPerpetual(
-                        instrument_id=instrument_id,
-                        native_symbol=native_symbol,
-                        base_currency=base_currency,
-                        quote_currency=quote_currency,
-                        settlement_currency=USD,
-                        is_inverse=False,
-                        price_precision=price_precision,
-                        size_precision=size_precision,
-                        price_increment=price_increment,
-                        size_increment=size_increment,
-                        max_quantity=None,
-                        min_quantity=None,
-                        max_notional=None,
-                        min_notional=None,
-                        max_price=None,
-                        min_price=None,
-                        margin_init=margin_init,
-                        margin_maint=margin_maint,
-                        maker_fee=maker_fee,
-                        taker_fee=taker_fee,
-                        ts_event=time.time_ns(),
-                        ts_init=time.time_ns(),
-                        info=info,
-                    )
-                else:
-                    instrument = Future(
-                        instrument_id=instrument_id,
-                        native_symbol=native_symbol,
-                        asset_class=AssetClass.CRYPTO,
-                        currency=USD,
-                        price_precision=price_precision,
-                        price_increment=price_increment,
-                        multiplier=Quantity.from_int(1),
-                        lot_size=Quantity.from_int(1),
-                        underlying=info["underlying"],
-                        expiry_date=datetime.utcnow().date(),  # TODO(cs): Implement
-                        # margin_init=margin_init,  # TODO(cs): Implement
-                        # margin_maint=margin_maint,  # TODO(cs): Implement
-                        # maker_fee=maker_fee,  # TODO(cs): Implement
-                        # taker_fee=taker_fee,  # TODO(cs): Implement
-                        ts_event=time.time_ns(),
-                        ts_init=time.time_ns(),
-                    )
-
-            self.add_currency(currency=quote_currency)
+            self.add_currency(currency=instrument.quote_currency)
             self.add(instrument=instrument)
 
         # Set async loading flags
