@@ -80,7 +80,7 @@ class TestFTXInstrumentProvider:
         assert self.provider.find(InstrumentId(Symbol("AAPL-1231"), Venue("FTX"))) is not None
         assert self.provider.find(InstrumentId(Symbol("AAPL/USD"), Venue("FTX"))) is not None
         assert self.provider.find(InstrumentId(Symbol("AAVE-PERP"), Venue("FTX"))) is not None
-        assert len(self.provider.currencies()) == 3
+        assert len(self.provider.currencies()) == 4
         assert "1INCH" in self.provider.currencies()
         assert "USD" in self.provider.currencies()
-        # assert "AAPL" not in self.provider.currencies()  # TODO: Tokenized equities
+        #  assert "AAPL" not in self.provider.currencies()  # TODO: Tokenized equities

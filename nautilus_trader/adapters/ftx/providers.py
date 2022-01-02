@@ -25,8 +25,6 @@ from nautilus_trader.common.logging import Logger
 from nautilus_trader.common.logging import LoggerAdapter
 from nautilus_trader.common.providers import InstrumentProvider
 from nautilus_trader.model.instruments.base import Instrument
-from nautilus_trader.model.instruments.currency import CurrencySpot
-from nautilus_trader.model.instruments.future import Future
 
 
 class FTXInstrumentProvider(InstrumentProvider):
@@ -97,16 +95,18 @@ class FTXInstrumentProvider(InstrumentProvider):
         assets_res: List[Dict[str, Any]] = await self._client.list_markets()
 
         for data in assets_res:
+            asset_type = data["type"]
+
             instrument: Instrument = parse_market(
                 account_info=account_info,
                 data=data,
                 ts_init=time.time_ns(),
             )
 
-            if isinstance(instrument, Future):
+            if asset_type == "future":
                 if instrument.native_symbol.value.endswith("-PERP"):
                     self.add_currency(currency=instrument.get_base_currency())
-            elif isinstance(instrument, CurrencySpot):
+            elif asset_type == "spot":
                 self.add_currency(
                     currency=instrument.get_base_currency()
                 )  # TODO: Temporary until tokenized equity

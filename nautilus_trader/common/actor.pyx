@@ -1361,6 +1361,11 @@ cdef class Actor(Component):
             The specified to datetime for the data. If ``None`` then will default
             to the current datetime.
 
+        Raises
+        ------
+        ValueError
+            If `from_datetime` is not less than `to_datetime`.
+
         Notes
         -----
         Always limited to the bar capacity of the `DataEngine` cache.

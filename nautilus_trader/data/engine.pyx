@@ -43,7 +43,6 @@ from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.data cimport Data
 from nautilus_trader.data.aggregation cimport BarAggregator
-from nautilus_trader.data.aggregation cimport BulkTimeBarUpdater
 from nautilus_trader.data.aggregation cimport TickBarAggregator
 from nautilus_trader.data.aggregation cimport TimeBarAggregator
 from nautilus_trader.data.aggregation cimport ValueBarAggregator
@@ -1143,7 +1142,6 @@ cdef class DataEngine(Component):
                 clock=self._clock,
                 logger=self._log.get_logger(),
             )
-            self._hydrate_aggregator(client, aggregator, bar_type)
         elif bar_type.spec.aggregation == BarAggregation.TICK:
             aggregator = TickBarAggregator(
                 instrument=instrument,
@@ -1195,34 +1193,6 @@ cdef class DataEngine(Component):
                 priority=5,
             )
             self._handle_subscribe_quote_ticks(client, bar_type.instrument_id)
-
-    cdef void _hydrate_aggregator(
-        self,
-        MarketDataClient client,
-        TimeBarAggregator aggregator,
-        BarType bar_type,
-    ) except *:
-        data_type = TradeTick if bar_type.spec.price_type == PriceType.LAST else QuoteTick
-
-        # Update aggregator with latest data
-        bulk_updater = BulkTimeBarUpdater(aggregator)
-
-        metadata = {
-            "instrument_id": bar_type.instrument_id,
-            "from_datetime": aggregator.get_start_time(),
-            "to_datetime": None,
-        }
-
-        request = DataRequest(
-            client_id=ClientId(bar_type.instrument_id.venue.value),
-            data_type=DataType(data_type, metadata),
-            callback=bulk_updater.receive,
-            request_id=self._uuid_factory.generate(),
-            ts_init=self._clock.timestamp_ns(),
-        )
-
-        # Send via message bus to setup response handler
-        self._msgbus.request(endpoint="DataEngine.request", request=request)
 
     cdef void _stop_bar_aggregator(self, MarketDataClient client, BarType bar_type) except *:
         cdef aggregator = self._bar_aggregators.get(bar_type)

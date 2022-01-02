@@ -129,20 +129,28 @@ class FTXExecutionClient(LiveExecutionClient):
     # -- COMMAND HANDLERS --------------------------------------------------------------------------
 
     def submit_order(self, command: SubmitOrder) -> None:
-        """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
+        # TODO: Implement
+        self._log.error(
+            f"Cannot process command {command}. " f"Not implemented in this version.",
+        )
 
     def submit_order_list(self, command: SubmitOrderList) -> None:
-        """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
+        # TODO: Implement
+        self._log.error(
+            f"Cannot process command {command}. " f"Not implemented in this version.",
+        )
 
     def modify_order(self, command: ModifyOrder) -> None:
-        """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
+        # TODO: Implement
+        self._log.error(
+            f"Cannot process command {command}. " f"Not implemented in this version.",
+        )
 
     def cancel_order(self, command: CancelOrder) -> None:
-        """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
+        # TODO: Implement
+        self._log.error(
+            f"Cannot process command {command}. " f"Not implemented in this version.",
+        )
 
     # -- RECONCILIATION ----------------------------------------------------------------------------
 
@@ -189,4 +197,8 @@ class FTXExecutionClient(LiveExecutionClient):
         list[ExecutionReport]
 
         """
-        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
+        # TODO: Implement
+        self._log.error(
+            "Cannot generate execution reports: Not implemented in this version.",
+        )
+        return []

@@ -25,7 +25,6 @@ from nautilus_trader.backtest.data.wranglers import TradeTickDataWrangler
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.data.aggregation import BarBuilder
-from nautilus_trader.data.aggregation import BulkTickBarBuilder
 from nautilus_trader.data.aggregation import TickBarAggregator
 from nautilus_trader.data.aggregation import TimeBarAggregator
 from nautilus_trader.data.aggregation import ValueBarAggregator
@@ -1231,29 +1230,3 @@ class TestTimeBarAggregator:
         assert Price.from_str("1.000035") == bar_store.get_store()[0].close
         assert Quantity.from_int(2) == bar_store.get_store()[0].volume
         assert 60_000_000_000 == bar_store.get_store()[0].ts_init
-
-
-class TestBulkTickBarBuilder:
-    def test_given_list_of_ticks_aggregates_tick_bars(self):
-        # Arrange
-        instrument = TestInstrumentProvider.default_fx_ccy("USD/JPY")
-        wrangler = QuoteTickDataWrangler(instrument)
-        provider = TestDataProvider()
-        ticks = wrangler.process(provider.read_csv_ticks("truefx-usdjpy-ticks.csv"))
-
-        bar_store = ObjectStorer()
-        handler = bar_store.store
-        instrument_id = TestStubs.usdjpy_id()
-        bar_spec = BarSpecification(3, BarAggregation.TICK, PriceType.MID)
-        bar_type = BarType(instrument_id, bar_spec)
-
-        clock = TestClock()
-        logger = Logger(clock)
-
-        builder = BulkTickBarBuilder(instrument, bar_type, logger, handler)
-
-        # Act
-        builder.receive(ticks)
-
-        # Assert
-        assert len(bar_store.get_store()[0]) == 333

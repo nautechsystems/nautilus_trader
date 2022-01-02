@@ -25,6 +25,8 @@ from nautilus_trader.core.datetime import secs_to_nanos
 from nautilus_trader.core.text import precision_from_str
 from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.currency import Currency
+from nautilus_trader.model.data.bar import Bar
+from nautilus_trader.model.data.bar import BarType
 from nautilus_trader.model.data.tick import QuoteTick
 from nautilus_trader.model.data.tick import TradeTick
 from nautilus_trader.model.enums import AggressorSide
@@ -153,7 +155,7 @@ def parse_quote_tick_ws(
 
 def parse_trade_ticks_ws(
     instrument: Instrument,
-    data: Dict,
+    data: List[Dict[str, Any]],
     ts_init: int,
 ) -> List[TradeTick]:
     ticks: List[TradeTick] = []
@@ -170,6 +172,31 @@ def parse_trade_ticks_ws(
         ticks.append(tick)
 
     return ticks
+
+
+def parse_bars(
+    instrument: Instrument,
+    bar_type: BarType,
+    data: List[Dict[str, Any]],
+    ts_event_delta: int,
+    ts_init: int,
+) -> List[Bar]:
+    bars: List[Bar] = []
+    for row in data:
+        bar: Bar = Bar(
+            bar_type=bar_type,
+            open=Price(row["open"], instrument.price_precision),
+            high=Price(row["high"], instrument.price_precision),
+            low=Price(row["low"], instrument.price_precision),
+            close=Price(row["close"], instrument.price_precision),
+            volume=Quantity(row["volume"], instrument.size_precision),
+            check=True,
+            ts_event=secs_to_nanos(row["time"]) + ts_event_delta,
+            ts_init=ts_init,
+        )
+        bars.append(bar)
+
+    return bars
 
 
 def parse_market(
