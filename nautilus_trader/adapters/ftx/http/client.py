@@ -372,8 +372,16 @@ class FTXHttpClient(HttpClient):
             payload=payload,
         )
 
-    async def get_fills(self) -> List[dict]:
-        return await self._get("fills")
+    async def get_fills(
+        self,
+        market: str,
+        start_time: int,
+        end_time: int,
+    ) -> List[dict]:
+        return await self._get(
+            "fills",
+            {"market": market, "end_time": end_time, "start_time": start_time, "order": "asc"},
+        )
 
     async def get_balances(self) -> List[dict]:
         return await self._get("wallet/balances")

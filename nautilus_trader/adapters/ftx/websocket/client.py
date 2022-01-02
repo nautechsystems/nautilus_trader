@@ -108,13 +108,13 @@ class FTXWebSocketClient(WebSocketClient):
         self._log.info("Session authenticated.")
 
     async def _subscribe(self, subscription: Dict) -> None:
-        await self.send_json({"op": "subscribe", **subscription})
         if subscription not in self._streams:
+            await self.send_json({"op": "subscribe", **subscription})
             self._streams.append(subscription)
 
     async def _unsubscribe(self, subscription: Dict) -> None:
-        await self.send_json({"op": "unsubscribe", **subscription})
         if subscription in self._streams:
+            await self.send_json({"op": "unsubscribe", **subscription})
             self._streams.remove(subscription)
 
     async def subscribe_markets(self) -> None:

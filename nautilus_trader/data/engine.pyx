@@ -633,7 +633,7 @@ cdef class DataEngine(Component):
             self._order_book_intervals[key] = []
             now = self._clock.utc_now()
             start_time = now - timedelta(milliseconds=int((now.second * 1000) % interval_ms), microseconds=now.microsecond)
-            timer_name = f"OrderBookSnapshot-{instrument_id}-{interval_ms}"
+            timer_name = f"OrderBookSnapshot_{instrument_id}_{interval_ms}"
             self._clock.set_timer(
                 name=timer_name,
                 interval=timedelta(milliseconds=interval_ms),
@@ -1102,7 +1102,7 @@ cdef class DataEngine(Component):
         order_book.apply(data)
 
     cpdef void _snapshot_order_book(self, TimeEvent snap_event) except *:
-        cdef tuple pieces = snap_event.name.partition('-')[2].partition('-')
+        cdef tuple pieces = snap_event.name.partition('_')[2].partition('_')
         cdef InstrumentId instrument_id = InstrumentId.from_str_c(pieces[0])
         cdef int interval_ms = int(pieces[2])
 
@@ -1202,7 +1202,7 @@ cdef class DataEngine(Component):
         TimeBarAggregator aggregator,
         BarType bar_type,
     ) except *:
-        data_type = type(TradeTick) if bar_type.spec.price_type == PriceType.LAST else QuoteTick
+        data_type = TradeTick if bar_type.spec.price_type == PriceType.LAST else QuoteTick
 
         # Update aggregator with latest data
         bulk_updater = BulkTimeBarUpdater(aggregator)
@@ -1221,8 +1221,8 @@ cdef class DataEngine(Component):
             ts_init=self._clock.timestamp_ns(),
         )
 
-        # Send request directly to handler as we're already inside engine
-        self._handle_request(request)
+        # Send via message bus to setup response handler
+        self._msgbus.request(endpoint="DataEngine.request", request=request)
 
     cdef void _stop_bar_aggregator(self, MarketDataClient client, BarType bar_type) except *:
         cdef aggregator = self._bar_aggregators.get(bar_type)

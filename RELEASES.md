@@ -11,6 +11,8 @@ None
 ## Fixes
 - Fixed parsing of `BarType` with symbols including hyphens `-`.
 - Fixed `BinanceTicker` `__repr__` (was missing whitespace after a comma).
+- Fixed `DataEngine` requests for historical `TradeTick`.
+
 ---
 
 # NautilusTrader 1.136.0 Beta - Release Notes

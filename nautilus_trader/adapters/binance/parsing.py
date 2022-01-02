@@ -66,13 +66,13 @@ def parse_diff_depth_stream_ws(
     ts_event: int = millis_to_nanos(msg["E"])
     update_id: int = msg["U"]
 
-    bid_deltas = [
+    bid_deltas: List[OrderBookDelta] = [
         parse_book_delta_ws(instrument_id, OrderSide.BUY, d, ts_event, ts_init, update_id)
-        for d in msg.get("b")
+        for d in msg["b"]
     ]
-    ask_deltas = [
+    ask_deltas: List[OrderBookDelta] = [
         parse_book_delta_ws(instrument_id, OrderSide.SELL, d, ts_event, ts_init, update_id)
-        for d in msg.get("a")
+        for d in msg["a"]
     ]
 
     return OrderBookDeltas(
