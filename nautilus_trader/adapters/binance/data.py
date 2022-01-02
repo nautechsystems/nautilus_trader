@@ -344,8 +344,8 @@ class BinanceDataClient(LiveMarketDataClient):
             resolution = "d"
         else:  # pragma: no cover (design-time error)
             raise RuntimeError(
-                f"invalid aggregation period, "
-                f"was {BarAggregationParser.from_str(bar_type.spec.aggregation)}",
+                f"invalid aggregation type, "
+                f"was {BarAggregationParser.to_str_py(bar_type.spec.aggregation)}",
             )
 
         self._ws_spot.subscribe_bars(
@@ -525,8 +525,8 @@ class BinanceDataClient(LiveMarketDataClient):
             resolution = "d"
         else:  # pragma: no cover (design-time error)
             raise RuntimeError(
-                f"invalid aggregation period, "
-                f"was {BarAggregationParser.from_str(bar_type.spec.aggregation)}",
+                f"invalid aggregation type, "
+                f"was {BarAggregationParser.to_str_py(bar_type.spec.aggregation)}",
             )
 
         start_time_ms = from_datetime.to_datetime64() * 1000 if from_datetime is not None else None

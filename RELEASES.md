@@ -12,6 +12,7 @@ None
 - Fixed parsing of `BarType` with symbols including hyphens `-`.
 - Fixed `BinanceTicker` `__repr__` (was missing whitespace after a comma).
 - Fixed `DataEngine` requests for historical `TradeTick`.
+- Fixed `DataEngine` `_handle_data_response` typing of `data` to `object`.
 
 ---
 

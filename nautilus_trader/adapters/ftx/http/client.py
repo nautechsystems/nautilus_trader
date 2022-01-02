@@ -162,10 +162,28 @@ class FTXHttpClient(HttpClient):
             payload=payload,
         )
 
-    async def get_trades(self, market: str) -> Dict[str, Any]:
+    async def get_trades(self, market: str) -> List[Dict[str, Any]]:
         return await self._send_request(
             http_method="GET",
             url_path=f"markets/{market}/trades",
+        )
+
+    async def get_historical_prices(
+        self,
+        market: str,
+        resolution: int,
+        start_time: Optional[int],
+        end_time: Optional[int],
+    ):
+        payload: Dict[str, str] = {"resolution": str(resolution)}
+        if start_time is not None:
+            payload["start_time"] = str(start_time)
+        if end_time is not None:
+            payload["end_time"] = str(end_time)
+        return await self._sign_request(
+            http_method="GET",
+            url_path=f"markets/{market}/candles",
+            payload=payload,
         )
 
     async def get_account_info(self) -> Dict[str, Any]:
@@ -378,9 +396,18 @@ class FTXHttpClient(HttpClient):
         start_time: int,
         end_time: int,
     ) -> List[dict]:
-        return await self._get(
-            "fills",
-            {"market": market, "end_time": end_time, "start_time": start_time, "order": "asc"},
+        payload: Dict[str, Any] = {
+            "market": market,
+            "order": "asc",
+        }
+        if start_time is not None:
+            payload["start_time"] = str(start_time)
+        if end_time is not None:
+            payload["end_time"] = str(end_time)
+        return await self._send_request(
+            http_method="GET",
+            url_path="fills",
+            payload=payload,
         )
 
     async def get_balances(self) -> List[dict]:
@@ -403,12 +430,13 @@ class FTXHttpClient(HttpClient):
         limit = 100
         results = []
         while True:
-            response = await self._get(
-                f"markets/{market}/trades",
-                {
-                    "end_time": end_time,
-                    "start_time": start_time,
-                },
+            response = await self._send_request(
+                http_method="GET",
+                url_path=f"markets/{market}/trades",
+                # payload={
+                #     "end_time": end_time,
+                #     "start_time": start_time,
+                # },
             )
             deduped_trades = [r for r in response if r["id"] not in ids]
             results.extend(deduped_trades)

@@ -24,6 +24,7 @@ from nautilus_trader.adapters.ftx.data_types import FTXTicker
 from nautilus_trader.adapters.ftx.http.client import FTXHttpClient
 from nautilus_trader.adapters.ftx.http.error import FTXClientError
 from nautilus_trader.adapters.ftx.http.error import FTXError
+from nautilus_trader.adapters.ftx.parsing import parse_bars
 from nautilus_trader.adapters.ftx.parsing import parse_book_partial_ws
 from nautilus_trader.adapters.ftx.parsing import parse_book_update_ws
 from nautilus_trader.adapters.ftx.parsing import parse_market
@@ -35,12 +36,19 @@ from nautilus_trader.adapters.ftx.websocket.client import FTXWebSocketClient
 from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.logging import Logger
+from nautilus_trader.core.datetime import secs_to_nanos
 from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.live.data_client import LiveMarketDataClient
+from nautilus_trader.model.c_enums.bar_aggregation import BarAggregationParser
+from nautilus_trader.model.data.bar import Bar
 from nautilus_trader.model.data.bar import BarType
+from nautilus_trader.model.data.base import DataType
 from nautilus_trader.model.data.tick import QuoteTick
 from nautilus_trader.model.data.tick import TradeTick
+from nautilus_trader.model.enums import AggregationSource
+from nautilus_trader.model.enums import BarAggregation
 from nautilus_trader.model.enums import BookType
+from nautilus_trader.model.enums import PriceType
 from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import Symbol
@@ -215,13 +223,14 @@ class FTXDataClient(LiveMarketDataClient):
 
     def subscribe_bars(self, bar_type: BarType):
         self._log.error(
-            f"Cannot subscribe to bars {bar_type} " f"(not supported by the FTX exchange).",
+            f"Cannot subscribe to bars {bar_type} (not supported by the FTX exchange). "
+            "Try and subscribe with `BarType` for INTERNAL aggregation source",
         )
 
     def subscribe_instrument_status_updates(self, instrument_id: InstrumentId):
         self._log.error(
             f"Cannot subscribe to instrument status updates for {instrument_id} "
-            f"(not supported by the FTX exchange).",
+            f"(not yet supported by NautilusTrader).",
         )
 
     def subscribe_instrument_close_prices(self, instrument_id: InstrumentId):
@@ -295,7 +304,7 @@ class FTXDataClient(LiveMarketDataClient):
         correlation_id: UUID4,
     ):
         self._log.error(
-            "Cannot request historical `QuoteTick` (not supported by the FTX exchange).",
+            "Cannot request historical quote ticks: not published by FTX.",
         )
 
     def request_trade_ticks(
@@ -325,24 +334,39 @@ class FTXDataClient(LiveMarketDataClient):
         correlation_id: UUID4,
     ):
         instrument = self._instrument_provider.find(instrument_id)
-
         if instrument is None:
             self._log.error(
-                f"Cannot parse `QuoteTick` " f"(no instrument found for {instrument_id}).",
+                f"Cannot parse trades response: no instrument found for {instrument_id}.",
             )
             return
 
-        trades = await self._http_client.get_trades(instrument_id.symbol.value)
+        data = await self._http_client.get_trades(instrument_id.symbol.value)
+
+        # Limit trades data
+        if limit:
+            while len(data) > limit:
+                data.pop(0)  # Pop left
 
         ticks: List[TradeTick] = parse_trade_ticks_ws(
             instrument=instrument,
-            data=trades,
+            data=data,
             ts_init=self._clock.timestamp_ns(),
         )
 
-        print(ticks)
-        # TODO: WIP
-        # self._handle_trade_ticks(instrument_id, ticks, correlation_id)
+        data_type = DataType(
+            type=TradeTick,
+            metadata={
+                "instrument_id": instrument_id,
+                "from_datetime": from_datetime,
+                "to_datetime": to_datetime,
+            },
+        )
+
+        self._handle_data_response(
+            data_type=data_type,
+            data=ticks,
+            correlation_id=correlation_id,
+        )
 
     def request_bars(
         self,
@@ -352,8 +376,114 @@ class FTXDataClient(LiveMarketDataClient):
         limit: int,
         correlation_id: UUID4,
     ):
-        pass
-        # TODO(Implement
+        if not bar_type.spec.is_time_aggregated():
+            self._log.error(
+                f"Cannot request {bar_type}: only time bars are aggregated by FTX.",
+            )
+            return
+
+        if bar_type.spec.price_type != PriceType.LAST:
+            self._log.error(
+                f"Cannot request historical bars for {bar_type}: "
+                f"can only request with `price_type` LAST which is based on trades.",
+            )
+            return
+
+        if bar_type.aggregation_source == AggregationSource.INTERNAL:
+            self._log.warning(
+                f"Requesting historical bars for {bar_type} "
+                f"which has an INTERNAL aggregation source, "
+                f"however requested bars were aggregated externally by FTX.",
+            )
+
+        self._loop.create_task(
+            self._request_bars(
+                bar_type,
+                from_datetime,
+                to_datetime,
+                limit,
+                correlation_id,
+            )
+        )
+
+    async def _request_bars(  # noqa C901 'FTXDataClient._request_bars' is too complex (11)
+        self,
+        bar_type: BarType,
+        from_datetime: pd.Timestamp,
+        to_datetime: pd.Timestamp,
+        limit: int,
+        correlation_id: UUID4,
+    ):
+        instrument = self._instrument_provider.find(bar_type.instrument_id)
+        if instrument is None:
+            self._log.error(
+                f"Cannot parse historical bars: "
+                f"no instrument found for {bar_type.instrument_id}.",
+            )
+            return
+
+        if bar_type.spec.aggregation == BarAggregation.SECOND:
+            resolution = bar_type.spec.step
+        elif bar_type.spec.aggregation == BarAggregation.MINUTE:
+            resolution = bar_type.spec.step * 60
+        elif bar_type.spec.aggregation == BarAggregation.HOUR:
+            resolution = bar_type.spec.step * 60 * 60
+        elif bar_type.spec.aggregation == BarAggregation.DAY:
+            resolution = bar_type.spec.step * 60 * 60 * 24
+        else:  # pragma: no cover (design-time error)
+            raise RuntimeError(
+                f"invalid aggregation type, "
+                f"was {BarAggregationParser.to_str_py(bar_type.spec.aggregation)}",
+            )
+
+        # Define validation constants
+        max_seconds: int = 30 * 86400
+        valid_windows: List[int] = [15, 60, 300, 900, 3600, 14400, 86400]
+
+        # Validate resolution
+        if resolution > max_seconds:
+            self._log.error(
+                f"Cannot request bars for {bar_type}: "
+                f"seconds window exceeds MAX_SECONDS {max_seconds}.",
+            )
+            return
+
+        if resolution > 86400 and resolution % 86400 != 0:
+            self._log.error(
+                f"Cannot request bars for {bar_type}: "
+                f"seconds window exceeds 1 day 86,400 and not a multiple of 1 day.",
+            )
+            return
+        elif resolution not in valid_windows:
+            self._log.error(
+                f"Cannot request bars for {bar_type}: "
+                f"invalid seconds window, use one of {valid_windows}.",
+            )
+            return
+
+        # Get historical bars data
+        data: List[Dict[str, Any]] = await self._http_client.get_historical_prices(
+            market=bar_type.instrument_id.symbol.value,
+            resolution=resolution,
+            start_time=int(from_datetime.timestamp()) if from_datetime is not None else None,
+            end_time=int(to_datetime.timestamp()) if to_datetime is not None else None,
+        )
+
+        # Limit bars data
+        if limit:
+            while len(data) > limit:
+                data.pop(0)  # Pop left
+
+        bars: List[Bar] = parse_bars(
+            instrument=instrument,
+            bar_type=bar_type,
+            data=data,
+            ts_event_delta=secs_to_nanos(resolution),
+            ts_init=self._clock.timestamp_ns(),
+        )
+        partial: Bar = bars.pop()
+
+        self._handle_bars(bar_type, bars, partial, correlation_id)
 
     async def _subscribed_instruments_update(self, delay):
         await self._instrument_provider.load_all_async()
@@ -467,7 +597,7 @@ class FTXDataClient(LiveMarketDataClient):
         self._handle_data(ticker)
 
     def _handle_trades(self, msg: Dict[str, Any]) -> None:
-        data: Optional[Dict[str, Any]] = msg.get("data")
+        data: Optional[List[Dict[str, Any]]] = msg.get("data")
         if data is None:
             return
 

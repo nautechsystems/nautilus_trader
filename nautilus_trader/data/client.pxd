@@ -52,7 +52,7 @@ cdef class DataClient(Component):
 # -- DATA HANDLERS ---------------------------------------------------------------------------------
 
     cpdef void _handle_data(self, Data data) except *
-    cpdef void _handle_data_response(self, DataType data_type, Data data, UUID4 correlation_id) except *
+    cpdef void _handle_data_response(self, DataType data_type, object data, UUID4 correlation_id) except *
 
 
 cdef class MarketDataClient(DataClient):
