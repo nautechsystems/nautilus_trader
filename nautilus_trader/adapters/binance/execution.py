@@ -126,9 +126,6 @@ class BinanceSpotExecutionClient(LiveExecutionClient):
 
         self._client = client
 
-        # Hot caches
-        self._instrument_ids: Dict[str, InstrumentId] = {}
-
         # HTTP API
         self._account_spot = BinanceSpotAccountHttpAPI(client=self._client)
         self._market_spot = BinanceSpotMarketHttpAPI(client=self._client)
@@ -148,6 +145,9 @@ class BinanceSpotExecutionClient(LiveExecutionClient):
             logger=logger,
             handler=self._handle_user_ws_message,
         )
+
+        # Hot caches
+        self._instrument_ids: Dict[str, InstrumentId] = {}
 
     def connect(self) -> None:
         """

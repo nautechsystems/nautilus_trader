@@ -35,6 +35,7 @@ from nautilus_trader.model.enums import BookAction
 from nautilus_trader.model.enums import BookType
 from nautilus_trader.model.enums import CurrencyType
 from nautilus_trader.model.enums import OrderSide
+from nautilus_trader.model.enums import OrderType
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.instruments.base import Instrument
@@ -334,3 +335,18 @@ def parse_market(
             )
     else:  # pragma: no cover (design-time error)
         raise ValueError(f"Cannot parse market instrument: unknown asset type {asset_type}")
+
+
+def parse_order_type(data: Dict[str, Any]) -> OrderType:
+    order_type: str = data["type"]
+    if order_type == "limit":
+        return OrderType.LIMIT
+    elif order_type == "market":
+        return OrderType.MARKET
+    elif order_type in ("stop", "trailingStop", "takeProfit"):
+        if data.get("orderPrice"):
+            return OrderType.STOP_LIMIT
+        else:
+            return OrderType.STOP_MARKET
+    else:  # pragma: no cover (design-time error)
+        raise RuntimeError(f"Cannot parse order type, was {order_type}")
