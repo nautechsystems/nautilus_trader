@@ -252,34 +252,30 @@ class FTXHttpClient(HttpClient):
 
     async def modify_order(
         self,
-        existing_order_id: Optional[str] = None,
-        existing_client_order_id: Optional[str] = None,
+        client_order_id: str,
         price: Optional[str] = None,
         size: Optional[str] = None,
-        client_order_id: Optional[str] = None,
     ) -> dict:
-        assert (existing_order_id is None) ^ (
-            existing_client_order_id is None
-        ), "Must supply exactly one ID for the order to modify"
-        assert (price is None) or (size is None), "Must modify price or size of order"
+        # assert (existing_order_id is None) ^ (
+        #     existing_client_order_id is None
+        # ), "Must supply exactly one ID for the order to modify"
+        # assert (price is None) or (size is None), "Must modify price or size of order"
 
-        url_path = (
-            f"orders/{existing_order_id}/modify"
-            if existing_order_id is not None
-            else f"orders/by_client_id/{existing_client_order_id}/modify"
-        )
+        # url_path = (
+        #     f"orders/{existing_order_id}/modify"
+        #     if existing_order_id is not None
+        #     else f"orders/by_client_id/{existing_client_order_id}/modify"
+        # )
 
         payload: Dict[str, str] = {}
         if price is not None:
             payload["price"] = price
         if size is not None:
             payload["size"] = size
-        if client_order_id is not None:
-            payload["client_order_id"] = client_order_id
 
         return await self._sign_request(
             http_method="POST",
-            url_path=url_path,
+            url_path=f"orders/by_client_id/{client_order_id}/modify",
             payload=payload,
         )
 
@@ -301,9 +297,9 @@ class FTXHttpClient(HttpClient):
         size: str,
         type: str,
         client_id: str,
-        price: str = None,
-        reduce_only: bool = False,
+        price: Optional[str] = None,
         ioc: bool = False,
+        reduce_only: bool = False,
         post_only: bool = False,
     ) -> Dict[str, Any]:
         payload: Dict[str, Any] = {
@@ -311,10 +307,10 @@ class FTXHttpClient(HttpClient):
             "side": side,
             "size": size,
             "type": type,
-            "reduce_only": reduce_only,
-            "ioc": ioc,
-            "post_only": post_only,
-            "client_id": client_id,
+            "clientId": client_id,
+            "ioc": str(ioc).lower(),
+            "reduceOnly": str(reduce_only).lower(),
+            "postOnly": str(post_only).lower(),
         }
         if price is not None:
             payload["price"] = price
@@ -329,13 +325,13 @@ class FTXHttpClient(HttpClient):
         self,
         market: str,
         side: str,
-        size: float,
+        size: str,
         type: str,
-        limit_price: float = None,
+        client_id: str,
+        price: Optional[str] = None,
+        trigger: Optional[str] = None,
+        trail_value: Optional[str] = None,
         reduce_only: bool = False,
-        cancel: bool = True,
-        trigger_price: float = None,
-        trail_value: float = None,
     ) -> Dict[str, Any]:
         """
         To send a Stop Market order, set type='stop' and supply a trigger_price
@@ -343,51 +339,45 @@ class FTXHttpClient(HttpClient):
         To send a Take Profit Market order, set type='trailing_stop' and supply a trigger_price
         To send a Trailing Stop order, set type='trailing_stop' and supply a trail_value
         """
-        assert type in ("stop", "take_profit", "trailing_stop")
-        assert (
-            type not in ("stop", "take_profit") or trigger_price is not None
-        ), "Need trigger prices for stop losses and take profits"
-        assert type not in ("trailing_stop",) or (
-            trigger_price is None and trail_value is not None
-        ), "Trailing stops need a trail value and cannot take a trigger price"
-
+        # assert type in ("stop", "take_profit", "trailing_stop")
+        # assert (
+        #     type not in ("stop", "take_profit") or trigger_price is not None
+        # ), "Need trigger prices for stop losses and take profits"
+        # assert type not in ("trailing_stop",) or (
+        #     trigger_price is None and trail_value is not None
+        # ), "Trailing stops need a trail value and cannot take a trigger price"
+        payload: Dict[str, Any] = {
+            "market": market,
+            "side": side,
+            "size": size,
+            "type": type,
+            "clientId": client_id,
+            "limitPrice": client_id,
+            "reduceOnly": reduce_only,
+        }
+        if price is not None:
+            payload["orderPrice"] = price
+        if trigger is not None:
+            payload["triggerPrice"] = trigger
+        if trail_value is not None:
+            payload["trailValue"] = trail_value
         return await self._post(
-            "conditional_orders",
-            {
-                "market": market,
-                "side": side,
-                "triggerPrice": trigger_price,
-                "size": size,
-                "reduceOnly": reduce_only,
-                "type": "stop",
-                "cancelLimitOnTrigger": cancel,
-                "orderPrice": limit_price,
-            },
+            http_method="POST",
+            url_path="conditional_orders",
+            payload=payload,
         )
 
-    async def cancel_order(self, order_id: str) -> Dict[str, Any]:
+    async def cancel_order(self, client_order_id: str) -> Dict[str, Any]:
         return await self._sign_request(
             http_method="DELETE",
-            url_path=f"orders/{order_id}",
+            url_path=f"orders/by_client_id/{client_order_id}",
         )
 
-    async def cancel_orders(
-        self,
-        market_name: str = None,
-        conditional_orders: bool = False,
-        limit_orders: bool = False,
-    ) -> Dict[str, Any]:
-        payload: Dict[str, Any] = {
-            "conditional_orders": conditional_orders,
-            "limit_orders": limit_orders,
-        }
-        if market_name is not None:
-            payload["market_name"] = market_name
-
+    async def cancel_all_orders(self, market: str) -> Dict[str, Any]:
         return await self._sign_request(
             http_method="DELETE",
             url_path="orders",
-            payload=payload,
+            payload={"market": market},
         )
 
     async def get_fills(

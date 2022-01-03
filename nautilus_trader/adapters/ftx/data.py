@@ -110,6 +110,9 @@ class FTXDataClient(LiveMarketDataClient):
             secret=client.api_secret,
         )
 
+        # Hot caches
+        self._instrument_ids: Dict[str, InstrumentId] = {}
+
     def connect(self):
         """
         Connect the client to FTX.
@@ -125,6 +128,7 @@ class FTXDataClient(LiveMarketDataClient):
         self._loop.create_task(self._disconnect())
 
     async def _connect(self):
+        # Connect HTTP client
         if not self._http_client.connected:
             await self._http_client.connect()
         try:
@@ -135,6 +139,7 @@ class FTXDataClient(LiveMarketDataClient):
 
         self._send_all_instruments_to_data_engine()
 
+        # Connect WebSocket client
         await self._ws_client.connect(start=True)
         await self._ws_client.subscribe_markets()
 
@@ -142,9 +147,12 @@ class FTXDataClient(LiveMarketDataClient):
         self._log.info("Connected.")
 
     async def _disconnect(self):
+        # Disconnect WebSocket client
         if self._ws_client.is_connected:
             await self._ws_client.disconnect()
             await self._ws_client.close()
+
+        # Disconnect HTTP client
         if self._http_client.connected:
             await self._http_client.disconnect()
 
@@ -500,6 +508,15 @@ class FTXDataClient(LiveMarketDataClient):
         for currency in self._instrument_provider.currencies().values():
             self._cache.add_currency(currency)
 
+    def _get_cached_instrument_id(self, msg: Dict[str, Any]) -> InstrumentId:
+        # Parse instrument ID
+        symbol: str = msg["market"]
+        instrument_id: Optional[InstrumentId] = self._instrument_ids.get(symbol)
+        if not instrument_id:
+            instrument_id = InstrumentId(Symbol(symbol), FTX_VENUE)
+            self._instrument_ids[symbol] = instrument_id
+        return instrument_id
+
     def _handle_ws_message(self, raw: bytes):
         msg: Dict[str, Any] = orjson.loads(raw)
         channel: str = msg.get("channel")
@@ -522,6 +539,7 @@ class FTXDataClient(LiveMarketDataClient):
     async def _handle_markets(self, msg: Dict[str, Any]) -> None:
         data: Optional[Dict[str, Any]] = msg.get("data")
         if data is None:
+            self._log.debug(str(data))  # Normally subscription status
             return
 
         try:
@@ -545,10 +563,11 @@ class FTXDataClient(LiveMarketDataClient):
     def _handle_orderbook(self, msg: Dict[str, Any]) -> None:
         data: Optional[Dict[str, Any]] = msg.get("data")
         if data is None:
+            self._log.debug(str(data))  # Normally subscription status
             return
 
-        # TODO: Cache instruments
-        instrument_id = InstrumentId(Symbol(msg["market"]), FTX_VENUE)
+        # Get instrument ID
+        instrument_id: InstrumentId = self._get_cached_instrument_id(msg)
 
         msg_type = msg["type"]
         if msg_type == "partial":
@@ -569,15 +588,15 @@ class FTXDataClient(LiveMarketDataClient):
     def _handle_ticker(self, msg: Dict[str, Any]) -> None:
         data: Optional[Dict[str, Any]] = msg.get("data")
         if data is None:
+            self._log.debug(str(data))  # Normally subscription status
             return
 
-        # TODO: Cache instruments
-        instrument_id = InstrumentId(Symbol(msg["market"]), FTX_VENUE)
-        instrument = self._instrument_provider.find(instrument_id)
-
+        # Get instrument
+        instrument_id: InstrumentId = self._get_cached_instrument_id(msg)
+        instrument: Instrument = self._instrument_provider.find(instrument_id)
         if instrument is None:
             self._log.error(
-                f"Cannot parse `FTXTicker` " f"(no instrument found for {instrument_id}).",
+                f"Cannot parse `FTXTicker`: no instrument found for {instrument_id}.",
             )
             return
 
@@ -599,15 +618,15 @@ class FTXDataClient(LiveMarketDataClient):
     def _handle_trades(self, msg: Dict[str, Any]) -> None:
         data: Optional[List[Dict[str, Any]]] = msg.get("data")
         if data is None:
+            self._log.debug(str(data))  # Normally subscription status
             return
 
-        # TODO: Cache instruments
-        instrument_id = InstrumentId(Symbol(msg["market"]), FTX_VENUE)
-        instrument = self._instrument_provider.find(instrument_id)
-
+        # Get instrument
+        instrument_id: InstrumentId = self._get_cached_instrument_id(msg)
+        instrument: Instrument = self._instrument_provider.find(instrument_id)
         if instrument is None:
             self._log.error(
-                f"Cannot parse `QuoteTick` " f"(no instrument found for {instrument_id}).",
+                f"Cannot parse `QuoteTick`: no instrument found for {instrument_id}.",
             )
             return
 

@@ -54,4 +54,14 @@ async def test_ftx_http_client():
     # for instrument in provider.get_all().values():
     #     print(instrument)
 
+    # response = await client.place_order(
+    #     market="ETH/USD",
+    #     side="buy",
+    #     size="0.01",
+    #     type="market",
+    #     client_id="001",
+    # )
+    # print(response)
+    # print(json.dumps(response, indent=4))
+
     await client.disconnect()
