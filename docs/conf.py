@@ -16,7 +16,6 @@ execution_in_temp = False
 execution_timeout = 30
 extensions = [
     "jupyter_book",
-    # "myst_nb",
     "myst_parser",
     "numpydoc",
     "sphinx.ext.autodoc",
