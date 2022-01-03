@@ -15,6 +15,7 @@
 
 import asyncio
 import hmac
+import json
 import urllib.parse
 from typing import Any, Dict, List, Optional
 
@@ -65,6 +66,10 @@ class FTXHttpClient(HttpClient):
     def api_secret(self) -> str:
         return self._secret
 
+    @staticmethod
+    def prepare_payload(payload: Dict[str, str]) -> Optional[str]:
+        return json.dumps(payload, separators=(",", ":")) if payload else None
+
     async def _sign_request(
         self,
         http_method: str,
@@ -73,25 +78,18 @@ class FTXHttpClient(HttpClient):
     ) -> Any:
         ts: int = self._clock.timestamp_ms()
 
-        # TODO: FTX client method of forming signature payload
-        # request = Request(http_method, self._base_url + url_path, json=payload)
-        # prepared = request.prepare()
-        # signature_payload: bytes = f"{ts}{prepared.method}{prepared.path_url}".encode()
-        # if prepared.body:
-        #     signature_payload += prepared.body
-
+        headers = {}
         signature_payload: str = f"{ts}{http_method}/api/{url_path}"
-        if payload:
-            signature_payload += str(payload)
+        if payload and http_method in ["POST", "DELETE"]:
+            signature_payload += self.prepare_payload(payload)
+            headers["Content-type"] = "application/json"
 
-        print(signature_payload)  # TODO!
-
-        signature: str = hmac.new(
-            self._secret.encode(),
-            signature_payload.encode(),  # <-- remove encode() if using FTX snippet  # TODO!
-            "sha256",
+        signature = hmac.new(
+            self._secret.encode(), signature_payload.encode(), "sha256"
         ).hexdigest()
+
         headers = {
+            **headers,
             "FTX-KEY": self._key,
             "FTX-SIGN": signature,
             "FTX-TS": str(ts),
@@ -119,13 +117,11 @@ class FTXHttpClient(HttpClient):
         if payload is None:
             payload = {}
         try:
-            params = self._prepare_params(payload)
-            print(params)  # TODO!
             resp: ClientResponse = await self.request(
                 method=http_method,
                 url=self._base_url + url_path,
                 headers=headers,
-                params=params,
+                data=self.prepare_payload(payload),
             )
         except ClientResponseError as ex:
             await self._handle_exception(ex)
@@ -318,9 +314,9 @@ class FTXHttpClient(HttpClient):
             "size": size,
             "type": type,
             "clientId": client_id,
-            # "ioc": ioc,
-            # "reduceOnly": reduce_only,
-            # "postOnly": post_only,
+            "ioc": ioc,
+            "reduceOnly": reduce_only,
+            "postOnly": post_only,
         }
         if price is not None:
             payload["price"] = price
