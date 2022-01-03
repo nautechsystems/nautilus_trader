@@ -65,9 +65,6 @@ class FTXHttpClient(HttpClient):
     def api_secret(self) -> str:
         return self._secret
 
-    def _prepare_params(self, params: Dict[str, str]) -> str:
-        return "&".join([k + "=" + v for k, v in params.items()])
-
     async def _sign_request(
         self,
         http_method: str,
@@ -75,12 +72,23 @@ class FTXHttpClient(HttpClient):
         payload: Dict[str, str] = None,
     ) -> Any:
         ts: int = self._clock.timestamp_ms()
+
+        # TODO: FTX client method of forming signature payload
+        # request = Request(http_method, self._base_url + url_path, json=payload)
+        # prepared = request.prepare()
+        # signature_payload: bytes = f"{ts}{prepared.method}{prepared.path_url}".encode()
+        # if prepared.body:
+        #     signature_payload += prepared.body
+
         signature_payload: str = f"{ts}{http_method}/api/{url_path}"
         if payload:
-            signature_payload += "?" + self._prepare_params(payload)
+            signature_payload += str(payload)
+
+        print(signature_payload)  # TODO!
+
         signature: str = hmac.new(
             self._secret.encode(),
-            signature_payload.encode(),
+            signature_payload.encode(),  # <-- remove encode() if using FTX snippet  # TODO!
             "sha256",
         ).hexdigest()
         headers = {
@@ -111,11 +119,13 @@ class FTXHttpClient(HttpClient):
         if payload is None:
             payload = {}
         try:
+            params = self._prepare_params(payload)
+            print(params)  # TODO!
             resp: ClientResponse = await self.request(
                 method=http_method,
                 url=self._base_url + url_path,
                 headers=headers,
-                params=self._prepare_params(payload),
+                params=params,
             )
         except ClientResponseError as ex:
             await self._handle_exception(ex)
@@ -308,9 +318,9 @@ class FTXHttpClient(HttpClient):
             "size": size,
             "type": type,
             "clientId": client_id,
-            "ioc": str(ioc).lower(),
-            "reduceOnly": str(reduce_only).lower(),
-            "postOnly": str(post_only).lower(),
+            # "ioc": ioc,
+            # "reduceOnly": reduce_only,
+            # "postOnly": post_only,
         }
         if price is not None:
             payload["price"] = price
