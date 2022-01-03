@@ -31,7 +31,7 @@ including FX, Equities, Futures, Options, CFDs, Crypto and Betting - across mult
 - **AI Agent Training:** Backtest engine fast enough to be used to train AI trading agents (RL/ES).
 - **Distributed:** Run backtests synchronously or as a graph distributed across a `dask` cluster.
 
-![Alt text](https://github.com/nautechsystems/nautilus_trader/blob/develop/docs/artwork/nautilus-art.png?raw=true "nautilus")
+![Nautilus](https://github.com/nautechsystems/nautilus_trader/blob/develop/docs/artwork/nautilus-art.png?raw=true "nautilus")
 > *nautilus - from ancient Greek 'sailor' and naus 'ship'.*
 >
 > *The nautilus shell consists of modular chambers with a growth factor which approximates a logarithmic spiral.
@@ -79,3 +79,5 @@ written in Cython, however the libraries can be accessed from both pure Python a
 - Modularity
 - Maintainability
 - Deployability
+
+![Architecture](https://github.com/nautechsystems/nautilus_trader/blob/develop/docs/artwork/architecture-overview.png?raw=true "architecture")
