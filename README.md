@@ -138,10 +138,10 @@ The below are some examples of this:
 
 ## Minimal Strategy
 
-The following is a minimal EMA Cross strategy example. While trading strategies
-can become very advanced with this platform, it's still possible to put together
-simple strategies. First inherit from the `TradingStrategy` base class, then only
-the methods which are required by the strategy need to be implemented.
+The following is a minimal EMA Cross strategy example which just uses bar data.
+While trading strategies can become very advanced with this platform, it's still possible to put
+together simple strategies. First inherit from the `TradingStrategy` base class, then only the
+methods which are required by the strategy need to be implemented.
 
 ```python
 class EMACross(TradingStrategy):
@@ -175,11 +175,8 @@ class EMACross(TradingStrategy):
 
     def on_start(self):
         """Actions to be performed on strategy start."""
+        # Get instrument
         self.instrument = self.cache.instrument(self.instrument_id)
-        if self.instrument is None:
-            self.log.error(f"Could not find instrument for {self.instrument_id}")
-            self.stop()
-            return
 
         # Register the indicators for updating
         self.register_indicator_for_bars(self.bar_type, self.fast_ema)
@@ -201,16 +198,6 @@ class EMACross(TradingStrategy):
             The bar received.
 
         """
-        self.log.info(f"Received {repr(bar)}")
-
-        # Check if indicators ready
-        if not self.indicators_initialized():
-            self.log.info(
-                f"Waiting for indicators to warm up " f"[{self.cache.bar_count(self.bar_type)}]...",
-                color=LogColor.BLUE,
-            )
-            return  # Wait for indicators to warm up...
-
         # BUY LOGIC
         if self.fast_ema.value >= self.slow_ema.value:
             if self.portfolio.is_flat(self.instrument_id):
@@ -255,6 +242,7 @@ class EMACross(TradingStrategy):
         """
         Actions to be performed when the strategy is stopped.
         """
+        # Cleanup orders and positions
         self.cancel_all_orders(self.instrument_id)
         self.flatten_all_positions(self.instrument_id)
 
