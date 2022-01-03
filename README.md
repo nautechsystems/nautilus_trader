@@ -152,11 +152,6 @@ class EMACross(TradingStrategy):
     in that direction.
 
     Cancels all orders and flattens all positions on stop.
-
-    Parameters
-    ----------
-    config : EMACrossConfig
-        The configuration for the instance.
     """
 
     def __init__(self, config: EMACrossConfig):
@@ -189,15 +184,7 @@ class EMACross(TradingStrategy):
         self.subscribe_bars(self.bar_type)
 
     def on_bar(self, bar: Bar):
-        """
-        Actions to be performed when the strategy is running and receives a bar.
-
-        Parameters
-        ----------
-        bar : Bar
-            The bar received.
-
-        """
+        """Actions to be performed when the strategy receives a bar."""
         # BUY LOGIC
         if self.fast_ema.value >= self.slow_ema.value:
             if self.portfolio.is_flat(self.instrument_id):
@@ -215,9 +202,7 @@ class EMACross(TradingStrategy):
                 self.sell()
 
     def buy(self):
-        """
-        Users simple buy method (example).
-        """
+        """Users simple buy method (example)."""
         order: MarketOrder = self.order_factory.market(
             instrument_id=self.instrument_id,
             order_side=OrderSide.BUY,
@@ -227,9 +212,7 @@ class EMACross(TradingStrategy):
         self.submit_order(order)
 
     def sell(self):
-        """
-        Users simple sell method (example).
-        """
+        """Users simple sell method (example)."""
         order: MarketOrder = self.order_factory.market(
             instrument_id=self.instrument_id,
             order_side=OrderSide.SELL,
@@ -239,9 +222,7 @@ class EMACross(TradingStrategy):
         self.submit_order(order)
 
     def on_stop(self):
-        """
-        Actions to be performed when the strategy is stopped.
-        """
+        """Actions to be performed when the strategy is stopped."""
         # Cleanup orders and positions
         self.cancel_all_orders(self.instrument_id)
         self.flatten_all_positions(self.instrument_id)
@@ -250,9 +231,7 @@ class EMACross(TradingStrategy):
         self.unsubscribe_bars(self.bar_type)
 
     def on_reset(self):
-        """
-        Actions to be performed when the strategy is reset.
-        """
+        """Actions to be performed when the strategy is reset."""
         # Reset indicators here
         self.fast_ema.reset()
         self.slow_ema.reset()
