@@ -416,7 +416,7 @@ cdef class SimulatedExchange:
 
         self.exec_client = client
 
-        self._log.info(f"Registered ExecutionClient {client}.")
+        self._log.info(f"Registered ExecutionClient-{client}.")
 
     cpdef void set_fill_model(self, FillModel fill_model) except *:
         """
