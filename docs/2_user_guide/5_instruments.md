@@ -17,14 +17,4 @@ jupyter:
 
 This notebook runs through some examples of setting up instruments for use in Nautilus Trader
 
-```python
-
-```
-
-```python
-
-```
-
-```python
-
-```
+!! Coming soon
