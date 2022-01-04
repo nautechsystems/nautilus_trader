@@ -277,7 +277,7 @@ class CSVReader(Reader):
             if self.chunked:
                 chunks = (process,)
             else:
-                chunks = tuple([dict(zip(self.header, line)) for line in process.split(b"\n")])  # type: ignore
+                chunks = tuple([dict(zip(self.header, line.split(b","))) for line in process.split(b"\n")])  # type: ignore
 
         for chunk in chunks:
             if self.instrument_provider_update is not None:
