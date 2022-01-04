@@ -29,7 +29,6 @@ from nautilus_trader.model.c_enums.book_type cimport BookType
 from nautilus_trader.model.c_enums.liquidity_side cimport LiquiditySide
 from nautilus_trader.model.c_enums.oms_type cimport OMSType
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
-from nautilus_trader.model.c_enums.venue_type cimport VenueType
 from nautilus_trader.model.commands.trading cimport TradingCommand
 from nautilus_trader.model.currency cimport Currency
 from nautilus_trader.model.data.bar cimport Bar
@@ -63,8 +62,6 @@ cdef class SimulatedExchange:
 
     cdef readonly Venue id
     """The exchange ID.\n\n:returns: `Venue`"""
-    cdef readonly VenueType venue_type
-    """The venues type.\n\n:returns: `VenueType`"""
     cdef readonly OMSType oms_type
     """The exchange order management system type.\n\n:returns: `OMSType`"""
     cdef readonly BookType book_type

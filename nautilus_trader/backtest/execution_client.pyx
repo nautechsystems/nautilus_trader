@@ -50,6 +50,8 @@ cdef class BacktestExecClient(ExecutionClient):
         The clock for the client.
     logger : Logger
         The logger for the client.
+    routing : bool
+        If multi-venue routing is enabled for the client.
     is_frozen_account : bool
         If the backtest run account is frozen.
     """
@@ -62,11 +64,11 @@ cdef class BacktestExecClient(ExecutionClient):
         Cache cache not None,
         TestClock clock not None,
         Logger logger not None,
+        bint routing=False,
         bint is_frozen_account=False,
     ):
         super().__init__(
             client_id=ClientId(exchange.id.value),
-            venue_type=exchange.venue_type,
             account_id=account_id,
             account_type=exchange.account_type,
             base_currency=exchange.base_currency,
@@ -74,6 +76,7 @@ cdef class BacktestExecClient(ExecutionClient):
             cache=cache,
             clock=clock,
             logger=logger,
+            config={"routing": True} if routing else None,
         )
 
         if not is_frozen_account:

@@ -406,8 +406,6 @@ class MockExecutionClient(ExecutionClient):
     ----------
     client_id : ClientId
         The client ID.
-    venue_type : VenueType
-        The client venue type.
     account_id : AccountId
         The account_id for the client.
     account_type : AccountType
@@ -427,7 +425,6 @@ class MockExecutionClient(ExecutionClient):
     def __init__(
         self,
         client_id,
-        venue_type,
         account_id,
         account_type,
         base_currency,
@@ -435,10 +432,10 @@ class MockExecutionClient(ExecutionClient):
         cache,
         clock,
         logger,
+        config=None,
     ):
         super().__init__(
             client_id=client_id,
-            venue_type=venue_type,
             account_id=account_id,
             account_type=account_type,
             base_currency=base_currency,
@@ -446,6 +443,7 @@ class MockExecutionClient(ExecutionClient):
             cache=cache,
             clock=clock,
             logger=logger,
+            config=config,
         )
 
         self.calls = []
@@ -498,8 +496,6 @@ class MockLiveExecutionClient(LiveExecutionClient):
     ----------
     client_id : ClientId
         The client ID.
-    venue_type : VenueType
-        The client venue type.
     account_id : AccountId
         The account_id for the client.
     account_type : AccountType
@@ -522,7 +518,6 @@ class MockLiveExecutionClient(LiveExecutionClient):
         self,
         loop,
         client_id,
-        venue_type,
         account_id,
         account_type,
         base_currency,
@@ -535,7 +530,6 @@ class MockLiveExecutionClient(LiveExecutionClient):
         super().__init__(
             loop=loop,
             client_id=client_id,
-            venue_type=venue_type,
             account_id=account_id,
             account_type=account_type,
             base_currency=base_currency,

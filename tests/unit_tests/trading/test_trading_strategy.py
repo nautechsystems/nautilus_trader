@@ -41,7 +41,6 @@ from nautilus_trader.model.enums import OMSType
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import OrderStatus
 from nautilus_trader.model.enums import PriceType
-from nautilus_trader.model.enums import VenueType
 from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import PositionId
 from nautilus_trader.model.identifiers import StrategyId
@@ -116,7 +115,6 @@ class TestTradingStrategy:
 
         self.exchange = SimulatedExchange(
             venue=Venue("SIM"),
-            venue_type=VenueType.ECN,
             oms_type=OMSType.HEDGING,
             account_type=AccountType.MARGIN,
             base_currency=USD,

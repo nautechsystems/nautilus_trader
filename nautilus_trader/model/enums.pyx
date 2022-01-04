@@ -65,5 +65,3 @@ from nautilus_trader.model.c_enums.trading_state import TradingState            
 from nautilus_trader.model.c_enums.trading_state import TradingStateParser                 # noqa F401 (being used)
 from nautilus_trader.model.c_enums.venue_status import VenueStatus                         # noqa F401 (being used)
 from nautilus_trader.model.c_enums.venue_status import VenueStatusParser                   # noqa F401 (being used)
-from nautilus_trader.model.c_enums.venue_type import VenueType                             # noqa F401 (being used)
-from nautilus_trader.model.c_enums.venue_type import VenueTypeParser                       # noqa F401 (being used)

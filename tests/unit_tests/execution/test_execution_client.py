@@ -22,7 +22,6 @@ from nautilus_trader.execution.client import ExecutionClient
 from nautilus_trader.execution.engine import ExecutionEngine
 from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.enums import AccountType
-from nautilus_trader.model.enums import VenueType
 from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import StrategyId
@@ -73,7 +72,6 @@ class TestExecutionClient:
 
         self.client = ExecutionClient(
             client_id=ClientId(self.venue.value),
-            venue_type=VenueType.ECN,
             account_id=TestStubs.account_id(),
             account_type=AccountType.MARGIN,
             base_currency=USD,
@@ -96,7 +94,6 @@ class TestExecutionClient:
         # Arrange
         client = ExecutionClient(
             client_id=ClientId("IB"),
-            venue_type=VenueType.BROKERAGE_MULTI_VENUE,
             account_id=AccountId("IB", "U1258001"),
             account_type=AccountType.MARGIN,
             base_currency=USD,
@@ -104,6 +101,7 @@ class TestExecutionClient:
             cache=self.cache,
             clock=self.clock,
             logger=self.logger,
+            config={"routing": True},
         )
 
         # Act, Assert

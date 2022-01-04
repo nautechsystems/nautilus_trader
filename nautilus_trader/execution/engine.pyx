@@ -50,8 +50,6 @@ from nautilus_trader.execution.client cimport ExecutionClient
 from nautilus_trader.model.c_enums.oms_type cimport OMSType
 from nautilus_trader.model.c_enums.oms_type cimport OMSTypeParser
 from nautilus_trader.model.c_enums.position_side cimport PositionSide
-from nautilus_trader.model.c_enums.venue_type cimport VenueType
-from nautilus_trader.model.c_enums.venue_type cimport VenueTypeParser
 from nautilus_trader.model.commands.trading cimport CancelAllOrders
 from nautilus_trader.model.commands.trading cimport CancelOrder
 from nautilus_trader.model.commands.trading cimport ModifyOrder
@@ -245,8 +243,8 @@ cdef class ExecutionEngine(Component):
         """
         Register the given execution client with the execution engine.
 
-        If the client.venue_type == ``BROKERAGE_MULTI_VENUE`` and a default client
-        has not been previously registered then will be registered as such.
+        If the `client.venue` is ``None`` and a default routing client has not
+        been previously registered then will be registered as such.
 
         Parameters
         ----------
@@ -264,24 +262,22 @@ cdef class ExecutionEngine(Component):
 
         self._clients[client.id] = client
 
-        if client.venue_type == VenueType.BROKERAGE_MULTI_VENUE:
+        routing_log = ""
+        if client.venue is None:
             if self._default_client is None:
                 self._default_client = client
-                self._log.info(
-                    f"Registered ExecutionClient {client} BROKERAGE_MULTI_VENUE."
-                )
+                routing_log = " for default routing"
         else:
             self._routing_map[client.venue] = client
-            self._log.info(
-                f"Registered ExecutionClient {client} {VenueTypeParser.to_str(client.venue_type)}."
-            )
+
+        self._log.info(f"Registered {client}{routing_log}.")
 
     cpdef void register_default_client(self, ExecutionClient client) except *:
         """
-        Register the given client as the default client (when a specific venue
-        routing cannot be found).
+        Register the given client as the default routing client (when a specific
+        venue routing cannot be found).
 
-        Any existing default client will be overwritten.
+        Any existing default routing client will be overwritten.
 
         Parameters
         ----------
@@ -293,10 +289,7 @@ cdef class ExecutionEngine(Component):
 
         self._default_client = client
 
-        self._log.info(
-            f"Registered default ExecutionClient {client} "
-            f"{VenueTypeParser.to_str(client.venue_type)}.",
-        )
+        self._log.info(f"Registered {client} for default routing.")
 
     cpdef void register_venue_routing(self, ExecutionClient client, Venue venue) except *:
         """
@@ -321,10 +314,7 @@ cdef class ExecutionEngine(Component):
 
         self._routing_map[venue] = client
 
-        self._log.info(
-            f"Registered ExecutionClient {client} {VenueTypeParser.to_str(client.venue_type)} "
-            f"for routing to {venue}."
-        )
+        self._log.info(f"Registered {client} for routing to {venue}.")
 
     cpdef void register_oms_type(self, TradingStrategy strategy) except *:
         """
@@ -365,13 +355,13 @@ cdef class ExecutionEngine(Component):
 
         del self._clients[client.id]
 
-        if client.venue_type == VenueType.BROKERAGE_MULTI_VENUE:
+        if client.venue is None:
             if self._default_client == client:
                 self._default_client = None
         else:
             del self._routing_map[client.venue]
 
-        self._log.info(f"Deregistered ExecutionClient {client}.")
+        self._log.info(f"Deregistered {client}.")
 
 # -- ABSTRACT METHODS ------------------------------------------------------------------------------
 

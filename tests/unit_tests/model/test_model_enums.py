@@ -63,8 +63,6 @@ from nautilus_trader.model.enums import TradingState
 from nautilus_trader.model.enums import TradingStateParser
 from nautilus_trader.model.enums import VenueStatus
 from nautilus_trader.model.enums import VenueStatusParser
-from nautilus_trader.model.enums import VenueType
-from nautilus_trader.model.enums import VenueTypeParser
 
 
 class TestAccountType:
@@ -1093,48 +1091,6 @@ class TestVenueStatus:
     def test_venue_status_from_str(self, string, expected):
         # Arrange, Act
         result = VenueStatusParser.from_str_py(string)
-
-        # Assert
-        assert expected == result
-
-
-class TestVenueType:
-    def test_venue_type_parser_given_invalid_value_raises_value_error(self):
-        # Arrange, Act, Assert
-        with pytest.raises(ValueError):
-            VenueTypeParser.to_str_py(0)
-
-        with pytest.raises(ValueError):
-            VenueTypeParser.from_str_py("")
-
-    @pytest.mark.parametrize(
-        "enum, expected",
-        [
-            [VenueType.EXCHANGE, "EXCHANGE"],
-            [VenueType.ECN, "ECN"],
-            [VenueType.BROKERAGE, "BROKERAGE"],
-            [VenueType.BROKERAGE_MULTI_VENUE, "BROKERAGE_MULTI_VENUE"],
-        ],
-    )
-    def test_venue_type_to_str(self, enum, expected):
-        # Arrange, Act
-        result = VenueTypeParser.to_str_py(enum)
-
-        # Assert
-        assert expected == result
-
-    @pytest.mark.parametrize(
-        "string, expected",
-        [
-            ["EXCHANGE", VenueType.EXCHANGE],
-            ["ECN", VenueType.ECN],
-            ["BROKERAGE", VenueType.BROKERAGE],
-            ["BROKERAGE_MULTI_VENUE", VenueType.BROKERAGE_MULTI_VENUE],
-        ],
-    )
-    def test_venue_type_from_str(self, string, expected):
-        # Arrange, Act
-        result = VenueTypeParser.from_str_py(string)
 
         # Assert
         assert expected == result
