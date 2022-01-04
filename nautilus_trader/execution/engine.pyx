@@ -270,7 +270,7 @@ cdef class ExecutionEngine(Component):
         else:
             self._routing_map[client.venue] = client
 
-        self._log.info(f"Registered {client}{routing_log}.")
+        self._log.info(f"Registered ExecutionClient-{client}{routing_log}.")
 
     cpdef void register_default_client(self, ExecutionClient client) except *:
         """
@@ -289,7 +289,7 @@ cdef class ExecutionEngine(Component):
 
         self._default_client = client
 
-        self._log.info(f"Registered {client} for default routing.")
+        self._log.info(f"Registered ExecutionClient-{client} for default routing.")
 
     cpdef void register_venue_routing(self, ExecutionClient client, Venue venue) except *:
         """
@@ -314,7 +314,7 @@ cdef class ExecutionEngine(Component):
 
         self._routing_map[venue] = client
 
-        self._log.info(f"Registered {client} for routing to {venue}.")
+        self._log.info(f"Registered ExecutionClient-{client} for routing to {venue}.")
 
     cpdef void register_oms_type(self, TradingStrategy strategy) except *:
         """
