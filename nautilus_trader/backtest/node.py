@@ -42,7 +42,6 @@ from nautilus_trader.model.data.tick import TradeTick
 from nautilus_trader.model.data.venue import InstrumentStatusUpdate
 from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import OMSType
-from nautilus_trader.model.enums import VenueType
 from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.instruments.base import Instrument
@@ -246,12 +245,12 @@ class BacktestNode:
         for config in venue_configs:
             engine.add_venue(
                 venue=Venue(config.name),
-                venue_type=VenueType[config.venue_type],
                 oms_type=OMSType[config.oms_type],
                 account_type=AccountType[config.account_type],
                 base_currency=Currency.from_str(config.base_currency),
                 starting_balances=[Money.from_str(m) for m in config.starting_balances],
                 book_type=BookTypeParser.from_str_py(config.book_type),
+                routing=config.routing,
             )
         return engine
 

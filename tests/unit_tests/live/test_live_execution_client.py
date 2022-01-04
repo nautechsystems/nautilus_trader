@@ -32,7 +32,6 @@ from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import OrderStatus
-from nautilus_trader.model.enums import VenueType
 from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import ClientOrderId
 from nautilus_trader.model.identifiers import StrategyId
@@ -113,7 +112,6 @@ class TestLiveExecutionClient:
         self.client = MockLiveExecutionClient(
             loop=self.loop,
             client_id=ClientId(SIM.value),
-            venue_type=VenueType.ECN,
             account_id=TestStubs.account_id(),
             account_type=AccountType.CASH,
             base_currency=USD,

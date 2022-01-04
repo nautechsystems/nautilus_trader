@@ -22,7 +22,6 @@ from nautilus_trader.model.c_enums.account_type cimport AccountType
 from nautilus_trader.model.c_enums.liquidity_side cimport LiquiditySide
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
 from nautilus_trader.model.c_enums.order_type cimport OrderType
-from nautilus_trader.model.c_enums.venue_type cimport VenueType
 from nautilus_trader.model.commands.trading cimport CancelAllOrders
 from nautilus_trader.model.commands.trading cimport CancelOrder
 from nautilus_trader.model.commands.trading cimport ModifyOrder
@@ -64,8 +63,6 @@ cdef class ExecutionClient(Component):
     ----------
     client_id : ClientId
         The client ID.
-    venue_type : VenueType
-        The venue type for the client (determines venue -> client_id mapping).
     account_id : AccountId
         The account ID for the client.
     account_type : AccountType
@@ -96,7 +93,6 @@ cdef class ExecutionClient(Component):
     def __init__(
         self,
         ClientId client_id not None,
-        VenueType venue_type,
         AccountId account_id not None,
         AccountType account_type,
         Currency base_currency,  # Can be None
@@ -123,8 +119,7 @@ cdef class ExecutionClient(Component):
         self._account = None  # Initialized on connection
 
         self.trader_id = msgbus.trader_id
-        self.venue = Venue(client_id.value) if venue_type != VenueType.BROKERAGE_MULTI_VENUE else None
-        self.venue_type = venue_type
+        self.venue = Venue(client_id.value) if not config.get("routing") else None
         self.account_id = account_id
         self.account_type = account_type
         self.base_currency = base_currency

@@ -27,7 +27,6 @@ class TestBacktestNode:
         self.catalog = DataCatalog.from_env()
         self.venue_config = BacktestVenueConfig(
             name="SIM",
-            venue_type="ECN",
             oms_type="HEDGING",
             account_type="MARGIN",
             base_currency="USD",

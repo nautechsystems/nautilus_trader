@@ -43,8 +43,6 @@ from nautilus_trader.model.c_enums.oms_type cimport OMSTypeParser
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
 from nautilus_trader.model.c_enums.order_status cimport OrderStatus
 from nautilus_trader.model.c_enums.order_type cimport OrderType
-from nautilus_trader.model.c_enums.venue_type cimport VenueType
-from nautilus_trader.model.c_enums.venue_type cimport VenueTypeParser
 from nautilus_trader.model.commands.trading cimport CancelAllOrders
 from nautilus_trader.model.commands.trading cimport CancelOrder
 from nautilus_trader.model.commands.trading cimport ModifyOrder
@@ -82,8 +80,6 @@ cdef class SimulatedExchange:
     ----------
     venue : Venue
         The venue to simulate.
-    venue_type : VenueType
-        The venues type.
     oms_type : OMSType {``HEDGING``, ``NETTING``}
         The order management system type used by the exchange.
     account_type : AccountType
@@ -134,7 +130,6 @@ cdef class SimulatedExchange:
     def __init__(
         self,
         Venue venue not None,
-        VenueType venue_type,
         OMSType oms_type,
         AccountType account_type,
         Currency base_currency,  # Can be None
@@ -169,7 +164,6 @@ cdef class SimulatedExchange:
         )
 
         self.id = venue
-        self.venue_type = venue_type
         self.oms_type = oms_type
         self._log.info(f"OMSType={OMSTypeParser.to_str(oms_type)}")
         self.book_type = book_type
@@ -231,7 +225,6 @@ cdef class SimulatedExchange:
         return (
             f"{type(self).__name__}("
             f"id={self.id}, "
-            f"venue_type={VenueTypeParser.to_str(self.venue_type)}, "
             f"oms_type={OMSTypeParser.to_str(self.oms_type)}, "
             f"account_type={AccountTypeParser.to_str(self.account_type)})"
         )

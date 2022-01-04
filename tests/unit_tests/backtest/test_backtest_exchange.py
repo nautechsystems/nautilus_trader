@@ -42,7 +42,6 @@ from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import OrderStatus
 from nautilus_trader.model.enums import PositionSide
 from nautilus_trader.model.enums import TimeInForce
-from nautilus_trader.model.enums import VenueType
 from nautilus_trader.model.events.order import OrderAccepted
 from nautilus_trader.model.events.order import OrderRejected
 from nautilus_trader.model.identifiers import AccountId
@@ -115,7 +114,6 @@ class TestSimulatedExchange:
 
         self.exchange = SimulatedExchange(
             venue=Venue("SIM"),
-            venue_type=VenueType.ECN,
             oms_type=OMSType.HEDGING,
             account_type=AccountType.MARGIN,
             base_currency=USD,
@@ -168,7 +166,7 @@ class TestSimulatedExchange:
         # Arrange, Act, Assert
         assert (
             repr(self.exchange)
-            == "SimulatedExchange(id=SIM, venue_type=ECN, oms_type=HEDGING, account_type=MARGIN)"
+            == "SimulatedExchange(id=SIM, oms_type=HEDGING, account_type=MARGIN)"
         )
 
     def test_process_quote_tick_updates_market(self):
@@ -1606,7 +1604,6 @@ class TestSimulatedExchange:
         # Arrange
         exchange = SimulatedExchange(
             venue=Venue("SIM"),
-            venue_type=VenueType.ECN,
             oms_type=OMSType.HEDGING,
             account_type=AccountType.MARGIN,
             base_currency=USD,
@@ -1891,7 +1888,6 @@ class TestBitmexExchange:
 
         self.exchange = SimulatedExchange(
             venue=Venue("BITMEX"),
-            venue_type=VenueType.EXCHANGE,
             oms_type=OMSType.NETTING,
             account_type=AccountType.MARGIN,
             base_currency=BTC,

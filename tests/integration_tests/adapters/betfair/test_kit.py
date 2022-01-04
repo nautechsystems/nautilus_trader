@@ -490,7 +490,6 @@ class BetfairTestStubs:
     def betfair_venue_config() -> BacktestVenueConfig:
         return BacktestVenueConfig(  # type: ignore
             name="BETFAIR",
-            venue_type="EXCHANGE",
             oms_type="NETTING",
             account_type="BETTING",
             base_currency="GBP",

@@ -4,6 +4,7 @@ Released TBD
 
 ## Breaking Changes
 - Renamed `local_symbol` to `native_symbol`.
+- Removed the `VenueType` enum and `venue_type` param in favour of a `routing` bool flag.
 
 ## Enhancements
 None
