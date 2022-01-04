@@ -33,7 +33,6 @@ from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import OMSType
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import OrderStatus
-from nautilus_trader.model.enums import VenueType
 from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.objects import Money
@@ -101,7 +100,6 @@ class TestSimulatedExchangeContingencyAdvancedOrders:
 
         self.exchange = SimulatedExchange(
             venue=FTX,
-            venue_type=VenueType.EXCHANGE,
             oms_type=OMSType.NETTING,
             account_type=AccountType.MARGIN,
             base_currency=None,  # Multi-asset wallet

@@ -15,6 +15,7 @@
 
 import asyncio
 import hmac
+import json
 import urllib.parse
 from typing import Any, Dict, List, Optional
 
@@ -65,8 +66,9 @@ class FTXHttpClient(HttpClient):
     def api_secret(self) -> str:
         return self._secret
 
-    def _prepare_params(self, params: Dict[str, str]) -> str:
-        return "&".join([k + "=" + v for k, v in params.items()])
+    @staticmethod
+    def prepare_payload(payload: Dict[str, str]) -> Optional[str]:
+        return json.dumps(payload, separators=(",", ":")) if payload else None
 
     async def _sign_request(
         self,
@@ -75,15 +77,19 @@ class FTXHttpClient(HttpClient):
         payload: Dict[str, str] = None,
     ) -> Any:
         ts: int = self._clock.timestamp_ms()
+
+        headers = {}
         signature_payload: str = f"{ts}{http_method}/api/{url_path}"
-        if payload:
-            signature_payload += "?" + self._prepare_params(payload)
-        signature: str = hmac.new(
-            self._secret.encode(),
-            signature_payload.encode(),
-            "sha256",
+        if payload and http_method in ["POST", "DELETE"]:
+            signature_payload += self.prepare_payload(payload)
+            headers["Content-type"] = "application/json"
+
+        signature = hmac.new(
+            self._secret.encode(), signature_payload.encode(), "sha256"
         ).hexdigest()
+
         headers = {
+            **headers,
             "FTX-KEY": self._key,
             "FTX-SIGN": signature,
             "FTX-TS": str(ts),
@@ -115,7 +121,7 @@ class FTXHttpClient(HttpClient):
                 method=http_method,
                 url=self._base_url + url_path,
                 headers=headers,
-                params=self._prepare_params(payload),
+                data=self.prepare_payload(payload),
             )
         except ClientResponseError as ex:
             await self._handle_exception(ex)
@@ -308,9 +314,9 @@ class FTXHttpClient(HttpClient):
             "size": size,
             "type": type,
             "clientId": client_id,
-            "ioc": str(ioc).lower(),
-            "reduceOnly": str(reduce_only).lower(),
-            "postOnly": str(post_only).lower(),
+            "ioc": ioc,
+            "reduceOnly": reduce_only,
+            "postOnly": post_only,
         }
         if price is not None:
             payload["price"] = price

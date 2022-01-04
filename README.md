@@ -52,6 +52,7 @@ including FX, Equities, Futures, Options, CFDs, Crypto and Betting - across mult
 - **Integrated:** Modular adapters mean any REST, WebSocket, or FIX API can be integrated.
 - **Advanced:** Time-in-force options `GTD`, `IOC`, `FOK` etc, advanced order types and triggers, `post-only`, `reduce-only`, and icebergs. Contingency order lists including `OCO`, `OTO` etc.
 - **Backtesting:** Run with multiple venues, instruments and strategies simultaneously using historical quote tick, trade tick, bar, order book and custom data with nanosecond resolution.
+- **Live:** Use identical strategy implementations between backtesting and live deployments.
 - **Multi-venue:** Multiple venue capabilities facilitate market making and statistical arbitrage strategies.
 - **AI Agent Training:** Backtest engine fast enough to be used to train AI trading agents (RL/ES).
 - **Distributed:** Run backtests synchronously or as a graph distributed across a `dask` cluster.
@@ -105,7 +106,7 @@ written in Cython, however the libraries can be accessed from both pure Python a
 - Maintainability
 - Deployability
 
-*New architectural diagrams pending*.
+![Architecture](https://github.com/nautechsystems/nautilus_trader/blob/develop/docs/artwork/architecture-overview.png?raw=true "architecture")
 
 ## Integrations
 
@@ -135,6 +136,108 @@ The below are some examples of this:
 - [indicator](/nautilus_trader/indicators/) examples written in Cython.
 - [strategy](/nautilus_trader/examples/strategies/) examples written in both Python and Cython.
 - [backtest](/examples/backtest/) examples using a `BacktestEngine` directly.
+
+## Minimal Strategy
+
+The following is a minimal EMA Cross strategy example which just uses bar data.
+While trading strategies can become very advanced with this platform, it's still possible to put
+together simple strategies. First inherit from the `TradingStrategy` base class, then only the
+methods which are required by the strategy need to be implemented.
+
+```python
+class EMACross(TradingStrategy):
+    """
+    A simple moving average cross example strategy.
+
+    When the fast EMA crosses the slow EMA then enter a position at the market
+    in that direction.
+
+    Cancels all orders and flattens all positions on stop.
+    """
+
+    def __init__(self, config: EMACrossConfig):
+        super().__init__(config)
+
+        # Configuration
+        self.instrument_id = InstrumentId.from_str(config.instrument_id)
+        self.bar_type = BarType.from_str(config.bar_type)
+        self.trade_size = Decimal(config.trade_size)
+
+        # Create the indicators for the strategy
+        self.fast_ema = ExponentialMovingAverage(config.fast_ema_period)
+        self.slow_ema = ExponentialMovingAverage(config.slow_ema_period)
+
+        self.instrument: Optional[Instrument] = None  # Initialized in on_start
+
+    def on_start(self):
+        """Actions to be performed on strategy start."""
+        # Get instrument
+        self.instrument = self.cache.instrument(self.instrument_id)
+
+        # Register the indicators for updating
+        self.register_indicator_for_bars(self.bar_type, self.fast_ema)
+        self.register_indicator_for_bars(self.bar_type, self.slow_ema)
+
+        # Get historical data
+        self.request_bars(self.bar_type)
+
+        # Subscribe to live data
+        self.subscribe_bars(self.bar_type)
+
+    def on_bar(self, bar: Bar):
+        """Actions to be performed when the strategy receives a bar."""
+        # BUY LOGIC
+        if self.fast_ema.value >= self.slow_ema.value:
+            if self.portfolio.is_flat(self.instrument_id):
+                self.buy()
+            elif self.portfolio.is_net_short(self.instrument_id):
+                self.flatten_all_positions(self.instrument_id)
+                self.buy()
+
+        # SELL LOGIC
+        elif self.fast_ema.value < self.slow_ema.value:
+            if self.portfolio.is_flat(self.instrument_id):
+                self.sell()
+            elif self.portfolio.is_net_long(self.instrument_id):
+                self.flatten_all_positions(self.instrument_id)
+                self.sell()
+
+    def buy(self):
+        """Users simple buy method (example)."""
+        order: MarketOrder = self.order_factory.market(
+            instrument_id=self.instrument_id,
+            order_side=OrderSide.BUY,
+            quantity=self.instrument.make_qty(self.trade_size),
+        )
+
+        self.submit_order(order)
+
+    def sell(self):
+        """Users simple sell method (example)."""
+        order: MarketOrder = self.order_factory.market(
+            instrument_id=self.instrument_id,
+            order_side=OrderSide.SELL,
+            quantity=self.instrument.make_qty(self.trade_size),
+        )
+
+        self.submit_order(order)
+
+    def on_stop(self):
+        """Actions to be performed when the strategy is stopped."""
+        # Cleanup orders and positions
+        self.cancel_all_orders(self.instrument_id)
+        self.flatten_all_positions(self.instrument_id)
+
+        # Unsubscribe from data
+        self.unsubscribe_bars(self.bar_type)
+
+    def on_reset(self):
+        """Actions to be performed when the strategy is reset."""
+        # Reset indicators here
+        self.fast_ema.reset()
+        self.slow_ema.reset()
+
+```
 
 ## Release schedule
 

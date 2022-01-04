@@ -37,7 +37,6 @@ from nautilus_trader.execution.messages import OrderStatusReport
 from nautilus_trader.live.execution_client import LiveExecutionClient
 from nautilus_trader.model.c_enums.account_type import AccountType
 from nautilus_trader.model.c_enums.order_side import OrderSideParser
-from nautilus_trader.model.c_enums.venue_type import VenueType
 from nautilus_trader.model.commands.trading import CancelAllOrders
 from nautilus_trader.model.commands.trading import CancelOrder
 from nautilus_trader.model.commands.trading import ModifyOrder
@@ -107,7 +106,6 @@ class FTXExecutionClient(LiveExecutionClient):
             loop=loop,
             client_id=ClientId(FTX_VENUE.value),
             instrument_provider=instrument_provider,
-            venue_type=VenueType.EXCHANGE,
             account_id=account_id,
             account_type=AccountType.MARGIN,
             base_currency=USD,

@@ -32,7 +32,6 @@ from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import OrderStatus
-from nautilus_trader.model.enums import VenueType
 from nautilus_trader.model.events.order import OrderCanceled
 from nautilus_trader.model.events.order import OrderUpdated
 from nautilus_trader.model.identifiers import AccountId
@@ -136,7 +135,6 @@ class TestExecutionEngine:
         self.venue = Venue("SIM")
         self.exec_client = MockExecutionClient(
             client_id=ClientId(self.venue.value),
-            venue_type=VenueType.ECN,
             account_id=self.account_id,
             account_type=AccountType.MARGIN,
             base_currency=USD,
@@ -156,11 +154,10 @@ class TestExecutionEngine:
         assert result == [ClientId("SIM")]
         assert self.exec_engine.default_client is None
 
-    def test_register_brokerage_multi_venue_exec_client(self):
+    def test_register_exec_client_for_routing(self):
         # Arrange
         exec_client = MockExecutionClient(
             client_id=ClientId("IB"),
-            venue_type=VenueType.BROKERAGE_MULTI_VENUE,
             account_id=AccountId("IB", "U1258001"),
             account_type=AccountType.MARGIN,
             base_currency=USD,
@@ -168,6 +165,7 @@ class TestExecutionEngine:
             cache=self.cache,
             clock=self.clock,
             logger=self.logger,
+            config={"routing": True},
         )
 
         # Act
@@ -184,7 +182,6 @@ class TestExecutionEngine:
         # Arrange
         exec_client = MockExecutionClient(
             client_id=ClientId("IB"),
-            venue_type=VenueType.BROKERAGE_MULTI_VENUE,
             account_id=AccountId("IB", "U1258001"),
             account_type=AccountType.MARGIN,
             base_currency=USD,
@@ -192,6 +189,7 @@ class TestExecutionEngine:
             cache=self.cache,
             clock=self.clock,
             logger=self.logger,
+            config={"routing": True},
         )
 
         # Act

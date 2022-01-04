@@ -30,3 +30,4 @@ cdef class HttpClient:
     cdef int _sessions_len
 
     cdef object _get_session(self)
+    cpdef str _prepare_params(self, dict params)

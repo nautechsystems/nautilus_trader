@@ -27,7 +27,6 @@ from nautilus_trader.live.risk_engine import LiveRiskEngine
 from nautilus_trader.model.commands.trading import SubmitOrder
 from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import OrderSide
-from nautilus_trader.model.enums import VenueType
 from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import Venue
@@ -99,7 +98,6 @@ class TestLiveExecutionPerformance(PerformanceHarness):
 
         self.exec_client = MockExecutionClient(
             client_id=ClientId("BINANCE"),
-            venue_type=VenueType.EXCHANGE,
             account_id=self.account_id,
             account_type=AccountType.CASH,
             base_currency=None,  # Multi-currency account

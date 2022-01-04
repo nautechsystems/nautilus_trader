@@ -80,6 +80,10 @@ class BinanceHttpClient(HttpClient):
         return self._key
 
     @property
+    def api_secret(self) -> str:
+        return self._secret
+
+    @property
     def headers(self):
         return self._headers
 
@@ -171,9 +175,6 @@ class BinanceHttpClient(HttpClient):
             return orjson.loads(resp.data)
         except orjson.JSONDecodeError:
             self._log.error(f"Could not decode data to JSON: {resp.data}.")
-
-    def _prepare_params(self, params: Dict[str, str]) -> str:
-        return "&".join([k + "=" + v for k, v in params.items()])
 
     def _get_sign(self, data) -> str:
         m = hmac.new(self._secret.encode(), data.encode(), hashlib.sha256)

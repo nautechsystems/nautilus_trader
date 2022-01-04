@@ -51,7 +51,6 @@ from nautilus_trader.live.execution_client import LiveExecutionClient
 from nautilus_trader.model.c_enums.account_type import AccountType
 from nautilus_trader.model.c_enums.liquidity_side import LiquiditySide
 from nautilus_trader.model.c_enums.order_type import OrderType
-from nautilus_trader.model.c_enums.venue_type import VenueType
 from nautilus_trader.model.commands.trading import CancelAllOrders
 from nautilus_trader.model.commands.trading import CancelOrder
 from nautilus_trader.model.commands.trading import ModifyOrder
@@ -118,7 +117,6 @@ class BetfairExecutionClient(LiveExecutionClient):
             client_id=ClientId(BETFAIR_VENUE.value),
             instrument_provider=instrument_provider
             or BetfairInstrumentProvider(client=client, logger=logger, market_filter=market_filter),
-            venue_type=VenueType.EXCHANGE,
             account_id=account_id,
             account_type=AccountType.BETTING,
             base_currency=base_currency,

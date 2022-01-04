@@ -97,27 +97,28 @@ class Partialable:
 @pydantic.dataclasses.dataclass
 class BacktestVenueConfig(Partialable):
     """
-    Represents the venue configuration for one specific backtest engine.
+    Represents a venue configuration for one specific backtest engine.
     """
 
     name: str
-    venue_type: str
     oms_type: str
     account_type: str
     base_currency: Optional[str]
     starting_balances: List[str]
     book_type: str = "L1_TBBO"
+    routing: bool = False
     # fill_model: Optional[FillModel] = None  # TODO(cs): Implement next iteration
     # modules: Optional[List[SimulationModule]] = None  # TODO(cs): Implement next iteration
 
     def __dask_tokenize__(self):
         values = [
             self.name,
-            self.venue_type,
             self.oms_type,
             self.account_type,
             self.base_currency,
             ",".join(sorted([b for b in self.starting_balances])),
+            self.book_type,
+            self.routing,
             # self.modules,  # TODO(cs): Implement next iteration
         ]
         return tuple(values)
