@@ -1,0 +1,4 @@
+#!/bin/bash
+pip install $REPO_DIR
+pip install jupytext
+jupytext --to notebook $REPO_DIR/docs/**/*.ipynb
