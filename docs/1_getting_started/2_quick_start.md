@@ -13,20 +13,18 @@ jupyter:
     name: nautilus_trader_gh
 ---
 
-### Quick start
+# Quick Start
 
-This section explains how to get up and running with Nautilus Trader by running some backtests on some Forex data. The Nautilus maintainers have pre-loaded some existing data into the nautilus storage format (parquet) for this guide.
+This section explains how to get up and running with NautilusTrader by running some backtests on Forex data. The Nautilus maintainers have pre-loaded some existing data into the nautilus storage format (parquet) for this guide.
 
-For more details on how to load other data into Nautilus, see [Backtest Example](../2_user_guide/3_backtest_example.md)
+For more details on how to load other data into Nautilus, see [Backtest Example](../2_user_guide/2_backtest_example.md)
 
 
-#### Getting the sample data
+## Getting the sample data
 
-We have prepared some sample data in the nautilus parquet format for use with this example. First, download and load the data (this should take ~60s):
+We have prepared some sample data in the Nautilus parquet format for use with this example. First, download and load the data (this should take ~60s):
 
 ```python
-
-
 def download(url):
     import requests 
     filename = url.rsplit("/", maxsplit=1)[1]
@@ -52,7 +50,7 @@ os.unlink('hist_data_to_catalog.py')
 os.unlink("DAT_ASCII_EURUSD_T_202001.csv.gz")
 ```
 
-### Connecting to the DataCatalog
+## Connecting to the `DataCatalog`
 
 If everything worked correctly, you should be able to see a single EURUSD instrument in the catalog
 
@@ -68,7 +66,7 @@ catalog = DataCatalog("EUDUSD202001/")
 catalog.instruments()
 ```
 
-### Writing a trading strategy
+## Writing a trading strategy
 
 Nautilus includes a handful of indicators built-in, in this example we will use a MACD indicator to build a simple trading strategy. You can read more about [MACD here](https://www.investopedia.com/terms/m/macd.asp), but this indicator merely serves as an example without any expected alpha.
 
@@ -162,7 +160,7 @@ class MACDStrategy(TradingStrategy):
 ```
 
 <!-- #region pycharm={"name": "#%% md\n"} -->
-### Configuing Backtests
+## Configuing Backtests
 
 Now that we have a trading strategy and data, we can run a backtest! Nautilus uses a `BacktestEngine` to configure and run backtests, and requires some setup. This may seem a little complex at first, but this is necessary for the correctness that Nautilus strives for.
 
@@ -175,7 +173,7 @@ There are many more configurable features which will be described later in the d
 <!-- #endregion -->
 
 <!-- #region pycharm={"name": "#%% md\n"} -->
-#### Venue
+## Venue
 
 First, we create a venue. For this example we will create a simulated venue for Oanda, a Forex broker. A venue needs a name, as well as some basic configuration; the account type (cash vs margin), the base currency and starting balance.
 <!-- #endregion -->
@@ -193,7 +191,7 @@ oanda_venue = BacktestVenueConfig(
 ```
 
 <!-- #region -->
-#### Instruments
+## Instruments
 
 
 Second, we need to know about the instruments that we would like to load data for, we can use the `DataCatalog` for this:
@@ -205,7 +203,7 @@ instruments
 ```
 
 <!-- #region jupyter={"outputs_hidden": false} pycharm={"name": "#%% md\n"} -->
-#### Data
+## Data
 
 Next, we need to configure the data for the backtest. Nautilus is built to be very flexible when it comes to loading data for backtests, but this also means configuration is required.
 
@@ -227,7 +225,7 @@ data = [
 ```
 
 <!-- #region pycharm={"name": "#%% md\n"} -->
-#### Engine
+## Engine
 
 Then, we need a `BacktestEngineConfig` which allows configuring the log level and other components, but is fine to leave with its defaults
 <!-- #endregion -->
@@ -238,7 +236,7 @@ from nautilus_trader.backtest.config import BacktestEngineConfig
 engine = BacktestEngineConfig(log_level='ERROR') # Lower to `INFO` to see more logging about orders, events, etc.
 ```
 
-#### Strategies
+## Strategies
 
 And finally is our actual trading strategy(s).
 
@@ -256,7 +254,7 @@ macd_strategy = MACDStrategy(config=macd_config)
 
 We can now pass our various config pieces to the `BacktestRunConfig` - this object now contains the full configuration for our backtest, we are ready to run some backtests!
 
-The `BacktestNode` class _actually_ runs the backtest. The reason for this separation between configuration and execution is the `BacktestNode` allows running multiple configurations (different parameters or batches of data), as well as parallelisation via the excellent [dask](https://dask.org/] library.
+The `BacktestNode` class _actually_ runs the backtest. The reason for this separation between configuration and execution is the `BacktestNode` allows running multiple configurations (different parameters or batches of data), as well as parallelisation via the excellent [dask](https://dask.org/) library.
 
 ```python pycharm={"name": "#%%\n"} tags=[]
 from nautilus_trader.backtest.node import BacktestNode
