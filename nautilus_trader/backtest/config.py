@@ -33,6 +33,7 @@ from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.persistence.config import PersistenceConfig
 from nautilus_trader.risk.config import RiskEngineConfig
 from nautilus_trader.trading.config import ImportableStrategyConfig
+from nautilus_trader.trading.strategy import TradingStrategy
 
 
 class Partialable:
@@ -192,9 +193,10 @@ class BacktestDataConfig(Partialable):
         instruments = catalog.instruments(instrument_ids=self.instrument_id, as_nautilus=True)
         if not instruments:
             return {"data": [], "instrument": None}
+        data = catalog.query(**query)
         return {
             "type": query["cls"],
-            "data": catalog.query(**query),
+            "data": data,
             "instrument": instruments[0] if self.instrument_id else None,
             "client_id": ClientId(self.client_id) if self.client_id else None,
         }
@@ -241,7 +243,12 @@ class BacktestEngineConfig(pydantic.BaseModel):
         return tuple(self.dict().items())
 
 
-@pydantic.dataclasses.dataclass
+# Required for passing `TradingStrategy` to `BacktestRunConfig.strategies`
+class _ArbitraryTypes:
+    arbitrary_types_allowed = True
+
+
+@pydantic.dataclasses.dataclass(config=_ArbitraryTypes)
 class BacktestRunConfig(Partialable):
     """
     Represents the configuration for one specific backtest run (a single set of
@@ -252,7 +259,7 @@ class BacktestRunConfig(Partialable):
     venues: Optional[List[BacktestVenueConfig]] = None
     data: Optional[List[BacktestDataConfig]] = None
     actors: Optional[List[ImportableActorConfig]] = None
-    strategies: Optional[List[ImportableStrategyConfig]] = None
+    strategies: Optional[List[Union[ImportableStrategyConfig, TradingStrategy]]] = None
     persistence: Optional[PersistenceConfig] = None
     batch_size_bytes: Optional[int] = None
 
