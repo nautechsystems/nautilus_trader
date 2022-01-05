@@ -66,7 +66,7 @@ There are a handful of readers available, some notes on when to use which:
 Each of the `Reader` classes takes a `line_parser` or `block_parser` function, a user defined function to convert a line or block (chunk / multiple rows) of data into nautilus object(s) (for example `QuoteTick` or `TradeTick`).
 
 
-### Writing the `parser` function
+### Writing the parser function
 
 The Forex data from `histdata` is stored in csv/text format, with fields `timestamp, bid_price, ask_price`. 
 
@@ -94,7 +94,7 @@ def parser(data, instrument_id):
     )
 ```
 
-### Creating a Data Catalog if one does not exist
+### Creating a DataCatalog if one does not exist
 
 Now that we have our parser function, we instantiate a `DataCatalog` (passing in a directory where to store the data, by default we will just use the current directory):
 
