@@ -17,7 +17,7 @@ jupyter:
 
 This notebook runs through a example loading raw data (external to nautilus) into the Nautilus Trader `DataCatalog`, for use in backtesting.
 
-### The Data Catalog
+## The Data Catalog
 
 The data catalog is a central store for Nautilus data, persisted in the [Parquet](https://parquet.apache.org) file format.
 
@@ -66,7 +66,7 @@ Each of the `Reader` classes takes a `line_parser` or `block_parser` function, a
 
 The Forex data from `histdata` is stored in csv/text format, with fields `timestamp, bid_price, ask_price`. 
 
-For this example, we will use the `CSVReader` class, but we need to manually pass a header as the files do not contain one. The `CSVReader` has a couple of options, we'll be setting and `chunked=False` to process the data line-by-line and `as_dataframe=False` to process the data as a string rather than DataFrame. See the [API Reference]("../3_api_reference/persistence") for more details
+For this example, we will use the `CSVReader` class, but we need to manually pass a header as the files do not contain one. The `CSVReader` has a couple of options, we'll be setting and `chunked=False` to process the data line-by-line and `as_dataframe=False` to process the data as a string rather than DataFrame. See the [API Reference]("../3_api_reference/model/persistence") for more details.
 
 ```python
 import datetime
@@ -90,7 +90,7 @@ def parser(data, instrument_id):
     )
 ```
 
-### Creating a DataCatalog if one does not exist
+### Creating a Data Catalog if one does not exist
 
 Now that we have our parser function, we instantiate a `DataCatalog` (passing in a directory where to store the data, by default we will just use the current directory)
 
@@ -116,7 +116,7 @@ Nautilus needs to link market data to an `instrument_id`, and an `instrument_id`
 
 For our example, Nautilus contains some helpers for creating Forex pairs, which we will use. If, however, you were adding data for financial or crypto markets, you could need to create (and add to the catalog) an instrument corresponding to that instrument_id. Definitions for various other instruments can be found in `nautilus_trader.model.instruments`. 
 
-See [Instruments](./5_instruments.md) for more details on creating other instruments
+See [Instruments](./4_instruments.md) for more details on creating other instruments
 
 
 
