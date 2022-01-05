@@ -22,7 +22,7 @@ For more details on how to load other data into Nautilus, see [Backtest Example]
 
 ## Getting the sample data
 
-We have prepared some sample data in the nautilus parquet format for use with this example. First, download and load the data (this should take ~ 1-2 mins):
+We have prepared a script to load sample data into the Nautilus format for use with this example. First, download and load the data by running the next cell (this should take ~ 1-2 mins):
 
 ```python
 !curl https://raw.githubusercontent.com/nautechsystems/nautilus_data/main/scripts/hist_data_to_catalog.py | python - 
@@ -34,13 +34,8 @@ If everything worked correctly, you should be able to see a single EURUSD instru
 
 ```python
 from nautilus_trader.persistence.catalog import DataCatalog
-```
 
-```python
 catalog = DataCatalog("EUDUSD202001/")
-```
-
-```python
 catalog.instruments()
 ```
 
