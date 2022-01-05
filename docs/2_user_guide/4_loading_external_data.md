@@ -116,7 +116,7 @@ Nautilus needs to link market data to an `instrument_id`, and an `instrument_id`
 
 For our example, Nautilus contains some helpers for creating Forex pairs, which we will use. If, however, you were adding data for financial or crypto markets, you could need to create (and add to the catalog) an instrument corresponding to that instrument_id. Definitions for various other instruments can be found in `nautilus_trader.model.instruments`. 
 
-See [Instruments #TODO]("./5_instruments") for more details on creating other instruments
+See [Instruments](./5_instruments.md) for more details on creating other instruments
 
 
 
