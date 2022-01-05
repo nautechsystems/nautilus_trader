@@ -243,6 +243,7 @@ class BacktestEngineConfig(pydantic.BaseModel):
         return tuple(self.dict().items())
 
 
+# Required for passing `TradingStrategy` to `BacktestRunConfig.strategies`
 class _ArbitraryTypes:
     arbitrary_types_allowed = True
 
