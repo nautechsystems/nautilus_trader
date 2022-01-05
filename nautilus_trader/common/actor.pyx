@@ -91,10 +91,9 @@ cdef class Actor(Component):
         if config is None:
             config = ActorConfig()
         Condition.type(config, ActorConfig, "config")
-        self.config = config
 
-        if self.config.component_id is not None:
-            component_id = ComponentId(self.config.component_id)
+        if config.component_id is not None:
+            component_id = ComponentId(config.component_id)
         else:
             component_id = None
 
@@ -103,7 +102,7 @@ cdef class Actor(Component):
             clock=clock,
             logger=Logger(clock=clock),
             component_id=component_id,
-            config=self.config.dict(),
+            config=config.dict(),
         )
 
         self._warning_events = set()

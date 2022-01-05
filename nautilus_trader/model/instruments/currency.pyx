@@ -205,7 +205,7 @@ cdef class CurrencySpot(Instrument):
         cdef bytes info = values["info"]
         return CurrencySpot(
             instrument_id=InstrumentId.from_str_c(values["id"]),
-            native_symbol=Symbol(values.get("native_symbol", values['local_symbol'])),
+            native_symbol=Symbol(values["native_symbol"]),
             base_currency=Currency.from_str_c(values["base_currency"]),
             quote_currency=Currency.from_str_c(values["quote_currency"]),
             price_precision=values["price_precision"],
