@@ -1,3 +1,11 @@
+# https://www.sphinx-doc.org/en/master/usage/configuration.html
+
+# -- Path setup --------------------------------------------------------------
+
+# If extensions (or modules to document with autodoc) are in another directory,
+# add these directories to sys.path here. If the directory is relative to the
+# documentation root, use os.path.abspath to make it absolute, like shown here.
+
 import os
 import sys
 from typing import Any, List
@@ -5,10 +13,13 @@ from typing import Any, List
 
 sys.path.insert(0, os.path.abspath("../.."))
 
-
+project = "NautilusTrader"
 author = "Nautech Systems Pty Ltd."
-comments_config = {"hypothesis": False, "utterances": False}
 copyright = "2015-2022"
+version = "latest"
+release = version
+
+comments_config = {"hypothesis": False, "utterances": False}
 exclude_patterns = ["**.ipynb_checkpoints", ".DS_Store", "Thumbs.db", "_build"]
 execution_allow_errors = False
 execution_excludepatterns: List[Any] = []
@@ -34,29 +45,19 @@ external_toc_exclude_missing = False
 external_toc_path = "_toc.yml"
 html_baseurl = ""
 html_favicon = ""
-html_logo = "artwork/shell.png"
+html_logo = "artwork/nautilus-trader-docs.png"
 html_sourcelink_suffix = ""
-html_theme = "sphinx_book_theme"
+html_theme = "pydata_sphinx_theme"
 html_theme_options = {
-    "search_bar_text": "Search this book...",
-    "launch_buttons": {
-        "notebook_interface": "classic",
-        "binderhub_url": "https://mybinder.org",
-        "jupyterhub_url": "",
-        "thebe": True,
-        "colab_url": "",
-    },
-    "path_to_docs": "docs/",
-    "repository_url": "https://github.com/nautechsystems/nautilus_trader",
-    "repository_branch": "dev",
+    "search_bar_text": "Search docs...",
+    "github_url": "https://github.com/nautechsystems/nautilus_trader",
+    "collapse_navigation": False,
+    "external_links": [{"name": "nautilustrader.io", "url": "https://nautilustrader.io"}],
     "google_analytics_id": "",
-    "extra_navbar": 'Powered by <a href="https://jupyterbook.org">Jupyter Book</a>',
-    "extra_footer": "",
-    "home_page_in_toc": True,
-    "use_repository_button": True,
     "use_edit_page_button": False,
-    "use_issues_button": True,
 }
+html_static_path = ["_static"]
+html_css_files = ["custom.css"]
 html_title = "NautilusTrader Docs"
 jupyter_cache = ""
 jupyter_execute_notebooks = "force"
