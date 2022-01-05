@@ -46,3 +46,4 @@ output.json
 .ipynb_checkpoints
 examples/backtest/notebooks/catalog
 nautilus_trader/**/.gitignore
+docs/**/*.ipynb

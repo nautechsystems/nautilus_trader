@@ -19,8 +19,10 @@ from typing import Dict, List, Optional
 
 import cloudpickle
 import dask
+import pandas as pd
 from dask.base import normalize_token
 from dask.delayed import Delayed
+from dask.utils import parse_timedelta
 
 from nautilus_trader.backtest.config import BacktestDataConfig
 from nautilus_trader.backtest.config import BacktestRunConfig
@@ -96,7 +98,7 @@ class BacktestNode:
 
         return self._gather_delayed(results)
 
-    def run_sync(self, run_configs: List[BacktestRunConfig]) -> List[BacktestResult]:
+    def run_sync(self, run_configs: List[BacktestRunConfig], **kwargs) -> List[BacktestResult]:
         """
         Run a list of backtest configs synchronously.
 
@@ -123,6 +125,7 @@ class BacktestNode:
                 strategy_configs=config.strategies,
                 persistence=config.persistence,
                 batch_size_bytes=config.batch_size_bytes,
+                **kwargs,
             )
             results.append(result)
 
@@ -165,6 +168,7 @@ class BacktestNode:
         strategy_configs: List[ImportableStrategyConfig],
         persistence: Optional[PersistenceConfig] = None,
         batch_size_bytes: Optional[int] = None,
+        return_engine: bool = False,
     ) -> BacktestResult:
         engine: BacktestEngine = self._create_engine(
             config=engine_config,
@@ -202,7 +206,10 @@ class BacktestNode:
         # Create strategies
         if strategy_configs:
             strategies: List[TradingStrategy] = [
-                StrategyFactory.create(config) for config in strategy_configs
+                StrategyFactory.create(config)
+                if isinstance(config, ImportableStrategyConfig)
+                else config
+                for config in strategy_configs
             ]
             if strategies:
                 engine.add_strategies(strategies)
@@ -217,7 +224,9 @@ class BacktestNode:
 
         result = engine.get_result()
 
-        engine.dispose()
+        if return_engine:
+            return engine
+
         if writer is not None:
             writer.close()
 
@@ -287,6 +296,10 @@ def backtest_runner(
 
     # Load data
     for config in data_configs:
+        t0 = pd.Timestamp.now()
+        engine._log.info(
+            f"Reading {config.data_type} backtest data for instrument={config.instrument_id}"
+        )
         d = config.load()
         if config.instrument_id and d["instrument"] is None:
             print(f"Requested instrument_id={d['instrument']} from data_config not found catalog")
@@ -294,8 +307,14 @@ def backtest_runner(
         if not d["data"]:
             print(f"No data found for {config}")
             continue
-        _load_engine_data(engine=engine, data=d)
 
+        t1 = pd.Timestamp.now()
+        engine._log.info(
+            f"Read {len(d['data']):,} events from parquet in {parse_timedelta(t1-t0)}s"
+        )
+        _load_engine_data(engine=engine, data=d)
+        t2 = pd.Timestamp.now()
+        engine._log.info(f"Engine load took {parse_timedelta(t2-t1)}s")
     return engine.run(run_config_id=run_config_id)
 
 
