@@ -15,7 +15,7 @@ sys.path.insert(0, os.path.abspath("../.."))
 
 project = "NautilusTrader"
 author = "Nautech Systems Pty Ltd."
-copyright = "2015-2022"
+copyright = "2015-2022 Nautech Systems Pty Ltd"
 version = "latest"
 release = version
 
@@ -55,6 +55,7 @@ html_theme_options = {
     "external_links": [{"name": "nautilustrader.io", "url": "https://nautilustrader.io"}],
     "google_analytics_id": "",
     "use_edit_page_button": False,
+    "footer_items": ["copyright"],
 }
 html_static_path = ["_static"]
 html_css_files = ["custom.css"]
