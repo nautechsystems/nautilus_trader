@@ -17,7 +17,7 @@ import dataclasses
 import importlib
 import sys
 from datetime import datetime
-from typing import Dict, List, Optional, Union
+from typing import Any, Dict, List, Optional, Union
 
 import pandas as pd
 import pydantic
@@ -192,9 +192,10 @@ class BacktestDataConfig(Partialable):
         instruments = catalog.instruments(instrument_ids=self.instrument_id, as_nautilus=True)
         if not instruments:
             return {"data": [], "instrument": None}
+        data = catalog.query(**query)
         return {
             "type": query["cls"],
-            "data": catalog.query(**query),
+            "data": data,
             "instrument": instruments[0] if self.instrument_id else None,
             "client_id": ClientId(self.client_id) if self.client_id else None,
         }
@@ -252,7 +253,7 @@ class BacktestRunConfig(Partialable):
     venues: Optional[List[BacktestVenueConfig]] = None
     data: Optional[List[BacktestDataConfig]] = None
     actors: Optional[List[ImportableActorConfig]] = None
-    strategies: Optional[List[ImportableStrategyConfig]] = None
+    strategies: Optional[List[Union[ImportableStrategyConfig, Any]]] = None
     persistence: Optional[PersistenceConfig] = None
     batch_size_bytes: Optional[int] = None
 

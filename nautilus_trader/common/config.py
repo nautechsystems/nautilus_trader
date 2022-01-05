@@ -15,9 +15,6 @@
 
 import importlib
 import importlib.util
-import sys
-from importlib.machinery import ModuleSpec
-from types import ModuleType
 from typing import Optional, Union
 
 import pydantic
@@ -48,14 +45,11 @@ class ImportableActorConfig(pydantic.BaseModel):
     ----------
     path : str, optional
         The fully-qualified name of the module.
-    source : bytes, optional
-        The actor source code.
     config : Union[ActorConfig, str]
 
     """
 
     path: Optional[str]
-    source: Optional[bytes]
     config: Union[ActorConfig, str]
 
     def _check_path(self):
@@ -99,19 +93,7 @@ class ActorFactory:
 
         """
         PyCondition.type(config, ImportableActorConfig, "config")
-        if (config.path is None or config.path.isspace()) and (
-            config.source is None or config.source.isspace()
-        ):
-            raise ValueError("both `source` and `path` were None")
-
-        if config.path is not None:
-            mod = importlib.import_module(config.module)
-            cls = getattr(mod, config.cls)
-            assert isinstance(config.config, ActorConfig)
-            return cls(config=config.config)
-        else:
-            spec: ModuleSpec = importlib.util.spec_from_loader(config.module, loader=None)
-            module: ModuleType = importlib.util.module_from_spec(spec)
-
-            exec(config.source, module.__dict__)  # noqa
-            sys.modules[config.module] = module
+        mod = importlib.import_module(config.module)
+        cls = getattr(mod, config.cls)
+        assert isinstance(config.config, ActorConfig)
+        return cls(config=config.config)
