@@ -8,7 +8,7 @@
 ![pypi-format](https://img.shields.io/pypi/format/nautilus_trader?color=blue)
 [![Downloads](https://pepy.tech/badge/nautilus-trader)](https://pepy.tech/project/nautilus-trader)
 [![code-style: black](https://img.shields.io/badge/code%20style-black-000000.svg)](https://github.com/psf/black)
-[![Binder](https://mybinder.org/badge_logo.svg)](https://mybinder.org/v2/gh/nautechsystems/nautilus_trader/binder?filepath=docs%2F1_getting_started%2F2_quick_start.ipynb)  
+[![Binder](https://mybinder.org/badge_logo.svg)](https://mybinder.org/v2/gh/nautechsystems/nautilus_trader/develop)  
 
 | Branch    | Version | Status |
 |:----------|:--------|:-------|
