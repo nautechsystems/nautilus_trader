@@ -45,7 +45,7 @@ cdef class BacktestEngine:
     cdef DataEngine _data_engine
     cdef ExecutionEngine _exec_engine
     cdef RiskEngine _risk_engine
-    cdef LoggerAdapter _log
+    cdef readonly LoggerAdapter _log
     cdef Logger _logger
     cdef Logger _test_logger
 

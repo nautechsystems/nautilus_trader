@@ -81,7 +81,7 @@ class TestPersistenceStreaming:
         expected = {
             "AccountState": 746,
             "BettingInstrument": 1,
-            "ComponentStateChanged": 7,
+            "ComponentStateChanged": 5,
             "OrderAccepted": 323,
             "OrderBookDeltas": 1077,
             "OrderBookSnapshot": 1,
