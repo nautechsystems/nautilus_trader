@@ -22,34 +22,10 @@ For more details on how to load other data into Nautilus, see [Backtest Example]
 
 #### Getting the sample data
 
-We have prepared some sample data in the nautilus parquet format for use with this example. First, download and load the data (this should take ~60s):
+We have prepared some sample data in the nautilus parquet format for use with this example. First, download and load the data (this should take ~ 1-2 mins):
 
 ```python
-
-
-def download(url):
-    import requests 
-    filename = url.rsplit("/", maxsplit=1)[1]
-    with open(filename, 'wb') as f:
-        f.write(requests.get(url).content)
-
-
-# Download raw data
-download("https://raw.githubusercontent.com/nautechsystems/nautilus_data/main/raw_data/fx_hist_data/DAT_ASCII_EURUSD_T_202001.csv.gz")
-
-# Download processing script
-download("https://raw.githubusercontent.com/nautechsystems/nautilus_data/main/scripts/hist_data_to_catalog.py")
-
-from hist_data_to_catalog import load_fx_hist_data, os, shutil
-load_fx_hist_data(
-    filename="DAT_ASCII_EURUSD_T_202001.csv.gz",
-    currency="EUR/USD",
-    catalog_path="EUDUSD202001",
-)
-
-# Cleanup files
-os.unlink('hist_data_to_catalog.py')
-os.unlink("DAT_ASCII_EURUSD_T_202001.csv.gz")
+!curl https://raw.githubusercontent.com/nautechsystems/nautilus_data/main/scripts/hist_data_to_catalog.py | python - 
 ```
 
 ### Connecting to the DataCatalog
