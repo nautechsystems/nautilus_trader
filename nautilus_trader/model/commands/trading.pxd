@@ -37,7 +37,7 @@ cdef class TradingCommand(Command):
 
 cdef class SubmitOrder(TradingCommand):
     cdef readonly PositionId position_id
-    """The position ID associated with the command.\n\n:returns: `PositionId`"""
+    """The position ID associated with the command.\n\n:returns: `PositionId` or ``None``"""
     cdef readonly Order order
     """The order for the command.\n\n:returns: `Order`"""
 
