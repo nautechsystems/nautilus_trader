@@ -2,6 +2,9 @@ from nautilus_trader.persistence.catalog import DataCatalog
 from nautilus_trader.persistence.external.core import write_objects
 
 
+# TODO (bm)
+
+
 def create_temp_table(func):
     """Make a temporary copy of any parquet dataset class called by `write_tables`"""
 
