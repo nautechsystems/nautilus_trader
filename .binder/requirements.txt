@@ -67,4 +67,3 @@ wrapt==1.13.3; python_version >= "3.6" and python_full_version < "3.0.0" or pyth
 yarl==1.7.2; python_version >= "3.6"
 yfinance==0.1.67
 zict==2.0.0; python_version >= "3.7"
-python-3.9
