@@ -207,7 +207,7 @@ Then, we need a `BacktestEngineConfig` which allows configuring the log level an
 ```python jupyter={"outputs_hidden": false} pycharm={"name": "#%%\n"}
 from nautilus_trader.backtest.config import BacktestEngineConfig
 
-engine = BacktestEngineConfig(log_level='WARN') # Lower to `INFO` to see more logging about orders, events, etc.
+engine = BacktestEngineConfig(log_level='ERROR') # Lower to `INFO` to see more logging about orders, events, etc.
 ```
 
 #### Strategies

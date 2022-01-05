@@ -17,7 +17,7 @@ import dataclasses
 import importlib
 import sys
 from datetime import datetime
-from typing import Any, Dict, List, Optional, Union
+from typing import Dict, List, Optional, Union
 
 import pandas as pd
 import pydantic
@@ -33,6 +33,7 @@ from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.persistence.config import PersistenceConfig
 from nautilus_trader.risk.config import RiskEngineConfig
 from nautilus_trader.trading.config import ImportableStrategyConfig
+from nautilus_trader.trading.strategy import TradingStrategy
 
 
 class Partialable:
@@ -242,7 +243,11 @@ class BacktestEngineConfig(pydantic.BaseModel):
         return tuple(self.dict().items())
 
 
-@pydantic.dataclasses.dataclass
+class _ArbitraryTypes:
+    arbitrary_types_allowed = True
+
+
+@pydantic.dataclasses.dataclass(config=_ArbitraryTypes)
 class BacktestRunConfig(Partialable):
     """
     Represents the configuration for one specific backtest run (a single set of
@@ -253,7 +258,7 @@ class BacktestRunConfig(Partialable):
     venues: Optional[List[BacktestVenueConfig]] = None
     data: Optional[List[BacktestDataConfig]] = None
     actors: Optional[List[ImportableActorConfig]] = None
-    strategies: Optional[List[Union[ImportableStrategyConfig, Any]]] = None
+    strategies: Optional[List[Union[ImportableStrategyConfig, TradingStrategy]]] = None
     persistence: Optional[PersistenceConfig] = None
     batch_size_bytes: Optional[int] = None
 

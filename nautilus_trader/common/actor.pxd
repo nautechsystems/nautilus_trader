@@ -46,6 +46,7 @@ from nautilus_trader.msgbus.bus cimport MessageBus
 
 cdef class Actor(Component):
     cdef set _warning_events
+
     cdef readonly Clock clock
     """The actors clock.\n\n:returns: `Clock`"""
     cdef readonly MessageBus msgbus
