@@ -6,6 +6,7 @@ import pyarrow.dataset as ds
 from nautilus_trader.model.instruments.base import Instrument
 from nautilus_trader.persistence.catalog import DataCatalog
 from nautilus_trader.persistence.external.core import write_objects
+from nautilus_trader.serialization.arrow.util import class_to_filename
 
 
 FROM = "1.136.0"
@@ -25,8 +26,8 @@ def main(catalog: DataCatalog):
 
         # Create temp parquet in case of error
         fs.move(
-            f"{catalog.path}/data/equity.parquet",
-            f"{catalog.path}/data/equity.parquet_tmp",
+            f"{catalog.path}/data/{class_to_filename(cls)}.parquet",
+            f"{catalog.path}/data/{class_to_filename(cls)}.parquet_tmp",
             recursive=True,
         )
 
@@ -38,11 +39,11 @@ def main(catalog: DataCatalog):
             _ = catalog.instruments(instrument_type=cls, as_nautilus=True)
 
             # Clear temp parquet
-            fs.rm(f"{catalog.path}/data/equity.parquet_tmp", recursive=True)
+            fs.rm(f"{catalog.path}/data/{class_to_filename(cls)}.parquet_tmp", recursive=True)
         except Exception:
             warnings.warn(f"Failed to write or read instrument type {cls}")
             fs.move(
-                f"{catalog.path}/data/equity.parquet_tmp",
-                f"{catalog.path}/data/equity.parquet",
+                f"{catalog.path}/data/{class_to_filename(cls)}.parquet_tmp",
+                f"{catalog.path}/data/{class_to_filename(cls)}.parquet",
                 recursive=True,
             )
