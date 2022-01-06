@@ -67,8 +67,12 @@ class FTXHttpClient(HttpClient):
         return self._secret
 
     @staticmethod
-    def prepare_payload(payload: Dict[str, str]) -> Optional[str]:
+    def _prepare_payload(payload: Dict[str, str]) -> Optional[str]:
         return json.dumps(payload, separators=(",", ":")) if payload else None
+
+    @staticmethod
+    def _url_encode(params: Dict[str, str]) -> str:
+        return "?" + urllib.parse.urlencode(params) if params else ""
 
     async def _sign_request(
         self,
@@ -81,7 +85,7 @@ class FTXHttpClient(HttpClient):
         headers = {}
         signature_payload: str = f"{ts}{http_method}/api/{url_path}"
         if payload and http_method in ["POST", "DELETE"]:
-            signature_payload += self.prepare_payload(payload)
+            signature_payload += self._prepare_payload(payload)
             headers["Content-Type"] = "application/json"
 
         signature = hmac.new(
@@ -111,17 +115,19 @@ class FTXHttpClient(HttpClient):
         url_path: str,
         headers: Dict[str, Any] = None,
         payload: Dict[str, str] = None,
+        params: Dict[str, str] = None,
     ) -> Any:
         # TODO(cs): Uncomment for development
         # print(f"{http_method} {url_path} {headers} {payload}")
         if payload is None:
             payload = {}
+        query = self._url_encode(params)
         try:
             resp: ClientResponse = await self.request(
                 method=http_method,
-                url=self._base_url + url_path,
+                url=self._base_url + url_path + query,
                 headers=headers,
-                data=self.prepare_payload(payload),
+                data=self._prepare_payload(payload),
             )
         except ClientResponseError as ex:
             await self._handle_exception(ex)
@@ -181,15 +187,15 @@ class FTXHttpClient(HttpClient):
         start_time: Optional[int] = None,
         end_time: Optional[int] = None,
     ):
-        payload: Dict[str, str] = {"resolution": str(resolution)}
+        params: Dict[str, str] = {"resolution": str(resolution)}
         if start_time is not None:
-            payload["start_time"] = str(start_time)
+            params["start_time"] = str(start_time)
         if end_time is not None:
-            payload["end_time"] = str(end_time)
+            params["end_time"] = str(end_time)
         return await self._send_request(
             http_method="GET",
             url_path=f"markets/{market}/candles",
-            payload=payload,
+            params=params,
         )
 
     async def get_account_info(self) -> Dict[str, Any]:
