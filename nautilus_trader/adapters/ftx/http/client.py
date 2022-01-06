@@ -82,7 +82,7 @@ class FTXHttpClient(HttpClient):
         signature_payload: str = f"{ts}{http_method}/api/{url_path}"
         if payload and http_method in ["POST", "DELETE"]:
             signature_payload += self.prepare_payload(payload)
-            headers["Content-type"] = "application/json"
+            headers["Content-Type"] = "application/json"
 
         signature = hmac.new(
             self._secret.encode(), signature_payload.encode(), "sha256"
@@ -178,15 +178,15 @@ class FTXHttpClient(HttpClient):
         self,
         market: str,
         resolution: int,
-        start_time: Optional[int],
-        end_time: Optional[int],
+        start_time: Optional[int] = None,
+        end_time: Optional[int] = None,
     ):
         payload: Dict[str, str] = {"resolution": str(resolution)}
         if start_time is not None:
             payload["start_time"] = str(start_time)
         if end_time is not None:
             payload["end_time"] = str(end_time)
-        return await self._sign_request(
+        return await self._send_request(
             http_method="GET",
             url_path=f"markets/{market}/candles",
             payload=payload,
@@ -311,15 +311,14 @@ class FTXHttpClient(HttpClient):
         payload: Dict[str, Any] = {
             "market": market,
             "side": side,
-            "size": size,
+            "price": price,
             "type": type,
-            "clientId": client_id,
+            "size": size,
             "ioc": ioc,
             "reduceOnly": reduce_only,
             "postOnly": post_only,
+            "clientId": client_id,
         }
-        if price is not None:
-            payload["price"] = price
 
         return await self._sign_request(
             http_method="POST",
@@ -367,7 +366,7 @@ class FTXHttpClient(HttpClient):
             payload["triggerPrice"] = trigger
         if trail_value is not None:
             payload["trailValue"] = trail_value
-        return await self._post(
+        return await self._sign_request(
             http_method="POST",
             url_path="conditional_orders",
             payload=payload,
