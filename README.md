@@ -7,8 +7,12 @@
 ![pythons](https://img.shields.io/pypi/pyversions/nautilus_trader)
 ![pypi-format](https://img.shields.io/pypi/format/nautilus_trader?color=blue)
 [![Downloads](https://pepy.tech/badge/nautilus-trader)](https://pepy.tech/project/nautilus-trader)
-[![code-style: black](https://img.shields.io/badge/code%20style-black-000000.svg)](https://github.com/psf/black)
-[![Binder](https://mybinder.org/badge_logo.svg)](https://mybinder.org/v2/gh/nautechsystems/nautilus_trader/develop)  
+[![code-style: black](https://img.shields.io/badge/code%20style-black-000000.svg)](https://github.com/psf/black) 
+
+- **Website:** https://nautilustrader.io
+- **Docs:** https://docs.nautilustrader.io
+- **Support:** [support@nautilustrader.io](mailto:support@nautilustrader.io)
+- **Discord:** https://discord.gg/VXv6byZZ
 
 | Branch    | Version | Status |
 |:----------|:--------|:-------|
@@ -20,11 +24,6 @@
 | Linux (x86_64)   | `TBA`   | `3.8+` |
 | macOS (x86_64)   | `TBA`   | `3.8+` |
 | Windows (x86_64) | `TBA`   | `3.8+` |
-
-- **Website:** https://nautilustrader.io
-- **Docs:** https://docs.nautilustrader.io
-- **Support:** [support@nautilustrader.io](mailto:support@nautilustrader.io)
-- **Discord:** https://discord.gg/VXv6byZZ
 
 ## Introduction
 
@@ -133,10 +132,16 @@ Refer to the [Installation Guide](https://docs.nautilustrader.io/1_getting_start
 
 Indicators and strategies can be developed in both Python and Cython (although if performance and latency sensitivity is import we recommend Cython).
 The below are some examples of this:
-- [indicator](/examples/indicators/ema.py) example written in Python.
+- [indicator](/examples/indicators/ema_py.py) example written in Python.
 - [indicator](/nautilus_trader/indicators/) examples written in Cython.
 - [strategy](/nautilus_trader/examples/strategies/) examples written in both Python and Cython.
 - [backtest](/examples/backtest/) examples using a `BacktestEngine` directly.
+
+## Interactive Backtest Example
+
+[Binder](mybinder.org) can launch Jupyter Notebooks from source repositories.
+You can access a complete running backtest example through Binder here!
+[![Binder](https://mybinder.org/badge_logo.svg)](https://mybinder.org/v2/gh/nautechsystems/nautilus_trader/develop?filepath=docs/1_getting_started/2_quick_start.ipynb)
 
 ## Minimal Strategy
 
