@@ -141,6 +141,7 @@ The below are some examples of this:
 
 [Binder](mybinder.org) can launch Jupyter Notebooks from source repositories.
 You can access a complete running backtest example through Binder here!
+
 [![Binder](https://mybinder.org/badge_logo.svg)](https://mybinder.org/v2/gh/nautechsystems/nautilus_trader/develop?filepath=docs/1_getting_started/2_quick_start.ipynb)
 
 ## Minimal Strategy
