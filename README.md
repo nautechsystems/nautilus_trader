@@ -1,4 +1,4 @@
-<img src="https://github.com/nautechsystems/nautilus_trader/blob/develop/docs/artwork/nautilus-trader-logo.png" width="500">
+# <img src="https://github.com/nautechsystems/nautilus_trader/blob/develop/docs/artwork/nautilus-trader-logo.png" width="500">
 
 [![codacy-quality](https://api.codacy.com/project/badge/Grade/a1d3ccf7bccb4483b091975681a5cb23)](https://app.codacy.com/gh/nautechsystems/nautilus_trader?utm_source=github.com&utm_medium=referral&utm_content=nautechsystems/nautilus_trader&utm_campaign=Badge_Grade_Dashboard)
 [![codecov](https://codecov.io/gh/nautechsystems/nautilus_trader/branch/master/graph/badge.svg?token=DXO9QQI40H)](https://codecov.io/gh/nautechsystems/nautilus_trader)
@@ -264,7 +264,6 @@ A `Makefile` is provided to automate most installation and build tasks. It provi
 - `make install` -- Installs the package using poetry.
 - `make build` -- Runs the Cython build script.
 - `make clean` -- Cleans all none source artifacts from the repository.
-- `make clean-build` -- Runs `clean` and then `build`.
 - `make docs` -- Builds the internal documentation HTML using Sphinx.
 - `make pre-commit` -- Runs the pre-commit checks over all files.
 
