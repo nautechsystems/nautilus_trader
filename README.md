@@ -264,7 +264,6 @@ A `Makefile` is provided to automate most installation and build tasks. It provi
 - `make install` -- Installs the package using poetry.
 - `make build` -- Runs the Cython build script.
 - `make clean` -- Cleans all none source artifacts from the repository.
-- `make clean-build` -- Runs `clean` and then `build`.
 - `make docs` -- Builds the internal documentation HTML using Sphinx.
 - `make pre-commit` -- Runs the pre-commit checks over all files.
 
