@@ -139,7 +139,7 @@ The below are some examples of this:
 
 ## Interactive Backtest Example
 
-[Binder](mybinder.org) can launch Jupyter Notebooks from source repositories.
+[Binder](https://mybinder.org) can launch Jupyter Notebooks from source repositories.
 You can access a complete running backtest example through Binder here!
 *Please note that currently Binder needs to build the platform from scratch which
 can take a significant amount of time. We are working to optimize this.*
