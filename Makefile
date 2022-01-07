@@ -27,8 +27,6 @@ clean:
 	rm -f coverage.xml
 	rm -f dump.rdb
 
-clean-build: clean build
-
 docs:
 	poetry run sphinx-build docs docs/build/html -b html
 
