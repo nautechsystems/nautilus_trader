@@ -39,6 +39,7 @@ HTTP_CLIENTS: Dict[str, FTXHttpClient] = {}
 def get_cached_ftx_http_client(
     key: Optional[str],
     secret: Optional[str],
+    subaccount_name: Optional[str],
     loop: asyncio.AbstractEventLoop,
     clock: LiveClock,
     logger: Logger,
@@ -57,6 +58,9 @@ def get_cached_ftx_http_client(
     secret : str, optional
         The API secret for the client.
         If None then will source from the `FTX_API_SECRET` env var.
+    subaccount_name : str, optional
+        The sub-account name.
+        If None then will source from the `FTX_SUB_ACCOUNT` env var.
     loop : asyncio.AbstractEventLoop
         The event loop for the client.
     clock : LiveClock
@@ -73,6 +77,7 @@ def get_cached_ftx_http_client(
 
     key = key or os.environ["FTX_API_KEY"]
     secret = secret or os.environ["FTX_API_SECRET"]
+    subaccount_name = subaccount_name or os.environ["FTX_SUB_ACCOUNT"]
 
     client_key: str = "|".join((key, secret))
     if client_key not in HTTP_CLIENTS:
@@ -82,6 +87,7 @@ def get_cached_ftx_http_client(
             logger=logger,
             key=key,
             secret=secret,
+            subaccount_name=subaccount_name,
         )
         HTTP_CLIENTS[client_key] = client
     return HTTP_CLIENTS[client_key]

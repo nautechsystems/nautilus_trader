@@ -79,11 +79,13 @@ class FTXHttpClient(HttpClient):
         http_method: str,
         url_path: str,
         payload: Dict[str, str] = None,
+        params: Dict[str, Any] = None,
     ) -> Any:
         ts: int = self._clock.timestamp_ms()
 
         headers = {}
-        signature_payload: str = f"{ts}{http_method}/api/{url_path}"
+        query = self._url_encode(params)
+        signature_payload: str = f"{ts}{http_method}/api/{url_path}{query}"
         if payload and http_method in ["POST", "DELETE"]:
             signature_payload += self._prepare_payload(payload)
             headers["Content-Type"] = "application/json"
@@ -107,6 +109,7 @@ class FTXHttpClient(HttpClient):
             url_path=url_path,
             headers=headers,
             payload=payload,
+            params=params,
         )
 
     async def _send_request(
@@ -418,7 +421,11 @@ class FTXHttpClient(HttpClient):
         return await self._get(f"wallet/deposit_address/{ticker}")
 
     async def get_positions(self, show_avg_price: bool = False) -> List[dict]:
-        return await self._get("positions", {"showAvgPrice": show_avg_price})
+        return await self._sign_request(
+            http_method="GET",
+            url_path="positions",
+            params={"showAvgPrice": show_avg_price},
+        )
 
     async def get_position(self, name: str, show_avg_price: bool = False) -> dict:
         positions = await self.get_positions(show_avg_price)
