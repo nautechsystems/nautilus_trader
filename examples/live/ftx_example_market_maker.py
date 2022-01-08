@@ -18,15 +18,14 @@ from decimal import Decimal
 
 from nautilus_trader.adapters.ftx.factories import FTXLiveDataClientFactory
 from nautilus_trader.adapters.ftx.factories import FTXLiveExecutionClientFactory
-from nautilus_trader.examples.strategies.ema_cross import EMACross
-from nautilus_trader.examples.strategies.ema_cross import EMACrossConfig
+from nautilus_trader.examples.strategies.volatility_market_maker import VolatilityMarketMaker
+from nautilus_trader.examples.strategies.volatility_market_maker import VolatilityMarketMakerConfig
 from nautilus_trader.live.node import TradingNode
 from nautilus_trader.live.node import TradingNodeConfig
 
 
 # *** THIS IS A TEST STRATEGY WITH NO ALPHA ADVANTAGE WHATSOEVER. ***
 # *** IT IS NOT INTENDED TO BE USED TO TRADE LIVE WITH REAL MONEY. ***
-
 
 # Configure the trading node
 config_node = TradingNodeConfig(
@@ -59,16 +58,15 @@ config_node = TradingNodeConfig(
 node = TradingNode(config=config_node)
 
 # Configure your strategy
-strat_config = EMACrossConfig(
+strat_config = VolatilityMarketMakerConfig(
     instrument_id="ETH/USD.FTX",
     bar_type="ETH/USD.FTX-1-MINUTE-LAST-INTERNAL",
-    fast_ema_period=10,
-    slow_ema_period=20,
+    atr_period=20,
+    atr_multiple=6.0,
     trade_size=Decimal("0.01"),
-    order_id_tag="001",
 )
 # Instantiate your strategy
-strategy = EMACross(config=strat_config)
+strategy = VolatilityMarketMaker(config=strat_config)
 
 # Add your strategies and modules
 node.trader.add_strategy(strategy)
