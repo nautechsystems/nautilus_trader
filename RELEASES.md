@@ -6,6 +6,7 @@ Released TBD
 - Renamed `local_symbol` to `native_symbol`.
 - Removed the `VenueType` enum and `venue_type` param in favour of a `routing` bool flag.
 - Removed `account_id` param from execution client factories and constructors.
+- Changed `OMSType.HEDGING` venue position IDs (prepending the venue ID).
 
 ## Enhancements
 - Added FTX integration for testing.
