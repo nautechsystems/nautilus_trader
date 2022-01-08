@@ -251,5 +251,7 @@ class FTXLiveExecutionClientFactory(LiveExecutionClientFactory):
             clock=clock,
             logger=logger,
             instrument_provider=provider,
+            account_polling_interval=config.get("account_polling_interval", 60),
+            calculated_account=config.get("calculated_account", False),
         )
         return exec_client
