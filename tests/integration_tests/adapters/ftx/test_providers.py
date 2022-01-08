@@ -54,6 +54,7 @@ class TestFTXInstrumentProvider:
             url_path: str,  # noqa (needed for mock)
             headers: Dict[str, Any] = None,  # noqa (needed for mock)
             payload: Dict[str, str] = None,  # noqa (needed for mock)
+            params: Dict[str, str] = None,  # noqa (needed for mock)
         ) -> bytes:
             return orjson.loads(responses.pop())
 
