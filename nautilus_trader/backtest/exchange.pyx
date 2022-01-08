@@ -1458,7 +1458,7 @@ cdef class SimulatedExchange:
         cdef int pos_count = self._symbol_pos_count.get(instrument_id, 0)
         pos_count += 1
         self._symbol_pos_count[instrument_id] = pos_count
-        return PositionId(f"{self._instrument_indexer[instrument_id]}-{pos_count:03d}")
+        return PositionId(f"{self.id.value}-{self._instrument_indexer[instrument_id]}-{pos_count:03d}")
 
     cdef VenueOrderId _generate_venue_order_id(self, InstrumentId instrument_id):
         cdef int ord_count = self._symbol_ord_count.get(instrument_id, 0)
