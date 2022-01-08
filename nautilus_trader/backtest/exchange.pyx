@@ -1464,11 +1464,11 @@ cdef class SimulatedExchange:
         cdef int ord_count = self._symbol_ord_count.get(instrument_id, 0)
         ord_count += 1
         self._symbol_ord_count[instrument_id] = ord_count
-        return VenueOrderId(f"{self._instrument_indexer[instrument_id]}-{ord_count:03d}")
+        return VenueOrderId(f"{self.id.value}-{self._instrument_indexer[instrument_id]}-{ord_count:03d}")
 
     cdef ExecutionId _generate_execution_id(self):
         self._executions_count += 1
-        return ExecutionId(f"{self._executions_count}")
+        return ExecutionId(f"{self.id.value}-{self._executions_count}")
 
 # -- EVENT GENERATORS ------------------------------------------------------------------------------
 
