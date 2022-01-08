@@ -98,7 +98,6 @@ class TestLiveExecutionPerformance(PerformanceHarness):
 
         self.exec_client = MockExecutionClient(
             client_id=ClientId("BINANCE"),
-            account_id=self.account_id,
             account_type=AccountType.CASH,
             base_currency=None,  # Multi-currency account
             msgbus=self.msgbus,

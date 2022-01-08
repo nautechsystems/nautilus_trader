@@ -43,7 +43,6 @@ class TestCommands:
         self.uuid_factory = UUIDFactory()
 
         self.trader_id = TestStubs.trader_id()
-        self.account_id = TestStubs.account_id()
 
         self.order_factory = OrderFactory(
             trader_id=self.trader_id,

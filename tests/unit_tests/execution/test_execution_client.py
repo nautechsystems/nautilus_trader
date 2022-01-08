@@ -22,7 +22,6 @@ from nautilus_trader.execution.client import ExecutionClient
 from nautilus_trader.execution.engine import ExecutionEngine
 from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.enums import AccountType
-from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import StrategyId
 from nautilus_trader.model.identifiers import TraderId
@@ -44,7 +43,6 @@ class TestExecutionClient:
         self.logger = Logger(self.clock)
 
         self.trader_id = TestStubs.trader_id()
-        self.account_id = TestStubs.account_id()
 
         self.msgbus = MessageBus(
             trader_id=self.trader_id,
@@ -72,7 +70,6 @@ class TestExecutionClient:
 
         self.client = ExecutionClient(
             client_id=ClientId(self.venue.value),
-            account_id=TestStubs.account_id(),
             account_type=AccountType.MARGIN,
             base_currency=USD,
             msgbus=self.msgbus,
@@ -90,11 +87,10 @@ class TestExecutionClient:
     def test_venue_when_brokerage_returns_client_id_value_as_venue(self):
         assert self.client.venue == self.venue
 
-    def test_venue_when_brokerage_multi_venue_returns_none(self):
+    def test_venue_when_routing_venue_returns_none(self):
         # Arrange
         client = ExecutionClient(
             client_id=ClientId("IB"),
-            account_id=AccountId("IB", "U1258001"),
             account_type=AccountType.MARGIN,
             base_currency=USD,
             msgbus=self.msgbus,

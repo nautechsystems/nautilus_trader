@@ -98,7 +98,6 @@ class BinanceDataClient(LiveMarketDataClient):
             cache=cache,
             clock=clock,
             logger=logger,
-            config={"name": "BinanceDataClient"},
         )
 
         self._client = client

@@ -37,16 +37,16 @@ config_node = TradingNodeConfig(
         "FTX": {
             # "api_key": "YOUR_FTX_API_KEY",
             # "api_secret": "YOUR_FTX_API_SECRET",
-            # "account_id": "YOUR_FTX_ACCOUNT_ID", (optional)
-            "sandbox_mode": False,  # If client uses the testnet
+            # "subaccount": "YOUR_FTX_SUBACCOUNT", (optional)
+            "us": False,  # If client is for FTX US
         },
     },
     exec_clients={
         "FTX": {
             # "api_key": "YOUR_FTX_API_KEY",
             # "api_secret": "YOUR_FTX_API_SECRET",
-            # "account_id": "YOUR_FTX_ACCOUNT_ID", (optional)
-            "sandbox_mode": False,  # If client uses the testnet,
+            # "subaccount": "YOUR_FTX_SUBACCOUNT", (optional)
+            "us": False,  # If client is for FTX US
         },
     },
     timeout_connection=5.0,

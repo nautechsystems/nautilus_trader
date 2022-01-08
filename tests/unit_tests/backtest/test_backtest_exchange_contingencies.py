@@ -33,7 +33,6 @@ from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import OMSType
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import OrderStatus
-from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Quantity
@@ -59,7 +58,6 @@ class TestSimulatedExchangeContingencyAdvancedOrders:
         )
 
         self.trader_id = TestStubs.trader_id()
-        self.account_id = TestStubs.account_id()
 
         self.msgbus = MessageBus(
             trader_id=self.trader_id,
@@ -118,7 +116,6 @@ class TestSimulatedExchangeContingencyAdvancedOrders:
 
         self.exec_client = BacktestExecClient(
             exchange=self.exchange,
-            account_id=AccountId("FTX", "001"),
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,

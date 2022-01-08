@@ -18,7 +18,6 @@ import os
 from functools import lru_cache
 from typing import Any, Dict, Optional
 
-from nautilus_trader.adapters.binance.common import BINANCE_VENUE
 from nautilus_trader.adapters.binance.data import BinanceDataClient
 from nautilus_trader.adapters.binance.execution import BinanceSpotExecutionClient
 from nautilus_trader.adapters.binance.http.client import BinanceHttpClient
@@ -29,7 +28,6 @@ from nautilus_trader.common.logging import LiveLogger
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.live.factories import LiveDataClientFactory
 from nautilus_trader.live.factories import LiveExecutionClientFactory
-from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.msgbus.bus import MessageBus
 
 
@@ -230,17 +228,10 @@ class BinanceLiveExecutionClientFactory(LiveExecutionClientFactory):
         # Get instrument provider singleton
         provider = get_cached_binance_instrument_provider(client=client, logger=logger)
 
-        # Get account ID env variable or set default
-        account_id_env_var = os.getenv(config.get("account_id", ""), "001")
-
-        # Set account ID
-        account_id = AccountId(BINANCE_VENUE.value, account_id_env_var)
-
         # Create client
         exec_client = BinanceSpotExecutionClient(
             loop=loop,
             client=client,
-            account_id=account_id,
             msgbus=msgbus,
             cache=cache,
             clock=clock,

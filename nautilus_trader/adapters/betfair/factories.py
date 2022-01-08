@@ -19,7 +19,6 @@ from functools import lru_cache
 from typing import Any, Dict, Optional
 
 from nautilus_trader.adapters.betfair.client.core import BetfairClient
-from nautilus_trader.adapters.betfair.common import BETFAIR_VENUE
 from nautilus_trader.adapters.betfair.data import BetfairDataClient
 from nautilus_trader.adapters.betfair.execution import BetfairExecutionClient
 from nautilus_trader.adapters.betfair.providers import BetfairInstrumentProvider
@@ -31,7 +30,6 @@ from nautilus_trader.common.logging import LoggerAdapter
 from nautilus_trader.live.factories import LiveDataClientFactory
 from nautilus_trader.live.factories import LiveExecutionClientFactory
 from nautilus_trader.model.currency import Currency
-from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.msgbus.bus import MessageBus
 
 
@@ -256,17 +254,10 @@ class BetfairLiveExecutionClientFactory(LiveExecutionClientFactory):
             client=client, logger=logger, market_filter=tuple(market_filter.items())
         )
 
-        # Get account ID env variable or set default
-        account_id_env_var = os.getenv(config.get("account_id", ""), "001")
-
-        # Set account ID
-        account_id = AccountId(BETFAIR_VENUE.value, account_id_env_var)
-
         # Create client
         exec_client = BetfairExecutionClient(
             loop=loop,
             client=client,
-            account_id=account_id,
             base_currency=Currency.from_str(config.get("base_currency")),
             msgbus=msgbus,
             cache=cache,

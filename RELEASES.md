@@ -5,9 +5,10 @@ Released TBD
 ## Breaking Changes
 - Renamed `local_symbol` to `native_symbol`.
 - Removed the `VenueType` enum and `venue_type` param in favour of a `routing` bool flag.
+- Removed `account_id` param from execution client factories and constructors.
 
 ## Enhancements
-None
+- Added FTX integration for testing.
 
 ## Fixes
 - Fixed parsing of `BarType` with symbols including hyphens `-`.

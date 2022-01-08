@@ -34,7 +34,6 @@ from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import OrderStatus
 from nautilus_trader.model.events.order import OrderCanceled
 from nautilus_trader.model.events.order import OrderUpdated
-from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import ClientOrderId
 from nautilus_trader.model.identifiers import OrderListId
@@ -135,7 +134,6 @@ class TestExecutionEngine:
         self.venue = Venue("SIM")
         self.exec_client = MockExecutionClient(
             client_id=ClientId(self.venue.value),
-            account_id=self.account_id,
             account_type=AccountType.MARGIN,
             base_currency=USD,
             msgbus=self.msgbus,
@@ -158,7 +156,6 @@ class TestExecutionEngine:
         # Arrange
         exec_client = MockExecutionClient(
             client_id=ClientId("IB"),
-            account_id=AccountId("IB", "U1258001"),
             account_type=AccountType.MARGIN,
             base_currency=USD,
             msgbus=self.msgbus,
@@ -182,7 +179,6 @@ class TestExecutionEngine:
         # Arrange
         exec_client = MockExecutionClient(
             client_id=ClientId("IB"),
-            account_id=AccountId("IB", "U1258001"),
             account_type=AccountType.MARGIN,
             base_currency=USD,
             msgbus=self.msgbus,

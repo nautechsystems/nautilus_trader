@@ -36,7 +36,6 @@ config_node = TradingNodeConfig(
         "BINANCE": {
             # "api_key": "YOUR_BINANCE_API_KEY",
             # "api_secret": "YOUR_BINANCE_API_SECRET",
-            # "account_id": "YOUR_BINANCE_ACCOUNT_ID", (optional)
             "sandbox_mode": False,  # If client uses the testnet
         },
     },
@@ -44,7 +43,6 @@ config_node = TradingNodeConfig(
         "BINANCE": {
             # "api_key": "YOUR_BINANCE_API_KEY",
             # "api_secret": "YOUR_BINANCE_API_SECRET",
-            # "account_id": "YOUR_BINANCE_ACCOUNT_ID", (optional)
             "sandbox_mode": False,  # If client uses the testnet,
         },
     },

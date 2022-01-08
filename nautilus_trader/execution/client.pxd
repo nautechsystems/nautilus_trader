@@ -50,7 +50,7 @@ cdef class ExecutionClient(Component):
     cdef readonly Venue venue
     """The clients venue ID (if not a routing client).\n\n:returns: `Venue` or ``None``"""
     cdef readonly AccountId account_id
-    """The clients account ID.\n\n:returns: `AccountId`"""
+    """The clients account ID.\n\n:returns: `AccountId` or ``None``"""
     cdef readonly AccountType account_type
     """The clients account type.\n\n:returns: `AccountType`"""
     cdef readonly Currency base_currency
@@ -61,6 +61,7 @@ cdef class ExecutionClient(Component):
     cpdef Account get_account(self)
 
     cpdef void _set_connected(self, bint value=*) except *
+    cpdef void _set_account_id(self, AccountId account_id) except *
 
 # -- COMMAND HANDLERS ------------------------------------------------------------------------------
 

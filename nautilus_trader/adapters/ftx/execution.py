@@ -21,6 +21,7 @@ from typing import Any, Dict, List, Optional
 import orjson
 import pandas as pd
 
+from nautilus_trader.accounting.factory import AccountFactory
 from nautilus_trader.adapters.ftx.common import FTX_VENUE
 from nautilus_trader.adapters.ftx.http.client import FTXHttpClient
 from nautilus_trader.adapters.ftx.http.error import FTXError
@@ -78,8 +79,6 @@ class FTXExecutionClient(LiveExecutionClient):
         The event loop for the client.
     client : FTXHttpClient
         The FTX HTTP client.
-    account_id : AccountId
-        The account ID for the client.
     msgbus : MessageBus
         The message bus for the client.
     cache : Cache
@@ -96,7 +95,6 @@ class FTXExecutionClient(LiveExecutionClient):
         self,
         loop: asyncio.AbstractEventLoop,
         client: FTXHttpClient,
-        account_id: AccountId,
         msgbus: MessageBus,
         cache: Cache,
         clock: LiveClock,
@@ -107,14 +105,12 @@ class FTXExecutionClient(LiveExecutionClient):
             loop=loop,
             client_id=ClientId(FTX_VENUE.value),
             instrument_provider=instrument_provider,
-            account_id=account_id,
             account_type=AccountType.MARGIN,
             base_currency=USD,
             msgbus=msgbus,
             cache=cache,
             clock=clock,
             logger=logger,
-            config={"name": "FTXExecClient"},
         )
 
         self._http_client = client
@@ -131,6 +127,8 @@ class FTXExecutionClient(LiveExecutionClient):
         self._instrument_ids: Dict[str, InstrumentId] = {}
         self._order_ids: Dict[VenueOrderId, ClientOrderId] = {}
         self._order_types: Dict[VenueOrderId, OrderType] = {}
+
+        AccountFactory.register_calculated_account(FTX_VENUE.value)
 
     def connect(self):
         """
@@ -158,6 +156,7 @@ class FTXExecutionClient(LiveExecutionClient):
 
         # Update account state
         account_info: Dict[str, Any] = await self._http_client.get_account_info()
+        self._set_account_id(AccountId(FTX_VENUE.value, str(account_info["accountIdentifier"])))
         self._handle_account_info(account_info)
 
         self._log.info("FTX API key authenticated.", LogColor.GREEN)

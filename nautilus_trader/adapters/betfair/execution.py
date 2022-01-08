@@ -81,8 +81,6 @@ class BetfairExecutionClient(LiveExecutionClient):
         The event loop for the client.
     client : BetfairClient
         The Betfair HttpClient.
-    account_id : AccountId
-        The account ID for the client.
     base_currency : Currency
         The account base currency for the client.
     msgbus : MessageBus
@@ -103,7 +101,6 @@ class BetfairExecutionClient(LiveExecutionClient):
         self,
         loop: asyncio.AbstractEventLoop,
         client: BetfairClient,
-        account_id: AccountId,
         base_currency: Currency,
         msgbus: MessageBus,
         cache: Cache,
@@ -117,14 +114,12 @@ class BetfairExecutionClient(LiveExecutionClient):
             client_id=ClientId(BETFAIR_VENUE.value),
             instrument_provider=instrument_provider
             or BetfairInstrumentProvider(client=client, logger=logger, market_filter=market_filter),
-            account_id=account_id,
             account_type=AccountType.BETTING,
             base_currency=base_currency,
             msgbus=msgbus,
             cache=cache,
             clock=clock,
             logger=logger,
-            config={"name": "BetfairExecClient"},
         )
 
         self._client: BetfairClient = client
@@ -138,7 +133,8 @@ class BetfairExecutionClient(LiveExecutionClient):
         self.pending_update_order_client_ids: Set[Tuple[ClientOrderId, VenueOrderId]] = set()
         self.published_executions: Dict[ClientOrderId, ExecutionId] = defaultdict(list)
 
-        AccountFactory.register_calculated_account(account_id.issuer)
+        self._set_account_id(AccountId(BETFAIR_VENUE.value, "001"))  # TODO(cs): Temporary
+        AccountFactory.register_calculated_account(BETFAIR_VENUE.value)
 
     # -- CONNECTION HANDLERS -----------------------------------------------------------------------
 

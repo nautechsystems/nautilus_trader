@@ -44,7 +44,6 @@ from nautilus_trader.model.enums import PositionSide
 from nautilus_trader.model.enums import TimeInForce
 from nautilus_trader.model.events.order import OrderAccepted
 from nautilus_trader.model.events.order import OrderRejected
-from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import ClientOrderId
 from nautilus_trader.model.identifiers import PositionId
 from nautilus_trader.model.identifiers import StrategyId
@@ -73,7 +72,6 @@ class TestSimulatedExchange:
         self.logger = Logger(clock=self.clock)
 
         self.trader_id = TestStubs.trader_id()
-        self.account_id = TestStubs.account_id()
 
         self.msgbus = MessageBus(
             trader_id=self.trader_id,
@@ -132,7 +130,6 @@ class TestSimulatedExchange:
 
         self.exec_client = BacktestExecClient(
             exchange=self.exchange,
-            account_id=self.account_id,
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
@@ -1847,7 +1844,6 @@ class TestBitmexExchange:
         self.logger = Logger(self.clock)
 
         self.trader_id = TestStubs.trader_id()
-        self.account_id = AccountId("BITMEX", "001")
 
         self.msgbus = MessageBus(
             trader_id=self.trader_id,
@@ -1906,7 +1902,6 @@ class TestBitmexExchange:
 
         self.exec_client = BacktestExecClient(
             exchange=self.exchange,
-            account_id=self.account_id,
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,

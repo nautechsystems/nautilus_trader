@@ -83,8 +83,6 @@ class BinanceSpotExecutionClient(LiveExecutionClient):
         The event loop for the client.
     client : BinanceHttpClient
         The binance HTTP client.
-    account_id : AccountId
-        The account ID for the client.
     msgbus : MessageBus
         The message bus for the client.
     cache : Cache
@@ -101,7 +99,6 @@ class BinanceSpotExecutionClient(LiveExecutionClient):
         self,
         loop: asyncio.AbstractEventLoop,
         client: BinanceHttpClient,
-        account_id: AccountId,
         msgbus: MessageBus,
         cache: Cache,
         clock: LiveClock,
@@ -112,17 +109,16 @@ class BinanceSpotExecutionClient(LiveExecutionClient):
             loop=loop,
             client_id=ClientId(BINANCE_VENUE.value),
             instrument_provider=instrument_provider,
-            account_id=account_id,
             account_type=AccountType.CASH,
             base_currency=None,
             msgbus=msgbus,
             cache=cache,
             clock=clock,
             logger=logger,
-            config={"name": "BinanceExecClient"},
         )
 
         self._client = client
+        self._set_account_id(AccountId(BINANCE_VENUE.value, "master"))
 
         # HTTP API
         self._account_spot = BinanceSpotAccountHttpAPI(client=self._client)

@@ -112,7 +112,6 @@ class TestBetfairExecutionClient:
         self.client = BetfairExecutionClient(
             loop=asyncio.get_event_loop(),
             client=self.betfair_client,
-            account_id=self.account_id,
             base_currency=GBP,
             msgbus=self.msgbus,
             cache=self.cache,
