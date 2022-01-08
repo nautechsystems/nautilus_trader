@@ -332,8 +332,8 @@ None
 Released on 2nd, August 2021
 
 This release sees the completion of the initial implementation of the 
-`MessageBus`, with data now being handled by PUB/SUB patterns, along with the 
-additions of point-to-point and REQ/REP messaging functionality.
+`MessageBus`, with data now being handled by Pub/Sub patterns, along with the 
+additions of point-to-point and Req/Rep messaging functionality.
 
 An `Actor` base class has been abstracted from `TradingStrategy` which allows
 custom components to be added to a `Trader` which aren't necessarily trading 
@@ -391,7 +391,7 @@ Released on 18th, July 2021
 
 This release introduces a major re-architecture of the internal messaging system.
 A common message bus has been implemented which now handles all events via a 
-PUB/SUB messaging pattern. The next release will see all data being handled by 
+Pub/Sub messaging pattern. The next release will see all data being handled by 
 the message bus, please see the related issue for further details on this enhancement.
 
 Another notable feature is the introduction of the order 'in-flight' concept, 

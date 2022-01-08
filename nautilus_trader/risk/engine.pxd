@@ -83,9 +83,9 @@ cdef class RiskEngine(Component):
 
     cdef bint _check_order_id(self, Order order) except *
     cdef bint _check_order(self, Instrument instrument, Order order) except *
-    cdef bint _check_order_quantity(self, Instrument instrument, Order order) except *
     cdef bint _check_order_price(self, Instrument instrument, Order order) except *
-    cdef bint _check_order_risk(self, Instrument instrument, Order order) except *
+    cdef bint _check_order_quantity(self, Instrument instrument, Order order) except *
+    cdef bint _check_orders_risk(self, Instrument instrument, list orders) except *
     cdef str _check_price(self, Instrument instrument, Price price)
     cdef str _check_quantity(self, Instrument instrument, Quantity quantity)
 
