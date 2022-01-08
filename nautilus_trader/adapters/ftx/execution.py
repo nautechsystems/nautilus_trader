@@ -14,7 +14,6 @@
 # -------------------------------------------------------------------------------------------------
 
 import asyncio
-import json
 import uuid
 from datetime import datetime
 from typing import Any, Dict, List, Optional
@@ -43,7 +42,9 @@ from nautilus_trader.model.commands.trading import ModifyOrder
 from nautilus_trader.model.commands.trading import SubmitOrder
 from nautilus_trader.model.commands.trading import SubmitOrderList
 from nautilus_trader.model.currencies import USD
+from nautilus_trader.model.currency import Currency
 from nautilus_trader.model.enums import LiquiditySide
+from nautilus_trader.model.enums import OrderStatus
 from nautilus_trader.model.enums import OrderType
 from nautilus_trader.model.enums import TimeInForce
 from nautilus_trader.model.identifiers import AccountId
@@ -128,6 +129,8 @@ class FTXExecutionClient(LiveExecutionClient):
 
         # Hot caches
         self._instrument_ids: Dict[str, InstrumentId] = {}
+        self._order_ids: Dict[VenueOrderId, ClientOrderId] = {}
+        self._order_types: Dict[VenueOrderId, OrderType] = {}
 
     def connect(self):
         """
@@ -156,6 +159,9 @@ class FTXExecutionClient(LiveExecutionClient):
         # Update account state
         account_info: Dict[str, Any] = await self._http_client.get_account_info()
         self._handle_account_info(account_info)
+
+        self._log.info("FTX API key authenticated.", LogColor.GREEN)
+        self._log.info(f"API key {self._http_client.api_key}.")
 
         # Connect WebSocket client
         await self._ws_client.connect(start=True)
@@ -186,7 +192,7 @@ class FTXExecutionClient(LiveExecutionClient):
     def submit_order_list(self, command: SubmitOrderList) -> None:
         # TODO: Implement
         self._log.error(
-            f"Cannot process command {command}. " f"Not implemented in this version.",
+            f"Cannot process command {command}. Not implemented in this version.",
         )
 
     def modify_order(self, command: ModifyOrder) -> None:
@@ -232,7 +238,7 @@ class FTXExecutionClient(LiveExecutionClient):
             market=order.instrument_id.symbol.value,
             side=OrderSideParser.to_str_py(order.side).lower(),
             size=str(order.quantity),
-            type="stop",
+            type="market",
             client_id=order.client_order_id.value,
             ioc=order.time_in_force == TimeInForce.IOC,
             reduce_only=order.is_reduce_only,
@@ -277,6 +283,13 @@ class FTXExecutionClient(LiveExecutionClient):
     async def _modify_order(self, command: ModifyOrder) -> None:
         self._log.debug(f"Modifying order {command.client_order_id.value}.")
 
+        self.generate_order_pending_update(
+            strategy_id=command.strategy_id,
+            instrument_id=command.instrument_id,
+            client_order_id=command.client_order_id,
+            venue_order_id=command.venue_order_id,
+            ts_event=self._clock.timestamp_ns(),
+        )
         try:
             await self._http_client.modify_order(
                 client_order_id=command.client_order_id.value,
@@ -289,6 +302,13 @@ class FTXExecutionClient(LiveExecutionClient):
     async def _cancel_order(self, command: CancelOrder) -> None:
         self._log.debug(f"Canceling order {command.client_order_id.value}.")
 
+        self.generate_order_pending_cancel(
+            strategy_id=command.strategy_id,
+            instrument_id=command.instrument_id,
+            client_order_id=command.client_order_id,
+            venue_order_id=command.venue_order_id,
+            ts_event=self._clock.timestamp_ns(),
+        )
         try:
             await self._http_client.cancel_order(command.client_order_id.value)
         except FTXError as ex:
@@ -297,6 +317,33 @@ class FTXExecutionClient(LiveExecutionClient):
     async def _cancel_all_orders(self, command: CancelAllOrders) -> None:
         self._log.debug(f"Canceling all orders for {command.instrument_id.value}.")
 
+        # Cancel all in-flight orders
+        inflight_orders = self._cache.orders_inflight(
+            instrument_id=command.instrument_id,
+            strategy_id=command.strategy_id,
+        )
+        for order in inflight_orders:
+            self.generate_order_pending_cancel(
+                strategy_id=order.strategy_id,
+                instrument_id=order.instrument_id,
+                client_order_id=order.client_order_id,
+                venue_order_id=order.venue_order_id,
+                ts_event=self._clock.timestamp_ns(),
+            )
+
+        # Cancel all working orders
+        working_orders = self._cache.orders_working(
+            instrument_id=command.instrument_id,
+            strategy_id=command.strategy_id,
+        )
+        for order in working_orders:
+            self.generate_order_pending_cancel(
+                strategy_id=order.strategy_id,
+                instrument_id=order.instrument_id,
+                client_order_id=order.client_order_id,
+                venue_order_id=order.venue_order_id,
+                ts_event=self._clock.timestamp_ns(),
+            )
         try:
             await self._http_client.cancel_all_orders(command.instrument_id.symbol.value)
         except FTXError as ex:
@@ -393,7 +440,7 @@ class FTXExecutionClient(LiveExecutionClient):
             return
 
         # TODO(cs): Uncomment for development
-        self._log.info(str(json.dumps(msg, indent=4)), color=LogColor.GREEN)
+        # self._log.info(str(json.dumps(msg, indent=4)), color=LogColor.GREEN)
 
         # Get instrument
         instrument_id: InstrumentId = self._get_cached_instrument_id(data)
@@ -418,8 +465,8 @@ class FTXExecutionClient(LiveExecutionClient):
             return
 
         # Parse identifiers
-        venue_order_id = VenueOrderId(data["orderId"])
-        client_order_id = self._cache.client_order_id(venue_order_id)
+        venue_order_id = VenueOrderId(str(data["orderId"]))
+        client_order_id = self._order_ids.get(venue_order_id)
         if client_order_id is None:
             client_order_id = ClientOrderId(str(uuid.uuid4()))
 
@@ -440,11 +487,11 @@ class FTXExecutionClient(LiveExecutionClient):
             venue_position_id=None,  # NETTING accounts
             execution_id=ExecutionId(str(data["id"])),  # Trade ID
             order_side=OrderSideParser.from_str_py(data["side"].upper()),
-            order_type=parse_order_type(data),
+            order_type=self._order_types[venue_order_id],
             last_qty=Quantity(data["size"], instrument.size_precision),
             last_px=Price(data["price"], instrument.price_precision),
             quote_currency=instrument.quote_currency,
-            commission=Money(data["fee"], USD),
+            commission=Money(data["fee"], Currency.from_str(data["feeCurrency"])),
             liquidity_side=LiquiditySide.MAKER
             if data["liquidity"] == "maker"
             else LiquiditySide.TAKER,
@@ -457,7 +504,11 @@ class FTXExecutionClient(LiveExecutionClient):
         if not client_order_id_str:
             client_order_id_str = str(uuid.uuid4())
         client_order_id = ClientOrderId(client_order_id_str)
-        venue_order_id = VenueOrderId(data["orderId"])
+        venue_order_id = VenueOrderId(str(data["id"]))
+
+        # Hot Cache
+        self._order_ids[venue_order_id] = client_order_id
+        self._order_types[venue_order_id] = parse_order_type(data)
 
         # Fetch strategy ID
         strategy_id: StrategyId = self._cache.strategy_id_for_order(client_order_id)
@@ -468,8 +519,7 @@ class FTXExecutionClient(LiveExecutionClient):
             )
             return
 
-        # order_type_str: str = data["type"]
-        ts_event: int = pd.to_datetime(data["time"], utc=True).to_datetime64()
+        ts_event: int = pd.to_datetime(data["createdAt"], utc=True).to_datetime64()
 
         order_status = data["status"]
         if order_status == "new":
@@ -480,7 +530,13 @@ class FTXExecutionClient(LiveExecutionClient):
                 venue_order_id=venue_order_id,
                 ts_event=ts_event,
             )
-        else:
-            self._log.error(f"Unknown order status, was {order_status}")
-
-        # TODO: WIP
+        elif order_status == "closed":
+            order = self._cache.order(client_order_id)
+            if order and order.status != OrderStatus.SUBMITTED:
+                self.generate_order_canceled(
+                    strategy_id=strategy_id,
+                    instrument_id=instrument.id,
+                    client_order_id=client_order_id,
+                    venue_order_id=venue_order_id,
+                    ts_event=ts_event,
+                )

@@ -37,11 +37,11 @@ HTTP_CLIENTS: Dict[str, BinanceHttpClient] = {}
 
 
 def get_cached_binance_http_client(
-    key: Optional[str],
-    secret: Optional[str],
     loop: asyncio.AbstractEventLoop,
     clock: LiveClock,
     logger: Logger,
+    key: Optional[str] = None,
+    secret: Optional[str] = None,
 ) -> BinanceHttpClient:
     """
     Cache and return a Binance HTTP client with the given key and secret.
@@ -51,18 +51,18 @@ def get_cached_binance_http_client(
 
     Parameters
     ----------
-    key : str, optional
-        The API key for the client.
-        If None then will source from the `BINANCE_API_KEY` env var.
-    secret : str, optional
-        The API secret for the client.
-        If None then will source from the `BINANCE_API_SECRET` env var.
     loop : asyncio.AbstractEventLoop
         The event loop for the client.
     clock : LiveClock
         The clock for the client.
     logger : Logger
         The logger for the client.
+    key : str, optional
+        The API key for the client.
+        If None then will source from the `BINANCE_API_KEY` env var.
+    secret : str, optional
+        The API secret for the client.
+        If None then will source from the `BINANCE_API_SECRET` env var.
 
     Returns
     -------
@@ -156,11 +156,11 @@ class BinanceLiveDataClientFactory(LiveDataClientFactory):
 
         """
         client = get_cached_binance_http_client(
-            key=config.get("api_key"),
-            secret=config.get("api_secret"),
             loop=loop,
             clock=clock,
             logger=logger,
+            key=config.get("api_key"),
+            secret=config.get("api_secret"),
         )
 
         # Get instrument provider singleton
@@ -220,11 +220,11 @@ class BinanceLiveExecutionClientFactory(LiveExecutionClientFactory):
 
         """
         client = get_cached_binance_http_client(
-            key=config.get("api_key"),
-            secret=config.get("api_secret"),
             loop=loop,
             clock=clock,
             logger=logger,
+            key=config.get("api_key"),
+            secret=config.get("api_secret"),
         )
 
         # Get instrument provider singleton

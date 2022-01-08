@@ -37,12 +37,12 @@ HTTP_CLIENTS: Dict[str, FTXHttpClient] = {}
 
 
 def get_cached_ftx_http_client(
-    key: Optional[str],
-    secret: Optional[str],
-    subaccount_name: Optional[str],
     loop: asyncio.AbstractEventLoop,
     clock: LiveClock,
     logger: Logger,
+    key: Optional[str] = None,
+    secret: Optional[str] = None,
+    subaccount_name: Optional[str] = None,
 ) -> FTXHttpClient:
     """
     Cache and return a FTX HTTP client with the given key or secret.
@@ -52,6 +52,12 @@ def get_cached_ftx_http_client(
 
     Parameters
     ----------
+    loop : asyncio.AbstractEventLoop
+        The event loop for the client.
+    clock : LiveClock
+        The clock for the client.
+    logger : Logger
+        The logger for the client.
     key : str, optional
         The API key for the client.
         If None then will source from the `FTX_API_KEY` env var.
@@ -61,12 +67,6 @@ def get_cached_ftx_http_client(
     subaccount_name : str, optional
         The sub-account name.
         If None then will source from the `FTX_SUB_ACCOUNT` env var.
-    loop : asyncio.AbstractEventLoop
-        The event loop for the client.
-    clock : LiveClock
-        The clock for the client.
-    logger : Logger
-        The logger for the client.
 
     Returns
     -------
@@ -79,7 +79,7 @@ def get_cached_ftx_http_client(
     secret = secret or os.environ["FTX_API_SECRET"]
     subaccount_name = subaccount_name or os.environ.get("FTX_SUB_ACCOUNT")
 
-    client_key: str = "|".join((key, secret))
+    client_key: str = "|".join((key, secret, subaccount_name or "None"))
     if client_key not in HTTP_CLIENTS:
         client = FTXHttpClient(
             loop=loop,
@@ -162,12 +162,12 @@ class FTXLiveDataClientFactory(LiveDataClientFactory):
 
         """
         client = get_cached_ftx_http_client(
-            key=config.get("api_key"),
-            secret=config.get("api_secret"),
-            subaccount_name=config.get("sub_account"),
             loop=loop,
             clock=clock,
             logger=logger,
+            key=config.get("api_key"),
+            secret=config.get("api_secret"),
+            subaccount_name=config.get("sub_account"),
         )
 
         # Get instrument provider singleton
@@ -227,12 +227,12 @@ class FTXLiveExecutionClientFactory(LiveExecutionClientFactory):
 
         """
         client = get_cached_ftx_http_client(
-            key=config.get("api_key"),
-            secret=config.get("api_secret"),
-            subaccount_name=config.get("sub_account"),
             loop=loop,
             clock=clock,
             logger=logger,
+            key=config.get("api_key"),
+            secret=config.get("api_secret"),
+            subaccount_name=config.get("sub_account"),
         )
 
         # Get instrument provider singleton
