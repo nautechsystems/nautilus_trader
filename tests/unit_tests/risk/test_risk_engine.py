@@ -715,7 +715,7 @@ class TestRiskEngine:
         # Assert
         assert self.exec_engine.command_count == 0  # <-- command never reaches engine
 
-    def test_submit_order_when_market_order_and_no_market_to_check_then_denies(self):
+    def test_submit_order_when_market_order_and_no_market_then_logs_warning(self):
         # Arrange
         self.risk_engine.set_max_notional_per_order(AUDUSD_SIM.id, 1_000_000)
 
@@ -750,7 +750,7 @@ class TestRiskEngine:
         self.risk_engine.execute(submit_order)
 
         # Assert
-        assert self.exec_engine.command_count == 0  # <-- command never reaches engine
+        assert self.exec_engine.command_count == 1  # <-- command reaches engine with warning
 
     def test_submit_order_when_market_order_and_over_max_notional_then_denies(self):
         # Arrange
