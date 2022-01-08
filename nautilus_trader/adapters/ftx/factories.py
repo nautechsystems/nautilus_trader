@@ -77,7 +77,7 @@ def get_cached_ftx_http_client(
 
     key = key or os.environ["FTX_API_KEY"]
     secret = secret or os.environ["FTX_API_SECRET"]
-    subaccount_name = subaccount_name or os.environ["FTX_SUB_ACCOUNT"]
+    subaccount_name = subaccount_name or os.environ.get("FTX_SUB_ACCOUNT")
 
     client_key: str = "|".join((key, secret))
     if client_key not in HTTP_CLIENTS:
