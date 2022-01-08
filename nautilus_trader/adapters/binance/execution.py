@@ -353,6 +353,14 @@ class BinanceSpotExecutionClient(LiveExecutionClient):
     async def _cancel_order(self, command: CancelOrder) -> None:
         self._log.debug(f"Canceling order {command.client_order_id.value}.")
 
+        self.generate_order_pending_cancel(
+            strategy_id=command.strategy_id,
+            instrument_id=command.instrument_id,
+            client_order_id=command.client_order_id,
+            venue_order_id=command.venue_order_id,
+            ts_event=self._clock.timestamp_ns(),
+        )
+
         try:
             await self._account_spot.cancel_order(
                 symbol=command.instrument_id.symbol.value,
@@ -363,6 +371,34 @@ class BinanceSpotExecutionClient(LiveExecutionClient):
 
     async def _cancel_all_orders(self, command: CancelAllOrders) -> None:
         self._log.debug(f"Canceling all orders for {command.instrument_id.value}.")
+
+        # Cancel all in-flight orders
+        inflight_orders = self._cache.orders_inflight(
+            instrument_id=command.instrument_id,
+            strategy_id=command.strategy_id,
+        )
+        for order in inflight_orders:
+            self.generate_order_pending_cancel(
+                strategy_id=order.strategy_id,
+                instrument_id=order.instrument_id,
+                client_order_id=order.client_order_id,
+                venue_order_id=order.venue_order_id,
+                ts_event=self._clock.timestamp_ns(),
+            )
+
+        # Cancel all working orders
+        working_orders = self._cache.orders_working(
+            instrument_id=command.instrument_id,
+            strategy_id=command.strategy_id,
+        )
+        for order in working_orders:
+            self.generate_order_pending_cancel(
+                strategy_id=order.strategy_id,
+                instrument_id=order.instrument_id,
+                client_order_id=order.client_order_id,
+                venue_order_id=order.venue_order_id,
+                ts_event=self._clock.timestamp_ns(),
+            )
 
         try:
             await self._account_spot.cancel_open_orders(
