@@ -89,6 +89,10 @@ class FTXExecutionClient(LiveExecutionClient):
         The logger for the client.
     instrument_provider : FTXInstrumentProvider
         The instrument provider.
+    account_polling_interval : int, default 60
+        The interval length (seconds) between account reconciliations.
+    calculated_account : bool, default False
+        If the account state will be calculated internally from each order fill.
     """
 
     def __init__(
@@ -100,6 +104,8 @@ class FTXExecutionClient(LiveExecutionClient):
         clock: LiveClock,
         logger: Logger,
         instrument_provider: FTXInstrumentProvider,
+        account_polling_interval: int = 60,
+        calculated_account: bool = False,
     ):
         super().__init__(
             loop=loop,
@@ -128,7 +134,17 @@ class FTXExecutionClient(LiveExecutionClient):
         self._order_ids: Dict[VenueOrderId, ClientOrderId] = {}
         self._order_types: Dict[VenueOrderId, OrderType] = {}
 
-        AccountFactory.register_calculated_account(FTX_VENUE.value)
+        self._account_polling_interval = account_polling_interval
+        self._calculated_account = calculated_account
+
+        self._log.info(
+            f"Set account polling interval {self._account_polling_interval}s.",
+            LogColor.BLUE,
+        )
+
+        if self._calculated_account:
+            self._log.info("Set for calculated account.", LogColor.BLUE)
+            AccountFactory.register_calculated_account(FTX_VENUE.value)
 
     def connect(self):
         """
@@ -155,9 +171,10 @@ class FTXExecutionClient(LiveExecutionClient):
             return
 
         # Update account state
-        account_info: Dict[str, Any] = await self._http_client.get_account_info()
-        self._set_account_id(AccountId(FTX_VENUE.value, str(account_info["accountIdentifier"])))
-        self._handle_account_info(account_info)
+        response: Dict[str, Any] = await self._http_client.get_account_info()
+        self._set_account_id(AccountId(FTX_VENUE.value, str(response["accountIdentifier"])))
+        self._handle_account_info(response)
+        self._loop.create_task(self._poll_account_state())
 
         self._log.info("FTX API key authenticated.", LogColor.GREEN)
         self._log.info(f"API key {self._http_client.api_key}.")
@@ -399,6 +416,17 @@ class FTXExecutionClient(LiveExecutionClient):
         )
         return []
 
+    async def _poll_account_state(self) -> None:
+        while True:
+            await asyncio.sleep(self._account_polling_interval)
+            await self._update_account_state()
+
+    async def _update_account_state(self) -> None:
+        self._log.debug("Updating account state...")
+
+        response: Dict[str, Any] = await self._http_client.get_account_info()
+        self._handle_account_info(response)
+
     def _handle_account_info(self, info: Dict[str, Any]) -> None:
         total = Money(info["totalAccountValue"], USD)
         free = Money(info["freeCollateral"], USD)
@@ -496,6 +524,8 @@ class FTXExecutionClient(LiveExecutionClient):
             else LiquiditySide.TAKER,
             ts_event=pd.to_datetime(data["time"], utc=True).to_datetime64(),
         )
+        if not self._calculated_account:
+            self._loop.create_task(self._update_account_state())
 
     def _handle_orders(self, instrument: Instrument, data: Dict[str, Any]) -> None:
         # Parse client order ID
