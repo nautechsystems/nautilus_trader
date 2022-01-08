@@ -38,7 +38,6 @@ from nautilus_trader.model.c_enums.account_type cimport AccountType
 from nautilus_trader.model.c_enums.order_status cimport OrderStatus
 from nautilus_trader.model.c_enums.order_status cimport OrderStatusParser
 from nautilus_trader.model.currency cimport Currency
-from nautilus_trader.model.identifiers cimport AccountId
 from nautilus_trader.model.identifiers cimport ClientId
 from nautilus_trader.model.identifiers cimport Symbol
 from nautilus_trader.model.identifiers cimport VenueOrderId
@@ -59,8 +58,6 @@ cdef class LiveExecutionClient(ExecutionClient):
         The client ID.
     instrument_provider : InstrumentProvider
         The instrument provider for the client.
-    account_id : AccountId
-        The account ID for the client.
     account_type : AccountType
         The account type for the client.
     base_currency : Currency, optional
@@ -86,7 +83,6 @@ cdef class LiveExecutionClient(ExecutionClient):
         loop not None: asyncio.AbstractEventLoop,
         ClientId client_id not None,
         InstrumentProvider instrument_provider not None,
-        AccountId account_id not None,
         AccountType account_type,
         Currency base_currency,  # Can be None
         MessageBus msgbus not None,
@@ -97,7 +93,6 @@ cdef class LiveExecutionClient(ExecutionClient):
     ):
         super().__init__(
             client_id=client_id,
-            account_id=account_id,
             account_type=account_type,
             base_currency=base_currency,
             msgbus=msgbus,

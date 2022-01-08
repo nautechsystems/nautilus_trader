@@ -127,7 +127,6 @@ class TestLiveExecutionEngine:
         self.client = MockLiveExecutionClient(
             loop=self.loop,
             client_id=ClientId(SIM.value),
-            account_id=TestStubs.account_id(),
             account_type=AccountType.CASH,
             base_currency=USD,
             instrument_provider=self.instrument_provider,

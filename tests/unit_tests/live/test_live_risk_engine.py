@@ -114,7 +114,6 @@ class TestLiveRiskEngine:
 
         self.exec_client = MockExecutionClient(
             client_id=ClientId("SIM"),
-            account_id=TestStubs.account_id(),
             account_type=AccountType.MARGIN,
             base_currency=USD,
             msgbus=self.msgbus,

@@ -46,7 +46,8 @@ class FTXHttpClient(HttpClient):
         key=None,
         secret=None,
         base_url=None,
-        subaccount_name=None,
+        subaccount=None,
+        us=False,
     ):
         super().__init__(
             loop=loop,
@@ -56,7 +57,11 @@ class FTXHttpClient(HttpClient):
         self._key = key
         self._secret = secret
         self._base_url = base_url or self.BASE_URL
-        self._subaccount_name = subaccount_name
+        self._subaccount = subaccount
+        self._us = us
+        if self._base_url == self.BASE_URL and us:
+            self._base_url.replace("com", "us")
+        self._ftx_header = "FTX" if not us else "FTXUS"
 
     @property
     def api_key(self) -> str:
@@ -96,13 +101,13 @@ class FTXHttpClient(HttpClient):
 
         headers = {
             **headers,
-            "FTX-KEY": self._key,
-            "FTX-SIGN": signature,
-            "FTX-TS": str(ts),
+            f"{self._ftx_header}-KEY": self._key,
+            f"{self._ftx_header}-SIGN": signature,
+            f"{self._ftx_header}-TS": str(ts),
         }
 
-        if self._subaccount_name:
-            headers["FTX-SUBACCOUNT"] = urllib.parse.quote(self._subaccount_name)
+        if self._subaccount:
+            headers[f"{self._ftx_header}-SUBACCOUNT"] = urllib.parse.quote(self._subaccount)
 
         return await self._send_request(
             http_method=http_method,

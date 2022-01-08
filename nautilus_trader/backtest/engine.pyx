@@ -594,7 +594,6 @@ cdef class BacktestEngine:
         # Create execution client for exchange
         exec_client = BacktestExecClient(
             exchange=exchange,
-            account_id=AccountId(venue.value, "001"),
             msgbus=self._msgbus,
             cache=self._cache,
             clock=self._test_clock,

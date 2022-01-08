@@ -63,8 +63,6 @@ cdef class ExecutionClient(Component):
     ----------
     client_id : ClientId
         The client ID.
-    account_id : AccountId
-        The account ID for the client.
     account_type : AccountType
         The account type for the client.
     base_currency : Currency, optional
@@ -93,7 +91,6 @@ cdef class ExecutionClient(Component):
     def __init__(
         self,
         ClientId client_id not None,
-        AccountId account_id not None,
         AccountType account_type,
         Currency base_currency,  # Can be None
         MessageBus msgbus not None,
@@ -102,8 +99,6 @@ cdef class ExecutionClient(Component):
         Logger logger not None,
         dict config=None,
     ):
-        Condition.equal(client_id.value, account_id.issuer, "client_id.value", "account_id.issuer")
-
         if config is None:
             config = {}
         super().__init__(
@@ -120,7 +115,7 @@ cdef class ExecutionClient(Component):
 
         self.trader_id = msgbus.trader_id
         self.venue = Venue(client_id.value) if not config.get("routing") else None
-        self.account_id = account_id
+        self.account_id = None  # Initialized on connection
         self.account_type = account_type
         self.base_currency = base_currency
 
@@ -130,16 +125,14 @@ cdef class ExecutionClient(Component):
         return f"{type(self).__name__}-{self.id.value}"
 
     cpdef void _set_connected(self, bint value=True) except *:
-        """
-        Setter for pure Python implementations to change the readonly property.
-
-        Parameters
-        ----------
-        value : bool
-            The value to set for is_connected.
-
-        """
+        # Setter for pure Python implementations to change the readonly property
         self.is_connected = value
+
+    cpdef void _set_account_id(self, AccountId account_id) except *:
+        Condition.not_none(account_id, "account_id")
+        Condition.equal(self.id.value, account_id.issuer, "id.value", "account_id.issuer")
+
+        self.account_id = account_id
 
     cpdef Account get_account(self):
         """

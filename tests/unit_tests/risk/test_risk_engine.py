@@ -102,7 +102,6 @@ class TestRiskEngine:
 
         self.exec_client = MockExecutionClient(
             client_id=ClientId(self.venue.value),
-            account_id=self.account_id,
             account_type=AccountType.MARGIN,
             base_currency=USD,
             msgbus=self.msgbus,

@@ -43,7 +43,6 @@ from nautilus_trader.model.data.venue import InstrumentStatusUpdate
 from nautilus_trader.model.enums import BookAction
 from nautilus_trader.model.enums import InstrumentCloseType
 from nautilus_trader.model.enums import InstrumentStatus
-from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.objects import Price
@@ -109,7 +108,6 @@ class TestBetfairDataClient:
         self.trader_id = TestStubs.trader_id()
         self.uuid = UUID4()
         self.venue = BETFAIR_VENUE
-        self.account_id = AccountId(self.venue.value, "001")
 
         # Setup logging
         self.logger = LiveLogger(loop=self.loop, clock=self.clock, level_stdout=LogLevel.ERROR)

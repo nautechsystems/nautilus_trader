@@ -40,8 +40,6 @@ cdef class BacktestExecClient(ExecutionClient):
     ----------
     exchange : SimulatedExchange
         The simulated exchange for the backtest.
-    account_id : AccountId
-        The account ID for the client.
     msgbus : MessageBus
         The message bus for the client.
     cache : Cache
@@ -59,7 +57,6 @@ cdef class BacktestExecClient(ExecutionClient):
     def __init__(
         self,
         SimulatedExchange exchange not None,
-        AccountId account_id not None,
         MessageBus msgbus not None,
         Cache cache not None,
         TestClock clock not None,
@@ -69,7 +66,6 @@ cdef class BacktestExecClient(ExecutionClient):
     ):
         super().__init__(
             client_id=ClientId(exchange.id.value),
-            account_id=account_id,
             account_type=exchange.account_type,
             base_currency=exchange.base_currency,
             msgbus=msgbus,
@@ -79,8 +75,9 @@ cdef class BacktestExecClient(ExecutionClient):
             config={"routing": True} if routing else None,
         )
 
+        self._set_account_id(AccountId(exchange.id.value, "001"))
         if not is_frozen_account:
-            AccountFactory.register_calculated_account(account_id.issuer)
+            AccountFactory.register_calculated_account(exchange.id.value)
 
         self._exchange = exchange
         self.is_connected = False

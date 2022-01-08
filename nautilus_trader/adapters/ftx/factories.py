@@ -18,7 +18,6 @@ import os
 from functools import lru_cache
 from typing import Any, Dict, Optional
 
-from nautilus_trader.adapters.ftx.common import FTX_VENUE
 from nautilus_trader.adapters.ftx.data import FTXDataClient
 from nautilus_trader.adapters.ftx.execution import FTXExecutionClient
 from nautilus_trader.adapters.ftx.http.client import FTXHttpClient
@@ -29,7 +28,6 @@ from nautilus_trader.common.logging import LiveLogger
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.live.factories import LiveDataClientFactory
 from nautilus_trader.live.factories import LiveExecutionClientFactory
-from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.msgbus.bus import MessageBus
 
 
@@ -42,7 +40,8 @@ def get_cached_ftx_http_client(
     logger: Logger,
     key: Optional[str] = None,
     secret: Optional[str] = None,
-    subaccount_name: Optional[str] = None,
+    subaccount: Optional[str] = None,
+    us: bool = False,
 ) -> FTXHttpClient:
     """
     Cache and return a FTX HTTP client with the given key or secret.
@@ -64,9 +63,11 @@ def get_cached_ftx_http_client(
     secret : str, optional
         The API secret for the client.
         If None then will source from the `FTX_API_SECRET` env var.
-    subaccount_name : str, optional
-        The sub-account name.
-        If None then will source from the `FTX_SUB_ACCOUNT` env var.
+    subaccount : str, optional
+        The subaccount name.
+        If None then will source from the `FTX_SUBACCOUNT` env var.
+    us : bool
+        If the client is for FTX US.
 
     Returns
     -------
@@ -77,9 +78,9 @@ def get_cached_ftx_http_client(
 
     key = key or os.environ["FTX_API_KEY"]
     secret = secret or os.environ["FTX_API_SECRET"]
-    subaccount_name = subaccount_name or os.environ.get("FTX_SUB_ACCOUNT")
+    subaccount = subaccount or os.environ.get("FTX_SUBACCOUNT")
 
-    client_key: str = "|".join((key, secret, subaccount_name or "None"))
+    client_key: str = "|".join((key, secret, subaccount or "None"))
     if client_key not in HTTP_CLIENTS:
         client = FTXHttpClient(
             loop=loop,
@@ -87,7 +88,8 @@ def get_cached_ftx_http_client(
             logger=logger,
             key=key,
             secret=secret,
-            subaccount_name=subaccount_name,
+            subaccount=subaccount,
+            us=us,
         )
         HTTP_CLIENTS[client_key] = client
     return HTTP_CLIENTS[client_key]
@@ -167,7 +169,8 @@ class FTXLiveDataClientFactory(LiveDataClientFactory):
             logger=logger,
             key=config.get("api_key"),
             secret=config.get("api_secret"),
-            subaccount_name=config.get("sub_account"),
+            subaccount=config.get("subaccount"),
+            us=config.get("us", False),
         )
 
         # Get instrument provider singleton
@@ -232,23 +235,17 @@ class FTXLiveExecutionClientFactory(LiveExecutionClientFactory):
             logger=logger,
             key=config.get("api_key"),
             secret=config.get("api_secret"),
-            subaccount_name=config.get("sub_account"),
+            subaccount=config.get("subaccount"),
+            us=config.get("us", False),
         )
 
         # Get instrument provider singleton
         provider = get_cached_ftx_instrument_provider(client=client, logger=logger)
 
-        # Get account ID env variable or set default
-        account_id_env_var = os.getenv(config.get("account_id", ""), "001")
-
-        # Set account ID
-        account_id = AccountId(FTX_VENUE.value, account_id_env_var)
-
         # Create client
         exec_client = FTXExecutionClient(
             loop=loop,
             client=client,
-            account_id=account_id,
             msgbus=msgbus,
             cache=cache,
             clock=clock,
