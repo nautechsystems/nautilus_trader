@@ -185,6 +185,7 @@ class FTXLiveDataClientFactory(LiveDataClientFactory):
             clock=clock,
             logger=logger,
             instrument_provider=provider,
+            us=config.get("us", False),
         )
         return data_client
 
@@ -251,6 +252,7 @@ class FTXLiveExecutionClientFactory(LiveExecutionClientFactory):
             clock=clock,
             logger=logger,
             instrument_provider=provider,
+            us=config.get("us", False),
             account_polling_interval=config.get("account_polling_interval", 60),
             calculated_account=config.get("calculated_account", False),
         )

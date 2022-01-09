@@ -41,6 +41,7 @@ class FTXWebSocketClient(WebSocketClient):
         key: Optional[str] = None,
         secret: Optional[str] = None,
         base_url: Optional[str] = None,
+        us: bool = False,
     ):
         super().__init__(
             loop=loop,
@@ -50,6 +51,8 @@ class FTXWebSocketClient(WebSocketClient):
 
         self._clock = clock
         self._base_url = base_url or self.BASE_URL
+        if self._base_url == self.BASE_URL and us:
+            self._base_url.replace("com", "us")
         self._key = key
         self._secret = secret
 

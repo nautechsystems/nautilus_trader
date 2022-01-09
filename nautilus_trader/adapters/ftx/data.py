@@ -35,6 +35,7 @@ from nautilus_trader.adapters.ftx.providers import FTXInstrumentProvider
 from nautilus_trader.adapters.ftx.websocket.client import FTXWebSocketClient
 from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.clock import LiveClock
+from nautilus_trader.common.logging import LogColor
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.core.datetime import secs_to_nanos
 from nautilus_trader.core.uuid import UUID4
@@ -78,6 +79,8 @@ class FTXDataClient(LiveMarketDataClient):
         The logger for the client.
     instrument_provider : FTXInstrumentProvider
         The instrument provider.
+    us : bool, default False
+        If the client is for FTX US.
     """
 
     def __init__(
@@ -89,6 +92,7 @@ class FTXDataClient(LiveMarketDataClient):
         clock: LiveClock,
         logger: Logger,
         instrument_provider: FTXInstrumentProvider,
+        us: bool = False,
     ):
         super().__init__(
             loop=loop,
@@ -108,10 +112,14 @@ class FTXDataClient(LiveMarketDataClient):
             handler=self._handle_ws_message,
             key=client.api_key,
             secret=client.api_secret,
+            us=us,
         )
 
         # Hot caches
         self._instrument_ids: Dict[str, InstrumentId] = {}
+
+        if us:
+            self._log.info("Set FTX US.", LogColor.BLUE)
 
     def connect(self):
         """
