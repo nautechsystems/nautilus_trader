@@ -37,6 +37,7 @@ for each of these subpackages from the left menu.
 
 ### System Components
 - `accounting`: different account types and account management machinery.
+- `adapters`: integration adapters for the platform including brokers and exchanges.
 - `analysis`: components relating to trading performance statistics and analysis.
 - `cache`: provides common caching infrastructure.
 - `data`: the data stack and data tooling for the platform.
@@ -51,7 +52,7 @@ for each of these subpackages from the left menu.
 
 ### System Implementations
 - `backtest`: backtesting componentry as well as a backtest engine implementation.
-- `live`: engine and client implementations as well as a node for live trading.
+- `live`: live engine and client implementations as well as a node for live trading.
 
 ## Errors and Exceptions
 Every attempt has been made to accurately document the possible exceptions which
