@@ -14,7 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 """
-The `accounts` subpackage defines both different account types and account management machinery.
+The `accounting` subpackage defines both different account types and account management machinery.
 
 There is also an `ExchangeRateCalculator` for calculating the exchange rate between FX and/or crypto
 pairs. The `AccountManager` is mainly used from the `Portfolio` to manage accounting operations.
