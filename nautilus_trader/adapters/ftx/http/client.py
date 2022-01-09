@@ -43,11 +43,11 @@ class FTXHttpClient(HttpClient):
         loop: asyncio.AbstractEventLoop,
         clock: LiveClock,
         logger: Logger,
-        key=None,
-        secret=None,
-        base_url=None,
-        subaccount=None,
-        us=False,
+        key: Optional[str] = None,
+        secret: Optional[str] = None,
+        base_url: Optional[str] = None,
+        subaccount: Optional[str] = None,
+        us: bool = False,
     ):
         super().__init__(
             loop=loop,

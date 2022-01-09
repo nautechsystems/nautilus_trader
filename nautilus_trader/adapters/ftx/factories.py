@@ -66,7 +66,7 @@ def get_cached_ftx_http_client(
     subaccount : str, optional
         The subaccount name.
         If None then will source from the `FTX_SUBACCOUNT` env var.
-    us : bool
+    us : bool, default False
         If the client is for FTX US.
 
     Returns
