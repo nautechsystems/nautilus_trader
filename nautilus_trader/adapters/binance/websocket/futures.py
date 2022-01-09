@@ -42,7 +42,6 @@ class BinanceFuturesWebSocket(BinanceWebSocketClient):
             clock=clock,
             logger=logger,
             handler=handler,
-            base_url="wss://fstream.binance.com",
         )
 
     def subscribe_mark_price(self, symbol: str = None, speed: int = None):

@@ -37,6 +37,7 @@ from nautilus_trader.adapters.binance.providers import BinanceInstrumentProvider
 from nautilus_trader.adapters.binance.websocket.spot import BinanceSpotWebSocket
 from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.clock import LiveClock
+from nautilus_trader.common.logging import LogColor
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.core.datetime import millis_to_nanos
@@ -78,6 +79,8 @@ class BinanceDataClient(LiveMarketDataClient):
         The logger for the client.
     instrument_provider : BinanceInstrumentProvider
         The instrument provider.
+    us : bool, default False
+        If the client is for Binance US.
     """
 
     def __init__(
@@ -89,6 +92,7 @@ class BinanceDataClient(LiveMarketDataClient):
         clock: LiveClock,
         logger: Logger,
         instrument_provider: BinanceInstrumentProvider,
+        us: bool = False,
     ):
         super().__init__(
             loop=loop,
@@ -114,9 +118,13 @@ class BinanceDataClient(LiveMarketDataClient):
             clock=clock,
             logger=logger,
             handler=self._handle_spot_ws_message,
+            us=us,
         )
 
         self._book_buffer: Dict[InstrumentId, List[OrderBookData]] = {}
+
+        if us:
+            self._log.info("Set Binance US.", LogColor.BLUE)
 
     def connect(self):
         """

@@ -93,6 +93,8 @@ class BinanceSpotExecutionClient(LiveExecutionClient):
         The logger for the client.
     instrument_provider : BinanceInstrumentProvider
         The instrument provider.
+    us : bool, default False
+        If the client is for Binance US.
     """
 
     def __init__(
@@ -104,6 +106,7 @@ class BinanceSpotExecutionClient(LiveExecutionClient):
         clock: LiveClock,
         logger: Logger,
         instrument_provider: BinanceInstrumentProvider,
+        us: bool = False,
     ):
         super().__init__(
             loop=loop,
@@ -138,10 +141,14 @@ class BinanceSpotExecutionClient(LiveExecutionClient):
             clock=clock,
             logger=logger,
             handler=self._handle_user_ws_message,
+            us=us,
         )
 
         # Hot caches
         self._instrument_ids: Dict[str, InstrumentId] = {}
+
+        if us:
+            self._log.info("Set Binance US.", LogColor.BLUE)
 
     def connect(self) -> None:
         """
@@ -195,6 +202,7 @@ class BinanceSpotExecutionClient(LiveExecutionClient):
     def _update_account_state(self, response: Dict[str, Any]) -> None:
         self.generate_account_state(
             balances=parse_account_balances(raw_balances=response["balances"]),
+            margins=[],
             reported=True,
             ts_event=response["updateTime"],
         )
@@ -475,6 +483,7 @@ class BinanceSpotExecutionClient(LiveExecutionClient):
     def _handle_account_position(self, data: Dict[str, Any]):
         self.generate_account_state(
             balances=parse_account_balances_ws(raw_balances=data["B"]),
+            margins=[],
             reported=True,
             ts_event=millis_to_nanos(data["u"]),
         )
