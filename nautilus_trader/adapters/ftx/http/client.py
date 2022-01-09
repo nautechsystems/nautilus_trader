@@ -60,7 +60,7 @@ class FTXHttpClient(HttpClient):
         self._subaccount = subaccount
         self._us = us
         if self._base_url == self.BASE_URL and us:
-            self._base_url.replace("com", "us")
+            self._base_url = self._base_url.replace("com", "us")
         self._ftx_header = "FTX" if not us else "FTXUS"
 
     @property

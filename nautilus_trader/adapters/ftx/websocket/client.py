@@ -52,7 +52,7 @@ class FTXWebSocketClient(WebSocketClient):
         self._clock = clock
         self._base_url = base_url or self.BASE_URL
         if self._base_url == self.BASE_URL and us:
-            self._base_url.replace("com", "us")
+            self._base_url = self._base_url.replace("com", "us")
         self._key = key
         self._secret = secret
 
