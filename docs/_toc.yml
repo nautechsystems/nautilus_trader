@@ -14,6 +14,12 @@ chapters:
   - file: 3_api_reference/0_index
     sections:
     - file: 3_api_reference/accounting
+    - file: 3_api_reference/adapters/0_index
+      sections:
+      - file: 3_api_reference/adapters/betfair
+      - file: 3_api_reference/adapters/binance
+      - file: 3_api_reference/adapters/ftx
+      - file: 3_api_reference/adapters/ib
     - file: 3_api_reference/analysis
     - file: 3_api_reference/backtest
     - file: 3_api_reference/cache
