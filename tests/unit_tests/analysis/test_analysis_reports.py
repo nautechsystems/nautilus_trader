@@ -67,6 +67,7 @@ class TestReportProvider:
                     locked=Money(0.00000000, BTC),
                 )
             ],
+            margins=[],
             info={},
             event_id=UUID4(),
             ts_event=0,

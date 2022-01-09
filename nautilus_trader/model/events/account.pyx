@@ -25,6 +25,7 @@ from nautilus_trader.model.c_enums.account_type cimport AccountTypeParser
 from nautilus_trader.model.currency cimport Currency
 from nautilus_trader.model.identifiers cimport AccountId
 from nautilus_trader.model.objects cimport AccountBalance
+from nautilus_trader.model.objects cimport MarginBalance
 
 
 cdef class AccountState(Event):
@@ -42,7 +43,9 @@ cdef class AccountState(Event):
     reported : bool
         If the state is reported from the exchange (otherwise system calculated).
     balances : list[AccountBalance]
-        The account balances
+        The account balances.
+    margins : list[MarginBalance]
+        The margin balances.
     info : dict [str, object]
         The additional implementation specific account information.
     event_id : UUID4
@@ -60,6 +63,7 @@ cdef class AccountState(Event):
         Currency base_currency,
         bint reported,
         list balances not None,
+        list margins not None,
         dict info not None,
         UUID4 event_id not None,
         int64_t ts_event,
@@ -72,6 +76,7 @@ cdef class AccountState(Event):
         self.account_type = account_type
         self.base_currency = base_currency
         self.balances = balances
+        self.margins = margins
         self.is_reported = reported
         self.info = info
 
@@ -83,6 +88,7 @@ cdef class AccountState(Event):
             f"base_currency={self.base_currency}, "
             f"is_reported={self.is_reported}, "
             f"balances=[{', '.join([str(b) for b in self.balances])}], "
+            f"margins=[{', '.join([str(m) for m in self.margins])}], "
             f"event_id={self.id})"
         )
 
@@ -96,6 +102,7 @@ cdef class AccountState(Event):
             base_currency=Currency.from_str_c(base_str) if base_str is not None else None,
             reported=values["reported"],
             balances=[AccountBalance.from_dict(b) for b in orjson.loads(values["balances"])],
+            margins=[MarginBalance.from_dict(m) for m in orjson.loads(values["margins"])],
             info=orjson.loads(values["info"]),
             event_id=UUID4(values["event_id"]),
             ts_event=values["ts_event"],
@@ -111,6 +118,7 @@ cdef class AccountState(Event):
             "account_type": AccountTypeParser.to_str(obj.account_type),
             "base_currency": obj.base_currency.code if obj.base_currency else None,
             "balances": orjson.dumps([b.to_dict() for b in obj.balances]),
+            "margins": orjson.dumps([m.to_dict() for m in obj.margins]),
             "reported": obj.is_reported,
             "info": orjson.dumps(obj.info),
             "event_id": obj.id.value,

@@ -26,6 +26,7 @@ def serialize(state: AccountState):
     result = []
     base = state.to_dict(state)
     del base["balances"]
+    del base["margins"]
     for balance in state.balances:
         data = {
             "balance_currency": balance.currency.code,
@@ -34,7 +35,16 @@ def serialize(state: AccountState):
             "balance_free": balance.free.as_double(),
         }
         result.append({**base, **data})
+    for margin in state.margins:
+        margin_data = {
+            "margin_instrument_id": margin.instrument_id.value,
+            "margin_currency": margin.currency.code,
+            "margin_init": margin.initial.as_double(),
+            "margin_maint": margin.maintenance.as_double(),
+        }
+        result.append({**base, **margin_data})
 
+    print(result)
     return result
 
 
@@ -51,6 +61,24 @@ def _deserialize(values):
         )
     state = {k: v for k, v in values[0].items() if not k.startswith("balance_")}
     state["balances"] = orjson.dumps(balances)
+
+    margins = []
+    for v in values:
+        margin_init = v.get("margin_init")
+        if not margin_init:
+            continue
+        margin_maint = v.get("margin_maint")
+
+        margins.append(
+            dict(
+                instrument_id=v["margin_instrument_id"],
+                currency=v["margin_currency"],
+                initial=margin_init,
+                maintenance=margin_maint,
+            )
+        )
+    state = {k: v for k, v in values[0].items() if not k.startswith("margin_")}
+    state["margins"] = orjson.dumps(margins)
 
     return AccountState.from_dict(state)
 

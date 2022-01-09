@@ -513,6 +513,7 @@ class TestStubs:
                     Money(1_000_000, USD),
                 )
             ],
+            margins=[],
             info={},
             event_id=UUID4(),
             ts_event=0,
@@ -534,6 +535,7 @@ class TestStubs:
                     Money(1_000_000, USD),
                 )
             ],
+            margins=[],
             info={},
             event_id=UUID4(),
             ts_event=0,
@@ -555,6 +557,7 @@ class TestStubs:
                     Money(1_000, GBP),
                 )
             ],
+            margins=[],
             info={},
             event_id=UUID4(),
             ts_event=0,

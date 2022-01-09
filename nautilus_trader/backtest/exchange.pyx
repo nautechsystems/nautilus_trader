@@ -488,9 +488,14 @@ cdef class SimulatedExchange:
         balance.total = Money(balance.total + adjustment, adjustment.currency)
         balance.free = Money(balance.free + adjustment, adjustment.currency)
 
+        cdef list margins = []
+        if account.is_margin_account():
+            margins = list(account.margins().values())
+
         # Generate and handle event
         self.exec_client.generate_account_state(
             balances=[balance],
+            margins=margins,
             reported=True,
             ts_event=self._clock.timestamp_ns(),
         )
@@ -1485,6 +1490,7 @@ cdef class SimulatedExchange:
 
         self.exec_client.generate_account_state(
             balances=balances,
+            margins=[],
             reported=True,
             ts_event=self._clock.timestamp_ns(),
         )
@@ -1587,7 +1593,7 @@ cdef class SimulatedExchange:
         if venue_order_id is None:
             venue_order_id = self._generate_venue_order_id(order.instrument_id)
             venue_order_id_modified = True
-        # Generate event
+
         self.exec_client.generate_order_updated(
             strategy_id=order.strategy_id,
             instrument_id=order.instrument_id,

@@ -60,8 +60,8 @@ node = TradingNode(config=config_node)
 
 # Configure your strategy
 strat_config = EMACrossConfig(
-    instrument_id="ETH/USD.FTX",
-    bar_type="ETH/USD.FTX-1-MINUTE-LAST-INTERNAL",
+    instrument_id="ETH-PERP.FTX",
+    bar_type="ETH-PERP.FTX-1-MINUTE-LAST-INTERNAL",
     fast_ema_period=10,
     slow_ema_period=20,
     trade_size=Decimal("0.01"),

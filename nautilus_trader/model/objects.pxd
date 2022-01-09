@@ -16,6 +16,7 @@
 from libc.stdint cimport uint8_t
 
 from nautilus_trader.model.currency cimport Currency
+from nautilus_trader.model.identifiers cimport InstrumentId
 
 
 cdef class BaseDecimal:
@@ -77,4 +78,19 @@ cdef class AccountBalance:
 
     @staticmethod
     cdef AccountBalance from_dict_c(dict values)
+    cpdef dict to_dict(self)
+
+
+cdef class MarginBalance:
+    cdef readonly InstrumentId instrument_id
+    """The instrument ID associated with the margin.\n\n:returns: `InstrumentId`"""
+    cdef readonly Currency currency
+    """The currency of the margin .\n\n:returns: `Currency`"""
+    cdef readonly Money initial
+    """The initial margin requirement.\n\n:returns: `Money`"""
+    cdef readonly Money maintenance
+    """The maintenance margin requirement.\n\n:returns: `Money`"""
+
+    @staticmethod
+    cdef MarginBalance from_dict_c(dict values)
     cpdef dict to_dict(self)

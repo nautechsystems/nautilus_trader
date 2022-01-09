@@ -28,6 +28,7 @@ from libc.stdint cimport uint8_t
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.text cimport precision_from_str
 from nautilus_trader.model.currency cimport Currency
+from nautilus_trader.model.identifiers cimport InstrumentId
 
 
 cdef class BaseDecimal:
@@ -527,10 +528,12 @@ cdef class Money(BaseDecimal):
 
 cdef class AccountBalance:
     """
-    Represents an account balance in a particular currency.
+    Represents an account balance denominated in a particular currency.
 
     Parameters
     ----------
+    currency : Currency
+        The currency for the account balance.
     total : Money
         The total account balance.
     locked : Money
@@ -542,6 +545,8 @@ cdef class AccountBalance:
     ------
     ValueError
         If any money currency does not equal `currency`.
+    ValueError
+        If any money is negative (< 0).
     ValueError
         If `total` - `locked` != `free`.
     """
@@ -617,4 +622,100 @@ cdef class AccountBalance:
             "total": str(self.total.as_decimal()),
             "locked": str(self.locked.as_decimal()),
             "free": str(self.free.as_decimal()),
+        }
+
+
+cdef class MarginBalance:
+    """
+    Represents a margin balance associated with a particular instrument.
+
+    Parameters
+    ----------
+    instrument_id : InstrumentId
+        The instrument ID associated with the margin.
+    currency : Currency
+        The currency for the margin balance.
+    initial : Money
+        The initial (order) margin requirement for the instrument.
+    maintenance : Money
+        The maintenance (position) margin requirement for the instrument.
+
+    Raises
+    ------
+    ValueError
+        If `margin_init` currency does not equal `currency`.
+    ValueError
+        If `margin_maint` currency does not equal `currency`.
+    ValueError
+        If any margin is negative (< 0).
+    """
+
+    def __init__(
+        self,
+        InstrumentId instrument_id not None,
+        Currency currency not None,
+        Money initial not None,
+        Money maintenance not None,
+    ):
+        Condition.equal(currency, initial.currency, "currency", "initial.currency")
+        Condition.equal(currency, maintenance.currency, "currency", "maintenance.currency")
+        Condition.not_negative(initial.as_decimal(), "initial")
+        Condition.not_negative(maintenance.as_decimal(), "maintenance")
+
+        self.instrument_id = instrument_id
+        self.currency = currency
+        self.initial = initial
+        self.maintenance = maintenance
+
+    def __repr__(self) -> str:
+        return (
+            f"{type(self).__name__}("
+            f"instrument_id={self.instrument_id.value}, "
+            f"initial={self.initial.to_str()}, "
+            f"maintenance={self.maintenance.to_str()})"
+        )
+
+    @staticmethod
+    cdef MarginBalance from_dict_c(dict values):
+        Condition.not_none(values, "values")
+        cdef Currency currency = Currency.from_str_c(values["currency"])
+        return MarginBalance(
+            instrument_id=InstrumentId.from_str_c(values["instrument_id"]),
+            currency=currency,
+            initial=Money(values["initial"], currency),
+            maintenance=Money(values["maintenance"], currency),
+        )
+
+    @staticmethod
+    def from_dict(dict values) -> MarginBalance:
+        """
+        Return a margin balance from the given dict values.
+
+        Parameters
+        ----------
+        values : dict[str, object]
+            The values for initialization.
+
+        Returns
+        -------
+        MarginAccountBalance
+
+        """
+        return MarginBalance.from_dict_c(values)
+
+    cpdef dict to_dict(self):
+        """
+        Return a dictionary representation of this object.
+
+        Returns
+        -------
+        dict[str, object]
+
+        """
+        return {
+            "type": type(self).__name__,
+            "instrument_id": self.instrument_id.value,
+            "currency": self.currency.code,
+            "initial": str(self.initial.as_decimal()),
+            "maintenance": str(self.maintenance.as_decimal()),
         }
