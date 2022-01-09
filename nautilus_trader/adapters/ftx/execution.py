@@ -92,6 +92,8 @@ class FTXExecutionClient(LiveExecutionClient):
         The logger for the client.
     instrument_provider : FTXInstrumentProvider
         The instrument provider.
+    us : bool, default False
+        If the client is for FTX US.
     account_polling_interval : int, default 60
         The interval length (seconds) between account reconciliations.
     calculated_account : bool, default False
@@ -107,6 +109,7 @@ class FTXExecutionClient(LiveExecutionClient):
         clock: LiveClock,
         logger: Logger,
         instrument_provider: FTXInstrumentProvider,
+        us: bool = False,
         account_polling_interval: int = 60,
         calculated_account: bool = False,
     ):
@@ -130,6 +133,7 @@ class FTXExecutionClient(LiveExecutionClient):
             handler=self._handle_ws_message,
             key=client.api_key,
             secret=client.api_secret,
+            us=us,
         )
 
         # Hot caches
@@ -141,13 +145,16 @@ class FTXExecutionClient(LiveExecutionClient):
         self._calculated_account = calculated_account
         self._initial_leverage_set = False
 
+        if us:
+            self._log.info("Set FTX US.", LogColor.BLUE)
+
         self._log.info(
             f"Set account polling interval {self._account_polling_interval}s.",
             LogColor.BLUE,
         )
 
         if self._calculated_account:
-            self._log.info("Set for calculated account.", LogColor.BLUE)
+            self._log.info("Set calculated account.", LogColor.BLUE)
             AccountFactory.register_calculated_account(FTX_VENUE.value)
 
     def connect(self):
