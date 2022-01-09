@@ -574,6 +574,7 @@ cdef class AccountsManager:
             base_currency=account.base_currency,
             reported=False,
             balances=list(account.balances().values()),
+            margins=list(account.margins().values()) if account.is_margin_account() else [],
             info={},
             event_id=self._uuid_factory.generate(),
             ts_event=ts_event,

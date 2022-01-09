@@ -164,7 +164,8 @@ cdef class WebSocketClient:
                 raw = await self.recv()
                 if raw is None:
                     continue
-                self._log.debug(f"[RECV] {raw}")
+                # TODO(cs): Uncomment for development
+                # self._log.debug(f"[RECV] {raw}")
                 if raw is not None:
                     self._handler(raw)
             except Exception as ex:

@@ -64,6 +64,7 @@ from nautilus_trader.model.identifiers import StrategyId
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.identifiers import VenueOrderId
 from nautilus_trader.model.objects import AccountBalance
+from nautilus_trader.model.objects import MarginBalance
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
@@ -396,7 +397,10 @@ class TestMsgPackSerializer:
             account_type=AccountType.MARGIN,
             base_currency=USD,
             reported=True,
-            balances=[AccountBalance(USD, Money(1525000, USD), Money(0, USD), Money(1525000, USD))],
+            balances=[
+                AccountBalance(USD, Money(1525000, USD), Money(25000, USD), Money(1500000, USD))
+            ],
+            margins=[MarginBalance(AUDUSD_SIM.id, USD, Money(5000, USD), Money(20000, USD))],
             info={},
             event_id=UUID4(),
             ts_event=0,
@@ -425,6 +429,7 @@ class TestMsgPackSerializer:
                     Money(10000, USDT),
                 )
             ],
+            margins=[],
             info={},
             event_id=UUID4(),
             ts_event=0,

@@ -183,6 +183,7 @@ cdef class ExecutionClient(Component):
     cpdef void generate_account_state(
         self,
         list balances,
+        list margins,
         bint reported,
         int64_t ts_event,
         dict info=None,
@@ -194,6 +195,8 @@ cdef class ExecutionClient(Component):
         ----------
         balances : list[AccountBalance]
             The account balances.
+        margins : list[MarginBalance]
+            The margin balances.
         reported : bool
             If the balances are reported directly from the exchange.
         ts_event : int64
@@ -209,6 +212,7 @@ cdef class ExecutionClient(Component):
             base_currency=self.base_currency,
             reported=reported,
             balances=balances,
+            margins=margins,
             info=info or {},
             event_id=self._uuid_factory.generate(),
             ts_event=ts_event,

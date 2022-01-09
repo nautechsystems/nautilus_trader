@@ -76,6 +76,7 @@ cdef class ExecutionClient(Component):
     cpdef void generate_account_state(
         self,
         list balances,
+        list margins,
         bint reported,
         int64_t ts_event,
         dict info=*,

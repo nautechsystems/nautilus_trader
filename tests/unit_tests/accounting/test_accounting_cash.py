@@ -89,6 +89,7 @@ class TestCashAccount:
                     Money(1_000_000, USD),
                 ),
             ],
+            margins=[],
             info={},
             event_id=UUID4(),
             ts_event=0,
@@ -131,6 +132,7 @@ class TestCashAccount:
                     Money(20.00000000, ETH),
                 ),
             ],
+            margins=[],
             info={},  # No default currency set
             event_id=UUID4(),
             ts_event=0,
@@ -186,6 +188,7 @@ class TestCashAccount:
                     Money(20.00000000, ETH),
                 ),
             ],
+            margins=[],
             info={},  # No default currency set
             event_id=UUID4(),
             ts_event=0,
@@ -214,6 +217,7 @@ class TestCashAccount:
                     Money(20.00000000, ETH),
                 ),
             ],
+            margins=[],
             info={},  # No default currency set
             event_id=UUID4(),
             ts_event=0,
@@ -249,6 +253,7 @@ class TestCashAccount:
                     Money(1_000_000.00, USD),
                 ),
             ],
+            margins=[],
             info={},  # No default currency set
             event_id=UUID4(),
             ts_event=0,
@@ -283,6 +288,7 @@ class TestCashAccount:
                     Money(1_000_000.00, USD),
                 ),
             ],
+            margins=[],
             info={},  # No default currency set
             event_id=UUID4(),
             ts_event=0,
@@ -317,6 +323,7 @@ class TestCashAccount:
                     Money(1_000_000.00, USD),
                 ),
             ],
+            margins=[],
             info={},  # No default currency set
             event_id=UUID4(),
             ts_event=0,
@@ -372,6 +379,7 @@ class TestCashAccount:
                     Money(20.00000000, ETH),
                 ),
             ],
+            margins=[],
             info={},  # No default currency set
             event_id=UUID4(),
             ts_event=0,
@@ -450,6 +458,7 @@ class TestCashAccount:
                     Money(1000.00000000, ADA),
                 ),
             ],
+            margins=[],
             info={},  # No default currency set
             event_id=UUID4(),
             ts_event=0,

@@ -59,8 +59,8 @@ node = TradingNode(config=config_node)
 
 # Configure your strategy
 strat_config = VolatilityMarketMakerConfig(
-    instrument_id="ETH/USD.FTX",
-    bar_type="ETH/USD.FTX-1-MINUTE-LAST-INTERNAL",
+    instrument_id="ETH-PERP.FTX",
+    bar_type="ETH-PERP.FTX-1-MINUTE-LAST-INTERNAL",
     atr_period=20,
     atr_multiple=6.0,
     trade_size=Decimal("0.01"),

@@ -65,6 +65,7 @@ class TestBettingAccount:
                     Money(starting_balance, GBP),
                 ),
             ],
+            margins=[],
             info={},  # No default currency set
             event_id=UUID4(),
             ts_event=0,
@@ -114,6 +115,7 @@ class TestBettingAccount:
                     Money(1_000_000, GBP),
                 ),
             ],
+            margins=[],
             info={},
             event_id=UUID4(),
             ts_event=0,
@@ -150,6 +152,7 @@ class TestBettingAccount:
                     Money(10.00000000, GBP),
                 ),
             ],
+            margins=[],
             info={},  # No default currency set
             event_id=UUID4(),
             ts_event=0,
@@ -172,6 +175,7 @@ class TestBettingAccount:
                     Money(8.50000000, GBP),
                 ),
             ],
+            margins=[],
             info={},  # No default currency set
             event_id=UUID4(),
             ts_event=0,

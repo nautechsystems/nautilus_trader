@@ -16,11 +16,13 @@
 import asyncio
 import uuid
 from datetime import datetime
+from decimal import Decimal
 from typing import Any, Dict, List, Optional
 
 import orjson
 import pandas as pd
 
+from nautilus_trader.accounting.accounts.margin import MarginAccount
 from nautilus_trader.accounting.factory import AccountFactory
 from nautilus_trader.adapters.ftx.common import FTX_VENUE
 from nautilus_trader.adapters.ftx.http.client import FTXHttpClient
@@ -58,6 +60,7 @@ from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import VenueOrderId
 from nautilus_trader.model.instruments.base import Instrument
 from nautilus_trader.model.objects import AccountBalance
+from nautilus_trader.model.objects import MarginBalance
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
@@ -136,6 +139,7 @@ class FTXExecutionClient(LiveExecutionClient):
 
         self._account_polling_interval = account_polling_interval
         self._calculated_account = calculated_account
+        self._initial_leverage_set = False
 
         self._log.info(
             f"Set account polling interval {self._account_polling_interval}s.",
@@ -170,14 +174,12 @@ class FTXExecutionClient(LiveExecutionClient):
             self._log.exception(ex)
             return
 
-        # Update account state
-        response: Dict[str, Any] = await self._http_client.get_account_info()
-        self._set_account_id(AccountId(FTX_VENUE.value, str(response["accountIdentifier"])))
-        self._handle_account_info(response)
-        self._loop.create_task(self._poll_account_state())
-
         self._log.info("FTX API key authenticated.", LogColor.GREEN)
         self._log.info(f"API key {self._http_client.api_key}.")
+
+        # Update account state
+        await self._update_account_state()
+        self._loop.create_task(self._poll_account_state())
 
         # Connect WebSocket client
         await self._ws_client.connect(start=True)
@@ -425,7 +427,23 @@ class FTXExecutionClient(LiveExecutionClient):
         self._log.debug("Updating account state...")
 
         response: Dict[str, Any] = await self._http_client.get_account_info()
+        if self.account_id is None:
+            self._set_account_id(AccountId(FTX_VENUE.value, str(response["accountIdentifier"])))
+
         self._handle_account_info(response)
+
+        if not self._initial_leverage_set:
+            account: Optional[MarginAccount] = self._cache.account(self.account_id)
+            while account is None:
+                self._log.debug(f"Waiting for account {self.account_id}...")
+                await asyncio.sleep(0.1)
+            leverage = Decimal(response["leverage"])
+            account.set_default_leverage(leverage)
+            self._log.info(
+                f"{self.account_id} leverage {leverage}X.",
+                LogColor.BLUE,
+            )
+            self._initial_leverage_set = True
 
     def _handle_account_info(self, info: Dict[str, Any]) -> None:
         total = Money(info["totalAccountValue"], USD)
@@ -438,11 +456,38 @@ class FTXExecutionClient(LiveExecutionClient):
             locked=locked,
             free=free,
         )
+
+        # TODO(cs): Uncomment for development
+        # self._log.info(str(json.dumps(info, indent=4)), color=LogColor.GREEN)
+
+        margins: List[MarginBalance] = []
+
+        # TODO(cs): Margins on FTX are fractions - determine solution
+        # for position in info["positions"]:
+        #     margin = MarginBalance(
+        #         instrument_id=InstrumentId(Symbol(position["future"]), FTX_VENUE),
+        #         currency=USD,
+        #         initial=Money(position["initialMarginRequirement"], USD),
+        #         maintenance=Money(position["maintenanceMarginRequirement"], USD),
+        #     )
+        #     margins.append(margin)
+
         self.generate_account_state(
             balances=[balance],
+            margins=margins,
             reported=True,
             ts_event=self._clock.timestamp_ns(),
             info=info,
+        )
+
+        self._log.info(
+            f"initialMarginRequirement={info['initialMarginRequirement']}, "
+            f"maintenanceMarginRequirement={info['maintenanceMarginRequirement']}, "
+            f"marginFraction={info['marginFraction']}, "
+            f"openMarginFraction={info['openMarginFraction']}, "
+            f"totalAccountValue={info['totalAccountValue']}, "
+            f"totalPositionSize={info['totalPositionSize']}",
+            LogColor.BLUE,
         )
 
     def _get_cached_instrument_id(self, data: Dict[str, Any]) -> InstrumentId:

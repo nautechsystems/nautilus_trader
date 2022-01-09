@@ -279,6 +279,7 @@ def betfair_account_to_account_state(
                 free=Money(free, currency),
             ),
         ],
+        margins=[],
         info={"funds": account_funds, "detail": account_detail},
         event_id=event_id,
         ts_event=ts_event,

@@ -152,6 +152,7 @@ class TestBetfairParsing:
             balances=[
                 AccountBalance(GBP, Money(1000.0, GBP), Money(0.00, GBP), Money(1000.0, GBP))
             ],
+            margins=[],
             info={"funds": funds, "detail": detail},
             event_id=self.uuid,
             ts_event=result.ts_event,

@@ -351,7 +351,7 @@ cdef class Portfolio(PortfolioFacade):
         else:
             account.apply(event)
 
-        self._log.debug(f"Updated with {event}.")
+        self._log.info(f"Updated with {event}.")
 
     cpdef void update_order(self, OrderEvent event) except *:
         """
