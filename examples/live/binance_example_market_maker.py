@@ -31,11 +31,12 @@ from nautilus_trader.live.node import TradingNodeConfig
 config_node = TradingNodeConfig(
     trader_id="TESTER-001",
     log_level="INFO",
-    # cache_database=CacheDatabaseConfig(),
+    # cache_database=CacheDatabaseConfig(),  # Do not run with a Redis cache at the moment
     data_clients={
         "BINANCE": {
             # "api_key": "YOUR_BINANCE_API_KEY",
             # "api_secret": "YOUR_BINANCE_API_SECRET",
+            "us": False,  # If client is for Binance US
             "sandbox_mode": False,  # If client uses the testnet
         },
     },
@@ -43,6 +44,7 @@ config_node = TradingNodeConfig(
         "BINANCE": {
             # "api_key": "YOUR_BINANCE_API_KEY",
             # "api_secret": "YOUR_BINANCE_API_SECRET",
+            "us": False,  # If client is for Binance US
             "sandbox_mode": False,  # If client uses the testnet,
         },
     },

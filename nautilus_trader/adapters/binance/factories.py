@@ -40,6 +40,7 @@ def get_cached_binance_http_client(
     logger: Logger,
     key: Optional[str] = None,
     secret: Optional[str] = None,
+    us: bool = False,
 ) -> BinanceHttpClient:
     """
     Cache and return a Binance HTTP client with the given key and secret.
@@ -61,6 +62,8 @@ def get_cached_binance_http_client(
     secret : str, optional
         The API secret for the client.
         If None then will source from the `BINANCE_API_SECRET` env var.
+    us : bool, default False
+        If the client is for FTX US.
 
     Returns
     -------
@@ -80,6 +83,7 @@ def get_cached_binance_http_client(
             logger=logger,
             key=key,
             secret=secret,
+            us=us,
         )
         HTTP_CLIENTS[client_key] = client
     return HTTP_CLIENTS[client_key]
@@ -159,6 +163,7 @@ class BinanceLiveDataClientFactory(LiveDataClientFactory):
             logger=logger,
             key=config.get("api_key"),
             secret=config.get("api_secret"),
+            us=config.get("us", False),
         )
 
         # Get instrument provider singleton
@@ -173,6 +178,7 @@ class BinanceLiveDataClientFactory(LiveDataClientFactory):
             clock=clock,
             logger=logger,
             instrument_provider=provider,
+            us=config.get("us", False),
         )
         return data_client
 
@@ -223,6 +229,7 @@ class BinanceLiveExecutionClientFactory(LiveExecutionClientFactory):
             logger=logger,
             key=config.get("api_key"),
             secret=config.get("api_secret"),
+            us=config.get("us", False),
         )
 
         # Get instrument provider singleton
@@ -237,5 +244,6 @@ class BinanceLiveExecutionClientFactory(LiveExecutionClientFactory):
             clock=clock,
             logger=logger,
             instrument_provider=provider,
+            us=config.get("us", False),
         )
         return exec_client

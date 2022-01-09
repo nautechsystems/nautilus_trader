@@ -36,13 +36,14 @@ class BinanceSpotWebSocket(BinanceWebSocketClient):
         clock: LiveClock,
         logger: Logger,
         handler: Callable[[bytes], None],
+        us: bool = False,
     ):
         super().__init__(
             loop=loop,
             clock=clock,
             logger=logger,
             handler=handler,
-            base_url="wss://stream.binance.com:9443",
+            us=us,
         )
 
     def subscribe_agg_trades(self, symbol: str):
