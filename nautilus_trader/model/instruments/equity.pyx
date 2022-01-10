@@ -37,7 +37,7 @@ cdef class Equity(Instrument):
     instrument_id : InstrumentId
         The instrument ID.
     native_symbol : Symbol
-        The local/native symbol on the exchange for the instrument.
+        The native/local symbol on the exchange for the instrument.
     currency : Currency
         The futures contract currency.
     price_precision : int

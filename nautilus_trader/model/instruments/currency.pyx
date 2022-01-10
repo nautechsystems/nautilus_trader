@@ -41,7 +41,7 @@ cdef class CurrencySpot(Instrument):
     instrument_id : InstrumentId
         The instrument ID for the instrument.
     native_symbol : Symbol
-        The local/native symbol on the exchange for the instrument.
+        The native/local symbol on the exchange for the instrument.
     base_currency : Currency, optional
         The base currency.
     quote_currency : Currency

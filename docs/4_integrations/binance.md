@@ -33,8 +33,8 @@ needs.
 ## Binance data types
 To provide complete API functionality to traders, the integration includes several
 custom data types:
-- `BinanceTicker` returned when subscribing to Binance tickers.
-- `BinanceBar` returned when requesting historical or subscribing to Binance bars.
+- `BinanceTicker` returned when subscribing to Binance tickers (contains many prices and stats).
+- `BinanceBar` returned when requesting historical, or subscribing to, Binance bars (contains extra volume information).
 
 See the Binance [API Reference](../3_api_reference/adapters/binance.md) for full definitions.
 

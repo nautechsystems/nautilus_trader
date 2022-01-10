@@ -33,7 +33,7 @@ cdef class Instrument(Data):
     cdef readonly InstrumentId id
     """The instrument ID.\n\n:returns: `InstrumentId`"""
     cdef readonly Symbol native_symbol
-    """The local/native symbol on the exchange for the instrument.\n\n:returns: `Symbol`"""
+    """The native/local symbol on the exchange for the instrument.\n\n:returns: `Symbol`"""
     cdef readonly AssetClass asset_class
     """The asset class of the instrument.\n\n:returns: `AssetClass`"""
     cdef readonly AssetType asset_type
