@@ -27,6 +27,8 @@ from nautilus_trader.live.node import TradingNodeConfig
 # *** THIS IS A TEST STRATEGY WITH NO ALPHA ADVANTAGE WHATSOEVER. ***
 # *** IT IS NOT INTENDED TO BE USED TO TRADE LIVE WITH REAL MONEY. ***
 
+# *** THIS INTEGRATION IS STILL UNDER CONSTRUCTION. ***
+# *** PLEASE CONSIDER IT TO BE IN AN UNSTABLE BETA PHASE AND EXERCISE CAUTION. ***
 
 # Configure the trading node
 config_node = TradingNodeConfig(
