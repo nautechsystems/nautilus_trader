@@ -31,7 +31,7 @@ We have chosen parquet as the storage format for the following reasons:
 
 Before we start the notebook - as a once off we need to download some sample data for loading.
 
-For this notebook we will use Forex data from `histdata.com`, simply go to https://www.histdata.com/download-free-forex-historical-data/?/ascii/tick-data-quotes/ and select a Forex pair and one or more months of data to download.
+For this notebook we will use FX data from `histdata.com`, simply go to https://www.histdata.com/download-free-forex-historical-data/?/ascii/tick-data-quotes/ and select a Forex pair and one or more months of data to download.
 
 Once you have downloaded the data, set the variable `input_files` below to the path containing the 
 data. You can also use a glob to select multiple files, for example `"~/Downloads/HISTDATA_COM_ASCII_AUDUSD_*.zip"`.
@@ -68,7 +68,7 @@ Each of the `Reader` classes takes a `line_parser` or `block_parser` function, a
 
 ### Writing the parser function
 
-The Forex data from `histdata` is stored in csv/text format, with fields `timestamp, bid_price, ask_price`. 
+The FX data from `histdata` is stored in csv/text format, with fields `timestamp, bid_price, ask_price`. 
 
 For this example, we will use the `CSVReader` class, but we need to manually pass a header as the files do not contain one. The `CSVReader` has a couple of options, we'll be setting and `chunked=False` to process the data line-by-line and `as_dataframe=False` to process the data as a string rather than DataFrame. See the [API Reference](../3_api_reference/persistence.md) for more details.
 
@@ -120,7 +120,7 @@ Nautilus needs to link market data to an `instrument_id`, and an `instrument_id`
 definition. This can be done at any time, but typically it makes sense to do it when you are loading 
 market data into the catalog.
 
-For our example, Nautilus contains some helpers for creating Forex pairs, which we will use. If, 
+For our example, Nautilus contains some helpers for creating FX pairs, which we will use. If, 
 however, you were adding data for financial or crypto markets, you could need to create (and add to 
 the catalog) an instrument corresponding to that instrument_id. Definitions for various other 
 instruments can be found in `nautilus_trader.model.instruments`.
@@ -131,7 +131,7 @@ See [Instruments](./4_instruments.md) for more details on creating other instrum
 from nautilus_trader.persistence.external.core import process_files, write_objects
 from nautilus_trader.backtest.data.providers import TestInstrumentProvider
 
-# Use nautilus test helpers to create a EUR/USD Forex instrument for our purposes
+# Use nautilus test helpers to create a EUR/USD FX instrument for our purposes
 instrument = TestInstrumentProvider.default_fx_ccy("EUR/USD")
 ```
 
@@ -154,7 +154,7 @@ catalog.instruments()
 
 One final note, our parsing function takes an `instrument_id` argument, as in our case with 
 hist_data, the actual file does not contain information about the instrument, only the file name 
-does. In our instance, we would likely need to split our loading per Forex pair, so we can determine 
+does. In our instance, we would likely need to split our loading per FX pair, so we can determine 
 which instrument we are loading. We will use a simple lambda function to pass our `instrument_id` to 
 the parsing function.
 
@@ -164,7 +164,7 @@ large files into chunks (protecting us from out of memory errors when reading la
 the results to the `DataCatalog`.
 
 
-For the hist_data, it should take less than a minute or two to load each Forex file (a progress bar 
+For the hist_data, it should take less than a minute or two to load each FX file (a progress bar 
 will appear below):
 <!-- #endregion -->
 
