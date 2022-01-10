@@ -33,7 +33,7 @@ See the FTX [API Reference](../3_api_reference/adapters/ftx.md) for full definit
 ## Configuration
 The most common use case is to configure a live `TradingNode` to include FTX
 data and execution clients. To achieve this, add an `FTX` section to your client
-configuration:
+configuration(s):
 
 ```python
 config = TradingNodeConfig(
@@ -57,16 +57,33 @@ config = TradingNodeConfig(
 )
 ```
 
+Then, create a `TradingNode` and add the client factories:
+
+```python
+# Instantiate the live trading node with a configuration
+node = TradingNode(config=config)
+
+# Register the client factories with the node
+node.add_data_client_factory("FTX", FTXLiveDataClientFactory)
+node.add_exec_client_factory("FTX", FTXLiveExecutionClientFactory)
+
+# Finally build the node
+node.build()
+```
+
 ### API credentials
 There are two options for supplying your credentials to the FTX clients.
 Either pass the corresponding `api_key` and `api_secret` values to the config dictionaries, or
-set the `FTX_API_KEY` and `FTX_API_SECRET` environment variables.
-You'll receive immediate confirmation that your credentials are valid with trading
-permissions when starting a trading node.
+set the following environment variables: 
+- `FTX_API_KEY`
+- `FTX_API_SECRET`
+
+When starting the trading node, you'll receive immediate confirmation of whether your 
+credentials are valid and have trading permissions.
 
 ### Sub-accounts
-There are two options to enable trading through a sub-account, by setting the 
-`subaccount` value in the config dictionary, or set the `FTX_SUBACCOUNT` 
+There are two options to enable trading through a sub-account, by setting the
+`subaccount` value in the config dictionary, or set the `FTX_SUBACCOUNT`
 environment variable.
 
 ### FTX US
