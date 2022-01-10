@@ -13,9 +13,9 @@ simply pass the following config to the TradingNode, indicating the names of the
 to look for when connecting:
 
 ```python
-config = {
-    ... # Omitted 
-    "data_clients": {
+config = TradingNodeConfig(
+    ...,  # Omitted 
+    data_clients={
         "BETFAIR": {
             "username": "YOUR_BETFAIR_USERNAME",
             "password": "YOUR_BETFAIR_PASSWORD",
@@ -23,7 +23,7 @@ config = {
             "cert_dir": "YOUR_BETFAIR_CERT_DIR",
         },
     },
-    "exec_clients": {
+    exec_clients={
         "BETFAIR": {
             "username": "YOUR_BETFAIR_USERNAME",
             "password": "YOUR_BETFAIR_PASSWORD",
@@ -32,6 +32,7 @@ config = {
             "base_currency": "AUD",
         },
     }
+)
 ```
 
 Then, create a `TradingNode` and add the factory clients:
