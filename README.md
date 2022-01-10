@@ -116,10 +116,10 @@ publishers and/or trading venues (exchanges/brokers).
 Name                                                      | ID      | Type                    |Status    | Docs |
 ----------------------------------------------------------|---------|-------------------------|----------|------|
 [Betfair](https://betfair.com)                            | BETFAIR | Sports Betting Exchange | Beta     | [Guide](https://docs.nautilustrader.io/4_integrations/betfair.html) |
-[Binance](https://binance.com) SPOT                       | BINANCE | Crypto Exchange         | Beta     | [Guide](https://docs.nautilustrader.io/4_integrations/binance.html) |
-[Binance US](https://binance.com) SPOT                    | BINANCE | Crypto Exchange         | Beta     | [Guide](https://docs.nautilustrader.io/4_integrations/binance.html) |
+[Binance](https://binance.com)                            | BINANCE | Crypto Exchange         | Beta     | [Guide](https://docs.nautilustrader.io/4_integrations/binance.html) |
+[Binance US](https://binance.us)                          | BINANCE | Crypto Exchange         | Beta     | [Guide](https://docs.nautilustrader.io/4_integrations/binance.html) |
 [FTX](https://ftx.com)                                    | FTX     | Crypto Exchange         | Beta     | [Guide](https://docs.nautilustrader.io/4_integrations/ftx.html) |
-[FTX US](https://ftx.com)                                 | FTX     | Crypto Exchange         | Beta     | [Guide](https://docs.nautilustrader.io/4_integrations/ftx.html) |
+[FTX US](https://ftx.us)                                  | FTX     | Crypto Exchange         | Beta     | [Guide](https://docs.nautilustrader.io/4_integrations/ftx.html) |
 [Interactive Brokers](https://www.interactivebrokers.com) | IB      | Brokerage (multi-venue) | Planning | [Guide](https://docs.nautilustrader.io/4_integrations/ib.html) |
 
 Refer to the [Integrations](https://docs.nautilustrader.io/4_integrations/0_index.html) documentation for further details.
