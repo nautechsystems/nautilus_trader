@@ -39,7 +39,7 @@ cdef class Future(Instrument):
     instrument_id : InstrumentId
         The instrument ID.
     native_symbol : Symbol
-        The local/native symbol on the exchange for the instrument.
+        The native/local symbol on the exchange for the instrument.
     asset_class : AssetClass
         The futures contract asset class.
     currency : Currency
