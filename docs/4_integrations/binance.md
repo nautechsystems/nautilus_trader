@@ -41,7 +41,7 @@ See the Binance [API Reference](../3_api_reference/adapters/binance.md) for full
 ## Configuration
 The most common use case is to configure a live `TradingNode` to include Binance 
 data and execution clients. To achieve this, add a `BINANCE` section to your client
-configuration:
+configuration(s):
 
 ```python
 config = TradingNodeConfig(
@@ -63,12 +63,29 @@ config = TradingNodeConfig(
 )
 ```
 
+Then, create a `TradingNode` and add the client factories:
+
+```python
+# Instantiate the live trading node with a configuration
+node = TradingNode(config=config)
+
+# Register the client factories with the node
+node.add_data_client_factory("BINANCE", BinanceLiveDataClientFactory)
+node.add_exec_client_factory("BINANCE", BinanceLiveExecutionClientFactory)
+
+# Finally build the node
+node.build()
+```
+
 ### API credentials
 There are two options for supplying your credentials to the Binance clients.
 Either pass the corresponding `api_key` and `api_secret` values to the config dictionaries, or
-set the `BINANCE_API_KEY` and `BINANCE_API_SECRET` environment variables.
-You'll receive immediate confirmation that your credentials are valid with trading
-permissions when starting a trading node.
+set the following environment variables: 
+- `BINANCE_API_KEY`
+- `BINANCE_API_SECRET`
+
+When starting the trading node, you'll receive immediate confirmation of whether your
+credentials are valid and have trading permissions.
 
 ### Binance US
 There is support for Binance US accounts by setting the `us` option in the configs

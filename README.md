@@ -113,7 +113,16 @@ written in Cython, however the libraries can be accessed from both pure Python a
 NautilusTrader is designed to work with modular adapters which provide integrations with data
 publishers and/or trading venues (exchanges/brokers).
 
-Refer to the [integrations](https://docs.nautilustrader.io/4_integrations/0_index.html) documentation for further details.
+Name                                                      | ID      | Type                    |Status    | Docs |
+----------------------------------------------------------|---------|-------------------------|----------|------|
+[Betfair](https://betfair.com)                            | BETFAIR | Sports Betting Exchange | Beta     | [Guide](https://docs.nautilustrader.io/4_integrations/betfair.html) |
+[Binance](https://binance.com) SPOT                       | BINANCE | Crypto Exchange         | Beta     | [Guide](https://docs.nautilustrader.io/4_integrations/binance.html) |
+[Binance US](https://binance.com) SPOT                    | BINANCE | Crypto Exchange         | Beta     | [Guide](https://docs.nautilustrader.io/4_integrations/binance.html) |
+[FTX](https://ftx.com)                                    | FTX     | Crypto Exchange         | Beta     | [Guide](https://docs.nautilustrader.io/4_integrations/ftx.html) |
+[FTX US](https://ftx.com)                                 | FTX     | Crypto Exchange         | Beta     | [Guide](https://docs.nautilustrader.io/4_integrations/ftx.html) |
+[Interactive Brokers](https://www.interactivebrokers.com) | IB      | Brokerage (multi-venue) | Planning | [Guide](https://docs.nautilustrader.io/4_integrations/ib.html) |
+
+Refer to the [Integrations](https://docs.nautilustrader.io/4_integrations/0_index.html) documentation for further details.
 
 ## Installation
 
