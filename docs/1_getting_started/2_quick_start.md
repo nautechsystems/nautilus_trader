@@ -16,7 +16,7 @@ jupyter:
 # Quick Start
 
 This section explains how to get up and running with NautilusTrader by running some backtests on 
-Forex data. The Nautilus maintainers have pre-loaded some existing data into the Nautilus storage 
+FX data. The Nautilus maintainers have pre-loaded some existing data into the Nautilus storage 
 format (parquet) for this guide.
 
 For more details on how to load other data into Nautilus, see [Backtest Example](../2_user_guide/2_backtest_example.md)
@@ -33,7 +33,7 @@ First, download and load the data by running the next cell (this should take ~ 1
 
 ## Connecting to the DataCatalog
 
-If everything worked correctly, you should be able to see a single EURUSD instrument in the catalog:
+If everything worked correctly, you should be able to see a single EUR/USD instrument in the catalog:
 
 ```python
 from nautilus_trader.persistence.catalog import DataCatalog
@@ -44,10 +44,12 @@ catalog.instruments()
 
 ## Writing a trading strategy
 
-Nautilus includes a handful of indicators built-in, in this example we will use a MACD indicator to 
+NautilusTrader includes a handful of indicators built-in, in this example we will use a MACD indicator to 
 build a simple trading strategy. 
 You can read more about [MACD here](https://www.investopedia.com/terms/m/macd.asp), so this 
-indicator merely serves as an example without any expected alpha.
+indicator merely serves as an example without any expected alpha. There is also a way of
+registering indicators to receive certain data types, however in this example we manually pass the received
+`QuoteTick` to the indicator in the `on_quote_tick` method.
 
 ```python
 from nautilus_trader.trading.strategy import TradingStrategy, TradingStrategyConfig
@@ -155,17 +157,18 @@ There are many more configurable features which will be described later in the d
 <!-- #endregion -->
 
 <!-- #region pycharm={"name": "#%% md\n"} -->
+
 ## Venue
 
 First, we create a venue. For this example we will create a simulated FX ECN venue. 
 A venue needs a name which acts as an ID, as well as some basic configuration; 
-the account type (cash vs margin), the base currency and starting balance.
+the account type (cash vs margin), an optional base currency, and starting balance.
 <!-- #endregion -->
 
 ```python jupyter={"outputs_hidden": false} pycharm={"name": "#%%\n"}
 from nautilus_trader.backtest.config import BacktestVenueConfig
 
-oanda_venue = BacktestVenueConfig(
+venue = BacktestVenueConfig(
     name="SIM",
     oms_type='NETTING',
     account_type='CASH',
@@ -176,7 +179,6 @@ oanda_venue = BacktestVenueConfig(
 
 <!-- #region -->
 ## Instruments
-
 
 Second, we need to know about the instruments that we would like to load data for, we can use the `DataCatalog` for this:
 <!-- #endregion -->
@@ -193,7 +195,7 @@ Next, we need to configure the data for the backtest. Nautilus is built to be ve
 comes to loading data for backtests, however this also means some configuration is required.
 
 For each tick type (and instrument), we add a `BacktestDataConfig`. In this instance we are simply 
-adding the `QuoteTick`(s) for our `EURUSD` instrument:
+adding the `QuoteTick`(s) for our EUR/USD instrument:
 <!-- #endregion -->
 
 ```python jupyter={"outputs_hidden": false} pycharm={"name": "#%%\n"}
@@ -252,7 +254,7 @@ from nautilus_trader.backtest.config import BacktestRunConfig
 from nautilus_trader.trading.config import ImportableStrategyConfig
 
 config = BacktestRunConfig(
-    venues=[oanda_venue],
+    venues=[venue],
     strategies=[macd_strategy],
     data=data,
     engine=engine,

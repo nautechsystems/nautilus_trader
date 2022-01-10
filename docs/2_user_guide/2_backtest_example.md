@@ -22,7 +22,7 @@ This notebook runs through a complete backtest example using raw data (external 
 
 Before we start the notebook - as a once off we need to download some sample data for backtesting
 
-For this notebook we will use Forex data from `histdata.com`, simply go to https://www.histdata.com/download-free-forex-historical-data/?/ascii/tick-data-quotes/ and select a Forex pair and one or more months of data to download.
+For this notebook we will use FX data from `histdata.com`, simply go to https://www.histdata.com/download-free-forex-historical-data/?/ascii/tick-data-quotes/ and select an FX pair, and one or more months of data to download.
 
 Once you have downloaded the data, set the variable `DATA_DIR` below to the directory containing the data. By default it will use the users `Downloads` directory.
 <!-- #endregion -->
@@ -47,18 +47,18 @@ raw_files
 Next we will load this raw data into the data catalog. The data catalog is a central store for Nautilus data, persisted in the [Parquet](https://parquet.apache.org) file format.
 
 We have chosen parquet as the storage format for the following reasons:
-- It performs much better than CSV/JSON/HDF5/etc in terms of compression (storage size) and read performance.
-- It does not require any separate running components (for example a database).
-- It is quick and simple for someone to get up and running with.
+- It performs much better than CSV/JSON/HDF5/etc in terms of compression (storage size) and read performance
+- It does not require any separate running components (for example a database)
+- It is quick and simple for someone to get up and running with
 <!-- #endregion -->
 
 ## Loading data into the catalog
 
 We can load data from various sources into the data catalog using helper methods in the `nautilus_trader.persistence.external.readers` module. The module contains methods for reading various data formats (csv, json, txt), minimising the amount of code required to get data loaded correctly into the data catalog.
 
-The Forex data from `histdata` is stored in csv/text format, with fields `timestamp, bid_price, ask_price`. To load the data into the catalog, we simply write a function that converts each row into a Nautilus object (in this case, a `QuoteTick`). For this example, we will use the `TextReader` helper, which allows reading and applying a parsing function line by line.
+The FX data from `histdata` is stored in csv/text format, with fields `timestamp, bid_price, ask_price`. To load the data into the catalog, we simply write a function that converts each row into a Nautilus object (in this case, a `QuoteTick`). For this example, we will use the `TextReader` helper, which allows reading and applying a parsing function line by line.
 
-Then, we simply instantiate a data catalog (passing in a directory where to store the data, by default we will just use the current directory) and pass our parsing function wrapping in the Reader class to `process_files`. We also need to know about which instrument this data is for; in this example, we will simply use one of the Nautilus test helpers to create a Forex instrument.
+Then, we simply instantiate a data catalog (passing in a directory where to store the data, by default we will just use the current directory) and pass our parsing function wrapping in the Reader class to `process_files`. We also need to know about which instrument this data is for; in this example, we will simply use one of the Nautilus test helpers to create a FX instrument.
 
 It should only take a couple of minutes to load the data (depending on how many months).
 
@@ -191,7 +191,7 @@ config
 
 ### Finally, add Strategy instances
 
-We can perform a grid-search of some parameters by using the `replace` method, which returns a new copy of the config. We use the `ImportableStrategyConfig` object to tell nautilus where the `TradingStrategy` class exists, and add some config 
+We can perform a grid-search of some parameters by using the `replace` method, which returns a new copy of the config. We use the `ImportableStrategyConfig` object to tell Nautilus where the `TradingStrategy` class exists, and add some config. 
 
 ```python
 from decimal import Decimal
@@ -232,7 +232,7 @@ print("\n\n".join(map(str, configs)))
 
 # Run the backtest
 
-Finally, we can create a BacktestNode and run the backtest
+Finally, we can create a BacktestNode and run the backtest:
 
 ```python
 from nautilus_trader.backtest.node import BacktestNode
@@ -250,7 +250,7 @@ task
 # task.visualize(rankdir='LR') 
 ```
 
-^ Notice because our configs share the same data that only one instance of `load` is required
+^ Notice because our configs share the same data, that only one instance of `load` is required.
 
 
 ### Start up a local dask cluster to execute the graph
