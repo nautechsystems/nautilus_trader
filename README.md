@@ -2,9 +2,8 @@
 
 [![codacy-quality](https://api.codacy.com/project/badge/Grade/a1d3ccf7bccb4483b091975681a5cb23)](https://app.codacy.com/gh/nautechsystems/nautilus_trader?utm_source=github.com&utm_medium=referral&utm_content=nautechsystems/nautilus_trader&utm_campaign=Badge_Grade_Dashboard)
 [![codecov](https://codecov.io/gh/nautechsystems/nautilus_trader/branch/master/graph/badge.svg?token=DXO9QQI40H)](https://codecov.io/gh/nautechsystems/nautilus_trader)
-![total-lines](https://img.shields.io/tokei/lines/github/nautechsystems/nautilus_trader)
-![pypi-version](https://img.shields.io/pypi/v/nautilus_trader)
 ![pythons](https://img.shields.io/pypi/pyversions/nautilus_trader)
+![pypi-version](https://img.shields.io/pypi/v/nautilus_trader)
 ![pypi-format](https://img.shields.io/pypi/format/nautilus_trader?color=blue)
 [![Downloads](https://pepy.tech/badge/nautilus-trader)](https://pepy.tech/project/nautilus-trader)
 [![code-style: black](https://img.shields.io/badge/code%20style-black-000000.svg)](https://github.com/psf/black) 
@@ -113,14 +112,14 @@ written in Cython, however the libraries can be accessed from both pure Python a
 NautilusTrader is designed to work with modular adapters which provide integrations with data
 publishers and/or trading venues (exchanges/brokers).
 
-| Name                                                    | ID      | Type                    |Status    | Docs |
-|:--------------------------------------------------------|:--------|:------------------------|:---------|:-----|
-[Betfair](https://betfair.com)                            | BETFAIR | Sports Betting Exchange | ![status](https://img.shields.io/badge/status-beta-yellow)   | [Guide](https://docs.nautilustrader.io/4_integrations/betfair.html) |
-[Binance](https://binance.com)                            | BINANCE | Crypto Exchange         | ![status](https://img.shields.io/badge/status-beta-yellow)   | [Guide](https://docs.nautilustrader.io/4_integrations/binance.html) |
-[Binance US](https://binance.us)                          | BINANCE | Crypto Exchange         | ![status](https://img.shields.io/badge/status-beta-yellow)   | [Guide](https://docs.nautilustrader.io/4_integrations/binance.html) |
-[FTX](https://ftx.com)                                    | FTX     | Crypto Exchange         | ![status](https://img.shields.io/badge/status-beta-yellow)   | [Guide](https://docs.nautilustrader.io/4_integrations/ftx.html) |
-[FTX US](https://ftx.us)                                  | FTX     | Crypto Exchange         | ![status](https://img.shields.io/badge/status-beta-yellow)   | [Guide](https://docs.nautilustrader.io/4_integrations/ftx.html) |
-[Interactive Brokers](https://www.interactivebrokers.com) | IB      | Brokerage (multi-venue) | ![status](https://img.shields.io/badge/status-planning-gray) | [Guide](https://docs.nautilustrader.io/4_integrations/ib.html) |
+| Name                                                    | ID      | Type                    | Status                                                | Docs |
+|:--------------------------------------------------------|:--------|:------------------------|:------------------------------------------------------|:-----|
+[Betfair](https://betfair.com)                            | BETFAIR | Sports Betting Exchange | ![status](https://img.shields.io/badge/beta-yellow)   | [Guide](https://docs.nautilustrader.io/4_integrations/betfair.html) |
+[Binance](https://binance.com)                            | BINANCE | Crypto Exchange         | ![status](https://img.shields.io/badge/beta-yellow)   | [Guide](https://docs.nautilustrader.io/4_integrations/binance.html) |
+[Binance US](https://binance.us)                          | BINANCE | Crypto Exchange         | ![status](https://img.shields.io/badge/beta-yellow)   | [Guide](https://docs.nautilustrader.io/4_integrations/binance.html) |
+[FTX](https://ftx.com)                                    | FTX     | Crypto Exchange         | ![status](https://img.shields.io/badge/beta-yellow)   | [Guide](https://docs.nautilustrader.io/4_integrations/ftx.html) |
+[FTX US](https://ftx.us)                                  | FTX     | Crypto Exchange         | ![status](https://img.shields.io/badge/beta-yellow)   | [Guide](https://docs.nautilustrader.io/4_integrations/ftx.html) |
+[Interactive Brokers](https://www.interactivebrokers.com) | IB      | Brokerage (multi-venue) | ![status](https://img.shields.io/badge/planning-gray) | [Guide](https://docs.nautilustrader.io/4_integrations/ib.html) |
 
 Refer to the [Integrations](https://docs.nautilustrader.io/4_integrations/0_index.html) documentation for further details.
 
