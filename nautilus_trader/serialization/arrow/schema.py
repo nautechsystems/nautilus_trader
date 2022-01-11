@@ -175,7 +175,7 @@ NAUTILUS_PARQUET_SCHEMA = {
             "margin_initial": pa.float64(),
             "margin_maintenance": pa.float64(),
             "margin_currency": pa.dictionary(pa.int8(), pa.string()),
-            "margin_instrument_id": pa.string(),
+            "margin_instrument_id": pa.dictionary(pa.int64(), pa.string()),
             "reported": pa.bool_(),
             "info": pa.string(),
             "event_id": pa.string(),

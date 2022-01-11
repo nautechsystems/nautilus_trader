@@ -85,7 +85,6 @@ class TestBacktestNode:
             "_run_delayed",
         ]
 
-    @pytest.mark.skip(reason="fix on develop")
     @pytest.mark.parametrize("batch_size_bytes", [None, parse_bytes("1mib")])
     def test_backtest_against_example_run(self, batch_size_bytes):
         """Replicate examples/fx_ema_cross_audusd_ticks.py backtest result."""
@@ -146,7 +145,6 @@ class TestBacktestNode:
         # Assert
         assert len(results) == 1
 
-    @pytest.mark.skip(reason="fix on develop")
     def test_backtest_build_graph(self):
         # Arrange
         node = BacktestNode()
@@ -156,9 +154,8 @@ class TestBacktestNode:
         result: List[BacktestResult] = tasks.compute()
 
         # Assert
-        assert len(result.results) == 1
+        assert len(result) == 1
 
-    @pytest.mark.skip(reason="fix on develop")
     def test_backtest_run_distributed(self):
         from distributed import Client
 
