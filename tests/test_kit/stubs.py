@@ -538,6 +538,7 @@ class TestStubs:
                 MarginBalance(
                     Money(10_000, USD),
                     Money(50_000, USD),
+                    TestStubs.audusd_id(),
                 ),
             ],
             info={},
