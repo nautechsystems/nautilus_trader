@@ -27,6 +27,7 @@ def serialize(state: AccountState):
     base = state.to_dict(state)
     del base["balances"]
     del base["margins"]
+
     for balance in state.balances:
         balance_data = {
             "balance_total": balance.total.as_double(),
@@ -35,6 +36,16 @@ def serialize(state: AccountState):
             "balance_currency": balance.currency.code,
         }
         result.append({**base, **balance_data})
+    if not state.margins:
+        margin_data = {
+            "margin_initial": None,
+            "margin_maintenance": None,
+            "margin_currency": None,
+            "margin_instrument_id": None,
+        }
+        result.append({**base, **margin_data})
+        return result
+
     for margin in state.margins:
         margin_data = {
             "margin_initial": margin.initial.as_double(),
