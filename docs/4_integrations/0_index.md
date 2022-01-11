@@ -1,7 +1,7 @@
 # Integrations
 
-NautilusTrader is designed to work with modular adapters which provide integrations 
-with data publishers and/or trading venues (exchanges/brokers).
+NautilusTrader is designed to work with modular adapters which provide integrations with data
+publishers and/or trading venues (exchanges/brokers). The following integrations are currently supported:
 
 ```{warning}
 The initial integrations for the project are currently under heavy construction. 
@@ -9,18 +9,29 @@ It's advised to conduct some of your own testing with small amounts of capital b
 running strategies which are able to access larger capital allocations.
 ```
 
+| Name                                                    | ID      | Type                    | Status                                                | Docs |
+|:--------------------------------------------------------|:--------|:------------------------|:------------------------------------------------------|:-----|
+[Betfair](https://betfair.com)                            | BETFAIR | Sports Betting Exchange | ![status](https://img.shields.io/badge/beta-yellow)   | [Guide](https://docs.nautilustrader.io/4_integrations/betfair.html) |
+[Binance](https://binance.com)                            | BINANCE | Crypto Exchange         | ![status](https://img.shields.io/badge/beta-yellow)   | [Guide](https://docs.nautilustrader.io/4_integrations/binance.html) |
+[Binance US](https://binance.us)                          | BINANCE | Crypto Exchange         | ![status](https://img.shields.io/badge/beta-yellow)   | [Guide](https://docs.nautilustrader.io/4_integrations/binance.html) |
+[FTX](https://ftx.com)                                    | FTX     | Crypto Exchange         | ![status](https://img.shields.io/badge/beta-yellow)   | [Guide](https://docs.nautilustrader.io/4_integrations/ftx.html) |
+[FTX US](https://ftx.us)                                  | FTX     | Crypto Exchange         | ![status](https://img.shields.io/badge/beta-yellow)   | [Guide](https://docs.nautilustrader.io/4_integrations/ftx.html) |
+[Interactive Brokers](https://www.interactivebrokers.com) | IB      | Brokerage (multi-venue) | ![status](https://img.shields.io/badge/planning-gray) | [Guide](https://docs.nautilustrader.io/4_integrations/ib.html) |
+
+## Implementation goals
+
 The implementation of each integration aims to meet the following criteria:
 
-- Low-level client components should match the exchange API as closely as possible.
-- The full range of an exchanges functionality (where applicable to NautilusTrader), should _eventually_ be supported.
+- Low-level client components should match the exchange API as closely as possible
+- The full range of an exchanges functionality (where applicable to NautilusTrader), should _eventually_ be supported
 - Exchange specific data types will be added to support the functionality and return
-  types which are reasonably expected by a user.
+  types which are reasonably expected by a user
 - Actions which are unsupported by either the exchange or NautilusTrader, will be explicitly logged as
-a warning or error when a user attempts to perform said action.
+a warning or error when a user attempts to perform said action
 
-## API Unification
+## API unification
 All integrations must be compatible with the NautilusTrader API at the system boundary,
-this means there is some unification and standardization needed.
+this means there is some normalization and standardization needed.
 
-- All symbols will match the native/local symbol for the exchange.
-- All timestamps will be normalized to UNIX nanoseconds.
+- All symbols will match the native/local symbol for the exchange
+- All timestamps will be normalized to UNIX nanoseconds

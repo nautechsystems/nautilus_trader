@@ -105,12 +105,14 @@ written in Cython, however the libraries can be accessed from both pure Python a
 - Maintainability
 - Deployability
 
+## Architecture (data flow)
+
 ![Architecture](https://github.com/nautechsystems/nautilus_trader/blob/develop/docs/artwork/architecture-overview.png?raw=true "architecture")
 
 ## Integrations
 
 NautilusTrader is designed to work with modular adapters which provide integrations with data
-publishers and/or trading venues (exchanges/brokers).
+publishers and/or trading venues (exchanges/brokers). The following integrations are currently supported:
 
 | Name                                                    | ID      | Type                    | Status                                                | Docs |
 |:--------------------------------------------------------|:--------|:------------------------|:------------------------------------------------------|:-----|
