@@ -87,6 +87,7 @@ cdef class ExecutionEngine(Component):
 # -- EVENT HANDLERS --------------------------------------------------------------------------------
 
     cdef void _handle_event(self, OrderEvent event) except *
+    cdef OMSType _confirm_oms_type(self, Venue venue, StrategyId strategy_id) except *
     cdef void _confirm_position_id(self, OrderFilled fill, OMSType oms_type) except *
     cdef void _handle_order_fill(self, OrderFilled fill, OMSType oms_type) except *
     cdef void _open_position(self, OrderFilled fill, OMSType oms_type) except *

@@ -581,7 +581,11 @@ cdef class ExecutionEngine(Component):
                 color=LogColor.GREEN,
             )
 
-        cdef OMSType oms_type = self._oms_types.get(event.strategy_id, OMSType.HEDGING)
+        # Confirm OMS for strategy
+        cdef OMSType oms_type = self._confirm_oms_type(
+            event.instrument_id.venue,
+            event.strategy_id,
+        )
 
         if isinstance(event, OrderFilled):
             self._confirm_position_id(event, oms_type)
@@ -608,6 +612,24 @@ cdef class ExecutionEngine(Component):
 
         if isinstance(event, OrderFilled):
             self._handle_order_fill(event, oms_type)
+
+    cdef OMSType _confirm_oms_type(self, Venue venue, StrategyId strategy_id) except *:
+        cdef:
+            OMSType oms_type
+            ExecutionClient client
+
+        oms_type = self._oms_types.get(strategy_id, 0)
+        if oms_type == 0:
+            # No OMS configured - use venue OMS
+            client = self._clients.get(venue)
+            if client is None:
+                oms_type = OMSType.HEDGING
+            else:
+                oms_type = OMSType.HEDGING  # TODO(cs): Set default venue OMS
+            # Set OMS for strategy
+            self._oms_types[strategy_id] = oms_type
+
+        return oms_type
 
     cdef void _confirm_position_id(self, OrderFilled fill, OMSType oms_type) except *:
         # Fetch ID from cache
