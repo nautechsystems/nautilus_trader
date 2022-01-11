@@ -136,11 +136,15 @@ class FTXExecutionClient(LiveExecutionClient):
             us=us,
         )
 
+        # Tasks
+        self._task_poll_account: Optional[asyncio.Task] = None
+
         # Hot caches
         self._instrument_ids: Dict[str, InstrumentId] = {}
         self._order_ids: Dict[VenueOrderId, ClientOrderId] = {}
         self._order_types: Dict[VenueOrderId, OrderType] = {}
 
+        # Settings
         self._account_polling_interval = account_polling_interval
         self._calculated_account = calculated_account
         self._initial_leverage_set = False
@@ -186,7 +190,7 @@ class FTXExecutionClient(LiveExecutionClient):
 
         # Update account state
         await self._update_account_state()
-        self._loop.create_task(self._poll_account_state())
+        self._task_poll_account = self._loop.create_task(self._poll_account_state())
 
         # Connect WebSocket client
         await self._ws_client.connect(start=True)
@@ -197,6 +201,9 @@ class FTXExecutionClient(LiveExecutionClient):
         self._log.info("Connected.")
 
     async def _disconnect(self):
+        if self._task_poll_account:
+            self._task_poll_account.cancel()
+
         # Disconnect WebSocket client
         if self._ws_client.is_connected:
             await self._ws_client.disconnect()
