@@ -96,23 +96,24 @@ The project heavily utilizes Cython to provide static type safety and increased 
 for Python through [C extension modules](https://docs.python.org/3/extending/extending.html). The vast majority of the production code is actually
 written in Cython, however the libraries can be accessed from both pure Python and Cython.
 
-## Architecture Quality Attributes
-
-- Reliability
-- Performance
-- Testability
-- Modularity
-- Maintainability
-- Deployability
-
 ## Architecture (data flow)
 
 ![Architecture](https://github.com/nautechsystems/nautilus_trader/blob/develop/docs/artwork/architecture-overview.png?raw=true "architecture")
 
+## Quality Attributes
+
+- Reliability
+- Performance
+- Modularity
+- Testability
+- Maintainability
+- Deployability
+
 ## Integrations
 
-NautilusTrader is designed to work with modular adapters which provide integrations with data
-publishers and/or trading venues (exchanges/brokers). The following integrations are currently supported:
+NautilusTrader is designed in a modular way to work with 'adapters' which provide
+connectivity to data publishers and/or trading venues - converting their raw API
+into a unified interface. The following integrations are currently supported:
 
 | Name                                                    | ID      | Type                    | Status                                                | Docs |
 |:--------------------------------------------------------|:--------|:------------------------|:------------------------------------------------------|:-----|
