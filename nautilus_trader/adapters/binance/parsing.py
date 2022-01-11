@@ -261,7 +261,6 @@ def _parse_balances(
 
     balances: List[AccountBalance] = [
         AccountBalance(
-            currency=currency,
             total=Money(values[0], currency),
             locked=Money(values[1], currency),
             free=Money(values[2], currency),

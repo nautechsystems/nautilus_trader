@@ -1480,7 +1480,6 @@ cdef class SimulatedExchange:
     cdef void _generate_fresh_account_state(self) except *:
         cdef list balances = [
             AccountBalance(
-                currency=money.currency,
                 total=money,
                 locked=Money(0, money.currency),
                 free=money,

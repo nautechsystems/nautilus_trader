@@ -275,10 +275,9 @@ cdef class MarginAccount(Account):
         cdef MarginBalance margin = self._margins.get(instrument_id)
         if margin is None:
             self._margins[instrument_id] = MarginBalance(
-                instrument_id=instrument_id,
-                currency=margin_init.currency,
                 initial=margin_init,
                 maintenance=Money(0, margin_init.currency),
+                instrument_id=instrument_id,
             )
         else:
             margin.initial = margin_init
@@ -312,10 +311,9 @@ cdef class MarginAccount(Account):
         cdef MarginBalance margin = self._margins.get(instrument_id)
         if margin is None:
             self._margins[instrument_id] = MarginBalance(
-                instrument_id=instrument_id,
-                currency=margin_maint.currency,
                 initial=Money(0, margin_maint.currency),
                 maintenance=margin_maint,
+                instrument_id=instrument_id,
             )
         else:
             margin.maintenance = margin_maint
@@ -427,7 +425,6 @@ cdef class MarginAccount(Account):
             total_margin += margin.maintenance.as_decimal()
 
         cdef AccountBalance new_balance = AccountBalance(
-            currency,
             current_balance.total,
             Money(total_margin, currency),
             Money(current_balance.total.as_decimal() - total_margin, currency),

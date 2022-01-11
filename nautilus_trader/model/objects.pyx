@@ -532,8 +532,6 @@ cdef class AccountBalance:
 
     Parameters
     ----------
-    currency : Currency
-        The currency for the account balance.
     total : Money
         The total account balance.
     locked : Money
@@ -544,7 +542,7 @@ cdef class AccountBalance:
     Raises
     ------
     ValueError
-        If any money currency does not equal `currency`.
+        If money currencies are not equal.
     ValueError
         If any money is negative (< 0).
     ValueError
@@ -553,23 +551,21 @@ cdef class AccountBalance:
 
     def __init__(
         self,
-        Currency currency not None,
         Money total not None,
         Money locked not None,
         Money free not None,
     ):
-        Condition.equal(currency, total.currency, "currency", "total.currency")
-        Condition.equal(currency, locked.currency, "currency", "locked.currency")
-        Condition.equal(currency, free.currency, "currency", "free.currency")
+        Condition.equal(total.currency, locked.currency, "total.currency", "locked.currency")
+        Condition.equal(total.currency, free.currency, "total.currency", "free.currency")
         Condition.not_negative(total.as_decimal(), "total")
         Condition.not_negative(locked.as_decimal(), "locked")
         Condition.not_negative(free.as_decimal(), "free")
         Condition.true(total.as_decimal() - locked.as_decimal() == free.as_decimal(), "total - locked != free")
 
-        self.currency = currency
         self.total = total
         self.locked = locked
         self.free = free
+        self.currency = total.currency
 
     def __repr__(self) -> str:
         return (
@@ -584,7 +580,6 @@ cdef class AccountBalance:
         Condition.not_none(values, "values")
         cdef Currency currency = Currency.from_str_c(values["currency"])
         return AccountBalance(
-            currency=currency,
             total=Money(values["total"], currency),
             locked=Money(values["locked"], currency),
             free=Money(values["free"], currency),
@@ -618,27 +613,25 @@ cdef class AccountBalance:
         """
         return {
             "type": type(self).__name__,
-            "currency": self.currency.code,
             "total": str(self.total.as_decimal()),
             "locked": str(self.locked.as_decimal()),
             "free": str(self.free.as_decimal()),
+            "currency": self.currency.code,
         }
 
 
 cdef class MarginBalance:
     """
-    Represents a margin balance associated with a particular instrument.
+    Represents a margin balance optionally associated with a particular instrument.
 
     Parameters
     ----------
-    instrument_id : InstrumentId
-        The instrument ID associated with the margin.
-    currency : Currency
-        The currency for the margin balance.
     initial : Money
         The initial (order) margin requirement for the instrument.
     maintenance : Money
         The maintenance (position) margin requirement for the instrument.
+    instrument_id : InstrumentId, optional
+        The instrument ID associated with the margin.
 
     Raises
     ------
@@ -652,38 +645,36 @@ cdef class MarginBalance:
 
     def __init__(
         self,
-        InstrumentId instrument_id not None,
-        Currency currency not None,
         Money initial not None,
         Money maintenance not None,
+        InstrumentId instrument_id=None,
     ):
-        Condition.equal(currency, initial.currency, "currency", "initial.currency")
-        Condition.equal(currency, maintenance.currency, "currency", "maintenance.currency")
+        Condition.equal(initial.currency, maintenance.currency, "initial.currency", "maintenance.currency")
         Condition.not_negative(initial.as_decimal(), "initial")
         Condition.not_negative(maintenance.as_decimal(), "maintenance")
 
-        self.instrument_id = instrument_id
-        self.currency = currency
         self.initial = initial
         self.maintenance = maintenance
+        self.currency = initial.currency
+        self.instrument_id = instrument_id
 
     def __repr__(self) -> str:
         return (
             f"{type(self).__name__}("
-            f"instrument_id={self.instrument_id.value}, "
             f"initial={self.initial.to_str()}, "
-            f"maintenance={self.maintenance.to_str()})"
+            f"maintenance={self.maintenance.to_str()}, "
+            f"instrument_id={self.instrument_id.value if self.instrument_id is not None else None})"
         )
 
     @staticmethod
     cdef MarginBalance from_dict_c(dict values):
         Condition.not_none(values, "values")
         cdef Currency currency = Currency.from_str_c(values["currency"])
+        cdef str instrument_id_str = values.get("instrument_id")
         return MarginBalance(
-            instrument_id=InstrumentId.from_str_c(values["instrument_id"]),
-            currency=currency,
             initial=Money(values["initial"], currency),
             maintenance=Money(values["maintenance"], currency),
+            instrument_id=InstrumentId.from_str_c(instrument_id_str) if instrument_id_str is not None else None,
         )
 
     @staticmethod
@@ -714,8 +705,8 @@ cdef class MarginBalance:
         """
         return {
             "type": type(self).__name__,
-            "instrument_id": self.instrument_id.value,
-            "currency": self.currency.code,
             "initial": str(self.initial.as_decimal()),
             "maintenance": str(self.maintenance.as_decimal()),
+            "currency": self.currency.code,
+            "instrument_id": self.instrument_id.value if self.instrument_id is not None else None,
         }

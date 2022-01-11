@@ -398,9 +398,19 @@ class TestMsgPackSerializer:
             base_currency=USD,
             reported=True,
             balances=[
-                AccountBalance(USD, Money(1525000, USD), Money(25000, USD), Money(1500000, USD))
+                AccountBalance(
+                    Money(1525000, USD),
+                    Money(25000, USD),
+                    Money(1500000, USD),
+                ),
             ],
-            margins=[MarginBalance(AUDUSD_SIM.id, USD, Money(5000, USD), Money(20000, USD))],
+            margins=[
+                MarginBalance(
+                    Money(5000, USD),
+                    Money(20000, USD),
+                    AUDUSD_SIM.id,
+                ),
+            ],
             info={},
             event_id=UUID4(),
             ts_event=0,
@@ -423,11 +433,10 @@ class TestMsgPackSerializer:
             reported=True,
             balances=[
                 AccountBalance(
-                    USDT,
                     Money(10000, USDT),
                     Money(0, USDT),
                     Money(10000, USDT),
-                )
+                ),
             ],
             margins=[],
             info={},

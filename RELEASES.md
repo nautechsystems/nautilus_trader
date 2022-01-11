@@ -3,6 +3,7 @@
 Released TBD
 
 ## Breaking Changes
+- Removed redundant `currency` param from `AccountBalance`.
 - Renamed `local_symbol` to `native_symbol`.
 - Removed the `VenueType` enum and `venue_type` param in favour of a `routing` bool flag.
 - Removed `account_id` param from execution client factories and constructors.
@@ -10,6 +11,9 @@ Released TBD
 
 ## Enhancements
 - Added FTX integration for testing.
+- Added FTX US configuration option.
+- Added Binance US configuration option.
+- Added `MarginBalance` object to assist with margin account functionality.
 
 ## Fixes
 - Fixed parsing of `BarType` with symbols including hyphens `-`.

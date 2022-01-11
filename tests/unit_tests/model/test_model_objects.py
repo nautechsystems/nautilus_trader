@@ -20,7 +20,12 @@ import pytest
 from nautilus_trader.model.currencies import AUD
 from nautilus_trader.model.currencies import BTC
 from nautilus_trader.model.currencies import USD
+from nautilus_trader.model.identifiers import InstrumentId
+from nautilus_trader.model.identifiers import Symbol
+from nautilus_trader.model.identifiers import Venue
+from nautilus_trader.model.objects import AccountBalance
 from nautilus_trader.model.objects import BaseDecimal
+from nautilus_trader.model.objects import MarginBalance
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
@@ -840,3 +845,60 @@ class TestMoney:
 
         # Assert
         assert result == expected
+
+
+class TestAccountBalance:
+    def test_instantiate_str_repr(self):
+        # Arrange, Act
+        balance = AccountBalance(
+            total=Money(1_525_000, USD),
+            locked=Money(25_000, USD),
+            free=Money(1_500_000, USD),
+        )
+
+        # Assert
+        assert (
+            str(balance)
+            == "AccountBalance(total=1_525_000.00 USD, locked=25_000.00 USD, free=1_500_000.00 USD)"
+        )
+        assert (
+            repr(balance)
+            == "AccountBalance(total=1_525_000.00 USD, locked=25_000.00 USD, free=1_500_000.00 USD)"
+        )
+
+
+class TestMarginBalance:
+    def test_instantiate_str_repr_with_instrument_id(self):
+        # Arrange, Act
+        margin = MarginBalance(
+            initial=Money(5_000, USD),
+            maintenance=Money(25_000, USD),
+            instrument_id=InstrumentId(Symbol("AUD/USD"), Venue("IDEALPRO")),
+        )
+
+        # Assert
+        assert (
+            str(margin)
+            == "MarginBalance(initial=5_000.00 USD, maintenance=25_000.00 USD, instrument_id=AUD/USD.IDEALPRO)"
+        )
+        assert (
+            repr(margin)
+            == "MarginBalance(initial=5_000.00 USD, maintenance=25_000.00 USD, instrument_id=AUD/USD.IDEALPRO)"
+        )
+
+    def test_instantiate_str_repr_without_instrument_id(self):
+        # Arrange, Act
+        margin = MarginBalance(
+            initial=Money(5_000, USD),
+            maintenance=Money(25_000, USD),
+        )
+
+        # Assert
+        assert (
+            str(margin)
+            == "MarginBalance(initial=5_000.00 USD, maintenance=25_000.00 USD, instrument_id=None)"
+        )
+        assert (
+            repr(margin)
+            == "MarginBalance(initial=5_000.00 USD, maintenance=25_000.00 USD, instrument_id=None)"
+        )
