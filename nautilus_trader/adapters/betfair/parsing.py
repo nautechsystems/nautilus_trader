@@ -273,7 +273,6 @@ def betfair_account_to_account_state(
         reported=False,
         balances=[
             AccountBalance(
-                currency=currency,
                 total=Money(balance, currency),
                 locked=Money(locked, currency),
                 free=Money(free, currency),

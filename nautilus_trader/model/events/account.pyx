@@ -45,7 +45,7 @@ cdef class AccountState(Event):
     balances : list[AccountBalance]
         The account balances.
     margins : list[MarginBalance]
-        The margin balances.
+        The margin balances (can be empty).
     info : dict [str, object]
         The additional implementation specific account information.
     event_id : UUID4
@@ -54,6 +54,11 @@ cdef class AccountState(Event):
         The UNIX timestamp (nanoseconds) when the account state event occurred.
     ts_init : int64
         The UNIX timestamp (nanoseconds) when the object was initialized.
+
+    Raises
+    ------
+    ValueError
+        If `balances` is empty.
     """
 
     def __init__(
@@ -63,7 +68,7 @@ cdef class AccountState(Event):
         Currency base_currency,
         bint reported,
         list balances not None,
-        list margins not None,
+        list margins not None,  # Can be empty
         dict info not None,
         UUID4 event_id not None,
         int64_t ts_event,

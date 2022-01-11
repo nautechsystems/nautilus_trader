@@ -458,7 +458,6 @@ class FTXExecutionClient(LiveExecutionClient):
         locked = Money(total - free, USD)
 
         balance = AccountBalance(
-            currency=USD,
             total=total,
             locked=locked,
             free=free,
@@ -472,10 +471,9 @@ class FTXExecutionClient(LiveExecutionClient):
         # TODO(cs): Margins on FTX are fractions - determine solution
         # for position in info["positions"]:
         #     margin = MarginBalance(
-        #         instrument_id=InstrumentId(Symbol(position["future"]), FTX_VENUE),
-        #         currency=USD,
         #         initial=Money(position["initialMarginRequirement"], USD),
         #         maintenance=Money(position["maintenanceMarginRequirement"], USD),
+        #         instrument_id=InstrumentId(Symbol(position["future"]), FTX_VENUE),
         #     )
         #     margins.append(margin)
 

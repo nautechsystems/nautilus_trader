@@ -82,6 +82,7 @@ from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.identifiers import VenueOrderId
 from nautilus_trader.model.objects import AccountBalance
+from nautilus_trader.model.objects import MarginBalance
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
@@ -507,11 +508,10 @@ class TestStubs:
             reported=True,  # reported
             balances=[
                 AccountBalance(
-                    USD,
                     Money(1_000_000, USD),
                     Money(0, USD),
                     Money(1_000_000, USD),
-                )
+                ),
             ],
             margins=[],
             info={},
@@ -529,13 +529,17 @@ class TestStubs:
             reported=True,  # reported
             balances=[
                 AccountBalance(
-                    USD,
                     Money(1_000_000, USD),
                     Money(0, USD),
                     Money(1_000_000, USD),
-                )
+                ),
             ],
-            margins=[],
+            margins=[
+                MarginBalance(
+                    Money(10_000, USD),
+                    Money(50_000, USD),
+                ),
+            ],
             info={},
             event_id=UUID4(),
             ts_event=0,
@@ -551,11 +555,10 @@ class TestStubs:
             reported=False,  # reported
             balances=[
                 AccountBalance(
-                    GBP,
                     Money(1_000, GBP),
                     Money(0, GBP),
                     Money(1_000, GBP),
-                )
+                ),
             ],
             margins=[],
             info={},

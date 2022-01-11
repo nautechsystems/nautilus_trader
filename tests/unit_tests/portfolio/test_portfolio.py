@@ -122,11 +122,10 @@ class TestPortfolio:
             reported=True,
             balances=[
                 AccountBalance(
-                    BTC,
                     Money(10.00000000, BTC),
                     Money(0.00000000, BTC),
                     Money(10.00000000, BTC),
-                )
+                ),
             ],
             margins=[],
             info={},
@@ -213,7 +212,6 @@ class TestPortfolio:
             reported=True,
             balances=[
                 AccountBalance(
-                    USD,
                     Money(100000.00, USD),
                     Money(0.00, USD),
                     Money(100000.00, USD),
@@ -260,13 +258,11 @@ class TestPortfolio:
             reported=True,
             balances=[
                 AccountBalance(
-                    BTC,
                     Money(10.00000000, BTC),
                     Money(0.00000000, BTC),
                     Money(10.00000000, BTC),
                 ),
                 AccountBalance(
-                    USDT,
                     Money(100000.00000000, USDT),
                     Money(0.00000000, USDT),
                     Money(100000.00000000, USDT),
@@ -314,13 +310,11 @@ class TestPortfolio:
             reported=True,
             balances=[
                 AccountBalance(
-                    BTC,
                     Money(10.00000000, BTC),
                     Money(0.00000000, BTC),
                     Money(10.00000000, BTC),
                 ),
                 AccountBalance(
-                    USDT,
                     Money(100000.00000000, USDT),
                     Money(0.00000000, USDT),
                     Money(100000.00000000, USDT),
@@ -365,19 +359,16 @@ class TestPortfolio:
             reported=True,
             balances=[
                 AccountBalance(
-                    BTC,
                     Money(10.00000000, BTC),
                     Money(0.00000000, BTC),
                     Money(10.00000000, BTC),
                 ),
                 AccountBalance(
-                    ETH,
                     Money(20.00000000, ETH),
                     Money(0.00000000, ETH),
                     Money(20.00000000, ETH),
                 ),
                 AccountBalance(
-                    USDT,
                     Money(100000.00000000, USDT),
                     Money(0.00000000, USDT),
                     Money(100000.00000000, USDT),
@@ -455,7 +446,6 @@ class TestPortfolio:
             reported=True,
             balances=[
                 AccountBalance(
-                    currency=GBP,
                     total=Money(1000, GBP),
                     free=Money(1000, GBP),
                     locked=Money(0, GBP),
@@ -506,13 +496,11 @@ class TestPortfolio:
             reported=True,
             balances=[
                 AccountBalance(
-                    BTC,
                     Money(10.00000000, BTC),
                     Money(0.00000000, BTC),
                     Money(10.00000000, BTC),
                 ),
                 AccountBalance(
-                    ETH,
                     Money(20.00000000, ETH),
                     Money(0.00000000, ETH),
                     Money(20.00000000, ETH),
@@ -619,19 +607,16 @@ class TestPortfolio:
             reported=True,
             balances=[
                 AccountBalance(
-                    BTC,
                     Money(10.00000000, BTC),
                     Money(0.00000000, BTC),
                     Money(10.00000000, BTC),
                 ),
                 AccountBalance(
-                    ETH,
                     Money(20.00000000, ETH),
                     Money(0.00000000, ETH),
                     Money(20.00000000, ETH),
                 ),
                 AccountBalance(
-                    USDT,
                     Money(100000.00000000, USDT),
                     Money(0.00000000, USDT),
                     Money(100000.00000000, USDT),
@@ -706,19 +691,16 @@ class TestPortfolio:
             reported=True,
             balances=[
                 AccountBalance(
-                    BTC,
                     Money(10.00000000, BTC),
                     Money(0.00000000, BTC),
                     Money(10.00000000, BTC),
                 ),
                 AccountBalance(
-                    ETH,
                     Money(20.00000000, ETH),
                     Money(0.00000000, ETH),
                     Money(20.00000000, ETH),
                 ),
                 AccountBalance(
-                    USDT,
                     Money(100000.00000000, USDT),
                     Money(0.00000000, USDT),
                     Money(100000.00000000, USDT),
@@ -793,13 +775,11 @@ class TestPortfolio:
             reported=True,
             balances=[
                 AccountBalance(
-                    BTC,
                     Money(10.00000000, BTC),
                     Money(0.00000000, BTC),
                     Money(10.00000000, BTC),
                 ),
                 AccountBalance(
-                    ETH,
                     Money(20.00000000, ETH),
                     Money(0.00000000, ETH),
                     Money(20.00000000, ETH),
@@ -877,13 +857,11 @@ class TestPortfolio:
             reported=True,
             balances=[
                 AccountBalance(
-                    BTC,
                     Money(10.00000000, BTC),
                     Money(0.00000000, BTC),
                     Money(10.00000000, BTC),
                 ),
                 AccountBalance(
-                    ETH,
                     Money(20.00000000, ETH),
                     Money(0.00000000, ETH),
                     Money(20.00000000, ETH),
@@ -940,7 +918,6 @@ class TestPortfolio:
             reported=True,
             balances=[
                 AccountBalance(
-                    BTC,
                     Money(10.00000000, BTC),
                     Money(0.00000000, BTC),
                     Money(10.00000000, BTC),
@@ -1017,7 +994,6 @@ class TestPortfolio:
             reported=True,
             balances=[
                 AccountBalance(
-                    USD,
                     Money(1_000_000, USD),
                     Money(0, USD),
                     Money(1_000_000, USD),
@@ -1134,7 +1110,6 @@ class TestPortfolio:
             reported=True,
             balances=[
                 AccountBalance(
-                    USD,
                     Money(1_000_000, USD),
                     Money(0, USD),
                     Money(1_000_000, USD),
@@ -1227,7 +1202,6 @@ class TestPortfolio:
             reported=True,
             balances=[
                 AccountBalance(
-                    USD,
                     Money(1_000_000, USD),
                     Money(0, USD),
                     Money(1_000_000, USD),
@@ -1304,7 +1278,6 @@ class TestPortfolio:
             reported=True,
             balances=[
                 AccountBalance(
-                    USD,
                     Money(1_000_000, USD),
                     Money(0, USD),
                     Money(1_000_000, USD),

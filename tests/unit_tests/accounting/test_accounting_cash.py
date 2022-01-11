@@ -83,7 +83,6 @@ class TestCashAccount:
             reported=True,
             balances=[
                 AccountBalance(
-                    USD,
                     Money(1_000_000, USD),
                     Money(0, USD),
                     Money(1_000_000, USD),
@@ -120,13 +119,11 @@ class TestCashAccount:
             reported=True,
             balances=[
                 AccountBalance(
-                    BTC,
                     Money(10.00000000, BTC),
                     Money(0.00000000, BTC),
                     Money(10.00000000, BTC),
                 ),
                 AccountBalance(
-                    ETH,
                     Money(20.00000000, ETH),
                     Money(0.00000000, ETH),
                     Money(20.00000000, ETH),
@@ -176,13 +173,11 @@ class TestCashAccount:
             reported=True,
             balances=[
                 AccountBalance(
-                    BTC,
                     Money(10.00000000, BTC),
                     Money(0.00000000, BTC),
                     Money(10.00000000, BTC),
                 ),
                 AccountBalance(
-                    ETH,
                     Money(20.00000000, ETH),
                     Money(0.00000000, ETH),
                     Money(20.00000000, ETH),
@@ -205,13 +200,11 @@ class TestCashAccount:
             reported=True,
             balances=[
                 AccountBalance(
-                    BTC,
                     Money(9.00000000, BTC),
                     Money(0.50000000, BTC),
                     Money(8.50000000, BTC),
                 ),
                 AccountBalance(
-                    ETH,
                     Money(20.00000000, ETH),
                     Money(0.00000000, ETH),
                     Money(20.00000000, ETH),
@@ -247,7 +240,6 @@ class TestCashAccount:
             reported=True,
             balances=[
                 AccountBalance(
-                    USD,
                     Money(1_000_000.00, USD),
                     Money(0.00, USD),
                     Money(1_000_000.00, USD),
@@ -282,7 +274,6 @@ class TestCashAccount:
             reported=True,
             balances=[
                 AccountBalance(
-                    USD,
                     Money(1_000_000.00, USD),
                     Money(0.00, USD),
                     Money(1_000_000.00, USD),
@@ -317,7 +308,6 @@ class TestCashAccount:
             reported=True,
             balances=[
                 AccountBalance(
-                    USD,
                     Money(1_000_000.00, USD),
                     Money(0.00, USD),
                     Money(1_000_000.00, USD),
@@ -367,13 +357,11 @@ class TestCashAccount:
             reported=True,
             balances=[
                 AccountBalance(
-                    BTC,
                     Money(10.00000000, BTC),
                     Money(0.00000000, BTC),
                     Money(10.00000000, BTC),
                 ),
                 AccountBalance(
-                    ETH,
                     Money(20.00000000, ETH),
                     Money(0.00000000, ETH),
                     Money(20.00000000, ETH),
@@ -446,13 +434,11 @@ class TestCashAccount:
             reported=True,
             balances=[
                 AccountBalance(
-                    BTC,
                     Money(1.00000000, BTC),
                     Money(0.00000000, BTC),
                     Money(1.00000000, BTC),
                 ),
                 AccountBalance(
-                    ADA,
                     Money(1000.00000000, ADA),
                     Money(0.00000000, ADA),
                     Money(1000.00000000, ADA),

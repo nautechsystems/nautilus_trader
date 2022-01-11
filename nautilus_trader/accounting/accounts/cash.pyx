@@ -123,7 +123,6 @@ cdef class CashAccount(Account):
             total_locked += locked.as_decimal()
 
         cdef AccountBalance new_balance = AccountBalance(
-            currency,
             current_balance.total,
             Money(total_locked, currency),
             Money(current_balance.total.as_decimal() - total_locked, currency),

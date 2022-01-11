@@ -59,7 +59,6 @@ class TestBettingAccount:
             reported=True,
             balances=[
                 AccountBalance(
-                    GBP,
                     Money(starting_balance, GBP),
                     Money(0.00, GBP),
                     Money(starting_balance, GBP),
@@ -109,7 +108,6 @@ class TestBettingAccount:
             reported=True,
             balances=[
                 AccountBalance(
-                    GBP,
                     Money(1_000_000, GBP),
                     Money(0, GBP),
                     Money(1_000_000, GBP),
@@ -146,7 +144,6 @@ class TestBettingAccount:
             reported=True,
             balances=[
                 AccountBalance(
-                    GBP,
                     Money(10.00000000, GBP),
                     Money(0.00000000, GBP),
                     Money(10.00000000, GBP),
@@ -169,7 +166,6 @@ class TestBettingAccount:
             reported=True,
             balances=[
                 AccountBalance(
-                    GBP,
                     Money(9.00000000, GBP),
                     Money(0.50000000, GBP),
                     Money(8.50000000, GBP),

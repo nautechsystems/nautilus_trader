@@ -67,14 +67,14 @@ cdef class Money(BaseDecimal):
 
 
 cdef class AccountBalance:
-    cdef readonly Currency currency
-    """The currency of the account .\n\n:returns: `Currency`"""
     cdef readonly Money total
     """The total account balance.\n\n:returns: `Money`"""
     cdef readonly Money locked
     """The account balance locked (assigned to pending orders).\n\n:returns: `Money`"""
     cdef readonly Money free
     """The account balance free for trading.\n\n:returns: `Money`"""
+    cdef readonly Currency currency
+    """The currency of the account .\n\n:returns: `Currency`"""
 
     @staticmethod
     cdef AccountBalance from_dict_c(dict values)
@@ -82,14 +82,14 @@ cdef class AccountBalance:
 
 
 cdef class MarginBalance:
-    cdef readonly InstrumentId instrument_id
-    """The instrument ID associated with the margin.\n\n:returns: `InstrumentId`"""
-    cdef readonly Currency currency
-    """The currency of the margin .\n\n:returns: `Currency`"""
     cdef readonly Money initial
     """The initial margin requirement.\n\n:returns: `Money`"""
     cdef readonly Money maintenance
     """The maintenance margin requirement.\n\n:returns: `Money`"""
+    cdef readonly Currency currency
+    """The currency of the margin.\n\n:returns: `Currency`"""
+    cdef readonly InstrumentId instrument_id
+    """The instrument ID associated with the margin.\n\n:returns: `InstrumentId` or ``None``"""
 
     @staticmethod
     cdef MarginBalance from_dict_c(dict values)

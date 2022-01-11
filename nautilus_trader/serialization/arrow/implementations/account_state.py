@@ -28,56 +28,62 @@ def serialize(state: AccountState):
     del base["balances"]
     del base["margins"]
     for balance in state.balances:
-        data = {
-            "balance_currency": balance.currency.code,
+        balance_data = {
             "balance_total": balance.total.as_double(),
             "balance_locked": balance.locked.as_double(),
             "balance_free": balance.free.as_double(),
+            "balance_currency": balance.currency.code,
         }
-        result.append({**base, **data})
+        result.append({**base, **balance_data})
     for margin in state.margins:
         margin_data = {
-            "margin_instrument_id": margin.instrument_id.value,
+            "margin_initial": margin.initial.as_double(),
+            "margin_maintenance": margin.maintenance.as_double(),
             "margin_currency": margin.currency.code,
-            "margin_init": margin.initial.as_double(),
-            "margin_maint": margin.maintenance.as_double(),
+            "margin_instrument_id": margin.instrument_id.value
+            if margin.instrument_id is not None
+            else None,  # noqa
         }
         result.append({**base, **margin_data})
 
-    print(result)
     return result
 
 
 def _deserialize(values):
     balances = []
     for v in values:
+        total = v.get("balance_total")
+        if total is None:
+            continue
         balances.append(
             dict(
-                currency=v["balance_currency"],
-                total=v["balance_total"],
+                total=total,
                 locked=v["balance_locked"],
                 free=v["balance_free"],
+                currency=v["balance_currency"],
             )
         )
-    state = {k: v for k, v in values[0].items() if not k.startswith("balance_")}
-    state["balances"] = orjson.dumps(balances)
 
     margins = []
     for v in values:
-        margin_init = v.get("margin_init")
-        if not margin_init:
+        initial = v.get("margin_initial")
+        if initial is None:
             continue
-        margin_maint = v.get("margin_maint")
-
         margins.append(
             dict(
-                instrument_id=v["margin_instrument_id"],
+                initial=initial,
+                maintenance=v["margin_maintenance"],
                 currency=v["margin_currency"],
-                initial=margin_init,
-                maintenance=margin_maint,
+                instrument_id=v["margin_instrument_id"],
             )
         )
-    state = {k: v for k, v in values[0].items() if not k.startswith("margin_")}
+
+    state = {
+        k: v
+        for k, v in values[0].items()
+        if not k.startswith("balance_") and not k.startswith("margin_")
+    }
+    state["balances"] = orjson.dumps(balances)
     state["margins"] = orjson.dumps(margins)
 
     return AccountState.from_dict(state)

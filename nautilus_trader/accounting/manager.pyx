@@ -490,7 +490,6 @@ cdef class AccountsManager:
             raise AccountBalanceNegative(balance=new_free)
 
         cdef AccountBalance new_balance = AccountBalance(
-            currency=account.base_currency,
             total=Money(new_total, account.base_currency),
             locked=balance.locked,
             free=Money(new_free, account.base_currency),
@@ -540,7 +539,6 @@ cdef class AccountsManager:
                     )
                     return
                 new_balance = AccountBalance(
-                    currency=currency,
                     total=Money(pnl, currency),
                     locked=Money(0, currency),
                     free=Money(pnl, currency),
@@ -555,7 +553,6 @@ cdef class AccountsManager:
                     raise AccountBalanceNegative(balance=new_free)
 
                 new_balance = AccountBalance(
-                    currency=currency,
                     total=Money(new_total, currency),
                     locked=balance.locked,
                     free=Money(new_free, currency),
