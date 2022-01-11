@@ -2,6 +2,7 @@ import sys
 from decimal import Decimal
 from typing import List
 
+import dask
 import pytest
 from dask.utils import parse_bytes
 
@@ -23,6 +24,7 @@ pytestmark = pytest.mark.skipif(sys.platform == "win32", reason="test path broke
 
 class TestBacktestNode:
     def setup(self):
+        dask.config.set(scheduler="single-threaded")
         data_catalog_setup()
         self.catalog = DataCatalog.from_env()
         self.venue_config = BacktestVenueConfig(
