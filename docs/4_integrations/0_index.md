@@ -1,7 +1,8 @@
 # Integrations
 
-NautilusTrader is designed to work with modular adapters which provide integrations with data
-publishers and/or trading venues (exchanges/brokers). The following integrations are currently supported:
+NautilusTrader is designed in a modular way to work with 'adapters' which provide
+connectivity to data publishers and/or trading venues - converting their raw API
+into a unified interface. The following integrations are currently supported:
 
 ```{warning}
 The initial integrations for the project are currently under heavy construction. 
@@ -19,6 +20,17 @@ running strategies which are able to access larger capital allocations.
 [Interactive Brokers](https://www.interactivebrokers.com) | IB      | Brokerage (multi-venue) | ![status](https://img.shields.io/badge/planning-gray) | [Guide](https://docs.nautilustrader.io/4_integrations/ib.html) |
 
 ## Implementation goals
+
+The primary goal of NautilusTrader is to provide a unified trading system for 
+use with a variety of integrations. To support the widest range of trading 
+strategies, priority will be given to 'standard' functionality:
+
+- Requesting historical market data
+- Streaming live market data
+- Reconciling execution state
+- Submitting standard order types with standard execution instructions
+- Modifying existing orders (if possible on an exchange)
+- Canceling orders
 
 The implementation of each integration aims to meet the following criteria:
 
