@@ -292,7 +292,7 @@ def write_parquet(
         **kwargs,
     )
     # Write the ``_common_metadata`` parquet file without row groups statistics
-    pq.write_metadata(table.schema, f"{path}/_common_metadata", version="2.0", filesystem=fs)
+    pq.write_metadata(table.schema, f"{path}/_common_metadata", version="2.6", filesystem=fs)
 
     # Write out any partition columns we had to modify due to filesystem requirements
     if mappings:
