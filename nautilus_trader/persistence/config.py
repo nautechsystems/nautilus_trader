@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2021 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -24,6 +24,8 @@ class PersistenceConfig(pydantic.BaseModel):
     """
     Configuration for persisting live or backtest runs to the catalog in feather format.
 
+    Parameters
+    ----------
     catalog_path : str
         The path to the data catalog
     fs_protocol : str

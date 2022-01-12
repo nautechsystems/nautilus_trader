@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2021 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -64,6 +64,15 @@ cdef class Message:
     """
     The abstract base class for all messages.
 
+    Parameters
+    ----------
+    category : MessageCategory
+        The message category.
+    message_id : UUID4
+        The message ID.
+    ts_init : int64
+        The UNIX timestamp (nanoseconds) when the object was initialized.
+
     Warnings
     --------
     This class should not be used directly, but through a concrete subclass.
@@ -75,19 +84,6 @@ cdef class Message:
         UUID4 message_id not None,
         int64_t ts_init,
     ):
-        """
-        Initialize a new instance of the ``Message`` class.
-
-        Parameters
-        ----------
-        category : MessageCategory
-            The message category.
-        message_id : UUID4
-            The message ID.
-        ts_init : int64
-            The UNIX timestamp (nanoseconds) when the object was initialized.
-
-        """
         self.category = category
         self.id = message_id
         self.ts_init = ts_init
@@ -106,6 +102,13 @@ cdef class Command(Message):
     """
     The abstract base class for all commands.
 
+    Parameters
+    ----------
+    command_id : UUID4
+        The command ID.
+    ts_init : int64
+        The UNIX timestamp (nanoseconds) when the object was initialized.
+
     Warnings
     --------
     This class should not be used directly, but through a concrete subclass.
@@ -116,23 +119,19 @@ cdef class Command(Message):
         UUID4 command_id not None,
         int64_t ts_init,
     ):
-        """
-        Initialize a new instance of the ``Command`` class.
-
-        Parameters
-        ----------
-        command_id : UUID4
-            The command ID.
-        ts_init : int64
-            The UNIX timestamp (nanoseconds) when the object was initialized.
-
-        """
         super().__init__(MessageCategory.COMMAND, command_id, ts_init)
 
 
 cdef class Document(Message):
     """
     The abstract base class for all documents.
+
+    Parameters
+    ----------
+    document_id : UUID4
+        The document ID.
+    ts_init : int64
+        The UNIX timestamp (nanoseconds) when the object was initialized.
 
     Warnings
     --------
@@ -144,23 +143,21 @@ cdef class Document(Message):
         UUID4 document_id not None,
         int64_t ts_init,
     ):
-        """
-        Initialize a new instance of the ``Document`` class.
-
-        Parameters
-        ----------
-        document_id : UUID4
-            The document ID.
-        ts_init : int64
-            The UNIX timestamp (nanoseconds) when the object was initialized.
-
-        """
         super().__init__(MessageCategory.DOCUMENT, document_id, ts_init)
 
 
 cdef class Event(Message):
     """
     The abstract base class for all events.
+
+    Parameters
+    ----------
+    event_id : UUID4
+        The event ID.
+    ts_event : int64
+        The UNIX timestamp (nanoseconds) when the event occurred.
+    ts_init : int64
+        The UNIX timestamp (nanoseconds) when the object was initialized.
 
     Warnings
     --------
@@ -173,19 +170,6 @@ cdef class Event(Message):
         int64_t ts_event,
         int64_t ts_init,
     ):
-        """
-        Initialize a new instance of the ``Event`` class.
-
-        Parameters
-        ----------
-        event_id : UUID4
-            The event ID.
-        ts_event : int64
-            The UNIX timestamp (nanoseconds) when the event occurred.
-        ts_init : int64
-            The UNIX timestamp (nanoseconds) when the object was initialized.
-
-        """
         super().__init__(MessageCategory.EVENT, event_id, ts_init)
 
         self.ts_event = ts_event
@@ -194,6 +178,15 @@ cdef class Event(Message):
 cdef class Request(Message):
     """
     The abstract base class for all requests.
+
+    Parameters
+    ----------
+    callback : Callable[[Any], None]
+        The delegate to call with the response.
+    request_id : UUID4
+        The request ID.
+    ts_init : int64
+        The UNIX timestamp (nanoseconds) when the object was initialized.
 
     Warnings
     --------
@@ -206,19 +199,6 @@ cdef class Request(Message):
         UUID4 request_id not None,
         int64_t ts_init,
     ):
-        """
-        Initialize a new instance of the ``Request`` class.
-
-        Parameters
-        ----------
-        callback : Callable[[Any], None]
-            The delegate to call with the response.
-        request_id : UUID4
-            The request ID.
-        ts_init : int64
-            The UNIX timestamp (nanoseconds) when the object was initialized.
-
-        """
         super().__init__(MessageCategory.REQUEST, request_id, ts_init)
 
         self.callback = callback
@@ -227,6 +207,15 @@ cdef class Request(Message):
 cdef class Response(Message):
     """
     The abstract base class for all responses.
+
+    Parameters
+    ----------
+    correlation_id : UUID4
+        The correlation ID.
+    response_id : UUID4
+        The response ID.
+    ts_init : int64
+        The UNIX timestamp (nanoseconds) when the object was initialized.
 
     Warnings
     --------
@@ -239,25 +228,14 @@ cdef class Response(Message):
         UUID4 response_id not None,
         int64_t ts_init,
     ):
-        """
-        Initialize a new instance of the ``Response`` class.
-
-        Parameters
-        ----------
-        correlation_id : UUID4
-            The correlation ID.
-        response_id : UUID4
-            The response ID.
-        ts_init : int64
-            The UNIX timestamp (nanoseconds) when the object was initialized.
-
-        """
         super().__init__(MessageCategory.RESPONSE, response_id, ts_init)
 
         self.correlation_id = correlation_id
 
     def __repr__(self) -> str:
-        return (f"{type(self).__name__}("
-                f"correlation_id={self.correlation_id}, "
-                f"id={self.id}, "
-                f"ts_init={self.ts_init})")
+        return (
+            f"{type(self).__name__}("
+            f"correlation_id={self.correlation_id}, "
+            f"id={self.id}, "
+            f"ts_init={self.ts_init})"
+        )

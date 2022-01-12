@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2021 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -34,6 +34,19 @@ cdef class TradingCommand(Command):
     """
     The abstract base class for all trading related commands.
 
+    Parameters
+    ----------
+    trader_id : TraderId
+        The trader ID for the command.
+    strategy_id : StrategyId
+        The strategy ID for the command.
+    instrument_id : InstrumentId
+        The instrument ID for the command.
+    command_id : UUID4
+        The commands ID.
+    ts_init : int64
+        The UNIX timestamp (nanoseconds) when the object was initialized.
+
     Warnings
     --------
     This class should not be used directly, but through a concrete subclass.
@@ -47,23 +60,6 @@ cdef class TradingCommand(Command):
         UUID4 command_id not None,
         int64_t ts_init,
     ):
-        """
-        Initialize a new instance of the ``TradingCommand`` class.
-
-        Parameters
-        ----------
-        trader_id : TraderId
-            The trader ID for the command.
-        strategy_id : StrategyId
-            The strategy ID for the command.
-        instrument_id : InstrumentId
-            The instrument ID for the command.
-        command_id : UUID4
-            The commands ID.
-        ts_init : int64
-            The UNIX timestamp (nanoseconds) when the object was initialized.
-
-        """
         super().__init__(command_id, ts_init)
 
         self.trader_id = trader_id
@@ -74,6 +70,21 @@ cdef class TradingCommand(Command):
 cdef class SubmitOrder(TradingCommand):
     """
     Represents a command to submit the given order.
+
+    Parameters
+    ----------
+    trader_id : TraderId
+        The trader ID for the command.
+    strategy_id : StrategyId
+        The strategy ID for the command.
+    position_id : PositionId, optional
+        The position ID for the command.
+    order : Order
+        The order to submit.
+    command_id : UUID4
+        The commands ID.
+    ts_init : int64
+        The UNIX timestamp (nanoseconds) when the object was initialized.
 
     References
     ----------
@@ -89,25 +100,6 @@ cdef class SubmitOrder(TradingCommand):
         UUID4 command_id not None,
         int64_t ts_init,
     ):
-        """
-        Initialize a new instance of the ``SubmitOrder`` class.
-
-        Parameters
-        ----------
-        trader_id : TraderId
-            The trader ID for the command.
-        strategy_id : StrategyId
-            The strategy ID for the command.
-        position_id : PositionId, optional
-            The position ID for the command.
-        order : Order
-            The order to submit.
-        command_id : UUID4
-            The commands ID.
-        ts_init : int64
-            The UNIX timestamp (nanoseconds) when the object was initialized.
-
-        """
         super().__init__(
             trader_id=trader_id,
             strategy_id=strategy_id,
@@ -120,22 +112,26 @@ cdef class SubmitOrder(TradingCommand):
         self.order = order
 
     def __str__(self) -> str:
-        return (f"{type(self).__name__}("
-                f"instrument_id={self.instrument_id.value}, "
-                f"client_order_id={self.order.client_order_id.value}, "
-                f"position_id={self.position_id}, "
-                f"order={self.order.info()})")
+        return (
+            f"{type(self).__name__}("
+            f"instrument_id={self.instrument_id.value}, "
+            f"client_order_id={self.order.client_order_id.value}, "
+            f"position_id={self.position_id}, "
+            f"order={self.order.info()})"
+        )
 
     def __repr__(self) -> str:
-        return (f"{type(self).__name__}("
-                f"trader_id={self.trader_id.value}, "
-                f"strategy_id={self.strategy_id.value}, "
-                f"instrument_id={self.instrument_id.value}, "
-                f"client_order_id={self.order.client_order_id.value}, "
-                f"position_id={self.position_id}, "
-                f"order={self.order.info()}, "
-                f"command_id={self.id.value}, "
-                f"ts_init={self.ts_init})")
+        return (
+            f"{type(self).__name__}("
+            f"trader_id={self.trader_id.value}, "
+            f"strategy_id={self.strategy_id.value}, "
+            f"instrument_id={self.instrument_id.value}, "
+            f"client_order_id={self.order.client_order_id.value}, "
+            f"position_id={self.position_id}, "
+            f"order={self.order.info()}, "
+            f"command_id={self.id.value}, "
+            f"ts_init={self.ts_init})"
+        )
 
     @staticmethod
     cdef SubmitOrder from_dict_c(dict values):
@@ -202,6 +198,19 @@ cdef class SubmitOrderList(TradingCommand):
     This command can correspond to a `NewOrderList <E> message` for the FIX
     protocol.
 
+    Parameters
+    ----------
+    trader_id : TraderId
+        The trader ID for the command.
+    strategy_id : StrategyId
+        The strategy ID for the command.
+    order_list : OrderList
+        The order list to submit.
+    command_id : UUID4
+        The command ID.
+    ts_init : int64
+        The UNIX timestamp (nanoseconds) when the object was initialized.
+
     References
     ----------
     https://www.onixs.biz/fix-dictionary/5.0.SP2/msgType_E_69.html
@@ -215,23 +224,6 @@ cdef class SubmitOrderList(TradingCommand):
         UUID4 command_id not None,
         int64_t ts_init,
     ):
-        """
-        Initialize a new instance of the ``SubmitOrderList`` class.
-
-        Parameters
-        ----------
-        trader_id : TraderId
-            The trader ID for the command.
-        strategy_id : StrategyId
-            The strategy ID for the command.
-        order_list : OrderList
-            The order list to submit.
-        command_id : UUID4
-            The command ID.
-        ts_init : int64
-            The UNIX timestamp (nanoseconds) when the object was initialized.
-
-        """
         super().__init__(
             trader_id=trader_id,
             strategy_id=strategy_id,
@@ -243,18 +235,22 @@ cdef class SubmitOrderList(TradingCommand):
         self.list = order_list
 
     def __str__(self) -> str:
-        return (f"{type(self).__name__}("
-                f"instrument_id={self.instrument_id.value}, "
-                f"order_list={self.list})")
+        return (
+            f"{type(self).__name__}("
+            f"instrument_id={self.instrument_id.value}, "
+            f"order_list={self.list})"
+        )
 
     def __repr__(self) -> str:
-        return (f"{type(self).__name__}("
-                f"trader_id={self.trader_id.value}, "
-                f"strategy_id={self.strategy_id.value}, "
-                f"instrument_id={self.instrument_id.value}, "
-                f"order_list={self.list}, "
-                f"command_id={self.id.value}, "
-                f"ts_init={self.ts_init})")
+        return (
+            f"{type(self).__name__}("
+            f"trader_id={self.trader_id.value}, "
+            f"strategy_id={self.strategy_id.value}, "
+            f"instrument_id={self.instrument_id.value}, "
+            f"order_list={self.list}, "
+            f"command_id={self.id.value}, "
+            f"ts_init={self.ts_init})"
+        )
 
     @staticmethod
     cdef SubmitOrderList from_dict_c(dict values):
@@ -320,6 +316,29 @@ cdef class ModifyOrder(TradingCommand):
     """
     Represents a command to modify the properties of an existing order.
 
+    Parameters
+    ----------
+    trader_id : TraderId
+        The trader ID for the command.
+    strategy_id : StrategyId
+        The strategy ID for the command.
+    instrument_id : InstrumentId
+        The instrument ID for the command.
+    client_order_id : VenueOrderId
+        The client order ID to update.
+    venue_order_id : VenueOrderId, optional
+        The venue order ID to update.
+    quantity : Quantity, optional
+        The quantity for the order update.
+    price : Price, optional
+        The price for the order update.
+    trigger : Price, optional
+        The trigger price for the order update.
+    command_id : UUID4
+        The command ID.
+    ts_init : int64
+        The UNIX timestamp (nanoseconds) when the object was initialized.
+
     References
     ----------
     https://www.onixs.biz/fix-dictionary/5.0.SP2/msgType_G_71.html
@@ -331,40 +350,13 @@ cdef class ModifyOrder(TradingCommand):
         StrategyId strategy_id not None,
         InstrumentId instrument_id not None,
         ClientOrderId client_order_id not None,
-        VenueOrderId venue_order_id not None,
+        VenueOrderId venue_order_id,  # Can be None
         Quantity quantity,  # Can be None
         Price price,  # Can be None
         Price trigger,  # Can be None
         UUID4 command_id not None,
         int64_t ts_init,
     ):
-        """
-        Initialize a new instance of the ``ModifyOrder`` class.
-
-        Parameters
-        ----------
-        trader_id : TraderId
-            The trader ID for the command.
-        strategy_id : StrategyId
-            The strategy ID for the command.
-        instrument_id : InstrumentId
-            The instrument ID for the command.
-        client_order_id : VenueOrderId
-            The client order ID to update.
-        venue_order_id : VenueOrderId
-            The venue order ID to update.
-        quantity : Quantity, optional
-            The quantity for the order update.
-        price : Price, optional
-            The price for the order update.
-        trigger : Price, optional
-            The trigger price for the order update.
-        command_id : UUID4
-            The command ID.
-        ts_init : int64
-            The UNIX timestamp (nanoseconds) when the object was initialized.
-
-        """
         super().__init__(
             trader_id=trader_id,
             strategy_id=strategy_id,
@@ -380,30 +372,35 @@ cdef class ModifyOrder(TradingCommand):
         self.trigger = trigger
 
     def __str__(self) -> str:
-        return (f"{type(self).__name__}("
-                f"instrument_id={self.instrument_id.value}, "
-                f"client_order_id={self.client_order_id.value}, "
-                f"venue_order_id={self.venue_order_id.value}, "
-                f"quantity={self.quantity.to_str()}, "
-                f"price={self.price}, "
-                f"trigger={self.trigger})")
+        return (
+            f"{type(self).__name__}("
+            f"instrument_id={self.instrument_id.value}, "
+            f"client_order_id={self.client_order_id.value}, "
+            f"venue_order_id={self.venue_order_id}, "  # Can be None
+            f"quantity={self.quantity.to_str()}, "
+            f"price={self.price}, "
+            f"trigger={self.trigger})"
+        )
 
     def __repr__(self) -> str:
-        return (f"{type(self).__name__}("
-                f"trader_id={self.trader_id.value}, "
-                f"strategy_id={self.strategy_id.value}, "
-                f"instrument_id={self.instrument_id.value}, "
-                f"client_order_id={self.client_order_id.value}, "
-                f"venue_order_id={self.venue_order_id.value}, "
-                f"quantity={self.quantity.to_str()}, "
-                f"price={self.price}, "
-                f"trigger={self.trigger}, "
-                f"command_id={self.id.value}, "
-                f"ts_init={self.ts_init})")
+        return (
+            f"{type(self).__name__}("
+            f"trader_id={self.trader_id.value}, "
+            f"strategy_id={self.strategy_id.value}, "
+            f"instrument_id={self.instrument_id.value}, "
+            f"client_order_id={self.client_order_id.value}, "
+            f"venue_order_id={self.venue_order_id}, "  # Can be None
+            f"quantity={self.quantity.to_str()}, "
+            f"price={self.price}, "
+            f"trigger={self.trigger}, "
+            f"command_id={self.id.value}, "
+            f"ts_init={self.ts_init})"
+        )
 
     @staticmethod
     cdef ModifyOrder from_dict_c(dict values):
         Condition.not_none(values, "values")
+        cdef str v = values["venue_order_id"]
         cdef str q = values["quantity"]
         cdef str p = values["price"]
         cdef str t = values["trigger"]
@@ -412,7 +409,7 @@ cdef class ModifyOrder(TradingCommand):
             strategy_id=StrategyId(values["strategy_id"]),
             instrument_id=InstrumentId.from_str_c(values["instrument_id"]),
             client_order_id=ClientOrderId(values["client_order_id"]),
-            venue_order_id=VenueOrderId(values["venue_order_id"]),
+            venue_order_id=VenueOrderId(v) if v is not None else None,
             quantity=Quantity.from_str_c(q) if q is not None else None,
             price=Price.from_str_c(p) if p is not None else None,
             trigger=Price.from_str_c(t) if t is not None else None,
@@ -429,7 +426,7 @@ cdef class ModifyOrder(TradingCommand):
             "strategy_id": obj.strategy_id.value,
             "instrument_id": obj.instrument_id.value,
             "client_order_id": obj.client_order_id.value,
-            "venue_order_id": obj.venue_order_id.value,
+            "venue_order_id": obj.venue_order_id.value if obj.venue_order_id is not None else None,
             "quantity": str(obj.quantity) if obj.quantity is not None else None,
             "price": str(obj.price) if obj.price is not None else None,
             "trigger": str(obj.trigger) if obj.trigger is not None else None,
@@ -471,6 +468,23 @@ cdef class CancelOrder(TradingCommand):
     """
     Represents a command to cancel an order.
 
+    Parameters
+    ----------
+    trader_id : TraderId
+        The trader ID for the command.
+    strategy_id : StrategyId
+        The strategy ID for the command.
+    instrument_id : InstrumentId
+        The instrument ID for the command.
+    client_order_id : ClientOrderId
+        The client order ID to cancel.
+    venue_order_id : VenueOrderId, optional
+        The venue order ID to cancel.
+    command_id : UUID4
+        The command ID.
+    ts_init : int64
+        The UNIX timestamp (nanoseconds) when the object was initialized.
+
     References
     ----------
     https://www.onixs.biz/fix-dictionary/5.0.SP2/msgType_F_70.html
@@ -482,31 +496,10 @@ cdef class CancelOrder(TradingCommand):
         StrategyId strategy_id not None,
         InstrumentId instrument_id not None,
         ClientOrderId client_order_id not None,
-        VenueOrderId venue_order_id not None,
+        VenueOrderId venue_order_id,  # Can be None
         UUID4 command_id not None,
         int64_t ts_init,
     ):
-        """
-        Initialize a new instance of the ``CancelOrder`` class.
-
-        Parameters
-        ----------
-        trader_id : TraderId
-            The trader ID for the command.
-        strategy_id : StrategyId
-            The strategy ID for the command.
-        instrument_id : InstrumentId
-            The instrument ID for the command.
-        client_order_id : ClientOrderId
-            The client order ID to cancel.
-        venue_order_id : VenueOrderId
-            The venue order ID to cancel.
-        command_id : UUID4
-            The command ID.
-        ts_init : int64
-            The UNIX timestamp (nanoseconds) when the object was initialized.
-
-        """
         super().__init__(
             trader_id=trader_id,
             strategy_id=strategy_id,
@@ -519,30 +512,35 @@ cdef class CancelOrder(TradingCommand):
         self.venue_order_id = venue_order_id
 
     def __str__(self) -> str:
-        return (f"{type(self).__name__}("
-                f"instrument_id={self.instrument_id.value}, "
-                f"client_order_id={self.client_order_id.value}, "
-                f"venue_order_id={self.venue_order_id.value})")
+        return (
+            f"{type(self).__name__}("
+            f"instrument_id={self.instrument_id.value}, "
+            f"client_order_id={self.client_order_id.value}, "
+            f"venue_order_id={self.venue_order_id})"  # Can be None
+        )
 
     def __repr__(self) -> str:
-        return (f"{type(self).__name__}("
-                f"trader_id={self.trader_id.value}, "
-                f"strategy_id={self.strategy_id.value}, "
-                f"instrument_id={self.instrument_id.value}, "
-                f"client_order_id={self.client_order_id.value}, "
-                f"venue_order_id={self.venue_order_id.value}, "
-                f"command_id={self.id.value}, "
-                f"ts_init={self.ts_init})")
+        return (
+            f"{type(self).__name__}("
+            f"trader_id={self.trader_id.value}, "
+            f"strategy_id={self.strategy_id.value}, "
+            f"instrument_id={self.instrument_id.value}, "
+            f"client_order_id={self.client_order_id.value}, "
+            f"venue_order_id={self.venue_order_id}, "  # Can be None
+            f"command_id={self.id.value}, "
+            f"ts_init={self.ts_init})"
+        )
 
     @staticmethod
     cdef CancelOrder from_dict_c(dict values):
         Condition.not_none(values, "values")
+        cdef str v = values["venue_order_id"]
         return CancelOrder(
             trader_id=TraderId(values["trader_id"]),
             strategy_id=StrategyId(values["strategy_id"]),
             instrument_id=InstrumentId.from_str_c(values["instrument_id"]),
             client_order_id=ClientOrderId(values["client_order_id"]),
-            venue_order_id=VenueOrderId(values["venue_order_id"]),
+            venue_order_id=VenueOrderId(v) if v is not None else None,
             command_id=UUID4(values["command_id"]),
             ts_init=values["ts_init"],
         )
@@ -556,7 +554,7 @@ cdef class CancelOrder(TradingCommand):
             "strategy_id": obj.strategy_id.value,
             "instrument_id": obj.instrument_id.value,
             "client_order_id": obj.client_order_id.value,
-            "venue_order_id": obj.venue_order_id.value,
+            "venue_order_id": obj.venue_order_id.value if obj.venue_order_id is not None else None,
             "command_id": obj.id.value,
             "ts_init": obj.ts_init,
         }
@@ -589,3 +587,106 @@ cdef class CancelOrder(TradingCommand):
 
         """
         return CancelOrder.to_dict_c(obj)
+
+
+cdef class CancelAllOrders(TradingCommand):
+    """
+    Represents a command to cancel all orders for an instrument.
+
+    Parameters
+    ----------
+    trader_id : TraderId
+        The trader ID for the command.
+    strategy_id : StrategyId
+        The strategy ID for the command.
+    instrument_id : InstrumentId
+        The instrument ID for the command.
+    command_id : UUID4
+        The command ID.
+    ts_init : int64
+        The UNIX timestamp (nanoseconds) when the object was initialized.
+    """
+
+    def __init__(
+        self,
+        TraderId trader_id not None,
+        StrategyId strategy_id not None,
+        InstrumentId instrument_id not None,
+        UUID4 command_id not None,
+        int64_t ts_init,
+    ):
+        super().__init__(
+            trader_id=trader_id,
+            strategy_id=strategy_id,
+            instrument_id=instrument_id,
+            command_id=command_id,
+            ts_init=ts_init,
+        )
+
+    def __str__(self) -> str:
+        return (
+            f"{type(self).__name__}("
+            f"instrument_id={self.instrument_id.value})"
+        )
+
+    def __repr__(self) -> str:
+        return (
+            f"{type(self).__name__}("
+            f"trader_id={self.trader_id.value}, "
+            f"strategy_id={self.strategy_id.value}, "
+            f"instrument_id={self.instrument_id.value}, "
+            f"command_id={self.id.value}, "
+            f"ts_init={self.ts_init})"
+        )
+
+    @staticmethod
+    cdef CancelAllOrders from_dict_c(dict values):
+        Condition.not_none(values, "values")
+        return CancelAllOrders(
+            trader_id=TraderId(values["trader_id"]),
+            strategy_id=StrategyId(values["strategy_id"]),
+            instrument_id=InstrumentId.from_str_c(values["instrument_id"]),
+            command_id=UUID4(values["command_id"]),
+            ts_init=values["ts_init"],
+        )
+
+    @staticmethod
+    cdef dict to_dict_c(CancelAllOrders obj):
+        Condition.not_none(obj, "obj")
+        return {
+            "type": "CancelAllOrders",
+            "trader_id": obj.trader_id.value,
+            "strategy_id": obj.strategy_id.value,
+            "instrument_id": obj.instrument_id.value,
+            "command_id": obj.id.value,
+            "ts_init": obj.ts_init,
+        }
+
+    @staticmethod
+    def from_dict(dict values) -> CancelAllOrders:
+        """
+        Return a cancel order command from the given dict values.
+
+        Parameters
+        ----------
+        values : dict[str, object]
+            The values for initialization.
+
+        Returns
+        -------
+        CancelAllOrders
+
+        """
+        return CancelAllOrders.from_dict_c(values)
+
+    @staticmethod
+    def to_dict(CancelAllOrders obj):
+        """
+        Return a dictionary representation of this object.
+
+        Returns
+        -------
+        dict[str, object]
+
+        """
+        return CancelAllOrders.to_dict_c(obj)

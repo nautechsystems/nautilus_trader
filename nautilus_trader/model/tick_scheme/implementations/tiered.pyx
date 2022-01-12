@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2021 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -25,6 +25,20 @@ from nautilus_trader.model.tick_scheme.base cimport register_tick_scheme
 cdef class TieredTickScheme(TickScheme):
     """
     Represents a tick scheme where tick levels change based on price level, such as various financial exchanges.
+
+    Parameters
+    ----------
+    name : str
+        The name of the tick scheme.
+    tiers : list[tuple(start, stop, step)]
+        The tiers for the tick scheme. Should be a list of (start, stop, step) tuples.
+    max_ticks_per_tier : int, default 100
+        The maximum number of ticks per tier.
+
+    Raises
+    ------
+    ValueError
+        If `name` is not a valid string.
     """
 
     def __init__(
@@ -33,24 +47,6 @@ cdef class TieredTickScheme(TickScheme):
         list tiers not None,
         int max_ticks_per_tier=100,
     ):
-        """
-        Initialize a new instance of the `TieredTickScheme` class.
-
-        Parameters
-        ----------
-        name : str
-            The name of the tick scheme.
-        tiers : list[tuple(start, stop, step)]
-            The tiers for the tick scheme. Should be a list of (start, stop, step) tuples.
-        max_ticks_per_tier : int, default 100
-            The maximum number of ticks per tier.
-
-        Raises
-        ------
-        ValueError
-            If `name` is not a valid string.
-
-        """
         self.tiers = self._validate_tiers(tiers)
         self.max_ticks_per_tier = max_ticks_per_tier
         self.ticks = self._build_ticks()

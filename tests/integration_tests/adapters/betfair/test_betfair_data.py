@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2021 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -43,7 +43,6 @@ from nautilus_trader.model.data.venue import InstrumentStatusUpdate
 from nautilus_trader.model.enums import BookAction
 from nautilus_trader.model.enums import InstrumentCloseType
 from nautilus_trader.model.enums import InstrumentStatus
-from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.objects import Price
@@ -109,7 +108,6 @@ class TestBetfairDataClient:
         self.trader_id = TestStubs.trader_id()
         self.uuid = UUID4()
         self.venue = BETFAIR_VENUE
-        self.account_id = AccountId(self.venue.value, "001")
 
         # Setup logging
         self.logger = LiveLogger(loop=self.loop, clock=self.clock, level_stdout=LogLevel.ERROR)
@@ -335,7 +333,7 @@ class TestBetfairDataClient:
             type=InstrumentSearch,
             metadata={"event_type_id": "7"},
         )
-        self.client.request(req, UUID4(str(self.uuid)))
+        self.client.request(req, self.uuid)
         await asyncio.sleep(0)
         resp = self.messages[0]
         assert len(resp.data.instruments) == 6800

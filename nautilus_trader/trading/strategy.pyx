@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2021 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -38,11 +38,11 @@ from nautilus_trader.common.logging cimport SENT
 from nautilus_trader.common.logging cimport LogColor
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.core.correctness cimport Condition
-from nautilus_trader.core.data cimport Data
 from nautilus_trader.core.message cimport Event
 from nautilus_trader.indicators.base.indicator cimport Indicator
 from nautilus_trader.model.c_enums.oms_type cimport OMSTypeParser
 from nautilus_trader.model.c_enums.order_type cimport OrderType
+from nautilus_trader.model.commands.trading cimport CancelAllOrders
 from nautilus_trader.model.commands.trading cimport CancelOrder
 from nautilus_trader.model.commands.trading cimport ModifyOrder
 from nautilus_trader.model.commands.trading cimport SubmitOrder
@@ -85,26 +85,22 @@ cdef class TradingStrategy(Actor):
      - ``NETTING``: There will only ever be a single position for the strategy
        per instrument. The position ID will be `{instrument_id}-{strategy_id}`.
 
+    Parameters
+    ----------
+    config : TradingStrategyConfig, optional
+        The trading strategy configuration.
+
+    Raises
+    ------
+    TypeError
+        If `config` is not of type `TradingStrategyConfig`.
+
     Warnings
     --------
     This class should not be used directly, but through a concrete subclass.
     """
 
     def __init__(self, config: Optional[TradingStrategyConfig]=None):
-        """
-        Initialize a new instance of the ``TradingStrategy`` class.
-
-        Parameters
-        ----------
-        config : TradingStrategyConfig, optional
-            The trading strategy configuration.
-
-        Raises
-        ------
-        TypeError
-            If `config` is not of type `TradingStrategyConfig`.
-
-        """
         if config is None:
             config = TradingStrategyConfig()
         Condition.type(config, TradingStrategyConfig, "config")
@@ -396,7 +392,7 @@ cdef class TradingStrategy(Actor):
             self.log.debug("Saving state...")
             user_state = self.on_save()
             if len(user_state) > 0:
-                self.log.info(f"Saved state: {user_state}.", color=LogColor.BLUE)
+                self.log.info(f"Saved state: {list(user_state.keys())}.", color=LogColor.BLUE)
             else:
                 self.log.info("No user state to save.", color=LogColor.BLUE)
             return user_state
@@ -434,30 +430,10 @@ cdef class TradingStrategy(Actor):
         try:
             self.log.debug(f"Loading state...")
             self.on_load(state)
-            self.log.info(f"Loaded state {state}.", color=LogColor.BLUE)
+            self.log.info(f"Loaded state {list(state.keys())}.", color=LogColor.BLUE)
         except Exception as ex:
             self.log.exception(ex)
             raise
-
-# -- SUBSCRIPTIONS ---------------------------------------------------------------------------------
-
-    cpdef void publish_data(self, Data data) except *:
-        """
-        Publish the strategy data to the message bus.
-
-        Parameters
-        ----------
-        data : Data
-            The strategy data to publish.
-
-        """
-        Condition.not_none(data, "data")
-        Condition.true(self.trader_id is not None, "The strategy has not been registered")
-
-        self._msgbus.publish_c(
-            topic=f"data.strategy.{type(data).__name__}.{self.id}",
-            msg=data,
-        )
 
 # -- TRADING COMMANDS ------------------------------------------------------------------------------
 
@@ -654,12 +630,6 @@ cdef class TradingStrategy(Actor):
         Condition.not_none(order, "order")
         Condition.true(self.trader_id is not None, "The strategy has not been registered")
 
-        if order.venue_order_id is None:
-            self.log.error(
-                f"Cannot cancel order: no venue_order_id assigned yet, {order}.",
-            )
-            return  # Cannot send command
-
         if order.is_completed_c() or order.is_pending_cancel_c():
             self.log.warning(
                 f"Cannot cancel order: state is {order.status_string_c()}, {order}.",
@@ -682,12 +652,9 @@ cdef class TradingStrategy(Actor):
         """
         Cancel all orders for this strategy for the given instrument ID.
 
-        All working orders in turn will have a `CancelOrder` command created and
-        then sent to the `ExecutionEngine`.
-
         Parameters
         ----------
-        instrument_id : InstrumentId, optional
+        instrument_id : InstrumentId
             The instrument for the orders to cancel.
 
         """
@@ -709,9 +676,15 @@ cdef class TradingStrategy(Actor):
             f"Canceling {count} working order{'' if count == 1 else 's'}...",
         )
 
-        cdef Order order
-        for order in working_orders:
-            self.cancel_order(order)
+        cdef CancelAllOrders command = CancelAllOrders(
+            self.trader_id,
+            self.id,
+            instrument_id,
+            self.uuid_factory.generate(),
+            self.clock.timestamp_ns(),
+        )
+
+        self._send_exec_cmd(command)
 
     cpdef void flatten_position(self, Position position) except *:
         """
@@ -767,12 +740,9 @@ cdef class TradingStrategy(Actor):
         """
         Flatten all positions for the given instrument ID for this strategy.
 
-        All open positions in turn will have a closing `MarketOrder` created and
-        then sent to the `ExecutionEngine` via `SubmitOrder` commands.
-
         Parameters
         ----------
-        instrument_id : InstrumentId, optional
+        instrument_id : InstrumentId
             The instrument for the positions to flatten.
 
         """

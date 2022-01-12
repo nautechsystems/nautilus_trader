@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2021 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -65,13 +65,10 @@ from nautilus_trader.trading.strategy import TradingStrategy
 
 class ObjectStorer:
     """
-    A test class which stores objects to assists with test assertions.
+    A test class which stores objects to assist with test assertions.
     """
 
     def __init__(self):
-        """
-        Initialize a new instance of the ``ObjectStorer`` class.
-        """
         self.count = 0
         self._store = []
 
@@ -118,10 +115,6 @@ class MockActor(Actor):
     """
 
     def __init__(self, config: ActorConfig = None):
-        """
-        Initialize a new instance of the ``MockActor`` class.
-
-        """
         super().__init__(config)
 
         self.object_storer = ObjectStorer()
@@ -185,18 +178,14 @@ class MockActor(Actor):
 class MockStrategy(TradingStrategy):
     """
     Provides a mock trading strategy for testing.
+
+    Parameters
+    ----------
+    bar_type : BarType
+        The bar type for the strategy.
     """
 
     def __init__(self, bar_type: BarType):
-        """
-        Initialize a new instance of the ``MockStrategy`` class.
-
-        Parameters
-        ----------
-        bar_type : BarType
-            The bar type for the strategy.
-
-        """
         super().__init__()
 
         self.object_storer = ObjectStorer()
@@ -295,9 +284,6 @@ class KaboomActor(Actor):
     """
 
     def __init__(self):
-        """
-        Initialize a new instance of the ``KaboomActor`` class.
-        """
         super().__init__()
 
         self._explode_on_start = True
@@ -357,9 +343,6 @@ class KaboomStrategy(TradingStrategy):
     """
 
     def __init__(self):
-        """
-        Initialize a new instance of the ``KaboomStrategy`` class.
-        """
         super().__init__()
 
         self._explode_on_start = True
@@ -418,55 +401,45 @@ class MockExecutionClient(ExecutionClient):
     Provides a mock execution client for testing.
 
     The client will append all method calls to the calls list.
+
+    Parameters
+    ----------
+    client_id : ClientId
+        The client ID.
+    account_type : AccountType
+        The account type for the client.
+    base_currency : Currency, optional
+        The account base currency for the client. Use ``None`` for multi-currency accounts.
+    msgbus : MessageBus
+        The message bus for the client.
+    cache : Cache
+        The cache for the client
+    clock : Clock
+        The clock for the client.
+    logger : Logger
+        The logger for the client.
     """
 
     def __init__(
         self,
         client_id,
-        venue_type,
-        account_id,
         account_type,
         base_currency,
         msgbus,
         cache,
         clock,
         logger,
+        config=None,
     ):
-        """
-        Initialize a new instance of the ``MockExecutionClient`` class.
-
-        Parameters
-        ----------
-        client_id : ClientId
-            The client ID.
-        venue_type : VenueType
-            The client venue type.
-        account_id : AccountId
-            The account_id for the client.
-        account_type : AccountType
-            The account type for the client.
-        base_currency : Currency, optional
-            The account base currency for the client. Use ``None`` for multi-currency accounts.
-        msgbus : MessageBus
-            The message bus for the client.
-        cache : Cache
-            The cache for the client
-        clock : Clock
-            The clock for the client.
-        logger : Logger
-            The logger for the client.
-
-        """
         super().__init__(
             client_id=client_id,
-            venue_type=venue_type,
-            account_id=account_id,
             account_type=account_type,
             base_currency=base_currency,
             msgbus=msgbus,
             cache=cache,
             clock=clock,
             logger=logger,
+            config=config,
         )
 
         self.calls = []
@@ -514,14 +487,31 @@ class MockLiveExecutionClient(LiveExecutionClient):
     Provides a mock execution client for testing.
 
     The client will append all method calls to the calls list.
+
+    Parameters
+    ----------
+    client_id : ClientId
+        The client ID.
+    account_type : AccountType
+        The account type for the client.
+    base_currency : Currency, optional
+        The account base currency for the client. Use ``None`` for multi-currency accounts.
+    instrument_provider : InstrumentProvider
+        The instrument provider for the client.
+    msgbus : MessageBus
+        The message bus for the client.
+    cache : Cache
+        The cache for the client.
+    clock : Clock
+        The clock for the client.
+    logger : Logger
+        The logger for the client.
     """
 
     def __init__(
         self,
         loop,
         client_id,
-        venue_type,
-        account_id,
         account_type,
         base_currency,
         instrument_provider,
@@ -530,38 +520,9 @@ class MockLiveExecutionClient(LiveExecutionClient):
         clock,
         logger,
     ):
-        """
-        Initialize a new instance of the ``MockExecutionClient`` class.
-
-        Parameters
-        ----------
-        client_id : ClientId
-            The client ID.
-        venue_type : VenueType
-            The client venue type.
-        account_id : AccountId
-            The account_id for the client.
-        account_type : AccountType
-            The account type for the client.
-        base_currency : Currency, optional
-            The account base currency for the client. Use ``None`` for multi-currency accounts.
-        instrument_provider : InstrumentProvider
-            The instrument provider for the client.
-        msgbus : MessageBus
-            The message bus for the client.
-        cache : Cache
-            The cache for the client.
-        clock : Clock
-            The clock for the client.
-        logger : Logger
-            The logger for the client.
-
-        """
         super().__init__(
             loop=loop,
             client_id=client_id,
-            venue_type=venue_type,
-            account_id=account_id,
             account_type=account_type,
             base_currency=base_currency,
             instrument_provider=instrument_provider,
@@ -571,6 +532,7 @@ class MockLiveExecutionClient(LiveExecutionClient):
             logger=logger,
         )
 
+        self._set_account_id(AccountId(client_id.value, "001"))
         self._order_status_reports: Dict[VenueOrderId, OrderStatusReport] = {}
         self._trades_lists: Dict[VenueOrderId, list[ExecutionReport]] = {}
 
@@ -628,18 +590,14 @@ class MockLiveExecutionClient(LiveExecutionClient):
 class MockCacheDatabase(CacheDatabase):
     """
     Provides a mock cache database for testing.
+
+    Parameters
+    ----------
+    logger : Logger
+        The logger for the database.
     """
 
     def __init__(self, logger: Logger):
-        """
-        Initialize a new instance of the ``MockCacheDatabase`` class.
-
-        Parameters
-        ----------
-        logger : Logger
-            The logger for the database.
-
-        """
         super().__init__(logger)
 
         self.currencies: Dict[str, Currency] = {}

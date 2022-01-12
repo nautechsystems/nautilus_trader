@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2021 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -22,18 +22,14 @@ cdef class Level:
     Represents an `OrderBook` level.
 
     A price level on one side of the `OrderBook` with one or more individual orders.
+
+    Parameters
+    ----------
+    price : double
+        The price for the level.
     """
 
     def __init__(self, double price):
-        """
-        Initialize a new instance of the ``Level`` class.
-
-        Parameters
-        ----------
-        price : double
-            The price for the level.
-
-        """
         self.price = price
         self.orders = []
 

@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2021 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -46,7 +46,61 @@ cdef class LimitOrder(PassiveOrder):
     trading cost, however they are sacrificing guaranteed execution as there is
     a chance the order may not be executed if it is placed deep out of the
     market.
+
+    Parameters
+    ----------
+    trader_id : TraderId
+        The trader ID associated with the order.
+    strategy_id : StrategyId
+        The strategy ID associated with the order.
+    instrument_id : InstrumentId
+        The order instrument ID.
+    client_order_id : ClientOrderId
+        The client order ID.
+    order_side : OrderSide {``BUY``, ``SELL``}
+        The order side.
+    quantity : Quantity
+        The order quantity (> 0).
+    price : Price
+        The order limit price.
+    time_in_force : TimeInForce
+        The order time-in-force.
+    expire_time : datetime, optional
+        The order expiry time.
+    init_id : UUID4
+        The order initialization event ID.
+    ts_init : int64
+        The UNIX timestamp (nanoseconds) when the object was initialized.
+    post_only : bool, optional
+        If the order will only provide liquidity (make a market).
+    reduce_only : bool, optional
+        If the order carries the 'reduce-only' execution instruction.
+    display_qty : Quantity, optional
+        The quantity of the order to display on the public book (iceberg).
+    order_list_id : OrderListId, optional
+        The order list ID associated with the order.
+    parent_order_id : ClientOrderId, optional
+        The order parent client order ID.
+    child_order_ids : list[ClientOrderId], optional
+        The order child client order ID(s).
+    contingency : ContingencyType
+        The order contingency type.
+    contingency_ids : list[ClientOrderId], optional
+        The order contingency client order ID(s).
+    tags : str, optional
+        The custom user tags for the order. These are optional and can
+        contain any arbitrary delimiter if required.
+
+    Raises
+    ------
+    ValueError
+        If `quantity` is not positive (> 0).
+    ValueError
+        If `time_in_force` is ``GTD`` and expire_time is ``None``.
+    ValueError
+        If `display_qty` is negative (< 0) or greater than `quantity`.
     """
+
     def __init__(
         self,
         TraderId trader_id not None,
@@ -62,7 +116,7 @@ cdef class LimitOrder(PassiveOrder):
         int64_t ts_init,
         bint post_only=False,
         bint reduce_only=False,
-        bint hidden=False,
+        Quantity display_qty=None,
         OrderListId order_list_id=None,
         ClientOrderId parent_order_id=None,
         list child_order_ids=None,
@@ -70,65 +124,7 @@ cdef class LimitOrder(PassiveOrder):
         list contingency_ids=None,
         str tags=None,
     ):
-        """
-        Initialize a new instance of the ``LimitOrder`` class.
-
-        Parameters
-        ----------
-        trader_id : TraderId
-            The trader ID associated with the order.
-        strategy_id : StrategyId
-            The strategy ID associated with the order.
-        instrument_id : InstrumentId
-            The order instrument ID.
-        client_order_id : ClientOrderId
-            The client order ID.
-        order_side : OrderSide {``BUY``, ``SELL``}
-            The order side.
-        quantity : Quantity
-            The order quantity (> 0).
-        price : Price
-            The order limit price.
-        time_in_force : TimeInForce
-            The order time-in-force.
-        expire_time : datetime, optional
-            The order expiry time.
-        init_id : UUID4
-            The order initialization event ID.
-        ts_init : int64
-            The UNIX timestamp (nanoseconds) when the object was initialized.
-        post_only : bool, optional
-            If the order will only provide liquidity (make a market).
-        reduce_only : bool, optional
-            If the order carries the 'reduce-only' execution instruction.
-        hidden : bool, optional
-            If the order should be hidden from the public book.
-        order_list_id : OrderListId, optional
-            The order list ID associated with the order.
-        parent_order_id : ClientOrderId, optional
-            The order parent client order ID.
-        child_order_ids : list[ClientOrderId], optional
-            The order child client order ID(s).
-        contingency : ContingencyType
-            The order contingency type.
-        contingency_ids : list[ClientOrderId], optional
-            The order contingency client order ID(s).
-        tags : str, optional
-            The custom user tags for the order. These are optional and can
-            contain any arbitrary delimiter if required.
-
-        Raises
-        ------
-        ValueError
-            If `quantity` is not positive (> 0).
-        ValueError
-            If `time_in_force` is ``GTD`` and expire_time is ``None``.
-        ValueError
-            If `post_only` and `hidden`.
-
-        """
-        if post_only:
-            Condition.false(hidden, "A post-only order cannot be hidden")
+        Condition.true(display_qty is None or 0 <= display_qty <= quantity, "display_qty was negative or greater than order quantity")  # noqa
         super().__init__(
             trader_id=trader_id,
             strategy_id=strategy_id,
@@ -143,7 +139,7 @@ cdef class LimitOrder(PassiveOrder):
             reduce_only=reduce_only,
             options={
                 "post_only": post_only,
-                "hidden": hidden,
+                "display_qty": str(display_qty) if display_qty is not None else None,
             },
             order_list_id=order_list_id,
             parent_order_id=parent_order_id,
@@ -156,7 +152,7 @@ cdef class LimitOrder(PassiveOrder):
         )
 
         self.is_post_only = post_only
-        self.is_hidden = hidden
+        self.display_qty = display_qty
 
     cpdef dict to_dict(self):
         """
@@ -189,7 +185,7 @@ cdef class LimitOrder(PassiveOrder):
             "status": self._fsm.state_string_c(),
             "is_post_only": self.is_post_only,
             "is_reduce_only": self.is_reduce_only,
-            "is_hidden": self.is_hidden,
+            "display_qty": str(self.display_qty) if self.display_qty is not None else None,
             "order_list_id": self.order_list_id,
             "parent_order_id": self.parent_order_id,
             "child_order_ids": ",".join([o.value for o in self.child_order_ids]) if self.child_order_ids is not None else None,  # noqa
@@ -223,6 +219,11 @@ cdef class LimitOrder(PassiveOrder):
         Condition.not_none(init, "init")
         Condition.equal(init.type, OrderType.LIMIT, "init.type", "OrderType")
 
+        # Parse display quantity
+        cdef str display_qty_str = init.options["display_qty"]
+        cdef Quantity display_qty = None
+        if display_qty_str is not None:
+            display_qty = Quantity.from_str_c(display_qty_str)
         return LimitOrder(
             trader_id=init.trader_id,
             strategy_id=init.strategy_id,
@@ -237,7 +238,7 @@ cdef class LimitOrder(PassiveOrder):
             ts_init=init.ts_init,
             post_only=init.options["post_only"],
             reduce_only=init.reduce_only,
-            hidden=init.options["hidden"],
+            display_qty=display_qty,
             order_list_id=init.order_list_id,
             parent_order_id=init.parent_order_id,
             child_order_ids=init.child_order_ids,

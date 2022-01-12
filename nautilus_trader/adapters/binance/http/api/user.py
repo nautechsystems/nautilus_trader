@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2021 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -15,6 +15,9 @@
 #  Heavily refactored from MIT licensed github.com/binance/binance-connector-python
 #  Original author: Jeremy https://github.com/2pd
 # -------------------------------------------------------------------------------------------------
+
+from typing import Any, Dict
+
 from nautilus_trader.adapters.binance.common import format_symbol
 from nautilus_trader.adapters.binance.http.client import BinanceHttpClient
 from nautilus_trader.core.correctness import PyCondition
@@ -23,6 +26,11 @@ from nautilus_trader.core.correctness import PyCondition
 class BinanceUserDataHttpAPI:
     """
     Provides access to the `Binance Wallet` HTTP REST API.
+
+    Parameters
+    ----------
+    client : BinanceHttpClient
+        The Binance REST API client.
     """
 
     BASE_ENDPOINT_SPOT = "/api/v3/userDataStream"
@@ -30,20 +38,11 @@ class BinanceUserDataHttpAPI:
     BASE_ENDPOINT_ISOLATED = "/sapi/v1/userDataStream/isolated"
 
     def __init__(self, client: BinanceHttpClient):
-        """
-        Initialize a new instance of the ``BinanceUserDataHttpAPI`` class.
-
-        Parameters
-        ----------
-        client : BinanceHttpClient
-            The Binance REST API client.
-
-        """
         PyCondition.not_none(client, "client")
 
         self.client = client
 
-    async def create_listen_key_spot(self) -> bytes:
+    async def create_listen_key_spot(self) -> Dict[str, Any]:
         """
         Create a new listen key for the SPOT API.
 
@@ -57,8 +56,7 @@ class BinanceUserDataHttpAPI:
 
         Returns
         -------
-        bytes
-            The raw response content.
+        dict[str, Any]
 
         References
         ----------
@@ -70,7 +68,7 @@ class BinanceUserDataHttpAPI:
             url_path=self.BASE_ENDPOINT_SPOT,
         )
 
-    async def ping_listen_key_spot(self, key: str) -> bytes:
+    async def ping_listen_key_spot(self, key: str) -> Dict[str, Any]:
         """
         Ping/Keep-alive a listen key for the SPOT API.
 
@@ -88,8 +86,7 @@ class BinanceUserDataHttpAPI:
 
         Returns
         -------
-        bytes
-            The raw response content.
+        dict[str, Any]
 
         References
         ----------
@@ -102,7 +99,7 @@ class BinanceUserDataHttpAPI:
             payload={"listenKey": key},
         )
 
-    async def close_listen_key_spot(self, key: str) -> bytes:
+    async def close_listen_key_spot(self, key: str) -> Dict[str, Any]:
         """
         Close a listen key for the SPOT API.
 
@@ -116,8 +113,7 @@ class BinanceUserDataHttpAPI:
 
         Returns
         -------
-        bytes
-            The raw response content.
+        dict[str, Any]
 
         References
         ----------
@@ -130,7 +126,7 @@ class BinanceUserDataHttpAPI:
             payload={"listenKey": key},
         )
 
-    async def create_listen_key_margin(self) -> bytes:
+    async def create_listen_key_margin(self) -> Dict[str, Any]:
         """
         Create a new listen key for the MARGIN API.
 
@@ -144,8 +140,7 @@ class BinanceUserDataHttpAPI:
 
         Returns
         -------
-        bytes
-            The raw response content.
+        dict[str, Any]
 
         References
         ----------
@@ -157,7 +152,7 @@ class BinanceUserDataHttpAPI:
             url_path=self.BASE_ENDPOINT_MARGIN,
         )
 
-    async def ping_listen_key_margin(self, key: str) -> bytes:
+    async def ping_listen_key_margin(self, key: str) -> Dict[str, Any]:
         """
         Ping/Keep-alive a listen key for the MARGIN API.
 
@@ -175,8 +170,7 @@ class BinanceUserDataHttpAPI:
 
         Returns
         -------
-        bytes
-            The raw response content.
+        dict[str, Any]
 
         References
         ----------
@@ -189,7 +183,7 @@ class BinanceUserDataHttpAPI:
             payload={"listenKey": key},
         )
 
-    async def close_listen_key_margin(self, key: str) -> bytes:
+    async def close_listen_key_margin(self, key: str) -> Dict[str, Any]:
         """
         Close a listen key for the MARGIN API.
 
@@ -203,8 +197,7 @@ class BinanceUserDataHttpAPI:
 
         Returns
         -------
-        bytes
-            The raw response content.
+        dict[str, Any]
 
         References
         ----------
@@ -217,7 +210,7 @@ class BinanceUserDataHttpAPI:
             payload={"listenKey": key},
         )
 
-    async def create_listen_key_isolated_margin(self, symbol: str) -> bytes:
+    async def create_listen_key_isolated_margin(self, symbol: str) -> Dict[str, Any]:
         """
         Create a new listen key for the ISOLATED MARGIN API.
 
@@ -236,8 +229,7 @@ class BinanceUserDataHttpAPI:
 
         Returns
         -------
-        bytes
-            The raw response content.
+        dict[str, Any]
 
         References
         ----------
@@ -250,7 +242,7 @@ class BinanceUserDataHttpAPI:
             payload={"symbol": format_symbol(symbol).upper()},
         )
 
-    async def ping_listen_key_isolated_margin(self, symbol: str, key: str) -> bytes:
+    async def ping_listen_key_isolated_margin(self, symbol: str, key: str) -> Dict[str, Any]:
         """
         Ping/Keep-alive a listen key for the ISOLATED MARGIN API.
 
@@ -270,8 +262,7 @@ class BinanceUserDataHttpAPI:
 
         Returns
         -------
-        bytes
-            The raw response content.
+        dict[str, Any]
 
         References
         ----------
@@ -284,7 +275,7 @@ class BinanceUserDataHttpAPI:
             payload={"listenKey": key, "symbol": format_symbol(symbol).upper()},
         )
 
-    async def close_listen_key_isolated_margin(self, symbol: str, key: str) -> bytes:
+    async def close_listen_key_isolated_margin(self, symbol: str, key: str) -> Dict[str, Any]:
         """
         Close a listen key for the ISOLATED MARGIN API.
 
@@ -300,8 +291,7 @@ class BinanceUserDataHttpAPI:
 
         Returns
         -------
-        bytes
-            The raw response content.
+        dict[str, Any]
 
         References
         ----------

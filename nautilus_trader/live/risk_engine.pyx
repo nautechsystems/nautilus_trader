@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2021 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -34,6 +34,28 @@ from nautilus_trader.live.config import LiveRiskEngineConfig
 cdef class LiveRiskEngine(RiskEngine):
     """
     Provides a high-performance asynchronous live risk engine.
+
+    Parameters
+    ----------
+    loop : asyncio.AbstractEventLoop
+        The event loop for the engine.
+    portfolio : PortfolioFacade
+        The portfolio for the engine.
+    msgbus : MessageBus
+        The message bus for the engine.
+    cache : CacheFacade
+        The read-only cache for the engine.
+    clock : Clock
+        The clock for the engine.
+    logger : Logger
+        The logger for the engine.
+    config : LiveRiskEngineConfig
+        The configuration for the instance.
+
+    Raises
+    ------
+    TypeError
+        If `config` is not of type `LiveRiskEngineConfig`.
     """
 
     def __init__(

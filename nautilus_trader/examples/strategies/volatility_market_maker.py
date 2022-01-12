@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2021 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -24,7 +24,6 @@ from nautilus_trader.model.data.bar import Bar
 from nautilus_trader.model.data.bar import BarType
 from nautilus_trader.model.data.tick import QuoteTick
 from nautilus_trader.model.data.tick import TradeTick
-from nautilus_trader.model.enums import BookType
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import TimeInForce
 from nautilus_trader.model.events.order import OrderFilled
@@ -75,18 +74,14 @@ class VolatilityMarketMaker(TradingStrategy):
     volatility measured by an ATR indicator.
 
     Cancels all orders and flattens all positions on stop.
+
+    Parameters
+    ----------
+    config : VolatilityMarketMakerConfig
+        The configuration for the instance.
     """
 
     def __init__(self, config: VolatilityMarketMakerConfig):
-        """
-        Initialize a new instance of the ``VolatilityMarketMaker`` class.
-
-        Parameters
-        ----------
-        config : VolatilityMarketMakerConfig
-            The configuration for the instance.
-
-        """
         super().__init__(config)
 
         # Configuration
@@ -121,13 +116,6 @@ class VolatilityMarketMaker(TradingStrategy):
         # Subscribe to live data
         self.subscribe_bars(self.bar_type)
         self.subscribe_quote_ticks(self.instrument_id)
-        self.subscribe_order_book_snapshots(
-            self.instrument_id,
-            book_type=BookType.L2_MBP,
-            depth=10,
-            interval_ms=1000,
-        )  # For debugging
-        # self.subscribe_trade_ticks(self.instrument_id)  # For debugging
 
     def on_instrument(self, instrument: Instrument):
         """
@@ -228,7 +216,7 @@ class VolatilityMarketMaker(TradingStrategy):
             price=self.instrument.make_price(price),
             time_in_force=TimeInForce.GTC,
             post_only=True,  # default value is True
-            hidden=False,  # default value is False
+            display_qty=self.instrument.make_qty(self.trade_size / 2),  # iceberg
         )
 
         self.buy_order = order
@@ -246,7 +234,7 @@ class VolatilityMarketMaker(TradingStrategy):
             price=self.instrument.make_price(price),
             time_in_force=TimeInForce.GTC,
             post_only=True,  # default value is True
-            hidden=False,  # default value is False
+            display_qty=self.instrument.make_qty(self.trade_size / 2),  # iceberg
         )
 
         self.sell_order = order
@@ -298,8 +286,6 @@ class VolatilityMarketMaker(TradingStrategy):
         # Unsubscribe from data
         self.unsubscribe_bars(self.bar_type)
         self.unsubscribe_quote_ticks(self.instrument_id)
-        self.unsubscribe_order_book_snapshots(self.instrument_id, interval_ms=1000)
-        # self.unsubscribe_trade_ticks(self.instrument_id)
 
     def on_reset(self):
         """

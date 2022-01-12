@@ -1,8 +1,86 @@
-# NautilusTrader 1.134.0 Beta - Release Notes
+# NautilusTrader 1.137.0 Beta - Release Notes
 
 Released TBD
 
 ## Breaking Changes
+- Removed redundant `currency` param from `AccountBalance`.
+- Renamed `local_symbol` to `native_symbol`.
+- Removed the `VenueType` enum and `venue_type` param in favour of a `routing` bool flag.
+- Removed `account_id` param from execution client factories and constructors.
+- Changed venue generated IDs (order, execution, position) which now begin with the venue ID.
+
+## Enhancements
+- Added FTX integration for testing.
+- Added FTX US configuration option.
+- Added Binance US configuration option.
+- Added `MarginBalance` object to assist with margin account functionality.
+
+## Fixes
+- Fixed parsing of `BarType` with symbols including hyphens `-`.
+- Fixed `BinanceTicker` `__repr__` (was missing whitespace after a comma).
+- Fixed `DataEngine` requests for historical `TradeTick`.
+- Fixed `DataEngine` `_handle_data_response` typing of `data` to `object`.
+
+---
+
+# NautilusTrader 1.136.0 Beta - Release Notes
+
+Released 29th, December 2021
+
+## Breaking Changes
+- Changed `subscribe_data(...)` method (`client_id` now optional).
+- Changed `unsubscribe_data(...)` method (`client_id` now optional).
+- Changed `publish_data(...)` method (added `data_type`).
+- Renamed `MessageBus.subscriptions` method param to `pattern`.
+- Renamed `MessageBus.has_subscribers` method param to `pattern`.`
+- Removed `subscribe_strategy_data(...)` method.
+- Removed `unsubscribe_strategy_data(...)` method.
+- Removed `publish_strategy_data(...)` method.
+- Renamed `CryptoSwap` to `CryptoPerpetual`.
+
+## Enhancements
+- Can now modify or cancel in-flight orders live and backtest.
+- Updated `CancelOrder` to allow None `venue_order_id`.
+- Updated `ModifyOrder` to allow None `venue_order_id`.
+- Updated `OrderPendingUpdate` to allow None `venue_order_id`.
+- Updated `OrderPendingCancel` to allow None `venue_order_id`.
+- Updated `OrderCancelRejected` to allow None `venue_order_id`.
+- Updated `OrderModifyRejected` to allow None `venue_order_id`.
+- Added `DataType.topic` string for improved message bus handling.
+
+## Fixes
+- Implemented comparisons for `DataType`, `BarSpecification` and `BarType`.
+- Fixed `QuoteTickDataWrangler.process_bar_data` with `random_seed`.
+
+---
+
+# NautilusTrader 1.135.0 Beta - Release Notes
+
+Released 13th, December 2021
+
+## Breaking Changes
+- Renamed `match_id` to `trade_id`.
+
+## Enhancements
+- Added bars method to `DataCatalog`.
+- Improved parsing of Binance historical bars data.
+- Added `CancelAllOrders` command.
+- Added bulk cancel capability to Binance integration.
+- Added bulk cancel capability to Betfair integration.
+
+## Fixes
+- Fixed handling of `cpu_freq` call in logging for ARM architecture.
+- Fixed market order fill edge case for bar data
+- Fixed handling of `GenericData` in backtests.
+
+---
+
+# NautilusTrader 1.134.0 Beta - Release Notes
+
+Released on 22nd, November 2021
+
+## Breaking Changes
+- Changed `hidden` order option to `display_qty` to support iceberg orders.
 - Renamed `Trader.component_ids()` to `Trader.actor_ids()`.
 - Renamed `Trader.component_states()` to `Trader.actor_states()`.
 - Renamed `Trader.add_component()` to `Trader.add_actor()`.
@@ -10,10 +88,11 @@ Released TBD
 - Renamed `Trader.clear_components()` to `Trader.clear_actors()`.
 
 ## Enhancements
-None
+- Added initial implementation of Binance SPOT integration (beta stage testing).
+- Added support for display quantity/iceberg orders.
 
 ## Fixes
-None
+- Fixed `Actor` clock time advancement in backtest engine.
 
 ---
 
@@ -259,8 +338,8 @@ None
 Released on 2nd, August 2021
 
 This release sees the completion of the initial implementation of the 
-`MessageBus`, with data now being handled by PUB/SUB patterns, along with the 
-additions of point-to-point and REQ/REP messaging functionality.
+`MessageBus`, with data now being handled by Pub/Sub patterns, along with the 
+additions of point-to-point and Req/Rep messaging functionality.
 
 An `Actor` base class has been abstracted from `TradingStrategy` which allows
 custom components to be added to a `Trader` which aren't necessarily trading 
@@ -318,7 +397,7 @@ Released on 18th, July 2021
 
 This release introduces a major re-architecture of the internal messaging system.
 A common message bus has been implemented which now handles all events via a 
-PUB/SUB messaging pattern. The next release will see all data being handled by 
+Pub/Sub messaging pattern. The next release will see all data being handled by 
 the message bus, please see the related issue for further details on this enhancement.
 
 Another notable feature is the introduction of the order 'in-flight' concept, 

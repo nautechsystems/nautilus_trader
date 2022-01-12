@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2021 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -82,6 +82,7 @@ from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.identifiers import VenueOrderId
 from nautilus_trader.model.objects import AccountBalance
+from nautilus_trader.model.objects import MarginBalance
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
@@ -134,12 +135,20 @@ class TestStubs:
         return InstrumentId(Symbol("ETH/USD"), Venue("BITMEX"))
 
     @staticmethod
+    def ethusd_ftx_id() -> InstrumentId:
+        return InstrumentId(Symbol("ETH-PERP"), Venue("FTX"))
+
+    @staticmethod
     def btcusdt_binance_id() -> InstrumentId:
         return InstrumentId(Symbol("BTC/USDT"), Venue("BINANCE"))
 
     @staticmethod
     def ethusdt_binance_id() -> InstrumentId:
         return InstrumentId(Symbol("ETH/USDT"), Venue("BINANCE"))
+
+    @staticmethod
+    def adabtc_binance_id() -> InstrumentId:
+        return InstrumentId(Symbol("ADA/BTC"), Venue("BINANCE"))
 
     @staticmethod
     def audusd_id() -> InstrumentId:
@@ -207,7 +216,7 @@ class TestStubs:
             price=price or Price.from_str("1.001"),
             size=quantity or Quantity.from_int(100000),
             aggressor_side=aggressor_side or AggressorSide.BUY,
-            match_id="123456",
+            trade_id="123456",
             ts_event=0,
             ts_init=0,
         )
@@ -224,7 +233,7 @@ class TestStubs:
             price=price or Price.from_str("1.00001"),
             size=quantity or Quantity.from_int(100000),
             aggressor_side=aggressor_side or AggressorSide.BUY,
-            match_id="123456",
+            trade_id="123456",
             ts_event=0,
             ts_init=0,
         )
@@ -284,6 +293,10 @@ class TestStubs:
     @staticmethod
     def bartype_btcusdt_binance_100tick_last() -> BarType:
         return BarType(TestStubs.btcusdt_binance_id(), TestStubs.bar_spec_100tick_last())
+
+    @staticmethod
+    def bartype_adabtc_binance_1min_last() -> BarType:
+        return BarType(TestStubs.adabtc_binance_id(), TestStubs.bar_spec_1min_last())
 
     @staticmethod
     def bar_5decimal() -> Bar:
@@ -495,12 +508,12 @@ class TestStubs:
             reported=True,  # reported
             balances=[
                 AccountBalance(
-                    USD,
                     Money(1_000_000, USD),
                     Money(0, USD),
                     Money(1_000_000, USD),
-                )
+                ),
             ],
+            margins=[],
             info={},
             event_id=UUID4(),
             ts_event=0,
@@ -516,11 +529,17 @@ class TestStubs:
             reported=True,  # reported
             balances=[
                 AccountBalance(
-                    USD,
                     Money(1_000_000, USD),
                     Money(0, USD),
                     Money(1_000_000, USD),
-                )
+                ),
+            ],
+            margins=[
+                MarginBalance(
+                    Money(10_000, USD),
+                    Money(50_000, USD),
+                    TestStubs.audusd_id(),
+                ),
             ],
             info={},
             event_id=UUID4(),
@@ -537,12 +556,12 @@ class TestStubs:
             reported=False,  # reported
             balances=[
                 AccountBalance(
-                    GBP,
                     Money(1_000, GBP),
                     Money(0, GBP),
                     Money(1_000, GBP),
-                )
+                ),
             ],
+            margins=[],
             info={},
             event_id=UUID4(),
             ts_event=0,
@@ -915,7 +934,7 @@ class TestStubs:
                         price=Price(d["trade"]["price"], 4),
                         size=Quantity(d["trade"]["volume"], 4),
                         aggressor_side=d["trade"]["side"],
-                        match_id=(d["trade"]["trade_id"]),
+                        trade_id=(d["trade"]["trade_id"]),
                         ts_event=ts,
                         ts_init=ts,
                     ),

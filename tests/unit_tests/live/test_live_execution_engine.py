@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2021 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -35,7 +35,6 @@ from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import LiquiditySide
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import OrderStatus
-from nautilus_trader.model.enums import VenueType
 from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import ExecutionId
 from nautilus_trader.model.identifiers import StrategyId
@@ -128,8 +127,6 @@ class TestLiveExecutionEngine:
         self.client = MockLiveExecutionClient(
             loop=self.loop,
             client_id=ClientId(SIM.value),
-            venue_type=VenueType.ECN,
-            account_id=TestStubs.account_id(),
             account_type=AccountType.CASH,
             base_currency=USD,
             instrument_provider=self.instrument_provider,
@@ -146,7 +143,8 @@ class TestLiveExecutionEngine:
     def teardown(self):
         self.exec_engine.dispose()
 
-    def test_start_when_loop_not_running_logs(self):
+    @pytest.mark.asyncio
+    async def test_start_when_loop_not_running_logs(self):
         # Arrange, Act
         self.exec_engine.start()
 
@@ -154,7 +152,8 @@ class TestLiveExecutionEngine:
         assert True  # No exceptions raised
         self.exec_engine.stop()
 
-    def test_message_qsize_at_max_blocks_on_put_command(self):
+    @pytest.mark.asyncio
+    async def test_message_qsize_at_max_blocks_on_put_command(self):
         # Arrange
         # Deregister test fixture ExecutionEngine from msgbus)
         self.msgbus.deregister(endpoint="ExecEngine.execute", handler=self.exec_engine.execute)
@@ -197,12 +196,14 @@ class TestLiveExecutionEngine:
         # Act
         self.exec_engine.execute(submit_order)
         self.exec_engine.execute(submit_order)
+        await asyncio.sleep(0.1)
 
         # Assert
         assert self.exec_engine.qsize() == 1
         assert self.exec_engine.command_count == 0
 
-    def test_message_qsize_at_max_blocks_on_put_event(self):
+    @pytest.mark.asyncio
+    async def test_message_qsize_at_max_blocks_on_put_event(self):
         # Arrange
         # Deregister test fixture ExecutionEngine from msgbus)
         self.msgbus.deregister(endpoint="ExecEngine.execute", handler=self.exec_engine.execute)
@@ -247,6 +248,7 @@ class TestLiveExecutionEngine:
         # Act
         self.exec_engine.execute(submit_order)
         self.exec_engine.process(event)  # Add over max size
+        await asyncio.sleep(0.1)
 
         # Assert
         assert self.exec_engine.qsize() == 1
@@ -341,6 +343,7 @@ class TestLiveExecutionEngine:
         # Act
         await self.exec_engine.reconcile_state(timeout_secs=10)
         self.exec_engine.stop()
+        await asyncio.sleep(0.1)
 
         # Assert
         assert True  # No exceptions raised

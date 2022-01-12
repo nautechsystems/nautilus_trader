@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2021 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -31,6 +31,7 @@ from nautilus_trader.adapters.betfair.common import probability_to_price
 from nautilus_trader.adapters.betfair.parsing import betfair_account_to_account_state
 from nautilus_trader.adapters.betfair.parsing import generate_order_status_report
 from nautilus_trader.adapters.betfair.parsing import generate_trades_list
+from nautilus_trader.adapters.betfair.parsing import order_cancel_all_to_betfair
 from nautilus_trader.adapters.betfair.parsing import order_cancel_to_betfair
 from nautilus_trader.adapters.betfair.parsing import order_submit_to_betfair
 from nautilus_trader.adapters.betfair.parsing import order_update_to_betfair
@@ -50,7 +51,7 @@ from nautilus_trader.live.execution_client import LiveExecutionClient
 from nautilus_trader.model.c_enums.account_type import AccountType
 from nautilus_trader.model.c_enums.liquidity_side import LiquiditySide
 from nautilus_trader.model.c_enums.order_type import OrderType
-from nautilus_trader.model.c_enums.venue_type import VenueType
+from nautilus_trader.model.commands.trading import CancelAllOrders
 from nautilus_trader.model.commands.trading import CancelOrder
 from nautilus_trader.model.commands.trading import ModifyOrder
 from nautilus_trader.model.commands.trading import SubmitOrder
@@ -73,13 +74,33 @@ from nautilus_trader.msgbus.bus import MessageBus
 class BetfairExecutionClient(LiveExecutionClient):
     """
     Provides an execution client for Betfair.
+
+    Parameters
+    ----------
+    loop : asyncio.AbstractEventLoop
+        The event loop for the client.
+    client : BetfairClient
+        The Betfair HttpClient.
+    base_currency : Currency
+        The account base currency for the client.
+    msgbus : MessageBus
+        The message bus for the client.
+    cache : Cache
+        The cache for the client.
+    clock : LiveClock
+        The clock for the client.
+    logger : Logger
+        The logger for the client.
+    market_filter : dict
+        The market filter.
+    instrument_provider : BetfairInstrumentProvider, optional
+        The instrument provider.
     """
 
     def __init__(
         self,
         loop: asyncio.AbstractEventLoop,
         client: BetfairClient,
-        account_id: AccountId,
         base_currency: Currency,
         msgbus: MessageBus,
         cache: Cache,
@@ -88,47 +109,17 @@ class BetfairExecutionClient(LiveExecutionClient):
         market_filter: Dict,
         instrument_provider: BetfairInstrumentProvider,
     ):
-        """
-        Initialize a new instance of the ``BetfairExecutionClient`` class.
-
-        Parameters
-        ----------
-        loop : asyncio.AbstractEventLoop
-            The event loop for the client.
-        client : BetfairClient
-            The Betfair HttpClient.
-        account_id : AccountId
-            The account ID for the client.
-        base_currency : Currency
-            The account base currency for the client.
-        msgbus : MessageBus
-            The message bus for the client.
-        cache : Cache
-            The cache for the client.
-        clock : LiveClock
-            The clock for the client.
-        logger : Logger
-            The logger for the client.
-        market_filter : dict
-            The market filter.
-        instrument_provider : BetfairInstrumentProvider, optional
-            The instrument provider.
-
-        """
         super().__init__(
             loop=loop,
             client_id=ClientId(BETFAIR_VENUE.value),
             instrument_provider=instrument_provider
             or BetfairInstrumentProvider(client=client, logger=logger, market_filter=market_filter),
-            venue_type=VenueType.EXCHANGE,
-            account_id=account_id,
             account_type=AccountType.BETTING,
             base_currency=base_currency,
             msgbus=msgbus,
             cache=cache,
             clock=clock,
             logger=logger,
-            config={"name": "BetfairExecClient"},
         )
 
         self._client: BetfairClient = client
@@ -142,7 +133,8 @@ class BetfairExecutionClient(LiveExecutionClient):
         self.pending_update_order_client_ids: Set[Tuple[ClientOrderId, VenueOrderId]] = set()
         self.published_executions: Dict[ClientOrderId, ExecutionId] = defaultdict(list)
 
-        AccountFactory.register_calculated_account(account_id.issuer)
+        self._set_account_id(AccountId(BETFAIR_VENUE.value, "001"))  # TODO(cs): Temporary
+        AccountFactory.register_calculated_account(BETFAIR_VENUE.value)
 
     # -- CONNECTION HANDLERS -----------------------------------------------------------------------
 
@@ -424,12 +416,12 @@ class BetfairExecutionClient(LiveExecutionClient):
         PyCondition.not_none(instrument, "instrument")
 
         # Format
-        cancel_orders = order_cancel_to_betfair(command=command, instrument=instrument)  # type: ignore
-        self._log.debug(f"cancel_orders {cancel_orders}")
+        cancel_order = order_cancel_to_betfair(command=command, instrument=instrument)  # type: ignore
+        self._log.debug(f"cancel_order {cancel_order}")
 
         # Send to client
         try:
-            result = await self._client.cancel_orders(**cancel_orders)
+            result = await self._client.cancel_orders(**cancel_order)
         except Exception as exc:
             if isinstance(exc, BetfairAPIError):
                 await self.on_api_exception(exc=exc)
@@ -460,6 +452,97 @@ class BetfairExecutionClient(LiveExecutionClient):
                     ts_event=self._clock.timestamp_ns(),
                 )
                 return
+
+            self._log.debug(
+                f"Matching venue_order_id: {venue_order_id} to client_order_id: {command.client_order_id}"
+            )
+            self.venue_order_id_to_client_order_id[venue_order_id] = command.client_order_id  # type: ignore
+            self.generate_order_canceled(
+                strategy_id=command.strategy_id,
+                instrument_id=command.instrument_id,
+                client_order_id=command.client_order_id,
+                venue_order_id=venue_order_id,  # type: ignore
+                ts_event=self._clock.timestamp_ns(),
+            )
+            self._log.debug("Sent order cancel")
+
+    def cancel_all_orders(self, command: CancelAllOrders) -> None:
+        PyCondition.not_none(command, "command")
+
+        working_orders = self._cache.working_orders(instrument_id=command.instrument_id)
+
+        # TODO(cs): Temporary solution generating individual cancels for all working orders
+        for order in working_orders:
+            command = CancelOrder(
+                trader_id=command.trader_id,
+                strategy_id=command.strategy_id,
+                instrument_id=command.instrument_id,
+                client_order_id=order.client_order_id,
+                venue_order_id=order.venue_order_id,
+                command_id=self._uuid_factory.generate(),
+                ts_init=self._clock.timestamp_ns(),
+            )
+
+            self.cancel_order(command)
+
+        # TODO(cs): Relates to below _cancel_all_orders
+        # Format
+        # cancel_orders = order_cancel_all_to_betfair(instrument=instrument)  # type: ignore
+        # self._log.debug(f"cancel_orders {cancel_orders}")
+        #
+        # self.create_task(self._cancel_order(command))
+
+    # TODO(cs): Currently not in use as old behavior restored to cancel orders individually
+    async def _cancel_all_orders(self, command: CancelAllOrders) -> None:
+        # TODO(cs): I've had to duplicate the logic as couldn't refactor and tease
+        #  apart the cancel rejects and execution report. This will possibly fail
+        #  badly if there are any API errors...
+        self._log.debug(f"Received cancel all orders: {command}")
+
+        instrument = self._cache.instrument(command.instrument_id)
+        PyCondition.not_none(instrument, "instrument")
+
+        # Format
+        cancel_orders = order_cancel_all_to_betfair(instrument=instrument)  # type: ignore
+        self._log.debug(f"cancel_orders {cancel_orders}")
+
+        # Send to client
+        try:
+            result = await self._client.cancel_orders(**cancel_orders)
+        except Exception as exc:
+            if isinstance(exc, BetfairAPIError):
+                await self.on_api_exception(exc=exc)
+            self._log.error(f"Cancel failed: {exc}")
+            # TODO(cs): Will probably just need to recover the client order ID
+            #  and order ID from the execution report?
+            # self.generate_order_cancel_rejected(
+            #     strategy_id=command.strategy_id,
+            #     instrument_id=command.instrument_id,
+            #     client_order_id=command.client_order_id,
+            #     venue_order_id=command.venue_order_id,
+            #     reason="client error",
+            #     ts_event=self._clock.timestamp_ns(),
+            # )
+            return
+        self._log.debug(f"result={result}")
+
+        # Parse response
+        for report in result["instructionReports"]:
+            venue_order_id = VenueOrderId(report["instruction"]["betId"])
+            if report["status"] == "FAILURE":
+                reason = f"{result.get('errorCode', 'Error')}: {report['errorCode']}"
+                self._log.error(f"cancel failed - {reason}")
+                # TODO(cs): Will probably just need to recover the client order ID
+                #  and order ID from the execution report?
+                # self.generate_order_cancel_rejected(
+                #     strategy_id=command.strategy_id,
+                #     instrument_id=command.instrument_id,
+                #     client_order_id=command.client_order_id,
+                #     venue_order_id=venue_order_id,
+                #     reason=reason,
+                #     ts_event=self._clock.timestamp_ns(),
+                # )
+                # return
 
             self._log.debug(
                 f"Matching venue_order_id: {venue_order_id} to client_order_id: {command.client_order_id}"

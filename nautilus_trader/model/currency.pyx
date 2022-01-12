@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2021 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -23,6 +23,28 @@ cdef class Currency:
     """
     Represents a medium of exchange in a specified denomination with a fixed
     decimal precision.
+
+    Parameters
+    ----------
+    code : str
+        The currency code.
+    precision : uint8
+        The currency decimal precision.
+    iso4217 : uint16
+        The currency ISO 4217 code.
+    name : str
+        The currency name.
+    currency_type : CurrencyType
+        The currency type.
+
+    Raises
+    ------
+    ValueError
+        If `code` is not a valid string.
+    OverflowError
+        If `precision` is negative (< 0).
+    ValueError
+        If `name` is not a valid string.
     """
 
     def __init__(
@@ -33,32 +55,6 @@ cdef class Currency:
         str name,
         CurrencyType currency_type,
     ):
-        """
-        Initialize a new instance of the ``Currency`` class.
-
-        Parameters
-        ----------
-        code : str
-            The currency code.
-        precision : uint8
-            The currency decimal precision.
-        iso4217 : uint16
-            The currency ISO 4217 code.
-        name : str
-            The currency name.
-        currency_type : CurrencyType
-            The currency type.
-
-        Raises
-        ------
-        ValueError
-            If `code` is not a valid string.
-        OverflowError
-            If `precision` is negative (< 0).
-        ValueError
-            If `name` is not a valid string.
-
-        """
         Condition.valid_string(code, "code")
         Condition.valid_string(name, "name")
         Condition.not_negative_int(precision, "precision")
@@ -79,15 +75,17 @@ cdef class Currency:
         return self.code
 
     def __repr__(self) -> str:
-        return (f"{type(self).__name__}("
-                f"code={self.code}, "
-                f"name={self.name}, "
-                f"precision={self.precision}, "
-                f"iso4217={self.iso4217}, "
-                f"type={CurrencyTypeParser.to_str(self.currency_type)})")
+        return (
+            f"{type(self).__name__}("
+            f"code={self.code}, "
+            f"name={self.name}, "
+            f"precision={self.precision}, "
+            f"iso4217={self.iso4217}, "
+            f"type={CurrencyTypeParser.to_str(self.currency_type)})"
+        )
 
     @staticmethod
-    cdef void register_c(Currency currency, bint overwrite=False):
+    cdef void register_c(Currency currency, bint overwrite=False) except *:
         if not overwrite and currency.code in _CURRENCY_MAP:
             return
         _CURRENCY_MAP[currency.code] = currency

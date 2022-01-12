@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2021 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -40,6 +40,61 @@ cdef class PositionEvent(Event):
     """
     The abstract base class for all position events.
 
+    Parameters
+    ----------
+    trader_id : TraderId
+        The trader ID.
+    strategy_id : StrategyId
+        The strategy ID.
+    instrument_id : InstrumentId
+        The instrument ID.
+    position_id : PositionId
+        The position IDt.
+    account_id : AccountId
+        The strategy ID.
+    from_order : ClientOrderId
+        The client order ID for the order which initially opened the position.
+    entry : OrderSide
+        The position entry order side.
+    side : PositionSide
+        The current position side.
+    net_qty : Decimal
+        The current net quantity (positive for ``LONG``, negative for ``SHORT``).
+    quantity : Quantity
+        The current open quantity.
+    peak_qty : Quantity
+        The peak directional quantity reached by the position.
+    last_qty : Quantity
+        The last fill quantity for the position.
+    last_px : Price
+        The last fill price for the position (not average price).
+    currency : Currency
+        The position quote currency.
+    avg_px_open : Decimal
+        The average open price.
+    avg_px_close : Decimal, optional
+        The average close price.
+    realized_points : Decimal
+        The realized points for the position.
+    realized_return : Decimal
+        The realized return for the position.
+    realized_pnl : Money
+        The realized PnL for the position.
+    unrealized_pnl : Money
+        The unrealized PnL for the position.
+    event_id : UUID4
+        The event ID.
+    ts_opened : int64
+        The UNIX timestamp (nanoseconds) when the position opened event occurred.
+    ts_closed : int64
+        The UNIX timestamp (nanoseconds) when the position closed event occurred.
+    duration_ns : int64
+        The total open duration (nanoseconds), will be 0 if still open.
+    ts_event : int64
+        The UNIX timestamp (nanoseconds) when the event occurred.
+    ts_init : int64
+        The UNIX timestamp (nanoseconds) when the object was initialized.
+
     Warnings
     --------
     This class should not be used directly, but through a concrete subclass.
@@ -74,65 +129,6 @@ cdef class PositionEvent(Event):
         int64_t ts_event,
         int64_t ts_init,
     ):
-        """
-        Initialize a new instance of the ``PositionEvent`` class.
-
-        Parameters
-        ----------
-        trader_id : TraderId
-            The trader ID.
-        strategy_id : StrategyId
-            The strategy ID.
-        instrument_id : InstrumentId
-            The instrument ID.
-        position_id : PositionId
-            The position IDt.
-        account_id : AccountId
-            The strategy ID.
-        from_order : ClientOrderId
-            The client order ID for the order which initially opened the position.
-        entry : OrderSide
-            The position entry order side.
-        side : PositionSide
-            The current position side.
-        net_qty : Decimal
-            The current net quantity (positive for ``LONG``, negative for ``SHORT``).
-        quantity : Quantity
-            The current open quantity.
-        peak_qty : Quantity
-            The peak directional quantity reached by the position.
-        last_qty : Quantity
-            The last fill quantity for the position.
-        last_px : Price
-            The last fill price for the position (not average price).
-        currency : Currency
-            The position quote currency.
-        avg_px_open : Decimal
-            The average open price.
-        avg_px_close : Decimal, optional
-            The average close price.
-        realized_points : Decimal
-            The realized points for the position.
-        realized_return : Decimal
-            The realized return for the position.
-        realized_pnl : Money
-            The realized PnL for the position.
-        unrealized_pnl : Money
-            The unrealized PnL for the position.
-        event_id : UUID4
-            The event ID.
-        ts_opened : int64
-            The UNIX timestamp (nanoseconds) when the position opened event occurred.
-        ts_closed : int64
-            The UNIX timestamp (nanoseconds) when the position closed event occurred.
-        duration_ns : int64
-            The total open duration (nanoseconds), will be 0 if still open.
-        ts_event : int64
-            The UNIX timestamp (nanoseconds) when the event occurred.
-        ts_init : int64
-            The UNIX timestamp (nanoseconds) when the object was initialized.
-
-        """
         super().__init__(event_id, ts_event, ts_init)
 
         self.trader_id = trader_id
@@ -161,61 +157,108 @@ cdef class PositionEvent(Event):
 
     def __str__(self) -> str:
         cdef str net_qty_str = f"{self.net_qty:,}".replace(",", "_")
-        return (f"{type(self).__name__}("
-                f"instrument_id={self.instrument_id.value}, "
-                f"position_id={self.position_id.value}, "
-                f"account_id={self.account_id.value}, "
-                f"from_order={self.from_order.value}, "
-                f"strategy_id={self.strategy_id.value}, "
-                f"entry={OrderSideParser.to_str(self.entry)}, "
-                f"side={PositionSideParser.to_str(self.side)}, "
-                f"net_qty={net_qty_str}, "
-                f"quantity={self.quantity.to_str()}, "
-                f"peak_qty={self.peak_qty.to_str()}, "
-                f"currency={self.currency.code}, "
-                f"avg_px_open={self.avg_px_open}, "
-                f"avg_px_close={self.avg_px_close}, "
-                f"realized_points={self.realized_points}, "
-                f"realized_return={self.realized_return:.5f}, "
-                f"realized_pnl={self.realized_pnl.to_str()}, "
-                f"unrealized_pnl={self.unrealized_pnl.to_str()}, "
-                f"ts_opened={self.ts_opened}, "
-                f"ts_last={self.ts_event}, "
-                f"ts_closed={self.ts_closed}, "
-                f"duration_ns={self.duration_ns})")
+        return (
+            f"{type(self).__name__}("
+            f"instrument_id={self.instrument_id.value}, "
+            f"position_id={self.position_id.value}, "
+            f"account_id={self.account_id.value}, "
+            f"from_order={self.from_order.value}, "
+            f"strategy_id={self.strategy_id.value}, "
+            f"entry={OrderSideParser.to_str(self.entry)}, "
+            f"side={PositionSideParser.to_str(self.side)}, "
+            f"net_qty={net_qty_str}, "
+            f"quantity={self.quantity.to_str()}, "
+            f"peak_qty={self.peak_qty.to_str()}, "
+            f"currency={self.currency.code}, "
+            f"avg_px_open={self.avg_px_open}, "
+            f"avg_px_close={self.avg_px_close}, "
+            f"realized_points={self.realized_points}, "
+            f"realized_return={self.realized_return:.5f}, "
+            f"realized_pnl={self.realized_pnl.to_str()}, "
+            f"unrealized_pnl={self.unrealized_pnl.to_str()}, "
+            f"ts_opened={self.ts_opened}, "
+            f"ts_last={self.ts_event}, "
+            f"ts_closed={self.ts_closed}, "
+            f"duration_ns={self.duration_ns})"
+        )
 
     def __repr__(self) -> str:
         cdef str net_qty_str = f"{self.net_qty:,}".replace(",", "_")
-        return (f"{type(self).__name__}("
-                f"trader_id={self.trader_id.value}, "
-                f"strategy_id={self.strategy_id.value}, "
-                f"instrument_id={self.instrument_id.value}, "
-                f"position_id={self.position_id.value}, "
-                f"account_id={self.account_id.value}, "
-                f"from_order={self.from_order.value}, "
-                f"strategy_id={self.strategy_id.value}, "
-                f"entry={OrderSideParser.to_str(self.entry)}, "
-                f"side={PositionSideParser.to_str(self.side)}, "
-                f"net_qty={net_qty_str}, "
-                f"quantity={self.quantity.to_str()}, "
-                f"peak_qty={self.peak_qty.to_str()}, "
-                f"currency={self.currency.code}, "
-                f"avg_px_open={self.avg_px_open}, "
-                f"avg_px_close={self.avg_px_close}, "
-                f"realized_points={self.realized_points}, "
-                f"realized_return={self.realized_return:.5f}, "
-                f"realized_pnl={self.realized_pnl.to_str()}, "
-                f"unrealized_pnl={self.unrealized_pnl.to_str()}, "
-                f"ts_opened={self.ts_opened}, "
-                f"ts_last={self.ts_event}, "
-                f"ts_closed={self.ts_closed}, "
-                f"duration_ns={self.duration_ns}, "
-                f"event_id={self.id})")
+        return (
+            f"{type(self).__name__}("
+            f"trader_id={self.trader_id.value}, "
+            f"strategy_id={self.strategy_id.value}, "
+            f"instrument_id={self.instrument_id.value}, "
+            f"position_id={self.position_id.value}, "
+            f"account_id={self.account_id.value}, "
+            f"from_order={self.from_order.value}, "
+            f"strategy_id={self.strategy_id.value}, "
+            f"entry={OrderSideParser.to_str(self.entry)}, "
+            f"side={PositionSideParser.to_str(self.side)}, "
+            f"net_qty={net_qty_str}, "
+            f"quantity={self.quantity.to_str()}, "
+            f"peak_qty={self.peak_qty.to_str()}, "
+            f"currency={self.currency.code}, "
+            f"avg_px_open={self.avg_px_open}, "
+            f"avg_px_close={self.avg_px_close}, "
+            f"realized_points={self.realized_points}, "
+            f"realized_return={self.realized_return:.5f}, "
+            f"realized_pnl={self.realized_pnl.to_str()}, "
+            f"unrealized_pnl={self.unrealized_pnl.to_str()}, "
+            f"ts_opened={self.ts_opened}, "
+            f"ts_last={self.ts_event}, "
+            f"ts_closed={self.ts_closed}, "
+            f"duration_ns={self.duration_ns}, "
+            f"event_id={self.id})"
+        )
 
 
 cdef class PositionOpened(PositionEvent):
     """
     Represents an event where a position has been opened.
+
+    Parameters
+    ----------
+    trader_id : TraderId
+        The trader ID.
+    strategy_id : StrategyId
+        The strategy ID.
+    instrument_id : InstrumentId
+        The instrument ID.
+    position_id : PositionId
+        The position IDt.
+    account_id : AccountId
+        The strategy ID.
+    from_order : ClientOrderId
+        The client order ID for the order which initially opened the position.
+    strategy_id : StrategyId
+        The strategy ID associated with the event.
+    entry : OrderSide
+        The position entry order side.
+    side : PositionSide
+        The current position side.
+    net_qty : Decimal
+        The current net quantity (positive for ``LONG``, negative for ``SHORT``).
+    quantity : Quantity
+        The current open quantity.
+    peak_qty : Quantity
+        The peak directional quantity reached by the position.
+    last_qty : Quantity
+        The last fill quantity for the position.
+    last_px : Price
+        The last fill price for the position (not average price).
+    currency : Currency
+        The position quote currency.
+    avg_px_open : Decimal
+        The average open price.
+    realized_pnl : Money
+        The realized PnL for the position.
+    event_id : UUID4
+        The event ID.
+    ts_event : int64
+        The UNIX timestamp (nanoseconds) when the position opened event occurred.
+    ts_init : int64
+        The UNIX timestamp (nanoseconds) when the object was initialized.
     """
 
     def __init__(
@@ -240,53 +283,6 @@ cdef class PositionOpened(PositionEvent):
         int64_t ts_event,
         int64_t ts_init,
     ):
-        """
-        Initialize a new instance of the ``PositionOpened`` class.
-
-        Parameters
-        ----------
-        trader_id : TraderId
-            The trader ID.
-        strategy_id : StrategyId
-            The strategy ID.
-        instrument_id : InstrumentId
-            The instrument ID.
-        position_id : PositionId
-            The position IDt.
-        account_id : AccountId
-            The strategy ID.
-        from_order : ClientOrderId
-            The client order ID for the order which initially opened the position.
-        strategy_id : StrategyId
-            The strategy ID associated with the event.
-        entry : OrderSide
-            The position entry order side.
-        side : PositionSide
-            The current position side.
-        net_qty : Decimal
-            The current net quantity (positive for ``LONG``, negative for ``SHORT``).
-        quantity : Quantity
-            The current open quantity.
-        peak_qty : Quantity
-            The peak directional quantity reached by the position.
-        last_qty : Quantity
-            The last fill quantity for the position.
-        last_px : Price
-            The last fill price for the position (not average price).
-        currency : Currency
-            The position quote currency.
-        avg_px_open : Decimal
-            The average open price.
-        realized_pnl : Money
-            The realized PnL for the position.
-        event_id : UUID4
-            The event ID.
-        ts_event : int64
-            The UNIX timestamp (nanoseconds) when the position opened event occurred.
-        ts_init : int64
-            The UNIX timestamp (nanoseconds) when the object was initialized.
-
-        """
         assert side != PositionSide.FLAT  # Design-time check: position side matches event
         super().__init__(
             trader_id,
@@ -463,6 +459,59 @@ cdef class PositionOpened(PositionEvent):
 cdef class PositionChanged(PositionEvent):
     """
     Represents an event where a position has changed.
+
+    Parameters
+    ----------
+    trader_id : TraderId
+        The trader ID.
+    strategy_id : StrategyId
+        The strategy ID.
+    instrument_id : InstrumentId
+        The instrument ID.
+    position_id : PositionId
+        The position IDt.
+    account_id : AccountId
+        The strategy ID.
+    from_order : ClientOrderId
+        The client order ID for the order which initially opened the position.
+    strategy_id : StrategyId
+        The strategy ID associated with the event.
+    entry : OrderSide
+        The position entry order side.
+    side : PositionSide
+        The current position side.
+    net_qty : Decimal
+        The current net quantity (positive for ``LONG``, negative for ``SHORT``).
+    quantity : Quantity
+        The current open quantity.
+    peak_qty : Quantity
+        The peak directional quantity reached by the position.
+    last_qty : Quantity
+        The last fill quantity for the position.
+    last_px : Price
+        The last fill price for the position (not average price).
+    currency : Currency
+        The position quote currency.
+    avg_px_open : Decimal
+        The average open price.
+    avg_px_close : Decimal, optional
+        The average close price.
+    realized_points : Decimal
+        The realized points for the position.
+    realized_return : Decimal
+        The realized return for the position.
+    realized_pnl : Money
+        The realized PnL for the position.
+    unrealized_pnl : Money
+        The unrealized PnL for the position.
+    event_id : UUID4
+        The event ID.
+    ts_opened : int64
+        The UNIX timestamp (nanoseconds) when the position opened event occurred.
+    ts_event : int64
+        The UNIX timestamp (nanoseconds) when the position changed event occurred.
+    ts_init : int64
+        The UNIX timestamp (nanoseconds) when the object was initialized.
     """
 
     def __init__(
@@ -492,63 +541,6 @@ cdef class PositionChanged(PositionEvent):
         int64_t ts_event,
         int64_t ts_init,
     ):
-        """
-        Initialize a new instance of the ``PositionChanged`` class.
-
-        Parameters
-        ----------
-        trader_id : TraderId
-            The trader ID.
-        strategy_id : StrategyId
-            The strategy ID.
-        instrument_id : InstrumentId
-            The instrument ID.
-        position_id : PositionId
-            The position IDt.
-        account_id : AccountId
-            The strategy ID.
-        from_order : ClientOrderId
-            The client order ID for the order which initially opened the position.
-        strategy_id : StrategyId
-            The strategy ID associated with the event.
-        entry : OrderSide
-            The position entry order side.
-        side : PositionSide
-            The current position side.
-        net_qty : Decimal
-            The current net quantity (positive for ``LONG``, negative for ``SHORT``).
-        quantity : Quantity
-            The current open quantity.
-        peak_qty : Quantity
-            The peak directional quantity reached by the position.
-        last_qty : Quantity
-            The last fill quantity for the position.
-        last_px : Price
-            The last fill price for the position (not average price).
-        currency : Currency
-            The position quote currency.
-        avg_px_open : Decimal
-            The average open price.
-        avg_px_close : Decimal, optional
-            The average close price.
-        realized_points : Decimal
-            The realized points for the position.
-        realized_return : Decimal
-            The realized return for the position.
-        realized_pnl : Money
-            The realized PnL for the position.
-        unrealized_pnl : Money
-            The unrealized PnL for the position.
-        event_id : UUID4
-            The event ID.
-        ts_opened : int64
-            The UNIX timestamp (nanoseconds) when the position opened event occurred.
-        ts_event : int64
-            The UNIX timestamp (nanoseconds) when the position changed event occurred.
-        ts_init : int64
-            The UNIX timestamp (nanoseconds) when the object was initialized.
-
-        """
         assert side != PositionSide.FLAT  # Design-time check: position side matches event
         super().__init__(
             trader_id,
@@ -741,6 +733,59 @@ cdef class PositionChanged(PositionEvent):
 cdef class PositionClosed(PositionEvent):
     """
     Represents an event where a position has been closed.
+
+    Parameters
+    ----------
+    trader_id : TraderId
+        The trader ID.
+    strategy_id : StrategyId
+        The strategy ID.
+    instrument_id : InstrumentId
+        The instrument ID.
+    position_id : PositionId
+        The position IDt.
+    account_id : AccountId
+        The strategy ID.
+    from_order : ClientOrderId
+        The client order ID for the order which initially opened the position.
+    strategy_id : StrategyId
+        The strategy ID associated with the event.
+    entry : OrderSide
+        The position entry order side.
+    side : PositionSide
+        The current position side.
+    net_qty : Decimal
+        The current net quantity (positive for ``LONG``, negative for ``SHORT``).
+    quantity : Quantity
+        The current open quantity.
+    peak_qty : Quantity
+        The peak directional quantity reached by the position.
+    last_qty : Quantity
+        The last fill quantity for the position.
+    last_px : Price
+        The last fill price for the position (not average price).
+    currency : Currency
+        The position quote currency.
+    avg_px_open : Decimal
+        The average open price.
+    avg_px_close : Decimal
+        The average close price.
+    realized_points : Decimal
+        The realized points for the position.
+    realized_return : Decimal
+        The realized return for the position.
+    realized_pnl : Money
+        The realized PnL for the position.
+    event_id : UUID4
+        The event ID.
+    ts_opened : int64
+        The UNIX timestamp (nanoseconds) when the position opened event occurred.
+    ts_closed : int64
+        The UNIX timestamp (nanoseconds) when the position closed event occurred.
+    duration_ns : int64
+        The total open duration (nanoseconds).
+    ts_init : int64
+        The UNIX timestamp (nanoseconds) when the object was initialized.
     """
 
     def __init__(
@@ -770,63 +815,6 @@ cdef class PositionClosed(PositionEvent):
         int64_t duration_ns,
         int64_t ts_init,
     ):
-        """
-        Initialize a new instance of the ``PositionClosed`` class.
-
-        Parameters
-        ----------
-        trader_id : TraderId
-            The trader ID.
-        strategy_id : StrategyId
-            The strategy ID.
-        instrument_id : InstrumentId
-            The instrument ID.
-        position_id : PositionId
-            The position IDt.
-        account_id : AccountId
-            The strategy ID.
-        from_order : ClientOrderId
-            The client order ID for the order which initially opened the position.
-        strategy_id : StrategyId
-            The strategy ID associated with the event.
-        entry : OrderSide
-            The position entry order side.
-        side : PositionSide
-            The current position side.
-        net_qty : Decimal
-            The current net quantity (positive for ``LONG``, negative for ``SHORT``).
-        quantity : Quantity
-            The current open quantity.
-        peak_qty : Quantity
-            The peak directional quantity reached by the position.
-        last_qty : Quantity
-            The last fill quantity for the position.
-        last_px : Price
-            The last fill price for the position (not average price).
-        currency : Currency
-            The position quote currency.
-        avg_px_open : Decimal
-            The average open price.
-        avg_px_close : Decimal
-            The average close price.
-        realized_points : Decimal
-            The realized points for the position.
-        realized_return : Decimal
-            The realized return for the position.
-        realized_pnl : Money
-            The realized PnL for the position.
-        event_id : UUID4
-            The event ID.
-        ts_opened : int64
-            The UNIX timestamp (nanoseconds) when the position opened event occurred.
-        ts_closed : int64
-            The UNIX timestamp (nanoseconds) when the position closed event occurred.
-        duration_ns : int64
-            The total open duration (nanoseconds).
-        ts_init : int64
-            The UNIX timestamp (nanoseconds) when the object was initialized.
-
-        """
         assert side == PositionSide.FLAT  # Design-time check: position side matches event
         super().__init__(
             trader_id,

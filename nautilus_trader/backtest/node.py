@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2021 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -15,13 +15,14 @@
 
 import itertools
 import pickle
-from typing import List, Optional
+from typing import Dict, List, Optional
 
 import cloudpickle
 import dask
 import pandas as pd
 from dask.base import normalize_token
 from dask.delayed import Delayed
+from dask.utils import parse_timedelta
 
 from nautilus_trader.backtest.config import BacktestDataConfig
 from nautilus_trader.backtest.config import BacktestRunConfig
@@ -32,17 +33,18 @@ from nautilus_trader.backtest.results import BacktestResult
 from nautilus_trader.common.actor import Actor
 from nautilus_trader.common.config import ActorFactory
 from nautilus_trader.common.config import ImportableActorConfig
-from nautilus_trader.core.datetime import maybe_dt_to_unix_nanos
 from nautilus_trader.core.inspect import is_nautilus_class
 from nautilus_trader.model.c_enums.book_type import BookTypeParser
 from nautilus_trader.model.currency import Currency
 from nautilus_trader.model.data.bar import Bar
+from nautilus_trader.model.data.base import DataType
+from nautilus_trader.model.data.base import GenericData
 from nautilus_trader.model.data.tick import QuoteTick
 from nautilus_trader.model.data.tick import TradeTick
 from nautilus_trader.model.data.venue import InstrumentStatusUpdate
 from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import OMSType
-from nautilus_trader.model.enums import VenueType
+from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.instruments.base import Instrument
 from nautilus_trader.model.objects import Money
@@ -64,11 +66,6 @@ class BacktestNode:
     These can be run synchronously, or can be built into a lazily evaluated
     graph for execution by a dask executor.
     """
-
-    def __init__(self):
-        """
-        Initialize a new instance of the ``BacktestNode`` class.
-        """
 
     def build_graph(self, run_configs: List[BacktestRunConfig]) -> Delayed:
         """
@@ -102,7 +99,7 @@ class BacktestNode:
 
         return self._gather_delayed(results)
 
-    def run_sync(self, run_configs: List[BacktestRunConfig]) -> List[BacktestResult]:
+    def run_sync(self, run_configs: List[BacktestRunConfig], **kwargs) -> List[BacktestResult]:
         """
         Run a list of backtest configs synchronously.
 
@@ -129,6 +126,7 @@ class BacktestNode:
                 strategy_configs=config.strategies,
                 persistence=config.persistence,
                 batch_size_bytes=config.batch_size_bytes,
+                **kwargs,
             )
             results.append(result)
 
@@ -171,6 +169,7 @@ class BacktestNode:
         strategy_configs: List[ImportableStrategyConfig],
         persistence: Optional[PersistenceConfig] = None,
         batch_size_bytes: Optional[int] = None,
+        return_engine: bool = False,
     ) -> BacktestResult:
         engine: BacktestEngine = self._create_engine(
             config=engine_config,
@@ -182,7 +181,7 @@ class BacktestNode:
         writer = None
         if persistence is not None:
             catalog = persistence.as_catalog()
-            backtest_dir = f"{persistence.catalog_path.strip('/')}/backtest/"
+            backtest_dir = f"{persistence.catalog_path.rstrip('/')}/backtest/"
             if not catalog.fs.exists(backtest_dir):
                 catalog.fs.mkdir(backtest_dir)
             writer = FeatherWriter(
@@ -208,7 +207,10 @@ class BacktestNode:
         # Create strategies
         if strategy_configs:
             strategies: List[TradingStrategy] = [
-                StrategyFactory.create(config) for config in strategy_configs
+                StrategyFactory.create(config)
+                if isinstance(config, ImportableStrategyConfig)
+                else config
+                for config in strategy_configs
             ]
             if strategies:
                 engine.add_strategies(strategies)
@@ -223,7 +225,9 @@ class BacktestNode:
 
         result = engine.get_result()
 
-        engine.dispose()
+        if return_engine:
+            return engine
+
         if writer is not None:
             writer.close()
 
@@ -251,12 +255,12 @@ class BacktestNode:
         for config in venue_configs:
             engine.add_venue(
                 venue=Venue(config.name),
-                venue_type=VenueType[config.venue_type],
                 oms_type=OMSType[config.oms_type],
                 account_type=AccountType[config.account_type],
                 base_currency=Currency.from_str(config.base_currency),
                 starting_balances=[Money.from_str(m) for m in config.starting_balances],
                 book_type=BookTypeParser.from_str_py(config.book_type),
+                routing=config.routing,
             )
         return engine
 
@@ -293,6 +297,10 @@ def backtest_runner(
 
     # Load data
     for config in data_configs:
+        t0 = pd.Timestamp.now()
+        engine._log.info(
+            f"Reading {config.data_type} backtest data for instrument={config.instrument_id}"
+        )
         d = config.load()
         if config.instrument_id and d["instrument"] is None:
             print(f"Requested instrument_id={d['instrument']} from data_config not found catalog")
@@ -300,8 +308,14 @@ def backtest_runner(
         if not d["data"]:
             print(f"No data found for {config}")
             continue
-        _load_engine_data(engine=engine, data=d)
 
+        t1 = pd.Timestamp.now()
+        engine._log.info(
+            f"Read {len(d['data']):,} events from parquet in {parse_timedelta(t1-t0)}s"
+        )
+        _load_engine_data(engine=engine, data=d)
+        t2 = pd.Timestamp.now()
+        engine._log.info(f"Engine load took {parse_timedelta(t2-t1)}s")
     return engine.run(run_config_id=run_config_id)
 
 
@@ -318,6 +332,21 @@ def groupby_datatype(data):
     ]
 
 
+def _extract_generic_data_client_id(data_configs: List[BacktestDataConfig]) -> Dict:
+    """
+    Extract a mapping of data_type : client_id from the list of `data_configs`. In the process of merging the streaming
+    data, we lose the client_id for generic data, we need to inject this back in so the backtest engine can be
+    correctly loaded.
+    """
+    data_client_ids = [
+        (config.data_type, config.client_id) for config in data_configs if config.client_id
+    ]
+    assert len(set(data_client_ids)) == len(
+        dict(data_client_ids)
+    ), "data_type found with multiple client_ids"
+    return dict(data_client_ids)
+
+
 def streaming_backtest_runner(
     run_config_id: str,
     engine: BacktestEngine,
@@ -326,18 +355,22 @@ def streaming_backtest_runner(
 ):
     config = data_configs[0]
     catalog: DataCatalog = config.catalog()
-    start_time = maybe_dt_to_unix_nanos(pd.Timestamp(min(dc.start_time for dc in data_configs)))
-    end_time = maybe_dt_to_unix_nanos(pd.Timestamp(max(dc.end_time for dc in data_configs)))
+
+    data_client_ids = _extract_generic_data_client_id(data_configs=data_configs)
 
     for data in batch_files(
         catalog=catalog,
         data_configs=data_configs,
-        start_time=start_time,
-        end_time=end_time,
         target_batch_size_bytes=batch_size_bytes,
     ):
         engine.clear_data()
         for data in groupby_datatype(data):
+            if data["type"] in data_client_ids:
+                # Generic data - manually re-add client_id as it gets lost in the streaming join
+                data.update({"client_id": ClientId(data_client_ids[data["type"]])})
+                data["data"] = [
+                    GenericData(data_type=DataType(data["type"]), data=d) for d in data["data"]
+                ]
             _load_engine_data(engine=engine, data=data)
         engine.run_streaming(run_config_id=run_config_id)
     engine.end_streaming()

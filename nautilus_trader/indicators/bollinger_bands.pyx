@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2021 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -34,6 +34,22 @@ cdef class BollingerBands(Indicator):
     trend lines plotted two standard deviations (positively and negatively) away
     from a simple moving average (SMA) of a instrument_id's price, but which can be
     adjusted to user preferences.
+
+    Parameters
+    ----------
+    period : int
+        The rolling window period for the indicator (> 0).
+    k : double
+        The standard deviation multiple for the indicator (> 0).
+    ma_type : MovingAverageType
+        The moving average type for the indicator.
+
+    Raises
+    ------
+    ValueError
+        If `period` is not positive (> 0).
+    ValueError
+        If `k` is not positive (> 0).
     """
 
     def __init__(
@@ -42,26 +58,6 @@ cdef class BollingerBands(Indicator):
         double k,
         ma_type not None: MovingAverageType=MovingAverageType.SIMPLE,
     ):
-        """
-        Initialize a new instance of the ``BollingerBands`` class.
-
-        Parameters
-        ----------
-        period : int
-            The rolling window period for the indicator (> 0).
-        k : double
-            The standard deviation multiple for the indicator (> 0).
-        ma_type : MovingAverageType
-            The moving average type for the indicator.
-
-        Raises
-        ------
-        ValueError
-            If `period` is not positive (> 0).
-        ValueError
-            If `k` is not positive (> 0).
-
-        """
         Condition.positive_int(period, "period")
         Condition.positive(k, "k")
         super().__init__(params=[period, k, ma_type.name])

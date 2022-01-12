@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2021 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -19,8 +19,9 @@
 import asyncio
 import hashlib
 import hmac
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
+import orjson
 from aiohttp import ClientResponse
 from aiohttp import ClientResponseError
 
@@ -47,11 +48,12 @@ class BinanceHttpClient(HttpClient):
         loop: asyncio.AbstractEventLoop,
         clock: LiveClock,
         logger: Logger,
-        key=None,
-        secret=None,
-        base_url=None,
-        timeout=None,
-        show_limit_usage=False,
+        key: Optional[str] = None,
+        secret: Optional[str] = None,
+        base_url: Optional[str] = None,
+        us: bool = False,
+        timeout: Optional[int] = None,
+        show_limit_usage: bool = False,
     ):
         super().__init__(
             loop=loop,
@@ -61,9 +63,11 @@ class BinanceHttpClient(HttpClient):
         self._key = key
         self._secret = secret
         self._base_url = base_url or self.BASE_URL
+        if self._base_url == self.BASE_URL and us:
+            self._base_url = self._base_url.replace("com", "us")
         self._show_limit_usage = show_limit_usage
         self._proxies = None
-        self._headers: Dict[str, str] = {
+        self._headers: Dict[str, Any] = {
             "Content-Type": "application/json;charset=utf-8",
             "User-Agent": "nautilus-trader/" + NAUTILUS_VERSION,
             "X-MBX-APIKEY": key,
@@ -79,10 +83,14 @@ class BinanceHttpClient(HttpClient):
         return self._key
 
     @property
+    def api_secret(self) -> str:
+        return self._secret
+
+    @property
     def headers(self):
         return self._headers
 
-    async def query(self, url_path, payload: Dict[str, str] = None) -> bytes:
+    async def query(self, url_path, payload: Dict[str, str] = None) -> Any:
         return await self.send_request("GET", url_path, payload=payload)
 
     async def limit_request(
@@ -90,7 +98,7 @@ class BinanceHttpClient(HttpClient):
         http_method: str,
         url_path: str,
         payload: Dict[str, Any] = None,
-    ) -> bytes:
+    ) -> Any:
         """
         Limit request is for those endpoints requiring an API key in the header.
         """
@@ -101,7 +109,7 @@ class BinanceHttpClient(HttpClient):
         http_method: str,
         url_path: str,
         payload: Dict[str, str] = None,
-    ) -> bytes:
+    ) -> Any:
         if payload is None:
             payload = {}
         payload["timestamp"] = str(self._clock.timestamp_ms())
@@ -115,7 +123,7 @@ class BinanceHttpClient(HttpClient):
         http_method: str,
         url_path: str,
         payload: Dict[str, str] = None,
-    ) -> bytes:
+    ) -> Any:
         """
         Limit encoded sign request.
 
@@ -139,7 +147,9 @@ class BinanceHttpClient(HttpClient):
         http_method: str,
         url_path: str,
         payload: Dict[str, str] = None,
-    ) -> bytes:
+    ) -> Any:
+        # TODO(cs): Uncomment for development
+        # print(f"{http_method} {url_path} {payload}")
         if payload is None:
             payload = {}
         try:
@@ -151,6 +161,7 @@ class BinanceHttpClient(HttpClient):
             )
         except ClientResponseError as ex:
             await self._handle_exception(ex)
+            return
 
         if self._show_limit_usage:
             limit_usage = {}
@@ -163,10 +174,10 @@ class BinanceHttpClient(HttpClient):
                 ):
                     limit_usage[key] = resp.headers[key]
 
-        return resp.data
-
-    def _prepare_params(self, params: Dict[str, str]) -> str:
-        return "&".join([k + "=" + v for k, v in params.items()])
+        try:
+            return orjson.loads(resp.data)
+        except orjson.JSONDecodeError:
+            self._log.error(f"Could not decode data to JSON: {resp.data}.")
 
     def _get_sign(self, data) -> str:
         m = hmac.new(self._secret.encode(), data.encode(), hashlib.sha256)

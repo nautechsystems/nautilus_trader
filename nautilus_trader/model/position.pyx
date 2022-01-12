@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2021 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -33,6 +33,20 @@ cdef class Position:
 
     The position ID may be assigned at the trading venue, or can be system
     generated depending on a strategies OMS (Order Management System) settings.
+
+    Parameters
+    ----------
+    instrument : Instrument
+        The trading instrument for the position.
+    fill : OrderFilled
+        The order fill event which opened the position.
+
+    Raises
+    ------
+    ValueError
+        If `instrument.id` is not equal to `fill.instrument_id`.
+    ValueError
+        If `event.position_id` is ``None``.
     """
 
     def __init__(
@@ -40,24 +54,6 @@ cdef class Position:
         Instrument instrument not None,
         OrderFilled fill not None,
     ):
-        """
-        Initialize a new instance of the ``Position`` class.
-
-        Parameters
-        ----------
-        instrument : Instrument
-            The trading instrument for the position.
-        fill : OrderFilled
-            The order fill event which opened the position.
-
-        Raises
-        ------
-        ValueError
-            If `instrument.id` is not equal to `fill.instrument_id`.
-        ValueError
-            If `event.position_id` is ``None``.
-
-        """
         Condition.equal(instrument.id, fill.instrument_id, "instrument.id", "fill.instrument_id")
         Condition.not_none(fill.position_id, "fill.position_id")
 

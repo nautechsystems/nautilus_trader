@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2021 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -29,6 +29,17 @@ from nautilus_trader.core.uuid cimport UUID4
 cdef class TimeEvent(Event):
     """
     Represents a time event occurring at the event timestamp.
+
+    Parameters
+    ----------
+    name : str
+        The event name.
+    event_id : UUID4
+        The event ID.
+    ts_event : int64
+        The UNIX timestamp (nanoseconds) when the time event occurred.
+    ts_init : int64
+        The UNIX timestamp (nanoseconds) when the object was initialized.
     """
 
     def __init__(
@@ -38,21 +49,6 @@ cdef class TimeEvent(Event):
         int64_t ts_event,
         int64_t ts_init,
     ):
-        """
-        Initialize a new instance of the ``TimeEvent`` class.
-
-        Parameters
-        ----------
-        name : str
-            The event name.
-        event_id : UUID4
-            The event ID.
-        ts_event : int64
-            The UNIX timestamp (nanoseconds) when the time event occurred.
-        ts_init : int64
-            The UNIX timestamp (nanoseconds) when the object was initialized.
-
-        """
         Condition.valid_string(name, "name")
         super().__init__(event_id, ts_event, ts_init)
 
@@ -62,9 +58,11 @@ cdef class TimeEvent(Event):
         return self.name == other.name
 
     def __repr__(self) -> str:
-        return (f"{type(self).__name__}("
-                f"name={self.name}, "
-                f"id={self.id})")
+        return (
+            f"{type(self).__name__}("
+            f"name={self.name}, "
+            f"id={self.id})"
+        )
 
 
 cdef class TimeEventHandler:
@@ -105,13 +103,35 @@ cdef class TimeEventHandler:
         return self.event.ts_event >= other.event.ts_event
 
     def __repr__(self) -> str:
-        return (f"{type(self).__name__}("
-                f"event={self.event})")
+        return (
+            f"{type(self).__name__}("
+            f"event={self.event})"
+        )
 
 
 cdef class Timer:
     """
     The abstract base class for all timers.
+
+    Parameters
+    ----------
+    name : str
+        The name for the timer.
+    callback : Callable[[TimeEvent], None]
+        The delegate to call at the next time.
+    interval_ns : int64
+        The time interval for the timer (not negative).
+    start_time_ns : int64
+        The UNIX time (nanoseconds) for timer start.
+    stop_time_ns : int64, optional
+        The UNIX time (nanoseconds) for timer stop (if 0 then timer is continuous).
+
+    Raises
+    ------
+    ValueError
+        If `name` is not a valid string.
+    TypeError
+        If `callback` is not of type `Callable`.
 
     Warnings
     --------
@@ -126,30 +146,6 @@ cdef class Timer:
         int64_t start_time_ns,
         int64_t stop_time_ns=0,
     ):
-        """
-        Initialize a new instance of the ``Timer`` class.
-
-        Parameters
-        ----------
-        name : str
-            The name for the timer.
-        callback : Callable[[TimeEvent], None]
-            The delegate to call at the next time.
-        interval_ns : int64
-            The time interval for the timer (not negative).
-        start_time_ns : int64
-            The UNIX time (nanoseconds) for timer start.
-        stop_time_ns : int64, optional
-            The UNIX time (nanoseconds) for timer stop (if 0 then timer is continuous).
-
-        Raises
-        ------
-        ValueError
-            If `name` is not a valid string.
-        TypeError
-            If `callback` is not of type `Callable`.
-
-        """
         Condition.valid_string(name, "name")
         Condition.callable(callback, "function")
 
@@ -171,13 +167,15 @@ cdef class Timer:
         return hash(self.name)
 
     def __repr__(self) -> str:
-        return (f"{type(self).__name__}("
-                f"name={self.name}, "
-                f"interval_ns={self.interval_ns}, "
-                f"start_time_ns={self.start_time_ns}, "
-                f"next_time_ns={self.next_time_ns}, "
-                f"stop_time_ns={self.stop_time_ns}, "
-                f"is_expired={self.is_expired})")
+        return (
+            f"{type(self).__name__}("
+            f"name={self.name}, "
+            f"interval_ns={self.interval_ns}, "
+            f"start_time_ns={self.start_time_ns}, "
+            f"next_time_ns={self.next_time_ns}, "
+            f"stop_time_ns={self.stop_time_ns}, "
+            f"is_expired={self.is_expired})"
+        )
 
     cpdef TimeEvent pop_event(self, UUID4 event_id, int64_t ts_init):
         """
@@ -226,6 +224,19 @@ cdef class Timer:
 cdef class TestTimer(Timer):
     """
     Provides a fake timer for backtesting and unit testing.
+
+    Parameters
+    ----------
+    name : str
+        The name for the timer.
+    callback : Callable[[TimeEvent], None]
+        The delegate to call at the next time.
+    interval_ns : int64
+        The time interval for the timer (not negative).
+    start_time_ns : int64
+        The UNIX time (nanoseconds) for timer start.
+    stop_time_ns : int64, optional
+        The UNIX time (nanoseconds) for timer stop (if 0 then timer is continuous).
     """
     __test__ = False
 
@@ -237,23 +248,6 @@ cdef class TestTimer(Timer):
         int64_t start_time_ns,
         int64_t stop_time_ns=0,
     ):
-        """
-        Initialize a new instance of the ``TestTimer`` class.
-
-        Parameters
-        ----------
-        name : str
-            The name for the timer.
-        callback : Callable[[TimeEvent], None]
-            The delegate to call at the next time.
-        interval_ns : int64
-            The time interval for the timer (not negative).
-        start_time_ns : int64
-            The UNIX time (nanoseconds) for timer start.
-        stop_time_ns : int64, optional
-            The UNIX time (nanoseconds) for timer stop (if 0 then timer is continuous).
-
-        """
         Condition.valid_string(name, "name")
         super().__init__(
             name=name,
@@ -319,6 +313,26 @@ cdef class LiveTimer(Timer):
     """
     The abstract base class for all live timers.
 
+    Parameters
+    ----------
+    name : str
+        The name for the timer.
+    callback : Callable[[TimeEvent], None]
+        The delegate to call at the next time.
+    interval_ns : int64
+        The time interval for the timer.
+    now_ns : int64
+        The datetime now (UTC).
+    start_time_ns : int64
+        The start datetime for the timer (UTC).
+    stop_time_ns : int64, optional
+        The stop datetime for the timer (UTC) (if None then timer repeats).
+
+    Raises
+    ------
+    TypeError
+        If `callback` is not of type `Callable`.
+
     Warnings
     --------
     This class should not be used directly, but through a concrete subclass.
@@ -333,30 +347,6 @@ cdef class LiveTimer(Timer):
         int64_t start_time_ns,
         int64_t stop_time_ns=0,
     ):
-        """
-        Initialize a new instance of the ``LiveTimer`` class.
-
-        Parameters
-        ----------
-        name : str
-            The name for the timer.
-        callback : Callable[[TimeEvent], None]
-            The delegate to call at the next time.
-        interval_ns : int64
-            The time interval for the timer.
-        now_ns : int64
-            The datetime now (UTC).
-        start_time_ns : int64
-            The start datetime for the timer (UTC).
-        stop_time_ns : int64, optional
-            The stop datetime for the timer (UTC) (if None then timer repeats).
-
-        Raises
-        ------
-        TypeError
-            If `callback` is not of type `Callable`.
-
-        """
         Condition.valid_string(name, "name")
         super().__init__(
             name=name,
@@ -394,6 +384,26 @@ cdef class LiveTimer(Timer):
 cdef class ThreadTimer(LiveTimer):
     """
     Provides a thread based timer for live trading.
+
+    Parameters
+    ----------
+    name : str
+        The name for the timer.
+    callback : Callable[[TimeEvent], None]
+        The delegate to call at the next time.
+    interval_ns : int64
+        The time interval for the timer.
+    now_ns : int64
+        The datetime now (UTC).
+    start_time_ns : int64
+        The start datetime for the timer (UTC).
+    stop_time_ns : int64, optional
+        The stop datetime for the timer (UTC) (if None then timer repeats).
+
+    Raises
+    ------
+    TypeError
+        If `callback` is not of type `Callable`.
     """
 
     def __init__(
@@ -405,30 +415,6 @@ cdef class ThreadTimer(LiveTimer):
         int64_t start_time_ns,
         int64_t stop_time_ns=0,
     ):
-        """
-        Initialize a new instance of the ``LiveTimer`` class.
-
-        Parameters
-        ----------
-        name : str
-            The name for the timer.
-        callback : Callable[[TimeEvent], None]
-            The delegate to call at the next time.
-        interval_ns : int64
-            The time interval for the timer.
-        now_ns : int64
-            The datetime now (UTC).
-        start_time_ns : int64
-            The start datetime for the timer (UTC).
-        stop_time_ns : int64, optional
-            The stop datetime for the timer (UTC) (if None then timer repeats).
-
-        Raises
-        ------
-        TypeError
-            If `callback` is not of type `Callable`.
-
-        """
         super().__init__(
             name=name,
             callback=callback,
@@ -453,6 +439,28 @@ cdef class ThreadTimer(LiveTimer):
 cdef class LoopTimer(LiveTimer):
     """
     Provides an event loop based timer for live trading.
+
+    Parameters
+    ----------
+    loop : asyncio.AbstractEventLoop
+        The event loop to run the timer on.
+    name : str
+        The name for the timer.
+    callback : Callable[[TimeEvent], None]
+        The delegate to call at the next time.
+    interval_ns : int64
+        The time interval for the timer.
+    now_ns : int64
+        The datetime now (UTC).
+    start_time_ns : int64
+        The start datetime for the timer (UTC).
+    stop_time_ns : int64, optional
+        The stop datetime for the timer (UTC) (if None then timer repeats).
+
+    Raises
+    ------
+    TypeError
+        If `callback` is not of type `Callable`.
     """
 
     def __init__(
@@ -465,32 +473,6 @@ cdef class LoopTimer(LiveTimer):
         int64_t start_time_ns,
         int64_t stop_time_ns=0,
     ):
-        """
-        Initialize a new instance of the ``LoopTimer`` class.
-
-        Parameters
-        ----------
-        loop : asyncio.AbstractEventLoop
-            The event loop to run the timer on.
-        name : str
-            The name for the timer.
-        callback : Callable[[TimeEvent], None]
-            The delegate to call at the next time.
-        interval_ns : int64
-            The time interval for the timer.
-        now_ns : int64
-            The datetime now (UTC).
-        start_time_ns : int64
-            The start datetime for the timer (UTC).
-        stop_time_ns : int64, optional
-            The stop datetime for the timer (UTC) (if None then timer repeats).
-
-        Raises
-        ------
-        TypeError
-            If `callback` is not of type `Callable`.
-
-        """
         Condition.valid_string(name, "name")
 
         self._loop = loop  # Assign here as `super().__init__` will call it

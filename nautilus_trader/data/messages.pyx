@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2021 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -25,6 +25,17 @@ cdef class DataCommand(Command):
     """
     The abstract base class for all data commands.
 
+    Parameters
+    ----------
+    client_id : ClientId
+        The data client ID for the command.
+    data_type : type
+        The data type for the command.
+    command_id : UUID4
+        The command ID.
+    ts_init : int64
+        The UNIX timestamp (nanoseconds) when the object was initialized.
+
     Warnings
     --------
     This class should not be used directly, but through a concrete subclass.
@@ -37,21 +48,6 @@ cdef class DataCommand(Command):
         UUID4 command_id not None,
         int64_t ts_init,
     ):
-        """
-        Initializes a new instance of the `DataCommand`` class.
-
-        Parameters
-        ----------
-        client_id : ClientId
-            The data client ID for the command.
-        data_type : type
-            The data type for the command.
-        command_id : UUID4
-            The command ID.
-        ts_init : int64
-            The UNIX timestamp (nanoseconds) when the object was initialized.
-
-        """
         super().__init__(command_id, ts_init)
 
         self.client_id = client_id
@@ -61,15 +57,28 @@ cdef class DataCommand(Command):
         return f"{type(self).__name__}({self.data_type})"
 
     def __repr__(self) -> str:
-        return (f"{type(self).__name__}("
-                f"client_id={self.client_id.value}, "
-                f"data_type={self.data_type}, "
-                f"id={self.id})")
+        return (
+            f"{type(self).__name__}("
+            f"client_id={self.client_id.value}, "
+            f"data_type={self.data_type}, "
+            f"id={self.id})"
+        )
 
 
 cdef class Subscribe(DataCommand):
     """
     Represents a command to subscribe to data.
+
+    Parameters
+    ----------
+    client_id : ClientId
+        The data client ID for the command.
+    data_type : type
+        The data type for the subscription.
+    command_id : UUID4
+        The command ID.
+    ts_init : int64
+        The UNIX timestamp (nanoseconds) when the object was initialized.
     """
 
     def __init__(
@@ -79,21 +88,6 @@ cdef class Subscribe(DataCommand):
         UUID4 command_id not None,
         int64_t ts_init,
     ):
-        """
-        Initialize a new instance of the ``Subscribe`` class.
-
-        Parameters
-        ----------
-        client_id : ClientId
-            The data client ID for the command.
-        data_type : type
-            The data type for the subscription.
-        command_id : UUID4
-            The command ID.
-        ts_init : int64
-            The UNIX timestamp (nanoseconds) when the object was initialized.
-
-        """
         super().__init__(
             client_id,
             data_type,
@@ -105,6 +99,17 @@ cdef class Subscribe(DataCommand):
 cdef class Unsubscribe(DataCommand):
     """
     Represents a command to unsubscribe from data.
+
+    Parameters
+    ----------
+    client_id : ClientId
+        The data client ID for the command.
+    data_type : type
+        The data type to unsubscribe from.
+    command_id : UUID4
+        The command ID.
+    ts_init : int64
+        The UNIX timestamp (nanoseconds) when the object was initialized.
     """
 
     def __init__(
@@ -114,21 +119,6 @@ cdef class Unsubscribe(DataCommand):
         UUID4 command_id not None,
         int64_t ts_init,
     ):
-        """
-        Initialize a new instance of the ``Unsubscribe`` class.
-
-        Parameters
-        ----------
-        client_id : ClientId
-            The data client ID for the command.
-        data_type : type
-            The data type to unsubscribe from.
-        command_id : UUID4
-            The command ID.
-        ts_init : int64
-            The UNIX timestamp (nanoseconds) when the object was initialized.
-
-        """
         super().__init__(
             client_id,
             data_type,
@@ -140,6 +130,19 @@ cdef class Unsubscribe(DataCommand):
 cdef class DataRequest(Request):
     """
     Represents a request for data.
+
+    Parameters
+    ----------
+    client_id : ClientId
+        The data client ID for the request.
+    data_type : type
+        The data type for the request.
+    callback : Callable[[Any], None]
+        The delegate to call with the data.
+    request_id : UUID4
+        The request ID.
+    ts_init : int64
+        The UNIX timestamp (nanoseconds) when the object was initialized.
     """
 
     def __init__(
@@ -150,23 +153,6 @@ cdef class DataRequest(Request):
         UUID4 request_id not None,
         int64_t ts_init,
     ):
-        """
-        Initialize a new instance of the ``DataRequest`` class.
-
-        Parameters
-        ----------
-        client_id : ClientId
-            The data client ID for the request.
-        data_type : type
-            The data type for the request.
-        callback : Callable[[Any], None]
-            The delegate to call with the data.
-        request_id : UUID4
-            The request ID.
-        ts_init : int64
-            The UNIX timestamp (nanoseconds) when the object was initialized.
-
-        """
         super().__init__(
             callback,
             request_id,
@@ -180,16 +166,33 @@ cdef class DataRequest(Request):
         return f"{type(self).__name__}({self.data_type})"
 
     def __repr__(self) -> str:
-        return (f"{type(self).__name__}("
-                f"client_id={self.client_id.value}, "
-                f"data_type={self.data_type}, "
-                f"callback={self.callback}, "
-                f"id={self.id})")
+        return (
+            f"{type(self).__name__}("
+            f"client_id={self.client_id.value}, "
+            f"data_type={self.data_type}, "
+            f"callback={self.callback}, "
+            f"id={self.id})"
+        )
 
 
 cdef class DataResponse(Response):
     """
     Represents a response with data.
+
+    Parameters
+    ----------
+    client_id : ClientId
+        The data client ID of the response.
+    data_type : type
+        The data type of the response.
+    data : object
+        The data of the response.
+    correlation_id : UUID4
+        The correlation ID.
+    response_id : UUID4
+        The response ID.
+    ts_init : int64
+        The UNIX timestamp (nanoseconds) when the object was initialized.
     """
 
     def __init__(
@@ -201,25 +204,6 @@ cdef class DataResponse(Response):
         UUID4 response_id not None,
         int64_t ts_init,
     ):
-        """
-        Initialize a new instance of the ``DataResponse`` class.
-
-        Parameters
-        ----------
-        client_id : ClientId
-            The data client ID of the response.
-        data_type : type
-            The data type of the response.
-        data : object
-            The data of the response.
-        correlation_id : UUID4
-            The correlation ID.
-        response_id : UUID4
-            The response ID.
-        ts_init : int64
-            The UNIX timestamp (nanoseconds) when the object was initialized.
-
-        """
         super().__init__(
             correlation_id,
             response_id,
@@ -234,8 +218,10 @@ cdef class DataResponse(Response):
         return f"{type(self).__name__}({self.data_type})"
 
     def __repr__(self) -> str:
-        return (f"{type(self).__name__}("
-                f"client_id={self.client_id.value}, "
-                f"data_type={self.data_type}, "
-                f"correlation_id={self.correlation_id}, "
-                f"id={self.id})")
+        return (
+            f"{type(self).__name__}("
+            f"client_id={self.client_id.value}, "
+            f"data_type={self.data_type}, "
+            f"correlation_id={self.correlation_id}, "
+            f"id={self.id})"
+        )

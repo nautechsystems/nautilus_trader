@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2021 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -52,7 +52,7 @@ cdef class TradeTick(Tick):
     """The traded size.\n\n:returns: `Quantity`"""
     cdef readonly AggressorSide aggressor_side
     """The trade aggressor side.\n\n:returns: `AggressorSide`"""
-    cdef readonly str match_id
+    cdef readonly str trade_id
     """The trade match ID.\n\n:returns: `str`"""
 
     @staticmethod

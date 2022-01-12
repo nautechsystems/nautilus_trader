@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2021 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -27,7 +27,6 @@ from nautilus_trader.live.risk_engine import LiveRiskEngine
 from nautilus_trader.model.commands.trading import SubmitOrder
 from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import OrderSide
-from nautilus_trader.model.enums import VenueType
 from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import Venue
@@ -99,8 +98,6 @@ class TestLiveExecutionPerformance(PerformanceHarness):
 
         self.exec_client = MockExecutionClient(
             client_id=ClientId("BINANCE"),
-            venue_type=VenueType.EXCHANGE,
-            account_id=self.account_id,
             account_type=AccountType.CASH,
             base_currency=None,  # Multi-currency account
             msgbus=self.msgbus,
@@ -135,6 +132,7 @@ class TestLiveExecutionPerformance(PerformanceHarness):
 
         self.strategy.submit_order(order)
 
+    @pytest.mark.skip(reason="For development only, event loop issue")
     def test_execute_command(self):
         order = self.strategy.order_factory.market(
             BTCUSDT_BINANCE.id,

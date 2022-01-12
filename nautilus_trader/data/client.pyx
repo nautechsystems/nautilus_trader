@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2021 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -36,6 +36,19 @@ cdef class DataClient(Component):
     """
     The abstract base class for all data clients.
 
+    Parameters
+    ----------
+    client_id : ClientId
+        The data client ID.
+    msgbus : MessageBus
+        The message bus for the client.
+    clock : Clock
+        The clock for the client.
+    logger : Logger
+        The logger for the client.
+    config : dict[str, object], optional
+        The configuration for the instance.
+
     Warnings
     --------
     This class should not be used directly, but through a concrete subclass.
@@ -50,23 +63,6 @@ cdef class DataClient(Component):
         Logger logger not None,
         dict config=None,
     ):
-        """
-        Initialize a new instance of the ``DataClient`` class.
-
-        Parameters
-        ----------
-        client_id : ClientId
-            The data client ID.
-        msgbus : MessageBus
-            The message bus for the client.
-        clock : Clock
-            The clock for the client.
-        logger : Logger
-            The logger for the client.
-        config : dict[str, object], optional
-            The configuration for the instance.
-
-        """
         if config is None:
             config = {}
         super().__init__(
@@ -160,7 +156,7 @@ cdef class DataClient(Component):
     def _handle_data_py(self, Data data):
         self._handle_data(data)
 
-    def _handle_data_response_py(self, DataType data_type, Data data, UUID4 correlation_id):
+    def _handle_data_response_py(self, DataType data_type, object data, UUID4 correlation_id):
         self._handle_data_response(data_type, data, correlation_id)
 
 # -- DATA HANDLERS ---------------------------------------------------------------------------------
@@ -168,7 +164,7 @@ cdef class DataClient(Component):
     cpdef void _handle_data(self, Data data) except *:
         self._msgbus.send(endpoint="DataEngine.process", msg=data)
 
-    cpdef void _handle_data_response(self, DataType data_type, Data data, UUID4 correlation_id) except *:
+    cpdef void _handle_data_response(self, DataType data_type, object data, UUID4 correlation_id) except *:
         cdef DataResponse response = DataResponse(
             client_id=self.id,
             data_type=data_type,
@@ -185,6 +181,21 @@ cdef class MarketDataClient(DataClient):
     """
     The abstract base class for all market data clients.
 
+    Parameters
+    ----------
+    client_id : ClientId
+        The data client ID (normally the venue).
+    msgbus : MessageBus
+        The message bus for the client.
+    cache : Cache
+        The cache for the client.
+    clock : Clock
+        The clock for the client.
+    logger : Logger
+        The logger for the client.
+    config : dict[str, object], optional
+        The configuration for the instance.
+
     Warnings
     --------
     This class should not be used directly, but through a concrete subclass.
@@ -199,25 +210,6 @@ cdef class MarketDataClient(DataClient):
         Logger logger not None,
         dict config=None,
     ):
-        """
-        Initialize a new instance of the ``MarketDataClient`` class.
-
-        Parameters
-        ----------
-        client_id : ClientId
-            The data client ID (normally the venue).
-        msgbus : MessageBus
-            The message bus for the client.
-        cache : Cache
-            The cache for the client.
-        clock : Clock
-            The clock for the client.
-        logger : Logger
-            The logger for the client.
-        config : dict[str, object], optional
-            The configuration for the instance.
-
-        """
         super().__init__(
             client_id=client_id,
             msgbus=msgbus,

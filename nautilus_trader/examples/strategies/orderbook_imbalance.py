@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2021 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -65,18 +65,14 @@ class OrderBookImbalance(TradingStrategy):
     imbalance in the order book.
 
     Cancels all orders and flattens all positions on stop.
+
+    Parameters
+    ----------
+    config : OrderbookImbalanceConfig
+        The configuration for the instance.
     """
 
     def __init__(self, config: OrderBookImbalanceConfig):
-        """
-        Initialize a new instance of the ``OrderbookImbalance`` class.
-
-        Parameters
-        ----------
-        config : OrderbookImbalanceConfig
-            The configuration for the instance.
-
-        """
         assert 0 < config.trigger_imbalance_ratio < 1
         super().__init__(config)
 

@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2021 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -15,14 +15,17 @@
 
 import dataclasses
 import importlib
+import sys
 from datetime import datetime
 from typing import Dict, List, Optional, Union
 
+import pandas as pd
 import pydantic
 from dask.base import tokenize
 
 from nautilus_trader.cache.cache import CacheConfig
 from nautilus_trader.common.config import ImportableActorConfig
+from nautilus_trader.core.datetime import maybe_dt_to_unix_nanos
 from nautilus_trader.data.engine import DataEngineConfig
 from nautilus_trader.execution.engine import ExecEngineConfig
 from nautilus_trader.infrastructure.cache import CacheDatabaseConfig
@@ -30,6 +33,7 @@ from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.persistence.config import PersistenceConfig
 from nautilus_trader.risk.config import RiskEngineConfig
 from nautilus_trader.trading.config import ImportableStrategyConfig
+from nautilus_trader.trading.strategy import TradingStrategy
 
 
 class Partialable:
@@ -81,7 +85,7 @@ class Partialable:
     def __dask_tokenize__(self):
         return tuple(self.fields())
 
-    def __repr__(self):
+    def __repr__(self):  # Adding -> causes error: Module has no attribute "_repr_fn"
         dataclass_repr_func = dataclasses._repr_fn(
             fields=list(self.fields().values()), globals=self.__dict__
         )
@@ -94,27 +98,28 @@ class Partialable:
 @pydantic.dataclasses.dataclass
 class BacktestVenueConfig(Partialable):
     """
-    Represents the venue configuration for one specific backtest engine.
+    Represents a venue configuration for one specific backtest engine.
     """
 
     name: str
-    venue_type: str
     oms_type: str
     account_type: str
     base_currency: Optional[str]
     starting_balances: List[str]
     book_type: str = "L1_TBBO"
+    routing: bool = False
     # fill_model: Optional[FillModel] = None  # TODO(cs): Implement next iteration
     # modules: Optional[List[SimulationModule]] = None  # TODO(cs): Implement next iteration
 
     def __dask_tokenize__(self):
         values = [
             self.name,
-            self.venue_type,
             self.oms_type,
             self.account_type,
             self.base_currency,
             ",".join(sorted([b for b in self.starting_balances])),
+            self.book_type,
+            self.routing,
             # self.modules,  # TODO(cs): Implement next iteration
         ]
         return tuple(values)
@@ -153,6 +158,18 @@ class BacktestDataConfig(Partialable):
             as_nautilus=True,
         )
 
+    @property
+    def start_time_nanos(self) -> int:
+        if self.start_time is None:
+            return 0
+        return maybe_dt_to_unix_nanos(pd.Timestamp(self.start_time))
+
+    @property
+    def end_time_nanos(self) -> int:
+        if self.end_time is None:
+            return sys.maxsize
+        return maybe_dt_to_unix_nanos(pd.Timestamp(self.end_time))
+
     def catalog(self):
         from nautilus_trader.persistence.catalog import DataCatalog
 
@@ -176,9 +193,10 @@ class BacktestDataConfig(Partialable):
         instruments = catalog.instruments(instrument_ids=self.instrument_id, as_nautilus=True)
         if not instruments:
             return {"data": [], "instrument": None}
+        data = catalog.query(**query)
         return {
             "type": query["cls"],
-            "data": catalog.query(**query),
+            "data": data,
             "instrument": instruments[0] if self.instrument_id else None,
             "client_id": ClientId(self.client_id) if self.client_id else None,
         }
@@ -188,6 +206,8 @@ class BacktestEngineConfig(pydantic.BaseModel):
     """
     Configuration for ``BacktestEngine`` instances.
 
+    Parameters
+    ----------
     trader_id : str, default="BACKTESTER-000"
         The trader ID.
     log_level : str, default="INFO"
@@ -223,7 +243,12 @@ class BacktestEngineConfig(pydantic.BaseModel):
         return tuple(self.dict().items())
 
 
-@pydantic.dataclasses.dataclass
+# Required for passing `TradingStrategy` to `BacktestRunConfig.strategies`
+class _ArbitraryTypes:
+    arbitrary_types_allowed = True
+
+
+@pydantic.dataclasses.dataclass(config=_ArbitraryTypes)
 class BacktestRunConfig(Partialable):
     """
     Represents the configuration for one specific backtest run (a single set of
@@ -234,7 +259,7 @@ class BacktestRunConfig(Partialable):
     venues: Optional[List[BacktestVenueConfig]] = None
     data: Optional[List[BacktestDataConfig]] = None
     actors: Optional[List[ImportableActorConfig]] = None
-    strategies: Optional[List[ImportableStrategyConfig]] = None
+    strategies: Optional[List[Union[ImportableStrategyConfig, TradingStrategy]]] = None
     persistence: Optional[PersistenceConfig] = None
     batch_size_bytes: Optional[int] = None
 

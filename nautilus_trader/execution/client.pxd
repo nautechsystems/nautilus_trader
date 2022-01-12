@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2021 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -22,7 +22,7 @@ from nautilus_trader.model.c_enums.account_type cimport AccountType
 from nautilus_trader.model.c_enums.liquidity_side cimport LiquiditySide
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
 from nautilus_trader.model.c_enums.order_type cimport OrderType
-from nautilus_trader.model.c_enums.venue_type cimport VenueType
+from nautilus_trader.model.commands.trading cimport CancelAllOrders
 from nautilus_trader.model.commands.trading cimport CancelOrder
 from nautilus_trader.model.commands.trading cimport ModifyOrder
 from nautilus_trader.model.commands.trading cimport SubmitOrder
@@ -48,11 +48,9 @@ cdef class ExecutionClient(Component):
     cdef readonly Account _account
 
     cdef readonly Venue venue
-    """The clients venue ID (if not multi-venue brokerage).\n\n:returns: `Venue` or ``None``"""
-    cdef readonly VenueType venue_type
-    """The clients venue type.\n\n:returns: `VenueType`"""
+    """The clients venue ID (if not a routing client).\n\n:returns: `Venue` or ``None``"""
     cdef readonly AccountId account_id
-    """The clients account ID.\n\n:returns: `AccountId`"""
+    """The clients account ID.\n\n:returns: `AccountId` or ``None``"""
     cdef readonly AccountType account_type
     """The clients account type.\n\n:returns: `AccountType`"""
     cdef readonly Currency base_currency
@@ -63,6 +61,7 @@ cdef class ExecutionClient(Component):
     cpdef Account get_account(self)
 
     cpdef void _set_connected(self, bint value=*) except *
+    cpdef void _set_account_id(self, AccountId account_id) except *
 
 # -- COMMAND HANDLERS ------------------------------------------------------------------------------
 
@@ -70,12 +69,14 @@ cdef class ExecutionClient(Component):
     cpdef void submit_order_list(self, SubmitOrderList command) except *
     cpdef void modify_order(self, ModifyOrder command) except *
     cpdef void cancel_order(self, CancelOrder command) except *
+    cpdef void cancel_all_orders(self, CancelAllOrders command) except *
 
 # -- EVENT HANDLERS --------------------------------------------------------------------------------
 
     cpdef void generate_account_state(
         self,
         list balances,
+        list margins,
         bint reported,
         int64_t ts_event,
         dict info=*,

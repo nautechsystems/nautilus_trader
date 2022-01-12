@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2021 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -20,29 +20,27 @@ cdef class Data:
     """
     The abstract base class for all data.
 
+    Parameters
+    ----------
+    ts_event : int64
+        The UNIX timestamp (nanoseconds) when the data event occurred.
+    ts_init : int64
+        The UNIX timestamp (nanoseconds) when the object was initialized.
+
     Warnings
     --------
     This class should not be used directly, but through a concrete subclass.
     """
 
     def __init__(self, int64_t ts_event, int64_t ts_init):
-        """
-        Initialize a new instance of the ``Data`` class.
-
-        Parameters
-        ----------
-        ts_event : int64
-            The UNIX timestamp (nanoseconds) when the data event occurred.
-        ts_init : int64
-            The UNIX timestamp (nanoseconds) when the object was initialized.
-
-        """
         # Design-time invariant: correct ordering of timestamps
         assert ts_event <= ts_init
         self.ts_event = ts_event
         self.ts_init = ts_init
 
     def __repr__(self) -> str:
-        return (f"{type(self).__name__}("
-                f"ts_event={self.ts_event}, "
-                f"ts_init{self.ts_init})")
+        return (
+            f"{type(self).__name__}("
+            f"ts_event={self.ts_event}, "
+            f"ts_init={self.ts_init})"
+        )

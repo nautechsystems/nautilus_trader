@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2021 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -36,6 +36,23 @@ cdef class LiveDataClient(DataClient):
     """
     The abstract base class for all live data clients.
 
+    Parameters
+    ----------
+    loop : asyncio.AbstractEventLoop
+        The event loop for the client.
+    client_id : ClientId
+        The client ID.
+    msgbus : MessageBus
+        The message bus for the client.
+    cache : Cache
+        The cache for the client.
+    clock : LiveClock
+        The clock for the client.
+    logger : Logger
+        The logger for the client.
+    config : dict[str, object], optional
+        The configuration for the instance.
+
     Warnings
     --------
     This class should not be used directly, but through a concrete subclass.
@@ -51,27 +68,6 @@ cdef class LiveDataClient(DataClient):
         Logger logger not None,
         dict config=None,
     ):
-        """
-        Initialize a new instance of the ``LiveDataClient`` class.
-
-        Parameters
-        ----------
-        loop : asyncio.AbstractEventLoop
-            The event loop for the client.
-        client_id : ClientId
-            The client ID.
-        msgbus : MessageBus
-            The message bus for the client.
-        cache : Cache
-            The cache for the client.
-        clock : LiveClock
-            The clock for the client.
-        logger : Logger
-            The logger for the client.
-        config : dict[str, object], optional
-            The configuration for the instance.
-
-        """
         super().__init__(
             client_id=client_id,
             msgbus=msgbus,
@@ -111,6 +107,25 @@ cdef class LiveMarketDataClient(MarketDataClient):
     """
     The abstract base class for all live data clients.
 
+    Parameters
+    ----------
+    loop : asyncio.AbstractEventLoop
+        The event loop for the client.
+    client_id : ClientId
+        The client ID.
+    instrument_provider : InstrumentProvider
+        The instrument provider for the client.
+    msgbus : MessageBus
+        The message bus for the client.
+    cache : Cache
+        The cache for the client.
+    clock : LiveClock
+        The clock for the client.
+    logger : Logger
+        The logger for the client.
+    config : dict[str, object], optional
+        The configuration for the instance.
+
     Warnings
     --------
     This class should not be used directly, but through a concrete subclass.
@@ -127,29 +142,6 @@ cdef class LiveMarketDataClient(MarketDataClient):
         Logger logger not None,
         dict config=None,
     ):
-        """
-        Initialize a new instance of the ``LiveMarketDataClient`` class.
-
-        Parameters
-        ----------
-        loop : asyncio.AbstractEventLoop
-            The event loop for the client.
-        client_id : ClientId
-            The client ID.
-        instrument_provider : InstrumentProvider
-            The instrument provider for the client.
-        msgbus : MessageBus
-            The message bus for the client.
-        cache : Cache
-            The cache for the client.
-        clock : LiveClock
-            The clock for the client.
-        logger : Logger
-            The logger for the client.
-        config : dict[str, object], optional
-            The configuration for the instance.
-
-        """
         super().__init__(
             client_id=client_id,
             msgbus=msgbus,

@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2021 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -74,22 +74,18 @@ class EMACrossBracket(TradingStrategy):
     """
     A simple moving average cross example strategy.
 
-    When the fast EMA crosses the slow EMA then enter a position in that
-    direction.
+    When the fast EMA crosses the slow EMA then enter a position at the market
+    in that direction.
 
     Cancels all orders and flattens all positions on stop.
+
+    Parameters
+    ----------
+    config : EMACrossConfig
+        The configuration for the instance.
     """
 
     def __init__(self, config: EMACrossBracketConfig):
-        """
-        Initialize a new instance of the ``EMACrossBracket`` class.
-
-        Parameters
-        ----------
-        config : EMACrossConfig
-            The configuration for the instance.
-
-        """
         super().__init__(config)
 
         # Configuration

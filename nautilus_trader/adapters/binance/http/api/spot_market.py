@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2021 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -16,7 +16,7 @@
 #  Original author: Jeremy https://github.com/2pd
 # -------------------------------------------------------------------------------------------------
 
-from typing import Dict, Optional
+from typing import Any, Dict, List, Optional
 
 from nautilus_trader.adapters.binance.common import format_symbol
 from nautilus_trader.adapters.binance.http.client import BinanceHttpClient
@@ -27,25 +27,21 @@ from nautilus_trader.core.correctness import PyCondition
 class BinanceSpotMarketHttpAPI:
     """
     Provides access to the `Binance SPOT Market` HTTP REST API.
+
+    Parameters
+    ----------
+    client : BinanceHttpClient
+        The Binance REST API client.
     """
 
     BASE_ENDPOINT = "/api/v3/"
 
     def __init__(self, client: BinanceHttpClient):
-        """
-        Initialize a new instance of the ``BinanceSpotMarketHttpAPI`` class.
-
-        Parameters
-        ----------
-        client : BinanceHttpClient
-            The Binance REST API client.
-
-        """
         PyCondition.not_none(client, "client")
 
         self.client = client
 
-    async def ping(self) -> bytes:
+    async def ping(self) -> Dict[str, Any]:
         """
         Test the connectivity to the REST API.
 
@@ -53,8 +49,7 @@ class BinanceSpotMarketHttpAPI:
 
         Returns
         -------
-        bytes
-            The raw response content.
+        dict[str, Any]
 
         References
         ----------
@@ -63,7 +58,7 @@ class BinanceSpotMarketHttpAPI:
         """
         return await self.client.query(url_path=self.BASE_ENDPOINT + "ping")
 
-    async def time(self) -> bytes:
+    async def time(self) -> Dict[str, Any]:
         """
         Test connectivity to the Rest API and get the current server time.
 
@@ -72,8 +67,7 @@ class BinanceSpotMarketHttpAPI:
 
         Returns
         -------
-        bytes
-            The raw response content.
+        dict[str, Any]
 
         References
         ----------
@@ -82,7 +76,7 @@ class BinanceSpotMarketHttpAPI:
         """
         return await self.client.query(url_path=self.BASE_ENDPOINT + "time")
 
-    async def exchange_info(self, symbol: str = None, symbols: list = None) -> bytes:
+    async def exchange_info(self, symbol: str = None, symbols: list = None) -> Dict[str, Any]:
         """
         Get current exchange trading rules and symbol information.
         Only either `symbol` or `symbols` should be passed.
@@ -99,8 +93,7 @@ class BinanceSpotMarketHttpAPI:
 
         Returns
         -------
-        bytes
-            The raw response content.
+        dict[str, Any]
 
         References
         ----------
@@ -121,7 +114,7 @@ class BinanceSpotMarketHttpAPI:
             payload=payload,
         )
 
-    async def depth(self, symbol: str, limit: Optional[int] = None) -> bytes:
+    async def depth(self, symbol: str, limit: Optional[int] = None) -> Dict[str, Any]:
         """
         Get orderbook.
 
@@ -137,8 +130,7 @@ class BinanceSpotMarketHttpAPI:
 
         Returns
         -------
-        bytes
-            The raw response content.
+        dict[str, Any]
 
         References
         ----------
@@ -154,7 +146,7 @@ class BinanceSpotMarketHttpAPI:
             payload=payload,
         )
 
-    async def trades(self, symbol: str, limit: Optional[int] = None) -> bytes:
+    async def trades(self, symbol: str, limit: Optional[int] = None) -> List[Dict[str, Any]]:
         """
         Get recent market trades.
 
@@ -170,8 +162,7 @@ class BinanceSpotMarketHttpAPI:
 
         Returns
         -------
-        bytes
-            The raw response content.
+        list[dict[str, Any]]
 
         References
         ----------
@@ -192,7 +183,7 @@ class BinanceSpotMarketHttpAPI:
         symbol: str,
         from_id: Optional[int] = None,
         limit: Optional[int] = None,
-    ) -> bytes:
+    ) -> Dict[str, Any]:
         """
         Get older market trades.
 
@@ -210,8 +201,7 @@ class BinanceSpotMarketHttpAPI:
 
         Returns
         -------
-        bytes
-            The raw response content.
+        dict[str, Any]
 
         References
         ----------
@@ -237,7 +227,7 @@ class BinanceSpotMarketHttpAPI:
         start_time_ms: Optional[int] = None,
         end_time_ms: Optional[int] = None,
         limit: Optional[int] = None,
-    ) -> bytes:
+    ) -> Dict[str, Any]:
         """
         Get recent aggregated market trades.
 
@@ -259,8 +249,7 @@ class BinanceSpotMarketHttpAPI:
 
         Returns
         -------
-        bytes
-            The raw response content.
+        dict[str, Any]
 
         References
         ----------
@@ -289,7 +278,7 @@ class BinanceSpotMarketHttpAPI:
         start_time_ms: Optional[int] = None,
         end_time_ms: Optional[int] = None,
         limit: Optional[int] = None,
-    ) -> bytes:
+    ) -> List[List[Any]]:
         """
         Kline/Candlestick Data.
 
@@ -307,6 +296,10 @@ class BinanceSpotMarketHttpAPI:
             The UNIX timestamp (milliseconds) to get aggregate trades until INCLUSIVE.
         limit : int, optional
             The limit for the response. Default 500; max 1000.
+
+        Returns
+        -------
+        list[list[Any]]
 
         References
         ----------
@@ -329,7 +322,7 @@ class BinanceSpotMarketHttpAPI:
             payload=payload,
         )
 
-    async def avg_price(self, symbol: str) -> bytes:
+    async def avg_price(self, symbol: str) -> Dict[str, Any]:
         """
         Get the current average price for the given symbol.
 
@@ -342,8 +335,7 @@ class BinanceSpotMarketHttpAPI:
 
         Returns
         -------
-        bytes
-            The raw response content.
+        dict[str, Any]
 
         References
         ----------
@@ -357,7 +349,7 @@ class BinanceSpotMarketHttpAPI:
             payload=payload,
         )
 
-    async def ticker_24hr(self, symbol: str = None) -> bytes:
+    async def ticker_24hr(self, symbol: str = None) -> Dict[str, Any]:
         """
         24hr Ticker Price Change Statistics.
 
@@ -370,8 +362,7 @@ class BinanceSpotMarketHttpAPI:
 
         Returns
         -------
-        bytes
-            The raw response content.
+        dict[str, Any]
 
         References
         ----------
@@ -387,7 +378,7 @@ class BinanceSpotMarketHttpAPI:
             payload=payload,
         )
 
-    async def ticker_price(self, symbol: str = None) -> bytes:
+    async def ticker_price(self, symbol: str = None) -> Dict[str, Any]:
         """
         Symbol Price Ticker.
 
@@ -400,8 +391,7 @@ class BinanceSpotMarketHttpAPI:
 
         Returns
         -------
-        bytes
-            The raw response content.
+        dict[str, Any]
 
         References
         ----------
@@ -417,7 +407,7 @@ class BinanceSpotMarketHttpAPI:
             payload=payload,
         )
 
-    async def book_ticker(self, symbol: str = None) -> bytes:
+    async def book_ticker(self, symbol: str = None) -> Dict[str, Any]:
         """
         Symbol Order Book Ticker.
 
@@ -430,8 +420,7 @@ class BinanceSpotMarketHttpAPI:
 
         Returns
         -------
-        bytes
-            The raw response content.
+        dict[str, Any]
 
         References
         ----------

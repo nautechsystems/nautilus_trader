@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2021 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -34,25 +34,21 @@ class PyExponentialMovingAverage(Indicator):
     """
     An indicator which calculates an exponential moving average across a
     rolling window.
+
+    Parameters
+    ----------
+    period : int
+        The rolling window period for the indicator (> 0).
+    price_type : PriceType
+        The specified price type for extracting values from quote ticks.
+
+    Raises
+    ------
+    ValueError
+        If `period` is not positive (> 0).
     """
 
     def __init__(self, period: int, price_type: PriceType = PriceType.LAST):
-        """
-        Initialize a new instance of the ``PyExponentialMovingAverage`` class.
-
-        Parameters
-        ----------
-        period : int
-            The rolling window period for the indicator (> 0).
-        price_type : PriceType
-            The specified price type for extracting values from quote ticks.
-
-        Raises
-        ------
-        ValueError
-            If `period` is not positive (> 0).
-
-        """
         PyCondition.positive_int(period, "period")
         super().__init__(params=[period])
 

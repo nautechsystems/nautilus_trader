@@ -2,6 +2,7 @@ import sys
 from decimal import Decimal
 from typing import List
 
+import dask
 import pytest
 from dask.utils import parse_bytes
 
@@ -23,11 +24,11 @@ pytestmark = pytest.mark.skipif(sys.platform == "win32", reason="test path broke
 
 class TestBacktestNode:
     def setup(self):
+        dask.config.set(scheduler="single-threaded")
         data_catalog_setup()
         self.catalog = DataCatalog.from_env()
         self.venue_config = BacktestVenueConfig(
             name="SIM",
-            venue_type="ECN",
             oms_type="HEDGING",
             account_type="MARGIN",
             base_currency="USD",
@@ -147,7 +148,6 @@ class TestBacktestNode:
         # Assert
         assert len(results) == 1
 
-    @pytest.mark.skipif(sys.platform == "darwin", reason="flaky on mac when run with whole suite")
     def test_backtest_build_graph(self):
         # Arrange
         node = BacktestNode()

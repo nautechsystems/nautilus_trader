@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2021 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -113,7 +113,6 @@ class TemplateLiveMarketDataClient(LiveMarketDataClient):
     | subscribe_ticker                      | optional    |
     | subscribe_quote_ticks                 | optional    |
     | subscribe_trade_ticks                 | optional    |
-    | subscribe_venue_status_update         | optional    |
     | subscribe_bars                        | optional    |
     | subscribe_instrument_status_updates   | optional    |
     | subscribe_instrument_close_prices     | optional    |
@@ -190,10 +189,6 @@ class TemplateLiveMarketDataClient(LiveMarketDataClient):
         raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
     def subscribe_trade_ticks(self, instrument_id: InstrumentId) -> None:
-        """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
-
-    def subscribe_venue_status_update(self, instrument_id: InstrumentId) -> None:
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 

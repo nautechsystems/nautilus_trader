@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2021 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -54,6 +54,22 @@ cdef class RedisCacheDatabase(CacheDatabase):
     """
     Provides a cache database backed by Redis.
 
+    Parameters
+    ----------
+    trader_id : TraderId
+        The trader ID for the database.
+    logger : Logger
+        The logger for the database.
+    serializer : Serializer
+        The serializer for database operations.
+    config : CacheDatabaseConfig, optional
+        The configuration for the instance.
+
+    Raises
+    ------
+    TypeError
+        If `config` is not of type `CacheDatabaseConfig`.
+
     Warnings
     --------
     Redis can only accurately store int64 types to 17 digits of precision.
@@ -72,26 +88,6 @@ cdef class RedisCacheDatabase(CacheDatabase):
         Serializer serializer not None,
         config: CacheDatabaseConfig=None,
     ):
-        """
-        Initialize a new instance of the ``RedisCacheDatabase`` class.
-
-        Parameters
-        ----------
-        trader_id : TraderId
-            The trader ID for the database.
-        logger : Logger
-            The logger for the database.
-        serializer : Serializer
-            The serializer for database operations.
-        config : CacheDatabaseConfig, optional
-            The configuration for the instance.
-
-        Raises
-        ------
-        TypeError
-            If `config` is not of type `CacheDatabaseConfig`.
-
-        """
         if config is None:
             config = CacheDatabaseConfig()
         Condition.type(config, CacheDatabaseConfig, "config")

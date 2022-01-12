@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2021 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -25,6 +25,19 @@ cdef class AverageTrueRange(Indicator):
     """
     An indicator which calculates the average true range across a rolling window.
     Different moving average types can be selected for the inner calculation.
+
+    Parameters
+    ----------
+    period : int
+        The rolling window period for the indicator (> 0).
+    ma_type : MovingAverageType
+        The moving average type for the indicator (cannot be None).
+    use_previous : bool
+        The boolean flag indicating whether previous price values should be used.
+        (note: only applicable for `update()`. `update_mid()` will need to
+        use previous price.
+    value_floor : double
+        The floor (minimum) output value for the indicator (>= 0).
     """
 
     def __init__(
@@ -34,23 +47,6 @@ cdef class AverageTrueRange(Indicator):
         bint use_previous=True,
         double value_floor=0,
     ):
-        """
-        Initialize a new instance of the ``AverageTrueRange`` class.
-
-        Parameters
-        ----------
-        period : int
-            The rolling window period for the indicator (> 0).
-        ma_type : MovingAverageType
-            The moving average type for the indicator (cannot be None).
-        use_previous : bool
-            The boolean flag indicating whether previous price values should be used.
-            (note: only applicable for `update()`. `update_mid()` will need to
-            use previous price.
-        value_floor : double
-            The floor (minimum) output value for the indicator (>= 0).
-
-        """
         Condition.positive_int(period, "period")
         Condition.not_negative(value_floor, "value_floor")
         params = [

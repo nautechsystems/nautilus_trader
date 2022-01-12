@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2021 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -370,6 +370,7 @@ class TestOrders:
             OrderSide.BUY,
             Quantity.from_int(100000),
             Price.from_str("1.00000"),
+            display_qty=Quantity.from_int(20000),
         )
 
         # Act
@@ -398,7 +399,7 @@ class TestOrders:
             "status": "INITIALIZED",
             "is_post_only": False,
             "is_reduce_only": False,
-            "is_hidden": False,
+            "display_qty": "20000",
             "order_list_id": None,
             "parent_order_id": None,
             "child_order_ids": None,
@@ -567,7 +568,7 @@ class TestOrders:
             "status": "INITIALIZED",
             "is_post_only": False,
             "is_reduce_only": False,
-            "is_hidden": False,
+            "display_qty": None,
             "order_list_id": None,
             "parent_order_id": None,
             "child_order_ids": None,

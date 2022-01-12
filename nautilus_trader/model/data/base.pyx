@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2021 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -19,46 +19,55 @@ from nautilus_trader.core.data cimport Data
 cdef class DataType:
     """
     Represents a data type including metadata.
+
+    Parameters
+    ----------
+    type : type
+        The ``Data`` type of the data.
+    metadata : dict
+        The data types metadata.
+
+    Raises
+    ------
+    TypeError
+        If `metadata` contains a key or value which is not hashable.
+
+    Warnings
+    --------
+    This class may be used as a key in hash maps throughout the system, thus
+    the key and value contents of metadata must themselves be hashable.
     """
 
-    def __init__(self, type type not None, dict metadata=None):    # noqa (shadows built-in type)
-        """
-        Initialize a new instance of the ``DataType`` class.
-
-        Parameters
-        ----------
-        type : type
-            The ``Data`` type of the data.
-        metadata : dict
-            The data types metadata.
-
-        Raises
-        ------
-        TypeError
-            If `metadata` contains a key or value which is not hashable.
-
-        Warnings
-        --------
-        This class may be used as a key in hash maps throughout the system, thus
-        the key and value contents of metadata must themselves be hashable.
-
-        """
-        if metadata is None:
-            metadata = {}
-
-        self._key = frozenset(metadata.items())
-        self._hash = hash((self.type, self._key))  # Assign hash for improved time complexity
+    def __init__(self, type type not None, dict metadata=None):  # noqa (shadows built-in type)
         self.type = type
-        self.metadata = metadata
+        self.metadata = metadata or {}
+        self.topic = self.type.__name__ + '.' + '.'.join([
+            f'{k}={v if v is not None else "*"}' for k, v in self.metadata.items()
+        ]) if self.metadata else self.type.__name__ + "*"
+
+        self._key = frozenset(self.metadata.items())
+        self._hash = hash((self.type, self._key))  # Assign hash for improved time complexity
 
     def __eq__(self, DataType other) -> bool:
         return self.type == other.type and self._key == other._key  # noqa
+
+    def __lt__(self, DataType other) -> bool:
+        return str(self) < str(other)
+
+    def __le__(self, DataType other) -> bool:
+        return str(self) <= str(other)
+
+    def __gt__(self, DataType other) -> bool:
+        return str(self) > str(other)
+
+    def __ge__(self, DataType other) -> bool:
+        return str(self) >= str(other)
 
     def __hash__(self) -> int:
         return self._hash
 
     def __str__(self) -> str:
-        return f"<{self.type.__name__}> {self.metadata}"
+        return f"{self.type.__name__}{self.metadata if self.metadata else ''}"
 
     def __repr__(self) -> str:
         return f"{type(self).__name__}(type={self.type.__name__}, metadata={self.metadata})"
@@ -67,6 +76,13 @@ cdef class DataType:
 cdef class GenericData(Data):
     """
     Provides a generic data wrapper which includes data type information.
+
+    Parameters
+    ----------
+    data_type : DataType
+        The data type.
+    data : Data
+        The data object to wrap.
     """
 
     def __init__(
@@ -74,17 +90,6 @@ cdef class GenericData(Data):
         DataType data_type not None,
         Data data not None,
     ):
-        """
-        Initialize a new instance of the ``GenericData`` class.
-
-        Parameters
-        ----------
-        data_type : DataType
-            The data type.
-        data : Data
-            The data object to wrap.
-
-        """
         super().__init__(data.ts_event, data.ts_init)
         self.data_type = data_type
         self.data = data

@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2021 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -76,6 +76,17 @@ cdef class Portfolio(PortfolioFacade):
 
     Currently there is a limitation of one account per ``ExecutionClient``
     instance.
+
+    Parameters
+    ----------
+    msgbus : MessageBus
+        The message bus for the engine.
+    cache : CacheFacade
+        The read-only cache for the portfolio.
+    clock : Clock
+        The clock for the portfolio.
+    logger : Logger
+        The logger for the portfolio.
     """
 
     def __init__(
@@ -85,21 +96,6 @@ cdef class Portfolio(PortfolioFacade):
         Clock clock not None,
         Logger logger=None,
     ):
-        """
-        Initialize a new instance of the ``Portfolio`` class.
-
-        Parameters
-        ----------
-        msgbus : MessageBus
-            The message bus for the engine.
-        cache : CacheFacade
-            The read-only cache for the portfolio.
-        clock : Clock
-            The clock for the portfolio.
-        logger : Logger
-            The logger for the portfolio.
-
-        """
         self._clock = clock
         self._uuid_factory = UUIDFactory()
         self._log = LoggerAdapter(component_name=type(self).__name__, logger=logger)
@@ -355,7 +351,7 @@ cdef class Portfolio(PortfolioFacade):
         else:
             account.apply(event)
 
-        self._log.debug(f"Updated with {event}.")
+        self._log.info(f"Updated with {event}.")
 
     cpdef void update_order(self, OrderEvent event) except *:
         """

@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2021 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -31,6 +31,25 @@ from nautilus_trader.msgbus.bus import MessageBus
 class TradingNodeBuilder:
     """
     Provides building services for a trading node.
+
+    Parameters
+    ----------
+    loop : asyncio.AbstractEventLoop
+        The event loop for the clients.
+    data_engine : LiveDataEngine
+        The data engine for the trading node.
+    exec_engine : LiveExecutionEngine
+        The execution engine for the trading node.
+    msgbus : MessageBus
+        The message bus for the trading node.
+    cache : Cache
+        The cache for building clients.
+    clock : LiveClock
+        The clock for building clients.
+    logger : LiveLogger
+        The logger for building clients.
+    log : LoggerAdapter
+        The trading nodes logger.
     """
 
     def __init__(
@@ -44,29 +63,6 @@ class TradingNodeBuilder:
         logger: LiveLogger,
         log: LoggerAdapter,
     ):
-        """
-        Initialize a new instance of the TradingNodeBuilder class.
-
-        Parameters
-        ----------
-        loop : asyncio.AbstractEventLoop
-            The event loop for the clients.
-        data_engine : LiveDataEngine
-            The data engine for the trading node.
-        exec_engine : LiveExecutionEngine
-            The execution engine for the trading node.
-        msgbus : MessageBus
-            The message bus for the trading node.
-        cache : Cache
-            The cache for building clients.
-        clock : LiveClock
-            The clock for building clients.
-        logger : LiveLogger
-            The logger for building clients.
-        log : LoggerAdapter
-            The trading nodes logger.
-
-        """
         self._msgbus = msgbus
         self._cache = cache
         self._clock = clock

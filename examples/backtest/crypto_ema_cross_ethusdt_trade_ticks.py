@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2021 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -30,7 +30,6 @@ from nautilus_trader.model.currencies import ETH
 from nautilus_trader.model.currencies import USDT
 from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import OMSType
-from nautilus_trader.model.enums import VenueType
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import Venue
@@ -69,7 +68,6 @@ if __name__ == "__main__":
     # Add starting balances for single-currency or multi-currency accounts
     engine.add_venue(
         venue=BINANCE,
-        venue_type=VenueType.EXCHANGE,
         oms_type=OMSType.NETTING,
         account_type=AccountType.CASH,  # Spot cash account
         base_currency=None,  # Multi-currency account

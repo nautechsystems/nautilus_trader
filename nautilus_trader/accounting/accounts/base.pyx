@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2021 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -51,10 +51,12 @@ cdef class Account:
 
     def __repr__(self) -> str:
         cdef str base_str = self.base_currency.code if self.base_currency is not None else None
-        return (f"{type(self).__name__}("
-                f"id={self.id.value}, "
-                f"type={AccountTypeParser.to_str(self.type)}, "
-                f"base={base_str})")
+        return (
+            f"{type(self).__name__}("
+            f"id={self.id.value}, "
+            f"type={AccountTypeParser.to_str(self.type)}, "
+            f"base={base_str})"
+        )
 
 # -- QUERIES ---------------------------------------------------------------------------------------
 

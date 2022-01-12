@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2021 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -66,23 +66,19 @@ except ImportError:  # pragma: no cover
 class TradingNode:
     """
     Provides an asynchronous network node for live trading.
+
+    Parameters
+    ----------
+    config : TradingNodeConfig, optional
+        The configuration for the instance.
+
+    Raises
+    ------
+    TypeError
+        If `config` is not of type `TradingNodeConfig`.
     """
 
     def __init__(self, config: Optional[TradingNodeConfig] = None):
-        """
-        Initialize a new instance of the TradingNode class.
-
-        Parameters
-        ----------
-        config : TradingNodeConfig, optional
-            The configuration for the instance.
-
-        Raises
-        ------
-        TypeError
-            If `config` is not of type `TradingNodeConfig`.
-
-        """
         if config is None:
             config = TradingNodeConfig()
         PyCondition.not_none(config, "config")

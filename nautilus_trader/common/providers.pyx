@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2021 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -29,10 +29,6 @@ cdef class InstrumentProvider:
     """
 
     def __init__(self):
-        """
-        Initialize a new instance of the ``InstrumentProvider`` class.
-
-        """
         self._instruments = {}  # type: dict[InstrumentId, Instrument]
         self._currencies = {}   # type: dict[str, Currency]
 
@@ -71,6 +67,7 @@ cdef class InstrumentProvider:
 
         """
         self._currencies[currency.code] = currency
+        Currency.register_c(currency, overwrite=False)
 
     cpdef void add(self, Instrument instrument) except *:
         """

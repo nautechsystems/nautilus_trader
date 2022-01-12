@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2021 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -31,6 +31,22 @@ from nautilus_trader.model.orderbook.data cimport Order
 cdef class SimulatedL1OrderBook(L1OrderBook):
     """
     Provides a simulated level 1 order book for backtesting.
+
+    Parameters
+    ----------
+    instrument_id : InstrumentId
+        The instrument ID for the book.
+    price_precision : uint8
+        The price precision of the books orders.
+    size_precision : uint8
+        The size precision of the books orders.
+
+    Raises
+    ------
+    OverflowError
+        If `price_precision` is negative (< 0).
+    OverflowError
+        If `size_precision` is negative (< 0).
     """
 
     def __init__(
@@ -39,26 +55,6 @@ cdef class SimulatedL1OrderBook(L1OrderBook):
         uint8_t price_precision,
         uint8_t size_precision,
     ):
-        """
-        Initialize a new instance of the ``SimulatedL1OrderBook`` class.
-
-        Parameters
-        ----------
-        instrument_id : InstrumentId
-            The instrument ID for the book.
-        price_precision : uint8
-            The price precision of the books orders.
-        size_precision : uint8
-            The size precision of the books orders.
-
-        Raises
-        ------
-        OverflowError
-            If `price_precision` is negative (< 0).
-        OverflowError
-            If `size_precision` is negative (< 0).
-
-        """
         super().__init__(
             instrument_id=instrument_id,
             price_precision=price_precision,
@@ -91,11 +87,11 @@ cdef class SimulatedL1OrderBook(L1OrderBook):
         elif isinstance(tick, TradeTick):
             self._update_trade_tick(tick)
 
-    cdef void _update_quote_tick(self, QuoteTick tick):
+    cdef void _update_quote_tick(self, QuoteTick tick) except *:
         self._update_bid(tick.bid, tick.bid_size)
         self._update_ask(tick.ask, tick.ask_size)
 
-    cdef void _update_trade_tick(self, TradeTick tick):
+    cdef void _update_trade_tick(self, TradeTick tick) except *:
         if tick.aggressor_side == AggressorSide.SELL:  # TAKER hit the bid
             self._update_bid(tick.price, tick.size)
             if self._top_ask and self._top_bid.price >= self._top_ask.price:
@@ -107,7 +103,7 @@ cdef class SimulatedL1OrderBook(L1OrderBook):
                 self._top_bid.price = self._top_ask.price
                 self._top_bid_level.price = self._top_ask.price
 
-    cdef void _update_bid(self, double price, double size):
+    cdef void _update_bid(self, double price, double size) except *:
         cdef Order bid
         if self._top_bid is None:
             bid = self._process_order(Order(price, size, OrderSide.BUY))
@@ -119,7 +115,7 @@ cdef class SimulatedL1OrderBook(L1OrderBook):
             self._top_bid.update_price(price)
             self._top_bid.update_size(size)
 
-    cdef void _update_ask(self, double price, double size):
+    cdef void _update_ask(self, double price, double size) except *:
         cdef Order ask
         if self._top_ask is None:
             ask = self._process_order(Order(price, size, OrderSide.SELL))
@@ -135,6 +131,22 @@ cdef class SimulatedL1OrderBook(L1OrderBook):
 cdef class SimulatedL2OrderBook(L2OrderBook):
     """
     Provides a simulated level 2 order book for backtesting.
+
+    Parameters
+    ----------
+    instrument_id : InstrumentId
+        The instrument ID for the book.
+    price_precision : uint8
+        The price precision of the books orders.
+    size_precision : uint8
+        The size precision of the books orders.
+
+    Raises
+    ------
+    OverflowError
+        If `price_precision` is negative (< 0).
+    OverflowError
+        If `size_precision` is negative (< 0).
     """
 
     def __init__(
@@ -143,26 +155,6 @@ cdef class SimulatedL2OrderBook(L2OrderBook):
         uint8_t price_precision,
         uint8_t size_precision,
     ):
-        """
-        Initialize a new instance of the ``SimulatedL2OrderBook`` class.
-
-        Parameters
-        ----------
-        instrument_id : InstrumentId
-            The instrument ID for the book.
-        price_precision : uint8
-            The price precision of the books orders.
-        size_precision : uint8
-            The size precision of the books orders.
-
-        Raises
-        ------
-        OverflowError
-            If `price_precision` is negative (< 0).
-        OverflowError
-            If `size_precision` is negative (< 0).
-
-        """
         super().__init__(
             instrument_id=instrument_id,
             price_precision=price_precision,
@@ -175,6 +167,22 @@ cdef class SimulatedL2OrderBook(L2OrderBook):
 cdef class SimulatedL3OrderBook(L3OrderBook):
     """
     Provides a simulated level 3 order book for backtesting.
+
+    Parameters
+    ----------
+    instrument_id : InstrumentId
+        The instrument ID for the book.
+    price_precision : uint8
+        The price precision of the books orders.
+    size_precision : uint8
+        The size precision of the books orders.
+
+    Raises
+    ------
+    OverflowError
+        If `price_precision` is negative (< 0).
+    OverflowError
+        If `size_precision` is negative (< 0).
     """
 
     def __init__(
@@ -183,26 +191,6 @@ cdef class SimulatedL3OrderBook(L3OrderBook):
         uint8_t price_precision,
         uint8_t size_precision,
     ):
-        """
-        Initialize a new instance of the ``SimulatedL3OrderBook`` class.
-
-        Parameters
-        ----------
-        instrument_id : InstrumentId
-            The instrument ID for the book.
-        price_precision : uint8
-            The price precision of the books orders.
-        size_precision : uint8
-            The size precision of the books orders.
-
-        Raises
-        ------
-        OverflowError
-            If `price_precision` is negative (< 0).
-        OverflowError
-            If `size_precision` is negative (< 0).
-
-        """
         super().__init__(
             instrument_id=instrument_id,
             price_precision=price_precision,

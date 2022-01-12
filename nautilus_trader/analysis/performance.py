@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2021 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -36,9 +36,6 @@ class PerformanceAnalyzer:
     """
 
     def __init__(self):
-        """
-        Initialize a new instance of the ``PerformanceAnalyzer`` class.
-        """
         self._account_balances_starting = {}  # type: dict[Currency, Money]
         self._account_balances = {}  # type: dict[Currency, Money]
         self._realized_pnls = {}  # type: dict[Currency, pd.Series]

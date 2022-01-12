@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2021 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -41,6 +41,6 @@ async def test_binance_spot_wallet_http_client():
     wallet = BinanceWalletHttpAPI(client=client)
     await client.connect()
     response = await wallet.trade_fee(symbol="BTCUSDT")
-    print(json.dumps(json.loads(response), indent=4))
+    print(json.dumps(response, indent=4))
 
     await client.disconnect()

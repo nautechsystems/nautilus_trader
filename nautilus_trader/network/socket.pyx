@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2021 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -25,6 +25,32 @@ from nautilus_trader.core.correctness cimport Condition
 cdef class SocketClient:
     """
     Provides a low-level generic socket base client.
+
+    Parameters
+    ----------
+    loop : asyncio.AbstractEventLoop
+        The event loop for the client.
+    logger : Logger
+        The logger for the client.
+    host : str
+        The host for the client.
+    port : int
+        The port for the client.
+    handler : Callable
+        The handler to process the raw bytes read.
+    ssl : bool
+        If SSL should be used for socket connection.
+    crlf : bytes, optional
+        The carriage return, line feed delimiter on which to split messages.
+    encoding : str, optional
+        The encoding to use when sending messages.
+
+    Raises
+    ------
+    ValueError
+        If `host` is not a valid string.
+    ValueError
+        If `port` is not positive (> 0).
     """
 
     def __init__(
@@ -38,36 +64,6 @@ cdef class SocketClient:
         bytes crlf=None,
         str encoding="utf-8",
     ):
-        """
-        Initialize a new instance of the ``WebSocketClient`` class.
-
-        Parameters
-        ----------
-        loop : asyncio.AbstractEventLoop
-            The event loop for the client.
-        logger : Logger
-            The logger for the client.
-        host : str
-            The host for the client.
-        port : int
-            The port for the client.
-        handler : Callable
-            The handler to process the raw bytes read.
-        ssl : bool
-            If SSL should be used for socket connection.
-        crlf : bytes, optional
-            The carriage return, line feed delimiter on which to split messages.
-        encoding : str, optional
-            The encoding to use when sending messages.
-
-        Raises
-        ------
-        ValueError
-            If `host` is not a valid string.
-        ValueError
-            If `port` is not positive (> 0).
-
-        """
         Condition.valid_string(host, "host")
         Condition.positive_int(port, "port")
 

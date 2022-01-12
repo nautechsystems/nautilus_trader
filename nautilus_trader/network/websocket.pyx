@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2021 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -16,9 +16,10 @@
 import asyncio
 import types
 from asyncio import Task
-from typing import Callable, List, Optional
+from typing import Callable, Dict, List, Optional
 
 import aiohttp
+import orjson
 from aiohttp import WSMessage
 from aiohttp import WSMsgType
 
@@ -26,10 +27,21 @@ from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.common.logging cimport LoggerAdapter
 from nautilus_trader.core.correctness cimport Condition
 
+from nautilus_trader.network.error import MaxRetriesExceeded
+
 
 cdef class WebSocketClient:
     """
     Provides a low-level web socket base client.
+
+    Parameters
+    ----------
+    loop : asyncio.AbstractEventLoop
+        The event loop for the client.
+    logger : LoggerAdapter
+        The logger adapter for the client.
+    handler : Callable[[bytes], None]
+        The handler for receiving raw data.
     """
 
     def __init__(
@@ -39,19 +51,6 @@ cdef class WebSocketClient:
         handler not None: Callable[[bytes], None],
         max_retry_connection=0,
     ):
-        """
-        Initialize a new instance of the ``WebSocketClient`` class.
-
-        Parameters
-        ----------
-        loop : asyncio.AbstractEventLoop
-            The event loop for the client.
-        logger : LoggerAdapter
-            The logger adapter for the client.
-        handler : Callable[[bytes], None]
-            The handler for rece    ived raw data.
-
-        """
         self._loop = loop
         self._log = LoggerAdapter(component_name=type(self).__name__, logger=logger)
         self._handler = handler
@@ -76,7 +75,7 @@ cdef class WebSocketClient:
     ) -> None:
         Condition.valid_string(ws_url, "ws_url")
 
-        self._log.debug(f"Connecting to {ws_url}")
+        self._log.debug(f"Connecting WebSocket to {ws_url}")
         self._session = aiohttp.ClientSession(loop=self._loop)
         self._socket = await self._session.ws_connect(url=ws_url, **ws_kwargs)
         self._ws_url = ws_url
@@ -98,12 +97,16 @@ cdef class WebSocketClient:
         pass
 
     async def disconnect(self) -> None:
+        self._log.debug("Closing WebSocket...")
         self._trigger_stop = True
         await self._socket.close()
         while not self._stopped:
             await self._sleep0()
         self.is_connected = False
         self._log.debug("WebSocket closed.")
+
+    async def send_json(self, msg: Dict) -> None:
+        await self.send(orjson.dumps(msg))
 
     async def send(self, raw: bytes) -> None:
         self._log.debug(f"[SEND] {raw}")
@@ -161,7 +164,8 @@ cdef class WebSocketClient:
                 raw = await self.recv()
                 if raw is None:
                     continue
-                self._log.debug(f"[RECV] {raw}")
+                # TODO(cs): Uncomment for development
+                # self._log.debug(f"[RECV] {raw}")
                 if raw is not None:
                     self._handler(raw)
             except Exception as ex:
@@ -185,7 +189,3 @@ cdef class WebSocketClient:
         # Uses a bare 'yield' expression (which Task.__step knows how to handle)
         # instead of creating a Future object.
         yield
-
-
-class MaxRetriesExceeded(ConnectionError):
-    pass

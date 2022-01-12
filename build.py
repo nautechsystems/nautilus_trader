@@ -18,10 +18,8 @@ from setuptools import Distribution
 from setuptools import Extension
 
 
-# If DEBUG mode is enabled, skip compiler optimizations
+# If DEBUG mode is enabled, include traces necessary for coverage, profiling and skip optimizations
 DEBUG_MODE = bool(os.getenv("DEBUG_MODE", ""))
-# If PROFILING mode is enabled, include traces necessary for coverage and profiling
-PROFILING_MODE = bool(os.getenv("PROFILING_MODE", ""))
 # If ANNOTATION mode is enabled, generate an annotated HTML version of the input source files
 ANNOTATION_MODE = bool(os.getenv("ANNOTATION_MODE", ""))
 # If PARALLEL build is enabled, uses all CPUs for compile stage of build
@@ -48,8 +46,8 @@ CYTHON_COMPILER_DIRECTIVES = {
     "language_level": "3",
     "cdivision": True,  # If division is as per C with no check for zero (35% speed up)
     "embedsignature": True,  # If docstrings should be embedded into C signatures
-    "profile": PROFILING_MODE,  # If we're profiling, turn on line tracing
-    "linetrace": PROFILING_MODE,
+    "profile": DEBUG_MODE,  # If we're debugging, turn on profiling
+    "linetrace": DEBUG_MODE,  # If we're debugging, turn on line tracing
     "warn.maybe_uninitialized": True,
 }
 
@@ -60,12 +58,12 @@ def _build_extensions() -> List[Extension]:
     # https://stackoverflow.com/questions/52749662/using-deprecated-numpy-api
     # From the Cython docs: "For the time being, it is just a warning that you can ignore."
     define_macros = [("NPY_NO_DEPRECATED_API", "NPY_1_7_API_VERSION")]
-    if PROFILING_MODE or ANNOTATION_MODE:
+    if DEBUG_MODE or ANNOTATION_MODE:
         # Profiling requires special macro directives
         define_macros.append(("CYTHON_TRACE", "1"))
 
     extra_compile_args = []
-    if platform.system() != "Windows":
+    if not DEBUG_MODE and platform.system() != "Windows":
         extra_compile_args.append("-O3")
         extra_compile_args.append("-pipe")
 
@@ -82,19 +80,16 @@ def _build_extensions() -> List[Extension]:
             language="c",
             extra_compile_args=extra_compile_args,
         )
-        for pyx in itertools.chain(
-            Path("examples").rglob("*.pyx"),
-            Path("nautilus_trader").rglob("*.pyx"),
-        )
+        for pyx in itertools.chain(Path("nautilus_trader").rglob("*.pyx"))
     ]
 
 
 def _build_distribution(extensions: List[Extension]) -> Distribution:
     # Build a Distribution using cythonize()
     # Determine the build output directory
-    if PROFILING_MODE:
-        # For subsequent annotation, the C source needs to be in
-        # the same tree as the Cython code.
+    if DEBUG_MODE:
+        # For subsequent debugging, the C source needs to be in
+        # the same tree as the Cython code (not in a separate build directory).
         build_dir = None
     elif ANNOTATION_MODE:
         build_dir = "build/annotated"
@@ -109,6 +104,7 @@ def _build_distribution(extensions: List[Extension]) -> Distribution:
                 compiler_directives=CYTHON_COMPILER_DIRECTIVES,
                 nthreads=os.cpu_count(),
                 build_dir=build_dir,
+                gdb_debug=DEBUG_MODE,
             ),
             zip_safe=False,
         )
@@ -133,7 +129,7 @@ def _copy_build_dir_to_project(cmd: build_ext) -> None:
     print("Copied all compiled '.so' dynamic library files into source")
 
 
-def build(setup_kwargs):
+def build() -> None:
     """Construct the extensions and distribution."""  # noqa
     # Create C Extensions to feed into cythonize()
     extensions = _build_extensions()
@@ -147,10 +143,9 @@ def build(setup_kwargs):
     cmd.ensure_finalized()
     cmd.run()
 
-    # Copy the build back into the project for packaging
-    _copy_build_dir_to_project(cmd)
-
-    return setup_kwargs
+    if not SKIP_BUILD_COPY:
+        # Copy the build back into the project for development and packaging
+        _copy_build_dir_to_project(cmd)
 
 
 if __name__ == "__main__":
@@ -159,7 +154,7 @@ if __name__ == "__main__":
     print("Nautilus Builder")
     print("=====================================================================\033[0m")
 
-    start_ts = datetime.utcnow()
+    ts_start = datetime.utcnow()
 
     # Work around a Cython problem in Python 3.8.x on macOS
     # https://github.com/cython/cython/issues/3262
@@ -187,12 +182,11 @@ if __name__ == "__main__":
 
     print("Starting build...")
     print(f"DEBUG_MODE={DEBUG_MODE}")
-    print(f"PROFILING_MODE={PROFILING_MODE}")
     print(f"ANNOTATION_MODE={ANNOTATION_MODE}")
     print(f"PARALLEL_BUILD={PARALLEL_BUILD}")
     print(f"SKIP_BUILD_COPY={SKIP_BUILD_COPY}")
     print("")
 
-    build({})
-    print(f"Build time: {datetime.utcnow() - start_ts}")
+    build()
+    print(f"Build time: {datetime.utcnow() - ts_start}")
     print("\033[32m" + "Build completed" + "\033[0m")

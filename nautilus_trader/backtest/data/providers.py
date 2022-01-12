@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2021 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -41,7 +41,7 @@ from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.instruments.betting import BettingInstrument
-from nautilus_trader.model.instruments.crypto_swap import CryptoSwap
+from nautilus_trader.model.instruments.crypto_perp import CryptoPerpetual
 from nautilus_trader.model.instruments.currency import CurrencySpot
 from nautilus_trader.model.instruments.equity import Equity
 from nautilus_trader.model.instruments.future import Future
@@ -71,13 +71,13 @@ class TestInstrumentProvider:
                 symbol=Symbol("ADA/BTC"),
                 venue=Venue("BINANCE"),
             ),
-            local_symbol=Symbol("ADABTC"),
+            native_symbol=Symbol("ADABTC"),
             base_currency=ADA,
             quote_currency=BTC,
             price_precision=8,
-            size_precision=0,
+            size_precision=8,
             price_increment=Price(1e-08, precision=8),
-            size_increment=Quantity.from_int(1),
+            size_increment=Quantity(1e-08, precision=8),
             lot_size=None,
             max_quantity=Quantity.from_int(90000000),
             min_quantity=Quantity.from_int(1),
@@ -108,7 +108,7 @@ class TestInstrumentProvider:
                 symbol=Symbol("BTC/USDT"),
                 venue=Venue("BINANCE"),
             ),
-            local_symbol=Symbol("BTCUSDT"),
+            native_symbol=Symbol("BTCUSDT"),
             base_currency=BTC,
             quote_currency=USDT,
             price_precision=2,
@@ -145,7 +145,7 @@ class TestInstrumentProvider:
                 symbol=Symbol("ETH/USDT"),
                 venue=Venue("BINANCE"),
             ),
-            local_symbol=Symbol("ETHUSDT"),
+            native_symbol=Symbol("ETHUSDT"),
             base_currency=ETH,
             quote_currency=USDT,
             price_precision=2,
@@ -182,7 +182,7 @@ class TestInstrumentProvider:
                 symbol=Symbol("ETH/USD"),
                 venue=Venue("FTX"),
             ),
-            local_symbol=Symbol("ETHUSD"),
+            native_symbol=Symbol("ETHUSD"),
             base_currency=ETH,
             quote_currency=USD,
             price_precision=1,
@@ -205,21 +205,21 @@ class TestInstrumentProvider:
         )
 
     @staticmethod
-    def xbtusd_bitmex() -> CryptoSwap:
+    def xbtusd_bitmex() -> CryptoPerpetual:
         """
         Return the BitMEX XBT/USD perpetual contract for backtesting.
 
         Returns
         -------
-        CryptoSwap
+        CryptoPerpetual
 
         """
-        return CryptoSwap(
+        return CryptoPerpetual(
             instrument_id=InstrumentId(
                 symbol=Symbol("BTC/USD"),
                 venue=Venue("BITMEX"),
             ),
-            local_symbol=Symbol("XBTUSD"),
+            native_symbol=Symbol("XBTUSD"),
             base_currency=BTC,
             quote_currency=USD,
             settlement_currency=BTC,
@@ -243,21 +243,21 @@ class TestInstrumentProvider:
         )
 
     @staticmethod
-    def ethusd_bitmex() -> CryptoSwap:
+    def ethusd_bitmex() -> CryptoPerpetual:
         """
         Return the BitMEX ETH/USD perpetual swap contract for backtesting.
 
         Returns
         -------
-        CryptoSwap
+        CryptoPerpetual
 
         """
-        return CryptoSwap(
+        return CryptoPerpetual(
             instrument_id=InstrumentId(
                 symbol=Symbol("ETH/USD"),
                 venue=Venue("BITMEX"),
             ),
-            local_symbol=Symbol("ETHUSD"),
+            native_symbol=Symbol("ETHUSD"),
             base_currency=ETH,
             quote_currency=USD,
             settlement_currency=BTC,
@@ -323,7 +323,7 @@ class TestInstrumentProvider:
 
         return CurrencySpot(
             instrument_id=instrument_id,
-            local_symbol=Symbol(symbol),
+            native_symbol=Symbol(symbol),
             base_currency=Currency.from_str(base_currency),
             quote_currency=Currency.from_str(quote_currency),
             price_precision=price_precision,
@@ -375,7 +375,7 @@ class TestInstrumentProvider:
     def aapl_equity():
         return Equity(
             instrument_id=InstrumentId(symbol=Symbol("AAPL"), venue=Venue("NASDAQ")),
-            local_symbol=Symbol("AAPL"),
+            native_symbol=Symbol("AAPL"),
             currency=USD,
             price_precision=2,
             price_increment=Price.from_str("0.01"),
@@ -390,7 +390,7 @@ class TestInstrumentProvider:
     def es_future():
         return Future(
             instrument_id=InstrumentId(symbol=Symbol("ESZ21"), venue=Venue("CME")),
-            local_symbol=Symbol("ESZ21"),
+            native_symbol=Symbol("ESZ21"),
             asset_class=AssetClass.INDEX,
             currency=USD,
             price_precision=2,
@@ -407,7 +407,7 @@ class TestInstrumentProvider:
     def aapl_option():
         return Option(
             instrument_id=InstrumentId(symbol=Symbol("AAPL211217C00150000"), venue=Venue("OPRA")),
-            local_symbol=Symbol("AAPL211217C00150000"),
+            native_symbol=Symbol("AAPL211217C00150000"),
             asset_class=AssetClass.EQUITY,
             currency=USD,
             price_precision=2,
@@ -426,18 +426,14 @@ class TestInstrumentProvider:
 class TestDataProvider:
     """
     Provides an API to load data from either the 'test/' directory or GitHub repo.
+
+    Parameters
+    ----------
+    branch : str
+        The NautilusTrader GitHub branch for the path.
     """
 
     def __init__(self, branch="develop"):
-        """
-        Initialize a new instance of the ``TestDataProvider`` class.
-
-        Parameters
-        ----------
-        branch : str
-            The NautilusTrader GitHub branch for the path.
-
-        """
         self.fs: Optional[fsspec.AbstractFileSystem] = None
         self.root: Optional[str] = None
         self._determine_filesystem()
@@ -475,10 +471,10 @@ class TestDataProvider:
         with fsspec.open(uri) as f:
             return f.read()
 
-    def read_csv(self, path: str):
+    def read_csv(self, path: str, **kwargs):
         uri = self._make_uri(path=path)
         with fsspec.open(uri) as f:
-            return pd.read_csv(f)
+            return pd.read_csv(f, **kwargs)
 
     def read_csv_ticks(self, path: str):
         uri = self._make_uri(path=path)

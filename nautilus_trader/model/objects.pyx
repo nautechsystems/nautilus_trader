@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2021 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -28,6 +28,7 @@ from libc.stdint cimport uint8_t
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.text cimport precision_from_str
 from nautilus_trader.model.currency cimport Currency
+from nautilus_trader.model.identifiers cimport InstrumentId
 
 
 cdef class BaseDecimal:
@@ -40,7 +41,20 @@ cdef class BaseDecimal:
     providing a decimal.Context. The `BaseDecimal` type and its subclasses are
     also able to be used as operands for mathematical operations with `float`
     objects. Return values are floats if one of the operands is a float, else
-    a decimal.Decimal.
+    a `decimal.Decimal`.
+
+    Parameters
+    ----------
+    value : integer, float, string or Decimal
+        The value of the decimal.
+    precision : uint8
+        The precision for the decimal. Use a precision of 0 for whole numbers
+        (no fractional units).
+
+    Raises
+    ------
+    OverflowError
+        If `precision` is negative (< 0).
 
     Warnings
     --------
@@ -52,24 +66,6 @@ cdef class BaseDecimal:
     """
 
     def __init__(self, value, uint8_t precision):
-        """
-        Initialize a new instance of the ``BaseDecimal`` class.
-
-        Use a precision of 0 for whole numbers (no fractional units).
-
-        Parameters
-        ----------
-        value : integer, float, string or Decimal
-            The value of the decimal.
-        precision : uint8
-            The precision for the decimal.
-
-        Raises
-        ------
-        OverflowError
-            If `precision` is negative (< 0).
-
-        """
         if isinstance(value, decimal.Decimal):
             self._value = round(value, precision)
         else:
@@ -238,32 +234,27 @@ cdef class Quantity(BaseDecimal):
     decimal places for non-share quantity asset classes (securities denominated
     in fractional units).
 
+    Parameters
+    ----------
+    value : integer, float, string, Decimal
+        The value of the quantity.
+    precision : uint8
+        The precision for the quantity. Use a precision of 0 for whole numbers
+        (no fractional units).
+
+    Raises
+    ------
+    ValueError
+        If `value` is negative (< 0).
+    OverflowError
+        If `precision` is negative (< 0).
+
     References
     ----------
     https://www.onixs.biz/fix-dictionary/5.0.SP2/index.html#Qty
     """
 
     def __init__(self, value, uint8_t precision):
-        """
-        Initialize a new instance of the ``Quantity`` class.
-
-        Use a precision of 0 for whole numbers (no fractional units).
-
-        Parameters
-        ----------
-        value : integer, float, string, Decimal
-            The value of the quantity.
-        precision : uint8
-            The precision for the quantity.
-
-        Raises
-        ------
-        ValueError
-            If `value` is negative (< 0).
-        OverflowError
-            If `precision` is negative (< 0).
-
-        """
         super().__init__(value, precision)
 
         # Post-condition
@@ -370,30 +361,25 @@ cdef class Price(BaseDecimal):
     be negative values. For example, prices for options strategies can be
     negative under certain market conditions.
 
+    Parameters
+    ----------
+    value : integer, float, string or Decimal
+        The value of the price.
+    precision : uint8
+        The precision for the price. Use a precision of 0 for whole numbers
+        (no fractional units).
+
+    Raises
+    ------
+    OverflowError
+        If `precision` is negative (< 0).
+
     References
     ----------
     https://www.onixs.biz/fix-dictionary/5.0.SP2/index.html#Price
     """
 
     def __init__(self, value, uint8_t precision):
-        """
-        Initialize a new instance of the ``Price`` class.
-
-        Use a precision of 0 for whole numbers (no fractional units).
-
-        Parameters
-        ----------
-        value : integer, float, string or Decimal
-            The value of the price.
-        precision : uint8
-            The precision for the price.
-
-        Raises
-        ------
-        OverflowError
-            If `precision` is negative (< 0).
-
-        """
         super().__init__(value, precision)
 
     @staticmethod
@@ -448,20 +434,16 @@ cdef class Price(BaseDecimal):
 cdef class Money(BaseDecimal):
     """
     Represents an amount of money including currency type.
+
+    Parameters
+    ----------
+    value : integer, float, string or Decimal
+        The amount of money in the currency denomination.
+    currency : Currency
+        The currency of the money.
     """
 
     def __init__(self, value, Currency currency not None):
-        """
-        Initialize a new instance of the ``Money`` class.
-
-        Parameters
-        ----------
-        value : integer, float, string or Decimal
-            The amount of money in the currency denomination.
-        currency : Currency
-            The currency of the money.
-
-        """
         if value is None:
             value = 0
         super().__init__(value, currency.precision)
@@ -546,48 +528,44 @@ cdef class Money(BaseDecimal):
 
 cdef class AccountBalance:
     """
-    Represents an account balance in a particular currency.
+    Represents an account balance denominated in a particular currency.
+
+    Parameters
+    ----------
+    total : Money
+        The total account balance.
+    locked : Money
+        The account balance locked (assigned to pending orders).
+    free : Money
+        The account balance free for trading.
+
+    Raises
+    ------
+    ValueError
+        If money currencies are not equal.
+    ValueError
+        If any money is negative (< 0).
+    ValueError
+        If `total` - `locked` != `free`.
     """
 
     def __init__(
         self,
-        Currency currency not None,
         Money total not None,
         Money locked not None,
         Money free not None,
     ):
-        """
-        Initialize a new instance of the ``AccountBalance`` class.
-
-        Parameters
-        ----------
-        total : Money
-            The total account balance.
-        locked : Money
-            The account balance locked (assigned to pending orders).
-        free : Money
-            The account balance free for trading.
-
-        Raises
-        ------
-        ValueError
-            If any money currency does not equal `currency`.
-        ValueError
-            If `total` - `locked` != `free`.
-
-        """
-        Condition.equal(currency, total.currency, "currency", "total.currency")
-        Condition.equal(currency, locked.currency, "currency", "locked.currency")
-        Condition.equal(currency, free.currency, "currency", "free.currency")
+        Condition.equal(total.currency, locked.currency, "total.currency", "locked.currency")
+        Condition.equal(total.currency, free.currency, "total.currency", "free.currency")
         Condition.not_negative(total.as_decimal(), "total")
         Condition.not_negative(locked.as_decimal(), "locked")
         Condition.not_negative(free.as_decimal(), "free")
         Condition.true(total.as_decimal() - locked.as_decimal() == free.as_decimal(), "total - locked != free")
 
-        self.currency = currency
         self.total = total
         self.locked = locked
         self.free = free
+        self.currency = total.currency
 
     def __repr__(self) -> str:
         return (
@@ -602,7 +580,6 @@ cdef class AccountBalance:
         Condition.not_none(values, "values")
         cdef Currency currency = Currency.from_str_c(values["currency"])
         return AccountBalance(
-            currency=currency,
             total=Money(values["total"], currency),
             locked=Money(values["locked"], currency),
             free=Money(values["free"], currency),
@@ -636,8 +613,100 @@ cdef class AccountBalance:
         """
         return {
             "type": type(self).__name__,
-            "currency": self.currency.code,
             "total": str(self.total.as_decimal()),
             "locked": str(self.locked.as_decimal()),
             "free": str(self.free.as_decimal()),
+            "currency": self.currency.code,
+        }
+
+
+cdef class MarginBalance:
+    """
+    Represents a margin balance optionally associated with a particular instrument.
+
+    Parameters
+    ----------
+    initial : Money
+        The initial (order) margin requirement for the instrument.
+    maintenance : Money
+        The maintenance (position) margin requirement for the instrument.
+    instrument_id : InstrumentId, optional
+        The instrument ID associated with the margin.
+
+    Raises
+    ------
+    ValueError
+        If `margin_init` currency does not equal `currency`.
+    ValueError
+        If `margin_maint` currency does not equal `currency`.
+    ValueError
+        If any margin is negative (< 0).
+    """
+
+    def __init__(
+        self,
+        Money initial not None,
+        Money maintenance not None,
+        InstrumentId instrument_id=None,
+    ):
+        Condition.equal(initial.currency, maintenance.currency, "initial.currency", "maintenance.currency")
+        Condition.not_negative(initial.as_decimal(), "initial")
+        Condition.not_negative(maintenance.as_decimal(), "maintenance")
+
+        self.initial = initial
+        self.maintenance = maintenance
+        self.currency = initial.currency
+        self.instrument_id = instrument_id
+
+    def __repr__(self) -> str:
+        return (
+            f"{type(self).__name__}("
+            f"initial={self.initial.to_str()}, "
+            f"maintenance={self.maintenance.to_str()}, "
+            f"instrument_id={self.instrument_id.value if self.instrument_id is not None else None})"
+        )
+
+    @staticmethod
+    cdef MarginBalance from_dict_c(dict values):
+        Condition.not_none(values, "values")
+        cdef Currency currency = Currency.from_str_c(values["currency"])
+        cdef str instrument_id_str = values.get("instrument_id")
+        return MarginBalance(
+            initial=Money(values["initial"], currency),
+            maintenance=Money(values["maintenance"], currency),
+            instrument_id=InstrumentId.from_str_c(instrument_id_str) if instrument_id_str is not None else None,
+        )
+
+    @staticmethod
+    def from_dict(dict values) -> MarginBalance:
+        """
+        Return a margin balance from the given dict values.
+
+        Parameters
+        ----------
+        values : dict[str, object]
+            The values for initialization.
+
+        Returns
+        -------
+        MarginAccountBalance
+
+        """
+        return MarginBalance.from_dict_c(values)
+
+    cpdef dict to_dict(self):
+        """
+        Return a dictionary representation of this object.
+
+        Returns
+        -------
+        dict[str, object]
+
+        """
+        return {
+            "type": type(self).__name__,
+            "initial": str(self.initial.as_decimal()),
+            "maintenance": str(self.maintenance.as_decimal()),
+            "currency": self.currency.code,
+            "instrument_id": self.instrument_id.value if self.instrument_id is not None else None,
         }

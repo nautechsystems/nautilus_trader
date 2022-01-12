@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2021 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -108,6 +108,29 @@ cdef class Component:
     Thus if the component does not receive a message bus through the constructor,
     then it will be in a ``PRE_INITIALIZED`` state, otherwise ``INITIALIZED``.
 
+    Parameters
+    ----------
+    clock : Clock
+        The clock for the component.
+    logger : Logger
+        The logger for the component.
+    trader_id : TraderId, optional
+        The trader ID associated with the component.
+    component_id : ComponentId, optional
+        The component ID. If ``None`` is passed then the identifier will be
+        taken from `type(self).__name__`.
+    component_name : str, optional
+        The custom component name.
+    msgbus : MessageBus, optional
+        The message bus for the component (required before initialized).
+    config : dict[str, Any], optional
+        The configuration for the component.
+
+    Raises
+    ------
+    ValueError
+        If `component_name` is not a valid string.
+
     Warnings
     --------
     This class should not be used directly, but through a concrete subclass.
@@ -123,33 +146,6 @@ cdef class Component:
         MessageBus msgbus=None,
         dict config=None,
     ):
-        """
-        Initialize a new instance of the ``Component`` class.
-
-        Parameters
-        ----------
-        clock : Clock
-            The clock for the component.
-        logger : Logger
-            The logger for the component.
-        trader_id : TraderId, optional
-            The trader ID associated with the component.
-        component_id : ComponentId, optional
-            The component ID. If ``None`` is passed then the identifier will be
-            taken from `type(self).__name__`.
-        component_name : str, optional
-            The custom component name.
-        msgbus : MessageBus, optional
-            The message bus for the component (required before initialized).
-        config : dict[str, Any], optional
-            The configuration for the component.
-
-        Raises
-        ------
-        ValueError
-            If `component_name` is not a valid string.
-
-        """
         if config is None:
             config = {}
         if component_id is None:

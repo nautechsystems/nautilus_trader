@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2021 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -42,7 +42,6 @@ class BinanceFuturesWebSocket(BinanceWebSocketClient):
             clock=clock,
             logger=logger,
             handler=handler,
-            base_url="wss://fstream.binance.com",
         )
 
     def subscribe_mark_price(self, symbol: str = None, speed: int = None):

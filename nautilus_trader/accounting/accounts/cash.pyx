@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2021 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -14,6 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 from decimal import Decimal
+from typing import Dict
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.model.c_enums.account_type cimport AccountType
@@ -35,6 +36,18 @@ from nautilus_trader.model.position cimport Position
 cdef class CashAccount(Account):
     """
     Provides a cash account.
+
+    Parameters
+    ----------
+    event : AccountState
+        The initial account state event.
+    calculate_account_state : bool, optional
+        If the account state should be calculated from order fills.
+
+    Raises
+    ------
+    ValueError
+        If `event.account_type` is not equal to ``CASH``.
     """
     ACCOUNT_TYPE = AccountType.CASH  # required for BettingAccount subclass
 
@@ -43,28 +56,12 @@ cdef class CashAccount(Account):
         AccountState event,
         bint calculate_account_state=False,
     ):
-        """
-        Initialize a new instance of the ``CashAccount`` class.
-
-        Parameters
-        ----------
-        event : AccountState
-            The initial account state event.
-        calculate_account_state : bool, optional
-            If the account state should be calculated from order fills.
-
-        Raises
-        ------
-        ValueError
-            If `event.account_type` is not equal to ``CASH``.
-
-        """
         Condition.not_none(event, "event")
         Condition.equal(event.account_type, self.ACCOUNT_TYPE, "event.account_type", "account_type")
 
         super().__init__(event, calculate_account_state)
 
-        self._balances_locked = {}  # type: dict[InstrumentId, Money]
+        self._balances_locked: Dict[InstrumentId, Money] = {}
 
     cpdef void update_balance_locked(self, InstrumentId instrument_id, Money locked) except *:
         """
@@ -126,7 +123,6 @@ cdef class CashAccount(Account):
             total_locked += locked.as_decimal()
 
         cdef AccountBalance new_balance = AccountBalance(
-            currency,
             current_balance.total,
             Money(total_locked, currency),
             Money(current_balance.total.as_decimal() - total_locked, currency),

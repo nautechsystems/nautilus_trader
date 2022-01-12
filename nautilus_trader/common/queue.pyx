@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2021 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -31,6 +31,11 @@ cdef class Queue:
     with qsize(), since your single-threaded asyncio application won't be
     interrupted between calling qsize() and doing an operation on the Queue.
 
+    Parameters
+    ----------
+    maxsize : int
+        The maximum capacity of the queue before blocking.
+
     Warnings
     --------
     This queue is not thread-safe and must be called from the same thread as the
@@ -38,15 +43,6 @@ cdef class Queue:
     """
 
     def __init__(self, int maxsize=0):
-        """
-        Initialize a new instance of the ``Queue`` class.
-
-        Parameters
-        ----------
-        maxsize : int
-            The maximum capacity of the queue before blocking.
-
-        """
         self.maxsize = maxsize
         self.count = 0
 

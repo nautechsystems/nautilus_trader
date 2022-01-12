@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2021 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -26,21 +26,17 @@ cdef class PositionSizer:
     """
     The abstract base class for all position sizers.
 
+    Parameters
+    ----------
+    instrument : Instrument
+        The instrument for position sizing.
+
     Warnings
     --------
     This class should not be used directly, but through a concrete subclass.
     """
 
     def __init__(self, Instrument instrument not None):
-        """
-        Initialize a new instance of the ``PositionSizer`` class.
-
-        Parameters
-        ----------
-        instrument : Instrument
-            The instrument for position sizing.
-
-        """
         self.instrument = instrument
 
     cpdef void update_instrument(self, Instrument instrument) except *:
@@ -98,18 +94,14 @@ cdef class PositionSizer:
 cdef class FixedRiskSizer(PositionSizer):
     """
     Provides position sizing calculations based on a given risk.
+
+    Parameters
+    ----------
+    instrument : Instrument
+        The instrument for position sizing.
     """
 
     def __init__(self, Instrument instrument not None):
-        """
-        Initialize a new instance of the ``FixedRiskSizer`` class.
-
-        Parameters
-        ----------
-        instrument : Instrument
-            The instrument for position sizing.
-
-        """
         super().__init__(instrument)
 
     cpdef Quantity calculate(

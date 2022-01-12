@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2021 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -27,9 +27,6 @@ cdef class VolumeWeightedAveragePrice(Indicator):
     """
 
     def __init__(self):
-        """
-        Initialize a new instance of the ``VolumeWeightedAveragePrice`` class.
-        """
         super().__init__(params=[])
 
         self._day = 0

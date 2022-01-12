@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2021 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -55,10 +55,11 @@ class TestPersistenceStreaming:
             + self.catalog.instrument_status_updates(as_nautilus=True)
             + self.catalog.trade_ticks(as_nautilus=True)
             + self.catalog.order_book_deltas(as_nautilus=True)
-            + self.catalog.ticker(as_nautilus=True)
+            + self.catalog.tickers(as_nautilus=True)
         )
         return data
 
+    @pytest.mark.skip(reason="change AccountState schema")
     def test_feather_writer(self):
         # Arrange
         instrument = self.catalog.instruments(as_nautilus=True)[0]
@@ -67,6 +68,7 @@ class TestPersistenceStreaming:
             catalog_fs_protocol=self.catalog.fs.protocol,
             instrument_id=instrument.id.value,
         )
+        run_config.persistence.flush_interval = 5000
         node = BacktestNode()
 
         # Act
@@ -80,7 +82,7 @@ class TestPersistenceStreaming:
         expected = {
             "AccountState": 746,
             "BettingInstrument": 1,
-            "ComponentStateChanged": 7,
+            "ComponentStateChanged": 5,
             "OrderAccepted": 323,
             "OrderBookDeltas": 1077,
             "OrderBookSnapshot": 1,

@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2021 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -32,7 +32,7 @@ cdef class Currency:
     """The currency type {``FIAT``, ``CRYPTO``}.\n\n:returns: `CurrencyType`"""
 
     @staticmethod
-    cdef void register_c(Currency currency, bint overwrite=*)
+    cdef void register_c(Currency currency, bint overwrite=*) except *
 
     @staticmethod
     cdef Currency from_str_c(str code)

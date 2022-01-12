@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2021 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -107,14 +107,3 @@ cdef class TimeBarAggregator(BarAggregator):
     cpdef void _set_build_timer(self) except *
     cpdef void _build_bar(self, int64_t ts_event) except *
     cpdef void _build_event(self, TimeEvent event) except *
-
-
-cdef class BulkTickBarBuilder:
-    cdef TickBarAggregator aggregator
-    cdef object callback
-    cdef list bars
-
-
-cdef class BulkTimeBarUpdater:
-    cdef TimeBarAggregator aggregator
-    cdef int64_t start_time_ns

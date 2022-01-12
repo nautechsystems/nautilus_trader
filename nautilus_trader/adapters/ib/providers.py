@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2021 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -38,6 +38,17 @@ from nautilus_trader.model.objects import Quantity
 class IBInstrumentProvider(InstrumentProvider):
     """
     Provides a means of loading `Instrument` objects through Interactive Brokers.
+
+    Parameters
+    ----------
+    client : ib_insync.IB
+        The Interactive Brokers client.
+    host : str
+        The client host name or IP address.
+    port : str
+        The client port number.
+    client_id : int
+        The unique client ID number for the connection.
     """
 
     def __init__(
@@ -47,21 +58,6 @@ class IBInstrumentProvider(InstrumentProvider):
         port: int = 7497,
         client_id: int = 1,
     ):
-        """
-        Initialize a new instance of the ``IBInstrumentProvider`` class.
-
-        Parameters
-        ----------
-        client : ib_insync.IB
-            The Interactive Brokers client.
-        host : str
-            The client host name or IP address.
-        port : str
-            The client port number.
-        client_id : int
-            The unique client ID number for the connection.
-
-        """
         super().__init__()
 
         self._client = client
@@ -156,7 +152,7 @@ class IBInstrumentProvider(InstrumentProvider):
         timestamp = time.time_ns()
         future = Future(
             instrument_id=instrument_id,
-            local_symbol=Symbol(details.contract.localSymbol),
+            native_symbol=Symbol(details.contract.localSymbol),
             asset_class=asset_class,
             currency=Currency.from_str(details.contract.currency),
             price_precision=price_precision,
@@ -182,7 +178,7 @@ class IBInstrumentProvider(InstrumentProvider):
         timestamp = time.time_ns()
         equity = Equity(
             instrument_id=instrument_id,
-            local_symbol=Symbol(details.contract.localSymbol),
+            native_symbol=Symbol(details.contract.localSymbol),
             currency=Currency.from_str(details.contract.currency),
             price_precision=price_precision,
             price_increment=Price(details.minTick, price_precision),

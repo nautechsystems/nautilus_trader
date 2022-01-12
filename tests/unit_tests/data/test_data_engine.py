@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2021 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -437,7 +437,7 @@ class TestDataEngine:
         data_type = DataType(str, metadata={"Type": "news"})
         handler = []
 
-        self.msgbus.subscribe(topic=f"data.{data_type}", handler=handler.append)
+        self.msgbus.subscribe(topic=f"data.{data_type.topic}", handler=handler.append)
         subscribe = Subscribe(
             client_id=ClientId("QUANDL"),
             data_type=DataType(str, metadata={"Type": "news"}),
@@ -447,7 +447,7 @@ class TestDataEngine:
 
         self.data_engine.execute(subscribe)
 
-        self.msgbus.unsubscribe(topic=f"data.{data_type}", handler=handler.append)
+        self.msgbus.unsubscribe(topic=f"data.{data_type.topic}", handler=handler.append)
         unsubscribe = Unsubscribe(
             client_id=ClientId("QUANDL"),
             data_type=DataType(str, metadata={"Type": "news"}),
@@ -1338,7 +1338,7 @@ class TestDataEngine:
             price=Price.from_str("1050.00000"),
             size=Quantity.from_int(100),
             aggressor_side=AggressorSide.BUY,
-            match_id="123456789",
+            trade_id="123456789",
             ts_event=0,
             ts_init=0,
         )
@@ -1383,7 +1383,7 @@ class TestDataEngine:
             price=Price.from_str("1050.00000"),
             size=Quantity.from_int(100),
             aggressor_side=AggressorSide.BUY,
-            match_id="123456789",
+            trade_id="123456789",
             ts_event=0,
             ts_init=0,
         )

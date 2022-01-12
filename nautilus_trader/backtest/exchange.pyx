@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2021 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -43,8 +43,7 @@ from nautilus_trader.model.c_enums.oms_type cimport OMSTypeParser
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
 from nautilus_trader.model.c_enums.order_status cimport OrderStatus
 from nautilus_trader.model.c_enums.order_type cimport OrderType
-from nautilus_trader.model.c_enums.venue_type cimport VenueType
-from nautilus_trader.model.c_enums.venue_type cimport VenueTypeParser
+from nautilus_trader.model.commands.trading cimport CancelAllOrders
 from nautilus_trader.model.commands.trading cimport CancelOrder
 from nautilus_trader.model.commands.trading cimport ModifyOrder
 from nautilus_trader.model.commands.trading cimport SubmitOrder
@@ -76,12 +75,61 @@ from nautilus_trader.model.position cimport Position
 cdef class SimulatedExchange:
     """
     Provides a simulated financial market exchange.
+
+    Parameters
+    ----------
+    venue : Venue
+        The venue to simulate.
+    oms_type : OMSType {``HEDGING``, ``NETTING``}
+        The order management system type used by the exchange.
+    account_type : AccountType
+        The account type for the client.
+    base_currency : Currency, optional
+        The account base currency for the client. Use ``None`` for multi-currency accounts.
+    starting_balances : list[Money]
+        The starting balances for the exchange.
+    default_leverage : Decimal
+        The account default leverage (for margin accounts).
+    leverages : Dict[InstrumentId, Decimal]
+        The instrument specific leverage configuration (for margin accounts).
+    is_frozen_account : bool
+        If the account for this exchange is frozen (balances will not change).
+    cache : CacheFacade
+        The read-only cache for the exchange.
+    fill_model : FillModel
+        The fill model for the exchange.
+    latency_model : LatencyModel, optional
+        The latency model for the exchange.
+    clock : TestClock
+        The clock for the exchange.
+    logger : Logger
+        The logger for the exchange.
+    book_type : BookType
+        The order book type for the exchange.
+    bar_execution : bool
+        If the exchange execution dynamics is based on bar data.
+    reject_stop_orders : bool
+        If stop orders are rejected on submission if in the market.
+
+    Raises
+    ------
+    ValueError
+        If `instruments` is empty.
+    ValueError
+        If `instruments` contains a type other than `Instrument`.
+    ValueError
+        If `starting_balances` is empty.
+    ValueError
+        If `starting_balances` contains a type other than `Money`.
+    ValueError
+        If `base_currency` and multiple starting balances.
+    ValueError
+        If `modules` contains a type other than `SimulationModule`.
     """
 
     def __init__(
         self,
         Venue venue not None,
-        VenueType venue_type,
         OMSType oms_type,
         AccountType account_type,
         Currency base_currency,  # Can be None
@@ -100,62 +148,6 @@ cdef class SimulatedExchange:
         bint bar_execution=False,
         bint reject_stop_orders=True,
     ):
-        """
-        Initialize a new instance of the ``SimulatedExchange`` class.
-
-        Parameters
-        ----------
-        venue : Venue
-            The venue to simulate.
-        venue_type : VenueType
-            The venues type.
-        oms_type : OMSType {``HEDGING``, ``NETTING``}
-            The order management system type used by the exchange.
-        account_type : AccountType
-            The account type for the client.
-        base_currency : Currency, optional
-            The account base currency for the client. Use ``None`` for multi-currency accounts.
-        starting_balances : list[Money]
-            The starting balances for the exchange.
-        default_leverage : Decimal
-            The account default leverage (for margin accounts).
-        leverages : Dict[InstrumentId, Decimal]
-            The instrument specific leverage configuration (for margin accounts).
-        is_frozen_account : bool
-            If the account for this exchange is frozen (balances will not change).
-        cache : CacheFacade
-            The read-only cache for the exchange.
-        fill_model : FillModel
-            The fill model for the exchange.
-        latency_model : LatencyModel, optional
-            The latency model for the exchange.
-        clock : TestClock
-            The clock for the exchange.
-        logger : Logger
-            The logger for the exchange.
-        book_type : BookType
-            The order book type for the exchange.
-        bar_execution : bool
-            If the exchange execution dynamics is based on bar data.
-        reject_stop_orders : bool
-            If stop orders are rejected on submission if in the market.
-
-        Raises
-        ------
-        ValueError
-            If `instruments` is empty.
-        ValueError
-            If `instruments` contains a type other than `Instrument`.
-        ValueError
-            If `starting_balances` is empty.
-        ValueError
-            If `starting_balances` contains a type other than `Money`.
-        ValueError
-            If `base_currency` and multiple starting balances.
-        ValueError
-            If `modules` contains a type other than `SimulationModule`.
-
-        """
         Condition.not_empty(instruments, "instruments")
         Condition.list_type(instruments, Instrument, "instruments", "Instrument")
         Condition.not_empty(starting_balances, "starting_balances")
@@ -172,7 +164,6 @@ cdef class SimulatedExchange:
         )
 
         self.id = venue
-        self.venue_type = venue_type
         self.oms_type = oms_type
         self._log.info(f"OMSType={OMSTypeParser.to_str(oms_type)}")
         self.book_type = book_type
@@ -231,11 +222,12 @@ cdef class SimulatedExchange:
         self._inflight_counter = {}
 
     def __repr__(self) -> str:
-        return (f"{type(self).__name__}("
-                f"id={self.id}, "
-                f"venue_type={VenueTypeParser.to_str(self.venue_type)}, "
-                f"oms_type={OMSTypeParser.to_str(self.oms_type)}, "
-                f"account_type={AccountTypeParser.to_str(self.account_type)})")
+        return (
+            f"{type(self).__name__}("
+            f"id={self.id}, "
+            f"oms_type={OMSTypeParser.to_str(self.oms_type)}, "
+            f"account_type={AccountTypeParser.to_str(self.account_type)})"
+        )
 
     cpdef Price best_bid_price(self, InstrumentId instrument_id):
         """
@@ -424,7 +416,7 @@ cdef class SimulatedExchange:
 
         self.exec_client = client
 
-        self._log.info(f"Registered ExecutionClient {client}.")
+        self._log.info(f"Registered ExecutionClient-{client}.")
 
     cpdef void set_fill_model(self, FillModel fill_model) except *:
         """
@@ -496,9 +488,14 @@ cdef class SimulatedExchange:
         balance.total = Money(balance.total + adjustment, adjustment.currency)
         balance.free = Money(balance.free + adjustment, adjustment.currency)
 
+        cdef list margins = []
+        if account.is_margin_account():
+            margins = list(account.margins().values())
+
         # Generate and handle event
         self.exec_client.generate_account_state(
             balances=[balance],
+            margins=margins,
             reported=True,
             ts_event=self._clock.timestamp_ns(),
         )
@@ -526,7 +523,7 @@ cdef class SimulatedExchange:
             ts = command.ts_init + self.latency_model.insert_latency_nanos
         elif isinstance(command, ModifyOrder):
             ts = command.ts_init + self.latency_model.update_latency_nanos
-        elif isinstance(command, CancelOrder):
+        elif isinstance(command, (CancelOrder, CancelAllOrders)):
             ts = command.ts_init + self.latency_model.cancel_latency_nanos
         else:  # pragma: no cover (design-time error)
             raise ValueError(f"invalid command, was {command}")
@@ -645,6 +642,7 @@ cdef class SimulatedExchange:
         cdef:
             TradingCommand command
             Order order
+            list orders
         while self._message_queue.count > 0:
             command = self._message_queue.get_nowait()
             if isinstance(command, SubmitOrder):
@@ -652,20 +650,6 @@ cdef class SimulatedExchange:
             elif isinstance(command, SubmitOrderList):
                 for order in command.list.orders:
                     self._process_order(order)
-            elif isinstance(command, CancelOrder):
-                order = self._order_index.pop(command.client_order_id, None)
-                if order is None:
-                    self._generate_order_cancel_rejected(
-                        command.strategy_id,
-                        command.instrument_id,
-                        command.client_order_id,
-                        command.venue_order_id,
-                        f"{repr(command.client_order_id)} not found",
-                    )
-                    continue
-                if order.is_active_c():
-                    self._generate_order_pending_cancel(order)
-                    self._cancel_order(order)
             elif isinstance(command, ModifyOrder):
                 order = self._order_index.get(command.client_order_id)
                 if order is None:
@@ -684,6 +668,29 @@ cdef class SimulatedExchange:
                     command.price,
                     command.trigger,
                 )
+            elif isinstance(command, CancelOrder):
+                order = self._order_index.pop(command.client_order_id, None)
+                if order is None:
+                    self._generate_order_cancel_rejected(
+                        command.strategy_id,
+                        command.instrument_id,
+                        command.client_order_id,
+                        command.venue_order_id,
+                        f"{repr(command.client_order_id)} not found",
+                    )
+                    continue
+                if order.is_active_c():
+                    self._generate_order_pending_cancel(order)
+                    self._cancel_order(order)
+            elif isinstance(command, CancelAllOrders):
+                orders = (
+                    self._orders_bid.get(command.instrument_id, [])
+                    + self._orders_ask.get(command.instrument_id, [])
+                )
+                for order in orders:
+                    if order.is_active_c():
+                        self._generate_order_pending_cancel(order)
+                        self._cancel_order(order)
 
         # Iterate over modules
         cdef SimulationModule module
@@ -1197,12 +1204,24 @@ cdef class SimulatedExchange:
             if order.type == OrderType.MARKET:
                 if order.is_buy_c():
                     price = self._last_asks.get(order.instrument_id)
+                    if price is None:
+                        price = self.best_ask_price(order.instrument_id)
                     if price is not None:
                         return [(price, order.leaves_qty)]
+                    else:  # pragma: no cover (design-time error)
+                        raise RuntimeError(
+                            "Market best ASK price was None when filling MARKET order",
+                        )
                 elif order.is_sell_c():
                     price = self._last_bids.get(order.instrument_id)
+                    if price is None:
+                        price = self.best_bid_price(order.instrument_id)
                     if price is not None:
                         return [(price, order.leaves_qty)]
+                    else:  # pragma: no cover (design-time error)
+                        raise RuntimeError(
+                            "Market best BID price was None when filling MARKET order",
+                        )
             else:
                 if order.is_buy_c():
                     self._last_asks[order.instrument_id] = order.price
@@ -1316,7 +1335,7 @@ cdef class SimulatedExchange:
             and self.book_type == BookType.L1_TBBO
             and (order.type == OrderType.MARKET or order.type == OrderType.STOP_MARKET)
         ):
-            # Exhausted simulated book volume - continue aggressive filling into next level)
+            # Exhausted simulated book volume (continue aggressive filling into next level)
             fill_px = fills[-1][0]
             if order.side == OrderSide.BUY:
                 fill_px = Price(fill_px + instrument.price_increment, instrument.price_precision)
@@ -1444,24 +1463,23 @@ cdef class SimulatedExchange:
         cdef int pos_count = self._symbol_pos_count.get(instrument_id, 0)
         pos_count += 1
         self._symbol_pos_count[instrument_id] = pos_count
-        return PositionId(f"{self._instrument_indexer[instrument_id]}-{pos_count:03d}")
+        return PositionId(f"{self.id.value}-{self._instrument_indexer[instrument_id]}-{pos_count:03d}")
 
     cdef VenueOrderId _generate_venue_order_id(self, InstrumentId instrument_id):
         cdef int ord_count = self._symbol_ord_count.get(instrument_id, 0)
         ord_count += 1
         self._symbol_ord_count[instrument_id] = ord_count
-        return VenueOrderId(f"{self._instrument_indexer[instrument_id]}-{ord_count:03d}")
+        return VenueOrderId(f"{self.id.value}-{self._instrument_indexer[instrument_id]}-{ord_count:03d}")
 
     cdef ExecutionId _generate_execution_id(self):
         self._executions_count += 1
-        return ExecutionId(f"{self._executions_count}")
+        return ExecutionId(f"{self.id.value}-{self._executions_count}")
 
 # -- EVENT GENERATORS ------------------------------------------------------------------------------
 
     cdef void _generate_fresh_account_state(self) except *:
         cdef list balances = [
             AccountBalance(
-                currency=money.currency,
                 total=money,
                 locked=Money(0, money.currency),
                 free=money,
@@ -1471,6 +1489,7 @@ cdef class SimulatedExchange:
 
         self.exec_client.generate_account_state(
             balances=balances,
+            margins=[],
             reported=True,
             ts_event=self._clock.timestamp_ns(),
         )
@@ -1573,7 +1592,7 @@ cdef class SimulatedExchange:
         if venue_order_id is None:
             venue_order_id = self._generate_venue_order_id(order.instrument_id)
             venue_order_id_modified = True
-        # Generate event
+
         self.exec_client.generate_order_updated(
             strategy_id=order.strategy_id,
             instrument_id=order.instrument_id,

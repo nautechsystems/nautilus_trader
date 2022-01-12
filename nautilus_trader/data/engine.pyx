@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2021 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -43,7 +43,6 @@ from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.data cimport Data
 from nautilus_trader.data.aggregation cimport BarAggregator
-from nautilus_trader.data.aggregation cimport BulkTimeBarUpdater
 from nautilus_trader.data.aggregation cimport TickBarAggregator
 from nautilus_trader.data.aggregation cimport TimeBarAggregator
 from nautilus_trader.data.aggregation cimport ValueBarAggregator
@@ -66,6 +65,7 @@ from nautilus_trader.model.data.venue cimport InstrumentClosePrice
 from nautilus_trader.model.data.venue cimport InstrumentStatusUpdate
 from nautilus_trader.model.data.venue cimport StatusUpdate
 from nautilus_trader.model.identifiers cimport ClientId
+from nautilus_trader.model.identifiers import ComponentId
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.instruments.base cimport Instrument
 from nautilus_trader.model.orderbook.book cimport OrderBook
@@ -79,6 +79,19 @@ cdef class DataEngine(Component):
     """
     Provides a high-performance data engine for managing many `DataClient`
     instances, for the asynchronous ingest of data.
+
+    Parameters
+    ----------
+    msgbus : MessageBus
+        The message bus for the engine.
+    cache : Cache
+        The cache for the engine.
+    clock : Clock
+        The clock for the engine.
+    logger : Logger
+        The logger for the engine.
+    config : DataEngineConfig, optional
+        The configuration for the instance.
     """
 
     def __init__(
@@ -89,29 +102,13 @@ cdef class DataEngine(Component):
         Logger logger not None,
         config: Optional[DataEngineConfig]=None,
     ):
-        """
-        Initialize a new instance of the ``DataEngine`` class.
-
-        Parameters
-        ----------
-        msgbus : MessageBus
-            The message bus for the engine.
-        cache : Cache
-            The cache for the engine.
-        clock : Clock
-            The clock for the engine.
-        logger : Logger
-            The logger for the engine.
-        config : DataEngineConfig, optional
-            The configuration for the instance.
-
-        """
         if config is None:
             config = DataEngineConfig()
         Condition.type(config, DataEngineConfig, "config")
         super().__init__(
             clock=clock,
             logger=logger,
+            component_id=ComponentId("DataEngine"),
             msgbus=msgbus,
             config=config.dict(),
         )
@@ -167,7 +164,7 @@ cdef class DataEngine(Component):
 
         self._clients[client.id] = client
 
-        self._log.info(f"Registered DataClient {client}.")
+        self._log.info(f"Registered DataClient-{client}.")
 
     cpdef void deregister_client(self, DataClient client) except *:
         """
@@ -637,7 +634,7 @@ cdef class DataEngine(Component):
             self._order_book_intervals[key] = []
             now = self._clock.utc_now()
             start_time = now - timedelta(milliseconds=int((now.second * 1000) % interval_ms), microseconds=now.microsecond)
-            timer_name = f"OrderBookSnapshot-{instrument_id}-{interval_ms}"
+            timer_name = f"OrderBookSnapshot_{instrument_id}_{interval_ms}"
             self._clock.set_timer(
                 name=timer_name,
                 interval=timedelta(milliseconds=interval_ms),
@@ -1038,7 +1035,7 @@ cdef class DataEngine(Component):
         self._msgbus.publish_c(topic=f"data.venue.close_price.{data.instrument_id}", msg=data)
 
     cdef void _handle_generic_data(self, GenericData data) except *:
-        self._msgbus.publish_c(topic=f"data.{data.data_type}", msg=data)
+        self._msgbus.publish_c(topic=f"data.{data.data_type.topic}", msg=data)
 
 # -- RESPONSE HANDLERS -----------------------------------------------------------------------------
 
@@ -1106,7 +1103,7 @@ cdef class DataEngine(Component):
         order_book.apply(data)
 
     cpdef void _snapshot_order_book(self, TimeEvent snap_event) except *:
-        cdef tuple pieces = snap_event.name.partition('-')[2].partition('-')
+        cdef tuple pieces = snap_event.name.partition('_')[2].partition('_')
         cdef InstrumentId instrument_id = InstrumentId.from_str_c(pieces[0])
         cdef int interval_ms = int(pieces[2])
 
@@ -1147,7 +1144,6 @@ cdef class DataEngine(Component):
                 clock=self._clock,
                 logger=self._log.get_logger(),
             )
-            self._hydrate_aggregator(client, aggregator, bar_type)
         elif bar_type.spec.aggregation == BarAggregation.TICK:
             aggregator = TickBarAggregator(
                 instrument=instrument,
@@ -1181,12 +1177,11 @@ cdef class DataEngine(Component):
         self._log.debug(f"Added {aggregator} for {bar_type} bars.")
 
         # Subscribe to required data
-        instrument_id = bar_type.instrument_id
         if bar_type.spec.price_type == PriceType.LAST:
             self._msgbus.subscribe(
                 topic=f"data.trades"
-                      f".{instrument_id.venue}"
-                      f".{instrument_id.symbol}",
+                      f".{bar_type.instrument_id.venue}"
+                      f".{bar_type.instrument_id.symbol}",
                 handler=aggregator.handle_trade_tick,
                 priority=5,
             )
@@ -1194,40 +1189,12 @@ cdef class DataEngine(Component):
         else:
             self._msgbus.subscribe(
                 topic=f"data.quotes"
-                      f".{instrument_id.venue}"
-                      f".{instrument_id.symbol}",
+                      f".{bar_type.instrument_id.venue}"
+                      f".{bar_type.instrument_id.symbol}",
                 handler=aggregator.handle_quote_tick,
                 priority=5,
             )
             self._handle_subscribe_quote_ticks(client, bar_type.instrument_id)
-
-    cdef void _hydrate_aggregator(
-        self,
-        MarketDataClient client,
-        TimeBarAggregator aggregator,
-        BarType bar_type,
-    ) except *:
-        data_type = type(TradeTick) if bar_type.spec.price_type == PriceType.LAST else QuoteTick
-
-        # Update aggregator with latest data
-        bulk_updater = BulkTimeBarUpdater(aggregator)
-
-        metadata = {
-            "instrument_id": bar_type.instrument_id,
-            "from_datetime": aggregator.get_start_time(),
-            "to_datetime": None,
-        }
-
-        request = DataRequest(
-            client_id=ClientId(bar_type.instrument_id.venue.value),
-            data_type=DataType(data_type, metadata),
-            callback=bulk_updater.receive,
-            request_id=self._uuid_factory.generate(),
-            ts_init=self._clock.timestamp_ns(),
-        )
-
-        # Send request directly to handler as we're already inside engine
-        self._handle_request(request)
 
     cdef void _stop_bar_aggregator(self, MarketDataClient client, BarType bar_type) except *:
         cdef aggregator = self._bar_aggregators.get(bar_type)
@@ -1242,20 +1209,19 @@ cdef class DataEngine(Component):
             aggregator.stop()
 
         # Unsubscribe from update ticks
-        instrument_id = bar_type.instrument_id
         if bar_type.spec.price_type == PriceType.LAST:
             self._msgbus.unsubscribe(
                 topic=f"data.trades"
-                      f".{instrument_id.venue}"
-                      f".{instrument_id.symbol}",
+                      f".{bar_type.instrument_id.venue}"
+                      f".{bar_type.instrument_id.symbol}",
                 handler=aggregator.handle_trade_tick,
             )
             self._handle_unsubscribe_trade_ticks(client, bar_type.instrument_id)
         else:
             self._msgbus.unsubscribe(
                 topic=f"data.quotes"
-                      f".{instrument_id.venue}"
-                      f".{instrument_id.symbol}",
+                      f".{bar_type.instrument_id.venue}"
+                      f".{bar_type.instrument_id.symbol}",
                 handler=aggregator.handle_quote_tick,
             )
             self._handle_unsubscribe_quote_ticks(client, bar_type.instrument_id)

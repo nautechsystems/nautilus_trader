@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2021 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -34,7 +34,7 @@ class BetfairAPIError(BetfairError):
         self.kind = ERROR_CODES.get(message, {}).get("kind")
         self.reason = ERROR_CODES.get(message, {}).get("reason")
 
-    def __str__(self):
+    def __str__(self) -> str:
         return f"BetfairAPIError(code='{self.code}', message='{self.message}', kind='{self.kind}', reason='{self.reason}')"
 
 

@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2021 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -16,12 +16,13 @@
 import heapq
 import sys
 from collections import namedtuple
-from typing import Any, List, Set
+from typing import Any, Iterator, List, Set
 
 import fsspec
 import pandas as pd
 import pyarrow.dataset as ds
 from dask.utils import parse_bytes
+from pyarrow.lib import ArrowInvalid
 
 from nautilus_trader.backtest.config import BacktestDataConfig
 from nautilus_trader.persistence.catalog import DataCatalog
@@ -29,20 +30,25 @@ from nautilus_trader.serialization.arrow.serializer import ParquetSerializer
 from nautilus_trader.serialization.arrow.util import clean_key
 
 
-FileMeta = namedtuple("FileMeta", "filename datatype instrument_id")
+FileMeta = namedtuple("FileMeta", "filename datatype instrument_id client_id start end")
 
 
 def dataset_batches(
-    file_meta: FileMeta, fs: fsspec.AbstractFileSystem, n_rows: int, filter_expr=None
-):
-    d = ds.dataset(file_meta.filename, filesystem=fs)  # type: ds.Dataset
-    scanner = d.scanner(filter=filter_expr, batch_size=n_rows)  # type: ds.Scanner
+    file_meta: FileMeta, fs: fsspec.AbstractFileSystem, n_rows: int
+) -> Iterator[pd.DataFrame]:
+    try:
+        d: ds.Dataset = ds.dataset(file_meta.filename, filesystem=fs)
+    except ArrowInvalid:
+        return
+    filter_expr = (ds.field("ts_init") >= file_meta.start) & (ds.field("ts_init") <= file_meta.end)
+    scanner: ds.Scanner = d.scanner(filter=filter_expr, batch_size=n_rows)
     for batch in scanner.to_batches():
         if batch.num_rows == 0:
             break
         data = batch.to_pandas()
-        data.loc[:, "instrument_id"] = file_meta.instrument_id
-        yield batch.nbytes, data
+        if file_meta.instrument_id:
+            data.loc[:, "instrument_id"] = file_meta.instrument_id
+        yield data
 
 
 def build_filenames(catalog: DataCatalog, data_configs: List[BacktestDataConfig]) -> List[FileMeta]:
@@ -55,7 +61,12 @@ def build_filenames(catalog: DataCatalog, data_configs: List[BacktestDataConfig]
             continue
         files.append(
             FileMeta(
-                filename=filename, datatype=config.data_type, instrument_id=config.instrument_id
+                filename=filename,
+                datatype=config.data_type,
+                instrument_id=config.instrument_id,
+                client_id=config.client_id,
+                start=config.start_time_nanos,
+                end=config.end_time_nanos,
             )
         )
     return files
@@ -68,19 +79,13 @@ def frame_to_nautilus(df: pd.DataFrame, cls: type) -> List[Any]:
 def batch_files(
     catalog: DataCatalog,
     data_configs: List[BacktestDataConfig],
-    start_time: int,
-    end_time: int,
     read_num_rows: int = 10000,
     target_batch_size_bytes: int = parse_bytes("100mb"),  # noqa: B008
 ):
-    filter_expr = (ds.field("ts_init") > start_time) & (ds.field("ts_init") < end_time)
     files = build_filenames(catalog=catalog, data_configs=data_configs)
     buffer = {fn.filename: pd.DataFrame() for fn in files}
     datasets = {
-        f.filename: dataset_batches(
-            file_meta=f, fs=catalog.fs, n_rows=read_num_rows, filter_expr=filter_expr
-        )
-        for f in files
+        f.filename: dataset_batches(file_meta=f, fs=catalog.fs, n_rows=read_num_rows) for f in files
     }
     completed: Set[str] = set()
     bytes_read = 0
@@ -93,7 +98,6 @@ def batch_files(
                 if next_buf is None:
                     completed.add(fn)
                     continue
-                nbytes, next_buf = next_buf
                 buffer[fn] = buffer[fn].append(next_buf)
 
         # Determine minimum timestamp

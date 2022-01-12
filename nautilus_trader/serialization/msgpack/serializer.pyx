@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2021 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -26,19 +26,15 @@ from nautilus_trader.serialization.base cimport Serializer
 cdef class MsgPackSerializer(Serializer):
     """
     Provides a serializer for the `MessagePack` specification.
+
+    Parameters
+    ----------
+    timestamps_as_str : bool
+        If the serializer converts timestamp int64_t to str on serialization,
+        and back to int64_t on deserialization.
     """
 
-    def __init__(self, timestamps_as_str=False):
-        """
-        Initializes a new instance of the ``MsgPackSerializer`` class.
-
-        Parameters
-        ----------
-        timestamps_as_str : bool
-            If the serializer converts timestamp int64_t to str on serialization,
-            and back to int64_t on deserialization.
-
-        """
+    def __init__(self, bint timestamps_as_str=False):
         self.timestamps_as_str = timestamps_as_str
 
     cpdef bytes serialize(self, object obj):

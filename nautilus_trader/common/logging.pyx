@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2021 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -101,6 +101,21 @@ cdef class LogLevelParser:
 cdef class Logger:
     """
     Provides a high-performance logger.
+
+    Parameters
+    ----------
+    clock : Clock
+        The clock for the logger.
+    trader_id : TraderId, optional
+        The trader ID for the logger.
+    machine_id : str, optional
+        The machine ID.
+    instance_id : UUID4, optional
+        The instance ID.
+    level_stdout : LogLevel
+        The minimum log level for logging messages to stdout.
+    bypass : bool
+        If the logger should be bypassed.
     """
 
     def __init__(
@@ -112,25 +127,6 @@ cdef class Logger:
         LogLevel level_stdout=LogLevel.INFO,
         bint bypass=False,
     ):
-        """
-        Initialize a new instance of the ``Logger`` class.
-
-        Parameters
-        ----------
-        clock : Clock
-            The clock for the logger.
-        trader_id : TraderId, optional
-            The trader ID for the logger.
-        machine_id : str, optional
-            The machine ID.
-        instance_id : UUID4, optional
-            The instance ID.
-        level_stdout : LogLevel
-            The minimum log level for logging messages to stdout.
-        bypass : bool
-            If the logger should be bypassed.
-
-        """
         if trader_id is None:
             trader_id = TraderId("TRADER-000")
         if instance_id is None:
@@ -253,14 +249,23 @@ cdef class Logger:
         # Return the formatted log message from the given arguments
         cdef str dt = format_iso8601_ns(pd.Timestamp(record["timestamp"], tz="UTC"))
         cdef str trader_id_str = f"{self.trader_id.value}." if self.trader_id is not None else ""
-        return (f"{_BOLD}{dt}{_ENDC} {color_cmd}"
-                f"[{LogLevelParser.to_str(level)}] "
-                f"{trader_id_str}{record['component']}: {record['msg']}{_ENDC}")
+        return (
+            f"{_BOLD}{dt}{_ENDC} {color_cmd}"
+            f"[{LogLevelParser.to_str(level)}] "
+            f"{trader_id_str}{record['component']}: {record['msg']}{_ENDC}"
+        )
 
 
 cdef class LoggerAdapter:
     """
     Provides an adapter for a components logger.
+
+    Parameters
+    ----------
+    component_name : str
+        The name of the component.
+    logger : Logger
+        The logger for the component.
     """
 
     def __init__(
@@ -268,17 +273,6 @@ cdef class LoggerAdapter:
         str component_name not None,
         Logger logger not None,
     ):
-        """
-        Initialize a new instance of the ``LoggerAdapter`` class.
-
-        Parameters
-        ----------
-        component_name : str
-            The name of the component.
-        logger : Logger
-            The logger for the component.
-
-        """
         Condition.valid_string(component_name, "component_name")
 
         self._logger = logger
@@ -500,7 +494,7 @@ cpdef void nautilus_header(LoggerAdapter logger) except *:
     logger.info("\033[36m=================================================================")
     logger.info(f"\033[36m NAUTILUS TRADER - Automated Algorithmic Trading Platform")
     logger.info(f"\033[36m by Nautech Systems Pty Ltd.")
-    logger.info(f"\033[36m Copyright (C) 2015-2021. All rights reserved.")
+    logger.info(f"\033[36m Copyright (C) 2015-2022. All rights reserved.")
     logger.info("\033[36m=================================================================")
     logger.info("                                                                 ")
     logger.info("                            .......                              ")
@@ -526,7 +520,7 @@ cpdef void nautilus_header(LoggerAdapter logger) except *:
     logger.info(f"CPU architecture: {platform.processor()}")
     try:
         cpu_freq_str = f"@ {int(psutil.cpu_freq()[2])} MHz"
-    except (TypeError, NotImplementedError):
+    except Exception:  # noqa (historically problematic call on ARM)
         cpu_freq_str = None
     logger.info(f"CPU(s): {psutil.cpu_count()} {cpu_freq_str}")
     logger.info(f"OS: {platform.platform()}")
@@ -565,6 +559,25 @@ cpdef void log_memory(LoggerAdapter logger) except *:
 cdef class LiveLogger(Logger):
     """
     Provides a high-performance logger which runs on the event loop.
+
+    Parameters
+    ----------
+    loop : asyncio.AbstractEventLoop
+        The event loop to run the logger on.
+    clock : LiveClock
+        The clock for the logger.
+    trader_id : TraderId, optional
+        The trader ID for the logger.
+    machine_id : str, optional
+        The machine ID for the logger.
+    instance_id : UUID4, optional
+        The systems unique instantiation ID.
+    level_stdout : LogLevel
+        The minimum log level for logging messages to stdout.
+    bypass : bool
+        If the logger should be bypassed.
+    maxsize : int, optional
+        The maximum capacity for the log queue.
     """
     _sentinel = None
 
@@ -579,29 +592,6 @@ cdef class LiveLogger(Logger):
         bint bypass=False,
         int maxsize=10000,
     ):
-        """
-        Initialize a new instance of the ``LiveLogger`` class.
-
-        Parameters
-        ----------
-        loop : asyncio.AbstractEventLoop
-            The event loop to run the logger on.
-        clock : LiveClock
-            The clock for the logger.
-        trader_id : TraderId, optional
-            The trader ID for the logger.
-        machine_id : str, optional
-            The machine ID for the logger.
-        instance_id : UUID4, optional
-            The systems unique instantiation ID.
-        level_stdout : LogLevel
-            The minimum log level for logging messages to stdout.
-        bypass : bool
-            If the logger should be bypassed.
-        maxsize : int, optional
-            The maximum capacity for the log queue.
-
-        """
         super().__init__(
             clock=clock,
             trader_id=trader_id,

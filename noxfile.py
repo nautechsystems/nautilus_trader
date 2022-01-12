@@ -4,7 +4,7 @@ import nox
 from nox.sessions import Session
 
 
-ALL_EXTRAS = "distributed docs ib"
+ALL_EXTRAS = "distributed ib"
 
 
 # Ensure everything runs within Poetry venvs
@@ -51,7 +51,7 @@ def performance_tests(session: Session) -> None:
 @nox.session
 def coverage(session: Session) -> None:
     """Run with test coverage."""
-    _setup_poetry(session, "--extras", ALL_EXTRAS, env={"PROFILING_MODE": "true"})
+    _setup_poetry(session, "--extras", ALL_EXTRAS, env={"DEBUG_MODE": "true"})
     _run_coverage(session)
 
 
@@ -83,8 +83,6 @@ def _setup_poetry(session: Session, *args, **kwargs) -> None:
         # Ensure deterministic builds by disabling parallelism
         env["PARALLEL_BUILD"] = ""  # Empty string parsed as false
 
-    # Skip the build copy when using Nox
-    env["SKIP_BUILD_COPY"] = "true"
     kwargs["env"] = env
 
     # Install poetry, then install the project (with its dependencies)

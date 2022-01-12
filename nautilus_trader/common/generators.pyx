@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2021 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -55,18 +55,36 @@ cdef class IdentifierGenerator:
 
         """
         cdef datetime utc_now = self._clock.utc_now()
-        return (f"{utc_now.year}"
-                f"{utc_now.month:02d}"
-                f"{utc_now.day:02d}"
-                f"-"
-                f"{utc_now.hour:02d}"
-                f"{utc_now.minute:02d}"
-                f"{utc_now.second:02d}")
+        return (
+            f"{utc_now.year}"
+            f"{utc_now.month:02d}"
+            f"{utc_now.day:02d}"
+            f"-"
+            f"{utc_now.hour:02d}"
+            f"{utc_now.minute:02d}"
+            f"{utc_now.second:02d}"
+        )
 
 
 cdef class ClientOrderIdGenerator(IdentifierGenerator):
     """
     Provides a generator for unique ClientOrderId(s).
+
+    Parameters
+    ----------
+    trader_id : TraderId
+        The trader ID for the generator.
+    strategy_id : StrategyId
+        The strategy ID for the generator.
+    clock : Clock
+        The clock for the generator.
+    initial_count : int
+        The initial count for the generator.
+
+    Raises
+    ------
+    ValueError
+        If `initial_count` is negative (< 0).
     """
 
     def __init__(
@@ -76,26 +94,6 @@ cdef class ClientOrderIdGenerator(IdentifierGenerator):
         Clock clock not None,
         int initial_count=0,
     ):
-        """
-        Initialize a new instance of the ``ClientOrderIdGenerator`` class.
-
-        Parameters
-        ----------
-        trader_id : TraderId
-            The trader ID for the generator.
-        strategy_id : StrategyId
-            The strategy ID for the generator.
-        clock : Clock
-            The clock for the generator.
-        initial_count : int
-            The initial count for the generator.
-
-        Raises
-        ------
-        ValueError
-            If `initial_count` is negative (< 0).
-
-        """
         Condition.not_negative_int(initial_count, "initial_count")
         super().__init__(trader_id, clock)
 
@@ -145,18 +143,14 @@ cdef class ClientOrderIdGenerator(IdentifierGenerator):
 cdef class PositionIdGenerator(IdentifierGenerator):
     """
     Provides a generator for unique PositionId(s).
+
+    Parameters
+    ----------
+    trader_id : TraderId
+        The trader ID tag for the generator.
     """
 
     def __init__(self, TraderId trader_id not None, Clock clock not None):
-        """
-        Initialize a new instance of the ``PositionIdGenerator`` class.
-
-        Parameters
-        ----------
-        trader_id : TraderId
-            The trader ID tag for the generator.
-
-        """
         super().__init__(trader_id, clock)
 
         self._counts = {}  # type: dict[StrategyId, int]

@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2021 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -20,26 +20,22 @@ cdef class Identifier:
     """
     The abstract base class for all identifiers.
 
+    Parameters
+    ----------
+    value : str
+        The value of the ID.
+
+    Raises
+    ------
+    ValueError
+        If `value` is not a valid string.
+
     Warnings
     --------
     This class should not be used directly, but through a concrete subclass.
     """
 
     def __init__(self, str value):
-        """
-        Initialize a new instance of the ``Identifier`` class.
-
-        Parameters
-        ----------
-        value : str
-            The value of the ID.
-
-        Raises
-        ------
-        ValueError
-            If `value` is not a valid string.
-
-        """
         Condition.valid_string(value, "value")
 
         self.value = value
@@ -76,49 +72,41 @@ cdef class Symbol(Identifier):
 
     The ID value must be unique for a trading venue.
 
+    Parameters
+    ----------
+    value : str
+        The ticker symbol ID value.
+
+    Raises
+    ------
+    ValueError
+        If `value` is not a valid string.
+
     References
     ----------
     https://en.wikipedia.org/wiki/Ticker_symbol
     """
 
     def __init__(self, str value):
-        """
-        Initialize a new instance of the ``Symbol`` class.
-
-        Parameters
-        ----------
-        value : str
-            The ticker symbol ID value.
-
-        Raises
-        ------
-        ValueError
-            If `value` is not a valid string.
-
-        """
         super().__init__(value)
 
 
 cdef class Venue(Identifier):
     """
     Represents a valid trading venue ID.
+
+    Parameters
+    ----------
+    name : str
+        The venue ID value.
+
+    Raises
+    ------
+    ValueError
+        If `name` is not a valid string.
     """
 
     def __init__(self, str name):
-        """
-        Initialize a new instance of the ``Venue`` class.
-
-        Parameters
-        ----------
-        name : str
-            The venue ID value.
-
-        Raises
-        ------
-        ValueError
-            If `name` is not a valid string.
-
-        """
         super().__init__(name)
 
 
@@ -127,20 +115,16 @@ cdef class InstrumentId(Identifier):
     Represents a valid instrument ID.
 
     The symbol and venue combination should uniquely identify the instrument.
+
+    Parameters
+    ----------
+    symbol : Symbol
+        The instruments ticker symbol.
+    venue : Venue
+        The instruments trading venue.
     """
 
     def __init__(self, Symbol symbol not None, Venue venue not None):
-        """
-        Initialize a new instance of the ``InstrumentId`` class.
-
-        Parameters
-        ----------
-        symbol : Symbol
-            The instruments ticker symbol.
-        venue : Venue
-            The instruments trading venue.
-
-        """
         super().__init__(f"{symbol.value}.{venue.value}")
 
         self.symbol = symbol
@@ -184,23 +168,19 @@ cdef class ComponentId(Identifier):
     Represents a valid component ID.
 
     The ID value must be unique at the trader level.
+
+    Parameters
+    ----------
+    value : str
+        The component ID value.
+
+    Raises
+    ------
+    ValueError
+        If `value` is not a valid string.
     """
 
     def __init__(self, str value):
-        """
-        Initialize a new instance of the ``ComponentId`` class.
-
-        Parameters
-        ----------
-        value : str
-            The component ID value.
-
-        Raises
-        ------
-        ValueError
-            If `value` is not a valid string.
-
-        """
         super().__init__(value)
 
 
@@ -209,23 +189,19 @@ cdef class ClientId(ComponentId):
     Represents a system client ID.
 
     The ID value must be unique at the trader level.
+
+    Parameters
+    ----------
+    value : str
+        The client ID value.
+
+    Raises
+    ------
+    ValueError
+        If `value` is not a valid string.
     """
 
     def __init__(self, str value):
-        """
-        Initialize a new instance of the ``ClientId`` class.
-
-        Parameters
-        ----------
-        value : str
-            The client ID value.
-
-        Raises
-        ------
-        ValueError
-            If `value` is not a valid string.
-
-        """
         super().__init__(value)
 
 
@@ -234,29 +210,25 @@ cdef class TraderId(ComponentId):
     Represents a valid trader ID.
 
     The name and tag combination ID value must be unique at the firm level.
+
+    Must be correctly formatted with two valid strings either side of a hyphen.
+    It is expected a trader ID is the abbreviated name of the trader
+    with an order ID tag number separated by a hyphen.
+
+    Example: "TESTER-001".
+
+    Parameters
+    ----------
+    value : str
+        The trader ID value.
+
+    Raises
+    ------
+    ValueError
+        If `value` is not a valid string containing a hyphen.
     """
 
     def __init__(self, str value):
-        """
-        Initialize a new instance of the ``TraderId`` class.
-
-        Must be correctly formatted with two valid strings either side of a hyphen.
-        It is expected a trader ID is the abbreviated name of the trader
-        with an order ID tag number separated by a hyphen.
-
-        Example: "TESTER-001".
-
-        Parameters
-        ----------
-        value : str
-            The trader ID value.
-
-        Raises
-        ------
-        ValueError
-            If `value` is not a valid string containing a hyphen.
-
-        """
         Condition.true("-" in value, "ID incorrectly formatted (did not contain '-' hyphen)")
         super().__init__(value)
 
@@ -277,29 +249,25 @@ cdef class StrategyId(ComponentId):
     Represents a valid strategy ID.
 
     The name and tag combination must be unique at the trader level.
+
+    Must be correctly formatted with two valid strings either side of a hyphen.
+    It is expected a strategy ID is the class name of the strategy,
+    with an order ID tag number separated by a hyphen.
+
+    Example: "EMACross-001".
+
+    Parameters
+    ----------
+    value : str
+        The strategy ID value.
+
+    Raises
+    ------
+    ValueError
+        If `value` is not a valid string containing a hyphen.
     """
 
     def __init__(self, str value):
-        """
-        Initialize a new instance of the ``StrategyId`` class.
-
-        Must be correctly formatted with two valid strings either side of a hyphen.
-        It is expected a strategy ID is the class name of the strategy,
-        with an order ID tag number separated by a hyphen.
-
-        Example: "EMACross-001".
-
-        Parameters
-        ----------
-        value : str
-            The strategy ID value.
-
-        Raises
-        ------
-        ValueError
-            If `value` is not a valid string containing a hyphen.
-
-        """
         Condition.true("-" in value, "ID incorrectly formatted (did not contain '-' hyphen)")
         super().__init__(value)
 
@@ -320,27 +288,23 @@ cdef class AccountId(Identifier):
     Represents a valid account ID.
 
     The issuer and number ID combination must be unique at the firm level.
+
+    Parameters
+    ----------
+    issuer : str
+        The account issuer (trading venue) ID value.
+    number : str
+        The account 'number' ID value.
+
+    Raises
+    ------
+    ValueError
+        If `issuer` is not a valid string.
+    ValueError
+        If `number` is not a valid string.
     """
 
     def __init__(self, str issuer, str number):
-        """
-        Initialize a new instance of the ``AccountId`` class.
-
-        Parameters
-        ----------
-        issuer : str
-            The account issuer (trading venue) ID value.
-        number : str
-            The account 'number' ID value.
-
-        Raises
-        ------
-        ValueError
-            If `issuer` is not a valid string.
-        ValueError
-            If `number` is not a valid string.
-
-        """
         Condition.valid_string(issuer, "issuer")
         Condition.valid_string(number, "number")
         super().__init__(f"{issuer}-{number}")
@@ -385,23 +349,19 @@ cdef class ClientOrderId(Identifier):
     Represents a valid client order ID (assigned by the Nautilus system).
 
     The ID value must be unique at the firm level.
+
+    Parameters
+    ----------
+    value : str
+        The client order ID value.
+
+    Raises
+    ------
+    ValueError
+        If `value` is not a valid string.
     """
 
     def __init__(self, str value):
-        """
-        Initialize a new instance of the ``ClientOrderId`` class.
-
-        Parameters
-        ----------
-        value : str
-            The client order ID value.
-
-        Raises
-        ------
-        ValueError
-            If `value` is not a valid string.
-
-        """
         super().__init__(value)
 
 
@@ -418,116 +378,96 @@ cdef class ClientOrderLinkId(Identifier):
     calculation of average execution price for a customer or to associate lists
     submitted to a broker as waves of a larger program trade.
 
+    Parameters
+    ----------
+    value : str
+        The client order link ID value.
+
+    Raises
+    ------
+    ValueError
+        If `value` is not a valid string.
+
     References
     ----------
     https://www.onixs.biz/fix-dictionary/5.0.sp2/tagnum_583.html
     """
 
     def __init__(self, str value):
-        """
-        Initialize a new instance of the ``ClientOrderLinkId`` class.
-
-        Parameters
-        ----------
-        value : str
-            The client order link ID value.
-
-        Raises
-        ------
-        ValueError
-            If `value` is not a valid string.
-
-        """
         super().__init__(value)
 
 
 cdef class VenueOrderId(Identifier):
     """
     Represents a valid venue order ID (assigned by a trading venue).
+
+    Parameters
+    ----------
+    value : str
+        The venue assigned order ID value.
+
+    Raises
+    ------
+    ValueError
+        If `value` is not a valid string.
     """
 
     def __init__(self, str value):
-        """
-        Initialize a new instance of the ``VenueOrderId`` class.
-
-        Parameters
-        ----------
-        value : str
-            The venue assigned order ID value.
-
-        Raises
-        ------
-        ValueError
-            If `value` is not a valid string.
-
-        """
         super().__init__(value)
 
 
 cdef class OrderListId(Identifier):
     """
     Represents a valid order list ID (assigned by the Nautilus system).
+
+    Parameters
+    ----------
+    value : str
+        The order list ID value.
+
+    Raises
+    ------
+    ValueError
+        If `value` is not a valid string.
     """
 
     def __init__(self, str value):
-        """
-        Initialize a new instance of the ``OrderListId`` class.
-
-        Parameters
-        ----------
-        value : str
-            The order list ID value.
-
-        Raises
-        ------
-        ValueError
-            If `value` is not a valid string.
-
-        """
         super().__init__(value)
 
 
 cdef class PositionId(Identifier):
     """
     Represents a valid position ID.
+
+    Parameters
+    ----------
+    value : str
+        The position ID value.
+
+    Raises
+    ------
+    ValueError
+        If `value` is not a valid string.
     """
 
     def __init__(self, str value):
-        """
-        Initialize a new instance of the ``PositionId`` class.
-
-        Parameters
-        ----------
-        value : str
-            The position ID value.
-
-        Raises
-        ------
-        ValueError
-            If `value` is not a valid string.
-
-        """
         super().__init__(value)
 
 
 cdef class ExecutionId(Identifier):
     """
     Represents a valid execution ID.
+
+    Parameters
+    ----------
+    value : str
+        The execution ID value.
+
+    Raises
+    ------
+    ValueError
+        If `value` is not a valid string.
     """
 
     def __init__(self, str value):
-        """
-        Initialize a new instance of the ``ExecutionId`` class.
-
-        Parameters
-        ----------
-        value : str
-            The execution ID value.
-
-        Raises
-        ------
-        ValueError
-            If `value` is not a valid string.
-
-        """
         super().__init__(value)

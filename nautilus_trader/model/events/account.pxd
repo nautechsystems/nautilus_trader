@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2021 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -28,6 +28,8 @@ cdef class AccountState(Event):
     """The account type for the event.\n\n:returns: `Currency` or ``None``"""
     cdef readonly list balances
     """The account balances.\n\n:returns: `list[AccountBalance]`"""
+    cdef readonly list margins
+    """The margin balances.\n\n:returns: `list[MarginBalance]`"""
     cdef readonly bint is_reported
     """If the state is reported from the exchange (otherwise system calculated).\n\n:returns: `bool`"""
     cdef readonly dict info

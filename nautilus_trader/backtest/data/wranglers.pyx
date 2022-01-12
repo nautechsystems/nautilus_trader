@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2021 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -12,6 +12,8 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+
+from copy import copy
 
 import numpy as np
 from libc.stdint cimport int64_t
@@ -35,18 +37,14 @@ from nautilus_trader.model.objects cimport Quantity
 cdef class QuoteTickDataWrangler:
     """
     Provides a means of building lists of Nautilus `QuoteTick` objects.
+
+    Parameters
+    ----------
+    instrument : Instrument
+        The instrument for the data wrangler.
     """
 
     def __init__(self, Instrument instrument not None):
-        """
-        Initialize a new instance of the ``QuoteTickDataWrangler`` class.
-
-        Parameters
-        ----------
-        instrument : Instrument
-            The instrument for the data wrangler.
-
-        """
         self.instrument = instrument
 
     def process(
@@ -193,10 +191,10 @@ cdef class QuoteTickDataWrangler:
         # Randomly shift high low prices
         if random_seed is not None:
             random.seed(random_seed)
-            for i in range(0, len(df_ticks_o), 4):
+            for i in range(0, len(df_ticks_final), 4):
                 if random.getrandbits(1):
-                    high = df_ticks_h.iloc[i]
-                    low = df_ticks_l.iloc[i]
+                    high = copy(df_ticks_final.iloc[i + 1])
+                    low = copy(df_ticks_final.iloc[i + 2])
                     df_ticks_final.iloc[i + 1] = low
                     df_ticks_final.iloc[i + 2] = high
 
@@ -228,18 +226,14 @@ cdef class QuoteTickDataWrangler:
 cdef class TradeTickDataWrangler:
     """
     Provides a means of building lists of Nautilus `TradeTick` objects.
+
+    Parameters
+    ----------
+    instrument : Instrument
+        The instrument for the data wrangler.
     """
 
     def __init__(self, Instrument instrument not None):
-        """
-        Initialize a new instance of the ``TradeTickDataWrangler`` class.
-
-        Parameters
-        ----------
-        instrument : Instrument
-            The instrument for the data wrangler.
-
-        """
         self.instrument = instrument
 
     def process(self, data: pd.DataFrame, ts_init_delta: int=0):
@@ -270,7 +264,7 @@ cdef class TradeTickDataWrangler:
         processed["price"] = data["price"].apply(lambda x: f'{x:.{self.instrument.price_precision}f}')
         processed["quantity"] = data["quantity"].apply(lambda x: f'{x:.{self.instrument.size_precision}f}')
         processed["aggressor_side"] = self._create_side_if_not_exist(data)
-        processed["match_id"] = data["trade_id"].apply(str)
+        processed["trade_id"] = data["trade_id"].apply(str)
 
         cdef int64_t[:] ts_events = np.ascontiguousarray([secs_to_nanos(dt.timestamp()) for dt in data.index], dtype=np.int64)  # noqa
         cdef int64_t[:] ts_inits = np.ascontiguousarray([ts_event + ts_init_delta for ts_event in ts_events], dtype=np.int64)  # noqa
@@ -297,7 +291,7 @@ cdef class TradeTickDataWrangler:
             price=Price(values[0], self.instrument.price_precision),
             size=Quantity(values[1], self.instrument.size_precision),
             aggressor_side=AggressorSideParser.from_str(values[2]),
-            match_id=values[3],
+            trade_id=values[3],
             ts_event=ts_event,
             ts_init=ts_init,
         )
@@ -306,6 +300,13 @@ cdef class TradeTickDataWrangler:
 cdef class BarDataWrangler:
     """
     Provides a means of building lists of Nautilus `Bar` objects.
+
+    Parameters
+    ----------
+    bar_type : BarType
+        The bar type for the wrangler.
+    instrument : Instrument
+        The instrument for the wrangler.
     """
 
     def __init__(
@@ -313,17 +314,6 @@ cdef class BarDataWrangler:
         BarType bar_type not None,
         Instrument instrument not None,
     ):
-        """
-        Initialize a new instance of the ``BarDataWrangler`` class.
-
-        Parameters
-        ----------
-        bar_type : BarType
-            The bar type for the wrangler.
-        instrument : Instrument
-            The instrument for the wrangler.
-
-        """
         Condition.not_none(bar_type, "bar_type")
         Condition.not_none(instrument, "instrument")
 

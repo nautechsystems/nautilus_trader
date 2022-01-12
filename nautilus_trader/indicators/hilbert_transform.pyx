@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2021 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -26,18 +26,14 @@ cdef class HilbertTransform(Indicator):
     processing. By using present and prior price differences, and some feedback,
     price values are split into their complex number components of real (in-phase)
     and imaginary (quadrature) parts.
+
+    Parameters
+    ----------
+    period : int
+        The rolling window period for the indicator (> 0).
     """
 
     def __init__(self, int period=7):
-        """
-        Initialize a new instance of the HilbertTransform class.
-
-        Parameters
-        ----------
-        period : int
-            The rolling window period for the indicator (> 0).
-
-        """
         Condition.positive_int(period, "period")
         super().__init__(params=[period])
 

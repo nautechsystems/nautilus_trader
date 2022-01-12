@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2021 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -46,6 +46,40 @@ from nautilus_trader.analysis.reports import ReportProvider
 cdef class Trader(Component):
     """
     Provides a trader for managing a portfolio of trading strategies.
+
+    Parameters
+    ----------
+    trader_id : TraderId
+        The ID for the trader.
+    msgbus : MessageBus
+        The message bus for the trader.
+    cache : Cache
+        The cache for the trader.
+    portfolio : Portfolio
+        The portfolio for the trader.
+    data_engine : DataEngine
+        The data engine for the trader.
+    risk_engine : RiskEngine
+        The risk engine for the trader.
+    exec_engine : ExecutionEngine
+        The execution engine for the trader.
+    clock : Clock
+        The clock for the trader.
+    logger : Logger
+        The logger for the trader.
+    config : dict[str, Any]
+        The configuration for the trader.
+
+    Raises
+    ------
+    ValueError
+        If `portfolio` is not equal to the `exec_engine` portfolio.
+    ValueError
+        If `strategies` is ``None``.
+    ValueError
+        If `strategies` is empty.
+    TypeError
+        If `strategies` contains a type other than `TradingStrategy`.
     """
 
     def __init__(
@@ -61,44 +95,6 @@ cdef class Trader(Component):
         Logger logger not None,
         dict config=None,
     ):
-        """
-        Initialize a new instance of the ``Trader`` class.
-
-        Parameters
-        ----------
-        trader_id : TraderId
-            The ID for the trader.
-        msgbus : MessageBus
-            The message bus for the trader.
-        cache : Cache
-            The cache for the trader.
-        portfolio : Portfolio
-            The portfolio for the trader.
-        data_engine : DataEngine
-            The data engine for the trader.
-        risk_engine : RiskEngine
-            The risk engine for the trader.
-        exec_engine : ExecutionEngine
-            The execution engine for the trader.
-        clock : Clock
-            The clock for the trader.
-        logger : Logger
-            The logger for the trader.
-        config : dict[str, Any]
-            The configuration for the trader.
-
-        Raises
-        ------
-        ValueError
-            If `portfolio` is not equal to the `exec_engine` portfolio.
-        ValueError
-            If `strategies` is ``None``.
-        ValueError
-            If `strategies` is empty.
-        TypeError
-            If `strategies` contains a type other than `TradingStrategy`.
-
-        """
         if config is None:
             config = {}
         super().__init__(

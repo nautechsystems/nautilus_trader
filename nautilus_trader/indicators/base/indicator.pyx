@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2021 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -22,21 +22,17 @@ cdef class Indicator:
     """
     The abstract base class for all indicators.
 
+    Parameters
+    ----------
+    params : list
+        The initialization parameters for the indicator.
+
     Warnings
     --------
     This class should not be used directly, but through a concrete subclass.
     """
 
     def __init__(self, list params not None):
-        """
-        Initialize a new instance of the ``Indicator`` class.
-
-        Parameters
-        ----------
-        params : list
-            The initialization parameters for the indicator.
-
-        """
         self._params = params.copy()
 
         self.name = type(self).__name__

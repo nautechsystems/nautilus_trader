@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2021 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -50,8 +50,7 @@ from nautilus_trader.execution.client cimport ExecutionClient
 from nautilus_trader.model.c_enums.oms_type cimport OMSType
 from nautilus_trader.model.c_enums.oms_type cimport OMSTypeParser
 from nautilus_trader.model.c_enums.position_side cimport PositionSide
-from nautilus_trader.model.c_enums.venue_type cimport VenueType
-from nautilus_trader.model.c_enums.venue_type cimport VenueTypeParser
+from nautilus_trader.model.commands.trading cimport CancelAllOrders
 from nautilus_trader.model.commands.trading cimport CancelOrder
 from nautilus_trader.model.commands.trading cimport ModifyOrder
 from nautilus_trader.model.commands.trading cimport SubmitOrder
@@ -82,6 +81,24 @@ cdef class ExecutionEngine(Component):
     Provides a high-performance execution engine for the management of many
     `ExecutionClient` instances, and the asynchronous ingest and distribution of
     trading commands and events.
+
+    Parameters
+    ----------
+    msgbus : MessageBus
+        The message bus for the engine.
+    cache : Cache
+        The cache for the engine.
+    clock : Clock
+        The clock for the engine.
+    logger : Logger
+        The logger for the engine.
+    config : ExecEngineConfig, optional
+        The configuration for the instance.
+
+    Raises
+    ------
+    TypeError
+        If `config` is not of type `ExecEngineConfig`.
     """
 
     def __init__(
@@ -92,28 +109,6 @@ cdef class ExecutionEngine(Component):
         Logger logger not None,
         config: Optional[ExecEngineConfig]=None,
     ):
-        """
-        Initialize a new instance of the ``ExecutionEngine`` class.
-
-        Parameters
-        ----------
-        msgbus : MessageBus
-            The message bus for the engine.
-        cache : Cache
-            The cache for the engine.
-        clock : Clock
-            The clock for the engine.
-        logger : Logger
-            The logger for the engine.
-        config : ExecEngineConfig, optional
-            The configuration for the instance.
-
-        Raises
-        ------
-        TypeError
-            If `config` is not of type `ExecEngineConfig`.
-
-        """
         if config is None:
             config = ExecEngineConfig()
         Condition.type(config, ExecEngineConfig, "config")
@@ -248,8 +243,8 @@ cdef class ExecutionEngine(Component):
         """
         Register the given execution client with the execution engine.
 
-        If the client.venue_type == ``BROKERAGE_MULTI_VENUE`` and a default client
-        has not been previously registered then will be registered as such.
+        If the `client.venue` is ``None`` and a default routing client has not
+        been previously registered then will be registered as such.
 
         Parameters
         ----------
@@ -267,24 +262,22 @@ cdef class ExecutionEngine(Component):
 
         self._clients[client.id] = client
 
-        if client.venue_type == VenueType.BROKERAGE_MULTI_VENUE:
+        routing_log = ""
+        if client.venue is None:
             if self._default_client is None:
                 self._default_client = client
-                self._log.info(
-                    f"Registered ExecutionClient {client} BROKERAGE_MULTI_VENUE."
-                )
+                routing_log = " for default routing"
         else:
             self._routing_map[client.venue] = client
-            self._log.info(
-                f"Registered ExecutionClient {client} {VenueTypeParser.to_str(client.venue_type)}."
-            )
+
+        self._log.info(f"Registered ExecutionClient-{client}{routing_log}.")
 
     cpdef void register_default_client(self, ExecutionClient client) except *:
         """
-        Register the given client as the default client (when a specific venue
-        routing cannot be found).
+        Register the given client as the default routing client (when a specific
+        venue routing cannot be found).
 
-        Any existing default client will be overwritten.
+        Any existing default routing client will be overwritten.
 
         Parameters
         ----------
@@ -296,10 +289,7 @@ cdef class ExecutionEngine(Component):
 
         self._default_client = client
 
-        self._log.info(
-            f"Registered default ExecutionClient {client} "
-            f"{VenueTypeParser.to_str(client.venue_type)}.",
-        )
+        self._log.info(f"Registered ExecutionClient-{client} for default routing.")
 
     cpdef void register_venue_routing(self, ExecutionClient client, Venue venue) except *:
         """
@@ -324,10 +314,7 @@ cdef class ExecutionEngine(Component):
 
         self._routing_map[venue] = client
 
-        self._log.info(
-            f"Registered ExecutionClient {client} {VenueTypeParser.to_str(client.venue_type)} "
-            f"for routing to {venue}."
-        )
+        self._log.info(f"Registered ExecutionClient-{client} for routing to {venue}.")
 
     cpdef void register_oms_type(self, TradingStrategy strategy) except *:
         """
@@ -368,13 +355,13 @@ cdef class ExecutionEngine(Component):
 
         del self._clients[client.id]
 
-        if client.venue_type == VenueType.BROKERAGE_MULTI_VENUE:
+        if client.venue is None:
             if self._default_client == client:
                 self._default_client = None
         else:
             del self._routing_map[client.venue]
 
-        self._log.info(f"Deregistered ExecutionClient {client}.")
+        self._log.info(f"Deregistered {client}.")
 
 # -- ABSTRACT METHODS ------------------------------------------------------------------------------
 
@@ -522,6 +509,8 @@ cdef class ExecutionEngine(Component):
             self._handle_modify_order(client, command)
         elif isinstance(command, CancelOrder):
             self._handle_cancel_order(client, command)
+        elif isinstance(command, CancelAllOrders):
+            self._handle_cancel_all_orders(client, command)
         else:
             self._log.error(f"Cannot handle command: unrecognized {command}.")
 
@@ -546,6 +535,9 @@ cdef class ExecutionEngine(Component):
 
     cdef void _handle_cancel_order(self, ExecutionClient client, CancelOrder command) except *:
         client.cancel_order(command)
+
+    cdef void _handle_cancel_all_orders(self, ExecutionClient client, CancelAllOrders command) except *:
+        client.cancel_all_orders(command)
 
 # -- EVENT HANDLERS --------------------------------------------------------------------------------
 
@@ -589,7 +581,11 @@ cdef class ExecutionEngine(Component):
                 color=LogColor.GREEN,
             )
 
-        cdef OMSType oms_type = self._oms_types.get(event.strategy_id, OMSType.HEDGING)
+        # Confirm OMS for strategy
+        cdef OMSType oms_type = self._confirm_oms_type(
+            event.instrument_id.venue,
+            event.strategy_id,
+        )
 
         if isinstance(event, OrderFilled):
             self._confirm_position_id(event, oms_type)
@@ -616,6 +612,24 @@ cdef class ExecutionEngine(Component):
 
         if isinstance(event, OrderFilled):
             self._handle_order_fill(event, oms_type)
+
+    cdef OMSType _confirm_oms_type(self, Venue venue, StrategyId strategy_id) except *:
+        cdef:
+            OMSType oms_type
+            ExecutionClient client
+
+        oms_type = self._oms_types.get(strategy_id, 0)
+        if oms_type == 0:
+            # No OMS configured - use venue OMS
+            client = self._clients.get(venue)
+            if client is None:
+                oms_type = OMSType.HEDGING
+            else:
+                oms_type = OMSType.HEDGING  # TODO(cs): Set default venue OMS
+            # Set OMS for strategy
+            self._oms_types[strategy_id] = oms_type
+
+        return oms_type
 
     cdef void _confirm_position_id(self, OrderFilled fill, OMSType oms_type) except *:
         # Fetch ID from cache

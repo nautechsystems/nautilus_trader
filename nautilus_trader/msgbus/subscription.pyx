@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2021 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -25,11 +25,28 @@ cdef class Subscription:
     This is an internal class intended to be used by the message bus to organize
     topics and their subscribers.
 
+    Parameters
+    ----------
+    topic : str
+        The topic for the subscription. May include wildcard characters `*` and `?`.
+    handler : Callable[[Message], None]
+        The handler for the subscription.
+    priority : int
+        The priority for the subscription.
+
+    Raises
+    ------
+    ValueError
+        If `topic` is not a valid string.
+    ValueError
+        If `handler` is not of type `Callable`.
+    ValueError
+        If `priority` is negative (< 0).
+
     Notes
     -----
     The subscription equality is determined by the topic and handler,
     priority is not considered (and could change).
-
     """
 
     def __init__(
@@ -38,28 +55,6 @@ cdef class Subscription:
         handler not None: Callable[[Any], None],
         int priority=0,
     ):
-        """
-        Initialize a new instance of the ``Subscription`` class.
-
-        Parameters
-        ----------
-        topic : str
-            The topic for the subscription. May include wildcard characters '*' and '?'.
-        handler : Callable[[Message], None]
-            The handler for the subscription.
-        priority : int
-            The priority for the subscription.
-
-        Raises
-        ------
-        ValueError
-            If `topic` is not a valid string.
-        ValueError
-            If `handler` is not of type `Callable`.
-        ValueError
-            If `priority` is negative (< 0).
-
-        """
         Condition.valid_string(topic, "topic")
         Condition.callable(handler, "handler")
         Condition.not_negative_int(priority, "priority")
@@ -88,7 +83,9 @@ cdef class Subscription:
         return hash((self.topic, str(self.handler)))
 
     def __repr__(self) -> str:
-        return (f"{type(self).__name__}("
-                f"topic={self.topic}, "
-                f"handler={self.handler}, "
-                f"priority={self.priority})")
+        return (
+            f"{type(self).__name__}("
+            f"topic={self.topic}, "
+            f"handler={self.handler}, "
+            f"priority={self.priority})"
+        )

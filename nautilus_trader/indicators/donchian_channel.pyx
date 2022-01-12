@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2021 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -30,23 +30,19 @@ cdef class DonchianChannel(Indicator):
     instrument_id over N periods while the lower band marks the lowest price of a
     instrument_id over N periods. The area between the upper and lower bands
     represents the Donchian Channel.
+
+    Parameters
+    ----------
+    period : int
+        The rolling window period for the indicator (> 0).
+
+    Raises
+    ------
+    ValueError
+        If `period` is not positive (> 0).
     """
 
     def __init__(self, int period):
-        """
-        Initialize a new instance of the ``DonchianChannel`` class.
-
-        Parameters
-        ----------
-        period : int
-            The rolling window period for the indicator (> 0).
-
-        Raises
-        ------
-        ValueError
-            If `period` is not positive (> 0).
-
-        """
         Condition.positive_int(period, "period")
         super().__init__(params=[period])
 

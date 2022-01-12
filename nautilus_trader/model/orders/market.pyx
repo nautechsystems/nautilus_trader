@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2021 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -58,6 +58,47 @@ cdef class MarketOrder(Order):
     near the current bid (for a sell order) or ask (for a buy order) price. The
     last-traded price is not necessarily the price at which a market order will
     be executed.
+
+    Parameters
+    ----------
+    trader_id : TraderId
+        The trader ID associated with the order.
+    strategy_id : StrategyId
+        The strategy ID associated with the order.
+    instrument_id : InstrumentId
+        The order instrument ID.
+    client_order_id : ClientOrderId
+        The client order ID.
+    order_side : OrderSide {``BUY``, ``SELL``}
+        The order side.
+    quantity : Quantity
+        The order quantity (> 0).
+    init_id : UUID4
+        The order initialization event ID.
+    ts_init : int64
+        The UNIX timestamp (nanoseconds) when the object was initialized.
+    reduce_only : bool
+        If the order carries the 'reduce-only' execution instruction.
+    order_list_id : OrderListId, optional
+        The order list ID associated with the order.
+    parent_order_id : ClientOrderId, optional
+        The order parent client order ID.
+    child_order_ids : list[ClientOrderId], optional
+        The order child client order ID(s).
+    contingency : ContingencyType
+        The order contingency type.
+    contingency_ids : list[ClientOrderId], optional
+        The order contingency client order ID(s).
+    tags : str, optional
+        The custom user tags for the order. These are optional and can
+        contain any arbitrary delimiter if required.
+
+    Raises
+    ------
+    ValueError
+        If `quantity` is not positive (> 0).
+    ValueError
+        If `time_in_force` is other than ``GTC``, ``IOC`` or ``FOK``.
     """
 
     def __init__(
@@ -79,51 +120,6 @@ cdef class MarketOrder(Order):
         list contingency_ids=None,
         str tags=None,
     ):
-        """
-        Initialize a new instance of the ``MarketOrder`` class.
-
-        Parameters
-        ----------
-        trader_id : TraderId
-            The trader ID associated with the order.
-        strategy_id : StrategyId
-            The strategy ID associated with the order.
-        instrument_id : InstrumentId
-            The order instrument ID.
-        client_order_id : ClientOrderId
-            The client order ID.
-        order_side : OrderSide {``BUY``, ``SELL``}
-            The order side.
-        quantity : Quantity
-            The order quantity (> 0).
-        init_id : UUID4
-            The order initialization event ID.
-        ts_init : int64
-            The UNIX timestamp (nanoseconds) when the object was initialized.
-        reduce_only : bool
-            If the order carries the 'reduce-only' execution instruction.
-        order_list_id : OrderListId, optional
-            The order list ID associated with the order.
-        parent_order_id : ClientOrderId, optional
-            The order parent client order ID.
-        child_order_ids : list[ClientOrderId], optional
-            The order child client order ID(s).
-        contingency : ContingencyType
-            The order contingency type.
-        contingency_ids : list[ClientOrderId], optional
-            The order contingency client order ID(s).
-        tags : str, optional
-            The custom user tags for the order. These are optional and can
-            contain any arbitrary delimiter if required.
-
-        Raises
-        ------
-        ValueError
-            If `quantity` is not positive (> 0).
-        ValueError
-            If `time_in_force` is other than ``GTC``, ``IOC`` or ``FOK``.
-
-        """
         Condition.positive(quantity, "quantity")
         Condition.true(time_in_force in _MARKET_ORDER_VALID_TIF, "time_in_force was != GTC, IOC or FOK")
 
@@ -238,9 +234,11 @@ cdef class MarketOrder(Order):
         str
 
         """
-        return (f"{OrderSideParser.to_str(self.side)} {self.quantity.to_str()} {self.instrument_id} "
-                f"{OrderTypeParser.to_str(self.type)} "
-                f"{TimeInForceParser.to_str(self.time_in_force)}")
+        return (
+            f"{OrderSideParser.to_str(self.side)} {self.quantity.to_str()} {self.instrument_id} "
+            f"{OrderTypeParser.to_str(self.type)} "
+            f"{TimeInForceParser.to_str(self.time_in_force)}"
+        )
 
     cdef void _filled(self, OrderFilled fill) except *:
         self.venue_order_id = fill.venue_order_id

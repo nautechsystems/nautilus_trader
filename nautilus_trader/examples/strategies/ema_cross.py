@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2021 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -72,22 +72,18 @@ class EMACross(TradingStrategy):
     """
     A simple moving average cross example strategy.
 
-    When the fast EMA crosses the slow EMA then enter a position in that
-    direction.
+    When the fast EMA crosses the slow EMA then enter a position at the market
+    in that direction.
 
     Cancels all orders and flattens all positions on stop.
+
+    Parameters
+    ----------
+    config : EMACrossConfig
+        The configuration for the instance.
     """
 
     def __init__(self, config: EMACrossConfig):
-        """
-        Initialize a new instance of the ``EMACross`` class.
-
-        Parameters
-        ----------
-        config : EMACrossConfig
-            The configuration for the instance.
-
-        """
         super().__init__(config)
 
         # Configuration
@@ -119,10 +115,10 @@ class EMACross(TradingStrategy):
         # self.request_trade_ticks(self.instrument_id)
 
         # Subscribe to live data
-        self.subscribe_bars(self.bar_type)  # For debugging
+        self.subscribe_bars(self.bar_type)
+        self.subscribe_quote_ticks(self.instrument_id)
+        # self.subscribe_trade_ticks(self.instrument_id)
         # self.subscribe_ticker(self.instrument_id)  # For debugging
-        # self.subscribe_quote_ticks(self.instrument_id)  # For debugging
-        # self.subscribe_trade_ticks(self.instrument_id)  # For debugging
         # self.subscribe_order_book_deltas(self.instrument_id, depth=20)  # For debugging
         # self.subscribe_order_book_snapshots(self.instrument_id, depth=20)  # For debugging
 
@@ -187,7 +183,7 @@ class EMACross(TradingStrategy):
             The quote tick received.
 
         """
-        self.log.info(f"Received {repr(tick)}")  # For debugging (must add a subscription)
+        # self.log.info(f"Received {repr(tick)}")  # For debugging (must add a subscription)
 
     def on_trade_tick(self, tick: TradeTick):
         """
@@ -295,12 +291,12 @@ class EMACross(TradingStrategy):
         self.flatten_all_positions(self.instrument_id)
 
         # Unsubscribe from data
+        self.unsubscribe_bars(self.bar_type)
+        self.unsubscribe_quote_ticks(self.instrument_id)
+        # self.unsubscribe_trade_ticks(self.instrument_id)
         # self.unsubscribe_ticker(self.instrument_id)
         # self.unsubscribe_order_book_deltas(self.instrument_id)
-        self.unsubscribe_bars(self.bar_type)
         # self.unsubscribe_order_book_snapshots(self.instrument_id)
-        # self.unsubscribe_quote_ticks(self.instrument_id)
-        # self.unsubscribe_trade_ticks(self.instrument_id)
 
     def on_reset(self):
         """

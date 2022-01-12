@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2021 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -16,7 +16,7 @@
 #  Original author: Jeremy https://github.com/2pd
 # -------------------------------------------------------------------------------------------------
 
-from typing import Dict, Optional
+from typing import Any, Dict, Optional
 
 from nautilus_trader.adapters.binance.common import format_symbol
 from nautilus_trader.adapters.binance.http.client import BinanceHttpClient
@@ -27,20 +27,16 @@ from nautilus_trader.core.correctness import PyCondition
 class BinanceSpotAccountHttpAPI:
     """
     Provides access to the `Binance SPOT Account/Trade` HTTP REST API.
+
+    Parameters
+    ----------
+    client : BinanceHttpClient
+        The Binance REST API client.
     """
 
     BASE_ENDPOINT = "/api/v3/"
 
     def __init__(self, client: BinanceHttpClient):
-        """
-        Initialize a new instance of the ``BinanceSpotAccountHttpAPI`` class.
-
-        Parameters
-        ----------
-        client : BinanceHttpClient
-            The Binance REST API client.
-
-        """
         PyCondition.not_none(client, "client")
 
         self.client = client
@@ -59,7 +55,7 @@ class BinanceSpotAccountHttpAPI:
         iceberg_qty: Optional[str] = None,
         new_order_resp_type: NewOrderRespType = None,
         recv_window: Optional[int] = None,
-    ) -> bytes:
+    ) -> Dict[str, Any]:
         """
         Test new order creation and signature/recvWindow.
 
@@ -101,8 +97,7 @@ class BinanceSpotAccountHttpAPI:
 
         Returns
         -------
-        bytes
-            The raw response content.
+        dict[str, Any]
 
         References
         ----------
@@ -153,7 +148,7 @@ class BinanceSpotAccountHttpAPI:
         iceberg_qty: Optional[str] = None,
         new_order_resp_type: NewOrderRespType = None,
         recv_window: Optional[int] = None,
-    ) -> bytes:
+    ) -> Dict[str, Any]:
         """
         Submit a new order.
 
@@ -193,8 +188,7 @@ class BinanceSpotAccountHttpAPI:
 
         Returns
         -------
-        bytes
-            The raw response content.
+        dict[str, Any]
 
         References
         ----------
@@ -238,7 +232,7 @@ class BinanceSpotAccountHttpAPI:
         orig_client_order_id: Optional[str] = None,
         new_client_order_id: Optional[str] = None,
         recv_window: Optional[int] = None,
-    ) -> bytes:
+    ) -> Dict[str, Any]:
         """
         Cancel an active order.
 
@@ -260,8 +254,7 @@ class BinanceSpotAccountHttpAPI:
 
         Returns
         -------
-        bytes
-            The raw response content.
+        dict[str, Any]
 
         References
         ----------
@@ -284,7 +277,11 @@ class BinanceSpotAccountHttpAPI:
             payload=payload,
         )
 
-    async def cancel_open_orders(self, symbol: str, recv_window: Optional[int] = None) -> bytes:
+    async def cancel_open_orders(
+        self,
+        symbol: str,
+        recv_window: Optional[int] = None,
+    ) -> Dict[str, Any]:
         """
         Cancel all active orders on a symbol. This includes OCO orders.
 
@@ -297,6 +294,10 @@ class BinanceSpotAccountHttpAPI:
             The symbol for the request.
         recv_window : int, optional
             The response receive window for the request (cannot be greater than 60000).
+
+        Returns
+        -------
+        dict[str, Any]
 
         References
         ----------
@@ -319,7 +320,7 @@ class BinanceSpotAccountHttpAPI:
         order_id: Optional[str] = None,
         orig_client_order_id: Optional[str] = None,
         recv_window: Optional[int] = None,
-    ) -> bytes:
+    ) -> Dict[str, Any]:
         """
         Check an order's status.
 
@@ -339,8 +340,7 @@ class BinanceSpotAccountHttpAPI:
 
         Returns
         -------
-        bytes
-            The raw response content.
+        dict[str, Any]
 
         References
         ----------
@@ -365,7 +365,7 @@ class BinanceSpotAccountHttpAPI:
         self,
         symbol: Optional[str] = None,
         recv_window: Optional[int] = None,
-    ) -> bytes:
+    ) -> Dict[str, Any]:
         """
         Get all open orders on a symbol.
 
@@ -381,8 +381,7 @@ class BinanceSpotAccountHttpAPI:
 
         Returns
         -------
-        bytes
-            The raw response content.
+        dict[str, Any]
 
         References
         ----------
@@ -409,7 +408,7 @@ class BinanceSpotAccountHttpAPI:
         end_time: Optional[int] = None,
         limit: Optional[int] = None,
         recv_window: Optional[int] = None,
-    ) -> bytes:
+    ) -> Dict[str, Any]:
         """
         Get all account orders; active, canceled, or filled.
 
@@ -433,8 +432,7 @@ class BinanceSpotAccountHttpAPI:
 
         Returns
         -------
-        bytes
-            The raw response content.
+        dict[str, Any]
 
         References
         ----------
@@ -475,7 +473,7 @@ class BinanceSpotAccountHttpAPI:
         stop_limit_time_in_force: Optional[str] = None,
         new_order_resp_type: NewOrderRespType = None,
         recv_window: Optional[int] = None,
-    ) -> bytes:
+    ) -> Dict[str, Any]:
         """
         Submit a new OCO order.
 
@@ -516,8 +514,7 @@ class BinanceSpotAccountHttpAPI:
 
         Returns
         -------
-        bytes
-            The raw response content.
+        dict[str, Any]
 
         References
         ----------
@@ -563,7 +560,7 @@ class BinanceSpotAccountHttpAPI:
         list_client_order_id: Optional[str] = None,
         new_client_order_id: Optional[str] = None,
         recv_window: Optional[int] = None,
-    ) -> bytes:
+    ) -> Dict[str, Any]:
         """
         Cancel an entire Order List.
 
@@ -587,8 +584,7 @@ class BinanceSpotAccountHttpAPI:
 
         Returns
         -------
-        bytes
-            The raw response content.
+        dict[str, Any]
 
         References
         ----------
@@ -616,7 +612,7 @@ class BinanceSpotAccountHttpAPI:
         order_list_id: Optional[str],
         orig_client_order_id: Optional[str],
         recv_window: Optional[int] = None,
-    ) -> bytes:
+    ) -> Dict[str, Any]:
         """
         Retrieve a specific OCO based on provided optional parameters.
 
@@ -636,8 +632,7 @@ class BinanceSpotAccountHttpAPI:
 
         Returns
         -------
-        bytes
-            The raw response content.
+        dict[str, Any]
 
         References
         ----------
@@ -665,7 +660,7 @@ class BinanceSpotAccountHttpAPI:
         end_time: Optional[int] = None,
         limit: Optional[int] = None,
         recv_window: Optional[int] = None,
-    ) -> bytes:
+    ) -> Dict[str, Any]:
         """
         Retrieve all OCO based on provided optional parameters.
 
@@ -690,8 +685,7 @@ class BinanceSpotAccountHttpAPI:
 
         Returns
         -------
-        bytes
-            The raw response content.
+        dict[str, Any]
 
         References
         ----------
@@ -716,7 +710,7 @@ class BinanceSpotAccountHttpAPI:
             payload=payload,
         )
 
-    async def get_oco_open_orders(self, recv_window: Optional[int] = None) -> bytes:
+    async def get_oco_open_orders(self, recv_window: Optional[int] = None) -> Dict[str, Any]:
         """
         Get all open OCO orders.
 
@@ -730,8 +724,7 @@ class BinanceSpotAccountHttpAPI:
 
         Returns
         -------
-        bytes
-            The raw response content.
+        dict[str, Any]
 
         References
         ----------
@@ -748,7 +741,7 @@ class BinanceSpotAccountHttpAPI:
             payload=payload,
         )
 
-    async def account(self, recv_window: Optional[int] = None) -> bytes:
+    async def account(self, recv_window: Optional[int] = None) -> Dict[str, Any]:
         """
         Get current account information.
 
@@ -762,8 +755,7 @@ class BinanceSpotAccountHttpAPI:
 
         Returns
         -------
-        bytes
-            The raw response content.
+        dict[str, Any]
 
         References
         ----------
@@ -789,7 +781,7 @@ class BinanceSpotAccountHttpAPI:
         end_time: Optional[int] = None,
         limit: Optional[int] = None,
         recv_window: Optional[int] = None,
-    ) -> bytes:
+    ) -> Dict[str, Any]:
         """
         Get trades for a specific account and symbol.
 
@@ -815,8 +807,7 @@ class BinanceSpotAccountHttpAPI:
 
         Returns
         -------
-        bytes
-            The raw response content.
+        dict[str, Any]
 
         References
         ----------
@@ -844,7 +835,7 @@ class BinanceSpotAccountHttpAPI:
             payload=payload,
         )
 
-    async def get_order_rate_limit(self, recv_window: Optional[int] = None) -> bytes:
+    async def get_order_rate_limit(self, recv_window: Optional[int] = None) -> Dict[str, Any]:
         """
         Get the user's current order count usage for all intervals.
 
@@ -858,8 +849,7 @@ class BinanceSpotAccountHttpAPI:
 
         Returns
         -------
-        bytes
-            The raw response content.
+        dict[str, Any]
 
         References
         ----------

@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2021 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -33,7 +33,6 @@ from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import TradingState
-from nautilus_trader.model.enums import VenueType
 from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import ClientOrderId
 from nautilus_trader.model.identifiers import OrderListId
@@ -103,8 +102,6 @@ class TestRiskEngine:
 
         self.exec_client = MockExecutionClient(
             client_id=ClientId(self.venue.value),
-            venue_type=VenueType.ECN,
-            account_id=self.account_id,
             account_type=AccountType.MARGIN,
             base_currency=USD,
             msgbus=self.msgbus,
@@ -717,7 +714,7 @@ class TestRiskEngine:
         # Assert
         assert self.exec_engine.command_count == 0  # <-- command never reaches engine
 
-    def test_submit_order_when_market_order_and_no_market_to_check_then_denies(self):
+    def test_submit_order_when_market_order_and_no_market_then_logs_warning(self):
         # Arrange
         self.risk_engine.set_max_notional_per_order(AUDUSD_SIM.id, 1_000_000)
 
@@ -752,7 +749,7 @@ class TestRiskEngine:
         self.risk_engine.execute(submit_order)
 
         # Assert
-        assert self.exec_engine.command_count == 0  # <-- command never reaches engine
+        assert self.exec_engine.command_count == 1  # <-- command reaches engine with warning
 
     def test_submit_order_when_market_order_and_over_max_notional_then_denies(self):
         # Arrange
@@ -957,6 +954,62 @@ class TestRiskEngine:
 
         # Act
         self.risk_engine.execute(submit_order)
+
+        # Assert
+        assert self.risk_engine.command_count == 1  # <-- command never reaches engine
+
+    def test_submit_order_list_when_trading_halted_then_denies_orders(self):
+        # Arrange
+        self.exec_engine.start()
+
+        strategy = TradingStrategy()
+        strategy.register(
+            trader_id=self.trader_id,
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            logger=self.logger,
+        )
+
+        entry = strategy.order_factory.market(
+            AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100000),
+        )
+
+        stop_loss = strategy.order_factory.stop_market(  # <-- duplicate
+            AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100000),
+            Price.from_str("1.00000"),
+        )
+
+        take_profit = strategy.order_factory.limit(
+            AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100000),
+            Price.from_str("1.10000"),
+        )
+
+        bracket = OrderList(
+            list_id=OrderListId("1"),
+            orders=[entry, stop_loss, take_profit],
+        )
+
+        submit_bracket = SubmitOrderList(
+            self.trader_id,
+            strategy.id,
+            bracket,
+            self.uuid_factory.generate(),
+            self.clock.timestamp_ns(),
+        )
+
+        # Halt trading
+        self.risk_engine.set_trading_state(TradingState.HALTED)
+
+        # Act
+        self.risk_engine.execute(submit_bracket)
 
         # Assert
         assert self.risk_engine.command_count == 1  # <-- command never reaches engine

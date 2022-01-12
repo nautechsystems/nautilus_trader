@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2021 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -281,6 +281,8 @@ def write_parquet(
         if partition_cols
         else None
     )
+    if pa.__version__ >= "6.0.0":
+        kwargs.update(existing_data_behavior="overwrite_or_ignore")
     ds.write_dataset(
         data=table,
         base_dir=path,

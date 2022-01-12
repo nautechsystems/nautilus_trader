@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2021 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -26,7 +26,7 @@ from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.currencies import USDT
 from nautilus_trader.model.enums import OptionKindParser
 from nautilus_trader.model.instruments.base import Instrument
-from nautilus_trader.model.instruments.crypto_swap import CryptoSwap
+from nautilus_trader.model.instruments.crypto_perp import CryptoPerpetual
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
@@ -86,7 +86,7 @@ class TestInstrument:
         assert result == {
             "type": "Instrument",
             "id": "BTC/USDT.BINANCE",
-            "local_symbol": "BTCUSDT",
+            "native_symbol": "BTCUSDT",
             "asset_class": "CRYPTO",
             "asset_type": "SPOT",
             "quote_currency": "USDT",
@@ -117,7 +117,7 @@ class TestInstrument:
         values = {
             "type": "Instrument",
             "id": "BTC/USDT.BINANCE",
-            "local_symbol": "BTCUSDT",
+            "native_symbol": "BTCUSDT",
             "asset_class": "CRYPTO",
             "asset_type": "SPOT",
             "quote_currency": "USDT",
@@ -151,14 +151,14 @@ class TestInstrument:
 
     def test_crypto_swap_instrument_to_dict(self):
         # Arrange, Act
-        result = CryptoSwap.to_dict(XBTUSD_BITMEX)
+        result = CryptoPerpetual.to_dict(XBTUSD_BITMEX)
 
         # Assert
-        assert CryptoSwap.from_dict(result) == XBTUSD_BITMEX
+        assert CryptoPerpetual.from_dict(result) == XBTUSD_BITMEX
         assert result == {
-            "type": "CryptoSwap",
+            "type": "CryptoPerpetual",
             "id": "BTC/USD.BITMEX",
-            "local_symbol": "XBTUSD",
+            "native_symbol": "XBTUSD",
             "base_currency": "BTC",
             "quote_currency": "USD",
             "settlement_currency": "BTC",

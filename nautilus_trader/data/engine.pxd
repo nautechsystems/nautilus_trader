@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2021 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -17,7 +17,6 @@ from nautilus_trader.cache.cache cimport Cache
 from nautilus_trader.common.component cimport Component
 from nautilus_trader.common.timer cimport TimeEvent
 from nautilus_trader.core.data cimport Data
-from nautilus_trader.data.aggregation cimport TimeBarAggregator
 from nautilus_trader.data.client cimport DataClient
 from nautilus_trader.data.client cimport MarketDataClient
 from nautilus_trader.data.messages cimport DataCommand
@@ -141,5 +140,4 @@ cdef class DataEngine(Component):
     cpdef void _maintain_order_book(self, OrderBookData data) except *
     cpdef void _snapshot_order_book(self, TimeEvent snap_event) except *
     cdef void _start_bar_aggregator(self, MarketDataClient client, BarType bar_type) except *
-    cdef void _hydrate_aggregator(self, MarketDataClient client, TimeBarAggregator aggregator, BarType bar_type) except *
     cdef void _stop_bar_aggregator(self, MarketDataClient client, BarType bar_type) except *

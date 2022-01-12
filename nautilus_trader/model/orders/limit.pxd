@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2021 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -14,14 +14,15 @@
 # -------------------------------------------------------------------------------------------------
 
 from nautilus_trader.model.events.order cimport OrderInitialized
+from nautilus_trader.model.objects cimport Quantity
 from nautilus_trader.model.orders.base cimport PassiveOrder
 
 
 cdef class LimitOrder(PassiveOrder):
     cdef readonly bint is_post_only
     """If the order will only provide liquidity (make a market).\n\n:returns: `bool`"""
-    cdef readonly bint is_hidden
-    """If the order should be hidden from the public book.\n\n:returns: `bool`"""
+    cdef readonly Quantity display_qty
+    """The quantity of the order to display on the public book (iceberg).\n\n:returns: `Quantity` or ``None``"""
 
     @staticmethod
     cdef LimitOrder create(OrderInitialized init)

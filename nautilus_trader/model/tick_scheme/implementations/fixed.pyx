@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2021 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -25,6 +25,24 @@ from nautilus_trader.model.tick_scheme.base cimport round_up
 cdef class FixedTickScheme(TickScheme):
     """
     Represents a Fixed precision tick scheme such as for Forex or Crypto.
+
+    Parameters
+    ----------
+    name : str
+        The name of the tick scheme.
+    price_precision: int
+        The instrument price precision.
+    min_tick : Price
+        The minimum possible tick `Price`.
+    max_tick: Price
+        The maximum possible tick `Price`.
+    increment : float, optional
+        The tick increment.
+
+    Raises
+    ------
+    ValueError
+        If `name` is not a valid string.
     """
 
     def __init__(
@@ -35,28 +53,6 @@ cdef class FixedTickScheme(TickScheme):
         Price max_tick not None,
         increment: Optional[float]=None,
     ):
-        """
-        Initialize a new instance of the `FixedTickScheme` class.
-
-        Parameters
-        ----------
-        name : str
-            The name of the tick scheme.
-        price_precision: int
-            The instrument price precision.
-        min_tick : Price
-            The minimum possible tick `Price`.
-        max_tick: Price
-            The maximum possible tick `Price`.
-        increment : float, optional
-            The tick increment.
-
-        Raises
-        ------
-        ValueError
-            If `name` is not a valid string.
-
-        """
         super().__init__(name=name, min_tick=min_tick, max_tick=max_tick)
         self.price_precision = price_precision
         self.increment = Price.from_str(str(increment or "0." + "1".zfill(price_precision)))

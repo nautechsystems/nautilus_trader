@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2021 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -193,7 +193,7 @@ class TestMessageBus:
 
         # Assert
         assert self.msgbus.has_subscribers()
-        assert self.msgbus.has_subscribers(topic="system")
+        assert self.msgbus.has_subscribers(pattern="system")
 
     def test_subscribe_when_handler_already_subscribed_does_not_add_subscription(self):
         # Arrange
@@ -271,7 +271,7 @@ class TestMessageBus:
         # Act
         self.msgbus.unsubscribe(topic="*", handler=handler)
 
-        result = self.msgbus.subscriptions(topic="*")
+        result = self.msgbus.subscriptions(pattern="*")
 
         # Assert
         assert result == []

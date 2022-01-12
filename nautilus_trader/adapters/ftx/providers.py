@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2021 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -14,17 +14,29 @@
 # -------------------------------------------------------------------------------------------------
 
 import asyncio
+import time
+from typing import Any, Dict, List
 
 from nautilus_trader.adapters.ftx.common import FTX_VENUE
 from nautilus_trader.adapters.ftx.http.client import FTXHttpClient
+from nautilus_trader.adapters.ftx.http.error import FTXClientError
+from nautilus_trader.adapters.ftx.parsing import parse_market
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.common.logging import LoggerAdapter
 from nautilus_trader.common.providers import InstrumentProvider
+from nautilus_trader.model.instruments.base import Instrument
 
 
 class FTXInstrumentProvider(InstrumentProvider):
     """
     Provides a means of loading `Instrument` from the FTX API.
+
+    Parameters
+    ----------
+    client : APIClient
+        The client for the provider.
+    logger : Logger
+        The logger for the provider.
     """
 
     def __init__(
@@ -32,26 +44,11 @@ class FTXInstrumentProvider(InstrumentProvider):
         client: FTXHttpClient,
         logger: Logger,
     ):
-        """
-        Initialize a new instance of the ``FTXInstrumentProvider`` class.
-
-        Parameters
-        ----------
-        client : APIClient
-            The client for the provider.
-        logger : Logger
-            The logger for the provider.
-
-        """
         super().__init__()
 
         self.venue = FTX_VENUE
         self._client = client
         self._log = LoggerAdapter(type(self).__name__, logger)
-
-        # self._wallet = FTXWalletHttpAPI(self._client)
-        # self._spot_market = FTXSpotMarketHttpAPI(self._client)
-        # self._futures_market = FTXFuturesMarketHttpAPI(self._client)
 
         # Async loading flags
         self._loaded = False
@@ -85,7 +82,39 @@ class FTXInstrumentProvider(InstrumentProvider):
         # Set async loading flag
         self._loading = True
 
-        # TODO: Implement
+        try:
+            # Get current commission rates
+            account_info: Dict[str, Any] = await self._client.get_account_info()
+        except FTXClientError:
+            self._log.error(
+                "Cannot load instruments: API key authentication failed "
+                "(this is needed to fetch the applicable account fee tier).",
+            )
+            return
+
+        assets_res: List[Dict[str, Any]] = await self._client.list_markets()
+
+        for data in assets_res:
+            asset_type = data["type"]
+
+            instrument: Instrument = parse_market(
+                account_info=account_info,
+                data=data,
+                ts_init=time.time_ns(),
+            )
+
+            if asset_type == "future":
+                if instrument.native_symbol.value.endswith("-PERP"):
+                    self.add_currency(currency=instrument.get_base_currency())
+            elif asset_type == "spot":
+                self.add_currency(
+                    currency=instrument.get_base_currency()
+                )  # TODO: Temporary until tokenized equity
+                # if not instrument.info.get("tokenizedEquity"):
+                #     self.add_currency(currency=instrument.get_base_currency())
+
+            self.add_currency(currency=instrument.quote_currency)
+            self.add(instrument=instrument)
 
         # Set async loading flags
         self._loading = False

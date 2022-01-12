@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2021 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -30,6 +30,15 @@ cdef class Tick(Data):
     """
     The abstract base class for all ticks.
 
+    Parameters
+    ----------
+    instrument_id : InstrumentId
+        The ticks instrument ID.
+    ts_event: int64
+        The UNIX timestamp (nanoseconds) when the tick event occurred.
+    ts_init : int64
+        The UNIX timestamp (nanoseconds) when the object was initialized.
+
     Warnings
     --------
     This class should not be used directly, but through a concrete subclass.
@@ -41,19 +50,6 @@ cdef class Tick(Data):
         int64_t ts_event,
         int64_t ts_init,
     ):
-        """
-        Initialize a new instance of the ``Tick`` class.
-
-        Parameters
-        ----------
-        instrument_id : InstrumentId
-            The ticks instrument ID.
-        ts_event: int64
-            The UNIX timestamp (nanoseconds) when the tick event occurred.
-        ts_init : int64
-            The UNIX timestamp (nanoseconds) when the object was initialized.
-
-        """
         super().__init__(ts_event, ts_init)
 
         self.instrument_id = instrument_id
@@ -62,6 +58,25 @@ cdef class Tick(Data):
 cdef class QuoteTick(Tick):
     """
     Represents a single quote tick in a financial market.
+
+    Contains information about the best top of book bid and ask.
+
+    Parameters
+    ----------
+    instrument_id : InstrumentId
+        The quotes instrument ID.
+    bid : Price
+        The top of book bid price.
+    ask : Price
+        The top of book ask price.
+    bid_size : Quantity
+        The top of book bid size.
+    ask_size : Quantity
+        The top of book ask size.
+    ts_event: int64
+        The UNIX timestamp (nanoseconds) when the tick event occurred.
+    ts_init: int64
+        The UNIX timestamp (nanoseconds) when the data object was initialized.
     """
 
     def __init__(
@@ -74,27 +89,6 @@ cdef class QuoteTick(Tick):
         int64_t ts_event,
         int64_t ts_init,
     ):
-        """
-        Initialize a new instance of the ``QuoteTick`` class.
-
-        Parameters
-        ----------
-        instrument_id : InstrumentId
-            The quotes instrument ID.
-        bid : Price
-            The top of book bid price.
-        ask : Price
-            The top of book ask price.
-        bid_size : Quantity
-            The top of book bid size.
-        ask_size : Quantity
-            The top of book ask size.
-        ts_event: int64
-            The UNIX timestamp (nanoseconds) when the tick event occurred.
-        ts_init: int64
-            The UNIX timestamp (nanoseconds) when the data object was initialized.
-
-        """
         super().__init__(instrument_id, ts_event, ts_init)
 
         self.bid = bid
@@ -109,12 +103,14 @@ cdef class QuoteTick(Tick):
         return hash(frozenset(QuoteTick.to_dict_c(self)))
 
     def __str__(self) -> str:
-        return (f"{self.instrument_id},"
-                f"{self.bid},"
-                f"{self.ask},"
-                f"{self.bid_size},"
-                f"{self.ask_size},"
-                f"{self.ts_event}")
+        return (
+            f"{self.instrument_id},"
+            f"{self.bid},"
+            f"{self.ask},"
+            f"{self.bid_size},"
+            f"{self.ask_size},"
+            f"{self.ts_event}"
+        )
 
     def __repr__(self) -> str:
         return f"{type(self).__name__}({self})"
@@ -225,6 +221,31 @@ cdef class QuoteTick(Tick):
 cdef class TradeTick(Tick):
     """
     Represents a single trade tick in a financial market.
+
+    Contains information about a single unique trade which matched buyer and
+    seller counterparties.
+
+    Parameters
+    ----------
+    instrument_id : InstrumentId
+        The trade instrument ID.
+    price : Price
+        The traded price.
+    size : Quantity
+        The traded size.
+    aggressor_side : AggressorSide
+        The trade aggressor side.
+    trade_id : str
+        The trade match ID.
+    ts_event: int64
+        The UNIX timestamp (nanoseconds) when the tick event occurred.
+    ts_init: int64
+        The UNIX timestamp (nanoseconds) when the data object was initialized.
+
+    Raises
+    ------
+    ValueError
+        If `trade_id` is not a valid string.
     """
 
     def __init__(
@@ -233,43 +254,17 @@ cdef class TradeTick(Tick):
         Price price not None,
         Quantity size not None,
         AggressorSide aggressor_side,
-        str match_id not None,
+        str trade_id not None,
         int64_t ts_event,
         int64_t ts_init,
     ):
-        """
-        Initialize a new instance of the ``TradeTick`` class.
-
-        Parameters
-        ----------
-        instrument_id : InstrumentId
-            The trade instrument ID.
-        price : Price
-            The traded price.
-        size : Quantity
-            The traded size.
-        aggressor_side : AggressorSide
-            The trade aggressor side.
-        match_id : str
-            The trade match ID.
-        ts_event: int64
-            The UNIX timestamp (nanoseconds) when the tick event occurred.
-        ts_init: int64
-            The UNIX timestamp (nanoseconds) when the data object was initialized.
-
-        Raises
-        ------
-        ValueError
-            If `match_id` is not a valid string.
-
-        """
-        Condition.valid_string(match_id, "match_id")
+        Condition.valid_string(trade_id, "trade_id")
         super().__init__(instrument_id, ts_event, ts_init)
 
         self.price = price
         self.size = size
         self.aggressor_side = aggressor_side
-        self.match_id = match_id
+        self.trade_id = trade_id
 
     def __eq__(self, TradeTick other) -> bool:
         return TradeTick.to_dict_c(self) == TradeTick.to_dict_c(other)
@@ -278,12 +273,14 @@ cdef class TradeTick(Tick):
         return hash(frozenset(TradeTick.to_dict_c(self)))
 
     def __str__(self) -> str:
-        return (f"{self.instrument_id},"
-                f"{self.price},"
-                f"{self.size},"
-                f"{AggressorSideParser.to_str(self.aggressor_side)},"
-                f"{self.match_id},"
-                f"{self.ts_event}")
+        return (
+            f"{self.instrument_id},"
+            f"{self.price},"
+            f"{self.size},"
+            f"{AggressorSideParser.to_str(self.aggressor_side)},"
+            f"{self.trade_id},"
+            f"{self.ts_event}"
+        )
 
     def __repr__(self) -> str:
         return f"{type(self).__name__}({self})"
@@ -296,7 +293,7 @@ cdef class TradeTick(Tick):
             price=Price.from_str_c(values["price"]),
             size=Quantity.from_str_c(values["size"]),
             aggressor_side=AggressorSideParser.from_str(values["aggressor_side"]),
-            match_id=values["match_id"],
+            trade_id=values["trade_id"],
             ts_event=values["ts_event"],
             ts_init=values["ts_init"],
         )
@@ -310,7 +307,7 @@ cdef class TradeTick(Tick):
             "price": str(obj.price),
             "size": str(obj.size),
             "aggressor_side": AggressorSideParser.to_str(obj.aggressor_side),
-            "match_id": obj.match_id,
+            "trade_id": obj.trade_id,
             "ts_event": obj.ts_event,
             "ts_init": obj.ts_init,
         }

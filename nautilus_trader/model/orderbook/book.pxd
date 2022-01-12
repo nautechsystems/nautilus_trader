@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2021 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -94,7 +94,7 @@ cdef class L3OrderBook(OrderBook):
 
 
 cdef class L2OrderBook(OrderBook):
-    cdef void _process_order(self, Order order)
+    cdef void _process_order(self, Order order) except *
     cdef void _remove_if_exists(self, Order order, int update_id) except *
 
 

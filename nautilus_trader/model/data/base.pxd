@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2021 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -19,11 +19,14 @@ from nautilus_trader.core.data cimport Data
 cdef class DataType:
     cdef frozenset _key
     cdef int _hash
+    cdef str _metadata_str
 
     cdef readonly type type
     """The `Data` type of the data.\n\n:returns: `type`"""
     cdef readonly dict metadata
     """The data types metadata.\n\n:returns: `dict[str, object]`"""
+    cdef readonly str topic
+    """The data types topic string.\n\n:returns: `str`"""
 
 
 cdef class GenericData(Data):

@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2021 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -59,7 +59,6 @@ from nautilus_trader.model.data.venue cimport VenueStatusUpdate
 from nautilus_trader.model.identifiers cimport ClientId
 from nautilus_trader.model.identifiers cimport ComponentId
 from nautilus_trader.model.identifiers cimport InstrumentId
-from nautilus_trader.model.identifiers cimport StrategyId
 from nautilus_trader.model.identifiers cimport TraderId
 from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.model.instruments.base cimport Instrument
@@ -73,26 +72,22 @@ cdef class Actor(Component):
     """
     The abstract base class for all actor components.
 
+    Parameters
+    ----------
+    config : ActorConfig, optional
+        The actor configuration.
+
+    Raises
+    ------
+    TypeError
+        If `config` is not of type `ActorConfig`.
+
     Warnings
     --------
     This class should not be used directly, but through a concrete subclass.
     """
 
     def __init__(self, config: Optional[ActorConfig]=None):
-        """
-        Initialize a new instance of the ``Actor`` class.
-
-        Parameters
-        ----------
-        config : ActorConfig, optional
-            The actor configuration.
-
-        Raises
-        ------
-        TypeError
-            If `config` is not of type `ActorConfig`.
-
-        """
         if config is None:
             config = ActorConfig()
         Condition.type(config, ActorConfig, "config")
@@ -467,7 +462,7 @@ cdef class Actor(Component):
         self.cache = cache
         self.clock = self._clock
 
-    cpdef void register_warning_event(self, type event):
+    cpdef void register_warning_event(self, type event) except *:
         """
         Register the given event type for warning log levels.
 
@@ -483,7 +478,7 @@ cdef class Actor(Component):
 
         self._log.debug(f"Registered `{event.__name__}` for warning log levels.")
 
-    cpdef void deregister_warning_event(self, type event):
+    cpdef void deregister_warning_event(self, type event) except *:
         """
         Deregister the given event type from warning log levels.
 
@@ -532,26 +527,29 @@ cdef class Actor(Component):
 
 # -- SUBSCRIPTIONS ---------------------------------------------------------------------------------
 
-    cpdef void subscribe_data(self, ClientId client_id, DataType data_type) except *:
+    cpdef void subscribe_data(self, DataType data_type, ClientId client_id=None) except *:
         """
         Subscribe to data of the given data type.
 
         Parameters
         ----------
-        client_id : ClientId
-            The data client ID.
         data_type : DataType
             The data type to subscribe to.
+        client_id : ClientId, optional
+            The data client ID. If supplied then a `Subscribe` command will be
+            sent to the data client.
 
         """
-        Condition.not_none(client_id, "client_id")
         Condition.not_none(data_type, "data_type")
         Condition.true(self.trader_id is not None, "The actor has not been registered")
 
         self._msgbus.subscribe(
-            topic=f"data.{data_type}",
+            topic=f"data.{data_type.topic}",
             handler=self.handle_data,
         )
+
+        if client_id is None:
+            return
 
         cdef Subscribe command = Subscribe(
             client_id=client_id,
@@ -561,37 +559,6 @@ cdef class Actor(Component):
         )
 
         self._send_data_cmd(command)
-
-    cpdef void subscribe_strategy_data(
-        self,
-        type data_type=None,
-        StrategyId strategy_id=None,
-    ) except *:
-        """
-        Subscribe to strategy data of the given data type.
-
-        Parameters
-        ----------
-        data_type : type, optional
-            The strategy data type to subscribe to.
-        strategy_id : StrategyId, optional
-            The strategy ID filter for the subscription.
-
-        """
-        Condition.not_none(data_type, "data_type")
-        Condition.true(self.trader_id is not None, "The actor has not been registered")
-
-        self._msgbus.subscribe(
-            topic=f"data.strategy"
-                  f".{data_type.__name__ if data_type else '*'}"
-                  f".{strategy_id or '*'}",
-            handler=self.handle_data,
-        )
-
-        self._log.info(
-            f"Subscribed to {data_type.__name__} "
-            f"strategy data{strategy_id if strategy_id else ''}.",
-        )
 
     cpdef void subscribe_instrument(self, InstrumentId instrument_id) except *:
         """
@@ -962,23 +929,29 @@ cdef class Actor(Component):
 
         self._send_data_cmd(command)
 
-    cpdef void unsubscribe_data(self, ClientId client_id, DataType data_type) except *:
+    cpdef void unsubscribe_data(self, DataType data_type, ClientId client_id=None) except *:
         """
         Unsubscribe from data of the given data type.
 
         Parameters
         ----------
-        client_id : ClientId
-            The data client ID.
         data_type : DataType
             The data type to unsubscribe from.
+        client_id : ClientId, optional
+            The data client ID. If supplied then an `Unsubscribe` command will
+            be sent to the data client.
 
         """
-        Condition.not_none(client_id, "client_id")
         Condition.not_none(data_type, "data_type")
         Condition.true(self.trader_id is not None, "The actor has not been registered")
 
-        self._msgbus.unsubscribe(topic=f"data.{data_type}", handler=self.handle_data)
+        self._msgbus.unsubscribe(
+            topic=f"data.{data_type.topic}",
+            handler=self.handle_data,
+        )
+
+        if client_id is None:
+            return
 
         cdef Unsubscribe command = Unsubscribe(
             client_id=client_id,
@@ -988,33 +961,6 @@ cdef class Actor(Component):
         )
 
         self._send_data_cmd(command)
-
-    cpdef void unsubscribe_strategy_data(
-        self,
-        type data_type,
-        StrategyId strategy_id=None,
-    ) except *:
-        """
-        Unsubscribe from strategy data of the given data type.
-
-        Parameters
-        ----------
-        data_type : type
-            The strategy data type to unsubscribe from.
-        strategy_id : StrategyId, optional
-            The strategy ID filter for the subscription.
-
-        """
-        Condition.not_none(data_type, "data_type")
-        Condition.true(self.trader_id is not None, "The actor has not been registered")
-
-        self._msgbus.unsubscribe(
-            topic=f"data.strategy.{data_type.__name__}.{strategy_id or '*'}",
-            handler=self.handle_data,
-        )
-
-        strategy_id_str = f" for {strategy_id}" if strategy_id else ""
-        self._log.info(f"Unsubscribed from {data_type.__name__} strategy data{strategy_id_str}.")
 
     cpdef void unsubscribe_instruments(self, Venue venue) except *:
         """
@@ -1257,23 +1203,24 @@ cdef class Actor(Component):
         self._send_data_cmd(command)
         self._log.info(f"Unsubscribed from {bar_type} bar data.")
 
-    cpdef void publish_data(self, Data data) except *:
+    cpdef void publish_data(self, DataType data_type, Data data) except *:
         """
         Publish the given data to the message bus.
 
         Parameters
         ----------
+        data_type : DataType
+            The data type being published.
         data : Data
             The data to publish.
 
         """
+        Condition.not_none(data_type, "data_type")
         Condition.not_none(data, "data")
+        Condition.type(data, data_type.type, "data", "data.type")
         Condition.true(self.trader_id is not None, "The actor has not been registered")
 
-        self._msgbus.publish_c(
-            topic=f"data.{type(data).__name__}.{type(self).__name__}",
-            msg=data,
-        )
+        self._msgbus.publish_c(topic=f"data.{data_type.topic}", msg=data)
 
 # -- REQUESTS --------------------------------------------------------------------------------------
 
@@ -1413,6 +1360,11 @@ cdef class Actor(Component):
         to_datetime : datetime, optional
             The specified to datetime for the data. If ``None`` then will default
             to the current datetime.
+
+        Raises
+        ------
+        ValueError
+            If `from_datetime` is not less than `to_datetime`.
 
         Notes
         -----

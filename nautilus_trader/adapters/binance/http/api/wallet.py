@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2021 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -16,7 +16,7 @@
 #  Original author: Jeremy https://github.com/2pd
 # -------------------------------------------------------------------------------------------------
 
-from typing import Dict, Optional
+from typing import Dict, List, Optional
 
 from nautilus_trader.adapters.binance.http.client import BinanceHttpClient
 from nautilus_trader.core.correctness import PyCondition
@@ -25,20 +25,16 @@ from nautilus_trader.core.correctness import PyCondition
 class BinanceWalletHttpAPI:
     """
     Provides access to the `Binance Wallet` HTTP REST API.
+
+    Parameters
+    ----------
+    client : BinanceHttpClient
+        The Binance REST API client.
     """
 
     BASE_ENDPOINT = "/sapi/v1/"
 
     def __init__(self, client: BinanceHttpClient):
-        """
-        Initialize a new instance of the ``BinanceWalletHttpAPI`` class.
-
-        Parameters
-        ----------
-        client : BinanceHttpClient
-            The Binance REST API client.
-
-        """
         PyCondition.not_none(client, "client")
 
         self.client = client
@@ -47,7 +43,7 @@ class BinanceWalletHttpAPI:
         self,
         symbol: Optional[str] = None,
         recv_window: Optional[int] = None,
-    ) -> bytes:
+    ) -> List[Dict[str, str]]:
         """
         Fetch trade fee.
 
@@ -62,8 +58,7 @@ class BinanceWalletHttpAPI:
 
         Returns
         -------
-        bytes
-            The raw response content.
+        list[dict[str, str]]
 
         References
         ----------

@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2021 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -30,7 +30,6 @@ from nautilus_trader.model.commands.trading import SubmitOrder
 from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import OrderSide
-from nautilus_trader.model.enums import VenueType
 from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import StrategyId
 from nautilus_trader.model.identifiers import TraderId
@@ -115,8 +114,6 @@ class TestLiveRiskEngine:
 
         self.exec_client = MockExecutionClient(
             client_id=ClientId("SIM"),
-            venue_type=VenueType.ECN,
-            account_id=TestStubs.account_id(),
             account_type=AccountType.MARGIN,
             base_currency=USD,
             msgbus=self.msgbus,
@@ -128,7 +125,8 @@ class TestLiveRiskEngine:
         # Wire up components
         self.exec_engine.register_client(self.exec_client)
 
-    def test_start_when_loop_not_running_logs(self):
+    @pytest.mark.asyncio
+    async def test_start_when_loop_not_running_logs(self):
         # Arrange, Act
         self.risk_engine.start()
 
@@ -136,14 +134,16 @@ class TestLiveRiskEngine:
         assert True  # No exceptions raised
         self.risk_engine.stop()
 
-    def test_get_event_loop_returns_expected_loop(self):
+    @pytest.mark.asyncio
+    async def test_get_event_loop_returns_expected_loop(self):
         # Arrange, Act
         loop = self.risk_engine.get_event_loop()
 
         # Assert
         assert loop == self.loop
 
-    def test_message_qsize_at_max_blocks_on_put_command(self):
+    @pytest.mark.asyncio
+    async def test_message_qsize_at_max_blocks_on_put_command(self):
         # Arrange
         self.msgbus.deregister("RiskEngine.execute", self.risk_engine.execute)
         self.risk_engine = LiveRiskEngine(
@@ -184,12 +184,14 @@ class TestLiveRiskEngine:
         # Act
         self.risk_engine.execute(submit_order)
         self.risk_engine.execute(submit_order)
+        await asyncio.sleep(0.1)
 
         # Assert
         assert self.risk_engine.qsize() == 1
         assert self.risk_engine.command_count == 0
 
-    def test_message_qsize_at_max_blocks_on_put_event(self):
+    @pytest.mark.asyncio
+    async def test_message_qsize_at_max_blocks_on_put_event(self):
         # Arrange
         self.msgbus.deregister("RiskEngine.execute", self.risk_engine.execute)
         self.risk_engine = LiveRiskEngine(
@@ -232,6 +234,7 @@ class TestLiveRiskEngine:
         # Act
         self.risk_engine.execute(submit_order)
         self.risk_engine.process(event)  # Add over max size
+        await asyncio.sleep(0.1)
 
         # Assert
         assert self.risk_engine.qsize() == 1

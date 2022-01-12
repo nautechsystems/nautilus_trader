@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2021 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -21,6 +21,8 @@ class CacheConfig(pydantic.BaseModel):
     """
     Configuration for ``Cache`` instances.
 
+    Parameters
+    ----------
     tick_capacity : int
         The maximum length for internal tick deques.
     bar_capacity : int

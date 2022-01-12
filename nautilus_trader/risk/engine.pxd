@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2021 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -21,6 +21,7 @@ from nautilus_trader.common.throttler cimport Throttler
 from nautilus_trader.core.message cimport Command
 from nautilus_trader.core.message cimport Event
 from nautilus_trader.model.c_enums.trading_state cimport TradingState
+from nautilus_trader.model.commands.trading cimport CancelAllOrders
 from nautilus_trader.model.commands.trading cimport CancelOrder
 from nautilus_trader.model.commands.trading cimport ModifyOrder
 from nautilus_trader.model.commands.trading cimport SubmitOrder
@@ -76,28 +77,29 @@ cdef class RiskEngine(Component):
     cdef void _handle_submit_order_list(self, SubmitOrderList command) except *
     cdef void _handle_modify_order(self, ModifyOrder command) except *
     cdef void _handle_cancel_order(self, CancelOrder command) except *
+    cdef void _handle_cancel_all_orders(self, CancelAllOrders command) except *
 
 # -- PRE-TRADE CHECKS ------------------------------------------------------------------------------
 
     cdef bint _check_order_id(self, Order order) except *
     cdef bint _check_order(self, Instrument instrument, Order order) except *
-    cdef bint _check_order_quantity(self, Instrument instrument, Order order) except *
     cdef bint _check_order_price(self, Instrument instrument, Order order) except *
-    cdef bint _check_order_risk(self, Instrument instrument, Order order) except *
+    cdef bint _check_order_quantity(self, Instrument instrument, Order order) except *
+    cdef bint _check_orders_risk(self, Instrument instrument, list orders) except *
     cdef str _check_price(self, Instrument instrument, Price price)
     cdef str _check_quantity(self, Instrument instrument, Quantity quantity)
 
 # -- DENIALS ---------------------------------------------------------------------------------------
 
     cdef void _deny_command(self, TradingCommand command, str reason) except *
-    cpdef _deny_new_order(self, TradingCommand command)
+    cpdef void _deny_new_order(self, TradingCommand command) except *
     cdef void _deny_order(self, Order order, str reason) except *
     cdef void _deny_order_list(self, OrderList order_list, str reason) except *
 
 # -- EGRESS ----------------------------------------------------------------------------------------
 
-    cdef void _execution_gateway(self, Instrument instrument, TradingCommand command, Order order)
-    cpdef _send_command(self, TradingCommand command)
+    cdef void _execution_gateway(self, Instrument instrument, TradingCommand command, Order order) except *
+    cpdef void _send_command(self, TradingCommand command) except *
 
 # -- EVENT HANDLERS --------------------------------------------------------------------------------
 

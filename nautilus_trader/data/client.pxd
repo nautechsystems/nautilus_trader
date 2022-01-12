@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2021 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -52,7 +52,7 @@ cdef class DataClient(Component):
 # -- DATA HANDLERS ---------------------------------------------------------------------------------
 
     cpdef void _handle_data(self, Data data) except *
-    cpdef void _handle_data_response(self, DataType data_type, Data data, UUID4 correlation_id) except *
+    cpdef void _handle_data_response(self, DataType data_type, object data, UUID4 correlation_id) except *
 
 
 cdef class MarketDataClient(DataClient):

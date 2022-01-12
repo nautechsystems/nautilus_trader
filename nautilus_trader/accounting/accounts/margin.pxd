@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2021 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -19,6 +19,7 @@ from nautilus_trader.accounting.accounts.base cimport Account
 from nautilus_trader.model.c_enums.position_side cimport PositionSide
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.instruments.base cimport Instrument
+from nautilus_trader.model.objects cimport MarginBalance
 from nautilus_trader.model.objects cimport Money
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
@@ -26,29 +27,32 @@ from nautilus_trader.model.objects cimport Quantity
 
 cdef class MarginAccount(Account):
     cdef dict _leverages
-    cdef dict _margins_init
-    cdef dict _margins_maint
+    cdef dict _margins
 
     cdef readonly default_leverage
     """The accounts default leverage setting.\n\n:returns: `Decimal`"""
 
 # -- QUERIES ---------------------------------------------------------------------------------------
 
-    cpdef dict leverages(self)
+    cpdef dict margins(self)
     cpdef dict margins_init(self)
     cpdef dict margins_maint(self)
+    cpdef dict leverages(self)
     cpdef object leverage(self, InstrumentId instrument_id)
     cpdef Money margin_init(self, InstrumentId instrument_id)
     cpdef Money margin_maint(self, InstrumentId instrument_id)
+    cpdef MarginBalance margin(self, InstrumentId instrument_id)
 
 # -- COMMANDS --------------------------------------------------------------------------------------
 
     cpdef void set_default_leverage(self, leverage: Decimal) except *
     cpdef void set_leverage(self, InstrumentId instrument_id, leverage: Decimal) except *
-    cpdef void update_margin_init(self, InstrumentId instrument_id, Money locked) except *
+    cpdef void update_margin_init(self, InstrumentId instrument_id, Money margin_init) except *
     cpdef void update_margin_maint(self, InstrumentId instrument_id, Money margin_maint) except *
+    cpdef void update_margin(self, MarginBalance margin) except *
     cpdef void clear_margin_init(self, InstrumentId instrument_id) except *
     cpdef void clear_margin_maint(self, InstrumentId instrument_id) except *
+    cpdef void clear_margin(self, InstrumentId instrument_id) except *
 
 # -- CALCULATIONS ----------------------------------------------------------------------------------
 

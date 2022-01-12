@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2021 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -18,7 +18,6 @@ import os
 from functools import lru_cache
 from typing import Any, Dict, Optional
 
-from nautilus_trader.adapters.ftx.common import FTX_VENUE
 from nautilus_trader.adapters.ftx.data import FTXDataClient
 from nautilus_trader.adapters.ftx.execution import FTXExecutionClient
 from nautilus_trader.adapters.ftx.http.client import FTXHttpClient
@@ -29,7 +28,6 @@ from nautilus_trader.common.logging import LiveLogger
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.live.factories import LiveDataClientFactory
 from nautilus_trader.live.factories import LiveExecutionClientFactory
-from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.msgbus.bus import MessageBus
 
 
@@ -37,11 +35,13 @@ HTTP_CLIENTS: Dict[str, FTXHttpClient] = {}
 
 
 def get_cached_ftx_http_client(
-    key: Optional[str],
-    secret: Optional[str],
     loop: asyncio.AbstractEventLoop,
     clock: LiveClock,
     logger: Logger,
+    key: Optional[str] = None,
+    secret: Optional[str] = None,
+    subaccount: Optional[str] = None,
+    us: bool = False,
 ) -> FTXHttpClient:
     """
     Cache and return a FTX HTTP client with the given key or secret.
@@ -51,18 +51,23 @@ def get_cached_ftx_http_client(
 
     Parameters
     ----------
-    key : str, optional
-        The API key for the client.
-        If None then will source from the `FTX_API_KEY` env var.
-    secret : str, optional
-        The API secret for the client.
-        If None then will source from the `FTX_API_SECRET` env var.
     loop : asyncio.AbstractEventLoop
         The event loop for the client.
     clock : LiveClock
         The clock for the client.
     logger : Logger
         The logger for the client.
+    key : str, optional
+        The API key for the client.
+        If None then will source from the `FTX_API_KEY` env var.
+    secret : str, optional
+        The API secret for the client.
+        If None then will source from the `FTX_API_SECRET` env var.
+    subaccount : str, optional
+        The subaccount name.
+        If None then will source from the `FTX_SUBACCOUNT` env var.
+    us : bool, default False
+        If the client is for FTX US.
 
     Returns
     -------
@@ -73,8 +78,9 @@ def get_cached_ftx_http_client(
 
     key = key or os.environ["FTX_API_KEY"]
     secret = secret or os.environ["FTX_API_SECRET"]
+    subaccount = subaccount or os.environ.get("FTX_SUBACCOUNT")
 
-    client_key: str = "|".join((key, secret))
+    client_key: str = "|".join((key, secret, subaccount or "None"))
     if client_key not in HTTP_CLIENTS:
         client = FTXHttpClient(
             loop=loop,
@@ -82,6 +88,8 @@ def get_cached_ftx_http_client(
             logger=logger,
             key=key,
             secret=secret,
+            subaccount=subaccount,
+            us=us,
         )
         HTTP_CLIENTS[client_key] = client
     return HTTP_CLIENTS[client_key]
@@ -129,7 +137,6 @@ class FTXLiveDataClientFactory(LiveDataClientFactory):
         cache: Cache,
         clock: LiveClock,
         logger: LiveLogger,
-        client_cls=None,
     ) -> FTXDataClient:
         """
         Create a new FTX data client.
@@ -150,8 +157,6 @@ class FTXLiveDataClientFactory(LiveDataClientFactory):
             The clock for the client.
         logger : LiveLogger
             The logger for the client.
-        client_cls : class, optional
-            The class to call to return a new internal client.
 
         Returns
         -------
@@ -159,11 +164,13 @@ class FTXLiveDataClientFactory(LiveDataClientFactory):
 
         """
         client = get_cached_ftx_http_client(
-            key=config.get("api_key"),
-            secret=config.get("api_secret"),
             loop=loop,
             clock=clock,
             logger=logger,
+            key=config.get("api_key"),
+            secret=config.get("api_secret"),
+            subaccount=config.get("subaccount"),
+            us=config.get("us", False),
         )
 
         # Get instrument provider singleton
@@ -178,6 +185,7 @@ class FTXLiveDataClientFactory(LiveDataClientFactory):
             clock=clock,
             logger=logger,
             instrument_provider=provider,
+            us=config.get("us", False),
         )
         return data_client
 
@@ -196,7 +204,6 @@ class FTXLiveExecutionClientFactory(LiveExecutionClientFactory):
         cache: Cache,
         clock: LiveClock,
         logger: LiveLogger,
-        client_cls=None,
     ) -> FTXExecutionClient:
         """
         Create a new FTX execution client.
@@ -217,9 +224,6 @@ class FTXLiveExecutionClientFactory(LiveExecutionClientFactory):
             The clock for the client.
         logger : LiveLogger
             The logger for the client.
-        client_cls : class, optional
-            The internal client constructor. This allows external library and
-            testing dependency injection.
 
         Returns
         -------
@@ -227,31 +231,29 @@ class FTXLiveExecutionClientFactory(LiveExecutionClientFactory):
 
         """
         client = get_cached_ftx_http_client(
-            key=config.get("api_key"),
-            secret=config.get("api_secret"),
             loop=loop,
             clock=clock,
             logger=logger,
+            key=config.get("api_key"),
+            secret=config.get("api_secret"),
+            subaccount=config.get("subaccount"),
+            us=config.get("us", False),
         )
 
         # Get instrument provider singleton
         provider = get_cached_ftx_instrument_provider(client=client, logger=logger)
 
-        # Get account ID env variable or set default
-        account_id_env_var = os.getenv(config.get("account_id", ""), "001")
-
-        # Set account ID
-        account_id = AccountId(FTX_VENUE.value, account_id_env_var)
-
         # Create client
         exec_client = FTXExecutionClient(
             loop=loop,
             client=client,
-            account_id=account_id,
             msgbus=msgbus,
             cache=cache,
             clock=clock,
             logger=logger,
             instrument_provider=provider,
+            us=config.get("us", False),
+            account_polling_interval=config.get("account_polling_interval", 60),
+            calculated_account=config.get("calculated_account", False),
         )
         return exec_client

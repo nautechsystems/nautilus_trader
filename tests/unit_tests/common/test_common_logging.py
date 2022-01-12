@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2021 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -252,8 +252,8 @@ class TestLiveLogger:
         logger_adapter.info("A log message.")  # <-- blocks
 
         await asyncio.sleep(0.3)  # <-- processes all log messages
-        self.logger.stop()
+        logger.stop()
         await asyncio.sleep(0.3)
 
         # Assert
-        assert not self.logger.is_running
+        assert not logger.is_running

@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2021 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -42,7 +42,7 @@ async def test_binance_spot_market_http_client():
 
     market = BinanceSpotMarketHttpAPI(client=client)
     response = await market.exchange_info(symbols=["BTCUSDT", "ETHUSDT"])
-    print(json.dumps(json.loads(response), indent=4))
+    print(json.dumps(response, indent=4))
 
     provider = BinanceInstrumentProvider(
         client=client,

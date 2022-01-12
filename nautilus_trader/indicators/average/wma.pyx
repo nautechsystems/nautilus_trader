@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2021 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -28,6 +28,20 @@ from nautilus_trader.model.data.tick cimport TradeTick
 cdef class WeightedMovingAverage(MovingAverage):
     """
     An indicator which calculates a weighted moving average across a rolling window.
+
+    Parameters
+    ----------
+    period : int
+        The rolling window period for the indicator (> 0).
+    weights : iterable
+        The weights for the moving average calculation (if not ``None`` then = period).
+    price_type : PriceType
+        The specified price type for extracting values from quote ticks.
+
+    Raises
+    ------
+    ValueError
+        If `period` is not positive (> 0).
     """
 
     def __init__(
@@ -36,24 +50,6 @@ cdef class WeightedMovingAverage(MovingAverage):
         weights=None,
         PriceType price_type=PriceType.LAST,
     ):
-        """
-        Initialize a new instance of the ``SimpleMovingAverage`` class.
-
-        Parameters
-        ----------
-        period : int
-            The rolling window period for the indicator (> 0).
-        weights : iterable
-            The weights for the moving average calculation (if not ``None`` then = period).
-        price_type : PriceType
-            The specified price type for extracting values from quote ticks.
-
-        Raises
-        ------
-        ValueError
-            If `period` is not positive (> 0).
-
-        """
         Condition.positive_int(period, "period")
         if weights is not None:
             if not isinstance(weights, np.ndarray):

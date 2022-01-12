@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2021 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -25,6 +25,20 @@ from nautilus_trader.model.objects cimport Quantity
 cdef class Bet:
     """
     Represents a bet "order" or "trade" in price space (not probability).
+
+    Parameters
+    ----------
+    price : Price or decimal.Decimal
+        The price of the bet.
+    quantity : Quantity
+        The size of the bet.
+    side : OrderSide
+        The side ( OrderSide.BUY = BACK, OrderSide.SELL = LAY ) of the bet.
+
+    Raises
+    ------
+    ValueError
+        If `price` is less than 1.0.
     """
 
     def __init__(
@@ -33,24 +47,6 @@ cdef class Bet:
         Quantity quantity,
         OrderSide side,
     ):
-        """
-        Initialize a new instance of the ``Bet`` class.
-
-        Parameters
-        ----------
-        price : Price
-            The price of the bet
-        quantity : Quantity
-            The size of the bet.
-        side : OrderSide
-            The side ( OrderSide.BUY = BACK, OrderSide.SELL = LAY ) of the bet
-
-        Raises
-        ------
-        ValueError
-            If `price` is less than 1.0.
-
-        """
         Condition.in_range_int(price, 1, 1000, "price")
 
         self.price = price

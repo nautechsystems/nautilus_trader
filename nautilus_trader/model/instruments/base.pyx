@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2021 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -36,12 +36,100 @@ cdef class Instrument(Data):
     The base class for all instruments.
 
     Represents a tradeable financial market instrument or trading pair.
+
+    Parameters
+    ----------
+    instrument_id : InstrumentId
+        The instrument ID for the instrument.
+    native_symbol : Symbol
+        The native/local symbol on the exchange for the instrument.
+    asset_class : AssetClass
+        The instrument asset class.
+    asset_type : AssetType
+        The instrument asset type.
+    quote_currency : Currency
+        The quote currency.
+    is_inverse : Currency
+        If the instrument costing is inverse (quantity expressed in quote currency units).
+    price_precision : int
+        The price decimal precision.
+    size_precision : int
+        The trading size decimal precision.
+    price_increment : Price
+        The minimum price increment (tick size).
+    size_increment : Price
+        The minimum size increment.
+    multiplier : Decimal
+        The contract value multiplier (determines tick value).
+    lot_size : Quantity, optional
+        The rounded lot unit size (standard/board).
+    max_quantity : Quantity, optional
+        The maximum allowable order quantity.
+    min_quantity : Quantity, optional
+        The minimum allowable order quantity.
+    max_notional : Money, optional
+        The maximum allowable order notional value.
+    min_notional : Money, optional
+        The minimum allowable order notional value.
+    max_price : Price, optional
+        The maximum allowable printed price.
+    min_price : Price, optional
+        The minimum allowable printed price.
+    margin_init : Decimal
+        The initial (order) margin requirement in percentage of order value.
+    margin_maint : Decimal
+        The maintenance (position) margin in percentage of position value.
+    maker_fee : Decimal
+        The fee rate for liquidity makers as a percentage of order value.
+    taker_fee : Decimal
+        The fee rate for liquidity takers as a percentage of order value.
+    ts_event: int64
+        The UNIX timestamp (nanoseconds) when the data event occurred.
+    ts_init: int64
+        The UNIX timestamp (nanoseconds) when the data object was initialized.
+    tick_scheme_name : str, optional
+        The name of the tick scheme.
+    info : dict[str, object], optional
+        The additional instrument information.
+
+    Raises
+    ------
+    ValueError
+        If `tick_scheme_name` is not a valid string.
+    ValueError
+        If `price_precision` is negative (< 0).
+    ValueError
+        If `size_precision` is negative (< 0).
+    ValueError
+        If `price_increment` is not positive (> 0).
+    ValueError
+        If `size_increment` is not positive (> 0).
+    ValueError
+        If `price_precision` is not equal to price_increment.precision.
+    ValueError
+        If `size_increment` is not equal to size_increment.precision.
+    ValueError
+        If `multiplier` is not positive (> 0).
+    ValueError
+        If `lot size` is not positive (> 0).
+    ValueError
+        If `max_quantity` is not positive (> 0).
+    ValueError
+        If `min_quantity` is negative (< 0).
+    ValueError
+        If `max_notional` is not positive (> 0).
+    ValueError
+        If `min_notional` is negative (< 0).
+    ValueError
+        If `max_price` is not positive (> 0).
+    ValueError
+        If `min_price` is negative (< 0).
     """
 
     def __init__(
         self,
         InstrumentId instrument_id not None,
-        Symbol local_symbol not None,
+        Symbol native_symbol not None,
         AssetClass asset_class,
         AssetType asset_type,
         Currency quote_currency not None,
@@ -67,98 +155,6 @@ cdef class Instrument(Data):
         str tick_scheme_name=None,
         dict info=None,
     ):
-        """
-        Initialize a new instance of the ``Instrument`` class.
-
-        Parameters
-        ----------
-        instrument_id : InstrumentId
-            The instrument ID for the instrument.
-        local_symbol : Symbol
-            The local/native symbol on the exchange for the instrument.
-        asset_class : AssetClass
-            The instrument asset class.
-        asset_type : AssetType
-            The instrument asset type.
-        quote_currency : Currency
-            The quote currency.
-        is_inverse : Currency
-            If the instrument costing is inverse (quantity expressed in quote currency units).
-        price_precision : int
-            The price decimal precision.
-        size_precision : int
-            The trading size decimal precision.
-        price_increment : Price
-            The minimum price increment (tick size).
-        size_increment : Price
-            The minimum size increment.
-        multiplier : Decimal
-            The contract value multiplier (determines tick value).
-        lot_size : Quantity, optional
-            The rounded lot unit size (standard/board).
-        max_quantity : Quantity, optional
-            The maximum allowable order quantity.
-        min_quantity : Quantity, optional
-            The minimum allowable order quantity.
-        max_notional : Money, optional
-            The maximum allowable order notional value.
-        min_notional : Money, optional
-            The minimum allowable order notional value.
-        max_price : Price, optional
-            The maximum allowable printed price.
-        min_price : Price, optional
-            The minimum allowable printed price.
-        margin_init : Decimal
-            The initial (order) margin requirement in percentage of order value.
-        margin_maint : Decimal
-            The maintenance (position) margin in percentage of position value.
-        maker_fee : Decimal
-            The fee rate for liquidity makers as a percentage of order value.
-        taker_fee : Decimal
-            The fee rate for liquidity takers as a percentage of order value.
-        ts_event: int64
-            The UNIX timestamp (nanoseconds) when the data event occurred.
-        ts_init: int64
-            The UNIX timestamp (nanoseconds) when the data object was initialized.
-        tick_scheme_name : str, optional
-            The name of the tick scheme.
-        info : dict[str, object], optional
-            The additional instrument information.
-
-        Raises
-        ------
-        ValueError
-            If `tick_scheme_name` is not a valid string.
-        ValueError
-            If `price_precision` is negative (< 0).
-        ValueError
-            If `size_precision` is negative (< 0).
-        ValueError
-            If `price_increment` is not positive (> 0).
-        ValueError
-            If `size_increment` is not positive (> 0).
-        ValueError
-            If `price_precision` is not equal to price_increment.precision.
-        ValueError
-            If `size_increment` is not equal to size_increment.precision.
-        ValueError
-            If `multiplier` is not positive (> 0).
-        ValueError
-            If `lot size` is not positive (> 0).
-        ValueError
-            If `max_quantity` is not positive (> 0).
-        ValueError
-            If `min_quantity` is negative (< 0).
-        ValueError
-            If `max_notional` is not positive (> 0).
-        ValueError
-            If `min_notional` is negative (< 0).
-        ValueError
-            If `max_price` is not positive (> 0).
-        ValueError
-            If `min_price` is negative (< 0).
-
-        """
         Condition.not_negative_int(price_precision, "price_precision")
         Condition.not_negative_int(size_precision, "size_precision")
         Condition.positive(size_increment, "size_increment")
@@ -196,7 +192,7 @@ cdef class Instrument(Data):
         super().__init__(ts_event, ts_init)
 
         self.id = instrument_id
-        self.local_symbol = local_symbol
+        self.native_symbol = native_symbol
         self.asset_class = asset_class
         self.asset_type = asset_type
         self.quote_currency = quote_currency
@@ -231,24 +227,26 @@ cdef class Instrument(Data):
         return hash(self.id.value)
 
     def __repr__(self) -> str:  # TODO(cs): tick_scheme_name pending
-        return (f"{type(self).__name__}"
-                f"(id={self.id.value}, "
-                f"local_symbol={self.local_symbol}, "
-                f"asset_class={AssetClassParser.to_str(self.asset_class)}, "
-                f"asset_type={AssetTypeParser.to_str(self.asset_type)}, "
-                f"quote_currency={self.quote_currency}, "
-                f"is_inverse={self.is_inverse}, "
-                f"price_precision={self.price_precision}, "
-                f"price_increment={self.price_increment}, "
-                f"size_precision={self.size_precision}, "
-                f"size_increment={self.size_increment}, "
-                f"multiplier={self.multiplier}, "
-                f"lot_size={self.lot_size}, "
-                f"margin_init={self.margin_init}, "
-                f"margin_maint={self.margin_maint}, "
-                f"maker_fee={self.maker_fee}, "
-                f"taker_fee={self.taker_fee}, "
-                f"info={self.info})")
+        return (
+            f"{type(self).__name__}"
+            f"(id={self.id.value}, "
+            f"native_symbol={self.native_symbol}, "
+            f"asset_class={AssetClassParser.to_str(self.asset_class)}, "
+            f"asset_type={AssetTypeParser.to_str(self.asset_type)}, "
+            f"quote_currency={self.quote_currency}, "
+            f"is_inverse={self.is_inverse}, "
+            f"price_precision={self.price_precision}, "
+            f"price_increment={self.price_increment}, "
+            f"size_precision={self.size_precision}, "
+            f"size_increment={self.size_increment}, "
+            f"multiplier={self.multiplier}, "
+            f"lot_size={self.lot_size}, "
+            f"margin_init={self.margin_init}, "
+            f"margin_maint={self.margin_maint}, "
+            f"maker_fee={self.maker_fee}, "
+            f"taker_fee={self.taker_fee}, "
+            f"info={self.info})"
+        )
 
     @staticmethod
     cdef Instrument base_from_dict_c(dict values):
@@ -262,7 +260,7 @@ cdef class Instrument(Data):
         cdef bytes info = values["info"]
         return Instrument(
             instrument_id=InstrumentId.from_str_c(values["id"]),
-            local_symbol=Symbol(values["local_symbol"]),
+            native_symbol=Symbol(values["native_symbol"]),
             asset_class=AssetClassParser.from_str(values["asset_class"]),
             asset_type=AssetTypeParser.from_str(values["asset_type"]),
             quote_currency=Currency.from_str_c(values["quote_currency"]),
@@ -293,7 +291,7 @@ cdef class Instrument(Data):
         return {
             "type": "Instrument",
             "id": obj.id.value,
-            "local_symbol": obj.local_symbol.value,
+            "native_symbol": obj.native_symbol.value,
             "asset_class": AssetClassParser.to_str(obj.asset_class),
             "asset_type": AssetTypeParser.to_str(obj.asset_type),
             "quote_currency": obj.quote_currency.code,

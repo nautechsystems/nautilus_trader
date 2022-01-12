@@ -28,20 +28,16 @@ cdef class BidAskMinMax(Indicator):
     """
     Given a historic lookback window of bid/ask prices, keep a running
     computation of the min/max values of the bid/ask prices within the window.
+
+    Parameters
+    ----------
+    instrument_id : InstrumentId
+        The instrument ID for inbound ticks.
+    lookback : timedelta
+        The look back duration in time.
     """
 
     def __init__(self, InstrumentId instrument_id not None, timedelta lookback not None):
-        """
-        Initialize a new instance of the ``BidAskMinMax`` class.
-
-        Parameters
-        ----------
-        instrument_id : InstrumentId
-            The instrument ID for inbound ticks.
-        lookback : timedelta
-            The look back duration in time.
-
-        """
         super().__init__(params=[lookback])
 
         self.instrument_id = instrument_id
@@ -78,18 +74,14 @@ cdef class WindowedMinMaxPrices:
     """
     Over the course of a defined lookback window, efficiently keep track
     of the min/max values currently in the window.
+
+    Parameters
+    ----------
+    lookback : timedelta
+        The look back duration in time.
     """
 
     def __init__(self, timedelta lookback not None):
-        """
-        Initialize a new instance of the ``WindowedMinMaxPrices`` class.
-
-        Parameters
-        ----------
-        lookback : timedelta
-            The look back duration in time.
-
-        """
         self.lookback = lookback
 
         # Initialize the deques

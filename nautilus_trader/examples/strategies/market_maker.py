@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2021 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -33,6 +33,15 @@ from nautilus_trader.trading.strategy import TradingStrategy
 class MarketMaker(TradingStrategy):
     """
     Provides a market making strategy for testing.
+
+    Parameters
+    ----------
+    instrument_id : InstrumentId
+        The instrument ID for the strategy.
+    trade_size : Decimal
+        The position size per trade.
+    max_size : Decimal
+        The maximum inventory size allowed.
     """
 
     def __init__(
@@ -41,19 +50,6 @@ class MarketMaker(TradingStrategy):
         trade_size: Decimal,
         max_size: Decimal,
     ):
-        """
-        Initialize a new instance of the ``MarketMaker`` class.
-
-        Parameters
-        ----------
-        instrument_id : InstrumentId
-            The instrument ID for the strategy.
-        trade_size : Decimal
-            The position size per trade.
-        max_size : Decimal
-            The maximum inventory size allowed.
-
-        """
         super().__init__()
 
         # Configuration

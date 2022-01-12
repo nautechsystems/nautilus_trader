@@ -1,3 +1,5 @@
+*.c
+*.h
 *.o
 *.so
 *.pyc
@@ -44,3 +46,5 @@ output.json
 .ipynb_checkpoints
 examples/backtest/notebooks/catalog
 nautilus_trader/**/.gitignore
+docs/**/*.ipynb
+!nautilus_trader/core/pytime.h

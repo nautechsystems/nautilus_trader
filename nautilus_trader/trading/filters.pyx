@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2021 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -32,9 +32,9 @@ from nautilus_trader.core.datetime cimport is_datetime_utc
 
 @unique
 class ForexSession(Enum):
-    SYDNEY = 1,
-    TOKYO = 2,
-    LONDON = 3,
+    SYDNEY = 1
+    TOKYO = 2
+    LONDON = 3
     NEW_YORK = 4
 
 
@@ -330,6 +330,19 @@ class NewsImpact(Enum):
 cdef class NewsEvent(Data):
     """
     Represents an economic news event.
+
+    Parameters
+    ----------
+    impact : NewsImpact
+        The expected impact for the economic news event.
+    name : str
+        The name of the economic news event.
+    currency : Currency
+        The currency the economic news event is expected to affect.
+    ts_event: int64
+        The UNIX timestamp (nanoseconds) when the news event occurred.
+    ts_init: int64
+        The UNIX timestamp (nanoseconds) when the data object was initialized.
     """
 
     def __init__(
@@ -340,22 +353,6 @@ cdef class NewsEvent(Data):
         int64_t ts_event,
         int64_t ts_init,
     ):
-        """
-
-        Parameters
-        ----------
-        impact : NewsImpact
-            The expected impact for the economic news event.
-        name : str
-            The name of the economic news event.
-        currency : Currency
-            The currency the economic news event is expected to affect.
-        ts_event: int64
-            The UNIX timestamp (nanoseconds) when the news event occurred.
-        ts_init: int64
-            The UNIX timestamp (nanoseconds) when the data object was initialized.
-
-        """
         super().__init__(ts_event, ts_init)
 
         self.impact = impact
@@ -366,6 +363,15 @@ cdef class NewsEvent(Data):
 cdef class EconomicNewsEventFilter:
     """
     Provides methods to help filter trading strategy rules based on economic news events.
+
+    Parameters
+    ----------
+    currencies : list[str]
+        The list of three letter currency codes to filter.
+    impacts : list[str]
+        The list of impact levels to filter ('LOW', 'MEDIUM', 'HIGH').
+    news_data : pd.DataFrame
+        The economic news data.
     """
 
     def __init__(
@@ -374,19 +380,6 @@ cdef class EconomicNewsEventFilter:
         list impacts not None,
         news_data not None: pd.DataFrame,
     ):
-        """
-        Initialize a new instance of the ``EconomicNewsEventFilter`` class.
-
-        Parameters
-        ----------
-        currencies : list[str]
-            The list of three letter currency codes to filter.
-        impacts : list[str]
-            The list of impact levels to filter ('LOW', 'MEDIUM', 'HIGH').
-        news_data : pd.DataFrame
-            The economic news data .
-
-        """
         self._currencies = currencies
         self._impacts = impacts
 

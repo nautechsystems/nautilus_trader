@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2021 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -62,7 +62,7 @@ cdef class FuzzyCandlesticks(Indicator):
         double high,
         double low,
         double close,
-    )
+    ) except *
 
     cdef CandleDirection _fuzzify_direction(self, double open, double close)
     cdef CandleSize _fuzzify_size(self, double length, double mean_length, double sd_lengths)

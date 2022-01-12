@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2021 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -32,8 +32,8 @@ cdef class Instrument(Data):
 
     cdef readonly InstrumentId id
     """The instrument ID.\n\n:returns: `InstrumentId`"""
-    cdef readonly Symbol local_symbol
-    """The local/native symbol on the exchange for the instrument.\n\n:returns: `Symbol`"""
+    cdef readonly Symbol native_symbol
+    """The native/local symbol on the exchange for the instrument.\n\n:returns: `Symbol`"""
     cdef readonly AssetClass asset_class
     """The asset class of the instrument.\n\n:returns: `AssetClass`"""
     cdef readonly AssetType asset_type

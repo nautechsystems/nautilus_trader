@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2021 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -17,6 +17,7 @@ from nautilus_trader.backtest.data.providers import TestInstrumentProvider
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.factories import OrderFactory
 from nautilus_trader.common.uuid import UUIDFactory
+from nautilus_trader.model.commands.trading import CancelAllOrders
 from nautilus_trader.model.commands.trading import CancelOrder
 from nautilus_trader.model.commands.trading import ModifyOrder
 from nautilus_trader.model.commands.trading import SubmitOrder
@@ -42,7 +43,6 @@ class TestCommands:
         self.uuid_factory = UUIDFactory()
 
         self.trader_id = TestStubs.trader_id()
-        self.account_id = TestStubs.account_id()
 
         self.order_factory = OrderFactory(
             trader_id=self.trader_id,
@@ -111,7 +111,7 @@ class TestCommands:
             == f"SubmitOrderList(trader_id=TRADER-001, strategy_id=S-001, instrument_id=AUD/USD.SIM, order_list=OrderList(id=1, instrument_id=AUD/USD.SIM, orders=[MarketOrder(BUY 100_000 AUD/USD.SIM MARKET GTC, status=INITIALIZED, client_order_id=O-19700101-000000-000-001-1, venue_order_id=None, tags=ENTRY), StopMarketOrder(SELL 100_000 AUD/USD.SIM STOP_MARKET @ 1.00000 GTC, status=INITIALIZED, client_order_id=O-19700101-000000-000-001-2, venue_order_id=None, tags=STOP_LOSS), LimitOrder(SELL 100_000 AUD/USD.SIM LIMIT @ 1.00100 GTC, status=INITIALIZED, client_order_id=O-19700101-000000-000-001-3, venue_order_id=None, tags=TAKE_PROFIT)]), command_id={uuid}, ts_init=0)"  # noqa
         )
 
-    def test_update_order_command_to_from_dict_and_str_repr(self):
+    def test_modify_order_command_to_from_dict_and_str_repr(self):
         # Arrange
         uuid = self.uuid_factory.generate()
 
@@ -139,6 +139,34 @@ class TestCommands:
             == f"ModifyOrder(trader_id=TRADER-001, strategy_id=S-001, instrument_id=AUD/USD.SIM, client_order_id=O-123456, venue_order_id=001, quantity=100_000, price=1.00000, trigger=1.00010, command_id={uuid}, ts_init=0)"  # noqa
         )
 
+    def test_modify_order_command_with_none_venue_order_id_to_from_dict_and_str_repr(self):
+        # Arrange
+        uuid = self.uuid_factory.generate()
+
+        command = ModifyOrder(
+            trader_id=TraderId("TRADER-001"),
+            strategy_id=StrategyId("S-001"),
+            instrument_id=AUDUSD_SIM.id,
+            client_order_id=ClientOrderId("O-123456"),
+            venue_order_id=None,
+            price=Price.from_str("1.00000"),
+            trigger=Price.from_str("1.00010"),
+            quantity=Quantity.from_int(100000),
+            command_id=uuid,
+            ts_init=self.clock.timestamp_ns(),
+        )
+
+        # Act, Assert
+        assert ModifyOrder.from_dict(ModifyOrder.to_dict(command)) == command
+        assert (
+            str(command)
+            == "ModifyOrder(instrument_id=AUD/USD.SIM, client_order_id=O-123456, venue_order_id=None, quantity=100_000, price=1.00000, trigger=1.00010)"  # noqa
+        )
+        assert (
+            repr(command)
+            == f"ModifyOrder(trader_id=TRADER-001, strategy_id=S-001, instrument_id=AUD/USD.SIM, client_order_id=O-123456, venue_order_id=None, quantity=100_000, price=1.00000, trigger=1.00010, command_id={uuid}, ts_init=0)"  # noqa
+        )
+
     def test_cancel_order_command_to_from_dict_and_str_repr(self):
         # Arrange
         uuid = self.uuid_factory.generate()
@@ -162,4 +190,49 @@ class TestCommands:
         assert (
             repr(command)
             == f"CancelOrder(trader_id=TRADER-001, strategy_id=S-001, instrument_id=AUD/USD.SIM, client_order_id=O-123456, venue_order_id=001, command_id={uuid}, ts_init=0)"  # noqa
+        )
+
+    def test_cancel_order_command_with_none_venue_order_id_to_from_dict_and_str_repr(self):
+        # Arrange
+        uuid = self.uuid_factory.generate()
+
+        command = CancelOrder(
+            trader_id=TraderId("TRADER-001"),
+            strategy_id=StrategyId("S-001"),
+            instrument_id=AUDUSD_SIM.id,
+            client_order_id=ClientOrderId("O-123456"),
+            venue_order_id=None,
+            command_id=uuid,
+            ts_init=self.clock.timestamp_ns(),
+        )
+
+        # Act, Assert
+        assert CancelOrder.from_dict(CancelOrder.to_dict(command)) == command
+        assert (
+            str(command)
+            == "CancelOrder(instrument_id=AUD/USD.SIM, client_order_id=O-123456, venue_order_id=None)"  # noqa
+        )
+        assert (
+            repr(command)
+            == f"CancelOrder(trader_id=TRADER-001, strategy_id=S-001, instrument_id=AUD/USD.SIM, client_order_id=O-123456, venue_order_id=None, command_id={uuid}, ts_init=0)"  # noqa
+        )
+
+    def test_cancel_all_orders_command_to_from_dict_and_str_repr(self):
+        # Arrange
+        uuid = self.uuid_factory.generate()
+
+        command = CancelAllOrders(
+            trader_id=TraderId("TRADER-001"),
+            strategy_id=StrategyId("S-001"),
+            instrument_id=AUDUSD_SIM.id,
+            command_id=uuid,
+            ts_init=self.clock.timestamp_ns(),
+        )
+
+        # Act, Assert
+        assert CancelAllOrders.from_dict(CancelAllOrders.to_dict(command)) == command
+        assert str(command) == "CancelAllOrders(instrument_id=AUD/USD.SIM)"  # noqa
+        assert (
+            repr(command)
+            == f"CancelAllOrders(trader_id=TRADER-001, strategy_id=S-001, instrument_id=AUD/USD.SIM, command_id={uuid}, ts_init=0)"  # noqa
         )

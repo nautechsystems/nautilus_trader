@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2021 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -37,7 +37,7 @@ cdef class TradingCommand(Command):
 
 cdef class SubmitOrder(TradingCommand):
     cdef readonly PositionId position_id
-    """The position ID associated with the command.\n\n:returns: `PositionId`"""
+    """The position ID associated with the command.\n\n:returns: `PositionId` or ``None``"""
     cdef readonly Order order
     """The order for the command.\n\n:returns: `Order`"""
 
@@ -63,7 +63,7 @@ cdef class ModifyOrder(TradingCommand):
     cdef readonly ClientOrderId client_order_id
     """The client order ID associated with the command.\n\n:returns: `ClientOrderId`"""
     cdef readonly VenueOrderId venue_order_id
-    """The venue order ID associated with the command.\n\n:returns: `VenueOrderId`"""
+    """The venue order ID associated with the command.\n\n:returns: `VenueOrderId` or ``None``"""
     cdef readonly Quantity quantity
     """The updated quantity for the command.\n\n:returns: `Quantity` or ``None``"""
     cdef readonly Price price
@@ -82,10 +82,19 @@ cdef class CancelOrder(TradingCommand):
     cdef readonly ClientOrderId client_order_id
     """The client order ID associated with the command.\n\n:returns: `ClientOrderId`"""
     cdef readonly VenueOrderId venue_order_id
-    """The venue order ID associated with the command.\n\n:returns: `VenueOrderId`"""
+    """The venue order ID associated with the command.\n\n:returns: `VenueOrderId` or ``None``"""
 
     @staticmethod
     cdef CancelOrder from_dict_c(dict values)
 
     @staticmethod
     cdef dict to_dict_c(CancelOrder obj)
+
+
+cdef class CancelAllOrders(TradingCommand):
+
+    @staticmethod
+    cdef CancelAllOrders from_dict_c(dict values)
+
+    @staticmethod
+    cdef dict to_dict_c(CancelAllOrders obj)

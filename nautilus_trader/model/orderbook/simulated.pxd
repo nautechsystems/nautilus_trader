@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2021 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -23,10 +23,10 @@ from nautilus_trader.model.orderbook.book cimport L3OrderBook
 
 cdef class SimulatedL1OrderBook(L1OrderBook):
     cpdef void update_tick(self, Tick tick) except *
-    cdef void _update_quote_tick(self, QuoteTick tick)
-    cdef void _update_trade_tick(self, TradeTick tick)
-    cdef void _update_bid(self, double price, double size)
-    cdef void _update_ask(self, double price, double size)
+    cdef void _update_quote_tick(self, QuoteTick tick) except *
+    cdef void _update_trade_tick(self, TradeTick tick) except *
+    cdef void _update_bid(self, double price, double size) except *
+    cdef void _update_ask(self, double price, double size) except *
 
 
 cdef class SimulatedL2OrderBook(L2OrderBook):
