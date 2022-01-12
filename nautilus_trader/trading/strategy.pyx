@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2021 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -392,7 +392,7 @@ cdef class TradingStrategy(Actor):
             self.log.debug("Saving state...")
             user_state = self.on_save()
             if len(user_state) > 0:
-                self.log.info(f"Saved state: {user_state}.", color=LogColor.BLUE)
+                self.log.info(f"Saved state: {list(user_state.keys())}.", color=LogColor.BLUE)
             else:
                 self.log.info("No user state to save.", color=LogColor.BLUE)
             return user_state
@@ -430,7 +430,7 @@ cdef class TradingStrategy(Actor):
         try:
             self.log.debug(f"Loading state...")
             self.on_load(state)
-            self.log.info(f"Loaded state {state}.", color=LogColor.BLUE)
+            self.log.info(f"Loaded state {list(state.keys())}.", color=LogColor.BLUE)
         except Exception as ex:
             self.log.exception(ex)
             raise

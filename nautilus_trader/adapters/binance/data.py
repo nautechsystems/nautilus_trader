@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2021 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -37,6 +37,7 @@ from nautilus_trader.adapters.binance.providers import BinanceInstrumentProvider
 from nautilus_trader.adapters.binance.websocket.spot import BinanceSpotWebSocket
 from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.clock import LiveClock
+from nautilus_trader.common.logging import LogColor
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.core.datetime import millis_to_nanos
@@ -78,6 +79,8 @@ class BinanceDataClient(LiveMarketDataClient):
         The logger for the client.
     instrument_provider : BinanceInstrumentProvider
         The instrument provider.
+    us : bool, default False
+        If the client is for Binance US.
     """
 
     def __init__(
@@ -89,6 +92,7 @@ class BinanceDataClient(LiveMarketDataClient):
         clock: LiveClock,
         logger: Logger,
         instrument_provider: BinanceInstrumentProvider,
+        us: bool = False,
     ):
         super().__init__(
             loop=loop,
@@ -98,7 +102,6 @@ class BinanceDataClient(LiveMarketDataClient):
             cache=cache,
             clock=clock,
             logger=logger,
-            config={"name": "BinanceDataClient"},
         )
 
         self._client = client
@@ -115,9 +118,13 @@ class BinanceDataClient(LiveMarketDataClient):
             clock=clock,
             logger=logger,
             handler=self._handle_spot_ws_message,
+            us=us,
         )
 
         self._book_buffer: Dict[InstrumentId, List[OrderBookData]] = {}
+
+        if us:
+            self._log.info("Set Binance US.", LogColor.BLUE)
 
     def connect(self):
         """
@@ -344,8 +351,8 @@ class BinanceDataClient(LiveMarketDataClient):
             resolution = "d"
         else:  # pragma: no cover (design-time error)
             raise RuntimeError(
-                f"invalid aggregation period, "
-                f"was {BarAggregationParser.from_str(bar_type.spec.aggregation)}",
+                f"invalid aggregation type, "
+                f"was {BarAggregationParser.to_str_py(bar_type.spec.aggregation)}",
             )
 
         self._ws_spot.subscribe_bars(
@@ -525,8 +532,8 @@ class BinanceDataClient(LiveMarketDataClient):
             resolution = "d"
         else:  # pragma: no cover (design-time error)
             raise RuntimeError(
-                f"invalid aggregation period, "
-                f"was {BarAggregationParser.from_str(bar_type.spec.aggregation)}",
+                f"invalid aggregation type, "
+                f"was {BarAggregationParser.to_str_py(bar_type.spec.aggregation)}",
             )
 
         start_time_ms = from_datetime.to_datetime64() * 1000 if from_datetime is not None else None

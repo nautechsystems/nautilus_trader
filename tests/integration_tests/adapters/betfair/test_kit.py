@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2021 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -490,7 +490,6 @@ class BetfairTestStubs:
     def betfair_venue_config() -> BacktestVenueConfig:
         return BacktestVenueConfig(  # type: ignore
             name="BETFAIR",
-            venue_type="EXCHANGE",
             oms_type="NETTING",
             account_type="BETTING",
             base_currency="GBP",

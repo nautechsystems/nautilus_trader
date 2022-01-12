@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2021 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -21,7 +21,8 @@ import pytest
 
 from nautilus_trader.adapters.ftx.factories import get_cached_ftx_http_client
 from nautilus_trader.adapters.ftx.http.client import FTXHttpClient
-from nautilus_trader.adapters.ftx.providers import FTXInstrumentProvider
+
+# from nautilus_trader.adapters.ftx.providers import FTXInstrumentProvider
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.logging import Logger
 
@@ -40,18 +41,40 @@ async def test_ftx_http_client():
     )
     await client.connect()
 
-    response = await client.list_markets(
-        # market="ETH-PERP",
-    )
+    # Test authentication works with account info
+    response = await client.get_account_info()
     print(json.dumps(response, indent=4))
 
-    provider = FTXInstrumentProvider(
-        client=client,
-        logger=Logger(clock=clock),
-    )
+    # response = await client.list_markets(
+    #     # market="ETH-PERP",
+    # )
+    # print(json.dumps(response, indent=4))
 
-    await provider.load_all_async()
+    # provider = FTXInstrumentProvider(
+    #     client=client,
+    #     logger=Logger(clock=clock),
+    # )
+    #
+    # await provider.load_all_async()
     # for instrument in provider.get_all().values():
     #     print(instrument)
+
+    # response = await client.get_historical_prices(
+    #     market="ETH/USD",
+    #     resolution=300,
+    # )
+    # print(response)
+
+    # response = await client.place_order(
+    #     market="ETH/USD",
+    #     side="sell",
+    #     size="0.01",
+    #     type="market",
+    #     #price="5500",
+    #     client_id="011",
+    #     # post_only=True,
+    #     # reduce_only=True,
+    # )
+    # print(json.dumps(response, indent=4))
 
     await client.disconnect()

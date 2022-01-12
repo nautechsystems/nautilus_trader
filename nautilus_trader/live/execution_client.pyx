@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2021 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -37,9 +37,7 @@ from nautilus_trader.execution.messages cimport OrderStatusReport
 from nautilus_trader.model.c_enums.account_type cimport AccountType
 from nautilus_trader.model.c_enums.order_status cimport OrderStatus
 from nautilus_trader.model.c_enums.order_status cimport OrderStatusParser
-from nautilus_trader.model.c_enums.venue_type cimport VenueType
 from nautilus_trader.model.currency cimport Currency
-from nautilus_trader.model.identifiers cimport AccountId
 from nautilus_trader.model.identifiers cimport ClientId
 from nautilus_trader.model.identifiers cimport Symbol
 from nautilus_trader.model.identifiers cimport VenueOrderId
@@ -60,10 +58,6 @@ cdef class LiveExecutionClient(ExecutionClient):
         The client ID.
     instrument_provider : InstrumentProvider
         The instrument provider for the client.
-    venue_type : VenueType
-        The client venue type.
-    account_id : AccountId
-        The account ID for the client.
     account_type : AccountType
         The account type for the client.
     base_currency : Currency, optional
@@ -89,8 +83,6 @@ cdef class LiveExecutionClient(ExecutionClient):
         loop not None: asyncio.AbstractEventLoop,
         ClientId client_id not None,
         InstrumentProvider instrument_provider not None,
-        VenueType venue_type,
-        AccountId account_id not None,
         AccountType account_type,
         Currency base_currency,  # Can be None
         MessageBus msgbus not None,
@@ -101,8 +93,6 @@ cdef class LiveExecutionClient(ExecutionClient):
     ):
         super().__init__(
             client_id=client_id,
-            venue_type=venue_type,
-            account_id=account_id,
             account_type=account_type,
             base_currency=base_currency,
             msgbus=msgbus,

@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2021 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -44,7 +44,6 @@ from nautilus_trader.model.c_enums.account_type import AccountType
 from nautilus_trader.model.c_enums.order_side import OrderSideParser
 from nautilus_trader.model.c_enums.order_type import OrderType
 from nautilus_trader.model.c_enums.time_in_force import TimeInForceParser
-from nautilus_trader.model.c_enums.venue_type import VenueType
 from nautilus_trader.model.commands.trading import CancelAllOrders
 from nautilus_trader.model.commands.trading import CancelOrder
 from nautilus_trader.model.commands.trading import ModifyOrder
@@ -84,8 +83,6 @@ class BinanceSpotExecutionClient(LiveExecutionClient):
         The event loop for the client.
     client : BinanceHttpClient
         The binance HTTP client.
-    account_id : AccountId
-        The account ID for the client.
     msgbus : MessageBus
         The message bus for the client.
     cache : Cache
@@ -96,38 +93,35 @@ class BinanceSpotExecutionClient(LiveExecutionClient):
         The logger for the client.
     instrument_provider : BinanceInstrumentProvider
         The instrument provider.
+    us : bool, default False
+        If the client is for Binance US.
     """
 
     def __init__(
         self,
         loop: asyncio.AbstractEventLoop,
         client: BinanceHttpClient,
-        account_id: AccountId,
         msgbus: MessageBus,
         cache: Cache,
         clock: LiveClock,
         logger: Logger,
         instrument_provider: BinanceInstrumentProvider,
+        us: bool = False,
     ):
         super().__init__(
             loop=loop,
             client_id=ClientId(BINANCE_VENUE.value),
             instrument_provider=instrument_provider,
-            venue_type=VenueType.EXCHANGE,
-            account_id=account_id,
             account_type=AccountType.CASH,
             base_currency=None,
             msgbus=msgbus,
             cache=cache,
             clock=clock,
             logger=logger,
-            config={"name": "BinanceExecClient"},
         )
 
         self._client = client
-
-        # Hot caches
-        self._instrument_ids: Dict[str, InstrumentId] = {}
+        self._set_account_id(AccountId(BINANCE_VENUE.value, "master"))
 
         # HTTP API
         self._account_spot = BinanceSpotAccountHttpAPI(client=self._client)
@@ -147,7 +141,14 @@ class BinanceSpotExecutionClient(LiveExecutionClient):
             clock=clock,
             logger=logger,
             handler=self._handle_user_ws_message,
+            us=us,
         )
+
+        # Hot caches
+        self._instrument_ids: Dict[str, InstrumentId] = {}
+
+        if us:
+            self._log.info("Set Binance US.", LogColor.BLUE)
 
     def connect(self) -> None:
         """
@@ -201,6 +202,7 @@ class BinanceSpotExecutionClient(LiveExecutionClient):
     def _update_account_state(self, response: Dict[str, Any]) -> None:
         self.generate_account_state(
             balances=parse_account_balances(raw_balances=response["balances"]),
+            margins=[],
             reported=True,
             ts_event=response["updateTime"],
         )
@@ -355,6 +357,14 @@ class BinanceSpotExecutionClient(LiveExecutionClient):
     async def _cancel_order(self, command: CancelOrder) -> None:
         self._log.debug(f"Canceling order {command.client_order_id.value}.")
 
+        self.generate_order_pending_cancel(
+            strategy_id=command.strategy_id,
+            instrument_id=command.instrument_id,
+            client_order_id=command.client_order_id,
+            venue_order_id=command.venue_order_id,
+            ts_event=self._clock.timestamp_ns(),
+        )
+
         try:
             await self._account_spot.cancel_order(
                 symbol=command.instrument_id.symbol.value,
@@ -365,6 +375,34 @@ class BinanceSpotExecutionClient(LiveExecutionClient):
 
     async def _cancel_all_orders(self, command: CancelAllOrders) -> None:
         self._log.debug(f"Canceling all orders for {command.instrument_id.value}.")
+
+        # Cancel all in-flight orders
+        inflight_orders = self._cache.orders_inflight(
+            instrument_id=command.instrument_id,
+            strategy_id=command.strategy_id,
+        )
+        for order in inflight_orders:
+            self.generate_order_pending_cancel(
+                strategy_id=order.strategy_id,
+                instrument_id=order.instrument_id,
+                client_order_id=order.client_order_id,
+                venue_order_id=order.venue_order_id,
+                ts_event=self._clock.timestamp_ns(),
+            )
+
+        # Cancel all working orders
+        working_orders = self._cache.orders_working(
+            instrument_id=command.instrument_id,
+            strategy_id=command.strategy_id,
+        )
+        for order in working_orders:
+            self.generate_order_pending_cancel(
+                strategy_id=order.strategy_id,
+                instrument_id=order.instrument_id,
+                client_order_id=order.client_order_id,
+                venue_order_id=order.venue_order_id,
+                ts_event=self._clock.timestamp_ns(),
+            )
 
         try:
             await self._account_spot.cancel_open_orders(
@@ -445,6 +483,7 @@ class BinanceSpotExecutionClient(LiveExecutionClient):
     def _handle_account_position(self, data: Dict[str, Any]):
         self.generate_account_state(
             balances=parse_account_balances_ws(raw_balances=data["B"]),
+            margins=[],
             reported=True,
             ts_event=millis_to_nanos(data["u"]),
         )

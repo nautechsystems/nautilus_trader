@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2021 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -15,6 +15,7 @@
 
 import asyncio
 import socket
+import urllib.parse
 from ssl import SSLContext
 from typing import Dict, List, Optional, Union
 
@@ -100,6 +101,10 @@ cdef class HttpClient:
         cdef int idx = self._sessions_idx
         self._sessions_idx += 1
         return self._sessions[idx]
+
+    cpdef str _prepare_params(self, dict params):
+        # Encode a dict into a URL query string
+        return urllib.parse.urlencode(params)
 
     async def connect(self) -> None:
         self._log.debug("Connecting sessions...")

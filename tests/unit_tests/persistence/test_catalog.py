@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2021 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -243,3 +243,9 @@ class TestPersistenceCatalog:
         # Assert
         bars = self.catalog.bars()
         assert len(bars) == 21
+
+    def test_catalog_projections(self):
+        projections = {"tid": ds.field("trade_id")}
+        trades = self.catalog.trade_ticks(projections=projections)
+        assert "tid" in trades.columns
+        assert trades["trade_id"].equals(trades["tid"])

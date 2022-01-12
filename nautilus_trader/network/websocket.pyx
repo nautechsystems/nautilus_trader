@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2021 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -16,9 +16,10 @@
 import asyncio
 import types
 from asyncio import Task
-from typing import Callable, List, Optional
+from typing import Callable, Dict, List, Optional
 
 import aiohttp
+import orjson
 from aiohttp import WSMessage
 from aiohttp import WSMsgType
 
@@ -104,6 +105,9 @@ cdef class WebSocketClient:
         self.is_connected = False
         self._log.debug("WebSocket closed.")
 
+    async def send_json(self, msg: Dict) -> None:
+        await self.send(orjson.dumps(msg))
+
     async def send(self, raw: bytes) -> None:
         self._log.debug(f"[SEND] {raw}")
         await self._socket.send_bytes(raw)
@@ -160,7 +164,8 @@ cdef class WebSocketClient:
                 raw = await self.recv()
                 if raw is None:
                     continue
-                self._log.debug(f"[RECV] {raw}")
+                # TODO(cs): Uncomment for development
+                # self._log.debug(f"[RECV] {raw}")
                 if raw is not None:
                     self._handler(raw)
             except Exception as ex:

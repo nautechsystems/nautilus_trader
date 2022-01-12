@@ -43,6 +43,7 @@ def nautilus_objects() -> List[Any]:
         TestStubs.event_component_state_changed(),
         TestStubs.event_trading_state_changed(),
         TestStubs.event_betting_account_state(),
+        TestStubs.event_cash_account_state(),
         TestStubs.event_margin_account_state(),
         # ORDERS
         TestStubs.event_order_accepted(buy),

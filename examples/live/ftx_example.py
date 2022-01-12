@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2021 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -20,7 +20,6 @@ from nautilus_trader.adapters.ftx.factories import FTXLiveDataClientFactory
 from nautilus_trader.adapters.ftx.factories import FTXLiveExecutionClientFactory
 from nautilus_trader.examples.strategies.ema_cross import EMACross
 from nautilus_trader.examples.strategies.ema_cross import EMACrossConfig
-from nautilus_trader.infrastructure.config import CacheDatabaseConfig
 from nautilus_trader.live.node import TradingNode
 from nautilus_trader.live.node import TradingNodeConfig
 
@@ -28,36 +27,43 @@ from nautilus_trader.live.node import TradingNodeConfig
 # *** THIS IS A TEST STRATEGY WITH NO ALPHA ADVANTAGE WHATSOEVER. ***
 # *** IT IS NOT INTENDED TO BE USED TO TRADE LIVE WITH REAL MONEY. ***
 
+# *** THIS INTEGRATION IS STILL UNDER CONSTRUCTION. ***
+# *** PLEASE CONSIDER IT TO BE IN AN UNSTABLE BETA PHASE AND EXERCISE CAUTION. ***
 
 # Configure the trading node
 config_node = TradingNodeConfig(
     trader_id="TESTER-001",
     log_level="INFO",
-    cache_database=CacheDatabaseConfig(),  # Redis by default if provided
+    # cache_database=CacheDatabaseConfig(),  # Do not run with a Redis cache at the moment
     data_clients={
         "FTX": {
             # "api_key": "YOUR_FTX_API_KEY",
             # "api_secret": "YOUR_FTX_API_SECRET",
-            # "account_id": "YOUR_FTX_ACCOUNT_ID", (optional)
-            "sandbox_mode": False,  # If client uses the testnet
+            # "subaccount": "YOUR_FTX_SUBACCOUNT", (optional)
+            "us": False,  # If client is for FTX US
         },
     },
     exec_clients={
         "FTX": {
             # "api_key": "YOUR_FTX_API_KEY",
             # "api_secret": "YOUR_FTX_API_SECRET",
-            # "account_id": "YOUR_FTX_ACCOUNT_ID", (optional)
-            "sandbox_mode": False,  # If client uses the testnet,
+            # "subaccount": "YOUR_FTX_SUBACCOUNT", (optional)
+            "us": False,  # If client is for FTX US
         },
     },
+    timeout_connection=5.0,
+    timeout_reconciliation=5.0,
+    timeout_portfolio=5.0,
+    timeout_disconnection=5.0,
+    check_residuals_delay=2.0,
 )
 # Instantiate the node with a configuration
 node = TradingNode(config=config_node)
 
 # Configure your strategy
 strat_config = EMACrossConfig(
-    instrument_id="ETH/USD.FTX",
-    bar_type="ETH/USD.FTX-1-MINUTE-LAST-INTERNAL",
+    instrument_id="ETH-PERP.FTX",
+    bar_type="ETH-PERP.FTX-1-MINUTE-LAST-INTERNAL",
     fast_ema_period=10,
     slow_ema_period=20,
     trade_size=Decimal("0.01"),

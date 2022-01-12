@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2021 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -128,7 +128,7 @@ class TestPersistenceParsers:
             # Replace str repr with "fully qualified" string we can `eval`
             replacements = {
                 b"id=BTC/USDT.BINANCE": b"instrument_id=InstrumentId(Symbol('BTC/USDT'), venue=Venue('BINANCE'))",
-                b"local_symbol=BTCUSDT": b"local_symbol=Symbol('BTCUSDT')",
+                b"native_symbol=BTCUSDT": b"native_symbol=Symbol('BTCUSDT')",
                 b"price_increment=0.01": b"price_increment=Price.from_str('0.01')",
                 b"size_increment=0.000001": b"size_increment=Quantity.from_str('0.000001')",
                 b"margin_init=0": b"margin_init=Decimal(0)",

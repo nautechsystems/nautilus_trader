@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2021 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -273,12 +273,12 @@ def betfair_account_to_account_state(
         reported=False,
         balances=[
             AccountBalance(
-                currency=currency,
                 total=Money(balance, currency),
                 locked=Money(locked, currency),
                 free=Money(free, currency),
             ),
         ],
+        margins=[],
         info={"funds": account_funds, "detail": account_detail},
         event_id=event_id,
         ts_event=ts_event,

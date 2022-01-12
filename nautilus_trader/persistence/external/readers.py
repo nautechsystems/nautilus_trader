@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2021 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -31,6 +31,8 @@ class LinePreprocessor:
     Used if the input data requires any preprocessing that may also be required
     as attributes on the resulting Nautilus objects that are created.
 
+    Examples
+    --------
     For example, if you were logging data in python with a prepended timestamp, as below:
 
     2021-06-29T06:03:14.528000 - {"op":"mcm","pt":1624946594395,"mc":[{"id":"1.179082386","rc":[{"atb":[[1.93,0]]}]}
@@ -39,16 +41,16 @@ class LinePreprocessor:
     also want to use this timestamp as the `ts_init` value in Nautilus. In
     this instance, you could use something along the lines of:
 
-    class LoggingLinePreprocessor(LinePreprocessor):
-        @staticmethod
-        def pre_process(line):
-            timestamp, json_data = line.split(' - ')
-            yield json_data, {'ts_init': pd.Timestamp(timestamp)}
-
-        @staticmethod
-        def post_process(obj: Any, state: dict):
-            obj.ts_init = state['ts_init']
-            return obj
+    >>> class LoggingLinePreprocessor(LinePreprocessor):
+    >>>    @staticmethod
+    >>>    def pre_process(line):
+    >>>        timestamp, json_data = line.split(' - ')
+    >>>        yield json_data, {'ts_init': pd.Timestamp(timestamp)}
+    >>>
+    >>>    @staticmethod
+    >>>    def post_process(obj: Any, state: dict):
+    >>>        obj.ts_init = state['ts_init']
+    >>>        return obj
     """
 
     def __init__(self):
@@ -275,7 +277,7 @@ class CSVReader(Reader):
             if self.chunked:
                 chunks = (process,)
             else:
-                chunks = tuple([dict(zip(self.header, line)) for line in process.split(b"\n")])  # type: ignore
+                chunks = tuple([dict(zip(self.header, line.split(b","))) for line in process.split(b"\n")])  # type: ignore
 
         for chunk in chunks:
             if self.instrument_provider_update is not None:

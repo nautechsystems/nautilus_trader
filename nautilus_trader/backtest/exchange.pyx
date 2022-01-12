@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2021 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -43,8 +43,6 @@ from nautilus_trader.model.c_enums.oms_type cimport OMSTypeParser
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
 from nautilus_trader.model.c_enums.order_status cimport OrderStatus
 from nautilus_trader.model.c_enums.order_type cimport OrderType
-from nautilus_trader.model.c_enums.venue_type cimport VenueType
-from nautilus_trader.model.c_enums.venue_type cimport VenueTypeParser
 from nautilus_trader.model.commands.trading cimport CancelAllOrders
 from nautilus_trader.model.commands.trading cimport CancelOrder
 from nautilus_trader.model.commands.trading cimport ModifyOrder
@@ -82,8 +80,6 @@ cdef class SimulatedExchange:
     ----------
     venue : Venue
         The venue to simulate.
-    venue_type : VenueType
-        The venues type.
     oms_type : OMSType {``HEDGING``, ``NETTING``}
         The order management system type used by the exchange.
     account_type : AccountType
@@ -134,7 +130,6 @@ cdef class SimulatedExchange:
     def __init__(
         self,
         Venue venue not None,
-        VenueType venue_type,
         OMSType oms_type,
         AccountType account_type,
         Currency base_currency,  # Can be None
@@ -169,7 +164,6 @@ cdef class SimulatedExchange:
         )
 
         self.id = venue
-        self.venue_type = venue_type
         self.oms_type = oms_type
         self._log.info(f"OMSType={OMSTypeParser.to_str(oms_type)}")
         self.book_type = book_type
@@ -231,7 +225,6 @@ cdef class SimulatedExchange:
         return (
             f"{type(self).__name__}("
             f"id={self.id}, "
-            f"venue_type={VenueTypeParser.to_str(self.venue_type)}, "
             f"oms_type={OMSTypeParser.to_str(self.oms_type)}, "
             f"account_type={AccountTypeParser.to_str(self.account_type)})"
         )
@@ -423,7 +416,7 @@ cdef class SimulatedExchange:
 
         self.exec_client = client
 
-        self._log.info(f"Registered ExecutionClient {client}.")
+        self._log.info(f"Registered ExecutionClient-{client}.")
 
     cpdef void set_fill_model(self, FillModel fill_model) except *:
         """
@@ -495,9 +488,14 @@ cdef class SimulatedExchange:
         balance.total = Money(balance.total + adjustment, adjustment.currency)
         balance.free = Money(balance.free + adjustment, adjustment.currency)
 
+        cdef list margins = []
+        if account.is_margin_account():
+            margins = list(account.margins().values())
+
         # Generate and handle event
         self.exec_client.generate_account_state(
             balances=[balance],
+            margins=margins,
             reported=True,
             ts_event=self._clock.timestamp_ns(),
         )
@@ -1465,24 +1463,23 @@ cdef class SimulatedExchange:
         cdef int pos_count = self._symbol_pos_count.get(instrument_id, 0)
         pos_count += 1
         self._symbol_pos_count[instrument_id] = pos_count
-        return PositionId(f"{self._instrument_indexer[instrument_id]}-{pos_count:03d}")
+        return PositionId(f"{self.id.value}-{self._instrument_indexer[instrument_id]}-{pos_count:03d}")
 
     cdef VenueOrderId _generate_venue_order_id(self, InstrumentId instrument_id):
         cdef int ord_count = self._symbol_ord_count.get(instrument_id, 0)
         ord_count += 1
         self._symbol_ord_count[instrument_id] = ord_count
-        return VenueOrderId(f"{self._instrument_indexer[instrument_id]}-{ord_count:03d}")
+        return VenueOrderId(f"{self.id.value}-{self._instrument_indexer[instrument_id]}-{ord_count:03d}")
 
     cdef ExecutionId _generate_execution_id(self):
         self._executions_count += 1
-        return ExecutionId(f"{self._executions_count}")
+        return ExecutionId(f"{self.id.value}-{self._executions_count}")
 
 # -- EVENT GENERATORS ------------------------------------------------------------------------------
 
     cdef void _generate_fresh_account_state(self) except *:
         cdef list balances = [
             AccountBalance(
-                currency=money.currency,
                 total=money,
                 locked=Money(0, money.currency),
                 free=money,
@@ -1492,6 +1489,7 @@ cdef class SimulatedExchange:
 
         self.exec_client.generate_account_state(
             balances=balances,
+            margins=[],
             reported=True,
             ts_event=self._clock.timestamp_ns(),
         )
@@ -1594,7 +1592,7 @@ cdef class SimulatedExchange:
         if venue_order_id is None:
             venue_order_id = self._generate_venue_order_id(order.instrument_id)
             venue_order_id_modified = True
-        # Generate event
+
         self.exec_client.generate_order_updated(
             strategy_id=order.strategy_id,
             instrument_id=order.instrument_id,

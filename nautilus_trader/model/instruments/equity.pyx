@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2021 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -36,8 +36,8 @@ cdef class Equity(Instrument):
     ----------
     instrument_id : InstrumentId
         The instrument ID.
-    local_symbol : Symbol
-        The local/native symbol on the exchange for the instrument.
+    native_symbol : Symbol
+        The native/local symbol on the exchange for the instrument.
     currency : Currency
         The futures contract currency.
     price_precision : int
@@ -70,7 +70,7 @@ cdef class Equity(Instrument):
     def __init__(
         self,
         InstrumentId instrument_id not None,
-        Symbol local_symbol not None,
+        Symbol native_symbol not None,
         Currency currency not None,
         int price_precision,
         Price price_increment not None,
@@ -82,7 +82,7 @@ cdef class Equity(Instrument):
     ):
         super().__init__(
             instrument_id=instrument_id,
-            local_symbol=local_symbol,
+            native_symbol=native_symbol,
             asset_class=AssetClass.EQUITY,
             asset_type=AssetType.SPOT,
             quote_currency=currency,
@@ -114,13 +114,13 @@ cdef class Equity(Instrument):
         Condition.not_none(values, "values")
         return Equity(
             instrument_id=InstrumentId.from_str_c(values["id"]),
-            local_symbol=Symbol(values["local_symbol"]),
+            native_symbol=Symbol(values["native_symbol"]),
             currency=Currency.from_str_c(values['currency']),
             price_precision=values['price_precision'],
             price_increment=Price.from_str(values['price_increment']),
             multiplier=Quantity.from_str(values['multiplier']),
             lot_size=Quantity.from_str(values['lot_size']),
-            isin=values['isin'],
+            isin=values.get('isin'),  # Can be None
             ts_event=values['ts_event'],
             ts_init=values['ts_init'],
         )
@@ -131,7 +131,7 @@ cdef class Equity(Instrument):
         return {
             "type": "Equity",
             "id": obj.id.value,
-            "local_symbol": obj.local_symbol.value,
+            "native_symbol": obj.native_symbol.value,
             "currency": obj.quote_currency.code,
             "price_precision": obj.price_precision,
             "price_increment": str(obj.price_increment),

@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2021 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -39,8 +39,8 @@ cdef class CryptoPerpetual(Instrument):
     ----------
     instrument_id : InstrumentId
         The instrument ID for the instrument.
-    local_symbol : Symbol
-        The local/native symbol on the exchange for the instrument.
+    native_symbol : Symbol
+        The native/local symbol on the exchange for the instrument.
     base_currency : Currency, optional
         The base currency.
     quote_currency : Currency
@@ -117,7 +117,7 @@ cdef class CryptoPerpetual(Instrument):
     def __init__(
         self,
         InstrumentId instrument_id not None,
-        Symbol local_symbol not None,
+        Symbol native_symbol not None,
         Currency base_currency not None,
         Currency quote_currency not None,
         Currency settlement_currency not None,
@@ -142,7 +142,7 @@ cdef class CryptoPerpetual(Instrument):
     ):
         super().__init__(
             instrument_id=instrument_id,
-            local_symbol=local_symbol,
+            native_symbol=native_symbol,
             asset_class=AssetClass.CRYPTO,
             asset_type=AssetType.SWAP,
             quote_currency=quote_currency,
@@ -198,7 +198,7 @@ cdef class CryptoPerpetual(Instrument):
         cdef bytes info = values["info"]
         return CryptoPerpetual(
             instrument_id=InstrumentId.from_str_c(values["id"]),
-            local_symbol=Symbol(values["local_symbol"]),
+            native_symbol=Symbol(values["native_symbol"]),
             base_currency=Currency.from_str_c(values["base_currency"]),
             quote_currency=Currency.from_str_c(values["quote_currency"]),
             settlement_currency=Currency.from_str_c(values["settlement_currency"]),
@@ -228,7 +228,7 @@ cdef class CryptoPerpetual(Instrument):
         return {
             "type": "CryptoPerpetual",
             "id": obj.id.value,
-            "local_symbol": obj.local_symbol.value,
+            "native_symbol": obj.native_symbol.value,
             "base_currency": obj.base_currency.code,
             "quote_currency": obj.quote_currency.code,
             "settlement_currency": obj.settlement_currency.code,

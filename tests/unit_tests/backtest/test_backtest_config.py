@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2021 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -69,7 +69,6 @@ class TestBacktestConfig:
             venues=[
                 BacktestVenueConfig(
                     name="SIM",
-                    venue_type="ECN",
                     oms_type="HEDGING",
                     account_type="MARGIN",
                     base_currency="USD",
@@ -146,7 +145,7 @@ class TestBacktestConfig:
         result = tokenize(venue)
 
         # Assert
-        assert result == "d2f74877f3aeeba2f89b95807a8ced02"
+        assert result == "1a803a06f1ab329b5e9dd1b52cc134a8"
 
     def test_data_config_tokenization(self):
         # Arrange, Act
@@ -173,7 +172,7 @@ class TestBacktestConfig:
         result = tokenize(self.backtest_config)
 
         # Assert
-        assert result == "5a2c9290bb73a4b5884ffce50673e538"
+        assert result == "6bbc700d9be1891f6fcb494b9920f370"
 
     def test_backtest_data_config_load(self):
         instrument = TestInstrumentProvider.default_fx_ccy("AUD/USD")
@@ -204,7 +203,6 @@ class TestBacktestConfig:
             venues=[
                 BacktestVenueConfig(
                     name="SIM",
-                    venue_type="ECN",
                     oms_type="HEDGING",
                     account_type="MARGIN",
                     base_currency="USD",

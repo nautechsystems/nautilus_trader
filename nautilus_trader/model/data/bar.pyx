@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2021 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -131,7 +131,7 @@ cdef class BarSpecification:
     cdef BarSpecification from_str_c(str value):
         Condition.valid_string(value, 'value')
 
-        cdef list pieces = value.split('-', maxsplit=2)
+        cdef list pieces = value.rsplit('-', maxsplit=2)
 
         if len(pieces) != 3:
             raise ValueError(
@@ -341,7 +341,7 @@ cdef class BarType:
     cdef BarType from_str_c(str value):
         Condition.valid_string(value, 'value')
 
-        cdef list pieces = value.split('-', maxsplit=4)
+        cdef list pieces = value.rsplit('-', maxsplit=4)
 
         if len(pieces) != 5:
             raise ValueError(f"The BarType string value was malformed, was {value}")

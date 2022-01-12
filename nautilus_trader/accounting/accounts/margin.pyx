@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2021 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -14,6 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 from decimal import Decimal
+from typing import Dict
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.model.c_enums.account_type cimport AccountType
@@ -25,6 +26,7 @@ from nautilus_trader.model.events.order cimport OrderFilled
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.instruments.base cimport Instrument
 from nautilus_trader.model.objects cimport AccountBalance
+from nautilus_trader.model.objects cimport MarginBalance
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.position cimport Position
 
@@ -56,15 +58,44 @@ cdef class MarginAccount(Account):
 
         super().__init__(event, calculate_account_state)
 
-        cdef dict margins_init = event.info.get("margins_init", {})
-        cdef dict margins_maint = event.info.get("margins_maint", {})
-
         self.default_leverage = Decimal(1)
-        self._leverages = {}                 # type: dict[InstrumentId, Decimal]
-        self._margins_init = margins_init    # type: dict[InstrumentId, Money]
-        self._margins_maint = margins_maint  # type: dict[InstrumentId, Money]
+        self._leverages: Dict[InstrumentId, Decimal] = {}
+        self._margins: Dict[InstrumentId, MarginBalance] = {m.instrument_id: m for m in event.margins}
 
 # -- QUERIES ---------------------------------------------------------------------------------------
+
+    cpdef dict margins(self):
+        """
+        Return the initial (order) margins for the account.
+
+        Returns
+        -------
+        dict[InstrumentId, Money]
+
+        """
+        return self._margins.copy()
+
+    cpdef dict margins_init(self):
+        """
+        Return the initial (order) margins for the account.
+
+        Returns
+        -------
+        dict[InstrumentId, Money]
+
+        """
+        return {k: v.initial for k, v in self._margins.items()}
+
+    cpdef dict margins_maint(self):
+        """
+        Return the maintenance (position) margins for the account.
+
+        Returns
+        -------
+        dict[InstrumentId, Money]
+
+        """
+        return {k: v.maintenance for k, v in self._margins.items()}
 
     cpdef dict leverages(self):
         """
@@ -76,28 +107,6 @@ cdef class MarginAccount(Account):
 
         """
         return self._leverages.copy()
-
-    cpdef dict margins_init(self):
-        """
-        Return the initial (order) margins for the account.
-
-        Returns
-        -------
-        dict[InstrumentId, Money]
-
-        """
-        return self._margins_init.copy()
-
-    cpdef dict margins_maint(self):
-        """
-        Return the maintenance (position) margins for the account.
-
-        Returns
-        -------
-        dict[InstrumentId, Money]
-
-        """
-        return self._margins_maint.copy()
 
     cpdef object leverage(self, InstrumentId instrument_id):
         """
@@ -117,11 +126,11 @@ cdef class MarginAccount(Account):
 
         return self._leverages.get(instrument_id)
 
+
+
     cpdef Money margin_init(self, InstrumentId instrument_id):
         """
         Return the current initial (order) margin.
-
-        For multi-currency accounts, specify the currency for the query.
 
         Parameters
         ----------
@@ -140,14 +149,13 @@ cdef class MarginAccount(Account):
         """
         Condition.not_none(instrument_id, "instrument_id")
 
-        return self._margins_init.get(instrument_id)
+        cdef MarginBalance margin = self._margins.get(instrument_id)
+        return None if margin is None else margin.initial
 
     cpdef Money margin_maint(self, InstrumentId instrument_id):
         """
         Return the current maintenance (position) margin.
 
-        For multi-currency accounts, specify the currency for the query.
-
         Parameters
         ----------
         instrument_id : InstrumentId
@@ -165,7 +173,31 @@ cdef class MarginAccount(Account):
         """
         Condition.not_none(instrument_id, "instrument_id")
 
-        return self._margins_maint.get(instrument_id)
+        cdef MarginBalance margin = self._margins.get(instrument_id)
+        return None if margin is None else margin.maintenance
+
+    cpdef MarginBalance margin(self, InstrumentId instrument_id):
+        """
+        Return the current margin balance.
+
+        Parameters
+        ----------
+        instrument_id : InstrumentId
+            The instrument ID for the query.
+
+        Returns
+        -------
+        MarginBalance or ``None``
+
+        Warnings
+        --------
+        Returns ``None`` if there is no applicable information for the query,
+        rather than `MarginBalance` with zero amounts.
+
+        """
+        Condition.not_none(instrument_id, "instrument_id")
+
+        return self._margins.get(instrument_id)
 
 # -- COMMANDS --------------------------------------------------------------------------------------
 
@@ -239,9 +271,17 @@ cdef class MarginAccount(Account):
         """
         Condition.not_none(instrument_id, "instrument_id")
         Condition.not_none(margin_init, "margin_init")
-        Condition.not_negative(margin_init.as_decimal(), "margin_init")
 
-        self._margins_init[instrument_id] = margin_init
+        cdef MarginBalance margin = self._margins.get(instrument_id)
+        if margin is None:
+            self._margins[instrument_id] = MarginBalance(
+                initial=margin_init,
+                maintenance=Money(0, margin_init.currency),
+                instrument_id=instrument_id,
+            )
+        else:
+            margin.initial = margin_init
+
         self._recalculate_balance(margin_init.currency)
 
     cpdef void update_margin_maint(self, InstrumentId instrument_id, Money margin_maint) except *:
@@ -267,10 +307,36 @@ cdef class MarginAccount(Account):
         """
         Condition.not_none(instrument_id, "instrument_id")
         Condition.not_none(margin_maint, "margin_maint")
-        Condition.not_negative(margin_maint.as_decimal(), "margin_maint")
 
-        self._margins_maint[instrument_id] = margin_maint
+        cdef MarginBalance margin = self._margins.get(instrument_id)
+        if margin is None:
+            self._margins[instrument_id] = MarginBalance(
+                initial=Money(0, margin_maint.currency),
+                maintenance=margin_maint,
+                instrument_id=instrument_id,
+            )
+        else:
+            margin.maintenance = margin_maint
+
         self._recalculate_balance(margin_maint.currency)
+
+    cpdef void update_margin(self, MarginBalance margin) except *:
+        """
+        Update the margin balance.
+
+        Parameters
+        ----------
+        margin : MarginBalance
+
+        Warnings
+        --------
+        System method (not intended to be called by user code).
+
+        """
+        Condition.not_none(margin, "margin")
+
+        self._margins[margin.instrument_id] = margin
+        self._recalculate_balance(margin.currency)
 
     cpdef void clear_margin_init(self, InstrumentId instrument_id) except *:
         """
@@ -281,12 +347,21 @@ cdef class MarginAccount(Account):
         instrument_id : InstrumentId
             The instrument for the initial margin to clear.
 
+        Warnings
+        --------
+        System method (not intended to be called by user code).
+
         """
         Condition.not_none(instrument_id, "instrument_id")
 
-        cdef Money margin_init = self._margins_init.pop(instrument_id, None)
-        if margin_init is not None:
-            self._recalculate_balance(margin_init.currency)
+        cdef MarginBalance margin = self._margins.get(instrument_id)
+        if margin is not None:
+            if margin.maintenance.as_decimal() == 0:
+                self._margins.pop(instrument_id)
+            else:
+                margin.initial = Money(0, margin.currency)
+
+            self._recalculate_balance(margin.currency)
 
     cpdef void clear_margin_maint(self, InstrumentId instrument_id) except *:
         """
@@ -297,12 +372,41 @@ cdef class MarginAccount(Account):
         instrument_id : InstrumentId
             The instrument for the maintenance margin to clear.
 
+        Warnings
+        --------
+        System method (not intended to be called by user code).
+
         """
         Condition.not_none(instrument_id, "instrument_id")
 
-        cdef Money margin_maint = self._margins_maint.pop(instrument_id, None)
-        if margin_maint is not None:
-            self._recalculate_balance(margin_maint.currency)
+        cdef MarginBalance margin = self._margins.get(instrument_id)
+        if margin is not None:
+            if margin.initial.as_decimal() == 0:
+                self._margins.pop(instrument_id)
+            else:
+                margin.maintenance = Money(0, margin.currency)
+
+            self._recalculate_balance(margin.currency)
+
+    cpdef void clear_margin(self, InstrumentId instrument_id) except *:
+        """
+        Clear the maintenance (position) margins for the given instrument ID.
+
+        Parameters
+        ----------
+        instrument_id : InstrumentId
+            The instrument for the maintenance margin to clear.
+
+        Warnings
+        --------
+        System method (not intended to be called by user code).
+
+        """
+        Condition.not_none(instrument_id, "instrument_id")
+
+        cdef MarginBalance margin = self._margins.pop(instrument_id, None)
+        if margin is not None:
+            self._recalculate_balance(margin.currency)
 
 # -- CALCULATIONS ----------------------------------------------------------------------------------
 
@@ -313,20 +417,14 @@ cdef class MarginAccount(Account):
 
         total_margin: Decimal = Decimal(0)
 
-        cdef Money margin_init
-        for margin_init in self._margins_init.values():
-            if margin_init.currency != currency:
+        cdef MarginBalance margin
+        for margin in self._margins.values():
+            if margin.currency != currency:
                 continue
-            total_margin += margin_init.as_decimal()
-
-        cdef Money margin_maint
-        for margin_maint in self._margins_maint.values():
-            if margin_maint.currency != currency:
-                continue
-            total_margin += margin_maint.as_decimal()
+            total_margin += margin.initial.as_decimal()
+            total_margin += margin.maintenance.as_decimal()
 
         cdef AccountBalance new_balance = AccountBalance(
-            currency,
             current_balance.total,
             Money(total_margin, currency),
             Money(current_balance.total.as_decimal() - total_margin, currency),

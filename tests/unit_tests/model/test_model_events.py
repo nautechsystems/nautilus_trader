@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2021 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -55,6 +55,7 @@ from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.identifiers import VenueOrderId
 from nautilus_trader.model.objects import AccountBalance
+from nautilus_trader.model.objects import MarginBalance
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
@@ -70,7 +71,6 @@ class TestModelEvents:
         # Arrange
         uuid = UUID4()
         balance = AccountBalance(
-            currency=USD,
             total=Money(1525000, USD),
             locked=Money(0, USD),
             free=Money(1525000, USD),
@@ -81,6 +81,7 @@ class TestModelEvents:
             base_currency=USD,
             reported=True,
             balances=[balance],
+            margins=[],
             info={},
             event_id=uuid,
             ts_event=0,
@@ -91,11 +92,48 @@ class TestModelEvents:
         assert AccountState.from_dict(AccountState.to_dict(event)) == event
         assert (
             str(event)
-            == f"AccountState(account_id=SIM-000, account_type=MARGIN, base_currency=USD, is_reported=True, balances=[AccountBalance(total=1_525_000.00 USD, locked=0.00 USD, free=1_525_000.00 USD)], event_id={uuid})"  # noqa
+            == f"AccountState(account_id=SIM-000, account_type=MARGIN, base_currency=USD, is_reported=True, balances=[AccountBalance(total=1_525_000.00 USD, locked=0.00 USD, free=1_525_000.00 USD)], margins=[], event_id={uuid})"  # noqa
         )
         assert (
             repr(event)
-            == f"AccountState(account_id=SIM-000, account_type=MARGIN, base_currency=USD, is_reported=True, balances=[AccountBalance(total=1_525_000.00 USD, locked=0.00 USD, free=1_525_000.00 USD)], event_id={uuid})"  # noqa
+            == f"AccountState(account_id=SIM-000, account_type=MARGIN, base_currency=USD, is_reported=True, balances=[AccountBalance(total=1_525_000.00 USD, locked=0.00 USD, free=1_525_000.00 USD)], margins=[], event_id={uuid})"  # noqa
+        )
+
+    def test_account_state_with_margin_event_to_from_dict_and_str_repr(self):
+        # Arrange
+        uuid = UUID4()
+        balance = AccountBalance(
+            total=Money(1_525_000, USD),
+            locked=Money(25_000, USD),
+            free=Money(1_500_000, USD),
+        )
+        margin = MarginBalance(
+            initial=Money(5_000, USD),
+            maintenance=Money(20_000, USD),
+            instrument_id=AUDUSD_SIM.id,
+        )
+        event = AccountState(
+            account_id=AccountId("SIM", "000"),
+            account_type=AccountType.MARGIN,
+            base_currency=USD,
+            reported=True,
+            balances=[balance],
+            margins=[margin],
+            info={},
+            event_id=uuid,
+            ts_event=0,
+            ts_init=0,
+        )
+
+        # Act, Assert
+        assert AccountState.from_dict(AccountState.to_dict(event)) == event
+        assert (
+            str(event)
+            == f"AccountState(account_id=SIM-000, account_type=MARGIN, base_currency=USD, is_reported=True, balances=[AccountBalance(total=1_525_000.00 USD, locked=25_000.00 USD, free=1_500_000.00 USD)], margins=[MarginBalance(initial=5_000.00 USD, maintenance=20_000.00 USD, instrument_id=AUD/USD.SIM)], event_id={uuid})"  # noqa
+        )
+        assert (
+            repr(event)
+            == f"AccountState(account_id=SIM-000, account_type=MARGIN, base_currency=USD, is_reported=True, balances=[AccountBalance(total=1_525_000.00 USD, locked=25_000.00 USD, free=1_500_000.00 USD)], margins=[MarginBalance(initial=5_000.00 USD, maintenance=20_000.00 USD, instrument_id=AUD/USD.SIM)], event_id={uuid})"  # noqa
         )
 
     def test_order_initialized_event_to_from_dict_and_str_repr(self):

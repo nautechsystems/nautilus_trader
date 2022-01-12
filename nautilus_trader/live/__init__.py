@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2021 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -15,4 +15,7 @@
 
 """
 The `live` subpackage groups all engine and client implementations for live trading.
+
+Generally a common event loop is passed into each live engine to support the overarching
+design of a single efficient event loop, by default `uvloop <https://github.com/MagicStack/uvloop>`_.
 """

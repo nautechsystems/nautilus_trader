@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2021 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -97,7 +97,7 @@ cdef class BettingInstrument(Instrument):
 
         super().__init__(
             instrument_id=InstrumentId(symbol=self.make_symbol(), venue=Venue(venue_name)),
-            local_symbol=Symbol(market_id),
+            native_symbol=Symbol(market_id),
             asset_class=AssetClass.BETTING,
             asset_type=AssetType.SPOT,
             quote_currency=Currency.from_str_c(currency),

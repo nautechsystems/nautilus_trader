@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2021 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -168,10 +168,14 @@ NAUTILUS_PARQUET_SCHEMA = {
             "account_id": pa.dictionary(pa.int8(), pa.string()),
             "account_type": pa.dictionary(pa.int8(), pa.string()),
             "base_currency": pa.dictionary(pa.int8(), pa.string()),
-            "balance_currency": pa.dictionary(pa.int8(), pa.string()),
             "balance_total": pa.float64(),
             "balance_locked": pa.float64(),
             "balance_free": pa.float64(),
+            "balance_currency": pa.dictionary(pa.int8(), pa.string()),
+            "margin_initial": pa.float64(),
+            "margin_maintenance": pa.float64(),
+            "margin_currency": pa.dictionary(pa.int8(), pa.string()),
+            "margin_instrument_id": pa.dictionary(pa.int64(), pa.string()),
             "reported": pa.bool_(),
             "info": pa.string(),
             "event_id": pa.string(),
@@ -497,7 +501,7 @@ NAUTILUS_PARQUET_SCHEMA = {
     CurrencySpot: pa.schema(
         {
             "id": pa.dictionary(pa.int64(), pa.string()),
-            "local_symbol": pa.string(),
+            "native_symbol": pa.string(),
             "base_currency": pa.dictionary(pa.int8(), pa.string()),
             "quote_currency": pa.dictionary(pa.int8(), pa.string()),
             "price_precision": pa.int64(),
@@ -523,7 +527,7 @@ NAUTILUS_PARQUET_SCHEMA = {
     Equity: pa.schema(
         {
             "id": pa.dictionary(pa.int64(), pa.string()),
-            "local_symbol": pa.string(),
+            "native_symbol": pa.string(),
             "currency": pa.dictionary(pa.int8(), pa.string()),
             "price_precision": pa.int64(),
             "size_precision": pa.int64(),
@@ -541,7 +545,7 @@ NAUTILUS_PARQUET_SCHEMA = {
     Future: pa.schema(
         {
             "id": pa.dictionary(pa.int64(), pa.string()),
-            "local_symbol": pa.string(),
+            "native_symbol": pa.string(),
             "underlying": pa.dictionary(pa.int8(), pa.string()),
             "asset_class": pa.dictionary(pa.int8(), pa.string()),
             "currency": pa.dictionary(pa.int8(), pa.string()),
@@ -559,7 +563,7 @@ NAUTILUS_PARQUET_SCHEMA = {
     Option: pa.schema(
         {
             "id": pa.dictionary(pa.int64(), pa.string()),
-            "local_symbol": pa.string(),
+            "native_symbol": pa.string(),
             "underlying": pa.dictionary(pa.int8(), pa.string()),
             "asset_class": pa.dictionary(pa.int8(), pa.string()),
             "currency": pa.dictionary(pa.int8(), pa.string()),

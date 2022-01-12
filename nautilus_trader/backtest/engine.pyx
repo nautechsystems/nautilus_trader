@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2021 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -50,7 +50,6 @@ from nautilus_trader.model.c_enums.account_type cimport AccountType
 from nautilus_trader.model.c_enums.aggregation_source cimport AggregationSource
 from nautilus_trader.model.c_enums.book_type cimport BookType
 from nautilus_trader.model.c_enums.oms_type cimport OMSType
-from nautilus_trader.model.c_enums.venue_type cimport VenueType
 from nautilus_trader.model.data.bar cimport Bar
 from nautilus_trader.model.data.base cimport GenericData
 from nautilus_trader.model.data.tick cimport Tick
@@ -500,7 +499,6 @@ cdef class BacktestEngine:
     def add_venue(
         self,
         Venue venue,
-        VenueType venue_type,
         OMSType oms_type,
         AccountType account_type,
         Currency base_currency,
@@ -512,6 +510,7 @@ cdef class BacktestEngine:
         FillModel fill_model=None,
         LatencyModel latency_model=None,
         BookType book_type=BookType.L1_TBBO,
+        routing: bool=False,
         bar_execution: bool=False,
         reject_stop_orders: bool=True,
     ) -> None:
@@ -522,8 +521,6 @@ cdef class BacktestEngine:
         ----------
         venue : Venue
             The exchange venue ID.
-        venue_type : VenueType
-            The type of venue (will determine venue -> client_id mapping).
         oms_type : OMSType {``HEDGING``, ``NETTING``}
             The order management system type for the exchange. If ``HEDGING`` will
             generate new position IDs.
@@ -547,6 +544,8 @@ cdef class BacktestEngine:
             The latency model for the exchange.
         book_type : BookType
             The default order book type for fill modelling.
+        routing : bool
+            If multi-venue routing should be enabled for the execution client.
         bar_execution : bool
             If the exchange execution dynamics is based on bar data.
         reject_stop_orders : bool
@@ -571,7 +570,6 @@ cdef class BacktestEngine:
         # Create exchange
         exchange = SimulatedExchange(
             venue=venue,
-            venue_type=venue_type,
             oms_type=oms_type,
             account_type=account_type,
             base_currency=base_currency,
@@ -596,11 +594,11 @@ cdef class BacktestEngine:
         # Create execution client for exchange
         exec_client = BacktestExecClient(
             exchange=exchange,
-            account_id=AccountId(venue.value, "001"),
             msgbus=self._msgbus,
             cache=self._cache,
             clock=self._test_clock,
             logger=self._test_logger,
+            routing=routing,
             is_frozen_account=is_frozen_account,
         )
 
