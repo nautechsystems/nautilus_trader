@@ -2,7 +2,7 @@
 
 ## Release Notes
 
-Released on January 12, 2022.
+Released on 12th January 2022.
 
 ### Breaking Changes
 - Removed redundant `currency` param from `AccountBalance`.
@@ -29,7 +29,7 @@ Released on January 12, 2022.
 
 ## Release Notes
 
-Released on December 29, 2021.
+Released on 29th December 2021.
 
 ### Breaking Changes
 - Changed `subscribe_data(...)` method (`client_id` now optional).
@@ -62,7 +62,7 @@ Released on December 29, 2021.
 
 ## Release Notes
 
-Released 13th, December 2021
+Released on 13th December 2021.
 
 ### Breaking Changes
 - Renamed `match_id` to `trade_id`.
@@ -85,7 +85,7 @@ Released 13th, December 2021
 
 ## Release Notes
 
-Released on 22nd, November 2021
+Released on 22nd November 2021.
 
 ### Breaking Changes
 - Changed `hidden` order option to `display_qty` to support iceberg orders.
@@ -108,7 +108,7 @@ Released on 22nd, November 2021
 
 ## Release Notes
 
-Released on 8th, November 2021
+Released on 8th November 2021.
 
 ### Breaking Changes
 None
@@ -134,7 +134,7 @@ None
 
 ## Release Notes
 
-Released on 24th, October 2021
+Released on 24th October 2021.
 
 ### Breaking Changes
 - `Actor` constructor now takes `ActorConfig`.
@@ -157,7 +157,7 @@ Released on 24th, October 2021
 
 ## Release Notes
 
-Released on 10th, October 2021
+Released on 10th October 2021.
 
 ### Breaking Changes
 - Renamed `nanos_to_unix_dt` to `unix_nanos_to_dt` (more accurate name).
@@ -191,7 +191,7 @@ Released on 10th, October 2021
 
 ## Release Notes
 
-Released on 26th, September 2021
+Released on 26th September 2021.
 
 ### Breaking Changes
 - `BacktestEngine.run` method signature change.
@@ -223,7 +223,7 @@ Released on 26th, September 2021
 
 ## Release Notes
 
-Released on 12th, September 2021
+Released on 12th September 2021.
 
 ### Breaking Changes
 - Removed CCXT adapter (#428).
@@ -251,7 +251,7 @@ Released on 12th, September 2021
 
 # NautilusTrader 1.128.0 Beta - Release Notes
 
-Released on 30th, August 2021
+Released on 30th August 2021.
 
 This release continues the focus on the core system, with upgrades and cleanups
 to the component base class. The concept of an `active` order has been introduced, 
@@ -294,7 +294,7 @@ which is an order whose state can change (is not a `completed` order).
 
 ## Release Notes
 
-Released on 17th, August 2021
+Released on 17th August 2021.
 
 This release has again focused on core areas of the platform, including a 
 significant overhaul of accounting and portfolio components. The wiring between 
@@ -338,7 +338,7 @@ as closely as possible with established terminology in the domain.
 
 ## Release Notes
 
-Released on 3rd, August 2021
+Released on 3rd August 2021.
 
 This is a patch release which fixes a bug involving `NotImplementedError` 
 exception handling when subscribing to order book deltas when not supported by 
@@ -359,7 +359,7 @@ None
 
 ## Release Notes
 
-Released on 2nd, August 2021
+Released on 2nd August 2021.
 
 This release sees the completion of the initial implementation of the 
 `MessageBus`, with data now being handled by Pub/Sub patterns, along with the 
@@ -419,7 +419,7 @@ in the years ahead.
 
 ## Release Notes
 
-Released on 18th, July 2021
+Released on 18th July 2021.
 
 This release introduces a major re-architecture of the internal messaging system.
 A common message bus has been implemented which now handles all events via a 
@@ -466,7 +466,7 @@ on events, along with numerous 'under the hood' cleanups and two bug fixes.
 
 ## Release Notes
 
-Released on 6th, July 2021
+Released on 6th July 2021.
 
 This release sees the expansion of pre-trade risk check options (see 
 `RiskEngine` class documentation). There has also been extensive 'under the 
@@ -495,7 +495,7 @@ hood' code cleanup and consolidation.
 
 ## Release Notes
 
-Released on 20th, June 2021
+Released on 20th June 2021.
 
 A major feature of this release is a complete re-design of serialization for the
 platform, along with initial support for the [Parquet](https://parquet.apache.org/) format.
@@ -551,7 +551,7 @@ Initial scaffolding for new backtest data tooling has been added.
 
 ## Release Notes
 
-Released on 6th, June 2021
+Released on 6th June 2021.
 
 This release includes numerous breaking changes with a view to enhancing the core
 functionality and API of the platform. The data and execution caches have been 
@@ -596,7 +596,7 @@ handling of margins.
 
 ## Release Notes
 
-Released on 30th, May 2021
+Released on 30th May 2021.
 
 In this release there has been a major change to the use of inlines for method
 signatures. From the Cython docs:
