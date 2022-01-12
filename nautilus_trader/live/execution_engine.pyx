@@ -16,8 +16,6 @@
 import asyncio
 from typing import Optional
 
-from pydantic import PositiveInt
-
 from cpython.datetime cimport datetime
 from cpython.datetime cimport timedelta
 
