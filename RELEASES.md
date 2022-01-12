@@ -1,6 +1,6 @@
 # NautilusTrader 1.137.0 Beta - Release Notes
 
-Released TBD
+Released 12th, January 2022
 
 ## Breaking Changes
 - Removed redundant `currency` param from `AccountBalance`.
