@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2021 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -91,7 +91,6 @@ cdef class SocketClient:
             self._reader, self._writer = await asyncio.open_connection(
                 host=self.host,
                 port=self.port,
-                loop=self._loop,
                 ssl=self.ssl,
             )
             await self.post_connection()

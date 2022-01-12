@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2021 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -406,10 +406,6 @@ class MockExecutionClient(ExecutionClient):
     ----------
     client_id : ClientId
         The client ID.
-    venue_type : VenueType
-        The client venue type.
-    account_id : AccountId
-        The account_id for the client.
     account_type : AccountType
         The account type for the client.
     base_currency : Currency, optional
@@ -427,25 +423,23 @@ class MockExecutionClient(ExecutionClient):
     def __init__(
         self,
         client_id,
-        venue_type,
-        account_id,
         account_type,
         base_currency,
         msgbus,
         cache,
         clock,
         logger,
+        config=None,
     ):
         super().__init__(
             client_id=client_id,
-            venue_type=venue_type,
-            account_id=account_id,
             account_type=account_type,
             base_currency=base_currency,
             msgbus=msgbus,
             cache=cache,
             clock=clock,
             logger=logger,
+            config=config,
         )
 
         self.calls = []
@@ -498,10 +492,6 @@ class MockLiveExecutionClient(LiveExecutionClient):
     ----------
     client_id : ClientId
         The client ID.
-    venue_type : VenueType
-        The client venue type.
-    account_id : AccountId
-        The account_id for the client.
     account_type : AccountType
         The account type for the client.
     base_currency : Currency, optional
@@ -522,8 +512,6 @@ class MockLiveExecutionClient(LiveExecutionClient):
         self,
         loop,
         client_id,
-        venue_type,
-        account_id,
         account_type,
         base_currency,
         instrument_provider,
@@ -535,8 +523,6 @@ class MockLiveExecutionClient(LiveExecutionClient):
         super().__init__(
             loop=loop,
             client_id=client_id,
-            venue_type=venue_type,
-            account_id=account_id,
             account_type=account_type,
             base_currency=base_currency,
             instrument_provider=instrument_provider,
@@ -546,6 +532,7 @@ class MockLiveExecutionClient(LiveExecutionClient):
             logger=logger,
         )
 
+        self._set_account_id(AccountId(client_id.value, "001"))
         self._order_status_reports: Dict[VenueOrderId, OrderStatusReport] = {}
         self._trades_lists: Dict[VenueOrderId, list[ExecutionReport]] = {}
 

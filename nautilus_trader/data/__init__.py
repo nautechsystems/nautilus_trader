@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2021 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -14,7 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 """
-The `data` subpackage groups components relating to the data stack for the platform.
+The `data` subpackage groups components relating to the data stack and data tooling for the platform.
 
 The layered architecture of the data stack somewhat mirrors the
 execution stack with a central engine, cache layer beneath, database layer

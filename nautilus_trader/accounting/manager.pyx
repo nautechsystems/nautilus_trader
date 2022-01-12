@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2021 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -16,7 +16,7 @@
 from decimal import Decimal
 from typing import Optional
 
-from nautilus_trader.accounting.accounts.base import Account
+from nautilus_trader.accounting.accounts.base cimport Account
 from nautilus_trader.accounting.accounts.cash cimport CashAccount
 from nautilus_trader.accounting.accounts.margin cimport MarginAccount
 from nautilus_trader.cache.base cimport CacheFacade
@@ -32,6 +32,8 @@ from nautilus_trader.model.instruments.base cimport Instrument
 from nautilus_trader.model.objects cimport AccountBalance
 from nautilus_trader.model.orders.base cimport PassiveOrder
 from nautilus_trader.model.position cimport Position
+
+from nautilus_trader.accounting.error import AccountBalanceNegative
 
 
 cdef class AccountsManager:
@@ -66,7 +68,7 @@ cdef class AccountsManager:
         OrderFilled fill,
     ):
         """
-        Update the maintenance (position) margin.
+        Update the account balances based on the given fill event.
 
         Will return ``None`` if operation fails.
 
@@ -82,6 +84,11 @@ cdef class AccountsManager:
         Returns
         -------
         AccountState or ``None``
+
+        Raises
+        ------
+        AccountBalanceNegative
+            If a new free balance would become negative.
 
         """
         Condition.not_none(account, "account")
@@ -133,6 +140,25 @@ cdef class AccountsManager:
         list passive_orders_working,
         int64_t ts_event,
     ):
+        """
+        Update the account states based on the given orders.
+
+        Parameters
+        ----------
+        account : MarginAccount
+            The account to update.
+        instrument : Instrument
+            The instrument for the update.
+        passive_orders_working : list[PassiveOrder]
+            The passive working orders for the update.
+        ts_event : int64
+            The UNIX timestamp (nanoseconds) when the account event occurred.
+
+        Returns
+        -------
+        AccountState
+
+        """
         Condition.not_none(account, "account")
         Condition.not_none(instrument, "instrument")
         Condition.not_none(passive_orders_working, "orders_working")
@@ -454,11 +480,19 @@ cdef class AccountsManager:
             return  # Nothing to adjust
 
         cdef AccountBalance balance = account.balance()
+
+        # Calculate new balances
+        new_total: Decimal = balance.total + pnl
+        new_free: Decimal = balance.free + pnl
+
+        # Validate free balance
+        if new_free < 0:
+            raise AccountBalanceNegative(balance=new_free)
+
         cdef AccountBalance new_balance = AccountBalance(
-            currency=account.base_currency,
-            total=Money(balance.total + pnl, account.base_currency),
+            total=Money(new_total, account.base_currency),
             locked=balance.locked,
-            free=Money(balance.free + pnl, account.base_currency),
+            free=Money(new_free, account.base_currency),
         )
         balances.append(new_balance)
 
@@ -505,17 +539,23 @@ cdef class AccountsManager:
                     )
                     return
                 new_balance = AccountBalance(
-                    currency=currency,
                     total=Money(pnl, currency),
                     locked=Money(0, currency),
                     free=Money(pnl, currency),
                 )
             else:
+                # Calculate new balances
+                new_total: Decimal = balance.total + pnl
+                new_free: Decimal = balance.free + pnl
+
+                # Validate free balance
+                if new_free < 0:
+                    raise AccountBalanceNegative(balance=new_free)
+
                 new_balance = AccountBalance(
-                    currency=currency,
-                    total=Money(balance.total + pnl, currency),
+                    total=Money(new_total, currency),
                     locked=balance.locked,
-                    free=Money(balance.free + pnl, currency),
+                    free=Money(new_free, currency),
                 )
 
             balances.append(new_balance)
@@ -531,6 +571,7 @@ cdef class AccountsManager:
             base_currency=account.base_currency,
             reported=False,
             balances=list(account.balances().values()),
+            margins=list(account.margins().values()) if account.is_margin_account() else [],
             info={},
             event_id=self._uuid_factory.generate(),
             ts_event=ts_event,

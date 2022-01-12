@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2021 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -19,7 +19,6 @@ from functools import lru_cache
 from typing import Any, Dict, Optional
 
 from nautilus_trader.adapters.betfair.client.core import BetfairClient
-from nautilus_trader.adapters.betfair.common import BETFAIR_VENUE
 from nautilus_trader.adapters.betfair.data import BetfairDataClient
 from nautilus_trader.adapters.betfair.execution import BetfairExecutionClient
 from nautilus_trader.adapters.betfair.providers import BetfairInstrumentProvider
@@ -31,7 +30,6 @@ from nautilus_trader.common.logging import LoggerAdapter
 from nautilus_trader.live.factories import LiveDataClientFactory
 from nautilus_trader.live.factories import LiveExecutionClientFactory
 from nautilus_trader.model.currency import Currency
-from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.msgbus.bus import MessageBus
 
 
@@ -148,7 +146,6 @@ class BetfairLiveDataClientFactory(LiveDataClientFactory):
         cache: Cache,
         clock: LiveClock,
         logger: LiveLogger,
-        client_cls=None,
     ) -> BetfairDataClient:
         """
         Create a new Betfair data client.
@@ -169,8 +166,6 @@ class BetfairLiveDataClientFactory(LiveDataClientFactory):
             The clock for the client.
         logger : LiveLogger
             The logger for the client.
-        client_cls : class, optional
-            The class to call to return a new internal client.
 
         Returns
         -------
@@ -219,7 +214,6 @@ class BetfairLiveExecutionClientFactory(LiveExecutionClientFactory):
         cache: Cache,
         clock: LiveClock,
         logger: LiveLogger,
-        client_cls=None,
     ) -> BetfairExecutionClient:
         """
         Create a new Betfair execution client.
@@ -240,9 +234,6 @@ class BetfairLiveExecutionClientFactory(LiveExecutionClientFactory):
             The clock for the client.
         logger : LiveLogger
             The logger for the client.
-        client_cls : class, optional
-            The internal client constructor. This allows external library and
-            testing dependency injection.
 
         Returns
         -------
@@ -263,17 +254,10 @@ class BetfairLiveExecutionClientFactory(LiveExecutionClientFactory):
             client=client, logger=logger, market_filter=tuple(market_filter.items())
         )
 
-        # Get account ID env variable or set default
-        account_id_env_var = os.getenv(config.get("account_id", ""), "001")
-
-        # Set account ID
-        account_id = AccountId(BETFAIR_VENUE.value, account_id_env_var)
-
         # Create client
         exec_client = BetfairExecutionClient(
             loop=loop,
             client=client,
-            account_id=account_id,
             base_currency=Currency.from_str(config.get("base_currency")),
             msgbus=msgbus,
             cache=cache,

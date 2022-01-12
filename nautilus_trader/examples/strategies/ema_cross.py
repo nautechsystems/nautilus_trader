@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2021 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -72,8 +72,8 @@ class EMACross(TradingStrategy):
     """
     A simple moving average cross example strategy.
 
-    When the fast EMA crosses the slow EMA then enter a position in that
-    direction.
+    When the fast EMA crosses the slow EMA then enter a position at the market
+    in that direction.
 
     Cancels all orders and flattens all positions on stop.
 
@@ -117,8 +117,8 @@ class EMACross(TradingStrategy):
         # Subscribe to live data
         self.subscribe_bars(self.bar_type)
         self.subscribe_quote_ticks(self.instrument_id)
+        # self.subscribe_trade_ticks(self.instrument_id)
         # self.subscribe_ticker(self.instrument_id)  # For debugging
-        # self.subscribe_trade_ticks(self.instrument_id)  # For debugging
         # self.subscribe_order_book_deltas(self.instrument_id, depth=20)  # For debugging
         # self.subscribe_order_book_snapshots(self.instrument_id, depth=20)  # For debugging
 
@@ -293,11 +293,10 @@ class EMACross(TradingStrategy):
         # Unsubscribe from data
         self.unsubscribe_bars(self.bar_type)
         self.unsubscribe_quote_ticks(self.instrument_id)
-
+        # self.unsubscribe_trade_ticks(self.instrument_id)
         # self.unsubscribe_ticker(self.instrument_id)
         # self.unsubscribe_order_book_deltas(self.instrument_id)
         # self.unsubscribe_order_book_snapshots(self.instrument_id)
-        # self.unsubscribe_trade_ticks(self.instrument_id)
 
     def on_reset(self):
         """

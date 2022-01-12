@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2021 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -64,6 +64,7 @@ from nautilus_trader.model.identifiers import StrategyId
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.identifiers import VenueOrderId
 from nautilus_trader.model.objects import AccountBalance
+from nautilus_trader.model.objects import MarginBalance
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
@@ -396,7 +397,20 @@ class TestMsgPackSerializer:
             account_type=AccountType.MARGIN,
             base_currency=USD,
             reported=True,
-            balances=[AccountBalance(USD, Money(1525000, USD), Money(0, USD), Money(1525000, USD))],
+            balances=[
+                AccountBalance(
+                    Money(1525000, USD),
+                    Money(25000, USD),
+                    Money(1500000, USD),
+                ),
+            ],
+            margins=[
+                MarginBalance(
+                    Money(5000, USD),
+                    Money(20000, USD),
+                    AUDUSD_SIM.id,
+                ),
+            ],
             info={},
             event_id=UUID4(),
             ts_event=0,
@@ -419,12 +433,12 @@ class TestMsgPackSerializer:
             reported=True,
             balances=[
                 AccountBalance(
-                    USDT,
                     Money(10000, USDT),
                     Money(0, USDT),
                     Money(10000, USDT),
-                )
+                ),
             ],
+            margins=[],
             info={},
             event_id=UUID4(),
             ts_event=0,

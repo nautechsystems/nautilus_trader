@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2021 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -30,10 +30,10 @@ cdef class MessageBus:
     """
     Provides a generic message bus to facilitate various messaging patterns.
 
-    The bus provides both a producer and consumer API for PUB/SUB, REQ/REP, as
+    The bus provides both a producer and consumer API for Pub/Sub, Req/Rep, as
     well as direct point-to-point messaging to registered endpoints.
 
-    PUB/SUB wildcard patterns for hierarchical topics are possible:
+    Pub/Sub wildcard patterns for hierarchical topics are possible:
      - `*` asterisk represents one or more characters in a pattern.
      - `?` question mark represents a single character in a pattern.
 

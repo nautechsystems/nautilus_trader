@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2021 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -59,12 +59,12 @@ class TestBettingAccount:
             reported=True,
             balances=[
                 AccountBalance(
-                    GBP,
                     Money(starting_balance, GBP),
                     Money(0.00, GBP),
                     Money(starting_balance, GBP),
                 ),
             ],
+            margins=[],
             info={},  # No default currency set
             event_id=UUID4(),
             ts_event=0,
@@ -108,12 +108,12 @@ class TestBettingAccount:
             reported=True,
             balances=[
                 AccountBalance(
-                    GBP,
                     Money(1_000_000, GBP),
                     Money(0, GBP),
                     Money(1_000_000, GBP),
                 ),
             ],
+            margins=[],
             info={},
             event_id=UUID4(),
             ts_event=0,
@@ -144,12 +144,12 @@ class TestBettingAccount:
             reported=True,
             balances=[
                 AccountBalance(
-                    GBP,
                     Money(10.00000000, GBP),
                     Money(0.00000000, GBP),
                     Money(10.00000000, GBP),
                 ),
             ],
+            margins=[],
             info={},  # No default currency set
             event_id=UUID4(),
             ts_event=0,
@@ -166,12 +166,12 @@ class TestBettingAccount:
             reported=True,
             balances=[
                 AccountBalance(
-                    GBP,
                     Money(9.00000000, GBP),
                     Money(0.50000000, GBP),
                     Money(8.50000000, GBP),
                 ),
             ],
+            margins=[],
             info={},  # No default currency set
             event_id=UUID4(),
             ts_event=0,

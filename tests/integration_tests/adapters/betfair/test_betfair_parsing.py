@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2021 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -150,8 +150,13 @@ class TestBetfairParsing:
             base_currency=GBP,
             reported=True,  # reported
             balances=[
-                AccountBalance(GBP, Money(1000.0, GBP), Money(0.00, GBP), Money(1000.0, GBP))
+                AccountBalance(
+                    Money(1000.0, GBP),
+                    Money(0.00, GBP),
+                    Money(1000.0, GBP),
+                )
             ],
+            margins=[],
             info={"funds": funds, "detail": detail},
             event_id=self.uuid,
             ts_event=result.ts_event,

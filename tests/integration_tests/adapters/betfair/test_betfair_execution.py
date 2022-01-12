@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2021 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -112,7 +112,6 @@ class TestBetfairExecutionClient:
         self.client = BetfairExecutionClient(
             loop=asyncio.get_event_loop(),
             client=self.betfair_client,
-            account_id=self.account_id,
             base_currency=GBP,
             msgbus=self.msgbus,
             cache=self.cache,

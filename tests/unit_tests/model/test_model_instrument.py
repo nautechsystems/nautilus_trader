@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2021 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -86,7 +86,7 @@ class TestInstrument:
         assert result == {
             "type": "Instrument",
             "id": "BTC/USDT.BINANCE",
-            "local_symbol": "BTCUSDT",
+            "native_symbol": "BTCUSDT",
             "asset_class": "CRYPTO",
             "asset_type": "SPOT",
             "quote_currency": "USDT",
@@ -117,7 +117,7 @@ class TestInstrument:
         values = {
             "type": "Instrument",
             "id": "BTC/USDT.BINANCE",
-            "local_symbol": "BTCUSDT",
+            "native_symbol": "BTCUSDT",
             "asset_class": "CRYPTO",
             "asset_type": "SPOT",
             "quote_currency": "USDT",
@@ -158,7 +158,7 @@ class TestInstrument:
         assert result == {
             "type": "CryptoPerpetual",
             "id": "BTC/USD.BITMEX",
-            "local_symbol": "XBTUSD",
+            "native_symbol": "XBTUSD",
             "base_currency": "BTC",
             "quote_currency": "USD",
             "settlement_currency": "BTC",

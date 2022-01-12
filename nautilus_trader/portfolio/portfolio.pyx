@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2021 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -351,7 +351,7 @@ cdef class Portfolio(PortfolioFacade):
         else:
             account.apply(event)
 
-        self._log.debug(f"Updated with {event}.")
+        self._log.info(f"Updated with {event}.")
 
     cpdef void update_order(self, OrderEvent event) except *:
         """

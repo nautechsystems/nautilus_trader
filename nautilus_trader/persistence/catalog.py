@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2021 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -99,6 +99,7 @@ class DataCatalog(metaclass=Singleton):
         table_kwargs: Optional[Dict] = None,
         clean_instrument_keys=True,
         as_dataframe=True,
+        projections: Optional[Dict] = None,
         **kwargs,
     ):
         filters = [filter_expr] if filter_expr is not None else []
@@ -121,6 +122,10 @@ class DataCatalog(metaclass=Singleton):
                 return pd.DataFrame() if as_dataframe else None
 
         dataset = ds.dataset(full_path, partitioning="hive", filesystem=self.fs)
+        table_kwargs = table_kwargs or {}
+        if projections:
+            projected = {**{c: ds.field(c) for c in dataset.schema.names}, **projections}
+            table_kwargs.update(columns=projected)
         table = dataset.to_table(filter=combine_filters(*filters), **(table_kwargs or {}))
         mappings = self.load_inverse_mappings(path=full_path)
         if as_dataframe:

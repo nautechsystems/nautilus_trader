@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2021 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -94,7 +94,7 @@ class TestBinanceSpotMarketHttpAPI:
         request = mock_send_request.call_args.kwargs
         assert request["method"] == "GET"
         assert request["url"] == "https://api.binance.com/api/v3/exchangeInfo"
-        assert request["params"] == 'symbols=["BTCUSDT","ETHUSDT"]'
+        assert request["params"] == "symbols=%5B%22BTCUSDT%22%2C%22ETHUSDT%22%5D"
 
     @pytest.mark.asyncio
     async def test_depth_sends_expected_request(self, mocker):

@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2021 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -66,13 +66,13 @@ def parse_diff_depth_stream_ws(
     ts_event: int = millis_to_nanos(msg["E"])
     update_id: int = msg["U"]
 
-    bid_deltas = [
+    bid_deltas: List[OrderBookDelta] = [
         parse_book_delta_ws(instrument_id, OrderSide.BUY, d, ts_event, ts_init, update_id)
-        for d in msg.get("b")
+        for d in msg["b"]
     ]
-    ask_deltas = [
+    ask_deltas: List[OrderBookDelta] = [
         parse_book_delta_ws(instrument_id, OrderSide.SELL, d, ts_event, ts_init, update_id)
-        for d in msg.get("a")
+        for d in msg["a"]
     ]
 
     return OrderBookDeltas(
@@ -261,7 +261,6 @@ def _parse_balances(
 
     balances: List[AccountBalance] = [
         AccountBalance(
-            currency=currency,
             total=Money(values[0], currency),
             locked=Money(values[1], currency),
             free=Money(values[2], currency),

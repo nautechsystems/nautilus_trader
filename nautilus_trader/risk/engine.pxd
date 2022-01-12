@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2021 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -83,9 +83,9 @@ cdef class RiskEngine(Component):
 
     cdef bint _check_order_id(self, Order order) except *
     cdef bint _check_order(self, Instrument instrument, Order order) except *
-    cdef bint _check_order_quantity(self, Instrument instrument, Order order) except *
     cdef bint _check_order_price(self, Instrument instrument, Order order) except *
-    cdef bint _check_order_risk(self, Instrument instrument, Order order) except *
+    cdef bint _check_order_quantity(self, Instrument instrument, Order order) except *
+    cdef bint _check_orders_risk(self, Instrument instrument, list orders) except *
     cdef str _check_price(self, Instrument instrument, Price price)
     cdef str _check_quantity(self, Instrument instrument, Quantity quantity)
 

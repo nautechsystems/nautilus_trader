@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2021 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -14,5 +14,6 @@
 # -------------------------------------------------------------------------------------------------
 
 """
-The `instruments` subpackage defines various instrument types.
+Defines categories of trading instruments with specific properties dependent
+on the asset class and asset type.
 """

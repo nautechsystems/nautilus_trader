@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2021 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -12,3 +12,14 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+
+"""
+The `accounting` subpackage defines both different account types and account management machinery.
+
+There is also an `ExchangeRateCalculator` for calculating the exchange rate between FX and/or crypto
+pairs. The `AccountManager` is mainly used from the `Portfolio` to manage accounting operations.
+
+The `AccountFactory` supports customized account types for specific integrations. These custom
+account types can be registered with the factory and will then be instantiated when an `AccountState`
+event is received for that integration.
+"""

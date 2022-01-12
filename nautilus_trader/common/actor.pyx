@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2021 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -1360,6 +1360,11 @@ cdef class Actor(Component):
         to_datetime : datetime, optional
             The specified to datetime for the data. If ``None`` then will default
             to the current datetime.
+
+        Raises
+        ------
+        ValueError
+            If `from_datetime` is not less than `to_datetime`.
 
         Notes
         -----

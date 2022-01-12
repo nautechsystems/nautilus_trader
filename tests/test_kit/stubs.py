@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2021 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -82,6 +82,7 @@ from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.identifiers import VenueOrderId
 from nautilus_trader.model.objects import AccountBalance
+from nautilus_trader.model.objects import MarginBalance
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
@@ -132,6 +133,10 @@ class TestStubs:
     @staticmethod
     def ethusd_bitmex_id() -> InstrumentId:
         return InstrumentId(Symbol("ETH/USD"), Venue("BITMEX"))
+
+    @staticmethod
+    def ethusd_ftx_id() -> InstrumentId:
+        return InstrumentId(Symbol("ETH-PERP"), Venue("FTX"))
 
     @staticmethod
     def btcusdt_binance_id() -> InstrumentId:
@@ -503,12 +508,12 @@ class TestStubs:
             reported=True,  # reported
             balances=[
                 AccountBalance(
-                    USD,
                     Money(1_000_000, USD),
                     Money(0, USD),
                     Money(1_000_000, USD),
-                )
+                ),
             ],
+            margins=[],
             info={},
             event_id=UUID4(),
             ts_event=0,
@@ -524,11 +529,17 @@ class TestStubs:
             reported=True,  # reported
             balances=[
                 AccountBalance(
-                    USD,
                     Money(1_000_000, USD),
                     Money(0, USD),
                     Money(1_000_000, USD),
-                )
+                ),
+            ],
+            margins=[
+                MarginBalance(
+                    Money(10_000, USD),
+                    Money(50_000, USD),
+                    TestStubs.audusd_id(),
+                ),
             ],
             info={},
             event_id=UUID4(),
@@ -545,12 +556,12 @@ class TestStubs:
             reported=False,  # reported
             balances=[
                 AccountBalance(
-                    GBP,
                     Money(1_000, GBP),
                     Money(0, GBP),
                     Money(1_000, GBP),
-                )
+                ),
             ],
+            margins=[],
             info={},
             event_id=UUID4(),
             ts_event=0,
