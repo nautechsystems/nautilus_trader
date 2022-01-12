@@ -91,7 +91,6 @@ cdef class SocketClient:
             self._reader, self._writer = await asyncio.open_connection(
                 host=self.host,
                 port=self.port,
-                loop=self._loop,
                 ssl=self.ssl,
             )
             await self.post_connection()
