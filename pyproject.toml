@@ -72,7 +72,7 @@ ib_insync = { version = "^0.9.70", optional = true }
 # coverage 5.x is currently broken for Cython
 # https://github.com/cython/cython/issues/3515
 coverage = "4.5.4"  # Pinned at 4.5.4 due Cython 3.0.0a10
-nox = "^2021.10.1"
+nox = "^2022.1.7"
 numpydoc = "^1.1.0"
 jupyter-book = "^0.12.1"
 pre-commit = "^2.16.0"
