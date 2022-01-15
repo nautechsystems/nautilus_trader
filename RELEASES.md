@@ -1,8 +1,24 @@
+# NautilusTrader 1.137.1 Beta
+
+## Release Notes
+
+Released on 15th January 2022 (UTC).
+
+This is a patch release which fixes moderate to high severity security vulnerabilities in
+`pillow < 9.0.0`:
+- PIL.ImageMath.eval allows evaluation of arbitrary expressions, such as ones that use the Python exec method.
+- path_getbbox in path.c has a buffer over-read during initialization of ImagePath.Path.
+- path_getbbox in path.c improperly initializes ImagePath.Path.
+
+This release upgrades to `pillow 9.0.0`.
+
+---
+
 # NautilusTrader 1.137.0 Beta
 
 ## Release Notes
 
-Released on 12th January 2022.
+Released on 12th January 2022 (UTC).
 
 ### Breaking Changes
 - Removed redundant `currency` param from `AccountBalance`.
