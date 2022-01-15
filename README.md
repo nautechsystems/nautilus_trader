@@ -6,12 +6,7 @@
 ![pypi-version](https://img.shields.io/pypi/v/nautilus_trader)
 ![pypi-format](https://img.shields.io/pypi/format/nautilus_trader?color=blue)
 [![Downloads](https://pepy.tech/badge/nautilus-trader)](https://pepy.tech/project/nautilus-trader)
-[![code-style: black](https://img.shields.io/badge/code%20style-black-000000.svg)](https://github.com/psf/black) 
-
-- **Website:** https://nautilustrader.io
-- **Docs:** https://docs.nautilustrader.io
-- **Support:** [support@nautilustrader.io](mailto:support@nautilustrader.io)
-- **Discord:** https://discord.gg/VXv6byZZ
+[![code-style: black](https://img.shields.io/badge/code%20style-black-000000.svg)](https://github.com/psf/black)
 
 | Branch    | Version | Status |
 |:----------|:--------|:-------|
@@ -23,6 +18,13 @@
 | Linux (x86_64)   | `TBA`   | `3.8+` |
 | macOS (x86_64)   | `TBA`   | `3.8+` |
 | Windows (x86_64) | `TBA`   | `3.8+` |
+
+- **Website:** https://nautilustrader.io
+- **Docs:** https://docs.nautilustrader.io
+- **Support:** [support@nautilustrader.io](mailto:support@nautilustrader.io)
+
+## Community
+![discord](https://img.shields.io/discord/924497682343550976?label=discord)
 
 ## Introduction
 
