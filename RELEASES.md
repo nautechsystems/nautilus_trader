@@ -1,3 +1,11 @@
+# NautilusTrader 1.138.0 Beta
+
+## Release Notes
+
+Released on TBD.
+
+---
+
 # NautilusTrader 1.137.1 Beta
 
 ## Release Notes
