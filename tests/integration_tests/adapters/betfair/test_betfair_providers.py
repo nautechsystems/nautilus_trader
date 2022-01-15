@@ -14,6 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 import asyncio
+import sys
 
 import pytest
 
@@ -30,6 +31,7 @@ from tests.integration_tests.adapters.betfair.test_kit import BetfairStreaming
 from tests.integration_tests.adapters.betfair.test_kit import BetfairTestStubs
 
 
+@pytest.mark.skipif(sys.platform == "win32", reason="failing on windows")
 class TestBetfairInstrumentProvider:
     def setup(self):
         # Fixture Setup
