@@ -24,7 +24,7 @@
 - **Support:** [support@nautilustrader.io](mailto:support@nautilustrader.io)
 
 ## Community
-[![discord](https://img.shields.io/discord/924497682343550976?label=discord)](https://discord.gg/AUWVs3XaCS)
+[![discord](https://img.shields.io/discord/924497682343550976?color=768AD4&label=discord)](https://discord.gg/AUWVs3XaCS)
 
 ## Introduction
 
