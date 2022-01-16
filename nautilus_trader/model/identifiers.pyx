@@ -454,19 +454,28 @@ cdef class PositionId(Identifier):
         super().__init__(value)
 
 
-cdef class ExecutionId(Identifier):
+cdef class TradeId(Identifier):
     """
-    Represents a valid execution ID.
+    Represents a valid trade ID (assigned by a trading venue).
+
+    Can correspond to the `TradeID <1003> field` of the FIX protocol.
+
+    The unique ID assigned to the trade entity once it is received or matched by
+    the exchange or central counterparty.
 
     Parameters
     ----------
     value : str
-        The execution ID value.
+        The trade ID value.
 
     Raises
     ------
     ValueError
         If `value` is not a valid string.
+
+    References
+    ----------
+    https://www.onixs.biz/fix-dictionary/5.0/tagnum_1003.html
     """
 
     def __init__(self, str value):

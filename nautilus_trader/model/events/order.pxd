@@ -22,11 +22,11 @@ from nautilus_trader.model.c_enums.time_in_force cimport TimeInForce
 from nautilus_trader.model.currency cimport Currency
 from nautilus_trader.model.identifiers cimport AccountId
 from nautilus_trader.model.identifiers cimport ClientOrderId
-from nautilus_trader.model.identifiers cimport ExecutionId
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.identifiers cimport OrderListId
 from nautilus_trader.model.identifiers cimport PositionId
 from nautilus_trader.model.identifiers cimport StrategyId
+from nautilus_trader.model.identifiers cimport TradeId
 from nautilus_trader.model.identifiers cimport TraderId
 from nautilus_trader.model.identifiers cimport VenueOrderId
 from nautilus_trader.model.objects cimport Money
@@ -205,8 +205,8 @@ cdef class OrderUpdated(OrderEvent):
 
 
 cdef class OrderFilled(OrderEvent):
-    cdef readonly ExecutionId execution_id
-    """The execution ID associated with the event.\n\n:returns: `ExecutionId`"""
+    cdef readonly TradeId trade_id
+    """The trade ID associated with the event.\n\n:returns: `TradeId`"""
     cdef readonly PositionId position_id
     """The position ID associated with the event.\n\n:returns: `PositionId` or ``None``"""
     cdef readonly OrderSide order_side

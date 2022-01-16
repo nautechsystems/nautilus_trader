@@ -34,8 +34,8 @@ from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.logging import LogColor
 from nautilus_trader.common.logging import Logger
-from nautilus_trader.execution.messages import ExecutionReport
-from nautilus_trader.execution.messages import OrderStatusReport
+from nautilus_trader.execution.reports import OrderStatusReport
+from nautilus_trader.execution.reports import TradeReport
 from nautilus_trader.live.execution_client import LiveExecutionClient
 from nautilus_trader.model.c_enums.account_type import AccountType
 from nautilus_trader.model.c_enums.order_side import OrderSideParser
@@ -53,10 +53,10 @@ from nautilus_trader.model.enums import TimeInForce
 from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import ClientOrderId
-from nautilus_trader.model.identifiers import ExecutionId
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import StrategyId
 from nautilus_trader.model.identifiers import Symbol
+from nautilus_trader.model.identifiers import TradeId
 from nautilus_trader.model.identifiers import VenueOrderId
 from nautilus_trader.model.instruments.base import Instrument
 from nautilus_trader.model.objects import AccountBalance
@@ -401,21 +401,21 @@ class FTXExecutionClient(LiveExecutionClient):
         """
         raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
-    async def generate_exec_reports(
+    async def generate_trade_reports(
         self,
         venue_order_id: VenueOrderId,
         symbol: Symbol,
         since: datetime = None,
-    ) -> List[ExecutionReport]:
+    ) -> List[TradeReport]:
         """
-        Generate a list of execution reports.
+        Generate a list of trade reports.
 
         The returned list may be empty if no trades match the given parameters.
 
         Parameters
         ----------
         venue_order_id : VenueOrderId
-            The venue order ID for the trades.
+            The venue order ID (assigned by the venue) for the trades.
         symbol : Symbol
             The symbol for the trades.
         since : datetime, optional
@@ -423,12 +423,12 @@ class FTXExecutionClient(LiveExecutionClient):
 
         Returns
         -------
-        list[ExecutionReport]
+        list[TradeReport]
 
         """
         # TODO: Implement
         self._log.error(
-            "Cannot generate execution reports: Not implemented in this version.",
+            "Cannot generate trade reports: Not implemented in this version.",
         )
         return []
 
@@ -569,7 +569,7 @@ class FTXExecutionClient(LiveExecutionClient):
             client_order_id=client_order_id,
             venue_order_id=venue_order_id,
             venue_position_id=None,  # NETTING accounts
-            execution_id=ExecutionId(str(data["id"])),  # Trade ID
+            trade_id=TradeId(str(data["id"])),  # Trade ID
             order_side=OrderSideParser.from_str_py(data["side"].upper()),
             order_type=self._order_types[venue_order_id],
             last_qty=Quantity(data["size"], instrument.size_precision),

@@ -34,10 +34,10 @@ from nautilus_trader.model.currency cimport Currency
 from nautilus_trader.model.data.bar cimport Bar
 from nautilus_trader.model.data.tick cimport Tick
 from nautilus_trader.model.identifiers cimport ClientOrderId
-from nautilus_trader.model.identifiers cimport ExecutionId
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.identifiers cimport PositionId
 from nautilus_trader.model.identifiers cimport StrategyId
+from nautilus_trader.model.identifiers cimport TradeId
 from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.model.identifiers cimport VenueOrderId
 from nautilus_trader.model.instruments.base cimport Instrument
@@ -197,7 +197,7 @@ cdef class SimulatedExchange:
     cdef PositionId _get_position_id(self, Order order, bint generate=*)
     cdef PositionId _generate_venue_position_id(self, InstrumentId instrument_id)
     cdef VenueOrderId _generate_venue_order_id(self, InstrumentId instrument_id)
-    cdef ExecutionId _generate_execution_id(self)
+    cdef TradeId _generate_trade_id(self)
 
 # -- EVENT GENERATORS ------------------------------------------------------------------------------
 

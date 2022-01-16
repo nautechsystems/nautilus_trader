@@ -57,10 +57,10 @@ from nautilus_trader.model.events.position import PositionOpened
 from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import ClientOrderId
 from nautilus_trader.model.identifiers import ComponentId
-from nautilus_trader.model.identifiers import ExecutionId
 from nautilus_trader.model.identifiers import OrderListId
 from nautilus_trader.model.identifiers import PositionId
 from nautilus_trader.model.identifiers import StrategyId
+from nautilus_trader.model.identifiers import TradeId
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.identifiers import VenueOrderId
 from nautilus_trader.model.objects import AccountBalance
@@ -859,7 +859,7 @@ class TestMsgPackSerializer:
             AUDUSD_SIM.id,
             ClientOrderId("O-123456"),
             VenueOrderId("1"),
-            ExecutionId("E123456"),
+            TradeId("E123456"),
             PositionId("T123456"),
             OrderSide.SELL,
             OrderType.MARKET,
@@ -889,7 +889,7 @@ class TestMsgPackSerializer:
             AUDUSD_SIM.id,
             ClientOrderId("O-123456"),
             VenueOrderId("1"),
-            ExecutionId("E123456"),
+            TradeId("E123456"),
             PositionId("T123456"),
             OrderSide.SELL,
             OrderType.MARKET,

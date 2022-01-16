@@ -29,7 +29,6 @@ from nautilus_trader.model.c_enums.time_in_force cimport TimeInForce
 from nautilus_trader.model.c_enums.time_in_force cimport TimeInForceParser
 from nautilus_trader.model.events.order cimport OrderFilled
 from nautilus_trader.model.events.order cimport OrderInitialized
-from nautilus_trader.model.events.order cimport OrderUpdated
 from nautilus_trader.model.identifiers cimport ClientOrderId
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.identifiers cimport OrderListId
@@ -163,7 +162,7 @@ cdef class MarketOrder(Order):
             "venue_order_id": self.venue_order_id.value if self.venue_order_id else None,
             "position_id": self.position_id.value if self.position_id else None,
             "account_id": self.account_id.value if self.account_id else None,
-            "execution_id": self.execution_id.value if self.execution_id else None,
+            "last_trade_id": self.last_trade_id.value if self.last_trade_id else None,
             "type": OrderTypeParser.to_str(self.type),
             "side": OrderSideParser.to_str(self.side),
             "quantity": str(self.quantity),
@@ -244,8 +243,8 @@ cdef class MarketOrder(Order):
         self.venue_order_id = fill.venue_order_id
         self.position_id = fill.position_id
         self.strategy_id = fill.strategy_id
-        self._execution_ids.append(fill.execution_id)
-        self.execution_id = fill.execution_id
+        self._trade_ids.append(fill.trade_id)
+        self.last_trade_id = fill.trade_id
         filled_qty: Decimal = self.filled_qty.as_decimal() + fill.last_qty.as_decimal()
         self.filled_qty = Quantity(filled_qty, fill.last_qty.precision)
         self.leaves_qty = Quantity(self.quantity.as_decimal() - filled_qty, fill.last_qty.precision)

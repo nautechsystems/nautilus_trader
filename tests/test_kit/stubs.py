@@ -74,10 +74,10 @@ from nautilus_trader.model.events.position import PositionClosed
 from nautilus_trader.model.events.position import PositionOpened
 from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import ComponentId
-from nautilus_trader.model.identifiers import ExecutionId
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import StrategyId
 from nautilus_trader.model.identifiers import Symbol
+from nautilus_trader.model.identifiers import TradeId
 from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.identifiers import VenueOrderId
@@ -216,7 +216,7 @@ class TestStubs:
             price=price or Price.from_str("1.001"),
             size=quantity or Quantity.from_int(100000),
             aggressor_side=aggressor_side or AggressorSide.BUY,
-            trade_id="123456",
+            trade_id=TradeId("123456"),
             ts_event=0,
             ts_init=0,
         )
@@ -233,7 +233,7 @@ class TestStubs:
             price=price or Price.from_str("1.00001"),
             size=quantity or Quantity.from_int(100000),
             aggressor_side=aggressor_side or AggressorSide.BUY,
-            trade_id="123456",
+            trade_id=TradeId("123456"),
             ts_event=0,
             ts_init=0,
         )
@@ -644,7 +644,7 @@ class TestStubs:
         strategy_id=None,
         account_id=None,
         venue_order_id=None,
-        execution_id=None,
+        trade_id=None,
         position_id=None,
         last_qty=None,
         last_px=None,
@@ -660,8 +660,8 @@ class TestStubs:
                 account_id = TestStubs.account_id()
         if venue_order_id is None:
             venue_order_id = VenueOrderId("1")
-        if execution_id is None:
-            execution_id = ExecutionId(order.client_order_id.value.replace("O", "E"))
+        if trade_id is None:
+            trade_id = TradeId(order.client_order_id.value.replace("O", "E"))
         if position_id is None:
             position_id = order.position_id
         if last_px is None:
@@ -685,7 +685,7 @@ class TestStubs:
             instrument_id=instrument.id,
             client_order_id=order.client_order_id,
             venue_order_id=venue_order_id,
-            execution_id=execution_id,
+            trade_id=trade_id,
             position_id=position_id,
             order_side=order.side,
             order_type=order.type,
@@ -934,7 +934,7 @@ class TestStubs:
                         price=Price(d["trade"]["price"], 4),
                         size=Quantity(d["trade"]["volume"], 4),
                         aggressor_side=d["trade"]["side"],
-                        trade_id=(d["trade"]["trade_id"]),
+                        trade_id=TradeId(d["trade"]["trade_id"]),
                         ts_event=ts,
                         ts_init=ts,
                     ),

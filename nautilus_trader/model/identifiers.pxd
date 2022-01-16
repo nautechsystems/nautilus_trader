@@ -83,5 +83,5 @@ cdef class PositionId(Identifier):
     pass
 
 
-cdef class ExecutionId(Identifier):
+cdef class TradeId(Identifier):
     pass

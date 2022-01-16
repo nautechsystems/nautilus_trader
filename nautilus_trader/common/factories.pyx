@@ -132,7 +132,7 @@ cdef class OrderFactory:
         ----------
         instrument_id : InstrumentId
             The orders instrument ID.
-        order_side : OrderSide
+        order_side : OrderSide {``BUY``, ``SELL``}
             The orders side.
         quantity : Quantity
             The orders quantity (> 0).
@@ -197,7 +197,7 @@ cdef class OrderFactory:
         ----------
         instrument_id : InstrumentId
             The orders instrument ID.
-        order_side : OrderSide
+        order_side : OrderSide {``BUY``, ``SELL``}
             The orders side.
         quantity : Quantity
             The orders quantity (> 0).
@@ -274,7 +274,7 @@ cdef class OrderFactory:
         ----------
         instrument_id : InstrumentId
             The orders instrument ID.
-        order_side : OrderSide
+        order_side : OrderSide {``BUY``, ``SELL``}
             The orders side.
         quantity : Quantity
             The orders quantity (> 0).
@@ -346,7 +346,7 @@ cdef class OrderFactory:
         ----------
         instrument_id : InstrumentId
             The orders instrument ID.
-        order_side : OrderSide
+        order_side : OrderSide {``BUY``, ``SELL``}
             The orders side.
         quantity : Quantity
             The orders quantity (> 0).
@@ -422,7 +422,7 @@ cdef class OrderFactory:
         ----------
         instrument_id : InstrumentId
             The orders instrument ID.
-        order_side : OrderSide
+        order_side : OrderSide {``BUY``, ``SELL``}
             The entry orders side.
         quantity : Quantity
             The entry orders quantity (> 0).
@@ -551,7 +551,7 @@ cdef class OrderFactory:
         ----------
         instrument_id : InstrumentId
             The orders instrument ID.
-        order_side : OrderSide
+        order_side : OrderSide {``BUY``, ``SELL``}
             The entry orders side.
         quantity : Quantity
             The entry orders quantity (> 0).

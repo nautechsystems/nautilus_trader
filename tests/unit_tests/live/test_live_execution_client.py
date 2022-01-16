@@ -23,7 +23,7 @@ from nautilus_trader.common.factories import OrderFactory
 from nautilus_trader.common.logging import LiveLogger
 from nautilus_trader.common.providers import InstrumentProvider
 from nautilus_trader.common.uuid import UUIDFactory
-from nautilus_trader.execution.messages import OrderStatusReport
+from nautilus_trader.execution.reports import OrderStatusReport
 from nautilus_trader.live.data_engine import LiveDataEngine
 from nautilus_trader.live.execution_engine import LiveExecutionEngine
 from nautilus_trader.live.risk_engine import LiveRiskEngine
@@ -51,6 +51,7 @@ AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy("AUD/USD")
 GBPUSD_SIM = TestInstrumentProvider.default_fx_ccy("GBP/USD")
 
 
+@pytest.mark.skip(reason="WIP")
 class TestLiveExecutionClient:
     def setup(self):
         # Fixture Setup

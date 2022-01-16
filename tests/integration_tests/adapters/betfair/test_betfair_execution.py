@@ -557,7 +557,7 @@ class TestBetfairExecutionClient:
         assert result
 
     @pytest.mark.asyncio
-    async def test_duplicate_execution_id(self):
+    async def test_duplicate_trade_id(self):
         # Arrange
         await self._setup_account()
         for update in BetfairStreaming.ocm_DUPLICATE_EXECUTION():
@@ -586,11 +586,11 @@ class TestBetfairExecutionClient:
         # Second order example, partial fill followed by remainder filled
         assert (
             isinstance(fill2, OrderFilled)
-            and fill2.execution_id.value == "4721ad7594e7a4a4dffb1bacb0cb45ccdec0747a"
+            and fill2.trade_id.value == "4721ad7594e7a4a4dffb1bacb0cb45ccdec0747a"
         )
         assert (
             isinstance(fill3, OrderFilled)
-            and fill3.execution_id.value == "8b3e65be779968a3fdf2d72731c848c5153e88cd"
+            and fill3.trade_id.value == "8b3e65be779968a3fdf2d72731c848c5153e88cd"
         )
 
     @pytest.mark.asyncio

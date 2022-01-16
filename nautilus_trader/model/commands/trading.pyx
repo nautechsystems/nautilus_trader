@@ -327,7 +327,7 @@ cdef class ModifyOrder(TradingCommand):
     client_order_id : VenueOrderId
         The client order ID to update.
     venue_order_id : VenueOrderId, optional
-        The venue order ID to update.
+        The venue order ID (assigned by the venue) to update.
     quantity : Quantity, optional
         The quantity for the order update.
     price : Price, optional
@@ -479,7 +479,7 @@ cdef class CancelOrder(TradingCommand):
     client_order_id : ClientOrderId
         The client order ID to cancel.
     venue_order_id : VenueOrderId, optional
-        The venue order ID to cancel.
+        The venue order ID (assigned by the venue) to cancel.
     command_id : UUID4
         The command ID.
     ts_init : int64

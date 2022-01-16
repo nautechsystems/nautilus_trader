@@ -21,7 +21,6 @@ API which may be presented directly by an exchange, or broker intermediary.
 import asyncio
 import types
 
-import pandas as pd
 from cpython.datetime cimport datetime
 
 from nautilus_trader.cache.cache cimport Cache
@@ -31,9 +30,9 @@ from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.common.providers cimport InstrumentProvider
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.execution.client cimport ExecutionClient
-from nautilus_trader.execution.messages cimport ExecutionMassStatus
-from nautilus_trader.execution.messages cimport ExecutionReport
-from nautilus_trader.execution.messages cimport OrderStatusReport
+from nautilus_trader.execution.reports cimport ExecutionMassStatus
+from nautilus_trader.execution.reports cimport OrderStatusReport
+from nautilus_trader.execution.reports cimport TradeReport
 from nautilus_trader.model.c_enums.account_type cimport AccountType
 from nautilus_trader.model.c_enums.order_status cimport OrderStatus
 from nautilus_trader.model.c_enums.order_status cimport OrderStatusParser
@@ -146,21 +145,21 @@ cdef class LiveExecutionClient(ExecutionClient):
         """
         raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
-    async def generate_exec_reports(
+    async def generate_trade_reports(
         self,
         VenueOrderId venue_order_id,
         Symbol symbol,
         datetime since=None,
     ):
         """
-        Generate a list of execution reports.
+        Generate a list of trade reports.
 
         The returned list may be empty if no trades match the given parameters.
 
         Parameters
         ----------
         venue_order_id : VenueOrderId
-            The venue order ID for the trades.
+            The venue order ID (assigned by the venue) for the trades.
         symbol : Symbol
             The symbol for the trades.
         since : datetime, optional
@@ -168,28 +167,21 @@ cdef class LiveExecutionClient(ExecutionClient):
 
         Returns
         -------
-        list[ExecutionReport]
+        list[TradeReport]
 
         """
         raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
-    async def generate_mass_status(self, list active_orders):
+    async def generate_mass_status(self):
         """
         Generate an execution state report based on the given list of active
         orders.
-
-        Parameters
-        ----------
-        active_orders : list[Order]
-            The orders which currently have an 'active' status.
 
         Returns
         -------
         ExecutionMassStatus
 
         """
-        Condition.not_none(active_orders, "active_orders")
-
         self._log.info(f"Generating ExecutionMassStatus for {self.id}...")
 
         cdef ExecutionMassStatus mass_status = ExecutionMassStatus(
@@ -198,33 +190,32 @@ cdef class LiveExecutionClient(ExecutionClient):
             ts_init=self._clock.timestamp_ns(),
         )
 
-        if not active_orders:
-            # Nothing to reconcile
-            return mass_status
-
-        cdef Order order
-        cdef OrderStatusReport order_report
-        cdef list exec_reports
-        for order in active_orders:
-            order_report = await self.generate_order_status_report(order)
-            if order_report:
-                mass_status.add_order_report(order_report)
-
-            if order_report.order_status in (OrderStatus.PARTIALLY_FILLED, OrderStatus.FILLED):
-                exec_reports = await self.generate_exec_reports(
-                    venue_order_id=order.venue_order_id,
-                    symbol=order.instrument_id.symbol,
-                    since=pd.Timestamp(order.ts_init, tz="UTC"),
-                )
-                mass_status.add_exec_reports(order.venue_order_id, exec_reports)
-
         return mass_status
+
+        # TODO(cs): WIP
+        # cdef Order order
+        # cdef OrderStatusReport order_report
+        # cdef list trade_reports
+        # for order in active_orders:
+        #     order_report = await self.generate_order_status_report(order)
+        #     if order_report:
+        #         mass_status.add_order_report(order_report)
+        #
+        #     if order_report.order_status in (OrderStatus.PARTIALLY_FILLED, OrderStatus.FILLED):
+        #         trade_reports = await self.generate_trade_reports(
+        #             venue_order_id=order.venue_order_id,
+        #             symbol=order.instrument_id.symbol,
+        #             since=pd.Timestamp(order.ts_init, tz="UTC"),
+        #         )
+        #         mass_status.add_trade_reports(order.venue_order_id, trade_reports)
+        #
+        # return mass_status
 
     async def reconcile_state(
         self,
         OrderStatusReport report,
         Order order=None,
-        list exec_reports=None,
+        list trade_reports=None,
     ) -> bool:
         """
         Reconcile the given orders state based on the given report.
@@ -236,8 +227,8 @@ cdef class LiveExecutionClient(ExecutionClient):
         order : Order, optional
             The order for reconciliation. If not supplied then will try to be
             fetched from cache.
-        exec_reports : list[ExecutionReport]
-            The list of execution reports relating to the order.
+        trade_reports : list[TradeReport]
+            The list of trade reports relating to the order.
 
         Raises
         ------
@@ -315,19 +306,19 @@ cdef class LiveExecutionClient(ExecutionClient):
             return True
 
         # OrderStatus.PARTIALLY_FILLED or FILLED
-        if exec_reports is None:
+        if trade_reports is None:
             self._log.error(
                 f"Cannot reconcile state for {repr(report.venue_order_id)}, "
                 f"no trades given for {OrderStatusParser.to_str(report.order_status)} order.")
             return False  # Cannot reconcile state
 
-        cdef ExecutionReport exec_report
+        cdef TradeReport trade_report
         cdef Instrument instrument
-        for exec_report in exec_reports:
-            if exec_report.id in order.execution_ids_c():
+        for trade_report in trade_reports:
+            if trade_report.trade_id in order.trade_ids_c():
                 continue  # Trade already applied
             self._log.info(
-                f"Generating OrderFilled event for {repr(exec_report.id)}...",
+                f"Generating OrderFilled event for trade ID {repr(trade_report.trade_id)}...",
                 color=LogColor.BLUE,
             )
 
@@ -342,16 +333,16 @@ cdef class LiveExecutionClient(ExecutionClient):
                 instrument_id=order.instrument_id,
                 client_order_id=order.client_order_id,
                 venue_order_id=order.venue_order_id,
-                venue_position_id=exec_report.venue_position_id,
-                execution_id=exec_report.id,
+                venue_position_id=trade_report.venue_position_id,
+                trade_id=trade_report.trade_id,
                 order_side=order.side,
                 order_type=order.type,
-                last_qty=exec_report.last_qty,
-                last_px=exec_report.last_px,
+                last_qty=trade_report.last_qty,
+                last_px=trade_report.last_px,
                 quote_currency=instrument.quote_currency,
-                commission=exec_report.commission,
-                liquidity_side=exec_report.liquidity_side,
-                ts_event=exec_report.ts_event,
+                commission=trade_report.commission,
+                liquidity_side=trade_report.liquidity_side,
+                ts_event=trade_report.ts_event,
             )
 
         return True
