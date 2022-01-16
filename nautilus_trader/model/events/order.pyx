@@ -2051,7 +2051,7 @@ cdef class OrderFilled(OrderEvent):
     venue_order_id : VenueOrderId
         The venue order ID (assigned by the venue).
     trade_id : TradeId
-        The trade ID.
+        The trade match ID.
     position_id : PositionId, optional
         The position ID associated with the order fill.
     order_side : OrderSide {``BUY``, ``SELL``}

@@ -456,7 +456,7 @@ cdef class PositionId(Identifier):
 
 cdef class TradeId(Identifier):
     """
-    Represents a valid trade ID (assigned by a trading venue).
+    Represents a valid trade match ID (assigned by a trading venue).
 
     Can correspond to the `TradeID <1003> field` of the FIX protocol.
 
@@ -466,7 +466,7 @@ cdef class TradeId(Identifier):
     Parameters
     ----------
     value : str
-        The trade ID value.
+        The trade match ID value.
 
     Raises
     ------

@@ -179,7 +179,7 @@ cdef class TradeReport:
         otherwise pass ``None`` and the execution engine OMS will handle
         position ID resolution.
     trade_id : TradeId
-        The reported trade ID for the trade.
+        The reported trade match ID.
     order_side : OrderSide {``BUY``, ``SELL``}
         The reported order side for the trade.
     last_qty : Quantity

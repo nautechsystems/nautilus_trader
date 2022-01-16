@@ -248,7 +248,7 @@ cdef class Position:
     @property
     def trade_ids(self):
         """
-        The trade IDs associated with the position.
+        The trade match IDs associated with the position.
 
         Returns
         -------
@@ -284,7 +284,7 @@ cdef class Position:
     @property
     def last_trade_id(self):
         """
-        The last trade ID for the position.
+        The last trade match ID for the position.
 
         Returns
         -------
