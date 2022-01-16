@@ -206,7 +206,7 @@ cdef class OrderUpdated(OrderEvent):
 
 cdef class OrderFilled(OrderEvent):
     cdef readonly TradeId trade_id
-    """The trade ID associated with the event.\n\n:returns: `TradeId`"""
+    """The trade match ID associated with the event.\n\n:returns: `TradeId`"""
     cdef readonly PositionId position_id
     """The position ID associated with the event.\n\n:returns: `PositionId` or ``None``"""
     cdef readonly OrderSide order_side

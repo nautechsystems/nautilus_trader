@@ -71,7 +71,7 @@ ib_insync = { version = "^0.9.70", optional = true }
 [tool.poetry.dev-dependencies]
 # coverage 5.x is currently broken for Cython
 # https://github.com/cython/cython/issues/3515
-coverage = "4.5.4"  # Pinned at 3.0.0a9 due cython
+coverage = "4.5.4"  # Pinned at 4.5.4 due Cython
 nox = "^2022.1.7"
 numpydoc = "^1.1.0"
 jupyter-book = "^0.12.1"

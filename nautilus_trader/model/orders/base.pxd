@@ -73,7 +73,7 @@ cdef class Order:
     cdef readonly AccountId account_id
     """The account ID associated with the order.\n\n:returns: `AccountId` or ``None``"""
     cdef readonly TradeId last_trade_id
-    """The orders last trade ID.\n\n:returns: `TradeId` or ``None``"""
+    """The orders last trade match ID.\n\n:returns: `TradeId` or ``None``"""
     cdef readonly OrderSide side
     """The order side.\n\n:returns: `OrderSide`"""
     cdef readonly OrderType type

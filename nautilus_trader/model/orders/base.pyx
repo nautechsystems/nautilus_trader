@@ -369,7 +369,7 @@ cdef class Order:
     @property
     def trade_ids(self):
         """
-        The trade IDs.
+        The trade match IDs.
 
         Returns
         -------
