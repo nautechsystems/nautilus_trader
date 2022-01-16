@@ -16,8 +16,8 @@
 from datetime import datetime
 from typing import List
 
-from nautilus_trader.execution.messages import ExecutionReport
-from nautilus_trader.execution.messages import OrderStatusReport
+from nautilus_trader.execution.reports import OrderStatusReport
+from nautilus_trader.execution.reports import TradeReport
 from nautilus_trader.live.execution_client import LiveExecutionClient
 from nautilus_trader.model.commands.trading import CancelAllOrders
 from nautilus_trader.model.commands.trading import CancelOrder
@@ -44,24 +44,24 @@ class TemplateLiveExecutionClient(LiveExecutionClient):
     """
     An example of a ``LiveExecutionClient`` highlighting the method requirements.
 
-    +------------------------------+-------------+
-    | Method                       | Requirement |
-    +------------------------------+-------------+
-    | connect                      | required    |
-    | disconnect                   | required    |
-    | reset                        | optional    |
-    | dispose                      | optional    |
-    +--------------------------------------------+
-    | submit_order                 | required    |
-    | submit_order_list            | required    |
-    | modify_order                 | required    |
-    | cancel_order                 | required    |
-    | cancel_all_orders            | required    |
-    | generate_order_status_report | required    |
-    | generate_order_status_report | required    |
-    | generate_exec_reports        | required    |
-    +--------------------------------------------+
-
+    +---------------------------------+-------------+
+    | Method                          | Requirement |
+    +---------------------------------+-------------+
+    | connect                         | required    |
+    | disconnect                      | required    |
+    | reset                           | optional    |
+    | dispose                         | optional    |
+    +-----------------------------------------------+
+    | submit_order                    | required    |
+    | submit_order_list               | required    |
+    | modify_order                    | required    |
+    | cancel_order                    | required    |
+    | cancel_all_orders               | required    |
+    | generate_order_status_report    | required    |
+    | generate_trade_reports          | required    |
+    | generate_position_status_report | required    |
+    | generate_execution_mass_status  | required    |
+    +-----------------------------------------------+
     """
 
     def connect(self) -> None:
@@ -122,21 +122,21 @@ class TemplateLiveExecutionClient(LiveExecutionClient):
         """
         raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
-    async def generate_exec_reports(
+    async def generate_trade_reports(
         self,
         venue_order_id: VenueOrderId,
         symbol: Symbol,
         since: datetime = None,
-    ) -> List[ExecutionReport]:
+    ) -> List[TradeReport]:
         """
-        Generate a list of execution reports.
+        Generate a list of trade reports.
 
         The returned list may be empty if no trades match the given parameters.
 
         Parameters
         ----------
         venue_order_id : VenueOrderId
-            The venue order ID for the trades.
+            The venue order ID (assigned by the venue) for the trades.
         symbol : Symbol
             The symbol for the trades.
         since : datetime, optional
@@ -144,7 +144,18 @@ class TemplateLiveExecutionClient(LiveExecutionClient):
 
         Returns
         -------
-        list[ExecutionReport]
+        list[TradeReport]
+
+        """
+        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
+
+    async def generate_mass_status(self):
+        """
+        Generate an execution state report.
+
+        Returns
+        -------
+        ExecutionMassStatus
 
         """
         raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover

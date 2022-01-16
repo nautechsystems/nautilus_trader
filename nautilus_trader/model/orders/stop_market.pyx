@@ -160,7 +160,7 @@ cdef class StopMarketOrder(PassiveOrder):
             "venue_order_id": self.venue_order_id if self.venue_order_id else None,
             "position_id": self.position_id.value if self.position_id else None,
             "account_id": self.account_id.value if self.account_id else None,
-            "execution_id": self.execution_id.value if self.execution_id else None,
+            "last_trade_id": self.last_trade_id.value if self.last_trade_id else None,
             "type": OrderTypeParser.to_str(self.type),
             "side": OrderSideParser.to_str(self.side),
             "quantity": str(self.quantity),

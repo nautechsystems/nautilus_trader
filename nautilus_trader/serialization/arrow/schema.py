@@ -377,7 +377,7 @@ NAUTILUS_PARQUET_SCHEMA = {
             "instrument_id": pa.dictionary(pa.int8(), pa.string()),
             "client_order_id": pa.string(),
             "venue_order_id": pa.string(),
-            "execution_id": pa.string(),
+            "trade_id": pa.string(),
             "position_id": pa.string(),
             "order_side": pa.dictionary(pa.int8(), pa.string()),
             "order_type": pa.dictionary(pa.int8(), pa.string()),

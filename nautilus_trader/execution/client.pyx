@@ -44,10 +44,10 @@ from nautilus_trader.model.events.order cimport OrderUpdated
 from nautilus_trader.model.identifiers cimport AccountId
 from nautilus_trader.model.identifiers cimport ClientId
 from nautilus_trader.model.identifiers cimport ClientOrderId
-from nautilus_trader.model.identifiers cimport ExecutionId
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.identifiers cimport PositionId
 from nautilus_trader.model.identifiers cimport StrategyId
+from nautilus_trader.model.identifiers cimport TradeId
 from nautilus_trader.model.identifiers cimport VenueOrderId
 from nautilus_trader.model.objects cimport Money
 from nautilus_trader.model.objects cimport Price
@@ -317,7 +317,7 @@ cdef class ExecutionClient(Component):
         client_order_id : ClientOrderId
             The client order ID.
         venue_order_id : VenueOrderId
-            The venue order ID.
+            The venue order ID (assigned by the venue).
         ts_event : int64
             The UNIX timestamp (nanoseconds) when the order accepted event occurred.
 
@@ -357,8 +357,8 @@ cdef class ExecutionClient(Component):
         client_order_id : ClientOrderId
             The client order ID.
         venue_order_id : VenueOrderId
-            The venue order ID.
-        ts_event : datetime
+            The venue order ID (assigned by the venue).
+        ts_event : int64
             The UNIX timestamp (nanoseconds) when the order pending update event occurred.
 
         """
@@ -397,8 +397,8 @@ cdef class ExecutionClient(Component):
         client_order_id : ClientOrderId
             The client order ID.
         venue_order_id : VenueOrderId
-            The venue order ID.
-        ts_event : datetime
+            The venue order ID (assigned by the venue).
+        ts_event : int64
             The UNIX timestamp (nanoseconds) when the order pending cancel event occurred.
 
         """
@@ -438,10 +438,10 @@ cdef class ExecutionClient(Component):
         client_order_id : ClientOrderId
             The client order ID.
         venue_order_id : VenueOrderId
-            The venue order ID.
+            The venue order ID (assigned by the venue).
         reason : str
             The order update rejected reason.
-        ts_event : datetime
+        ts_event : int64
             The UNIX timestamp (nanoseconds) when the order update rejection event occurred.
 
         """
@@ -482,10 +482,10 @@ cdef class ExecutionClient(Component):
         client_order_id : ClientOrderId
             The client order ID.
         venue_order_id : VenueOrderId
-            The venue order ID.
+            The venue order ID (assigned by the venue).
         reason : str
             The order cancel rejected reason.
-        ts_event : datetime
+        ts_event : int64
             The UNIX timestamp (nanoseconds) when the order cancel rejected event occurred.
 
         """
@@ -529,7 +529,7 @@ cdef class ExecutionClient(Component):
         client_order_id : ClientOrderId
             The client order ID.
         venue_order_id : VenueOrderId
-            The venue order ID.
+            The venue order ID (assigned by the venue).
         quantity : Quantity
             The orders current quantity.
         price : Price
@@ -588,7 +588,7 @@ cdef class ExecutionClient(Component):
         client_order_id : ClientOrderId
             The client order ID.
         venue_order_id : VenueOrderId
-            The venue order ID.
+            The venue order ID (assigned by the venue).
         ts_event : int64
             The UNIX timestamp (nanoseconds) when order canceled event occurred.
 
@@ -628,7 +628,7 @@ cdef class ExecutionClient(Component):
         client_order_id : ClientOrderId
             The client order ID.
         venue_order_id : VenueOrderId
-            The venue order ID.
+            The venue order ID (assigned by the venue).
         ts_event : int64
             The UNIX timestamp (nanoseconds) when the order triggered event occurred.
 
@@ -668,7 +668,7 @@ cdef class ExecutionClient(Component):
         client_order_id : ClientOrderId
             The client order ID.
         venue_order_id : VenueOrderId
-            The venue order ID.
+            The venue order ID (assigned by the venue).
         ts_event : int64
             The UNIX timestamp (nanoseconds) when the order expired event occurred.
 
@@ -695,7 +695,7 @@ cdef class ExecutionClient(Component):
         ClientOrderId client_order_id,
         VenueOrderId venue_order_id,
         PositionId venue_position_id,  # Can be None
-        ExecutionId execution_id,
+        TradeId trade_id,
         OrderSide order_side,
         OrderType order_type,
         Quantity last_qty,
@@ -717,15 +717,15 @@ cdef class ExecutionClient(Component):
         client_order_id : ClientOrderId
             The client order ID.
         venue_order_id : VenueOrderId
-            The venue order ID.
-        execution_id : ExecutionId
-            The execution ID.
+            The venue order ID (assigned by the venue).
+        trade_id : TradeId
+            The trade ID.
         venue_position_id : PositionId, optional
             The venue position ID associated with the order. If the trading
             venue has assigned a position ID / ticket then pass that here,
             otherwise pass ``None`` and the execution engine OMS will handle
             position ID resolution.
-        order_side : OrderSide
+        order_side : OrderSide {``BUY``, ``SELL``}
             The execution order side.
         order_type : OrderType
             The execution order type.
@@ -737,7 +737,7 @@ cdef class ExecutionClient(Component):
             The currency of the price.
         commission : Money
             The fill commission.
-        liquidity_side : LiquiditySide
+        liquidity_side : LiquiditySide {``NONE``, ``MAKER``, ``TAKER``}
             The execution liquidity side.
         ts_event : int64
             The UNIX timestamp (nanoseconds) when the order filled event occurred.
@@ -753,7 +753,7 @@ cdef class ExecutionClient(Component):
             instrument_id=instrument_id,
             client_order_id=client_order_id,
             venue_order_id=venue_order_id,
-            execution_id=execution_id,
+            trade_id=trade_id,
             position_id=venue_position_id,
             order_side=order_side,
             order_type=order_type,

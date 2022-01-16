@@ -32,7 +32,7 @@ cdef class Bet:
         The price of the bet.
     quantity : Quantity
         The size of the bet.
-    side : OrderSide
+    side : OrderSide {``BUY``, ``SELL``}
         The side ( OrderSide.BUY = BACK, OrderSide.SELL = LAY ) of the bet.
 
     Raises

@@ -38,11 +38,11 @@ from nautilus_trader.model.events.order cimport OrderTriggered
 from nautilus_trader.model.events.order cimport OrderUpdated
 from nautilus_trader.model.identifiers cimport AccountId
 from nautilus_trader.model.identifiers cimport ClientOrderId
-from nautilus_trader.model.identifiers cimport ExecutionId
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.identifiers cimport OrderListId
 from nautilus_trader.model.identifiers cimport PositionId
 from nautilus_trader.model.identifiers cimport StrategyId
+from nautilus_trader.model.identifiers cimport TradeId
 from nautilus_trader.model.identifiers cimport TraderId
 from nautilus_trader.model.identifiers cimport VenueOrderId
 from nautilus_trader.model.objects cimport Price
@@ -52,7 +52,7 @@ from nautilus_trader.model.objects cimport Quantity
 cdef class Order:
     cdef list _events
     cdef list _venue_order_ids
-    cdef list _execution_ids
+    cdef list _trade_ids
     cdef FiniteStateMachine _fsm
     cdef OrderStatus _rollback_status
 
@@ -64,14 +64,16 @@ cdef class Order:
     """The order instrument ID.\n\n:returns: `InstrumentId`"""
     cdef readonly ClientOrderId client_order_id
     """The client order ID.\n\n:returns: `ClientOrderId`"""
+    cdef readonly OrderListId order_list_id
+    """The order list ID associated with the order.\n\n:returns: `OrderListId` or ``None``"""
     cdef readonly VenueOrderId venue_order_id
     """The venue assigned order ID.\n\n:returns: `VenueOrderId`"""
     cdef readonly PositionId position_id
     """The position ID associated with the order.\n\n:returns: `PositionId`"""
     cdef readonly AccountId account_id
     """The account ID associated with the order.\n\n:returns: `AccountId` or ``None``"""
-    cdef readonly ExecutionId execution_id
-    """The orders last execution ID.\n\n:returns: `ExecutionId` or ``None``"""
+    cdef readonly TradeId last_trade_id
+    """The orders last trade ID.\n\n:returns: `TradeId` or ``None``"""
     cdef readonly OrderSide side
     """The order side.\n\n:returns: `OrderSide`"""
     cdef readonly OrderType type
@@ -90,8 +92,6 @@ cdef class Order:
     """The order average fill price.\n\n:returns: `Decimal` or ``None``"""
     cdef readonly object slippage
     """The order total price slippage.\n\n:returns: `Decimal`"""
-    cdef readonly OrderListId order_list_id
-    """The order list ID associated with the order.\n\n:returns: `OrderListId` or ``None``"""
     cdef readonly ClientOrderId parent_order_id
     """The parent client order ID.\n\n:returns: `ClientOrderId` or ``None``"""
     cdef readonly list child_order_ids
@@ -116,7 +116,7 @@ cdef class Order:
     cdef OrderInitialized init_event_c(self)
     cdef OrderEvent last_event_c(self)
     cdef list events_c(self)
-    cdef list execution_ids_c(self)
+    cdef list trade_ids_c(self)
     cdef int event_count_c(self) except *
     cdef str status_string_c(self)
     cdef str type_string_c(self)

@@ -34,10 +34,10 @@ from nautilus_trader.model.events.order import OrderFilled
 from nautilus_trader.model.events.order import OrderInitialized
 from nautilus_trader.model.events.order import OrderUpdated
 from nautilus_trader.model.identifiers import ClientOrderId
-from nautilus_trader.model.identifiers import ExecutionId
 from nautilus_trader.model.identifiers import OrderListId
 from nautilus_trader.model.identifiers import PositionId
 from nautilus_trader.model.identifiers import StrategyId
+from nautilus_trader.model.identifiers import TradeId
 from nautilus_trader.model.identifiers import VenueOrderId
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
@@ -316,7 +316,7 @@ class TestOrders:
             "venue_order_id": None,
             "position_id": None,
             "account_id": None,
-            "execution_id": None,
+            "last_trade_id": None,
             "type": "MARKET",
             "side": "BUY",
             "quantity": "100000",
@@ -385,7 +385,7 @@ class TestOrders:
             "venue_order_id": None,
             "position_id": None,
             "account_id": None,
-            "execution_id": None,
+            "last_trade_id": None,
             "type": "LIMIT",
             "side": "BUY",
             "quantity": "100000",
@@ -479,7 +479,7 @@ class TestOrders:
             "venue_order_id": None,
             "position_id": None,
             "account_id": None,
-            "execution_id": None,
+            "last_trade_id": None,
             "type": "STOP_MARKET",
             "side": "BUY",
             "quantity": "100000",
@@ -553,7 +553,7 @@ class TestOrders:
             "venue_order_id": None,
             "position_id": None,
             "account_id": None,
-            "execution_id": None,
+            "last_trade_id": None,
             "type": "STOP_LIMIT",
             "side": "BUY",
             "quantity": "100000",
@@ -1051,7 +1051,7 @@ class TestOrders:
         assert order.filled_qty == Quantity.from_int(100000)
         assert order.leaves_qty == Quantity.zero()
         assert order.avg_px == Decimal("1.00001")
-        assert len(order.execution_ids) == 1
+        assert len(order.trade_ids) == 1
         assert not order.is_active
         assert not order.is_inflight
         assert not order.is_working
@@ -1084,7 +1084,7 @@ class TestOrders:
         assert order.status == OrderStatus.FILLED
         assert order.filled_qty == Quantity.from_int(100000)
         assert order.avg_px == Decimal("1.00001")
-        assert len(order.execution_ids) == 1
+        assert len(order.trade_ids) == 1
         assert not order.is_active
         assert not order.is_inflight
         assert not order.is_working
@@ -1107,7 +1107,7 @@ class TestOrders:
         fill1 = TestStubs.event_order_filled(
             order,
             instrument=AUDUSD_SIM,
-            execution_id=ExecutionId("1"),
+            trade_id=TradeId("1"),
             position_id=PositionId("P-123456"),
             strategy_id=StrategyId("S-001"),
             last_px=Price.from_str("1.00001"),
@@ -1117,7 +1117,7 @@ class TestOrders:
         fill2 = TestStubs.event_order_filled(
             order,
             instrument=AUDUSD_SIM,
-            execution_id=ExecutionId("2"),
+            trade_id=TradeId("2"),
             position_id=PositionId("P-123456"),
             strategy_id=StrategyId("S-001"),
             last_px=Price.from_str("1.00002"),
@@ -1133,7 +1133,7 @@ class TestOrders:
         assert order.filled_qty == Quantity.from_int(60000)
         assert order.leaves_qty == Quantity.from_int(40000)
         assert order.avg_px == Decimal("1.000014")
-        assert len(order.execution_ids) == 2
+        assert len(order.trade_ids) == 2
         assert order.is_active
         assert not order.is_inflight
         assert order.is_working
@@ -1154,7 +1154,7 @@ class TestOrders:
         fill1 = TestStubs.event_order_filled(
             order,
             instrument=AUDUSD_SIM,
-            execution_id=ExecutionId("1"),
+            trade_id=TradeId("1"),
             position_id=PositionId("P-123456"),
             strategy_id=StrategyId("S-001"),
             last_px=Price.from_str("1.00001"),
@@ -1164,7 +1164,7 @@ class TestOrders:
         fill2 = TestStubs.event_order_filled(
             order,
             instrument=AUDUSD_SIM,
-            execution_id=ExecutionId("2"),
+            trade_id=TradeId("2"),
             position_id=PositionId("P-123456"),
             strategy_id=StrategyId("S-001"),
             last_px=Price.from_str("1.00002"),
@@ -1174,7 +1174,7 @@ class TestOrders:
         fill3 = TestStubs.event_order_filled(
             order,
             instrument=AUDUSD_SIM,
-            execution_id=ExecutionId("3"),
+            trade_id=TradeId("3"),
             position_id=PositionId("P-123456"),
             strategy_id=StrategyId("S-001"),
             last_px=Price.from_str("1.00003"),
@@ -1190,7 +1190,7 @@ class TestOrders:
         assert order.status == OrderStatus.FILLED
         assert order.filled_qty == Quantity.from_int(100000)
         assert order.avg_px == Decimal("1.000018571428571428571428571")
-        assert len(order.execution_ids) == 3
+        assert len(order.trade_ids) == 3
         assert not order.is_active
         assert not order.is_inflight
         assert not order.is_working
@@ -1216,7 +1216,7 @@ class TestOrders:
             order.instrument_id,
             order.client_order_id,
             VenueOrderId("1"),
-            ExecutionId("E-1"),
+            TradeId("E-1"),
             PositionId("P-1"),
             order.side,
             order.type,
@@ -1264,7 +1264,7 @@ class TestOrders:
             order.instrument_id,
             order.client_order_id,
             VenueOrderId("1"),
-            ExecutionId("E-1"),
+            TradeId("E-1"),
             PositionId("P-1"),
             order.side,
             order.type,

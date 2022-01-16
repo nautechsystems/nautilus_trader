@@ -32,9 +32,9 @@ from nautilus_trader.model.c_enums.time_in_force cimport TimeInForceParser
 from nautilus_trader.model.currency cimport Currency
 from nautilus_trader.model.identifiers cimport AccountId
 from nautilus_trader.model.identifiers cimport ClientOrderId
-from nautilus_trader.model.identifiers cimport ExecutionId
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.identifiers cimport StrategyId
+from nautilus_trader.model.identifiers cimport TradeId
 from nautilus_trader.model.identifiers cimport TraderId
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
@@ -57,7 +57,7 @@ cdef class OrderEvent(Event):
     client_order_id : ClientOrderId
         The client order ID.
     venue_order_id : VenueOrderId, optional
-        The venue order ID.
+        The venue order ID (assigned by the venue).
     event_id : UUID4
         The event ID.
     ts_event : int64
@@ -111,7 +111,7 @@ cdef class OrderInitialized(OrderEvent):
         The instrument ID.
     client_order_id : ClientOrderId
         The client order ID.
-    order_side : OrderSide
+    order_side : OrderSide {``BUY``, ``SELL``}
         The order side.
     order_type : OrderType
         The order type.
@@ -598,7 +598,7 @@ cdef class OrderAccepted(OrderEvent):
     Represents an event where an order has been accepted by the trading venue.
 
     This event often corresponds to a `NEW` OrdStatus <39> field in FIX
-    execution reports.
+    trade reports.
 
     Parameters
     ----------
@@ -613,7 +613,7 @@ cdef class OrderAccepted(OrderEvent):
     client_order_id : ClientOrderId
         The client order ID.
     venue_order_id : VenueOrderId
-        The venue order ID.
+        The venue order ID (assigned by the venue).
     event_id : UUID4
         The event ID.
     ts_event : int64
@@ -895,7 +895,7 @@ cdef class OrderCanceled(OrderEvent):
     client_order_id : ClientOrderId
         The client order ID.
     venue_order_id : VenueOrderId
-        The venue order ID.
+        The venue order ID (assigned by the venue).
     event_id : UUID4
         The event ID.
     ts_event : int64
@@ -1030,7 +1030,7 @@ cdef class OrderExpired(OrderEvent):
     client_order_id : ClientOrderId
         The client order ID.
     venue_order_id : VenueOrderId
-        The venue order ID.
+        The venue order ID (assigned by the venue).
     event_id : UUID4
         The event ID.
     ts_event : int64
@@ -1165,7 +1165,7 @@ cdef class OrderTriggered(OrderEvent):
     client_order_id : ClientOrderId
         The client order ID.
     venue_order_id : VenueOrderId
-        The venue order ID.
+        The venue order ID (assigned by the venue).
     event_id : UUID4
         The event ID.
     ts_event : int64
@@ -1303,10 +1303,10 @@ cdef class OrderPendingUpdate(OrderEvent):
     client_order_id : ClientOrderId
         The client order ID.
     venue_order_id : VenueOrderId, optional
-        The venue order ID.
+        The venue order ID (assigned by the venue).
     event_id : UUID4
         The event ID.
-    ts_event : datetime
+    ts_event : int64
         The UNIX timestamp (nanoseconds) when the order pending update event occurred.
     ts_init : int64
         The UNIX timestamp (nanoseconds) when the object was initialized.
@@ -1440,10 +1440,10 @@ cdef class OrderPendingCancel(OrderEvent):
     client_order_id : ClientOrderId
         The client order ID.
     venue_order_id : VenueOrderId, optional
-        The venue order ID.
+        The venue order ID (assigned by the venue).
     event_id : UUID4
         The event ID.
-    ts_event : datetime
+    ts_event : int64
         The UNIX timestamp (nanoseconds) when the order pending cancel event occurred.
     ts_init : int64
         The UNIX timestamp (nanoseconds) when the object was initialized.
@@ -1577,12 +1577,12 @@ cdef class OrderModifyRejected(OrderEvent):
     client_order_id : ClientOrderId
         The client order ID.
     venue_order_id : VenueOrderId, optional
-        The venue order ID.
+        The venue order ID (assigned by the venue).
     reason : str
         The order update rejected reason.
     event_id : UUID4
         The event ID.
-    ts_event : datetime
+    ts_event : int64
         The UNIX timestamp (nanoseconds) when the order update rejected event occurred.
     ts_init : int64
         The UNIX timestamp (nanoseconds) when the object was initialized.
@@ -1729,12 +1729,12 @@ cdef class OrderCancelRejected(OrderEvent):
     client_order_id : ClientOrderId
         The client order ID.
     venue_order_id : VenueOrderId
-        The venue order ID.
+        The venue order ID (assigned by the venue).
     reason : str
         The order cancel rejected reason.
     event_id : UUID4
         The event ID.
-    ts_event : datetime
+    ts_event : int64
         The UNIX timestamp (nanoseconds) when the order cancel rejected event occurred.
     ts_init : int64
         The UNIX timestamp (nanoseconds) when the object was initialized.
@@ -1880,7 +1880,7 @@ cdef class OrderUpdated(OrderEvent):
     client_order_id : ClientOrderId
         The client order ID.
     venue_order_id : VenueOrderId
-        The venue order ID.
+        The venue order ID (assigned by the venue).
     quantity : Quantity
         The orders current quantity.
     price : Price, optional
@@ -2049,12 +2049,12 @@ cdef class OrderFilled(OrderEvent):
     client_order_id : ClientOrderId
         The client order ID.
     venue_order_id : VenueOrderId
-        The venue order ID.
-    execution_id : ExecutionId
-        The execution ID.
+        The venue order ID (assigned by the venue).
+    trade_id : TradeId
+        The trade ID.
     position_id : PositionId, optional
         The position ID associated with the order fill.
-    order_side : OrderSide
+    order_side : OrderSide {``BUY``, ``SELL``}
         The execution order side.
     order_side : OrderType
         The execution order type.
@@ -2066,7 +2066,7 @@ cdef class OrderFilled(OrderEvent):
         The currency of the price.
     commission : Money
         The fill commission.
-    liquidity_side : LiquiditySide
+    liquidity_side : LiquiditySide {``NONE``, ``MAKER``, ``TAKER``}
         The execution liquidity side.
     event_id : UUID4
         The event ID.
@@ -2091,7 +2091,7 @@ cdef class OrderFilled(OrderEvent):
         InstrumentId instrument_id not None,
         ClientOrderId client_order_id not None,
         VenueOrderId venue_order_id not None,
-        ExecutionId execution_id not None,
+        TradeId trade_id not None,
         PositionId position_id,  # Can be None
         OrderSide order_side,
         OrderType order_type,
@@ -2121,7 +2121,7 @@ cdef class OrderFilled(OrderEvent):
             ts_init,
         )
 
-        self.execution_id = execution_id
+        self.trade_id = trade_id
         self.position_id = position_id
         self.order_side = order_side
         self.order_type = order_type
@@ -2139,7 +2139,7 @@ cdef class OrderFilled(OrderEvent):
             f"instrument_id={self.instrument_id.value}, "
             f"client_order_id={self.client_order_id.value}, "
             f"venue_order_id={self.venue_order_id.value}, "
-            f"execution_id={self.execution_id.value}, "
+            f"trade_id={self.trade_id.value}, "
             f"position_id={self.position_id}, "
             f"order_side={OrderSideParser.to_str(self.order_side)}, "
             f"order_type={OrderTypeParser.to_str(self.order_type)}, "
@@ -2159,7 +2159,7 @@ cdef class OrderFilled(OrderEvent):
             f"instrument_id={self.instrument_id.value}, "
             f"client_order_id={self.client_order_id.value}, "
             f"venue_order_id={self.venue_order_id.value}, "
-            f"execution_id={self.execution_id.value}, "
+            f"trade_id={self.trade_id.value}, "
             f"position_id={self.position_id}, "
             f"order_side={OrderSideParser.to_str(self.order_side)}, "
             f"order_type={OrderTypeParser.to_str(self.order_type)}, "
@@ -2183,7 +2183,7 @@ cdef class OrderFilled(OrderEvent):
             instrument_id=InstrumentId.from_str_c(values["instrument_id"]),
             client_order_id=ClientOrderId(values["client_order_id"]),
             venue_order_id=VenueOrderId(values["venue_order_id"]),
-            execution_id=ExecutionId(values["execution_id"]),
+            trade_id=TradeId(values["trade_id"]),
             position_id=PositionId(position_id_str) if position_id_str is not None else None,
             order_side=OrderSideParser.from_str(values["order_side"]),
             order_type=OrderTypeParser.from_str(values["order_type"]),
@@ -2209,7 +2209,7 @@ cdef class OrderFilled(OrderEvent):
             "instrument_id": obj.instrument_id.value,
             "client_order_id": obj.client_order_id.value,
             "venue_order_id": obj.venue_order_id.value,
-            "execution_id": obj.execution_id.value,
+            "trade_id": obj.trade_id.value,
             "position_id": obj.position_id.value if obj.position_id else None,
             "order_side": OrderSideParser.to_str(obj.order_side),
             "order_type": OrderTypeParser.to_str(obj.order_type),

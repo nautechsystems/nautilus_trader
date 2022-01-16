@@ -51,10 +51,10 @@ from nautilus_trader.model.commands.trading cimport SubmitOrderList
 from nautilus_trader.model.commands.trading cimport TradingCommand
 from nautilus_trader.model.data.tick cimport Tick
 from nautilus_trader.model.identifiers cimport ClientOrderId
-from nautilus_trader.model.identifiers cimport ExecutionId
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.identifiers cimport PositionId
 from nautilus_trader.model.identifiers cimport StrategyId
+from nautilus_trader.model.identifiers cimport TradeId
 from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.model.identifiers cimport VenueOrderId
 from nautilus_trader.model.instruments.base cimport Instrument
@@ -1471,9 +1471,9 @@ cdef class SimulatedExchange:
         self._symbol_ord_count[instrument_id] = ord_count
         return VenueOrderId(f"{self.id.value}-{self._instrument_indexer[instrument_id]}-{ord_count:03d}")
 
-    cdef ExecutionId _generate_execution_id(self):
+    cdef TradeId _generate_trade_id(self):
         self._executions_count += 1
-        return ExecutionId(f"{self.id.value}-{self._executions_count}")
+        return TradeId(f"{self.id.value}-{self._executions_count}")
 
 # -- EVENT GENERATORS ------------------------------------------------------------------------------
 
@@ -1651,7 +1651,7 @@ cdef class SimulatedExchange:
             client_order_id=order.client_order_id,
             venue_order_id=venue_order_id,
             venue_position_id=venue_position_id,
-            execution_id=self._generate_execution_id(),
+            trade_id=self._generate_trade_id(),
             order_side=order.side,
             order_type=order.type,
             last_qty=last_qty,

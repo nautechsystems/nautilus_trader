@@ -20,6 +20,7 @@ Defines various order types used for trading.
 from decimal import Decimal
 
 import pandas as pd
+
 from cpython.datetime cimport datetime
 from libc.stdint cimport int64_t
 
@@ -52,9 +53,9 @@ from nautilus_trader.model.events.order cimport OrderSubmitted
 from nautilus_trader.model.events.order cimport OrderTriggered
 from nautilus_trader.model.events.order cimport OrderUpdated
 from nautilus_trader.model.identifiers cimport ClientOrderId
-from nautilus_trader.model.identifiers cimport ExecutionId
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.identifiers cimport OrderListId
+from nautilus_trader.model.identifiers cimport TradeId
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
 
@@ -119,7 +120,7 @@ cdef class Order:
     def __init__(self, OrderInitialized init not None):
         self._events = [init]       # type: list[OrderEvent]
         self._venue_order_ids = []  # type: list[VenueOrderId]
-        self._execution_ids = []    # type: list[ExecutionId]
+        self._trade_ids = []    # type: list[TradeId]
         self._fsm = FiniteStateMachine(
             state_transition_table=_ORDER_STATE_TABLE,
             initial_state=OrderStatus.INITIALIZED,
@@ -137,7 +138,7 @@ cdef class Order:
         self.venue_order_id = None  # Can be None
         self.position_id = None  # Can be None
         self.account_id = None  # Can be None
-        self.execution_id = None  # Can be None
+        self.last_trade_id = None  # Can be None
 
         # Properties
         self.side = init.side
@@ -212,8 +213,8 @@ cdef class Order:
     cdef list events_c(self):
         return self._events.copy()
 
-    cdef list execution_ids_c(self):
-        return self._execution_ids.copy()
+    cdef list trade_ids_c(self):
+        return self._trade_ids.copy()
 
     cdef int event_count_c(self) except *:
         return len(self._events)
@@ -366,16 +367,16 @@ cdef class Order:
         return self.events_c()
 
     @property
-    def execution_ids(self):
+    def trade_ids(self):
         """
-        The execution IDs.
+        The trade IDs.
 
         Returns
         -------
-        list[ExecutionId]
+        list[TradeId]
 
         """
-        return self.execution_ids_c()
+        return self.trade_ids_c()
 
     @property
     def event_count(self):
@@ -605,7 +606,7 @@ cdef class Order:
 
         Parameters
         ----------
-        side : OrderSide
+        side : OrderSide {``BUY``, ``SELL``}
             The original order side.
 
         Returns
@@ -627,7 +628,7 @@ cdef class Order:
 
         Parameters
         ----------
-        side : PositionSide
+        side : PositionSide {``LONG``, ``SHORT``}
             The position side to flatten.
 
         Returns
@@ -660,7 +661,7 @@ cdef class Order:
         InvalidStateTrigger
             If `event` is not a valid trigger from the current order status.
         KeyError
-            If `event` is `OrderFilled` and `event.execution_id` already applied to the order.
+            If `event` is `OrderFilled` and `event.trade_id` already applied to the order.
 
         """
         Condition.not_none(event, "event")
@@ -712,7 +713,7 @@ cdef class Order:
             if self.venue_order_id is None:
                 self.venue_order_id = event.venue_order_id
             else:
-                Condition.not_in(event.execution_id, self._execution_ids, "event.execution_id", "self._execution_ids")
+                Condition.not_in(event.trade_id, self._trade_ids, "event.trade_id", "self._trade_ids")
             # Fill order
             if self.filled_qty + event.last_qty < self.quantity:
                 self._fsm.trigger(OrderStatus.PARTIALLY_FILLED)
@@ -901,8 +902,8 @@ cdef class PassiveOrder(Order):
         self.venue_order_id = fill.venue_order_id
         self.position_id = fill.position_id
         self.strategy_id = fill.strategy_id
-        self._execution_ids.append(fill.execution_id)
-        self.execution_id = fill.execution_id
+        self._trade_ids.append(fill.trade_id)
+        self.last_trade_id = fill.trade_id
         self.liquidity_side = fill.liquidity_side
         filled_qty: Decimal = self.filled_qty.as_decimal() + fill.last_qty.as_decimal()
         leaves_qty: Decimal = self.quantity.as_decimal() - filled_qty

@@ -45,8 +45,8 @@ from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.core.datetime import millis_to_nanos
 from nautilus_trader.core.datetime import nanos_to_secs
 from nautilus_trader.core.datetime import secs_to_nanos
-from nautilus_trader.execution.messages import ExecutionReport
-from nautilus_trader.execution.messages import OrderStatusReport
+from nautilus_trader.execution.reports import OrderStatusReport
+from nautilus_trader.execution.reports import TradeReport
 from nautilus_trader.live.execution_client import LiveExecutionClient
 from nautilus_trader.model.c_enums.account_type import AccountType
 from nautilus_trader.model.c_enums.liquidity_side import LiquiditySide
@@ -61,8 +61,8 @@ from nautilus_trader.model.events.account import AccountState
 from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import ClientOrderId
-from nautilus_trader.model.identifiers import ExecutionId
 from nautilus_trader.model.identifiers import Symbol
+from nautilus_trader.model.identifiers import TradeId
 from nautilus_trader.model.identifiers import VenueOrderId
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
@@ -131,7 +131,7 @@ class BetfairExecutionClient(LiveExecutionClient):
 
         self.venue_order_id_to_client_order_id: Dict[VenueOrderId, ClientOrderId] = {}
         self.pending_update_order_client_ids: Set[Tuple[ClientOrderId, VenueOrderId]] = set()
-        self.published_executions: Dict[ClientOrderId, ExecutionId] = defaultdict(list)
+        self.published_executions: Dict[ClientOrderId, TradeId] = defaultdict(list)
 
         self._set_account_id(AccountId(BETFAIR_VENUE.value, "001"))  # TODO(cs): Temporary
         AccountFactory.register_calculated_account(BETFAIR_VENUE.value)
@@ -495,7 +495,7 @@ class BetfairExecutionClient(LiveExecutionClient):
     # TODO(cs): Currently not in use as old behavior restored to cancel orders individually
     async def _cancel_all_orders(self, command: CancelAllOrders) -> None:
         # TODO(cs): I've had to duplicate the logic as couldn't refactor and tease
-        #  apart the cancel rejects and execution report. This will possibly fail
+        #  apart the cancel rejects and trade report. This will possibly fail
         #  badly if there are any API errors...
         self._log.debug(f"Received cancel all orders: {command}")
 
@@ -514,7 +514,7 @@ class BetfairExecutionClient(LiveExecutionClient):
                 await self.on_api_exception(exc=exc)
             self._log.error(f"Cancel failed: {exc}")
             # TODO(cs): Will probably just need to recover the client order ID
-            #  and order ID from the execution report?
+            #  and order ID from the trade report?
             # self.generate_order_cancel_rejected(
             #     strategy_id=command.strategy_id,
             #     instrument_id=command.instrument_id,
@@ -533,7 +533,7 @@ class BetfairExecutionClient(LiveExecutionClient):
                 reason = f"{result.get('errorCode', 'Error')}: {report['errorCode']}"
                 self._log.error(f"cancel failed - {reason}")
                 # TODO(cs): Will probably just need to recover the client order ID
-                #  and order ID from the execution report?
+                #  and order ID from the trade report?
                 # self.generate_order_cancel_rejected(
                 #     strategy_id=command.strategy_id,
                 #     instrument_id=command.instrument_id,
@@ -663,8 +663,8 @@ class BetfairExecutionClient(LiveExecutionClient):
 
         # Check for any portion executed
         if update["sm"] > 0 and update["sm"] > order.filled_qty:
-            execution_id = create_execution_id(update)
-            if execution_id not in self.published_executions[client_order_id]:
+            trade_id = create_trade_id(update)
+            if trade_id not in self.published_executions[client_order_id]:
                 fill_qty = update["sm"] - order.filled_qty
                 fill_price = self._determine_fill_price(update=update, order=order)
                 self.generate_order_filled(
@@ -673,7 +673,7 @@ class BetfairExecutionClient(LiveExecutionClient):
                     client_order_id=client_order_id,
                     venue_order_id=venue_order_id,
                     venue_position_id=None,  # Can be None
-                    execution_id=execution_id,
+                    trade_id=trade_id,
                     order_side=B2N_ORDER_STREAM_SIDE[update["side"]],
                     order_type=OrderType.LIMIT,
                     last_qty=Quantity(fill_qty, instrument.size_precision),
@@ -684,7 +684,7 @@ class BetfairExecutionClient(LiveExecutionClient):
                     liquidity_side=LiquiditySide.NONE,
                     ts_event=millis_to_nanos(update["md"]),
                 )
-                self.published_executions[client_order_id].append(execution_id)
+                self.published_executions[client_order_id].append(trade_id)
 
     def _determine_fill_price(self, update: Dict, order: Order):
         if "avp" not in update:
@@ -724,8 +724,8 @@ class BetfairExecutionClient(LiveExecutionClient):
 
         if update["sm"] > 0 and update["sm"] > order.filled_qty:
             self._log.debug("")
-            execution_id = create_execution_id(update)
-            if execution_id not in self.published_executions[client_order_id]:
+            trade_id = create_trade_id(update)
+            if trade_id not in self.published_executions[client_order_id]:
                 fill_qty = update["sm"] - order.filled_qty
                 fill_price = self._determine_fill_price(update=update, order=order)
                 # At least some part of this order has been filled
@@ -735,7 +735,7 @@ class BetfairExecutionClient(LiveExecutionClient):
                     client_order_id=client_order_id,
                     venue_order_id=venue_order_id,
                     venue_position_id=None,  # Can be None
-                    execution_id=execution_id,
+                    trade_id=trade_id,
                     order_side=B2N_ORDER_STREAM_SIDE[update["side"]],
                     order_type=OrderType.LIMIT,
                     last_qty=Quantity(fill_qty, instrument.size_precision),
@@ -746,7 +746,7 @@ class BetfairExecutionClient(LiveExecutionClient):
                     liquidity_side=LiquiditySide.TAKER,  # TODO - Fix this?
                     ts_event=millis_to_nanos(update["md"]),
                 )
-                self.published_executions[client_order_id].append(execution_id)
+                self.published_executions[client_order_id].append(trade_id)
 
         cancel_qty = update["sc"] + update["sl"] + update["sv"]
         if cancel_qty > 0 and not order.is_completed:
@@ -824,17 +824,17 @@ class BetfairExecutionClient(LiveExecutionClient):
         self._log.debug(f"generate_order_status_report: {order}")
         return await generate_order_status_report(self, order)
 
-    async def generate_exec_reports(
+    async def generate_trade_reports(
         self,
         venue_order_id: VenueOrderId,
         symbol: Symbol,
         since: Optional[datetime] = None,
-    ) -> List[ExecutionReport]:
-        self._log.debug(f"generate_exec_reports: {venue_order_id}, {symbol}, {since}")
+    ) -> List[TradeReport]:
+        self._log.debug(f"generate_trade_reports: {venue_order_id}, {symbol}, {since}")
         return await generate_trades_list(self, venue_order_id, symbol, since)
 
 
-def create_execution_id(uo: Dict) -> ExecutionId:
+def create_trade_id(uo: Dict) -> TradeId:
     data: bytes = orjson.dumps(
         (
             uo["id"],
@@ -849,4 +849,4 @@ def create_execution_id(uo: Dict) -> ExecutionId:
             uo.get("sm"),
         )
     )
-    return ExecutionId(hashlib.sha1(data).hexdigest())  # noqa (S303 insecure SHA1)
+    return TradeId(hashlib.sha1(data).hexdigest())  # noqa (S303 insecure SHA1)

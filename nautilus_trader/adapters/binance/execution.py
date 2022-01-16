@@ -37,8 +37,8 @@ from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.logging import LogColor
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.core.datetime import millis_to_nanos
-from nautilus_trader.execution.messages import ExecutionReport
-from nautilus_trader.execution.messages import OrderStatusReport
+from nautilus_trader.execution.reports import OrderStatusReport
+from nautilus_trader.execution.reports import TradeReport
 from nautilus_trader.live.execution_client import LiveExecutionClient
 from nautilus_trader.model.c_enums.account_type import AccountType
 from nautilus_trader.model.c_enums.order_side import OrderSideParser
@@ -54,10 +54,10 @@ from nautilus_trader.model.enums import TimeInForce
 from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import ClientOrderId
-from nautilus_trader.model.identifiers import ExecutionId
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import StrategyId
 from nautilus_trader.model.identifiers import Symbol
+from nautilus_trader.model.identifiers import TradeId
 from nautilus_trader.model.identifiers import VenueOrderId
 from nautilus_trader.model.instruments.base import Instrument
 from nautilus_trader.model.objects import Money
@@ -433,21 +433,21 @@ class BinanceSpotExecutionClient(LiveExecutionClient):
             "Cannot generate order status report: not yet implemented.",
         )
 
-    async def generate_exec_reports(
+    async def generate_trade_reports(
         self,
         venue_order_id: VenueOrderId,
         symbol: Symbol,
         since: datetime = None,
-    ) -> List[ExecutionReport]:  # type: ignore
+    ) -> List[TradeReport]:  # type: ignore
         """
-        Generate a list of execution reports.
+        Generate a list of trade reports.
 
         The returned list may be empty if no trades match the given parameters.
 
         Parameters
         ----------
         venue_order_id : VenueOrderId
-            The venue order ID for the trades.
+            The venue order ID (assigned by the venue) for the trades.
         symbol : Symbol
             The symbol for the trades.
         since : datetime, optional
@@ -455,11 +455,11 @@ class BinanceSpotExecutionClient(LiveExecutionClient):
 
         Returns
         -------
-        list[ExecutionReport]
+        list[TradeReport]
 
         """
         self._log.error(  # pragma: no cover
-            "Cannot generate execution report: not yet implemented.",
+            "Cannot generate trade report: not yet implemented.",
         )
 
         return []
@@ -475,7 +475,7 @@ class BinanceSpotExecutionClient(LiveExecutionClient):
             msg_type: str = data.get("e")
             if msg_type == "outboundAccountPosition":
                 self._handle_account_position(data)
-            elif msg_type == "executionReport":
+            elif msg_type == "TradeReport":
                 self._handle_execution_report(data)
         except Exception as ex:
             self._log.exception(ex)
@@ -509,7 +509,7 @@ class BinanceSpotExecutionClient(LiveExecutionClient):
         if strategy_id is None:
             # TODO(cs): Implement external order handling
             self._log.error(
-                f"Cannot handle execution report: " f"strategy ID for {client_order_id} not found.",
+                f"Cannot handle trade report: strategy ID for {client_order_id} not found.",
             )
             return
 
@@ -543,7 +543,7 @@ class BinanceSpotExecutionClient(LiveExecutionClient):
                 client_order_id=client_order_id,
                 venue_order_id=venue_order_id,
                 venue_position_id=None,  # NETTING accounts
-                execution_id=ExecutionId(str(data["t"])),  # Trade ID
+                trade_id=TradeId(str(data["t"])),  # Trade ID
                 order_side=OrderSideParser.from_str_py(data["S"]),
                 order_type=parse_order_type(order_type_str),
                 last_qty=Quantity.from_str(data["l"]),

@@ -24,10 +24,10 @@
    :member-order: bysource
 ```
 
-## Messages
+## Reports
 
 ```{eval-rst}
-.. automodule:: nautilus_trader.execution.messages
+.. automodule:: nautilus_trader.execution.reports
    :show-inheritance:
    :inherited-members:
    :members:

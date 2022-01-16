@@ -2330,7 +2330,7 @@ cdef class Cache(CacheFacade):
 
     cpdef ClientOrderId client_order_id(self, VenueOrderId venue_order_id):
         """
-        Return the client order ID matching the given order ID (if found).
+        Return the client order ID matching the given venue order ID (if found).
 
         Parameters
         ----------

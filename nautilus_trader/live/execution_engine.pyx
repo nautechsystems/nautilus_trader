@@ -28,8 +28,8 @@ from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.message cimport Message
 from nautilus_trader.core.message cimport MessageCategory
 from nautilus_trader.execution.engine cimport ExecutionEngine
-from nautilus_trader.execution.messages cimport ExecutionMassStatus
-from nautilus_trader.execution.messages cimport OrderStatusReport
+from nautilus_trader.execution.reports cimport ExecutionMassStatus
+from nautilus_trader.execution.reports cimport OrderStatusReport
 from nautilus_trader.live.execution_client cimport LiveExecutionClient
 from nautilus_trader.model.c_enums.order_status cimport OrderStatus
 from nautilus_trader.model.commands.trading cimport TradingCommand
@@ -194,7 +194,7 @@ cdef class LiveExecutionEngine(ExecutionEngine):
 
         # Generate state report for each client
         for name, client in self._clients.items():
-            client_mass_status[name] = await client.generate_mass_status(client_orders[name])
+            client_mass_status[name] = await client.generate_mass_status()
 
         # Reconcile order status
         cdef ExecutionMassStatus mass_status
@@ -211,8 +211,8 @@ cdef class LiveExecutionEngine(ExecutionEngine):
                         f"No order found for {repr(order_status_report.client_order_id)}."
                     )
                     continue
-                exec_reports = mass_status.exec_reports().get(order.venue_order_id, [])
-                await self._clients[name].reconcile_state(order_status_report, order, exec_reports)
+                trade_reports = mass_status.trade_reports().get(order.venue_order_id, [])
+                await self._clients[name].reconcile_state(order_status_report, order, trade_reports)
 
         # Wait for state resolution until timeout...
         cdef datetime timeout = self._clock.utc_now() + timedelta(seconds=timeout_secs)

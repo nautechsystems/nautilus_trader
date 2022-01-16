@@ -30,8 +30,8 @@ from nautilus_trader.common.logging import Logger
 from nautilus_trader.common.providers import InstrumentProvider
 from nautilus_trader.core.datetime import secs_to_nanos
 from nautilus_trader.execution.client import ExecutionClient
-from nautilus_trader.execution.messages import ExecutionReport
-from nautilus_trader.execution.messages import OrderStatusReport
+from nautilus_trader.execution.reports import OrderStatusReport
+from nautilus_trader.execution.reports import TradeReport
 from nautilus_trader.indicators.average.ema import ExponentialMovingAverage
 from nautilus_trader.live.data_engine import LiveDataEngine
 from nautilus_trader.live.execution_client import LiveExecutionClient
@@ -534,7 +534,7 @@ class MockLiveExecutionClient(LiveExecutionClient):
 
         self._set_account_id(AccountId(client_id.value, "001"))
         self._order_status_reports: Dict[VenueOrderId, OrderStatusReport] = {}
-        self._trades_lists: Dict[VenueOrderId, list[ExecutionReport]] = {}
+        self._trades_lists: Dict[VenueOrderId, list[TradeReport]] = {}
 
         self.calls = []
         self.commands = []
@@ -542,7 +542,7 @@ class MockLiveExecutionClient(LiveExecutionClient):
     def add_order_status_report(self, report: OrderStatusReport) -> None:
         self._order_status_reports[report.venue_order_id] = report
 
-    def add_trades_list(self, venue_order_id: VenueOrderId, trades: List[ExecutionReport]) -> None:
+    def add_trades_list(self, venue_order_id: VenueOrderId, trades: List[TradeReport]) -> None:
         self._trades_lists[venue_order_id] = trades
 
     def dispose(self) -> None:
@@ -577,12 +577,12 @@ class MockLiveExecutionClient(LiveExecutionClient):
         self.calls.append(inspect.currentframe().f_code.co_name)
         return self._order_status_reports[order.venue_order_id]
 
-    async def generate_exec_reports(
+    async def generate_trade_reports(
         self,
         venue_order_id: VenueOrderId,
         symbol: Symbol,
         since: datetime = None,
-    ) -> List[ExecutionReport]:
+    ) -> List[TradeReport]:
         self.calls.append(inspect.currentframe().f_code.co_name)
         return self._trades_lists[venue_order_id]
 

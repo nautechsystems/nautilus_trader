@@ -38,6 +38,7 @@ from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import OrderType
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import Symbol
+from nautilus_trader.model.identifiers import TradeId
 from nautilus_trader.model.instruments.base import Instrument
 from nautilus_trader.model.instruments.crypto_perp import CryptoPerpetual
 from nautilus_trader.model.instruments.currency import CurrencySpot
@@ -166,7 +167,7 @@ def parse_trade_ticks_ws(
             price=Price(trade["price"], instrument.price_precision),
             size=Quantity(trade["size"], instrument.size_precision),
             aggressor_side=AggressorSide.BUY if trade["side"] == "buy" else AggressorSide.SELL,
-            trade_id=str(trade["id"]),
+            trade_id=TradeId(trade["id"]),
             ts_event=pd.to_datetime(trade["time"], utc=True).to_datetime64(),
             ts_init=ts_init,
         )

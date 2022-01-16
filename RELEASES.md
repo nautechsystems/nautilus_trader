@@ -4,6 +4,21 @@
 
 Released on TBD.
 
+For consistency and standardization with other protocols, the `ExecutionId` type 
+has been renamed to `TradeId`. In the interests of enforcing correctness and 
+safety this type is now utilized for the `TradeTick.trade_id`, as they express 
+the same concept with a more standardized terminology.
+
+### Breaking Changes
+- Renamed `ExecutionId` to `TradeId`.
+- Renamed `execution_id` to `trade_id`.
+- Renamed `Order.trade_id` to `Order.last_trade_id` (for clarity).
+- Renamed other variations and references of 'execution ID' to 'trade ID'.
+
+### Enhancements
+- Introduced the `TradeId` type to enforce `trade_id` typing.
+
+
 ---
 
 # NautilusTrader 1.137.1 Beta
@@ -815,7 +830,7 @@ None
 
 ### Fixes
 - `OrderBook.create` for `BookLevel.L3` now returns correct book.
-- Betfair handling of execution IDs.
+- Betfair handling of trade IDs.
 
 ---
 

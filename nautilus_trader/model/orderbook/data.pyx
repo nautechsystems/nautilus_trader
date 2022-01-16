@@ -416,7 +416,7 @@ cdef class Order:
         The order price.
     size : double
         The order size.
-    side : OrderSide
+    side : OrderSide {``BUY``, ``SELL``}
         The order side.
     id : str
         The order ID.

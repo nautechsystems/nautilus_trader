@@ -53,7 +53,7 @@ cdef class BettingAccount(CashAccount):
         ----------
         instrument : Instrument
             The instrument for the calculation.
-        side : OrderSide
+        side : OrderSide {``BUY``, ``SELL``}
             The order side.
         quantity : Quantity
             The order quantity.

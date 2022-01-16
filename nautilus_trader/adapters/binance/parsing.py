@@ -34,6 +34,7 @@ from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import OrderType
 from nautilus_trader.model.enums import PriceType
 from nautilus_trader.model.identifiers import InstrumentId
+from nautilus_trader.model.identifiers import TradeId
 from nautilus_trader.model.objects import AccountBalance
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
@@ -157,7 +158,7 @@ def parse_trade_tick(instrument_id: InstrumentId, msg: Dict, ts_init: int) -> Tr
         price=Price.from_str(msg["price"]),
         size=Quantity.from_str(msg["qty"]),
         aggressor_side=AggressorSide.SELL if msg["isBuyerMaker"] else AggressorSide.BUY,
-        trade_id=str(msg["id"]),
+        trade_id=TradeId(str(msg["id"])),
         ts_event=millis_to_nanos(msg["time"]),
         ts_init=ts_init,
     )
@@ -169,7 +170,7 @@ def parse_trade_tick_ws(instrument_id: InstrumentId, msg: Dict, ts_init: int) ->
         price=Price.from_str(msg["p"]),
         size=Quantity.from_str(msg["q"]),
         aggressor_side=AggressorSide.SELL if msg["m"] else AggressorSide.BUY,
-        trade_id=str(msg["t"]),
+        trade_id=TradeId(str(msg["t"])),
         ts_event=millis_to_nanos(msg["T"]),
         ts_init=ts_init,
     )
