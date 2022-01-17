@@ -23,6 +23,7 @@ from nautilus_trader.adapters.ftx.common import FTX_VENUE
 from nautilus_trader.adapters.ftx.data_types import FTXTicker
 from nautilus_trader.core.datetime import secs_to_nanos
 from nautilus_trader.core.text import precision_from_str
+from nautilus_trader.execution.reports import OrderStatusReport
 from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.currency import Currency
 from nautilus_trader.model.data.bar import Bar
@@ -33,12 +34,17 @@ from nautilus_trader.model.enums import AggressorSide
 from nautilus_trader.model.enums import AssetClass
 from nautilus_trader.model.enums import BookAction
 from nautilus_trader.model.enums import BookType
+from nautilus_trader.model.enums import ContingencyType
 from nautilus_trader.model.enums import CurrencyType
 from nautilus_trader.model.enums import OrderSide
+from nautilus_trader.model.enums import OrderStatus
 from nautilus_trader.model.enums import OrderType
+from nautilus_trader.model.enums import TimeInForce
+from nautilus_trader.model.identifiers import ClientOrderId
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import TradeId
+from nautilus_trader.model.identifiers import VenueOrderId
 from nautilus_trader.model.instruments.base import Instrument
 from nautilus_trader.model.instruments.crypto_perp import CryptoPerpetual
 from nautilus_trader.model.instruments.currency import CurrencySpot
@@ -51,9 +57,61 @@ from nautilus_trader.model.orderbook.data import OrderBookDeltas
 from nautilus_trader.model.orderbook.data import OrderBookSnapshot
 
 
+def parse_order_status(
+    instrument: Instrument,
+    data: Dict[str, Any],
+    ts_init: int,
+) -> OrderStatusReport:
+    client_id_str = data["clientId"]
+    price = data["price"]
+    avg_px = data["avgFillPrice"]
+    created_at = int(pd.to_datetime(data["createdAt"]).to_datetime64())
+    return OrderStatusReport(
+        instrument_id=InstrumentId(Symbol(data["market"]), FTX_VENUE),
+        client_order_id=ClientOrderId(client_id_str) if client_id_str is not None else None,
+        order_list_id=None,
+        venue_order_id=VenueOrderId(str(data["id"])),
+        order_side=OrderSide.BUY if data["side"] == "buy" else OrderSide.SELL,
+        order_type=parse_order_type(data=data, price_str="price"),
+        contingency=ContingencyType.NONE,
+        time_in_force=TimeInForce.IOC if data["ioc"] else TimeInForce.GTC,
+        order_status=parse_status(data),
+        price=instrument.make_price(price) if price is not None else None,
+        trigger=None,
+        quantity=instrument.make_qty(str(data["size"])),
+        filled_qty=instrument.make_qty(str(data["filledSize"])),
+        display_qty=None,
+        avg_px=Decimal(str(avg_px)) if avg_px is not None else None,
+        is_reduce_only=data["reduceOnly"],
+        is_post_only=data["postOnly"],
+        reject_reason=None,
+        ts_accepted=created_at,
+        ts_last=created_at,
+        ts_init=ts_init,
+    )
+
+
+def parse_status(result: Dict[str, Any]) -> OrderStatus:
+    status: str = result["status"]
+    if status in ("new", "open"):
+        if result["filledSize"] == 0:
+            return OrderStatus.ACCEPTED
+        else:
+            return OrderStatus.PARTIALLY_FILLED
+    elif status == "closed":
+        if result["filledSize"] == 0:
+            return OrderStatus.CANCELED
+        elif result["remainingSize"] == 0:
+            return OrderStatus.FILLED
+        else:
+            return OrderStatus.PARTIALLY_FILLED
+    else:  # pragma: no cover (design-time error)
+        raise RuntimeError(f"Cannot parse order status, was {status}")
+
+
 def parse_book_partial_ws(
     instrument_id: InstrumentId,
-    data: Dict,
+    data: Dict[str, Any],
     ts_init: int,
 ) -> OrderBookSnapshot:
     return OrderBookSnapshot(
@@ -69,7 +127,7 @@ def parse_book_partial_ws(
 
 def parse_book_update_ws(
     instrument_id: InstrumentId,
-    data: Dict,
+    data: Dict[str, Any],
     ts_init: int,
 ) -> OrderBookDeltas:
     ts_event: int = secs_to_nanos(data["time"])
@@ -124,7 +182,7 @@ def parse_book_delta_ws(
 
 def parse_ticker_ws(
     instrument: Instrument,
-    data: Dict,
+    data: Dict[str, Any],
     ts_init: int,
 ) -> FTXTicker:
     return FTXTicker(
@@ -141,7 +199,7 @@ def parse_ticker_ws(
 
 def parse_quote_tick_ws(
     instrument: Instrument,
-    data: Dict,
+    data: Dict[str, Any],
     ts_init: int,
 ) -> QuoteTick:
     return QuoteTick(
@@ -167,7 +225,7 @@ def parse_trade_ticks_ws(
             price=Price(trade["price"], instrument.price_precision),
             size=Quantity(trade["size"], instrument.size_precision),
             aggressor_side=AggressorSide.BUY if trade["side"] == "buy" else AggressorSide.SELL,
-            trade_id=TradeId(trade["id"]),
+            trade_id=TradeId(str(trade["id"])),
             ts_event=pd.to_datetime(trade["time"], utc=True).to_datetime64(),
             ts_init=ts_init,
         )
@@ -338,14 +396,14 @@ def parse_market(
         raise ValueError(f"Cannot parse market instrument: unknown asset type {asset_type}")
 
 
-def parse_order_type(data: Dict[str, Any]) -> OrderType:
+def parse_order_type(data: Dict[str, Any], price_str: str = "orderPrice") -> OrderType:
     order_type: str = data["type"]
     if order_type == "limit":
         return OrderType.LIMIT
     elif order_type == "market":
         return OrderType.MARKET
     elif order_type in ("stop", "trailingStop", "takeProfit"):
-        if data.get("orderPrice"):
+        if data.get(price_str):
             return OrderType.STOP_LIMIT
         else:
             return OrderType.STOP_MARKET

@@ -79,16 +79,16 @@ cdef class LiveDataClient(DataClient):
 
         self._loop = loop
 
-    def connect(self):
+    def connect(self) -> None:
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
-    def disconnect(self):
+    def disconnect(self) -> None:
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
     @types.coroutine
-    def sleep0(self):
+    def sleep0(self) -> None:
         # Skip one event loop run cycle.
         #
         # This is equivalent to `asyncio.sleep(0)` however avoids the overhead
@@ -98,7 +98,7 @@ cdef class LiveDataClient(DataClient):
         # instead of creating a Future object.
         yield
 
-    async def run_after_delay(self, delay, coro):
+    async def run_after_delay(self, delay: float, coro) -> None:
         await asyncio.sleep(delay)
         return await coro
 
@@ -154,16 +154,16 @@ cdef class LiveMarketDataClient(MarketDataClient):
         self._loop = loop
         self._instrument_provider = instrument_provider
 
-    def connect(self):
+    def connect(self) -> None:
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
-    def disconnect(self):
+    def disconnect(self) -> None:
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
     @types.coroutine
-    def sleep0(self):
+    def sleep0(self) -> None:
         # Skip one event loop run cycle.
         #
         # This is equivalent to `asyncio.sleep(0)` however avoids the overhead
@@ -173,6 +173,6 @@ cdef class LiveMarketDataClient(MarketDataClient):
         # instead of creating a Future object.
         yield
 
-    async def run_after_delay(self, delay, coro):
+    async def run_after_delay(self, delay, coro) -> None:
         await asyncio.sleep(delay)
         return await coro

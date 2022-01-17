@@ -140,6 +140,6 @@ cdef class ExecutionMassStatus:
     cpdef dict trade_reports(self)
     cpdef dict position_reports(self)
 
-    cpdef void add_order_report(self, OrderStatusReport report) except *
-    cpdef void add_trade_reports(self, VenueOrderId venue_order_id, list reports) except *
-    cpdef void add_position_report(self, PositionStatusReport report) except *
+    cpdef void add_order_reports(self, list reports) except *
+    cpdef void add_trade_reports(self, list reports) except *
+    cpdef void add_position_reports(self, list reports) except *

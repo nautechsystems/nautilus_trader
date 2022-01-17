@@ -216,6 +216,18 @@ class FTXHttpClient(HttpClient):
             payload={"market": market},
         )
 
+    async def get_order_status(self, order_id: str) -> Dict[str, Any]:
+        return await self._sign_request(
+            http_method="GET",
+            url_path=f"orders/{order_id}",
+        )
+
+    async def get_order_status_by_client_id(self, client_order_id: str) -> Dict[str, Any]:
+        return await self._sign_request(
+            http_method="GET",
+            url_path=f"orders/by_client_id/{client_order_id}",
+        )
+
     async def get_order_history(
         self,
         market: str = None,

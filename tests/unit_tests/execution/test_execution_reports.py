@@ -40,7 +40,7 @@ from tests.test_kit.stubs import TestStubs
 AUDUSD_SIM = TestStubs.audusd_id()
 
 
-class TestTradeReport:
+class TestExecutionReports:
     def test_instantiate_order_status_report(self):
         # Arrange, Act
         report = OrderStatusReport(
@@ -152,16 +152,16 @@ class TestTradeReport:
             == "ExecutionMassStatus(client_id=IB, account_id=SIM-000, order_reports={}, trade_reports={}, position_reports={}, ts_init=0)"  # noqa
         )
 
-    def test_add_order_status_report(self):
+    def test_add_order_status_reports(self):
         # Arrange
-        report = ExecutionMassStatus(
+        mass_status = ExecutionMassStatus(
             client_id=ClientId("IB"),
             account_id=TestStubs.account_id(),
             ts_init=0,
         )
 
         venue_order_id = VenueOrderId("2")
-        order_report = OrderStatusReport(
+        report = OrderStatusReport(
             instrument_id=AUDUSD_SIM,
             client_order_id=ClientOrderId("O-123456"),
             order_list_id=OrderListId("1"),
@@ -186,27 +186,27 @@ class TestTradeReport:
         )
 
         # Act
-        report.add_order_report(order_report)
+        mass_status.add_order_reports([report])
 
         # Assert
-        assert report.order_reports()[venue_order_id] == order_report
+        assert mass_status.order_reports()[venue_order_id] == report
         assert (
-            repr(report)
+            repr(mass_status)
             == "ExecutionMassStatus(client_id=IB, account_id=SIM-000, order_reports={VenueOrderId('2'): OrderStatusReport(client_order_id=O-123456, order_list_id=1, venue_order_id=2, order_side=SELL, order_type=STOP_LIMIT, contingency=OCO, time_in_force=DAY, order_status=REJECTED, price=0.90090, trigger=0.90100, quantity=1000000, filled_qty=0, leaves_qty=1000000, display_qty=None, avg_px=None, is_reduce_only=False, is_post_only=True, reject_reason=SOME_REASON, ts_accepted=1000000, ts_last=2000000, ts_init=3000000)}, trade_reports={}, position_reports={}, ts_init=0)"  # noqa
         )
         assert (
-            repr(order_report)
+            repr(report)
             == "OrderStatusReport(client_order_id=O-123456, order_list_id=1, venue_order_id=2, order_side=SELL, order_type=STOP_LIMIT, contingency=OCO, time_in_force=DAY, order_status=REJECTED, price=0.90090, trigger=0.90100, quantity=1000000, filled_qty=0, leaves_qty=1000000, display_qty=None, avg_px=None, is_reduce_only=False, is_post_only=True, reject_reason=SOME_REASON, ts_accepted=1000000, ts_last=2000000, ts_init=3000000)"  # noqa
         )
 
-    def test_add_position_state_report(self):
-        report = ExecutionMassStatus(
+    def test_add_position_state_reports(self):
+        mass_status = ExecutionMassStatus(
             client_id=ClientId("IB"),
             account_id=TestStubs.account_id(),
             ts_init=0,
         )
 
-        position_report = PositionStatusReport(
+        report = PositionStatusReport(
             instrument_id=AUDUSD_SIM,
             venue_position_id=PositionId("1"),
             position_side=PositionSide.LONG,
@@ -216,15 +216,15 @@ class TestTradeReport:
         )
 
         # Act
-        report.add_position_report(position_report)
+        mass_status.add_position_reports([report])
 
         # Assert
-        assert report.position_reports()[AUDUSD_SIM] == position_report
+        assert mass_status.position_reports()[AUDUSD_SIM] == [report]
         assert (
-            repr(report)
-            == "ExecutionMassStatus(client_id=IB, account_id=SIM-000, order_reports={}, trade_reports={}, position_reports={InstrumentId('AUD/USD.SIM'): PositionStatusReport(instrument_id=AUD/USD.SIM, venue_position_id=1, position_side=LONG, quantity=1000000, ts_last=0, ts_init=0)}, ts_init=0)"  # noqa
+            repr(mass_status)
+            == "ExecutionMassStatus(client_id=IB, account_id=SIM-000, order_reports={}, trade_reports={}, position_reports={InstrumentId('AUD/USD.SIM'): [PositionStatusReport(instrument_id=AUD/USD.SIM, venue_position_id=1, position_side=LONG, quantity=1000000, ts_last=0, ts_init=0)]}, ts_init=0)"  # noqa
         )
         assert (
-            repr(position_report)
+            repr(report)
             == "PositionStatusReport(instrument_id=AUD/USD.SIM, venue_position_id=1, position_side=LONG, quantity=1000000, ts_last=0, ts_init=0)"  # noqa
         )

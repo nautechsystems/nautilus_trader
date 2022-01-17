@@ -320,7 +320,7 @@ cdef class ExecutionMassStatus:
 
         self._order_reports = {}     # type: dict[VenueOrderId, OrderStatusReport]
         self._trade_reports = {}     # type: dict[VenueOrderId, list[TradeReport]]
-        self._position_reports = {}  # type: dict[InstrumentId, PositionStatusReport]
+        self._position_reports = {}  # type: dict[InstrumentId, list[PositionStatusReport]]
 
     def __repr__(self) -> str:
         return (
@@ -361,62 +361,70 @@ cdef class ExecutionMassStatus:
 
         Returns
         -------
-        dict[InstrumentId, PositionStatusReport]
+        dict[InstrumentId, list[PositionStatusReport]]
 
         """
         return self._position_reports.copy()
 
-    cpdef void add_order_report(self, OrderStatusReport report) except *:
+    cpdef void add_order_reports(self, list reports) except *:
         """
-        Add the order status report.
+        Add the order reports to the mass status.
 
         Parameters
         ----------
-        report : OrderStatusReport
-            The report to add.
+        reports : list[OrderStatusReport]
+            The list of reports to add.
+
+        Raises
+        -------
+        TypeError
+            If `reports` contains a type other than `TradeReport`.
 
         """
-        Condition.not_none(report, "report")
+        Condition.not_none(reports, "reports")
 
-        self._order_reports[report.venue_order_id] = report
+        cdef OrderStatusReport report
+        for report in reports:
+            self._order_reports[report.venue_order_id] = report
 
-    cpdef void add_trade_reports(self, VenueOrderId venue_order_id, list reports) except *:
+    cpdef void add_trade_reports(self, list reports) except *:
         """
-        Add the list of trade reports for the given order ID.
+        Add the trade reports to the mass status.
 
         Parameters
         ----------
-        venue_order_id : VenueOrderId
-            The venue order ID (assigned by the venue) for the reports.
         reports : list[TradeReport]
             The list of reports to add.
 
         Raises
         -------
         TypeError
-            If `trades` contains a type other than `TradeReport`.
-        ValueError
-            If `reports` is empty.
-        ValueError
             If `reports` contains a type other than `TradeReport`.
 
         """
-        Condition.not_none(venue_order_id, "venue_order_id")
-        Condition.not_empty(reports, "reports")
-        Condition.list_type(reports, TradeReport, "reports")
+        Condition.not_none(reports, "reports")
 
-        self._trade_reports[venue_order_id] = reports
+        # Sort reports by venue order ID
+        cdef TradeReport report
+        for report in reports:
+            if report.venue_order_id not in self._trade_reports:
+                self._trade_reports[report.venue_order_id] = []
+            self._trade_reports[report.venue_order_id].append(report)
 
-    cpdef void add_position_report(self, PositionStatusReport report) except *:
+    cpdef void add_position_reports(self, list reports) except *:
         """
-        Add the position status report.
+        Add the position status reports to the mass status.
 
         Parameters
         ----------
-        report : PositionStatusReport
-            The report to add.
+        reports : list[PositionStatusReport]
+            The reports to add.
 
         """
-        Condition.not_none(report, "report")
+        Condition.not_none(reports, "reports")
 
-        self._position_reports[report.instrument_id] = report
+        # Sort reports by instrument ID
+        for report in reports:
+            if report.instrument_id not in self._position_reports:
+                self._position_reports[report.instrument_id] = []
+            self._position_reports[report.instrument_id].append(report)

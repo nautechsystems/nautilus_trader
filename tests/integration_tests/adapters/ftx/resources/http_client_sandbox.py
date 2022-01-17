@@ -14,7 +14,6 @@
 # -------------------------------------------------------------------------------------------------
 
 import asyncio
-import json
 import os
 
 import pytest
@@ -42,8 +41,8 @@ async def test_ftx_http_client():
     await client.connect()
 
     # Test authentication works with account info
-    response = await client.get_account_info()
-    print(json.dumps(response, indent=4))
+    # response = await client.get_account_info()
+    # print(json.dumps(response, indent=4))
 
     # response = await client.list_markets(
     #     # market="ETH-PERP",
@@ -69,12 +68,19 @@ async def test_ftx_http_client():
     #     market="ETH/USD",
     #     side="sell",
     #     size="0.01",
-    #     type="market",
-    #     #price="5500",
-    #     client_id="011",
+    #     type="limit",
+    #     price="5500",
+    #     client_id="103",
     #     # post_only=True,
     #     # reduce_only=True,
     # )
+    # print(json.dumps(response, indent=4))
+
+    # response = await client.cancel_order("103")
+
+    # response = await client.get_order_history()
+
+    # response = await client.get_order_status_by_client_id("001")
     # print(json.dumps(response, indent=4))
 
     await client.disconnect()

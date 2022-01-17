@@ -27,6 +27,7 @@ from nautilus_trader.accounting.factory import AccountFactory
 from nautilus_trader.adapters.ftx.common import FTX_VENUE
 from nautilus_trader.adapters.ftx.http.client import FTXHttpClient
 from nautilus_trader.adapters.ftx.http.error import FTXError
+from nautilus_trader.adapters.ftx.parsing import parse_order_status
 from nautilus_trader.adapters.ftx.parsing import parse_order_type
 from nautilus_trader.adapters.ftx.providers import FTXInstrumentProvider
 from nautilus_trader.adapters.ftx.websocket.client import FTXWebSocketClient
@@ -35,6 +36,7 @@ from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.logging import LogColor
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.execution.reports import OrderStatusReport
+from nautilus_trader.execution.reports import PositionStatusReport
 from nautilus_trader.execution.reports import TradeReport
 from nautilus_trader.live.execution_client import LiveExecutionClient
 from nautilus_trader.model.c_enums.account_type import AccountType
@@ -197,6 +199,9 @@ class FTXExecutionClient(LiveExecutionClient):
         await self._ws_client.subscribe_fills()
         await self._ws_client.subscribe_orders()
 
+        # reports = await self.generate_order_status_reports()  # TODO!
+        # self._log.info(str(reports), LogColor.GREEN)
+
         self._set_connected(True)
         self._log.info("Connected.")
 
@@ -215,6 +220,186 @@ class FTXExecutionClient(LiveExecutionClient):
 
         self._set_connected(False)
         self._log.info("Disconnected.")
+
+    # -- STATUS REPORTS ----------------------------------------------------------------------------
+
+    async def generate_order_status_report(
+        self,
+        client_order_id: ClientOrderId = None,
+        venue_order_id: VenueOrderId = None,
+    ) -> Optional[OrderStatusReport]:
+        """
+        Generate an order status report for the given order identifier parameter(s).
+
+        Either one or both of the identifiers must be provided.
+
+        If the order is not found, or an error occurs, then logs and returns
+        ``None``.
+
+        Parameters
+        ----------
+        client_order_id : ClientOrderId, optional
+            The client order ID query filter.
+        venue_order_id : VenueOrderId, optional
+            The venue order ID (assigned by the venue) query filter.
+
+        Returns
+        -------
+        OrderStatusReport or ``None``
+
+        """
+        if client_order_id is None and venue_order_id is None:
+            self._log.error("Cannot generate order status report: no identifier given.")
+            return None
+
+        try:
+            if venue_order_id is not None:
+                response = await self._http_client.get_order_status(venue_order_id.value)
+            else:
+                response = await self._http_client.get_order_status_by_client_id(
+                    client_order_id.value
+                )
+        except FTXError as ex:
+            self._log.error(ex.message)  # type: ignore  # TODO(cs): Improve errors
+            return None
+
+        # Get instrument
+        instrument_id: InstrumentId = self._get_cached_instrument_id(response)
+        instrument = self._instrument_provider.find(instrument_id)
+        if instrument is None:
+            self._log.error(
+                f"Cannot generate order status report: "
+                f"no instrument found for {instrument_id}.",
+            )
+            return None
+
+        return parse_order_status(
+            instrument=instrument,
+            data=response,
+            ts_init=self._clock.timestamp_ns(),
+        )
+
+    async def generate_order_status_reports(
+        self,
+        instrument_id: InstrumentId = None,
+        start: datetime = None,
+        end: datetime = None,
+        open_only: bool = False,
+    ) -> List[OrderStatusReport]:
+        """
+        Generate a list of order status reports with optional query filters.
+
+        The returned list may be empty if no orders match the given parameters.
+
+        Parameters
+        ----------
+        instrument_id : InstrumentId, optional
+            The instrument ID query filter.
+        start : datetime, optional
+            The start datetime query filter.
+        end : datetime, optional
+            The end datetime query filter.
+        open_only : bool, default False
+            If the query is for open orders only.
+
+        Returns
+        -------
+        list[OrderStatusReport]
+
+        """
+        try:
+            if open_only:
+                response: List[Dict[str, Any]] = await self._http_client.get_open_orders(
+                    market=instrument_id.symbol.value if instrument_id is not None else None,
+                )
+            else:
+                response = await self._http_client.get_order_history(
+                    market=instrument_id.symbol.value if instrument_id is not None else None,
+                    start_time=int(start.timestamp() * 1000) if start is not None else None,
+                    end_time=int(end.timestamp() * 1000) if end is not None else None,
+                )
+        except FTXError as ex:
+            self._log.error(ex.message)  # type: ignore  # TODO(cs): Improve errors
+            return []
+
+        reports: List[OrderStatusReport] = []
+        for data in response:
+            # Get instrument
+            instrument_id = instrument_id or self._get_cached_instrument_id(data)
+            instrument = self._instrument_provider.find(instrument_id)
+            if instrument is None:
+                self._log.error(
+                    f"Cannot generate order status report: "
+                    f"no instrument found for {instrument_id}.",
+                )
+                continue
+
+            reports.append(
+                parse_order_status(
+                    instrument=instrument,
+                    data=data,
+                    ts_init=self._clock.timestamp_ns(),
+                )
+            )
+
+        return reports
+
+    async def generate_trade_reports(
+        self,
+        instrument_id: InstrumentId = None,
+        venue_order_id: VenueOrderId = None,
+        start: datetime = None,
+        end: datetime = None,
+    ) -> List[TradeReport]:
+        """
+        Generate a list of trade reports with optional query filters.
+
+        The returned list may be empty if no trades match the given parameters.
+
+        Parameters
+        ----------
+        instrument_id : InstrumentId, optional
+            The instrument ID query filter.
+        venue_order_id : VenueOrderId, optional
+            The venue order ID (assigned by the venue) query filter.
+        start : datetime, optional
+            The start datetime query filter.
+        end : datetime, optional
+            The end datetime query filter.
+
+        Returns
+        -------
+        list[TradeReport]
+
+        """
+        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
+
+    async def generate_position_status_reports(
+        self,
+        instrument_id: InstrumentId = None,
+        start: datetime = None,
+        end: datetime = None,
+    ) -> List[PositionStatusReport]:
+        """
+        Generate a list of position status reports with optional query filters.
+
+        The returned list may be empty if no positions match the given parameters.
+
+        Parameters
+        ----------
+        instrument_id : InstrumentId, optional
+            The instrument ID query filter.
+        start : datetime, optional
+            The start datetime query filter.
+        end : datetime, optional
+            The end datetime query filter.
+
+        Returns
+        -------
+        list[PositionStatusReport]
+
+        """
+        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
     # -- COMMAND HANDLERS --------------------------------------------------------------------------
 
@@ -380,57 +565,6 @@ class FTXExecutionClient(LiveExecutionClient):
             await self._http_client.cancel_all_orders(command.instrument_id.symbol.value)
         except FTXError as ex:
             self._log.error(ex.message)  # type: ignore  # TODO(cs): Improve errors
-
-    # -- RECONCILIATION ----------------------------------------------------------------------------
-
-    async def generate_order_status_report(self, order: Order) -> OrderStatusReport:
-        """
-        Generate an order status report for the given order.
-
-        If an error occurs then logs and returns ``None``.
-
-        Parameters
-        ----------
-        order : Order
-            The order for the report.
-
-        Returns
-        -------
-        OrderStatusReport or ``None``
-
-        """
-        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
-
-    async def generate_trade_reports(
-        self,
-        venue_order_id: VenueOrderId,
-        symbol: Symbol,
-        since: datetime = None,
-    ) -> List[TradeReport]:
-        """
-        Generate a list of trade reports.
-
-        The returned list may be empty if no trades match the given parameters.
-
-        Parameters
-        ----------
-        venue_order_id : VenueOrderId
-            The venue order ID (assigned by the venue) for the trades.
-        symbol : Symbol
-            The symbol for the trades.
-        since : datetime, optional
-            The timestamp to filter trades on.
-
-        Returns
-        -------
-        list[TradeReport]
-
-        """
-        # TODO: Implement
-        self._log.error(
-            "Cannot generate trade reports: Not implemented in this version.",
-        )
-        return []
 
     async def _poll_account_state(self) -> None:
         while True:
@@ -605,7 +739,7 @@ class FTXExecutionClient(LiveExecutionClient):
             )
             return
 
-        ts_event: int = pd.to_datetime(data["createdAt"], utc=True).to_datetime64()
+        ts_event: int = int(pd.to_datetime(data["createdAt"], utc=True).to_datetime64())
 
         order_status = data["status"]
         if order_status == "new":
