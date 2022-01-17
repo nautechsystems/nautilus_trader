@@ -411,7 +411,7 @@ class BinanceSpotExecutionClient(LiveExecutionClient):
         except BinanceError as ex:
             self._log.error(ex.message)  # type: ignore  # TODO(cs): Improve errors
 
-    # -- RECONCILIATION ----------------------------------------------------------------------------
+    # -- STATUS REPORTS ----------------------------------------------------------------------------
 
     async def generate_order_status_report(self, order: Order) -> OrderStatusReport:  # type: ignore
         """

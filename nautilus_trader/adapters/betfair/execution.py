@@ -818,7 +818,7 @@ class BetfairExecutionClient(LiveExecutionClient):
         )
         return None
 
-    # -- RECONCILIATION -------------------------------------------------------------------------------
+    # -- STATUS REPORTS ----------------------------------------------------------------------------
 
     async def generate_order_status_report(self, order: Order) -> Optional[OrderStatusReport]:
         self._log.debug(f"generate_order_status_report: {order}")
