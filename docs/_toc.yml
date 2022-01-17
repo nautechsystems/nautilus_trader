@@ -65,5 +65,5 @@ chapters:
     - file: 5_developer_guide/5_packaged_data
     - url: https://github.com/nautechsystems/nautilus_trader/blob/develop/CONTRIBUTING.md
       title: Contributing
-  - url: https://github.com/nautechsystems/nautilus_trader/blob/develop/RELEASES.md
+  - url: https://github.com/nautechsystems/nautilus_trader/blob/master/RELEASES.md
     title: Releases
