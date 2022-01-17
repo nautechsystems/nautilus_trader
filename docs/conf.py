@@ -56,6 +56,8 @@ html_theme_options = {
     "google_analytics_id": "",
     "use_edit_page_button": False,
     "footer_items": ["copyright"],
+    "show_toc_level": 2,
+    "navbar_align": "left",
 }
 html_static_path = ["_static"]
 html_css_files = ["custom.css"]

@@ -134,10 +134,6 @@
     --pst-icon-versionmodified-deprecated: var(--pst-icon-exclamation-circle);
 }
 
-.header-logo img {
-    width: auto;
-}
-
 .body {
     width: auto;
     font-family: 'Open Sans', sans-serif;
