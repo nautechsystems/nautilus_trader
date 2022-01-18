@@ -5,9 +5,9 @@
 Released on TBD.
 
 For consistency and standardization with other protocols, the `ExecutionId` type 
-has been renamed to `TradeId`. In the interests of enforcing correctness and 
-safety this type is now utilized for the `TradeTick.trade_id`, as they express 
-the same concept with a more standardized terminology.
+has been renamed to `TradeId` as they express the same concept with a more 
+standardized terminology. In the interests of enforcing correctness and 
+safety this type is now utilized for the `TradeTick.trade_id`.
 
 ### Breaking Changes
 - Renamed `ExecutionId` to `TradeId`.
@@ -17,7 +17,7 @@ the same concept with a more standardized terminology.
 
 ### Enhancements
 - Introduced the `TradeId` type to enforce `trade_id` typing.
-
+- Added `TriggerMethod` enum.
 
 ---
 

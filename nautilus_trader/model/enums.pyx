@@ -61,6 +61,8 @@ from nautilus_trader.model.c_enums.price_type import PriceType                  
 from nautilus_trader.model.c_enums.price_type import PriceTypeParser                       # noqa F401 (being used)
 from nautilus_trader.model.c_enums.time_in_force import TimeInForce                        # noqa F401 (being used)
 from nautilus_trader.model.c_enums.time_in_force import TimeInForceParser                  # noqa F401 (being used)
+from nautilus_trader.model.c_enums.trigger_method import TriggerMethod                     # noqa F401 (being used)
+from nautilus_trader.model.c_enums.trigger_method import TriggerMethodParser               # noqa F401 (being used)
 from nautilus_trader.model.c_enums.trading_state import TradingState                       # noqa F401 (being used)
 from nautilus_trader.model.c_enums.trading_state import TradingStateParser                 # noqa F401 (being used)
 from nautilus_trader.model.c_enums.venue_status import VenueStatus                         # noqa F401 (being used)
