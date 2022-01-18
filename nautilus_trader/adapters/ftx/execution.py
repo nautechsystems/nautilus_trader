@@ -493,7 +493,7 @@ class FTXExecutionClient(LiveExecutionClient):
             type="stop",  # <-- stop-limit with limit price
             client_id=order.client_order_id.value,
             price=str(order.price),  # <-- limit price
-            trigger=str(order.trigger),
+            trigger=str(order.trigger_price),
             reduce_only=order.is_reduce_only,
         )
 

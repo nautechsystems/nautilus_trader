@@ -567,7 +567,7 @@ class TestSimulatedExchangeContingencyAdvancedOrders:
         self.strategy.modify_order(
             order=sl,
             quantity=Quantity.from_int(5),
-            price=sl.price,
+            trigger_price=sl.trigger_price,
         )
         self.exchange.process(0)
 

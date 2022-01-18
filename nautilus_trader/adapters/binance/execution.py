@@ -342,7 +342,7 @@ class BinanceSpotExecutionClient(LiveExecutionClient):
             time_in_force=TimeInForceParser.to_str_py(order.time_in_force),
             quantity=str(order.quantity),
             price=str(order.price),
-            stop_price=str(order.trigger),
+            stop_price=str(order.trigger_price),
             iceberg_qty=str(order.display_qty) if order.display_qty is not None else None,
             new_client_order_id=order.client_order_id.value,
             recv_window=5000,

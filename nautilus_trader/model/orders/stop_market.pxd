@@ -13,11 +13,18 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from nautilus_trader.model.c_enums.trigger_method cimport TriggerMethod
 from nautilus_trader.model.events.order cimport OrderInitialized
+from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.orders.base cimport PassiveOrder
 
 
 cdef class StopMarketOrder(PassiveOrder):
+    cdef readonly Price trigger_price
+    """The order trigger price (STOP).\n\n:returns: `Price`"""
+    cdef readonly TriggerMethod trigger
+    """The trigger method for the order.\n\n:returns: `TriggerMethod`"""
+
 
     @staticmethod
     cdef StopMarketOrder create(OrderInitialized init)

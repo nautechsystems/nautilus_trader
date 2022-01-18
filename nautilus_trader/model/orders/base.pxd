@@ -149,16 +149,16 @@ cdef class Order:
     cdef void _rejected(self, OrderRejected event) except *
     cdef void _accepted(self, OrderAccepted event) except *
     cdef void _updated(self, OrderUpdated event) except *
+    cdef void _triggered(self, OrderTriggered event) except *
     cdef void _canceled(self, OrderCanceled event) except *
     cdef void _expired(self, OrderExpired event) except *
-    cdef void _triggered(self, OrderTriggered event) except *
     cdef void _filled(self, OrderFilled event) except *
     cdef object _calculate_avg_px(self, Quantity last_qty, Price last_px)
+    cdef void _set_liquidity_side(self, OrderFilled fill) except *
+    cdef void _set_slippage(self) except *
 
 
 cdef class PassiveOrder(Order):
-    cdef readonly Price price
-    """The order price (STOP or LIMIT).\n\n:returns: `Price`"""
     cdef readonly LiquiditySide liquidity_side
     """The order liquidity side.\n\n:returns: `LiquiditySide`"""
     cdef readonly datetime expire_time
@@ -166,8 +166,4 @@ cdef class PassiveOrder(Order):
     cdef readonly int64_t expire_time_ns
     """The order expire time (nanoseconds), zero for no expire time.\n\n:returns: `int64`"""
 
-    cpdef dict to_dict(self)
-
     cdef list venue_order_ids_c(self)
-
-    cdef void _set_slippage(self) except *

@@ -306,12 +306,12 @@ def binance_order_type(order: Order, market_price: Decimal = None) -> str:  # no
                 return "STOP_LOSS"
     elif order.type == OrderType.STOP_LIMIT:
         if order.side == OrderSide.BUY:
-            if order.trigger < market_price:
+            if order.trigger_price < market_price:
                 return "TAKE_PROFIT_LIMIT"
             else:
                 return "STOP_LOSS_LIMIT"
         else:  # OrderSide.SELL
-            if order.trigger > market_price:
+            if order.trigger_price > market_price:
                 return "TAKE_PROFIT_LIMIT"
             else:
                 return "STOP_LOSS_LIMIT"

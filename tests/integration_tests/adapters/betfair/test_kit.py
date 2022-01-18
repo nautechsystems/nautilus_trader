@@ -416,7 +416,7 @@ class BetfairTestStubs:
             venue_order_id=venue_order_id or VenueOrderId("001"),
             quantity=Quantity.from_int(50),
             price=Price(0.74347, precision=5),
-            trigger=None,
+            trigger_price=None,
             command_id=BetfairTestStubs.uuid(),
             ts_init=BetfairTestStubs.clock().timestamp_ns(),
         )
@@ -994,7 +994,7 @@ class BetfairDataProvider:
             venue_order_id=VenueOrderId("001"),
             quantity=Quantity.from_int(50),
             price=Price(0.74347, precision=5),
-            trigger=None,
+            trigger_price=None,
             command_id=BetfairTestStubs.uuid(),
             ts_init=BetfairTestStubs.clock().timestamp_ns(),
         )

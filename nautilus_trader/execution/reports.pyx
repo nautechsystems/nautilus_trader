@@ -29,6 +29,8 @@ from nautilus_trader.model.c_enums.order_type cimport OrderTypeParser
 from nautilus_trader.model.c_enums.position_side cimport PositionSide
 from nautilus_trader.model.c_enums.position_side cimport PositionSideParser
 from nautilus_trader.model.c_enums.time_in_force cimport TimeInForceParser
+from nautilus_trader.model.c_enums.trigger_method cimport TriggerMethod
+from nautilus_trader.model.c_enums.trigger_method cimport TriggerMethodParser
 from nautilus_trader.model.identifiers cimport AccountId
 from nautilus_trader.model.identifiers cimport ClientOrderId
 from nautilus_trader.model.identifiers cimport InstrumentId
@@ -63,8 +65,8 @@ cdef class OrderStatusReport:
         The reported order status at the exchange.
     price : Price, optional
         The reported order price (STOP or LIMIT).
-    trigger : Price, optional
-        The reported trigger price (STOP).
+    trigger_price : Price, optional
+        The reported order trigger price (STOP).
     quantity : Quantity
         The reported order original quantity.
     filled_qty : Quantity
@@ -99,7 +101,8 @@ cdef class OrderStatusReport:
         TimeInForce time_in_force,
         OrderStatus order_status,
         Price price,  # Can be None
-        Price trigger,  # Can be None
+        Price trigger_price,  # Can be None
+        TriggerMethod trigger,
         Quantity quantity not None,
         Quantity filled_qty not None,
         Quantity display_qty,  # Can be None
@@ -121,6 +124,7 @@ cdef class OrderStatusReport:
         self.time_in_force = time_in_force
         self.order_status = order_status
         self.price = price
+        self.trigger_price = trigger_price
         self.trigger = trigger
         self.quantity = quantity
         self.filled_qty = filled_qty
@@ -146,7 +150,8 @@ cdef class OrderStatusReport:
             f"time_in_force={TimeInForceParser.to_str(self.time_in_force)}, "
             f"order_status={OrderStatusParser.to_str(self.order_status)}, "
             f"price={self.price}, "
-            f"trigger={self.trigger}, "
+            f"trigger_price={self.trigger_price}, "
+            f"trigger={TriggerMethodParser.to_str(self.trigger)}, "
             f"quantity={self.quantity}, "
             f"filled_qty={self.filled_qty}, "
             f"leaves_qty={self.leaves_qty}, "

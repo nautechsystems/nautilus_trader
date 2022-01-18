@@ -515,7 +515,7 @@ cdef class TradingStrategy(Actor):
         PassiveOrder order,
         Quantity quantity=None,
         Price price=None,
-        Price trigger=None,
+        Price trigger_price=None,
     ) except *:
         """
         Modify the given order with optional parameters and routing instructions.
@@ -537,7 +537,7 @@ cdef class TradingStrategy(Actor):
             The updated quantity for the given order.
         price : Price, optional
             The updated price for the given order.
-        trigger : Price, optional
+        trigger_price : Price, optional
             The updated trigger price for the given order.
 
         Raises
@@ -551,8 +551,6 @@ cdef class TradingStrategy(Actor):
 
         """
         Condition.not_none(order, "order")
-        if trigger is not None:
-            Condition.equal(order.type, OrderType.STOP_LIMIT, "order.type", "STOP_LIMIT")
         Condition.true(self.trader_id is not None, "The strategy has not been registered")
 
         cdef bint updating = False  # Set validation flag (must become true)
@@ -560,23 +558,33 @@ cdef class TradingStrategy(Actor):
         if quantity is not None and quantity != order.quantity:
             updating = True
 
-        if price is not None and price != order.price:
-            updating = True
+        if price is not None:
+            Condition.true(
+                order.type == OrderType.LIMIT or order.type == OrderType.STOP_LIMIT,
+                fail_msg=f"{order.type_string_c()} orders do not have a LIMIT price"
+            )
+            if price != order.price:
+                updating = True
 
-        if trigger is not None:
-            if order.is_triggered_c():
+        if trigger_price is not None:
+            Condition.true(
+                order.type == OrderType.STOP_MARKET or order.type == OrderType.STOP_LIMIT,
+                fail_msg=f"{order.type_string_c()} orders do not have a STOP trigger price"
+            )
+            if order.type == OrderType.STOP_LIMIT and order.is_triggered_c():
                 self.log.warning(
                     f"Cannot create command ModifyOrder: "
                     f"Order with {repr(order.client_order_id)} already triggered.",
                 )
                 return
-            if trigger != order.trigger:
+            if trigger_price != order.trigger_price:
                 updating = True
 
         if not updating:
             self.log.error(
                 "Cannot create command ModifyOrder: "
-                "quantity, price and trigger were either None or the same as existing values.",
+                "quantity, price and trigger were either None "
+                "or the same as existing values.",
             )
             return
 
@@ -593,7 +601,8 @@ cdef class TradingStrategy(Actor):
             or order.is_pending_cancel_c()
         ):
             self.log.warning(
-                f"Cannot create command ModifyOrder: state is {order.status_string_c()}, {order}.",
+                f"Cannot create command ModifyOrder: "
+                f"state is {order.status_string_c()}, {order}.",
             )
             return  # Cannot send command
 
@@ -605,7 +614,7 @@ cdef class TradingStrategy(Actor):
             order.venue_order_id,
             quantity,
             price,
-            trigger,
+            trigger_price,
             self.uuid_factory.generate(),
             self.clock.timestamp_ns(),
         )

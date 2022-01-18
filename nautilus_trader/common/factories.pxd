@@ -20,6 +20,7 @@ from nautilus_trader.common.generators cimport ClientOrderIdGenerator
 from nautilus_trader.common.uuid cimport UUIDFactory
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
 from nautilus_trader.model.c_enums.time_in_force cimport TimeInForce
+from nautilus_trader.model.c_enums.trigger_method cimport TriggerMethod
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.identifiers cimport StrategyId
 from nautilus_trader.model.identifiers cimport TraderId
@@ -77,7 +78,8 @@ cdef class OrderFactory:
         InstrumentId instrument_id,
         OrderSide order_side,
         Quantity quantity,
-        Price price,
+        Price trigger_price,
+        TriggerMethod trigger=*,
         TimeInForce time_in_force=*,
         datetime expire_time=*,
         bint reduce_only=*,
@@ -90,7 +92,8 @@ cdef class OrderFactory:
         OrderSide order_side,
         Quantity quantity,
         Price price,
-        Price trigger,
+        Price trigger_price,
+        TriggerMethod trigger=*,
         TimeInForce time_in_force=*,
         datetime expire_time=*,
         bint post_only=*,

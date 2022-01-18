@@ -199,7 +199,7 @@ NAUTILUS_PARQUET_SCHEMA = {
             "post_only": pa.bool_(),
             "display_qty": pa.string(),
             "price": pa.float64(),
-            "trigger": pa.bool_(),
+            "trigger_price": pa.bool_(),
             # --------------------- #
             "order_list_id": pa.string(),
             "parent_order_id": pa.string(),
@@ -210,7 +210,9 @@ NAUTILUS_PARQUET_SCHEMA = {
             "event_id": pa.string(),
             "ts_init": pa.int64(),
         },
-        metadata={"options_fields": orjson.dumps(["post_only", "display_qty", "price", "trigger"])},
+        metadata={
+            "options_fields": orjson.dumps(["post_only", "display_qty", "price", "trigger_price"])
+        },
     ),
     OrderDenied: pa.schema(
         {
@@ -363,7 +365,7 @@ NAUTILUS_PARQUET_SCHEMA = {
             "client_order_id": pa.string(),
             "venue_order_id": pa.string(),
             "price": pa.float64(),
-            "trigger": pa.float64(),
+            "trigger_price": pa.float64(),
             "event_id": pa.string(),
             "ts_event": pa.int64(),
             "ts_init": pa.int64(),

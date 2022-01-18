@@ -13,6 +13,9 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from libc.stdint cimport int64_t
+
+from nautilus_trader.model.c_enums.trigger_method cimport TriggerMethod
 from nautilus_trader.model.events.order cimport OrderInitialized
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
@@ -20,14 +23,20 @@ from nautilus_trader.model.orders.base cimport PassiveOrder
 
 
 cdef class StopLimitOrder(PassiveOrder):
-    cdef readonly Price trigger
-    """The trigger stop price for the order.\n\n:returns: `Price`"""
+    cdef readonly Price price
+    """The order price (LIMIT).\n\n:returns: `Price`"""
+    cdef readonly Price trigger_price
+    """The order trigger price (STOP).\n\n:returns: `Price`"""
+    cdef readonly TriggerMethod trigger
+    """The trigger method for the order.\n\n:returns: `TriggerMethod`"""
     cdef readonly bint is_triggered
     """If the order has been triggered.\n\n:returns: `bool`"""
     cdef readonly bint is_post_only
     """If the order will only provide liquidity (make a market).\n\n:returns: `bool`"""
     cdef readonly Quantity display_qty
-    """The quantity of the `LIMIT` order to display on the public book (iceberg).\n\n:returns: `Quantity` or ``None``"""  # noqa
+    """The quantity of the ``LIMIT`` order to display on the public book (iceberg).\n\n:returns: `Quantity` or ``None``"""  # noqa
+    cdef readonly int64_t ts_triggered
+    """The UNIX timestamp (nanoseconds) when the order was triggered (0 if not triggered).\n\n:returns: `int64`"""
 
     @staticmethod
     cdef StopLimitOrder create(OrderInitialized init)

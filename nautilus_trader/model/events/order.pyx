@@ -1152,6 +1152,8 @@ cdef class OrderTriggered(OrderEvent):
     """
     Represents an event where an order has triggered.
 
+    Applicable to :class:`StopLimit` orders only.
+
     Parameters
     ----------
     trader_id : TraderId
@@ -1885,7 +1887,7 @@ cdef class OrderUpdated(OrderEvent):
         The orders current quantity.
     price : Price, optional
         The orders current price.
-    trigger : Price, optional
+    trigger_price : Price, optional
         The orders current trigger.
     event_id : UUID4
         The event ID.
@@ -1910,7 +1912,7 @@ cdef class OrderUpdated(OrderEvent):
         VenueOrderId venue_order_id not None,
         Quantity quantity not None,
         Price price,  # Can be None
-        Price trigger,  # Can be None
+        Price trigger_price,  # Can be None
         UUID4 event_id not None,
         int64_t ts_event,
         int64_t ts_init,
@@ -1931,7 +1933,7 @@ cdef class OrderUpdated(OrderEvent):
 
         self.quantity = quantity
         self.price = price
-        self.trigger = trigger
+        self.trigger_price = trigger_price
 
     def __str__(self) -> str:
         return (
@@ -1942,7 +1944,7 @@ cdef class OrderUpdated(OrderEvent):
             f"venue_order_id={self.venue_order_id.value}, "
             f"quantity={self.quantity.to_str()}, "
             f"price={self.price}, "
-            f"trigger={self.trigger}, "
+            f"trigger_price={self.trigger_price}, "
             f"ts_event={self.ts_event})"
         )
 
@@ -1957,7 +1959,7 @@ cdef class OrderUpdated(OrderEvent):
             f"venue_order_id={self.venue_order_id.value}, "
             f"quantity={self.quantity.to_str()}, "
             f"price={self.price}, "
-            f"trigger={self.trigger}, "
+            f"trigger_price={self.trigger_price}, "
             f"event_id={self.id}, "
             f"ts_event={self.ts_event}, "
             f"ts_init={self.ts_init})"
@@ -1967,7 +1969,7 @@ cdef class OrderUpdated(OrderEvent):
     cdef OrderUpdated from_dict_c(dict values):
         Condition.not_none(values, "values")
         cdef str p = values["price"]
-        cdef str t = values["trigger"]
+        cdef str t = values["trigger_price"]
         return OrderUpdated(
             trader_id=TraderId(values["trader_id"]),
             strategy_id=StrategyId(values["strategy_id"]),
@@ -1977,7 +1979,7 @@ cdef class OrderUpdated(OrderEvent):
             venue_order_id=VenueOrderId(values["venue_order_id"]),
             quantity=Quantity.from_str_c(values["quantity"]),
             price=Price.from_str_c(p) if p is not None else None,
-            trigger=Price.from_str_c(t) if t is not None else None,
+            trigger_price=Price.from_str_c(t) if t is not None else None,
             event_id=UUID4(values["event_id"]),
             ts_event=values["ts_event"],
             ts_init=values["ts_init"],
@@ -1996,7 +1998,7 @@ cdef class OrderUpdated(OrderEvent):
             "venue_order_id": obj.venue_order_id.value,
             "quantity": str(obj.quantity),
             "price": str(obj.price),
-            "trigger": str(obj.trigger) if obj.trigger is not None else None,
+            "trigger_price": str(obj.trigger_price) if obj.trigger_price is not None else None,
             "event_id": obj.id.value,
             "ts_event": obj.ts_event,
             "ts_init": obj.ts_init,

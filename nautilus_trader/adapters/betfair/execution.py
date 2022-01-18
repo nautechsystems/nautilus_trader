@@ -392,7 +392,7 @@ class BetfairExecutionClient(LiveExecutionClient):
                 price=price_to_probability(
                     str(update_instruction["instruction"]["limitOrder"]["price"])
                 ),
-                trigger=None,  # Not applicable for Betfair
+                trigger_price=None,  # Not applicable for Betfair
                 ts_event=self._clock.timestamp_ns(),
                 venue_order_id_modified=True,
             )

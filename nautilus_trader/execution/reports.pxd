@@ -22,6 +22,7 @@ from nautilus_trader.model.c_enums.order_status cimport OrderStatus
 from nautilus_trader.model.c_enums.order_type cimport OrderType
 from nautilus_trader.model.c_enums.position_side cimport PositionSide
 from nautilus_trader.model.c_enums.time_in_force cimport TimeInForce
+from nautilus_trader.model.c_enums.trigger_method cimport TriggerMethod
 from nautilus_trader.model.identifiers cimport AccountId
 from nautilus_trader.model.identifiers cimport ClientId
 from nautilus_trader.model.identifiers cimport ClientOrderId
@@ -55,9 +56,11 @@ cdef class OrderStatusReport:
     cdef readonly OrderStatus order_status
     """The reported order status at the exchange.\n\n:returns: `OrderStatus`"""
     cdef readonly Price price
-    """The reported order price (STOP or LIMIT).\n\n:returns: `Price`"""
-    cdef readonly Price trigger
+    """The reported order price (LIMIT).\n\n:returns: `Price` or ``None``"""
+    cdef readonly Price trigger_price
     """The reported order trigger price (STOP).\n\n:returns: `Price` or ``None``"""
+    cdef readonly TriggerMethod trigger
+    """The trigger method for the order.\n\n:returns: `TriggerMethod`"""
     cdef readonly Quantity quantity
     """The reported order original quantity.\n\n:returns: `Quantity`"""
     cdef readonly Quantity filled_qty
