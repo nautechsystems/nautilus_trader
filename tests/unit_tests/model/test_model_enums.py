@@ -61,6 +61,8 @@ from nautilus_trader.model.enums import TimeInForce
 from nautilus_trader.model.enums import TimeInForceParser
 from nautilus_trader.model.enums import TradingState
 from nautilus_trader.model.enums import TradingStateParser
+from nautilus_trader.model.enums import TriggerMethod
+from nautilus_trader.model.enums import TriggerMethodParser
 from nautilus_trader.model.enums import VenueStatus
 from nautilus_trader.model.enums import VenueStatusParser
 
@@ -1047,6 +1049,55 @@ class TestTradingState:
     def test_trading_state_from_str(self, string, expected):
         # Arrange, Act
         result = TradingStateParser.from_str_py(string)
+
+        # Assert
+        assert expected == result
+
+
+class TestTriggerMethod:
+    def test_trigger_method_parser_given_invalid_value_raises_value_error(self):
+        # Arrange, Act, Assert
+        with pytest.raises(ValueError):
+            TriggerMethodParser.from_str_py("")
+
+    @pytest.mark.parametrize(
+        "enum, expected",
+        [
+            [TriggerMethod.DEFAULT, "DEFAULT"],
+            [TriggerMethod.LAST, "LAST"],
+            [TriggerMethod.BID_ASK, "BID_ASK"],
+            [TriggerMethod.DOUBLE_LAST, "DOUBLE_LAST"],
+            [TriggerMethod.DOUBLE_BID_ASK, "DOUBLE_BID_ASK"],
+            [TriggerMethod.LAST_OR_BID_ASK, "LAST_OR_BID_ASK"],
+            [TriggerMethod.MID_POINT, "MID_POINT"],
+            [TriggerMethod.MARK, "MARK"],
+            [TriggerMethod.INDEX, "INDEX"],
+        ],
+    )
+    def test_trigger_method_to_str(self, enum, expected):
+        # Arrange, Act
+        result = TriggerMethodParser.to_str_py(enum)
+
+        # Assert
+        assert expected == result
+
+    @pytest.mark.parametrize(
+        "string, expected",
+        [
+            ["DEFAULT", TriggerMethod.DEFAULT],
+            ["LAST", TriggerMethod.LAST],
+            ["BID_ASK", TriggerMethod.BID_ASK],
+            ["DOUBLE_LAST", TriggerMethod.DOUBLE_LAST],
+            ["DOUBLE_BID_ASK", TriggerMethod.DOUBLE_BID_ASK],
+            ["LAST_OR_BID_ASK", TriggerMethod.LAST_OR_BID_ASK],
+            ["MID_POINT", TriggerMethod.MID_POINT],
+            ["MARK", TriggerMethod.MARK],
+            ["INDEX", TriggerMethod.INDEX],
+        ],
+    )
+    def test_trigger_method_from_str(self, string, expected):
+        # Arrange, Act
+        result = TriggerMethodParser.from_str_py(string)
 
         # Assert
         assert expected == result
