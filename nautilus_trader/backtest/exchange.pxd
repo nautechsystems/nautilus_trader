@@ -143,13 +143,13 @@ cdef class SimulatedExchange:
     cdef void _process_stop_market_order(self, StopMarketOrder order) except *
     cdef void _process_stop_limit_order(self, StopLimitOrder order) except *
     cdef void _update_limit_order(self, LimitOrder order, Quantity qty, Price price) except *
-    cdef void _update_stop_market_order(self, StopMarketOrder order, Quantity qty, Price price) except *
-    cdef void _update_stop_limit_order(self, StopLimitOrder order, Quantity qty, Price price, Price trigger) except *
+    cdef void _update_stop_market_order(self, StopMarketOrder order, Quantity qty, Price trigger_price) except *
+    cdef void _update_stop_limit_order(self, StopLimitOrder order, Quantity qty, Price price, Price trigger_price) except *
 
 # -- EVENT HANDLING --------------------------------------------------------------------------------
 
     cdef void _accept_order(self, PassiveOrder order) except *
-    cdef void _update_order(self, PassiveOrder order, Quantity qty, Price price, Price trigger=*, bint update_ocos=*) except *
+    cdef void _update_order(self, PassiveOrder order, Quantity qty, Price price=*, Price trigger_price=*, bint update_ocos=*) except *
     cdef void _update_oco_orders(self, PassiveOrder order) except *
     cdef void _cancel_order(self, PassiveOrder order, bint cancel_ocos=*) except *
     cdef void _cancel_oco_orders(self, PassiveOrder order) except *
@@ -223,7 +223,7 @@ cdef class SimulatedExchange:
         VenueOrderId venue_order_id,
         str reason,
     ) except *
-    cdef void _generate_order_updated(self, Order order, Quantity qty, Price price, Price trigger) except *
+    cdef void _generate_order_updated(self, Order order, Quantity qty, Price price, Price trigger_price) except *
     cdef void _generate_order_canceled(self, Order order) except *
     cdef void _generate_order_triggered(self, StopLimitOrder order) except *
     cdef void _generate_order_expired(self, PassiveOrder order) except *

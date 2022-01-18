@@ -90,7 +90,7 @@ cdef class TradingStrategy(Actor):
         PassiveOrder order,
         Quantity quantity=*,
         Price price=*,
-        Price trigger=*,
+        Price trigger_price=*,
     ) except *
     cpdef void cancel_order(self, Order order) except *
     cpdef void cancel_all_orders(self, InstrumentId instrument_id) except *

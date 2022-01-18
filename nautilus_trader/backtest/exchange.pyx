@@ -666,7 +666,7 @@ cdef class SimulatedExchange:
                     order,
                     command.quantity,
                     command.price,
-                    command.trigger,
+                    command.trigger_price,
                 )
             elif isinstance(command, CancelOrder):
                 order = self._order_index.pop(command.client_order_id, None)
@@ -820,12 +820,12 @@ cdef class SimulatedExchange:
             self._fill_limit_order(order, LiquiditySide.TAKER)
 
     cdef void _process_stop_market_order(self, StopMarketOrder order) except *:
-        if self._is_stop_marketable(order.instrument_id, order.side, order.price):
+        if self._is_stop_marketable(order.instrument_id, order.side, order.trigger_price):
             if self.reject_stop_orders:
                 self._generate_order_rejected(
                     order,
                     f"STOP {order.side_string_c()} order "
-                    f"stop px of {order.price} was in the market: "
+                    f"stop px of {order.trigger_price} was in the market: "
                     f"bid={self.best_bid_price(order.instrument_id)}, "
                     f"ask={self.best_ask_price(order.instrument_id)}",
                 )
@@ -835,11 +835,11 @@ cdef class SimulatedExchange:
         self._accept_order(order)
 
     cdef void _process_stop_limit_order(self, StopLimitOrder order) except *:
-        if self._is_stop_marketable(order.instrument_id, order.side, order.trigger):
+        if self._is_stop_marketable(order.instrument_id, order.side, order.trigger_price):
             self._generate_order_rejected(
                 order,
                 f"STOP_LIMIT {order.side_string_c()} order "
-                f"trigger stop px of {order.trigger} was in the market: "
+                f"trigger stop px of {order.trigger_price} was in the market: "
                 f"bid={self.best_bid_price(order.instrument_id)}, "
                 f"ask={self.best_ask_price(order.instrument_id)}",
             )
@@ -878,29 +878,29 @@ cdef class SimulatedExchange:
         self,
         StopMarketOrder order,
         Quantity qty,
-        Price price,
+        Price trigger_price,
     ) except *:
-        if self._is_stop_marketable(order.instrument_id, order.side, price):
+        if self._is_stop_marketable(order.instrument_id, order.side, trigger_price):
             self._generate_order_modify_rejected(
                 order.strategy_id,
                 order.instrument_id,
                 order.client_order_id,
                 order.venue_order_id,
                 f"STOP {order.side_string_c()} order "
-                f"new stop px of {price} was in the market: "
+                f"new stop px of {trigger_price} was in the market: "
                 f"bid={self.best_bid_price(order.instrument_id)}, "
                 f"ask={self.best_ask_price(order.instrument_id)}",
             )
             return  # Cannot update order
 
-        self._generate_order_updated(order, qty, price, None)
+        self._generate_order_updated(order, qty, None, trigger_price)
 
     cdef void _update_stop_limit_order(
         self,
         StopLimitOrder order,
         Quantity qty,
         Price price,
-        Price trigger,
+        Price trigger_price,
     ) except *:
         if not order.is_triggered:
             # Updating stop price
@@ -936,7 +936,7 @@ cdef class SimulatedExchange:
                     self._fill_limit_order(order, LiquiditySide.TAKER)  # Immediate fill as TAKER
                     return  # Filled
 
-        self._generate_order_updated(order, qty, price, trigger or order.trigger)
+        self._generate_order_updated(order, qty, price, trigger_price or order.trigger_price)
 
 # -- EVENT HANDLING --------------------------------------------------------------------------------
 
@@ -944,20 +944,31 @@ cdef class SimulatedExchange:
         self._add_order(order)
         self._generate_order_accepted(order)
 
-    cdef void _update_order(self, PassiveOrder order, Quantity qty, Price price, Price trigger=None, bint update_ocos=True) except *:
+    cdef void _update_order(
+        self,
+        PassiveOrder order,
+        Quantity qty,
+        Price price=None,
+        Price trigger_price=None,
+        bint update_ocos=True,
+    ) except *:
         if qty is None:
             qty = order.quantity
-        if price is None:
-            price = order.price
 
         if order.type == OrderType.LIMIT:
+            if price is None:
+                price = order.price
             self._update_limit_order(order, qty, price)
         elif order.type == OrderType.STOP_MARKET:
-            self._update_stop_market_order(order, qty, price)
+            if trigger_price is None:
+                trigger_price = order.trigger_price
+            self._update_stop_market_order(order, qty, trigger_price)
         elif order.type == OrderType.STOP_LIMIT:
-            if trigger is None:
-                trigger = order.trigger
-            self._update_stop_limit_order(order, qty, price, trigger)
+            if price is None:
+                price = order.price
+            if trigger_price is None:
+                trigger_price = order.trigger_price
+            self._update_stop_limit_order(order, qty, price, trigger_price)
         else:  # pragma: no cover (design-time error)
             raise ValueError(f"invalid OrderType, was {order.type}")
 
@@ -975,8 +986,8 @@ cdef class SimulatedExchange:
                 self._update_order(
                     oco_order,
                     order.leaves_qty,
-                    oco_order.price,
-                    trigger=None,
+                    price=oco_order.price if oco_order.type == OrderType.LIMIT or oco_order.type == OrderType.STOP_LIMIT else None,  # noqa TODO(cs): Temporary will refactor!,
+                    trigger_price=oco_order.trigger_price if oco_order.type == OrderType.STOP_MARKET or oco_order.type == OrderType.STOP_LIMIT else None,  # noqa TODO(cs): Temporary will refactor!
                     update_ocos=False,
                 )
 
@@ -1030,14 +1041,14 @@ cdef class SimulatedExchange:
                 orders_bid = []
                 self._orders_bid[order.instrument_id] = orders_bid
             orders_bid.append(order)
-            orders_bid.sort(key=lambda x: x.price, reverse=True)
+            orders_bid.sort(key=lambda o: o.price if o.type == OrderType.LIMIT or (o.type == OrderType.STOP_LIMIT and o.is_triggered) else o.trigger_price, reverse=True)  # noqa  TODO(cs): Will refactor!
         elif order.is_sell_c():
             orders_ask = self._orders_ask.get(order.instrument_id)
             if orders_ask is None:
                 orders_ask = []
                 self._orders_ask[order.instrument_id] = orders_ask
             orders_ask.append(order)
-            orders_ask.sort(key=lambda x: x.price)
+            orders_ask.sort(key=lambda o: o.price if o.type == OrderType.LIMIT or (o.type == OrderType.STOP_LIMIT and o.is_triggered) else o.trigger_price)  # noqa  TODO(cs): Will refactor!
 
     cdef void _delete_order(self, Order order) except *:
         self._order_index.pop(order.client_order_id, None)
@@ -1092,7 +1103,7 @@ cdef class SimulatedExchange:
             self._fill_limit_order(order, LiquiditySide.MAKER)
 
     cdef void _match_stop_market_order(self, StopMarketOrder order) except *:
-        if self._is_stop_triggered(order.instrument_id, order.side, order.price):
+        if self._is_stop_triggered(order.instrument_id, order.side, order.trigger_price):
             # Triggered stop places market order
             self._fill_market_order(order, LiquiditySide.TAKER)
 
@@ -1102,7 +1113,7 @@ cdef class SimulatedExchange:
                 self._fill_limit_order(order, LiquiditySide.MAKER)
             return
 
-        if self._is_stop_triggered(order.instrument_id, order.side, order.trigger):
+        if self._is_stop_triggered(order.instrument_id, order.side, order.trigger_price):
             self._generate_order_triggered(order)
             # Check for immediate fill
             if not self._is_limit_marketable(order.instrument_id, order.side, order.price):
@@ -1223,11 +1234,12 @@ cdef class SimulatedExchange:
                             "Market best BID price was None when filling MARKET order",
                         )
             else:
+                price = order.price if order.type != OrderType.STOP_MARKET else order.trigger_price
                 if order.is_buy_c():
-                    self._last_asks[order.instrument_id] = order.price
+                    self._last_asks[order.instrument_id] = price
                 elif order.is_sell_c():
-                    self._last_bids[order.instrument_id] = order.price
-                return [(order.price, order.leaves_qty)]
+                    self._last_bids[order.instrument_id] = price
+                return [(price, order.leaves_qty)]
         price = Price.from_int_c(INT_MAX if order.side == OrderSide.BUY else INT_MIN)
         cdef OrderBookOrder submit_order = OrderBookOrder(price=price, size=order.leaves_qty, side=order.side)
         cdef OrderBook book = self.get_book(order.instrument_id)
@@ -1297,7 +1309,7 @@ cdef class SimulatedExchange:
             if order.is_reduce_only and order.leaves_qty == 0:
                 return  # Done early
             if order.type == OrderType.STOP_MARKET:
-                fill_px = order.price  # TODO: Temporary strategy for market moving through price
+                fill_px = order.trigger_price  # TODO: Temporary strategy for market moving through price
             if self.book_type == BookType.L1_TBBO and self.fill_model.is_slipped():
                 if order.side == OrderSide.BUY:
                     fill_px = Price(fill_px + instrument.price_increment, instrument.price_precision)
@@ -1316,7 +1328,7 @@ cdef class SimulatedExchange:
                         order=order,
                         qty=Quantity(updated_qty, fill_qty.precision),
                         price=None,
-                        trigger=None,
+                        trigger_price=None,
                     )
             if fill_qty <= 0:
                 return  # Done
@@ -1416,8 +1428,8 @@ cdef class SimulatedExchange:
                     self._update_order(
                         oco_order,
                         order.leaves_qty,
-                        oco_order.price,
-                        trigger=None,
+                        price=order.price if order.type == OrderType.LIMIT or order.type == OrderType.STOP_LIMIT else None,  # noqa TODO(cs): Temporary will refactor!
+                        trigger_price=order.trigger_price if order.type == OrderType.STOP_MARKET or order.type == OrderType.STOP_LIMIT else None,  # noqa TODO(cs): Temporary will refactor!
                         update_ocos=False,
                     )
 
@@ -1434,7 +1446,12 @@ cdef class SimulatedExchange:
                 if position.quantity == 0:
                     self._cancel_order(order)
                 elif order.leaves_qty != position.quantity:
-                    self._update_order(order, position.quantity, order.price)
+                    self._update_order(
+                        order,
+                        position.quantity,
+                        price=order.price if order.type == OrderType.LIMIT or order.type == OrderType.STOP_LIMIT else None,  # noqa TODO(cs): Temporary will refactor!
+                        trigger_price=order.trigger_price if order.type == OrderType.STOP_MARKET or order.type == OrderType.STOP_LIMIT else None,  # noqa TODO(cs): Temporary will refactor!
+                    )
 
 # -- IDENTIFIER GENERATORS -------------------------------------------------------------------------
 
@@ -1585,7 +1602,7 @@ cdef class SimulatedExchange:
         Order order,
         Quantity qty,
         Price price,
-        Price trigger,
+        Price trigger_price,
     ) except *:
         cdef VenueOrderId venue_order_id = order.venue_order_id
         cdef bint venue_order_id_modified = False
@@ -1600,7 +1617,7 @@ cdef class SimulatedExchange:
             venue_order_id=venue_order_id,
             quantity=qty,
             price=price,
-            trigger=trigger,
+            trigger_price=trigger_price,
             ts_event=self._clock.timestamp_ns(),
             venue_order_id_modified=venue_order_id_modified,
         )

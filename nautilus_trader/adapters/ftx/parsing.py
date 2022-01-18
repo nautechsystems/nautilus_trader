@@ -40,6 +40,7 @@ from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import OrderStatus
 from nautilus_trader.model.enums import OrderType
 from nautilus_trader.model.enums import TimeInForce
+from nautilus_trader.model.enums import TriggerMethod
 from nautilus_trader.model.identifiers import ClientOrderId
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import Symbol
@@ -77,7 +78,8 @@ def parse_order_status(
         time_in_force=TimeInForce.IOC if data["ioc"] else TimeInForce.GTC,
         order_status=parse_status(data),
         price=instrument.make_price(price) if price is not None else None,
-        trigger=None,
+        trigger_price=None,
+        trigger=TriggerMethod.DEFAULT,
         quantity=instrument.make_qty(str(data["size"])),
         filled_qty=instrument.make_qty(str(data["filledSize"])),
         display_qty=None,

@@ -14,11 +14,14 @@
 # -------------------------------------------------------------------------------------------------
 
 from nautilus_trader.model.events.order cimport OrderInitialized
+from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
 from nautilus_trader.model.orders.base cimport PassiveOrder
 
 
 cdef class LimitOrder(PassiveOrder):
+    cdef readonly Price price
+    """The order price (LIMIT).\n\n:returns: `Price`"""
     cdef readonly bint is_post_only
     """If the order will only provide liquidity (make a market).\n\n:returns: `bool`"""
     cdef readonly Quantity display_qty

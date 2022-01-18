@@ -13,8 +13,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from decimal import Decimal
-
 from libc.stdint cimport int64_t
 
 from nautilus_trader.core.correctness cimport Condition
@@ -27,7 +25,6 @@ from nautilus_trader.model.c_enums.order_type cimport OrderType
 from nautilus_trader.model.c_enums.order_type cimport OrderTypeParser
 from nautilus_trader.model.c_enums.time_in_force cimport TimeInForce
 from nautilus_trader.model.c_enums.time_in_force cimport TimeInForceParser
-from nautilus_trader.model.events.order cimport OrderFilled
 from nautilus_trader.model.events.order cimport OrderInitialized
 from nautilus_trader.model.identifiers cimport ClientOrderId
 from nautilus_trader.model.identifiers cimport InstrumentId
@@ -238,15 +235,3 @@ cdef class MarketOrder(Order):
             f"{OrderTypeParser.to_str(self.type)} "
             f"{TimeInForceParser.to_str(self.time_in_force)}"
         )
-
-    cdef void _filled(self, OrderFilled fill) except *:
-        self.venue_order_id = fill.venue_order_id
-        self.position_id = fill.position_id
-        self.strategy_id = fill.strategy_id
-        self._trade_ids.append(fill.trade_id)
-        self.last_trade_id = fill.trade_id
-        filled_qty: Decimal = self.filled_qty.as_decimal() + fill.last_qty.as_decimal()
-        self.filled_qty = Quantity(filled_qty, fill.last_qty.precision)
-        self.leaves_qty = Quantity(self.quantity.as_decimal() - filled_qty, fill.last_qty.precision)
-        self.ts_last = fill.ts_event
-        self.avg_px = self._calculate_avg_px(fill.last_qty, fill.last_px)

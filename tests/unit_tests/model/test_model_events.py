@@ -574,7 +574,7 @@ class TestModelEvents:
             venue_order_id=VenueOrderId("123456"),
             quantity=Quantity.from_int(500000),
             price=Price.from_str("1.95000"),
-            trigger=None,
+            trigger_price=None,
             ts_event=0,
             event_id=uuid,
             ts_init=0,
@@ -584,11 +584,11 @@ class TestModelEvents:
         assert OrderUpdated.from_dict(OrderUpdated.to_dict(event)) == event
         assert (
             str(event)
-            == "OrderUpdated(account_id=SIM-000, instrument_id=BTC/USDT.BINANCE, client_order_id=O-2020872378423, venue_order_id=123456, quantity=500_000, price=1.95000, trigger=None, ts_event=0)"  # noqa
+            == "OrderUpdated(account_id=SIM-000, instrument_id=BTC/USDT.BINANCE, client_order_id=O-2020872378423, venue_order_id=123456, quantity=500_000, price=1.95000, trigger_price=None, ts_event=0)"  # noqa
         )
         assert (
             repr(event)
-            == f"OrderUpdated(trader_id=TRADER-001, strategy_id=SCALPER-001, account_id=SIM-000, instrument_id=BTC/USDT.BINANCE, client_order_id=O-2020872378423, venue_order_id=123456, quantity=500_000, price=1.95000, trigger=None, event_id={uuid}, ts_event=0, ts_init=0)"  # noqa
+            == f"OrderUpdated(trader_id=TRADER-001, strategy_id=SCALPER-001, account_id=SIM-000, instrument_id=BTC/USDT.BINANCE, client_order_id=O-2020872378423, venue_order_id=123456, quantity=500_000, price=1.95000, trigger_price=None, event_id={uuid}, ts_event=0, ts_init=0)"  # noqa
         )
 
     def test_order_filled_event_to_from_dict_and_str_repr(self):

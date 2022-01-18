@@ -36,6 +36,7 @@ from nautilus_trader.model.enums import LiquiditySide
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import OrderType
 from nautilus_trader.model.enums import TimeInForce
+from nautilus_trader.model.enums import TriggerMethod
 from nautilus_trader.model.events.account import AccountState
 from nautilus_trader.model.events.order import OrderAccepted
 from nautilus_trader.model.events.order import OrderCanceled
@@ -204,7 +205,8 @@ class TestMsgPackSerializer:
             ClientOrderId("O-123456"),
             OrderSide.BUY,
             Quantity(100000, precision=0),
-            price=Price(1.00000, precision=5),
+            trigger_price=Price(1.00000, precision=5),
+            trigger=TriggerMethod.DEFAULT,
             time_in_force=TimeInForce.GTD,
             expire_time=UNIX_EPOCH,
             init_id=UUID4(),
@@ -228,7 +230,8 @@ class TestMsgPackSerializer:
             OrderSide.BUY,
             Quantity(100000, precision=0),
             price=Price(1.00000, precision=5),
-            trigger=Price(1.00010, precision=5),
+            trigger_price=Price(1.00010, precision=5),
+            trigger=TriggerMethod.BID_ASK,
             time_in_force=TimeInForce.GTC,
             expire_time=None,
             init_id=UUID4(),
@@ -252,7 +255,8 @@ class TestMsgPackSerializer:
             OrderSide.BUY,
             Quantity(100000, precision=0),
             price=Price(1.00000, precision=5),
-            trigger=Price(1.00010, precision=5),
+            trigger_price=Price(1.00010, precision=5),
+            trigger=TriggerMethod.LAST,
             time_in_force=TimeInForce.GTD,
             expire_time=UNIX_EPOCH,
             init_id=UUID4(),
@@ -559,11 +563,10 @@ class TestMsgPackSerializer:
     def test_serialize_and_deserialize_stop_limit_order_initialized_events(self):
         # Arrange
         options = {
-            "ExpireTime": None,
-            "Price": "1.0005",
-            "Trigger": "1.0010",
-            "PostOnly": True,
-            "Hidden": False,
+            "expire_time": None,
+            "price": "1.0005",
+            "trigger_price": "1.0010",
+            "post_only": True,
         }
 
         event = OrderInitialized(

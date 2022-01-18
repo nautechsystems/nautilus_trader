@@ -25,6 +25,7 @@ from nautilus_trader.common.logging cimport LoggerAdapter
 from nautilus_trader.common.uuid cimport UUIDFactory
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
+from nautilus_trader.model.c_enums.order_type cimport OrderType
 from nautilus_trader.model.c_enums.price_type cimport PriceType
 from nautilus_trader.model.currency cimport Currency
 from nautilus_trader.model.identifiers cimport PositionId
@@ -300,7 +301,7 @@ cdef class AccountsManager:
             margin_init: Decimal = account.calculate_margin_init(
                 instrument,
                 order.quantity,
-                order.price,
+                order.price if order.type != OrderType.STOP_MARKET else order.trigger_price,  # TODO(cs): Temporary will refactor!
             ).as_decimal()
 
             if account.base_currency is not None:

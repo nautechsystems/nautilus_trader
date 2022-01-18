@@ -17,6 +17,7 @@ from cpython.datetime cimport datetime
 from libc.stdint cimport int64_t
 
 from nautilus_trader.core.correctness cimport Condition
+from nautilus_trader.core.datetime cimport format_iso8601
 from nautilus_trader.core.datetime cimport maybe_unix_nanos_to_dt
 from nautilus_trader.core.uuid cimport UUID4
 from nautilus_trader.model.c_enums.contingency_type cimport ContingencyType
@@ -28,6 +29,8 @@ from nautilus_trader.model.c_enums.order_type cimport OrderType
 from nautilus_trader.model.c_enums.order_type cimport OrderTypeParser
 from nautilus_trader.model.c_enums.time_in_force cimport TimeInForce
 from nautilus_trader.model.c_enums.time_in_force cimport TimeInForceParser
+from nautilus_trader.model.c_enums.trigger_method cimport TriggerMethod
+from nautilus_trader.model.c_enums.trigger_method cimport TriggerMethodParser
 from nautilus_trader.model.events.order cimport OrderInitialized
 from nautilus_trader.model.events.order cimport OrderTriggered
 from nautilus_trader.model.events.order cimport OrderUpdated
@@ -38,12 +41,11 @@ from nautilus_trader.model.identifiers cimport StrategyId
 from nautilus_trader.model.identifiers cimport TraderId
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
-from nautilus_trader.model.orders.base cimport PassiveOrder
 
 
 cdef class StopLimitOrder(PassiveOrder):
     """
-    Represents a stop-limit order.
+    Represents a stop-limit trigger order.
 
     A stop-limit order is an instruction to submit a buy or sell limit order
     when the user-specified stop trigger price is attained or penetrated. The
@@ -72,9 +74,11 @@ cdef class StopLimitOrder(PassiveOrder):
     quantity : Quantity
         The order quantity (> 0).
     price : Price
-        The order limit price.
-    trigger : Price
-        The order stop trigger price.
+        The order price (LIMIT).
+    trigger_price : Price
+        The order trigger price (STOP).
+    trigger : TriggerMethod
+        The order trigger method.
     time_in_force : TimeInForce
         The order time-in-force.
     expire_time : datetime, optional
@@ -84,11 +88,11 @@ cdef class StopLimitOrder(PassiveOrder):
     ts_init : int64
         The UNIX timestamp (nanoseconds) when the object was initialized.
     post_only : bool, optional
-        If the `LIMIT` order will only provide liquidity (once triggered).
+        If the ``LIMIT`` order will only provide liquidity (once triggered).
     reduce_only : bool, optional
-        If the `LIMIT` order carries the 'reduce-only' execution instruction.
+        If the ``LIMIT`` order carries the 'reduce-only' execution instruction.
     display_qty : Quantity, optional
-        The quantity of the `LIMIT` order to display on the public book (iceberg).
+        The quantity of the ``LIMIT`` order to display on the public book (iceberg).
     order_list_id : OrderListId, optional
         The order list ID associated with the order.
     parent_order_id : ClientOrderId, optional
@@ -122,7 +126,8 @@ cdef class StopLimitOrder(PassiveOrder):
         OrderSide order_side,
         Quantity quantity not None,
         Price price not None,
-        Price trigger not None,
+        Price trigger_price not None,
+        TriggerMethod trigger,
         TimeInForce time_in_force,
         datetime expire_time,  # Can be None
         UUID4 init_id not None,
@@ -146,12 +151,13 @@ cdef class StopLimitOrder(PassiveOrder):
             order_side=order_side,
             order_type=OrderType.STOP_LIMIT,
             quantity=quantity,
-            price=price,
             time_in_force=time_in_force,
             expire_time=expire_time,
             reduce_only=reduce_only,
             options={
-                "trigger": str(trigger),
+                "price": str(price),
+                "trigger_price": str(trigger_price),
+                "trigger": TriggerMethodParser.to_str(trigger),
                 "post_only": post_only,
                 "display_qty": str(display_qty) if display_qty is not None else None,
             },
@@ -165,20 +171,28 @@ cdef class StopLimitOrder(PassiveOrder):
             ts_init=ts_init,
         )
 
+        self.price = price
+        self.trigger_price = trigger_price
         self.trigger = trigger
         self.is_triggered = False
         self.is_post_only = post_only
         self.display_qty = display_qty
 
-    def __repr__(self) -> str:
-        cdef str id_string = f", id={self.venue_order_id.value})" if self.venue_order_id is not None else ")"
+    cpdef str info(self):
+        """
+        Return a summary description of the order.
+
+        Returns
+        -------
+        str
+
+        """
+        cdef str expire_time = "" if self.expire_time is None else f" {format_iso8601(self.expire_time)}"
         return (
-            f"{type(self).__name__}("
-            f"{self.info()}, "
-            f"trigger={self.trigger}, "
-            f"status={self._fsm.state_string_c()}, "
-            f"client_order_id={self.client_order_id.value}"
-            f"{id_string}"
+            f"{OrderSideParser.to_str(self.side)} {self.quantity.to_str()} {self.instrument_id} "
+            f"{OrderTypeParser.to_str(self.type)} @ {self.trigger_price}-"
+            f"{TriggerMethodParser.to_str(self.trigger)} (STOP) {self.price} (LIMIT) "
+            f"{TimeInForceParser.to_str(self.time_in_force)}{expire_time}"
         )
 
     cpdef dict to_dict(self):
@@ -202,8 +216,9 @@ cdef class StopLimitOrder(PassiveOrder):
             "type": OrderTypeParser.to_str(self.type),
             "side": OrderSideParser.to_str(self.side),
             "quantity": str(self.quantity),
-            "trigger": str(self.trigger),
             "price": str(self.price),
+            "trigger_price": str(self.trigger_price),
+            "trigger": TriggerMethodParser.to_str(self.trigger),
             "liquidity_side": LiquiditySideParser.to_str(self.liquidity_side),
             "expire_time_ns": self.expire_time_ns,
             "time_in_force": TimeInForceParser.to_str(self.time_in_force),
@@ -260,7 +275,8 @@ cdef class StopLimitOrder(PassiveOrder):
             order_side=init.side,
             quantity=init.quantity,
             price=Price.from_str_c(init.options["price"]),
-            trigger=Price.from_str_c(init.options["trigger"]),
+            trigger_price=Price.from_str_c(init.options["trigger_price"]),
+            trigger=TriggerMethodParser.from_str(init.options["trigger"]),
             time_in_force=init.time_in_force,
             expire_time=maybe_unix_nanos_to_dt(init.options.get("expire_time")),
             init_id=init.id,
@@ -277,12 +293,23 @@ cdef class StopLimitOrder(PassiveOrder):
         )
 
     cdef void _updated(self, OrderUpdated event) except *:
-        self.venue_order_id = event.venue_order_id
-        self.quantity = event.quantity
-        if self.is_triggered:
+        if self.venue_order_id != event.venue_order_id:
+            self._venue_order_ids.append(self.venue_order_id)
+            self.venue_order_id = event.venue_order_id
+        if event.quantity is not None:
+            self.quantity = event.quantity
+            self.leaves_qty = Quantity(self.quantity - self.filled_qty, self.quantity.precision)
+        if event.price is not None:
             self.price = event.price
-        else:
-            self.trigger = event.price
+        if event.trigger_price is not None:
+            self.trigger_price = event.trigger_price
 
     cdef void _triggered(self, OrderTriggered event) except *:
         self.is_triggered = True
+        self.ts_triggered = event.ts_event
+
+    cdef void _set_slippage(self) except *:
+        if self.side == OrderSide.BUY:
+            self.slippage = self.avg_px - self.price
+        elif self.side == OrderSide.SELL:
+            self.slippage = self.price - self.avg_px

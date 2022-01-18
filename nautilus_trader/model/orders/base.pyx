@@ -698,16 +698,16 @@ cdef class Order:
             if self._fsm.state == OrderStatus.PENDING_UPDATE:
                 self._fsm.trigger(self._rollback_status)
             self._updated(event)
+        elif isinstance(event, OrderTriggered):
+            Condition.true(self.type == OrderType.STOP_LIMIT, "can only trigger a STOP_LIMIT order")
+            self._fsm.trigger(OrderStatus.TRIGGERED)
+            self._triggered(event)
         elif isinstance(event, OrderCanceled):
             self._fsm.trigger(OrderStatus.CANCELED)
             self._canceled(event)
         elif isinstance(event, OrderExpired):
             self._fsm.trigger(OrderStatus.EXPIRED)
             self._expired(event)
-        elif isinstance(event, OrderTriggered):
-            Condition.true(self.type == OrderType.STOP_LIMIT, "can only trigger a STOP_LIMIT order")
-            self._fsm.trigger(OrderStatus.TRIGGERED)
-            self._triggered(event)
         elif isinstance(event, OrderFilled):
             # Check identifiers
             if self.venue_order_id is None:
@@ -739,12 +739,13 @@ cdef class Order:
         self.venue_order_id = event.venue_order_id
 
     cdef void _updated(self, OrderUpdated event) except *:
-        if self.venue_order_id != event.venue_order_id:
-            self._venue_order_ids.append(self.venue_order_id)
-            self.venue_order_id = event.venue_order_id
         if event.quantity is not None:
             self.quantity = event.quantity
             self.leaves_qty = Quantity(self.quantity - self.filled_qty, self.quantity.precision)
+
+    cdef void _triggered(self, OrderTriggered event) except *:
+        """Abstract method (implement in subclass)."""
+        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
     cdef void _canceled(self, OrderCanceled event) except *:
         pass  # Do nothing else
@@ -752,13 +753,28 @@ cdef class Order:
     cdef void _expired(self, OrderExpired event) except *:
         pass  # Do nothing else
 
-    cdef void _triggered(self, OrderTriggered event) except *:
-        """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
-
-    cdef void _filled(self, OrderFilled event) except *:
-        """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
+    cdef void _filled(self, OrderFilled fill) except *:
+        self.venue_order_id = fill.venue_order_id
+        self.position_id = fill.position_id
+        self.strategy_id = fill.strategy_id
+        self._trade_ids.append(fill.trade_id)
+        self.last_trade_id = fill.trade_id
+        filled_qty: Decimal = self.filled_qty.as_decimal() + fill.last_qty.as_decimal()
+        leaves_qty: Decimal = self.quantity.as_decimal() - filled_qty
+        if leaves_qty < 0:
+            raise ValueError(
+                f"invalid order.leaves_qty: was {leaves_qty}, "
+                f"order.quantity={self.quantity}, "
+                f"order.filled_qty={self.filled_qty}, "
+                f"fill.last_qty={fill.last_qty}, "
+                f"fill={fill}",
+            )
+        self.filled_qty = Quantity(filled_qty, fill.last_qty.precision)
+        self.leaves_qty = Quantity(leaves_qty, fill.last_qty.precision)
+        self.ts_last = fill.ts_event
+        self.avg_px = self._calculate_avg_px(fill.last_qty, fill.last_px)
+        self._set_liquidity_side(fill)
+        self._set_slippage()
 
     cdef object _calculate_avg_px(self, Quantity last_qty, Price last_px):
         if self.avg_px is None:
@@ -767,6 +783,12 @@ cdef class Order:
         total_qty: Decimal = self.filled_qty + last_qty
         if total_qty > 0:  # Protect divide by zero
             return ((self.avg_px * self.filled_qty) + (last_px * last_qty)) / total_qty
+
+    cdef void _set_liquidity_side(self, OrderFilled fill) except *:
+        pass  # Optionally implement
+
+    cdef void _set_slippage(self) except *:
+        pass  # Optionally implement
 
 
 cdef class PassiveOrder(Order):
@@ -787,7 +809,6 @@ cdef class PassiveOrder(Order):
         OrderSide order_side,
         OrderType order_type,
         Quantity quantity not None,
-        Price price not None,
         TimeInForce time_in_force,
         datetime expire_time,  # Can be None
         bint reduce_only,
@@ -809,7 +830,6 @@ cdef class PassiveOrder(Order):
             # Should not have an expire time
             Condition.none(expire_time, "expire_time")
 
-        options["price"] = str(price)  # price checked not None
         if expire_time is not None:
             options["expire_time"] = maybe_dt_to_unix_nanos(expire_time)
 
@@ -836,27 +856,10 @@ cdef class PassiveOrder(Order):
 
         super().__init__(init=init)
 
-        self.price = price
         self.liquidity_side = LiquiditySide.NONE
         self.expire_time = expire_time
         self.expire_time_ns = int(pd.Timestamp(expire_time).to_datetime64()) if expire_time else 0
         self.slippage = Decimal(0)
-
-    cpdef str info(self):
-        """
-        Return a summary description of the order.
-
-        Returns
-        -------
-        str
-
-        """
-        cdef str expire_time = "" if self.expire_time is None else f" {format_iso8601(self.expire_time)}"
-        return (
-            f"{OrderSideParser.to_str(self.side)} {self.quantity.to_str()} {self.instrument_id} "
-            f"{OrderTypeParser.to_str(self.type)} @ {self.price} "
-            f"{TimeInForceParser.to_str(self.time_in_force)}{expire_time}"
-        )
 
     cpdef dict to_dict(self):
         """
@@ -884,45 +887,5 @@ cdef class PassiveOrder(Order):
         """
         return self.venue_order_ids_c().copy()
 
-    cdef void _updated(self, OrderUpdated event) except *:
-        if self.venue_order_id != event.venue_order_id:
-            self._venue_order_ids.append(self.venue_order_id)
-            self.venue_order_id = event.venue_order_id
-        if event.quantity is not None:
-            self.quantity = event.quantity
-            self.leaves_qty = Quantity(self.quantity - self.filled_qty, self.quantity.precision)
-        if event.price is not None:
-            self.price = event.price
-
-    cdef void _triggered(self, OrderTriggered event) except *:
-        """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
-
-    cdef void _filled(self, OrderFilled fill) except *:
-        self.venue_order_id = fill.venue_order_id
-        self.position_id = fill.position_id
-        self.strategy_id = fill.strategy_id
-        self._trade_ids.append(fill.trade_id)
-        self.last_trade_id = fill.trade_id
+    cdef void _set_liquidity_side(self, OrderFilled fill) except *:
         self.liquidity_side = fill.liquidity_side
-        filled_qty: Decimal = self.filled_qty.as_decimal() + fill.last_qty.as_decimal()
-        leaves_qty: Decimal = self.quantity.as_decimal() - filled_qty
-        if leaves_qty < 0:
-            raise ValueError(
-                f"invalid order.leaves_qty: was {leaves_qty}, "
-                f"order.quantity={self.quantity}, "
-                f"order.filled_qty={self.filled_qty}, "
-                f"fill.last_qty={fill.last_qty}, "
-                f"fill={fill}",
-            )
-        self.filled_qty = Quantity(filled_qty, fill.last_qty.precision)
-        self.leaves_qty = Quantity(leaves_qty, fill.last_qty.precision)
-        self.ts_last = fill.ts_event
-        self.avg_px = self._calculate_avg_px(fill.last_qty, fill.last_px)
-        self._set_slippage()
-
-    cdef void _set_slippage(self) except *:
-        if self.side == OrderSide.BUY:
-            self.slippage = self.avg_px - self.price
-        elif self.side == OrderSide.SELL:
-            self.slippage = self.price - self.avg_px

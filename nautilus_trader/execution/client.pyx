@@ -513,7 +513,7 @@ cdef class ExecutionClient(Component):
         VenueOrderId venue_order_id,
         Quantity quantity,
         Price price,
-        Price trigger,
+        Price trigger_price,
         int64_t ts_event,
         bint venue_order_id_modified=False,
     ) except *:
@@ -534,7 +534,7 @@ cdef class ExecutionClient(Component):
             The orders current quantity.
         price : Price
             The orders current price.
-        trigger : Price, optional
+        trigger_price : Price, optional
             The orders current trigger price.
         ts_event : int64
             The UNIX timestamp (nanoseconds) when the order update event occurred.
@@ -560,7 +560,7 @@ cdef class ExecutionClient(Component):
             venue_order_id=venue_order_id,
             quantity=quantity,
             price=price,
-            trigger=trigger,
+            trigger_price=trigger_price,
             event_id=self._uuid_factory.generate(),
             ts_event=ts_event,
             ts_init=self._clock.timestamp_ns(),

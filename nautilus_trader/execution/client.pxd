@@ -146,7 +146,7 @@ cdef class ExecutionClient(Component):
         VenueOrderId venue_order_id,
         Quantity quantity,
         Price price,
-        Price trigger,
+        Price trigger_price,
         int64_t ts_event,
         bint venue_order_id_modified=*,
     ) except *

@@ -17,6 +17,7 @@ from cpython.datetime cimport datetime
 from libc.stdint cimport int64_t
 
 from nautilus_trader.core.correctness cimport Condition
+from nautilus_trader.core.datetime cimport format_iso8601
 from nautilus_trader.core.datetime cimport maybe_unix_nanos_to_dt
 from nautilus_trader.core.uuid cimport UUID4
 from nautilus_trader.model.c_enums.contingency_type cimport ContingencyType
@@ -29,6 +30,7 @@ from nautilus_trader.model.c_enums.order_type cimport OrderTypeParser
 from nautilus_trader.model.c_enums.time_in_force cimport TimeInForce
 from nautilus_trader.model.c_enums.time_in_force cimport TimeInForceParser
 from nautilus_trader.model.events.order cimport OrderInitialized
+from nautilus_trader.model.events.order cimport OrderUpdated
 from nautilus_trader.model.identifiers cimport ClientOrderId
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.identifiers cimport OrderListId
@@ -133,11 +135,11 @@ cdef class LimitOrder(PassiveOrder):
             order_side=order_side,
             order_type=OrderType.LIMIT,
             quantity=quantity,
-            price=price,
             time_in_force=time_in_force,
             expire_time=expire_time,
             reduce_only=reduce_only,
             options={
+                "price": str(price),
                 "post_only": post_only,
                 "display_qty": str(display_qty) if display_qty is not None else None,
             },
@@ -151,8 +153,25 @@ cdef class LimitOrder(PassiveOrder):
             ts_init=ts_init,
         )
 
+        self.price = price
         self.is_post_only = post_only
         self.display_qty = display_qty
+
+    cpdef str info(self):
+        """
+        Return a summary description of the order.
+
+        Returns
+        -------
+        str
+
+        """
+        cdef str expire_time = "" if self.expire_time is None else f" {format_iso8601(self.expire_time)}"
+        return (
+            f"{OrderSideParser.to_str(self.side)} {self.quantity.to_str()} {self.instrument_id} "
+            f"{OrderTypeParser.to_str(self.type)} @ {self.price} "
+            f"{TimeInForceParser.to_str(self.time_in_force)}{expire_time}"
+        )
 
     cpdef dict to_dict(self):
         """
@@ -246,3 +265,19 @@ cdef class LimitOrder(PassiveOrder):
             contingency_ids=init.contingency_ids,
             tags=init.tags,
         )
+
+    cdef void _updated(self, OrderUpdated event) except *:
+        if self.venue_order_id != event.venue_order_id:
+            self._venue_order_ids.append(self.venue_order_id)
+            self.venue_order_id = event.venue_order_id
+        if event.quantity is not None:
+            self.quantity = event.quantity
+            self.leaves_qty = Quantity(self.quantity - self.filled_qty, self.quantity.precision)
+        if event.price is not None:
+            self.price = event.price
+
+    cdef void _set_slippage(self) except *:
+        if self.side == OrderSide.BUY:
+            self.slippage = self.avg_px - self.price
+        elif self.side == OrderSide.SELL:
+            self.slippage = self.price - self.avg_px

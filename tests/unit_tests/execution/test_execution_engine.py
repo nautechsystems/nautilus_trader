@@ -931,8 +931,8 @@ class TestExecutionEngine:
             order.client_order_id,
             order.venue_order_id,
             Quantity.from_int(200000),
-            order.price,
             None,
+            order.trigger_price,
             self.uuid_factory.generate(),
             self.clock.timestamp_ns(),
         )
@@ -2003,7 +2003,7 @@ class TestExecutionEngine:
             venue_order_id=new_venue_id,
             quantity=order.quantity,
             price=order.price,
-            trigger=None,
+            trigger_price=None,
             ts_event=self.clock.timestamp_ns(),
             event_id=self.uuid_factory.generate(),
             ts_init=self.clock.timestamp_ns(),

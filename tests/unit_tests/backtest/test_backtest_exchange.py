@@ -636,7 +636,7 @@ class TestSimulatedExchange:
             OrderSide.SELL,
             Quantity.from_int(100000),
             price=Price.from_str("90.010"),
-            trigger=Price.from_str("90.02"),
+            trigger_price=Price.from_str("90.02"),
         )
 
         # Act
@@ -662,7 +662,7 @@ class TestSimulatedExchange:
             OrderSide.BUY,
             Quantity.from_int(100000),
             price=Price.from_str("90.000"),
-            trigger=Price.from_str("90.010"),
+            trigger_price=Price.from_str("90.010"),
         )
 
         # Act
@@ -792,7 +792,7 @@ class TestSimulatedExchange:
             venue_order_id=VenueOrderId("001"),
             quantity=Quantity.from_int(100000),
             price=Price.from_str("110.000"),
-            trigger=None,
+            trigger_price=None,
             command_id=self.uuid_factory.generate(),
             ts_init=0,
         )
@@ -917,13 +917,13 @@ class TestSimulatedExchange:
         self.exchange.process(0)
 
         # Act
-        self.strategy.modify_order(order, order.quantity, Price.from_str("90.005"))
+        self.strategy.modify_order(order, order.quantity, trigger_price=Price.from_str("90.005"))
         self.exchange.process(0)
 
         # Assert
         assert order.status == OrderStatus.ACCEPTED
         assert len(self.exchange.get_working_orders()) == 1
-        assert order.price == Price.from_str("90.010")
+        assert order.trigger_price == Price.from_str("90.010")
 
     def test_modify_stop_market_order_when_price_valid_then_updates(self):
         # Arrange: Prepare market
@@ -946,13 +946,13 @@ class TestSimulatedExchange:
         self.exchange.process(0)
 
         # Act
-        self.strategy.modify_order(order, order.quantity, Price.from_str("90.011"))
+        self.strategy.modify_order(order, order.quantity, trigger_price=Price.from_str("90.011"))
         self.exchange.process(0)
 
         # Assert
         assert order.status == OrderStatus.ACCEPTED
         assert len(self.exchange.get_working_orders()) == 1
-        assert order.price == Price.from_str("90.011")
+        assert order.trigger_price == Price.from_str("90.011")
 
     def test_modify_untriggered_stop_limit_order_when_price_inside_market_then_rejects_modify(
         self,
@@ -971,7 +971,7 @@ class TestSimulatedExchange:
             OrderSide.BUY,
             Quantity.from_int(100000),
             price=Price.from_str("90.000"),
-            trigger=Price.from_str("90.010"),
+            trigger_price=Price.from_str("90.010"),
         )
 
         self.strategy.submit_order(order)
@@ -984,7 +984,7 @@ class TestSimulatedExchange:
         # Assert
         assert order.status == OrderStatus.ACCEPTED
         assert len(self.exchange.get_working_orders()) == 1
-        assert order.trigger == Price.from_str("90.010")
+        assert order.trigger_price == Price.from_str("90.010")
 
     def test_modify_untriggered_stop_limit_order_when_price_valid_then_amends(self):
         # Arrange: Prepare market
@@ -1001,7 +1001,7 @@ class TestSimulatedExchange:
             OrderSide.BUY,
             Quantity.from_int(100000),
             price=Price.from_str("90.000"),
-            trigger=Price.from_str("90.010"),
+            trigger_price=Price.from_str("90.010"),
         )
 
         self.strategy.submit_order(order)
@@ -1014,7 +1014,8 @@ class TestSimulatedExchange:
         # Assert
         assert order.status == OrderStatus.ACCEPTED
         assert len(self.exchange.get_working_orders()) == 1
-        assert order.trigger == Price.from_str("90.011")
+        assert order.price == Price.from_str("90.011")
+        assert order.price == Price.from_str("90.011")
 
     def test_modify_triggered_post_only_stop_limit_order_when_price_inside_market_then_rejects_modify(
         self,
@@ -1033,7 +1034,7 @@ class TestSimulatedExchange:
             OrderSide.BUY,
             Quantity.from_int(100000),
             price=Price.from_str("90.000"),
-            trigger=Price.from_str("90.010"),
+            trigger_price=Price.from_str("90.010"),
             post_only=True,
         )
 
@@ -1076,7 +1077,7 @@ class TestSimulatedExchange:
             OrderSide.BUY,
             Quantity.from_int(100000),
             price=Price.from_str("90.000"),
-            trigger=Price.from_str("90.010"),
+            trigger_price=Price.from_str("90.010"),
             post_only=False,
         )
 
@@ -1117,7 +1118,7 @@ class TestSimulatedExchange:
             OrderSide.BUY,
             Quantity.from_int(100000),
             price=Price.from_str("90.000"),
-            trigger=Price.from_str("90.010"),
+            trigger_price=Price.from_str("90.010"),
         )
 
         self.strategy.submit_order(order)
@@ -1322,7 +1323,7 @@ class TestSimulatedExchange:
             OrderSide.BUY,
             Quantity.from_int(100000),
             price=Price.from_str("90.006"),
-            trigger=Price.from_str("90.006"),
+            trigger_price=Price.from_str("90.006"),
             post_only=True,
         )
 
@@ -1361,7 +1362,7 @@ class TestSimulatedExchange:
             OrderSide.BUY,
             Quantity.from_int(100000),
             price=Price.from_str("90.001"),
-            trigger=Price.from_str("90.006"),
+            trigger_price=Price.from_str("90.006"),
         )
 
         self.strategy.submit_order(order)

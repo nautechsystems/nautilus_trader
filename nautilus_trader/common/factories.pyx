@@ -259,7 +259,8 @@ cdef class OrderFactory:
         InstrumentId instrument_id,
         OrderSide order_side,
         Quantity quantity,
-        Price price,
+        Price trigger_price,
+        TriggerMethod trigger=TriggerMethod.DEFAULT,
         TimeInForce time_in_force=TimeInForce.GTC,
         datetime expire_time=None,
         bint reduce_only=False,
@@ -278,8 +279,10 @@ cdef class OrderFactory:
             The orders side.
         quantity : Quantity
             The orders quantity (> 0).
-        price : Price
-            The orders price.
+        trigger_price : Price
+            The orders trigger price (STOP).
+        trigger : TriggerMethod
+            The order trigger method.
         time_in_force : TimeInForce, optional
             The orders time-in-force.
         expire_time : datetime, optional
@@ -309,7 +312,8 @@ cdef class OrderFactory:
             client_order_id=self._id_generator.generate(),
             order_side=order_side,
             quantity=quantity,
-            price=price,
+            trigger_price=trigger_price,
+            trigger=trigger,
             time_in_force=time_in_force,
             expire_time=expire_time,
             init_id=self._uuid_factory.generate(),
@@ -329,7 +333,8 @@ cdef class OrderFactory:
         OrderSide order_side,
         Quantity quantity,
         Price price,
-        Price trigger,
+        Price trigger_price,
+        TriggerMethod trigger=TriggerMethod.DEFAULT,
         TimeInForce time_in_force=TimeInForce.GTC,
         datetime expire_time=None,
         bint post_only=False,
@@ -352,8 +357,10 @@ cdef class OrderFactory:
             The orders quantity (> 0).
         price : Price
             The orders limit price.
-        trigger : Price
-            The orders stop trigger price.
+        trigger_price : Price
+            The orders trigger stop price.
+        trigger : TriggerMethod
+            The order trigger method.
         time_in_force : TimeInForce, optional
             The orders time-in-force.
         expire_time : datetime, optional
@@ -390,6 +397,7 @@ cdef class OrderFactory:
             order_side=order_side,
             quantity=quantity,
             price=price,
+            trigger_price=trigger_price,
             trigger=trigger,
             time_in_force=time_in_force,
             expire_time=expire_time,
@@ -490,7 +498,8 @@ cdef class OrderFactory:
             client_order_id=stop_loss_client_order_id,
             order_side=Order.opposite_side_c(entry_order.side),
             quantity=quantity,
-            price=stop_loss,
+            trigger_price=stop_loss,
+            trigger=TriggerMethod.DEFAULT,
             time_in_force=tif_bracket,
             expire_time=None,
             init_id=self._uuid_factory.generate(),
@@ -636,7 +645,8 @@ cdef class OrderFactory:
             client_order_id=stop_loss_client_order_id,
             order_side=Order.opposite_side_c(entry_order.side),
             quantity=quantity,
-            price=stop_loss,
+            trigger_price=stop_loss,
+            trigger=TriggerMethod.DEFAULT,
             time_in_force=tif_bracket,
             expire_time=None,
             init_id=self._uuid_factory.generate(),

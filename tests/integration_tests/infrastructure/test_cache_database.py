@@ -537,7 +537,7 @@ class TestRedisCacheDatabase:
             OrderSide.BUY,
             Quantity.from_int(100000),
             price=Price.from_str("1.00000"),
-            trigger=Price.from_str("1.00010"),
+            trigger_price=Price.from_str("1.00010"),
         )
 
         self.database.add_order(order)
@@ -548,7 +548,7 @@ class TestRedisCacheDatabase:
         # Assert
         assert result == order
         assert result.price == order.price
-        assert result.trigger == order.trigger
+        assert result.trigger_price == order.trigger_price
 
     def test_load_position_when_no_position_in_database_returns_none(self):
         # Arrange
