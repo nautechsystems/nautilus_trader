@@ -71,10 +71,10 @@ cdef class OrderStatusReport:
     """The reported order quantity to display on the public book (iceberg).\n\n:returns: `Quantity` or ``None``"""
     cdef readonly object avg_px
     """The reported order average fill price.\n\n:returns: `Decimal` or ``None``"""
-    cdef readonly bint is_reduce_only
-    """If the reported order carries the 'reduce-only' execution instruction.\n\n:returns: `bool`"""
     cdef readonly bint is_post_only
     """If the reported order will only provide liquidity (make a market).\n\n:returns: `bool`"""
+    cdef readonly bint is_reduce_only
+    """If the reported order carries the 'reduce-only' execution instruction.\n\n:returns: `bool`"""
     cdef readonly str reject_reason
     """The reported reason for order rejection.\n\n:returns: `str` or ``None``"""
     cdef readonly int64_t ts_accepted
