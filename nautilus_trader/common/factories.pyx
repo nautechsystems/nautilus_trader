@@ -138,7 +138,7 @@ cdef class OrderFactory:
             The orders quantity (> 0).
         time_in_force : TimeInForce, optional
             The orders time-in-force. Often not applicable for market orders.
-        reduce_only : bool
+        reduce_only : bool, optional
             If the order carries the 'reduce-only' execution instruction.
         tags : str, optional
             The custom user tags for the order. These are optional and can
@@ -207,9 +207,9 @@ cdef class OrderFactory:
             The orders time-in-force.
         expire_time : datetime, optional
             The order expire time (for ``GTD`` orders).
-        post_only : bool
+        post_only : bool, optional
             If the order will only provide liquidity (make a market).
-        reduce_only : bool
+        reduce_only : bool, optional
             If the order carries the 'reduce-only' execution instruction.
         display_qty : Quantity, optional
             The quantity of the order to display on the public book (iceberg).
@@ -287,7 +287,7 @@ cdef class OrderFactory:
             The orders time-in-force.
         expire_time : datetime, optional
             The order expire time (for ``GTD`` orders).
-        reduce_only : bool,
+        reduce_only : bool, optional
             If the order carries the 'reduce-only' execution instruction.
         tags : str, optional
             The custom user tags for the order. These are optional and can
@@ -365,9 +365,9 @@ cdef class OrderFactory:
             The orders time-in-force.
         expire_time : datetime, optional
             The order expire time (for ``GTD`` orders).
-        post_only : bool
+        post_only : bool, optional
             If the order will only provide liquidity (make a market).
-        reduce_only : bool
+        reduce_only : bool, optional
             If the order carries the 'reduce-only' execution instruction.
         display_qty : Quantity, optional
             The quantity of the order to display on the public book (iceberg).
@@ -576,7 +576,7 @@ cdef class OrderFactory:
             The order expire time (for ``GTD`` orders).
         tif_bracket : TimeInForce {``DAY``, ``GTC``}, optional
             The bracket orders time-in-force.
-        post_only : bool
+        post_only : bool, optional
             If the entry order will only provide liquidity (make a market).
 
         Returns
