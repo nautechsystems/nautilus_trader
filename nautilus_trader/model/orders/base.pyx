@@ -14,6 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 from decimal import Decimal
+from typing import List
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.model.c_enums.liquidity_side cimport LiquiditySide
@@ -104,9 +105,9 @@ cdef class Order:
     def __init__(self, OrderInitialized init not None):
         Condition.positive(init.quantity, "init.quantity")
 
-        self._events = [init]       # type: list[OrderEvent]
-        self._venue_order_ids = []  # type: list[VenueOrderId]
-        self._trade_ids = []    # type: list[TradeId]
+        self._events: List[OrderEvent] = [init]
+        self._venue_order_ids: List[VenueOrderId] = []
+        self._trade_ids: List[TradeId] = []
         self._fsm = FiniteStateMachine(
             state_transition_table=_ORDER_STATE_TABLE,
             initial_state=OrderStatus.INITIALIZED,
