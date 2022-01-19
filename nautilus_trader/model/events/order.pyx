@@ -204,7 +204,7 @@ cdef class OrderInitialized(OrderEvent):
         return (
             f"{type(self).__name__}("
             f"instrument_id={self.instrument_id.value}, "
-            f"client_order_id={self.client_order_id.value}, "
+            f"client_order_id={self.client_order_id}, "
             f"side={OrderSideParser.to_str(self.side)}, "
             f"type={OrderTypeParser.to_str(self.type)}, "
             f"quantity={self.quantity.to_str()}, "

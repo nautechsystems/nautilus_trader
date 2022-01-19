@@ -17,7 +17,7 @@ import asyncio
 import socket
 import urllib.parse
 from ssl import SSLContext
-from typing import Dict, List, Optional, Union
+from typing import Any, Dict, List, Optional, Union
 
 import aiohttp
 import cython
@@ -138,7 +138,7 @@ cdef class HttpClient:
         method: str,
         url: str,
         headers: Optional[Dict[str, str]]=None,
-        json: Optional[Dict[str, str]]=None,
+        json: Optional[Dict[str, Any]]=None,
         **kwargs,
     ) -> ClientResponse:
         session: ClientSession = self._get_session()

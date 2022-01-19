@@ -323,24 +323,26 @@ class FTXExecutionClient(LiveExecutionClient):
             return []
 
         reports: List[OrderStatusReport] = []
-        for data in response:
-            # Get instrument
-            instrument_id = instrument_id or self._get_cached_instrument_id(data)
-            instrument = self._instrument_provider.find(instrument_id)
-            if instrument is None:
-                self._log.error(
-                    f"Cannot generate order status report: "
-                    f"no instrument found for {instrument_id}.",
-                )
-                continue
 
-            reports.append(
-                parse_order_status(
-                    instrument=instrument,
-                    data=data,
-                    ts_init=self._clock.timestamp_ns(),
+        if response:
+            for data in response:
+                # Get instrument
+                instrument_id = instrument_id or self._get_cached_instrument_id(data)
+                instrument = self._instrument_provider.find(instrument_id)
+                if instrument is None:
+                    self._log.error(
+                        f"Cannot generate order status report: "
+                        f"no instrument found for {instrument_id}.",
+                    )
+                    continue
+
+                reports.append(
+                    parse_order_status(
+                        instrument=instrument,
+                        data=data,
+                        ts_init=self._clock.timestamp_ns(),
+                    )
                 )
-            )
 
         return reports
 

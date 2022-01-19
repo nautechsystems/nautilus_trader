@@ -141,7 +141,7 @@ cdef class OrderStatusReport:
     def __repr__(self) -> str:
         return (
             f"{type(self).__name__}("
-            f"client_order_id={self.client_order_id.value}, "
+            f"client_order_id={self.client_order_id}, "
             f"order_list_id={self.order_list_id}, "
             f"venue_order_id={self.venue_order_id.value}, "
             f"order_side={OrderSideParser.to_str(self.order_side)}, "
