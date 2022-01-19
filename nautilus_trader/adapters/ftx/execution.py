@@ -29,6 +29,7 @@ from nautilus_trader.adapters.ftx.http.client import FTXHttpClient
 from nautilus_trader.adapters.ftx.http.error import FTXError
 from nautilus_trader.adapters.ftx.parsing import parse_order_status
 from nautilus_trader.adapters.ftx.parsing import parse_order_type
+from nautilus_trader.adapters.ftx.parsing import parse_trigger_order_status
 from nautilus_trader.adapters.ftx.providers import FTXInstrumentProvider
 from nautilus_trader.adapters.ftx.websocket.client import FTXWebSocketClient
 from nautilus_trader.cache.cache import Cache
@@ -307,6 +308,31 @@ class FTXExecutionClient(LiveExecutionClient):
         list[OrderStatusReport]
 
         """
+        reports: List[OrderStatusReport] = []
+        reports += await self._get_order_status_reports(
+            instrument_id=instrument_id,
+            start=start,
+            end=end,
+            open_only=open_only,
+        )
+        reports += await self._get_trigger_order_status_reports(
+            instrument_id=instrument_id,
+            start=start,
+            end=end,
+            open_only=open_only,
+        )
+
+        return reports
+
+    async def _get_order_status_reports(
+        self,
+        instrument_id: InstrumentId = None,
+        start: datetime = None,
+        end: datetime = None,
+        open_only: bool = False,
+    ) -> List[OrderStatusReport]:
+        reports: List[OrderStatusReport] = []
+
         try:
             if open_only:
                 response: List[Dict[str, Any]] = await self._http_client.get_open_orders(
@@ -322,8 +348,6 @@ class FTXExecutionClient(LiveExecutionClient):
             self._log.error(ex.message)  # type: ignore  # TODO(cs): Improve errors
             return []
 
-        reports: List[OrderStatusReport] = []
-
         if response:
             for data in response:
                 # Get instrument
@@ -338,6 +362,52 @@ class FTXExecutionClient(LiveExecutionClient):
 
                 reports.append(
                     parse_order_status(
+                        instrument=instrument,
+                        data=data,
+                        ts_init=self._clock.timestamp_ns(),
+                    )
+                )
+
+        return reports
+
+    async def _get_trigger_order_status_reports(
+        self,
+        instrument_id: InstrumentId = None,
+        start: datetime = None,
+        end: datetime = None,
+        open_only: bool = False,
+    ) -> List[OrderStatusReport]:
+        reports: List[OrderStatusReport] = []
+
+        try:
+            if open_only:
+                response: List[Dict[str, Any]] = await self._http_client.get_open_trigger_orders(
+                    market=instrument_id.symbol.value if instrument_id is not None else None,
+                )
+            else:
+                response = await self._http_client.get_trigger_order_history(
+                    market=instrument_id.symbol.value if instrument_id is not None else None,
+                    start_time=int(start.timestamp() * 1000) if start is not None else None,
+                    end_time=int(end.timestamp() * 1000) if end is not None else None,
+                )
+        except FTXError as ex:
+            self._log.error(ex.message)  # type: ignore  # TODO(cs): Improve errors
+            return []
+
+        if response:
+            for data in response:
+                # Get instrument
+                instrument_id = instrument_id or self._get_cached_instrument_id(data)
+                instrument = self._instrument_provider.find(instrument_id)
+                if instrument is None:
+                    self._log.error(
+                        f"Cannot generate order status report: "
+                        f"no instrument found for {instrument_id}.",
+                    )
+                    continue
+
+                reports.append(
+                    parse_trigger_order_status(
                         instrument=instrument,
                         data=data,
                         ts_init=self._clock.timestamp_ns(),
@@ -483,7 +553,7 @@ class FTXExecutionClient(LiveExecutionClient):
             size=str(order.quantity),
             type="stop",  # <-- stop-market with trigger price only
             client_id=order.client_order_id.value,
-            trigger=str(order.price),  # <-- trigger price
+            trigger_price=str(order.trigger_price),
             reduce_only=order.is_reduce_only,
         )
 
@@ -494,8 +564,8 @@ class FTXExecutionClient(LiveExecutionClient):
             size=str(order.quantity),
             type="stop",  # <-- stop-limit with limit price
             client_id=order.client_order_id.value,
-            price=str(order.price),  # <-- limit price
-            trigger=str(order.trigger_price),
+            price=str(order.price),
+            trigger_price=str(order.trigger_price),
             reduce_only=order.is_reduce_only,
         )
 
