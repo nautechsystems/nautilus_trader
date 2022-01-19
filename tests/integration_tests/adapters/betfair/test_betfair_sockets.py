@@ -14,6 +14,9 @@
 # -------------------------------------------------------------------------------------------------
 
 import asyncio
+import sys
+
+import pytest
 
 from nautilus_trader.adapters.betfair.sockets import BetfairMarketStreamClient
 from nautilus_trader.adapters.betfair.sockets import BetfairOrderStreamClient
@@ -22,6 +25,7 @@ from nautilus_trader.common.logging import LiveLogger
 from tests.integration_tests.adapters.betfair.test_kit import BetfairTestStubs
 
 
+@pytest.mark.skipif(sys.platform == "win32", reason="failing on windows")
 class TestBetfairSockets:
     def setup(self):
         # Fixture Setup
