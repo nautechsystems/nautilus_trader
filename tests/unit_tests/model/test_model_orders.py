@@ -139,7 +139,7 @@ class TestOrders:
                 0,
             )
 
-    def test_stop_market_order_with_gtd_and_expire_time_none_raises_type_error(self):
+    def test_stop_market_order_with_gtd_and_expiration_none_raises_type_error(self):
         # Arrange, Act, Assert
         with pytest.raises(TypeError):
             StopMarketOrder(
@@ -153,10 +153,10 @@ class TestOrders:
                 init_id=UUID4(),
                 ts_init=0,
                 time_in_force=TimeInForce.GTD,
-                expire_time=None,
+                expiration=None,
             )
 
-    def test_stop_limit_buy_order_with_gtd_and_expire_time_none_raises_type_error(self):
+    def test_stop_limit_buy_order_with_gtd_and_expiration_none_raises_type_error(self):
         # Arrange, Act, Assert
         with pytest.raises(TypeError):
             StopLimitOrder(
@@ -171,7 +171,7 @@ class TestOrders:
                 init_id=UUID4(),
                 ts_init=0,
                 time_in_force=TimeInForce.GTD,
-                expire_time=None,
+                expiration=None,
             )
 
     def test_overfill_limit_buy_order_raises_value_error(self):
@@ -392,7 +392,7 @@ class TestOrders:
             "side": "BUY",
             "quantity": "100000",
             "price": "1.00000",
-            "expire_time_ns": None,
+            "expiration_ns": None,
             "time_in_force": "GTC",
             "filled_qty": "0",
             "liquidity_side": "NONE",
@@ -412,7 +412,7 @@ class TestOrders:
             "ts_init": 0,
         }
 
-    def test_initialize_limit_order_with_expire_time(self):
+    def test_initialize_limit_order_with_expiration(self):
         # Arrange, Act
         order = self.order_factory.limit(
             AUDUSD_SIM.id,
@@ -420,7 +420,7 @@ class TestOrders:
             Quantity.from_int(100000),
             Price.from_str("1.00000"),
             TimeInForce.GTD,
-            expire_time=UNIX_EPOCH + timedelta(minutes=1),
+            expiration=UNIX_EPOCH + timedelta(minutes=1),
         )
 
         # Assert
@@ -429,7 +429,7 @@ class TestOrders:
         assert order.price == Price.from_str("1.00000")
         assert order.status == OrderStatus.INITIALIZED
         assert order.time_in_force == TimeInForce.GTD
-        assert order.expire_time == UNIX_EPOCH + timedelta(minutes=1)
+        assert order.expiration == UNIX_EPOCH + timedelta(minutes=1)
         assert not order.is_completed
         assert isinstance(order.init_event, OrderInitialized)
         assert (
@@ -496,7 +496,7 @@ class TestOrders:
             "quantity": "100000",
             "trigger_price": "1.00000",
             "trigger": "DEFAULT",
-            "expire_time_ns": None,
+            "expiration_ns": None,
             "time_in_force": "GTC",
             "filled_qty": "0",
             "liquidity_side": "NONE",
@@ -573,7 +573,7 @@ class TestOrders:
             "price": "1.00000",
             "trigger_price": "1.10010",
             "trigger": "MARK",
-            "expire_time_ns": None,
+            "expiration_ns": None,
             "time_in_force": "GTC",
             "filled_qty": "0",
             "liquidity_side": "NONE",
@@ -648,8 +648,8 @@ class TestOrders:
         assert bracket.orders[2].price == Price.from_str("1.00010")
         assert bracket.orders[1].time_in_force == TimeInForce.GTC
         assert bracket.orders[2].time_in_force == TimeInForce.GTC
-        assert bracket.orders[1].expire_time is None
-        assert bracket.orders[2].expire_time is None
+        assert bracket.orders[1].expiration is None
+        assert bracket.orders[2].expiration is None
         assert bracket.orders[0].contingency == ContingencyType.OTO
         assert bracket.orders[1].contingency == ContingencyType.OCO
         assert bracket.orders[2].contingency == ContingencyType.OCO
@@ -702,8 +702,8 @@ class TestOrders:
         assert bracket.orders[2].price == Price.from_str("1.00010")
         assert bracket.orders[1].time_in_force == TimeInForce.GTC
         assert bracket.orders[2].time_in_force == TimeInForce.GTC
-        assert bracket.orders[1].expire_time is None
-        assert bracket.orders[2].expire_time is None
+        assert bracket.orders[1].expiration is None
+        assert bracket.orders[2].expiration is None
         assert bracket.orders[0].contingency == ContingencyType.OTO
         assert bracket.orders[1].contingency == ContingencyType.OCO
         assert bracket.orders[2].contingency == ContingencyType.OCO
@@ -847,7 +847,7 @@ class TestOrders:
             Quantity.from_int(100000),
             Price.from_str("0.99990"),
             time_in_force=TimeInForce.GTD,
-            expire_time=UNIX_EPOCH + timedelta(minutes=1),
+            expiration=UNIX_EPOCH + timedelta(minutes=1),
         )
 
         order.apply(TestStubs.event_order_submitted(order))
@@ -872,7 +872,7 @@ class TestOrders:
             Price.from_str("1.00000"),
             Price.from_str("0.99990"),
             time_in_force=TimeInForce.GTD,
-            expire_time=UNIX_EPOCH + timedelta(minutes=1),
+            expiration=UNIX_EPOCH + timedelta(minutes=1),
         )
 
         order.apply(TestStubs.event_order_submitted(order))

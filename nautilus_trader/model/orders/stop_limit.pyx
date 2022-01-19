@@ -83,8 +83,8 @@ cdef class StopLimitOrder(Order):
         The order trigger method.
     time_in_force : TimeInForce
         The order time-in-force.
-    expire_time : datetime, optional
-        The order expiry time.
+    expiration : datetime, optional
+        The order expiration.
     init_id : UUID4
         The order initialization event ID.
     ts_init : int64
@@ -114,7 +114,7 @@ cdef class StopLimitOrder(Order):
     ValueError
         If `quantity` is not positive (> 0).
     ValueError
-        If `time_in_force` is ``GTD`` and `expire_time` is ``None`` or <= UNIX epoch.
+        If `time_in_force` is ``GTD`` and `expiration` is ``None`` or <= UNIX epoch.
     ValueError
         If `display_qty` is negative (< 0) or greater than `quantity`.
     """
@@ -131,7 +131,7 @@ cdef class StopLimitOrder(Order):
         Price trigger_price not None,
         TriggerMethod trigger,
         TimeInForce time_in_force,
-        datetime expire_time,  # Can be None
+        datetime expiration,  # Can be None
         UUID4 init_id not None,
         int64_t ts_init,
         bint post_only=False,
@@ -144,15 +144,15 @@ cdef class StopLimitOrder(Order):
         list contingency_ids=None,
         str tags=None,
     ):
-        cdef int64_t expire_time_ns = 0
+        cdef int64_t expiration_ns = 0
         if time_in_force == TimeInForce.GTD:
             # Must have an expire time
-            Condition.not_none(expire_time, "expire_time")
-            expire_time_ns = dt_to_unix_nanos(expire_time)
-            Condition.true(expire_time_ns > 0, "expire_time cannot be <= UNIX epoch.")
+            Condition.not_none(expiration, "expiration")
+            expiration_ns = dt_to_unix_nanos(expiration)
+            Condition.true(expiration_ns > 0, "expiration cannot be <= UNIX epoch.")
         else:
             # Should not have an expire time
-            Condition.none(expire_time, "expire_time")
+            Condition.none(expiration, "expiration")
         Condition.true(
             display_qty is None or 0 <= display_qty <= quantity,
             fail_msg="display_qty was negative or greater than order quantity",
@@ -163,7 +163,7 @@ cdef class StopLimitOrder(Order):
             "price": str(price),
             "trigger_price": str(trigger_price),
             "trigger": TriggerMethodParser.to_str(trigger),
-            "expire_time_ns": expire_time_ns if expire_time_ns > 0 else None,
+            "expiration_ns": expiration_ns if expiration_ns > 0 else None,
             "display_qty": str(display_qty) if display_qty is not None else None,
         }
 
@@ -194,8 +194,8 @@ cdef class StopLimitOrder(Order):
         self.price = price
         self.trigger_price = trigger_price
         self.trigger = trigger
-        self.expire_time = expire_time
-        self.expire_time_ns = expire_time_ns
+        self.expiration = expiration
+        self.expiration_ns = expiration_ns
         self.display_qty = display_qty
         self.is_triggered = False
         self.ts_triggered = 0
@@ -209,12 +209,12 @@ cdef class StopLimitOrder(Order):
         str
 
         """
-        cdef str expire_time = "" if self.expire_time is None else f" {format_iso8601(self.expire_time)}"
+        cdef str expiration_str = "" if self.expiration is None else f" {format_iso8601(self.expiration)}"
         return (
             f"{OrderSideParser.to_str(self.side)} {self.quantity.to_str()} {self.instrument_id} "
             f"{OrderTypeParser.to_str(self.type)} @ {self.trigger_price}-"
             f"{TriggerMethodParser.to_str(self.trigger)} (STOP) {self.price} (LIMIT) "
-            f"{TimeInForceParser.to_str(self.time_in_force)}{expire_time}"
+            f"{TimeInForceParser.to_str(self.time_in_force)}{expiration_str}"
         )
 
     cpdef dict to_dict(self):
@@ -241,7 +241,7 @@ cdef class StopLimitOrder(Order):
             "price": str(self.price),
             "trigger_price": str(self.trigger_price),
             "trigger": TriggerMethodParser.to_str(self.trigger),
-            "expire_time_ns": self.expire_time_ns if self.expire_time_ns > 0 else None,
+            "expiration_ns": self.expiration_ns if self.expiration_ns > 0 else None,
             "time_in_force": TimeInForceParser.to_str(self.time_in_force),
             "filled_qty": str(self.filled_qty),
             "liquidity_side": LiquiditySideParser.to_str(self.liquidity_side),
@@ -297,7 +297,7 @@ cdef class StopLimitOrder(Order):
             trigger_price=Price.from_str_c(init.options["trigger_price"]),
             trigger=TriggerMethodParser.from_str(init.options["trigger"]),
             time_in_force=init.time_in_force,
-            expire_time=maybe_unix_nanos_to_dt(init.options["expire_time_ns"]),
+            expiration=maybe_unix_nanos_to_dt(init.options["expiration_ns"]),
             init_id=init.id,
             ts_init=init.ts_init,
             post_only=init.post_only,

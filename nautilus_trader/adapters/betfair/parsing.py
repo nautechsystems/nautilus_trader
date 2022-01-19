@@ -164,7 +164,7 @@ def _make_market_order(order: Union[LimitOrder, MarketOrder]):
             quantity=order.quantity,
             price=MAX_BET_PROB if order.side == OrderSide.BUY else MIN_BET_PROB,
             time_in_force=TimeInForce.FOK,
-            expire_time=None,
+            expiration=None,
             init_id=order.init_id,
             ts_init=order.ts_init,
         )

@@ -10,6 +10,8 @@ standardized terminology. In the interests of enforcing correctness and
 safety this type is now utilized for the `TradeTick.trade_id`.
 
 ### Breaking Changes
+- Renamed `expire_time` to `expiration`.
+- Renamed `expire_time_ns` to `expiration_ns`.
 - Renamed `trigger` to `trigger_price`.
 - Renamed `StopMarketOrder.price` to `StopMarketOrder.trigger_price`.
 - Renamed all params related to a `StopMarketOrders` `price` to `trigger_price`.
@@ -22,6 +24,7 @@ safety this type is now utilized for the `TradeTick.trade_id`.
 - Introduced the `TradeId` type to enforce `trade_id` typing.
 - Added `TriggerMethod` enum.
 - Large refactoring of order base and impl classes.
+- Overhaul of execution reports.
 
 ---
 

@@ -30,10 +30,10 @@ cdef class StopLimitOrder(Order):
     """The order trigger price (STOP).\n\n:returns: `Price`"""
     cdef readonly TriggerMethod trigger
     """The trigger method for the order.\n\n:returns: `TriggerMethod`"""
-    cdef readonly datetime expire_time
-    """The order expire time.\n\n:returns: `datetime` or ``None``"""
-    cdef readonly int64_t expire_time_ns
-    """The order expire time (nanoseconds), zero for no expire time.\n\n:returns: `int64`"""
+    cdef readonly datetime expiration
+    """The order expiration.\n\n:returns: `datetime` or ``None``"""
+    cdef readonly int64_t expiration_ns
+    """The order expiration (UNIX epoch nanoseconds), zero for no expiration.\n\n:returns: `int64`"""
     cdef readonly Quantity display_qty
     """The quantity of the ``LIMIT`` order to display on the public book (iceberg).\n\n:returns: `Quantity` or ``None``"""  # noqa
     cdef readonly bint is_triggered
