@@ -89,9 +89,9 @@ cdef class StopLimitOrder(Order):
         The order initialization event ID.
     ts_init : int64
         The UNIX timestamp (nanoseconds) when the object was initialized.
-    post_only : bool
+    post_only : bool, optional
         If the ``LIMIT`` order will only provide liquidity (once triggered).
-    reduce_only : bool
+    reduce_only : bool, optional
         If the ``LIMIT`` order carries the 'reduce-only' execution instruction.
     display_qty : Quantity, optional
         The quantity of the ``LIMIT`` order to display on the public book (iceberg).

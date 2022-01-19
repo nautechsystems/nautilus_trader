@@ -73,7 +73,7 @@ cdef class MarketOrder(Order):
         The order initialization event ID.
     ts_init : int64
         The UNIX timestamp (nanoseconds) when the object was initialized.
-    reduce_only : bool
+    reduce_only : bool, optional
         If the order carries the 'reduce-only' execution instruction.
     order_list_id : OrderListId, optional
         The order list ID associated with the order.
