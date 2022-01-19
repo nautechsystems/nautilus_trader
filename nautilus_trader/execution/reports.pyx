@@ -64,9 +64,11 @@ cdef class OrderStatusReport:
     order_status : OrderStatus
         The reported order status at the exchange.
     price : Price, optional
-        The reported order price (STOP or LIMIT).
+        The reported order price (LIMIT).
     trigger_price : Price, optional
         The reported order trigger price (STOP).
+    trigger : TriggerMethod
+        The reported order trigger method.
     quantity : Quantity
         The reported order original quantity.
     filled_qty : Quantity
@@ -75,9 +77,9 @@ cdef class OrderStatusReport:
         The reported order quantity to display on the public book (iceberg).
     avg_px : Decimal, optional
         The reported order average fill price.
-    is_post_only : bool
+    post_only : bool
         If the reported order will only provide liquidity (make a market).
-    is_reduce_only : bool
+    reduce_only : bool
         If the reported order carries the 'reduce-only' execution instruction.
     reject_reason : str, optional
         The reported reason for order rejection.
@@ -107,10 +109,11 @@ cdef class OrderStatusReport:
         Quantity filled_qty not None,
         Quantity display_qty,  # Can be None
         avg_px: Optional[Decimal],
-        bint is_post_only,
-        bint is_reduce_only,
+        bint post_only,
+        bint reduce_only,
         str reject_reason,  # Can be None
         int64_t ts_accepted,
+        int64_t ts_triggered,
         int64_t ts_last,
         int64_t ts_init,
     ):
@@ -131,10 +134,11 @@ cdef class OrderStatusReport:
         self.leaves_qty = Quantity(self.quantity - self.filled_qty, self.quantity.precision)
         self.display_qty = display_qty
         self.avg_px = avg_px
-        self.is_post_only = is_post_only
-        self.is_reduce_only = is_reduce_only
+        self.post_only = post_only
+        self.reduce_only = reduce_only
         self.reject_reason = reject_reason
         self.ts_accepted = ts_accepted
+        self.ts_triggered = ts_triggered
         self.ts_last = ts_last
         self.ts_init = ts_init
 
@@ -157,10 +161,11 @@ cdef class OrderStatusReport:
             f"leaves_qty={self.leaves_qty}, "
             f"display_qty={self.display_qty}, "
             f"avg_px={self.avg_px}, "
-            f"is_post_only={self.is_post_only}, "
-            f"is_reduce_only={self.is_reduce_only}, "
+            f"post_only={self.post_only}, "
+            f"reduce_only={self.reduce_only}, "
             f"reject_reason={self.reject_reason}, "
             f"ts_accepted={self.ts_accepted}, "
+            f"ts_triggered={self.ts_triggered}, "
             f"ts_last={self.ts_last}, "
             f"ts_init={self.ts_init})"
         )
