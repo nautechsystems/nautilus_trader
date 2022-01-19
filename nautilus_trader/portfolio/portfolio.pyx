@@ -167,7 +167,7 @@ cdef class Portfolio(PortfolioFacade):
             result = self._accounts.update_orders(
                 account=account,
                 instrument=instrument,
-                passive_orders_working=[o for o in orders_working if o.is_passive_c()],
+                orders_working=[o for o in orders_working if o.is_passive_c()],
                 ts_event=account.last_event_c().ts_event,
             )
             if result is None:
@@ -302,7 +302,7 @@ cdef class Portfolio(PortfolioFacade):
         cdef AccountState result_init = self._accounts.update_orders(
             account=account,
             instrument=instrument,
-            passive_orders_working=[o for o in orders_working if o.is_passive_c()],
+            orders_working=[o for o in orders_working if o.is_passive_c()],
             ts_event=account.last_event_c().ts_event,
         )
 
@@ -419,7 +419,7 @@ cdef class Portfolio(PortfolioFacade):
         account_state = self._accounts.update_orders(
             account=account,
             instrument=instrument,
-            passive_orders_working=[o for o in orders_working if o.is_passive_c()],
+            orders_working=[o for o in orders_working if o.is_passive_c()],
             ts_event=event.ts_event,
         )
 

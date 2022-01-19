@@ -194,9 +194,9 @@ NAUTILUS_PARQUET_SCHEMA = {
             "order_type": pa.dictionary(pa.int8(), pa.string()),
             "quantity": pa.float64(),
             "time_in_force": pa.dictionary(pa.int8(), pa.string()),
+            "post_only": pa.bool_(),
             "reduce_only": pa.bool_(),
             # -- Options fields -- #
-            "post_only": pa.bool_(),
             "display_qty": pa.string(),
             "price": pa.float64(),
             "trigger_price": pa.bool_(),

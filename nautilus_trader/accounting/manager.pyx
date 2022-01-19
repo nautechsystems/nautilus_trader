@@ -31,7 +31,7 @@ from nautilus_trader.model.currency cimport Currency
 from nautilus_trader.model.identifiers cimport PositionId
 from nautilus_trader.model.instruments.base cimport Instrument
 from nautilus_trader.model.objects cimport AccountBalance
-from nautilus_trader.model.orders.base cimport PassiveOrder
+from nautilus_trader.model.orders.base cimport Order
 from nautilus_trader.model.position cimport Position
 
 from nautilus_trader.accounting.error import AccountBalanceNegative
@@ -138,7 +138,7 @@ cdef class AccountsManager:
         self,
         Account account,
         Instrument instrument,
-        list passive_orders_working,
+        list orders_working,
         int64_t ts_event,
     ):
         """
@@ -150,8 +150,8 @@ cdef class AccountsManager:
             The account to update.
         instrument : Instrument
             The instrument for the update.
-        passive_orders_working : list[PassiveOrder]
-            The passive working orders for the update.
+        orders_working : list[Order]
+            The working orders for the update.
         ts_event : int64
             The UNIX timestamp (nanoseconds) when the account event occurred.
 
@@ -162,20 +162,20 @@ cdef class AccountsManager:
         """
         Condition.not_none(account, "account")
         Condition.not_none(instrument, "instrument")
-        Condition.not_none(passive_orders_working, "orders_working")
+        Condition.not_none(orders_working, "orders_working")
 
         if account.is_cash_account():
             return self._update_balance_locked(
                 account,
                 instrument,
-                passive_orders_working,
+                orders_working,
                 ts_event,
             )
         elif account.is_margin_account():
             return self._update_margin_init(
                 account,
                 instrument,
-                passive_orders_working,
+                orders_working,
                 ts_event,
             )
         else:  # pragma: no cover (design-time error)
@@ -185,10 +185,10 @@ cdef class AccountsManager:
         self,
         CashAccount account,
         Instrument instrument,
-        list passive_orders_working,
+        list orders_working,
         int64_t ts_event,
     ):
-        if not passive_orders_working:
+        if not orders_working:
             account.clear_balance_locked(instrument.id)
             return self._generate_account_state(
                 account=account,
@@ -199,8 +199,8 @@ cdef class AccountsManager:
         base_xrate: Optional[Decimal] = None
 
         cdef Currency currency = instrument.get_cost_currency()
-        cdef PassiveOrder order
-        for order in passive_orders_working:
+        cdef Order order
+        for order in orders_working:
             assert order.instrument_id == instrument.id
             assert order.is_working_c()
 
@@ -252,7 +252,7 @@ cdef class AccountsManager:
         self,
         MarginAccount account,
         Instrument instrument,
-        list passive_orders_working,
+        list orders_working,
         int64_t ts_event,
     ):
         """
@@ -267,8 +267,8 @@ cdef class AccountsManager:
             The account to update.
         instrument : Instrument
             The instrument for the update.
-        passive_orders_working : list[PassiveOrder]
-            The passive working orders for the update.
+        orders_working : list[Order]
+            The working orders for the update.
         ts_event : int64
             The UNIX timestamp (nanoseconds) when the account event occurred.
 
@@ -279,9 +279,9 @@ cdef class AccountsManager:
         """
         Condition.not_none(account, "account")
         Condition.not_none(instrument, "instrument")
-        Condition.not_none(passive_orders_working, "orders_working")
+        Condition.not_none(orders_working, "orders_working")
 
-        if not passive_orders_working:
+        if not orders_working:
             account.clear_margin_init(instrument.id)
             return self._generate_account_state(
                 account=account,
@@ -292,8 +292,8 @@ cdef class AccountsManager:
         base_xrate: Optional[Decimal] = None
 
         cdef Currency currency = instrument.get_cost_currency()
-        cdef PassiveOrder order
-        for order in passive_orders_working:
+        cdef Order order
+        for order in orders_working:
             assert order.instrument_id == instrument.id
             assert order.is_working_c()
 

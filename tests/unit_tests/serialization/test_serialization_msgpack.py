@@ -467,6 +467,7 @@ class TestMsgPackSerializer:
             OrderType.MARKET,
             Quantity(100000, precision=0),
             TimeInForce.FOK,
+            post_only=False,
             reduce_only=True,
             options={},
             order_list_id=OrderListId("1"),
@@ -489,10 +490,8 @@ class TestMsgPackSerializer:
     def test_serialize_and_deserialize_limit_order_initialized_events(self):
         # Arrange
         options = {
-            "ExpireTime": None,
-            "Price": "1.0010",
-            "PostOnly": True,
-            "Hidden": False,
+            "expire_time_ns": 1_000_000_000,
+            "price": "1.0010",
         }
 
         event = OrderInitialized(
@@ -504,6 +503,7 @@ class TestMsgPackSerializer:
             OrderType.LIMIT,
             Quantity(100000, precision=0),
             TimeInForce.DAY,
+            post_only=True,
             reduce_only=False,
             options=options,
             order_list_id=OrderListId("1"),
@@ -527,8 +527,7 @@ class TestMsgPackSerializer:
     def test_serialize_and_deserialize_stop_market_order_initialized_events(self):
         # Arrange
         options = {
-            "ExpireTime": None,
-            "Price": "1.0005",
+            "trigger_price": "1.0005",
         }
 
         event = OrderInitialized(
@@ -540,6 +539,7 @@ class TestMsgPackSerializer:
             OrderType.STOP_MARKET,
             Quantity(100000, precision=0),
             TimeInForce.DAY,
+            post_only=False,
             reduce_only=True,
             options=options,
             order_list_id=OrderListId("1"),
@@ -566,7 +566,6 @@ class TestMsgPackSerializer:
             "expire_time": None,
             "price": "1.0005",
             "trigger_price": "1.0010",
-            "post_only": True,
         }
 
         event = OrderInitialized(
@@ -578,6 +577,7 @@ class TestMsgPackSerializer:
             OrderType.STOP_LIMIT,
             Quantity(100000, precision=0),
             TimeInForce.DAY,
+            post_only=True,
             reduce_only=True,
             options=options,
             order_list_id=OrderListId("1"),

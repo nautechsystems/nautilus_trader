@@ -13,21 +13,9 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-"""
-Defines various order types used for trading.
-"""
-
 from decimal import Decimal
 
-import pandas as pd
-
-from cpython.datetime cimport datetime
-from libc.stdint cimport int64_t
-
 from nautilus_trader.core.correctness cimport Condition
-from nautilus_trader.core.datetime cimport format_iso8601
-from nautilus_trader.core.datetime cimport maybe_dt_to_unix_nanos
-from nautilus_trader.core.uuid cimport UUID4
 from nautilus_trader.model.c_enums.liquidity_side cimport LiquiditySide
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
 from nautilus_trader.model.c_enums.order_side cimport OrderSideParser
@@ -35,7 +23,6 @@ from nautilus_trader.model.c_enums.order_status cimport OrderStatus
 from nautilus_trader.model.c_enums.order_status cimport OrderStatusParser
 from nautilus_trader.model.c_enums.order_type cimport OrderType
 from nautilus_trader.model.c_enums.order_type cimport OrderTypeParser
-from nautilus_trader.model.c_enums.time_in_force cimport TimeInForce
 from nautilus_trader.model.c_enums.time_in_force cimport TimeInForceParser
 from nautilus_trader.model.events.order cimport OrderAccepted
 from nautilus_trader.model.events.order cimport OrderCanceled
@@ -52,9 +39,6 @@ from nautilus_trader.model.events.order cimport OrderRejected
 from nautilus_trader.model.events.order cimport OrderSubmitted
 from nautilus_trader.model.events.order cimport OrderTriggered
 from nautilus_trader.model.events.order cimport OrderUpdated
-from nautilus_trader.model.identifiers cimport ClientOrderId
-from nautilus_trader.model.identifiers cimport InstrumentId
-from nautilus_trader.model.identifiers cimport OrderListId
 from nautilus_trader.model.identifiers cimport TradeId
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
@@ -118,6 +102,8 @@ cdef class Order:
     """
 
     def __init__(self, OrderInitialized init not None):
+        Condition.positive(init.quantity, "init.quantity")
+
         self._events = [init]       # type: list[OrderEvent]
         self._venue_order_ids = []  # type: list[VenueOrderId]
         self._trade_ids = []    # type: list[TradeId]
@@ -145,6 +131,8 @@ cdef class Order:
         self.type = init.type
         self.quantity = init.quantity
         self.time_in_force = init.time_in_force
+        self.liquidity_side = LiquiditySide.NONE
+        self.is_post_only = init.post_only
         self.is_reduce_only = init.reduce_only
         self.parent_order_id = init.parent_order_id  # Can be None
         self.child_order_ids = init.child_order_ids  # Can be None
@@ -212,6 +200,9 @@ cdef class Order:
 
     cdef list events_c(self):
         return self._events.copy()
+
+    cdef list venue_order_ids_c(self):
+        return self._venue_order_ids.copy()
 
     cdef list trade_ids_c(self):
         return self._trade_ids.copy()
@@ -365,6 +356,18 @@ cdef class Order:
 
         """
         return self.events_c()
+
+    @property
+    def venue_order_ids(self):
+        """
+        The venue order IDs.
+
+        Returns
+        -------
+        list[VenueOrderId]
+
+        """
+        return self.venue_order_ids_c().copy()
 
     @property
     def trade_ids(self):
@@ -773,7 +776,7 @@ cdef class Order:
         self.leaves_qty = Quantity(leaves_qty, fill.last_qty.precision)
         self.ts_last = fill.ts_event
         self.avg_px = self._calculate_avg_px(fill.last_qty, fill.last_px)
-        self._set_liquidity_side(fill)
+        self.liquidity_side = fill.liquidity_side
         self._set_slippage()
 
     cdef object _calculate_avg_px(self, Quantity last_qty, Price last_px):
@@ -784,108 +787,5 @@ cdef class Order:
         if total_qty > 0:  # Protect divide by zero
             return ((self.avg_px * self.filled_qty) + (last_px * last_qty)) / total_qty
 
-    cdef void _set_liquidity_side(self, OrderFilled fill) except *:
-        pass  # Optionally implement
-
     cdef void _set_slippage(self) except *:
         pass  # Optionally implement
-
-
-cdef class PassiveOrder(Order):
-    """
-    The abstract base class for all passive orders.
-
-    Warnings
-    --------
-    This class should not be used directly, but through a concrete subclass.
-    """
-
-    def __init__(
-        self,
-        TraderId trader_id not None,
-        StrategyId strategy_id not None,
-        InstrumentId instrument_id not None,
-        ClientOrderId client_order_id not None,
-        OrderSide order_side,
-        OrderType order_type,
-        Quantity quantity not None,
-        TimeInForce time_in_force,
-        datetime expire_time,  # Can be None
-        bint reduce_only,
-        dict options not None,
-        OrderListId order_list_id,  # Can be None
-        ClientOrderId parent_order_id,  # Can be None
-        list child_order_ids,  # Can be None
-        ContingencyType contingency,
-        list contingency_ids,  # Can be None
-        str tags,  # Can be None
-        UUID4 init_id not None,
-        int64_t ts_init,
-    ):
-        Condition.positive(quantity, "quantity")
-        if time_in_force == TimeInForce.GTD:
-            # Must have an expire time
-            Condition.not_none(expire_time, "expire_time")
-        else:
-            # Should not have an expire time
-            Condition.none(expire_time, "expire_time")
-
-        if expire_time is not None:
-            options["expire_time"] = maybe_dt_to_unix_nanos(expire_time)
-
-        cdef OrderInitialized init = OrderInitialized(
-            trader_id=trader_id,
-            strategy_id=strategy_id,
-            instrument_id=instrument_id,
-            client_order_id=client_order_id,
-            order_side=order_side,
-            order_type=order_type,
-            quantity=quantity,
-            time_in_force=time_in_force,
-            reduce_only=reduce_only,
-            options=options,
-            order_list_id=order_list_id,
-            parent_order_id=parent_order_id,
-            child_order_ids=child_order_ids,
-            contingency=contingency,
-            contingency_ids=contingency_ids,
-            tags=tags,
-            event_id=init_id,
-            ts_init=ts_init,
-        )
-
-        super().__init__(init=init)
-
-        self.liquidity_side = LiquiditySide.NONE
-        self.expire_time = expire_time
-        self.expire_time_ns = int(pd.Timestamp(expire_time).to_datetime64()) if expire_time else 0
-        self.slippage = Decimal(0)
-
-    cpdef dict to_dict(self):
-        """
-        Return a dictionary representation of this object.
-
-        Returns
-        -------
-        dict[str, object]
-
-        """
-        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
-
-    cdef list venue_order_ids_c(self):
-        return self._venue_order_ids.copy()
-
-    @property
-    def venue_order_ids(self):
-        """
-        The venue order IDs.
-
-        Returns
-        -------
-        list[VenueOrderId]
-
-        """
-        return self.venue_order_ids_c().copy()
-
-    cdef void _set_liquidity_side(self, OrderFilled fill) except *:
-        self.liquidity_side = fill.liquidity_side
