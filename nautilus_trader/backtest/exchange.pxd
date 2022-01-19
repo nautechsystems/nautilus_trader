@@ -47,7 +47,6 @@ from nautilus_trader.model.objects cimport Quantity
 from nautilus_trader.model.orderbook.book cimport OrderBook
 from nautilus_trader.model.orderbook.data cimport OrderBookData
 from nautilus_trader.model.orders.base cimport Order
-from nautilus_trader.model.orders.base cimport PassiveOrder
 from nautilus_trader.model.orders.limit cimport LimitOrder
 from nautilus_trader.model.orders.market cimport MarketOrder
 from nautilus_trader.model.orders.stop_limit cimport StopLimitOrder
@@ -148,20 +147,20 @@ cdef class SimulatedExchange:
 
 # -- EVENT HANDLING --------------------------------------------------------------------------------
 
-    cdef void _accept_order(self, PassiveOrder order) except *
-    cdef void _update_order(self, PassiveOrder order, Quantity qty, Price price=*, Price trigger_price=*, bint update_ocos=*) except *
-    cdef void _update_oco_orders(self, PassiveOrder order) except *
-    cdef void _cancel_order(self, PassiveOrder order, bint cancel_ocos=*) except *
-    cdef void _cancel_oco_orders(self, PassiveOrder order) except *
-    cdef void _expire_order(self, PassiveOrder order) except *
+    cdef void _accept_order(self, Order order) except *
+    cdef void _update_order(self, Order order, Quantity qty, Price price=*, Price trigger_price=*, bint update_ocos=*) except *
+    cdef void _update_oco_orders(self, Order order) except *
+    cdef void _cancel_order(self, Order order, bint cancel_ocos=*) except *
+    cdef void _cancel_oco_orders(self, Order order) except *
+    cdef void _expire_order(self, Order order) except *
 
 # -- ORDER MATCHING ENGINE -------------------------------------------------------------------------
 
-    cdef void _add_order(self, PassiveOrder order) except *
+    cdef void _add_order(self, Order order) except *
     cdef void _delete_order(self, Order order) except *
     cdef void _iterate_matching_engine(self, InstrumentId instrument_id, int64_t timestamp_ns) except *
     cdef void _iterate_side(self, list orders, int64_t timestamp_ns) except *
-    cdef void _match_order(self, PassiveOrder order) except *
+    cdef void _match_order(self, Order order) except *
     cdef void _match_limit_order(self, LimitOrder order) except *
     cdef void _match_stop_market_order(self, StopMarketOrder order) except *
     cdef void _match_stop_limit_order(self, StopLimitOrder order) except *
@@ -169,9 +168,9 @@ cdef class SimulatedExchange:
     cdef bint _is_limit_matched(self, InstrumentId instrument_id, OrderSide side, Price price) except *
     cdef bint _is_stop_marketable(self, InstrumentId instrument_id, OrderSide side, Price price) except *
     cdef bint _is_stop_triggered(self, InstrumentId instrument_id, OrderSide side, Price price) except *
-    cdef list _determine_limit_price_and_volume(self, PassiveOrder order)
+    cdef list _determine_limit_price_and_volume(self, Order order)
     cdef list _determine_market_price_and_volume(self, Order order)
-    cdef void _fill_limit_order(self, PassiveOrder order, LiquiditySide liquidity_side) except *
+    cdef void _fill_limit_order(self, Order order, LiquiditySide liquidity_side) except *
     cdef void _fill_market_order(self, Order order, LiquiditySide liquidity_side) except *
     cdef void _apply_fills(
         self,
@@ -226,7 +225,7 @@ cdef class SimulatedExchange:
     cdef void _generate_order_updated(self, Order order, Quantity qty, Price price, Price trigger_price) except *
     cdef void _generate_order_canceled(self, Order order) except *
     cdef void _generate_order_triggered(self, StopLimitOrder order) except *
-    cdef void _generate_order_expired(self, PassiveOrder order) except *
+    cdef void _generate_order_expired(self, Order order) except *
     cdef void _generate_order_filled(
         self,
         Order order,

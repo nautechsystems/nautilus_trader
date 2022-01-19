@@ -13,17 +13,24 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from cpython.datetime cimport datetime
+from libc.stdint cimport int64_t
+
 from nautilus_trader.model.c_enums.trigger_method cimport TriggerMethod
 from nautilus_trader.model.events.order cimport OrderInitialized
 from nautilus_trader.model.objects cimport Price
-from nautilus_trader.model.orders.base cimport PassiveOrder
+from nautilus_trader.model.orders.base cimport Order
 
 
-cdef class StopMarketOrder(PassiveOrder):
+cdef class StopMarketOrder(Order):
     cdef readonly Price trigger_price
     """The order trigger price (STOP).\n\n:returns: `Price`"""
     cdef readonly TriggerMethod trigger
     """The trigger method for the order.\n\n:returns: `TriggerMethod`"""
+    cdef readonly datetime expire_time
+    """The order expire time.\n\n:returns: `datetime` or ``None``"""
+    cdef readonly int64_t expire_time_ns
+    """The order expire time (nanoseconds), zero for no expire time.\n\n:returns: `int64`"""
 
 
     @staticmethod

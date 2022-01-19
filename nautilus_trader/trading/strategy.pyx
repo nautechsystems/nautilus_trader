@@ -62,7 +62,6 @@ from nautilus_trader.model.identifiers cimport TraderId
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
 from nautilus_trader.model.orders.base cimport Order
-from nautilus_trader.model.orders.base cimport PassiveOrder
 from nautilus_trader.model.orders.list cimport OrderList
 from nautilus_trader.model.orders.market cimport MarketOrder
 from nautilus_trader.model.position cimport Position
@@ -512,7 +511,7 @@ cdef class TradingStrategy(Actor):
 
     cpdef void modify_order(
         self,
-        PassiveOrder order,
+        Order order,
         Quantity quantity=None,
         Price price=None,
         Price trigger_price=None,
@@ -531,14 +530,14 @@ cdef class TradingStrategy(Actor):
 
         Parameters
         ----------
-        order : PassiveOrder
+        order : Order
             The order to update.
         quantity : Quantity, optional
             The updated quantity for the given order.
         price : Price, optional
-            The updated price for the given order.
+            The updated price for the given order (if applicable).
         trigger_price : Price, optional
-            The updated trigger price for the given order.
+            The updated trigger price for the given order (if applicable).
 
         Raises
         ------

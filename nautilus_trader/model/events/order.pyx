@@ -119,6 +119,8 @@ cdef class OrderInitialized(OrderEvent):
         The order quantity.
     time_in_force : TimeInForce
         The order time-in-force.
+    post_only : bool
+        If the order will only provide liquidity (make a market).
     reduce_only : bool
         If the order carries the 'reduce-only' execution instruction.
     options : dict[str, str]
@@ -153,6 +155,7 @@ cdef class OrderInitialized(OrderEvent):
         OrderType order_type,
         Quantity quantity not None,
         TimeInForce time_in_force,
+        bint post_only,
         bint reduce_only,
         dict options not None,
         OrderListId order_list_id,  # Can be None
@@ -180,6 +183,7 @@ cdef class OrderInitialized(OrderEvent):
         self.type = order_type
         self.quantity = quantity
         self.time_in_force = time_in_force
+        self.post_only = post_only
         self.reduce_only = reduce_only
         self.options = options
         self.order_list_id = order_list_id
@@ -205,6 +209,7 @@ cdef class OrderInitialized(OrderEvent):
             f"type={OrderTypeParser.to_str(self.type)}, "
             f"quantity={self.quantity.to_str()}, "
             f"time_in_force={TimeInForceParser.to_str(self.time_in_force)}, "
+            f"post_only={self.post_only}, "
             f"reduce_only={self.reduce_only}, "
             f"options={self.options}, "
             f"order_list_id={self.order_list_id}, "
@@ -233,6 +238,7 @@ cdef class OrderInitialized(OrderEvent):
             f"type={OrderTypeParser.to_str(self.type)}, "
             f"quantity={self.quantity.to_str()}, "
             f"time_in_force={TimeInForceParser.to_str(self.time_in_force)}, "
+            f"post_only={self.post_only}, "
             f"reduce_only={self.reduce_only}, "
             f"options={self.options}, "
             f"order_list_id={self.order_list_id}, "
@@ -262,6 +268,7 @@ cdef class OrderInitialized(OrderEvent):
             order_type=OrderTypeParser.from_str(values["order_type"]),
             quantity=Quantity.from_str_c(values["quantity"]),
             time_in_force=TimeInForceParser.from_str(values["time_in_force"]),
+            post_only=values["post_only"],
             reduce_only=values["reduce_only"],
             options=orjson.loads(values["options"]),
             order_list_id=OrderListId(order_list_id_str) if order_list_id_str else None,
@@ -288,6 +295,7 @@ cdef class OrderInitialized(OrderEvent):
             "order_type": OrderTypeParser.to_str(obj.type),
             "quantity": str(obj.quantity),
             "time_in_force": TimeInForceParser.to_str(obj.time_in_force),
+            "post_only": obj.post_only,
             "reduce_only": obj.reduce_only,
             "options": orjson.dumps(obj.options).decode(),
             "order_list_id": obj.order_list_id.value if obj.order_list_id is not None else None,

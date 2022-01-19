@@ -13,7 +13,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from cpython.datetime cimport datetime
 from libc.stdint cimport int64_t
 
 from nautilus_trader.core.fsm cimport FiniteStateMachine
@@ -80,6 +79,10 @@ cdef class Order:
     """The order type.\n\n:returns: `OrderType`"""
     cdef readonly TimeInForce time_in_force
     """The order time-in-force.\n\n:returns: `TimeInForce`"""
+    cdef readonly LiquiditySide liquidity_side
+    """The order liquidity side.\n\n:returns: `LiquiditySide`"""
+    cdef readonly bint is_post_only
+    """If the order will only provide liquidity (make a market).\n\n:returns: `bool`"""
     cdef readonly bint is_reduce_only
     """If the order carries the 'reduce-only' execution instruction.\n\n:returns: `bool`"""
     cdef readonly Quantity quantity
@@ -116,6 +119,7 @@ cdef class Order:
     cdef OrderInitialized init_event_c(self)
     cdef OrderEvent last_event_c(self)
     cdef list events_c(self)
+    cdef list venue_order_ids_c(self)
     cdef list trade_ids_c(self)
     cdef int event_count_c(self) except *
     cdef str status_string_c(self)
@@ -154,16 +158,4 @@ cdef class Order:
     cdef void _expired(self, OrderExpired event) except *
     cdef void _filled(self, OrderFilled event) except *
     cdef object _calculate_avg_px(self, Quantity last_qty, Price last_px)
-    cdef void _set_liquidity_side(self, OrderFilled fill) except *
     cdef void _set_slippage(self) except *
-
-
-cdef class PassiveOrder(Order):
-    cdef readonly LiquiditySide liquidity_side
-    """The order liquidity side.\n\n:returns: `LiquiditySide`"""
-    cdef readonly datetime expire_time
-    """The order expire time.\n\n:returns: `datetime` or ``None``"""
-    cdef readonly int64_t expire_time_ns
-    """The order expire time (nanoseconds), zero for no expire time.\n\n:returns: `int64`"""
-
-    cdef list venue_order_ids_c(self)

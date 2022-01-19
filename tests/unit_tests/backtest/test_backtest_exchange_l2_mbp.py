@@ -237,7 +237,7 @@ class TestL2OrderBookExchange:
         assert order.avg_px == Decimal("15.93333333333333333333333333")
         assert self.exchange.get_account().balance_total(USD) == Money(999999.88, USD)
 
-    def test_passive_post_only_insert(self):
+    def test_post_only_insert(self):
         # Arrange: Prepare market
         self.cache.add_instrument(USDJPY_SIM)
         # Market is 10 @ 15

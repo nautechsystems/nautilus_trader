@@ -116,9 +116,12 @@ cdef class MarketOrder(Order):
         list contingency_ids=None,
         str tags=None,
     ):
-        Condition.positive(quantity, "quantity")
-        Condition.true(time_in_force in _MARKET_ORDER_VALID_TIF, "time_in_force was != GTC, IOC or FOK")
+        Condition.true(
+            time_in_force in _MARKET_ORDER_VALID_TIF,
+            fail_msg="time_in_force was != GTC, IOC or FOK",
+        )
 
+        # Create initialization event
         cdef OrderInitialized init = OrderInitialized(
             trader_id=trader_id,
             strategy_id=strategy_id,
@@ -128,6 +131,7 @@ cdef class MarketOrder(Order):
             order_type=OrderType.MARKET,
             quantity=quantity,
             time_in_force=time_in_force,
+            post_only=False,
             reduce_only=reduce_only,
             options={},
             order_list_id=order_list_id,
@@ -139,7 +143,6 @@ cdef class MarketOrder(Order):
             event_id=init_id,
             ts_init=ts_init,
         )
-
         super().__init__(init=init)
 
     cpdef dict to_dict(self):

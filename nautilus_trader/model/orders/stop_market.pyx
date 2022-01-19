@@ -17,6 +17,7 @@ from cpython.datetime cimport datetime
 from libc.stdint cimport int64_t
 
 from nautilus_trader.core.correctness cimport Condition
+from nautilus_trader.core.datetime cimport dt_to_unix_nanos
 from nautilus_trader.core.datetime cimport format_iso8601
 from nautilus_trader.core.datetime cimport maybe_unix_nanos_to_dt
 from nautilus_trader.core.uuid cimport UUID4
@@ -40,9 +41,10 @@ from nautilus_trader.model.identifiers cimport StrategyId
 from nautilus_trader.model.identifiers cimport TraderId
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
+from nautilus_trader.model.orders.base cimport Order
 
 
-cdef class StopMarketOrder(PassiveOrder):
+cdef class StopMarketOrder(Order):
     """
     Represents a stop-market trigger order.
 
@@ -81,7 +83,7 @@ cdef class StopMarketOrder(PassiveOrder):
         The order initialization event ID.
     ts_init : int64
         The UNIX timestamp (nanoseconds) when the object was initialized.
-    reduce_only : bool, optional
+    reduce_only : bool
         If the order carries the 'reduce-only' execution instruction.
     order_list_id : OrderListId, optional
         The order list ID associated with the order.
@@ -126,7 +128,26 @@ cdef class StopMarketOrder(PassiveOrder):
         list contingency_ids=None,
         str tags=None,
     ):
-        super().__init__(
+        if time_in_force == TimeInForce.GTD:
+            # Must have an expire time
+            Condition.not_none(expire_time, "expire_time")
+        else:
+            # Should not have an expire time
+            Condition.none(expire_time, "expire_time")
+
+        # Set options
+        cdef dict options = {
+            "trigger_price": str(trigger_price),
+            "trigger": TriggerMethodParser.to_str(trigger),
+        }
+
+        # Set expire time
+        cdef int64_t expire_time_ns = dt_to_unix_nanos(expire_time) if expire_time is not None else 0
+        if expire_time is not None:
+            options["expire_time_ns"] = expire_time_ns
+
+        # Create initialization event
+        cdef OrderInitialized init = OrderInitialized(
             trader_id=trader_id,
             strategy_id=strategy_id,
             instrument_id=instrument_id,
@@ -135,24 +156,24 @@ cdef class StopMarketOrder(PassiveOrder):
             order_type=OrderType.STOP_MARKET,
             quantity=quantity,
             time_in_force=time_in_force,
-            expire_time=expire_time,
+            post_only=False,
             reduce_only=reduce_only,
-            options={
-                "trigger_price": str(trigger_price),
-                "trigger": TriggerMethodParser.to_str(trigger),
-            },
+            options=options,
             order_list_id=order_list_id,
             parent_order_id=parent_order_id,
             child_order_ids=child_order_ids,
             contingency=contingency,
             contingency_ids=contingency_ids,
             tags=tags,
-            init_id=init_id,
+            event_id=init_id,
             ts_init=ts_init,
         )
+        super().__init__(init=init)
 
         self.trigger_price = trigger_price
         self.trigger = trigger
+        self.expire_time = expire_time
+        self.expire_time_ns = expire_time_ns
 
     cpdef str info(self):
         """
@@ -194,10 +215,10 @@ cdef class StopMarketOrder(PassiveOrder):
             "quantity": str(self.quantity),
             "trigger_price": str(self.trigger_price),
             "trigger": TriggerMethodParser.to_str(self.trigger),
-            "liquidity_side": LiquiditySideParser.to_str(self.liquidity_side),
             "expire_time_ns": self.expire_time_ns,
             "time_in_force": TimeInForceParser.to_str(self.time_in_force),
             "filled_qty": str(self.filled_qty),
+            "liquidity_side": LiquiditySideParser.to_str(self.liquidity_side),
             "avg_px": str(self.avg_px) if self.avg_px else None,
             "slippage": str(self.slippage),
             "status": self._fsm.state_string_c(),
@@ -245,7 +266,7 @@ cdef class StopMarketOrder(PassiveOrder):
             trigger_price=Price.from_str_c(init.options["trigger_price"]),
             trigger=TriggerMethodParser.from_str(init.options["trigger"]),
             time_in_force=init.time_in_force,
-            expire_time=maybe_unix_nanos_to_dt(init.options.get("expire_time")),
+            expire_time=maybe_unix_nanos_to_dt(init.options.get("expire_time_ns")),
             init_id=init.id,
             ts_init=init.ts_init,
             reduce_only=init.reduce_only,

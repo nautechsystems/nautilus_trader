@@ -462,7 +462,7 @@ class TestPortfolio:
 
         self.portfolio.update_account(state)
 
-        # Create a passive order
+        # Create a limit order
         order1 = self.order_factory.limit(
             BETTING_INSTRUMENT.id,
             OrderSide.BUY,
