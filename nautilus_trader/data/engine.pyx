@@ -29,9 +29,9 @@ Alternative implementations can be written on top of the generic engine - which
 just need to override the `execute`, `process`, `send` and `receive` methods.
 """
 
-from cpython.datetime cimport timedelta
-
 from typing import Callable, Optional
+
+from cpython.datetime cimport timedelta
 
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.component cimport Component
