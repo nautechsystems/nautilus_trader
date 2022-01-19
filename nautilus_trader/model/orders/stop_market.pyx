@@ -13,15 +13,13 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from typing import Optional
-
 from cpython.datetime cimport datetime
 from libc.stdint cimport int64_t
 
 from nautilus_trader.core.correctness cimport Condition
+from nautilus_trader.core.datetime cimport dt_to_unix_nanos
 from nautilus_trader.core.datetime cimport format_iso8601
-from nautilus_trader.core.datetime cimport maybe_dt_to_unix_nanos
-from nautilus_trader.core.datetime cimport maybe_unix_nanos_to_dt
+from nautilus_trader.core.datetime cimport unix_nanos_to_dt
 from nautilus_trader.core.uuid cimport UUID4
 from nautilus_trader.model.c_enums.contingency_type cimport ContingencyType
 from nautilus_trader.model.c_enums.contingency_type cimport ContingencyTypeParser
@@ -138,7 +136,7 @@ cdef class StopMarketOrder(Order):
             Condition.none(expire_time, "expire_time")
 
         # Set options
-        expire_time_ns: Optional[int] = maybe_dt_to_unix_nanos(expire_time)
+        cdef int64_t expire_time_ns = dt_to_unix_nanos(expire_time) if expire_time is not None else 0
         cdef dict options = {
             "trigger_price": str(trigger_price),
             "trigger": TriggerMethodParser.to_str(trigger),
@@ -255,6 +253,8 @@ cdef class StopMarketOrder(Order):
         Condition.not_none(init, "init")
         Condition.equal(init.type, OrderType.STOP_MARKET, "init.type", "OrderType")
 
+        cdef int64_t expire_time_ns = init.options["expire_time_ns"]
+
         return StopMarketOrder(
             trader_id=init.trader_id,
             strategy_id=init.strategy_id,
@@ -265,7 +265,7 @@ cdef class StopMarketOrder(Order):
             trigger_price=Price.from_str_c(init.options["trigger_price"]),
             trigger=TriggerMethodParser.from_str(init.options["trigger"]),
             time_in_force=init.time_in_force,
-            expire_time=maybe_unix_nanos_to_dt(init.options["expire_time_ns"]),
+            expire_time=unix_nanos_to_dt(expire_time_ns) if expire_time_ns > 0 else None,
             init_id=init.id,
             ts_init=init.ts_init,
             reduce_only=init.reduce_only,

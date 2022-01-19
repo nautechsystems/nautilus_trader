@@ -13,15 +13,13 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from typing import Optional
-
 from cpython.datetime cimport datetime
 from libc.stdint cimport int64_t
 
 from nautilus_trader.core.correctness cimport Condition
+from nautilus_trader.core.datetime cimport dt_to_unix_nanos
 from nautilus_trader.core.datetime cimport format_iso8601
-from nautilus_trader.core.datetime cimport maybe_dt_to_unix_nanos
-from nautilus_trader.core.datetime cimport maybe_unix_nanos_to_dt
+from nautilus_trader.core.datetime cimport unix_nanos_to_dt
 from nautilus_trader.core.uuid cimport UUID4
 from nautilus_trader.model.c_enums.contingency_type cimport ContingencyType
 from nautilus_trader.model.c_enums.contingency_type cimport ContingencyTypeParser
@@ -158,7 +156,7 @@ cdef class StopLimitOrder(Order):
         )
 
         # Set options
-        expire_time_ns: Optional[int] = maybe_dt_to_unix_nanos(expire_time)
+        cdef int64_t expire_time_ns = dt_to_unix_nanos(expire_time) if expire_time is not None else 0
         cdef dict options = {
             "price": str(price),
             "trigger_price": str(trigger_price),
@@ -284,11 +282,9 @@ cdef class StopLimitOrder(Order):
         Condition.not_none(init, "init")
         Condition.equal(init.type, OrderType.STOP_LIMIT, "init.type", "OrderType")
 
-        # Parse display quantity
+        cdef int64_t expire_time_ns = init.options["expire_time_ns"]
         cdef str display_qty_str = init.options["display_qty"]
-        cdef Quantity display_qty = None
-        if display_qty_str is not None:
-            display_qty = Quantity.from_str_c(display_qty_str)
+
         return StopLimitOrder(
             trader_id=init.trader_id,
             strategy_id=init.strategy_id,
@@ -300,12 +296,12 @@ cdef class StopLimitOrder(Order):
             trigger_price=Price.from_str_c(init.options["trigger_price"]),
             trigger=TriggerMethodParser.from_str(init.options["trigger"]),
             time_in_force=init.time_in_force,
-            expire_time=maybe_unix_nanos_to_dt(init.options["expire_time_ns"]),
+            expire_time=unix_nanos_to_dt(expire_time_ns) if expire_time_ns > 0 else None,
             init_id=init.id,
             ts_init=init.ts_init,
             post_only=init.post_only,
             reduce_only=init.reduce_only,
-            display_qty=display_qty,
+            display_qty=Quantity.from_str_c(display_qty_str) if display_qty_str is not None else None,
             order_list_id=init.order_list_id,
             parent_order_id=init.parent_order_id,
             child_order_ids=init.child_order_ids,
