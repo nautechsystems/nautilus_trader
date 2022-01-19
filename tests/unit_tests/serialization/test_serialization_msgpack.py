@@ -14,6 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 from base64 import b64encode
+from datetime import timedelta
 
 import msgpack
 import pytest
@@ -184,7 +185,31 @@ class TestMsgPackSerializer:
             Quantity(100000, precision=0),
             price=Price(1.00000, precision=5),
             time_in_force=TimeInForce.GTD,
-            expire_time=UNIX_EPOCH,
+            expire_time=UNIX_EPOCH + timedelta(minutes=1),
+            init_id=UUID4(),
+            ts_init=0,
+        )
+
+        # Act
+        packed = OrderInitialized.to_dict(order.last_event)
+        unpacked = self.unpacker.unpack(packed)
+
+        # Assert
+        assert unpacked == order
+
+    def test_pack_and_unpack_stop_market_orders(self):
+        # Arrange
+        order = StopMarketOrder(
+            self.trader_id,
+            self.strategy_id,
+            AUDUSD_SIM.id,
+            ClientOrderId("O-123456"),
+            OrderSide.BUY,
+            Quantity(100000, precision=0),
+            trigger_price=Price(1.00000, precision=5),
+            trigger=TriggerMethod.DEFAULT,
+            time_in_force=TimeInForce.GTC,
+            expire_time=None,
             init_id=UUID4(),
             ts_init=0,
         )
@@ -208,7 +233,7 @@ class TestMsgPackSerializer:
             trigger_price=Price(1.00000, precision=5),
             trigger=TriggerMethod.DEFAULT,
             time_in_force=TimeInForce.GTD,
-            expire_time=UNIX_EPOCH,
+            expire_time=UNIX_EPOCH + timedelta(minutes=1),
             init_id=UUID4(),
             ts_init=0,
         )
@@ -258,7 +283,7 @@ class TestMsgPackSerializer:
             trigger_price=Price(1.00010, precision=5),
             trigger=TriggerMethod.LAST,
             time_in_force=TimeInForce.GTD,
-            expire_time=UNIX_EPOCH,
+            expire_time=UNIX_EPOCH + timedelta(minutes=1),
             init_id=UUID4(),
             ts_init=0,
         )

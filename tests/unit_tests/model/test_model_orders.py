@@ -13,6 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from datetime import timedelta
 from decimal import Decimal
 
 import pytest
@@ -391,7 +392,7 @@ class TestOrders:
             "side": "BUY",
             "quantity": "100000",
             "price": "1.00000",
-            "expire_time_ns": -1,
+            "expire_time_ns": None,
             "time_in_force": "GTC",
             "filled_qty": "0",
             "liquidity_side": "NONE",
@@ -419,7 +420,7 @@ class TestOrders:
             Quantity.from_int(100000),
             Price.from_str("1.00000"),
             TimeInForce.GTD,
-            expire_time=UNIX_EPOCH,
+            expire_time=UNIX_EPOCH + timedelta(minutes=1),
         )
 
         # Assert
@@ -428,9 +429,17 @@ class TestOrders:
         assert order.price == Price.from_str("1.00000")
         assert order.status == OrderStatus.INITIALIZED
         assert order.time_in_force == TimeInForce.GTD
-        assert order.expire_time == UNIX_EPOCH
+        assert order.expire_time == UNIX_EPOCH + timedelta(minutes=1)
         assert not order.is_completed
         assert isinstance(order.init_event, OrderInitialized)
+        assert (
+            str(order)
+            == "LimitOrder(BUY 100_000 AUD/USD.SIM LIMIT @ 1.00000 GTD 1970-01-01T00:01:00.000Z, status=INITIALIZED, client_order_id=O-19700101-000000-000-001-1, venue_order_id=None, tags=None)"  # noqa
+        )
+        assert (
+            repr(order)
+            == "LimitOrder(BUY 100_000 AUD/USD.SIM LIMIT @ 1.00000 GTD 1970-01-01T00:01:00.000Z, status=INITIALIZED, client_order_id=O-19700101-000000-000-001-1, venue_order_id=None, tags=None)"  # noqa
+        )
 
     def test_initialize_stop_market_order(self):
         # Arrange, Act
@@ -487,7 +496,7 @@ class TestOrders:
             "quantity": "100000",
             "trigger_price": "1.00000",
             "trigger": "DEFAULT",
-            "expire_time_ns": -1,
+            "expire_time_ns": None,
             "time_in_force": "GTC",
             "filled_qty": "0",
             "liquidity_side": "NONE",
@@ -564,7 +573,7 @@ class TestOrders:
             "price": "1.00000",
             "trigger_price": "1.10010",
             "trigger": "MARK",
-            "expire_time_ns": -1,
+            "expire_time_ns": None,
             "time_in_force": "GTC",
             "filled_qty": "0",
             "liquidity_side": "NONE",
@@ -838,7 +847,7 @@ class TestOrders:
             Quantity.from_int(100000),
             Price.from_str("0.99990"),
             time_in_force=TimeInForce.GTD,
-            expire_time=UNIX_EPOCH,
+            expire_time=UNIX_EPOCH + timedelta(minutes=1),
         )
 
         order.apply(TestStubs.event_order_submitted(order))
@@ -863,7 +872,7 @@ class TestOrders:
             Price.from_str("1.00000"),
             Price.from_str("0.99990"),
             time_in_force=TimeInForce.GTD,
-            expire_time=UNIX_EPOCH,
+            expire_time=UNIX_EPOCH + timedelta(minutes=1),
         )
 
         order.apply(TestStubs.event_order_submitted(order))

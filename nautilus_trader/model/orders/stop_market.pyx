@@ -104,7 +104,7 @@ cdef class StopMarketOrder(Order):
     ValueError
         If `quantity` is not positive (> 0).
     ValueError
-        If `time_in_force` is ``GTD`` and the expire_time is ``None``.
+        If `time_in_force` is ``GTD`` and `expire_time` is ``None`` or <= UNIX epoch.
     """
     def __init__(
         self,
@@ -128,19 +128,21 @@ cdef class StopMarketOrder(Order):
         list contingency_ids=None,
         str tags=None,
     ):
+        cdef int64_t expire_time_ns = 0
         if time_in_force == TimeInForce.GTD:
             # Must have an expire time
             Condition.not_none(expire_time, "expire_time")
+            expire_time_ns = dt_to_unix_nanos(expire_time)
+            Condition.true(expire_time_ns > 0, "expire_time cannot be <= UNIX epoch.")
         else:
             # Should not have an expire time
             Condition.none(expire_time, "expire_time")
 
         # Set options
-        cdef int64_t expire_time_ns = dt_to_unix_nanos(expire_time) if expire_time is not None else -1
         cdef dict options = {
             "trigger_price": str(trigger_price),
             "trigger": TriggerMethodParser.to_str(trigger),
-            "expire_time_ns": expire_time_ns if expire_time_ns >= 0 else None,
+            "expire_time_ns": expire_time_ns if expire_time_ns > 0 else None,
         }
 
         # Create initialization event
@@ -212,7 +214,7 @@ cdef class StopMarketOrder(Order):
             "quantity": str(self.quantity),
             "trigger_price": str(self.trigger_price),
             "trigger": TriggerMethodParser.to_str(self.trigger),
-            "expire_time_ns": self.expire_time_ns,
+            "expire_time_ns": self.expire_time_ns if self.expire_time_ns > 0 else None,
             "time_in_force": TimeInForceParser.to_str(self.time_in_force),
             "filled_qty": str(self.filled_qty),
             "liquidity_side": LiquiditySideParser.to_str(self.liquidity_side),
