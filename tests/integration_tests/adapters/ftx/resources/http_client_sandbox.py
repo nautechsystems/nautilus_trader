@@ -14,6 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 import asyncio
+import json
 import os
 
 import pytest
@@ -65,12 +66,23 @@ async def test_ftx_http_client():
     # print(response)
 
     # response = await client.place_order(
-    #     market="ETH/USD",
+    #     market="ETH-PERP",
     #     side="sell",
     #     size="0.01",
     #     type="limit",
     #     price="5500",
-    #     client_id="103",
+    #     client_id="105",
+    #     # post_only=True,
+    #     # reduce_only=True,
+    # )
+
+    # response = await client.place_trigger_order(
+    #     market="ETH-PERP",
+    #     side="sell",
+    #     size="0.01",
+    #     type="stop",
+    #     trigger_price="2500",
+    #     client_id="106",
     #     # post_only=True,
     #     # reduce_only=True,
     # )
@@ -78,9 +90,9 @@ async def test_ftx_http_client():
 
     # response = await client.cancel_order("103")
 
-    # response = await client.get_order_history()
+    response = await client.get_trigger_order_history()
 
     # response = await client.get_order_status_by_client_id("001")
-    # print(json.dumps(response, indent=4))
+    print(json.dumps(response, indent=4))
 
     await client.disconnect()

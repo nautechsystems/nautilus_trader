@@ -243,7 +243,7 @@ class FTXHttpClient(HttpClient):
         if side is not None:
             payload["side"] = side
         if order_type is not None:
-            payload["order_type"] = order_type
+            payload["orderType"] = order_type
         if start_time is not None:
             payload["start_time"] = str(start_time)
         if end_time is not None:
@@ -271,12 +271,11 @@ class FTXHttpClient(HttpClient):
         if type is not None:
             payload["type"] = type
         if order_type is not None:
-            payload["order_type"] = order_type
+            payload["orderType"] = order_type
         if start_time is not None:
             payload["start_time"] = str(start_time)
         if end_time is not None:
             payload["end_time"] = str(end_time)
-
         return await self._sign_request(
             http_method="GET",
             url_path="conditional_orders/history",
@@ -373,7 +372,7 @@ class FTXHttpClient(HttpClient):
         type: str,
         client_id: str,
         price: Optional[str] = None,
-        trigger: Optional[str] = None,
+        trigger_price: Optional[str] = None,
         trail_value: Optional[str] = None,
         reduce_only: bool = False,
     ) -> Dict[str, Any]:
@@ -396,13 +395,12 @@ class FTXHttpClient(HttpClient):
             "size": size,
             "type": type,
             "clientId": client_id,
-            "limitPrice": client_id,
             "reduceOnly": reduce_only,
         }
         if price is not None:
             payload["orderPrice"] = price
-        if trigger is not None:
-            payload["triggerPrice"] = trigger
+        if trigger_price is not None:
+            payload["triggerPrice"] = trigger_price
         if trail_value is not None:
             payload["trailValue"] = trail_value
         return await self._sign_request(
