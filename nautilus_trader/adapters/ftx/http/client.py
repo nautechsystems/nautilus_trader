@@ -125,10 +125,10 @@ class FTXHttpClient(HttpClient):
         payload: Dict[str, str] = None,
         params: Dict[str, str] = None,
     ) -> Any:
-        # TODO(cs): Uncomment for development
-        # print(f"{http_method} {url_path} {headers} {payload}")
         if payload is None:
             payload = {}
+        # TODO(cs): Uncomment for development
+        # print(f"{http_method} {url_path} {headers} {payload}")
         query = self._url_encode(params)
         try:
             resp: ClientResponse = await self.request(
