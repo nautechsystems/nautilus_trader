@@ -29,10 +29,10 @@ Alternative implementations can be written on top of the generic engine - which
 just need to override the `execute` and `process` methods.
 """
 
-from libc.stdint cimport int64_t
-
 from decimal import Decimal
 from typing import Optional
+
+from libc.stdint cimport int64_t
 
 from nautilus_trader.cache.cache cimport Cache
 from nautilus_trader.common.clock cimport Clock
