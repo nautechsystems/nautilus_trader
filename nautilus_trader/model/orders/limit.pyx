@@ -136,7 +136,7 @@ cdef class LimitOrder(Order):
         Condition.true(
             display_qty is None or 0 <= display_qty <= quantity,
             fail_msg="display_qty was negative or greater than order quantity",
-            )
+        )
 
         # Set options
         cdef dict options = {
