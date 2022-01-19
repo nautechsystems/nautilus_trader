@@ -71,14 +71,16 @@ cdef class OrderStatusReport:
     """The reported order quantity to display on the public book (iceberg).\n\n:returns: `Quantity` or ``None``"""
     cdef readonly object avg_px
     """The reported order average fill price.\n\n:returns: `Decimal` or ``None``"""
-    cdef readonly bint is_post_only
+    cdef readonly bint post_only
     """If the reported order will only provide liquidity (make a market).\n\n:returns: `bool`"""
-    cdef readonly bint is_reduce_only
+    cdef readonly bint reduce_only
     """If the reported order carries the 'reduce-only' execution instruction.\n\n:returns: `bool`"""
     cdef readonly str reject_reason
     """The reported reason for order rejection.\n\n:returns: `str` or ``None``"""
     cdef readonly int64_t ts_accepted
     """The UNIX timestamp (nanoseconds) when the reported order was accepted.\n\n:returns: `int64`"""
+    cdef readonly int64_t ts_triggered
+    """The UNIX timestamp (nanoseconds) when the order was triggered (0 if not triggered).\n\n:returns: `int64`"""
     cdef readonly int64_t ts_last
     """The UNIX timestamp (nanoseconds) of the last order status change.\n\n:returns: `int64`"""
     cdef readonly int64_t ts_init

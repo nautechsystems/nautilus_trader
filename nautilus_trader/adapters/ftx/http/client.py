@@ -165,23 +165,6 @@ class FTXHttpClient(HttpClient):
                 headers=error.headers,
             )
 
-    async def list_futures(self) -> List[Dict[str, Any]]:
-        return await self._send_request(http_method="GET", url_path="futures")
-
-    async def list_markets(self) -> List[Dict[str, Any]]:
-        return await self._send_request(http_method="GET", url_path="markets")
-
-    async def get_orderbook(self, market: str, depth: int = None) -> Dict[str, Any]:
-        payload: Dict[str, str] = {}
-        if depth is not None:
-            payload = {"depth": str(depth)}
-
-        return await self._send_request(
-            http_method="GET",
-            url_path=f"markets/{market}/orderbook",
-            payload=payload,
-        )
-
     async def get_trades(self, market: str) -> List[Dict[str, Any]]:
         return await self._send_request(
             http_method="GET",
@@ -206,8 +189,31 @@ class FTXHttpClient(HttpClient):
             params=params,
         )
 
+    async def get_orderbook(self, market: str, depth: int = None) -> Dict[str, Any]:
+        payload: Dict[str, str] = {}
+        if depth is not None:
+            payload = {"depth": str(depth)}
+
+        return await self._send_request(
+            http_method="GET",
+            url_path=f"markets/{market}/orderbook",
+            payload=payload,
+        )
+
     async def get_account_info(self) -> Dict[str, Any]:
         return await self._sign_request(http_method="GET", url_path="account")
+
+    async def get_balances(self) -> List[dict]:
+        return await self._get("wallet/balances")
+
+    async def get_deposit_address(self, ticker: str) -> dict:
+        return await self._get(f"wallet/deposit_address/{ticker}")
+
+    async def list_futures(self) -> List[Dict[str, Any]]:
+        return await self._send_request(http_method="GET", url_path="futures")
+
+    async def list_markets(self) -> List[Dict[str, Any]]:
+        return await self._send_request(http_method="GET", url_path="markets")
 
     async def get_open_orders(self, market: str = None) -> List[Dict[str, Any]]:
         return await self._sign_request(
@@ -216,16 +222,11 @@ class FTXHttpClient(HttpClient):
             payload={"market": market},
         )
 
-    async def get_order_status(self, order_id: str) -> Dict[str, Any]:
+    async def get_open_trigger_orders(self, market: str = None) -> List[Dict[str, Any]]:
         return await self._sign_request(
             http_method="GET",
-            url_path=f"orders/{order_id}",
-        )
-
-    async def get_order_status_by_client_id(self, client_order_id: str) -> Dict[str, Any]:
-        return await self._sign_request(
-            http_method="GET",
-            url_path=f"orders/by_client_id/{client_order_id}",
+            url_path="conditional_orders",
+            payload={"market": market},
         )
 
     async def get_order_history(
@@ -253,7 +254,7 @@ class FTXHttpClient(HttpClient):
             payload=payload,
         )
 
-    async def get_conditional_order_history(
+    async def get_trigger_order_history(
         self,
         market: str = None,
         side: str = None,
@@ -280,6 +281,18 @@ class FTXHttpClient(HttpClient):
             http_method="GET",
             url_path="conditional_orders/history",
             payload=payload,
+        )
+
+    async def get_order_status(self, order_id: str) -> Dict[str, Any]:
+        return await self._sign_request(
+            http_method="GET",
+            url_path=f"orders/{order_id}",
+        )
+
+    async def get_order_status_by_client_id(self, client_order_id: str) -> Dict[str, Any]:
+        return await self._sign_request(
+            http_method="GET",
+            url_path=f"orders/by_client_id/{client_order_id}",
         )
 
     async def modify_order(
@@ -352,7 +365,7 @@ class FTXHttpClient(HttpClient):
             payload=payload,
         )
 
-    async def place_conditional_order(
+    async def place_trigger_order(
         self,
         market: str,
         side: str,
@@ -430,12 +443,6 @@ class FTXHttpClient(HttpClient):
             url_path="fills",
             payload=payload,
         )
-
-    async def get_balances(self) -> List[dict]:
-        return await self._get("wallet/balances")
-
-    async def get_deposit_address(self, ticker: str) -> dict:
-        return await self._get(f"wallet/deposit_address/{ticker}")
 
     async def get_positions(self, show_avg_price: bool = False) -> List[dict]:
         return await self._sign_request(

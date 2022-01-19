@@ -61,10 +61,11 @@ class TestExecutionReports:
             filled_qty=Quantity.from_int(0),
             display_qty=None,
             avg_px=None,
-            is_post_only=True,
-            is_reduce_only=False,
+            post_only=True,
+            reduce_only=False,
             reject_reason="SOME_REASON",
             ts_accepted=1_000_000,
+            ts_triggered=1_500_000,
             ts_last=2_000_000,
             ts_init=3_000_000,
         )
@@ -72,11 +73,11 @@ class TestExecutionReports:
         # Assert
         assert (
             str(report)
-            == "OrderStatusReport(client_order_id=O-123456, order_list_id=1, venue_order_id=2, order_side=SELL, order_type=STOP_LIMIT, contingency=OCO, time_in_force=DAY, order_status=REJECTED, price=0.90090, trigger_price=0.90100, trigger=DEFAULT, quantity=1000000, filled_qty=0, leaves_qty=1000000, display_qty=None, avg_px=None, is_post_only=True, is_reduce_only=False, reject_reason=SOME_REASON, ts_accepted=1000000, ts_last=2000000, ts_init=3000000)"  # noqa
+            == "OrderStatusReport(client_order_id=O-123456, order_list_id=1, venue_order_id=2, order_side=SELL, order_type=STOP_LIMIT, contingency=OCO, time_in_force=DAY, order_status=REJECTED, price=0.90090, trigger_price=0.90100, trigger=DEFAULT, quantity=1000000, filled_qty=0, leaves_qty=1000000, display_qty=None, avg_px=None, post_only=True, reduce_only=False, reject_reason=SOME_REASON, ts_accepted=1000000, ts_triggered=1500000, ts_last=2000000, ts_init=3000000)"  # noqa
         )
         assert (
             repr(report)
-            == "OrderStatusReport(client_order_id=O-123456, order_list_id=1, venue_order_id=2, order_side=SELL, order_type=STOP_LIMIT, contingency=OCO, time_in_force=DAY, order_status=REJECTED, price=0.90090, trigger_price=0.90100, trigger=DEFAULT, quantity=1000000, filled_qty=0, leaves_qty=1000000, display_qty=None, avg_px=None, is_post_only=True, is_reduce_only=False, reject_reason=SOME_REASON, ts_accepted=1000000, ts_last=2000000, ts_init=3000000)"  # noqa
+            == "OrderStatusReport(client_order_id=O-123456, order_list_id=1, venue_order_id=2, order_side=SELL, order_type=STOP_LIMIT, contingency=OCO, time_in_force=DAY, order_status=REJECTED, price=0.90090, trigger_price=0.90100, trigger=DEFAULT, quantity=1000000, filled_qty=0, leaves_qty=1000000, display_qty=None, avg_px=None, post_only=True, reduce_only=False, reject_reason=SOME_REASON, ts_accepted=1000000, ts_triggered=1500000, ts_last=2000000, ts_init=3000000)"  # noqa
         )
 
     def test_instantiate_trade_report(self):
@@ -180,10 +181,11 @@ class TestExecutionReports:
             filled_qty=Quantity.from_int(0),
             display_qty=None,
             avg_px=None,
-            is_post_only=True,
-            is_reduce_only=False,
+            post_only=True,
+            reduce_only=False,
             reject_reason="SOME_REASON",
             ts_accepted=1_000_000,
+            ts_triggered=0,
             ts_last=2_000_000,
             ts_init=3_000_000,
         )
@@ -195,11 +197,11 @@ class TestExecutionReports:
         assert mass_status.order_reports()[venue_order_id] == report
         assert (
             repr(mass_status)
-            == "ExecutionMassStatus(client_id=IB, account_id=SIM-000, order_reports={VenueOrderId('2'): OrderStatusReport(client_order_id=O-123456, order_list_id=1, venue_order_id=2, order_side=SELL, order_type=STOP_LIMIT, contingency=OCO, time_in_force=DAY, order_status=REJECTED, price=0.90090, trigger_price=0.90100, trigger=DEFAULT, quantity=1000000, filled_qty=0, leaves_qty=1000000, display_qty=None, avg_px=None, is_post_only=True, is_reduce_only=False, reject_reason=SOME_REASON, ts_accepted=1000000, ts_last=2000000, ts_init=3000000)}, trade_reports={}, position_reports={}, ts_init=0)"  # noqa
+            == "ExecutionMassStatus(client_id=IB, account_id=SIM-000, order_reports={VenueOrderId('2'): OrderStatusReport(client_order_id=O-123456, order_list_id=1, venue_order_id=2, order_side=SELL, order_type=STOP_LIMIT, contingency=OCO, time_in_force=DAY, order_status=REJECTED, price=0.90090, trigger_price=0.90100, trigger=DEFAULT, quantity=1000000, filled_qty=0, leaves_qty=1000000, display_qty=None, avg_px=None, post_only=True, reduce_only=False, reject_reason=SOME_REASON, ts_accepted=1000000, ts_triggered=0, ts_last=2000000, ts_init=3000000)}, trade_reports={}, position_reports={}, ts_init=0)"  # noqa
         )
         assert (
             repr(report)
-            == "OrderStatusReport(client_order_id=O-123456, order_list_id=1, venue_order_id=2, order_side=SELL, order_type=STOP_LIMIT, contingency=OCO, time_in_force=DAY, order_status=REJECTED, price=0.90090, trigger_price=0.90100, trigger=DEFAULT, quantity=1000000, filled_qty=0, leaves_qty=1000000, display_qty=None, avg_px=None, is_post_only=True, is_reduce_only=False, reject_reason=SOME_REASON, ts_accepted=1000000, ts_last=2000000, ts_init=3000000)"  # noqa
+            == "OrderStatusReport(client_order_id=O-123456, order_list_id=1, venue_order_id=2, order_side=SELL, order_type=STOP_LIMIT, contingency=OCO, time_in_force=DAY, order_status=REJECTED, price=0.90090, trigger_price=0.90100, trigger=DEFAULT, quantity=1000000, filled_qty=0, leaves_qty=1000000, display_qty=None, avg_px=None, post_only=True, reduce_only=False, reject_reason=SOME_REASON, ts_accepted=1000000, ts_triggered=0, ts_last=2000000, ts_init=3000000)"  # noqa
         )
 
     def test_add_position_state_reports(self):

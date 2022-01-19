@@ -84,10 +84,50 @@ def parse_order_status(
         filled_qty=instrument.make_qty(str(data["filledSize"])),
         display_qty=None,
         avg_px=Decimal(str(avg_px)) if avg_px is not None else None,
-        is_post_only=data["postOnly"],
-        is_reduce_only=data["reduceOnly"],
+        post_only=data["postOnly"],
+        reduce_only=data["reduceOnly"],
         reject_reason=None,
         ts_accepted=created_at,
+        ts_triggered=0,
+        ts_last=created_at,
+        ts_init=ts_init,
+    )
+
+
+def parse_trigger_order_status(
+    instrument: Instrument,
+    data: Dict[str, Any],
+    ts_init: int,
+) -> OrderStatusReport:
+    client_id_str = data["clientId"]
+    price = data["price"]
+    avg_px = data["avgFillPrice"]
+    triggered_at = data["triggeredAt"]
+    created_at = int(pd.to_datetime(data["createdAt"]).to_datetime64())
+    return OrderStatusReport(
+        instrument_id=InstrumentId(Symbol(data["market"]), FTX_VENUE),
+        client_order_id=ClientOrderId(client_id_str) if client_id_str is not None else None,
+        order_list_id=None,
+        venue_order_id=VenueOrderId(str(data["id"])),
+        order_side=OrderSide.BUY if data["side"] == "buy" else OrderSide.SELL,
+        order_type=parse_order_type(data=data, price_str="price"),
+        contingency=ContingencyType.NONE,
+        time_in_force=TimeInForce.IOC if data["ioc"] else TimeInForce.GTC,
+        order_status=parse_status(data),
+        price=instrument.make_price(price) if price is not None else None,
+        trigger_price=None,
+        trigger=TriggerMethod.DEFAULT,
+        quantity=instrument.make_qty(str(data["size"])),
+        filled_qty=instrument.make_qty(str(data["filledSize"])),
+        display_qty=None,
+        avg_px=Decimal(str(avg_px)) if avg_px is not None else None,
+        post_only=data["postOnly"],
+        reduce_only=data["reduceOnly"],
+        reject_reason=None,
+        ts_accepted=created_at,
+        ts_triggered=int(pd.to_datetime(triggered_at, utc=True).to_datetime64())
+        if triggered_at is not None
+        else 0,
         ts_last=created_at,
         ts_init=ts_init,
     )
