@@ -174,7 +174,7 @@ class TestMsgPackSerializer:
         # Assert
         assert unpacked == order
 
-    def test_pack_and_unpack_limit_orders_with_expire_time(self):
+    def test_pack_and_unpack_limit_orders_with_expiration(self):
         # Arrange
         order = LimitOrder(
             self.trader_id,
@@ -185,7 +185,7 @@ class TestMsgPackSerializer:
             Quantity(100000, precision=0),
             price=Price(1.00000, precision=5),
             time_in_force=TimeInForce.GTD,
-            expire_time=UNIX_EPOCH + timedelta(minutes=1),
+            expiration=UNIX_EPOCH + timedelta(minutes=1),
             init_id=UUID4(),
             ts_init=0,
         )
@@ -209,7 +209,7 @@ class TestMsgPackSerializer:
             trigger_price=Price(1.00000, precision=5),
             trigger=TriggerMethod.DEFAULT,
             time_in_force=TimeInForce.GTC,
-            expire_time=None,
+            expiration=None,
             init_id=UUID4(),
             ts_init=0,
         )
@@ -221,7 +221,7 @@ class TestMsgPackSerializer:
         # Assert
         assert unpacked == order
 
-    def test_pack_and_unpack_stop_market_orders_with_expire_time(self):
+    def test_pack_and_unpack_stop_market_orders_with_expiration(self):
         # Arrange
         order = StopMarketOrder(
             self.trader_id,
@@ -233,7 +233,7 @@ class TestMsgPackSerializer:
             trigger_price=Price(1.00000, precision=5),
             trigger=TriggerMethod.DEFAULT,
             time_in_force=TimeInForce.GTD,
-            expire_time=UNIX_EPOCH + timedelta(minutes=1),
+            expiration=UNIX_EPOCH + timedelta(minutes=1),
             init_id=UUID4(),
             ts_init=0,
         )
@@ -258,7 +258,7 @@ class TestMsgPackSerializer:
             trigger_price=Price(1.00010, precision=5),
             trigger=TriggerMethod.BID_ASK,
             time_in_force=TimeInForce.GTC,
-            expire_time=None,
+            expiration=None,
             init_id=UUID4(),
             ts_init=0,
         )
@@ -270,7 +270,7 @@ class TestMsgPackSerializer:
         # Assert
         assert unpacked == order
 
-    def test_pack_and_unpack_stop_limit_orders_with_expire_time(self):
+    def test_pack_and_unpack_stop_limit_orders_with_expiration(self):
         # Arrange
         order = StopLimitOrder(
             self.trader_id,
@@ -283,7 +283,7 @@ class TestMsgPackSerializer:
             trigger_price=Price(1.00010, precision=5),
             trigger=TriggerMethod.LAST,
             time_in_force=TimeInForce.GTD,
-            expire_time=UNIX_EPOCH + timedelta(minutes=1),
+            expiration=UNIX_EPOCH + timedelta(minutes=1),
             init_id=UUID4(),
             ts_init=0,
         )
@@ -515,7 +515,7 @@ class TestMsgPackSerializer:
     def test_serialize_and_deserialize_limit_order_initialized_events(self):
         # Arrange
         options = {
-            "expire_time_ns": 1_000_000_000,
+            "expiration_ns": 1_000_000_000,
             "price": "1.0010",
         }
 
@@ -588,7 +588,7 @@ class TestMsgPackSerializer:
     def test_serialize_and_deserialize_stop_limit_order_initialized_events(self):
         # Arrange
         options = {
-            "expire_time": None,
+            "expiration_ns": None,
             "price": "1.0005",
             "trigger_price": "1.0010",
         }

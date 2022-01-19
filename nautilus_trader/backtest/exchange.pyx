@@ -1081,7 +1081,7 @@ cdef class SimulatedExchange:
         for order in orders:
             if not order.is_working_c():
                 continue  # Orders state has changed since the loop started
-            elif order.expire_time and timestamp_ns >= order.expire_time_ns:
+            elif order.expiration and timestamp_ns >= order.expiration_ns:
                 self._delete_order(order)
                 self._expire_order(order)
                 continue
@@ -1646,7 +1646,7 @@ cdef class SimulatedExchange:
             instrument_id=order.instrument_id,
             client_order_id=order.client_order_id,
             venue_order_id=order.venue_order_id,
-            ts_event=order.expire_time_ns,
+            ts_event=order.expiration_ns,
         )
 
     cdef void _generate_order_filled(
