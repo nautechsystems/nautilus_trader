@@ -13,12 +13,14 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from typing import Optional
+
 from cpython.datetime cimport datetime
 from libc.stdint cimport int64_t
 
 from nautilus_trader.core.correctness cimport Condition
-from nautilus_trader.core.datetime cimport dt_to_unix_nanos
 from nautilus_trader.core.datetime cimport format_iso8601
+from nautilus_trader.core.datetime cimport maybe_dt_to_unix_nanos
 from nautilus_trader.core.datetime cimport maybe_unix_nanos_to_dt
 from nautilus_trader.core.uuid cimport UUID4
 from nautilus_trader.model.c_enums.contingency_type cimport ContingencyType
@@ -156,17 +158,14 @@ cdef class StopLimitOrder(Order):
         )
 
         # Set options
+        expire_time_ns: Optional[int] = maybe_dt_to_unix_nanos(expire_time)
         cdef dict options = {
             "price": str(price),
             "trigger_price": str(trigger_price),
             "trigger": TriggerMethodParser.to_str(trigger),
+            "expire_time_ns": expire_time_ns,
             "display_qty": str(display_qty) if display_qty is not None else None,
         }
-
-        # Set expire time
-        cdef int64_t expire_time_ns = dt_to_unix_nanos(expire_time) if expire_time is not None else 0
-        if expire_time is not None:
-            options["expire_time_ns"] = expire_time_ns
 
         # Create initialization event
         cdef OrderInitialized init = OrderInitialized(
@@ -196,7 +195,7 @@ cdef class StopLimitOrder(Order):
         self.trigger_price = trigger_price
         self.trigger = trigger
         self.expire_time = expire_time
-        self.expire_time_ns = expire_time_ns
+        self.expire_time_ns = expire_time_ns or 0
         self.display_qty = display_qty
         self.is_triggered = False
         self.ts_triggered = 0
@@ -301,7 +300,7 @@ cdef class StopLimitOrder(Order):
             trigger_price=Price.from_str_c(init.options["trigger_price"]),
             trigger=TriggerMethodParser.from_str(init.options["trigger"]),
             time_in_force=init.time_in_force,
-            expire_time=maybe_unix_nanos_to_dt(init.options.get("expire_time_ns")),
+            expire_time=maybe_unix_nanos_to_dt(init.options["expire_time_ns"]),
             init_id=init.id,
             ts_init=init.ts_init,
             post_only=init.post_only,
