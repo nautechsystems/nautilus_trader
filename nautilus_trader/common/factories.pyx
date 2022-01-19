@@ -226,7 +226,7 @@ cdef class OrderFactory:
         ValueError
             If `quantity` is not positive (> 0).
         ValueError
-            If `time_in_force` is ``GTD`` and `expire_time` is ``None``.
+            If `time_in_force` is ``GTD`` and `expire_time` is ``None`` or <= UNIX epoch.
         ValueError
             If `display_qty` is negative (< 0) or greater than `quantity`.
 
@@ -302,7 +302,7 @@ cdef class OrderFactory:
         ValueError
             If `quantity` is not positive (> 0).
         ValueError
-            If `time_in_force` is ``GTD`` and `expire_time` is ``None``.
+            If `time_in_force` is ``GTD`` and `expire_time` is ``None`` or <= UNIX epoch.
 
         """
         return StopMarketOrder(
@@ -384,7 +384,7 @@ cdef class OrderFactory:
         ValueError
             If `quantity` is not positive (> 0).
         ValueError
-            If `time_in_force` is ``GTD`` and `expire_time` is ``None``.
+            If `time_in_force` is ``GTD`` and `expire_time` is ``None`` or <= UNIX epoch.
         ValueError
             If `display_qty` is negative (< 0) or greater than `quantity`.
 
