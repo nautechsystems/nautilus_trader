@@ -261,7 +261,7 @@ cdef class TrailingStopMarketOrder(Order):
 
         Returns
         -------
-        StopMarketOrder
+        TrailingStopMarketOrder
 
         Raises
         ------
