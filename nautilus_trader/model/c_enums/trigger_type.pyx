@@ -14,46 +14,58 @@
 # -------------------------------------------------------------------------------------------------
 
 
-cdef class OrderTypeParser:
+cdef class TriggerTypeParser:
 
     @staticmethod
     cdef str to_str(int value):
-        if value == 1:
-            return "MARKET"
+        if value == 0:
+            return "DEFAULT"
+        elif value == 1:
+            return "LAST"
         elif value == 2:
-            return "LIMIT"
+            return "BID_ASK"
         elif value == 3:
-            return "STOP_MARKET"
+            return "DOUBLE_LAST"
         elif value == 4:
-            return "STOP_LIMIT"
+            return "DOUBLE_BID_ASK"
         elif value == 5:
-            return "TRAILING_STOP_MARKET"
+            return "LAST_OR_BID_ASK"
         elif value == 6:
-            return "TRAILING_STOP_LIMIT"
+            return "MID_POINT"
+        elif value == 7:
+            return "MARK"
+        elif value == 8:
+            return "INDEX"
         else:
             raise ValueError(f"value was invalid, was {value}")
 
     @staticmethod
-    cdef OrderType from_str(str value) except *:
-        if value == "MARKET":
-            return OrderType.MARKET
-        elif value == "LIMIT":
-            return OrderType.LIMIT
-        elif value == "STOP_MARKET":
-            return OrderType.STOP_MARKET
-        elif value == "STOP_LIMIT":
-            return OrderType.STOP_LIMIT
-        elif value == "TRAILING_STOP_MARKET":
-            return OrderType.TRAILING_STOP_MARKET
-        elif value == "TRAILING_STOP_LIMIT":
-            return OrderType.TRAILING_STOP_LIMIT
+    cdef TriggerType from_str(str value) except *:
+        if value == "DEFAULT":
+            return TriggerType.DEFAULT
+        elif value == "LAST":
+            return TriggerType.LAST
+        elif value == "BID_ASK":
+            return TriggerType.BID_ASK
+        elif value == "DOUBLE_LAST":
+            return TriggerType.DOUBLE_LAST
+        elif value == "DOUBLE_BID_ASK":
+            return TriggerType.DOUBLE_BID_ASK
+        elif value == "LAST_OR_BID_ASK":
+            return TriggerType.LAST_OR_BID_ASK
+        elif value == "MID_POINT":
+            return TriggerType.MID_POINT
+        elif value == "MARK":
+            return TriggerType.MARK
+        elif value == "INDEX":
+            return TriggerType.INDEX
         else:
             raise ValueError(f"value was invalid, was {value}")
 
     @staticmethod
     def to_str_py(int value):
-        return OrderTypeParser.to_str(value)
+        return TriggerTypeParser.to_str(value)
 
     @staticmethod
     def from_str_py(str value):
-        return OrderTypeParser.from_str(value)
+        return TriggerTypeParser.from_str(value)

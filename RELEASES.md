@@ -22,7 +22,12 @@ safety this type is now utilized for the `TradeTick.trade_id`.
 
 ### Enhancements
 - Introduced the `TradeId` type to enforce `trade_id` typing.
-- Added `TriggerMethod` enum.
+- Added `TrailingOffsetType` enum.
+- Added `TrailingStopMarketOrder`.
+- Added `TrailingStopLimitOrder`.
+- Added trailing order factory methods.
+- Added `trigger_type` param to stop orders.
+- Added `TriggerType` enum.
 - Large refactoring of order base and impl classes.
 - Overhaul of execution reports.
 

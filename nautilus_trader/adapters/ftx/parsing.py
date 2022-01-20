@@ -40,7 +40,8 @@ from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import OrderStatus
 from nautilus_trader.model.enums import OrderType
 from nautilus_trader.model.enums import TimeInForce
-from nautilus_trader.model.enums import TriggerMethod
+from nautilus_trader.model.enums import TrailingOffsetType
+from nautilus_trader.model.enums import TriggerType
 from nautilus_trader.model.identifiers import ClientOrderId
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import Symbol
@@ -79,7 +80,10 @@ def parse_order_status(
         order_status=parse_status(data),
         price=instrument.make_price(price) if price is not None else None,
         trigger_price=None,
-        trigger=TriggerMethod.DEFAULT,
+        trigger_type=TriggerType.DEFAULT,
+        limit_offset=None,
+        trailing_offset=None,
+        offset_type=TrailingOffsetType.PRICE,
         quantity=instrument.make_qty(str(data["size"])),
         filled_qty=instrument.make_qty(str(data["filledSize"])),
         display_qty=None,
@@ -103,6 +107,7 @@ def parse_trigger_order_status(
     price = data["price"]
     avg_px = data["avgFillPrice"]
     triggered_at = data["triggeredAt"]
+    trail_value = data["trailValue"]
     created_at = int(pd.to_datetime(data["createdAt"]).to_datetime64())
     return OrderStatusReport(
         instrument_id=InstrumentId(Symbol(data["market"]), FTX_VENUE),
@@ -116,7 +121,10 @@ def parse_trigger_order_status(
         order_status=parse_status(data),
         price=instrument.make_price(price) if price is not None else None,
         trigger_price=None,
-        trigger=TriggerMethod.DEFAULT,
+        trigger_type=TriggerType.DEFAULT,
+        limit_offset=None,
+        trailing_offset=Decimal(str(trail_value)) if trail_value is not None else None,
+        offset_type=TrailingOffsetType.PRICE,
         quantity=instrument.make_qty(str(data["size"])),
         filled_qty=instrument.make_qty(str(data["filledSize"])),
         display_qty=None,

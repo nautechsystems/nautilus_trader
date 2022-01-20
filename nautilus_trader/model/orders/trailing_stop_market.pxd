@@ -16,30 +16,27 @@
 from cpython.datetime cimport datetime
 from libc.stdint cimport int64_t
 
+from nautilus_trader.model.c_enums.trailing_offset_type cimport TrailingOffsetType
 from nautilus_trader.model.c_enums.trigger_type cimport TriggerType
 from nautilus_trader.model.events.order cimport OrderInitialized
 from nautilus_trader.model.objects cimport Price
-from nautilus_trader.model.objects cimport Quantity
 from nautilus_trader.model.orders.base cimport Order
 
 
-cdef class StopLimitOrder(Order):
-    cdef readonly Price price
-    """The order price (LIMIT).\n\n:returns: `Price`"""
+cdef class TrailingStopMarketOrder(Order):
     cdef readonly Price trigger_price
     """The order trigger price (STOP).\n\n:returns: `Price`"""
     cdef readonly TriggerType trigger_type
     """The trigger type for the order.\n\n:returns: `TriggerType`"""
+    cdef readonly object trailing_offset
+    """The trailing offset for the orders trigger (STOP) price.\n\n:returns: `Decimal`"""
+    cdef readonly TrailingOffsetType offset_type
+    """The trailing offset type.\n\n:returns: `Decimal`"""
     cdef readonly datetime expiration
     """The order expiration.\n\n:returns: `datetime` or ``None``"""
     cdef readonly int64_t expiration_ns
     """The order expiration (UNIX epoch nanoseconds), zero for no expiration.\n\n:returns: `int64`"""
-    cdef readonly Quantity display_qty
-    """The quantity of the ``LIMIT`` order to display on the public book (iceberg).\n\n:returns: `Quantity` or ``None``"""  # noqa
-    cdef readonly bint is_triggered
-    """If the order has been triggered.\n\n:returns: `bool`"""
-    cdef readonly int64_t ts_triggered
-    """The UNIX timestamp (nanoseconds) when the order was triggered (0 if not triggered).\n\n:returns: `int64`"""
+
 
     @staticmethod
-    cdef StopLimitOrder create(OrderInitialized init)
+    cdef TrailingStopMarketOrder create(OrderInitialized init)

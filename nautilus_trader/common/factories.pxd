@@ -13,6 +13,8 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from decimal import Decimal
+
 from cpython.datetime cimport datetime
 
 from nautilus_trader.common.clock cimport Clock
@@ -20,7 +22,8 @@ from nautilus_trader.common.generators cimport ClientOrderIdGenerator
 from nautilus_trader.common.uuid cimport UUIDFactory
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
 from nautilus_trader.model.c_enums.time_in_force cimport TimeInForce
-from nautilus_trader.model.c_enums.trigger_method cimport TriggerMethod
+from nautilus_trader.model.c_enums.trailing_offset_type cimport TrailingOffsetType
+from nautilus_trader.model.c_enums.trigger_type cimport TriggerType
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.identifiers cimport StrategyId
 from nautilus_trader.model.identifiers cimport TraderId
@@ -31,6 +34,8 @@ from nautilus_trader.model.orders.list cimport OrderList
 from nautilus_trader.model.orders.market cimport MarketOrder
 from nautilus_trader.model.orders.stop_limit cimport StopLimitOrder
 from nautilus_trader.model.orders.stop_market cimport StopMarketOrder
+from nautilus_trader.model.orders.trailing_stop_limit cimport TrailingStopLimitOrder
+from nautilus_trader.model.orders.trailing_stop_market cimport TrailingStopMarketOrder
 
 
 cdef class OrderFactory:
@@ -79,7 +84,7 @@ cdef class OrderFactory:
         OrderSide order_side,
         Quantity quantity,
         Price trigger_price,
-        TriggerMethod trigger=*,
+        TriggerType trigger_type=*,
         TimeInForce time_in_force=*,
         datetime expiration=*,
         bint reduce_only=*,
@@ -93,7 +98,41 @@ cdef class OrderFactory:
         Quantity quantity,
         Price price,
         Price trigger_price,
-        TriggerMethod trigger=*,
+        TriggerType trigger_type=*,
+        TimeInForce time_in_force=*,
+        datetime expiration=*,
+        bint post_only=*,
+        bint reduce_only=*,
+        Quantity display_qty=*,
+        str tags=*,
+    )
+
+    cpdef TrailingStopMarketOrder trailing_stop_market(
+        self,
+        InstrumentId instrument_id,
+        OrderSide order_side,
+        Quantity quantity,
+        Price trigger_price,
+        trailing_offset: Decimal,
+        TriggerType trigger_type=*,
+        TrailingOffsetType offset_type=*,
+        TimeInForce time_in_force=*,
+        datetime expiration=*,
+        bint reduce_only=*,
+        str tags=*,
+    )
+
+    cpdef TrailingStopLimitOrder trailing_stop_limit(
+        self,
+        InstrumentId instrument_id,
+        OrderSide order_side,
+        Quantity quantity,
+        Price price,
+        Price trigger_price,
+        limit_offset: Decimal,
+        trailing_offset: Decimal,
+        TriggerType trigger_type=*,
+        TrailingOffsetType offset_type=*,
         TimeInForce time_in_force=*,
         datetime expiration=*,
         bint post_only=*,

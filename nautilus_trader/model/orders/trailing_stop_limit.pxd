@@ -16,6 +16,7 @@
 from cpython.datetime cimport datetime
 from libc.stdint cimport int64_t
 
+from nautilus_trader.model.c_enums.trailing_offset_type cimport TrailingOffsetType
 from nautilus_trader.model.c_enums.trigger_type cimport TriggerType
 from nautilus_trader.model.events.order cimport OrderInitialized
 from nautilus_trader.model.objects cimport Price
@@ -23,13 +24,19 @@ from nautilus_trader.model.objects cimport Quantity
 from nautilus_trader.model.orders.base cimport Order
 
 
-cdef class StopLimitOrder(Order):
+cdef class TrailingStopLimitOrder(Order):
     cdef readonly Price price
     """The order price (LIMIT).\n\n:returns: `Price`"""
     cdef readonly Price trigger_price
     """The order trigger price (STOP).\n\n:returns: `Price`"""
     cdef readonly TriggerType trigger_type
     """The trigger type for the order.\n\n:returns: `TriggerType`"""
+    cdef readonly object limit_offset
+    """The trailing offset for the orders limit price.\n\n:returns: `Decimal`"""
+    cdef readonly object trailing_offset
+    """The trailing offset for the orders trigger (STOP) price.\n\n:returns: `Decimal`"""
+    cdef readonly TrailingOffsetType offset_type
+    """The trailing offset type.\n\n:returns: `Decimal`"""
     cdef readonly datetime expiration
     """The order expiration.\n\n:returns: `datetime` or ``None``"""
     cdef readonly int64_t expiration_ns
@@ -42,4 +49,4 @@ cdef class StopLimitOrder(Order):
     """The UNIX timestamp (nanoseconds) when the order was triggered (0 if not triggered).\n\n:returns: `int64`"""
 
     @staticmethod
-    cdef StopLimitOrder create(OrderInitialized init)
+    cdef TrailingStopLimitOrder create(OrderInitialized init)

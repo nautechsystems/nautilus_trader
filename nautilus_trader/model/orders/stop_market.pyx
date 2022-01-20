@@ -30,8 +30,8 @@ from nautilus_trader.model.c_enums.order_type cimport OrderType
 from nautilus_trader.model.c_enums.order_type cimport OrderTypeParser
 from nautilus_trader.model.c_enums.time_in_force cimport TimeInForce
 from nautilus_trader.model.c_enums.time_in_force cimport TimeInForceParser
-from nautilus_trader.model.c_enums.trigger_method cimport TriggerMethod
-from nautilus_trader.model.c_enums.trigger_method cimport TriggerMethodParser
+from nautilus_trader.model.c_enums.trigger_type cimport TriggerType
+from nautilus_trader.model.c_enums.trigger_type cimport TriggerTypeParser
 from nautilus_trader.model.events.order cimport OrderInitialized
 from nautilus_trader.model.events.order cimport OrderUpdated
 from nautilus_trader.model.identifiers cimport ClientOrderId
@@ -73,8 +73,8 @@ cdef class StopMarketOrder(Order):
         The order quantity (> 0).
     trigger_price : Price
         The order trigger price (STOP).
-    trigger : TriggerMethod
-        The order trigger method.
+    trigger_type : TriggerType
+        The order trigger type.
     time_in_force : TimeInForce
         The order time-in-force.
     expiration : datetime, optional
@@ -115,7 +115,7 @@ cdef class StopMarketOrder(Order):
         OrderSide order_side,
         Quantity quantity not None,
         Price trigger_price not None,
-        TriggerMethod trigger,
+        TriggerType trigger_type,
         TimeInForce time_in_force,
         datetime expiration,  # Can be None
         UUID4 init_id not None,
@@ -141,7 +141,7 @@ cdef class StopMarketOrder(Order):
         # Set options
         cdef dict options = {
             "trigger_price": str(trigger_price),
-            "trigger": TriggerMethodParser.to_str(trigger),
+            "trigger_type": TriggerTypeParser.to_str(trigger_type),
             "expiration_ns": expiration_ns if expiration_ns > 0 else None,
         }
 
@@ -170,7 +170,7 @@ cdef class StopMarketOrder(Order):
         super().__init__(init=init)
 
         self.trigger_price = trigger_price
-        self.trigger = trigger
+        self.trigger_type = trigger_type
         self.expiration = expiration
         self.expiration_ns = expiration_ns
 
@@ -186,8 +186,8 @@ cdef class StopMarketOrder(Order):
         cdef str expiration_str = "" if self.expiration is None else f" {format_iso8601(self.expiration)}"
         return (
             f"{OrderSideParser.to_str(self.side)} {self.quantity.to_str()} {self.instrument_id} "
-            f"{OrderTypeParser.to_str(self.type)} @ {self.trigger_price}-"
-            f"{TriggerMethodParser.to_str(self.trigger)} "
+            f"{OrderTypeParser.to_str(self.type)} @ {self.trigger_price}"
+            f"[{TriggerTypeParser.to_str(self.trigger_type)}] "
             f"{TimeInForceParser.to_str(self.time_in_force)}{expiration_str}"
         )
 
@@ -213,7 +213,7 @@ cdef class StopMarketOrder(Order):
             "side": OrderSideParser.to_str(self.side),
             "quantity": str(self.quantity),
             "trigger_price": str(self.trigger_price),
-            "trigger": TriggerMethodParser.to_str(self.trigger),
+            "trigger_type": TriggerTypeParser.to_str(self.trigger_type),
             "expiration_ns": self.expiration_ns if self.expiration_ns > 0 else None,
             "time_in_force": TimeInForceParser.to_str(self.time_in_force),
             "filled_qty": str(self.filled_qty),
@@ -263,7 +263,7 @@ cdef class StopMarketOrder(Order):
             order_side=init.side,
             quantity=init.quantity,
             trigger_price=Price.from_str_c(init.options["trigger_price"]),
-            trigger=TriggerMethodParser.from_str(init.options["trigger"]),
+            trigger_type=TriggerTypeParser.from_str(init.options["trigger_type"]),
             time_in_force=init.time_in_force,
             expiration=maybe_unix_nanos_to_dt(init.options["expiration_ns"]),
             init_id=init.id,

@@ -13,6 +13,8 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from decimal import Decimal
+
 from cpython.datetime cimport datetime
 from libc.stdint cimport int64_t
 
@@ -30,6 +32,7 @@ from nautilus_trader.model.c_enums.order_type cimport OrderType
 from nautilus_trader.model.c_enums.order_type cimport OrderTypeParser
 from nautilus_trader.model.c_enums.time_in_force cimport TimeInForce
 from nautilus_trader.model.c_enums.time_in_force cimport TimeInForceParser
+from nautilus_trader.model.c_enums.trailing_offset_type cimport TrailingOffsetTypeParser
 from nautilus_trader.model.c_enums.trigger_type cimport TriggerType
 from nautilus_trader.model.c_enums.trigger_type cimport TriggerTypeParser
 from nautilus_trader.model.events.order cimport OrderInitialized
@@ -45,21 +48,23 @@ from nautilus_trader.model.objects cimport Quantity
 from nautilus_trader.model.orders.base cimport Order
 
 
-cdef class StopLimitOrder(Order):
+cdef class TrailingStopLimitOrder(Order):
     """
-    Represents a stop-limit trigger order.
+    Represents a trailing stop-limit trigger order.
 
-    A stop-limit order is an instruction to submit a buy or sell limit order
-    when the user-specified stop trigger price is attained or penetrated. The
-    order has two basic components: the stop price and the limit price. When a
-    trade has occurred at or through the stop price, the order becomes
-    executable and enters the market as a limit order, which is an order to buy
-    or sell at a specified price or better.
+    A trailing stop limit order is designed to allow a trader to specify a
+    limit on the maximum possible loss, without setting a limit on the maximum
+    possible gain. A SELL trailing stop limit moves with the market price, and
+    continually recalculates the stop trigger price at a fixed amount below the
+    market price, based on the user-defined "trailing" offset. The limit order
+    price is also continually recalculated based on the limit offset. As the
+    market price rises, both the stop price and the limit price rise by the
+    trail amount and limit offset respectively, but if the stock price falls,
+    the stop price remains unchanged, and when the stop price is hit a limit
+    order is submitted at the last calculated limit price.
 
-    A stop-limit eliminates the price risk associated with a stop order where
-    the execution price cannot be guaranteed, but exposes the trader to the
-    risk that the order may never fill even if the stop price is reached. The
-    trader could "miss the market" altogether.
+    A "Buy" trailing stop limit order is the mirror image of a sell trailing
+    stop limit, and is generally used in falling markets.
 
     Parameters
     ----------
@@ -81,6 +86,12 @@ cdef class StopLimitOrder(Order):
         The order trigger price (STOP).
     trigger_type : TriggerType
         The order trigger type.
+    limit_offset : Decimal
+        The trailing offset for the order (LIMIT) price.
+    trailing_offset : Decimal
+        The trailing offset for the order trigger (STOP) price.
+    offset_type : TrailingOffsetType
+        The order trailing offset type.
     time_in_force : TimeInForce
         The order time-in-force.
     expiration : datetime, optional
@@ -130,6 +141,9 @@ cdef class StopLimitOrder(Order):
         Price price not None,
         Price trigger_price not None,
         TriggerType trigger_type,
+        limit_offset: Decimal,
+        trailing_offset: Decimal,
+        TrailingOffsetType offset_type,
         TimeInForce time_in_force,
         datetime expiration,  # Can be None
         UUID4 init_id not None,
@@ -156,13 +170,16 @@ cdef class StopLimitOrder(Order):
         Condition.true(
             display_qty is None or 0 <= display_qty <= quantity,
             fail_msg="display_qty was negative or greater than order quantity",
-        )
+            )
 
         # Set options
         cdef dict options = {
             "price": str(price),
             "trigger_price": str(trigger_price),
             "trigger_type": TriggerTypeParser.to_str(trigger_type),
+            "limit_offset": str(limit_offset),
+            "trailing_offset": str(trailing_offset),
+            "offset_type": TrailingOffsetTypeParser.to_str(offset_type),
             "expiration_ns": expiration_ns if expiration_ns > 0 else None,
             "display_qty": str(display_qty) if display_qty is not None else None,
         }
@@ -174,7 +191,7 @@ cdef class StopLimitOrder(Order):
             instrument_id=instrument_id,
             client_order_id=client_order_id,
             order_side=order_side,
-            order_type=OrderType.STOP_LIMIT,
+            order_type=OrderType.TRAILING_STOP_LIMIT,
             quantity=quantity,
             time_in_force=time_in_force,
             post_only=post_only,
@@ -194,6 +211,9 @@ cdef class StopLimitOrder(Order):
         self.price = price
         self.trigger_price = trigger_price
         self.trigger_type = trigger_type
+        self.limit_offset = limit_offset
+        self.trailing_offset = trailing_offset
+        self.offset_type = offset_type
         self.expiration = expiration
         self.expiration_ns = expiration_ns
         self.display_qty = display_qty
@@ -214,6 +234,8 @@ cdef class StopLimitOrder(Order):
             f"{OrderSideParser.to_str(self.side)} {self.quantity.to_str()} {self.instrument_id} "
             f"{OrderTypeParser.to_str(self.type)} @ {self.trigger_price}-STOP"
             f"[{TriggerTypeParser.to_str(self.trigger_type)}] {self.price}-LIMIT "
+            f"{self.trailing_offset}-TRAILING_OFFSET[{TrailingOffsetTypeParser.to_str(self.offset_type)}] "
+            f"{self.limit_offset}-LIMIT_OFFSET[{TrailingOffsetTypeParser.to_str(self.offset_type)}] "
             f"{TimeInForceParser.to_str(self.time_in_force)}{expiration_str}"
         )
 
@@ -241,6 +263,9 @@ cdef class StopLimitOrder(Order):
             "price": str(self.price),
             "trigger_price": str(self.trigger_price),
             "trigger_type": TriggerTypeParser.to_str(self.trigger_type),
+            "limit_offset": str(self.limit_offset),
+            "trailing_offset": str(self.trailing_offset),
+            "offset_type": TrailingOffsetTypeParser.to_str(self.offset_type),
             "expiration_ns": self.expiration_ns if self.expiration_ns > 0 else None,
             "time_in_force": TimeInForceParser.to_str(self.time_in_force),
             "filled_qty": str(self.filled_qty),
@@ -262,7 +287,7 @@ cdef class StopLimitOrder(Order):
         }
 
     @staticmethod
-    cdef StopLimitOrder create(OrderInitialized init):
+    cdef TrailingStopLimitOrder create(OrderInitialized init):
         """
         Return a stop-limit order from the given initialized event.
 
@@ -282,11 +307,11 @@ cdef class StopLimitOrder(Order):
 
         """
         Condition.not_none(init, "init")
-        Condition.equal(init.type, OrderType.STOP_LIMIT, "init.type", "OrderType")
+        Condition.equal(init.type, OrderType.TRAILING_STOP_LIMIT, "init.type", "OrderType")
 
         cdef str display_qty_str = init.options["display_qty"]
 
-        return StopLimitOrder(
+        return TrailingStopLimitOrder(
             trader_id=init.trader_id,
             strategy_id=init.strategy_id,
             instrument_id=init.instrument_id,
@@ -296,6 +321,9 @@ cdef class StopLimitOrder(Order):
             price=Price.from_str_c(init.options["price"]),
             trigger_price=Price.from_str_c(init.options["trigger_price"]),
             trigger_type=TriggerTypeParser.from_str(init.options["trigger_type"]),
+            limit_offset=Decimal(init.options["limit_offset"]),
+            trailing_offset=Decimal(init.options["trailing_offset"]),
+            offset_type=TrailingOffsetTypeParser.from_str(init.options["offset_type"]),
             time_in_force=init.time_in_force,
             expiration=maybe_unix_nanos_to_dt(init.options["expiration_ns"]),
             init_id=init.id,

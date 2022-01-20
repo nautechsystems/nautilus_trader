@@ -29,8 +29,10 @@ from nautilus_trader.model.c_enums.order_type cimport OrderTypeParser
 from nautilus_trader.model.c_enums.position_side cimport PositionSide
 from nautilus_trader.model.c_enums.position_side cimport PositionSideParser
 from nautilus_trader.model.c_enums.time_in_force cimport TimeInForceParser
-from nautilus_trader.model.c_enums.trigger_method cimport TriggerMethod
-from nautilus_trader.model.c_enums.trigger_method cimport TriggerMethodParser
+from nautilus_trader.model.c_enums.trailing_offset_type cimport TrailingOffsetType
+from nautilus_trader.model.c_enums.trailing_offset_type cimport TrailingOffsetTypeParser
+from nautilus_trader.model.c_enums.trigger_type cimport TriggerType
+from nautilus_trader.model.c_enums.trigger_type cimport TriggerTypeParser
 from nautilus_trader.model.identifiers cimport AccountId
 from nautilus_trader.model.identifiers cimport ClientOrderId
 from nautilus_trader.model.identifiers cimport InstrumentId
@@ -67,8 +69,8 @@ cdef class OrderStatusReport:
         The reported order price (LIMIT).
     trigger_price : Price, optional
         The reported order trigger price (STOP).
-    trigger : TriggerMethod
-        The reported order trigger method.
+    trigger_type : TriggerType
+        The reported order trigger type.
     quantity : Quantity
         The reported order original quantity.
     filled_qty : Quantity
@@ -104,7 +106,10 @@ cdef class OrderStatusReport:
         OrderStatus order_status,
         Price price,  # Can be None
         Price trigger_price,  # Can be None
-        TriggerMethod trigger,
+        TriggerType trigger_type,
+        limit_offset: Optional[Decimal],  # Can be None
+        trailing_offset: Optional[Decimal],  # Can be None
+        TrailingOffsetType offset_type,
         Quantity quantity not None,
         Quantity filled_qty not None,
         Quantity display_qty,  # Can be None
@@ -128,7 +133,10 @@ cdef class OrderStatusReport:
         self.order_status = order_status
         self.price = price
         self.trigger_price = trigger_price
-        self.trigger = trigger
+        self.trigger_type = trigger_type
+        self.limit_offset = limit_offset
+        self.trailing_offset = trailing_offset
+        self.offset_type = offset_type
         self.quantity = quantity
         self.filled_qty = filled_qty
         self.leaves_qty = Quantity(self.quantity - self.filled_qty, self.quantity.precision)
@@ -155,7 +163,10 @@ cdef class OrderStatusReport:
             f"order_status={OrderStatusParser.to_str(self.order_status)}, "
             f"price={self.price}, "
             f"trigger_price={self.trigger_price}, "
-            f"trigger={TriggerMethodParser.to_str(self.trigger)}, "
+            f"trigger_type={TriggerTypeParser.to_str(self.trigger_type)}, "
+            f"limit_offset={self.limit_offset}, "
+            f"trailing_offset={self.trailing_offset}, "
+            f"offset_type={TrailingOffsetTypeParser.to_str(self.offset_type)}, "
             f"quantity={self.quantity}, "
             f"filled_qty={self.filled_qty}, "
             f"leaves_qty={self.leaves_qty}, "

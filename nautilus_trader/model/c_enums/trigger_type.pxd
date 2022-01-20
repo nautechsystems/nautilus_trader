@@ -14,19 +14,23 @@
 # -------------------------------------------------------------------------------------------------
 
 
-cpdef enum OrderType:
-    MARKET = 1
-    LIMIT = 2
-    STOP_MARKET = 3
-    STOP_LIMIT = 4
-    TRAILING_STOP_MARKET = 5
-    TRAILING_STOP_LIMIT = 6
+cpdef enum TriggerType:
+    DEFAULT = 0
+    LAST = 1
+    BID_ASK = 2
+    DOUBLE_LAST = 3
+    DOUBLE_BID_ASK = 4
+    LAST_OR_BID_ASK = 5
+    MID_POINT = 6
+    MARK = 7
+    INDEX = 8
 
 
-cdef class OrderTypeParser:
+
+cdef class TriggerTypeParser:
 
     @staticmethod
     cdef str to_str(int value)
 
     @staticmethod
-    cdef OrderType from_str(str value) except *
+    cdef TriggerType from_str(str value) except *
