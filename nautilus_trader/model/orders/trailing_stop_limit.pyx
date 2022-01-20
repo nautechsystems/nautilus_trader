@@ -298,7 +298,7 @@ cdef class TrailingStopLimitOrder(Order):
 
         Returns
         -------
-        StopLimitOrder
+        TrailingStopLimitOrder
 
         Raises
         ------
