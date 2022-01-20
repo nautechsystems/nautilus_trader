@@ -16,7 +16,7 @@
 from cpython.datetime cimport datetime
 from libc.stdint cimport int64_t
 
-from nautilus_trader.model.c_enums.trigger_method cimport TriggerMethod
+from nautilus_trader.model.c_enums.trigger_type cimport TriggerType
 from nautilus_trader.model.events.order cimport OrderInitialized
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.orders.base cimport Order
@@ -25,8 +25,8 @@ from nautilus_trader.model.orders.base cimport Order
 cdef class StopMarketOrder(Order):
     cdef readonly Price trigger_price
     """The order trigger price (STOP).\n\n:returns: `Price`"""
-    cdef readonly TriggerMethod trigger
-    """The trigger method for the order.\n\n:returns: `TriggerMethod`"""
+    cdef readonly TriggerType trigger_type
+    """The trigger type for the order.\n\n:returns: `TriggerType`"""
     cdef readonly datetime expiration
     """The order expiration.\n\n:returns: `datetime` or ``None``"""
     cdef readonly int64_t expiration_ns

@@ -14,58 +14,38 @@
 # -------------------------------------------------------------------------------------------------
 
 
-cdef class TriggerMethodParser:
+cdef class TrailingOffsetTypeParser:
 
     @staticmethod
     cdef str to_str(int value):
         if value == 0:
-            return "DEFAULT"
+            return "PRICE"
         elif value == 1:
-            return "LAST"
+            return "BASIS_POINTS"
         elif value == 2:
-            return "BID_ASK"
+            return "TICKS"
         elif value == 3:
-            return "DOUBLE_LAST"
-        elif value == 4:
-            return "DOUBLE_BID_ASK"
-        elif value == 5:
-            return "LAST_OR_BID_ASK"
-        elif value == 6:
-            return "MID_POINT"
-        elif value == 7:
-            return "MARK"
-        elif value == 8:
-            return "INDEX"
+            return "PRICE_TIER"
         else:
             raise ValueError(f"value was invalid, was {value}")
 
     @staticmethod
-    cdef TriggerMethod from_str(str value) except *:
-        if value == "DEFAULT":
-            return TriggerMethod.DEFAULT
-        elif value == "LAST":
-            return TriggerMethod.LAST
-        elif value == "BID_ASK":
-            return TriggerMethod.BID_ASK
-        elif value == "DOUBLE_LAST":
-            return TriggerMethod.DOUBLE_LAST
-        elif value == "DOUBLE_BID_ASK":
-            return TriggerMethod.DOUBLE_BID_ASK
-        elif value == "LAST_OR_BID_ASK":
-            return TriggerMethod.LAST_OR_BID_ASK
-        elif value == "MID_POINT":
-            return TriggerMethod.MID_POINT
-        elif value == "MARK":
-            return TriggerMethod.MARK
-        elif value == "INDEX":
-            return TriggerMethod.INDEX
+    cdef TrailingOffsetType from_str(str value) except *:
+        if value == "PRICE":
+            return TrailingOffsetType.PRICE
+        elif value == "BASIS_POINTS":
+            return TrailingOffsetType.BASIS_POINTS
+        elif value == "TICKS":
+            return TrailingOffsetType.TICKS
+        elif value == "PRICE_TIER":
+            return TrailingOffsetType.PRICE_TIER
         else:
             raise ValueError(f"value was invalid, was {value}")
 
     @staticmethod
     def to_str_py(int value):
-        return TriggerMethodParser.to_str(value)
+        return TrailingOffsetTypeParser.to_str(value)
 
     @staticmethod
     def from_str_py(str value):
-        return TriggerMethodParser.from_str(value)
+        return TrailingOffsetTypeParser.from_str(value)

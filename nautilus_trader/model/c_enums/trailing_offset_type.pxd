@@ -14,23 +14,17 @@
 # -------------------------------------------------------------------------------------------------
 
 
-cpdef enum TriggerMethod:
-    DEFAULT = 0
-    LAST = 1
-    BID_ASK = 2
-    DOUBLE_LAST = 3
-    DOUBLE_BID_ASK = 4
-    LAST_OR_BID_ASK = 5
-    MID_POINT = 6
-    MARK = 7
-    INDEX = 8
+cpdef enum TrailingOffsetType:
+    PRICE = 0  # Default
+    BASIS_POINTS = 1
+    TICKS = 2
+    PRICE_TIER = 3
 
 
-
-cdef class TriggerMethodParser:
+cdef class TrailingOffsetTypeParser:
 
     @staticmethod
     cdef str to_str(int value)
 
     @staticmethod
-    cdef TriggerMethod from_str(str value) except *
+    cdef TrailingOffsetType from_str(str value) except *

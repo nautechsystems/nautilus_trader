@@ -15,6 +15,7 @@
 
 from base64 import b64encode
 from datetime import timedelta
+from decimal import Decimal
 
 import msgpack
 import pytest
@@ -37,7 +38,8 @@ from nautilus_trader.model.enums import LiquiditySide
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import OrderType
 from nautilus_trader.model.enums import TimeInForce
-from nautilus_trader.model.enums import TriggerMethod
+from nautilus_trader.model.enums import TrailingOffsetType
+from nautilus_trader.model.enums import TriggerType
 from nautilus_trader.model.events.account import AccountState
 from nautilus_trader.model.events.order import OrderAccepted
 from nautilus_trader.model.events.order import OrderCanceled
@@ -73,6 +75,8 @@ from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.orders.limit import LimitOrder
 from nautilus_trader.model.orders.stop_limit import StopLimitOrder
 from nautilus_trader.model.orders.stop_market import StopMarketOrder
+from nautilus_trader.model.orders.trailing_stop_limit import TrailingStopLimitOrder
+from nautilus_trader.model.orders.trailing_stop_market import TrailingStopMarketOrder
 from nautilus_trader.model.orders.unpacker import OrderUnpacker
 from nautilus_trader.model.position import Position
 from nautilus_trader.serialization.msgpack.serializer import MsgPackSerializer
@@ -207,7 +211,7 @@ class TestMsgPackSerializer:
             OrderSide.BUY,
             Quantity(100000, precision=0),
             trigger_price=Price(1.00000, precision=5),
-            trigger=TriggerMethod.DEFAULT,
+            trigger_type=TriggerType.DEFAULT,
             time_in_force=TimeInForce.GTC,
             expiration=None,
             init_id=UUID4(),
@@ -231,7 +235,7 @@ class TestMsgPackSerializer:
             OrderSide.BUY,
             Quantity(100000, precision=0),
             trigger_price=Price(1.00000, precision=5),
-            trigger=TriggerMethod.DEFAULT,
+            trigger_type=TriggerType.DEFAULT,
             time_in_force=TimeInForce.GTD,
             expiration=UNIX_EPOCH + timedelta(minutes=1),
             init_id=UUID4(),
@@ -256,7 +260,7 @@ class TestMsgPackSerializer:
             Quantity(100000, precision=0),
             price=Price(1.00000, precision=5),
             trigger_price=Price(1.00010, precision=5),
-            trigger=TriggerMethod.BID_ASK,
+            trigger_type=TriggerType.BID_ASK,
             time_in_force=TimeInForce.GTC,
             expiration=None,
             init_id=UUID4(),
@@ -281,7 +285,61 @@ class TestMsgPackSerializer:
             Quantity(100000, precision=0),
             price=Price(1.00000, precision=5),
             trigger_price=Price(1.00010, precision=5),
-            trigger=TriggerMethod.LAST,
+            trigger_type=TriggerType.LAST,
+            time_in_force=TimeInForce.GTD,
+            expiration=UNIX_EPOCH + timedelta(minutes=1),
+            init_id=UUID4(),
+            ts_init=0,
+        )
+
+        # Act
+        packed = OrderInitialized.to_dict(order.last_event)
+        unpacked = self.unpacker.unpack(packed)
+
+        # Assert
+        assert unpacked == order
+
+    def test_pack_and_unpack_trailing_stop_market_orders_with_expiration(self):
+        # Arrange
+        order = TrailingStopMarketOrder(
+            self.trader_id,
+            self.strategy_id,
+            AUDUSD_SIM.id,
+            ClientOrderId("O-123456"),
+            OrderSide.BUY,
+            Quantity(100000, precision=0),
+            trigger_price=Price(1.00000, precision=5),
+            trigger_type=TriggerType.DEFAULT,
+            trailing_offset=Decimal("0.00010"),
+            offset_type=TrailingOffsetType.PRICE,
+            time_in_force=TimeInForce.GTD,
+            expiration=UNIX_EPOCH + timedelta(minutes=1),
+            init_id=UUID4(),
+            ts_init=0,
+        )
+
+        # Act
+        packed = OrderInitialized.to_dict(order.last_event)
+        unpacked = self.unpacker.unpack(packed)
+
+        # Assert
+        assert unpacked == order
+
+    def test_pack_and_unpack_trailing_stop_limit_orders_with_expiration(self):
+        # Arrange
+        order = TrailingStopLimitOrder(
+            self.trader_id,
+            self.strategy_id,
+            AUDUSD_SIM.id,
+            ClientOrderId("O-123456"),
+            OrderSide.BUY,
+            Quantity(100000, precision=0),
+            price=Price(1.00000, precision=5),
+            trigger_price=Price(1.00010, precision=5),
+            trigger_type=TriggerType.MARK,
+            limit_offset=Decimal("50"),
+            trailing_offset=Decimal("50"),
+            offset_type=TrailingOffsetType.TICKS,
             time_in_force=TimeInForce.GTD,
             expiration=UNIX_EPOCH + timedelta(minutes=1),
             init_id=UUID4(),

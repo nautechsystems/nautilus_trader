@@ -22,7 +22,8 @@ from nautilus_trader.model.c_enums.order_status cimport OrderStatus
 from nautilus_trader.model.c_enums.order_type cimport OrderType
 from nautilus_trader.model.c_enums.position_side cimport PositionSide
 from nautilus_trader.model.c_enums.time_in_force cimport TimeInForce
-from nautilus_trader.model.c_enums.trigger_method cimport TriggerMethod
+from nautilus_trader.model.c_enums.trailing_offset_type cimport TrailingOffsetType
+from nautilus_trader.model.c_enums.trigger_type cimport TriggerType
 from nautilus_trader.model.identifiers cimport AccountId
 from nautilus_trader.model.identifiers cimport ClientId
 from nautilus_trader.model.identifiers cimport ClientOrderId
@@ -59,8 +60,14 @@ cdef class OrderStatusReport:
     """The reported order price (LIMIT).\n\n:returns: `Price` or ``None``"""
     cdef readonly Price trigger_price
     """The reported order trigger price (STOP).\n\n:returns: `Price` or ``None``"""
-    cdef readonly TriggerMethod trigger
-    """The trigger method for the order.\n\n:returns: `TriggerMethod`"""
+    cdef readonly TriggerType trigger_type
+    """The trigger type for the order.\n\n:returns: `TriggerType`"""
+    cdef readonly object limit_offset
+    """The trailing offset for the orders limit price.\n\n:returns: `Decimal`"""
+    cdef readonly object trailing_offset
+    """The trailing offset for the orders trigger (STOP) price.\n\n:returns: `Decimal`"""
+    cdef readonly TrailingOffsetType offset_type
+    """The trailing offset type.\n\n:returns: `Decimal`"""
     cdef readonly Quantity quantity
     """The reported order original quantity.\n\n:returns: `Quantity`"""
     cdef readonly Quantity filled_qty
