@@ -422,8 +422,8 @@ cdef class OrderFactory:
         InstrumentId instrument_id,
         OrderSide order_side,
         Quantity quantity,
-        Price trigger_price,
         trailing_offset: Decimal,
+        Price trigger_price=None,
         TriggerType trigger_type=TriggerType.DEFAULT,
         TrailingOffsetType offset_type=TrailingOffsetType.PRICE,
         TimeInForce time_in_force=TimeInForce.GTC,
@@ -444,10 +444,11 @@ cdef class OrderFactory:
             The orders side.
         quantity : Quantity
             The orders quantity (> 0).
-        trigger_price : Price
-            The orders trigger price (STOP).
         trailing_offset : Decimal
             The trailing offset for the trigger (STOP) price.
+        trigger_price : Price, optional
+            The order trigger price (STOP). If ``None`` then will typically default
+            to the delta of market price and `trailing_offset`.
         trigger_type : TriggerType, optional
             The order trigger type.
         offset_type : TrailingOffsetType, optional
@@ -503,10 +504,10 @@ cdef class OrderFactory:
         InstrumentId instrument_id,
         OrderSide order_side,
         Quantity quantity,
-        Price price,
-        Price trigger_price,
         limit_offset: Decimal,
         trailing_offset: Decimal,
+        Price price=None,
+        Price trigger_price=None,
         TriggerType trigger_type=TriggerType.DEFAULT,
         TrailingOffsetType offset_type=TrailingOffsetType.PRICE,
         TimeInForce time_in_force=TimeInForce.GTC,
@@ -529,14 +530,16 @@ cdef class OrderFactory:
             The orders side.
         quantity : Quantity
             The orders quantity (> 0).
-        price : Price
-            The orders limit price.
-        trigger_price : Price
-            The orders trigger stop price.
         trailing_offset : Decimal
             The trailing offset for the trigger (STOP) price.
         limit_offset : Decimal
             The trailing offset for the order (LIMIT) price.
+        price : Price, optional
+            The order price (LIMIT). If ``None`` then will typically default to the
+            delta of market price and `limit_offset`.
+        trigger_price : Price, optional
+            The order trigger price (STOP). If ``None`` then will typically default
+            to the delta of market price and `trailing_offset`.
         trigger_type : TriggerType, optional
             The order trigger type.
         offset_type : TrailingOffsetType, optional

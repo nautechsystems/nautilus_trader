@@ -72,6 +72,9 @@ from nautilus_trader.model.orders.limit import LimitOrder
 from nautilus_trader.model.orders.market import MarketOrder
 from nautilus_trader.model.orders.stop_limit import StopLimitOrder
 from nautilus_trader.model.orders.stop_market import StopMarketOrder
+from nautilus_trader.model.orders.trailing_stop_limit import TrailingStopLimitOrder
+from nautilus_trader.model.orders.trailing_stop_market import TrailingStopMarketOrder
+from nautilus_trader.model.position import Position
 from nautilus_trader.msgbus.bus import MessageBus
 
 
@@ -476,7 +479,32 @@ class FTXExecutionClient(LiveExecutionClient):
     # -- COMMAND HANDLERS --------------------------------------------------------------------------
 
     def submit_order(self, command: SubmitOrder) -> None:
-        self._loop.create_task(self._submit_order(command.order))
+        position: Optional[Position] = None
+        if command.position_id is not None:
+            position = self._cache.position(command.position_id)
+            if position is None:
+                self._log.error(
+                    f"Cannot submit order {command.order}: "
+                    f"position ID {command.position_id} not found.",
+                )
+                return
+
+        if command.order.type == OrderType.TRAILING_STOP_MARKET:
+            if command.order.trigger_price is not None:
+                self._log.warning(
+                    "TrailingStopMarketOrder has specified a `trigger_price`, "
+                    "however FTX will use the delta of current market price and "
+                    "`trailing_offset` as the placed `trigger_price`.",
+                )
+        elif command.order.type == OrderType.TRAILING_STOP_LIMIT:
+            if command.order.trigger_price is not None or command.order.price is not None:
+                self._log.warning(
+                    "TrailingStopLimitOrder has specified a `trigger_price` and/or "
+                    "a `price` however FTX will use the delta of current market "
+                    "price and `trailing_offset` as the placed `trigger_price`.",
+                )
+
+        self._loop.create_task(self._submit_order(command.order, position))
 
     def submit_order_list(self, command: SubmitOrderList) -> None:
         # TODO: Implement
@@ -493,7 +521,7 @@ class FTXExecutionClient(LiveExecutionClient):
     def cancel_all_orders(self, command: CancelAllOrders) -> None:
         self._loop.create_task(self._cancel_all_orders(command))
 
-    async def _submit_order(self, order: Order) -> None:
+    async def _submit_order(self, order: Order, position: Optional[Position]) -> None:
         self._log.debug(f"Submitting {order}.")
 
         # Generate event here to ensure correct ordering of events
@@ -510,9 +538,13 @@ class FTXExecutionClient(LiveExecutionClient):
             elif order.type == OrderType.LIMIT:
                 await self._submit_limit_order(order)
             elif order.type == OrderType.STOP_MARKET:
-                await self._submit_stop_market_order(order)
+                await self._submit_stop_market_order(order, position)
             elif order.type == OrderType.STOP_LIMIT:
-                await self._submit_stop_limit_order(order)
+                await self._submit_stop_limit_order(order, position)
+            elif order.type == OrderType.TRAILING_STOP_MARKET:
+                await self._submit_trailing_stop_market(order)
+            elif order.type == OrderType.TRAILING_STOP_LIMIT:
+                await self._submit_trailing_stop_limit(order)
         except FTXError as ex:
             self.generate_order_rejected(
                 strategy_id=order.strategy_id,
@@ -527,7 +559,7 @@ class FTXExecutionClient(LiveExecutionClient):
             market=order.instrument_id.symbol.value,
             side=OrderSideParser.to_str_py(order.side).lower(),
             size=str(order.quantity),
-            type="market",
+            order_type="market",
             client_id=order.client_order_id.value,
             ioc=order.time_in_force == TimeInForce.IOC,
             reduce_only=order.is_reduce_only,
@@ -538,7 +570,7 @@ class FTXExecutionClient(LiveExecutionClient):
             market=order.instrument_id.symbol.value,
             side=OrderSideParser.to_str_py(order.side).lower(),
             size=str(order.quantity),
-            type="limit",
+            order_type="limit",
             client_id=order.client_order_id.value,
             price=str(order.price),
             ioc=order.time_in_force == TimeInForce.IOC,
@@ -546,26 +578,71 @@ class FTXExecutionClient(LiveExecutionClient):
             post_only=order.is_post_only,
         )
 
-    async def _submit_stop_market_order(self, order: StopMarketOrder) -> None:
-        await self._http_client.place_conditional_order(
+    async def _submit_stop_market_order(
+        self,
+        order: StopMarketOrder,
+        position: Optional[Position],
+    ) -> None:
+        order_type = "stop"
+        if position is not None:
+            if order.is_buy and order.trigger_price < position.avg_px_open:
+                order_type = "take_profit"
+            elif order.is_sell and order.trigger_price > position.avg_px_open:
+                order_type = "take_profit"
+        await self._http_client.place_trigger_order(
             market=order.instrument_id.symbol.value,
             side=OrderSideParser.to_str_py(order.side).lower(),
             size=str(order.quantity),
-            type="stop",  # <-- stop-market with trigger price only
+            order_type=order_type,
             client_id=order.client_order_id.value,
             trigger_price=str(order.trigger_price),
             reduce_only=order.is_reduce_only,
         )
 
-    async def _submit_stop_limit_order(self, order: StopLimitOrder) -> None:
-        await self._http_client.place_conditional_order(
+    async def _submit_stop_limit_order(
+        self,
+        order: StopLimitOrder,
+        position: Optional[Position],
+    ) -> None:
+        order_type = "stop"
+        if position is not None:
+            if order.is_buy and order.trigger_price < position.avg_px_open:
+                order_type = "take_profit"
+            elif order.is_sell and order.trigger_price > position.avg_px_open:
+                order_type = "take_profit"
+        await self._http_client.place_trigger_order(
             market=order.instrument_id.symbol.value,
             side=OrderSideParser.to_str_py(order.side).lower(),
             size=str(order.quantity),
-            type="stop",  # <-- stop-limit with limit price
+            order_type=order_type,
             client_id=order.client_order_id.value,
             price=str(order.price),
             trigger_price=str(order.trigger_price),
+            reduce_only=order.is_reduce_only,
+        )
+
+    async def _submit_trailing_stop_market(self, order: TrailingStopMarketOrder) -> None:
+        await self._http_client.place_trigger_order(
+            market=order.instrument_id.symbol.value,
+            side=OrderSideParser.to_str_py(order.side).lower(),
+            size=str(order.quantity),
+            order_type="trailing_stop",
+            client_id=order.client_order_id.value,
+            trigger_price=str(order.trigger_price),
+            trail_value=str(order.trailing_offset) if order.is_buy else str(-order.trailing_offset),
+            reduce_only=order.is_reduce_only,
+        )
+
+    async def _submit_trailing_stop_limit(self, order: TrailingStopLimitOrder) -> None:
+        await self._http_client.place_trigger_order(
+            market=order.instrument_id.symbol.value,
+            side=OrderSideParser.to_str_py(order.side).lower(),
+            size=str(order.quantity),
+            order_type="trailing_stop",
+            client_id=order.client_order_id.value,
+            price=str(order.price),
+            trigger_price=str(order.trigger_price),
+            trail_value=str(order.trailing_offset) if order.is_buy else str(-order.trailing_offset),
             reduce_only=order.is_reduce_only,
         )
 

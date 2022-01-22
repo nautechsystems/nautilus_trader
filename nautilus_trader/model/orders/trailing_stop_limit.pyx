@@ -80,10 +80,12 @@ cdef class TrailingStopLimitOrder(Order):
         The order side.
     quantity : Quantity
         The order quantity (> 0).
-    price : Price
-        The order price (LIMIT).
-    trigger_price : Price
-        The order trigger price (STOP).
+    price : Price, optional
+        The order price (LIMIT). If ``None`` then will typically default to the
+        delta of market price and `limit_offset`.
+    trigger_price : Price, optional
+        The order trigger price (STOP). If ``None`` then will typically default
+        to the delta of market price and `trailing_offset`.
     trigger_type : TriggerType
         The order trigger type.
     limit_offset : Decimal
@@ -138,8 +140,8 @@ cdef class TrailingStopLimitOrder(Order):
         ClientOrderId client_order_id not None,
         OrderSide order_side,
         Quantity quantity not None,
-        Price price not None,
-        Price trigger_price not None,
+        Price price,  # Can be None
+        Price trigger_price,  # Can be None
         TriggerType trigger_type,
         limit_offset: Decimal,
         trailing_offset: Decimal,
@@ -174,8 +176,8 @@ cdef class TrailingStopLimitOrder(Order):
 
         # Set options
         cdef dict options = {
-            "price": str(price),
-            "trigger_price": str(trigger_price),
+            "price": str(price) if price is not None else None,
+            "trigger_price": str(trigger_price) if trigger_price is not None else None,
             "trigger_type": TriggerTypeParser.to_str(trigger_type),
             "limit_offset": str(limit_offset),
             "trailing_offset": str(trailing_offset),
@@ -260,8 +262,8 @@ cdef class TrailingStopLimitOrder(Order):
             "type": OrderTypeParser.to_str(self.type),
             "side": OrderSideParser.to_str(self.side),
             "quantity": str(self.quantity),
-            "price": str(self.price),
-            "trigger_price": str(self.trigger_price),
+            "price": str(self.price) if self.price is not None else None,
+            "trigger_price": str(self.trigger_price) if self.trigger_price is not None else None,
             "trigger_type": TriggerTypeParser.to_str(self.trigger_type),
             "limit_offset": str(self.limit_offset),
             "trailing_offset": str(self.trailing_offset),
@@ -309,6 +311,8 @@ cdef class TrailingStopLimitOrder(Order):
         Condition.not_none(init, "init")
         Condition.equal(init.type, OrderType.TRAILING_STOP_LIMIT, "init.type", "OrderType")
 
+        cdef str price_str = init.options["price"]
+        cdef str trigger_price_str = init.options["trigger_price"]
         cdef str display_qty_str = init.options["display_qty"]
 
         return TrailingStopLimitOrder(
@@ -318,8 +322,8 @@ cdef class TrailingStopLimitOrder(Order):
             client_order_id=init.client_order_id,
             order_side=init.side,
             quantity=init.quantity,
-            price=Price.from_str_c(init.options["price"]),
-            trigger_price=Price.from_str_c(init.options["trigger_price"]),
+            price=Price.from_str_c(price_str) if price_str is not None else None,
+            trigger_price=Price.from_str_c(trigger_price_str) if trigger_price_str is not None else None,
             trigger_type=TriggerTypeParser.from_str(init.options["trigger_type"]),
             limit_offset=Decimal(init.options["limit_offset"]),
             trailing_offset=Decimal(init.options["trailing_offset"]),
