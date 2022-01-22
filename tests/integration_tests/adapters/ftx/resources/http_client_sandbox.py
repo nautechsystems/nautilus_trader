@@ -48,13 +48,12 @@ async def test_ftx_http_client():
     # response = await client.list_markets(
     #     # market="ETH-PERP",
     # )
-    # print(json.dumps(response, indent=4))
 
     # provider = FTXInstrumentProvider(
     #     client=client,
     #     logger=Logger(clock=clock),
     # )
-    #
+
     # await provider.load_all_async()
     # for instrument in provider.get_all().values():
     #     print(instrument)
@@ -76,21 +75,22 @@ async def test_ftx_http_client():
     #     # reduce_only=True,
     # )
 
-    # response = await client.place_trigger_order(
-    #     market="ETH-PERP",
-    #     side="sell",
-    #     size="0.01",
-    #     type="stop",
-    #     trigger_price="2500",
-    #     client_id="106",
-    #     # post_only=True,
-    #     # reduce_only=True,
-    # )
-    # print(json.dumps(response, indent=4))
+    response = await client.place_trigger_order(
+        market="ETH-PERP",
+        side="sell",
+        size="0.01",
+        order_type="stop",
+        # price="2540",
+        trigger_price="2500",
+        # trail_value="-20",
+        client_id="117",
+        # post_only=True,
+        # reduce_only=True,
+    )
 
     # response = await client.cancel_order("103")
 
-    response = await client.get_trigger_order_history()
+    # response = await client.get_trigger_order_history()
 
     # response = await client.get_order_status_by_client_id("001")
     print(json.dumps(response, indent=4))

@@ -600,7 +600,7 @@ class TestOrders:
             AUDUSD_SIM.id,
             OrderSide.BUY,
             Quantity.from_int(100000),
-            Price.from_str("1.00000"),
+            trigger_price=Price.from_str("1.00000"),
             trailing_offset=Decimal("0.00050"),
         )
 
@@ -623,13 +623,41 @@ class TestOrders:
             == "TrailingStopMarketOrder(BUY 100_000 AUD/USD.SIM TRAILING_STOP_MARKET @ 1.00000[DEFAULT] 0.00050-TRAILING_OFFSET[PRICE] GTC, status=INITIALIZED, client_order_id=O-19700101-000000-000-001-1, venue_order_id=None, tags=None)"  # noqa
         )
 
+    def test_initialize_trailing_stop_market_order_with_no_initial_trigger(self):
+        # Arrange, Act
+        order = self.order_factory.trailing_stop_market(
+            AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100000),
+            trailing_offset=Decimal("0.00050"),
+        )
+
+        # Assert
+        assert order.type == OrderType.TRAILING_STOP_MARKET
+        assert order.status == OrderStatus.INITIALIZED
+        assert order.time_in_force == TimeInForce.GTC
+        assert order.offset_type == TrailingOffsetType.PRICE
+        assert order.is_passive
+        assert not order.is_aggressive
+        assert order.is_active
+        assert not order.is_completed
+        assert isinstance(order.init_event, OrderInitialized)
+        assert (
+            str(order)
+            == "TrailingStopMarketOrder(BUY 100_000 AUD/USD.SIM TRAILING_STOP_MARKET @ None[DEFAULT] 0.00050-TRAILING_OFFSET[PRICE] GTC, status=INITIALIZED, client_order_id=O-19700101-000000-000-001-1, venue_order_id=None, tags=None)"  # noqa
+        )
+        assert (
+            repr(order)
+            == "TrailingStopMarketOrder(BUY 100_000 AUD/USD.SIM TRAILING_STOP_MARKET @ None[DEFAULT] 0.00050-TRAILING_OFFSET[PRICE] GTC, status=INITIALIZED, client_order_id=O-19700101-000000-000-001-1, venue_order_id=None, tags=None)"  # noqa
+        )
+
     def test_trailing_stop_market_order_to_dict(self):
         # Arrange
         order = self.order_factory.trailing_stop_market(
             AUDUSD_SIM.id,
             OrderSide.BUY,
             Quantity.from_int(100000),
-            Price.from_str("1.00000"),
+            trigger_price=Price.from_str("1.00000"),
             trailing_offset=Decimal("0.00050"),
         )
 
@@ -671,14 +699,61 @@ class TestOrders:
             "ts_init": 0,
         }
 
+    def test_trailing_stop_market_order_with_no_initial_trigger_to_dict(self):
+        # Arrange
+        order = self.order_factory.trailing_stop_market(
+            AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100000),
+            trailing_offset=Decimal("0.00050"),
+        )
+
+        # Act
+        result = order.to_dict()
+
+        # Assert
+        assert result == {
+            "trader_id": "TESTER-000",
+            "strategy_id": "S-001",
+            "instrument_id": "AUD/USD.SIM",
+            "client_order_id": "O-19700101-000000-000-001-1",
+            "venue_order_id": None,
+            "position_id": None,
+            "account_id": None,
+            "last_trade_id": None,
+            "type": "TRAILING_STOP_MARKET",
+            "side": "BUY",
+            "quantity": "100000",
+            "trigger_price": None,
+            "trigger_type": "DEFAULT",
+            "trailing_offset": "0.00050",
+            "offset_type": "PRICE",
+            "expiration_ns": None,
+            "time_in_force": "GTC",
+            "filled_qty": "0",
+            "liquidity_side": "NONE",
+            "avg_px": None,
+            "slippage": "0",
+            "status": "INITIALIZED",
+            "is_reduce_only": False,
+            "order_list_id": None,
+            "parent_order_id": None,
+            "child_order_ids": None,
+            "contingency": "NONE",
+            "contingency_ids": None,
+            "tags": None,
+            "ts_last": 0,
+            "ts_init": 0,
+        }
+
     def test_initialize_trailing_stop_limit_order(self):
         # Arrange, Act
         order = self.order_factory.trailing_stop_limit(
             AUDUSD_SIM.id,
             OrderSide.BUY,
             Quantity.from_int(100000),
-            Price.from_str("1.00000"),
-            Price.from_str("1.10010"),
+            price=Price.from_str("1.00000"),
+            trigger_price=Price.from_str("1.10010"),
             limit_offset=Decimal("5"),
             trailing_offset=Decimal("10"),
         )
@@ -700,14 +775,41 @@ class TestOrders:
             == "TrailingStopLimitOrder(BUY 100_000 AUD/USD.SIM TRAILING_STOP_LIMIT @ 1.10010-STOP[DEFAULT] 1.00000-LIMIT 10-TRAILING_OFFSET[PRICE] 5-LIMIT_OFFSET[PRICE] GTC, status=INITIALIZED, client_order_id=O-19700101-000000-000-001-1, venue_order_id=None, tags=None)"  # noqa
         )
 
+    def test_initialize_trailing_stop_limit_order_with_no_initial_prices(self):
+        # Arrange, Act
+        order = self.order_factory.trailing_stop_limit(
+            AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100000),
+            limit_offset=Decimal("5"),
+            trailing_offset=Decimal("10"),
+        )
+
+        # Assert
+        assert order.type == OrderType.TRAILING_STOP_LIMIT
+        assert order.status == OrderStatus.INITIALIZED
+        assert order.time_in_force == TimeInForce.GTC
+        assert order.is_passive
+        assert not order.is_aggressive
+        assert not order.is_completed
+        assert isinstance(order.init_event, OrderInitialized)
+        assert (
+            str(order)
+            == "TrailingStopLimitOrder(BUY 100_000 AUD/USD.SIM TRAILING_STOP_LIMIT @ None-STOP[DEFAULT] None-LIMIT 10-TRAILING_OFFSET[PRICE] 5-LIMIT_OFFSET[PRICE] GTC, status=INITIALIZED, client_order_id=O-19700101-000000-000-001-1, venue_order_id=None, tags=None)"  # noqa
+        )
+        assert (
+            repr(order)
+            == "TrailingStopLimitOrder(BUY 100_000 AUD/USD.SIM TRAILING_STOP_LIMIT @ None-STOP[DEFAULT] None-LIMIT 10-TRAILING_OFFSET[PRICE] 5-LIMIT_OFFSET[PRICE] GTC, status=INITIALIZED, client_order_id=O-19700101-000000-000-001-1, venue_order_id=None, tags=None)"  # noqa
+        )
+
     def test_trailing_stop_limit_order_to_dict(self):
         # Arrange
         order = self.order_factory.trailing_stop_limit(
             AUDUSD_SIM.id,
             OrderSide.BUY,
             Quantity.from_int(100000),
-            Price.from_str("1.00000"),
-            Price.from_str("1.10010"),
+            price=Price.from_str("1.00000"),
+            trigger_price=Price.from_str("1.10010"),
             limit_offset=Decimal("5"),
             trailing_offset=Decimal("10"),
             trigger_type=TriggerType.MARK,
@@ -732,6 +834,60 @@ class TestOrders:
             "quantity": "100000",
             "price": "1.00000",
             "trigger_price": "1.10010",
+            "trigger_type": "MARK",
+            "limit_offset": "5",
+            "trailing_offset": "10",
+            "offset_type": "BASIS_POINTS",
+            "expiration_ns": None,
+            "time_in_force": "GTC",
+            "filled_qty": "0",
+            "liquidity_side": "NONE",
+            "avg_px": None,
+            "slippage": "0",
+            "status": "INITIALIZED",
+            "is_post_only": False,
+            "is_reduce_only": False,
+            "display_qty": None,
+            "order_list_id": None,
+            "parent_order_id": None,
+            "child_order_ids": None,
+            "contingency": "NONE",
+            "contingency_ids": None,
+            "tags": None,
+            "ts_last": 0,
+            "ts_init": 0,
+        }
+
+    def test_trailing_stop_limit_order_with_no_initial_prices_to_dict(self):
+        # Arrange
+        order = self.order_factory.trailing_stop_limit(
+            AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100000),
+            limit_offset=Decimal("5"),
+            trailing_offset=Decimal("10"),
+            trigger_type=TriggerType.MARK,
+            offset_type=TrailingOffsetType.BASIS_POINTS,
+        )
+
+        # Act
+        result = order.to_dict()
+
+        # Assert
+        assert result == {
+            "trader_id": "TESTER-000",
+            "strategy_id": "S-001",
+            "instrument_id": "AUD/USD.SIM",
+            "client_order_id": "O-19700101-000000-000-001-1",
+            "venue_order_id": None,
+            "position_id": None,
+            "account_id": None,
+            "last_trade_id": None,
+            "type": "TRAILING_STOP_LIMIT",
+            "side": "BUY",
+            "quantity": "100000",
+            "price": None,
+            "trigger_price": None,
             "trigger_type": "MARK",
             "limit_offset": "5",
             "trailing_offset": "10",

@@ -258,8 +258,8 @@ class FTXHttpClient(HttpClient):
         self,
         market: str = None,
         side: str = None,
-        type: str = None,
-        order_type: str = None,
+        type: str = None,  # stop, trailing_stop, and take_profit
+        order_type: str = None,  # market or limit
         start_time: float = None,
         end_time: float = None,
     ) -> List[Dict[str, Any]]:
@@ -300,17 +300,6 @@ class FTXHttpClient(HttpClient):
         price: Optional[str] = None,
         size: Optional[str] = None,
     ) -> dict:
-        # assert (existing_order_id is None) ^ (
-        #     existing_client_order_id is None
-        # ), "Must supply exactly one ID for the order to modify"
-        # assert (price is None) or (size is None), "Must modify price or size of order"
-
-        # url_path = (
-        #     f"orders/{existing_order_id}/modify"
-        #     if existing_order_id is not None
-        #     else f"orders/by_client_id/{existing_client_order_id}/modify"
-        # )
-
         payload: Dict[str, str] = {}
         if price is not None:
             payload["price"] = price
@@ -339,7 +328,7 @@ class FTXHttpClient(HttpClient):
         market: str,
         side: str,
         size: str,
-        type: str,
+        order_type: str,
         client_id: str,
         price: Optional[str] = None,
         ioc: bool = False,
@@ -350,7 +339,7 @@ class FTXHttpClient(HttpClient):
             "market": market,
             "side": side,
             "price": price,
-            "type": type,
+            "type": order_type,
             "size": size,
             "ioc": ioc,
             "reduceOnly": reduce_only,
@@ -369,7 +358,7 @@ class FTXHttpClient(HttpClient):
         market: str,
         side: str,
         size: str,
-        type: str,
+        order_type: str,
         client_id: str,
         price: Optional[str] = None,
         trigger_price: Optional[str] = None,
@@ -382,18 +371,18 @@ class FTXHttpClient(HttpClient):
         To send a Take Profit Market order, set type='trailing_stop' and supply a trigger_price
         To send a Trailing Stop order, set type='trailing_stop' and supply a trail_value
         """
-        # assert type in ("stop", "take_profit", "trailing_stop")
+        # assert order_type in ("stop", "take_profit", "trailing_stop")
         # assert (
-        #     type not in ("stop", "take_profit") or trigger_price is not None
+        #         order_type not in ("stop", "take_profit") or trigger_price is not None
         # ), "Need trigger prices for stop losses and take profits"
-        # assert type not in ("trailing_stop",) or (
+        # assert order_type not in ("trailing_stop",) or (
         #     trigger_price is None and trail_value is not None
         # ), "Trailing stops need a trail value and cannot take a trigger price"
         payload: Dict[str, Any] = {
             "market": market,
             "side": side,
             "size": size,
-            "type": type,
+            "type": order_type,
             "clientId": client_id,
             "reduceOnly": reduce_only,
         }
@@ -460,18 +449,20 @@ class FTXHttpClient(HttpClient):
         limit = 100
         results = []
         while True:
+            payload: Dict[str, Any] = {}
+            if start_time is not None:
+                payload["start_time"] = str(start_time)
+            if end_time is not None:
+                payload["end_time"] = str(end_time)
             response = await self._send_request(
                 http_method="GET",
                 url_path=f"markets/{market}/trades",
-                # payload={
-                #     "end_time": end_time,
-                #     "start_time": start_time,
-                # },
+                payload=payload,
             )
             deduped_trades = [r for r in response if r["id"] not in ids]
             results.extend(deduped_trades)
             ids |= {r["id"] for r in deduped_trades}
-            print(f"Adding {len(response)} trades with end time {end_time}")
+            # print(f"Adding {len(response)} trades with end time {end_time}")
             if len(response) == 0:
                 break
             end_time = min(pd.Timestamp(t["time"]) for t in response).timestamp()

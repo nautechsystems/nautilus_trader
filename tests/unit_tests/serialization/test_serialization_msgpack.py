@@ -325,6 +325,32 @@ class TestMsgPackSerializer:
         # Assert
         assert unpacked == order
 
+    def test_pack_and_unpack_trailing_stop_market_orders_no_initial_prices(self):
+        # Arrange
+        order = TrailingStopMarketOrder(
+            self.trader_id,
+            self.strategy_id,
+            AUDUSD_SIM.id,
+            ClientOrderId("O-123456"),
+            OrderSide.BUY,
+            Quantity(100000, precision=0),
+            trigger_price=None,
+            trigger_type=TriggerType.DEFAULT,
+            trailing_offset=Decimal("0.00010"),
+            offset_type=TrailingOffsetType.PRICE,
+            time_in_force=TimeInForce.GTD,
+            expiration=UNIX_EPOCH + timedelta(minutes=1),
+            init_id=UUID4(),
+            ts_init=0,
+        )
+
+        # Act
+        packed = OrderInitialized.to_dict(order.last_event)
+        unpacked = self.unpacker.unpack(packed)
+
+        # Assert
+        assert unpacked == order
+
     def test_pack_and_unpack_trailing_stop_limit_orders_with_expiration(self):
         # Arrange
         order = TrailingStopLimitOrder(
@@ -336,6 +362,34 @@ class TestMsgPackSerializer:
             Quantity(100000, precision=0),
             price=Price(1.00000, precision=5),
             trigger_price=Price(1.00010, precision=5),
+            trigger_type=TriggerType.MARK,
+            limit_offset=Decimal("50"),
+            trailing_offset=Decimal("50"),
+            offset_type=TrailingOffsetType.TICKS,
+            time_in_force=TimeInForce.GTD,
+            expiration=UNIX_EPOCH + timedelta(minutes=1),
+            init_id=UUID4(),
+            ts_init=0,
+        )
+
+        # Act
+        packed = OrderInitialized.to_dict(order.last_event)
+        unpacked = self.unpacker.unpack(packed)
+
+        # Assert
+        assert unpacked == order
+
+    def test_pack_and_unpack_trailing_stop_limit_orders_with_no_initial_prices(self):
+        # Arrange
+        order = TrailingStopLimitOrder(
+            self.trader_id,
+            self.strategy_id,
+            AUDUSD_SIM.id,
+            ClientOrderId("O-123456"),
+            OrderSide.BUY,
+            Quantity(100000, precision=0),
+            price=None,
+            trigger_price=None,
             trigger_type=TriggerType.MARK,
             limit_offset=Decimal("50"),
             trailing_offset=Decimal("50"),

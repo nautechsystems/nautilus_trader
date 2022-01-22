@@ -75,8 +75,9 @@ cdef class TrailingStopMarketOrder(Order):
         The order side.
     quantity : Quantity
         The order quantity (> 0).
-    trigger_price : Price
-        The order trigger price (STOP).
+    trigger_price : Price, optional
+        The order trigger price (STOP). If ``None`` then will typically default
+        to the delta of market price and `trailing_offset`.
     trigger_type : TriggerType
         The order trigger type.
     trailing_offset : Decimal
@@ -122,7 +123,7 @@ cdef class TrailingStopMarketOrder(Order):
         ClientOrderId client_order_id not None,
         OrderSide order_side,
         Quantity quantity not None,
-        Price trigger_price not None,
+        Price trigger_price,  # Can be None
         TriggerType trigger_type,
         trailing_offset: Decimal,
         TrailingOffsetType offset_type,
@@ -150,7 +151,7 @@ cdef class TrailingStopMarketOrder(Order):
 
         # Set options
         cdef dict options = {
-            "trigger_price": str(trigger_price),
+            "trigger_price": str(trigger_price) if trigger_price is not None else None,
             "trigger_type": TriggerTypeParser.to_str(trigger_type),
             "trailing_offset": str(trailing_offset),
             "offset_type": TrailingOffsetTypeParser.to_str(offset_type),
@@ -227,7 +228,7 @@ cdef class TrailingStopMarketOrder(Order):
             "type": OrderTypeParser.to_str(self.type),
             "side": OrderSideParser.to_str(self.side),
             "quantity": str(self.quantity),
-            "trigger_price": str(self.trigger_price),
+            "trigger_price": str(self.trigger_price) if self.trigger_price is not None else None,
             "trigger_type": TriggerTypeParser.to_str(self.trigger_type),
             "trailing_offset": str(self.trailing_offset),
             "offset_type": TrailingOffsetTypeParser.to_str(self.offset_type),
@@ -272,6 +273,8 @@ cdef class TrailingStopMarketOrder(Order):
         Condition.not_none(init, "init")
         Condition.equal(init.type, OrderType.TRAILING_STOP_MARKET, "init.type", "OrderType")
 
+        cdef str trigger_price_str = init.options["trigger_price"]
+
         return TrailingStopMarketOrder(
             trader_id=init.trader_id,
             strategy_id=init.strategy_id,
@@ -279,7 +282,7 @@ cdef class TrailingStopMarketOrder(Order):
             client_order_id=init.client_order_id,
             order_side=init.side,
             quantity=init.quantity,
-            trigger_price=Price.from_str_c(init.options["trigger_price"]),
+            trigger_price=Price.from_str_c(trigger_price_str) if trigger_price_str is not None else None,
             trigger_type=TriggerTypeParser.from_str(init.options["trigger_type"]),
             trailing_offset=Decimal(init.options["trailing_offset"]),
             offset_type=TrailingOffsetTypeParser.from_str(init.options["offset_type"]),

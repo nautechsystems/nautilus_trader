@@ -25,7 +25,7 @@ from nautilus_trader.model.orders.base cimport Order
 
 cdef class TrailingStopMarketOrder(Order):
     cdef readonly Price trigger_price
-    """The order trigger price (STOP).\n\n:returns: `Price`"""
+    """The order trigger price (STOP).\n\n:returns: `Price` or ``None``"""
     cdef readonly TriggerType trigger_type
     """The trigger type for the order.\n\n:returns: `TriggerType`"""
     cdef readonly object trailing_offset
