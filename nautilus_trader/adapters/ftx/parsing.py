@@ -23,6 +23,7 @@ from nautilus_trader.adapters.ftx.common import FTX_VENUE
 from nautilus_trader.adapters.ftx.data_types import FTXTicker
 from nautilus_trader.core.datetime import secs_to_nanos
 from nautilus_trader.core.text import precision_from_str
+from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.execution.reports import OrderStatusReport
 from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.currency import Currency
@@ -91,6 +92,7 @@ def parse_order_status(
         post_only=data["postOnly"],
         reduce_only=data["reduceOnly"],
         reject_reason=None,
+        report_id=UUID4(),
         ts_accepted=created_at,
         ts_triggered=0,
         ts_last=created_at,
@@ -132,6 +134,7 @@ def parse_trigger_order_status(
         post_only=data["postOnly"],
         reduce_only=data["reduceOnly"],
         reject_reason=None,
+        report_id=UUID4(),
         ts_accepted=created_at,
         ts_triggered=int(pd.to_datetime(triggered_at, utc=True).to_datetime64())
         if triggered_at is not None
