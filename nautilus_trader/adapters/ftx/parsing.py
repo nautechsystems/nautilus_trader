@@ -43,6 +43,7 @@ from nautilus_trader.model.enums import OrderType
 from nautilus_trader.model.enums import TimeInForce
 from nautilus_trader.model.enums import TrailingOffsetType
 from nautilus_trader.model.enums import TriggerType
+from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import ClientOrderId
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import Symbol
@@ -61,6 +62,7 @@ from nautilus_trader.model.orderbook.data import OrderBookSnapshot
 
 
 def parse_order_status(
+    account_id: AccountId,
     instrument: Instrument,
     data: Dict[str, Any],
     report_id: UUID4,
@@ -71,6 +73,7 @@ def parse_order_status(
     avg_px = data["avgFillPrice"]
     created_at = int(pd.to_datetime(data["createdAt"]).to_datetime64())
     return OrderStatusReport(
+        account_id=account_id,
         instrument_id=InstrumentId(Symbol(data["market"]), FTX_VENUE),
         client_order_id=ClientOrderId(client_id_str) if client_id_str is not None else None,
         order_list_id=None,
@@ -102,6 +105,7 @@ def parse_order_status(
 
 
 def parse_trigger_order_status(
+    account_id: AccountId,
     instrument: Instrument,
     data: Dict[str, Any],
     report_id: UUID4,
@@ -114,6 +118,7 @@ def parse_trigger_order_status(
     trail_value = data["trailValue"]
     created_at = int(pd.to_datetime(data["createdAt"]).to_datetime64())
     return OrderStatusReport(
+        account_id=account_id,
         instrument_id=InstrumentId(Symbol(data["market"]), FTX_VENUE),
         client_order_id=ClientOrderId(client_id_str) if client_id_str is not None else None,
         order_list_id=None,

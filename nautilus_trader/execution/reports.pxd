@@ -38,9 +38,14 @@ from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
 
 
-cdef class OrderStatusReport(Document):
+cdef class ExecutionReport(Document):
+    cdef readonly AccountId account_id
+    """The account ID for the report.\n\n:returns: `AccountId`"""
     cdef readonly InstrumentId instrument_id
-    """The order instrument ID.\n\n:returns: `InstrumentId`"""
+    """The instrument ID for the report.\n\n:returns: `InstrumentId`"""
+
+
+cdef class OrderStatusReport(ExecutionReport):
     cdef readonly ClientOrderId client_order_id
     """The client order ID for the report.\n\n:returns: `ClientOrderId` or ``None``"""
     cdef readonly OrderListId order_list_id
@@ -93,9 +98,7 @@ cdef class OrderStatusReport(Document):
     """The UNIX timestamp (nanoseconds) of the last order status change.\n\n:returns: `int64`"""
 
 
-cdef class TradeReport(Document):
-    cdef readonly InstrumentId instrument_id
-    """The order instrument ID.\n\n:returns: `InstrumentId`"""
+cdef class TradeReport(ExecutionReport):
     cdef readonly ClientOrderId client_order_id
     """The client order ID for the report.\n\n:returns: `ClientOrderId` or ``None``"""
     cdef readonly VenueOrderId venue_order_id
@@ -118,9 +121,7 @@ cdef class TradeReport(Document):
     """The UNIX timestamp (nanoseconds) when the execution event occurred.\n\n:returns: `LiquiditySide`"""
 
 
-cdef class PositionStatusReport(Document):
-    cdef readonly InstrumentId instrument_id
-    """The reported instrument ID.\n\n:returns: `InstrumentId`"""
+cdef class PositionStatusReport(ExecutionReport):
     cdef readonly PositionId venue_position_id
     """The reported venue position ID (assigned by the venue).\n\n:returns: `PositionId` or ``None``"""
     cdef readonly PositionSide position_side

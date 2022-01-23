@@ -43,14 +43,36 @@ from nautilus_trader.model.identifiers cimport VenueOrderId
 from nautilus_trader.model.objects cimport Quantity
 
 
-cdef class OrderStatusReport(Document):
+cdef class ExecutionReport(Document):
+    """
+    The abstract base class for all execution reports.
+    """
+
+    def __init__(
+        self,
+        AccountId account_id not None,
+        InstrumentId instrument_id not None,
+        UUID4 report_id not None,
+        int64_t ts_init,
+    ):
+        super().__init__(
+            report_id,
+            ts_init,
+        )
+        self.account_id = account_id
+        self.instrument_id = instrument_id
+
+
+cdef class OrderStatusReport(ExecutionReport):
     """
     Represents an order status at a point in time.
 
     Parameters
     ----------
+    account_id : AccountId
+        The account ID for the report.
     instrument_id : InstrumentId
-        The reported instrument ID for the order.
+        The instrument ID for the report.
     client_order_id : ClientOrderId, optional
         The reported client order ID.
     order_list_id : OrderListId, optional
@@ -99,6 +121,7 @@ cdef class OrderStatusReport(Document):
 
     def __init__(
         self,
+        AccountId account_id not None,
         InstrumentId instrument_id not None,
         ClientOrderId client_order_id,  # Can be None (external order)
         OrderListId order_list_id,  # Can be None
@@ -128,10 +151,11 @@ cdef class OrderStatusReport(Document):
         int64_t ts_init,
     ):
         super().__init__(
+            account_id,
+            instrument_id,
             report_id,
             ts_init,
         )
-        self.instrument_id = instrument_id
         self.client_order_id = client_order_id
         self.order_list_id = order_list_id
         self.venue_order_id = venue_order_id
@@ -161,6 +185,8 @@ cdef class OrderStatusReport(Document):
     def __repr__(self) -> str:
         return (
             f"{type(self).__name__}("
+            f"account_id={self.account_id}, "
+            f"instrument_id={self.instrument_id.value}, "
             f"client_order_id={self.client_order_id}, "
             f"order_list_id={self.order_list_id}, "
             f"venue_order_id={self.venue_order_id.value}, "
@@ -191,12 +217,14 @@ cdef class OrderStatusReport(Document):
         )
 
 
-cdef class TradeReport(Document):
+cdef class TradeReport(ExecutionReport):
     """
     Represents a report of a single trade.
 
     Parameters
     ----------
+    account_id : AccountId
+        The account ID for the report.
     instrument_id : InstrumentId
         The reported instrument ID for the trade.
     client_order_id : ClientOrderId, optional
@@ -230,6 +258,7 @@ cdef class TradeReport(Document):
 
     def __init__(
         self,
+        AccountId account_id not None,
         InstrumentId instrument_id not None,
         ClientOrderId client_order_id,  # Can be None (external order)
         VenueOrderId venue_order_id not None,
@@ -245,10 +274,11 @@ cdef class TradeReport(Document):
         int64_t ts_init,
     ):
         super().__init__(
+            account_id,
+            instrument_id,
             report_id,
             ts_init,
         )
-        self.instrument_id = instrument_id
         self.client_order_id = client_order_id
         self.venue_order_id = venue_order_id
         self.venue_position_id = venue_position_id
@@ -263,6 +293,7 @@ cdef class TradeReport(Document):
     def __repr__(self) -> str:
         return (
             f"{type(self).__name__}("
+            f"account_id={self.account_id}, "
             f"instrument_id={self.instrument_id.value}, "
             f"client_order_id={self.client_order_id.value}, "
             f"venue_order_id={self.venue_order_id.value}, "
@@ -279,12 +310,14 @@ cdef class TradeReport(Document):
         )
 
 
-cdef class PositionStatusReport(Document):
+cdef class PositionStatusReport(ExecutionReport):
     """
     Represents a position status at a point in time.
 
     Parameters
     ----------
+    account_id : AccountId
+        The account ID for the report.
     instrument_id : InstrumentId
         The reported instrument ID for the position.
     venue_position_id : PositionId, optional
@@ -306,6 +339,7 @@ cdef class PositionStatusReport(Document):
 
     def __init__(
         self,
+        AccountId account_id not None,
         InstrumentId instrument_id not None,
         PositionId venue_position_id,  # Can be None
         PositionSide position_side,
@@ -315,10 +349,11 @@ cdef class PositionStatusReport(Document):
         int64_t ts_init,
     ):
         super().__init__(
+            account_id,
+            instrument_id,
             report_id,
             ts_init,
         )
-        self.instrument_id = instrument_id
         self.venue_position_id = venue_position_id
         self.position_side = position_side
         self.quantity = quantity
@@ -327,6 +362,7 @@ cdef class PositionStatusReport(Document):
     def __repr__(self) -> str:
         return (
             f"{type(self).__name__}("
+            f"account_id={self.account_id}, "
             f"instrument_id={self.instrument_id.value}, "
             f"venue_position_id={self.venue_position_id}, "
             f"position_side={PositionSideParser.to_str(self.position_side)}, "
@@ -339,8 +375,8 @@ cdef class PositionStatusReport(Document):
 
 cdef class ExecutionMassStatus(Document):
     """
-    Represents an execution mass status report including status of all open
-    orders, trades for those orders and open positions.
+    Represents an execution mass status report for an execution client -
+    including status of all orders, trades for those orders and open positions.
 
     Parameters
     ----------

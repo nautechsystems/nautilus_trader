@@ -48,6 +48,7 @@ from nautilus_trader.model.enums import PositionSide
 from nautilus_trader.model.enums import TimeInForce
 from nautilus_trader.model.events.order import OrderCanceled
 from nautilus_trader.model.events.order import OrderUpdated
+from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import ClientOrderId
 from nautilus_trader.model.identifiers import OrderListId
@@ -2033,6 +2034,7 @@ class TestExecutionEngine:
     def test_handle_order_status_report(self):
         # Arrange
         order_report = OrderStatusReport(
+            account_id=AccountId("SIM", "001"),
             instrument_id=AUDUSD_SIM.id,
             client_order_id=ClientOrderId("O-123456"),
             order_list_id=OrderListId("1"),
@@ -2071,6 +2073,7 @@ class TestExecutionEngine:
     def test_handle_trade_report(self):
         # Arrange
         trade_report = TradeReport(
+            account_id=AccountId("SIM", "001"),
             instrument_id=AUDUSD_SIM.id,
             client_order_id=ClientOrderId("O-123456789"),
             venue_order_id=VenueOrderId("1"),
@@ -2095,6 +2098,7 @@ class TestExecutionEngine:
     def test_handle_position_status_report(self):
         # Arrange
         position_report = PositionStatusReport(
+            account_id=AccountId("SIM", "001"),
             instrument_id=AUDUSD_SIM.id,
             venue_position_id=PositionId("1"),
             position_side=PositionSide.LONG,

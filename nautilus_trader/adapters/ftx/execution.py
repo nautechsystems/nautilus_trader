@@ -278,6 +278,7 @@ class FTXExecutionClient(LiveExecutionClient):
             return None
 
         return parse_order_status(
+            account_id=self.account_id,
             instrument=instrument,
             data=response,
             report_id=self._uuid_factory.generate(),
@@ -366,6 +367,7 @@ class FTXExecutionClient(LiveExecutionClient):
 
                 reports.append(
                     parse_order_status(
+                        account_id=self.account_id,
                         instrument=instrument,
                         data=data,
                         report_id=self._uuid_factory.generate(),
@@ -413,6 +415,7 @@ class FTXExecutionClient(LiveExecutionClient):
 
                 reports.append(
                     parse_trigger_order_status(
+                        account_id=self.account_id,
                         instrument=instrument,
                         data=data,
                         report_id=self._uuid_factory.generate(),

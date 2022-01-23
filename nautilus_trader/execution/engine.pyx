@@ -39,9 +39,9 @@ from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.component cimport Component
 from nautilus_trader.common.generators cimport PositionIdGenerator
 from nautilus_trader.common.logging cimport CMD
-from nautilus_trader.common.logging cimport DOC
 from nautilus_trader.common.logging cimport EVT
 from nautilus_trader.common.logging cimport RECV
+from nautilus_trader.common.logging cimport RPT
 from nautilus_trader.common.logging cimport LogColor
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.core.correctness cimport Condition
@@ -826,7 +826,7 @@ cdef class ExecutionEngine(Component):
 # -- REPORT HANDLERS -------------------------------------------------------------------------------
 
     cdef void _reconcile_report(self, Document report) except *:
-        self._log.debug(f"{RECV}{DOC} {report}.")
+        self._log.debug(f"{RECV}{RPT} {report}.")
         self.report_count += 1
 
         if isinstance(report, OrderStatusReport):
