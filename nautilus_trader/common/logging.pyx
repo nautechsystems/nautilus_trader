@@ -58,6 +58,7 @@ SENT = "-->"
 CMD = "[CMD]"
 EVT = "[EVT]"
 DOC = "[DOC]"
+RPT = "[RPT]"
 REQ = "[REQ]"
 RES = "[RES]"
 

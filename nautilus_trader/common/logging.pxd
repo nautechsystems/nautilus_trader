@@ -30,6 +30,7 @@ cdef str SENT
 cdef str CMD
 cdef str EVT
 cdef str DOC
+cdef str RPT
 cdef str REQ
 cdef str RES
 
