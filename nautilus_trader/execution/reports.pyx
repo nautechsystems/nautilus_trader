@@ -39,6 +39,7 @@ from nautilus_trader.model.identifiers cimport AccountId
 from nautilus_trader.model.identifiers cimport ClientOrderId
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.identifiers cimport TradeId
+from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.model.identifiers cimport VenueOrderId
 from nautilus_trader.model.objects cimport Quantity
 
@@ -201,10 +202,10 @@ cdef class OrderStatusReport(ExecutionReport):
             f"limit_offset={self.limit_offset}, "
             f"trailing_offset={self.trailing_offset}, "
             f"offset_type={TrailingOffsetTypeParser.to_str(self.offset_type)}, "
-            f"quantity={self.quantity}, "
-            f"filled_qty={self.filled_qty}, "
-            f"leaves_qty={self.leaves_qty}, "
-            f"display_qty={self.display_qty}, "
+            f"quantity={self.quantity.to_str()}, "
+            f"filled_qty={self.filled_qty.to_str()}, "
+            f"leaves_qty={self.leaves_qty.to_str()}, "
+            f"display_qty={self.display_qty.to_str() if self.display_qty is not None else None}, "
             f"avg_px={self.avg_px}, "
             f"post_only={self.post_only}, "
             f"reduce_only={self.reduce_only}, "
@@ -300,7 +301,7 @@ cdef class TradeReport(ExecutionReport):
             f"venue_position_id={self.venue_position_id}, "
             f"trade_id={self.trade_id.value}, "
             f"order_side={OrderSideParser.to_str(self.order_side)}, "
-            f"last_qty={self.last_qty}, "
+            f"last_qty={self.last_qty.to_str()}, "
             f"last_px={self.last_px}, "
             f"commission={self.commission.to_str()}, "
             f"liquidity_side={LiquiditySideParser.to_str(self.liquidity_side)}, "
@@ -366,7 +367,7 @@ cdef class PositionStatusReport(ExecutionReport):
             f"instrument_id={self.instrument_id.value}, "
             f"venue_position_id={self.venue_position_id}, "
             f"position_side={PositionSideParser.to_str(self.position_side)}, "
-            f"quantity={self.quantity}, "
+            f"quantity={self.quantity.to_str()}, "
             f"report_id={self.id}, "
             f"ts_last={self.ts_last}, "
             f"ts_init={self.ts_init})"
@@ -380,6 +381,8 @@ cdef class ExecutionMassStatus(Document):
 
     Parameters
     ----------
+    venue : Venue
+        The venue for the report.
     client_id : ClientId
         The client ID for the report.
     account_id : AccountId
@@ -394,6 +397,7 @@ cdef class ExecutionMassStatus(Document):
         self,
         ClientId client_id not None,
         AccountId account_id not None,
+        Venue venue not None,
         UUID4 report_id not None,
         int64_t ts_init,
     ):
@@ -403,6 +407,7 @@ cdef class ExecutionMassStatus(Document):
         )
         self.client_id = client_id
         self.account_id = account_id
+        self.venue = venue
 
         self._order_reports = {}     # type: dict[VenueOrderId, OrderStatusReport]
         self._trade_reports = {}     # type: dict[VenueOrderId, list[TradeReport]]
@@ -411,8 +416,9 @@ cdef class ExecutionMassStatus(Document):
     def __repr__(self) -> str:
         return (
             f"{type(self).__name__}("
-            f"client_id={self.client_id}, "
-            f"account_id={self.account_id}, "
+            f"client_id={self.client_id.value}, "
+            f"account_id={self.account_id.value}, "
+            f"venue={self.venue.value}, "
             f"order_reports={self._order_reports}, "
             f"trade_reports={self._trade_reports}, "
             f"position_reports={self._position_reports}, "

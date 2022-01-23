@@ -16,8 +16,9 @@
 from nautilus_trader.cache.cache cimport Cache
 from nautilus_trader.common.component cimport Component
 from nautilus_trader.common.generators cimport PositionIdGenerator
-from nautilus_trader.core.message cimport Document
 from nautilus_trader.execution.client cimport ExecutionClient
+from nautilus_trader.execution.reports cimport ExecutionMassStatus
+from nautilus_trader.execution.reports cimport ExecutionReport
 from nautilus_trader.model.c_enums.oms_type cimport OMSType
 from nautilus_trader.model.commands.trading cimport CancelAllOrders
 from nautilus_trader.model.commands.trading cimport CancelOrder
@@ -76,7 +77,8 @@ cdef class ExecutionEngine(Component):
     cpdef void load_cache(self) except *
     cpdef void execute(self, TradingCommand command) except *
     cpdef void process(self, OrderEvent event) except *
-    cpdef void reconcile(self, Document report) except *
+    cpdef void reconcile_report(self, ExecutionReport report) except *
+    cpdef void reconcile_mass_status(self, ExecutionMassStatus report) except *
     cpdef void flush_db(self) except *
 
 # -- COMMAND HANDLERS ------------------------------------------------------------------------------
@@ -100,4 +102,5 @@ cdef class ExecutionEngine(Component):
 
 # -- REPORT HANDLERS -------------------------------------------------------------------------------
 
-    cdef void _reconcile_report(self, Document report) except *
+    cdef void _reconcile_report(self, ExecutionReport report) except *
+    cdef void _reconcile_mass_status(self, ExecutionMassStatus report) except *
