@@ -39,14 +39,20 @@ from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.component cimport Component
 from nautilus_trader.common.generators cimport PositionIdGenerator
 from nautilus_trader.common.logging cimport CMD
+from nautilus_trader.common.logging cimport DOC
 from nautilus_trader.common.logging cimport EVT
 from nautilus_trader.common.logging cimport RECV
 from nautilus_trader.common.logging cimport LogColor
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.fsm cimport InvalidStateTrigger
+from nautilus_trader.core.message cimport Document
 from nautilus_trader.core.time cimport unix_timestamp_ms
 from nautilus_trader.execution.client cimport ExecutionClient
+from nautilus_trader.execution.reports cimport ExecutionMassStatus
+from nautilus_trader.execution.reports cimport OrderStatusReport
+from nautilus_trader.execution.reports cimport PositionStatusReport
+from nautilus_trader.execution.reports cimport TradeReport
 from nautilus_trader.model.c_enums.oms_type cimport OMSType
 from nautilus_trader.model.c_enums.oms_type cimport OMSTypeParser
 from nautilus_trader.model.c_enums.position_side cimport PositionSide
@@ -135,10 +141,12 @@ cdef class ExecutionEngine(Component):
         # Counters
         self.command_count = 0
         self.event_count = 0
+        self.report_count = 0
 
         # Register endpoints
         self._msgbus.register(endpoint="ExecEngine.execute", handler=self.execute)
         self._msgbus.register(endpoint="ExecEngine.process", handler=self.process)
+        self._msgbus.register(endpoint="ExecEngine.reconcile", handler=self.reconcile)
 
     @property
     def registered_clients(self):
@@ -396,6 +404,7 @@ cdef class ExecutionEngine(Component):
 
         self.command_count = 0
         self.event_count = 0
+        self.report_count = 0
 
     cpdef void _dispose(self) except *:
         cdef ExecutionClient client
@@ -448,6 +457,18 @@ cdef class ExecutionEngine(Component):
         Condition.not_none(event, "event")
 
         self._handle_event(event)
+
+    cpdef void reconcile(self, Document report) except *:
+        """
+        Process the given execution report.
+
+        Parameters
+        ----------
+        report : Document
+            The execution report to process.
+
+        """
+        self._reconcile_report(report)
 
     cpdef void flush_db(self) except *:
         """
@@ -511,7 +532,7 @@ cdef class ExecutionEngine(Component):
             self._handle_cancel_order(client, command)
         elif isinstance(command, CancelAllOrders):
             self._handle_cancel_all_orders(client, command)
-        else:
+        else:  # pragma: no cover (design-time error)
             self._log.error(f"Cannot handle command: unrecognized {command}.")
 
     cdef void _handle_submit_order(self, ExecutionClient client, SubmitOrder command) except *:
@@ -801,3 +822,25 @@ cdef class ExecutionEngine(Component):
 
         # Open flipped position
         self._handle_order_fill(fill_split2, oms_type)
+
+# -- REPORT HANDLERS -------------------------------------------------------------------------------
+
+    cdef void _reconcile_report(self, Document report) except *:
+        self._log.debug(f"{RECV}{DOC} {report}.")
+        self.report_count += 1
+
+        if isinstance(report, OrderStatusReport):
+            pass  # TODO: Implement
+        elif isinstance(report, TradeReport):
+            pass  # TODO: Implement
+        elif isinstance(report, PositionStatusReport):
+            pass  # TODO: Implement
+        elif isinstance(report, ExecutionMassStatus):
+            pass  # TODO: Implement
+        else:  # pragma: no cover (design-time error)
+            self._log.error(f"Cannot handle report: unrecognized {report}.")
+
+        self._msgbus.publish_c(
+            topic=f"reports.execution",
+            msg=report,
+        )
