@@ -13,6 +13,8 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from decimal import Decimal
+
 from nautilus_trader.accounting.accounts.cash import CashAccount
 from nautilus_trader.backtest.data.providers import TestInstrumentProvider
 from nautilus_trader.cache.cache import Cache
@@ -21,8 +23,15 @@ from nautilus_trader.common.factories import OrderFactory
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.common.logging import LogLevel
 from nautilus_trader.common.uuid import UUIDFactory
+from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.data.engine import DataEngine
 from nautilus_trader.execution.engine import ExecutionEngine
+from nautilus_trader.execution.reports import ExecutionMassStatus
+from nautilus_trader.execution.reports import OrderStatusReport
+from nautilus_trader.execution.reports import PositionStatusReport
+from nautilus_trader.execution.reports import TradeReport
+from nautilus_trader.model.c_enums.trailing_offset_type import TrailingOffsetType
+from nautilus_trader.model.c_enums.trigger_type import TriggerType
 from nautilus_trader.model.commands.trading import CancelOrder
 from nautilus_trader.model.commands.trading import ModifyOrder
 from nautilus_trader.model.commands.trading import SubmitOrder
@@ -30,8 +39,13 @@ from nautilus_trader.model.commands.trading import SubmitOrderList
 from nautilus_trader.model.commands.trading import TradingCommand
 from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.enums import AccountType
+from nautilus_trader.model.enums import ContingencyType
+from nautilus_trader.model.enums import LiquiditySide
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import OrderStatus
+from nautilus_trader.model.enums import OrderType
+from nautilus_trader.model.enums import PositionSide
+from nautilus_trader.model.enums import TimeInForce
 from nautilus_trader.model.events.order import OrderCanceled
 from nautilus_trader.model.events.order import OrderUpdated
 from nautilus_trader.model.identifiers import ClientId
@@ -39,8 +53,10 @@ from nautilus_trader.model.identifiers import ClientOrderId
 from nautilus_trader.model.identifiers import OrderListId
 from nautilus_trader.model.identifiers import PositionId
 from nautilus_trader.model.identifiers import StrategyId
+from nautilus_trader.model.identifiers import TradeId
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.identifiers import VenueOrderId
+from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.orders.list import OrderList
@@ -2013,3 +2029,98 @@ class TestExecutionEngine:
         # Order should have new venue_order_id
         cached_order = self.cache.order(order.client_order_id)
         assert cached_order.venue_order_id == new_venue_id
+
+    def test_handle_order_status_report(self):
+        # Arrange
+        order_report = OrderStatusReport(
+            instrument_id=AUDUSD_SIM.id,
+            client_order_id=ClientOrderId("O-123456"),
+            order_list_id=OrderListId("1"),
+            venue_order_id=VenueOrderId("2"),
+            order_side=OrderSide.SELL,
+            order_type=OrderType.STOP_LIMIT,
+            contingency=ContingencyType.OCO,
+            time_in_force=TimeInForce.DAY,
+            order_status=OrderStatus.REJECTED,
+            price=Price.from_str("0.90090"),
+            trigger_price=Price.from_str("0.90100"),
+            trigger_type=TriggerType.DEFAULT,
+            limit_offset=None,
+            trailing_offset=Decimal("0.00010"),
+            offset_type=TrailingOffsetType.PRICE,
+            quantity=Quantity.from_int(1_000_000),
+            filled_qty=Quantity.from_int(0),
+            display_qty=None,
+            avg_px=None,
+            post_only=True,
+            reduce_only=False,
+            reject_reason="SOME_REASON",
+            report_id=UUID4(),
+            ts_accepted=1_000_000,
+            ts_triggered=1_500_000,
+            ts_last=2_000_000,
+            ts_init=3_000_000,
+        )
+
+        # Act
+        self.exec_engine.reconcile(order_report)
+
+        # Assert
+        assert self.exec_engine.report_count == 1
+
+    def test_handle_trade_report(self):
+        # Arrange
+        trade_report = TradeReport(
+            instrument_id=AUDUSD_SIM.id,
+            client_order_id=ClientOrderId("O-123456789"),
+            venue_order_id=VenueOrderId("1"),
+            venue_position_id=PositionId("2"),
+            trade_id=TradeId("3"),
+            order_side=OrderSide.BUY,
+            last_qty=Quantity.from_int(100),
+            last_px=Price.from_str("100.50"),
+            commission=Money("4.50", USD),
+            liquidity_side=LiquiditySide.TAKER,
+            report_id=UUID4(),
+            ts_event=0,
+            ts_init=0,
+        )
+
+        # Act
+        self.exec_engine.reconcile(trade_report)
+
+        # Assert
+        assert self.exec_engine.report_count == 1
+
+    def test_handle_position_status_report(self):
+        # Arrange
+        position_report = PositionStatusReport(
+            instrument_id=AUDUSD_SIM.id,
+            venue_position_id=PositionId("1"),
+            position_side=PositionSide.LONG,
+            quantity=Quantity.from_int(1_000_000),
+            report_id=UUID4(),
+            ts_last=0,
+            ts_init=0,
+        )
+
+        # Act
+        self.exec_engine.reconcile(position_report)
+
+        # Assert
+        assert self.exec_engine.report_count == 1
+
+    def test_execution_mass_status(self):
+        # Arrange
+        mass_status = ExecutionMassStatus(
+            client_id=ClientId("IB"),
+            account_id=TestStubs.account_id(),
+            report_id=UUID4(),
+            ts_init=0,
+        )
+
+        # Act
+        self.exec_engine.reconcile(mass_status)
+
+        # Assert
+        assert self.exec_engine.report_count == 1

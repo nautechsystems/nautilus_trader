@@ -63,6 +63,7 @@ from nautilus_trader.model.orderbook.data import OrderBookSnapshot
 def parse_order_status(
     instrument: Instrument,
     data: Dict[str, Any],
+    report_id: UUID4,
     ts_init: int,
 ) -> OrderStatusReport:
     client_id_str = data["clientId"]
@@ -92,7 +93,7 @@ def parse_order_status(
         post_only=data["postOnly"],
         reduce_only=data["reduceOnly"],
         reject_reason=None,
-        report_id=UUID4(),
+        report_id=report_id,
         ts_accepted=created_at,
         ts_triggered=0,
         ts_last=created_at,
@@ -103,6 +104,7 @@ def parse_order_status(
 def parse_trigger_order_status(
     instrument: Instrument,
     data: Dict[str, Any],
+    report_id: UUID4,
     ts_init: int,
 ) -> OrderStatusReport:
     client_id_str = data["clientId"]
@@ -134,7 +136,7 @@ def parse_trigger_order_status(
         post_only=data["postOnly"],
         reduce_only=data["reduceOnly"],
         reject_reason=None,
-        report_id=UUID4(),
+        report_id=report_id,
         ts_accepted=created_at,
         ts_triggered=int(pd.to_datetime(triggered_at, utc=True).to_datetime64())
         if triggered_at is not None

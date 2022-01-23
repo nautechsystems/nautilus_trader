@@ -57,6 +57,7 @@ RECV = "<--"
 SENT = "-->"
 CMD = "[CMD]"
 EVT = "[EVT]"
+DOC = "[DOC]"
 REQ = "[REQ]"
 RES = "[RES]"
 

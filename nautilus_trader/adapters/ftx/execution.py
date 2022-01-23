@@ -280,6 +280,7 @@ class FTXExecutionClient(LiveExecutionClient):
         return parse_order_status(
             instrument=instrument,
             data=response,
+            report_id=self._uuid_factory.generate(),
             ts_init=self._clock.timestamp_ns(),
         )
 
@@ -367,6 +368,7 @@ class FTXExecutionClient(LiveExecutionClient):
                     parse_order_status(
                         instrument=instrument,
                         data=data,
+                        report_id=self._uuid_factory.generate(),
                         ts_init=self._clock.timestamp_ns(),
                     )
                 )
@@ -413,6 +415,7 @@ class FTXExecutionClient(LiveExecutionClient):
                     parse_trigger_order_status(
                         instrument=instrument,
                         data=data,
+                        report_id=self._uuid_factory.generate(),
                         ts_init=self._clock.timestamp_ns(),
                     )
                 )

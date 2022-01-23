@@ -16,6 +16,7 @@
 from nautilus_trader.cache.cache cimport Cache
 from nautilus_trader.common.component cimport Component
 from nautilus_trader.common.generators cimport PositionIdGenerator
+from nautilus_trader.core.message cimport Document
 from nautilus_trader.execution.client cimport ExecutionClient
 from nautilus_trader.model.c_enums.oms_type cimport OMSType
 from nautilus_trader.model.commands.trading cimport CancelAllOrders
@@ -44,6 +45,8 @@ cdef class ExecutionEngine(Component):
     """The total count of commands received by the engine.\n\n:returns: `int`"""
     cdef readonly int event_count
     """The total count of events received by the engine.\n\n:returns: `int`"""
+    cdef readonly int report_count
+    """The total count of reports received by the engine.\n\n:returns: `int`"""
 
     cpdef int position_id_count(self, StrategyId strategy_id) except *
     cpdef bint check_integrity(self) except *
@@ -73,6 +76,7 @@ cdef class ExecutionEngine(Component):
     cpdef void load_cache(self) except *
     cpdef void execute(self, TradingCommand command) except *
     cpdef void process(self, OrderEvent event) except *
+    cpdef void reconcile(self, Document report) except *
     cpdef void flush_db(self) except *
 
 # -- COMMAND HANDLERS ------------------------------------------------------------------------------
@@ -93,3 +97,7 @@ cdef class ExecutionEngine(Component):
     cdef void _open_position(self, OrderFilled fill, OMSType oms_type) except *
     cdef void _update_position(self, Position position, OrderFilled fill, OMSType oms_type) except *
     cdef void _flip_position(self, Position position, OrderFilled fill, OMSType oms_type) except *
+
+# -- REPORT HANDLERS -------------------------------------------------------------------------------
+
+    cdef void _reconcile_report(self, Document report) except *
