@@ -50,6 +50,7 @@ from nautilus_trader.core.message cimport Document
 from nautilus_trader.core.time cimport unix_timestamp_ms
 from nautilus_trader.execution.client cimport ExecutionClient
 from nautilus_trader.execution.reports cimport ExecutionMassStatus
+from nautilus_trader.execution.reports cimport ExecutionReport
 from nautilus_trader.execution.reports cimport OrderStatusReport
 from nautilus_trader.execution.reports cimport PositionStatusReport
 from nautilus_trader.execution.reports cimport TradeReport
@@ -146,7 +147,8 @@ cdef class ExecutionEngine(Component):
         # Register endpoints
         self._msgbus.register(endpoint="ExecEngine.execute", handler=self.execute)
         self._msgbus.register(endpoint="ExecEngine.process", handler=self.process)
-        self._msgbus.register(endpoint="ExecEngine.reconcile", handler=self.reconcile)
+        self._msgbus.register(endpoint="ExecEngine.reconcile_report", handler=self.reconcile_report)
+        self._msgbus.register(endpoint="ExecEngine.reconcile_mass_status", handler=self.reconcile_mass_status)
 
     @property
     def registered_clients(self):
@@ -458,17 +460,29 @@ cdef class ExecutionEngine(Component):
 
         self._handle_event(event)
 
-    cpdef void reconcile(self, Document report) except *:
+    cpdef void reconcile_report(self, ExecutionReport report) except *:
         """
-        Process the given execution report.
+        Reconcile the given execution report.
 
         Parameters
         ----------
         report : Document
-            The execution report to process.
+            The execution report to reconcile.
 
         """
         self._reconcile_report(report)
+
+    cpdef void reconcile_mass_status(self, ExecutionMassStatus report) except *:
+        """
+        Reconcile the given execution mass status report.
+
+        Parameters
+        ----------
+        report : Document
+            The execution report to reconcile.
+
+        """
+        self._reconcile_mass_status(report)
 
     cpdef void flush_db(self) except *:
         """
@@ -825,7 +839,7 @@ cdef class ExecutionEngine(Component):
 
 # -- REPORT HANDLERS -------------------------------------------------------------------------------
 
-    cdef void _reconcile_report(self, Document report) except *:
+    cdef void _reconcile_report(self, ExecutionReport report) except *:
         self._log.debug(f"{RECV}{RPT} {report}.")
         self.report_count += 1
 
@@ -835,12 +849,21 @@ cdef class ExecutionEngine(Component):
             pass  # TODO: Implement
         elif isinstance(report, PositionStatusReport):
             pass  # TODO: Implement
-        elif isinstance(report, ExecutionMassStatus):
-            pass  # TODO: Implement
         else:  # pragma: no cover (design-time error)
             self._log.error(f"Cannot handle report: unrecognized {report}.")
 
         self._msgbus.publish_c(
-            topic=f"reports.execution",
+            topic=f"reports.execution"
+                  f".{report.instrument_id.venue}"
+                  f".{report.instrument_id.symbol}",
+            msg=report,
+        )
+
+    cdef void _reconcile_mass_status(self, ExecutionMassStatus report) except *:
+        self._log.debug(f"{RECV}{RPT} {report}.")
+        self.report_count += 1
+
+        self._msgbus.publish_c(
+            topic=f"reports.execution.{report.venue.value}",
             msg=report,
         )

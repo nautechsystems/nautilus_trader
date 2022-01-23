@@ -2065,7 +2065,7 @@ class TestExecutionEngine:
         )
 
         # Act
-        self.exec_engine.reconcile(order_report)
+        self.exec_engine.reconcile_report(order_report)
 
         # Assert
         assert self.exec_engine.report_count == 1
@@ -2090,7 +2090,7 @@ class TestExecutionEngine:
         )
 
         # Act
-        self.exec_engine.reconcile(trade_report)
+        self.exec_engine.reconcile_report(trade_report)
 
         # Assert
         assert self.exec_engine.report_count == 1
@@ -2109,7 +2109,7 @@ class TestExecutionEngine:
         )
 
         # Act
-        self.exec_engine.reconcile(position_report)
+        self.exec_engine.reconcile_report(position_report)
 
         # Assert
         assert self.exec_engine.report_count == 1
@@ -2117,14 +2117,15 @@ class TestExecutionEngine:
     def test_execution_mass_status(self):
         # Arrange
         mass_status = ExecutionMassStatus(
-            client_id=ClientId("IB"),
+            client_id=ClientId("SIM"),
             account_id=TestStubs.account_id(),
+            venue=Venue("SIM"),
             report_id=UUID4(),
             ts_init=0,
         )
 
         # Act
-        self.exec_engine.reconcile(mass_status)
+        self.exec_engine.reconcile_mass_status(mass_status)
 
         # Assert
         assert self.exec_engine.report_count == 1

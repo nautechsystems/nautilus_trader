@@ -163,6 +163,10 @@ class TestStubs:
         return InstrumentId(Symbol("USD/JPY"), Venue("SIM"))
 
     @staticmethod
+    def audusd_idealpro_id() -> InstrumentId:
+        return InstrumentId(Symbol("AUD/USD"), Venue("IDEALPRO"))
+
+    @staticmethod
     def ticker(instrument_id=None) -> Ticker:
         return Ticker(
             instrument_id=instrument_id or TestStubs.audusd_id(),

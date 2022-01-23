@@ -32,6 +32,7 @@ from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.identifiers cimport OrderListId
 from nautilus_trader.model.identifiers cimport PositionId
 from nautilus_trader.model.identifiers cimport TradeId
+from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.model.identifiers cimport VenueOrderId
 from nautilus_trader.model.objects cimport Money
 from nautilus_trader.model.objects cimport Price
@@ -141,6 +142,8 @@ cdef class ExecutionMassStatus(Document):
     """The client ID for the report.\n\n:returns: `ClientId`"""
     cdef readonly AccountId account_id
     """The account ID for the report.\n\n:returns: `AccountId`"""
+    cdef readonly Venue venue
+    """The venue for the report.\n\n:returns: `Venue`"""
 
     cpdef dict order_reports(self)
     cpdef dict trade_reports(self)
