@@ -19,6 +19,8 @@ from typing import Optional
 from libc.stdint cimport int64_t
 
 from nautilus_trader.core.correctness cimport Condition
+from nautilus_trader.core.message cimport Document
+from nautilus_trader.core.uuid cimport UUID4
 from nautilus_trader.model.c_enums.contingency_type cimport ContingencyTypeParser
 from nautilus_trader.model.c_enums.liquidity_side cimport LiquiditySide
 from nautilus_trader.model.c_enums.liquidity_side cimport LiquiditySideParser
@@ -41,7 +43,7 @@ from nautilus_trader.model.identifiers cimport VenueOrderId
 from nautilus_trader.model.objects cimport Quantity
 
 
-cdef class OrderStatusReport:
+cdef class OrderStatusReport(Document):
     """
     Represents an order status at a point in time.
 
@@ -85,6 +87,8 @@ cdef class OrderStatusReport:
         If the reported order carries the 'reduce-only' execution instruction.
     reject_reason : str, optional
         The reported reason for order rejection.
+    report_id : UUID4
+        The report ID.
     ts_accepted : int64
         The UNIX timestamp (nanoseconds) when the reported order was accepted.
     ts_last : int64
@@ -117,11 +121,16 @@ cdef class OrderStatusReport:
         bint post_only,
         bint reduce_only,
         str reject_reason,  # Can be None
+        UUID4 report_id not None,
         int64_t ts_accepted,
         int64_t ts_triggered,
         int64_t ts_last,
         int64_t ts_init,
     ):
+        super().__init__(
+            report_id,
+            ts_init,
+        )
         self.instrument_id = instrument_id
         self.client_order_id = client_order_id
         self.order_list_id = order_list_id
@@ -148,7 +157,6 @@ cdef class OrderStatusReport:
         self.ts_accepted = ts_accepted
         self.ts_triggered = ts_triggered
         self.ts_last = ts_last
-        self.ts_init = ts_init
 
     def __repr__(self) -> str:
         return (
@@ -175,6 +183,7 @@ cdef class OrderStatusReport:
             f"post_only={self.post_only}, "
             f"reduce_only={self.reduce_only}, "
             f"reject_reason={self.reject_reason}, "
+            f"report_id={self.id}, "
             f"ts_accepted={self.ts_accepted}, "
             f"ts_triggered={self.ts_triggered}, "
             f"ts_last={self.ts_last}, "
@@ -182,7 +191,7 @@ cdef class OrderStatusReport:
         )
 
 
-cdef class TradeReport:
+cdef class TradeReport(Document):
     """
     Represents a report of a single trade.
 
@@ -211,6 +220,8 @@ cdef class TradeReport:
         The reported commission for the trade (can be ``None``).
     liquidity_side : LiquiditySide {``NONE``, ``MAKER``, ``TAKER``}
         The reported liquidity side for the trade.
+    report_id : UUID4
+        The report ID.
     ts_event : int64
         The UNIX timestamp (nanoseconds) when the trade occurred.
     ts_init : int64
@@ -229,9 +240,14 @@ cdef class TradeReport:
         Price last_px not None,
         Money commission,  # Can be None
         LiquiditySide liquidity_side,
+        UUID4 report_id not None,
         int64_t ts_event,
         int64_t ts_init,
     ):
+        super().__init__(
+            report_id,
+            ts_init,
+        )
         self.instrument_id = instrument_id
         self.client_order_id = client_order_id
         self.venue_order_id = venue_order_id
@@ -243,7 +259,6 @@ cdef class TradeReport:
         self.commission = commission
         self.liquidity_side = liquidity_side
         self.ts_event = ts_event
-        self.ts_init = ts_init
 
     def __repr__(self) -> str:
         return (
@@ -258,12 +273,13 @@ cdef class TradeReport:
             f"last_px={self.last_px}, "
             f"commission={self.commission.to_str()}, "
             f"liquidity_side={LiquiditySideParser.to_str(self.liquidity_side)}, "
+            f"report_id={self.id}, "
             f"ts_event={self.ts_event}, "
             f"ts_init={self.ts_init})"
         )
 
 
-cdef class PositionStatusReport:
+cdef class PositionStatusReport(Document):
     """
     Represents a position status at a point in time.
 
@@ -280,6 +296,8 @@ cdef class PositionStatusReport:
         The reported position side at the exchange.
     quantity : Quantity
         The reported position quantity at the exchange.
+    report_id : UUID4
+        The report ID.
     ts_last : int64
         The UNIX timestamp (nanoseconds) of the last position change.
     ts_init : int64
@@ -292,15 +310,19 @@ cdef class PositionStatusReport:
         PositionId venue_position_id,  # Can be None
         PositionSide position_side,
         Quantity quantity not None,
+        UUID4 report_id not None,
         int64_t ts_last,
         int64_t ts_init,
     ):
+        super().__init__(
+            report_id,
+            ts_init,
+        )
         self.instrument_id = instrument_id
         self.venue_position_id = venue_position_id
         self.position_side = position_side
         self.quantity = quantity
         self.ts_last = ts_last
-        self.ts_init = ts_init
 
     def __repr__(self) -> str:
         return (
@@ -309,12 +331,13 @@ cdef class PositionStatusReport:
             f"venue_position_id={self.venue_position_id}, "
             f"position_side={PositionSideParser.to_str(self.position_side)}, "
             f"quantity={self.quantity}, "
+            f"report_id={self.id}, "
             f"ts_last={self.ts_last}, "
             f"ts_init={self.ts_init})"
         )
 
 
-cdef class ExecutionMassStatus:
+cdef class ExecutionMassStatus(Document):
     """
     Represents an execution mass status report including status of all open
     orders, trades for those orders and open positions.
@@ -325,6 +348,8 @@ cdef class ExecutionMassStatus:
         The client ID for the report.
     account_id : AccountId
         The account ID for the report.
+    report_id : UUID4
+        The report ID.
     ts_init : int64
         The UNIX timestamp (nanoseconds) when the object was initialized.
     """
@@ -333,11 +358,15 @@ cdef class ExecutionMassStatus:
         self,
         ClientId client_id not None,
         AccountId account_id not None,
+        UUID4 report_id not None,
         int64_t ts_init,
     ):
+        super().__init__(
+            report_id,
+            ts_init,
+        )
         self.client_id = client_id
         self.account_id = account_id
-        self.ts_init = ts_init
 
         self._order_reports = {}     # type: dict[VenueOrderId, OrderStatusReport]
         self._trade_reports = {}     # type: dict[VenueOrderId, list[TradeReport]]
@@ -351,6 +380,7 @@ cdef class ExecutionMassStatus:
             f"order_reports={self._order_reports}, "
             f"trade_reports={self._trade_reports}, "
             f"position_reports={self._position_reports}, "
+            f"report_id={self.id}, "
             f"ts_init={self.ts_init})"
         )
 

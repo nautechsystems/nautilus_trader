@@ -15,6 +15,7 @@
 
 from libc.stdint cimport int64_t
 
+from nautilus_trader.core.message cimport Document
 from nautilus_trader.model.c_enums.contingency_type cimport ContingencyType
 from nautilus_trader.model.c_enums.liquidity_side cimport LiquiditySide
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
@@ -37,7 +38,7 @@ from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
 
 
-cdef class OrderStatusReport:
+cdef class OrderStatusReport(Document):
     cdef readonly InstrumentId instrument_id
     """The order instrument ID.\n\n:returns: `InstrumentId`"""
     cdef readonly ClientOrderId client_order_id
@@ -90,11 +91,9 @@ cdef class OrderStatusReport:
     """The UNIX timestamp (nanoseconds) when the order was triggered (0 if not triggered).\n\n:returns: `int64`"""
     cdef readonly int64_t ts_last
     """The UNIX timestamp (nanoseconds) of the last order status change.\n\n:returns: `int64`"""
-    cdef readonly int64_t ts_init
-    """The UNIX timestamp (nanoseconds) when the object was initialized.\n\n:returns: `int64`"""
 
 
-cdef class TradeReport:
+cdef class TradeReport(Document):
     cdef readonly InstrumentId instrument_id
     """The order instrument ID.\n\n:returns: `InstrumentId`"""
     cdef readonly ClientOrderId client_order_id
@@ -117,11 +116,9 @@ cdef class TradeReport:
     """The reported liquidity side.\n\n:returns: `LiquiditySide`"""
     cdef readonly int64_t ts_event
     """The UNIX timestamp (nanoseconds) when the execution event occurred.\n\n:returns: `LiquiditySide`"""
-    cdef readonly int64_t ts_init
-    """The UNIX timestamp (nanoseconds) when the object was initialized.\n\n:returns: `int64`"""
 
 
-cdef class PositionStatusReport:
+cdef class PositionStatusReport(Document):
     cdef readonly InstrumentId instrument_id
     """The reported instrument ID.\n\n:returns: `InstrumentId`"""
     cdef readonly PositionId venue_position_id
@@ -132,11 +129,9 @@ cdef class PositionStatusReport:
     """The reported position quantity at the exchange.\n\n:returns: `Quantity`"""
     cdef readonly int64_t ts_last
     """The UNIX timestamp (nanoseconds) of the last position change.\n\n:returns: `int64`"""
-    cdef readonly int64_t ts_init
-    """The UNIX timestamp (nanoseconds) when the object was initialized.\n\n:returns: `int64`"""
 
 
-cdef class ExecutionMassStatus:
+cdef class ExecutionMassStatus(Document):
     cdef dict _order_reports
     cdef dict _trade_reports
     cdef dict _position_reports
@@ -145,8 +140,6 @@ cdef class ExecutionMassStatus:
     """The client ID for the report.\n\n:returns: `ClientId`"""
     cdef readonly AccountId account_id
     """The account ID for the report.\n\n:returns: `AccountId`"""
-    cdef readonly int64_t ts_init
-    """The UNIX timestamp (nanoseconds) when the object was initialized.\n\n:returns: `int64`"""
 
     cpdef dict order_reports(self)
     cpdef dict trade_reports(self)
