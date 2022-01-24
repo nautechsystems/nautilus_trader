@@ -208,8 +208,11 @@ class EMACrossStopEntryTrail(TradingStrategy):
         if self.portfolio.is_flat(self.instrument_id):
             if self.entry is not None:
                 self.cancel_order(self.entry)
+
+            # BUY LOGIC
             if self.fast_ema.value >= self.slow_ema.value:
                 self.entry_buy(bar)
+            # SELL LOGIC
             else:  # fast_ema.value < self.slow_ema.value
                 self.entry_sell(bar)
         else:
