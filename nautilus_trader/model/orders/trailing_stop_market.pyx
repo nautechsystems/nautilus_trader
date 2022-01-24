@@ -51,15 +51,14 @@ cdef class TrailingStopMarketOrder(Order):
     """
     Represents a trailing stop-market trigger order.
 
-    A sell trailing stop order sets the stop price at a fixed amount below the
-    market price with an attached "trailing" offset. As the market price rises,
-    the stop price rises by the trail amount, but if the stock price falls, the
-    stop loss price doesn't change, and a market order is submitted when the
-    stop price is hit. This technique is designed to allow a trader to
-    specify a limit on the maximum possible loss, without setting a limit on
-    the maximum possible gain. "Buy" trailing stop orders are the mirror image
-    of sell trailing stop orders, and are most appropriate for use in falling
-    markets.
+    A trailing stop-market moves with the market price, and continually recalculates
+    the stop trigger price at a fixed offset from the market price, based on
+    the user-defined `trailing_offset`. In the SELL case, as the market rises, the
+    stop trigger prices rise by the `trailing_offset`. However, if the market
+    falls the stop trigger price remains unchanged. When the stop trigger price
+    is hit, a market SELL order is immediately submitted.
+
+    The 'BUY case' is the mirror image of the above 'SELL case'.
 
     Parameters
     ----------
