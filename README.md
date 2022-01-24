@@ -6,7 +6,6 @@
 ![pypi-version](https://img.shields.io/pypi/v/nautilus_trader)
 ![pypi-format](https://img.shields.io/pypi/format/nautilus_trader?color=blue)
 [![Downloads](https://pepy.tech/badge/nautilus-trader)](https://pepy.tech/project/nautilus-trader)
-[![code-style: black](https://img.shields.io/badge/code%20style-black-000000.svg)](https://github.com/psf/black)
 [![discord](https://img.shields.io/discord/924497682343550976?color=768AD4&label=discord)](https://discord.gg/AUWVs3XaCS)
 
 | Branch    | Version | Status |
