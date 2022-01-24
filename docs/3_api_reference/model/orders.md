@@ -44,6 +44,26 @@
    :member-order: bysource
 ```
 
+## Trailing Stop-Market
+
+```{eval-rst}
+.. automodule:: nautilus_trader.model.orders.trailing_stop_market
+   :show-inheritance:
+   :inherited-members:
+   :members:
+   :member-order: bysource
+```
+
+## Trailing Stop-Limit
+
+```{eval-rst}
+.. automodule:: nautilus_trader.model.orders.trailing_stop_limit
+   :show-inheritance:
+   :inherited-members:
+   :members:
+   :member-order: bysource
+```
+
 ## Order List
 
 ```{eval-rst}
