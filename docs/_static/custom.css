@@ -9,18 +9,18 @@
     /*****************************************************************************
     * Font size
     **/
-    --pst-font-size-base: 14px; /* base font size - applied at body / html level */
+    --pst-font-size-base: 15px; /* base font size - applied at body / html level */
 
     /* heading font sizes */
-    --pst-font-size-h1: 30px;
-    --pst-font-size-h2: 26px;
-    --pst-font-size-h3: 20px;
-    --pst-font-size-h4: 15px;
-    --pst-font-size-h5: 12px;
-    --pst-font-size-h6: 10px;
+    --pst-font-size-h1: 34px;
+    --pst-font-size-h2: 30px;
+    --pst-font-size-h3: 26px;
+    --pst-font-size-h4: 19px;
+    --pst-font-size-h5: 16px;
+    --pst-font-size-h6: 14px;
 
     /* smaller then heading font sizes*/
-    --pst-font-size-milli: 14px;
+    --pst-font-size-milli: 12px;
 
     --pst-sidebar-font-size: 0.9em;
     --pst-sidebar-caption-font-size: 0.9em;
