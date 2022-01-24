@@ -208,14 +208,18 @@ class EMACross(TradingStrategy):
         """Actions to be performed when the strategy receives a bar."""
         # BUY LOGIC
         if self.fast_ema.value >= self.slow_ema.value:
-            if self.portfolio.is_net_short(self.instrument_id):
+            if self.portfolio.is_flat(self.instrument_id):
+                self.buy()
+            elif self.portfolio.is_net_short(self.instrument_id):
                 self.flatten_all_positions(self.instrument_id)
-            self.buy()
+                self.buy()
         # SELL LOGIC
         elif self.fast_ema.value < self.slow_ema.value:
-            if self.portfolio.is_net_long(self.instrument_id):
+            if self.portfolio.is_flat(self.instrument_id):
+                self.sell()
+            elif self.portfolio.is_net_long(self.instrument_id):
                 self.flatten_all_positions(self.instrument_id)
-            self.sell()
+                self.sell()
 
     def buy(self):
         """Users simple buy method (example)."""

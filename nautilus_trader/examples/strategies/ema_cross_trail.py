@@ -206,9 +206,11 @@ class EMACrossWithTrailingStop(TradingStrategy):
             return  # Wait for indicators to warm up...
 
         if self.portfolio.is_flat(self.instrument_id):
+            # BUY LOGIC
             if self.fast_ema.value >= self.slow_ema.value:
                 self.entry_buy()
                 self.trailing_stop_sell(bar)
+            # SELL LOGIC
             else:  # fast_ema.value < self.slow_ema.value
                 self.entry_sell()
                 self.trailing_stop_buy(bar)
