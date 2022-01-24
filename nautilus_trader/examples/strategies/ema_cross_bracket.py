@@ -148,7 +148,6 @@ class EMACrossBracket(TradingStrategy):
                 self.flatten_all_positions(self.instrument_id)
                 self.cancel_all_orders(self.instrument_id)
                 self.buy(bar)
-
         # SELL LOGIC
         elif self.fast_ema.value < self.slow_ema.value:
             if self.portfolio.is_flat(self.instrument_id):

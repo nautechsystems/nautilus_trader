@@ -200,19 +200,14 @@ cdef class EMACross(TradingStrategy):
 
         # BUY LOGIC
         if self.fast_ema.value >= self.slow_ema.value:
-            if self.portfolio.is_flat(self.instrument_id):
-                self.buy()
-            elif self.portfolio.is_net_short(self.instrument_id):
+            if self.portfolio.is_net_short(self.instrument_id):
                 self.flatten_all_positions(self.instrument_id)
-                self.buy()
-
+            self.buy()
         # SELL LOGIC
         elif self.fast_ema.value < self.slow_ema.value:
-            if self.portfolio.is_flat(self.instrument_id):
-                self.sell()
-            elif self.portfolio.is_net_long(self.instrument_id):
+            if self.portfolio.is_net_long(self.instrument_id):
                 self.flatten_all_positions(self.instrument_id)
-                self.sell()
+            self.sell()
 
     cpdef void buy(self) except *:
         """
