@@ -97,6 +97,8 @@ cdef class LiveExecutionClient(ExecutionClient):
         self._loop = loop
         self._instrument_provider = instrument_provider
 
+        self.reconciliation_active = False
+
     def connect(self) -> None:
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
@@ -233,10 +235,15 @@ cdef class LiveExecutionClient(ExecutionClient):
         """
         raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
-    async def generate_mass_status(self):
+    async def generate_mass_status(self, timeout_secs):
         """
         Generate an execution state report based on the given list of active
         orders.
+
+        Parameters
+        ----------
+        timeout_secs : float
+            The timeout value to wait.
 
         Returns
         -------
@@ -245,18 +252,22 @@ cdef class LiveExecutionClient(ExecutionClient):
         """
         self._log.info(f"Generating ExecutionMassStatus for {self.id}...")
 
+        self.reconciliation_active = True
+
         cdef ExecutionMassStatus mass_status = ExecutionMassStatus(
             client_id=self.id,
             account_id=self.account_id,
             ts_init=self._clock.timestamp_ns(),
         )
 
-        cdef list order_reports = await self.generate_order_status_reports()
-        cdef list trade_reports = await self.generate_trade_reports()
-        cdef list position_reports = await self.generate_position_status_reports()
+        reports = await asyncio.gather(
+            self.generate_order_status_reports(),
+            self.generate_trade_reports(),
+            self.generate_position_status_reports(),
+        )
 
-        mass_status.add_order_reports(reports=order_reports)
-        mass_status.add_trade_reports(reports=trade_reports)
-        mass_status.add_position_reports(reports=position_reports)
+        mass_status.add_order_reports(reports=reports[0])
+        mass_status.add_trade_reports(reports=reports[1])
+        mass_status.add_position_reports(reports=reports[2])
 
         return mass_status
