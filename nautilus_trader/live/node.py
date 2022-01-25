@@ -536,14 +536,11 @@ class TradingNode:
                 f"({self._config.timeout_reconciliation}s timeout)...",
                 color=LogColor.BLUE,
             )
-            if not await self._exec_engine.reconcile_state(
-                timeout_secs=self._config.timeout_reconciliation,
-            ):
-                self._log.warning(
-                    f"Timed out ({self._config.timeout_reconciliation}s) waiting for "
-                    f"execution state to reconcile."
-                )
-                return
+            # if not await self._exec_engine.reconcile_state(
+            #     timeout_secs=self._config.timeout_reconciliation,
+            # ):
+            #     self._log.error("Execution state could not be reconciled.")
+            #     return
             self._log.info("State reconciled.", color=LogColor.GREEN)
 
             # Initialize portfolio

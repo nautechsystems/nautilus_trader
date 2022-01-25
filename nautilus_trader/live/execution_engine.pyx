@@ -16,27 +16,17 @@
 import asyncio
 from typing import Optional
 
-from cpython.datetime cimport datetime
-from cpython.datetime cimport timedelta
-
 from nautilus_trader.cache.cache cimport Cache
 from nautilus_trader.common.clock cimport LiveClock
-from nautilus_trader.common.logging cimport LogColor
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.common.queue cimport Queue
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.message cimport Message
 from nautilus_trader.core.message cimport MessageCategory
+from nautilus_trader.execution.client cimport ExecutionClient
 from nautilus_trader.execution.engine cimport ExecutionEngine
-from nautilus_trader.execution.reports cimport ExecutionMassStatus
-from nautilus_trader.execution.reports cimport OrderStatusReport
-from nautilus_trader.live.execution_client cimport LiveExecutionClient
-from nautilus_trader.model.c_enums.order_status cimport OrderStatus
 from nautilus_trader.model.commands.trading cimport TradingCommand
 from nautilus_trader.model.events.order cimport OrderEvent
-from nautilus_trader.model.identifiers cimport ClientId
-from nautilus_trader.model.identifiers cimport ClientOrderId
-from nautilus_trader.model.orders.base cimport Order
 from nautilus_trader.msgbus.bus cimport MessageBus
 
 from nautilus_trader.live.config import LiveExecEngineConfig
@@ -134,14 +124,6 @@ cdef class LiveExecutionEngine(ExecutionEngine):
         """
         Reconcile the execution engines state with all execution clients.
 
-        The execution engine will collect all cached active orders and send
-        those to the relevant execution client(s) for a comparison with the
-        exchange(s) order status.
-
-        If a cached order does not match the exchanges order status then
-        the missing events will be generated. If there is not enough information
-        to reconcile a state then errors will be logged.
-
         Parameters
         ----------
         timeout_secs : double
@@ -159,92 +141,24 @@ cdef class LiveExecutionEngine(ExecutionEngine):
 
         """
         Condition.positive(timeout_secs, "timeout_secs")
-        cdef dict active_orders = {
-            order.client_order_id: order for order in self._cache.orders() if not order.is_completed_c()
-        }  # type: dict[ClientOrderId, Order]
 
-        if not active_orders:
-            return True  # Execution states reconciled
+        # Request execution mass status report from each client
+        mass_status_coros = [
+            (c_id, c.generate_mass_status()) for c_id, c in self._clients.items()
+        ]
+        client_id_mass_status = await asyncio.gather(*mass_status_coros)
 
-        cdef int count = len(active_orders)
-        self._log.info(
-            f"Reconciling state: {count} active order{'s' if count > 1 else ''}...",
-            color=LogColor.BLUE,
-        )
+        cdef list results = []
 
-        # Initialize order status map
-        cdef dict client_orders = {
-            name: [] for name in self._clients.keys()
-        }   # type: dict[ClientId, list[Order]]
+        # Reconcile each mass status with the execution engine
+        cdef ExecutionClient client
+        for (client_id, mass_status) in client_id_mass_status:
+            result = self._reconcile_mass_status(mass_status)
+            client = self._clients[client_id]
+            client.reconciliation_active = False
+            results.append(result)
 
-        # Build order status map
-        cdef Order order
-        cdef LiveExecutionClient client
-        for order in active_orders.values():
-            client = self._routing_map.get(order.instrument_id.venue)
-            if client is None:
-                self._log.error(
-                    f"Cannot reconcile state: "
-                    f"No client found for {order.instrument_id.venue} for active {order}."
-                )
-                continue
-            client_orders[client.id].append(order)
-
-        cdef dict client_mass_status = {}  # type: dict[ClientId, ExecutionMassStatus]
-
-        # Generate state report for each client
-        for name, client in self._clients.items():
-            client_mass_status[name] = await client.generate_mass_status()
-
-        # Reconcile order status
-        cdef ExecutionMassStatus mass_status
-        cdef OrderStatusReport order_status_report
-        for name, mass_status in client_mass_status.items():
-            order_reports = mass_status.order_reports()
-            if not order_reports:
-                continue
-            for order_status_report in order_reports.values():
-                order = active_orders.get(order_status_report.client_order_id)
-                if order is None:
-                    self._log.error(
-                        f"Cannot reconcile state: "
-                        f"No order found for {repr(order_status_report.client_order_id)}."
-                    )
-                    continue
-                trade_reports = mass_status.trade_reports().get(order.venue_order_id, [])
-                await self._clients[name].reconcile_state(order_status_report, order, trade_reports)
-
-        # Wait for state resolution until timeout...
-        cdef datetime timeout = self._clock.utc_now() + timedelta(seconds=timeout_secs)
-        cdef OrderStatusReport report
-        while True:
-            reconciled = True
-            for order in active_orders.values():
-                client = self._routing_map.get(order.instrument_id.venue)
-                if client is None:
-                    self._log.error(
-                        f"Cannot reconcile state: "
-                        f"No client found for {order.instrument_id.venue}."
-                    )
-                    return False  # Will never reconcile
-                mass_status = client_mass_status.get(client.id)
-                if mass_status is None:
-                    return False  # Will never reconcile
-                report = mass_status.order_reports().get(order.venue_order_id)
-                if report is None:
-                    return False  # Will never reconcile
-                if order.status_c() != report.order_status:
-                    reconciled = False  # Incorrect state on this loop
-                if report.order_status in (OrderStatus.FILLED, OrderStatus.PARTIALLY_FILLED):
-                    if order.filled_qty != report.filled_qty:
-                        reconciled = False  # Incorrect filled quantity on this loop
-            if reconciled:
-                break
-            if self._clock.utc_now() >= timeout:
-                return False
-            await asyncio.sleep(0)  # Sleep for one event loop cycle
-
-        return True  # Execution states reconciled
+        return all(results)
 
     cpdef void kill(self) except *:
         """
