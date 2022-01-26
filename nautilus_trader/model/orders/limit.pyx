@@ -68,7 +68,7 @@ cdef class LimitOrder(Order):
         The order limit price.
     time_in_force : TimeInForce
         The order time-in-force.
-    expiration : datetime, optional
+    expire_time : datetime, optional
         The order expiration.
     init_id : UUID4
         The order initialization event ID.
@@ -99,7 +99,7 @@ cdef class LimitOrder(Order):
     ValueError
         If `quantity` is not positive (> 0).
     ValueError
-        If `time_in_force` is ``GTD`` and `expiration` is ``None`` or <= UNIX epoch.
+        If `time_in_force` is ``GTD`` and `expire_time` is ``None`` or <= UNIX epoch.
     ValueError
         If `display_qty` is negative (< 0) or greater than `quantity`.
     """
@@ -114,7 +114,7 @@ cdef class LimitOrder(Order):
         Quantity quantity not None,
         Price price not None,
         TimeInForce time_in_force,
-        datetime expiration,  # Can be None
+        datetime expire_time,  # Can be None
         UUID4 init_id not None,
         int64_t ts_init,
         bint post_only=False,
@@ -127,15 +127,15 @@ cdef class LimitOrder(Order):
         list contingency_ids=None,
         str tags=None,
     ):
-        cdef int64_t expiration_ns = 0
+        cdef int64_t expire_time_ns = 0
         if time_in_force == TimeInForce.GTD:
             # Must have an expire time
-            Condition.not_none(expiration, "expiration")
-            expiration_ns = dt_to_unix_nanos(expiration)
-            Condition.true(expiration_ns > 0, "expiration cannot be <= UNIX epoch.")
+            Condition.not_none(expire_time, "expire_time")
+            expire_time_ns = dt_to_unix_nanos(expire_time)
+            Condition.true(expire_time_ns > 0, "`expire_time` cannot be <= UNIX epoch.")
         else:
             # Should not have an expire time
-            Condition.none(expiration, "expiration")
+            Condition.none(expire_time, "expire_time")
         Condition.true(
             display_qty is None or 0 <= display_qty <= quantity,
             fail_msg="display_qty was negative or greater than order quantity",
@@ -145,7 +145,7 @@ cdef class LimitOrder(Order):
         cdef dict options = {
             "price": str(price),
             "display_qty": str(display_qty) if display_qty is not None else None,
-            "expiration_ns": expiration_ns if expiration_ns > 0 else None,
+            "expire_time_ns": expire_time_ns if expire_time_ns > 0 else None,
         }
 
         # Create initialization event
@@ -173,8 +173,8 @@ cdef class LimitOrder(Order):
         super().__init__(init=init)
 
         self.price = price
-        self.expiration = expiration
-        self.expiration_ns = expiration_ns
+        self.expire_time = expire_time
+        self.expire_time_ns = expire_time_ns
         self.display_qty = display_qty
 
     cpdef str info(self):
@@ -186,7 +186,7 @@ cdef class LimitOrder(Order):
         str
 
         """
-        cdef str expiration_str = "" if self.expiration is None else f" {format_iso8601(self.expiration)}"
+        cdef str expiration_str = "" if self.expire_time is None else f" {format_iso8601(self.expire_time)}"
         return (
             f"{OrderSideParser.to_str(self.side)} {self.quantity.to_str()} {self.instrument_id} "
             f"{OrderTypeParser.to_str(self.type)} @ {self.price} "
@@ -216,7 +216,7 @@ cdef class LimitOrder(Order):
             "quantity": str(self.quantity),
             "price": str(self.price),
             "time_in_force": TimeInForceParser.to_str(self.time_in_force),
-            "expiration_ns": self.expiration_ns if self.expiration_ns > 0 else None,
+            "expire_time_ns": self.expire_time_ns if self.expire_time_ns > 0 else None,
             "filled_qty": str(self.filled_qty),
             "liquidity_side": LiquiditySideParser.to_str(self.liquidity_side),
             "avg_px": str(self.avg_px) if self.avg_px else None,
@@ -269,7 +269,7 @@ cdef class LimitOrder(Order):
             quantity=init.quantity,
             price=Price.from_str_c(init.options["price"]),
             time_in_force=init.time_in_force,
-            expiration=maybe_unix_nanos_to_dt(init.options["expiration_ns"]),
+            expire_time=maybe_unix_nanos_to_dt(init.options["expire_time_ns"]),
             init_id=init.id,
             ts_init=init.ts_init,
             post_only=init.post_only,

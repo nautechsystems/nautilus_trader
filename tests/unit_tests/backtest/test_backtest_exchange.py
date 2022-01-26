@@ -1208,7 +1208,7 @@ class TestSimulatedExchange:
             Quantity.from_int(100000),
             Price.from_str("96.711"),
             time_in_force=TimeInForce.GTD,
-            expiration=UNIX_EPOCH + timedelta(minutes=1),
+            expire_time=UNIX_EPOCH + timedelta(minutes=1),
         )
 
         self.strategy.submit_order(order)

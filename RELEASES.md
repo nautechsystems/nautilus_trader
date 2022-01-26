@@ -12,8 +12,6 @@ standardized terminology. In the interests of enforcing correctness and
 safety this type is now utilized for the `TradeTick.trade_id`.
 
 ### Breaking Changes
-- Renamed `expire_time` to `expiration`.
-- Renamed `expire_time_ns` to `expiration_ns`.
 - Renamed `trigger` to `trigger_price`.
 - Renamed `StopMarketOrder.price` to `StopMarketOrder.trigger_price`.
 - Renamed all params related to a `StopMarketOrders` `price` to `trigger_price`.

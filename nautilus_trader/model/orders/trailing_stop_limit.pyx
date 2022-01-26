@@ -96,7 +96,7 @@ cdef class TrailingStopLimitOrder(Order):
         The order trailing offset type.
     time_in_force : TimeInForce
         The order time-in-force.
-    expiration : datetime, optional
+    expire_time : datetime, optional
         The order expiration.
     init_id : UUID4
         The order initialization event ID.
@@ -127,7 +127,7 @@ cdef class TrailingStopLimitOrder(Order):
     ValueError
         If `quantity` is not positive (> 0).
     ValueError
-        If `time_in_force` is ``GTD`` and `expiration` is ``None`` or <= UNIX epoch.
+        If `time_in_force` is ``GTD`` and `expire_time` is ``None`` or <= UNIX epoch.
     ValueError
         If `display_qty` is negative (< 0) or greater than `quantity`.
     """
@@ -147,7 +147,7 @@ cdef class TrailingStopLimitOrder(Order):
         trailing_offset: Decimal,
         TrailingOffsetType offset_type,
         TimeInForce time_in_force,
-        datetime expiration,  # Can be None
+        datetime expire_time,  # Can be None
         UUID4 init_id not None,
         int64_t ts_init,
         bint post_only=False,
@@ -160,18 +160,18 @@ cdef class TrailingStopLimitOrder(Order):
         list contingency_ids=None,
         str tags=None,
     ):
-        cdef int64_t expiration_ns = 0
+        cdef int64_t expire_time_ns = 0
         if time_in_force == TimeInForce.GTD:
             # Must have an expire time
-            Condition.not_none(expiration, "expiration")
-            expiration_ns = dt_to_unix_nanos(expiration)
-            Condition.true(expiration_ns > 0, "expiration cannot be <= UNIX epoch.")
+            Condition.not_none(expire_time, "expire_time")
+            expire_time_ns = dt_to_unix_nanos(expire_time)
+            Condition.true(expire_time_ns > 0, "`expire_time` cannot be <= UNIX epoch.")
         else:
             # Should not have an expire time
-            Condition.none(expiration, "expiration")
+            Condition.none(expire_time, "expire_time")
         Condition.true(
             display_qty is None or 0 <= display_qty <= quantity,
-            fail_msg="display_qty was negative or greater than order quantity",
+            fail_msg="`display_qty` was negative or greater than order quantity",
         )
 
         # Set options
@@ -182,7 +182,7 @@ cdef class TrailingStopLimitOrder(Order):
             "limit_offset": str(limit_offset),
             "trailing_offset": str(trailing_offset),
             "offset_type": TrailingOffsetTypeParser.to_str(offset_type),
-            "expiration_ns": expiration_ns if expiration_ns > 0 else None,
+            "expire_time_ns": expire_time_ns if expire_time_ns > 0 else None,
             "display_qty": str(display_qty) if display_qty is not None else None,
         }
 
@@ -216,8 +216,8 @@ cdef class TrailingStopLimitOrder(Order):
         self.limit_offset = limit_offset
         self.trailing_offset = trailing_offset
         self.offset_type = offset_type
-        self.expiration = expiration
-        self.expiration_ns = expiration_ns
+        self.expire_time = expire_time
+        self.expire_time_ns = expire_time_ns
         self.display_qty = display_qty
         self.is_triggered = False
         self.ts_triggered = 0
@@ -231,7 +231,7 @@ cdef class TrailingStopLimitOrder(Order):
         str
 
         """
-        cdef str expiration_str = "" if self.expiration is None else f" {format_iso8601(self.expiration)}"
+        cdef str expiration_str = "" if self.expire_time is None else f" {format_iso8601(self.expire_time)}"
         return (
             f"{OrderSideParser.to_str(self.side)} {self.quantity.to_str()} {self.instrument_id} "
             f"{OrderTypeParser.to_str(self.type)} @ {self.trigger_price}-STOP"
@@ -268,7 +268,7 @@ cdef class TrailingStopLimitOrder(Order):
             "limit_offset": str(self.limit_offset),
             "trailing_offset": str(self.trailing_offset),
             "offset_type": TrailingOffsetTypeParser.to_str(self.offset_type),
-            "expiration_ns": self.expiration_ns if self.expiration_ns > 0 else None,
+            "expire_time_ns": self.expire_time_ns if self.expire_time_ns > 0 else None,
             "time_in_force": TimeInForceParser.to_str(self.time_in_force),
             "filled_qty": str(self.filled_qty),
             "liquidity_side": LiquiditySideParser.to_str(self.liquidity_side),
@@ -329,7 +329,7 @@ cdef class TrailingStopLimitOrder(Order):
             trailing_offset=Decimal(init.options["trailing_offset"]),
             offset_type=TrailingOffsetTypeParser.from_str(init.options["offset_type"]),
             time_in_force=init.time_in_force,
-            expiration=maybe_unix_nanos_to_dt(init.options["expiration_ns"]),
+            expire_time=maybe_unix_nanos_to_dt(init.options["expire_time_ns"]),
             init_id=init.id,
             ts_init=init.ts_init,
             post_only=init.post_only,

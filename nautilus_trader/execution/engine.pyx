@@ -1131,10 +1131,10 @@ cdef class ExecutionEngine(Component):
             options["trailing_offset"] = str(report.trailing_offset)
         if report.display_qty is not None:
             options["display_qty"] = str(report.display_qty)
-        if report.expiration is not None:
-            expiration_ns: int = dt_to_unix_nanos(report.expiration)
-            if expiration_ns > 0:
-                options["expiration_ns"] = expiration_ns
+        if report.expire_time is not None:
+            expire_time_ns: int = dt_to_unix_nanos(report.expire_time)
+            if expire_time_ns > 0:
+                options["expire_time_ns"] = expire_time_ns
 
         cdef initialized = OrderInitialized(
             trader_id=self.trader_id,
