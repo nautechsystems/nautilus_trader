@@ -137,7 +137,7 @@ cdef class Order:
         self.is_reduce_only = init.reduce_only
         self.parent_order_id = init.parent_order_id  # Can be None
         self.child_order_ids = init.child_order_ids  # Can be None
-        self.contingency = init.contingency
+        self.contingency_type = init.contingency_type
         self.contingency_ids = init.contingency_ids  # Can be None
         self.tags = init.tags
 
@@ -236,7 +236,7 @@ cdef class Order:
         return self.type == OrderType.MARKET
 
     cdef bint is_contingency_c(self) except *:
-        return self.contingency != ContingencyType.NONE
+        return self.contingency_type != ContingencyType.NONE
 
     cdef bint is_parent_order_c(self) except *:
         return self.child_order_ids is not None
@@ -445,7 +445,7 @@ cdef class Order:
     @property
     def is_contingency(self):
         """
-        If the order has a contingency (`order.contingency` is not ``NONE``).
+        If the order has a contingency (`order.contingency_type` is not ``NONE``).
 
         Returns
         -------

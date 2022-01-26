@@ -173,7 +173,7 @@ cdef class OrderFactory:
             order_list_id=None,
             parent_order_id=None,
             child_order_ids=None,
-            contingency=ContingencyType.NONE,
+            contingency_type=ContingencyType.NONE,
             contingency_ids=None,
             tags=tags,
         )
@@ -252,7 +252,7 @@ cdef class OrderFactory:
             order_list_id=None,
             parent_order_id=None,
             child_order_ids=None,
-            contingency=ContingencyType.NONE,
+            contingency_type=ContingencyType.NONE,
             contingency_ids=None,
             tags=tags,
         )
@@ -325,7 +325,7 @@ cdef class OrderFactory:
             order_list_id=None,
             parent_order_id=None,
             child_order_ids=None,
-            contingency=ContingencyType.NONE,
+            contingency_type=ContingencyType.NONE,
             contingency_ids=None,
             tags=tags,
         )
@@ -412,7 +412,7 @@ cdef class OrderFactory:
             order_list_id=None,
             parent_order_id=None,
             child_order_ids=None,
-            contingency=ContingencyType.NONE,
+            contingency_type=ContingencyType.NONE,
             contingency_ids=None,
             tags=tags,
         )
@@ -494,7 +494,7 @@ cdef class OrderFactory:
             order_list_id=None,
             parent_order_id=None,
             child_order_ids=None,
-            contingency=ContingencyType.NONE,
+            contingency_type=ContingencyType.NONE,
             contingency_ids=None,
             tags=tags,
         )
@@ -595,7 +595,7 @@ cdef class OrderFactory:
             order_list_id=None,
             parent_order_id=None,
             child_order_ids=None,
-            contingency=ContingencyType.NONE,
+            contingency_type=ContingencyType.NONE,
             contingency_ids=None,
             tags=tags,
         )
@@ -672,7 +672,7 @@ cdef class OrderFactory:
             order_list_id=order_list_id,
             parent_order_id=None,
             child_order_ids=[stop_loss_client_order_id, take_profit_client_order_id],
-            contingency=ContingencyType.OTO,
+            contingency_type=ContingencyType.OTO,
             contingency_ids=[stop_loss_client_order_id, take_profit_client_order_id],
             tags="ENTRY",
         )
@@ -694,7 +694,7 @@ cdef class OrderFactory:
             order_list_id=order_list_id,
             parent_order_id=entry_client_order_id,
             child_order_ids=None,
-            contingency=ContingencyType.OCO,
+            contingency_type=ContingencyType.OCO,
             contingency_ids=[take_profit_client_order_id],
             tags="STOP_LOSS",
         )
@@ -716,7 +716,7 @@ cdef class OrderFactory:
             order_list_id=order_list_id,
             parent_order_id=entry_client_order_id,
             child_order_ids=None,
-            contingency=ContingencyType.OCO,
+            contingency_type=ContingencyType.OCO,
             contingency_ids=[stop_loss_client_order_id],
             tags="TAKE_PROFIT",
         )
@@ -819,7 +819,7 @@ cdef class OrderFactory:
             order_list_id=order_list_id,
             parent_order_id=None,
             child_order_ids=[stop_loss_client_order_id, take_profit_client_order_id],
-            contingency=ContingencyType.OTO,
+            contingency_type=ContingencyType.OTO,
             contingency_ids=[stop_loss_client_order_id, take_profit_client_order_id],
             tags="ENTRY",
         )
@@ -841,7 +841,7 @@ cdef class OrderFactory:
             order_list_id=order_list_id,
             parent_order_id=entry_client_order_id,
             child_order_ids=None,
-            contingency=ContingencyType.OCO,
+            contingency_type=ContingencyType.OCO,
             contingency_ids=[take_profit_client_order_id],
             tags="STOP_LOSS",
         )
@@ -863,7 +863,7 @@ cdef class OrderFactory:
             display_qty=None,
             order_list_id=order_list_id,
             parent_order_id=entry_client_order_id,
-            contingency=ContingencyType.OCO,
+            contingency_type=ContingencyType.OCO,
             contingency_ids=[stop_loss_client_order_id],
             tags="TAKE_PROFIT",
         )

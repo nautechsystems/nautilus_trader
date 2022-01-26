@@ -70,7 +70,7 @@ cdef class OrderInitialized(OrderEvent):
     """The orders parent client order ID.\n\n:returns: `ClientOrderId` or ``None``"""
     cdef readonly list child_order_ids
     """The orders child client order ID(s).\n\n:returns: `list[ClientOrderId]` or ``None``"""
-    cdef readonly ContingencyType contingency
+    cdef readonly ContingencyType contingency_type
     """The orders contingency type.\n\n:returns: `ContingencyType`"""
     cdef readonly list contingency_ids
     """The orders contingency client order ID(s).\n\n:returns: `list[ClientOrderId]` or ``None``"""

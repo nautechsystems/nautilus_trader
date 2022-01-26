@@ -944,7 +944,7 @@ cdef class ExecutionEngine(Component):
             order_list_id=report.order_list_id,
             parent_order_id=None,
             child_order_ids=None,
-            contingency=report.contingency,
+            contingency_type=report.contingency_type,
             contingency_ids=None,
             event_id=self._uuid_factory.generate(),
             ts_init=self._clock.timestamp_ns(),

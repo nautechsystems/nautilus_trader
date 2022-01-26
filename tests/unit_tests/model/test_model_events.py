@@ -154,7 +154,7 @@ class TestModelEvents:
             order_list_id=OrderListId("1"),
             parent_order_id=None,
             child_order_ids=[ClientOrderId("O-2020872378424")],
-            contingency=ContingencyType.OTO,
+            contingency_type=ContingencyType.OTO,
             contingency_ids=[ClientOrderId("O-2020872378424")],
             tags="ENTRY",
             event_id=uuid,
@@ -165,11 +165,11 @@ class TestModelEvents:
         assert OrderInitialized.from_dict(OrderInitialized.to_dict(event)) == event
         assert (
             str(event)
-            == f"OrderInitialized(instrument_id=BTC/USDT.BINANCE, client_order_id=O-2020872378423, side=BUY, type=LIMIT, quantity=0.561000, time_in_force=DAY, post_only=True, reduce_only=True, options={{'price': '15200.10'}}, order_list_id=1, parent_order_id=None, child_order_ids=['O-2020872378424'], contingency=OTO, contingency_ids=['O-2020872378424'], tags=ENTRY)"  # noqa
+            == f"OrderInitialized(instrument_id=BTC/USDT.BINANCE, client_order_id=O-2020872378423, side=BUY, type=LIMIT, quantity=0.561000, time_in_force=DAY, post_only=True, reduce_only=True, options={{'price': '15200.10'}}, order_list_id=1, parent_order_id=None, child_order_ids=['O-2020872378424'], contingency_type=OTO, contingency_ids=['O-2020872378424'], tags=ENTRY)"  # noqa
         )
         assert (
             repr(event)
-            == f"OrderInitialized(trader_id=TRADER-001, strategy_id=SCALPER-001, instrument_id=BTC/USDT.BINANCE, client_order_id=O-2020872378423, side=BUY, type=LIMIT, quantity=0.561000, time_in_force=DAY, post_only=True, reduce_only=True, options={{'price': '15200.10'}}, order_list_id=1, parent_order_id=None, child_order_ids=['O-2020872378424'], contingency=OTO, contingency_ids=['O-2020872378424'], tags=ENTRY, event_id={uuid}, ts_init=0)"  # noqa
+            == f"OrderInitialized(trader_id=TRADER-001, strategy_id=SCALPER-001, instrument_id=BTC/USDT.BINANCE, client_order_id=O-2020872378423, side=BUY, type=LIMIT, quantity=0.561000, time_in_force=DAY, post_only=True, reduce_only=True, options={{'price': '15200.10'}}, order_list_id=1, parent_order_id=None, child_order_ids=['O-2020872378424'], contingency_type=OTO, contingency_ids=['O-2020872378424'], tags=ENTRY, event_id={uuid}, ts_init=0)"  # noqa
         )
 
     def test_order_denied_event_to_from_dict_and_str_repr(self):
