@@ -45,8 +45,8 @@ from nautilus_trader.common.logging cimport RPT
 from nautilus_trader.common.logging cimport LogColor
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.core.correctness cimport Condition
+from nautilus_trader.core.datetime cimport dt_to_unix_nanos
 from nautilus_trader.core.fsm cimport InvalidStateTrigger
-from nautilus_trader.core.message cimport Document
 from nautilus_trader.core.time cimport unix_timestamp_ms
 from nautilus_trader.execution.client cimport ExecutionClient
 from nautilus_trader.execution.reports cimport ExecutionMassStatus
@@ -57,6 +57,8 @@ from nautilus_trader.execution.reports cimport TradeReport
 from nautilus_trader.model.c_enums.oms_type cimport OMSType
 from nautilus_trader.model.c_enums.oms_type cimport OMSTypeParser
 from nautilus_trader.model.c_enums.position_side cimport PositionSide
+from nautilus_trader.model.c_enums.trailing_offset_type cimport TrailingOffsetTypeParser
+from nautilus_trader.model.c_enums.trigger_type cimport TriggerTypeParser
 from nautilus_trader.model.commands.trading cimport CancelAllOrders
 from nautilus_trader.model.commands.trading cimport CancelOrder
 from nautilus_trader.model.commands.trading cimport ModifyOrder
@@ -64,6 +66,7 @@ from nautilus_trader.model.commands.trading cimport SubmitOrder
 from nautilus_trader.model.commands.trading cimport SubmitOrderList
 from nautilus_trader.model.events.order cimport OrderEvent
 from nautilus_trader.model.events.order cimport OrderFilled
+from nautilus_trader.model.events.order cimport OrderInitialized
 from nautilus_trader.model.events.position cimport PositionChanged
 from nautilus_trader.model.events.position cimport PositionClosed
 from nautilus_trader.model.events.position cimport PositionEvent
@@ -148,7 +151,6 @@ cdef class ExecutionEngine(Component):
         self._msgbus.register(endpoint="ExecEngine.execute", handler=self.execute)
         self._msgbus.register(endpoint="ExecEngine.process", handler=self.process)
         self._msgbus.register(endpoint="ExecEngine.reconcile_report", handler=self.reconcile_report)
-        self._msgbus.register(endpoint="ExecEngine.reconcile_mass_status", handler=self.reconcile_mass_status)
 
     @property
     def registered_clients(self):
@@ -462,14 +464,16 @@ cdef class ExecutionEngine(Component):
 
     cpdef void reconcile_report(self, ExecutionReport report) except *:
         """
-        Reconcile the given execution report.
+        Check the given execution report.
 
         Parameters
         ----------
         report : Document
-            The execution report to reconcile.
+            The execution report to check.
 
         """
+        Condition.not_none(report, "report")
+
         self._reconcile_report(report)
 
     cpdef void reconcile_mass_status(self, ExecutionMassStatus report) except *:
@@ -479,9 +483,11 @@ cdef class ExecutionEngine(Component):
         Parameters
         ----------
         report : Document
-            The execution report to reconcile.
+            The execution mass status report to reconcile.
 
         """
+        Condition.not_none(report, "report")
+
         self._reconcile_mass_status(report)
 
     cpdef void flush_db(self) except *:
@@ -859,11 +865,87 @@ cdef class ExecutionEngine(Component):
             msg=report,
         )
 
-    cdef void _reconcile_mass_status(self, ExecutionMassStatus report) except *:
-        self._log.debug(f"{RECV}{RPT} {report}.")
+    cdef void _reconcile_mass_status(self, ExecutionMassStatus mass_status) except *:
+        self._log.debug(f"{RECV}{RPT} {mass_status}.")
         self.report_count += 1
 
+        cdef dict trade_reports = mass_status.trade_reports()
+
+        # Reconcile all reported orders
+        for venue_order_id, order_report in mass_status.order_reports().items():
+            trades = trade_reports.get(venue_order_id, [])
+            self._reconcile_order(order_report, trades)
+
+        # Check all reported positions
+
+
+        # Publish mass status
         self._msgbus.publish_c(
-            topic=f"reports.execution.{report.venue.value}",
-            msg=report,
+            topic=f"reports.execution.{mass_status.venue.value}",
+            msg=mass_status,
+        )
+
+    cdef void _reconcile_order(self, OrderStatusReport report, list trades) except *:
+        cdef ClientOrderId client_order_id = report.client_order_id
+        if client_order_id is None:
+            client_order_id = self._cache.client_order_id(report.venue_order_id)
+            if client_order_id is None:
+                # Generate external client order ID
+                client_order_id = self._generate_client_order_id()
+            # Assign to report
+            report.client_order_id = client_order_id
+
+        cdef Order order = self._cache.order(client_order_id)
+        if order is None:
+            order = self._generate_external_order(report)
+            # Add to cache without determining any position ID initially
+            self._cache.add_order(order, position_id=None)
+            # Publish initialized event
+            self._msgbus.publish_c(
+                topic=f"events.order.{order.strategy_id.value}",
+                msg=order.init_event_c(),
+            )
+
+    cdef ClientOrderId _generate_client_order_id(self):
+        return ClientOrderId(f"EXTERNAL-{self._uuid_factory.generate().value}")
+
+    cdef Order _generate_external_order(self, OrderStatusReport report):
+        # Prepare order options
+        cdef dict options = {}
+        if report.price is not None:
+            options["price"] = str(report.price)
+        if report.trigger_price is not None:
+            options["trigger_price"] = str(report.trigger_price),
+            options["trigger_type"] = TriggerTypeParser.to_str(report.trigger_type)
+        if report.limit_offset is not None:
+            options["limit_offset"] = str(report.limit_offset)
+            options["offset_type"] =  TrailingOffsetTypeParser.to_str(report.offset_type)
+        if report.trailing_offset is not None:
+            options["trailing_offset"] = str(report.trailing_offset)
+        if report.display_qty is not None:
+            options["display_qty"] = str(report.display_qty)
+        if report.expiration is not None:
+            expiration_ns = dt_to_unix_nanos(report.expiration)
+            if expiration_ns > 0:
+                options["expiration_ns"] = expiration_ns
+
+        cdef initialized = OrderInitialized(
+            trader_id=self.trader_id,
+            strategy_id=StrategyId("EXTERNAL"),
+            instrument_id=report.instrument_id,
+            client_order_id=report.client_order_id,
+            order_side=report.order_side,
+            order_type=report.order_type,
+            quantity=report.quantity,
+            time_in_force=report.time_in_force,
+            post_only=report.post_only,
+            reduct_only=report.reduce_only,
+            options=options,
+            order_list_id=report.order_list_id,
+            parent_order_id=None,
+            child_order_ids=None,
+            contingency=report.contingency,
+            contingency_ids=None,
+            event_id=self._uuid_factory.generate(),
+            ts_init=self._clock.timestamp_ns(),
         )

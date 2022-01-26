@@ -15,7 +15,7 @@
 
 from decimal import Decimal
 from typing import Optional
-
+from cpython.datetime cimport datetime
 from libc.stdint cimport int64_t
 
 from nautilus_trader.core.correctness cimport Condition
@@ -88,6 +88,8 @@ cdef class OrderStatusReport(ExecutionReport):
         The reported order contingency type.
     time_in_force : TimeInForce
         The reported order time in force.
+    expiration : datetime, optional
+        The order expiration.
     order_status : OrderStatus
         The reported order status at the exchange.
     price : Price, optional
@@ -131,6 +133,7 @@ cdef class OrderStatusReport(ExecutionReport):
         OrderType order_type,
         ContingencyType contingency,
         TimeInForce time_in_force,
+        datetime expiration,  # Can be None
         OrderStatus order_status,
         Price price,  # Can be None
         Price trigger_price,  # Can be None
@@ -164,6 +167,7 @@ cdef class OrderStatusReport(ExecutionReport):
         self.order_type = order_type
         self.contingency = contingency
         self.time_in_force = time_in_force
+        self.expiration = expiration
         self.order_status = order_status
         self.price = price
         self.trigger_price = trigger_price
@@ -195,6 +199,7 @@ cdef class OrderStatusReport(ExecutionReport):
             f"order_type={OrderTypeParser.to_str(self.order_type)}, "
             f"contingency={ContingencyTypeParser.to_str(self.contingency)}, "
             f"time_in_force={TimeInForceParser.to_str(self.time_in_force)}, "
+            f"expiration={self.expiration}, "
             f"order_status={OrderStatusParser.to_str(self.order_status)}, "
             f"price={self.price}, "
             f"trigger_price={self.trigger_price}, "

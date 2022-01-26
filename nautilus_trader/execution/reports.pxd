@@ -13,6 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from cpython.datetime cimport datetime
 from libc.stdint cimport int64_t
 
 from nautilus_trader.core.message cimport Document
@@ -57,10 +58,10 @@ cdef class OrderStatusReport(ExecutionReport):
     """The reported order side.\n\n:returns: `OrderSide`"""
     cdef readonly OrderType order_type
     """The reported order type.\n\n:returns: `OrderType`"""
-    cdef readonly ContingencyType contingency
-    """The reported orders contingency type.\n\n:returns: `ContingencyType`"""
     cdef readonly TimeInForce time_in_force
     """The reported order time-in-force.\n\n:returns: `TimeInForce`"""
+    cdef readonly datetime expiration
+    """The order expiration.\n\n:returns: `datetime` or ``None``"""
     cdef readonly OrderStatus order_status
     """The reported order status at the exchange.\n\n:returns: `OrderStatus`"""
     cdef readonly Price price
@@ -91,6 +92,8 @@ cdef class OrderStatusReport(ExecutionReport):
     """If the reported order carries the 'reduce-only' execution instruction.\n\n:returns: `bool`"""
     cdef readonly str reject_reason
     """The reported reason for order rejection.\n\n:returns: `str` or ``None``"""
+    cdef readonly ContingencyType contingency
+    """The reported orders contingency type.\n\n:returns: `ContingencyType`"""
     cdef readonly int64_t ts_accepted
     """The UNIX timestamp (nanoseconds) when the reported order was accepted.\n\n:returns: `int64`"""
     cdef readonly int64_t ts_triggered
