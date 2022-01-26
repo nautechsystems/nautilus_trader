@@ -25,9 +25,9 @@ from nautilus_trader.model.orders.base cimport Order
 cdef class LimitOrder(Order):
     cdef readonly Price price
     """The order price (LIMIT).\n\n:returns: `Price`"""
-    cdef readonly datetime expiration
+    cdef readonly datetime expire_time
     """The order expiration.\n\n:returns: `datetime` or ``None``"""
-    cdef readonly int64_t expiration_ns
+    cdef readonly int64_t expire_time_ns
     """The order expiration (UNIX epoch nanoseconds), zero for no expiration.\n\n:returns: `int64`"""
     cdef readonly Quantity display_qty
     """The quantity of the order to display on the public book (iceberg).\n\n:returns: `Quantity` or ``None``"""

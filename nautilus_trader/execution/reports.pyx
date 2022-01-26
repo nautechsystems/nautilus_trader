@@ -88,7 +88,7 @@ cdef class OrderStatusReport(ExecutionReport):
         The reported order contingency type.
     time_in_force : TimeInForce
         The reported order time in force.
-    expiration : datetime, optional
+    expire_time : datetime, optional
         The order expiration.
     order_status : OrderStatus
         The reported order status at the exchange.
@@ -133,7 +133,7 @@ cdef class OrderStatusReport(ExecutionReport):
         OrderType order_type,
         ContingencyType contingency_type,
         TimeInForce time_in_force,
-        datetime expiration,  # Can be None
+        datetime expire_time,  # Can be None
         OrderStatus order_status,
         Price price,  # Can be None
         Price trigger_price,  # Can be None
@@ -167,7 +167,7 @@ cdef class OrderStatusReport(ExecutionReport):
         self.order_type = order_type
         self.contingency_type = contingency_type
         self.time_in_force = time_in_force
-        self.expiration = expiration
+        self.expire_time = expire_time
         self.order_status = order_status
         self.price = price
         self.trigger_price = trigger_price
@@ -199,7 +199,7 @@ cdef class OrderStatusReport(ExecutionReport):
             f"order_type={OrderTypeParser.to_str(self.order_type)}, "
             f"contingency_type={ContingencyTypeParser.to_str(self.contingency_type)}, "
             f"time_in_force={TimeInForceParser.to_str(self.time_in_force)}, "
-            f"expiration={self.expiration}, "
+            f"expire_time={self.expire_time}, "
             f"order_status={OrderStatusParser.to_str(self.order_status)}, "
             f"price={self.price}, "
             f"trigger_price={self.trigger_price}, "
