@@ -32,6 +32,8 @@ just need to override the `execute` and `process` methods.
 from decimal import Decimal
 from typing import Optional
 
+from nautilus_trader.execution.config import ExecEngineConfig
+
 from libc.stdint cimport int64_t
 
 from nautilus_trader.cache.cache cimport Cache
@@ -56,6 +58,7 @@ from nautilus_trader.execution.reports cimport PositionStatusReport
 from nautilus_trader.execution.reports cimport TradeReport
 from nautilus_trader.model.c_enums.oms_type cimport OMSType
 from nautilus_trader.model.c_enums.oms_type cimport OMSTypeParser
+from nautilus_trader.model.c_enums.order_status cimport OrderStatus
 from nautilus_trader.model.c_enums.position_side cimport PositionSide
 from nautilus_trader.model.c_enums.trailing_offset_type cimport TrailingOffsetTypeParser
 from nautilus_trader.model.c_enums.trigger_type cimport TriggerTypeParser
@@ -64,9 +67,14 @@ from nautilus_trader.model.commands.trading cimport CancelOrder
 from nautilus_trader.model.commands.trading cimport ModifyOrder
 from nautilus_trader.model.commands.trading cimport SubmitOrder
 from nautilus_trader.model.commands.trading cimport SubmitOrderList
+from nautilus_trader.model.events.order cimport OrderAccepted
+from nautilus_trader.model.events.order cimport OrderCanceled
 from nautilus_trader.model.events.order cimport OrderEvent
+from nautilus_trader.model.events.order cimport OrderExpired
 from nautilus_trader.model.events.order cimport OrderFilled
 from nautilus_trader.model.events.order cimport OrderInitialized
+from nautilus_trader.model.events.order cimport OrderRejected
+from nautilus_trader.model.events.order cimport OrderTriggered
 from nautilus_trader.model.events.position cimport PositionChanged
 from nautilus_trader.model.events.position cimport PositionClosed
 from nautilus_trader.model.events.position cimport PositionEvent
@@ -81,9 +89,8 @@ from nautilus_trader.model.instruments.base cimport Instrument
 from nautilus_trader.model.objects cimport Money
 from nautilus_trader.model.objects cimport Quantity
 from nautilus_trader.model.orders.base cimport Order
+from nautilus_trader.model.orders.unpacker cimport OrderUnpacker
 from nautilus_trader.msgbus.bus cimport MessageBus
-
-from nautilus_trader.execution.config import ExecEngineConfig
 
 
 cdef class ExecutionEngine(Component):
@@ -845,7 +852,7 @@ cdef class ExecutionEngine(Component):
 
 # -- REPORT HANDLERS -------------------------------------------------------------------------------
 
-    cdef void _reconcile_report(self, ExecutionReport report) except *:
+    cdef bint _reconcile_report(self, ExecutionReport report) except *:
         self._log.debug(f"{RECV}{RPT} {report}.")
         self.report_count += 1
 
@@ -865,19 +872,23 @@ cdef class ExecutionEngine(Component):
             msg=report,
         )
 
-    cdef void _reconcile_mass_status(self, ExecutionMassStatus mass_status) except *:
+        return True  # TODO(cs): Implement
+
+    cdef bint _reconcile_mass_status(self, ExecutionMassStatus mass_status) except *:
         self._log.debug(f"{RECV}{RPT} {mass_status}.")
         self.report_count += 1
 
         cdef dict trade_reports = mass_status.trade_reports()
 
+        cdef list results = []
+
         # Reconcile all reported orders
         for venue_order_id, order_report in mass_status.order_reports().items():
             trades = trade_reports.get(venue_order_id, [])
-            self._reconcile_order(order_report, trades)
+            result = self._reconcile_order(order_report, trades)
+            results.append(result)
 
         # Check all reported positions
-
 
         # Publish mass status
         self._msgbus.publish_c(
@@ -885,7 +896,9 @@ cdef class ExecutionEngine(Component):
             msg=mass_status,
         )
 
-    cdef void _reconcile_order(self, OrderStatusReport report, list trades) except *:
+        return all(results)
+
+    cdef bint _reconcile_order(self, OrderStatusReport report, list trades) except *:
         cdef ClientOrderId client_order_id = report.client_order_id
         if client_order_id is None:
             client_order_id = self._cache.client_order_id(report.venue_order_id)
@@ -900,11 +913,205 @@ cdef class ExecutionEngine(Component):
             order = self._generate_external_order(report)
             # Add to cache without determining any position ID initially
             self._cache.add_order(order, position_id=None)
-            # Publish initialized event
-            self._msgbus.publish_c(
-                topic=f"events.order.{order.strategy_id.value}",
-                msg=order.init_event_c(),
+
+        cdef Instrument instrument = self._cache.instrument(order.instrument_id)
+        if instrument is None:
+            self._log.error(
+                f"Cannot reconcile order: "
+                f"instrument {order.instrument_id} not found.",
             )
+            return False  # Failed
+
+        if report.order_status == OrderStatus.REJECTED:
+            if order.status_c() != OrderStatus.REJECTED:
+                rejected = OrderRejected(
+                    trader_id=order.trader_id,
+                    strategy_id=order.strategy_id,
+                    account_id=report.account_id,
+                    instrument_id=order.instrument_id,
+                    client_order_id=order.client_order_id,
+                    reason=report.reject_reason or "UNKNOWN",
+                    event_id=self._uuid_factory.generate(),
+                    ts_init=self._clock.timestamp_ns(),
+                )
+                order.apply(rejected)
+                self._cache.update_order(order)
+            return True  # Reconciled
+
+        # if (
+        #     report.quantity != order.quantity
+        #     or report.price != order.price
+        #     or report.trigger_price != order.trigger_price
+        # ):
+        # TODO(cs): Apply any order modifications
+
+        if report.order_status == OrderStatus.ACCEPTED:
+            if order.status_c() != OrderStatus.ACCEPTED:
+                accepted = OrderAccepted(
+                    trader_id=self.trader_id,
+                    strategy_id=order.strategy_id,
+                    instrument_id=report.instrument_id,
+                    client_order_id=report.client_order_id,
+                    venue_order_id=report.venue_order_id,
+                    event_id=self._uuid_factory.generate(),
+                    ts_event=report.ts_accepted,
+                    ts_init=self._clock.timestamp_ns(),
+                )
+                order.apply(accepted)
+                self._cache.update_order(order)
+            return True  # Reconciled
+
+        if report.order_status == OrderStatus.TRIGGERED:
+            if order.status_c() in (OrderStatus.INITIALIZED or OrderStatus.SUBMITTED):
+                accepted = OrderAccepted(
+                    trader_id=self.trader_id,
+                    strategy_id=order.strategy_id,
+                    instrument_id=report.instrument_id,
+                    client_order_id=report.client_order_id,
+                    venue_order_id=report.venue_order_id,
+                    event_id=self._uuid_factory.generate(),
+                    ts_event=report.ts_accepted,
+                    ts_init=self._clock.timestamp_ns(),
+                )
+                order.apply(accepted)
+                self._cache.update_order(order)
+            if order.status_c() != OrderStatus.TRIGGERED:
+                triggered = OrderTriggered(
+                    trader_id=self.trader_id,
+                    strategy_id=order.strategy_id,
+                    instrument_id=report.instrument_id,
+                    client_order_id=report.client_order_id,
+                    venue_order_id=report.venue_order_id,
+                    event_id=self._uuid_factory.generate(),
+                    ts_event=report.ts_triggered,
+                    ts_init=self._clock.timestamp_ns(),
+                )
+                order.apply(triggered)
+                self._cache.update_order(order)
+            return True  # Reconciled
+
+        if report.order_status == OrderStatus.CANCELED:
+            if order.status_c() in (OrderStatus.INITIALIZED or OrderStatus.SUBMITTED):
+                accepted = OrderAccepted(
+                    trader_id=self.trader_id,
+                    strategy_id=order.strategy_id,
+                    instrument_id=report.instrument_id,
+                    client_order_id=report.client_order_id,
+                    venue_order_id=report.venue_order_id,
+                    event_id=self._uuid_factory.generate(),
+                    ts_event=report.ts_accepted,
+                    ts_init=self._clock.timestamp_ns(),
+                )
+                order.apply(accepted)
+                self._cache.update_order(order)
+            if order.status_c() != OrderStatus.CANCELED:
+                if report.ts_triggered > 0:
+                    triggered = OrderTriggered(
+                        trader_id=self.trader_id,
+                        strategy_id=order.strategy_id,
+                        instrument_id=report.instrument_id,
+                        client_order_id=report.client_order_id,
+                        venue_order_id=report.venue_order_id,
+                        event_id=self._uuid_factory.generate(),
+                        ts_event=report.ts_triggered,
+                        ts_init=self._clock.timestamp_ns(),
+                    )
+                    order.apply(triggered)
+                    self._cache.update_order(order)
+                canceled = OrderCanceled(
+                    trader_id=order.trader_id,
+                    strategy_id=order.strategy_id,
+                    account_id=report.account_id,
+                    instrument_id=report.instrument_id,
+                    client_order_id=report.client_order_id,
+                    venue_order_id=report.venue_order_id,
+                    event_id=self._uuid_factory.generate(),
+                    event_ts=report.ts_last,
+                    ts_init=self._clock.timestamp_ns(),
+                )
+                order.apply(canceled)
+                self._cache.update_order(order)
+            return True  # Reconciled
+
+        if report.order_status == OrderStatus.EXPIRED:
+            if order.status_c() in (OrderStatus.INITIALIZED or OrderStatus.SUBMITTED):
+                accepted = OrderAccepted(
+                    trader_id=self.trader_id,
+                    strategy_id=order.strategy_id,
+                    instrument_id=report.instrument_id,
+                    client_order_id=report.client_order_id,
+                    venue_order_id=report.venue_order_id,
+                    event_id=self._uuid_factory.generate(),
+                    ts_event=report.ts_accepted,
+                    ts_init=self._clock.timestamp_ns(),
+                )
+                order.apply(accepted)
+                self._cache.update_order(order)
+            if order.status_c() != OrderStatus.EXPIRED:
+                if report.ts_triggered > 0:
+                    triggered = OrderTriggered(
+                        trader_id=self.trader_id,
+                        strategy_id=order.strategy_id,
+                        instrument_id=report.instrument_id,
+                        client_order_id=report.client_order_id,
+                        venue_order_id=report.venue_order_id,
+                        event_id=self._uuid_factory.generate(),
+                        ts_event=report.ts_triggered,
+                        ts_init=self._clock.timestamp_ns(),
+                    )
+                    order.apply(triggered)
+                    self._cache.update_order(order)
+                expired = OrderExpired(
+                    trader_id=order.trader_id,
+                    strategy_id=order.strategy_id,
+                    account_id=report.account_id,
+                    instrument_id=report.instrument_id,
+                    client_order_id=report.client_order_id,
+                    venue_order_id=report.venue_order_id,
+                    event_id=self._uuid_factory.generate(),
+                    event_ts=report.ts_last,
+                    ts_init=self._clock.timestamp_ns(),
+                )
+                order.apply(expired)
+                self._cache.update_order(order)
+            return True  # Reconciled
+
+        cdef:
+            TradeReport trade
+            OrderFilled fill
+        for trade in trades:
+            if trade.trade_id in order.trade_ids_c():
+                continue  # Fill already applied
+            fill = OrderFilled(
+                trader_id=order.trader_id,
+                strategy_id=order.strategy_id,
+                account_id=trade.account_id,
+                instrument_id=trade.instrument_id,
+                client_order_id=trade.client_order_id,
+                venue_order_id=trade.venue_order_id,
+                trade_id=trade.trade_id,
+                position_id=trade.venue_position_id,
+                order_side=trade.order_side,
+                last_qty=trade.last_qty,
+                last_px=trade.last_px,
+                currency=instrument.quote_currency,
+                commission=trade.commission,
+                liquidity_side=trade.liquidity_side,
+                event_id=self._uuid_factory.generate(),
+                event_ts=trade.ts_event,
+                ts_init=self._clock.timestamp_ns(),
+            )
+            order.apply(fill)
+            self._cache.update_order(order)
+
+        if report.filled_qty != order.filled_qty:
+            self._log.error(
+                f"Cannot reconcile order: "
+                f"reported filled qty {report.filled_qty} != order.filled_qty {order.filled_qty}.",
+            )
+            return False  # Failed
+
+        return True  # Reconciled
 
     cdef ClientOrderId _generate_client_order_id(self):
         return ClientOrderId(f"EXTERNAL-{self._uuid_factory.generate().value}")
@@ -925,7 +1132,7 @@ cdef class ExecutionEngine(Component):
         if report.display_qty is not None:
             options["display_qty"] = str(report.display_qty)
         if report.expiration is not None:
-            expiration_ns = dt_to_unix_nanos(report.expiration)
+            expiration_ns: int = dt_to_unix_nanos(report.expiration)
             if expiration_ns > 0:
                 options["expiration_ns"] = expiration_ns
 
@@ -949,3 +1156,5 @@ cdef class ExecutionEngine(Component):
             event_id=self._uuid_factory.generate(),
             ts_init=self._clock.timestamp_ns(),
         )
+
+        return OrderUnpacker.from_init_c(initialized)
