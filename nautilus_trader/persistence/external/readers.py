@@ -244,6 +244,7 @@ class CSVReader(Reader):
         header: Optional[List[str]] = None,
         chunked=True,
         as_dataframe=True,
+        separator=",",
     ):
         super().__init__(
             instrument_provider=instrument_provider,
@@ -254,11 +255,12 @@ class CSVReader(Reader):
         self.header_in_first_row = not header
         self.chunked = chunked
         self.as_dataframe = as_dataframe
+        self.separator = separator
 
     def parse(self, block: bytes) -> Generator:
         if self.header is None:
             header, block = block.split(b"\n", maxsplit=1)
-            self.header = header.decode().split(",")
+            self.header = header.decode().split(self.separator)
 
         self.buffer += block
         if b"\n" in block:
@@ -268,7 +270,7 @@ class CSVReader(Reader):
 
         # Prepare - a little gross but allows a lot of flexibility
         if self.as_dataframe:
-            df = pd.read_csv(BytesIO(process), names=self.header)
+            df = pd.read_csv(BytesIO(process), names=self.header, sep=self.separator)
             if self.chunked:
                 chunks = (df,)
             else:
@@ -277,7 +279,7 @@ class CSVReader(Reader):
             if self.chunked:
                 chunks = (process,)
             else:
-                chunks = tuple([dict(zip(self.header, line.split(b","))) for line in process.split(b"\n")])  # type: ignore
+                chunks = tuple([dict(zip(self.header, line.split(bytes(self.separator)))) for line in process.split(b"\n")])  # type: ignore
 
         for chunk in chunks:
             if self.instrument_provider_update is not None:
