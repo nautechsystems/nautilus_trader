@@ -49,6 +49,7 @@ from nautilus_trader.model.objects cimport Quantity
 cdef dict _ORDER_STATE_TABLE = {
     (OrderStatus.INITIALIZED, OrderStatus.DENIED): OrderStatus.DENIED,
     (OrderStatus.INITIALIZED, OrderStatus.SUBMITTED): OrderStatus.SUBMITTED,
+    (OrderStatus.INITIALIZED, OrderStatus.ACCEPTED): OrderStatus.ACCEPTED,  # Covers external orders
     (OrderStatus.SUBMITTED, OrderStatus.REJECTED): OrderStatus.REJECTED,
     (OrderStatus.SUBMITTED, OrderStatus.ACCEPTED): OrderStatus.ACCEPTED,
     (OrderStatus.SUBMITTED, OrderStatus.PARTIALLY_FILLED): OrderStatus.PARTIALLY_FILLED,

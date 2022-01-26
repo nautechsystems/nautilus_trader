@@ -157,16 +157,16 @@ def parse_status(result: Dict[str, Any]) -> OrderStatus:
     status: str = result["status"]
     if status in ("new", "open"):
         if result["filledSize"] == 0:
-            return OrderStatus.ACCEPTED
+            if result["triggeredAt"] is not None:
+                return OrderStatus.TRIGGERED
+            else:
+                return OrderStatus.ACCEPTED
         else:
             return OrderStatus.PARTIALLY_FILLED
     elif status == "closed":
         if result["filledSize"] == 0:
             return OrderStatus.CANCELED
-        elif result["remainingSize"] == 0:
-            return OrderStatus.FILLED
-        else:
-            return OrderStatus.PARTIALLY_FILLED
+        return OrderStatus.FILLED
     else:  # pragma: no cover (design-time error)
         raise RuntimeError(f"Cannot parse order status, was {status}")
 

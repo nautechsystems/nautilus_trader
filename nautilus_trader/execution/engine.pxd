@@ -105,8 +105,8 @@ cdef class ExecutionEngine(Component):
 
 # -- REPORT HANDLERS -------------------------------------------------------------------------------
 
-    cdef void _reconcile_report(self, ExecutionReport report) except *
-    cdef void _reconcile_mass_status(self, ExecutionMassStatus report) except *
-    cdef void _reconcile_order(self, OrderStatusReport report, list trades) except *
+    cdef bint _reconcile_report(self, ExecutionReport report) except *
+    cdef bint _reconcile_mass_status(self, ExecutionMassStatus report) except *
+    cdef bint _reconcile_order(self, OrderStatusReport report, list trades) except *
     cdef ClientOrderId _generate_client_order_id(self)
     cdef Order _generate_external_order(self, OrderStatusReport report)
