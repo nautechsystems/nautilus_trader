@@ -2043,6 +2043,7 @@ class TestExecutionEngine:
             order_type=OrderType.STOP_LIMIT,
             contingency=ContingencyType.OCO,
             time_in_force=TimeInForce.DAY,
+            expiration=None,
             order_status=OrderStatus.REJECTED,
             price=Price.from_str("0.90090"),
             trigger_price=Price.from_str("0.90100"),

@@ -19,6 +19,7 @@ from nautilus_trader.common.generators cimport PositionIdGenerator
 from nautilus_trader.execution.client cimport ExecutionClient
 from nautilus_trader.execution.reports cimport ExecutionMassStatus
 from nautilus_trader.execution.reports cimport ExecutionReport
+from nautilus_trader.execution.reports cimport OrderStatusReport
 from nautilus_trader.model.c_enums.oms_type cimport OMSType
 from nautilus_trader.model.commands.trading cimport CancelAllOrders
 from nautilus_trader.model.commands.trading cimport CancelOrder
@@ -28,8 +29,10 @@ from nautilus_trader.model.commands.trading cimport SubmitOrderList
 from nautilus_trader.model.commands.trading cimport TradingCommand
 from nautilus_trader.model.events.order cimport OrderEvent
 from nautilus_trader.model.events.order cimport OrderFilled
+from nautilus_trader.model.identifiers cimport ClientOrderId
 from nautilus_trader.model.identifiers cimport StrategyId
 from nautilus_trader.model.identifiers cimport Venue
+from nautilus_trader.model.orders.base cimport Order
 from nautilus_trader.model.position cimport Position
 from nautilus_trader.trading.strategy cimport TradingStrategy
 
@@ -104,3 +107,6 @@ cdef class ExecutionEngine(Component):
 
     cdef void _reconcile_report(self, ExecutionReport report) except *
     cdef void _reconcile_mass_status(self, ExecutionMassStatus report) except *
+    cdef void _reconcile_order(self, OrderStatusReport report, list trades) except *
+    cdef ClientOrderId _generate_client_order_id(self)
+    cdef Order _generate_external_order(self, OrderStatusReport report)
