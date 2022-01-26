@@ -177,7 +177,7 @@ class TestPersistenceCore:
             ("**.json", 4),
             ("**.txt", 3),
             ("**.parquet", 2),
-            ("**.csv", 13),
+            ("**.csv", 14),
         ],
     )
     def test_scan_paths(self, glob, num_files):
@@ -188,7 +188,7 @@ class TestPersistenceCore:
         self,
     ):
         files = scan_files(glob_path=f"{TEST_DATA_DIR}/*.csv")
-        assert len(files) == 13
+        assert len(files) == 14
 
         files = scan_files(glob_path=f"{TEST_DATA_DIR}/*jpy*.csv")
         assert len(files) == 3
