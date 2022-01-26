@@ -2041,7 +2041,7 @@ class TestExecutionEngine:
             venue_order_id=VenueOrderId("2"),
             order_side=OrderSide.SELL,
             order_type=OrderType.STOP_LIMIT,
-            contingency=ContingencyType.OCO,
+            contingency_type=ContingencyType.OCO,
             time_in_force=TimeInForce.DAY,
             expiration=None,
             order_status=OrderStatus.REJECTED,

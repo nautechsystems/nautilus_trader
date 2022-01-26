@@ -4,6 +4,8 @@
 
 Released on TBD.
 
+**This release contains numerous parameter and property name changes**
+
 For consistency and standardization with other protocols, the `ExecutionId` type 
 has been renamed to `TradeId` as they express the same concept with a more 
 standardized terminology. In the interests of enforcing correctness and 
@@ -19,6 +21,7 @@ safety this type is now utilized for the `TradeTick.trade_id`.
 - Renamed `execution_id` to `trade_id`.
 - Renamed `Order.trade_id` to `Order.last_trade_id` (for clarity).
 - Renamed other variations and references of 'execution ID' to 'trade ID'.
+- Renamed `contigency` to `contingency_type`.
 
 ### Enhancements
 - Introduced the `TradeId` type to enforce `trade_id` typing.
@@ -30,6 +33,7 @@ safety this type is now utilized for the `TradeTick.trade_id`.
 - Added `TriggerType` enum.
 - Large refactoring of order base and impl classes.
 - Overhaul of execution reports.
+- Overhaul of execution state reconciliation.
 
 ---
 

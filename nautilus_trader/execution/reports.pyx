@@ -84,7 +84,7 @@ cdef class OrderStatusReport(ExecutionReport):
         The reported order side.
     order_type : OrderType
         The reported order type.
-    contingency : ContingencyType
+    contingency_type : ContingencyType
         The reported order contingency type.
     time_in_force : TimeInForce
         The reported order time in force.
@@ -131,7 +131,7 @@ cdef class OrderStatusReport(ExecutionReport):
         VenueOrderId venue_order_id not None,
         OrderSide order_side,
         OrderType order_type,
-        ContingencyType contingency,
+        ContingencyType contingency_type,
         TimeInForce time_in_force,
         datetime expiration,  # Can be None
         OrderStatus order_status,
@@ -165,7 +165,7 @@ cdef class OrderStatusReport(ExecutionReport):
         self.venue_order_id = venue_order_id
         self.order_side = order_side
         self.order_type = order_type
-        self.contingency = contingency
+        self.contingency_type = contingency_type
         self.time_in_force = time_in_force
         self.expiration = expiration
         self.order_status = order_status
@@ -197,7 +197,7 @@ cdef class OrderStatusReport(ExecutionReport):
             f"venue_order_id={self.venue_order_id.value}, "
             f"order_side={OrderSideParser.to_str(self.order_side)}, "
             f"order_type={OrderTypeParser.to_str(self.order_type)}, "
-            f"contingency={ContingencyTypeParser.to_str(self.contingency)}, "
+            f"contingency_type={ContingencyTypeParser.to_str(self.contingency_type)}, "
             f"time_in_force={TimeInForceParser.to_str(self.time_in_force)}, "
             f"expiration={self.expiration}, "
             f"order_status={OrderStatusParser.to_str(self.order_status)}, "

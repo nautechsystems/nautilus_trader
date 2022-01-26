@@ -99,7 +99,7 @@ cdef class Order:
     """The parent client order ID.\n\n:returns: `ClientOrderId` or ``None``"""
     cdef readonly list child_order_ids
     """The child order ID(s).\n\n:returns: `list[ClientOrderId]` or ``None``"""
-    cdef readonly ContingencyType contingency
+    cdef readonly ContingencyType contingency_type
     """The orders contingency type.\n\n:returns: `ContingencyType`"""
     cdef readonly list contingency_ids
     """The orders contingency client order ID(s).\n\n:returns: `list[ClientOrderId]` or ``None``"""

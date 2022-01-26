@@ -332,7 +332,7 @@ class TestOrders:
             "order_list_id": None,
             "parent_order_id": None,
             "child_order_ids": None,
-            "contingency": "NONE",
+            "contingency_type": "NONE",
             "contingency_ids": None,
             "tags": None,
             "ts_last": 0,
@@ -406,7 +406,7 @@ class TestOrders:
             "order_list_id": None,
             "parent_order_id": None,
             "child_order_ids": None,
-            "contingency": "NONE",
+            "contingency_type": "NONE",
             "contingency_ids": None,
             "tags": None,
             "ts_last": 0,
@@ -508,7 +508,7 @@ class TestOrders:
             "order_list_id": None,
             "parent_order_id": None,
             "child_order_ids": None,
-            "contingency": "NONE",
+            "contingency_type": "NONE",
             "contingency_ids": None,
             "tags": None,
             "ts_last": 0,
@@ -587,7 +587,7 @@ class TestOrders:
             "order_list_id": None,
             "parent_order_id": None,
             "child_order_ids": None,
-            "contingency": "NONE",
+            "contingency_type": "NONE",
             "contingency_ids": None,
             "tags": "STOP_LOSS",
             "ts_last": 0,
@@ -692,7 +692,7 @@ class TestOrders:
             "order_list_id": None,
             "parent_order_id": None,
             "child_order_ids": None,
-            "contingency": "NONE",
+            "contingency_type": "NONE",
             "contingency_ids": None,
             "tags": None,
             "ts_last": 0,
@@ -739,7 +739,7 @@ class TestOrders:
             "order_list_id": None,
             "parent_order_id": None,
             "child_order_ids": None,
-            "contingency": "NONE",
+            "contingency_type": "NONE",
             "contingency_ids": None,
             "tags": None,
             "ts_last": 0,
@@ -851,7 +851,7 @@ class TestOrders:
             "order_list_id": None,
             "parent_order_id": None,
             "child_order_ids": None,
-            "contingency": "NONE",
+            "contingency_type": "NONE",
             "contingency_ids": None,
             "tags": None,
             "ts_last": 0,
@@ -905,7 +905,7 @@ class TestOrders:
             "order_list_id": None,
             "parent_order_id": None,
             "child_order_ids": None,
-            "contingency": "NONE",
+            "contingency_type": "NONE",
             "contingency_ids": None,
             "tags": None,
             "ts_last": 0,
@@ -969,9 +969,9 @@ class TestOrders:
         assert bracket.orders[2].time_in_force == TimeInForce.GTC
         assert bracket.orders[1].expiration is None
         assert bracket.orders[2].expiration is None
-        assert bracket.orders[0].contingency == ContingencyType.OTO
-        assert bracket.orders[1].contingency == ContingencyType.OCO
-        assert bracket.orders[2].contingency == ContingencyType.OCO
+        assert bracket.orders[0].contingency_type == ContingencyType.OTO
+        assert bracket.orders[1].contingency_type == ContingencyType.OCO
+        assert bracket.orders[2].contingency_type == ContingencyType.OCO
         assert bracket.orders[0].contingency_ids == [
             ClientOrderId("O-19700101-000000-000-001-2"),
             ClientOrderId("O-19700101-000000-000-001-3"),
@@ -1023,9 +1023,9 @@ class TestOrders:
         assert bracket.orders[2].time_in_force == TimeInForce.GTC
         assert bracket.orders[1].expiration is None
         assert bracket.orders[2].expiration is None
-        assert bracket.orders[0].contingency == ContingencyType.OTO
-        assert bracket.orders[1].contingency == ContingencyType.OCO
-        assert bracket.orders[2].contingency == ContingencyType.OCO
+        assert bracket.orders[0].contingency_type == ContingencyType.OTO
+        assert bracket.orders[1].contingency_type == ContingencyType.OCO
+        assert bracket.orders[2].contingency_type == ContingencyType.OCO
         assert bracket.orders[0].contingency_ids == [
             ClientOrderId("O-19700101-000000-000-001-2"),
             ClientOrderId("O-19700101-000000-000-001-3"),

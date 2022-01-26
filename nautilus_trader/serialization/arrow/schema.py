@@ -204,7 +204,7 @@ NAUTILUS_PARQUET_SCHEMA = {
             "order_list_id": pa.string(),
             "parent_order_id": pa.string(),
             "child_order_ids": pa.string(),
-            "contingency": pa.string(),
+            "contingency_type": pa.string(),
             "contingency_ids": pa.string(),
             "tags": pa.string(),
             "event_id": pa.string(),

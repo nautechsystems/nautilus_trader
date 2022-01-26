@@ -114,7 +114,7 @@ cdef class TrailingStopLimitOrder(Order):
         The order parent client order ID.
     child_order_ids : list[ClientOrderId], optional
         The order child client order ID(s).
-    contingency : ContingencyType
+    contingency_type : ContingencyType
         The order contingency type.
     contingency_ids : list[ClientOrderId], optional
         The order contingency client order ID(s).
@@ -156,7 +156,7 @@ cdef class TrailingStopLimitOrder(Order):
         OrderListId order_list_id=None,
         ClientOrderId parent_order_id=None,
         list child_order_ids=None,
-        ContingencyType contingency=ContingencyType.NONE,
+        ContingencyType contingency_type=ContingencyType.NONE,
         list contingency_ids=None,
         str tags=None,
     ):
@@ -202,7 +202,7 @@ cdef class TrailingStopLimitOrder(Order):
             order_list_id=order_list_id,
             parent_order_id=parent_order_id,
             child_order_ids=child_order_ids,
-            contingency=contingency,
+            contingency_type=contingency_type,
             contingency_ids=contingency_ids,
             tags=tags,
             event_id=init_id,
@@ -281,7 +281,7 @@ cdef class TrailingStopLimitOrder(Order):
             "order_list_id": self.order_list_id,
             "parent_order_id": self.parent_order_id,
             "child_order_ids": ",".join([o.value for o in self.child_order_ids]) if self.child_order_ids is not None else None,  # noqa
-            "contingency": ContingencyTypeParser.to_str(self.contingency),
+            "contingency_type": ContingencyTypeParser.to_str(self.contingency_type),
             "contingency_ids": ",".join([o.value for o in self.contingency_ids]) if self.contingency_ids is not None else None,  # noqa
             "tags": self.tags,
             "ts_last": self.ts_last,
@@ -338,7 +338,7 @@ cdef class TrailingStopLimitOrder(Order):
             order_list_id=init.order_list_id,
             parent_order_id=init.parent_order_id,
             child_order_ids=init.child_order_ids,
-            contingency=init.contingency,
+            contingency_type=init.contingency_type,
             contingency_ids=init.contingency_ids,
             tags=init.tags,
         )

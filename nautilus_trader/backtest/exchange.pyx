@@ -737,7 +737,7 @@ cdef class SimulatedExchange:
 
         # Check contingency orders
         cdef ClientOrderId client_order_id
-        if order.contingency == ContingencyType.OTO:
+        if order.contingency_type == ContingencyType.OTO:
             assert order.child_order_ids is not None
             for client_order_id in order.child_order_ids:
                 self._oto_orders[client_order_id] = order.client_order_id
@@ -972,7 +972,7 @@ cdef class SimulatedExchange:
         else:  # pragma: no cover (design-time error)
             raise ValueError(f"invalid OrderType, was {order.type}")
 
-        if order.contingency == ContingencyType.OCO and update_ocos:
+        if order.contingency_type == ContingencyType.OCO and update_ocos:
             self._update_oco_orders(order)
 
     cdef void _update_oco_orders(self, Order order) except *:
@@ -1009,7 +1009,7 @@ cdef class SimulatedExchange:
 
         self._generate_order_canceled(order)
 
-        if order.contingency == ContingencyType.OCO and cancel_ocos:
+        if order.contingency_type == ContingencyType.OCO and cancel_ocos:
             self._cancel_oco_orders(order)
 
     cdef void _cancel_oco_orders(self, Order order) except*:
@@ -1026,7 +1026,7 @@ cdef class SimulatedExchange:
     cdef void _expire_order(self, Order order) except *:
         self._generate_order_expired(order)
 
-        if order.contingency == ContingencyType.OCO:
+        if order.contingency_type == ContingencyType.OCO:
             self._cancel_oco_orders(order)
 
 # -- ORDER MATCHING ENGINE -------------------------------------------------------------------------
@@ -1401,7 +1401,7 @@ cdef class SimulatedExchange:
         # Check contingency orders
         cdef ClientOrderId client_order_id
         cdef Order child_order
-        if order.contingency == ContingencyType.OTO:
+        if order.contingency_type == ContingencyType.OTO:
             for client_order_id in order.child_order_ids:
                 child_order = self.cache.order(client_order_id)
                 assert child_order is not None, "OTO child order not found"
@@ -1418,7 +1418,7 @@ cdef class SimulatedExchange:
                     )
                 if not child_order.is_working_c():
                     self._accept_order(child_order)
-        elif order.contingency == ContingencyType.OCO:
+        elif order.contingency_type == ContingencyType.OCO:
             for client_order_id in order.contingency_ids:
                 oco_order = self.cache.order(client_order_id)
                 assert oco_order is not None, "OCO order not found"
