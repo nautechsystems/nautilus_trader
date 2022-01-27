@@ -202,7 +202,7 @@ class TestBetfairParsing:
         assert result == expected
 
     def test_make_order_limit_on_close(self):
-        order = BetfairTestStubs.limit_order(time_in_force=TimeInForce.OC)
+        order = BetfairTestStubs.limit_order(time_in_force=TimeInForce.AT_THE_CLOSE)
         result = make_order(order)
         expected = {
             "limitOnCloseOrder": {"price": "3.05", "liability": "10.0"},
@@ -244,7 +244,7 @@ class TestBetfairParsing:
     )
     def test_make_order_market_on_close(self, side, liability):
         order = BetfairTestStubs.market_order(
-            time_in_force=TimeInForce.OC, side=OrderSideParser.from_str_py(side)
+            time_in_force=TimeInForce.AT_THE_CLOSE, side=OrderSideParser.from_str_py(side)
         )
         result = make_order(order)
         expected = {

@@ -984,13 +984,13 @@ class TestTimeInForce:
     @pytest.mark.parametrize(
         "enum, expected",
         [
-            [TimeInForce.DAY, "DAY"],
             [TimeInForce.GTC, "GTC"],
             [TimeInForce.IOC, "IOC"],
             [TimeInForce.FOK, "FOK"],
-            [TimeInForce.FAK, "FAK"],
             [TimeInForce.GTD, "GTD"],
-            [TimeInForce.OC, "OC"],
+            [TimeInForce.DAY, "DAY"],
+            [TimeInForce.AT_THE_OPEN, "AT_THE_OPEN"],
+            [TimeInForce.AT_THE_CLOSE, "AT_THE_CLOSE"],
         ],
     )
     def test_time_in_force_to_str(self, enum, expected):
@@ -1003,13 +1003,13 @@ class TestTimeInForce:
     @pytest.mark.parametrize(
         "string, expected",
         [
-            ["DAY", TimeInForce.DAY],
             ["GTC", TimeInForce.GTC],
             ["IOC", TimeInForce.IOC],
             ["FOK", TimeInForce.FOK],
-            ["FAK", TimeInForce.FAK],
             ["GTD", TimeInForce.GTD],
-            ["OC", TimeInForce.OC],
+            ["DAY", TimeInForce.DAY],
+            ["AT_THE_OPEN", TimeInForce.AT_THE_OPEN],
+            ["AT_THE_CLOSE", TimeInForce.AT_THE_CLOSE],
         ],
     )
     def test_time_in_force_from_str(self, string, expected):
