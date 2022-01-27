@@ -1149,10 +1149,9 @@ cdef class ExecutionEngine(Component):
             reduct_only=report.reduce_only,
             options=options,
             order_list_id=report.order_list_id,
-            parent_order_id=None,
-            child_order_ids=None,
             contingency_type=report.contingency_type,
-            contingency_ids=None,
+            linked_order_ids=None,
+            parent_order_id=None,
             event_id=self._uuid_factory.generate(),
             ts_init=self._clock.timestamp_ns(),
         )

@@ -171,10 +171,9 @@ cdef class OrderFactory:
             init_id=self._uuid_factory.generate(),
             ts_init=self._clock.timestamp_ns(),
             order_list_id=None,
-            parent_order_id=None,
-            child_order_ids=None,
             contingency_type=ContingencyType.NONE,
-            contingency_ids=None,
+            linked_order_ids=None,
+            parent_order_id=None,
             tags=tags,
         )
 
@@ -250,10 +249,9 @@ cdef class OrderFactory:
             reduce_only=reduce_only,
             display_qty=display_qty,
             order_list_id=None,
-            parent_order_id=None,
-            child_order_ids=None,
             contingency_type=ContingencyType.NONE,
-            contingency_ids=None,
+            linked_order_ids=None,
+            parent_order_id=None,
             tags=tags,
         )
 
@@ -323,10 +321,9 @@ cdef class OrderFactory:
             ts_init=self._clock.timestamp_ns(),
             reduce_only=reduce_only,
             order_list_id=None,
-            parent_order_id=None,
-            child_order_ids=None,
             contingency_type=ContingencyType.NONE,
-            contingency_ids=None,
+            linked_order_ids=None,
+            parent_order_id=None,
             tags=tags,
         )
 
@@ -410,10 +407,9 @@ cdef class OrderFactory:
             reduce_only=reduce_only,
             display_qty=display_qty,
             order_list_id=None,
-            parent_order_id=None,
-            child_order_ids=None,
             contingency_type=ContingencyType.NONE,
-            contingency_ids=None,
+            linked_order_ids=None,
+            parent_order_id=None,
             tags=tags,
         )
 
@@ -492,10 +488,9 @@ cdef class OrderFactory:
             ts_init=self._clock.timestamp_ns(),
             reduce_only=reduce_only,
             order_list_id=None,
-            parent_order_id=None,
-            child_order_ids=None,
             contingency_type=ContingencyType.NONE,
-            contingency_ids=None,
+            linked_order_ids=None,
+            parent_order_id=None,
             tags=tags,
         )
 
@@ -593,10 +588,9 @@ cdef class OrderFactory:
             reduce_only=reduce_only,
             display_qty=display_qty,
             order_list_id=None,
-            parent_order_id=None,
-            child_order_ids=None,
             contingency_type=ContingencyType.NONE,
-            contingency_ids=None,
+            linked_order_ids=None,
+            parent_order_id=None,
             tags=tags,
         )
 
@@ -670,10 +664,9 @@ cdef class OrderFactory:
             init_id=self._uuid_factory.generate(),
             ts_init=self._clock.timestamp_ns(),
             order_list_id=order_list_id,
-            parent_order_id=None,
-            child_order_ids=[stop_loss_client_order_id, take_profit_client_order_id],
             contingency_type=ContingencyType.OTO,
-            contingency_ids=[stop_loss_client_order_id, take_profit_client_order_id],
+            linked_order_ids=[stop_loss_client_order_id, take_profit_client_order_id],
+            parent_order_id=None,
             tags="ENTRY",
         )
 
@@ -692,10 +685,9 @@ cdef class OrderFactory:
             ts_init=self._clock.timestamp_ns(),
             reduce_only=True,
             order_list_id=order_list_id,
-            parent_order_id=entry_client_order_id,
-            child_order_ids=None,
             contingency_type=ContingencyType.OCO,
-            contingency_ids=[take_profit_client_order_id],
+            linked_order_ids=[take_profit_client_order_id],
+            parent_order_id=entry_client_order_id,
             tags="STOP_LOSS",
         )
 
@@ -714,10 +706,9 @@ cdef class OrderFactory:
             post_only=True,
             reduce_only=True,
             order_list_id=order_list_id,
-            parent_order_id=entry_client_order_id,
-            child_order_ids=None,
             contingency_type=ContingencyType.OCO,
-            contingency_ids=[stop_loss_client_order_id],
+            linked_order_ids=[stop_loss_client_order_id],
+            parent_order_id=entry_client_order_id,
             tags="TAKE_PROFIT",
         )
 
@@ -817,10 +808,9 @@ cdef class OrderFactory:
             ts_init=self._clock.timestamp_ns(),
             post_only=post_only,
             order_list_id=order_list_id,
-            parent_order_id=None,
-            child_order_ids=[stop_loss_client_order_id, take_profit_client_order_id],
             contingency_type=ContingencyType.OTO,
-            contingency_ids=[stop_loss_client_order_id, take_profit_client_order_id],
+            linked_order_ids=[stop_loss_client_order_id, take_profit_client_order_id],
+            parent_order_id=None,
             tags="ENTRY",
         )
 
@@ -839,10 +829,9 @@ cdef class OrderFactory:
             ts_init=self._clock.timestamp_ns(),
             reduce_only=True,
             order_list_id=order_list_id,
-            parent_order_id=entry_client_order_id,
-            child_order_ids=None,
             contingency_type=ContingencyType.OCO,
-            contingency_ids=[take_profit_client_order_id],
+            linked_order_ids=[take_profit_client_order_id],
+            parent_order_id=entry_client_order_id,
             tags="STOP_LOSS",
         )
 
@@ -862,9 +851,9 @@ cdef class OrderFactory:
             reduce_only=True,
             display_qty=None,
             order_list_id=order_list_id,
-            parent_order_id=entry_client_order_id,
             contingency_type=ContingencyType.OCO,
-            contingency_ids=[stop_loss_client_order_id],
+            linked_order_ids=[stop_loss_client_order_id],
+            parent_order_id=entry_client_order_id,
             tags="TAKE_PROFIT",
         )
 

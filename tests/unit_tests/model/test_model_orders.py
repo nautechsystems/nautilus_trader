@@ -330,10 +330,9 @@ class TestOrders:
             "slippage": "0",
             "status": "INITIALIZED",
             "order_list_id": None,
-            "parent_order_id": None,
-            "child_order_ids": None,
             "contingency_type": "NONE",
-            "contingency_ids": None,
+            "linked_order_ids": None,
+            "parent_order_id": None,
             "tags": None,
             "ts_last": 0,
             "ts_init": 0,
@@ -404,10 +403,9 @@ class TestOrders:
             "is_reduce_only": False,
             "display_qty": "20000",
             "order_list_id": None,
-            "parent_order_id": None,
-            "child_order_ids": None,
             "contingency_type": "NONE",
-            "contingency_ids": None,
+            "linked_order_ids": None,
+            "parent_order_id": None,
             "tags": None,
             "ts_last": 0,
             "ts_init": 0,
@@ -506,10 +504,9 @@ class TestOrders:
             "status": "INITIALIZED",
             "is_reduce_only": False,
             "order_list_id": None,
-            "parent_order_id": None,
-            "child_order_ids": None,
             "contingency_type": "NONE",
-            "contingency_ids": None,
+            "linked_order_ids": None,
+            "parent_order_id": None,
             "tags": None,
             "ts_last": 0,
             "ts_init": 0,
@@ -585,10 +582,9 @@ class TestOrders:
             "is_reduce_only": False,
             "display_qty": None,
             "order_list_id": None,
-            "parent_order_id": None,
-            "child_order_ids": None,
             "contingency_type": "NONE",
-            "contingency_ids": None,
+            "linked_order_ids": None,
+            "parent_order_id": None,
             "tags": "STOP_LOSS",
             "ts_last": 0,
             "ts_init": 0,
@@ -690,10 +686,9 @@ class TestOrders:
             "status": "INITIALIZED",
             "is_reduce_only": False,
             "order_list_id": None,
-            "parent_order_id": None,
-            "child_order_ids": None,
             "contingency_type": "NONE",
-            "contingency_ids": None,
+            "linked_order_ids": None,
+            "parent_order_id": None,
             "tags": None,
             "ts_last": 0,
             "ts_init": 0,
@@ -737,10 +732,9 @@ class TestOrders:
             "status": "INITIALIZED",
             "is_reduce_only": False,
             "order_list_id": None,
-            "parent_order_id": None,
-            "child_order_ids": None,
             "contingency_type": "NONE",
-            "contingency_ids": None,
+            "linked_order_ids": None,
+            "parent_order_id": None,
             "tags": None,
             "ts_last": 0,
             "ts_init": 0,
@@ -849,10 +843,9 @@ class TestOrders:
             "is_reduce_only": False,
             "display_qty": None,
             "order_list_id": None,
-            "parent_order_id": None,
-            "child_order_ids": None,
             "contingency_type": "NONE",
-            "contingency_ids": None,
+            "linked_order_ids": None,
+            "parent_order_id": None,
             "tags": None,
             "ts_last": 0,
             "ts_init": 0,
@@ -903,10 +896,9 @@ class TestOrders:
             "is_reduce_only": False,
             "display_qty": None,
             "order_list_id": None,
-            "parent_order_id": None,
-            "child_order_ids": None,
             "contingency_type": "NONE",
-            "contingency_ids": None,
+            "linked_order_ids": None,
+            "parent_order_id": None,
             "tags": None,
             "ts_last": 0,
             "ts_init": 0,
@@ -972,16 +964,12 @@ class TestOrders:
         assert bracket.orders[0].contingency_type == ContingencyType.OTO
         assert bracket.orders[1].contingency_type == ContingencyType.OCO
         assert bracket.orders[2].contingency_type == ContingencyType.OCO
-        assert bracket.orders[0].contingency_ids == [
+        assert bracket.orders[0].linked_order_ids == [
             ClientOrderId("O-19700101-000000-000-001-2"),
             ClientOrderId("O-19700101-000000-000-001-3"),
         ]
-        assert bracket.orders[1].contingency_ids == [ClientOrderId("O-19700101-000000-000-001-3")]
-        assert bracket.orders[2].contingency_ids == [ClientOrderId("O-19700101-000000-000-001-2")]
-        assert bracket.orders[0].child_order_ids == [
-            ClientOrderId("O-19700101-000000-000-001-2"),
-            ClientOrderId("O-19700101-000000-000-001-3"),
-        ]
+        assert bracket.orders[1].linked_order_ids == [ClientOrderId("O-19700101-000000-000-001-3")]
+        assert bracket.orders[2].linked_order_ids == [ClientOrderId("O-19700101-000000-000-001-2")]
         assert bracket.orders[1].parent_order_id == ClientOrderId("O-19700101-000000-000-001-1")
         assert bracket.orders[2].parent_order_id == ClientOrderId("O-19700101-000000-000-001-1")
         assert bracket.ts_init == 0
@@ -1026,16 +1014,12 @@ class TestOrders:
         assert bracket.orders[0].contingency_type == ContingencyType.OTO
         assert bracket.orders[1].contingency_type == ContingencyType.OCO
         assert bracket.orders[2].contingency_type == ContingencyType.OCO
-        assert bracket.orders[0].contingency_ids == [
+        assert bracket.orders[0].linked_order_ids == [
             ClientOrderId("O-19700101-000000-000-001-2"),
             ClientOrderId("O-19700101-000000-000-001-3"),
         ]
-        assert bracket.orders[1].contingency_ids == [ClientOrderId("O-19700101-000000-000-001-3")]
-        assert bracket.orders[2].contingency_ids == [ClientOrderId("O-19700101-000000-000-001-2")]
-        assert bracket.orders[0].child_order_ids == [
-            ClientOrderId("O-19700101-000000-000-001-2"),
-            ClientOrderId("O-19700101-000000-000-001-3"),
-        ]
+        assert bracket.orders[1].linked_order_ids == [ClientOrderId("O-19700101-000000-000-001-3")]
+        assert bracket.orders[2].linked_order_ids == [ClientOrderId("O-19700101-000000-000-001-2")]
         assert bracket.orders[1].parent_order_id == ClientOrderId("O-19700101-000000-000-001-1")
         assert bracket.orders[2].parent_order_id == ClientOrderId("O-19700101-000000-000-001-1")
         assert bracket.ts_init == 0

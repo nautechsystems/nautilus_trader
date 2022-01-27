@@ -128,14 +128,12 @@ cdef class OrderInitialized(OrderEvent):
         order parameters.
     order_list_id : OrderListId, optional
         The order list ID associated with the order.
-    parent_order_id : ClientOrderId, optional
-        The orders parent client order ID.
-    child_order_ids : list[ClientOrderId], optional
-        The order child client order ID(s).
     contingency_type : ContingencyType
         The order contingency type.
-    contingency_ids : list[ClientOrderId], optional
-        The order contingency client order ID(s).
+    linked_order_ids : list[ClientOrderId], optional
+        The order linked client order ID(s).
+    parent_order_id : ClientOrderId, optional
+        The orders parent client order ID.
     tags : str, optional
         The custom user tags for the order. These are optional and can
         contain any arbitrary delimiter if required.
@@ -159,10 +157,9 @@ cdef class OrderInitialized(OrderEvent):
         bint reduce_only,
         dict options not None,
         OrderListId order_list_id,  # Can be None
-        ClientOrderId parent_order_id,  # Can be None
-        list child_order_ids,  # Can be None
         ContingencyType contingency_type,
-        list contingency_ids,  # Can be None
+        list linked_order_ids,  # Can be None
+        ClientOrderId parent_order_id,  # Can be None
         str tags,  # Can be None
         UUID4 event_id not None,
         int64_t ts_init,
@@ -187,20 +184,16 @@ cdef class OrderInitialized(OrderEvent):
         self.reduce_only = reduce_only
         self.options = options
         self.order_list_id = order_list_id
-        self.parent_order_id = parent_order_id
-        self.child_order_ids = child_order_ids
         self.contingency_type = contingency_type
-        self.contingency_ids = contingency_ids
+        self.linked_order_ids = linked_order_ids
+        self.parent_order_id = parent_order_id
         self.tags = tags
 
     def __str__(self) -> str:
         cdef ClientOrderId o
-        cdef str child_order_ids = "None"
-        if self.child_order_ids:
-            child_order_ids = str([o.value for o in self.child_order_ids])
-        cdef str contingency_ids = "None"
-        if self.contingency_ids:
-            contingency_ids = str([o.value for o in self.contingency_ids])
+        cdef str linked_order_ids = "None"
+        if self.linked_order_ids:
+            linked_order_ids = str([o.value for o in self.linked_order_ids])
         return (
             f"{type(self).__name__}("
             f"instrument_id={self.instrument_id.value}, "
@@ -213,21 +206,17 @@ cdef class OrderInitialized(OrderEvent):
             f"reduce_only={self.reduce_only}, "
             f"options={self.options}, "
             f"order_list_id={self.order_list_id}, "
-            f"parent_order_id={self.parent_order_id}, "
-            f"child_order_ids={child_order_ids}, "
             f"contingency_type={ContingencyTypeParser.to_str(self.contingency_type)}, "
-            f"contingency_ids={contingency_ids}, "
+            f"linked_order_ids={linked_order_ids}, "
+            f"parent_order_id={self.parent_order_id}, "
             f"tags={self.tags})"
         )
 
     def __repr__(self) -> str:
         cdef ClientOrderId o
-        cdef str child_order_ids = "None"
-        if self.child_order_ids:
-            child_order_ids = str([o.value for o in self.child_order_ids])
-        cdef str contingency_ids = "None"
-        if self.contingency_ids:
-            contingency_ids = str([o.value for o in self.contingency_ids])
+        cdef str linked_order_ids = "None"
+        if self.linked_order_ids:
+            linked_order_ids = str([o.value for o in self.linked_order_ids])
         return (
             f"{type(self).__name__}("
             f"trader_id={self.trader_id.value}, "
@@ -242,10 +231,9 @@ cdef class OrderInitialized(OrderEvent):
             f"reduce_only={self.reduce_only}, "
             f"options={self.options}, "
             f"order_list_id={self.order_list_id}, "
-            f"parent_order_id={self.parent_order_id}, "
-            f"child_order_ids={child_order_ids}, "
             f"contingency_type={ContingencyTypeParser.to_str(self.contingency_type)}, "
-            f"contingency_ids={contingency_ids}, "
+            f"linked_order_ids={linked_order_ids}, "
+            f"parent_order_id={self.parent_order_id}, "
             f"tags={self.tags}, "
             f"event_id={self.id}, "
             f"ts_init={self.ts_init})"
@@ -256,8 +244,7 @@ cdef class OrderInitialized(OrderEvent):
         Condition.not_none(values, "values")
         cdef str order_list_id_str = values["order_list_id"]
         cdef str parent_order_id_str = values["parent_order_id"]
-        cdef str child_order_ids_str = values["child_order_ids"]
-        cdef str contingency_ids_str = values["contingency_ids"]
+        cdef str linked_order_ids_str = values["linked_order_ids"]
         cdef str o_str
         return OrderInitialized(
             trader_id=TraderId(values["trader_id"]),
@@ -272,10 +259,9 @@ cdef class OrderInitialized(OrderEvent):
             reduce_only=values["reduce_only"],
             options=orjson.loads(values["options"]),
             order_list_id=OrderListId(order_list_id_str) if order_list_id_str else None,
-            parent_order_id=ClientOrderId(parent_order_id_str) if parent_order_id_str else None,
-            child_order_ids=[ClientOrderId(o_str) for o_str in child_order_ids_str.split(",")] if child_order_ids_str is not None else None,
             contingency_type=ContingencyTypeParser.from_str(values["contingency_type"]),
-            contingency_ids=[ClientOrderId(o_str) for o_str in contingency_ids_str.split(",")] if contingency_ids_str is not None else None,
+            linked_order_ids=[ClientOrderId(o_str) for o_str in linked_order_ids_str.split(",")] if linked_order_ids_str is not None else None,
+            parent_order_id=ClientOrderId(parent_order_id_str) if parent_order_id_str else None,
             tags=values["tags"],
             event_id=UUID4(values["event_id"]),
             ts_init=values["ts_init"],
@@ -299,10 +285,9 @@ cdef class OrderInitialized(OrderEvent):
             "reduce_only": obj.reduce_only,
             "options": orjson.dumps(obj.options).decode(),
             "order_list_id": obj.order_list_id.value if obj.order_list_id is not None else None,
-            "parent_order_id": obj.parent_order_id.value if obj.parent_order_id is not None else None,
-            "child_order_ids": ",".join([o.value for o in obj.child_order_ids]) if obj.child_order_ids is not None else None,  # noqa
             "contingency_type": ContingencyTypeParser.to_str(obj.contingency_type),
-            "contingency_ids": ",".join([o.value for o in obj.contingency_ids]) if obj.contingency_ids is not None else None,  # noqa
+            "linked_order_ids": ",".join([o.value for o in obj.linked_order_ids]) if obj.linked_order_ids is not None else None,  # noqa
+            "parent_order_id": obj.parent_order_id.value if obj.parent_order_id is not None else None,
             "tags": obj.tags,
             "event_id": obj.id.value,
             "ts_init": obj.ts_init,
