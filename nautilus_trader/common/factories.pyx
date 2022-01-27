@@ -156,7 +156,7 @@ cdef class OrderFactory:
         ValueError
             If `quantity` is not positive (> 0).
         ValueError
-            If `time_in_force` is other than ``GTC``, ``IOC``, ``FOK`` or ``OC``.
+            If `time_in_force` is other than ``GTC``, ``IOC``, ``FOK``, ``AT_THE_OPEN`` or ``AT_THE_CLOSE``.
 
         """
         return MarketOrder(

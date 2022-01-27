@@ -47,7 +47,6 @@ N2B_SIDE = {
 
 N2B_TIME_IN_FORCE = {
     TimeInForce.FOK: "FILL_OR_KILL",
-    TimeInForce.FAK: "FILL_OR_KILL",
 }
 
 B2N_MARKET_STREAM_SIDE = {

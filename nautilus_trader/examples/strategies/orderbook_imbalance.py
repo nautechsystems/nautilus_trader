@@ -61,7 +61,7 @@ class OrderBookImbalanceConfig(TradingStrategyConfig):
 
 class OrderBookImbalance(TradingStrategy):
     """
-    A simple strategy that sends FAK limit orders when there is a bid/ask
+    A simple strategy that sends FOK limit orders when there is a bid/ask
     imbalance in the order book.
 
     Cancels all orders and flattens all positions on stop.

@@ -39,8 +39,8 @@ cdef set _MARKET_ORDER_VALID_TIF = {
     TimeInForce.GTC,
     TimeInForce.IOC,
     TimeInForce.FOK,
-    TimeInForce.FAK,
-    TimeInForce.OC,
+    TimeInForce.AT_THE_OPEN,
+    TimeInForce.AT_THE_CLOSE,
 }
 
 
@@ -94,7 +94,7 @@ cdef class MarketOrder(Order):
     ValueError
         If `quantity` is not positive (> 0).
     ValueError
-        If `time_in_force` is other than ``GTC``, ``IOC`` or ``FOK``.
+        If `time_in_force` is other than ``GTC``, ``IOC``, ``FOK``, ``AT_THE_OPEN`` or ``AT_THE_CLOSE``.
     """
 
     def __init__(
@@ -118,7 +118,7 @@ cdef class MarketOrder(Order):
     ):
         Condition.true(
             time_in_force in _MARKET_ORDER_VALID_TIF,
-            fail_msg="time_in_force was != GTC, IOC or FOK",
+            fail_msg="time_in_force was != GTC, IOC, FOK, AT_THE_OPEN, AT_THE_CLOSE",
         )
 
         # Create initialization event

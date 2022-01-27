@@ -19,38 +19,38 @@ cdef class TimeInForceParser:
     @staticmethod
     cdef str to_str(int value):
         if value == 1:
-            return "DAY"
-        elif value == 2:
             return "GTC"
-        elif value == 3:
+        elif value == 2:
             return "IOC"
-        elif value == 4:
+        elif value == 3:
             return "FOK"
-        elif value == 5:
-            return "FAK"
-        elif value == 6:
+        elif value == 4:
             return "GTD"
+        elif value == 5:
+            return "DAY"
+        elif value == 6:
+            return "AT_THE_OPEN"
         elif value == 7:
-            return "OC"
+            return "AT_THE_CLOSE"
         else:
             raise ValueError(f"value was invalid, was {value}")
 
     @staticmethod
     cdef TimeInForce from_str(str value) except *:
-        if value == "DAY":
-            return TimeInForce.DAY
-        elif value == "GTC":
+        if value == "GTC":
             return TimeInForce.GTC
         elif value == "IOC":
             return TimeInForce.IOC
         elif value == "FOK":
             return TimeInForce.FOK
-        elif value == "FAK":
-            return TimeInForce.FAK
         elif value == "GTD":
             return TimeInForce.GTD
-        elif value == "OC":
-            return TimeInForce.OC
+        elif value == "DAY":
+            return TimeInForce.DAY
+        elif value == "AT_THE_OPEN":
+            return TimeInForce.AT_THE_OPEN
+        elif value == "AT_THE_CLOSE":
+            return TimeInForce.AT_THE_CLOSE
         else:
             raise ValueError(f"value was invalid, was {value}")
 
