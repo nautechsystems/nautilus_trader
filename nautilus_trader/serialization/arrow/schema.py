@@ -105,6 +105,7 @@ NAUTILUS_PARQUET_SCHEMA = {
     Bar: pa.schema(
         {
             "bar_type": pa.dictionary(pa.int8(), pa.string()),
+            "instrument_id": pa.dictionary(pa.int8(), pa.string()),
             "open": pa.string(),
             "high": pa.string(),
             "low": pa.string(),
