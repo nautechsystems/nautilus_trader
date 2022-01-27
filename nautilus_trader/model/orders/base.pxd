@@ -95,14 +95,12 @@ cdef class Order:
     """The order average fill price.\n\n:returns: `Decimal` or ``None``"""
     cdef readonly object slippage
     """The order total price slippage.\n\n:returns: `Decimal`"""
-    cdef readonly ClientOrderId parent_order_id
-    """The parent client order ID.\n\n:returns: `ClientOrderId` or ``None``"""
-    cdef readonly list child_order_ids
-    """The child order ID(s).\n\n:returns: `list[ClientOrderId]` or ``None``"""
     cdef readonly ContingencyType contingency_type
     """The orders contingency type.\n\n:returns: `ContingencyType`"""
-    cdef readonly list contingency_ids
-    """The orders contingency client order ID(s).\n\n:returns: `list[ClientOrderId]` or ``None``"""
+    cdef readonly list linked_order_ids
+    """The orders linked client order ID(s).\n\n:returns: `list[ClientOrderId]` or ``None``"""
+    cdef readonly ClientOrderId parent_order_id
+    """The parent client order ID.\n\n:returns: `ClientOrderId` or ``None``"""
     cdef readonly str tags
     """The order custom user tags.\n\n:returns: `str` or ``None``"""
     cdef readonly UUID4 init_id

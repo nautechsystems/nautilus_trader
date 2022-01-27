@@ -136,10 +136,9 @@ cdef class Order:
         self.liquidity_side = LiquiditySide.NONE
         self.is_post_only = init.post_only
         self.is_reduce_only = init.reduce_only
-        self.parent_order_id = init.parent_order_id  # Can be None
-        self.child_order_ids = init.child_order_ids  # Can be None
         self.contingency_type = init.contingency_type
-        self.contingency_ids = init.contingency_ids  # Can be None
+        self.linked_order_ids = init.linked_order_ids  # Can be None
+        self.parent_order_id = init.parent_order_id  # Can be None
         self.tags = init.tags
 
         # Execution
@@ -240,7 +239,7 @@ cdef class Order:
         return self.contingency_type != ContingencyType.NONE
 
     cdef bint is_parent_order_c(self) except *:
-        return self.child_order_ids is not None
+        return self.contingency_type == ContingencyType.OTO
 
     cdef bint is_child_order_c(self) except *:
         return self.parent_order_id is not None

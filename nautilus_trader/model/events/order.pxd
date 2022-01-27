@@ -66,14 +66,12 @@ cdef class OrderInitialized(OrderEvent):
     """The order initialization options.\n\n:returns: `dict`"""
     cdef readonly OrderListId order_list_id
     """The order list ID associated with the order.\n\n:returns: `OrderListId` or ``None``"""
-    cdef readonly ClientOrderId parent_order_id
-    """The orders parent client order ID.\n\n:returns: `ClientOrderId` or ``None``"""
-    cdef readonly list child_order_ids
-    """The orders child client order ID(s).\n\n:returns: `list[ClientOrderId]` or ``None``"""
     cdef readonly ContingencyType contingency_type
     """The orders contingency type.\n\n:returns: `ContingencyType`"""
-    cdef readonly list contingency_ids
-    """The orders contingency client order ID(s).\n\n:returns: `list[ClientOrderId]` or ``None``"""
+    cdef readonly list linked_order_ids
+    """The orders linked client order ID(s).\n\n:returns: `list[ClientOrderId]` or ``None``"""
+    cdef readonly ClientOrderId parent_order_id
+    """The orders parent client order ID.\n\n:returns: `ClientOrderId` or ``None``"""
     cdef readonly str tags
     """The order custom user tags.\n\n:returns: `str` or ``None``"""
 

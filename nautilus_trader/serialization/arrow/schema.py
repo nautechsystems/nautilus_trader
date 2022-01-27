@@ -197,21 +197,36 @@ NAUTILUS_PARQUET_SCHEMA = {
             "post_only": pa.bool_(),
             "reduce_only": pa.bool_(),
             # -- Options fields -- #
+            "price": pa.string(),
+            "trigger_price": pa.float64(),
+            "trigger_type": pa.dictionary(pa.int8(), pa.string()),
+            "limit_offset": pa.float64(),
+            "trailing_offset": pa.float64(),
+            "offset_type": pa.dictionary(pa.int8(), pa.string()),
+            "expire_time_ns": pa.int64(),
             "display_qty": pa.string(),
-            "price": pa.float64(),
-            "trigger_price": pa.bool_(),
             # --------------------- #
             "order_list_id": pa.string(),
-            "parent_order_id": pa.string(),
-            "child_order_ids": pa.string(),
             "contingency_type": pa.string(),
-            "contingency_ids": pa.string(),
+            "linked_order_ids": pa.string(),
+            "parent_order_id": pa.string(),
             "tags": pa.string(),
             "event_id": pa.string(),
             "ts_init": pa.int64(),
         },
         metadata={
-            "options_fields": orjson.dumps(["post_only", "display_qty", "price", "trigger_price"])
+            "options_fields": orjson.dumps(
+                [
+                    "price",
+                    "trigger_price",
+                    "trigger_type",
+                    "limit_offset",
+                    "trailing_offset",
+                    "offset_type",
+                    "display_qty",
+                    "expire_time_ns",
+                ],
+            )
         },
     ),
     OrderDenied: pa.schema(

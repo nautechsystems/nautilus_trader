@@ -82,14 +82,12 @@ cdef class LimitOrder(Order):
         The quantity of the order to display on the public book (iceberg).
     order_list_id : OrderListId, optional
         The order list ID associated with the order.
-    parent_order_id : ClientOrderId, optional
-        The order parent client order ID.
-    child_order_ids : list[ClientOrderId], optional
-        The order child client order ID(s).
     contingency_type : ContingencyType
         The order contingency type.
-    contingency_ids : list[ClientOrderId], optional
-        The order contingency client order ID(s).
+    linked_order_ids : list[ClientOrderId], optional
+        The order linked client order ID(s).
+    parent_order_id : ClientOrderId, optional
+        The order parent client order ID.
     tags : str, optional
         The custom user tags for the order. These are optional and can
         contain any arbitrary delimiter if required.
@@ -121,10 +119,9 @@ cdef class LimitOrder(Order):
         bint reduce_only=False,
         Quantity display_qty=None,
         OrderListId order_list_id=None,
-        ClientOrderId parent_order_id=None,
-        list child_order_ids=None,
         ContingencyType contingency_type=ContingencyType.NONE,
-        list contingency_ids=None,
+        list linked_order_ids=None,
+        ClientOrderId parent_order_id=None,
         str tags=None,
     ):
         cdef int64_t expire_time_ns = 0
@@ -162,10 +159,9 @@ cdef class LimitOrder(Order):
             reduce_only=reduce_only,
             options=options,
             order_list_id=order_list_id,
-            parent_order_id=parent_order_id,
-            child_order_ids=child_order_ids,
             contingency_type=contingency_type,
-            contingency_ids=contingency_ids,
+            linked_order_ids=linked_order_ids,
+            parent_order_id=parent_order_id,
             tags=tags,
             event_id=init_id,
             ts_init=ts_init,
@@ -226,10 +222,9 @@ cdef class LimitOrder(Order):
             "is_reduce_only": self.is_reduce_only,
             "display_qty": str(self.display_qty) if self.display_qty is not None else None,
             "order_list_id": self.order_list_id,
-            "parent_order_id": self.parent_order_id,
-            "child_order_ids": ",".join([o.value for o in self.child_order_ids]) if self.child_order_ids is not None else None,  # noqa
             "contingency_type": ContingencyTypeParser.to_str(self.contingency_type),
-            "contingency_ids": ",".join([o.value for o in self.contingency_ids]) if self.contingency_ids is not None else None,  # noqa
+            "linked_order_ids": ",".join([o.value for o in self.linked_order_ids]) if self.linked_order_ids is not None else None,  # noqa
+            "parent_order_id": self.parent_order_id,
             "tags": self.tags,
             "ts_last": self.ts_last,
             "ts_init": self.ts_init,
@@ -276,10 +271,9 @@ cdef class LimitOrder(Order):
             reduce_only=init.reduce_only,
             display_qty=Quantity.from_str_c(display_qty_str) if display_qty_str is not None else None,
             order_list_id=init.order_list_id,
-            parent_order_id=init.parent_order_id,
-            child_order_ids=init.child_order_ids,
             contingency_type=init.contingency_type,
-            contingency_ids=init.contingency_ids,
+            linked_order_ids=init.linked_order_ids,
+            parent_order_id=init.parent_order_id,
             tags=init.tags,
         )
 

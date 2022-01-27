@@ -738,8 +738,8 @@ cdef class SimulatedExchange:
         # Check contingency orders
         cdef ClientOrderId client_order_id
         if order.contingency_type == ContingencyType.OTO:
-            assert order.child_order_ids is not None
-            for client_order_id in order.child_order_ids:
+            assert order.linked_order_ids is not None
+            for client_order_id in order.linked_order_ids:
                 self._oto_orders[client_order_id] = order.client_order_id
 
         cdef Order parent
@@ -979,7 +979,7 @@ cdef class SimulatedExchange:
         self._log.debug(f"Updating OCO orders from {order.client_order_id}")
         cdef ClientOrderId client_order_id
         cdef Order oco_order
-        for client_order_id in order.contingency_ids:
+        for client_order_id in order.linked_order_ids:
             oco_order = self.cache.order(client_order_id)
             assert oco_order is not None, "OCO order not found"
             if oco_order.leaves_qty != order.leaves_qty:
@@ -1017,7 +1017,7 @@ cdef class SimulatedExchange:
         # Iterate all contingency orders and cancel if active
         cdef ClientOrderId client_order_id
         cdef Order oco_order
-        for client_order_id in order.contingency_ids:
+        for client_order_id in order.linked_order_ids:
             oco_order = self.cache.order(client_order_id)
             assert oco_order is not None, "OCO order not found"
             if oco_order.is_active_c():
@@ -1402,7 +1402,7 @@ cdef class SimulatedExchange:
         cdef ClientOrderId client_order_id
         cdef Order child_order
         if order.contingency_type == ContingencyType.OTO:
-            for client_order_id in order.child_order_ids:
+            for client_order_id in order.linked_order_ids:
                 child_order = self.cache.order(client_order_id)
                 assert child_order is not None, "OTO child order not found"
                 if child_order.position_id is None:
@@ -1419,7 +1419,7 @@ cdef class SimulatedExchange:
                 if not child_order.is_working_c():
                     self._accept_order(child_order)
         elif order.contingency_type == ContingencyType.OCO:
-            for client_order_id in order.contingency_ids:
+            for client_order_id in order.linked_order_ids:
                 oco_order = self.cache.order(client_order_id)
                 assert oco_order is not None, "OCO order not found"
                 if order.is_completed_c() and oco_order.is_active_c():

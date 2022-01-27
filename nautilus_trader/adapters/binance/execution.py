@@ -350,7 +350,7 @@ class BinanceSpotExecutionClient(LiveExecutionClient):
 
     async def _submit_order_list(self, command: SubmitOrderList) -> None:
         for order in command.list:
-            if order.contingency_ids:  # TODO(cs): Implement
+            if order.linked_order_ids:  # TODO(cs): Implement
                 self._log.warning(f"Cannot yet handle contingency orders, {order}.")
             await self._submit_order(order)
 
