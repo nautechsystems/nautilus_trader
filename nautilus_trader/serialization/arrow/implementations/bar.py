@@ -12,10 +12,27 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
-from nautilus_trader.serialization.arrow.implementations import account_state  # noqa: F401
-from nautilus_trader.serialization.arrow.implementations import bar  # noqa: F401
-from nautilus_trader.serialization.arrow.implementations import closing_prices  # noqa: F401
-from nautilus_trader.serialization.arrow.implementations import instruments  # noqa: F401
-from nautilus_trader.serialization.arrow.implementations import order_book  # noqa: F401
-from nautilus_trader.serialization.arrow.implementations import order_events  # noqa: F401
-from nautilus_trader.serialization.arrow.implementations import position_events  # noqa: F401
+
+from typing import Dict
+
+from nautilus_trader.model.data.bar import Bar
+from nautilus_trader.serialization.arrow.serializer import register_parquet
+
+
+def serialize(bar: Bar):
+    data = bar.to_dict(bar)
+    data["instrument_id"] = bar.type.instrument_id.value
+    return data
+
+
+def deserialize(data: Dict) -> Bar:
+    ignore = ("instrument_id",)
+    bar = Bar.from_dict({k: v for k, v in data.items() if k not in ignore})
+    return bar
+
+
+register_parquet(
+    Bar,
+    serializer=serialize,
+    deserializer=deserialize,
+)
