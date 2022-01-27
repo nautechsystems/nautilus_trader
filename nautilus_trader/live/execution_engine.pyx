@@ -144,7 +144,7 @@ cdef class LiveExecutionEngine(ExecutionEngine):
 
         # Request execution mass status report from each client
         mass_status_coros = [
-            (c_id, c.generate_mass_status()) for c_id, c in self._clients.items()
+            c.generate_mass_status() for c in self._clients.values()
         ]
         client_id_mass_status = await asyncio.gather(*mass_status_coros)
 
@@ -152,9 +152,9 @@ cdef class LiveExecutionEngine(ExecutionEngine):
 
         # Reconcile each mass status with the execution engine
         cdef ExecutionClient client
-        for (client_id, mass_status) in client_id_mass_status:
+        for mass_status in client_id_mass_status:
             result = self._reconcile_mass_status(mass_status)
-            client = self._clients[client_id]
+            client = self._clients[mass_status.client_id]
             client.reconciliation_active = False
             results.append(result)
 

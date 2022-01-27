@@ -253,7 +253,7 @@ cdef class LimitOrder(Order):
         Condition.not_none(init, "init")
         Condition.equal(init.type, OrderType.LIMIT, "init.type", "OrderType")
 
-        cdef str display_qty_str = init.options["display_qty"]
+        cdef str display_qty_str = init.options.get("display_qty")
 
         return LimitOrder(
             trader_id=init.trader_id,
@@ -264,7 +264,7 @@ cdef class LimitOrder(Order):
             quantity=init.quantity,
             price=Price.from_str_c(init.options["price"]),
             time_in_force=init.time_in_force,
-            expire_time=maybe_unix_nanos_to_dt(init.options["expire_time_ns"]),
+            expire_time=maybe_unix_nanos_to_dt(init.options.get("expire_time_ns")),
             init_id=init.id,
             ts_init=init.ts_init,
             post_only=init.post_only,
