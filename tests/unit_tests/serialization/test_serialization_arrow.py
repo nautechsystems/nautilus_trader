@@ -121,6 +121,10 @@ class TestParquetSerializer:
     def test_serialize_and_deserialize_tick(self, tick):
         self._test_serialization(obj=tick)
 
+    def test_serialize_and_deserialize_bar(self):
+        bar = TestStubs.bar_5decimal()
+        self._test_serialization(obj=bar)
+
     def test_serialize_and_deserialize_order_book_delta(self):
         delta = OrderBookDelta(
             instrument_id=TestStubs.audusd_id(),
