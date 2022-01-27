@@ -59,6 +59,7 @@ from nautilus_trader.execution.reports cimport TradeReport
 from nautilus_trader.model.c_enums.oms_type cimport OMSType
 from nautilus_trader.model.c_enums.oms_type cimport OMSTypeParser
 from nautilus_trader.model.c_enums.order_status cimport OrderStatus
+from nautilus_trader.model.c_enums.order_type cimport OrderType
 from nautilus_trader.model.c_enums.position_side cimport PositionSide
 from nautilus_trader.model.c_enums.trailing_offset_type cimport TrailingOffsetTypeParser
 from nautilus_trader.model.c_enums.trigger_type cimport TriggerTypeParser
@@ -75,6 +76,7 @@ from nautilus_trader.model.events.order cimport OrderFilled
 from nautilus_trader.model.events.order cimport OrderInitialized
 from nautilus_trader.model.events.order cimport OrderRejected
 from nautilus_trader.model.events.order cimport OrderTriggered
+from nautilus_trader.model.events.order cimport OrderUpdated
 from nautilus_trader.model.events.position cimport PositionChanged
 from nautilus_trader.model.events.position cimport PositionClosed
 from nautilus_trader.model.events.position cimport PositionEvent
@@ -938,18 +940,12 @@ cdef class ExecutionEngine(Component):
                 self._cache.update_order(order)
             return True  # Reconciled
 
-        # if (
-        #     report.quantity != order.quantity
-        #     or report.price != order.price
-        #     or report.trigger_price != order.trigger_price
-        # ):
-        # TODO(cs): Apply any order modifications
-
         if report.order_status == OrderStatus.ACCEPTED:
             if order.status_c() != OrderStatus.ACCEPTED:
                 accepted = OrderAccepted(
                     trader_id=self.trader_id,
                     strategy_id=order.strategy_id,
+                    account_id=report.account_id,
                     instrument_id=report.instrument_id,
                     client_order_id=report.client_order_id,
                     venue_order_id=report.venue_order_id,
@@ -961,11 +957,44 @@ cdef class ExecutionEngine(Component):
                 self._cache.update_order(order)
             return True  # Reconciled
 
+        # Update order if necessary
+        cdef bint update = False
+        if report.quantity != order.quantity:
+            update = True
+        elif order.type == OrderType.LIMIT:
+            if report.price != order.price:
+                update = True
+        elif order.type == OrderType.STOP_MARKET or order.type == OrderType.TRAILING_STOP_MARKET:
+            if report.trigger_price != order.trigger_price:
+                update = True
+        elif order.type == OrderType.STOP_LIMIT or order.type == OrderType.TRAILING_STOP_LIMIT:
+            if report.trigger_price != order.trigger_price or report.price != order.price:
+                update = True
+
+        if update:
+            updated = OrderUpdated(
+                trader_id=self.trader_id,
+                strategy_id=order.strategy_id,
+                account_id=report.account_id,
+                instrument_id=report.instrument_id,
+                client_order_id=report.client_order_id,
+                venue_order_id=report.venue_order_id,
+                quantity=report.quantity,
+                price=report.price,
+                trigger_price=report.trigger_price,
+                event_id=self._uuid_factory.generate(),
+                ts_event=report.ts_accepted,
+                ts_init=self._clock.timestamp_ns(),
+            )
+            order.apply(updated)
+            self._cache.update_order(order)
+
         if report.order_status == OrderStatus.TRIGGERED:
             if order.status_c() in (OrderStatus.INITIALIZED or OrderStatus.SUBMITTED):
                 accepted = OrderAccepted(
                     trader_id=self.trader_id,
                     strategy_id=order.strategy_id,
+                    account_id=report.account_id,
                     instrument_id=report.instrument_id,
                     client_order_id=report.client_order_id,
                     venue_order_id=report.venue_order_id,
@@ -979,6 +1008,7 @@ cdef class ExecutionEngine(Component):
                 triggered = OrderTriggered(
                     trader_id=self.trader_id,
                     strategy_id=order.strategy_id,
+                    account_id=report.account_id,
                     instrument_id=report.instrument_id,
                     client_order_id=report.client_order_id,
                     venue_order_id=report.venue_order_id,
@@ -991,10 +1021,11 @@ cdef class ExecutionEngine(Component):
             return True  # Reconciled
 
         if report.order_status == OrderStatus.CANCELED:
-            if order.status_c() in (OrderStatus.INITIALIZED or OrderStatus.SUBMITTED):
+            if order.status_c() == OrderStatus.INITIALIZED or order.status_c() == OrderStatus.SUBMITTED:
                 accepted = OrderAccepted(
                     trader_id=self.trader_id,
                     strategy_id=order.strategy_id,
+                    account_id=report.account_id,
                     instrument_id=report.instrument_id,
                     client_order_id=report.client_order_id,
                     venue_order_id=report.venue_order_id,
@@ -1009,6 +1040,7 @@ cdef class ExecutionEngine(Component):
                     triggered = OrderTriggered(
                         trader_id=self.trader_id,
                         strategy_id=order.strategy_id,
+                        account_id=report.account_id,
                         instrument_id=report.instrument_id,
                         client_order_id=report.client_order_id,
                         venue_order_id=report.venue_order_id,
@@ -1026,7 +1058,7 @@ cdef class ExecutionEngine(Component):
                     client_order_id=report.client_order_id,
                     venue_order_id=report.venue_order_id,
                     event_id=self._uuid_factory.generate(),
-                    event_ts=report.ts_last,
+                    ts_event=report.ts_last,
                     ts_init=self._clock.timestamp_ns(),
                 )
                 order.apply(canceled)
@@ -1034,10 +1066,11 @@ cdef class ExecutionEngine(Component):
             return True  # Reconciled
 
         if report.order_status == OrderStatus.EXPIRED:
-            if order.status_c() in (OrderStatus.INITIALIZED or OrderStatus.SUBMITTED):
+            if order.status_c() == OrderStatus.INITIALIZED or order.status_c() == OrderStatus.SUBMITTED:
                 accepted = OrderAccepted(
                     trader_id=self.trader_id,
                     strategy_id=order.strategy_id,
+                    account_id=report.account_id,
                     instrument_id=report.instrument_id,
                     client_order_id=report.client_order_id,
                     venue_order_id=report.venue_order_id,
@@ -1052,6 +1085,7 @@ cdef class ExecutionEngine(Component):
                     triggered = OrderTriggered(
                         trader_id=self.trader_id,
                         strategy_id=order.strategy_id,
+                        account_id=report.account_id,
                         instrument_id=report.instrument_id,
                         client_order_id=report.client_order_id,
                         venue_order_id=report.venue_order_id,
@@ -1069,7 +1103,7 @@ cdef class ExecutionEngine(Component):
                     client_order_id=report.client_order_id,
                     venue_order_id=report.venue_order_id,
                     event_id=self._uuid_factory.generate(),
-                    event_ts=report.ts_last,
+                    ts_event=report.ts_last,
                     ts_init=self._clock.timestamp_ns(),
                 )
                 order.apply(expired)
@@ -1098,7 +1132,7 @@ cdef class ExecutionEngine(Component):
                 commission=trade.commission,
                 liquidity_side=trade.liquidity_side,
                 event_id=self._uuid_factory.generate(),
-                event_ts=trade.ts_event,
+                ts_event=trade.ts_event,
                 ts_init=self._clock.timestamp_ns(),
             )
             order.apply(fill)
@@ -1114,7 +1148,7 @@ cdef class ExecutionEngine(Component):
         return True  # Reconciled
 
     cdef ClientOrderId _generate_client_order_id(self):
-        return ClientOrderId(f"EXTERNAL-{self._uuid_factory.generate().value}")
+        return ClientOrderId(f"O-{self._uuid_factory.generate().value}")
 
     cdef Order _generate_external_order(self, OrderStatusReport report):
         # Prepare order options
@@ -1138,7 +1172,7 @@ cdef class ExecutionEngine(Component):
 
         cdef initialized = OrderInitialized(
             trader_id=self.trader_id,
-            strategy_id=StrategyId("EXTERNAL"),
+            strategy_id=StrategyId("EXTERNAL-000"),
             instrument_id=report.instrument_id,
             client_order_id=report.client_order_id,
             order_side=report.order_side,
@@ -1146,12 +1180,13 @@ cdef class ExecutionEngine(Component):
             quantity=report.quantity,
             time_in_force=report.time_in_force,
             post_only=report.post_only,
-            reduct_only=report.reduce_only,
+            reduce_only=report.reduce_only,
             options=options,
             order_list_id=report.order_list_id,
             contingency_type=report.contingency_type,
             linked_order_ids=None,
             parent_order_id=None,
+            tags="EXTERNAL",
             event_id=self._uuid_factory.generate(),
             ts_init=self._clock.timestamp_ns(),
         )

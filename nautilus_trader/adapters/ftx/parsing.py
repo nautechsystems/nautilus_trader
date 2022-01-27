@@ -15,7 +15,7 @@
 
 from datetime import datetime
 from decimal import Decimal
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 import pandas as pd
 
@@ -68,8 +68,8 @@ def parse_order_status(
     report_id: UUID4,
     ts_init: int,
 ) -> OrderStatusReport:
-    client_id_str = data["clientId"]
-    price = data["price"]
+    client_id_str = data.get("clientId")
+    price = data.get("price")
     avg_px = data["avgFillPrice"]
     created_at = int(pd.to_datetime(data["createdAt"]).to_datetime64())
     return OrderStatusReport(
@@ -112,8 +112,9 @@ def parse_trigger_order_status(
     report_id: UUID4,
     ts_init: int,
 ) -> OrderStatusReport:
-    client_id_str = data["clientId"]
-    price = data["price"]
+    client_id_str = data.get("clientId")
+    trigger_price = data.get("triggerPrice")
+    order_price = data.get("orderPrice")
     avg_px = data["avgFillPrice"]
     triggered_at = data["triggeredAt"]
     trail_value = data["trailValue"]
@@ -125,13 +126,13 @@ def parse_trigger_order_status(
         order_list_id=None,
         venue_order_id=VenueOrderId(str(data["id"])),
         order_side=OrderSide.BUY if data["side"] == "buy" else OrderSide.SELL,
-        order_type=parse_order_type(data=data, price_str="price"),
+        order_type=parse_order_type(data=data),
         contingency_type=ContingencyType.NONE,
-        time_in_force=TimeInForce.IOC if data["ioc"] else TimeInForce.GTC,
+        time_in_force=TimeInForce.GTC,
         expire_time=None,
         order_status=parse_status(data),
-        price=instrument.make_price(price) if price is not None else None,
-        trigger_price=None,
+        price=instrument.make_price(order_price) if order_price is not None else None,
+        trigger_price=instrument.make_price(trigger_price) if trigger_price is not None else None,
         trigger_type=TriggerType.DEFAULT,
         limit_offset=None,
         trailing_offset=Decimal(str(trail_value)) if trail_value is not None else None,
@@ -140,7 +141,7 @@ def parse_trigger_order_status(
         filled_qty=instrument.make_qty(str(data["filledSize"])),
         display_qty=None,
         avg_px=Decimal(str(avg_px)) if avg_px is not None else None,
-        post_only=data["postOnly"],
+        post_only=False,
         reduce_only=data["reduceOnly"],
         reject_reason=None,
         report_id=report_id,
@@ -154,7 +155,7 @@ def parse_trigger_order_status(
 
 
 def parse_status(result: Dict[str, Any]) -> OrderStatus:
-    status: str = result["status"]
+    status: Optional[str] = result.get("status")
     if status in ("new", "open"):
         if result["filledSize"] == 0:
             if result["triggeredAt"] is not None:
@@ -163,12 +164,34 @@ def parse_status(result: Dict[str, Any]) -> OrderStatus:
                 return OrderStatus.ACCEPTED
         else:
             return OrderStatus.PARTIALLY_FILLED
-    elif status == "closed":
+    elif status in ("closed", "cancelled"):
         if result["filledSize"] == 0:
             return OrderStatus.CANCELED
         return OrderStatus.FILLED
+    elif status == "triggered":
+        if result["filledSize"] == 0:
+            return OrderStatus.TRIGGERED
+        elif result["filledSize"] == result["size"]:
+            return OrderStatus.FILLED
+        else:
+            return OrderStatus.PARTIALLY_FILLED
     else:  # pragma: no cover (design-time error)
         raise RuntimeError(f"Cannot parse order status, was {status}")
+
+
+def parse_order_type(data: Dict[str, Any], price_str: str = "orderPrice") -> OrderType:
+    order_type: str = data["type"]
+    if order_type == "limit":
+        return OrderType.LIMIT
+    elif order_type == "market":
+        return OrderType.MARKET
+    elif order_type in ("stop", "trailing_stop", "take_profit"):
+        if data.get(price_str):
+            return OrderType.STOP_LIMIT
+        else:
+            return OrderType.STOP_MARKET
+    else:  # pragma: no cover (design-time error)
+        raise RuntimeError(f"Cannot parse order type, was {order_type}")
 
 
 def parse_book_partial_ws(
@@ -456,18 +479,3 @@ def parse_market(
             )
     else:  # pragma: no cover (design-time error)
         raise ValueError(f"Cannot parse market instrument: unknown asset type {asset_type}")
-
-
-def parse_order_type(data: Dict[str, Any], price_str: str = "orderPrice") -> OrderType:
-    order_type: str = data["type"]
-    if order_type == "limit":
-        return OrderType.LIMIT
-    elif order_type == "market":
-        return OrderType.MARKET
-    elif order_type in ("stop", "trailingStop", "takeProfit"):
-        if data.get(price_str):
-            return OrderType.STOP_LIMIT
-        else:
-            return OrderType.STOP_MARKET
-    else:  # pragma: no cover (design-time error)
-        raise RuntimeError(f"Cannot parse order type, was {order_type}")
