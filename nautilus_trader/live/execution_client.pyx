@@ -235,15 +235,10 @@ cdef class LiveExecutionClient(ExecutionClient):
         """
         raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
-    async def generate_mass_status(self, timeout_secs):
+    async def generate_mass_status(self):
         """
         Generate an execution state report based on the given list of active
         orders.
-
-        Parameters
-        ----------
-        timeout_secs : float
-            The timeout value to wait.
 
         Returns
         -------
@@ -257,6 +252,8 @@ cdef class LiveExecutionClient(ExecutionClient):
         cdef ExecutionMassStatus mass_status = ExecutionMassStatus(
             client_id=self.id,
             account_id=self.account_id,
+            venue=self.venue,
+            report_id=self._uuid_factory.generate(),
             ts_init=self._clock.timestamp_ns(),
         )
 

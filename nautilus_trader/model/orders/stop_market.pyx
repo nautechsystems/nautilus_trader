@@ -260,7 +260,7 @@ cdef class StopMarketOrder(Order):
             trigger_price=Price.from_str_c(init.options["trigger_price"]),
             trigger_type=TriggerTypeParser.from_str(init.options["trigger_type"]),
             time_in_force=init.time_in_force,
-            expire_time=maybe_unix_nanos_to_dt(init.options["expire_time_ns"]),
+            expire_time=maybe_unix_nanos_to_dt(init.options.get("expire_time_ns")),
             init_id=init.id,
             ts_init=init.ts_init,
             reduce_only=init.reduce_only,

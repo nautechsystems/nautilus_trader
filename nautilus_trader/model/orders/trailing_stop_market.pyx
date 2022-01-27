@@ -267,7 +267,7 @@ cdef class TrailingStopMarketOrder(Order):
         Condition.not_none(init, "init")
         Condition.equal(init.type, OrderType.TRAILING_STOP_MARKET, "init.type", "OrderType")
 
-        cdef str trigger_price_str = init.options["trigger_price"]
+        cdef str trigger_price_str = init.options.get("trigger_price")
 
         return TrailingStopMarketOrder(
             trader_id=init.trader_id,
@@ -281,7 +281,7 @@ cdef class TrailingStopMarketOrder(Order):
             trailing_offset=Decimal(init.options["trailing_offset"]),
             offset_type=TrailingOffsetTypeParser.from_str(init.options["offset_type"]),
             time_in_force=init.time_in_force,
-            expire_time=maybe_unix_nanos_to_dt(init.options["expire_time_ns"]),
+            expire_time=maybe_unix_nanos_to_dt(init.options.get("expire_time_ns")),
             init_id=init.id,
             ts_init=init.ts_init,
             reduce_only=init.reduce_only,

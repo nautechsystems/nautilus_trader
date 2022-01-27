@@ -203,9 +203,6 @@ class FTXExecutionClient(LiveExecutionClient):
         await self._ws_client.subscribe_fills()
         await self._ws_client.subscribe_orders()
 
-        # reports = await self.generate_order_status_reports()  # TODO!
-        # self._log.info(str(reports), LogColor.GREEN)
-
         self._set_connected(True)
         self._log.info("Connected.")
 
@@ -313,6 +310,8 @@ class FTXExecutionClient(LiveExecutionClient):
         list[OrderStatusReport]
 
         """
+        self._log.info(f"Generating OrderStatusReports for {self.id}...")
+
         reports: List[OrderStatusReport] = []
         reports += await self._get_order_status_reports(
             instrument_id=instrument_id,
@@ -320,12 +319,15 @@ class FTXExecutionClient(LiveExecutionClient):
             end=end,
             open_only=open_only,
         )
+
         reports += await self._get_trigger_order_status_reports(
             instrument_id=instrument_id,
             start=start,
             end=end,
             open_only=open_only,
         )
+
+        self._log.info(f"Generated {len(reports)} OrderStatusReports.")
 
         return reports
 
@@ -365,15 +367,16 @@ class FTXExecutionClient(LiveExecutionClient):
                     )
                     continue
 
-                reports.append(
-                    parse_order_status(
-                        account_id=self.account_id,
-                        instrument=instrument,
-                        data=data,
-                        report_id=self._uuid_factory.generate(),
-                        ts_init=self._clock.timestamp_ns(),
-                    )
+                report = parse_order_status(
+                    account_id=self.account_id,
+                    instrument=instrument,
+                    data=data,
+                    report_id=self._uuid_factory.generate(),
+                    ts_init=self._clock.timestamp_ns(),
                 )
+
+                self._log.debug(f"Received {report}.")
+                reports.append(report)
 
         return reports
 
@@ -413,15 +416,16 @@ class FTXExecutionClient(LiveExecutionClient):
                     )
                     continue
 
-                reports.append(
-                    parse_trigger_order_status(
-                        account_id=self.account_id,
-                        instrument=instrument,
-                        data=data,
-                        report_id=self._uuid_factory.generate(),
-                        ts_init=self._clock.timestamp_ns(),
-                    )
+                report = parse_trigger_order_status(
+                    account_id=self.account_id,
+                    instrument=instrument,
+                    data=data,
+                    report_id=self._uuid_factory.generate(),
+                    ts_init=self._clock.timestamp_ns(),
                 )
+
+                self._log.debug(f"Received {report}.")
+                reports.append(report)
 
         return reports
 
@@ -453,7 +457,9 @@ class FTXExecutionClient(LiveExecutionClient):
         list[TradeReport]
 
         """
-        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
+        self._log.info(f"Generating TradeReports for {self.id}...")
+
+        return []
 
     async def generate_position_status_reports(
         self,
@@ -480,7 +486,9 @@ class FTXExecutionClient(LiveExecutionClient):
         list[PositionStatusReport]
 
         """
-        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
+        self._log.info(f"Generating PositionStatusReports for {self.id}...")
+
+        return []
 
     # -- COMMAND HANDLERS --------------------------------------------------------------------------
 
