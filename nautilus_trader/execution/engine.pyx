@@ -910,6 +910,8 @@ cdef class ExecutionEngine(Component):
             # Assign to report
             report.client_order_id = client_order_id
 
+        assert report.client_order_id is not None
+
         cdef Order order = self._cache.order(client_order_id)
         if order is None:
             order = self._generate_external_order(report)
@@ -926,6 +928,7 @@ cdef class ExecutionEngine(Component):
                 self._apply_order_accepted(order, report)
             return True  # Reconciled
 
+        # Order must have been accepted from this point
         if order.status_c() == OrderStatus.INITIALIZED or order.status_c() == OrderStatus.SUBMITTED:
             self._apply_order_accepted(order, report)
 
@@ -941,8 +944,6 @@ cdef class ExecutionEngine(Component):
             return True  # Reconciled
 
         if report.order_status == OrderStatus.CANCELED:
-            if order.status_c() == OrderStatus.INITIALIZED or order.status_c() == OrderStatus.SUBMITTED:
-                self._apply_order_accepted(order, report)
             if order.status_c() != OrderStatus.CANCELED:
                 if report.ts_triggered > 0:
                     self._apply_order_triggered(order, report)
@@ -950,14 +951,13 @@ cdef class ExecutionEngine(Component):
             return True  # Reconciled
 
         if report.order_status == OrderStatus.EXPIRED:
-            if order.status_c() == OrderStatus.INITIALIZED or order.status_c() == OrderStatus.SUBMITTED:
-                self._apply_order_accepted(order, report)
             if order.status_c() != OrderStatus.EXPIRED:
                 if report.ts_triggered > 0:
                     self._apply_order_triggered(order, report)
                 self._apply_order_expired(order, report)
             return True  # Reconciled
 
+        # Order has some fills from this point
         cdef Instrument instrument = self._cache.instrument(order.instrument_id)
         if instrument is None:
             self._log.error(
@@ -966,20 +966,27 @@ cdef class ExecutionEngine(Component):
             )
             return False  # Failed
 
-        cdef:
-            TradeReport trade
-            OrderFilled fill
+        cdef TradeReport trade
+        cdef int64_t last_ts_event = 0
         for trade in trades:
             if trade.trade_id in order.trade_ids_c():
                 continue  # Fill already applied
             self._apply_order_filled(order, trade, instrument)
+            # Check correct ordering of fills
+            if trade.ts_event < last_ts_event:
+                self._log.warning(
+                    f"OrderFilled applied out of chronological order: {trade}",
+                )
+            last_ts_event = trade.ts_event
 
-        # if report.filled_qty != order.filled_qty:
-        #     self._log.error(
-        #         f"Cannot reconcile order {order.client_order_id}: "
-        #         f"reported filled qty {report.filled_qty} != order.filled_qty {order.filled_qty}.",
-        #     )
-        #     return False  # Failed
+        if report.filled_qty != order.filled_qty:
+            self._log.error(
+                f"Cannot reconcile order "
+                f"{repr(order.client_order_id)} {repr(order.venue_order_id)}: "
+                f"reported filled qty {report.filled_qty} != order.filled_qty {order.filled_qty}. "
+                f"{order}.",
+            )
+            return False  # Failed
 
         return True  # Reconciled
 
@@ -1043,6 +1050,7 @@ cdef class ExecutionEngine(Component):
         )
         order.apply(rejected)
         self._cache.update_order(order)
+        self._log.debug(f"Applied {rejected}.")
 
     cdef void _apply_order_accepted(self, Order order, OrderStatusReport report) except *:
         cdef OrderAccepted accepted = OrderAccepted(
@@ -1058,6 +1066,7 @@ cdef class ExecutionEngine(Component):
         )
         order.apply(accepted)
         self._cache.update_order(order)
+        self._log.debug(f"Applied {accepted}.")
 
     cdef void _apply_order_triggered(self, Order order, OrderStatusReport report) except *:
         cdef OrderTriggered triggered = OrderTriggered(
@@ -1073,6 +1082,7 @@ cdef class ExecutionEngine(Component):
         )
         order.apply(triggered)
         self._cache.update_order(order)
+        self._log.debug(f"Applied {triggered}.")
 
     cdef void _apply_order_updated(self, Order order, OrderStatusReport report) except *:
         cdef OrderUpdated updated = OrderUpdated(
@@ -1091,6 +1101,7 @@ cdef class ExecutionEngine(Component):
         )
         order.apply(updated)
         self._cache.update_order(order)
+        self._log.debug(f"Applied {updated}.")
 
     cdef void _apply_order_canceled(self, Order order, OrderStatusReport report) except *:
         cdef OrderCanceled canceled = OrderCanceled(
@@ -1106,6 +1117,7 @@ cdef class ExecutionEngine(Component):
         )
         order.apply(canceled)
         self._cache.update_order(order)
+        self._log.debug(f"Applied {canceled}.")
 
     cdef void _apply_order_expired(self, Order order, OrderStatusReport report) except *:
         cdef OrderExpired expired = OrderExpired(
@@ -1121,9 +1133,10 @@ cdef class ExecutionEngine(Component):
         )
         order.apply(expired)
         self._cache.update_order(order)
+        self._log.debug(f"Applied {expired}.")
 
     cdef void _apply_order_filled(self, Order order, TradeReport trade, Instrument instrument) except *:
-        cdef OrderFilled fill = OrderFilled(
+        cdef OrderFilled filled = OrderFilled(
             trader_id=order.trader_id,
             strategy_id=order.strategy_id,
             account_id=trade.account_id,
@@ -1143,8 +1156,9 @@ cdef class ExecutionEngine(Component):
             ts_event=trade.ts_event,
             ts_init=self._clock.timestamp_ns(),
         )
-        order.apply(fill)
+        order.apply(filled)
         self._cache.update_order(order)
+        self._log.info(f"Applied {filled}.")
 
     cdef bint _should_update(self, Order order, OrderStatusReport report) except *:
         if report.quantity != order.quantity:

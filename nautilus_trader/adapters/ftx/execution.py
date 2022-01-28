@@ -329,7 +329,9 @@ class FTXExecutionClient(LiveExecutionClient):
             open_only=open_only,
         )
 
-        self._log.info(f"Generated {len(reports)} OrderStatusReports.")
+        len_reports = len(reports)
+        plural = "" if len_reports == 1 else "s"
+        self._log.info(f"Generated {len(reports)} OrderStatusReport{plural}.")
 
         return reports
 
@@ -496,6 +498,13 @@ class FTXExecutionClient(LiveExecutionClient):
                 self._log.debug(f"Received {report}.")
                 reports.append(report)
 
+        # Sort in ascending order (adding 'order' to `get_fills()` breaks the client)
+        reports = sorted(reports, key=lambda x: x.trade_id)
+
+        len_reports = len(reports)
+        plural = "" if len_reports == 1 else "s"
+        self._log.info(f"Generated {len(reports)} TradeReport{plural}.")
+
         return reports
 
     async def generate_position_status_reports(
@@ -555,6 +564,10 @@ class FTXExecutionClient(LiveExecutionClient):
 
                 self._log.debug(f"Received {report}.")
                 reports.append(report)
+
+        len_reports = len(reports)
+        plural = "" if len_reports == 1 else "s"
+        self._log.info(f"Generated {len(reports)} PositionStatusReport{plural}.")
 
         return reports
 
