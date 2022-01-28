@@ -852,14 +852,14 @@ cdef class ExecutionEngine(Component):
         # Open flipped position
         self._handle_order_fill(fill_split2, oms_type)
 
-# -- REPORT HANDLERS -------------------------------------------------------------------------------
+# -- RECONCILIATION --------------------------------------------------------------------------------
 
     cdef bint _reconcile_report(self, ExecutionReport report) except *:
         self._log.debug(f"{RECV}{RPT} {report}.")
         self.report_count += 1
 
         if isinstance(report, OrderStatusReport):
-            pass  # TODO: Implement
+            self._reconcile_order(report)
         elif isinstance(report, TradeReport):
             pass  # TODO: Implement
         elif isinstance(report, PositionStatusReport):
@@ -890,7 +890,7 @@ cdef class ExecutionEngine(Component):
             result = self._reconcile_order(order_report, trades)
             results.append(result)
 
-        # Check all reported positions
+        # TODO(cs): Check all reported positions
 
         # Publish mass status
         self._msgbus.publish_c(
@@ -916,6 +916,45 @@ cdef class ExecutionEngine(Component):
             # Add to cache without determining any position ID initially
             self._cache.add_order(order, position_id=None)
 
+        if report.order_status == OrderStatus.REJECTED:
+            if order.status_c() != OrderStatus.REJECTED:
+                self._apply_order_rejected(order, report)
+            return True  # Reconciled
+
+        if report.order_status == OrderStatus.ACCEPTED:
+            if order.status_c() != OrderStatus.ACCEPTED:
+                self._apply_order_accepted(order, report)
+            return True  # Reconciled
+
+        # Update order if necessary
+        if self._should_update(order, report):
+            self._apply_order_updated(order, report)
+
+        if report.order_status == OrderStatus.TRIGGERED:
+            if order.status_c() in (OrderStatus.INITIALIZED or OrderStatus.SUBMITTED):
+                self._apply_order_accepted(order, report)
+            if order.status_c() != OrderStatus.TRIGGERED:
+                self._apply_order_triggered(order, report)
+            return True  # Reconciled
+
+        if report.order_status == OrderStatus.CANCELED:
+            if order.status_c() == OrderStatus.INITIALIZED or order.status_c() == OrderStatus.SUBMITTED:
+                self._apply_order_accepted(order, report)
+            if order.status_c() != OrderStatus.CANCELED:
+                if report.ts_triggered > 0:
+                    self._apply_order_triggered(order, report)
+                self._apply_order_canceled(order, report)
+            return True  # Reconciled
+
+        if report.order_status == OrderStatus.EXPIRED:
+            if order.status_c() == OrderStatus.INITIALIZED or order.status_c() == OrderStatus.SUBMITTED:
+                self._apply_order_accepted(order, report)
+            if order.status_c() != OrderStatus.EXPIRED:
+                if report.ts_triggered > 0:
+                    self._apply_order_triggered(order, report)
+                self._apply_order_expired(order, report)
+            return True  # Reconciled
+
         cdef Instrument instrument = self._cache.instrument(order.instrument_id)
         if instrument is None:
             self._log.error(
@@ -924,219 +963,13 @@ cdef class ExecutionEngine(Component):
             )
             return False  # Failed
 
-        if report.order_status == OrderStatus.REJECTED:
-            if order.status_c() != OrderStatus.REJECTED:
-                rejected = OrderRejected(
-                    trader_id=order.trader_id,
-                    strategy_id=order.strategy_id,
-                    account_id=report.account_id,
-                    instrument_id=order.instrument_id,
-                    client_order_id=order.client_order_id,
-                    reason=report.reject_reason or "UNKNOWN",
-                    event_id=self._uuid_factory.generate(),
-                    ts_init=self._clock.timestamp_ns(),
-                )
-                order.apply(rejected)
-                self._cache.update_order(order)
-            return True  # Reconciled
-
-        if report.order_status == OrderStatus.ACCEPTED:
-            if order.status_c() != OrderStatus.ACCEPTED:
-                accepted = OrderAccepted(
-                    trader_id=self.trader_id,
-                    strategy_id=order.strategy_id,
-                    account_id=report.account_id,
-                    instrument_id=report.instrument_id,
-                    client_order_id=report.client_order_id,
-                    venue_order_id=report.venue_order_id,
-                    event_id=self._uuid_factory.generate(),
-                    ts_event=report.ts_accepted,
-                    ts_init=self._clock.timestamp_ns(),
-                )
-                order.apply(accepted)
-                self._cache.update_order(order)
-            return True  # Reconciled
-
-        # Update order if necessary
-        cdef bint update = False
-        if report.quantity != order.quantity:
-            update = True
-        elif order.type == OrderType.LIMIT:
-            if report.price != order.price:
-                update = True
-        elif order.type == OrderType.STOP_MARKET or order.type == OrderType.TRAILING_STOP_MARKET:
-            if report.trigger_price != order.trigger_price:
-                update = True
-        elif order.type == OrderType.STOP_LIMIT or order.type == OrderType.TRAILING_STOP_LIMIT:
-            if report.trigger_price != order.trigger_price or report.price != order.price:
-                update = True
-
-        if update:
-            updated = OrderUpdated(
-                trader_id=self.trader_id,
-                strategy_id=order.strategy_id,
-                account_id=report.account_id,
-                instrument_id=report.instrument_id,
-                client_order_id=report.client_order_id,
-                venue_order_id=report.venue_order_id,
-                quantity=report.quantity,
-                price=report.price,
-                trigger_price=report.trigger_price,
-                event_id=self._uuid_factory.generate(),
-                ts_event=report.ts_accepted,
-                ts_init=self._clock.timestamp_ns(),
-            )
-            order.apply(updated)
-            self._cache.update_order(order)
-
-        if report.order_status == OrderStatus.TRIGGERED:
-            if order.status_c() in (OrderStatus.INITIALIZED or OrderStatus.SUBMITTED):
-                accepted = OrderAccepted(
-                    trader_id=self.trader_id,
-                    strategy_id=order.strategy_id,
-                    account_id=report.account_id,
-                    instrument_id=report.instrument_id,
-                    client_order_id=report.client_order_id,
-                    venue_order_id=report.venue_order_id,
-                    event_id=self._uuid_factory.generate(),
-                    ts_event=report.ts_accepted,
-                    ts_init=self._clock.timestamp_ns(),
-                )
-                order.apply(accepted)
-                self._cache.update_order(order)
-            if order.status_c() != OrderStatus.TRIGGERED:
-                triggered = OrderTriggered(
-                    trader_id=self.trader_id,
-                    strategy_id=order.strategy_id,
-                    account_id=report.account_id,
-                    instrument_id=report.instrument_id,
-                    client_order_id=report.client_order_id,
-                    venue_order_id=report.venue_order_id,
-                    event_id=self._uuid_factory.generate(),
-                    ts_event=report.ts_triggered,
-                    ts_init=self._clock.timestamp_ns(),
-                )
-                order.apply(triggered)
-                self._cache.update_order(order)
-            return True  # Reconciled
-
-        if report.order_status == OrderStatus.CANCELED:
-            if order.status_c() == OrderStatus.INITIALIZED or order.status_c() == OrderStatus.SUBMITTED:
-                accepted = OrderAccepted(
-                    trader_id=self.trader_id,
-                    strategy_id=order.strategy_id,
-                    account_id=report.account_id,
-                    instrument_id=report.instrument_id,
-                    client_order_id=report.client_order_id,
-                    venue_order_id=report.venue_order_id,
-                    event_id=self._uuid_factory.generate(),
-                    ts_event=report.ts_accepted,
-                    ts_init=self._clock.timestamp_ns(),
-                )
-                order.apply(accepted)
-                self._cache.update_order(order)
-            if order.status_c() != OrderStatus.CANCELED:
-                if report.ts_triggered > 0:
-                    triggered = OrderTriggered(
-                        trader_id=self.trader_id,
-                        strategy_id=order.strategy_id,
-                        account_id=report.account_id,
-                        instrument_id=report.instrument_id,
-                        client_order_id=report.client_order_id,
-                        venue_order_id=report.venue_order_id,
-                        event_id=self._uuid_factory.generate(),
-                        ts_event=report.ts_triggered,
-                        ts_init=self._clock.timestamp_ns(),
-                    )
-                    order.apply(triggered)
-                    self._cache.update_order(order)
-                canceled = OrderCanceled(
-                    trader_id=order.trader_id,
-                    strategy_id=order.strategy_id,
-                    account_id=report.account_id,
-                    instrument_id=report.instrument_id,
-                    client_order_id=report.client_order_id,
-                    venue_order_id=report.venue_order_id,
-                    event_id=self._uuid_factory.generate(),
-                    ts_event=report.ts_last,
-                    ts_init=self._clock.timestamp_ns(),
-                )
-                order.apply(canceled)
-                self._cache.update_order(order)
-            return True  # Reconciled
-
-        if report.order_status == OrderStatus.EXPIRED:
-            if order.status_c() == OrderStatus.INITIALIZED or order.status_c() == OrderStatus.SUBMITTED:
-                accepted = OrderAccepted(
-                    trader_id=self.trader_id,
-                    strategy_id=order.strategy_id,
-                    account_id=report.account_id,
-                    instrument_id=report.instrument_id,
-                    client_order_id=report.client_order_id,
-                    venue_order_id=report.venue_order_id,
-                    event_id=self._uuid_factory.generate(),
-                    ts_event=report.ts_accepted,
-                    ts_init=self._clock.timestamp_ns(),
-                )
-                order.apply(accepted)
-                self._cache.update_order(order)
-            if order.status_c() != OrderStatus.EXPIRED:
-                if report.ts_triggered > 0:
-                    triggered = OrderTriggered(
-                        trader_id=self.trader_id,
-                        strategy_id=order.strategy_id,
-                        account_id=report.account_id,
-                        instrument_id=report.instrument_id,
-                        client_order_id=report.client_order_id,
-                        venue_order_id=report.venue_order_id,
-                        event_id=self._uuid_factory.generate(),
-                        ts_event=report.ts_triggered,
-                        ts_init=self._clock.timestamp_ns(),
-                    )
-                    order.apply(triggered)
-                    self._cache.update_order(order)
-                expired = OrderExpired(
-                    trader_id=order.trader_id,
-                    strategy_id=order.strategy_id,
-                    account_id=report.account_id,
-                    instrument_id=report.instrument_id,
-                    client_order_id=report.client_order_id,
-                    venue_order_id=report.venue_order_id,
-                    event_id=self._uuid_factory.generate(),
-                    ts_event=report.ts_last,
-                    ts_init=self._clock.timestamp_ns(),
-                )
-                order.apply(expired)
-                self._cache.update_order(order)
-            return True  # Reconciled
-
         cdef:
             TradeReport trade
             OrderFilled fill
         for trade in trades:
             if trade.trade_id in order.trade_ids_c():
                 continue  # Fill already applied
-            fill = OrderFilled(
-                trader_id=order.trader_id,
-                strategy_id=order.strategy_id,
-                account_id=trade.account_id,
-                instrument_id=trade.instrument_id,
-                client_order_id=trade.client_order_id,
-                venue_order_id=trade.venue_order_id,
-                trade_id=trade.trade_id,
-                position_id=trade.venue_position_id,
-                order_side=trade.order_side,
-                last_qty=trade.last_qty,
-                last_px=trade.last_px,
-                currency=instrument.quote_currency,
-                commission=trade.commission,
-                liquidity_side=trade.liquidity_side,
-                event_id=self._uuid_factory.generate(),
-                ts_event=trade.ts_event,
-                ts_init=self._clock.timestamp_ns(),
-            )
-            order.apply(fill)
-            self._cache.update_order(order)
+            self._apply_order_filled(order, trade, instrument)
 
         if report.filled_qty != order.filled_qty:
             self._log.error(
@@ -1192,3 +1025,132 @@ cdef class ExecutionEngine(Component):
         )
 
         return OrderUnpacker.from_init_c(initialized)
+
+    cdef void _apply_order_rejected(self, Order order, OrderStatusReport report) except *:
+        cdef OrderRejected rejected = OrderRejected(
+            trader_id=order.trader_id,
+            strategy_id=order.strategy_id,
+            account_id=report.account_id,
+            instrument_id=order.instrument_id,
+            client_order_id=order.client_order_id,
+            reason=report.reject_reason or "UNKNOWN",
+            event_id=self._uuid_factory.generate(),
+            ts_init=self._clock.timestamp_ns(),
+        )
+        order.apply(rejected)
+        self._cache.update_order(order)
+
+    cdef void _apply_order_accepted(self, Order order, OrderStatusReport report) except *:
+        cdef OrderAccepted accepted = OrderAccepted(
+            trader_id=self.trader_id,
+            strategy_id=order.strategy_id,
+            account_id=report.account_id,
+            instrument_id=report.instrument_id,
+            client_order_id=report.client_order_id,
+            venue_order_id=report.venue_order_id,
+            event_id=self._uuid_factory.generate(),
+            ts_event=report.ts_accepted,
+            ts_init=self._clock.timestamp_ns(),
+        )
+        order.apply(accepted)
+        self._cache.update_order(order)
+
+    cdef void _apply_order_triggered(self, Order order, OrderStatusReport report) except *:
+        cdef OrderTriggered triggered = OrderTriggered(
+            trader_id=self.trader_id,
+            strategy_id=order.strategy_id,
+            account_id=report.account_id,
+            instrument_id=report.instrument_id,
+            client_order_id=report.client_order_id,
+            venue_order_id=report.venue_order_id,
+            event_id=self._uuid_factory.generate(),
+            ts_event=report.ts_triggered,
+            ts_init=self._clock.timestamp_ns(),
+        )
+        order.apply(triggered)
+        self._cache.update_order(order)
+
+    cdef void _apply_order_updated(self, Order order, OrderStatusReport report) except *:
+        cdef OrderUpdated updated = OrderUpdated(
+            trader_id=self.trader_id,
+            strategy_id=order.strategy_id,
+            account_id=report.account_id,
+            instrument_id=report.instrument_id,
+            client_order_id=report.client_order_id,
+            venue_order_id=report.venue_order_id,
+            quantity=report.quantity,
+            price=report.price,
+            trigger_price=report.trigger_price,
+            event_id=self._uuid_factory.generate(),
+            ts_event=report.ts_accepted,
+            ts_init=self._clock.timestamp_ns(),
+        )
+        order.apply(updated)
+        self._cache.update_order(order)
+
+    cdef void _apply_order_canceled(self, Order order, OrderStatusReport report) except *:
+        cdef OrderCanceled canceled = OrderCanceled(
+            trader_id=order.trader_id,
+            strategy_id=order.strategy_id,
+            account_id=report.account_id,
+            instrument_id=report.instrument_id,
+            client_order_id=report.client_order_id,
+            venue_order_id=report.venue_order_id,
+            event_id=self._uuid_factory.generate(),
+            ts_event=report.ts_last,
+            ts_init=self._clock.timestamp_ns(),
+        )
+        order.apply(canceled)
+        self._cache.update_order(order)
+
+    cdef void _apply_order_expired(self, Order order, OrderStatusReport report) except *:
+        cdef OrderExpired expired = OrderExpired(
+            trader_id=order.trader_id,
+            strategy_id=order.strategy_id,
+            account_id=report.account_id,
+            instrument_id=report.instrument_id,
+            client_order_id=report.client_order_id,
+            venue_order_id=report.venue_order_id,
+            event_id=self._uuid_factory.generate(),
+            ts_event=report.ts_last,
+            ts_init=self._clock.timestamp_ns(),
+        )
+        order.apply(expired)
+        self._cache.update_order(order)
+
+    cdef void _apply_order_filled(self, Order order, TradeReport trade, Instrument instrument) except *:
+        cdef OrderFilled fill = OrderFilled(
+            trader_id=order.trader_id,
+            strategy_id=order.strategy_id,
+            account_id=trade.account_id,
+            instrument_id=trade.instrument_id,
+            client_order_id=trade.client_order_id,
+            venue_order_id=trade.venue_order_id,
+            trade_id=trade.trade_id,
+            position_id=trade.venue_position_id,
+            order_side=trade.order_side,
+            last_qty=trade.last_qty,
+            last_px=trade.last_px,
+            currency=instrument.quote_currency,
+            commission=trade.commission,
+            liquidity_side=trade.liquidity_side,
+            event_id=self._uuid_factory.generate(),
+            ts_event=trade.ts_event,
+            ts_init=self._clock.timestamp_ns(),
+        )
+        order.apply(fill)
+        self._cache.update_order(order)
+
+    cdef bint _should_update(self, Order order, OrderStatusReport report) except *:
+        if report.quantity != order.quantity:
+            return True
+        elif order.type == OrderType.LIMIT:
+            if report.price != order.price:
+                return True
+        elif order.type == OrderType.STOP_MARKET or order.type == OrderType.TRAILING_STOP_MARKET:
+            if report.trigger_price != order.trigger_price:
+                return True
+        elif order.type == OrderType.STOP_LIMIT or order.type == OrderType.TRAILING_STOP_LIMIT:
+            if report.trigger_price != order.trigger_price or report.price != order.price:
+                return True
+        return False
