@@ -171,7 +171,7 @@ def parse_order_fill(
         instrument_id=instrument.id,
         client_order_id=None,
         venue_order_id=VenueOrderId(str(data["orderId"])),
-        position_id=None,  # FTX always netting
+        venue_position_id=None,  # FTX always netting
         trade_id=TradeId(str(data["tradeId"])),
         order_side=OrderSide.BUY if data["side"] == "buy" else OrderSide.SELL,
         last_qty=instrument.make_qty(data["size"]),

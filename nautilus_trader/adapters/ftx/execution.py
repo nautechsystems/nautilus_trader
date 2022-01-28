@@ -536,7 +536,7 @@ class FTXExecutionClient(LiveExecutionClient):
         if response:
             for data in response:
                 # Get instrument
-                instrument_id = instrument_id or self._get_cached_instrument_id(data)
+                instrument_id = instrument_id or self._get_cached_instrument_id(data, "future")
                 instrument = self._instrument_provider.find(instrument_id)
                 if instrument is None:
                     self._log.error(
@@ -867,9 +867,13 @@ class FTXExecutionClient(LiveExecutionClient):
             LogColor.BLUE,
         )
 
-    def _get_cached_instrument_id(self, data: Dict[str, Any]) -> InstrumentId:
+    def _get_cached_instrument_id(
+        self,
+        data: Dict[str, Any],
+        symbol_str: str = "market",
+    ) -> InstrumentId:
         # Parse instrument ID
-        symbol: str = data["market"]
+        symbol: str = data[symbol_str]
         instrument_id: Optional[InstrumentId] = self._instrument_ids.get(symbol)
         if not instrument_id:
             instrument_id = InstrumentId(Symbol(symbol), FTX_VENUE)

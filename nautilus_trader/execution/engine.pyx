@@ -859,7 +859,7 @@ cdef class ExecutionEngine(Component):
         self.report_count += 1
 
         if isinstance(report, OrderStatusReport):
-            self._reconcile_order(report)
+            self._reconcile_order(report, [])  # No trades to reconcile
         elif isinstance(report, TradeReport):
             pass  # TODO: Implement
         elif isinstance(report, PositionStatusReport):
@@ -926,6 +926,9 @@ cdef class ExecutionEngine(Component):
                 self._apply_order_accepted(order, report)
             return True  # Reconciled
 
+        if order.status_c() == OrderStatus.INITIALIZED or order.status_c() == OrderStatus.SUBMITTED:
+            self._apply_order_accepted(order, report)
+
         # Update order if necessary
         if self._should_update(order, report):
             self._apply_order_updated(order, report)
@@ -958,7 +961,7 @@ cdef class ExecutionEngine(Component):
         cdef Instrument instrument = self._cache.instrument(order.instrument_id)
         if instrument is None:
             self._log.error(
-                f"Cannot reconcile order: "
+                f"Cannot reconcile order {order.client_order_id}: "
                 f"instrument {order.instrument_id} not found.",
             )
             return False  # Failed
@@ -971,12 +974,12 @@ cdef class ExecutionEngine(Component):
                 continue  # Fill already applied
             self._apply_order_filled(order, trade, instrument)
 
-        if report.filled_qty != order.filled_qty:
-            self._log.error(
-                f"Cannot reconcile order: "
-                f"reported filled qty {report.filled_qty} != order.filled_qty {order.filled_qty}.",
-            )
-            return False  # Failed
+        # if report.filled_qty != order.filled_qty:
+        #     self._log.error(
+        #         f"Cannot reconcile order {order.client_order_id}: "
+        #         f"reported filled qty {report.filled_qty} != order.filled_qty {order.filled_qty}.",
+        #     )
+        #     return False  # Failed
 
         return True  # Reconciled
 
@@ -989,7 +992,7 @@ cdef class ExecutionEngine(Component):
         if report.price is not None:
             options["price"] = str(report.price)
         if report.trigger_price is not None:
-            options["trigger_price"] = str(report.trigger_price),
+            options["trigger_price"] = str(report.trigger_price)
             options["trigger_type"] = TriggerTypeParser.to_str(report.trigger_type)
         if report.limit_offset is not None:
             options["limit_offset"] = str(report.limit_offset)
@@ -1035,6 +1038,7 @@ cdef class ExecutionEngine(Component):
             client_order_id=order.client_order_id,
             reason=report.reject_reason or "UNKNOWN",
             event_id=self._uuid_factory.generate(),
+            ts_event=report.ts_last,
             ts_init=self._clock.timestamp_ns(),
         )
         order.apply(rejected)
@@ -1124,11 +1128,12 @@ cdef class ExecutionEngine(Component):
             strategy_id=order.strategy_id,
             account_id=trade.account_id,
             instrument_id=trade.instrument_id,
-            client_order_id=trade.client_order_id,
+            client_order_id=order.client_order_id,
             venue_order_id=trade.venue_order_id,
             trade_id=trade.trade_id,
             position_id=trade.venue_position_id,
-            order_side=trade.order_side,
+            order_side=order.side,
+            order_type=order.type,
             last_qty=trade.last_qty,
             last_px=trade.last_px,
             currency=instrument.quote_currency,

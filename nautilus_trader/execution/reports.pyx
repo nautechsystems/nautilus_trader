@@ -301,7 +301,7 @@ cdef class TradeReport(ExecutionReport):
             f"{type(self).__name__}("
             f"account_id={self.account_id}, "
             f"instrument_id={self.instrument_id.value}, "
-            f"client_order_id={self.client_order_id.value}, "
+            f"client_order_id={self.client_order_id}, "
             f"venue_order_id={self.venue_order_id.value}, "
             f"venue_position_id={self.venue_position_id}, "
             f"trade_id={self.trade_id.value}, "
