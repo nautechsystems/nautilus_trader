@@ -203,12 +203,6 @@ class FTXHttpClient(HttpClient):
     async def get_account_info(self) -> Dict[str, Any]:
         return await self._sign_request(http_method="GET", url_path="account")
 
-    async def get_balances(self) -> List[dict]:
-        return await self._get("wallet/balances")
-
-    async def get_deposit_address(self, ticker: str) -> dict:
-        return await self._get(f"wallet/deposit_address/{ticker}")
-
     async def list_futures(self) -> List[Dict[str, Any]]:
         return await self._send_request(http_method="GET", url_path="futures")
 
@@ -413,19 +407,18 @@ class FTXHttpClient(HttpClient):
 
     async def get_fills(
         self,
-        market: str,
-        start_time: int,
-        end_time: int,
+        market: Optional[str] = "ETH-PERP",
+        start_time: Optional[int] = None,
+        end_time: Optional[int] = None,
     ) -> List[dict]:
-        payload: Dict[str, Any] = {
-            "market": market,
-            "order": "asc",
-        }
+        payload: Dict[str, Any] = {}
+        if market is not None:
+            payload["market"] = market
         if start_time is not None:
             payload["start_time"] = str(start_time)
         if end_time is not None:
             payload["end_time"] = str(end_time)
-        return await self._send_request(
+        return await self._sign_request(
             http_method="GET",
             url_path="fills",
             payload=payload,
