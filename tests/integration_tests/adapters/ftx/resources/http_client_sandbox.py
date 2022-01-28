@@ -75,20 +75,20 @@ async def test_ftx_http_client():
     #     # reduce_only=True,
     # )
 
-    response = await client.place_trigger_order(
-        market="ETH-PERP",
-        side="sell",
-        size="0.01",
-        order_type="stop",
-        # price="2540",
-        trigger_price="2500",
-        # trail_value="-20",
-        client_id="117",
-        # post_only=True,
-        # reduce_only=True,
-    )
+    # response = await client.place_trigger_order(
+    #     market="ETH-PERP",
+    #     side="sell",
+    #     size="0.01",
+    #     order_type="stop",
+    #     # price="2540",
+    #     trigger_price="2500",
+    #     # trail_value="-20",
+    #     client_id="117",
+    #     # post_only=True,
+    #     # reduce_only=True,
+    # )
 
-    # response = await client.cancel_order("103")
+    response = await client.get_order_status("112461976236")
 
     # response = await client.get_trigger_order_history()
 
