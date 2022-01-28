@@ -27,8 +27,10 @@ from nautilus_trader.accounting.factory import AccountFactory
 from nautilus_trader.adapters.ftx.common import FTX_VENUE
 from nautilus_trader.adapters.ftx.http.client import FTXHttpClient
 from nautilus_trader.adapters.ftx.http.error import FTXError
+from nautilus_trader.adapters.ftx.parsing import parse_order_fill
 from nautilus_trader.adapters.ftx.parsing import parse_order_status
 from nautilus_trader.adapters.ftx.parsing import parse_order_type
+from nautilus_trader.adapters.ftx.parsing import parse_position
 from nautilus_trader.adapters.ftx.parsing import parse_trigger_order_status
 from nautilus_trader.adapters.ftx.providers import FTXInstrumentProvider
 from nautilus_trader.adapters.ftx.websocket.client import FTXWebSocketClient
@@ -367,7 +369,7 @@ class FTXExecutionClient(LiveExecutionClient):
                     )
                     continue
 
-                report = parse_order_status(
+                report: OrderStatusReport = parse_order_status(
                     account_id=self.account_id,
                     instrument=instrument,
                     data=data,
@@ -416,7 +418,7 @@ class FTXExecutionClient(LiveExecutionClient):
                     )
                     continue
 
-                report = parse_trigger_order_status(
+                report: OrderStatusReport = parse_trigger_order_status(
                     account_id=self.account_id,
                     instrument=instrument,
                     data=data,
@@ -459,7 +461,42 @@ class FTXExecutionClient(LiveExecutionClient):
         """
         self._log.info(f"Generating TradeReports for {self.id}...")
 
-        return []
+        reports: List[TradeReport] = []
+
+        try:
+            response: List[Dict[str, Any]] = await self._http_client.get_fills(
+                market=instrument_id.symbol.value if instrument_id is not None else None,
+                start_time=int(start.timestamp() * 1000) if start is not None else None,
+                end_time=int(end.timestamp() * 1000) if end is not None else None,
+            )
+        except FTXError as ex:
+            self._log.error(ex.message)  # type: ignore  # TODO(cs): Improve errors
+            return []
+
+        if response:
+            for data in response:
+                # Get instrument
+                instrument_id = instrument_id or self._get_cached_instrument_id(data)
+                instrument = self._instrument_provider.find(instrument_id)
+                if instrument is None:
+                    self._log.error(
+                        f"Cannot generate order status report: "
+                        f"no instrument found for {instrument_id}.",
+                    )
+                    continue
+
+                report: TradeReport = parse_order_fill(
+                    account_id=self.account_id,
+                    instrument=instrument,
+                    data=data,
+                    report_id=self._uuid_factory.generate(),
+                    ts_init=self._clock.timestamp_ns(),
+                )
+
+                self._log.debug(f"Received {report}.")
+                reports.append(report)
+
+        return reports
 
     async def generate_position_status_reports(
         self,
@@ -488,7 +525,38 @@ class FTXExecutionClient(LiveExecutionClient):
         """
         self._log.info(f"Generating PositionStatusReports for {self.id}...")
 
-        return []
+        reports: List[PositionStatusReport] = []
+
+        try:
+            response: List[Dict[str, Any]] = await self._http_client.get_positions()
+        except FTXError as ex:
+            self._log.error(ex.message)  # type: ignore  # TODO(cs): Improve errors
+            return []
+
+        if response:
+            for data in response:
+                # Get instrument
+                instrument_id = instrument_id or self._get_cached_instrument_id(data)
+                instrument = self._instrument_provider.find(instrument_id)
+                if instrument is None:
+                    self._log.error(
+                        f"Cannot generate order status report: "
+                        f"no instrument found for {instrument_id}.",
+                    )
+                    continue
+
+                report: PositionStatusReport = parse_position(
+                    account_id=self.account_id,
+                    instrument=instrument,
+                    data=data,
+                    report_id=self._uuid_factory.generate(),
+                    ts_init=self._clock.timestamp_ns(),
+                )
+
+                self._log.debug(f"Received {report}.")
+                reports.append(report)
+
+        return reports
 
     # -- COMMAND HANDLERS --------------------------------------------------------------------------
 

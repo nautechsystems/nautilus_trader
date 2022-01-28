@@ -25,6 +25,8 @@ from nautilus_trader.core.datetime import secs_to_nanos
 from nautilus_trader.core.text import precision_from_str
 from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.execution.reports import OrderStatusReport
+from nautilus_trader.execution.reports import PositionStatusReport
+from nautilus_trader.execution.reports import TradeReport
 from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.currency import Currency
 from nautilus_trader.model.data.bar import Bar
@@ -37,9 +39,11 @@ from nautilus_trader.model.enums import BookAction
 from nautilus_trader.model.enums import BookType
 from nautilus_trader.model.enums import ContingencyType
 from nautilus_trader.model.enums import CurrencyType
+from nautilus_trader.model.enums import LiquiditySide
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import OrderStatus
 from nautilus_trader.model.enums import OrderType
+from nautilus_trader.model.enums import PositionSide
 from nautilus_trader.model.enums import TimeInForce
 from nautilus_trader.model.enums import TrailingOffsetType
 from nautilus_trader.model.enums import TriggerType
@@ -53,6 +57,7 @@ from nautilus_trader.model.instruments.base import Instrument
 from nautilus_trader.model.instruments.crypto_perp import CryptoPerpetual
 from nautilus_trader.model.instruments.currency import CurrencySpot
 from nautilus_trader.model.instruments.future import Future
+from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.orderbook.data import Order
@@ -90,8 +95,8 @@ def parse_order_status(
         limit_offset=None,
         trailing_offset=None,
         offset_type=TrailingOffsetType.PRICE,
-        quantity=instrument.make_qty(str(data["size"])),
-        filled_qty=instrument.make_qty(str(data["filledSize"])),
+        quantity=instrument.make_qty(data["size"]),
+        filled_qty=instrument.make_qty(data["filledSize"]),
         display_qty=None,
         avg_px=Decimal(str(avg_px)) if avg_px is not None else None,
         post_only=data["postOnly"],
@@ -137,8 +142,8 @@ def parse_trigger_order_status(
         limit_offset=None,
         trailing_offset=Decimal(str(trail_value)) if trail_value is not None else None,
         offset_type=TrailingOffsetType.PRICE,
-        quantity=instrument.make_qty(str(data["size"])),
-        filled_qty=instrument.make_qty(str(data["filledSize"])),
+        quantity=instrument.make_qty(data["size"]),
+        filled_qty=instrument.make_qty(data["filledSize"]),
         display_qty=None,
         avg_px=Decimal(str(avg_px)) if avg_px is not None else None,
         post_only=False,
@@ -150,6 +155,51 @@ def parse_trigger_order_status(
         if triggered_at is not None
         else 0,
         ts_last=created_at,
+        ts_init=ts_init,
+    )
+
+
+def parse_order_fill(
+    account_id: AccountId,
+    instrument: Instrument,
+    data: Dict[str, Any],
+    report_id: UUID4,
+    ts_init: int,
+) -> TradeReport:
+    return TradeReport(
+        account_id=account_id,
+        instrument_id=instrument.id,
+        client_order_id=None,
+        venue_order_id=VenueOrderId(str(data["orderId"])),
+        position_id=None,  # FTX always netting
+        trade_id=TradeId(str(data["tradeId"])),
+        order_side=OrderSide.BUY if data["side"] == "buy" else OrderSide.SELL,
+        last_qty=instrument.make_qty(data["size"]),
+        last_px=instrument.make_price(data["price"]),
+        commission=Money(data["fee"], Currency.from_str(data["feeCurrency"])),
+        liquidity_side=LiquiditySide.TAKER if data["liquidity"] == "taker" else LiquiditySide.MAKER,
+        report_id=report_id,
+        ts_event=int(pd.to_datetime(data["time"], utc=True).to_datetime64()),
+        ts_init=ts_init,
+    )
+
+
+def parse_position(
+    account_id: AccountId,
+    instrument: Instrument,
+    data: Dict[str, Any],
+    report_id: UUID4,
+    ts_init: int,
+) -> PositionStatusReport:
+    net_size = data["netSize"]
+    return PositionStatusReport(
+        account_id=account_id,
+        instrument_id=instrument.id,
+        venue_position_id=None,  # FTX always netting
+        position_side=PositionSide.LONG if net_size > 0 else PositionSide.SHORT,
+        quantity=instrument.make_qty(abs(net_size)),
+        report_id=report_id,
+        ts_last=ts_init,
         ts_init=ts_init,
     )
 
