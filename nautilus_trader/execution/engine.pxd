@@ -109,8 +109,10 @@ cdef class ExecutionEngine(Component):
 
     cdef bint _reconcile_report(self, ExecutionReport report) except *
     cdef bint _reconcile_mass_status(self, ExecutionMassStatus report) except *
-    cdef bint _reconcile_order(self, OrderStatusReport report, list trades) except *
+    cdef bint _reconcile_order_report(self, OrderStatusReport report, list trades) except *
+    cdef void _reconcile_trade_report(self, Order order, TradeReport report, Instrument instrument) except *
     cdef ClientOrderId _generate_client_order_id(self)
+    cdef OrderFilled _generate_order_filled(self, Order order, OrderStatusReport report, Instrument instrument)
     cdef Order _generate_external_order(self, OrderStatusReport report)
     cdef void _apply_order_rejected(self, Order order, OrderStatusReport report) except *
     cdef void _apply_order_accepted(self, Order order, OrderStatusReport report) except *
