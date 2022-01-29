@@ -56,6 +56,7 @@ from nautilus_trader.execution.reports cimport ExecutionReport
 from nautilus_trader.execution.reports cimport OrderStatusReport
 from nautilus_trader.execution.reports cimport PositionStatusReport
 from nautilus_trader.execution.reports cimport TradeReport
+from nautilus_trader.model.c_enums.liquidity_side cimport LiquiditySide
 from nautilus_trader.model.c_enums.oms_type cimport OMSType
 from nautilus_trader.model.c_enums.oms_type cimport OMSTypeParser
 from nautilus_trader.model.c_enums.order_status cimport OrderStatus
@@ -86,9 +87,12 @@ from nautilus_trader.model.identifiers cimport ClientOrderId
 from nautilus_trader.model.identifiers cimport ComponentId
 from nautilus_trader.model.identifiers cimport PositionId
 from nautilus_trader.model.identifiers cimport StrategyId
+from nautilus_trader.model.identifiers cimport TradeId
 from nautilus_trader.model.identifiers cimport Venue
+from nautilus_trader.model.identifiers cimport VenueOrderId
 from nautilus_trader.model.instruments.base cimport Instrument
 from nautilus_trader.model.objects cimport Money
+from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
 from nautilus_trader.model.orders.base cimport Order
 from nautilus_trader.model.orders.unpacker cimport OrderUnpacker
@@ -858,8 +862,10 @@ cdef class ExecutionEngine(Component):
         self._log.debug(f"{RECV}{RPT} {report}.")
         self.report_count += 1
 
+        self._log.info(f"Reconciling {report}.", color=LogColor.BLUE)
+
         if isinstance(report, OrderStatusReport):
-            self._reconcile_order(report, [])  # No trades to reconcile
+            self._reconcile_order_report(report, [])  # No trades to reconcile
         elif isinstance(report, TradeReport):
             pass  # TODO: Implement
         elif isinstance(report, PositionStatusReport):
@@ -885,9 +891,16 @@ cdef class ExecutionEngine(Component):
         cdef list results = []
 
         # Reconcile all reported orders
+        cdef VenueOrderId venue_order_id
+        cdef OrderStatusReport order_report
+        cdef bint result
         for venue_order_id, order_report in mass_status.order_reports().items():
             trades = trade_reports.get(venue_order_id, [])
-            result = self._reconcile_order(order_report, trades)
+            try:
+                result = self._reconcile_order_report(order_report, trades)
+            except InvalidStateTrigger as ex:
+                self._log.error(str(ex))
+                result = False
             results.append(result)
 
         # TODO(cs): Check all reported positions
@@ -900,7 +913,7 @@ cdef class ExecutionEngine(Component):
 
         return all(results)
 
-    cdef bint _reconcile_order(self, OrderStatusReport report, list trades) except *:
+    cdef bint _reconcile_order_report(self, OrderStatusReport report, list trades) except *:
         cdef ClientOrderId client_order_id = report.client_order_id
         if client_order_id is None:
             client_order_id = self._cache.client_order_id(report.venue_order_id)
@@ -909,8 +922,6 @@ cdef class ExecutionEngine(Component):
                 client_order_id = self._generate_client_order_id()
             # Assign to report
             report.client_order_id = client_order_id
-
-        assert report.client_order_id is not None
 
         cdef Order order = self._cache.order(client_order_id)
         if order is None:
@@ -966,32 +977,85 @@ cdef class ExecutionEngine(Component):
             )
             return False  # Failed
 
+        # Reconcile all trades
         cdef TradeReport trade
-        cdef int64_t last_ts_event = 0
         for trade in trades:
-            if trade.trade_id in order.trade_ids_c():
-                continue  # Fill already applied
-            self._apply_order_filled(order, trade, instrument)
-            # Check correct ordering of fills
-            if trade.ts_event < last_ts_event:
-                self._log.warning(
-                    f"OrderFilled applied out of chronological order: {trade}",
-                )
-            last_ts_event = trade.ts_event
+            self._reconcile_trade_report(order, trade, instrument)
 
+        # Check reported filled qty against order filled qty
+        cdef OrderFilled fill
         if report.filled_qty != order.filled_qty:
-            self._log.error(
-                f"Cannot reconcile order "
-                f"{repr(order.client_order_id)} {repr(order.venue_order_id)}: "
-                f"reported filled qty {report.filled_qty} != order.filled_qty {order.filled_qty}. "
-                f"{order}.",
-            )
-            return False  # Failed
+            self._log.warning(f"Generating OrderFilled from {report}")
+            fill = self._generate_order_filled(order, report, instrument)
+            order.apply(fill)
+            assert report.filled_qty == order.filled_qty
 
         return True  # Reconciled
 
+    cdef void _reconcile_trade_report(self, Order order, TradeReport report, Instrument instrument) except *:
+        if report.trade_id in order.trade_ids_c():
+            return  # Fill already applied
+        self._apply_order_filled(order, report, instrument)
+        # Check correct ordering of fills
+        if report.ts_event < order.ts_last:
+            self._log.warning(
+                f"OrderFilled applied out of chronological order from {report}",
+            )
+
     cdef ClientOrderId _generate_client_order_id(self):
         return ClientOrderId(f"O-{self._uuid_factory.generate().value}")
+
+    cdef OrderFilled _generate_order_filled(
+        self,
+        Order order,
+        OrderStatusReport report,
+        Instrument instrument,
+    ):
+        cdef LiquiditySide liquidity_side = LiquiditySide.NONE
+        if (
+            order.type == OrderType.MARKET
+            or order.type == OrderType.STOP_MARKET
+            or order.type == OrderType.TRAILING_STOP_MARKET
+        ):
+            # Infer liquidity side
+            liquidity_side = LiquiditySide.TAKER
+        elif report.post_only:
+            liquidity_side = LiquiditySide.MAKER
+
+        # Calculate last qty
+        cdef Quantity last_qty = instrument.make_qty(order.quantity - order.filled_qty)
+
+        # Calculate last px
+        cdef Price last_px
+        if order.avg_px is None:
+            last_px = instrument.make_price(report.avg_px)
+        else:
+            percentage: Decimal = (order.quantity - order.filled_qty) / order.quantity
+            diff = abs(order.avg_px - report.avg_px)
+            last_px = instrument.make_price(diff / percentage)
+
+        cdef Money notional_value = instrument.notional_value(last_qty, last_px)
+        cdef Money commission = Money(notional_value * instrument.taker_fee, instrument.quote_currency)
+        return OrderFilled(
+            trader_id=order.trader_id,
+            strategy_id=order.strategy_id,
+            account_id=report.account_id,
+            instrument_id=report.instrument_id,
+            client_order_id=order.client_order_id,
+            venue_order_id=report.venue_order_id,
+            trade_id=TradeId(str({self._uuid_factory.generate().value})),
+            position_id=None,
+            order_side=order.side,
+            order_type=order.type,
+            last_qty=last_qty,
+            last_px=last_px,
+            currency=instrument.quote_currency,
+            commission=commission,
+            liquidity_side=liquidity_side,
+            event_id=self._uuid_factory.generate(),
+            ts_event=report.ts_last,
+            ts_init=self._clock.timestamp_ns(),
+        )
 
     cdef Order _generate_external_order(self, OrderStatusReport report):
         # Prepare order options
@@ -1013,7 +1077,7 @@ cdef class ExecutionEngine(Component):
             if expire_time_ns > 0:
                 options["expire_time_ns"] = expire_time_ns
 
-        cdef initialized = OrderInitialized(
+        cdef OrderInitialized initialized = OrderInitialized(
             trader_id=self.trader_id,
             strategy_id=StrategyId("EXTERNAL-000"),
             instrument_id=report.instrument_id,
@@ -1034,7 +1098,10 @@ cdef class ExecutionEngine(Component):
             ts_init=self._clock.timestamp_ns(),
         )
 
-        return OrderUnpacker.from_init_c(initialized)
+        cdef Order order = OrderUnpacker.from_init_c(initialized)
+        self._log.info(f"Initialized external order {order}.")
+
+        return order
 
     cdef void _apply_order_rejected(self, Order order, OrderStatusReport report) except *:
         cdef OrderRejected rejected = OrderRejected(
@@ -1158,7 +1225,7 @@ cdef class ExecutionEngine(Component):
         )
         order.apply(filled)
         self._cache.update_order(order)
-        self._log.info(f"Applied {filled}.")
+        self._log.debug(f"Applied {filled}.")
 
     cdef bint _should_update(self, Order order, OrderStatusReport report) except *:
         if report.quantity != order.quantity:
