@@ -287,7 +287,7 @@ Please make all pull requests to the `develop` branch.
 NautilusTrader is currently following a bi-weekly release schedule.
 
 ## Community
-We maintain a [Discord](https://discord.gg/AUWVs3XaCS) server where active users of NautilusTrader can interact!
+We maintain a [Discord](https://discord.gg/AUWVs3XaCS) server where contributors and active users of NautilusTrader can interact!
 
 ## License
 
