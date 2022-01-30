@@ -276,6 +276,12 @@ class FTXHttpClient(HttpClient):
             payload=payload,
         )
 
+    async def get_trigger_order_triggers(self, order_id: str) -> Dict[str, Any]:
+        return await self._sign_request(
+            http_method="GET",
+            url_path=f"conditional_orders/{order_id}/triggers",
+        )
+
     async def get_order_status(self, order_id: str) -> Dict[str, Any]:
         return await self._sign_request(
             http_method="GET",
@@ -392,7 +398,13 @@ class FTXHttpClient(HttpClient):
             payload=payload,
         )
 
-    async def cancel_order(self, client_order_id: str) -> Dict[str, Any]:
+    async def cancel_order(self, order_id: str) -> Dict[str, Any]:
+        return await self._sign_request(
+            http_method="DELETE",
+            url_path=f"orders/{order_id}",
+        )
+
+    async def cancel_order_by_client_id(self, client_order_id: str) -> Dict[str, Any]:
         return await self._sign_request(
             http_method="DELETE",
             url_path=f"orders/by_client_id/{client_order_id}",
