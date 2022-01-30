@@ -138,6 +138,15 @@ https://stackoverflow.com/questions/65745683/how-to-install-scipy-on-apple-silic
 
 Refer to the [Installation Guide](https://docs.nautilustrader.io/1_getting_started/1_installation.html) for other options and further details.
 
+## Makefile
+
+A `Makefile` is provided to automate most installation and build tasks. It provides the following targets:
+- `make install` -- Installs the package using poetry.
+- `make build` -- Runs the Cython build script.
+- `make clean` -- Cleans all none source artifacts from the repository.
+- `make docs` -- Builds the internal documentation HTML using Sphinx.
+- `make pre-commit` -- Runs the pre-commit checks over all files.
+
 ## Examples
 
 Indicators and strategies can be developed in both Python and Cython (although if performance and latency sensitivity is import we recommend Cython).
@@ -257,24 +266,11 @@ class EMACross(TradingStrategy):
 
 ```
 
-## Release schedule
-
-NautilusTrader is currently following a bi-weekly release schedule.
-
 ## Development
 
 We aim to make the developer experience for this hybrid codebase of Cython and Python
 as pleasant as possible.
 Please refer to the [Developer Guide](https://docs.nautilustrader.io/5_developer_guide/0_index.html) for helpful information.
-
-## Makefile
-
-A `Makefile` is provided to automate most installation and build tasks. It provides the following targets:
-- `make install` -- Installs the package using poetry.
-- `make build` -- Runs the Cython build script.
-- `make clean` -- Cleans all none source artifacts from the repository.
-- `make docs` -- Builds the internal documentation HTML using Sphinx.
-- `make pre-commit` -- Runs the pre-commit checks over all files.
 
 ## Contributing
 
@@ -285,6 +281,13 @@ to make bug reports.
 Refer to the [CONTRIBUTING.md](https://github.com/nautechsystems/nautilus_trader/blob/master/CONTRIBUTING.md) for further information.
 
 Please make all pull requests to the `develop` branch.
+
+## Release schedule
+
+NautilusTrader is currently following a bi-weekly release schedule.
+
+## Community
+We maintain a [Discord](https://discord.gg/AUWVs3XaCS) server where active users of NautilusTrader can interact!
 
 ## License
 
