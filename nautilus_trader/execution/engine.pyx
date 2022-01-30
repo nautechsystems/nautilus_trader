@@ -948,8 +948,6 @@ cdef class ExecutionEngine(Component):
             self._apply_order_updated(order, report)
 
         if report.order_status == OrderStatus.TRIGGERED:
-            if order.status_c() in (OrderStatus.INITIALIZED or OrderStatus.SUBMITTED):
-                self._apply_order_accepted(order, report)
             if order.status_c() != OrderStatus.TRIGGERED:
                 self._apply_order_triggered(order, report)
             return True  # Reconciled
@@ -988,6 +986,8 @@ cdef class ExecutionEngine(Component):
             self._log.warning(f"Generating OrderFilled from {report}")
             fill = self._generate_order_filled(order, report, instrument)
             order.apply(fill)
+            self._cache.update_order(order)
+            self._log.debug(f"Applied {fill}.")
             assert report.filled_qty == order.filled_qty
 
         return True  # Reconciled
@@ -1099,7 +1099,7 @@ cdef class ExecutionEngine(Component):
         )
 
         cdef Order order = OrderUnpacker.from_init_c(initialized)
-        self._log.info(f"Initialized external order {order}.")
+        self._log.debug(f"Initialized external order {order}.")
 
         return order
 
