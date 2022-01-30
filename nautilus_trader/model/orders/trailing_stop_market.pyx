@@ -49,16 +49,7 @@ from nautilus_trader.model.orders.base cimport Order
 
 cdef class TrailingStopMarketOrder(Order):
     """
-    Represents a trailing stop-market trigger order.
-
-    A trailing stop-market moves with the market price, and continually recalculates
-    the stop trigger price at a fixed offset from the market price, based on
-    the user-defined `trailing_offset`. In the SELL case, as the market rises, the
-    stop trigger prices rise by the `trailing_offset`. However, if the market
-    falls the stop trigger price remains unchanged. When the stop trigger price
-    is hit, a market SELL order is immediately submitted.
-
-    The 'BUY case' is the mirror image of the above 'SELL case'.
+    Represents a trailing stop-market conditional order.
 
     Parameters
     ----------

@@ -47,19 +47,7 @@ from nautilus_trader.model.orders.base cimport Order
 
 cdef class StopLimitOrder(Order):
     """
-    Represents a stop-limit trigger order.
-
-    A stop-limit order is an instruction to submit a buy or sell limit order
-    when the user-specified stop trigger price is attained or penetrated. The
-    order has two basic components: the stop price and the limit price. When a
-    trade has occurred at or through the stop price, the order becomes
-    executable and enters the market as a limit order, which is an order to buy
-    or sell at a specified price or better.
-
-    A stop-limit eliminates the price risk associated with a stop order where
-    the execution price cannot be guaranteed, but exposes the trader to the
-    risk that the order may never fill even if the stop price is reached. The
-    trader could "miss the market" altogether.
+    Represents a stop-limit conditional order.
 
     Parameters
     ----------

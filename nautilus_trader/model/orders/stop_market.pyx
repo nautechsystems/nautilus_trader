@@ -46,16 +46,7 @@ from nautilus_trader.model.orders.base cimport Order
 
 cdef class StopMarketOrder(Order):
     """
-    Represents a stop-market trigger order.
-
-    A stop-market order is an instruction to submit a buy or sell market order
-    if and when the user-specified stop trigger price is attained or penetrated.
-    A stop-market order is not guaranteed a specific execution price and may
-    execute significantly away from its stop price. A Sell Stop order is always
-    placed below the current market price and is typically used to limit a loss
-    or protect a profit on a long stock position. A Buy Stop order is always
-    placed above the current market price. It is typically used to limit a loss
-    or help protect a profit on a short sale.
+    Represents a stop-market conditional order.
 
     Parameters
     ----------
