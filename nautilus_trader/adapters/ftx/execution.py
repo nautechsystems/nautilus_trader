@@ -151,6 +151,7 @@ class FTXExecutionClient(LiveExecutionClient):
         self._instrument_ids: Dict[str, InstrumentId] = {}
         self._order_ids: Dict[VenueOrderId, ClientOrderId] = {}
         self._order_types: Dict[VenueOrderId, OrderType] = {}
+        self._triggers: Dict[int, VenueOrderId] = {}
 
         # Settings
         self._account_polling_interval = account_polling_interval
@@ -322,12 +323,29 @@ class FTXExecutionClient(LiveExecutionClient):
             open_only=open_only,
         )
 
-        reports += await self._get_trigger_order_status_reports(
+        conditional_reports = await self._get_trigger_order_status_reports(
             instrument_id=instrument_id,
             start=start,
             end=end,
             open_only=open_only,
         )
+
+        trigger_reports = await asyncio.gather(
+            *[
+                self._http_client.get_trigger_order_triggers(r.venue_order_id.value)
+                for r in conditional_reports
+            ]
+        )
+
+        # Build map of trigger order IDs to parent venue order IDs
+        for idx, triggers in enumerate(trigger_reports):
+            for trigger in triggers:
+                order_id = trigger.get("orderId")
+                if order_id is not None:
+                    self._triggers[order_id] = conditional_reports[idx].venue_order_id
+
+        # Concatenate all order reports
+        reports += conditional_reports
 
         len_reports = len(reports)
         plural = "" if len_reports == 1 else "s"
@@ -562,6 +580,8 @@ class FTXExecutionClient(LiveExecutionClient):
                     ts_init=self._clock.timestamp_ns(),
                 )
 
+                if report.quantity == 0:
+                    continue  # Flat position
                 self._log.debug(f"Received {report}.")
                 reports.append(report)
 
@@ -771,7 +791,10 @@ class FTXExecutionClient(LiveExecutionClient):
             ts_event=self._clock.timestamp_ns(),
         )
         try:
-            await self._http_client.cancel_order(command.client_order_id.value)
+            if command.venue_order_id is not None:
+                await self._http_client.cancel_order(command.venue_order_id.value)
+            else:
+                await self._http_client.cancel_order_by_client_id(command.client_order_id.value)
         except FTXError as ex:
             self._log.error(ex.message)  # type: ignore  # TODO(cs): Improve errors
 
