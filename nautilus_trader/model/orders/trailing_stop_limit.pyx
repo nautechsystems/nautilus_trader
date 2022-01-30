@@ -50,21 +50,7 @@ from nautilus_trader.model.orders.base cimport Order
 
 cdef class TrailingStopLimitOrder(Order):
     """
-    Represents a trailing stop-limit trigger order.
-
-    A trailing stop-limit order is designed to allow a trader to specify a
-    limit on the maximum possible loss, without setting a limit on the maximum
-    possible gain. A trailing stop-limit moves with the market price, and
-    continually recalculates the stop trigger price at a fixed offset from the
-    market price, based on the user-defined `trailing_offset`. The limit order
-    price is also continually recalculated based on the `limit_offset`.
-    In the 'SELL case', as the market rises, both the stop trigger price and the limit price
-    rise by the `trailing_offset` and `limit_offset` respectively. However, if the
-    market falls the stop trigger price and limit price remain unchanged.
-    When the stop trigger price is hit, a limit order is immediately submitted
-    for the last calculated limit price.
-
-    The 'BUY case' is the mirror image of the above 'SELL case'.
+    Represents a trailing stop-limit conditional order.
 
     Parameters
     ----------

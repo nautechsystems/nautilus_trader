@@ -48,13 +48,6 @@ cdef class MarketOrder(Order):
     """
     Represents a market order.
 
-    A market order is an order to buy or sell an instrument immediately. This
-    type of order guarantees that the order will be executed, but does not
-    guarantee the execution price. A market order generally will execute at or
-    near the current bid (for a sell order) or ask (for a buy order) price. The
-    last-traded price is not necessarily the price at which a market order will
-    be executed.
-
     Parameters
     ----------
     trader_id : TraderId

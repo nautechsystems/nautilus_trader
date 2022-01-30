@@ -44,11 +44,7 @@ from nautilus_trader.model.orders.base cimport Order
 
 cdef class LimitOrder(Order):
     """
-    Limit orders are used to specify a maximum or minimum price the trader is
-    willing to buy or sell at. Traders use this order type to minimise their
-    trading cost, however they are sacrificing guaranteed execution as there is
-    a chance the order may not be executed if it is placed deep out of the
-    market.
+    Represents a limit order.
 
     Parameters
     ----------
