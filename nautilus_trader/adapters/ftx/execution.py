@@ -225,7 +225,7 @@ class FTXExecutionClient(LiveExecutionClient):
         self._set_connected(False)
         self._log.info("Disconnected.")
 
-    # -- STATUS REPORTS ----------------------------------------------------------------------------
+    # -- EXECUTION REPORTS -------------------------------------------------------------------------
 
     async def generate_order_status_report(
         self,
@@ -323,29 +323,12 @@ class FTXExecutionClient(LiveExecutionClient):
             open_only=open_only,
         )
 
-        conditional_reports = await self._get_trigger_order_status_reports(
+        reports += await self._get_trigger_order_status_reports(
             instrument_id=instrument_id,
             start=start,
             end=end,
             open_only=open_only,
         )
-
-        trigger_reports = await asyncio.gather(
-            *[
-                self._http_client.get_trigger_order_triggers(r.venue_order_id.value)
-                for r in conditional_reports
-            ]
-        )
-
-        # Build map of trigger order IDs to parent venue order IDs
-        for idx, triggers in enumerate(trigger_reports):
-            for trigger in triggers:
-                order_id = trigger.get("orderId")
-                if order_id is not None:
-                    self._triggers[order_id] = conditional_reports[idx].venue_order_id
-
-        # Concatenate all order reports
-        reports += conditional_reports
 
         len_reports = len(reports)
         plural = "" if len_reports == 1 else "s"
@@ -422,6 +405,20 @@ class FTXExecutionClient(LiveExecutionClient):
                     start_time=int(start.timestamp() * 1000) if start is not None else None,
                     end_time=int(end.timestamp() * 1000) if end is not None else None,
                 )
+
+            trigger_reports = await asyncio.gather(
+                *[self._http_client.get_trigger_order_triggers(r["id"]) for r in response]
+            )
+
+            # Build map of trigger order IDs to parent venue order IDs
+            for idx, triggers in enumerate(trigger_reports):
+                for trigger in triggers:
+                    venue_order_id = trigger.get("orderId")
+                    if venue_order_id is not None:
+                        self._triggers[response[idx]["id"]] = VenueOrderId(str(venue_order_id))
+
+            # TODO(cs): Uncomment for development
+            # self._log.info(str(self._triggers), LogColor.GREEN)
         except FTXError as ex:
             self._log.error(ex.message)  # type: ignore  # TODO(cs): Improve errors
             return []
@@ -441,6 +438,7 @@ class FTXExecutionClient(LiveExecutionClient):
                 report: OrderStatusReport = parse_trigger_order_status(
                     account_id=self.account_id,
                     instrument=instrument,
+                    triggers=self._triggers,
                     data=data,
                     report_id=self._uuid_factory.generate(),
                     ts_init=self._clock.timestamp_ns(),

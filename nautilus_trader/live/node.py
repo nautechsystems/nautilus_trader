@@ -473,7 +473,9 @@ class TradingNode:
         # Setup persistence
         path = f"{config.catalog_path}/live/{self.instance_id}.feather"
         writer = FeatherWriter(
-            path=path, fs_protocol=config.fs_protocol, flush_interval=config.flush_interval
+            path=path,
+            fs_protocol=config.fs_protocol,
+            flush_interval=config.flush_interval,
         )
         self.persistence_writers.append(writer)
         self.trader.subscribe("*", writer.write)
@@ -536,11 +538,11 @@ class TradingNode:
                 f"({self._config.timeout_reconciliation}s timeout)...",
                 color=LogColor.BLUE,
             )
-            # if not await self._exec_engine.reconcile_state(
-            #     timeout_secs=self._config.timeout_reconciliation,
-            # ):
-            #     self._log.error("Execution state could not be reconciled.")
-            #     return
+            if not await self._exec_engine.reconcile_state(
+                timeout_secs=self._config.timeout_reconciliation,
+            ):
+                self._log.error("Execution state could not be reconciled.")
+                return
             self._log.info("State reconciled.", color=LogColor.GREEN)
 
             # Initialize portfolio

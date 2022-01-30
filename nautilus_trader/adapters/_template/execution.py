@@ -81,7 +81,7 @@ class TemplateLiveExecutionClient(LiveExecutionClient):
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
-    # -- STATUS REPORTS ----------------------------------------------------------------------------
+    # -- EXECUTION REPORTS -------------------------------------------------------------------------
 
     async def generate_order_status_report(
         self,

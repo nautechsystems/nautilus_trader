@@ -113,10 +113,13 @@ def parse_order_status(
 def parse_trigger_order_status(
     account_id: AccountId,
     instrument: Instrument,
+    triggers: Dict[int, VenueOrderId],
     data: Dict[str, Any],
     report_id: UUID4,
     ts_init: int,
 ) -> OrderStatusReport:
+    order_id = data["id"]
+    parent_order_id = triggers.get(order_id)  # Map trigger to parent
     client_id_str = data.get("clientId")
     trigger_price = data.get("triggerPrice")
     order_price = data.get("orderPrice")
@@ -129,7 +132,7 @@ def parse_trigger_order_status(
         instrument_id=InstrumentId(Symbol(data["market"]), FTX_VENUE),
         client_order_id=ClientOrderId(client_id_str) if client_id_str is not None else None,
         order_list_id=None,
-        venue_order_id=VenueOrderId(str(data["id"])),
+        venue_order_id=parent_order_id or VenueOrderId(str(order_id)),
         order_side=OrderSide.BUY if data["side"] == "buy" else OrderSide.SELL,
         order_type=parse_order_type(data=data),
         contingency_type=ContingencyType.NONE,
