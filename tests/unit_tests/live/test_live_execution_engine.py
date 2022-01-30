@@ -14,6 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 import asyncio
+from decimal import Decimal
 
 import pytest
 
@@ -23,19 +24,32 @@ from nautilus_trader.common.factories import OrderFactory
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.common.providers import InstrumentProvider
 from nautilus_trader.common.uuid import UUIDFactory
+from nautilus_trader.core.uuid import UUID4
+from nautilus_trader.execution.reports import ExecutionMassStatus
 from nautilus_trader.execution.reports import OrderStatusReport
+from nautilus_trader.execution.reports import PositionStatusReport
 from nautilus_trader.execution.reports import TradeReport
 from nautilus_trader.live.data_engine import LiveDataEngine
 from nautilus_trader.live.execution_engine import LiveExecEngineConfig
 from nautilus_trader.live.execution_engine import LiveExecutionEngine
 from nautilus_trader.live.risk_engine import LiveRiskEngine
+from nautilus_trader.model.c_enums.trailing_offset_type import TrailingOffsetType
+from nautilus_trader.model.c_enums.trigger_type import TriggerType
 from nautilus_trader.model.commands.trading import SubmitOrder
 from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.enums import AccountType
+from nautilus_trader.model.enums import ContingencyType
 from nautilus_trader.model.enums import LiquiditySide
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import OrderStatus
+from nautilus_trader.model.enums import OrderType
+from nautilus_trader.model.enums import PositionSide
+from nautilus_trader.model.enums import TimeInForce
+from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import ClientId
+from nautilus_trader.model.identifiers import ClientOrderId
+from nautilus_trader.model.identifiers import OrderListId
+from nautilus_trader.model.identifiers import PositionId
 from nautilus_trader.model.identifiers import StrategyId
 from nautilus_trader.model.identifiers import TradeId
 from nautilus_trader.model.identifiers import TraderId
@@ -56,7 +70,6 @@ AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy("AUD/USD")
 GBPUSD_SIM = TestInstrumentProvider.default_fx_ccy("GBP/USD")
 
 
-@pytest.mark.skip(reason="WIP")
 class TestLiveExecutionEngine:
     def setup(self):
         # Fixture Setup
@@ -159,6 +172,9 @@ class TestLiveExecutionEngine:
         # Deregister test fixture ExecutionEngine from msgbus)
         self.msgbus.deregister(endpoint="ExecEngine.execute", handler=self.exec_engine.execute)
         self.msgbus.deregister(endpoint="ExecEngine.process", handler=self.exec_engine.process)
+        self.msgbus.deregister(
+            endpoint="ExecEngine.reconcile_report", handler=self.exec_engine.reconcile_report
+        )
 
         self.exec_engine = LiveExecutionEngine(
             loop=self.loop,
@@ -209,6 +225,9 @@ class TestLiveExecutionEngine:
         # Deregister test fixture ExecutionEngine from msgbus)
         self.msgbus.deregister(endpoint="ExecEngine.execute", handler=self.exec_engine.execute)
         self.msgbus.deregister(endpoint="ExecEngine.process", handler=self.exec_engine.process)
+        self.msgbus.deregister(
+            endpoint="ExecEngine.reconcile_report", handler=self.exec_engine.reconcile_report
+        )
 
         self.exec_engine = LiveExecutionEngine(
             loop=self.loop,
@@ -326,6 +345,7 @@ class TestLiveExecutionEngine:
         # Tear Down
         self.exec_engine.stop()
 
+    @pytest.mark.skip("WIP: Reconciliation testing")
     @pytest.mark.asyncio
     async def test_reconcile_state_with_no_active_orders(self):
         # Arrange
@@ -349,6 +369,7 @@ class TestLiveExecutionEngine:
         # Assert
         assert True  # No exceptions raised
 
+    @pytest.mark.skip("WIP: Reconciliation testing")
     @pytest.mark.asyncio
     async def test_reconcile_state_when_report_agrees_reconciles(self):
         # Arrange
@@ -403,6 +424,7 @@ class TestLiveExecutionEngine:
         # Assert
         assert result
 
+    @pytest.mark.skip("WIP: Reconciliation testing")
     @pytest.mark.asyncio
     async def test_reconcile_state_when_canceled_reconciles(self):
         # Arrange
@@ -457,6 +479,7 @@ class TestLiveExecutionEngine:
         # Assert
         assert result
 
+    @pytest.mark.skip("WIP: Reconciliation testing")
     @pytest.mark.asyncio
     async def test_reconcile_state_when_expired_reconciles(self):
         # Arrange
@@ -674,3 +697,103 @@ class TestLiveExecutionEngine:
 
         # Assert
         assert result
+
+    def test_handle_order_status_report(self):
+        # Arrange
+        order_report = OrderStatusReport(
+            account_id=AccountId("SIM", "001"),
+            instrument_id=AUDUSD_SIM.id,
+            client_order_id=ClientOrderId("O-123456"),
+            order_list_id=OrderListId("1"),
+            venue_order_id=VenueOrderId("2"),
+            order_side=OrderSide.SELL,
+            order_type=OrderType.STOP_LIMIT,
+            contingency_type=ContingencyType.OCO,
+            time_in_force=TimeInForce.DAY,
+            expire_time=None,
+            order_status=OrderStatus.REJECTED,
+            price=Price.from_str("0.90090"),
+            trigger_price=Price.from_str("0.90100"),
+            trigger_type=TriggerType.DEFAULT,
+            limit_offset=None,
+            trailing_offset=Decimal("0.00010"),
+            offset_type=TrailingOffsetType.PRICE,
+            quantity=Quantity.from_int(1_000_000),
+            filled_qty=Quantity.from_int(0),
+            display_qty=None,
+            avg_px=None,
+            post_only=True,
+            reduce_only=False,
+            reject_reason="SOME_REASON",
+            report_id=UUID4(),
+            ts_accepted=1_000_000,
+            ts_triggered=1_500_000,
+            ts_last=2_000_000,
+            ts_init=3_000_000,
+        )
+
+        # Act
+        self.exec_engine.reconcile_report(order_report)
+
+        # Assert
+        assert self.exec_engine.report_count == 1
+
+    def test_handle_trade_report(self):
+        # Arrange
+        trade_report = TradeReport(
+            account_id=AccountId("SIM", "001"),
+            instrument_id=AUDUSD_SIM.id,
+            client_order_id=ClientOrderId("O-123456789"),
+            venue_order_id=VenueOrderId("1"),
+            venue_position_id=PositionId("2"),
+            trade_id=TradeId("3"),
+            order_side=OrderSide.BUY,
+            last_qty=Quantity.from_int(100),
+            last_px=Price.from_str("100.50"),
+            commission=Money("4.50", USD),
+            liquidity_side=LiquiditySide.TAKER,
+            report_id=UUID4(),
+            ts_event=0,
+            ts_init=0,
+        )
+
+        # Act
+        self.exec_engine.reconcile_report(trade_report)
+
+        # Assert
+        assert self.exec_engine.report_count == 1
+
+    def test_handle_position_status_report(self):
+        # Arrange
+        position_report = PositionStatusReport(
+            account_id=AccountId("SIM", "001"),
+            instrument_id=AUDUSD_SIM.id,
+            venue_position_id=PositionId("1"),
+            position_side=PositionSide.LONG,
+            quantity=Quantity.from_int(1_000_000),
+            report_id=UUID4(),
+            ts_last=0,
+            ts_init=0,
+        )
+
+        # Act
+        self.exec_engine.reconcile_report(position_report)
+
+        # Assert
+        assert self.exec_engine.report_count == 1
+
+    def test_execution_mass_status(self):
+        # Arrange
+        mass_status = ExecutionMassStatus(
+            client_id=ClientId("SIM"),
+            account_id=TestStubs.account_id(),
+            venue=Venue("SIM"),
+            report_id=UUID4(),
+            ts_init=0,
+        )
+
+        # Act
+        self.exec_engine.reconcile_mass_status(mass_status)
+
+        # Assert
+        assert self.exec_engine.report_count == 1

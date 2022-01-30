@@ -244,6 +244,10 @@ cdef class TraderId(ComponentId):
         return self.value.partition("-")[2]
 
 
+# External strategy ID constant
+cdef StrategyId EXTERNAL_STRATEGY = StrategyId("EXTERNAL")
+
+
 cdef class StrategyId(ComponentId):
     """
     Represents a valid strategy ID.
@@ -267,8 +271,13 @@ cdef class StrategyId(ComponentId):
         If `value` is not a valid string containing a hyphen.
     """
 
+
     def __init__(self, str value):
-        Condition.true("-" in value, "ID incorrectly formatted (did not contain '-' hyphen)")
+        if value != "EXTERNAL":
+            Condition.true(
+                value.__contains__("-"),
+                "ID incorrectly formatted (did not contain '-' hyphen)",
+            )
         super().__init__(value)
 
     cpdef str get_tag(self):
@@ -281,6 +290,23 @@ cdef class StrategyId(ComponentId):
 
         """
         return self.value.partition("-")[2]
+
+    cpdef bint is_external(self):
+        """
+        If the strategy ID is the global 'external' strategy. This represents
+        the strategy for all orders interacting with this instance of the system
+        which did not originate from any strategy being managed by the system.
+
+        Returns
+        -------
+        bool
+
+        """
+        return self.value == EXTERNAL_STRATEGY.value
+
+    @staticmethod
+    cdef StrategyId external_c():
+        return EXTERNAL_STRATEGY
 
 
 cdef class AccountId(Identifier):

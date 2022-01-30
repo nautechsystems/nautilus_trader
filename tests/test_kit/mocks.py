@@ -31,6 +31,7 @@ from nautilus_trader.common.providers import InstrumentProvider
 from nautilus_trader.core.datetime import secs_to_nanos
 from nautilus_trader.execution.client import ExecutionClient
 from nautilus_trader.execution.reports import OrderStatusReport
+from nautilus_trader.execution.reports import PositionStatusReport
 from nautilus_trader.execution.reports import TradeReport
 from nautilus_trader.indicators.average.ema import ExponentialMovingAverage
 from nautilus_trader.live.data_engine import LiveDataEngine
@@ -46,7 +47,6 @@ from nautilus_trader.model.identifiers import ClientOrderId
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import PositionId
 from nautilus_trader.model.identifiers import StrategyId
-from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.identifiers import VenueOrderId
 from nautilus_trader.model.instruments.base import Instrument
@@ -534,7 +534,8 @@ class MockLiveExecutionClient(LiveExecutionClient):
 
         self._set_account_id(AccountId(client_id.value, "001"))
         self._order_status_reports: Dict[VenueOrderId, OrderStatusReport] = {}
-        self._trades_lists: Dict[VenueOrderId, list[TradeReport]] = {}
+        self._trades_lists: Dict[VenueOrderId, List[TradeReport]] = {}
+        self._position_status_reports: Dict[InstrumentId, List[PositionStatusReport]] = {}
 
         self.calls = []
         self.commands = []
@@ -544,6 +545,11 @@ class MockLiveExecutionClient(LiveExecutionClient):
 
     def add_trades_list(self, venue_order_id: VenueOrderId, trades: List[TradeReport]) -> None:
         self._trades_lists[venue_order_id] = trades
+
+    def add_position_status_report(self, report: PositionStatusReport) -> None:
+        if report.instrument_id not in self._position_status_reports:
+            self._position_status_reports[report.instrument_id] = []
+        self._position_status_reports[report.instrument_id].append(report)
 
     def dispose(self) -> None:
         self.calls.append(inspect.currentframe().f_code.co_name)
@@ -573,18 +579,44 @@ class MockLiveExecutionClient(LiveExecutionClient):
         self.calls.append(inspect.currentframe().f_code.co_name)
         self.commands.append(command)
 
-    async def generate_order_status_report(self, order: Order) -> Optional[OrderStatusReport]:
+    # -- EXECUTION REPORTS -------------------------------------------------------------------------
+
+    async def generate_order_status_report(
+        self,
+        client_order_id: ClientOrderId = None,
+        venue_order_id: VenueOrderId = None,
+    ) -> Optional[OrderStatusReport]:
         self.calls.append(inspect.currentframe().f_code.co_name)
-        return self._order_status_reports[order.venue_order_id]
+        return self._order_status_reports.get(venue_order_id)
+
+    async def generate_order_status_reports(
+        self,
+        instrument_id: InstrumentId = None,
+        start: datetime = None,
+        end: datetime = None,
+        open_only: bool = False,
+    ) -> List[OrderStatusReport]:
+        self.calls.append(inspect.currentframe().f_code.co_name)
+        return list(self._order_status_reports.values())
 
     async def generate_trade_reports(
         self,
-        venue_order_id: VenueOrderId,
-        symbol: Symbol,
-        since: datetime = None,
+        instrument_id: InstrumentId = None,
+        venue_order_id: VenueOrderId = None,
+        start: datetime = None,
+        end: datetime = None,
     ) -> List[TradeReport]:
         self.calls.append(inspect.currentframe().f_code.co_name)
-        return self._trades_lists[venue_order_id]
+        return self._trades_lists.get(venue_order_id, [])
+
+    async def generate_position_status_reports(
+        self,
+        instrument_id: InstrumentId = None,
+        start: datetime = None,
+        end: datetime = None,
+    ) -> List[PositionStatusReport]:
+        self.calls.append(inspect.currentframe().f_code.co_name)
+        return self._position_status_reports.get(instrument_id, [])
 
 
 class MockCacheDatabase(CacheDatabase):
