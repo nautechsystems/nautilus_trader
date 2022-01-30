@@ -363,6 +363,9 @@ cdef class PositionStatusReport(ExecutionReport):
         self.venue_position_id = venue_position_id
         self.position_side = position_side
         self.quantity = quantity
+        self.net_qty = self.quantity.as_decimal()
+        if self.position_side == PositionSide.SHORT:
+            self.net_qty = -self.quantity.as_decimal()
         self.ts_last = ts_last
 
     def __repr__(self) -> str:
@@ -373,6 +376,7 @@ cdef class PositionStatusReport(ExecutionReport):
             f"venue_position_id={self.venue_position_id}, "
             f"position_side={PositionSideParser.to_str(self.position_side)}, "
             f"quantity={self.quantity.to_str()}, "
+            f"net_qty={self.net_qty}, "
             f"report_id={self.id}, "
             f"ts_last={self.ts_last}, "
             f"ts_init={self.ts_init})"

@@ -29,8 +29,6 @@ from nautilus_trader.adapters.betfair.common import BETFAIR_VENUE
 from nautilus_trader.adapters.betfair.common import price_to_probability
 from nautilus_trader.adapters.betfair.common import probability_to_price
 from nautilus_trader.adapters.betfair.parsing import betfair_account_to_account_state
-from nautilus_trader.adapters.betfair.parsing import generate_order_status_report
-from nautilus_trader.adapters.betfair.parsing import generate_trades_list
 from nautilus_trader.adapters.betfair.parsing import order_cancel_all_to_betfair
 from nautilus_trader.adapters.betfair.parsing import order_cancel_to_betfair
 from nautilus_trader.adapters.betfair.parsing import order_submit_to_betfair
@@ -46,6 +44,7 @@ from nautilus_trader.core.datetime import millis_to_nanos
 from nautilus_trader.core.datetime import nanos_to_secs
 from nautilus_trader.core.datetime import secs_to_nanos
 from nautilus_trader.execution.reports import OrderStatusReport
+from nautilus_trader.execution.reports import PositionStatusReport
 from nautilus_trader.execution.reports import TradeReport
 from nautilus_trader.live.execution_client import LiveExecutionClient
 from nautilus_trader.model.c_enums.account_type import AccountType
@@ -61,7 +60,7 @@ from nautilus_trader.model.events.account import AccountState
 from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import ClientOrderId
-from nautilus_trader.model.identifiers import Symbol
+from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import TradeId
 from nautilus_trader.model.identifiers import VenueOrderId
 from nautilus_trader.model.objects import Money
@@ -212,6 +211,130 @@ class BetfairExecutionClient(LiveExecutionClient):
         self._log.debug(f"Received account state: {account_state}, sending")
         self._send_account_state(account_state)
         self._log.debug("Initial Account state completed")
+
+    # -- EXECUTION REPORTS -------------------------------------------------------------------------
+
+    async def generate_order_status_report(
+        self,
+        client_order_id: ClientOrderId = None,
+        venue_order_id: VenueOrderId = None,
+    ) -> Optional[OrderStatusReport]:
+        """
+        Generate an order status report for the given order identifier parameter(s).
+
+        Either one or both of the identifiers must be provided.
+
+        If the order is not found, or an error occurs, then logs and returns
+        ``None``.
+
+        Parameters
+        ----------
+        client_order_id : ClientOrderId, optional
+            The client order ID query filter.
+        venue_order_id : VenueOrderId, optional
+            The venue order ID (assigned by the venue) query filter.
+
+        Returns
+        -------
+        OrderStatusReport or ``None``
+
+        """
+        self._log.warning("Cannot generate OrderStatusReport: not yet implemented.")
+
+        return None
+
+    async def generate_order_status_reports(
+        self,
+        instrument_id: InstrumentId = None,
+        start: datetime = None,
+        end: datetime = None,
+        open_only: bool = False,
+    ) -> List[OrderStatusReport]:
+        """
+        Generate a list of order status reports with optional query filters.
+
+        The returned list may be empty if no orders match the given parameters.
+
+        Parameters
+        ----------
+        instrument_id : InstrumentId, optional
+            The instrument ID query filter.
+        start : datetime, optional
+            The start datetime query filter.
+        end : datetime, optional
+            The end datetime query filter.
+        open_only : bool, default False
+            If the query is for open orders only.
+
+        Returns
+        -------
+        list[OrderStatusReport]
+
+        """
+        self._log.warning("Cannot generate OrderStatusReports: not yet implemented.")
+
+        return []
+
+    async def generate_trade_reports(
+        self,
+        instrument_id: InstrumentId = None,
+        venue_order_id: VenueOrderId = None,
+        start: datetime = None,
+        end: datetime = None,
+    ) -> List[TradeReport]:
+        """
+        Generate a list of trade reports with optional query filters.
+
+        The returned list may be empty if no trades match the given parameters.
+
+        Parameters
+        ----------
+        instrument_id : InstrumentId, optional
+            The instrument ID query filter.
+        venue_order_id : VenueOrderId, optional
+            The venue order ID (assigned by the venue) query filter.
+        start : datetime, optional
+            The start datetime query filter.
+        end : datetime, optional
+            The end datetime query filter.
+
+        Returns
+        -------
+        list[TradeReport]
+
+        """
+        self._log.warning("Cannot generate TradeReports: not yet implemented.")
+
+        return []
+
+    async def generate_position_status_reports(
+        self,
+        instrument_id: InstrumentId = None,
+        start: datetime = None,
+        end: datetime = None,
+    ) -> List[PositionStatusReport]:
+        """
+        Generate a list of position status reports with optional query filters.
+
+        The returned list may be empty if no positions match the given parameters.
+
+        Parameters
+        ----------
+        instrument_id : InstrumentId, optional
+            The instrument ID query filter.
+        start : datetime, optional
+            The start datetime query filter.
+        end : datetime, optional
+            The end datetime query filter.
+
+        Returns
+        -------
+        list[PositionStatusReport]
+
+        """
+        self._log.warning("Cannot generate PositionStatusReports: not yet implemented.")
+
+        return []
 
     # -- COMMAND HANDLERS --------------------------------------------------------------------------
 
@@ -817,21 +940,6 @@ class BetfairExecutionClient(LiveExecutionClient):
             f"\nexisting: {self.venue_order_id_to_client_order_id})"
         )
         return None
-
-    # -- STATUS REPORTS ----------------------------------------------------------------------------
-
-    async def generate_order_status_report(self, order: Order) -> Optional[OrderStatusReport]:
-        self._log.debug(f"generate_order_status_report: {order}")
-        return await generate_order_status_report(self, order)
-
-    async def generate_trade_reports(
-        self,
-        venue_order_id: VenueOrderId,
-        symbol: Symbol,
-        since: Optional[datetime] = None,
-    ) -> List[TradeReport]:
-        self._log.debug(f"generate_trade_reports: {venue_order_id}, {symbol}, {since}")
-        return await generate_trades_list(self, venue_order_id, symbol, since)
 
 
 def create_trade_id(uo: Dict) -> TradeId:
