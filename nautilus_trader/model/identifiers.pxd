@@ -51,6 +51,9 @@ cdef class TraderId(ComponentId):
 
 cdef class StrategyId(ComponentId):
     cpdef str get_tag(self)
+    cpdef bint is_external(self)
+    @staticmethod
+    cdef StrategyId external_c()
 
 
 cdef class AccountId(Identifier):

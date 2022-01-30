@@ -17,11 +17,6 @@ from nautilus_trader.cache.cache cimport Cache
 from nautilus_trader.common.component cimport Component
 from nautilus_trader.common.generators cimport PositionIdGenerator
 from nautilus_trader.execution.client cimport ExecutionClient
-from nautilus_trader.execution.reports cimport ExecutionMassStatus
-from nautilus_trader.execution.reports cimport ExecutionReport
-from nautilus_trader.execution.reports cimport OrderStatusReport
-from nautilus_trader.execution.reports cimport PositionStatusReport
-from nautilus_trader.execution.reports cimport TradeReport
 from nautilus_trader.model.c_enums.oms_type cimport OMSType
 from nautilus_trader.model.commands.trading cimport CancelAllOrders
 from nautilus_trader.model.commands.trading cimport CancelOrder
@@ -31,11 +26,8 @@ from nautilus_trader.model.commands.trading cimport SubmitOrderList
 from nautilus_trader.model.commands.trading cimport TradingCommand
 from nautilus_trader.model.events.order cimport OrderEvent
 from nautilus_trader.model.events.order cimport OrderFilled
-from nautilus_trader.model.identifiers cimport ClientOrderId
 from nautilus_trader.model.identifiers cimport StrategyId
 from nautilus_trader.model.identifiers cimport Venue
-from nautilus_trader.model.instruments.base cimport Instrument
-from nautilus_trader.model.orders.base cimport Order
 from nautilus_trader.model.position cimport Position
 from nautilus_trader.trading.strategy cimport TradingStrategy
 
@@ -83,8 +75,6 @@ cdef class ExecutionEngine(Component):
     cpdef void load_cache(self) except *
     cpdef void execute(self, TradingCommand command) except *
     cpdef void process(self, OrderEvent event) except *
-    cpdef void reconcile_report(self, ExecutionReport report) except *
-    cpdef void reconcile_mass_status(self, ExecutionMassStatus report) except *
     cpdef void flush_db(self) except *
 
 # -- COMMAND HANDLERS ------------------------------------------------------------------------------
@@ -105,25 +95,3 @@ cdef class ExecutionEngine(Component):
     cdef void _open_position(self, OrderFilled fill, OMSType oms_type) except *
     cdef void _update_position(self, Position position, OrderFilled fill, OMSType oms_type) except *
     cdef void _flip_position(self, Position position, OrderFilled fill, OMSType oms_type) except *
-
-# -- RECONCILIATION --------------------------------------------------------------------------------
-
-    cdef bint _reconcile_report(self, ExecutionReport report) except *
-    cdef bint _reconcile_mass_status(self, ExecutionMassStatus report) except *
-    cdef bint _reconcile_order_report(self, OrderStatusReport report, list trades) except *
-    cdef bint _reconcile_trade_report_single(self, TradeReport report) except *
-    cdef bint _reconcile_trade_report(self, Order order, TradeReport report, Instrument instrument) except *
-    cdef bint _reconcile_position_report(self, PositionStatusReport report) except *
-    cdef bint _reconcile_position_report_netting(self, PositionStatusReport report) except *
-    cdef bint _reconcile_position_report_hedging(self, PositionStatusReport report) except *
-    cdef ClientOrderId _generate_client_order_id(self)
-    cdef OrderFilled _generate_synthetic_fill(self, Order order, OrderStatusReport report, Instrument instrument)
-    cdef Order _generate_external_order(self, OrderStatusReport report)
-    cdef void _generate_order_rejected(self, Order order, OrderStatusReport report) except *
-    cdef void _generate_order_accepted(self, Order order, OrderStatusReport report) except *
-    cdef void _generate_order_triggered(self, Order order, OrderStatusReport report) except *
-    cdef void _generate_order_updated(self, Order order, OrderStatusReport report) except *
-    cdef void _generate_order_canceled(self, Order order, OrderStatusReport report) except *
-    cdef void _generate_order_expired(self, Order order, OrderStatusReport report) except *
-    cdef void _generate_order_filled(self, Order order, TradeReport trade, Instrument instrument) except *
-    cdef bint _should_update(self, Order order, OrderStatusReport report) except *
