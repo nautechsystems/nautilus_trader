@@ -583,7 +583,6 @@ class MockLiveExecutionClient(LiveExecutionClient):
 
     async def generate_order_status_report(
         self,
-        client_order_id: ClientOrderId = None,
         venue_order_id: VenueOrderId = None,
     ) -> Optional[OrderStatusReport]:
         self.calls.append(inspect.currentframe().f_code.co_name)

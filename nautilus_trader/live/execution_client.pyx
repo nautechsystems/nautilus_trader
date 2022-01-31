@@ -122,22 +122,14 @@ cdef class LiveExecutionClient(ExecutionClient):
         await asyncio.sleep(delay)
         return await coro
 
-    async def generate_order_status_report(
-        self,
-        ClientOrderId client_order_id=None,
-        VenueOrderId venue_order_id=None,
-    ):
+    async def generate_order_status_report(self, VenueOrderId venue_order_id=None):
         """
         Generate an order status report for the given order identifier parameter(s).
-
-        Either one or both of the identifiers must be provided.
 
         If the order is not found, or an error occurs, then logs and returns ``None``.
 
         Parameters
         ----------
-        client_order_id : ClientOrderId, optional
-            The client order ID query filter.
         venue_order_id : VenueOrderId, optional
             The venue order ID (assigned by the venue) query filter.
 
