@@ -142,7 +142,7 @@ Refer to the [Installation Guide](https://docs.nautilustrader.io/1_getting_start
 
 NautilusTrader is currently following a bi-weekly beta release schedule.
 The API is becoming more stable, however breaking changes are still possible between releases.
-The documentation of these changes are made in the release notes on a best-effort basis.
+The documentation of these changes as found in the release notes are made on a best-effort basis.
 
 The `master` branch will always reflect the source code for the latest released version.
 
