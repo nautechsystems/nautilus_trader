@@ -239,9 +239,22 @@ class BetfairExecutionClient(LiveExecutionClient):
         OrderStatusReport or ``None``
 
         """
-        self._log.warning("Cannot generate OrderStatusReport: not yet implemented.")
+        assert client_order_id is not None or venue_order_id is not None
+        orders = await self._client.list_current_orders(
+            bet_ids=[venue_order_id] if venue_order_id is not None else None,
+            customer_order_refs=[client_order_id] if client_order_id is not None else None,
+        )
 
-        return None
+        if not orders:
+            self._log.warning(
+                f"Could not find order for venue_order_id={venue_order_id}, client_order_id={client_order_id}"
+            )
+            return
+        # We have a response, check list length and grab first entry
+        assert len(orders) == 1
+        # order = orders[0]
+        # return OrderStatusReport()
+        return
 
     async def generate_order_status_reports(
         self,

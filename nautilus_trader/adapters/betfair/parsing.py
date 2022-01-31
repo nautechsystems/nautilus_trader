@@ -62,6 +62,7 @@ from nautilus_trader.model.enums import TimeInForce
 from nautilus_trader.model.events.account import AccountState
 from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import ClientOrderId
+from nautilus_trader.model.identifiers import StrategyId
 from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import TradeId
 from nautilus_trader.model.identifiers import VenueOrderId
@@ -82,7 +83,7 @@ uuid_factory = UUIDFactory()
 MILLIS_TO_NANOS = 1_000_000
 
 
-def make_custom_order_ref(client_order_id, strategy_id):
+def make_custom_order_ref(client_order_id: ClientOrderId, strategy_id: StrategyId) -> str:
     return client_order_id.value.rsplit("-" + strategy_id.get_tag(), maxsplit=1)[0]
 
 

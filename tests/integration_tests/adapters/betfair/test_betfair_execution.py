@@ -30,6 +30,7 @@ from nautilus_trader.common.logging import LiveLogger
 from nautilus_trader.common.logging import LoggerAdapter
 from nautilus_trader.common.logging import LogLevel
 from nautilus_trader.common.uuid import UUIDFactory
+from nautilus_trader.execution.reports import OrderStatusReport
 from nautilus_trader.live.execution_engine import LiveExecutionEngine
 from nautilus_trader.model.currencies import GBP
 from nautilus_trader.model.events.order import OrderAccepted
@@ -55,6 +56,7 @@ from tests.integration_tests.adapters.betfair.test_kit import BetfairDataProvide
 from tests.integration_tests.adapters.betfair.test_kit import BetfairResponses
 from tests.integration_tests.adapters.betfair.test_kit import BetfairStreaming
 from tests.integration_tests.adapters.betfair.test_kit import BetfairTestStubs
+from tests.integration_tests.adapters.betfair.test_kit import format_current_orders
 from tests.integration_tests.adapters.betfair.test_kit import mock_betfair_request
 from tests.test_kit.stubs import TestStubs
 
@@ -685,3 +687,19 @@ class TestBetfairExecutionClient:
         )
         await self.client._handle_order_stream_update(update=update)
         await asyncio.sleep(0)
+
+    @pytest.mark.asyncio
+    async def test_generate_order_status_report_client_id(self):
+        # Arrange
+        client_order_id = ClientOrderId("O-20210327-090738-001-001-2")
+
+        order_resp = format_current_orders()
+        mock_betfair_request(self.betfair_client, order_resp, "list_current_orders")
+
+        # Act
+        report: OrderStatusReport = await self.client.generate_order_status_report(
+            client_order_id=client_order_id
+        )
+
+        # Assert
+        assert report
