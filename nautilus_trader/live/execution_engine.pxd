@@ -33,6 +33,10 @@ cdef class LiveExecutionEngine(ExecutionEngine):
 
     cdef readonly bint is_running
     """If the execution engine is running.\n\n:returns: `bool`"""
+    cdef readonly bint recon_auto
+    """If the execution engine will generate reconciliation events to align state.\n\n:returns: `bool`"""
+    cdef readonly int recon_lookback_mins
+    """The lookback window for reconciliation on start-up (zero for max lookback).\n\n:returns: `int`"""
 
     cpdef int qsize(self) except *
 
