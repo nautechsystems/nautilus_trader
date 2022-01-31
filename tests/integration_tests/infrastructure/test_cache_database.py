@@ -30,8 +30,8 @@ from nautilus_trader.data.engine import DataEngine
 from nautilus_trader.examples.strategies.ema_cross import EMACross
 from nautilus_trader.examples.strategies.ema_cross import EMACrossConfig
 from nautilus_trader.execution.engine import ExecutionEngine
-from nautilus_trader.infrastructure.cache import CacheDatabaseConfig
 from nautilus_trader.infrastructure.cache import RedisCacheDatabase
+from nautilus_trader.infrastructure.config import CacheDatabaseConfig
 from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.currency import Currency
 from nautilus_trader.model.enums import AccountType

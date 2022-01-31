@@ -29,8 +29,8 @@ from nautilus_trader.execution.reports import ExecutionMassStatus
 from nautilus_trader.execution.reports import OrderStatusReport
 from nautilus_trader.execution.reports import PositionStatusReport
 from nautilus_trader.execution.reports import TradeReport
+from nautilus_trader.live.config import LiveExecEngineConfig
 from nautilus_trader.live.data_engine import LiveDataEngine
-from nautilus_trader.live.execution_engine import LiveExecEngineConfig
 from nautilus_trader.live.execution_engine import LiveExecutionEngine
 from nautilus_trader.live.risk_engine import LiveRiskEngine
 from nautilus_trader.model.c_enums.trailing_offset_type import TrailingOffsetType

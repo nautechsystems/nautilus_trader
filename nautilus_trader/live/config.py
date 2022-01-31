@@ -19,10 +19,10 @@ import pydantic
 from pydantic import PositiveFloat
 from pydantic import PositiveInt
 
-from nautilus_trader.cache.cache import CacheConfig
+from nautilus_trader.cache.config import CacheConfig
 from nautilus_trader.data.config import DataEngineConfig
 from nautilus_trader.execution.config import ExecEngineConfig
-from nautilus_trader.infrastructure.cache import CacheDatabaseConfig
+from nautilus_trader.infrastructure.config import CacheDatabaseConfig
 from nautilus_trader.persistence.config import PersistenceConfig
 from nautilus_trader.risk.config import RiskEngineConfig
 

@@ -20,8 +20,8 @@ from nautilus_trader.adapters.binance.factories import BinanceLiveDataClientFact
 from nautilus_trader.adapters.binance.factories import BinanceLiveExecutionClientFactory
 from nautilus_trader.examples.strategies.ema_cross import EMACross
 from nautilus_trader.examples.strategies.ema_cross import EMACrossConfig
+from nautilus_trader.live.config import TradingNodeConfig
 from nautilus_trader.live.node import TradingNode
-from nautilus_trader.live.node import TradingNodeConfig
 
 
 # *** THIS IS A TEST STRATEGY WITH NO ALPHA ADVANTAGE WHATSOEVER. ***
