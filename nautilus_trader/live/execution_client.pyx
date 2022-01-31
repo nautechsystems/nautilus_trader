@@ -259,4 +259,6 @@ cdef class LiveExecutionClient(ExecutionClient):
         mass_status.add_trade_reports(reports=reports[1])
         mass_status.add_position_reports(reports=reports[2])
 
+        self.reconciliation_active = False
+
         return mass_status
