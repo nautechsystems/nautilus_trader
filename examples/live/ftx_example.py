@@ -20,8 +20,8 @@ from nautilus_trader.adapters.ftx.factories import FTXLiveDataClientFactory
 from nautilus_trader.adapters.ftx.factories import FTXLiveExecutionClientFactory
 from nautilus_trader.examples.strategies.ema_cross import EMACross
 from nautilus_trader.examples.strategies.ema_cross import EMACrossConfig
+from nautilus_trader.live.config import TradingNodeConfig
 from nautilus_trader.live.node import TradingNode
-from nautilus_trader.live.node import TradingNodeConfig
 
 
 # *** THIS IS A TEST STRATEGY WITH NO ALPHA ADVANTAGE WHATSOEVER. ***

@@ -25,8 +25,8 @@ from nautilus_trader.core.data import Data
 from nautilus_trader.data.messages import DataRequest
 from nautilus_trader.data.messages import DataResponse
 from nautilus_trader.data.messages import Subscribe
+from nautilus_trader.live.config import LiveDataEngineConfig
 from nautilus_trader.live.data_engine import LiveDataEngine
-from nautilus_trader.live.data_engine import LiveDataEngineConfig
 from nautilus_trader.model.data.base import DataType
 from nautilus_trader.model.data.tick import QuoteTick
 from nautilus_trader.model.identifiers import ClientId

@@ -51,8 +51,8 @@ from nautilus_trader.model.objects import Quantity
 from nautilus_trader.msgbus.bus import MessageBus
 from nautilus_trader.portfolio.portfolio import Portfolio
 from nautilus_trader.risk.engine import RiskEngine
+from nautilus_trader.trading.config import TradingStrategyConfig
 from nautilus_trader.trading.strategy import TradingStrategy
-from nautilus_trader.trading.strategy import TradingStrategyConfig
 from tests.test_kit.mocks import KaboomStrategy
 from tests.test_kit.mocks import MockStrategy
 from tests.test_kit.stubs import TestStubs
