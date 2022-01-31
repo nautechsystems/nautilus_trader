@@ -25,7 +25,6 @@ from nautilus_trader.model.commands.trading import CancelOrder
 from nautilus_trader.model.commands.trading import ModifyOrder
 from nautilus_trader.model.commands.trading import SubmitOrder
 from nautilus_trader.model.commands.trading import SubmitOrderList
-from nautilus_trader.model.identifiers import ClientOrderId
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import VenueOrderId
 
@@ -85,21 +84,16 @@ class TemplateLiveExecutionClient(LiveExecutionClient):
 
     async def generate_order_status_report(
         self,
-        client_order_id: ClientOrderId = None,
         venue_order_id: VenueOrderId = None,
     ) -> Optional[OrderStatusReport]:
         """
-        Generate an order status report for the given order identifier parameter(s).
-
-        Either one or both of the identifiers must be provided.
+        Generate an order status report for the given venue order ID.
 
         If the order is not found, or an error occurs, then logs and returns
         ``None``.
 
         Parameters
         ----------
-        client_order_id : ClientOrderId, optional
-            The client order ID query filter.
         venue_order_id : VenueOrderId, optional
             The venue order ID (assigned by the venue) query filter.
 
