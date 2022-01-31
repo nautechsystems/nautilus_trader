@@ -46,8 +46,20 @@ class LiveRiskEngineConfig(RiskEngineConfig):
 class LiveExecEngineConfig(ExecEngineConfig):
     """
     Configuration for ``LiveExecEngine`` instances.
+
+    Parameters
+    ----------
+    recon_auto : bool
+        If reconciliation should automatically generate events to align state.
+    recon_lookback_mins : int, optional
+        The maximum lookback minutes to reconcile state for. If None then will
+        use the maximum lookback available from the venues.
+    qsize : PositiveInt
+        The queue size for the engines internal queue buffers.
     """
 
+    recon_auto: bool = True
+    recon_lookback_mins: Optional[PositiveInt] = 2880
     qsize: PositiveInt = 10000
 
 

@@ -20,6 +20,8 @@ API which may be presented directly by an exchange, or broker intermediary.
 
 import asyncio
 import types
+from datetime import timedelta
+from typing import Optional
 
 from cpython.datetime cimport datetime
 
@@ -227,10 +229,13 @@ cdef class LiveExecutionClient(ExecutionClient):
         """
         raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
-    async def generate_mass_status(self):
+    async def generate_mass_status(self, lookback_mins: Optional[int]):
         """
         Generate an execution state report based on the given list of active
         orders.
+
+        lookback_mins : int, optional
+            The maximum lookback for querying closed orders, trades and positions.
 
         Returns
         -------
@@ -248,6 +253,9 @@ cdef class LiveExecutionClient(ExecutionClient):
             report_id=self._uuid_factory.generate(),
             ts_init=self._clock.timestamp_ns(),
         )
+
+        since = self._clock.utc_now() - timedelta(minutes=lookback_mins)
+        # TODO(cs): Reconciliation lookback filter WIP
 
         reports = await asyncio.gather(
             self.generate_order_status_reports(),

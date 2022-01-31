@@ -339,8 +339,8 @@ class FTXExecutionClient(LiveExecutionClient):
             else:
                 response = await self._http_client.get_order_history(
                     market=instrument_id.symbol.value if instrument_id is not None else None,
-                    start_time=int(start.timestamp() * 1000) if start is not None else None,
-                    end_time=int(end.timestamp() * 1000) if end is not None else None,
+                    start_time=int(start.timestamp()) if start is not None else None,
+                    end_time=int(end.timestamp()) if end is not None else None,
                 )
         except FTXError as ex:
             self._log.error(ex.message)  # type: ignore  # TODO(cs): Improve errors
@@ -388,8 +388,8 @@ class FTXExecutionClient(LiveExecutionClient):
             else:
                 response = await self._http_client.get_trigger_order_history(
                     market=instrument_id.symbol.value if instrument_id is not None else None,
-                    start_time=int(start.timestamp() * 1000) if start is not None else None,
-                    end_time=int(end.timestamp() * 1000) if end is not None else None,
+                    start_time=int(start.timestamp()) if start is not None else None,
+                    end_time=int(end.timestamp()) if end is not None else None,
                 )
 
             trigger_reports = await asyncio.gather(
@@ -470,8 +470,8 @@ class FTXExecutionClient(LiveExecutionClient):
         try:
             response: List[Dict[str, Any]] = await self._http_client.get_fills(
                 market=instrument_id.symbol.value if instrument_id is not None else None,
-                start_time=int(start.timestamp() * 1000) if start is not None else None,
-                end_time=int(end.timestamp() * 1000) if end is not None else None,
+                start_time=int(start.timestamp()) if start is not None else None,
+                end_time=int(end.timestamp()) if end is not None else None,
             )
         except FTXError as ex:
             self._log.error(ex.message)  # type: ignore  # TODO(cs): Improve errors
