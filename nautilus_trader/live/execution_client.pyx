@@ -20,6 +20,8 @@ API which may be presented directly by an exchange, or broker intermediary.
 
 import asyncio
 import types
+from datetime import timedelta
+from typing import Optional
 
 from cpython.datetime cimport datetime
 
@@ -122,22 +124,14 @@ cdef class LiveExecutionClient(ExecutionClient):
         await asyncio.sleep(delay)
         return await coro
 
-    async def generate_order_status_report(
-        self,
-        ClientOrderId client_order_id=None,
-        VenueOrderId venue_order_id=None,
-    ):
+    async def generate_order_status_report(self, VenueOrderId venue_order_id=None):
         """
         Generate an order status report for the given order identifier parameter(s).
-
-        Either one or both of the identifiers must be provided.
 
         If the order is not found, or an error occurs, then logs and returns ``None``.
 
         Parameters
         ----------
-        client_order_id : ClientOrderId, optional
-            The client order ID query filter.
         venue_order_id : VenueOrderId, optional
             The venue order ID (assigned by the venue) query filter.
 
@@ -235,10 +229,13 @@ cdef class LiveExecutionClient(ExecutionClient):
         """
         raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
-    async def generate_mass_status(self):
+    async def generate_mass_status(self, lookback_mins: Optional[int]):
         """
         Generate an execution state report based on the given list of active
         orders.
+
+        lookback_mins : int, optional
+            The maximum lookback for querying closed orders, trades and positions.
 
         Returns
         -------
@@ -257,6 +254,9 @@ cdef class LiveExecutionClient(ExecutionClient):
             ts_init=self._clock.timestamp_ns(),
         )
 
+        since = self._clock.utc_now() - timedelta(minutes=lookback_mins)
+        # TODO(cs): Reconciliation lookback filter WIP
+
         reports = await asyncio.gather(
             self.generate_order_status_reports(),
             self.generate_trade_reports(),
@@ -266,5 +266,7 @@ cdef class LiveExecutionClient(ExecutionClient):
         mass_status.add_order_reports(reports=reports[0])
         mass_status.add_trade_reports(reports=reports[1])
         mass_status.add_position_reports(reports=reports[2])
+
+        self.reconciliation_active = False
 
         return mass_status

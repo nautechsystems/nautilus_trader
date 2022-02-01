@@ -87,9 +87,9 @@ developer/user communities.
 
 ## What is Cython?
 
-[Cython](https://cython.org) is a compiled programming language that aims to be a superset of the Python programming
-language, designed to give C-like performance with code that is written mostly in Python with
-optional additional C-inspired syntax.
+[Cython](https://cython.org) is a compiled programming language which aims to be a superset of the Python programming
+language, designed to give C-like performance with code that is written in Python - with
+optional C-inspired syntax.
 
 The project heavily utilizes Cython to provide static type safety and increased performance
 for Python through [C extension modules](https://docs.python.org/3/extending/extending.html). The vast majority of the production code is actually
@@ -137,6 +137,20 @@ To install on ARM architectures such as MacBook Pro M1 / Apple Silicon, this sta
 https://stackoverflow.com/questions/65745683/how-to-install-scipy-on-apple-silicon-arm-m1
 
 Refer to the [Installation Guide](https://docs.nautilustrader.io/1_getting_started/1_installation.html) for other options and further details.
+
+## Versioning and releases
+
+NautilusTrader is currently following a bi-weekly beta release schedule.
+The API is becoming more stable, however breaking changes are still possible between releases.
+The documentation of these changes as found in the release notes are made on a best-effort basis.
+
+The `master` branch will always reflect the source code for the latest released version.
+
+The `develop` branch is normally very active with frequent commits, we aim to maintain a stable 
+passing build on this branch.
+
+The current roadmap has a goal of achieving a stable API for a `2.x` version. From this
+point we will follow a more formal process for releases, with deprecation periods for any API changes.
 
 ## Makefile
 
@@ -268,23 +282,18 @@ class EMACross(TradingStrategy):
 
 ## Development
 
-We aim to make the developer experience for this hybrid codebase of Cython and Python
-as pleasant as possible.
+We aim to provide the most pleasant developer experience possible for this hybrid codebase of Python, Cython and Rust.
 Please refer to the [Developer Guide](https://docs.nautilustrader.io/5_developer_guide/0_index.html) for helpful information.
 
 ## Contributing
 
-Involvement from the trading community is a goal for this project. All help is welcome!
-Developers can open issues on GitHub to discuss proposed enhancements/changes, or
-to make bug reports.
+Involvement from the trading community is a goal for this project, all help is welcome!
+Developers can open [issues](https://github.com/nautechsystems/nautilus_trader/issues) on GitHub to discuss proposed enhancements, changes, or
+to make bug reports. Questions and more general thoughts are best directed to a [discussions](https://github.com/nautechsystems/nautilus_trader/discussions) thread.
 
 Refer to the [CONTRIBUTING.md](https://github.com/nautechsystems/nautilus_trader/blob/master/CONTRIBUTING.md) for further information.
 
 Please make all pull requests to the `develop` branch.
-
-## Release schedule
-
-NautilusTrader is currently following a bi-weekly release schedule.
 
 ## Community
 We maintain a [Discord](https://discord.gg/AUWVs3XaCS) server where contributors and active users of NautilusTrader can interact!

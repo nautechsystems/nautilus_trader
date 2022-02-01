@@ -229,21 +229,16 @@ class FTXExecutionClient(LiveExecutionClient):
 
     async def generate_order_status_report(
         self,
-        client_order_id: ClientOrderId = None,
         venue_order_id: VenueOrderId = None,
     ) -> Optional[OrderStatusReport]:
         """
         Generate an order status report for the given order identifier parameter(s).
-
-        Either one or both of the identifiers must be provided.
 
         If the order is not found, or an error occurs, then logs and returns
         ``None``.
 
         Parameters
         ----------
-        client_order_id : ClientOrderId, optional
-            The client order ID query filter.
         venue_order_id : VenueOrderId, optional
             The venue order ID (assigned by the venue) query filter.
 
@@ -252,17 +247,8 @@ class FTXExecutionClient(LiveExecutionClient):
         OrderStatusReport or ``None``
 
         """
-        if client_order_id is None and venue_order_id is None:
-            self._log.error("Cannot generate order status report: no identifier given.")
-            return None
-
         try:
-            if venue_order_id is not None:
-                response = await self._http_client.get_order_status(venue_order_id.value)
-            else:
-                response = await self._http_client.get_order_status_by_client_id(
-                    client_order_id.value
-                )
+            response = await self._http_client.get_order_status(venue_order_id.value)
         except FTXError as ex:
             self._log.error(ex.message)  # type: ignore  # TODO(cs): Improve errors
             return None
@@ -353,8 +339,8 @@ class FTXExecutionClient(LiveExecutionClient):
             else:
                 response = await self._http_client.get_order_history(
                     market=instrument_id.symbol.value if instrument_id is not None else None,
-                    start_time=int(start.timestamp() * 1000) if start is not None else None,
-                    end_time=int(end.timestamp() * 1000) if end is not None else None,
+                    start_time=int(start.timestamp()) if start is not None else None,
+                    end_time=int(end.timestamp()) if end is not None else None,
                 )
         except FTXError as ex:
             self._log.error(ex.message)  # type: ignore  # TODO(cs): Improve errors
@@ -402,8 +388,8 @@ class FTXExecutionClient(LiveExecutionClient):
             else:
                 response = await self._http_client.get_trigger_order_history(
                     market=instrument_id.symbol.value if instrument_id is not None else None,
-                    start_time=int(start.timestamp() * 1000) if start is not None else None,
-                    end_time=int(end.timestamp() * 1000) if end is not None else None,
+                    start_time=int(start.timestamp()) if start is not None else None,
+                    end_time=int(end.timestamp()) if end is not None else None,
                 )
 
             trigger_reports = await asyncio.gather(
@@ -484,8 +470,8 @@ class FTXExecutionClient(LiveExecutionClient):
         try:
             response: List[Dict[str, Any]] = await self._http_client.get_fills(
                 market=instrument_id.symbol.value if instrument_id is not None else None,
-                start_time=int(start.timestamp() * 1000) if start is not None else None,
-                end_time=int(end.timestamp() * 1000) if end is not None else None,
+                start_time=int(start.timestamp()) if start is not None else None,
+                end_time=int(end.timestamp()) if end is not None else None,
             )
         except FTXError as ex:
             self._log.error(ex.message)  # type: ignore  # TODO(cs): Improve errors

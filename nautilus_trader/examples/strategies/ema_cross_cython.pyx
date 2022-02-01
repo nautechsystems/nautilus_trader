@@ -31,7 +31,7 @@ from nautilus_trader.model.orderbook.book cimport OrderBook
 from nautilus_trader.model.orders.market cimport MarketOrder
 from nautilus_trader.trading.strategy cimport TradingStrategy
 
-from nautilus_trader.trading.strategy import TradingStrategyConfig
+from nautilus_trader.trading.config import TradingStrategyConfig
 
 
 # *** THIS IS A TEST STRATEGY WITH NO ALPHA ADVANTAGE WHATSOEVER. ***

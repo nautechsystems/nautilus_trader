@@ -19,9 +19,9 @@ import pytest
 
 from nautilus_trader.adapters.betfair.factories import BetfairLiveDataClientFactory
 from nautilus_trader.adapters.betfair.factories import BetfairLiveExecutionClientFactory
-from nautilus_trader.infrastructure.cache import CacheDatabaseConfig
+from nautilus_trader.infrastructure.config import CacheDatabaseConfig
+from nautilus_trader.live.config import TradingNodeConfig
 from nautilus_trader.live.node import TradingNode
-from nautilus_trader.live.node import TradingNodeConfig
 
 
 class TestTradingNodeConfiguration:

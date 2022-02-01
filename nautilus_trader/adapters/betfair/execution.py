@@ -216,21 +216,16 @@ class BetfairExecutionClient(LiveExecutionClient):
 
     async def generate_order_status_report(
         self,
-        client_order_id: ClientOrderId = None,
         venue_order_id: VenueOrderId = None,
     ) -> Optional[OrderStatusReport]:
         """
-        Generate an order status report for the given order identifier parameter(s).
-
-        Either one or both of the identifiers must be provided.
+        Generate an order status report for the given venue order ID.
 
         If the order is not found, or an error occurs, then logs and returns
         ``None``.
 
         Parameters
         ----------
-        client_order_id : ClientOrderId, optional
-            The client order ID query filter.
         venue_order_id : VenueOrderId, optional
             The venue order ID (assigned by the venue) query filter.
 

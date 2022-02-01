@@ -37,7 +37,6 @@ from nautilus_trader.execution.reports cimport ExecutionReport
 from nautilus_trader.execution.reports cimport OrderStatusReport
 from nautilus_trader.execution.reports cimport PositionStatusReport
 from nautilus_trader.execution.reports cimport TradeReport
-from nautilus_trader.live.execution_client cimport LiveExecutionClient
 from nautilus_trader.model.c_enums.liquidity_side cimport LiquiditySide
 from nautilus_trader.model.c_enums.order_status cimport OrderStatus
 from nautilus_trader.model.c_enums.order_type cimport OrderType
@@ -116,6 +115,10 @@ cdef class LiveExecutionEngine(ExecutionEngine):
 
         self._loop = loop
         self._queue = Queue(maxsize=config.qsize)
+
+        # Settings
+        self.recon_auto = config.recon_auto if config else True
+        self.recon_lookback_mins = config.recon_lookback_mins if config else 0
 
         self._run_queue_task = None
         self.is_running = False
@@ -298,20 +301,18 @@ cdef class LiveExecutionEngine(ExecutionEngine):
         """
         Condition.positive(timeout_secs, "timeout_secs")
 
-        # Request execution mass status report from each client
+        # Request execution mass status report from clients
+        recon_lookback_mins = self.recon_lookback_mins if self.recon_lookback_mins > 0 else None
         mass_status_coros = [
-            c.generate_mass_status() for c in self._clients.values()
+            c.generate_mass_status(recon_lookback_mins) for c in self._clients.values()
         ]
-        client_id_mass_status = await asyncio.gather(*mass_status_coros)
+        mass_status_all = await asyncio.gather(*mass_status_coros)
 
         cdef list results = []
 
         # Reconcile each mass status with the execution engine
-        cdef LiveExecutionClient client
-        for mass_status in client_id_mass_status:
+        for mass_status in mass_status_all:
             result = self._reconcile_mass_status(mass_status)
-            client = self._clients[mass_status.client_id]
-            client.reconciliation_active = False
             results.append(result)
 
         return all(results)
