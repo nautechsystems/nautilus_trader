@@ -39,7 +39,6 @@ if __name__ == "__main__":
     config = BacktestEngineConfig(
         trader_id="BACKTESTER-001",
         log_level="INFO",
-        use_data_cache=True,
         risk_engine={
             "bypass": True,  # Example of bypassing pre-trade risk checks for backtests
             "max_notional_per_order": {"GBP/USD.SIM": 2_000_000},
