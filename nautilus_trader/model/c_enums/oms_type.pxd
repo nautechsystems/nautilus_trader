@@ -15,6 +15,7 @@
 
 
 cpdef enum OMSType:
+    NONE = 0
     NETTING = 1
     HEDGING = 2
 

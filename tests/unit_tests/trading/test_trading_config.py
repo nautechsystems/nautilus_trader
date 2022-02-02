@@ -70,8 +70,7 @@ class TestStrategyFactory:
         # Assert
         assert isinstance(strategy, EMACross)
         assert (
-            repr(config)
-            == "EMACrossConfig(component_id=None, order_id_tag='000', oms_type='HEDGING', "
+            repr(config) == "EMACrossConfig(component_id=None, order_id_tag='000', oms_type=None, "
             "instrument_id='AUD/USD.SIM', bar_type='AUD/USD.SIM-15-MINUTE-BID-EXTERNAL', "
             "fast_ema_period=10, slow_ema_period=20, trade_size=Decimal('1000000'))"  # noqa
         )

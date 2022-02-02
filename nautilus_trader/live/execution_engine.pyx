@@ -399,13 +399,12 @@ cdef class LiveExecutionEngine(ExecutionEngine):
                 result = False
             results.append(result)
 
-        cdef:
-            InstrumentId instrument_id
-            PositionStatusReport position_report
+        cdef list position_reports  # type: list[PositionStatusReport]
         # Reconcile all reported positions
-        for instrument_id, position_report in mass_status.position_reports().items():
-            result = self._reconcile_position_report(position_report)
-            results.append(result)
+        for position_reports in mass_status.position_reports().values():
+            for report in position_reports:
+                result = self._reconcile_position_report(report)
+                results.append(result)
 
         # Publish mass status
         self._msgbus.publish_c(
@@ -562,14 +561,17 @@ cdef class LiveExecutionEngine(ExecutionEngine):
         return True  # Reconciled
 
     cdef bint _reconcile_position_report_netting(self, PositionStatusReport report) except *:
-        cdef list positions_open = self._cache.positions_open(report.instrument_id)
+        cdef list positions_open = self._cache.positions_open(
+            venue=None,  # Faster query filtering
+            instrument_id=report.instrument_id,
+        )
         net_qty = Decimal()
         for position in positions_open:
             net_qty += position.net_qty
         if net_qty != report.net_qty:
             self._log.error(
                 f"Cannot reconcile position: "
-                f"position for {report.instrument_id} "
+                f"{report.instrument_id} "
                 f"net qty {net_qty} != reported {report.net_qty}.",
             )
             return False  # Failed

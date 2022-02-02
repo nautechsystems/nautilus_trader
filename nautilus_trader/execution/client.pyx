@@ -63,6 +63,8 @@ cdef class ExecutionClient(Component):
     ----------
     client_id : ClientId
         The client ID.
+    oms_type : OMSType
+        The venues order management system type.
     account_type : AccountType
         The account type for the client.
     base_currency : Currency, optional
@@ -82,6 +84,8 @@ cdef class ExecutionClient(Component):
     ------
     ValueError
         If `client_id` is not equal to `account_id.issuer`.
+    ValueError
+        If `oms_type` is ``NONE`` value (must be defined).
 
     Warnings
     --------
@@ -91,6 +95,7 @@ cdef class ExecutionClient(Component):
     def __init__(
         self,
         ClientId client_id not None,
+        OMSType oms_type,
         AccountType account_type,
         Currency base_currency,  # Can be None
         MessageBus msgbus not None,
@@ -99,6 +104,7 @@ cdef class ExecutionClient(Component):
         Logger logger not None,
         dict config=None,
     ):
+        Condition.not_equal(oms_type, OMSType.NONE, "oms_type", "OMSType")
         if config is None:
             config = {}
         super().__init__(
@@ -115,6 +121,7 @@ cdef class ExecutionClient(Component):
 
         self.trader_id = msgbus.trader_id
         self.venue = Venue(client_id.value) if not config.get("routing") else None
+        self.oms_type = oms_type
         self.account_id = None  # Initialized on connection
         self.account_type = account_type
         self.base_currency = base_currency

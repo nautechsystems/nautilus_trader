@@ -124,7 +124,7 @@ cdef class ExecutionEngine(Component):
 
         self._clients = {}           # type: dict[ClientId, ExecutionClient]
         self._routing_map = {}       # type: dict[Venue, ExecutionClient]
-        self._oms_types = {}         # type: dict[StrategyId, OMSType]
+        self._oms_overrides = {}     # type: dict[StrategyId, OMSType]
         self._default_client = None  # type: Optional[ExecutionClient]
 
         self._pos_id_generator = PositionIdGenerator(
@@ -329,7 +329,7 @@ cdef class ExecutionEngine(Component):
         """
         Condition.not_none(strategy, "strategy")
 
-        self._oms_types[strategy.id] = strategy.oms_type
+        self._oms_overrides[strategy.id] = strategy.oms_type
 
         self._log.info(
             f"Registered OMS.{OMSTypeParser.to_str(strategy.oms_type)} "
@@ -583,15 +583,16 @@ cdef class ExecutionEngine(Component):
                 color=LogColor.GREEN,
             )
 
-        # Confirm OMS for strategy
-        cdef OMSType oms_type = self._confirm_oms_type(
-            event.instrument_id.venue,
-            event.strategy_id,
-        )
-
+        cdef OMSType oms_type
         if isinstance(event, OrderFilled):
-            self._confirm_position_id(event, oms_type)
+            oms_type = self._determine_oms_type(event)
+            self._determine_position_id(event, oms_type)
+            self._apply_event_to_order(order, event)
+            self._handle_order_fill(event, oms_type)
+        else:
+            self._apply_event_to_order(order, event)
 
+    cdef void _apply_event_to_order(self, Order order, OrderEvent event) except *:
         try:
             order.apply(event)
         except InvalidStateTrigger as ex:
@@ -612,32 +613,21 @@ cdef class ExecutionEngine(Component):
             msg=event,
         )
 
-        if isinstance(event, OrderFilled):
-            self._handle_order_fill(event, oms_type)
-
-    cdef OMSType _confirm_oms_type(self, Venue venue, StrategyId strategy_id) except *:
-        if strategy_id.is_external():
-            # Always net external orders
-            return OMSType.NETTING
-
-        cdef:
-            OMSType oms_type
-            ExecutionClient client
-
-        oms_type = self._oms_types.get(strategy_id, 0)
-        if oms_type == 0:
-            # No OMS configured - use venue OMS
-            client = self._clients.get(venue)
+    cdef OMSType _determine_oms_type(self, OrderFilled fill) except *:
+        cdef ExecutionClient client
+        # Check for strategy OMS override
+        cdef OMSType oms_type = self._oms_overrides.get(fill.strategy_id, OMSType.NONE)
+        if oms_type == OMSType.NONE:
+            # Use native venue OMS
+            client = self._routing_map.get(fill.instrument_id.venue, self._default_client)
             if client is None:
-                oms_type = OMSType.HEDGING
+                return OMSType.NETTING
             else:
-                oms_type = OMSType.HEDGING  # TODO(cs): Set default venue OMS
-            # Set OMS for strategy
-            self._oms_types[strategy_id] = oms_type
+                return client.oms_type
 
         return oms_type
 
-    cdef void _confirm_position_id(self, OrderFilled fill, OMSType oms_type) except *:
+    cdef void _determine_position_id(self, OrderFilled fill, OMSType oms_type) except *:
         # Fetch ID from cache
         cdef PositionId position_id = self._cache.position_id(fill.client_order_id)
         if position_id is not None:
@@ -658,7 +648,7 @@ cdef class ExecutionEngine(Component):
             # Assign new position ID
             fill.position_id = self._pos_id_generator.generate(fill.strategy_id)
         elif oms_type == OMSType.NETTING:
-            # Assign netted position ID singleton
+            # Assign netted position ID
             fill.position_id = PositionId(f"{fill.instrument_id.value}-{fill.strategy_id.value}")
         else:  # pragma: no cover
             raise ValueError(f"invalid OMSType, was {oms_type}")
