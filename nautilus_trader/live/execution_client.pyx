@@ -32,9 +32,9 @@ from nautilus_trader.common.providers cimport InstrumentProvider
 from nautilus_trader.execution.client cimport ExecutionClient
 from nautilus_trader.execution.reports cimport ExecutionMassStatus
 from nautilus_trader.model.c_enums.account_type cimport AccountType
+from nautilus_trader.model.c_enums.oms_type cimport OMSType
 from nautilus_trader.model.currency cimport Currency
 from nautilus_trader.model.identifiers cimport ClientId
-from nautilus_trader.model.identifiers cimport ClientOrderId
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.identifiers cimport VenueOrderId
 from nautilus_trader.msgbus.bus cimport MessageBus
@@ -67,6 +67,11 @@ cdef class LiveExecutionClient(ExecutionClient):
     config : dict[str, object], optional
         The configuration for the instance.
 
+    Raises
+    ------
+    ValueError
+        If `oms_type` is ``NONE`` value (must be defined).
+
     Warnings
     --------
     This class should not be used directly, but through a concrete subclass.
@@ -76,9 +81,10 @@ cdef class LiveExecutionClient(ExecutionClient):
         self,
         loop not None: asyncio.AbstractEventLoop,
         ClientId client_id not None,
-        InstrumentProvider instrument_provider not None,
+        OMSType oms_type,
         AccountType account_type,
         Currency base_currency,  # Can be None
+        InstrumentProvider instrument_provider not None,
         MessageBus msgbus not None,
         Cache cache not None,
         LiveClock clock not None,
@@ -87,6 +93,7 @@ cdef class LiveExecutionClient(ExecutionClient):
     ):
         super().__init__(
             client_id=client_id,
+            oms_type=oms_type,
             account_type=account_type,
             base_currency=base_currency,
             msgbus=msgbus,
