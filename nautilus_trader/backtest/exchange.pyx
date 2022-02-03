@@ -607,23 +607,36 @@ cdef class SimulatedExchange:
 
         self._clock.set_time(bar.ts_init)
 
+        cdef OrderBook book = self.get_book(bar.type.instrument_id)
+        if book.type != BookType.L1_TBBO:
+            self._iterate_matching_engine(
+                bar.type.instrument_id,
+                bar.ts_init,
+            )
+            return
+
+        # Turn ON bar execution mode
+        self._bar_execution = True
+
         cdef PriceType price_type = bar.type.spec.price_type
         if price_type == PriceType.LAST or price_type == PriceType.MID:
-            self._process_trade_tick_from_bar(bar)
+            self._process_trade_tick_from_bar(book, bar)
         elif price_type == PriceType.BID:
             self._last_bid_bars[bar.type.instrument_id] = bar
-            self._process_quote_tick_from_bar(bar.type.instrument_id)
+            self._process_quote_tick_from_bar(book)
         elif price_type == PriceType.ASK:
             self._last_ask_bars[bar.type.instrument_id] = bar
-            self._process_quote_tick_from_bar(bar.type.instrument_id)
+            self._process_quote_tick_from_bar(book)
         else:  # pragma: no cover (design-time error)
             raise RuntimeError("invalid price type")
+
+        # Turn OFF bar execution mode
+        self._bar_execution = False
 
         if not self._log.is_bypassed:
             self._log.debug(f"Processed {bar}")
 
-    cdef void _process_trade_tick_from_bar(self, Bar bar) except *:
-        self._bar_execution = True
+    cdef void _process_trade_tick_from_bar(self, OrderBook book, Bar bar) except *:
         cdef Quantity size = Quantity(bar.volume / 4, bar.volume.precision)
 
         # Create reusable tick
@@ -631,58 +644,48 @@ cdef class SimulatedExchange:
             bar.type.instrument_id,
             bar.open,
             size,
-            AggressorSide.BUY if bar.open,
+            AggressorSide.BUY,
             TradeId(str(uuid.uuid4())),
             bar.ts_event,
             bar.ts_event,
         )
 
-        # Process OHLC through order book
-        cdef OrderBook book = self.get_book(bar.type.instrument_id)
-        if book.type == BookType.L1_TBBO:
-            # Open
-            book.update_tick(tick)
-            self._iterate_matching_engine(
-                tick.instrument_id,
-                tick.ts_init,
-            )
+        # Open
+        book.update_tick(tick)
+        self._iterate_matching_engine(
+            tick.instrument_id,
+            tick.ts_init,
+        )
 
-            # High
-            tick.price = bar.high
-            book.update_tick(tick)
-            self._iterate_matching_engine(
-                tick.instrument_id,
-                tick.ts_init,
-            )
+        # High
+        tick.price = bar.high
+        book.update_tick(tick)
+        self._iterate_matching_engine(
+            tick.instrument_id,
+            tick.ts_init,
+        )
 
-            # Low
-            tick.price = bar.low
-            tick.aggressor_side = AggressorSide.SELL
-            book.update_tick(tick)
-            self._iterate_matching_engine(
-                tick.instrument_id,
-                tick.ts_init,
-            )
+        # Low
+        tick.price = bar.low
+        tick.aggressor_side = AggressorSide.SELL
+        book.update_tick(tick)
+        self._iterate_matching_engine(
+            tick.instrument_id,
+            tick.ts_init,
+        )
 
-            # Close
-            tick.price = bar.close
-            tick.aggressor_side = AggressorSide.BUY
-            book.update_tick(tick)
-            self._iterate_matching_engine(
-                tick.instrument_id,
-                tick.ts_init,
-            )
-        else:
-            self._iterate_matching_engine(
-                tick.instrument_id,
-                tick.ts_init,
-            )
+        # Close
+        tick.price = bar.close
+        tick.aggressor_side = AggressorSide.BUY
+        book.update_tick(tick)
+        self._iterate_matching_engine(
+            tick.instrument_id,
+            tick.ts_init,
+        )
 
-        self._bar_execution = False
-
-    cdef void _process_quote_tick_from_bar(self, InstrumentId instrument_id) except *:
-        cdef Bar last_bid_bar = self._last_bid_bars.get(instrument_id)
-        cdef Bar last_ask_bar = self._last_ask_bars.get(instrument_id)
+    cdef void _process_quote_tick_from_bar(self, OrderBook book) except *:
+        cdef Bar last_bid_bar = self._last_bid_bars.get(book.instrument_id)
+        cdef Bar last_ask_bar = self._last_ask_bars.get(book.instrument_id)
 
         if last_bid_bar is None or last_ask_bar is None:
             return  # Wait for next bar
@@ -690,14 +693,12 @@ cdef class SimulatedExchange:
         if last_bid_bar.ts_event != last_ask_bar.ts_event:
             return  # Wait for next bar
 
-        self._bar_execution = True
-
         cdef Quantity bid_size = Quantity(last_bid_bar.volume / 4, last_bid_bar.volume.precision)
         cdef Quantity ask_size = Quantity(last_ask_bar.volume / 4, last_ask_bar.volume.precision)
 
         # Create reusable tick
         cdef QuoteTick tick = QuoteTick(
-            instrument_id,
+            book.instrument_id,
             last_bid_bar.open,
             last_ask_bar.open,
             bid_size,
@@ -706,49 +707,39 @@ cdef class SimulatedExchange:
             last_ask_bar.ts_init,
         )
 
-        # Process OHLC through order book
-        cdef OrderBook book = self.get_book(instrument_id)
-        if book.type == BookType.L1_TBBO:
-            # Open
-            book.update_tick(tick)
-            self._iterate_matching_engine(
-                tick.instrument_id,
-                tick.ts_init,
-            )
+        # Open
+        book.update_tick(tick)
+        self._iterate_matching_engine(
+            tick.instrument_id,
+            tick.ts_init,
+        )
 
-            # High
-            tick.bid = last_bid_bar.high
-            tick.ask = last_ask_bar.high
-            book.update_tick(tick)
-            self._iterate_matching_engine(
-                tick.instrument_id,
-                tick.ts_init,
-            )
+        # High
+        tick.bid = last_bid_bar.high
+        tick.ask = last_ask_bar.high
+        book.update_tick(tick)
+        self._iterate_matching_engine(
+            tick.instrument_id,
+            tick.ts_init,
+        )
 
-            # Low
-            tick.bid = last_bid_bar.low
-            tick.ask = last_ask_bar.low
-            book.update_tick(tick)
-            self._iterate_matching_engine(
-                tick.instrument_id,
-                tick.ts_init,
-            )
+        # Low
+        tick.bid = last_bid_bar.low
+        tick.ask = last_ask_bar.low
+        book.update_tick(tick)
+        self._iterate_matching_engine(
+            tick.instrument_id,
+            tick.ts_init,
+        )
 
-            # Close
-            tick.bid = last_bid_bar.close
-            tick.ask = last_ask_bar.close
-            book.update_tick(tick)
-            self._iterate_matching_engine(
-                tick.instrument_id,
-                tick.ts_init,
-            )
-        else:
-            self._iterate_matching_engine(
-                tick.instrument_id,
-                tick.ts_init,
-            )
-
-        self._bar_execution = False
+        # Close
+        tick.bid = last_bid_bar.close
+        tick.ask = last_ask_bar.close
+        book.update_tick(tick)
+        self._iterate_matching_engine(
+            tick.instrument_id,
+            tick.ts_init,
+        )
 
     cpdef void process(self, int64_t now_ns) except *:
         """
