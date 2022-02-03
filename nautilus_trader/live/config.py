@@ -69,9 +69,9 @@ class TradingNodeConfig(pydantic.BaseModel):
 
     Parameters
     ----------
-    trader_id : str, default="TRADER-000"
+    trader_id : str, default "TRADER-000"
         The trader ID for the node (must be a name and ID tag separated by a hyphen)
-    log_level : str, default="INFO"
+    log_level : str, default "INFO"
         The stdout log level for the node.
     cache : CacheConfig, optional
         The cache configuration.
@@ -83,11 +83,11 @@ class TradingNodeConfig(pydantic.BaseModel):
         The live risk engine configuration.
     exec_engine : LiveExecEngineConfig, optional
         The live execution engine configuration.
-    loop_debug : bool, default=False
+    loop_debug : bool, default False
         If the asyncio event loop should be in debug mode.
-    load_strategy_state : bool, default=True
+    load_strategy_state : bool, default True
         If trading strategy state should be loaded from the database on start.
-    save_strategy_state : bool, default=True
+    save_strategy_state : bool, default True
         If trading strategy state should be saved to the database on stop.
     timeout_connection : PositiveFloat (seconds)
         The timeout for all clients to connect and initialize.

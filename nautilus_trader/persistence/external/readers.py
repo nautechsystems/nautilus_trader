@@ -226,13 +226,13 @@ class CSVReader(Reader):
         The readers instrument provider.
     instrument_provider_update
         Optional hook to call before `parser` for the purpose of loading instruments into an InstrumentProvider
-    header: List[str], default=None
+    header: List[str], default None
         If first row contains names of columns, header has to be set to `None`.
         If data starts right at the first row, header has to be provided the list of column names.
-    chunked: bool, default=True
+    chunked: bool, default True
         If chunked=False, each CSV line will be passed to `block_parser` individually, if chunked=True, the data
         passed will potentially contain many lines (a block).
-    as_dataframe: bool, default=False
+    as_dataframe: bool, default False
         If as_dataframe=True, the passes block will be parsed into a DataFrame before passing to `block_parser`.
     """
 

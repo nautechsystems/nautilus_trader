@@ -99,6 +99,11 @@ class Partialable:
 class BacktestVenueConfig(Partialable):
     """
     Represents a venue configuration for one specific backtest engine.
+
+    Parameters
+    ----------
+    bar_execution : bool, default False
+        If the simulated exchange should be configured for bar execution mode.
     """
 
     name: str
@@ -108,6 +113,7 @@ class BacktestVenueConfig(Partialable):
     starting_balances: List[str]
     book_type: str = "L1_TBBO"
     routing: bool = False
+    bar_execution: bool = False
     # fill_model: Optional[FillModel] = None  # TODO(cs): Implement next iteration
     # modules: Optional[List[SimulationModule]] = None  # TODO(cs): Implement next iteration
 
@@ -208,9 +214,9 @@ class BacktestEngineConfig(pydantic.BaseModel):
 
     Parameters
     ----------
-    trader_id : str, default="BACKTESTER-000"
+    trader_id : str, default "BACKTESTER-000"
         The trader ID.
-    log_level : str, default="INFO"
+    log_level : str, default "INFO"
         The minimum log level for logging messages to stdout.
     cache : CacheConfig, optional
         The configuration for the cache.
@@ -222,9 +228,9 @@ class BacktestEngineConfig(pydantic.BaseModel):
         The configuration for the risk engine.
     exec_engine : ExecEngineConfig, optional
         The configuration for the execution engine.
-    bypass_logging : bool, default=False
+    bypass_logging : bool, default False
         If logging should be bypassed.
-    run_analysis : bool, default=True
+    run_analysis : bool, default True
         If post backtest performance analysis should be run.
 
     """
