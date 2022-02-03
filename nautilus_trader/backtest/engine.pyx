@@ -510,6 +510,7 @@ cdef class BacktestEngine:
         LatencyModel latency_model=None,
         BookType book_type=BookType.L1_TBBO,
         routing: bool=False,
+        bar_execution: bool = False,
         reject_stop_orders: bool=True,
     ) -> None:
         """
@@ -544,6 +545,8 @@ cdef class BacktestEngine:
             The default order book type for fill modelling.
         routing : bool
             If multi-venue routing should be enabled for the execution client.
+        bar_execution : bool
+            If the exchange execution dynamics is based on bar data.
         reject_stop_orders : bool
             If stop orders are rejected on submission if in the market.
 
@@ -581,6 +584,7 @@ cdef class BacktestEngine:
             book_type=book_type,
             clock=self._test_clock,
             logger=self._test_logger,
+            bar_execution=bar_execution,
             reject_stop_orders=reject_stop_orders,
         )
 

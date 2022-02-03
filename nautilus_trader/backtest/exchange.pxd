@@ -97,6 +97,7 @@ cdef class SimulatedExchange:
     cdef dict _instrument_indexer
 
     cdef dict _books
+    cdef dict _last
     cdef dict _last_bids
     cdef dict _last_asks
     cdef dict _last_bid_bars
