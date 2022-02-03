@@ -142,7 +142,7 @@ Refer to the [Installation Guide](https://docs.nautilustrader.io/1_getting_start
 
 NautilusTrader is currently following a bi-weekly beta release schedule.
 The API is becoming more stable, however breaking changes are still possible between releases.
-The documentation of these changes as found in the release notes are made on a best-effort basis.
+Documentation of these changes in the release notes are made on a best-effort basis.
 
 The `master` branch will always reflect the source code for the latest released version.
 
@@ -158,7 +158,7 @@ A `Makefile` is provided to automate most installation and build tasks. It provi
 - `make install` -- Installs the package using poetry.
 - `make build` -- Runs the Cython build script.
 - `make clean` -- Cleans all none source artifacts from the repository.
-- `make docs` -- Builds the internal documentation HTML using Sphinx.
+- `make docs` -- Builds the documentation HTML using Sphinx.
 - `make pre-commit` -- Runs the pre-commit checks over all files.
 
 ## Examples
