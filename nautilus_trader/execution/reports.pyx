@@ -103,7 +103,7 @@ cdef class OrderStatusReport(ExecutionReport):
     filled_qty : Quantity
         The reported filled quantity at the exchange.
     display_qty : Quantity, optional
-        The reported order quantity to display on the public book (iceberg).
+        The reported order quantity displayed on the public book (iceberg).
     avg_px : Decimal, optional
         The reported order average fill price.
     post_only : bool
