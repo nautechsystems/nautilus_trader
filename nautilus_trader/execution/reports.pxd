@@ -85,7 +85,7 @@ cdef class OrderStatusReport(ExecutionReport):
     cdef readonly Quantity leaves_qty
     """The reported order total leaves quantity.\n\n:returns: `Quantity`"""
     cdef readonly Quantity display_qty
-    """The reported order quantity to display on the public book (iceberg).\n\n:returns: `Quantity` or ``None``"""
+    """The reported order quantity displayed on the public book (iceberg).\n\n:returns: `Quantity` or ``None``"""
     cdef readonly object avg_px
     """The reported order average fill price.\n\n:returns: `Decimal` or ``None``"""
     cdef readonly bint post_only
