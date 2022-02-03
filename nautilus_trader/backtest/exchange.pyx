@@ -600,7 +600,7 @@ cdef class SimulatedExchange:
         Parameters
         ----------
         bar : Bar
-            The tick to process.
+            The bar to process.
 
         """
         Condition.not_none(bar, "bar")
@@ -1116,7 +1116,7 @@ cdef class SimulatedExchange:
                 self._update_order(
                     oco_order,
                     order.leaves_qty,
-                    price=oco_order.price if oco_order.type == OrderType.LIMIT or oco_order.type == OrderType.STOP_LIMIT else None,  # noqa TODO(cs): Temporary will refactor!,
+                    price=oco_order.price if oco_order.type == OrderType.LIMIT or oco_order.type == OrderType.STOP_LIMIT else None,  # noqa TODO(cs): Temporary will refactor!
                     trigger_price=oco_order.trigger_price if oco_order.type == OrderType.STOP_MARKET or oco_order.type == OrderType.STOP_LIMIT else None,  # noqa TODO(cs): Temporary will refactor!
                     update_ocos=False,
                 )
