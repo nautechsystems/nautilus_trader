@@ -215,8 +215,7 @@ class BetfairExecutionClient(LiveExecutionClient):
     # -- EXECUTION REPORTS -------------------------------------------------------------------------
 
     async def generate_order_status_report(
-        self,
-        venue_order_id: VenueOrderId = None,
+        self, venue_order_id: VenueOrderId
     ) -> Optional[OrderStatusReport]:
         """
         Generate an order status report for the given venue order ID.
@@ -234,22 +233,50 @@ class BetfairExecutionClient(LiveExecutionClient):
         OrderStatusReport or ``None``
 
         """
-        assert client_order_id is not None or venue_order_id is not None
+        assert venue_order_id is not None
         orders = await self._client.list_current_orders(
-            bet_ids=[venue_order_id] if venue_order_id is not None else None,
-            customer_order_refs=[client_order_id] if client_order_id is not None else None,
+            bet_ids=[venue_order_id],
         )
 
         if not orders:
-            self._log.warning(
-                f"Could not find order for venue_order_id={venue_order_id}, client_order_id={client_order_id}"
-            )
-            return
+            self._log.warning(f"Could not find order for venue_order_id={venue_order_id}")
+            return None
         # We have a response, check list length and grab first entry
         assert len(orders) == 1
-        # order = orders[0]
-        # return OrderStatusReport()
-        return
+        order = orders[0]
+        instrument = self._instrument_provider.get_betting_instrument()
+        venue_order_id = VenueOrderId(order["betId"])
+        return OrderStatusReport(
+            account_id=self.account_id,
+            instrument_id=instrument.id,
+            client_order_id=self._cache.client_order_id(venue_order_id),
+            order_list_id=None,
+            venue_order_id=venue_order_id,
+            # order_side
+            # order_type
+            # contingency_type
+            # time_in_force
+            # expire_time
+            # order_status
+            # price
+            # trigger_price
+            # trigger_type
+            # Optional
+            # Optional
+            # offset_type
+            # quantity
+            # filled_qty
+            # display_qty
+            # Optional
+            # post_only
+            # reduce_only
+            # reject_reason
+            # report_id
+            # ts_accepted
+            # ts_triggered
+            # ts_last
+            # ts_init
+        )
 
     async def generate_order_status_reports(
         self,

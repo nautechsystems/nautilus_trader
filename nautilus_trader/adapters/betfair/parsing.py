@@ -746,3 +746,10 @@ def parse_handicap(x) -> str:
         return str(x)
     else:
         raise TypeError(f"Unexpected type ({type(x)}) for handicap: {x}")
+
+
+def parse_side(side: str) -> OrderSide:
+    return {
+        "BACK": OrderSide.BUY,
+        "LAY": OrderSide.SELL,
+    }[side.upper()]
