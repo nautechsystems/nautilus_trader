@@ -99,11 +99,6 @@ class Partialable:
 class BacktestVenueConfig(Partialable):
     """
     Represents a venue configuration for one specific backtest engine.
-
-    Parameters
-    ----------
-    bar_execution : bool, default False
-        If the simulated exchange should be configured for bar execution mode.
     """
 
     name: str
@@ -113,7 +108,6 @@ class BacktestVenueConfig(Partialable):
     starting_balances: List[str]
     book_type: str = "L1_TBBO"
     routing: bool = False
-    bar_execution: bool = False
     # fill_model: Optional[FillModel] = None  # TODO(cs): Implement next iteration
     # modules: Optional[List[SimulationModule]] = None  # TODO(cs): Implement next iteration
 
