@@ -283,7 +283,6 @@ class TestBacktestAcceptanceTestsGBPUSDBarsExternal:
             base_currency=USD,
             starting_balances=[Money(1_000_000, USD)],
             modules=[fx_rollover_interest],
-            bar_execution=True,
         )
 
     def teardown(self):
@@ -307,7 +306,7 @@ class TestBacktestAcceptanceTestsGBPUSDBarsExternal:
         # Assert
         assert strategy.fast_ema.count == 30117
         assert self.engine.iteration == 60234
-        assert self.engine.portfolio.account(self.venue).balance_total(USD) == Money(570156.51, USD)
+        assert self.engine.portfolio.account(self.venue).balance_total(USD) == Money(805194.05, USD)
 
 
 class TestBacktestAcceptanceTestsAUDUSD:
