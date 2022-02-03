@@ -21,6 +21,7 @@ import pytest
 
 from nautilus_trader.backtest.data.providers import TestDataProvider
 from nautilus_trader.backtest.data.providers import TestInstrumentProvider
+from nautilus_trader.backtest.data.wranglers import BarDataWrangler
 from nautilus_trader.backtest.data.wranglers import QuoteTickDataWrangler
 from nautilus_trader.backtest.data.wranglers import TradeTickDataWrangler
 from nautilus_trader.backtest.engine import BacktestEngine
@@ -35,6 +36,7 @@ from nautilus_trader.model.currencies import AUD
 from nautilus_trader.model.currencies import GBP
 from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.currencies import USDT
+from nautilus_trader.model.data.bar import BarType
 from nautilus_trader.model.data.tick import TradeTick
 from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import BookType
@@ -168,7 +170,7 @@ class TestBacktestAcceptanceTestsUSDJPY:
         assert self.engine.portfolio.account(self.venue).balance_total(USD) == Money(985622.52, USD)
 
 
-class TestBacktestAcceptanceTestsGBPUSD:
+class TestBacktestAcceptanceTestsGBPUSDBarsInternal:
     def setup(self):
         # Fixture Setup
         config = BacktestEngineConfig(
@@ -226,6 +228,86 @@ class TestBacktestAcceptanceTestsGBPUSD:
         assert strategy.fast_ema.count == 8353
         assert self.engine.iteration == 120468
         assert self.engine.portfolio.account(self.venue).balance_total(GBP) == Money(931346.81, GBP)
+
+
+class TestBacktestAcceptanceTestsGBPUSDBarsExternal:
+    def setup(self):
+        # Fixture Setup
+        config = BacktestEngineConfig(
+            bypass_logging=False,
+            run_analysis=False,
+            risk_engine={
+                "bypass": True,  # Example of bypassing pre-trade risk checks for backtests
+                "max_notional_per_order": {"GBP/USD.SIM": 2_000_000},
+            },
+        )
+        self.engine = BacktestEngine(config=config)
+
+        self.venue = Venue("SIM")
+        self.gbpusd = TestInstrumentProvider.default_fx_ccy("GBP/USD")
+
+        # Setup wranglers
+        bid_wrangler = BarDataWrangler(
+            bar_type=BarType.from_str("GBP/USD.SIM-1-MINUTE-BID-EXTERNAL"),
+            instrument=self.gbpusd,
+        )
+        ask_wrangler = BarDataWrangler(
+            bar_type=BarType.from_str("GBP/USD.SIM-1-MINUTE-ASK-EXTERNAL"),
+            instrument=self.gbpusd,
+        )
+
+        # Setup data
+        provider = TestDataProvider()
+
+        # Build externally aggregated bars
+        bid_bars = bid_wrangler.process(
+            data=provider.read_csv_bars("fxcm-gbpusd-m1-bid-2012.csv"),
+        )
+        ask_bars = ask_wrangler.process(
+            data=provider.read_csv_bars("fxcm-gbpusd-m1-ask-2012.csv"),
+        )
+
+        self.engine.add_instrument(self.gbpusd)
+        self.engine.add_bars(bid_bars)
+        self.engine.add_bars(ask_bars)
+
+        interest_rate_data = pd.read_csv(
+            os.path.join(PACKAGE_ROOT, "data", "short-term-interest.csv")
+        )
+        fx_rollover_interest = FXRolloverInterestModule(rate_data=interest_rate_data)
+
+        self.engine.add_venue(
+            venue=self.venue,
+            oms_type=OMSType.HEDGING,
+            account_type=AccountType.MARGIN,
+            base_currency=USD,
+            starting_balances=[Money(1_000_000, USD)],
+            modules=[fx_rollover_interest],
+            bar_execution=True,
+        )
+
+    def teardown(self):
+        self.engine.dispose()
+
+    def test_run_ema_cross_with_minute_bar_spec(self):
+        # Arrange
+        config = EMACrossConfig(
+            instrument_id=str(self.gbpusd.id),
+            bar_type="GBP/USD.SIM-1-MINUTE-BID-EXTERNAL",
+            trade_size=Decimal(1_000_000),
+            fast_ema=10,
+            slow_ema=20,
+        )
+        strategy = EMACross(config=config)
+        self.engine.add_strategy(strategy)
+
+        # Act
+        self.engine.run()
+
+        # Assert
+        assert strategy.fast_ema.count == 30117
+        assert self.engine.iteration == 60234
+        assert self.engine.portfolio.account(self.venue).balance_total(USD) == Money(570156.51, USD)
 
 
 class TestBacktestAcceptanceTestsAUDUSD:

@@ -13,6 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+import uuid
 from decimal import Decimal
 from heapq import heappush
 from typing import Dict
@@ -34,6 +35,7 @@ from nautilus_trader.common.uuid cimport UUIDFactory
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.model.c_enums.account_type cimport AccountType
 from nautilus_trader.model.c_enums.account_type cimport AccountTypeParser
+from nautilus_trader.model.c_enums.aggressor_side cimport AggressorSide
 from nautilus_trader.model.c_enums.book_type cimport BookType
 from nautilus_trader.model.c_enums.contingency_type cimport ContingencyType
 from nautilus_trader.model.c_enums.depth_type cimport DepthType
@@ -50,6 +52,7 @@ from nautilus_trader.model.commands.trading cimport SubmitOrder
 from nautilus_trader.model.commands.trading cimport SubmitOrderList
 from nautilus_trader.model.commands.trading cimport TradingCommand
 from nautilus_trader.model.data.tick cimport Tick
+from nautilus_trader.model.data.tick cimport TradeTick
 from nautilus_trader.model.identifiers cimport ClientOrderId
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.identifiers cimport PositionId
@@ -600,15 +603,65 @@ cdef class SimulatedExchange:
 
         self._clock.set_time(bar.ts_init)
 
-        # TODO(cs): Implement simulated order book bar processing
-        # cdef OrderBook book = self.get_book(bar.type.instrument_id)
-        # if book.level == BookType.L1_TBBO:
-        #     book.update_tick(tick)
-        #
-        # self._iterate_matching_engine(
-        #     tick.instrument_id,
-        #     tick.ts_init,
-        # )
+        cdef Quantity size = Quantity(bar.volume / 4, bar.volume.precision)
+
+        # Create reusable tick
+        cdef TradeTick tick = TradeTick(
+            instrument_id=bar.type.instrument_id,
+            price=bar.open,
+            size=size,
+            aggressor_side=AggressorSide.BUY,
+            trade_id=TradeId(str(uuid.uuid4())),
+            ts_event=bar.ts_event - 3_000_000_000,
+            ts_init=bar.ts_event - 3_000_000_000,
+        )
+
+        # Process OHLC through order book
+        cdef OrderBook book = self.get_book(bar.type.instrument_id)
+        if book.type == BookType.L1_TBBO:
+            # Open
+            book.update_tick(tick)
+            self._iterate_matching_engine(
+                tick.instrument_id,
+                tick.ts_init,
+            )
+
+            # High
+            tick.price = bar.high
+            tick.ts_event = bar.ts_event - 2_000_000_000
+            tick.ts_init = bar.ts_init - 2_000_000_000
+            book.update_tick(tick)
+            self._iterate_matching_engine(
+                tick.instrument_id,
+                tick.ts_init,
+            )
+
+            # Low
+            tick.price = bar.low
+            tick.aggressor_side = AggressorSide.SELL
+            tick.ts_event = bar.ts_event - 1_000_000_000
+            tick.ts_init = bar.ts_init - 1_000_000_000
+            book.update_tick(tick)
+            self._iterate_matching_engine(
+                tick.instrument_id,
+                tick.ts_init,
+            )
+
+            # Close
+            tick.price = bar.close
+            tick.aggressor_side = AggressorSide.BUY
+            tick.ts_event = bar.ts_event
+            tick.ts_init = bar.ts_init
+            book.update_tick(tick)
+            self._iterate_matching_engine(
+                tick.instrument_id,
+                tick.ts_init,
+            )
+        else:
+            self._iterate_matching_engine(
+                tick.instrument_id,
+                tick.ts_init,
+            )
 
         if not self._log.is_bypassed:
             self._log.debug(f"Processed {bar}")

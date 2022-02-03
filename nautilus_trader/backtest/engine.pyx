@@ -20,6 +20,10 @@ from typing import Dict, List, Optional, Union
 
 import pandas as pd
 
+from nautilus_trader.analysis.performance import PerformanceAnalyzer
+from nautilus_trader.backtest.config import BacktestEngineConfig
+from nautilus_trader.backtest.results import BacktestResult
+
 from cpython.datetime cimport datetime
 from libc.stdint cimport int64_t
 
@@ -63,10 +67,6 @@ from nautilus_trader.portfolio.portfolio cimport Portfolio
 from nautilus_trader.risk.engine cimport RiskEngine
 from nautilus_trader.serialization.msgpack.serializer cimport MsgPackSerializer
 from nautilus_trader.trading.strategy cimport TradingStrategy
-
-from nautilus_trader.analysis.performance import PerformanceAnalyzer
-from nautilus_trader.backtest.config import BacktestEngineConfig
-from nautilus_trader.backtest.results import BacktestResult
 
 
 cdef class BacktestEngine:
@@ -909,6 +909,8 @@ cdef class BacktestEngine:
                 self._exchanges[data.instrument_id.venue].process_order_book(data)
             elif isinstance(data, Tick):
                 self._exchanges[data.instrument_id.venue].process_tick(data)
+            elif isinstance(data, Bar):
+                self._exchanges[data.type.instrument_id.venue].process_bar(data)
             for exchange in self._exchanges.values():
                 exchange.process(data.ts_init)
             self.iteration += 1
