@@ -163,7 +163,7 @@ class TestLiveExecutionReconciliation:
             limit_offset=None,
             trailing_offset=None,
             offset_type=TrailingOffsetType.NONE,
-            quantity=Quantity.from_int(1_000_000),
+            quantity=Quantity.from_int(10_000),
             filled_qty=Quantity.from_int(0),
             display_qty=None,
             avg_px=None,
@@ -181,7 +181,6 @@ class TestLiveExecutionReconciliation:
 
         # Act
         result = await self.exec_engine.reconcile_state()
-        await asyncio.sleep(0.3)
 
         # Assert
         assert result
@@ -209,7 +208,7 @@ class TestLiveExecutionReconciliation:
             limit_offset=None,
             trailing_offset=None,
             offset_type=TrailingOffsetType.NONE,
-            quantity=Quantity.from_int(1_000_000),
+            quantity=Quantity.from_int(10_000),
             filled_qty=Quantity.from_int(0),
             display_qty=None,
             avg_px=None,
@@ -227,7 +226,6 @@ class TestLiveExecutionReconciliation:
 
         # Act
         result = await self.exec_engine.reconcile_state()
-        await asyncio.sleep(0.3)
 
         # Assert
         assert result
@@ -256,7 +254,7 @@ class TestLiveExecutionReconciliation:
             limit_offset=None,
             trailing_offset=None,
             offset_type=TrailingOffsetType.NONE,
-            quantity=Quantity.from_int(1_000_000),
+            quantity=Quantity.from_int(10_000),
             filled_qty=Quantity.from_int(0),
             display_qty=None,
             avg_px=None,
@@ -274,7 +272,6 @@ class TestLiveExecutionReconciliation:
 
         # Act
         result = await self.exec_engine.reconcile_state()
-        await asyncio.sleep(0.3)
 
         # Assert
         assert result
@@ -302,7 +299,7 @@ class TestLiveExecutionReconciliation:
             limit_offset=None,
             trailing_offset=None,
             offset_type=TrailingOffsetType.PRICE,
-            quantity=Quantity.from_int(1_000_000),
+            quantity=Quantity.from_int(10_000),
             filled_qty=Quantity.from_int(0),
             display_qty=None,
             avg_px=None,
@@ -320,7 +317,6 @@ class TestLiveExecutionReconciliation:
 
         # Act
         result = await self.exec_engine.reconcile_state()
-        await asyncio.sleep(0.3)
 
         # Assert
         assert result
@@ -348,7 +344,7 @@ class TestLiveExecutionReconciliation:
             limit_offset=None,
             trailing_offset=None,
             offset_type=TrailingOffsetType.PRICE,
-            quantity=Quantity.from_int(1_000_000),
+            quantity=Quantity.from_int(10_000),
             filled_qty=Quantity.from_int(0),
             display_qty=None,
             avg_px=None,
@@ -366,7 +362,6 @@ class TestLiveExecutionReconciliation:
 
         # Act
         result = await self.exec_engine.reconcile_state()
-        await asyncio.sleep(0.3)
 
         # Assert
         assert result
@@ -395,8 +390,8 @@ class TestLiveExecutionReconciliation:
             limit_offset=None,
             trailing_offset=None,
             offset_type=TrailingOffsetType.NONE,
-            quantity=Quantity.from_int(1_000_000),
-            filled_qty=Quantity.from_int(1_000_000),
+            quantity=Quantity.from_int(10_000),
+            filled_qty=Quantity.from_int(10_000),
             display_qty=None,
             avg_px=Decimal("1.00000"),
             post_only=True,
@@ -413,7 +408,6 @@ class TestLiveExecutionReconciliation:
 
         # Act
         result = await self.exec_engine.reconcile_state()
-        await asyncio.sleep(0.3)
 
         # Assert
         assert result
@@ -442,8 +436,8 @@ class TestLiveExecutionReconciliation:
             limit_offset=None,
             trailing_offset=None,
             offset_type=TrailingOffsetType.NONE,
-            quantity=Quantity.from_int(1_000_000),
-            filled_qty=Quantity.from_int(1_000_000),
+            quantity=Quantity.from_int(10_000),
+            filled_qty=Quantity.from_int(10_000),
             display_qty=None,
             avg_px=Decimal("1.00000"),
             post_only=True,
@@ -464,7 +458,7 @@ class TestLiveExecutionReconciliation:
             venue_position_id=None,
             trade_id=TradeId("1"),
             order_side=OrderSide.BUY,
-            last_qty=Quantity.from_int(1_000_000),
+            last_qty=Quantity.from_int(10_000),
             last_px=Price.from_str("1.00000"),
             commission=Money(0, USD),
             liquidity_side=LiquiditySide.MAKER,
@@ -478,7 +472,6 @@ class TestLiveExecutionReconciliation:
 
         # Act
         result = await self.exec_engine.reconcile_state()
-        await asyncio.sleep(0.3)
 
         # Assert
         assert result
