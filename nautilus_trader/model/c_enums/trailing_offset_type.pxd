@@ -15,10 +15,11 @@
 
 
 cpdef enum TrailingOffsetType:
-    PRICE = 0  # Default
-    BASIS_POINTS = 1
-    TICKS = 2
-    PRICE_TIER = 3
+    NONE = 0
+    PRICE = 1  # Default
+    BASIS_POINTS = 2
+    TICKS = 3
+    PRICE_TIER = 4
 
 
 cdef class TrailingOffsetTypeParser:

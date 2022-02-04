@@ -15,15 +15,16 @@
 
 
 cpdef enum TriggerType:
-    DEFAULT = 0
-    LAST = 1
-    BID_ASK = 2
-    DOUBLE_LAST = 3
-    DOUBLE_BID_ASK = 4
-    LAST_OR_BID_ASK = 5
-    MID_POINT = 6
-    MARK = 7
-    INDEX = 8
+    NONE = 0
+    DEFAULT = 1
+    LAST = 2
+    BID_ASK = 3
+    DOUBLE_LAST = 4
+    DOUBLE_BID_ASK = 5
+    LAST_OR_BID_ASK = 6
+    MID_POINT = 7
+    MARK = 8
+    INDEX = 9
 
 
 

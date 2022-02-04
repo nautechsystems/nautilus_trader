@@ -1068,6 +1068,7 @@ class TestTrailingOffsetType:
     @pytest.mark.parametrize(
         "enum, expected",
         [
+            [TrailingOffsetType.NONE, "NONE"],
             [TrailingOffsetType.PRICE, "PRICE"],
             [TrailingOffsetType.BASIS_POINTS, "BASIS_POINTS"],
             [TrailingOffsetType.TICKS, "TICKS"],
@@ -1084,6 +1085,7 @@ class TestTrailingOffsetType:
     @pytest.mark.parametrize(
         "string, expected",
         [
+            ["NONE", TrailingOffsetType.NONE],
             ["PRICE", TrailingOffsetType.PRICE],
             ["BASIS_POINTS", TrailingOffsetType.BASIS_POINTS],
             ["TICKS", TrailingOffsetType.TICKS],
@@ -1107,6 +1109,7 @@ class TestTriggerType:
     @pytest.mark.parametrize(
         "enum, expected",
         [
+            [TriggerType.NONE, "NONE"],
             [TriggerType.DEFAULT, "DEFAULT"],
             [TriggerType.LAST, "LAST"],
             [TriggerType.BID_ASK, "BID_ASK"],
@@ -1128,6 +1131,7 @@ class TestTriggerType:
     @pytest.mark.parametrize(
         "string, expected",
         [
+            ["NONE", TriggerType.NONE],
             ["DEFAULT", TriggerType.DEFAULT],
             ["LAST", TriggerType.LAST],
             ["BID_ASK", TriggerType.BID_ASK],

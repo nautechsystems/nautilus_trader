@@ -53,7 +53,6 @@ from nautilus_trader.model.events.order cimport OrderRejected
 from nautilus_trader.model.events.order cimport OrderTriggered
 from nautilus_trader.model.events.order cimport OrderUpdated
 from nautilus_trader.model.identifiers cimport ClientOrderId
-from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.identifiers cimport StrategyId
 from nautilus_trader.model.identifiers cimport TradeId
 from nautilus_trader.model.identifiers cimport VenueOrderId
@@ -279,13 +278,13 @@ cdef class LiveExecutionEngine(ExecutionEngine):
         self._queue.put_nowait(self._sentinel)
         self._log.debug(f"Sentinel message placed on message queue.")
 
-    async def reconcile_state(self, double timeout_secs) -> bool:
+    async def reconcile_state(self, double timeout_secs=10.0) -> bool:
         """
         Reconcile the execution engines state with all execution clients.
 
         Parameters
         ----------
-        timeout_secs : double
+        timeout_secs : double, default 10.0
             The seconds to allow for reconciliation before timing out.
 
         Returns
