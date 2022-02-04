@@ -100,6 +100,8 @@ cdef class StopLimitOrder(Order):
     ValueError
         If `quantity` is not positive (> 0).
     ValueError
+        If `trigger_type` is ``NONE``.
+    ValueError
         If `time_in_force` is ``GTD`` and `expire_time` is ``None`` or <= UNIX epoch.
     ValueError
         If `display_qty` is negative (< 0) or greater than `quantity`.
@@ -129,6 +131,8 @@ cdef class StopLimitOrder(Order):
         ClientOrderId parent_order_id=None,
         str tags=None,
     ):
+        Condition.not_equal(trigger_type, TriggerType.NONE, "trigger_type", "NONE")
+
         cdef int64_t expire_time_ns = 0
         if time_in_force == TimeInForce.GTD:
             # Must have an expire time

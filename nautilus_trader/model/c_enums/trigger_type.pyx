@@ -19,29 +19,33 @@ cdef class TriggerTypeParser:
     @staticmethod
     cdef str to_str(int value):
         if value == 0:
-            return "DEFAULT"
+            return "NONE"
         elif value == 1:
-            return "LAST"
+            return "DEFAULT"
         elif value == 2:
-            return "BID_ASK"
+            return "LAST"
         elif value == 3:
-            return "DOUBLE_LAST"
+            return "BID_ASK"
         elif value == 4:
-            return "DOUBLE_BID_ASK"
+            return "DOUBLE_LAST"
         elif value == 5:
-            return "LAST_OR_BID_ASK"
+            return "DOUBLE_BID_ASK"
         elif value == 6:
-            return "MID_POINT"
+            return "LAST_OR_BID_ASK"
         elif value == 7:
-            return "MARK"
+            return "MID_POINT"
         elif value == 8:
+            return "MARK"
+        elif value == 9:
             return "INDEX"
         else:
             raise ValueError(f"value was invalid, was {value}")
 
     @staticmethod
     cdef TriggerType from_str(str value) except *:
-        if value == "DEFAULT":
+        if value == "NONE":
+            return TriggerType.NONE
+        elif value == "DEFAULT":
             return TriggerType.DEFAULT
         elif value == "LAST":
             return TriggerType.LAST
