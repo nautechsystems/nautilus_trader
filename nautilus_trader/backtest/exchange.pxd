@@ -134,8 +134,8 @@ cdef class SimulatedExchange:
     cpdef void process_order_book(self, OrderBookData data) except *
     cpdef void process_tick(self, Tick tick) except *
     cpdef void process_bar(self, Bar bar) except *
-    cdef void _process_trade_tick_from_bar(self, OrderBook book, Bar bar) except *
-    cdef void _process_quote_tick_from_bar(self, OrderBook book) except *
+    cdef void _process_trade_ticks_from_bar(self, OrderBook book, Bar bar) except *
+    cdef void _process_quote_ticks_from_bar(self, OrderBook book) except *
     cpdef void process(self, int64_t now_ns) except *
     cpdef void reset(self) except *
 
