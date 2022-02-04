@@ -610,11 +610,7 @@ cdef class SimulatedExchange:
 
         cdef OrderBook book = self.get_book(bar.type.instrument_id)
         if book.type != BookType.L1_TBBO:
-            self._iterate_matching_engine(
-                bar.type.instrument_id,
-                bar.ts_init,
-            )
-            return
+            return  # Can only process an L1 book with bars
 
         # Turn ON bar execution mode (temporary until unify execution)
         self._bar_execution = True
