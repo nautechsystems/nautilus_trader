@@ -181,6 +181,7 @@ class TestLiveExecutionReconciliation:
 
         # Act
         result = await self.exec_engine.reconcile_state()
+        await asyncio.sleep(0.3)
 
         # Assert
         assert result
@@ -226,6 +227,7 @@ class TestLiveExecutionReconciliation:
 
         # Act
         result = await self.exec_engine.reconcile_state()
+        await asyncio.sleep(0.3)
 
         # Assert
         assert result
@@ -272,6 +274,7 @@ class TestLiveExecutionReconciliation:
 
         # Act
         result = await self.exec_engine.reconcile_state()
+        await asyncio.sleep(0.3)
 
         # Assert
         assert result
@@ -317,6 +320,7 @@ class TestLiveExecutionReconciliation:
 
         # Act
         result = await self.exec_engine.reconcile_state()
+        await asyncio.sleep(0.3)
 
         # Assert
         assert result
@@ -362,6 +366,7 @@ class TestLiveExecutionReconciliation:
 
         # Act
         result = await self.exec_engine.reconcile_state()
+        await asyncio.sleep(0.3)
 
         # Assert
         assert result
@@ -408,6 +413,7 @@ class TestLiveExecutionReconciliation:
 
         # Act
         result = await self.exec_engine.reconcile_state()
+        await asyncio.sleep(0.3)
 
         # Assert
         assert result
@@ -472,6 +478,7 @@ class TestLiveExecutionReconciliation:
 
         # Act
         result = await self.exec_engine.reconcile_state()
+        await asyncio.sleep(0.3)
 
         # Assert
         assert result
