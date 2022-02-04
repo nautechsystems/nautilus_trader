@@ -56,6 +56,7 @@ from nautilus_trader.model.commands.trading import ModifyOrder
 from nautilus_trader.model.commands.trading import SubmitOrder
 from nautilus_trader.model.commands.trading import SubmitOrderList
 from nautilus_trader.model.currency import Currency
+from nautilus_trader.model.enums import OMSType
 from nautilus_trader.model.events.account import AccountState
 from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import ClientId
@@ -111,10 +112,11 @@ class BetfairExecutionClient(LiveExecutionClient):
         super().__init__(
             loop=loop,
             client_id=ClientId(BETFAIR_VENUE.value),
-            instrument_provider=instrument_provider
-            or BetfairInstrumentProvider(client=client, logger=logger, market_filter=market_filter),
+            oms_type=OMSType.NETTING,
             account_type=AccountType.BETTING,
             base_currency=base_currency,
+            instrument_provider=instrument_provider
+            or BetfairInstrumentProvider(client=client, logger=logger, market_filter=market_filter),
             msgbus=msgbus,
             cache=cache,
             clock=clock,

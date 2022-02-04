@@ -20,14 +20,15 @@ import pandas as pd
 
 from nautilus_trader.backtest.data.providers import TestDataProvider
 from nautilus_trader.backtest.data.providers import TestInstrumentProvider
-from nautilus_trader.backtest.data.wranglers import QuoteTickDataWrangler
+from nautilus_trader.backtest.data.wranglers import BarDataWrangler
 from nautilus_trader.backtest.engine import BacktestEngine
 from nautilus_trader.backtest.engine import BacktestEngineConfig
 from nautilus_trader.backtest.models import FillModel
 from nautilus_trader.backtest.modules import FXRolloverInterestModule
-from nautilus_trader.examples.strategies.ema_cross import EMACross
-from nautilus_trader.examples.strategies.ema_cross import EMACrossConfig
+from nautilus_trader.examples.strategies.ema_cross_bracket import EMACrossBracket
+from nautilus_trader.examples.strategies.ema_cross_bracket import EMACrossBracketConfig
 from nautilus_trader.model.currencies import USD
+from nautilus_trader.model.data.bar import BarType
 from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import OMSType
 from nautilus_trader.model.identifiers import Venue
@@ -38,20 +39,42 @@ if __name__ == "__main__":
     # Configure backtest engine
     config = BacktestEngineConfig(
         trader_id="BACKTESTER-001",
+        log_level="INFO",
+        risk_engine={
+            "bypass": True,  # Example of bypassing pre-trade risk checks for backtests
+            "max_notional_per_order": {"GBP/USD.SIM": 2_000_000},
+        },
     )
-    # Build the backtest engine
+    # Build backtest engine
     engine = BacktestEngine(config=config)
 
     # Setup trading instruments
     SIM = Venue("SIM")
-    AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy("AUD/USD", SIM)
+    GBPUSD_SIM = TestInstrumentProvider.default_fx_ccy("GBP/USD", SIM)
+
+    # Setup wranglers
+    bid_wrangler = BarDataWrangler(
+        bar_type=BarType.from_str("GBP/USD.SIM-1-MINUTE-BID-EXTERNAL"),
+        instrument=GBPUSD_SIM,
+    )
+    ask_wrangler = BarDataWrangler(
+        bar_type=BarType.from_str("GBP/USD.SIM-1-MINUTE-ASK-EXTERNAL"),
+        instrument=GBPUSD_SIM,
+    )
 
     # Setup data
     provider = TestDataProvider()
-    wrangler = QuoteTickDataWrangler(instrument=AUDUSD_SIM)
-    ticks = wrangler.process(provider.read_csv_ticks("truefx-audusd-ticks.csv"))
-    engine.add_instrument(AUDUSD_SIM)
-    engine.add_ticks(ticks)
+
+    # Build externally aggregated bars
+    bid_bars = bid_wrangler.process(
+        data=provider.read_csv_bars("fxcm-gbpusd-m1-bid-2012.csv")[:10000],
+    )
+    ask_bars = ask_wrangler.process(
+        data=provider.read_csv_bars("fxcm-gbpusd-m1-ask-2012.csv")[:10000],
+    )
+    engine.add_instrument(GBPUSD_SIM)
+    engine.add_bars(bid_bars)
+    engine.add_bars(ask_bars)
 
     # Create a fill model (optional)
     fill_model = FillModel(
@@ -79,16 +102,17 @@ if __name__ == "__main__":
     )
 
     # Configure your strategy
-    config = EMACrossConfig(
-        instrument_id=str(AUDUSD_SIM.id),
-        bar_type="AUD/USD.SIM-100-TICK-MID-INTERNAL",
+    config = EMACrossBracketConfig(
+        instrument_id=str(GBPUSD_SIM.id),
+        bar_type="GBP/USD.SIM-1-MINUTE-BID-EXTERNAL",
         fast_ema_period=10,
         slow_ema_period=20,
+        bracket_distance_atr=3.0,
         trade_size=Decimal(1_000_000),
         order_id_tag="001",
     )
     # Instantiate and add your strategy
-    strategy = EMACross(config=config)
+    strategy = EMACrossBracket(config=config)
     engine.add_strategy(strategy=strategy)
 
     input("Press Enter to continue...")  # noqa (always Python 3)

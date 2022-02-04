@@ -625,14 +625,12 @@ class TestOMSType:
     def test_oms_type_parser_given_invalid_value_raises_value_error(self):
         # Arrange, Act, Assert
         with pytest.raises(ValueError):
-            OMSTypeParser.to_str_py(0)
-
-        with pytest.raises(ValueError):
             OMSTypeParser.from_str_py("")
 
     @pytest.mark.parametrize(
         "enum, expected",
         [
+            [OMSType.NONE, "NONE"],
             [OMSType.NETTING, "NETTING"],
             [OMSType.HEDGING, "HEDGING"],
         ],
@@ -647,6 +645,7 @@ class TestOMSType:
     @pytest.mark.parametrize(
         "string, expected",
         [
+            ["NONE", OMSType.NONE],
             ["NETTING", OMSType.NETTING],
             ["HEDGING", OMSType.HEDGING],
         ],

@@ -18,7 +18,9 @@ cdef class OMSTypeParser:
 
     @staticmethod
     cdef str to_str(int value):
-        if value == 1:
+        if value == 0:
+            return "NONE"
+        elif value == 1:
             return "NETTING"
         elif value == 2:
             return "HEDGING"
@@ -27,7 +29,9 @@ cdef class OMSTypeParser:
 
     @staticmethod
     cdef OMSType from_str(str value) except *:
-        if value == "NETTING":
+        if value == "NONE":
+            return OMSType.NONE
+        elif value == "NETTING":
             return OMSType.NETTING
         elif value == "HEDGING":
             return OMSType.HEDGING

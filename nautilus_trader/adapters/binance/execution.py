@@ -51,6 +51,7 @@ from nautilus_trader.model.commands.trading import ModifyOrder
 from nautilus_trader.model.commands.trading import SubmitOrder
 from nautilus_trader.model.commands.trading import SubmitOrderList
 from nautilus_trader.model.enums import LiquiditySide
+from nautilus_trader.model.enums import OMSType
 from nautilus_trader.model.enums import TimeInForce
 from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import ClientId
@@ -112,6 +113,7 @@ class BinanceSpotExecutionClient(LiveExecutionClient):
         super().__init__(
             loop=loop,
             client_id=ClientId(BINANCE_VENUE.value),
+            oms_type=OMSType.NETTING,
             instrument_provider=instrument_provider,
             account_type=AccountType.CASH,
             base_currency=None,

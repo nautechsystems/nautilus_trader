@@ -42,6 +42,7 @@ from nautilus_trader.model.c_enums.order_side import OrderSide
 from nautilus_trader.model.currency import Currency
 from nautilus_trader.model.data.bar import BarType
 from nautilus_trader.model.data.tick import QuoteTick
+from nautilus_trader.model.enums import OMSType
 from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import ClientOrderId
 from nautilus_trader.model.identifiers import InstrumentId
@@ -433,6 +434,7 @@ class MockExecutionClient(ExecutionClient):
     ):
         super().__init__(
             client_id=client_id,
+            oms_type=OMSType.HEDGING,
             account_type=account_type,
             base_currency=base_currency,
             msgbus=msgbus,
@@ -523,6 +525,7 @@ class MockLiveExecutionClient(LiveExecutionClient):
         super().__init__(
             loop=loop,
             client_id=client_id,
+            oms_type=OMSType.HEDGING,
             account_type=account_type,
             base_currency=base_currency,
             instrument_provider=instrument_provider,

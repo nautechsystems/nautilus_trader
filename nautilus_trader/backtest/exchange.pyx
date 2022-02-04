@@ -13,6 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+import uuid
 from decimal import Decimal
 from heapq import heappush
 from typing import Dict
@@ -34,6 +35,7 @@ from nautilus_trader.common.uuid cimport UUIDFactory
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.model.c_enums.account_type cimport AccountType
 from nautilus_trader.model.c_enums.account_type cimport AccountTypeParser
+from nautilus_trader.model.c_enums.aggressor_side cimport AggressorSide
 from nautilus_trader.model.c_enums.book_type cimport BookType
 from nautilus_trader.model.c_enums.contingency_type cimport ContingencyType
 from nautilus_trader.model.c_enums.depth_type cimport DepthType
@@ -43,13 +45,16 @@ from nautilus_trader.model.c_enums.oms_type cimport OMSTypeParser
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
 from nautilus_trader.model.c_enums.order_status cimport OrderStatus
 from nautilus_trader.model.c_enums.order_type cimport OrderType
+from nautilus_trader.model.c_enums.price_type cimport PriceType
 from nautilus_trader.model.commands.trading cimport CancelAllOrders
 from nautilus_trader.model.commands.trading cimport CancelOrder
 from nautilus_trader.model.commands.trading cimport ModifyOrder
 from nautilus_trader.model.commands.trading cimport SubmitOrder
 from nautilus_trader.model.commands.trading cimport SubmitOrderList
 from nautilus_trader.model.commands.trading cimport TradingCommand
+from nautilus_trader.model.data.tick cimport QuoteTick
 from nautilus_trader.model.data.tick cimport Tick
+from nautilus_trader.model.data.tick cimport TradeTick
 from nautilus_trader.model.identifiers cimport ClientOrderId
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.identifiers cimport PositionId
@@ -181,9 +186,9 @@ cdef class SimulatedExchange:
 
         # Execution
         self.reject_stop_orders = reject_stop_orders
-        self.bar_execution = bar_execution
         self.fill_model = fill_model
         self.latency_model = latency_model
+        self._bar_execution = bar_execution
 
         # Load modules
         self.modules = []
@@ -206,13 +211,16 @@ cdef class SimulatedExchange:
             self._log.info(f"Loaded instrument {instrument.id.value}.")
 
         # Markets
-        self._books = {}        # type: dict[InstrumentId, OrderBook]
-        self._last_bids = {}    # type: dict[InstrumentId, Price]
-        self._last_asks = {}    # type: dict[InstrumentId, Price]
-        self._order_index = {}  # type: dict[ClientOrderId, Order]
-        self._orders_bid = {}   # type: dict[InstrumentId, list[Order]]
-        self._orders_ask = {}   # type: dict[InstrumentId, list[Order]]
-        self._oto_orders = {}   # type: dict[ClientOrderId]
+        self._books = {}          # type: dict[InstrumentId, OrderBook]
+        self._last = {}           # type: dict[InstrumentId, Price]
+        self._last_bids = {}      # type: dict[InstrumentId, Price]
+        self._last_asks = {}      # type: dict[InstrumentId, Price]
+        self._last_bid_bars = {}  # type: dict[InstrumentId, Bar]
+        self._last_ask_bars = {}  # type: dict[InstrumentId, Bar]
+        self._order_index = {}    # type: dict[ClientOrderId, Order]
+        self._orders_bid = {}     # type: dict[InstrumentId, list[Order]]
+        self._orders_ask = {}     # type: dict[InstrumentId, list[Order]]
+        self._oto_orders = {}     # type: dict[ClientOrderId]
 
         self._symbol_pos_count = {}  # type: dict[InstrumentId, int]
         self._symbol_ord_count = {}  # type: dict[InstrumentId, int]
@@ -593,25 +601,149 @@ cdef class SimulatedExchange:
         Parameters
         ----------
         bar : Bar
-            The tick to process.
+            The bar to process.
 
         """
         Condition.not_none(bar, "bar")
 
         self._clock.set_time(bar.ts_init)
 
-        # TODO(cs): Implement simulated order book bar processing
-        # cdef OrderBook book = self.get_book(bar.type.instrument_id)
-        # if book.level == BookType.L1_TBBO:
-        #     book.update_tick(tick)
-        #
-        # self._iterate_matching_engine(
-        #     tick.instrument_id,
-        #     tick.ts_init,
-        # )
+        cdef OrderBook book = self.get_book(bar.type.instrument_id)
+        if book.type != BookType.L1_TBBO:
+            self._iterate_matching_engine(
+                bar.type.instrument_id,
+                bar.ts_init,
+            )
+            return
+
+        # Turn ON bar execution mode (temporary until unify execution)
+        self._bar_execution = True
+
+        cdef PriceType price_type = bar.type.spec.price_type
+        if price_type == PriceType.LAST or price_type == PriceType.MID:
+            self._process_trade_tick_from_bar(book, bar)
+        elif price_type == PriceType.BID:
+            self._last_bid_bars[bar.type.instrument_id] = bar
+            self._process_quote_tick_from_bar(book)
+        elif price_type == PriceType.ASK:
+            self._last_ask_bars[bar.type.instrument_id] = bar
+            self._process_quote_tick_from_bar(book)
+        else:  # pragma: no cover (design-time error)
+            raise RuntimeError("invalid price type")
 
         if not self._log.is_bypassed:
             self._log.debug(f"Processed {bar}")
+
+    cdef void _process_trade_tick_from_bar(self, OrderBook book, Bar bar) except *:
+        cdef Quantity size = Quantity(bar.volume / 4, bar.volume.precision)
+        cdef Price last = self._last.get(book.instrument_id)
+
+        # Create reusable tick
+        cdef TradeTick tick = TradeTick(
+            bar.type.instrument_id,
+            bar.open,
+            size,
+            AggressorSide.BUY if last is None or bar.open >= last else AggressorSide.SELL,
+            TradeId(str(uuid.uuid4())),
+            bar.ts_event,
+            bar.ts_event,
+        )
+
+        # TODO(cs): Only produce a trade if it changes the last price
+
+        # Open
+        book.update_tick(tick)
+        self._iterate_matching_engine(
+            tick.instrument_id,
+            tick.ts_init,
+        )
+
+        # High
+        tick.price = bar.high
+        tick.aggressor_side = AggressorSide.BUY
+        book.update_tick(tick)
+        self._iterate_matching_engine(
+            tick.instrument_id,
+            tick.ts_init,
+        )
+
+        # Low
+        tick.price = bar.low
+        tick.aggressor_side = AggressorSide.SELL
+        book.update_tick(tick)
+        self._iterate_matching_engine(
+            tick.instrument_id,
+            tick.ts_init,
+        )
+
+        # Close
+        tick.price = bar.close
+        tick.aggressor_side = AggressorSide.BUY
+        book.update_tick(tick)
+        self._iterate_matching_engine(
+            tick.instrument_id,
+            tick.ts_init,
+        )
+
+        self._last[book.instrument_id] = bar.close
+
+    cdef void _process_quote_tick_from_bar(self, OrderBook book) except *:
+        cdef Bar last_bid_bar = self._last_bid_bars.get(book.instrument_id)
+        cdef Bar last_ask_bar = self._last_ask_bars.get(book.instrument_id)
+
+        if last_bid_bar is None or last_ask_bar is None:
+            return  # Wait for next bar
+
+        if last_bid_bar.ts_event != last_ask_bar.ts_event:
+            return  # Wait for next bar
+
+        cdef Quantity bid_size = Quantity(last_bid_bar.volume / 4, last_bid_bar.volume.precision)
+        cdef Quantity ask_size = Quantity(last_ask_bar.volume / 4, last_ask_bar.volume.precision)
+
+        # Create reusable tick
+        cdef QuoteTick tick = QuoteTick(
+            book.instrument_id,
+            last_bid_bar.open,
+            last_ask_bar.open,
+            bid_size,
+            ask_size,
+            last_bid_bar.ts_event,
+            last_ask_bar.ts_init,
+        )
+
+        # Open
+        book.update_tick(tick)
+        self._iterate_matching_engine(
+            tick.instrument_id,
+            tick.ts_init,
+        )
+
+        # High
+        tick.bid = last_bid_bar.high
+        tick.ask = last_ask_bar.high
+        book.update_tick(tick)
+        self._iterate_matching_engine(
+            tick.instrument_id,
+            tick.ts_init,
+        )
+
+        # Low
+        tick.bid = last_bid_bar.low
+        tick.ask = last_ask_bar.low
+        book.update_tick(tick)
+        self._iterate_matching_engine(
+            tick.instrument_id,
+            tick.ts_init,
+        )
+
+        # Close
+        tick.bid = last_bid_bar.close
+        tick.ask = last_ask_bar.close
+        book.update_tick(tick)
+        self._iterate_matching_engine(
+            tick.instrument_id,
+            tick.ts_init,
+        )
 
     cpdef void process(self, int64_t now_ns) except *:
         """
@@ -714,8 +846,11 @@ cdef class SimulatedExchange:
         self._generate_fresh_account_state()
 
         self._books.clear()
+        self._last.clear()
         self._last_bids.clear()
         self._last_asks.clear()
+        self._last_bid_bars.clear()
+        self._last_ask_bars.clear()
         self._order_index.clear()
         self._orders_bid.clear()
         self._orders_ask.clear()
@@ -986,7 +1121,7 @@ cdef class SimulatedExchange:
                 self._update_order(
                     oco_order,
                     order.leaves_qty,
-                    price=oco_order.price if oco_order.type == OrderType.LIMIT or oco_order.type == OrderType.STOP_LIMIT else None,  # noqa TODO(cs): Temporary will refactor!,
+                    price=oco_order.price if oco_order.type == OrderType.LIMIT or oco_order.type == OrderType.STOP_LIMIT else None,  # noqa TODO(cs): Temporary will refactor!
                     trigger_price=oco_order.trigger_price if oco_order.type == OrderType.STOP_MARKET or oco_order.type == OrderType.STOP_LIMIT else None,  # noqa TODO(cs): Temporary will refactor!
                     update_ocos=False,
                 )
@@ -1196,11 +1331,12 @@ cdef class SimulatedExchange:
             raise ValueError(f"invalid OrderSide, was {side}")
 
     cdef list _determine_limit_price_and_volume(self, Order order):
-        if self.bar_execution:
+        if self._bar_execution:
             if order.is_buy_c():
                 self._last_bids[order.instrument_id] = order.price
             elif order.is_sell_c():
                 self._last_asks[order.instrument_id] = order.price
+            self._last[order.instrument_id] = order.price
             return [(order.price, order.leaves_qty)]
         cdef OrderBook book = self.get_book(order.instrument_id)
         cdef OrderBookOrder submit_order = OrderBookOrder(price=order.price, size=order.leaves_qty, side=order.side)
@@ -1211,12 +1347,13 @@ cdef class SimulatedExchange:
 
     cdef list _determine_market_price_and_volume(self, Order order):
         cdef Price price
-        if self.bar_execution:
+        if self._bar_execution:
             if order.type == OrderType.MARKET:
                 if order.is_buy_c():
                     price = self._last_asks.get(order.instrument_id)
                     if price is None:
                         price = self.best_ask_price(order.instrument_id)
+                    self._last[order.instrument_id] = price
                     if price is not None:
                         return [(price, order.leaves_qty)]
                     else:  # pragma: no cover (design-time error)
@@ -1227,6 +1364,7 @@ cdef class SimulatedExchange:
                     price = self._last_bids.get(order.instrument_id)
                     if price is None:
                         price = self.best_bid_price(order.instrument_id)
+                    self._last[order.instrument_id] = price
                     if price is not None:
                         return [(price, order.leaves_qty)]
                     else:  # pragma: no cover (design-time error)
@@ -1239,6 +1377,7 @@ cdef class SimulatedExchange:
                     self._last_asks[order.instrument_id] = price
                 elif order.is_sell_c():
                     self._last_bids[order.instrument_id] = price
+                self._last[order.instrument_id] = price
                 return [(price, order.leaves_qty)]
         price = Price.from_int_c(INT_MAX if order.side == OrderSide.BUY else INT_MIN)
         cdef OrderBookOrder submit_order = OrderBookOrder(price=price, size=order.leaves_qty, side=order.side)

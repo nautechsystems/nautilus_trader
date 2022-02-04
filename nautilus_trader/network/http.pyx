@@ -45,7 +45,7 @@ cdef class HttpClient:
         The logger for the client.
     ttl_dns_cache : int
         The time to live for the DNS cache.
-    ssl: Union[None, bool, Fingerprint, SSLContext], default=False
+    ssl: Union[None, bool, Fingerprint, SSLContext], default False
         The ssl context to use for HTTPS.
     connector_kwargs : dict, optional
         The connector key word arguments.

@@ -79,6 +79,8 @@ cdef class TradingStrategy(Actor):
     determines how positions are handled by the `ExecutionEngine`.
 
     Strategy OMS (Order Management System) types:
+     - ``NONE``: No specific type has been configured, will therefore default to
+       the native OMS type for each venue.
      - ``HEDGING``: A position ID will be assigned for each new position which
        is opened per instrument.
      - ``NETTING``: There will only ever be a single position for the strategy
@@ -109,7 +111,7 @@ cdef class TradingStrategy(Actor):
         component_id = type(self).__name__ if config.component_id is None else config.component_id
         self.id = StrategyId(f"{component_id}-{config.order_id_tag}")
 
-        self.oms_type = OMSTypeParser.from_str(config.oms_type)
+        self.oms_type = OMSTypeParser.from_str(str(config.oms_type).upper())
 
         # Indicators
         self._indicators = []             # type: list[Indicator]

@@ -277,7 +277,7 @@ cdef class Quantity(BaseDecimal):
         """
         Return a quantity with a value of zero.
 
-        precision : uint8, default=0
+        precision : uint8, default 0
             The precision for the quantity.
 
         Returns

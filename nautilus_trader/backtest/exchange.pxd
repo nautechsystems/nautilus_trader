@@ -88,22 +88,25 @@ cdef class SimulatedExchange:
     """The fill model for the exchange.\n\n:returns: `FillModel`"""
     cdef readonly bint reject_stop_orders
     """If stop orders are rejected on submission if in the market.\n\n:returns: `bool`"""
-    cdef readonly bint bar_execution
-    """If the exchange execution dynamics is based on bar data.\n\n:returns: `bool`"""
     cdef readonly list modules
     """The simulation modules registered with the exchange.\n\n:returns: `list[SimulationModule]`"""
     cdef readonly dict instruments
     """The exchange instruments.\n\n:returns: `dict[InstrumentId, Instrument]`"""
 
+
     cdef dict _instrument_indexer
 
     cdef dict _books
+    cdef dict _last
     cdef dict _last_bids
     cdef dict _last_asks
+    cdef dict _last_bid_bars
+    cdef dict _last_ask_bars
     cdef dict _order_index
     cdef dict _orders_bid
     cdef dict _orders_ask
     cdef dict _oto_orders
+    cdef bint _bar_execution
 
     cdef dict _symbol_pos_count
     cdef dict _symbol_ord_count
@@ -131,6 +134,8 @@ cdef class SimulatedExchange:
     cpdef void process_order_book(self, OrderBookData data) except *
     cpdef void process_tick(self, Tick tick) except *
     cpdef void process_bar(self, Bar bar) except *
+    cdef void _process_trade_tick_from_bar(self, OrderBook book, Bar bar) except *
+    cdef void _process_quote_tick_from_bar(self, OrderBook book) except *
     cpdef void process(self, int64_t now_ns) except *
     cpdef void reset(self) except *
 

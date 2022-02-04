@@ -52,6 +52,7 @@ from nautilus_trader.model.commands.trading import SubmitOrderList
 from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.currency import Currency
 from nautilus_trader.model.enums import LiquiditySide
+from nautilus_trader.model.enums import OMSType
 from nautilus_trader.model.enums import OrderStatus
 from nautilus_trader.model.enums import OrderType
 from nautilus_trader.model.enums import TimeInForce
@@ -124,6 +125,7 @@ class FTXExecutionClient(LiveExecutionClient):
         super().__init__(
             loop=loop,
             client_id=ClientId(FTX_VENUE.value),
+            oms_type=OMSType.NETTING,
             instrument_provider=instrument_provider,
             account_type=AccountType.MARGIN,
             base_currency=USD,

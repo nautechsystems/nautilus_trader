@@ -208,9 +208,9 @@ class BacktestEngineConfig(pydantic.BaseModel):
 
     Parameters
     ----------
-    trader_id : str, default="BACKTESTER-000"
+    trader_id : str, default "BACKTESTER-000"
         The trader ID.
-    log_level : str, default="INFO"
+    log_level : str, default "INFO"
         The minimum log level for logging messages to stdout.
     cache : CacheConfig, optional
         The configuration for the cache.
@@ -222,9 +222,9 @@ class BacktestEngineConfig(pydantic.BaseModel):
         The configuration for the risk engine.
     exec_engine : ExecEngineConfig, optional
         The configuration for the execution engine.
-    bypass_logging : bool, default=False
+    bypass_logging : bool, default False
         If logging should be bypassed.
-    run_analysis : bool, default=True
+    run_analysis : bool, default True
         If post backtest performance analysis should be run.
 
     """
