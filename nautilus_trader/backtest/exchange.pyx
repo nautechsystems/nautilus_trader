@@ -679,9 +679,9 @@ cdef class SimulatedExchange:
             last = bar.low
 
         # Close
-        if bar.close > last:
+        if bar.close != last:
             tick.price = bar.close
-            tick.aggressor_side = AggressorSide.BUY
+            tick.aggressor_side = AggressorSide.BUY if bar.close > last else AggressorSide.SELL
             tick.trade_id = self._generate_trade_id()
             book.update_tick(tick)
             self._iterate_matching_engine(
