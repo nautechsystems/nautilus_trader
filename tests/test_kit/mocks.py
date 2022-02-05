@@ -537,7 +537,7 @@ class MockLiveExecutionClient(LiveExecutionClient):
 
         self._set_account_id(AccountId(client_id.value, "001"))
         self._order_status_reports: Dict[VenueOrderId, OrderStatusReport] = {}
-        self._trades_lists: Dict[VenueOrderId, List[TradeReport]] = {}
+        self._trades_reports: Dict[VenueOrderId, List[TradeReport]] = {}
         self._position_status_reports: Dict[InstrumentId, List[PositionStatusReport]] = {}
 
         self.calls = []
@@ -546,8 +546,8 @@ class MockLiveExecutionClient(LiveExecutionClient):
     def add_order_status_report(self, report: OrderStatusReport) -> None:
         self._order_status_reports[report.venue_order_id] = report
 
-    def add_trades_list(self, venue_order_id: VenueOrderId, trades: List[TradeReport]) -> None:
-        self._trades_lists[venue_order_id] = trades
+    def add_trade_reports(self, venue_order_id: VenueOrderId, trades: List[TradeReport]) -> None:
+        self._trades_reports[venue_order_id] = trades
 
     def add_position_status_report(self, report: PositionStatusReport) -> None:
         if report.instrument_id not in self._position_status_reports:
@@ -589,6 +589,7 @@ class MockLiveExecutionClient(LiveExecutionClient):
         venue_order_id: VenueOrderId = None,
     ) -> Optional[OrderStatusReport]:
         self.calls.append(inspect.currentframe().f_code.co_name)
+
         return self._order_status_reports.get(venue_order_id)
 
     async def generate_order_status_reports(
@@ -599,7 +600,21 @@ class MockLiveExecutionClient(LiveExecutionClient):
         open_only: bool = False,
     ) -> List[OrderStatusReport]:
         self.calls.append(inspect.currentframe().f_code.co_name)
-        return list(self._order_status_reports.values())
+
+        reports = []
+        for _, report in self._order_status_reports.items():
+            reports.append(report)
+
+        if instrument_id is not None:
+            reports = [r for r in reports if r.instrument_id == instrument_id]
+
+        if start is not None:
+            reports = [r for r in reports if r.ts_accepted >= start]
+
+        if end is not None:
+            reports = [r for r in reports if r.ts_accepted <= end]
+
+        return reports
 
     async def generate_trade_reports(
         self,
@@ -609,7 +624,24 @@ class MockLiveExecutionClient(LiveExecutionClient):
         end: datetime = None,
     ) -> List[TradeReport]:
         self.calls.append(inspect.currentframe().f_code.co_name)
-        return self._trades_lists.get(venue_order_id, [])
+
+        if venue_order_id is not None:
+            trades = self._trades_reports.get(venue_order_id, [])
+        else:
+            trades = []
+            for t_list in self._trades_reports.values():
+                trades = [*trades, *t_list]
+
+        if instrument_id is not None:
+            trades = [t for t in trades if t.instrument_id == instrument_id]
+
+        if start is not None:
+            trades = [t for t in trades if t.ts_event >= start]
+
+        if end is not None:
+            trades = [t for t in trades if t.ts_event <= end]
+
+        return trades
 
     async def generate_position_status_reports(
         self,
@@ -618,7 +650,21 @@ class MockLiveExecutionClient(LiveExecutionClient):
         end: datetime = None,
     ) -> List[PositionStatusReport]:
         self.calls.append(inspect.currentframe().f_code.co_name)
-        return self._position_status_reports.get(instrument_id, [])
+
+        if instrument_id is not None:
+            reports = self._position_status_reports.get(instrument_id, [])
+        else:
+            reports = []
+            for p_list in self._position_status_reports.values():
+                reports = [*reports, *p_list]
+
+        if start is not None:
+            reports = [r for r in reports if r.ts_event >= start]
+
+        if end is not None:
+            reports = [r for r in reports if r.ts_event <= end]
+
+        return reports
 
 
 class MockCacheDatabase(CacheDatabase):

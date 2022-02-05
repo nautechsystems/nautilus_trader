@@ -610,31 +610,27 @@ cdef class SimulatedExchange:
 
         cdef OrderBook book = self.get_book(bar.type.instrument_id)
         if book.type != BookType.L1_TBBO:
-            self._iterate_matching_engine(
-                bar.type.instrument_id,
-                bar.ts_init,
-            )
-            return
+            return  # Can only process an L1 book with bars
 
         # Turn ON bar execution mode (temporary until unify execution)
         self._bar_execution = True
 
         cdef PriceType price_type = bar.type.spec.price_type
         if price_type == PriceType.LAST or price_type == PriceType.MID:
-            self._process_trade_tick_from_bar(book, bar)
+            self._process_trade_ticks_from_bar(book, bar)
         elif price_type == PriceType.BID:
             self._last_bid_bars[bar.type.instrument_id] = bar
-            self._process_quote_tick_from_bar(book)
+            self._process_quote_ticks_from_bar(book)
         elif price_type == PriceType.ASK:
             self._last_ask_bars[bar.type.instrument_id] = bar
-            self._process_quote_tick_from_bar(book)
+            self._process_quote_ticks_from_bar(book)
         else:  # pragma: no cover (design-time error)
             raise RuntimeError("invalid price type")
 
         if not self._log.is_bypassed:
             self._log.debug(f"Processed {bar}")
 
-    cdef void _process_trade_tick_from_bar(self, OrderBook book, Bar bar) except *:
+    cdef void _process_trade_ticks_from_bar(self, OrderBook book, Bar bar) except *:
         cdef Quantity size = Quantity(bar.volume / 4, bar.volume.precision)
         cdef Price last = self._last.get(book.instrument_id)
 
@@ -643,51 +639,60 @@ cdef class SimulatedExchange:
             bar.type.instrument_id,
             bar.open,
             size,
-            AggressorSide.BUY if last is None or bar.open >= last else AggressorSide.SELL,
-            TradeId(str(uuid.uuid4())),
+            AggressorSide.BUY if last is None or bar.open > last else AggressorSide.SELL,
+            self._generate_trade_id(),
             bar.ts_event,
             bar.ts_event,
         )
-
-        # TODO(cs): Only produce a trade if it changes the last price
 
         # Open
-        book.update_tick(tick)
-        self._iterate_matching_engine(
-            tick.instrument_id,
-            tick.ts_init,
-        )
+        if last is None or bar.open != last:
+            book.update_tick(tick)
+            self._iterate_matching_engine(
+                tick.instrument_id,
+                tick.ts_init,
+            )
+            last = bar.open
 
         # High
-        tick.price = bar.high
-        tick.aggressor_side = AggressorSide.BUY
-        book.update_tick(tick)
-        self._iterate_matching_engine(
-            tick.instrument_id,
-            tick.ts_init,
-        )
+        if bar.high > last:
+            tick.price = bar.high
+            tick.aggressor_side = AggressorSide.BUY
+            tick.trade_id = self._generate_trade_id()
+            book.update_tick(tick)
+            self._iterate_matching_engine(
+                tick.instrument_id,
+                tick.ts_init,
+            )
+            last = bar.high
 
         # Low
-        tick.price = bar.low
-        tick.aggressor_side = AggressorSide.SELL
-        book.update_tick(tick)
-        self._iterate_matching_engine(
-            tick.instrument_id,
-            tick.ts_init,
-        )
+        if bar.low < last:
+            tick.price = bar.low
+            tick.aggressor_side = AggressorSide.SELL
+            tick.trade_id = self._generate_trade_id()
+            book.update_tick(tick)
+            self._iterate_matching_engine(
+                tick.instrument_id,
+                tick.ts_init,
+            )
+            last = bar.low
 
         # Close
-        tick.price = bar.close
-        tick.aggressor_side = AggressorSide.BUY
-        book.update_tick(tick)
-        self._iterate_matching_engine(
-            tick.instrument_id,
-            tick.ts_init,
-        )
+        if bar.close != last:
+            tick.price = bar.close
+            tick.aggressor_side = AggressorSide.BUY if bar.close > last else AggressorSide.SELL
+            tick.trade_id = self._generate_trade_id()
+            book.update_tick(tick)
+            self._iterate_matching_engine(
+                tick.instrument_id,
+                tick.ts_init,
+            )
+            last = bar.close
 
-        self._last[book.instrument_id] = bar.close
+        self._last[book.instrument_id] = last
 
-    cdef void _process_quote_tick_from_bar(self, OrderBook book) except *:
+    cdef void _process_quote_ticks_from_bar(self, OrderBook book) except *:
         cdef Bar last_bid_bar = self._last_bid_bars.get(book.instrument_id)
         cdef Bar last_ask_bar = self._last_ask_bars.get(book.instrument_id)
 
