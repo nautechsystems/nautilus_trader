@@ -689,7 +689,7 @@ cdef class LiveExecutionEngine(ExecutionEngine):
             account_id=report.account_id,
             instrument_id=order.instrument_id,
             client_order_id=order.client_order_id,
-            reason=report.reject_reason or "UNKNOWN",
+            reason=report.cancel_reason or "UNKNOWN",
             event_id=self._uuid_factory.generate(),
             ts_event=report.ts_last,
             ts_init=self._clock.timestamp_ns(),

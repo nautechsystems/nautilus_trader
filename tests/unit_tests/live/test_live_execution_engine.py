@@ -724,7 +724,7 @@ class TestLiveExecutionEngine:
             avg_px=None,
             post_only=True,
             reduce_only=False,
-            reject_reason="SOME_REASON",
+            cancel_reason="SOME_REASON",
             report_id=UUID4(),
             ts_accepted=1_000_000,
             ts_triggered=1_500_000,
