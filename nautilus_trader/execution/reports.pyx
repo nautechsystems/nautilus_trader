@@ -128,6 +128,17 @@ cdef class OrderStatusReport(ExecutionReport):
         The reported reason for order cancellation.
     ts_triggered : int64, optional
         The UNIX timestamp (nanoseconds) when the object was initialized.
+
+    Raises
+    ------
+    ValueError
+        If `quantity` is not positive (> 0).
+    ValueError
+        If `filled_qty` is negative (< 0).
+    ValueError
+        If `trigger_price` is not ``None`` and `trigger_price` is equal to ``TriggerType.NONE``.
+    ValueError
+        If `limit_offset` or `trailing_offset` is not ``None`` and offset_type is equal to ``TrailingOffsetType.NONE``.
     """
 
     def __init__(
@@ -162,6 +173,13 @@ cdef class OrderStatusReport(ExecutionReport):
         str cancel_reason = None,  # Can be None
         ts_triggered: Optional[int] = None,  # Can be None
     ):
+        Condition.positive(quantity, "quantity")
+        Condition.not_negative(filled_qty, "filled_qty")
+        if trigger_price is not None:
+            Condition.not_equal(trigger_type, TriggerType.NONE, "trigger_type", "NONE")
+        if limit_offset is not None or trailing_offset is not None:
+            Condition.not_equal(offset_type, TrailingOffsetType.NONE, "offset_type", "NONE")
+
         super().__init__(
             account_id,
             instrument_id,
@@ -268,6 +286,11 @@ cdef class TradeReport(ExecutionReport):
         The UNIX timestamp (nanoseconds) when the trade occurred.
     ts_init : int64
         The UNIX timestamp (nanoseconds) when the object was initialized.
+
+    Raises
+    ------
+    ValueError
+        If `last_qty` is not positive (> 0).
     """
 
     def __init__(
@@ -287,6 +310,8 @@ cdef class TradeReport(ExecutionReport):
         PositionId venue_position_id = None,  # Can be None
         Money commission = None,  # Can be None
     ):
+        Condition.positive(last_qty, "last_qty")
+
         super().__init__(
             account_id,
             instrument_id,
@@ -349,6 +374,11 @@ cdef class PositionStatusReport(ExecutionReport):
         venue has assigned a position ID / ticket for the trade then pass that
         here, otherwise pass ``None`` and the execution engine OMS will handle
         position ID resolution.
+
+    Raises
+    ------
+    ValueError
+        If `quantity` is not positive (> 0).
     """
 
     def __init__(
@@ -362,6 +392,8 @@ cdef class PositionStatusReport(ExecutionReport):
         int64_t ts_init,
         PositionId venue_position_id = None,  # Can be None
     ):
+        Condition.positive(quantity, "quantity")
+
         super().__init__(
             account_id,
             instrument_id,
