@@ -26,6 +26,7 @@ from nautilus_trader.model.tick_scheme.implementations.tiered import TieredTickS
 
 BETFAIR_VENUE = Venue("BETFAIR")
 BETFAIR_PRICE_PRECISION = 7
+BETFAIR_QUANTITY_PRECISION = 4
 
 
 # ------------------------------- MAPPINGS ------------------------------- #
@@ -67,6 +68,13 @@ B_SIDE_KINDS = B_BID_KINDS + B_ASK_KINDS
 B2N_ORDER_STREAM_SIDE = {
     "B": OrderSide.BUY,
     "L": OrderSide.SELL,
+    "BACK": OrderSide.BUY,
+    "LAY": OrderSide.SELL,
+}
+
+B2N_TIME_IN_FORCE = {
+    "LAPSE": TimeInForce.DAY,
+    "PERSIST": TimeInForce.GTC,
 }
 
 

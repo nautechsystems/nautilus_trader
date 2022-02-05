@@ -20,19 +20,24 @@ from datetime import datetime
 from typing import Dict, List, Optional, Set, Tuple
 
 import orjson
+import pandas as pd
 
 from nautilus_trader.accounting.factory import AccountFactory
 from nautilus_trader.adapters.betfair.client.core import BetfairClient
 from nautilus_trader.adapters.betfair.client.exceptions import BetfairAPIError
 from nautilus_trader.adapters.betfair.common import B2N_ORDER_STREAM_SIDE
+from nautilus_trader.adapters.betfair.common import B2N_TIME_IN_FORCE
+from nautilus_trader.adapters.betfair.common import BETFAIR_QUANTITY_PRECISION
 from nautilus_trader.adapters.betfair.common import BETFAIR_VENUE
 from nautilus_trader.adapters.betfair.common import price_to_probability
 from nautilus_trader.adapters.betfair.common import probability_to_price
 from nautilus_trader.adapters.betfair.parsing import betfair_account_to_account_state
+from nautilus_trader.adapters.betfair.parsing import determine_order_status
 from nautilus_trader.adapters.betfair.parsing import order_cancel_all_to_betfair
 from nautilus_trader.adapters.betfair.parsing import order_cancel_to_betfair
 from nautilus_trader.adapters.betfair.parsing import order_submit_to_betfair
 from nautilus_trader.adapters.betfair.parsing import order_update_to_betfair
+from nautilus_trader.adapters.betfair.parsing import parse_handicap
 from nautilus_trader.adapters.betfair.providers import BetfairInstrumentProvider
 from nautilus_trader.adapters.betfair.sockets import BetfairOrderStreamClient
 from nautilus_trader.cache.cache import Cache
@@ -40,6 +45,7 @@ from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.logging import LogColor
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.core.correctness import PyCondition
+from nautilus_trader.core.datetime import dt_to_unix_nanos
 from nautilus_trader.core.datetime import millis_to_nanos
 from nautilus_trader.core.datetime import nanos_to_secs
 from nautilus_trader.core.datetime import secs_to_nanos
@@ -50,12 +56,16 @@ from nautilus_trader.live.execution_client import LiveExecutionClient
 from nautilus_trader.model.c_enums.account_type import AccountType
 from nautilus_trader.model.c_enums.liquidity_side import LiquiditySide
 from nautilus_trader.model.c_enums.order_type import OrderType
+from nautilus_trader.model.c_enums.order_type import OrderTypeParser
+from nautilus_trader.model.c_enums.trailing_offset_type import TrailingOffsetType
+from nautilus_trader.model.c_enums.trigger_type import TriggerType
 from nautilus_trader.model.commands.trading import CancelAllOrders
 from nautilus_trader.model.commands.trading import CancelOrder
 from nautilus_trader.model.commands.trading import ModifyOrder
 from nautilus_trader.model.commands.trading import SubmitOrder
 from nautilus_trader.model.commands.trading import SubmitOrderList
 from nautilus_trader.model.currency import Currency
+from nautilus_trader.model.enums import ContingencyType
 from nautilus_trader.model.enums import OMSType
 from nautilus_trader.model.events.account import AccountState
 from nautilus_trader.model.identifiers import AccountId
@@ -246,7 +256,11 @@ class BetfairExecutionClient(LiveExecutionClient):
         # We have a response, check list length and grab first entry
         assert len(orders) == 1
         order = orders[0]
-        instrument = self._instrument_provider.get_betting_instrument()
+        instrument = self._instrument_provider.get_betting_instrument(
+            market_id=str(order["marketId"]),
+            selection_id=str(order["selectionId"]),
+            handicap=parse_handicap(order["handicap"]),
+        )
         venue_order_id = VenueOrderId(order["betId"])
         return OrderStatusReport(
             account_id=self.account_id,
@@ -254,30 +268,32 @@ class BetfairExecutionClient(LiveExecutionClient):
             client_order_id=self._cache.client_order_id(venue_order_id),
             order_list_id=None,
             venue_order_id=venue_order_id,
-            # order_side
-            # order_type
-            # contingency_type
-            # time_in_force
-            # expire_time
-            # order_status
-            # price
-            # trigger_price
-            # trigger_type
-            # Optional
-            # Optional
-            # offset_type
-            # quantity
-            # filled_qty
-            # display_qty
-            # Optional
-            # post_only
-            # reduce_only
-            # reject_reason
-            # report_id
-            # ts_accepted
-            # ts_triggered
-            # ts_last
-            # ts_init
+            order_side=B2N_ORDER_STREAM_SIDE[order["side"]],
+            order_type=OrderTypeParser.from_str_py(order["orderType"]),
+            contingency_type=ContingencyType.NONE,
+            time_in_force=B2N_TIME_IN_FORCE[order["persistenceType"]],
+            expire_time=None,
+            order_status=determine_order_status(order),
+            price=price_to_probability(str(order["priceSize"]["price"])),
+            trigger_price=None,
+            limit_offset=None,
+            trailing_offset=None,
+            trigger_type=TriggerType.DEFAULT,
+            offset_type=TrailingOffsetType.PRICE,
+            quantity=Quantity(order["priceSize"]["size"], BETFAIR_QUANTITY_PRECISION),
+            filled_qty=Quantity(order["sizeMatched"], BETFAIR_QUANTITY_PRECISION),
+            display_qty=None,
+            avg_px=None,
+            post_only=False,
+            reduce_only=False,
+            reject_reason=None,
+            report_id=self._uuid_factory.generate(),
+            ts_accepted=dt_to_unix_nanos(pd.Timestamp(order["placedDate"])),
+            ts_triggered=0,
+            ts_last=dt_to_unix_nanos(pd.Timestamp(order["matchedDate"]))
+            if "matchedDate" in order
+            else 0,
+            ts_init=self._clock.timestamp_ns(),
         )
 
     async def generate_order_status_reports(
@@ -547,7 +563,8 @@ class BetfairExecutionClient(LiveExecutionClient):
                 client_order_id=client_order_id,
                 venue_order_id=VenueOrderId(update_instruction["betId"]),
                 quantity=Quantity(
-                    update_instruction["instruction"]["limitOrder"]["size"], precision=4
+                    update_instruction["instruction"]["limitOrder"]["size"],
+                    precision=BETFAIR_QUANTITY_PRECISION,
                 ),
                 price=price_to_probability(
                     str(update_instruction["instruction"]["limitOrder"]["price"])
@@ -836,7 +853,7 @@ class BetfairExecutionClient(LiveExecutionClient):
                     trade_id=trade_id,
                     order_side=B2N_ORDER_STREAM_SIDE[update["side"]],
                     order_type=OrderType.LIMIT,
-                    last_qty=Quantity(fill_qty, instrument.size_precision),
+                    last_qty=Quantity(fill_qty, BETFAIR_QUANTITY_PRECISION),
                     last_px=price_to_probability(str(fill_price)),
                     # avg_px=Decimal(order['avp']),
                     quote_currency=instrument.quote_currency,
@@ -898,7 +915,7 @@ class BetfairExecutionClient(LiveExecutionClient):
                     trade_id=trade_id,
                     order_side=B2N_ORDER_STREAM_SIDE[update["side"]],
                     order_type=OrderType.LIMIT,
-                    last_qty=Quantity(fill_qty, instrument.size_precision),
+                    last_qty=Quantity(fill_qty, BETFAIR_QUANTITY_PRECISION),
                     last_px=price_to_probability(str(fill_price)),
                     quote_currency=instrument.quote_currency,
                     # avg_px=order['avp'],

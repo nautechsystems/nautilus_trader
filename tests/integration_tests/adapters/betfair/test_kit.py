@@ -205,7 +205,9 @@ class BetfairTestStubs:
         )
 
     @staticmethod
-    def betting_instrument():
+    def betting_instrument(
+        market_id: str = "1.179082386", selection_id: str = "50214", handicap: str = "0.0"
+    ):
         return BettingInstrument(
             venue_name=BETFAIR_VENUE.value,
             betting_type="ODDS",
@@ -217,12 +219,12 @@ class BetfairTestStubs:
             event_open_date=pd.Timestamp("2022-02-07 23:30:00+00:00"),
             event_type_id="6423",
             event_type_name="American Football",
-            market_id="1.179082386",
+            market_id=market_id,
             market_name="AFC Conference Winner",
             market_start_time=pd.Timestamp("2022-02-07 23:30:00+00:00"),
             market_type="SPECIAL",
-            selection_handicap="0.0",
-            selection_id="50214",
+            selection_handicap=handicap,
+            selection_id=selection_id,
             selection_name="Kansas City Chiefs",
             currency="GBP",
             ts_event=BetfairTestStubs.clock().timestamp_ns(),

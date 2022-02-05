@@ -18,7 +18,7 @@ import hashlib
 import itertools
 from collections import defaultdict
 from functools import lru_cache
-from typing import Dict, List, Optional, Union
+from typing import Dict, List, Union
 
 import orjson
 import pandas as pd
@@ -27,6 +27,7 @@ from nautilus_trader.adapters.betfair.common import B2N_MARKET_STREAM_SIDE
 from nautilus_trader.adapters.betfair.common import B_ASK_KINDS
 from nautilus_trader.adapters.betfair.common import B_BID_KINDS
 from nautilus_trader.adapters.betfair.common import B_SIDE_KINDS
+from nautilus_trader.adapters.betfair.common import BETFAIR_QUANTITY_PRECISION
 from nautilus_trader.adapters.betfair.common import BETFAIR_TICK_SCHEME
 from nautilus_trader.adapters.betfair.common import BETFAIR_VENUE
 from nautilus_trader.adapters.betfair.common import MAX_BET_PROB
@@ -40,7 +41,6 @@ from nautilus_trader.adapters.betfair.data_types import BSPOrderBookDelta
 from nautilus_trader.adapters.betfair.util import hash_json
 from nautilus_trader.adapters.betfair.util import one
 from nautilus_trader.common.uuid import UUIDFactory
-from nautilus_trader.execution.reports import OrderStatusReport
 from nautilus_trader.execution.reports import TradeReport
 from nautilus_trader.model.commands.trading import CancelOrder
 from nautilus_trader.model.commands.trading import ModifyOrder
@@ -367,7 +367,7 @@ def _handle_market_trades(
         tick = TradeTick(
             instrument_id=instrument.id,
             price=price_to_probability(str(price)),
-            size=Quantity(volume, precision=4),
+            size=Quantity(volume, precision=BETFAIR_QUANTITY_PRECISION),
             aggressor_side=AggressorSide.UNKNOWN,
             trade_id=TradeId(trade_id),
             ts_event=ts_event,
@@ -388,7 +388,7 @@ def _handle_bsp_updates(runner, instrument, ts_event, ts_init):
                 action=BookAction.DELETE if volume == 0 else BookAction.UPDATE,
                 order=Order(
                     price=price_to_probability(str(price)),
-                    size=Quantity(volume, precision=8),
+                    size=Quantity(volume, precision=BETFAIR_QUANTITY_PRECISION),
                     side=B2N_MARKET_STREAM_SIDE[side],
                 ),
                 ts_event=ts_event,
@@ -416,7 +416,7 @@ def _handle_book_updates(runner, instrument, ts_event, ts_init):
                     action=BookAction.DELETE if volume == 0 else BookAction.UPDATE,
                     order=Order(
                         price=price_to_probability(str(price)),
-                        size=Quantity(volume, precision=8),
+                        size=Quantity(volume, precision=BETFAIR_QUANTITY_PRECISION),
                         side=B2N_MARKET_STREAM_SIDE[side],
                     ),
                     ts_event=ts_event,
@@ -540,7 +540,7 @@ def _handle_ticker(runner: dict, instrument: BettingInstrument, ts_event, ts_ini
     if "ltp" in runner:
         last_traded_price = price_to_probability(str(runner["ltp"]))
     if "tv" in runner:
-        traded_volume = Quantity(value=runner.get("tv"), precision=instrument.size_precision)
+        traded_volume = Quantity(value=runner.get("tv"), precision=BETFAIR_QUANTITY_PRECISION)
     return BetfairTicker(
         instrument_id=instrument.id,
         last_traded_price=last_traded_price,
@@ -693,19 +693,6 @@ def on_market_update(instrument_provider, update: dict):
     return []
 
 
-async def generate_order_status_report(self, order) -> Optional[OrderStatusReport]:
-    return [
-        OrderStatusReport(
-            client_order_id=ClientOrderId(),
-            venue_order_id=VenueOrderId(),
-            order_status=OrderStatus(),
-            filled_qty=Quantity.zero(),
-            ts_init=int(pd.Timestamp(order["timestamp"]).to_datetime64()),
-        )
-        for order in self.client().betting.list_current_orders()["currentOrders"]
-    ]
-
-
 async def generate_trades_list(
     self, venue_order_id: VenueOrderId, symbol: Symbol, since: datetime = None  # type: ignore
 ) -> List[TradeReport]:
@@ -748,8 +735,17 @@ def parse_handicap(x) -> str:
         raise TypeError(f"Unexpected type ({type(x)}) for handicap: {x}")
 
 
-def parse_side(side: str) -> OrderSide:
-    return {
-        "BACK": OrderSide.BUY,
-        "LAY": OrderSide.SELL,
-    }[side.upper()]
+def determine_order_status(order: Dict) -> OrderStatus:
+    order_size = order["priceSize"]["size"]
+    if order["status"] == "EXECUTION_COMPLETE":
+        if order_size == order["sizeMatched"]:
+            return OrderStatus.FILLED
+        elif order["sizeCancelled"] > 0.0:
+            return OrderStatus.CANCELED
+        else:
+            return OrderStatus.PARTIALLY_FILLED
+    elif order["status"] == "EXECUTABLE":
+        if order["sizeMatched"] == 0.0:
+            return OrderStatus.ACCEPTED
+        elif order["sizeMatched"] > 0.0:
+            return OrderStatus.PARTIALLY_FILLED
