@@ -74,44 +74,20 @@ cdef class OrderStatusReport(ExecutionReport):
         The account ID for the report.
     instrument_id : InstrumentId
         The instrument ID for the report.
-    client_order_id : ClientOrderId, optional
-        The reported client order ID.
-    order_list_id : OrderListId, optional
-        The reported order list ID associated with the order.
     venue_order_id : VenueOrderId
         The reported order ID (assigned by the venue).
     order_side : OrderSide {``BUY``, ``SELL``}
         The reported order side.
     order_type : OrderType
         The reported order type.
-    contingency_type : ContingencyType
-        The reported order contingency type.
     time_in_force : TimeInForce
         The reported order time in force.
-    expire_time : datetime, optional
-        The order expiration.
     order_status : OrderStatus
         The reported order status at the exchange.
-    price : Price, optional
-        The reported order price (LIMIT).
-    trigger_price : Price, optional
-        The reported order trigger price (STOP).
-    trigger_type : TriggerType
-        The reported order trigger type.
     quantity : Quantity
         The reported order original quantity.
     filled_qty : Quantity
         The reported filled quantity at the exchange.
-    display_qty : Quantity, optional
-        The reported order quantity displayed on the public book (iceberg).
-    avg_px : Decimal, optional
-        The reported order average fill price.
-    post_only : bool
-        If the reported order will only provide liquidity (make a market).
-    reduce_only : bool
-        If the reported order carries the 'reduce-only' execution instruction.
-    reject_reason : str, optional
-        The reported reason for order rejection.
     report_id : UUID4
         The report ID.
     ts_accepted : int64
@@ -120,40 +96,90 @@ cdef class OrderStatusReport(ExecutionReport):
         The UNIX timestamp (nanoseconds) of the last order status change.
     ts_init : int64
         The UNIX timestamp (nanoseconds) when the object was initialized.
+    client_order_id : ClientOrderId, optional
+        The reported client order ID.
+    order_list_id : OrderListId, optional
+        The reported order list ID associated with the order.
+    contingency_type : ContingencyType, default ``NONE``
+        The reported order contingency type.
+    expire_time : datetime, optional
+        The order expiration.
+    price : Price, optional
+        The reported order price (LIMIT).
+    trigger_price : Price, optional
+        The reported order trigger price (STOP).
+    trigger_type : TriggerType, default ``NONE``
+        The reported order trigger type.
+    limit_offset : Decimal, optional
+        The trailing offset for the order (LIMIT) price.
+    trailing_offset : Decimal, optional
+        The trailing offset for the trigger (STOP) price.
+    offset_type : TrailingOffsetType, default ``NONE``
+        The order trailing offset type.
+    avg_px : Decimal, optional
+        The reported order average fill price.
+    display_qty : Quantity, optional
+        The reported order quantity displayed on the public book (iceberg).
+    post_only : bool, default False
+        If the reported order will only provide liquidity (make a market).
+    reduce_only : bool, default False
+        If the reported order carries the 'reduce-only' execution instruction.
+    cancel_reason : str, optional
+        The reported reason for order cancellation.
+    ts_triggered : int64, optional
+        The UNIX timestamp (nanoseconds) when the object was initialized.
+
+    Raises
+    ------
+    ValueError
+        If `quantity` is not positive (> 0).
+    ValueError
+        If `filled_qty` is negative (< 0).
+    ValueError
+        If `trigger_price` is not ``None`` and `trigger_price` is equal to ``TriggerType.NONE``.
+    ValueError
+        If `limit_offset` or `trailing_offset` is not ``None`` and offset_type is equal to ``TrailingOffsetType.NONE``.
     """
 
     def __init__(
         self,
         AccountId account_id not None,
         InstrumentId instrument_id not None,
-        ClientOrderId client_order_id,  # Can be None (external order)
-        OrderListId order_list_id,  # Can be None
         VenueOrderId venue_order_id not None,
         OrderSide order_side,
         OrderType order_type,
-        ContingencyType contingency_type,
         TimeInForce time_in_force,
-        datetime expire_time,  # Can be None
         OrderStatus order_status,
-        Price price,  # Can be None
-        Price trigger_price,  # Can be None
-        TriggerType trigger_type,
-        limit_offset: Optional[Decimal],  # Can be None
-        trailing_offset: Optional[Decimal],  # Can be None
-        TrailingOffsetType offset_type,
         Quantity quantity not None,
         Quantity filled_qty not None,
-        Quantity display_qty,  # Can be None
-        avg_px: Optional[Decimal],
-        bint post_only,
-        bint reduce_only,
-        str reject_reason,  # Can be None
         UUID4 report_id not None,
         int64_t ts_accepted,
-        int64_t ts_triggered,
         int64_t ts_last,
         int64_t ts_init,
+        ClientOrderId client_order_id = None,  # Can be None (external order)
+        OrderListId order_list_id = None,  # Can be None
+        ContingencyType contingency_type = ContingencyType.NONE,
+        datetime expire_time = None,  # Can be None
+        Price price = None,  # Can be None
+        Price trigger_price = None,  # Can be None
+        TriggerType trigger_type = TriggerType.NONE,
+        limit_offset: Optional[Decimal] = None,  # Can be None
+        trailing_offset: Optional[Decimal] = None,  # Can be None
+        TrailingOffsetType offset_type = TrailingOffsetType.NONE,
+        avg_px: Optional[Decimal] = None,  # Can be None
+        Quantity display_qty = None,  # Can be None
+        bint post_only = False,
+        bint reduce_only = False,
+        str cancel_reason = None,  # Can be None
+        ts_triggered: Optional[int] = None,  # Can be None
     ):
+        Condition.positive(quantity, "quantity")
+        Condition.not_negative(filled_qty, "filled_qty")
+        if trigger_price is not None:
+            Condition.not_equal(trigger_type, TriggerType.NONE, "trigger_type", "NONE")
+        if limit_offset is not None or trailing_offset is not None:
+            Condition.not_equal(offset_type, TrailingOffsetType.NONE, "offset_type", "NONE")
+
         super().__init__(
             account_id,
             instrument_id,
@@ -182,9 +208,9 @@ cdef class OrderStatusReport(ExecutionReport):
         self.avg_px = avg_px
         self.post_only = post_only
         self.reduce_only = reduce_only
-        self.reject_reason = reject_reason
+        self.cancel_reason = cancel_reason
         self.ts_accepted = ts_accepted
-        self.ts_triggered = ts_triggered
+        self.ts_triggered = ts_triggered or 0
         self.ts_last = ts_last
 
     def __repr__(self) -> str:
@@ -214,7 +240,7 @@ cdef class OrderStatusReport(ExecutionReport):
             f"avg_px={self.avg_px}, "
             f"post_only={self.post_only}, "
             f"reduce_only={self.reduce_only}, "
-            f"reject_reason={self.reject_reason}, "
+            f"cancel_reason={self.cancel_reason}, "
             f"report_id={self.id}, "
             f"ts_accepted={self.ts_accepted}, "
             f"ts_triggered={self.ts_triggered}, "
@@ -260,25 +286,32 @@ cdef class TradeReport(ExecutionReport):
         The UNIX timestamp (nanoseconds) when the trade occurred.
     ts_init : int64
         The UNIX timestamp (nanoseconds) when the object was initialized.
+
+    Raises
+    ------
+    ValueError
+        If `last_qty` is not positive (> 0).
     """
 
     def __init__(
         self,
         AccountId account_id not None,
         InstrumentId instrument_id not None,
-        ClientOrderId client_order_id,  # Can be None (external order)
         VenueOrderId venue_order_id not None,
-        PositionId venue_position_id,  # Can be None
         TradeId trade_id not None,
         OrderSide order_side,
         Quantity last_qty not None,
         Price last_px not None,
-        Money commission,  # Can be None
         LiquiditySide liquidity_side,
         UUID4 report_id not None,
         int64_t ts_event,
         int64_t ts_init,
+        ClientOrderId client_order_id = None,  # Can be None (external order)
+        PositionId venue_position_id = None,  # Can be None
+        Money commission = None,  # Can be None
     ):
+        Condition.positive(last_qty, "last_qty")
+
         super().__init__(
             account_id,
             instrument_id,
@@ -326,11 +359,6 @@ cdef class PositionStatusReport(ExecutionReport):
         The account ID for the report.
     instrument_id : InstrumentId
         The reported instrument ID for the position.
-    venue_position_id : PositionId, optional
-        The reported venue position ID (assigned by the venue). If the trading
-        venue has assigned a position ID / ticket for the trade then pass that
-        here, otherwise pass ``None`` and the execution engine OMS will handle
-        position ID resolution.
     position_side : PositionSide {``FLAT``, ``LONG``, ``SHORT``}
         The reported position side at the exchange.
     quantity : Quantity
@@ -341,19 +369,31 @@ cdef class PositionStatusReport(ExecutionReport):
         The UNIX timestamp (nanoseconds) of the last position change.
     ts_init : int64
         The UNIX timestamp (nanoseconds) when the object was initialized.
+    venue_position_id : PositionId, optional
+        The reported venue position ID (assigned by the venue). If the trading
+        venue has assigned a position ID / ticket for the trade then pass that
+        here, otherwise pass ``None`` and the execution engine OMS will handle
+        position ID resolution.
+
+    Raises
+    ------
+    ValueError
+        If `quantity` is not positive (> 0).
     """
 
     def __init__(
         self,
         AccountId account_id not None,
         InstrumentId instrument_id not None,
-        PositionId venue_position_id,  # Can be None
         PositionSide position_side,
         Quantity quantity not None,
         UUID4 report_id not None,
         int64_t ts_last,
         int64_t ts_init,
+        PositionId venue_position_id = None,  # Can be None
     ):
+        Condition.positive(quantity, "quantity")
+
         super().__init__(
             account_id,
             instrument_id,

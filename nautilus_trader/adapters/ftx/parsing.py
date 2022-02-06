@@ -37,7 +37,6 @@ from nautilus_trader.model.enums import AggressorSide
 from nautilus_trader.model.enums import AssetClass
 from nautilus_trader.model.enums import BookAction
 from nautilus_trader.model.enums import BookType
-from nautilus_trader.model.enums import ContingencyType
 from nautilus_trader.model.enums import CurrencyType
 from nautilus_trader.model.enums import LiquiditySide
 from nautilus_trader.model.enums import OrderSide
@@ -81,30 +80,19 @@ def parse_order_status(
         account_id=account_id,
         instrument_id=InstrumentId(Symbol(data["market"]), FTX_VENUE),
         client_order_id=ClientOrderId(client_id_str) if client_id_str is not None else None,
-        order_list_id=None,
         venue_order_id=VenueOrderId(str(data["id"])),
         order_side=OrderSide.BUY if data["side"] == "buy" else OrderSide.SELL,
         order_type=parse_order_type(data=data, price_str="price"),
-        contingency_type=ContingencyType.NONE,
         time_in_force=TimeInForce.IOC if data["ioc"] else TimeInForce.GTC,
-        expire_time=None,
         order_status=parse_status(data),
         price=instrument.make_price(price) if price is not None else None,
-        trigger_price=None,
-        trigger_type=TriggerType.NONE,
-        limit_offset=None,
-        trailing_offset=None,
-        offset_type=TrailingOffsetType.NONE,
         quantity=instrument.make_qty(data["size"]),
         filled_qty=instrument.make_qty(data["filledSize"]),
-        display_qty=None,
         avg_px=Decimal(str(avg_px)) if avg_px is not None else None,
         post_only=data["postOnly"],
         reduce_only=data["reduceOnly"],
-        reject_reason=None,
         report_id=report_id,
         ts_accepted=created_at,
-        ts_triggered=0,
         ts_last=created_at,
         ts_init=ts_init,
     )
@@ -131,27 +119,21 @@ def parse_trigger_order_status(
         account_id=account_id,
         instrument_id=InstrumentId(Symbol(data["market"]), FTX_VENUE),
         client_order_id=ClientOrderId(client_id_str) if client_id_str is not None else None,
-        order_list_id=None,
         venue_order_id=parent_order_id or VenueOrderId(str(order_id)),
         order_side=OrderSide.BUY if data["side"] == "buy" else OrderSide.SELL,
         order_type=parse_order_type(data=data),
-        contingency_type=ContingencyType.NONE,
         time_in_force=TimeInForce.GTC,
-        expire_time=None,
         order_status=parse_status(data),
         price=instrument.make_price(order_price) if order_price is not None else None,
         trigger_price=instrument.make_price(trigger_price) if trigger_price is not None else None,
         trigger_type=TriggerType.LAST,
-        limit_offset=None,
         trailing_offset=Decimal(str(trail_value)) if trail_value is not None else None,
         offset_type=TrailingOffsetType.PRICE,
         quantity=instrument.make_qty(data["size"]),
         filled_qty=instrument.make_qty(data["filledSize"]),
-        display_qty=None,
         avg_px=Decimal(str(avg_px)) if avg_px is not None else None,
         post_only=False,
         reduce_only=data["reduceOnly"],
-        reject_reason=None,
         report_id=report_id,
         ts_accepted=created_at,
         ts_triggered=int(pd.to_datetime(triggered_at, utc=True).to_datetime64())
@@ -172,9 +154,7 @@ def parse_order_fill(
     return TradeReport(
         account_id=account_id,
         instrument_id=instrument.id,
-        client_order_id=None,
         venue_order_id=VenueOrderId(str(data["orderId"])),
-        venue_position_id=None,  # FTX always netting
         trade_id=TradeId(str(data["tradeId"])),
         order_side=OrderSide.BUY if data["side"] == "buy" else OrderSide.SELL,
         last_qty=instrument.make_qty(data["size"]),
@@ -198,7 +178,6 @@ def parse_position(
     return PositionStatusReport(
         account_id=account_id,
         instrument_id=instrument.id,
-        venue_position_id=None,  # FTX always netting
         position_side=PositionSide.LONG if net_size > 0 else PositionSide.SHORT,
         quantity=instrument.make_qty(abs(net_size)),
         report_id=report_id,
