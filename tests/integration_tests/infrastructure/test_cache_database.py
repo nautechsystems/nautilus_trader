@@ -59,7 +59,7 @@ AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy("AUD/USD")
 # - A Redis instance listening on the default port 6379
 
 
-@pytest.mark.skipif(sys.platform == "win32", reason="Redis not available on windows.")
+@pytest.mark.skipif(sys.platform == "win32", reason="Redis not available on windows")
 class TestRedisCacheDatabase:
     def setup(self):
         # Fixture Setup
@@ -751,7 +751,7 @@ class TestRedisCacheDatabase:
         assert self.database.load_position(position1.id) is None
 
 
-@pytest.mark.skipif(sys.platform == "win32", reason="Redis not available on windows.")
+@pytest.mark.skipif(sys.platform == "win32", reason="Redis not available on windows")
 class TestExecutionCacheWithRedisDatabaseTests:
     def setup(self):
         # Fixture Setup
