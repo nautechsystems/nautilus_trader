@@ -190,7 +190,7 @@ def parse_status(result: Dict[str, Any]) -> OrderStatus:
     status: Optional[str] = result.get("status")
     if status in ("new", "open"):
         if result["filledSize"] == 0:
-            if result["triggeredAt"] is not None:
+            if result.get("triggeredAt") is not None:
                 return OrderStatus.TRIGGERED
             else:
                 return OrderStatus.ACCEPTED
