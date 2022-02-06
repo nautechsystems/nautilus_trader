@@ -53,6 +53,7 @@ from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.currency import Currency
 from nautilus_trader.model.enums import LiquiditySide
 from nautilus_trader.model.enums import OMSType
+from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import OrderStatus
 from nautilus_trader.model.enums import OrderType
 from nautilus_trader.model.enums import TimeInForce
@@ -948,10 +949,7 @@ class FTXExecutionClient(LiveExecutionClient):
         # Fetch strategy ID
         strategy_id: StrategyId = self._cache.strategy_id_for_order(client_order_id)
         if strategy_id is None:
-            # TODO(cs): Implement external order handling
-            self._log.error(
-                f"Cannot handle fill: strategy ID for {client_order_id} not found.",
-            )
+            self._generate_external_trade_report(instrument, data)
             return
 
         self.generate_order_filled(
@@ -990,10 +988,7 @@ class FTXExecutionClient(LiveExecutionClient):
         # Fetch strategy ID
         strategy_id: StrategyId = self._cache.strategy_id_for_order(client_order_id)
         if strategy_id is None:
-            # TODO(cs): Implement external order handling
-            self._log.error(
-                f"Cannot handle order update: strategy ID for {client_order_id} not found.",
-            )
+            self._generate_external_order_status(instrument, data)
             return
 
         ts_event: int = int(pd.to_datetime(data["createdAt"], utc=True).to_datetime64())
@@ -1017,3 +1012,41 @@ class FTXExecutionClient(LiveExecutionClient):
                     venue_order_id=venue_order_id,
                     ts_event=ts_event,
                 )
+
+    def _generate_external_order_status(self, instrument: Instrument, data: Dict[str, Any]) -> None:
+        client_id_str = data.get("clientId")
+        price = data.get("price")
+        created_at = int(pd.to_datetime(data["createdAt"]).to_datetime64())
+        report = OrderStatusReport(
+            account_id=self.account_id,
+            instrument_id=InstrumentId(Symbol(data["market"]), FTX_VENUE),
+            client_order_id=ClientOrderId(client_id_str) if client_id_str is not None else None,
+            venue_order_id=VenueOrderId(str(data["id"])),
+            order_side=OrderSide.BUY if data["side"] == "buy" else OrderSide.SELL,
+            order_type=parse_order_type(data=data, price_str="price"),
+            time_in_force=TimeInForce.IOC if data["ioc"] else TimeInForce.GTC,
+            order_status=OrderStatus.ACCEPTED,
+            price=instrument.make_price(price) if price is not None else None,
+            quantity=instrument.make_qty(data["size"]),
+            filled_qty=instrument.make_qty(0),
+            avg_px=None,
+            post_only=data["postOnly"],
+            reduce_only=data["reduceOnly"],
+            report_id=self._uuid_factory.generate(),
+            ts_accepted=created_at,
+            ts_last=created_at,
+            ts_init=self._clock.timestamp_ns(),
+        )
+
+        self._send_order_status_report(report)
+
+    def _generate_external_trade_report(self, instrument: Instrument, data: Dict[str, Any]) -> None:
+        report = parse_order_fill(
+            account_id=self.account_id,
+            instrument=instrument,
+            data=data,
+            report_id=self._uuid_factory.generate(),
+            ts_init=self._clock.timestamp_ns(),
+        )
+
+        self._send_trade_report(report)

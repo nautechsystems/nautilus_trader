@@ -64,16 +64,15 @@ async def test_ftx_http_client():
     # )
     # print(response)
 
-    # response = await client.place_order(
-    #     market="ETH-PERP",
-    #     side="sell",
-    #     size="0.01",
-    #     type="limit",
-    #     price="5500",
-    #     client_id="105",
-    #     # post_only=True,
-    #     # reduce_only=True,
-    # )
+    response = await client.place_order(
+        market="ETH-PERP",
+        side="sell",
+        size="0.01",
+        order_type="market",
+        # price="5500",
+        # post_only=True,
+        # reduce_only=True,
+    )
 
     # response = await client.place_trigger_order(
     #     market="ETH-PERP",
@@ -88,7 +87,7 @@ async def test_ftx_http_client():
     #     # reduce_only=True,
     # )
 
-    response = await client.get_order_status("112461976236")
+    # response = await client.get_order_status("112461976236")
 
     # response = await client.get_trigger_order_history()
 

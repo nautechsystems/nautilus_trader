@@ -329,7 +329,7 @@ class FTXHttpClient(HttpClient):
         side: str,
         size: str,
         order_type: str,
-        client_id: str,
+        client_id: str = None,
         price: Optional[str] = None,
         ioc: bool = False,
         reduce_only: bool = False,
