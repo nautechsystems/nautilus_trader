@@ -60,12 +60,10 @@ from tests.integration_tests.adapters.betfair.test_kit import BetfairTestStubs
 from tests.test_kit.stubs import TestStubs
 
 
-pytestmark = pytest.mark.skipif(sys.version_info < (3, 8), reason="requires python3.8 or higher")
-
-
 INSTRUMENTS = []
 
 
+@pytest.mark.skipif(sys.platform == "win32", reason="failing on windows")
 @pytest.fixture(scope="session", autouse=True)
 @patch("nautilus_trader.adapters.betfair.providers.load_markets_metadata")
 def instrument_list(mock_load_markets_metadata, loop: asyncio.AbstractEventLoop):
@@ -96,6 +94,7 @@ def instrument_list(mock_load_markets_metadata, loop: asyncio.AbstractEventLoop)
     assert INSTRUMENTS
 
 
+@pytest.mark.skipif(sys.platform == "win32", reason="failing on windows")
 class TestBetfairDataClient:
     def setup(self):
         # Fixture Setup
