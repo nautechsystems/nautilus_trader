@@ -33,7 +33,6 @@ from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.persistence.config import PersistenceConfig
 from nautilus_trader.risk.config import RiskEngineConfig
 from nautilus_trader.trading.config import ImportableStrategyConfig
-from nautilus_trader.trading.strategy import TradingStrategy
 
 
 class Partialable:
@@ -259,7 +258,7 @@ class BacktestRunConfig(Partialable):
     venues: Optional[List[BacktestVenueConfig]] = None
     data: Optional[List[BacktestDataConfig]] = None
     actors: Optional[List[ImportableActorConfig]] = None
-    strategies: Optional[List[Union[ImportableStrategyConfig, TradingStrategy]]] = None
+    strategies: Optional[List[ImportableStrategyConfig]] = None
     persistence: Optional[PersistenceConfig] = None
     batch_size_bytes: Optional[int] = None
 
