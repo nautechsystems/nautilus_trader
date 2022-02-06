@@ -374,11 +374,6 @@ cdef class PositionStatusReport(ExecutionReport):
         venue has assigned a position ID / ticket for the trade then pass that
         here, otherwise pass ``None`` and the execution engine OMS will handle
         position ID resolution.
-
-    Raises
-    ------
-    ValueError
-        If `quantity` is not positive (> 0).
     """
 
     def __init__(
@@ -392,8 +387,6 @@ cdef class PositionStatusReport(ExecutionReport):
         int64_t ts_init,
         PositionId venue_position_id = None,  # Can be None
     ):
-        Condition.positive(quantity, "quantity")
-
         super().__init__(
             account_id,
             instrument_id,

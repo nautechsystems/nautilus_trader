@@ -564,7 +564,7 @@ cdef class LiveExecutionEngine(ExecutionEngine):
             venue=None,  # Faster query filtering
             instrument_id=report.instrument_id,
         )
-        net_qty = Decimal()
+        net_qty = Decimal(0)
         for position in positions_open:
             net_qty += position.net_qty
         if net_qty != report.net_qty:
@@ -598,16 +598,16 @@ cdef class LiveExecutionEngine(ExecutionEngine):
             liquidity_side = LiquiditySide.MAKER
 
         # Calculate last qty
-        cdef Quantity last_qty = instrument.make_qty(order.quantity - order.filled_qty)
+        cdef Quantity last_qty = instrument.make_qty(report.filled_qty - order.filled_qty)
 
         # Calculate last px
         cdef Price last_px
         if order.avg_px is None:
             last_px = instrument.make_price(report.avg_px)
         else:
-            percentage: Decimal = (order.quantity - order.filled_qty) / order.quantity
-            diff = abs(order.avg_px - report.avg_px)
-            last_px = instrument.make_price(diff / percentage)
+            report_cost: Decimal = report.avg_px * report.filled_qty
+            filled_cost: Decimal = order.avg_px * order.filled_qty
+            last_px = instrument.make_price((report_cost - filled_cost) / last_qty.as_decimal())
 
         cdef Money notional_value = instrument.notional_value(last_qty, last_px)
         cdef Money commission = Money(notional_value * instrument.taker_fee, instrument.quote_currency)
