@@ -24,6 +24,8 @@ import orjson
 import pandas as pd
 
 from nautilus_trader.adapters.betfair.common import B2N_MARKET_STREAM_SIDE
+from nautilus_trader.adapters.betfair.common import B2N_ORDER_STREAM_SIDE
+from nautilus_trader.adapters.betfair.common import B2N_TIME_IN_FORCE
 from nautilus_trader.adapters.betfair.common import B_ASK_KINDS
 from nautilus_trader.adapters.betfair.common import B_BID_KINDS
 from nautilus_trader.adapters.betfair.common import B_SIDE_KINDS
@@ -41,7 +43,10 @@ from nautilus_trader.adapters.betfair.data_types import BSPOrderBookDelta
 from nautilus_trader.adapters.betfair.util import hash_json
 from nautilus_trader.adapters.betfair.util import one
 from nautilus_trader.common.uuid import UUIDFactory
+from nautilus_trader.core.datetime import dt_to_unix_nanos
+from nautilus_trader.execution.reports import OrderStatusReport
 from nautilus_trader.execution.reports import TradeReport
+from nautilus_trader.model.c_enums.order_type import OrderTypeParser
 from nautilus_trader.model.commands.trading import CancelOrder
 from nautilus_trader.model.commands.trading import ModifyOrder
 from nautilus_trader.model.commands.trading import SubmitOrder
@@ -53,6 +58,7 @@ from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import AggressorSide
 from nautilus_trader.model.enums import BookAction
 from nautilus_trader.model.enums import BookType
+from nautilus_trader.model.enums import ContingencyType
 from nautilus_trader.model.enums import InstrumentCloseType
 from nautilus_trader.model.enums import InstrumentStatus
 from nautilus_trader.model.enums import LiquiditySide
@@ -62,6 +68,7 @@ from nautilus_trader.model.enums import TimeInForce
 from nautilus_trader.model.events.account import AccountState
 from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import ClientOrderId
+from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import StrategyId
 from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import TradeId
@@ -733,6 +740,38 @@ def parse_handicap(x) -> str:
         return str(x)
     else:
         raise TypeError(f"Unexpected type ({type(x)}) for handicap: {x}")
+
+
+def bet_to_order_status_report(
+    order,
+    account_id: AccountId,
+    instrument_id: InstrumentId,
+    venue_order_id: VenueOrderId,
+    client_order_id: ClientOrderId,
+    ts_init,
+    report_id,
+) -> OrderStatusReport:
+    return OrderStatusReport(
+        account_id=account_id,
+        instrument_id=instrument_id,
+        venue_order_id=venue_order_id,
+        client_order_id=client_order_id,
+        order_side=B2N_ORDER_STREAM_SIDE[order["side"]],
+        order_type=OrderTypeParser.from_str_py(order["orderType"]),
+        contingency_type=ContingencyType.NONE,
+        time_in_force=B2N_TIME_IN_FORCE[order["persistenceType"]],
+        order_status=determine_order_status(order),
+        price=price_to_probability(str(order["priceSize"]["price"])),
+        quantity=Quantity(order["priceSize"]["size"], BETFAIR_QUANTITY_PRECISION),
+        filled_qty=Quantity(order["sizeMatched"], BETFAIR_QUANTITY_PRECISION),
+        report_id=report_id,
+        ts_accepted=dt_to_unix_nanos(pd.Timestamp(order["placedDate"])),
+        ts_triggered=0,
+        ts_last=dt_to_unix_nanos(pd.Timestamp(order["matchedDate"]))
+        if "matchedDate" in order
+        else 0,
+        ts_init=ts_init,
+    )
 
 
 def determine_order_status(order: Dict) -> OrderStatus:

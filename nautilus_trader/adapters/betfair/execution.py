@@ -20,19 +20,17 @@ from datetime import datetime
 from typing import Dict, List, Optional, Set, Tuple
 
 import orjson
-import pandas as pd
 
 from nautilus_trader.accounting.factory import AccountFactory
 from nautilus_trader.adapters.betfair.client.core import BetfairClient
 from nautilus_trader.adapters.betfair.client.exceptions import BetfairAPIError
 from nautilus_trader.adapters.betfair.common import B2N_ORDER_STREAM_SIDE
-from nautilus_trader.adapters.betfair.common import B2N_TIME_IN_FORCE
 from nautilus_trader.adapters.betfair.common import BETFAIR_QUANTITY_PRECISION
 from nautilus_trader.adapters.betfair.common import BETFAIR_VENUE
 from nautilus_trader.adapters.betfair.common import price_to_probability
 from nautilus_trader.adapters.betfair.common import probability_to_price
+from nautilus_trader.adapters.betfair.parsing import bet_to_order_status_report
 from nautilus_trader.adapters.betfair.parsing import betfair_account_to_account_state
-from nautilus_trader.adapters.betfair.parsing import determine_order_status
 from nautilus_trader.adapters.betfair.parsing import order_cancel_all_to_betfair
 from nautilus_trader.adapters.betfair.parsing import order_cancel_to_betfair
 from nautilus_trader.adapters.betfair.parsing import order_submit_to_betfair
@@ -45,7 +43,6 @@ from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.logging import LogColor
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.core.correctness import PyCondition
-from nautilus_trader.core.datetime import dt_to_unix_nanos
 from nautilus_trader.core.datetime import millis_to_nanos
 from nautilus_trader.core.datetime import nanos_to_secs
 from nautilus_trader.core.datetime import secs_to_nanos
@@ -56,16 +53,12 @@ from nautilus_trader.live.execution_client import LiveExecutionClient
 from nautilus_trader.model.c_enums.account_type import AccountType
 from nautilus_trader.model.c_enums.liquidity_side import LiquiditySide
 from nautilus_trader.model.c_enums.order_type import OrderType
-from nautilus_trader.model.c_enums.order_type import OrderTypeParser
-from nautilus_trader.model.c_enums.trailing_offset_type import TrailingOffsetType
-from nautilus_trader.model.c_enums.trigger_type import TriggerType
 from nautilus_trader.model.commands.trading import CancelAllOrders
 from nautilus_trader.model.commands.trading import CancelOrder
 from nautilus_trader.model.commands.trading import ModifyOrder
 from nautilus_trader.model.commands.trading import SubmitOrder
 from nautilus_trader.model.commands.trading import SubmitOrderList
 from nautilus_trader.model.currency import Currency
-from nautilus_trader.model.enums import ContingencyType
 from nautilus_trader.model.enums import OMSType
 from nautilus_trader.model.events.account import AccountState
 from nautilus_trader.model.identifiers import AccountId
@@ -262,37 +255,13 @@ class BetfairExecutionClient(LiveExecutionClient):
             handicap=parse_handicap(order["handicap"]),
         )
         venue_order_id = VenueOrderId(order["betId"])
-        return OrderStatusReport(
+        return bet_to_order_status_report(
+            order=order,
             account_id=self.account_id,
             instrument_id=instrument.id,
-            client_order_id=self._cache.client_order_id(venue_order_id),
-            order_list_id=None,
             venue_order_id=venue_order_id,
-            order_side=B2N_ORDER_STREAM_SIDE[order["side"]],
-            order_type=OrderTypeParser.from_str_py(order["orderType"]),
-            contingency_type=ContingencyType.NONE,
-            time_in_force=B2N_TIME_IN_FORCE[order["persistenceType"]],
-            expire_time=None,
-            order_status=determine_order_status(order),
-            price=price_to_probability(str(order["priceSize"]["price"])),
-            trigger_price=None,
-            limit_offset=None,
-            trailing_offset=None,
-            trigger_type=TriggerType.DEFAULT,
-            offset_type=TrailingOffsetType.PRICE,
-            quantity=Quantity(order["priceSize"]["size"], BETFAIR_QUANTITY_PRECISION),
-            filled_qty=Quantity(order["sizeMatched"], BETFAIR_QUANTITY_PRECISION),
-            display_qty=None,
-            avg_px=None,
-            post_only=False,
-            reduce_only=False,
-            reject_reason=None,
+            client_order_id=self._cache.client_order_id(venue_order_id),
             report_id=self._uuid_factory.generate(),
-            ts_accepted=dt_to_unix_nanos(pd.Timestamp(order["placedDate"])),
-            ts_triggered=0,
-            ts_last=dt_to_unix_nanos(pd.Timestamp(order["matchedDate"]))
-            if "matchedDate" in order
-            else 0,
             ts_init=self._clock.timestamp_ns(),
         )
 
