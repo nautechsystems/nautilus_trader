@@ -1,4 +1,11 @@
-# Bug report
+---
+name: Bug Report
+about: Report a bug here
+labels:
+  - bug
+---
+  
+# Bug Report
 
 ### Expected Behavior
 Add here...
@@ -14,5 +21,6 @@ Add here...
 
 ### Specifications
 
-- OS Platform:
+- OS platform:
+- Python version:
 - `nautilus_trader` version:
