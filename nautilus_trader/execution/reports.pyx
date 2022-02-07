@@ -213,6 +213,14 @@ cdef class OrderStatusReport(ExecutionReport):
         self.ts_triggered = ts_triggered or 0
         self.ts_last = ts_last
 
+    def __eq__(self, OrderStatusReport other) -> bool:
+        return (
+            self.account_id == other.account_id
+            and self.instrument_id == other.instrument_id
+            and self.venue_order_id == other.venue_order_id
+            and self.ts_accepted == other.ts_accepted
+        )
+
     def __repr__(self) -> str:
         return (
             f"{type(self).__name__}("
@@ -328,6 +336,15 @@ cdef class TradeReport(ExecutionReport):
         self.commission = commission
         self.liquidity_side = liquidity_side
         self.ts_event = ts_event
+
+    def __eq__(self, TradeReport other) -> bool:
+        return (
+            self.account_id == other.account_id
+            and self.instrument_id == other.instrument_id
+            and self.venue_order_id == other.venue_order_id
+            and self.trade_id == other.trade_id
+            and self.ts_event == other.ts_event
+        )
 
     def __repr__(self) -> str:
         return (

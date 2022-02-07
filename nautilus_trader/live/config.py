@@ -59,7 +59,7 @@ class LiveExecEngineConfig(ExecEngineConfig):
     """
 
     recon_auto: bool = True
-    recon_lookback_mins: Optional[PositiveInt] = 2880
+    recon_lookback_mins: Optional[PositiveInt] = None
     qsize: PositiveInt = 10000
 
 

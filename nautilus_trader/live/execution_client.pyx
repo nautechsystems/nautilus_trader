@@ -261,13 +261,14 @@ cdef class LiveExecutionClient(ExecutionClient):
             ts_init=self._clock.timestamp_ns(),
         )
 
-        since = self._clock.utc_now() - timedelta(minutes=lookback_mins)
-        # TODO(cs): Reconciliation lookback filter WIP
+        since = None
+        if lookback_mins is not None:
+            since = self._clock.utc_now() - timedelta(minutes=lookback_mins)
 
         reports = await asyncio.gather(
-            self.generate_order_status_reports(),
-            self.generate_trade_reports(),
-            self.generate_position_status_reports(),
+            self.generate_order_status_reports(start=since),
+            self.generate_trade_reports(start=since),
+            self.generate_position_status_reports(start=since),
         )
 
         mass_status.add_order_reports(reports=reports[0])
