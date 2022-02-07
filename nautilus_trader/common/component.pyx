@@ -180,6 +180,11 @@ cdef class Component:
     def __repr__(self) -> str:
         return f"{type(self).__name__}({self.id})"
 
+    def fullname(self) -> str:
+        klass = self.__class__
+        module = klass.__module__
+        return module + '.' + klass.__qualname__
+
     cdef ComponentState state_c(self) except *:
         return <ComponentState>self._fsm.state
 
