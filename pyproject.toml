@@ -82,11 +82,11 @@ pytest-benchmark = "^3.4.1"
 pytest-cov = "2.10.1"  # Pinned at 2.10.1 due coverage 4.5.4
 pytest-mock = "^3.7.0"
 pytest-xdist = { version = "^2.5.0", extras = ["psutil"] }
+docker = "^5.0.3"
 
 [tool.poetry.extras]
 distributed = ["distributed", "bokeh"]
-ib = ["ib_insync"]
-
+ib = ["ib_insync", "docker"]
 
 ##########################################################
 # Test configs                                           #
