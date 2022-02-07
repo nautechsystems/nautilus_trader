@@ -15,7 +15,7 @@ Please delete options that are not relevant.
 
 ### How Has This Been Tested?
 
-Please describe the tests that you ran to verify your changes. Provide instructions so we can reproduce. Please also list any relevant details for your test configuration
+Please describe the tests that you ran to verify your changes. Provide instructions so we can reproduce. Please also list any relevant details for your test configuration.
 
 - [ ] Test A
 - [ ] Test B
@@ -26,5 +26,5 @@ Please describe the tests that you ran to verify your changes. Provide instructi
 - [ ] My code follows the style guidelines of this project
 - [ ] I have made corresponding changes to the documentation
 - [ ] My changes generate no new warnings
+- [ ] New and existing tests pass locally with my changes
 - [ ] I have added tests that prove my fix is effective or that my feature works
-- [ ] New and existing unit tests pass locally with my changes
