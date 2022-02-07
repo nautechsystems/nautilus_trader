@@ -64,6 +64,8 @@ cdef class OrderEvent(Event):
         The UNIX timestamp (nanoseconds) when the order event occurred.
     ts_init : int64
         The UNIX timestamp (nanoseconds) when the object was initialized.
+    reconciliation : bool
+        If the event was generated during reconciliation.
 
     Warnings
     --------
@@ -81,6 +83,7 @@ cdef class OrderEvent(Event):
         UUID4 event_id not None,
         int64_t ts_event,
         int64_t ts_init,
+        bint reconciliation,
     ):
         super().__init__(event_id, ts_event, ts_init)
 
@@ -90,6 +93,7 @@ cdef class OrderEvent(Event):
         self.instrument_id = instrument_id
         self.client_order_id = client_order_id
         self.venue_order_id = venue_order_id
+        self.reconciliation = reconciliation
 
 
 cdef class OrderInitialized(OrderEvent):
@@ -141,6 +145,8 @@ cdef class OrderInitialized(OrderEvent):
         The event ID.
     ts_init : int64
         The UNIX timestamp (nanoseconds) when the object was initialized.
+    reconciliation : bool, default False
+        If the event was generated during reconciliation.
     """
 
     def __init__(
@@ -163,6 +169,7 @@ cdef class OrderInitialized(OrderEvent):
         str tags,  # Can be None
         UUID4 event_id not None,
         int64_t ts_init,
+        bint reconciliation=False,
     ):
         super().__init__(
             trader_id,
@@ -174,6 +181,7 @@ cdef class OrderInitialized(OrderEvent):
             event_id,
             ts_init,  # Timestamp identical to ts_init
             ts_init,
+            reconciliation,
         )
 
         self.side = order_side
@@ -265,6 +273,7 @@ cdef class OrderInitialized(OrderEvent):
             tags=values["tags"],
             event_id=UUID4(values["event_id"]),
             ts_init=values["ts_init"],
+            reconciliation=values.get("reconciliation", False),
         )
 
     @staticmethod
@@ -291,6 +300,7 @@ cdef class OrderInitialized(OrderEvent):
             "tags": obj.tags,
             "event_id": obj.id.value,
             "ts_init": obj.ts_init,
+            "reconciliation": obj.reconciliation,
         }
 
     @staticmethod
@@ -374,6 +384,7 @@ cdef class OrderDenied(OrderEvent):
             event_id,
             ts_init,  # Timestamp identical to ts_init
             ts_init,
+            reconciliation=False,  # Internal system event
         )
 
         self.reason = reason
@@ -501,6 +512,7 @@ cdef class OrderSubmitted(OrderEvent):
             event_id,
             ts_event,
             ts_init,
+            reconciliation=False,  # Internal system event
         )
 
         self.account_id = account_id
@@ -613,6 +625,8 @@ cdef class OrderAccepted(OrderEvent):
         The UNIX timestamp (nanoseconds) when the order accepted event occurred.
     ts_init : int64
         The UNIX timestamp (nanoseconds) when the object was initialized.
+    reconciliation : bool, default False
+        If the event was generated during reconciliation.
 
     References
     ----------
@@ -630,6 +644,7 @@ cdef class OrderAccepted(OrderEvent):
         UUID4 event_id not None,
         int64_t ts_event,
         int64_t ts_init,
+        bint reconciliation=False,
     ):
         super().__init__(
             trader_id,
@@ -641,6 +656,7 @@ cdef class OrderAccepted(OrderEvent):
             event_id,
             ts_event,
             ts_init,
+            reconciliation,
         )
 
     def __str__(self) -> str:
@@ -680,6 +696,7 @@ cdef class OrderAccepted(OrderEvent):
             event_id=UUID4(values["event_id"]),
             ts_event=values["ts_event"],
             ts_init=values["ts_init"],
+            reconciliation=values.get("reconciliation", False),
         )
 
     @staticmethod
@@ -696,6 +713,7 @@ cdef class OrderAccepted(OrderEvent):
             "event_id": obj.id.value,
             "ts_event": obj.ts_event,
             "ts_init": obj.ts_init,
+            "reconciliation": obj.reconciliation,
         }
 
     @staticmethod
@@ -752,6 +770,8 @@ cdef class OrderRejected(OrderEvent):
         The UNIX timestamp (nanoseconds) when the order rejected event occurred.
     ts_init : int64
         The UNIX timestamp (nanoseconds) when the object was initialized.
+    reconciliation : bool, default False
+        If the event was generated during reconciliation.
 
     Raises
     ------
@@ -770,6 +790,7 @@ cdef class OrderRejected(OrderEvent):
         UUID4 event_id not None,
         int64_t ts_event,
         int64_t ts_init,
+        bint reconciliation=False,
     ):
         Condition.valid_string(reason, "reason")
         super().__init__(
@@ -782,6 +803,7 @@ cdef class OrderRejected(OrderEvent):
             event_id,
             ts_event,
             ts_init,
+            reconciliation,
         )
 
         self.reason = reason
@@ -823,6 +845,7 @@ cdef class OrderRejected(OrderEvent):
             event_id=UUID4(values["event_id"]),
             ts_event=values["ts_event"],
             ts_init=values["ts_init"],
+            reconciliation=values.get("reconciliation", False),
         )
 
     @staticmethod
@@ -839,6 +862,7 @@ cdef class OrderRejected(OrderEvent):
             "event_id": obj.id.value,
             "ts_event": obj.ts_event,
             "ts_init": obj.ts_init,
+            "reconciliation": obj.reconciliation,
         }
 
     @staticmethod
@@ -895,6 +919,8 @@ cdef class OrderCanceled(OrderEvent):
         The UNIX timestamp (nanoseconds) when order canceled event occurred.
     ts_init : int64
         The UNIX timestamp (nanoseconds) when the object was initialized.
+    reconciliation : bool, default False
+        If the event was generated during reconciliation.
     """
 
     def __init__(
@@ -908,6 +934,7 @@ cdef class OrderCanceled(OrderEvent):
         UUID4 event_id not None,
         int64_t ts_event,
         int64_t ts_init,
+        bint reconciliation=False,
     ):
         super().__init__(
             trader_id,
@@ -919,6 +946,7 @@ cdef class OrderCanceled(OrderEvent):
             event_id,
             ts_event,
             ts_init,
+            reconciliation,
         )
 
     def __str__(self) -> str:
@@ -958,6 +986,7 @@ cdef class OrderCanceled(OrderEvent):
             event_id=UUID4(values["event_id"]),
             ts_event=values["ts_event"],
             ts_init=values["ts_init"],
+            reconciliation=values.get("reconciliation", False),
         )
 
     @staticmethod
@@ -974,6 +1003,7 @@ cdef class OrderCanceled(OrderEvent):
             "event_id": obj.id.value,
             "ts_event": obj.ts_event,
             "ts_init": obj.ts_init,
+            "reconciliation": obj.reconciliation,
         }
 
     @staticmethod
@@ -1030,6 +1060,8 @@ cdef class OrderExpired(OrderEvent):
         The UNIX timestamp (nanoseconds) when the order expired event occurred.
     ts_init : int64
         The UNIX timestamp (nanoseconds) when the object was initialized.
+    reconciliation : bool, default False
+        If the event was generated during reconciliation.
     """
 
     def __init__(
@@ -1043,6 +1075,7 @@ cdef class OrderExpired(OrderEvent):
         UUID4 event_id not None,
         int64_t ts_event,
         int64_t ts_init,
+        bint reconciliation=False,
     ):
         super().__init__(
             trader_id,
@@ -1054,6 +1087,7 @@ cdef class OrderExpired(OrderEvent):
             event_id,
             ts_event,
             ts_init,
+            reconciliation,
         )
 
     def __str__(self) -> str:
@@ -1093,6 +1127,7 @@ cdef class OrderExpired(OrderEvent):
             event_id=UUID4(values["event_id"]),
             ts_event=values["ts_event"],
             ts_init=values["ts_init"],
+            reconciliation=values.get("reconciliation", False),
         )
 
     @staticmethod
@@ -1109,6 +1144,7 @@ cdef class OrderExpired(OrderEvent):
             "event_id": obj.id.value,
             "ts_event": obj.ts_event,
             "ts_init": obj.ts_init,
+            "reconciliation": obj.reconciliation,
         }
 
     @staticmethod
@@ -1167,6 +1203,8 @@ cdef class OrderTriggered(OrderEvent):
         The UNIX timestamp (nanoseconds) when the order triggered event occurred.
     ts_init : int64
         The UNIX timestamp (nanoseconds) when the object was initialized.
+    reconciliation : bool, default False
+        If the event was generated during reconciliation.
     """
 
     def __init__(
@@ -1180,6 +1218,7 @@ cdef class OrderTriggered(OrderEvent):
         UUID4 event_id not None,
         int64_t ts_event,
         int64_t ts_init,
+        bint reconciliation=False,
     ):
         super().__init__(
             trader_id,
@@ -1191,6 +1230,7 @@ cdef class OrderTriggered(OrderEvent):
             event_id,
             ts_event,
             ts_init,
+            reconciliation,
         )
 
         self.account_id = account_id
@@ -1232,6 +1272,7 @@ cdef class OrderTriggered(OrderEvent):
             event_id=UUID4(values["event_id"]),
             ts_event=values["ts_event"],
             ts_init=values["ts_init"],
+            reconciliation=values.get("reconciliation", False),
         )
 
     @staticmethod
@@ -1248,6 +1289,7 @@ cdef class OrderTriggered(OrderEvent):
             "event_id": obj.id.value,
             "ts_event": obj.ts_event,
             "ts_init": obj.ts_init,
+            "reconciliation": obj.reconciliation,
         }
 
     @staticmethod
@@ -1305,6 +1347,8 @@ cdef class OrderPendingUpdate(OrderEvent):
         The UNIX timestamp (nanoseconds) when the order pending update event occurred.
     ts_init : int64
         The UNIX timestamp (nanoseconds) when the object was initialized.
+    reconciliation : bool, default False
+        If the event was generated during reconciliation.
     """
 
     def __init__(
@@ -1318,6 +1362,7 @@ cdef class OrderPendingUpdate(OrderEvent):
         UUID4 event_id not None,
         int64_t ts_event,
         int64_t ts_init,
+        bint reconciliation=False,
     ):
         super().__init__(
             trader_id,
@@ -1329,6 +1374,7 @@ cdef class OrderPendingUpdate(OrderEvent):
             event_id,
             ts_event,
             ts_init,
+            reconciliation,
         )
 
     def __str__(self) -> str:
@@ -1369,6 +1415,7 @@ cdef class OrderPendingUpdate(OrderEvent):
             event_id=UUID4(values["event_id"]),
             ts_event=values["ts_event"],
             ts_init=values["ts_init"],
+            reconciliation=values.get("reconciliation", False),
         )
 
     @staticmethod
@@ -1385,6 +1432,7 @@ cdef class OrderPendingUpdate(OrderEvent):
             "event_id": obj.id.value,
             "ts_event": obj.ts_event,
             "ts_init": obj.ts_init,
+            "reconciliation": obj.reconciliation,
         }
 
     @staticmethod
@@ -1442,6 +1490,8 @@ cdef class OrderPendingCancel(OrderEvent):
         The UNIX timestamp (nanoseconds) when the order pending cancel event occurred.
     ts_init : int64
         The UNIX timestamp (nanoseconds) when the object was initialized.
+    reconciliation : bool, default False
+        If the event was generated during reconciliation.
     """
 
     def __init__(
@@ -1455,6 +1505,7 @@ cdef class OrderPendingCancel(OrderEvent):
         UUID4 event_id not None,
         int64_t ts_event,
         int64_t ts_init,
+        bint reconciliation=False,
     ):
         super().__init__(
             trader_id,
@@ -1466,6 +1517,7 @@ cdef class OrderPendingCancel(OrderEvent):
             event_id,
             ts_event,
             ts_init,
+            reconciliation,
         )
 
     def __str__(self) -> str:
@@ -1506,6 +1558,7 @@ cdef class OrderPendingCancel(OrderEvent):
             event_id=UUID4(values["event_id"]),
             ts_event=values["ts_event"],
             ts_init=values["ts_init"],
+            reconciliation=values.get("reconciliation", False),
         )
 
     @staticmethod
@@ -1522,6 +1575,7 @@ cdef class OrderPendingCancel(OrderEvent):
             "event_id": obj.id.value,
             "ts_event": obj.ts_event,
             "ts_init": obj.ts_init,
+            "reconciliation": obj.reconciliation,
         }
 
     @staticmethod
@@ -1581,6 +1635,8 @@ cdef class OrderModifyRejected(OrderEvent):
         The UNIX timestamp (nanoseconds) when the order update rejected event occurred.
     ts_init : int64
         The UNIX timestamp (nanoseconds) when the object was initialized.
+    reconciliation : bool, default False
+        If the event was generated during reconciliation.
 
     Raises
     ------
@@ -1600,6 +1656,7 @@ cdef class OrderModifyRejected(OrderEvent):
         UUID4 event_id not None,
         int64_t ts_event,
         int64_t ts_init,
+        bint reconciliation=False,
     ):
         Condition.valid_string(reason, "reason")
         super().__init__(
@@ -1612,6 +1669,7 @@ cdef class OrderModifyRejected(OrderEvent):
             event_id,
             ts_event,
             ts_init,
+            reconciliation,
         )
 
         self.reason = reason
@@ -1657,6 +1715,7 @@ cdef class OrderModifyRejected(OrderEvent):
             event_id=UUID4(values["event_id"]),
             ts_event=values["ts_event"],
             ts_init=values["ts_init"],
+            reconciliation=values.get("reconciliation", False),
         )
 
     @staticmethod
@@ -1674,6 +1733,7 @@ cdef class OrderModifyRejected(OrderEvent):
             "event_id": obj.id.value,
             "ts_event": obj.ts_event,
             "ts_init": obj.ts_init,
+            "reconciliation": obj.reconciliation,
         }
 
     @staticmethod
@@ -1733,6 +1793,8 @@ cdef class OrderCancelRejected(OrderEvent):
         The UNIX timestamp (nanoseconds) when the order cancel rejected event occurred.
     ts_init : int64
         The UNIX timestamp (nanoseconds) when the object was initialized.
+    reconciliation : bool, default False
+        If the event was generated during reconciliation.
 
     Raises
     ------
@@ -1752,6 +1814,7 @@ cdef class OrderCancelRejected(OrderEvent):
         UUID4 event_id not None,
         int64_t ts_event,
         int64_t ts_init,
+        bint reconciliation=False,
     ):
         Condition.valid_string(reason, "reason")
         super().__init__(
@@ -1764,6 +1827,7 @@ cdef class OrderCancelRejected(OrderEvent):
             event_id,
             ts_event,
             ts_init,
+            reconciliation,
         )
 
         self.reason = reason
@@ -1809,6 +1873,7 @@ cdef class OrderCancelRejected(OrderEvent):
             event_id=UUID4(values["event_id"]),
             ts_event=values["ts_event"],
             ts_init=values["ts_init"],
+            reconciliation=values.get("reconciliation", False),
         )
 
     @staticmethod
@@ -1826,6 +1891,7 @@ cdef class OrderCancelRejected(OrderEvent):
             "event_id": obj.id.value,
             "ts_event": obj.ts_event,
             "ts_init": obj.ts_init,
+            "reconciliation": obj.reconciliation,
         }
 
     @staticmethod
@@ -1888,6 +1954,8 @@ cdef class OrderUpdated(OrderEvent):
         The UNIX timestamp (nanoseconds) when the order updated event occurred.
     ts_init : int64
         The UNIX timestamp (nanoseconds) when the object was initialized.
+    reconciliation : bool, default False
+        If the event was generated during reconciliation.
 
     Raises
     ------
@@ -1909,6 +1977,7 @@ cdef class OrderUpdated(OrderEvent):
         UUID4 event_id not None,
         int64_t ts_event,
         int64_t ts_init,
+        bint reconciliation=False,
     ):
         Condition.positive(quantity, "quantity")
 
@@ -1922,6 +1991,7 @@ cdef class OrderUpdated(OrderEvent):
             event_id,
             ts_event,
             ts_init,
+            reconciliation,
         )
 
         self.quantity = quantity
@@ -1976,6 +2046,7 @@ cdef class OrderUpdated(OrderEvent):
             event_id=UUID4(values["event_id"]),
             ts_event=values["ts_event"],
             ts_init=values["ts_init"],
+            reconciliation=values.get("reconciliation", False),
         )
 
     @staticmethod
@@ -1995,6 +2066,7 @@ cdef class OrderUpdated(OrderEvent):
             "event_id": obj.id.value,
             "ts_event": obj.ts_event,
             "ts_init": obj.ts_init,
+            "reconciliation": obj.reconciliation,
         }
 
     @staticmethod
@@ -2071,6 +2143,8 @@ cdef class OrderFilled(OrderEvent):
         The UNIX timestamp (nanoseconds) when the object was initialized.
     info : dict[str, object], optional
         The additional fill information.
+    reconciliation : bool, default False
+        If the event was generated during reconciliation.
 
     Raises
     ------
@@ -2098,6 +2172,7 @@ cdef class OrderFilled(OrderEvent):
         UUID4 event_id not None,
         int64_t ts_event,
         int64_t ts_init,
+        bint reconciliation=False,
         dict info=None,
     ):
         Condition.positive(last_qty, "last_qty")
@@ -2114,6 +2189,7 @@ cdef class OrderFilled(OrderEvent):
             event_id,
             ts_event,
             ts_init,
+            reconciliation,
         )
 
         self.trade_id = trade_id
@@ -2190,7 +2266,8 @@ cdef class OrderFilled(OrderEvent):
             event_id=UUID4(values["event_id"]),
             ts_event=values["ts_event"],
             ts_init=values["ts_init"],
-            info=orjson.loads(values["info"])
+            info=orjson.loads(values["info"]),
+            reconciliation=values.get("reconciliation", False),
         )
 
     @staticmethod
@@ -2217,6 +2294,7 @@ cdef class OrderFilled(OrderEvent):
             "ts_event": obj.ts_event,
             "ts_init": obj.ts_init,
             "info": orjson.dumps(obj.info).decode(),
+            "reconciliation": obj.reconciliation,
         }
 
     @staticmethod

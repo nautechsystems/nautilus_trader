@@ -675,6 +675,7 @@ cdef class LiveExecutionEngine(ExecutionEngine):
             tags="EXTERNAL",
             event_id=self._uuid_factory.generate(),
             ts_init=self._clock.timestamp_ns(),
+            reconciliation=True,
         )
 
         cdef Order order = OrderUnpacker.from_init_c(initialized)
@@ -693,6 +694,7 @@ cdef class LiveExecutionEngine(ExecutionEngine):
             event_id=self._uuid_factory.generate(),
             ts_event=report.ts_last,
             ts_init=self._clock.timestamp_ns(),
+            reconciliation=True,
         )
         self._log.debug(f"Generated {rejected}.")
         self._handle_event(rejected)
@@ -708,6 +710,7 @@ cdef class LiveExecutionEngine(ExecutionEngine):
             event_id=self._uuid_factory.generate(),
             ts_event=report.ts_accepted,
             ts_init=self._clock.timestamp_ns(),
+            reconciliation=True,
         )
         self._log.debug(f"Generated {accepted}.")
         self._handle_event(accepted)
@@ -723,6 +726,7 @@ cdef class LiveExecutionEngine(ExecutionEngine):
             event_id=self._uuid_factory.generate(),
             ts_event=report.ts_triggered,
             ts_init=self._clock.timestamp_ns(),
+            reconciliation=True,
         )
         self._log.debug(f"Generated {triggered}.")
         self._handle_event(triggered)
@@ -741,6 +745,7 @@ cdef class LiveExecutionEngine(ExecutionEngine):
             event_id=self._uuid_factory.generate(),
             ts_event=report.ts_accepted,
             ts_init=self._clock.timestamp_ns(),
+            reconciliation=True,
         )
         self._log.debug(f"Generated {updated}.")
         self._handle_event(updated)
@@ -756,6 +761,7 @@ cdef class LiveExecutionEngine(ExecutionEngine):
             event_id=self._uuid_factory.generate(),
             ts_event=report.ts_last,
             ts_init=self._clock.timestamp_ns(),
+            reconciliation=True,
         )
         self._log.debug(f"Generated {canceled}.")
         self._handle_event(canceled)
@@ -771,6 +777,7 @@ cdef class LiveExecutionEngine(ExecutionEngine):
             event_id=self._uuid_factory.generate(),
             ts_event=report.ts_last,
             ts_init=self._clock.timestamp_ns(),
+            reconciliation=True,
         )
         self._log.debug(f"Generated {expired}.")
         self._handle_event(expired)
@@ -795,6 +802,7 @@ cdef class LiveExecutionEngine(ExecutionEngine):
             event_id=self._uuid_factory.generate(),
             ts_event=trade.ts_event,
             ts_init=self._clock.timestamp_ns(),
+            reconciliation=True,
         )
         self._handle_event(filled)
 

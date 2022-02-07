@@ -47,6 +47,8 @@ cdef class OrderEvent(Event):
     """The client order ID associated with the event.\n\n:returns: `ClientOrderId`"""
     cdef readonly VenueOrderId venue_order_id
     """The venue order ID associated with the event.\n\n:returns: `VenueOrderId` or ``None``"""
+    cdef readonly bint reconciliation
+    """If the event was generated during reconciliation.\n\n:returns: `bool`"""
 
 
 cdef class OrderInitialized(OrderEvent):
