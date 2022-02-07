@@ -1,8 +1,10 @@
+# Bug report
+
 ### Expected Behavior
-Add here.
+Add here...
 
 ### Actual Behavior
-Add here.
+Add here...
 
 ### Steps to Reproduce the Problem
 
@@ -13,4 +15,4 @@ Add here.
 ### Specifications
 
 - OS Platform:
-- NautilusTrader Version:
+- `nautilus_trader` version:
