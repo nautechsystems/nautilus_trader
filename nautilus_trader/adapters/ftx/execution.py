@@ -342,8 +342,6 @@ class FTXExecutionClient(LiveExecutionClient):
             else:
                 response = await self._http_client.get_order_history(
                     market=instrument_id.symbol.value if instrument_id is not None else None,
-                    start_time=int(start.timestamp()) if start is not None else None,
-                    end_time=int(end.timestamp()) if end is not None else None,
                 )
         except FTXError as ex:
             self._log.error(ex.message)  # type: ignore  # TODO(cs): Improve errors
@@ -351,6 +349,13 @@ class FTXExecutionClient(LiveExecutionClient):
 
         if response:
             for data in response:
+                # Apply filter (FTX filters not working)
+                created_at = pd.to_datetime(data["createdAt"])
+                if start is not None and created_at < start:
+                    continue
+                if end is not None and created_at > end:
+                    continue
+
                 # Get instrument
                 instrument_id = instrument_id or self._get_cached_instrument_id(data)
                 instrument = self._instrument_provider.find(instrument_id)
@@ -374,7 +379,7 @@ class FTXExecutionClient(LiveExecutionClient):
 
         return reports
 
-    async def _get_trigger_order_status_reports(
+    async def _get_trigger_order_status_reports(  # noqa TODO(cs): WIP too complex
         self,
         instrument_id: InstrumentId = None,
         start: datetime = None,
@@ -414,6 +419,13 @@ class FTXExecutionClient(LiveExecutionClient):
 
         if response:
             for data in response:
+                # Apply filter (FTX filters not working)
+                created_at = pd.to_datetime(data["createdAt"])
+                if start is not None and created_at < start:
+                    continue
+                if end is not None and created_at > end:
+                    continue
+
                 # Get instrument
                 instrument_id = instrument_id or self._get_cached_instrument_id(data)
                 instrument = self._instrument_provider.find(instrument_id)
@@ -482,6 +494,13 @@ class FTXExecutionClient(LiveExecutionClient):
 
         if response:
             for data in response:
+                # Apply filter (FTX filters not working)
+                created_at = pd.to_datetime(data["time"])
+                if start is not None and created_at < start:
+                    continue
+                if end is not None and created_at > end:
+                    continue
+
                 # Get instrument
                 instrument_id = instrument_id or self._get_cached_instrument_id(data)
                 instrument = self._instrument_provider.find(instrument_id)

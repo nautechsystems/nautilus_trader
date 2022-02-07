@@ -117,7 +117,7 @@ cdef class LiveExecutionEngine(ExecutionEngine):
 
         # Settings
         self.recon_auto = config.recon_auto if config else True
-        self.recon_lookback_mins = config.recon_lookback_mins if config else 0
+        self.recon_lookback_mins = config.recon_lookback_mins if config and config.recon_lookback_mins is not None else 0  # TODO: WIP!
 
         self._run_queue_task = None
         self.is_running = False
