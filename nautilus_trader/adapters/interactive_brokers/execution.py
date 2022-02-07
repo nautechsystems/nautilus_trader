@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2021 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -13,6 +13,10 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-"""
-Provides an API integration for Interactive Brokers.
-"""
+from nautilus_trader.live.execution_client import LiveExecutionClient
+
+
+class InteractiveBrokersExecutionClient(LiveExecutionClient):
+    """
+    Provides an execution client for Interactive Brokers TWS API.
+    """
