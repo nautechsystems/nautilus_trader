@@ -71,27 +71,27 @@ html_theme_options = {
     "globaltoc_depth": 4,
     "nav_links": [
         {
-            "href": "../html/1_getting_started/0_index",
+            "href": "/1_getting_started/0_index",
             "internal": True,
             "title": "Getting Started",
         },
         {
-            "href": "../html/2_user_guide/0_index",
+            "href": "/2_user_guide/0_index",
             "internal": True,
             "title": "User Guide",
         },
         {
-            "href": "../html/3_api_reference/0_index",
+            "href": "/3_api_reference/0_index",
             "internal": True,
             "title": "API Reference",
         },
         {
-            "href": "../html/4_integrations/0_index",
+            "href": "/4_integrations/0_index",
             "internal": True,
             "title": "Integrations",
         },
         {
-            "href": "../html/5_developer_guide/0_index",
+            "href": "/5_developer_guide/0_index",
             "internal": True,
             "title": "Developer Guide",
         },
