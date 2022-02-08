@@ -82,3 +82,16 @@ written in Cython, however the libraries can be accessed from both pure Python a
 - Deployability
 
 ![Architecture](https://github.com/nautechsystems/nautilus_trader/blob/develop/docs/artwork/architecture-overview.png?raw=true "architecture")
+
+
+```{eval-rst}
+.. toctree::
+   :maxdepth: 2
+   :hidden:
+   
+   1_getting_started/0_index.md
+   2_user_guide/0_index.md
+   3_api_reference/0_index.md
+   4_integrations/0_index.md
+   5_developer_guide/0_index.md
+```

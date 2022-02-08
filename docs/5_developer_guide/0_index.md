@@ -30,3 +30,15 @@ concepts, and where C typing is being introduced.
 It's not necessary to become a C language expert, however it's helpful to understand how Cython C 
 syntax is used in function and method definitions, in local code blocks, and the common primitive C 
 types and how these map to their corresponding `PyObject` types.
+
+```{eval-rst}
+.. toctree::
+   :maxdepth: 2
+   :hidden:
+   
+   1_environment_setup.md
+   2_coding_standards.md
+   3_cython.md
+   4_testing.md
+   5_packaged_data.md
+```

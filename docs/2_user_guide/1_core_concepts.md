@@ -69,5 +69,6 @@ The following order types are available (when possible on an exchange);
 - `Limit`
 - `StopMarket`
 - `StopLimit`
-- `TrailingStopMarket`
-- `TrailingStopLimit`
+
+More will be added in due course including `MarketIfTouched`, and `LimitIfTouched`. 
+Users are invited to open discussion issues to request specific order types or features.
