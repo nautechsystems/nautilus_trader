@@ -74,7 +74,6 @@ ib_insync = { version = "^0.9.70", optional = true }
 coverage = "4.5.4"  # Pinned at 4.5.4 due Cython
 nox = "^2022.1.7"
 numpydoc = "^1.2.0"
-jupyter-book = "^0.12.1"
 pre-commit = "^2.17.0"
 pytest = "^7.0.0"
 pytest-asyncio = "^0.18.0"
@@ -82,13 +81,13 @@ pytest-benchmark = "^3.4.1"
 pytest-cov = "2.10.1"  # Pinned at 2.10.1 due coverage 4.5.4
 pytest-mock = "^3.7.0"
 pytest-xdist = { version = "^2.5.0", extras = ["psutil"] }
-#linkify = "^1.4"
-#myst-parser = "0.16.1"  # Pinned at 0.15.2 due sphinx_togglebutton 0.2.2
-#sphinx_comments = "^0.0.3"
-#sphinx_copybutton = "^0.5.0"
-#sphinx-external-toc = "^0.2.3"
+linkify-it-py = "^1.0.3"
+myst-parser = "^0.16.1"
+sphinx_comments = "^0.0.3"
+sphinx_copybutton = "^0.5.0"
+sphinx-external-toc = "^0.2.3"
 sphinx-material = "^0.0.35"
-#sphinx_togglebutton = "^0.3.0"
+sphinx_togglebutton = "^0.3.0"
 
 [tool.poetry.extras]
 distributed = ["distributed", "bokeh"]
