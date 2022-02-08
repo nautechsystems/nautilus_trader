@@ -14,6 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 import heapq
+import logging
 import sys
 from collections import namedtuple
 from typing import Any, Iterator, List, Set
@@ -30,6 +31,9 @@ from nautilus_trader.serialization.arrow.serializer import ParquetSerializer
 from nautilus_trader.serialization.arrow.util import clean_key
 
 
+logger = logging.getLogger("nautilus_trader.batching")
+
+
 FileMeta = namedtuple("FileMeta", "filename datatype instrument_id client_id start end")
 
 
@@ -41,14 +45,16 @@ def dataset_batches(
     except ArrowInvalid:
         return
     filter_expr = (ds.field("ts_init") >= file_meta.start) & (ds.field("ts_init") <= file_meta.end)
-    scanner: ds.Scanner = d.scanner(filter=filter_expr, batch_size=n_rows)
-    for batch in scanner.to_batches():
-        if batch.num_rows == 0:
-            break
-        data = batch.to_pandas()
-        if file_meta.instrument_id:
-            data.loc[:, "instrument_id"] = file_meta.instrument_id
-        yield data
+    for fn in sorted(map(str, d.files)):
+        logger.info(f"reading batch for {fn}")
+        scanner = ds.dataset(fn).scanner(filter=filter_expr, batch_size=n_rows)
+        for batch in scanner.to_batches():
+            if batch.num_rows == 0:
+                break
+            data = batch.to_pandas()
+            if file_meta.instrument_id:
+                data.loc[:, "instrument_id"] = file_meta.instrument_id
+            yield data
 
 
 def build_filenames(catalog: DataCatalog, data_configs: List[BacktestDataConfig]) -> List[FileMeta]:
@@ -101,10 +107,14 @@ def batch_files(
                 buffer[fn] = pd.concat([buffer[fn], next_buf])
 
         # Determine minimum timestamp
-        max_ts_per_frame = [df["ts_init"].max() for df in buffer.values() if not df.empty]
+        max_ts_per_frame = {fn: df["ts_init"].max() for fn, df in buffer.items() if not df.empty}
+        logger.debug(
+            f"Max timestamps per : {[(fn, pd.Timestamp(t)) for fn, t in max_ts_per_frame.items()]}"
+        )
         if not max_ts_per_frame:
             continue
-        min_ts = min(max_ts_per_frame)
+        min_ts = min(max_ts_per_frame.values())
+        logger.debug(f"Using min of max timestamps: {pd.Timestamp(min_ts)}")
 
         # Filter buffer dataframes based on min_timestamp
         batches = []
@@ -112,18 +122,24 @@ def batch_files(
             df = buffer[f.filename]
             if df.empty:
                 continue
-            ts_filter = df["ts_init"] <= min_ts
+            ts_filter = df["ts_init"] <= min_ts  # min of max timestamps
             batch = df[ts_filter]
             buffer[f.filename] = df[~ts_filter]
-            # print(f"{f.filename} batch={len(batch)} buffer={len(buffer)}")
+            logger.debug(f"{f.filename} batch={len(batch)} buffer={len(buffer)}")
             objs = frame_to_nautilus(df=batch, cls=f.datatype)
             batches.append(objs)
             bytes_read += sum([sys.getsizeof(x) for x in objs])
 
         # Merge ticks
         values.extend(list(heapq.merge(*batches, key=lambda x: x.ts_init)))
-        # print(f"iter complete, {bytes_read=}, flushing at target={target_batch_size_bytes}")
+        logger.debug(
+            f"buffer updated, contains {len(values)} items ({bytes_read=} / {target_batch_size_bytes=})"
+        )
+        logger.debug("")
         if bytes_read > target_batch_size_bytes:
+            logger.debug(
+                f"iter complete, {bytes_read=}, flushing at target={target_batch_size_bytes}"
+            )
             yield values
             bytes_read = 0
             values = []
