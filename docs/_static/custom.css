@@ -45,10 +45,10 @@ h1, h2, h3 {
 .md-typeset a {
     color: #00bdd6 !important;
 }
-/*.md-typeset {
-    font-size: .72rem;
-    line-height: 1.9;
-}*/
+.md-typeset {  /* main body font */
+    font-size: .8rem;
+    line-height: 1.6;
+}
 .md-typeset h1 {
     margin: 0 0 1rem !important;
     color: #d2d7f99e !important;
@@ -91,7 +91,7 @@ h1, h2, h3 {
     display: none;
 }
 .md-nav {
-    font-size: .69rem;
+    font-size: .7rem;
 }
 .md-nav__link--active, .md-nav__link:active, .md-nav__link:focus, .md-nav__link:hover {
     color: #00bdd6;
@@ -111,30 +111,57 @@ h1, h2, h3 {
     background: rgb(0 0 0 / 12%);
 }
 .highlight .kn {
-    color: #a846b9;
+    color: #6f6ed1;  /* import keywords */
 }
-.highlight .nn {
-    color: #bfbfbf;
+.highlight .nn {     /* import paths */
+    color: #D3D3D3;
+}
+.highlight .bp {     /* self keyword */
+color: #6495ED;
+}
+.highlight .nb {      /* class */
+color: #00bdd6;
+}
+.highlight .nc {
+color: #00bdd6;      /* class */
+}
+.highlight .nf {     /* method */
+color: #00bdd6;
+}
+.highlight .s1 {     /* string literal */
+color: #E9967A;
+}
+.highlight .s2 {     /* string literal */
+color: #E9967A;
 }
 .highlight .c1 {
-    color: #00bd00;
+    color: #808080;
     white-space: pre-wrap;
 }
-.highlight .k, .highlight .nb {
-    color: #a846b9;
+.highlight .fm {     /* special methods */
+color: #BA55D3;
 }
-.md-typeset pre {
-    color: #3f6ec6;
+.highlight .k, .highlight .nb {
+    color: #6f6ed1;
+}
+.md-typeset pre {    /* normal code */
+    color: #D3D3D3;
 }
 .highlight .o {
-    color: #fff;
+    color: #D3D3D3;
 }
-.highlight .mi {
-    color: #b52989;
+.highlight .mf {     /* float literals */
+    color: #B0E0E6;
+}
+.highlight .mi {     /* integer literals */
+    color: #B0E0E6;
 }
 .md-header-nav__topic {
     display: none;
     width: 0 !important;
+}
+.md-typeset table:not([class]) th {
+background-color: rgba(0,0,0,.54);
 }
 
 @media only screen and (max-width: 76.1875em) {
@@ -154,8 +181,8 @@ h1, h2, h3 {
     html .md-nav--primary .md-nav__title~.md-nav__list {
         background-color: rgb(32 38 46 / 94%) !important;
     }
-    .md-nav--primary .md-nav__item {
-        font-size: .7rem;
+    .md-nav--primary .md-nav__item {  /* menus font */
+        font-size: 0.7rem;
     }
 }
 
