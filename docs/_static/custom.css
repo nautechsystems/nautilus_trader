@@ -46,8 +46,8 @@ h1, h2, h3 {
     color: #00bdd6 !important;
 }
 .md-typeset {  /* main body font */
-    font-size: .8rem;
-    line-height: 1.6;
+    font-size: .78rem;
+    line-height: 1.5;
 }
 .md-typeset h1 {
     margin: 0 0 1rem !important;
