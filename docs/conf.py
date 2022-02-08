@@ -42,17 +42,21 @@ html_static_path = ["_static"]
 html_css_files = ["custom.css"]
 templates_path = ["_templates"]
 
-
 comments_config = {"hypothesis": False, "utterances": False}
 exclude_patterns = ["**.ipynb_checkpoints", ".DS_Store", "Thumbs.db", "_build"]
+source_suffix = [".rst", ".md"]
+
 
 # -- Options for HTML output -------------------------------------------------
-
 html_theme = "sphinx_material"
 html_logo = "artwork/nt-white.png"
+html_favicon = "artwork/favicon-32x32.png"
 html_title = ""
+html_sidebars = {"**": ["logo-text.html", "globaltoc.html", "localtoc.html", "searchbox.html"]}
+html_show_sphinx = False
+html_show_sourcelink = False
 
-# material theme options (see theme.conf for more information)
+# sphinx-material theme options (see theme.conf for more information)
 html_theme_options = {
     "nav_title": "",
     "base_url": "",
@@ -96,6 +100,11 @@ html_theme_options = {
             "title": "Developer Guide",
         },
         {
+            "href": "https://github.com/nautechsystems/nautilus_trader/releases",
+            "internal": False,
+            "title": "Releases",
+        },
+        {
             "href": "https://nautilustrader.io/",
             "internal": False,
             "title": "nautilustrader.io",
@@ -110,20 +119,8 @@ html_theme_options = {
         "5_developer_guide/0_index": "Documentation",
     },
     "version_dropdown": False,
-    "version_json": "_static/versions.json",
-    "version_info": {
-        "Release": "https://bashtage.github.io/sphinx-material/",
-        "Development": "https://bashtage.github.io/sphinx-material/devel/",
-        "Release (rel)": "/sphinx-material/",
-        "Development (rel)": "/sphinx-material/devel/",
-    },
     "table_classes": ["plain"],
 }
-
-html_sidebars = {"**": ["logo-text.html", "globaltoc.html", "localtoc.html", "searchbox.html"]}
-
-source_suffix = [".rst", ".md"]
-html_show_sphinx = False
 
 myst_enable_extensions = [
     "colon_fence",
@@ -135,10 +132,10 @@ myst_enable_extensions = [
 myst_url_schemes = ["mailto", "http", "https"]
 suppress_warnings = ["myst.domains"]
 
-# Don't auto-generate summary for class members
+# Do not auto-generate summary for class members
 numpydoc_show_class_members = False
 
-# do not prepend module name to functions
+# Do not prepend module name to functions
 add_module_names = False
 todo_include_todos = False
 
@@ -149,5 +146,3 @@ napoleon_google_docstring = False
 
 # Do not show the return type as separate section
 napoleon_use_rtype = False
-
-html_show_sphinx = False
