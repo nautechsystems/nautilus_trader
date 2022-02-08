@@ -269,7 +269,7 @@ def write_parquet(
 
     if "basename_template" not in kwargs and "ts_init" in df.columns:
         kwargs["basename_template"] = (
-            f"{df['ts_init'].iloc[0]}-{df['ts_init'].iloc[-1]}" + "-{i}.parquet"
+            f"{df['ts_init'].min()}-{df['ts_init'].max()}" + "-{i}.parquet"
         )
 
     # Write the actual file

@@ -98,7 +98,7 @@ def batch_files(
                 if next_buf is None:
                     completed.add(fn)
                     continue
-                buffer[fn] = buffer[fn].append(next_buf)
+                buffer[fn] = pd.concat([buffer[fn], next_buf])
 
         # Determine minimum timestamp
         max_ts_per_frame = [df["ts_init"].max() for df in buffer.values() if not df.empty]

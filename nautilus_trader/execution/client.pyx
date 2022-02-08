@@ -18,6 +18,8 @@ from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.component cimport Component
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.core.correctness cimport Condition
+from nautilus_trader.execution.reports cimport OrderStatusReport
+from nautilus_trader.execution.reports cimport TradeReport
 from nautilus_trader.model.c_enums.account_type cimport AccountType
 from nautilus_trader.model.c_enums.liquidity_side cimport LiquiditySide
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
@@ -788,4 +790,16 @@ cdef class ExecutionClient(Component):
         self._msgbus.send(
             endpoint="ExecEngine.process",
             msg=event,
+        )
+
+    cpdef void _send_order_status_report(self, OrderStatusReport report) except *:
+        self._msgbus.send(
+            endpoint="ExecEngine.reconcile_report",
+            msg=report,
+        )
+
+    cpdef void _send_trade_report(self, TradeReport report) except *:
+        self._msgbus.send(
+            endpoint="ExecEngine.reconcile_report",
+            msg=report,
         )
