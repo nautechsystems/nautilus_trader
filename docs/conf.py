@@ -102,12 +102,17 @@ html_theme_options = {
         {
             "href": "https://github.com/nautechsystems/nautilus_trader/releases",
             "internal": False,
-            "title": "Releases",
+            "title": "Releases ⬀",
+        },
+        {
+            "href": "https://github.com/nautechsystems/nautilus_trader",
+            "internal": False,
+            "title": "GitHub ⬀",
         },
         {
             "href": "https://nautilustrader.io/",
             "internal": False,
-            "title": "nautilustrader.io",
+            "title": "nautilustrader.io ⬀",
         },
     ],
     "heroes": {
