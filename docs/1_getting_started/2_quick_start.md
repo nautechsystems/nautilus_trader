@@ -170,10 +170,10 @@ from nautilus_trader.backtest.config import BacktestVenueConfig
 
 venue = BacktestVenueConfig(
     name="SIM",
-    oms_type='NETTING',
-    account_type='CASH',
+    oms_type="NETTING",
+    account_type="CASH",
     base_currency="USD",
-    starting_balances=['100_000 USD']
+    starting_balances=["100_000 USD"]
 )
 ```
 
@@ -207,7 +207,7 @@ data = [
         catalog_path=str(catalog.path),
         data_cls_path=f"{QuoteTick.__module__}.{QuoteTick.__name__}",
         instrument_id=str(instruments[0].id),
-        end_time='2020-01-05',
+        end_time="2020-01-05",
     )
 ]
 ```
@@ -222,7 +222,7 @@ however is fine to leave with its defaults:
 ```python jupyter={"outputs_hidden": false} pycharm={"name": "#%%\n"}
 from nautilus_trader.backtest.config import BacktestEngineConfig
 
-engine = BacktestEngineConfig(log_level='ERROR') # Lower to `INFO` to see more logging about orders, events, etc.
+engine = BacktestEngineConfig(log_level="ERROR") # Lower to `INFO` to see more logging about orders, events, etc.
 ```
 
 ## Strategies

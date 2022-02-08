@@ -13,35 +13,34 @@
 
 import os
 import sys
-from typing import Any, List
 
-sys.path.insert(0, os.path.abspath('..'))
+
+sys.path.insert(0, os.path.abspath(".."))
 
 
 # -- Project information -----------------------------------------------------
-project = 'NautilusTrader'
-author = 'Nautech Systems Pty Ltd.'
+project = "NautilusTrader"
+author = "Nautech Systems Pty Ltd."
 copyright = "2015-2022 Nautech Systems Pty Ltd"
 version = "latest"
-release = 'version'
+release = "version"
 
 
 # -- General configuration ---------------------------------------------------
 extensions = [
-    'myst_parser',
-    'sphinx.ext.autodoc',
-    'sphinx.ext.intersphinx',
-    'sphinx.ext.napoleon',
-    'sphinx_togglebutton',
-    'sphinx_copybutton',
-    #'sphinx_panels',
-    'sphinx_comments',
+    "myst_parser",
+    "sphinx.ext.autodoc",
+    "sphinx.ext.intersphinx",
+    "sphinx.ext.napoleon",
+    "sphinx_togglebutton",
+    "sphinx_copybutton",
+    "sphinx_comments",
 ]
 
 # Add any paths that contain templates here, relative to this directory.
-html_static_path = ['_static']
+html_static_path = ["_static"]
 html_css_files = ["custom.css"]
-templates_path = ['_templates']
+templates_path = ["_templates"]
 
 
 comments_config = {"hypothesis": False, "utterances": False}
@@ -49,13 +48,13 @@ exclude_patterns = ["**.ipynb_checkpoints", ".DS_Store", "Thumbs.db", "_build"]
 
 # -- Options for HTML output -------------------------------------------------
 
-html_theme = 'sphinx_material'
+html_theme = "sphinx_material"
 html_logo = "artwork/nt-white.png"
-html_title = "Documentation"
+html_title = ""
 
 # material theme options (see theme.conf for more information)
 html_theme_options = {
-	"nav_title": "",
+    "nav_title": "",
     "base_url": "",
     "repo_type": "github",
     "repo_url": "https://github.com/nautechsystems/nautilus_trader",
@@ -65,41 +64,36 @@ html_theme_options = {
     "html_prettify": True,
     "color_primary": "#282f38",
     "color_accent": "#00bdd6",
-    "theme_color": "#2C2E43", 
+    "theme_color": "#2C2E43",
     "touch_icon": "images/apple-icon-152x152.png",
     "master_doc": False,
     "globaltoc_collapse": True,
     "globaltoc_depth": 4,
     "nav_links": [
         {
-            "href": "/1_getting_started/0_index.html",
+            "href": "../html/1_getting_started/0_index",
             "internal": True,
             "title": "Getting Started",
         },
         {
-            "href": "/2_api_reference/0_index.html",
+            "href": "../html/2_user_guide/0_index",
             "internal": True,
             "title": "User Guide",
         },
         {
-            "href": "/3_api_reference/0_index.html",
+            "href": "../html/3_api_reference/0_index",
             "internal": True,
             "title": "API Reference",
         },
         {
-            "href": "/4_api_reference/0_index.html",
+            "href": "../html/4_integrations/0_index",
             "internal": True,
             "title": "Integrations",
         },
         {
-            "href": "/5_api_reference/0_index.html",
+            "href": "../html/5_developer_guide/0_index",
             "internal": True,
             "title": "Developer Guide",
-        },
-        {
-            "href": "Developer Guide",
-            "internal": True,
-            "title": "Releases",
         },
         {
             "href": "https://nautilustrader.io/",
@@ -109,6 +103,11 @@ html_theme_options = {
     ],
     "heroes": {
         "index": "Documentation",
+        "1_getting_started/0_index": "Documentation",
+        "2_user_guide/0_index": "Documentation",
+        "3_api_reference/0_index": "Documentation",
+        "4_integrations/0_index": "Documentation",
+        "5_developer_guide/0_index": "Documentation",
     },
     "version_dropdown": False,
     "version_json": "_static/versions.json",
@@ -121,9 +120,7 @@ html_theme_options = {
     "table_classes": ["plain"],
 }
 
-html_sidebars = {
-    "**": ["logo-text.html", "globaltoc.html", "localtoc.html", "searchbox.html"]
-}
+html_sidebars = {"**": ["logo-text.html", "globaltoc.html", "localtoc.html", "searchbox.html"]}
 
 source_suffix = [".rst", ".md"]
 html_show_sphinx = False
