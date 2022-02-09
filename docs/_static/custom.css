@@ -4,6 +4,9 @@
     /* Use softer blue from bootstrap's default info color */
     --pst-color-info: 23, 162, 184;
 }
+html, body {
+    background-color: #1d2228;
+}
 body, input {
     color: #fff;
     font-family: 'Open Sans', sans-serif;
@@ -69,9 +72,6 @@ h1, h2, h3 {
     margin-left: 0;
     padding-left: 0;
 }
-.md-main {
-    background-color: rgb(29, 34, 40);
-}
 .md-tabs {
     box-shadow: 0 0 0.2rem rgb(0 0 0 / 10%), 0 0.2rem 0.4rem rgb(0 0 0 / 20%);
     transition: transform .25s cubic-bezier(.1,.7,.1,1),box-shadow .25s;
@@ -107,55 +107,6 @@ h1, h2, h3 {
     margin-left: 0;
     margin-right: 0;
 }
-.highlight {
-    background: rgb(0 0 0 / 12%);
-}
-.highlight .kn {
-    color: #6f6ed1;  /* import keywords */
-}
-.highlight .nn {     /* import paths */
-    color: #D3D3D3;
-}
-.highlight .bp {     /* self keyword */
-color: #6495ED;
-}
-.highlight .nb {      /* class */
-color: #00bdd6;
-}
-.highlight .nc {
-color: #00bdd6;      /* class */
-}
-.highlight .nf {     /* method */
-color: #00bdd6;
-}
-.highlight .s1 {     /* string literal */
-color: #E9967A;
-}
-.highlight .s2 {     /* string literal */
-color: #E9967A;
-}
-.highlight .c1 {
-    color: #808080;
-    white-space: pre-wrap;
-}
-.highlight .fm {     /* special methods */
-color: #BA55D3;
-}
-.highlight .k, .highlight .nb {
-    color: #6f6ed1;
-}
-.md-typeset pre {    /* normal code */
-    color: #D3D3D3;
-}
-.highlight .o {
-    color: #D3D3D3;
-}
-.highlight .mf {     /* float literals */
-    color: #B0E0E6;
-}
-.highlight .mi {     /* integer literals */
-    color: #B0E0E6;
-}
 .md-header-nav__topic {
     display: none;
     width: 0 !important;
@@ -163,7 +114,9 @@ color: #BA55D3;
 .md-typeset table:not([class]) th {
 background-color: rgba(0,0,0,.54);
 }
-
+.md-typeset pre {
+    color: #D3D3D3;
+}
 @media only screen and (max-width: 76.1875em) {
     .md-nav {
         background-color: transparent;
