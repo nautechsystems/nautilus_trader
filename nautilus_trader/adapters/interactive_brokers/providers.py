@@ -74,14 +74,12 @@ class InteractiveBrokersInstrumentProvider(InstrumentProvider):
             clientId=self._client_id,
         )
 
-    def load(self, contract_id: str, symbol: str, exchange: str, **kwargs):
+    def load(self, symbol: str, exchange: str, **kwargs):
         """
         Search and load the instrument for the given symbol, exchange and (optional) kwargs
 
         Parameters
         ----------
-        contract_id : str
-            The symbol to search for
         symbol : str
             The symbol to search for
         exchange : str

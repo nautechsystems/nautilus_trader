@@ -23,7 +23,7 @@ import ib_insync
 from nautilus_trader.adapters.interactive_brokers.common import IB_VENUE
 from nautilus_trader.adapters.interactive_brokers.data import InteractiveBrokersDataClient
 from nautilus_trader.adapters.interactive_brokers.execution import InteractiveBrokersExecutionClient
-from nautilus_trader.adapters.interactive_brokers.gateway import IBGateway
+from nautilus_trader.adapters.interactive_brokers.gateway import InteractiveBrokersGateway
 from nautilus_trader.adapters.interactive_brokers.providers import (
     InteractiveBrokersInstrumentProvider,
 )
@@ -76,7 +76,7 @@ def get_cached_ib_client(
 
     # Start gateway
     if GATEWAY is None:
-        GATEWAY = IBGateway(username=username, password=password)
+        GATEWAY = InteractiveBrokersGateway(username=username, password=password)
         GATEWAY.safe_start()
 
     client_key: tuple = (host, port)

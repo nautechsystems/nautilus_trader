@@ -15,6 +15,7 @@
 
 
 import os
+from enum import IntEnum
 from time import sleep
 from typing import Optional
 
@@ -23,7 +24,14 @@ from docker.models.containers import Container
 from ib_insync import IB
 
 
-class IBGateway:
+class ContainerStatus(IntEnum):
+    NO_CONTAINER = 1
+    CONTAINER_STOPPED = 2
+    NOT_LOGGED_IN = 3
+    RUNNING = 4
+
+
+class InteractiveBrokersGateway:
     """
     A context manager for starting an IB Gateway docker container
     """
@@ -66,7 +74,7 @@ class IBGateway:
 
     @property
     def container(self) -> Container:
-        if not self._container:
+        if self._container is None:
             all_containers = {c.name: c for c in self._docker.containers.list(all=True)}
             container = all_containers.get(self.CONTAINER_NAME)
             if container is None:
@@ -170,4 +178,4 @@ class GatewayLoginFailure(Exception):
     pass
 
 
-__all__ = ["IBGateway"]
+__all__ = ["InteractiveBrokersGateway"]

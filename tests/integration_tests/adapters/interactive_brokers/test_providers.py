@@ -17,7 +17,9 @@ import pickle
 from unittest.mock import MagicMock
 from unittest.mock import patch
 
-from nautilus_trader.adapters.ib.providers import IBInstrumentProvider
+from nautilus_trader.adapters.interactive_brokers.providers import (
+    InteractiveBrokersInstrumentProvider,
+)
 from nautilus_trader.model.enums import AssetClass
 from nautilus_trader.model.enums import AssetType
 from nautilus_trader.model.identifiers import InstrumentId
@@ -33,7 +35,7 @@ TEST_PATH = TESTS_PACKAGE_ROOT + "/integration_tests/adapters/ib/responses/"
 class TestIBInstrumentProvider:
     def setup(self):
         self.ib = MagicMock()
-        self.provider = IBInstrumentProvider(client=self.ib)
+        self.provider = InteractiveBrokersInstrumentProvider(client=self.ib)
         self.provider.connect()
 
     def test_load_equity_contract_instrument(self):
