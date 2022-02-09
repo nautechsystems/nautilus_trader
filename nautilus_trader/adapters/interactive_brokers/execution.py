@@ -12,3 +12,11 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+
+from nautilus_trader.live.execution_client import LiveExecutionClient
+
+
+class InteractiveBrokersExecutionClient(LiveExecutionClient):
+    """
+    Provides an execution client for Interactive Brokers TWS API.
+    """
