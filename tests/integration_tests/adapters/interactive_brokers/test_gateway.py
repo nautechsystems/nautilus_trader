@@ -12,6 +12,8 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+from unittest.mock import MagicMock
+from unittest.mock import call
 
 from nautilus_trader.adapters.interactive_brokers.gateway import InteractiveBrokersGateway
 from tests import TESTS_PACKAGE_ROOT
@@ -22,7 +24,35 @@ TEST_PATH = TESTS_PACKAGE_ROOT + "/integration_tests/adapters/ib/responses/"
 
 class TestIBGateway:
     def setup(self):
-        self.gateway = InteractiveBrokersGateway()
+        self.gateway = InteractiveBrokersGateway(username="", password="")  # noqa: S106
+        self.gateway._docker = MagicMock()
 
-    def test_gateway_no_container(self):
-        pass
+    def test_gateway_start_no_container(self):
+        # Arrange, Act
+        self.gateway.start(wait=None)
+
+        # Assert
+        expected = call.containers.run(
+            image="mgvazquez/ibgateway",
+            name="nautilus-ib-gateway",
+            detach=True,
+            ports={"4001": "4001"},
+            environment={"TWSUSERID": "", "TWSPASSWORD": "", "TRADING_MODE": "paper"},
+        )
+        result = self.gateway._docker.method_calls[-1]
+        assert result == expected
+
+    # def test_gateway_start_no_login(self):
+    #     # Arrange
+    #
+    #
+    #     # Act
+    #     self.gateway.start(wait=None)
+    #
+    #     # Assert
+    #     expected = call.containers.run(
+    #         image='mgvazquez/ibgateway', name='nautilus-ib-gateway', detach=True, ports={'4001': '4001'},
+    #         environment={'TWSUSERID': 'user', 'TWSPASSWORD': 'test', 'TRADING_MODE': 'paper'}
+    #     )
+    #     result = self.gateway._docker.method_calls[-1]
+    #     assert result == expected

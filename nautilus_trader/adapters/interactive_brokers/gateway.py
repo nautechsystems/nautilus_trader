@@ -33,7 +33,7 @@ class ContainerStatus(IntEnum):
 
 class InteractiveBrokersGateway:
     """
-    A context manager for starting an IB Gateway docker container
+    A class to manage starting an Interactive Brokers Gateway docker container
     """
 
     IMAGE = "mgvazquez/ibgateway"
@@ -79,9 +79,9 @@ class InteractiveBrokersGateway:
             container = all_containers.get(self.CONTAINER_NAME)
             if container is None:
                 raise NoContainer
-            elif container.status == "running":
+            elif container.status == "running" and self.is_logged_in:
                 self._container = container
-            elif container.status in ("created", "stopped", "exited"):
+            elif container.status in ("stopped", "exited"):
                 container.remove(force=True)
             else:
                 raise UnknownContainerStatus
@@ -109,7 +109,11 @@ class InteractiveBrokersGateway:
         :return:
         """
         print("Starting gateway container")
-        if self.container:
+        try:
+            container = self.container
+        except (NoContainer, UnknownContainerStatus):
+            container = None
+        if container is not None:
             if not reset:
                 if not self.is_logged_in:
                     raise GatewayLoginFailure
