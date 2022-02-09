@@ -22,6 +22,7 @@ from typing import Any, Iterator, List, Set
 import fsspec
 import pandas as pd
 import pyarrow.dataset as ds
+import pyarrow.parquet as pq
 from dask.utils import parse_bytes
 from pyarrow.lib import ArrowInvalid
 
@@ -44,17 +45,20 @@ def dataset_batches(
         d: ds.Dataset = ds.dataset(file_meta.filename, filesystem=fs)
     except ArrowInvalid:
         return
-    filter_expr = (ds.field("ts_init") >= file_meta.start) & (ds.field("ts_init") <= file_meta.end)
     for fn in sorted(map(str, d.files)):
         logger.info(f"reading batch for {fn}")
-        scanner = ds.dataset(fn).scanner(filter=filter_expr, batch_size=n_rows)
-        for batch in scanner.to_batches():
+        f = pq.ParquetFile(fn)
+        for batch in f.iter_batches(batch_size=n_rows):
             if batch.num_rows == 0:
                 break
-            data = batch.to_pandas()
+            df = batch.to_pandas()
+            df = df[(df["ts_init"] >= file_meta.start) & (df["ts_init"] <= file_meta.end)]
+            logger.info(
+                f"Reading batch from {pd.Timestamp(df['ts_init'].min())} to {pd.Timestamp(df['ts_init'].max())}"
+            )
             if file_meta.instrument_id:
-                data.loc[:, "instrument_id"] = file_meta.instrument_id
-            yield data
+                df.loc[:, "instrument_id"] = file_meta.instrument_id
+            yield df
 
 
 def build_filenames(catalog: DataCatalog, data_configs: List[BacktestDataConfig]) -> List[FileMeta]:

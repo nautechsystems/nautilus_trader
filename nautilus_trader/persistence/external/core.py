@@ -275,7 +275,7 @@ def write_parquet(
     # Write the actual file
     partitions = (
         ds.partitioning(
-            schema=pa.schema(fields=[table.schema.field(c) for c in (partition_cols)]),
+            schema=pa.schema(fields=[table.schema.field(c) for c in partition_cols]),
             flavor="hive",
         )
         if partition_cols
@@ -283,6 +283,7 @@ def write_parquet(
     )
     if pa.__version__ >= "6.0.0":
         kwargs.update(existing_data_behavior="overwrite_or_ignore")
+    files = set(fs.glob(f"{path}/**"))
     ds.write_dataset(
         data=table,
         base_dir=path,
@@ -291,6 +292,21 @@ def write_parquet(
         format="parquet",
         **kwargs,
     )
+
+    # Ensure data written by write_dataset is sorted
+    new_files = set(fs.glob(f"{path}/**/*.parquet")) - files
+    shape = df.shape[0]
+    del df
+    for fn in new_files:
+        ndf = pd.read_parquet(fs.open(fn))
+        assert ndf.shape[0] == shape
+        ndf = ndf.sort_values("ts_init").reset_index(drop=True)
+        pq.write_table(
+            table=pa.Table.from_pandas(ndf),
+            where=fn,
+            filesystem=fs,
+        )
+
     # Write the ``_common_metadata`` parquet file without row groups statistics
     pq.write_metadata(table.schema, f"{path}/_common_metadata", version="2.6", filesystem=fs)
 
