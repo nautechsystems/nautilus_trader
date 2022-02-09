@@ -91,7 +91,7 @@ class FTXHttpClient(HttpClient):
         headers = {}
         query = self._url_encode(params)
         signature_payload: str = f"{ts}{http_method}/api/{url_path}{query}"
-        if payload and http_method in ["POST", "DELETE"]:
+        if payload:
             signature_payload += self._prepare_payload(payload)
             headers["Content-Type"] = "application/json"
 

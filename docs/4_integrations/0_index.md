@@ -47,3 +47,15 @@ this means there is some normalization and standardization needed.
 
 - All symbols will match the native/local symbol for the exchange
 - All timestamps will be normalized to UNIX nanoseconds
+
+```{eval-rst}
+.. toctree::
+   :maxdepth: 2
+   :hidden:
+   
+   betfair.md
+   binance.md
+   ftx.md
+   ib.md
+
+```

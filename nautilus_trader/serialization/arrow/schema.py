@@ -214,6 +214,7 @@ NAUTILUS_PARQUET_SCHEMA = {
             "tags": pa.string(),
             "event_id": pa.string(),
             "ts_init": pa.int64(),
+            "reconciliation": pa.bool_(),
         },
         metadata={
             "options_fields": orjson.dumps(
@@ -264,6 +265,7 @@ NAUTILUS_PARQUET_SCHEMA = {
             "event_id": pa.string(),
             "ts_event": pa.int64(),
             "ts_init": pa.int64(),
+            "reconciliation": pa.bool_(),
         }
     ),
     OrderRejected: pa.schema(
@@ -277,6 +279,7 @@ NAUTILUS_PARQUET_SCHEMA = {
             "event_id": pa.string(),
             "ts_event": pa.int64(),
             "ts_init": pa.int64(),
+            "reconciliation": pa.bool_(),
         }
     ),
     OrderPendingCancel: pa.schema(
@@ -290,6 +293,7 @@ NAUTILUS_PARQUET_SCHEMA = {
             "event_id": pa.string(),
             "ts_event": pa.int64(),
             "ts_init": pa.int64(),
+            "reconciliation": pa.bool_(),
         }
     ),
     OrderCanceled: pa.schema(
@@ -303,6 +307,7 @@ NAUTILUS_PARQUET_SCHEMA = {
             "event_id": pa.string(),
             "ts_event": pa.int64(),
             "ts_init": pa.int64(),
+            "reconciliation": pa.bool_(),
         }
     ),
     OrderCancelRejected: pa.schema(
@@ -317,6 +322,7 @@ NAUTILUS_PARQUET_SCHEMA = {
             "event_id": pa.string(),
             "ts_event": pa.int64(),
             "ts_init": pa.int64(),
+            "reconciliation": pa.bool_(),
         }
     ),
     OrderExpired: pa.schema(
@@ -330,6 +336,7 @@ NAUTILUS_PARQUET_SCHEMA = {
             "event_id": pa.string(),
             "ts_event": pa.int64(),
             "ts_init": pa.int64(),
+            "reconciliation": pa.bool_(),
         }
     ),
     OrderTriggered: pa.schema(
@@ -343,6 +350,7 @@ NAUTILUS_PARQUET_SCHEMA = {
             "event_id": pa.string(),
             "ts_event": pa.int64(),
             "ts_init": pa.int64(),
+            "reconciliation": pa.bool_(),
         }
     ),
     OrderPendingUpdate: pa.schema(
@@ -356,6 +364,7 @@ NAUTILUS_PARQUET_SCHEMA = {
             "event_id": pa.string(),
             "ts_event": pa.int64(),
             "ts_init": pa.int64(),
+            "reconciliation": pa.bool_(),
         }
     ),
     OrderModifyRejected: pa.schema(
@@ -370,6 +379,7 @@ NAUTILUS_PARQUET_SCHEMA = {
             "event_id": pa.string(),
             "ts_event": pa.int64(),
             "ts_init": pa.int64(),
+            "reconciliation": pa.bool_(),
         }
     ),
     OrderUpdated: pa.schema(
@@ -385,6 +395,7 @@ NAUTILUS_PARQUET_SCHEMA = {
             "event_id": pa.string(),
             "ts_event": pa.int64(),
             "ts_init": pa.int64(),
+            "reconciliation": pa.bool_(),
         }
     ),
     OrderFilled: pa.schema(
@@ -408,6 +419,7 @@ NAUTILUS_PARQUET_SCHEMA = {
             "ts_event": pa.int64(),
             "ts_init": pa.int64(),
             "info": pa.string(),
+            "reconciliation": pa.bool_(),
         }
     ),
     PositionOpened: pa.schema(

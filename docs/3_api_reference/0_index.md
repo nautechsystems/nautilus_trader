@@ -62,3 +62,32 @@ can be raised from NautilusTrader code, and the conditions which will trigger th
 There may be other undocumented exceptions which can be raised by Pythons standard 
 library, or from third party library dependencies.
 ```
+
+
+```{eval-rst}
+.. toctree::
+   :maxdepth: 2
+   :hidden:
+   
+   accounting.md
+   adapters/0_index.md
+   analysis.md
+   backtest.md
+   cache.md
+   common.md
+   core.md
+   data.md
+   execution.md
+   indicators.md
+   infrastructure.md
+   live.md
+   model/0_index.md
+   msgbus.md
+   network.md
+   persistence.md
+   portfolio.md
+   risk.md
+   serialization.md
+   trading.md
+```
+
