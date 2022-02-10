@@ -59,7 +59,7 @@ def parse_equity_contract(
     timestamp = time.time_ns()
     equity = Equity(
         instrument_id=instrument_id,
-        local_symbol=Symbol(details.contract.localSymbol),
+        native_symbol=Symbol(details.contract.localSymbol),
         currency=Currency.from_str(details.contract.currency),
         price_precision=price_precision,
         price_increment=Price(details.minTick, price_precision),

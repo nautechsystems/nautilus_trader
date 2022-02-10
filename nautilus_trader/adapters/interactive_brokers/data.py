@@ -97,11 +97,12 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
         # Connect client
         if not self._client.isConnected():
             await self._client.connect()
-        try:
-            await self._instrument_provider.load_all_or_wait_async()
-        except Exception as ex:
-            self._log.exception(ex)
-            return
+        # TODO - load any instruments?
+        # try:
+        #     await self._instrument_provider.load_all_or_wait_async()
+        # except Exception as ex:
+        #     self._log.exception(ex)
+        #     return
         for instrument in self._instrument_provider.get_all().values():
             self._handle_data(instrument)
         self._set_connected(True)
@@ -170,4 +171,4 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
         self._tickers[ContractId(ticker.contract.conId)] = ticker
 
     def _on_ticker_update(self, ticker: Ticker):
-        pass
+        self._log.debug(str(ticker))

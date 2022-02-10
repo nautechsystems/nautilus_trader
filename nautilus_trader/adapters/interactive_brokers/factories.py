@@ -47,6 +47,7 @@ def get_cached_ib_client(
     host: str = "127.0.0.1",
     port: int = 4001,
     connect=True,
+    timeout=15,
 ) -> ib_insync.IB:
     """
     Cache and return a InteractiveBrokers HTTP client with the given key and secret.
@@ -66,6 +67,8 @@ def get_cached_ib_client(
         The IB port to connect to
     connect: bool, optional
         Whether to connect to IB.
+    timeout: int, optional
+        The timeout for trying to establish a connection
 
     Returns
     -------
@@ -84,7 +87,11 @@ def get_cached_ib_client(
     if client_key not in IB_INSYNC_CLIENTS:
         client = ib_insync.IB()
         if connect:
-            client.connect(host=host, port=port)
+            try:
+                client.connect(host=host, port=port, timeout=timeout)
+            except TimeoutError:
+                raise TimeoutError(f"Failed to connect to gateway in {timeout}s")
+
         IB_INSYNC_CLIENTS[client_key] = client
     return IB_INSYNC_CLIENTS[client_key]
 
@@ -158,10 +165,10 @@ class InteractiveBrokersLiveDataClientFactory(LiveDataClientFactory):
 
         """
         client = get_cached_ib_client(
-            username=config.get("username"),
-            password=config.get("password"),
-            host=config.get("host"),
-            port=config.get("port"),
+            username=config.get("username") or os.environ["TWS_USERNAME"],
+            password=config.get("password") or os.environ["TWS_PASSWORD"],
+            host=config.get("host") or "127.0.0.1",
+            port=config.get("port") or 4001,
         )
 
         # Get instrument provider singleton
@@ -225,10 +232,10 @@ class InteractiveBrokersLiveExecutionClientFactory(LiveExecutionClientFactory):
 
         """
         client = get_cached_ib_client(
-            username=config.get("username"),
-            password=config.get("password"),
-            host=config.get("host"),
-            port=config.get("port"),
+            username=config.get("username") or os.environ["TWS_USERNAME"],
+            password=config.get("password") or os.environ["TWS_PASSWORD"],
+            host=config.get("host") or "127.0.0.1",
+            port=config.get("port") or 4001,
         )
 
         # Get instrument provider singleton

@@ -17,10 +17,6 @@
 from nautilus_trader.adapters.interactive_brokers.factories import (
     InteractiveBrokersLiveDataClientFactory,
 )
-
-# from nautilus_trader.adapters.interactive_brokers.factories import (
-#     InteractiveBrokersLiveExecutionClientFactory,
-# )
 from nautilus_trader.live.config import TradingNodeConfig
 from nautilus_trader.live.node import TradingNode
 
@@ -41,12 +37,12 @@ config_node = TradingNodeConfig(
             # "api_secret": "YOUR_IB_PASSWORD",
         },
     },
-    exec_clients={
-        "IB": {
-            # "api_key": "YOUR_IB_USERNAME",
-            # "api_secret": "YOUR_IB_PASSWORD",
-        },
-    },
+    # exec_clients={
+    #     "IB": {
+    #         # "api_key": "YOUR_IB_USERNAME",
+    #         # "api_secret": "YOUR_IB_PASSWORD",
+    #     },
+    # },
     timeout_connection=5.0,
     timeout_reconciliation=5.0,
     timeout_portfolio=5.0,
