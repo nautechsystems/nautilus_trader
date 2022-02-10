@@ -38,6 +38,9 @@ h1, h2, h3 {
 .md-header, .md-hero {
     background-color: rgb(40, 47, 56) !important;
 }
+.md-header {
+    height: 2.8rem;
+}
 .md-tabs__list {
     margin: 0 0 0px 13rem;
 }
@@ -71,6 +74,7 @@ h1, h2, h3 {
 .md-header-nav__button {
     margin-left: 0;
     padding-left: 0;
+    margin-top: 0;
 }
 .md-tabs {
     box-shadow: 0 0 0.2rem rgb(0 0 0 / 10%), 0 0.2rem 0.4rem rgb(0 0 0 / 20%);
@@ -117,6 +121,12 @@ background-color: rgba(0,0,0,.54);
 .md-typeset pre {
     color: #D3D3D3;
 }
+
+@media only screen and (min-width: 60em) {
+    .md-search__inner {
+        padding: 0.34rem 0;
+    }
+}
 @media only screen and (max-width: 76.1875em) {
     .md-nav {
         background-color: transparent;
@@ -137,12 +147,35 @@ background-color: rgba(0,0,0,.54);
     .md-nav--primary .md-nav__item {  /* menus font */
         font-size: 0.7rem;
     }
+    .md-nav__list ul.md-nav__list {
+        padding-left: 24px;
+    }
+    .md-nav__list ul.md-nav__list .md-nav__item {
+        font-size: 0.65rem;
+    }
+    html .md-nav--primary .md-nav__title {
+        height: 4rem;
+    }
+
 }
 
 
 @media only screen and (min-width: 76.25em) {
     .md-tabs {
         background-color: rgb(32 38 46 / 94%) !important;
+    }
+}
+
+@media only screen and (max-width: 59.9375em) {
+    html .md-nav__link[for=__toc]~.md-nav {
+        display: none;
+    }
+    html .md-nav__link[for=__toc]:after {
+        content: none;
+    }
+    .md-nav__source {
+        background-color: #1d2228;
+        box-shadow: 0 0 0.2rem rgb(0 0 0 / 10%), 0 0.2rem 0.4rem rgb(0 0 0 / 20%);
     }
 }
 
