@@ -14,6 +14,7 @@
 import os
 import sys
 
+
 sys.path.insert(0, os.path.abspath(".."))
 sys.path.append(os.path.abspath("./_pygments"))
 
@@ -150,6 +151,5 @@ napoleon_google_docstring = False
 
 # Do not show the return type as separate section
 napoleon_use_rtype = False
-
 
 pygments_style = "monokai.MonokaiStyle"
