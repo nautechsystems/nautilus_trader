@@ -16,7 +16,7 @@ import sys
 
 
 sys.path.insert(0, os.path.abspath(".."))
-
+sys.path.append(os.path.abspath("./_pygments"))
 
 # -- Project information -----------------------------------------------------
 project = "NautilusTrader"
@@ -67,8 +67,8 @@ html_theme_options = {
     "html_minify": False,
     "html_prettify": True,
     "color_primary": "#282f38",
-    "color_accent": "#00bdd6",
-    "theme_color": "#2C2E43",
+    "color_accent": "#282f38",
+    "theme_color": "#282f38",
     "touch_icon": "images/apple-icon-152x152.png",
     "master_doc": False,
     "globaltoc_collapse": True,
@@ -151,3 +151,5 @@ napoleon_google_docstring = False
 
 # Do not show the return type as separate section
 napoleon_use_rtype = False
+
+pygments_style = "monokai.MonokaiStyle"
