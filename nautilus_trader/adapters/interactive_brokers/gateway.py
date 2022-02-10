@@ -12,8 +12,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
-
-
+import logging
 import os
 from enum import IntEnum
 from time import sleep
@@ -26,9 +25,11 @@ from ib_insync import IB
 
 class ContainerStatus(IntEnum):
     NO_CONTAINER = 1
+    CONTAINER_CREATED = 2
     CONTAINER_STOPPED = 2
     NOT_LOGGED_IN = 3
-    RUNNING = 4
+    READY = 4
+    UNKNOWN = 5
 
 
 class InteractiveBrokersGateway:
@@ -41,29 +42,25 @@ class InteractiveBrokersGateway:
 
     def __init__(
         self,
-        username: str,
-        password: str,
+        username: Optional[str] = None,
+        password: Optional[str] = None,
         host="localhost",
         port=4001,
         trading_mode="paper",
         start=False,
+        logger=None,
     ):
-        self.username = username
-        self.password = password
+        self.username = username or os.environ["TWS_USERNAME"]
+        self.password = password or os.environ["TWS_PASSWORD"]
         self.trading_mode = trading_mode
         self.host = host
         self.port = port
         self._docker: DockerClient = DockerClient.from_env()
         self._client: Optional[IB] = None
         self._container = None
+        self.log = logger or logging.getLogger("nautilus_trader")
         if start:
             self.start()
-
-    @classmethod
-    def from_env(cls, **kwargs):
-        return cls(
-            username=os.environ["TWS_USERNAME"], password=os.environ["TWS_PASSWORD"], **kwargs
-        )
 
     @classmethod
     def from_container(cls, **kwargs):
@@ -73,18 +70,22 @@ class InteractiveBrokersGateway:
         return self
 
     @property
+    def container_status(self) -> ContainerStatus:
+        container = self.container
+        if container is None:
+            return ContainerStatus.NO_CONTAINER
+        elif container.status == "running" and self.is_logged_in(container=container):
+            return ContainerStatus.READY
+        elif container.status in ("stopped", "exited"):
+            return ContainerStatus.CONTAINER_STOPPED
+        else:
+            return ContainerStatus.UNKNOWN
+
+    @property
     def container(self) -> Container:
         if self._container is None:
             all_containers = {c.name: c for c in self._docker.containers.list(all=True)}
-            container = all_containers.get(self.CONTAINER_NAME)
-            if container is None:
-                raise NoContainer
-            elif container.status == "running" and self.is_logged_in:
-                self._container = container
-            elif container.status in ("stopped", "exited"):
-                container.remove(force=True)
-            else:
-                raise UnknownContainerStatus
+            self._container = all_containers.get(self.CONTAINER_NAME)
         return self._container
 
     @property
@@ -94,34 +95,37 @@ class InteractiveBrokersGateway:
             self._client.connect(host=self.host, port=self.port)
         return self._client
 
-    @property
-    def is_logged_in(self) -> bool:
+    @staticmethod
+    def is_logged_in(container) -> bool:
         try:
-            logs = self.container.logs()
+            logs = container.logs()
         except NoContainer:
             return False
         return any([b"Login has completed" in line for line in logs.split(b"\n")])
 
-    def start(self, reset=False, wait: Optional[int] = 30):
+    def start(self, wait: Optional[int] = 30):
         """
-        :param reset: Stop and start the container
         :param wait: Seconds to wait until container is ready
         :return:
         """
-        print("Starting gateway container")
-        try:
-            container = self.container
-        except (NoContainer, UnknownContainerStatus):
-            container = None
-        if container is not None:
-            if not reset:
-                if not self.is_logged_in:
-                    raise GatewayLoginFailure
-                raise ContainerExists(
-                    "Container already exists, skipping start. Use reset=True to force restart"
-                )
-            else:
-                self.stop()
+        broken_statuses = (
+            ContainerStatus.NOT_LOGGED_IN,
+            ContainerStatus.CONTAINER_STOPPED,
+            ContainerStatus.CONTAINER_CREATED,
+            ContainerStatus.UNKNOWN,
+        )
+
+        self.log.info("Ensuring gateway is running")
+        status = self.container_status
+        if status == ContainerStatus.NO_CONTAINER:
+            self.log.debug("No container, starting")
+        elif status in broken_statuses:
+            self.log.debug(f"{status=}, removing existing container")
+            self.stop()
+        elif status == ContainerStatus.READY:
+            raise ContainerExists
+
+        self.log.debug("Starting new container")
         self._container = self._docker.containers.run(
             image=self.IMAGE,
             name=self.CONTAINER_NAME,
@@ -133,7 +137,7 @@ class InteractiveBrokersGateway:
                 "TRADING_MODE": self.trading_mode,
             },
         )
-        print("Container starting, waiting for ready")
+        self.log.info("Container starting, waiting for ready")
 
         if wait is not None:
             for _ in range(wait):
@@ -143,7 +147,8 @@ class InteractiveBrokersGateway:
                     sleep(1)
             else:
                 raise GatewayLoginFailure
-        print("Gateway ready")
+
+        self.log.info("Gateway ready")
 
     def safe_start(self):
         try:
