@@ -47,6 +47,7 @@ class FTXWebSocketClient(WebSocketClient):
             loop=loop,
             logger=logger,
             handler=handler,
+            max_retry_connection=10,
         )
 
         self._clock = clock

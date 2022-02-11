@@ -16,18 +16,31 @@
 import asyncio
 import types
 from asyncio import Task
-from typing import Callable, Dict, List, Optional
+from typing import Callable, List, Optional
 
 import aiohttp
 import orjson
 from aiohttp import WSMessage
-from aiohttp import WSMsgType
 
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.common.logging cimport LoggerAdapter
 from nautilus_trader.core.correctness cimport Condition
 
 from nautilus_trader.network.error import MaxRetriesExceeded
+
+
+cpdef enum WSMsgType:
+    # websocket spec types
+    CONTINUATION = 0x0
+    TEXT = 0x1
+    BINARY = 0x2
+    PING = 0x9
+    PONG = 0xA
+    CLOSE = 0x8
+    # aiohttp specific types
+    CLOSING = 0x100
+    CLOSED = 0x101
+    ERROR = 0x102
 
 
 cdef class WebSocketClient:
@@ -53,19 +66,20 @@ cdef class WebSocketClient:
     ):
         self._loop = loop
         self._log = LoggerAdapter(component_name=type(self).__name__, logger=logger)
-        self._handler = handler
         self._ws_url = None
         self._ws_kwargs = {}
+        self._handler = handler
 
         self._session: Optional[aiohttp.ClientSession] = None
-        self._socket: Optional[aiohttp.ClientWebSocketResponse] = None
+        self._ws: Optional[aiohttp.ClientWebSocketResponse] = None
         self._tasks: List[asyncio.Task] = []
         self._stopped = False
-        self._trigger_stop = False
-        self._connection_retry_count = 0
-        self._unknown_message_count = 0
-        self._max_retry_connection = max_retry_connection
+        self._stopping = False
+
         self.is_connected = False
+        self.max_retry_connection = max_retry_connection
+        self.connection_retry_count = 0
+        self.unknown_message_count = 0
 
     async def connect(
         self,
@@ -77,9 +91,9 @@ cdef class WebSocketClient:
 
         self._log.debug(f"Connecting WebSocket to {ws_url}")
         self._session = aiohttp.ClientSession(loop=self._loop)
-        self._socket = await self._session.ws_connect(url=ws_url, **ws_kwargs)
         self._ws_url = ws_url
         self._ws_kwargs = ws_kwargs
+        self._ws = await self._session.ws_connect(url=ws_url, **ws_kwargs)
         await self.post_connect()
         if start:
             task: Task = self._loop.create_task(self.start())
@@ -98,79 +112,92 @@ cdef class WebSocketClient:
 
     async def disconnect(self) -> None:
         self._log.debug("Closing WebSocket...")
-        self._trigger_stop = True
-        await self._socket.close()
+        self._stopping = True
+        await self._ws.close()
         while not self._stopped:
             await self._sleep0()
         self.is_connected = False
         self._log.debug("WebSocket closed.")
 
-    async def send_json(self, msg: Dict) -> None:
+    async def send_json(self, dict msg) -> None:
         await self.send(orjson.dumps(msg))
 
-    async def send(self, raw: bytes) -> None:
+    async def send(self, bytes raw) -> None:
         self._log.debug(f"[SEND] {raw}")
-        await self._socket.send_bytes(raw)
+        await self._ws.send_bytes(raw)
 
-    async def recv(self) -> Optional[bytes]:
+    async def receive(self) -> Optional[bytes]:
+        cdef WSMsgType msg_type
         try:
-            msg: WSMessage = await self._socket.receive()
-            if msg.type == WSMsgType.TEXT:
-                return msg.data.encode()
-            elif msg.type == WSMsgType.BINARY:
+            msg: WSMessage = await self._ws.receive()
+            msg_type = msg.type
+            if msg_type == TEXT:
+                return msg.data.encode()  # Current workaround to always return bytes
+            elif msg_type == BINARY:
                 return msg.data
-            elif msg.type in (WSMsgType.ERROR, WSMsgType.CLOSE, WSMsgType.CLOSING, WSMsgType.CLOSED):
-                if self._trigger_stop is True:
+            elif msg_type == ERROR:  # aiohttp specific
+                if self._stopping is True:
                     return
-                self._log.warning(f"Received closing msg {msg}.")
-                raise ConnectionAbortedError("WebSocket error or closed")
+                self._log.warning(f"Received {msg}.")
+                raise ConnectionAbortedError("websocket aiohttp error")
+            elif msg_type == CLOSE:  # Received CLOSE from server
+                if self._stopping is True:
+                    return
+                self._log.warning(f"Received {msg}.")
+                raise ConnectionAbortedError("websocket closed by server")
+            elif msg_type == CLOSING or msg_type == CLOSED:  # aiohttp specific
+                if self._stopping is True:
+                    return
+                self._log.warning(f"Received {msg}.")
+                raise ConnectionAbortedError("websocket aiohttp closing or closed")
             else:
                 self._log.warning(
-                    f"Received unknown data type: {msg.type} data: {msg.data}.",
+                    f"Received unknown data type: {msg.type}, data: {msg.data}.",
                 )
-                self._unknown_message_count += 1
-                if self._unknown_message_count > 20:
-                    # This shouldn't be happening and we don't want to spam the logger, trigger a reconnection
+                self.unknown_message_count += 1
+                if self.unknown_message_count > 20:
+                    self.unknown_message_count = 0  # Reset counter
+                    # This shouldn't be happening, trigger a reconnection
                     raise ConnectionAbortedError("Too many unknown messages")
                 return b""
         except (asyncio.IncompleteReadError, ConnectionAbortedError, RuntimeError) as ex:
-            self._log.exception(ex)
-            self._log.debug(
-                f"Error, attempting reconnection {self._connection_retry_count=} "
-                f"{self._max_retry_connection=}",
+            self._log.warning(
+                f"{ex.__class__.__name__}: Reconnecting {self.connection_retry_count=}, "
+                f"{self.max_retry_connection=}",
             )
-            if self._connection_retry_count > self._max_retry_connection:
-                raise MaxRetriesExceeded(f"Max retries of {self._max_retry_connection} exceeded.")
+            if self.max_retry_connection == 0:
+                raise
+            if self.connection_retry_count > self.max_retry_connection:
+                raise MaxRetriesExceeded(f"Max retries of {self.max_retry_connection} exceeded.")
             await self._reconnect_backoff()
-            self._connection_retry_count += 1
+            self.connection_retry_count += 1
             self._log.debug(
                 f"Attempting reconnect "
-                f"(attempt: {self._connection_retry_count}) after exception.",
+                f"(attempt: {self.connection_retry_count}) after exception.",
             )
-            await self.connect(ws_url=self._ws_url, start=False, **self._ws_kwargs)
+            self._ws = await self._session.ws_connect(url=self._ws_url, **self._ws_kwargs)
 
     async def _reconnect_backoff(self):
-        backoff = 2 ** self._connection_retry_count
+        cdef int backoff = 2 ** self.connection_retry_count
         self._log.debug(
             f"Exponential backoff attempt "
-            f"{self._connection_retry_count}, sleeping for {backoff}",
+            f"{self.connection_retry_count}, sleeping for {backoff}",
         )
         await asyncio.sleep(backoff)
 
     async def start(self) -> None:
         self._log.debug("Starting recv loop...")
-        while not self._trigger_stop:
+        cdef bytes raw
+        while not self._stopping:
             try:
-                raw = await self.recv()
+                raw = await self.receive()
                 if raw is None:
                     continue
-                # TODO(cs): Uncomment for development
-                # self._log.debug(f"[RECV] {raw}")
                 if raw is not None:
                     self._handler(raw)
             except Exception as ex:
-                # TODO - Handle disconnect? Should we reconnect or throw?
                 self._log.exception(ex)
+                break
         self._log.debug("Stopped.")
         self._stopped = True
 
