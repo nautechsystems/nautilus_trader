@@ -531,7 +531,7 @@ cdef class Order:
     @property
     def is_pending_update(self):
         """
-        If current order.status is ``PENDING_UPDATE``.
+        If current `order.status` is ``PENDING_UPDATE``.
 
         Returns
         -------
@@ -543,7 +543,7 @@ cdef class Order:
     @property
     def is_pending_cancel(self):
         """
-        If current order.status is ``PENDING_CANCEL``.
+        If current `order.status` is ``PENDING_CANCEL``.
 
         Returns
         -------
@@ -630,7 +630,7 @@ cdef class Order:
         ValueError
             If `self.venue_order_id` and `event.venue_order_id` are both not ``None``, and are not equal.
         InvalidStateTrigger
-            If `event` is not a valid trigger from the current order status.
+            If `event` is not a valid trigger from the current `order.status`.
         KeyError
             If `event` is `OrderFilled` and `event.trade_id` already applied to the order.
 
