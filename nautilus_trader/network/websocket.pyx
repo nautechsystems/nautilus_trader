@@ -203,8 +203,7 @@ cdef class WebSocketClient:
                 raw = await self.receive()
                 if raw is None:
                     continue
-                if raw is not None:
-                    self._handler(raw)
+                self._handler(raw)
             except Exception as ex:
                 self._log.exception(ex)
                 break
