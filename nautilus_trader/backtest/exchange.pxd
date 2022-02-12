@@ -119,9 +119,9 @@ cdef class SimulatedExchange:
     cpdef Price best_ask_price(self, InstrumentId instrument_id)
     cpdef OrderBook get_book(self, InstrumentId instrument_id)
     cpdef dict get_books(self)
-    cpdef list get_working_orders(self, InstrumentId instrument_id=*)
-    cpdef list get_working_bid_orders(self, InstrumentId instrument_id=*)
-    cpdef list get_working_ask_orders(self, InstrumentId instrument_id=*)
+    cpdef list get_open_orders(self, InstrumentId instrument_id=*)
+    cpdef list get_open_bid_orders(self, InstrumentId instrument_id=*)
+    cpdef list get_open_ask_orders(self, InstrumentId instrument_id=*)
     cpdef Account get_account(self)
 
     cpdef void register_client(self, BacktestExecClient client) except *

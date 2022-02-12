@@ -12,6 +12,9 @@ standardized terminology. In the interests of enforcing correctness and
 safety this type is now utilized for the `TradeTick.trade_id`.
 
 ### Breaking Changes
+- Renamed `working` orders to `open` orders including all associated methods and params.
+- Renamed `completed` orders to `closed` orders including all associated methods and params.
+- Removed `active` order concept (often confused with `open`).
 - Renamed `trigger` to `trigger_price`.
 - Renamed `StopMarketOrder.price` to `StopMarketOrder.trigger_price`.
 - Renamed all params related to a `StopMarketOrders` `price` to `trigger_price`.
@@ -32,6 +35,9 @@ safety this type is now utilized for the `TradeTick.trade_id`.
 - Large refactoring of order base and impl classes.
 - Overhaul of execution reports.
 - Overhaul of execution state reconciliation.
+
+### Fixes
+- Fixed WebSocket base reconnect handling.
 
 ---
 

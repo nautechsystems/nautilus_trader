@@ -227,7 +227,7 @@ class TestRedisCacheDatabase:
         # Assert
         assert True  # No exceptions raised
 
-    def test_update_order_for_working_order(self):
+    def test_update_order_for_open_order(self):
         # Arrange
         order = self.strategy.order_factory.stop_market(
             AUDUSD_SIM.id,
@@ -249,7 +249,7 @@ class TestRedisCacheDatabase:
         # Assert
         assert self.database.load_order(order.client_order_id) == order
 
-    def test_update_order_for_completed_order(self):
+    def test_update_order_for_closed_order(self):
         # Arrange
         order = self.strategy.order_factory.market(
             AUDUSD_SIM.id,

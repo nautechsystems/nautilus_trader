@@ -512,12 +512,12 @@ class BinanceSpotExecutionClient(LiveExecutionClient):
                 ts_event=self._clock.timestamp_ns(),
             )
 
-        # Cancel all working orders
-        working_orders = self._cache.orders_working(
+        # Cancel all open orders
+        open_orders = self._cache.orders_open(
             instrument_id=command.instrument_id,
             strategy_id=command.strategy_id,
         )
-        for order in working_orders:
+        for order in open_orders:
             self.generate_order_pending_cancel(
                 strategy_id=order.strategy_id,
                 instrument_id=order.instrument_id,
