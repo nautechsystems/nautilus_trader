@@ -75,9 +75,9 @@ cdef class TrailingStopLimitOrder(Order):
     trigger_type : TriggerType
         The order trigger type.
     limit_offset : Decimal
-        The trailing offset for the order (LIMIT) price.
+        The trailing offset for the order price (LIMIT).
     trailing_offset : Decimal
-        The trailing offset for the order trigger (STOP) price.
+        The trailing offset for the order trigger price (STOP).
     offset_type : TrailingOffsetType
         The order trailing offset type.
     time_in_force : TimeInForce
