@@ -317,6 +317,7 @@ class TestBacktestAcceptanceTestsBTCPERPTradeBars:
         config = BacktestEngineConfig(
             bypass_logging=False,
             run_analysis=False,
+            exec_engine={"allow_cash_positions": True},  # Retain original behaviour for now
             risk_engine={"bypass": True},
         )
         self.engine = BacktestEngine(config=config)

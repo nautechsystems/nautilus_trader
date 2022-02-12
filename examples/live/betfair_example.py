@@ -67,6 +67,7 @@ async def main(market_id: str):
         timeout_connection=30.0,
         log_level="DEBUG",
         cache_database=CacheDatabaseConfig(type="in-memory"),
+        exec_engine={"allow_cash_positions": True},  # Retain original behaviour for now
         data_clients={
             "BETFAIR": {
                 # "username": "YOUR_BETFAIR_USERNAME",

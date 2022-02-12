@@ -164,14 +164,14 @@ cdef class AccountsManager:
         Condition.not_none(instrument, "instrument")
         Condition.not_none(orders_open, "orders_open")
 
-        if account.is_cash_account():
+        if account.is_cash_account:
             return self._update_balance_locked(
                 account,
                 instrument,
                 orders_open,
                 ts_event,
             )
-        elif account.is_margin_account():
+        elif account.is_margin_account:
             return self._update_margin_init(
                 account,
                 instrument,
@@ -572,7 +572,7 @@ cdef class AccountsManager:
             base_currency=account.base_currency,
             reported=False,
             balances=list(account.balances().values()),
-            margins=list(account.margins().values()) if account.is_margin_account() else [],
+            margins=list(account.margins().values()) if account.is_margin_account else [],
             info={},
             event_id=self._uuid_factory.generate(),
             ts_event=ts_event,

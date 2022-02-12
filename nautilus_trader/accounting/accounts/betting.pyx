@@ -33,9 +33,6 @@ cdef class BettingAccount(CashAccount):
     """
     ACCOUNT_TYPE = AccountType.BETTING
 
-    cdef bint is_cash_account(self) except *:
-        return True
-
 # -- CALCULATIONS ----------------------------------------------------------------------------------
 
     cpdef Money calculate_balance_locked(

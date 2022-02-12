@@ -43,11 +43,10 @@ async def test_ftx_http_client():
 
     # Test authentication works with account info
     # response = await client.get_account_info()
-    # print(json.dumps(response, indent=4))
 
-    # response = await client.list_markets(
-    #     # market="ETH-PERP",
-    # )
+    response = await client.list_markets(
+        # market="ETH-PERP",
+    )
 
     # provider = FTXInstrumentProvider(
     #     client=client,
@@ -62,17 +61,16 @@ async def test_ftx_http_client():
     #     market="ETH/USD",
     #     resolution=300,
     # )
-    # print(response)
 
-    response = await client.place_order(
-        market="ETH-PERP",
-        side="buy",
-        size="0.01",
-        order_type="market",
-        # price="5500",
-        # post_only=True,
-        # reduce_only=True,
-    )
+    # response = await client.place_order(
+    #     market="ETH-PERP",
+    #     side="buy",
+    #     size="0.01",
+    #     order_type="market",
+    #     # price="5500",
+    #     # post_only=True,
+    #     # reduce_only=True,
+    # )
 
     # response = await client.place_trigger_order(
     #     market="ETH-PERP",

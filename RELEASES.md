@@ -26,6 +26,8 @@ safety this type is now utilized for the `TradeTick.trade_id`.
 
 ### Enhancements
 - Introduced the `TradeId` type to enforce `trade_id` typing.
+- Improve handling of unleveraged cash asset positions including Crypto and Fiat spot currency instruments.
+- Added `ExecEngineConfig` option `allow_cash_positions` (`False` by default).
 - Added `TrailingOffsetType` enum.
 - Added `TrailingStopMarketOrder`.
 - Added `TrailingStopLimitOrder`.

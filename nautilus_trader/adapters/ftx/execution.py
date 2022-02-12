@@ -66,6 +66,7 @@ from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import TradeId
 from nautilus_trader.model.identifiers import VenueOrderId
 from nautilus_trader.model.instruments.base import Instrument
+from nautilus_trader.model.instruments.currency import CurrencySpot
 from nautilus_trader.model.objects import AccountBalance
 from nautilus_trader.model.objects import MarginBalance
 from nautilus_trader.model.objects import Money
@@ -857,13 +858,21 @@ class FTXExecutionClient(LiveExecutionClient):
             account: Optional[MarginAccount] = self._cache.account(self.account_id)
             while account is None:
                 self._log.debug(f"Waiting for account {self.account_id}...")
-                await asyncio.sleep(0.1)
+                await self.sleep0()
             leverage = Decimal(response["leverage"])
             account.set_default_leverage(leverage)
             self._log.info(
-                f"{self.account_id} leverage {leverage}X.",
+                f"Setting {self.account_id} default leverage to {leverage}X.",
                 LogColor.BLUE,
             )
+            instruments: List[Instrument] = self._instrument_provider.list_all()
+            for instrument in instruments:
+                if isinstance(instrument, CurrencySpot):
+                    self._log.debug(
+                        f"Setting {self.account_id} leverage for {instrument.id} to 1X.",
+                    )
+                    account.set_leverage(instrument.id, Decimal(1))  # No leverage
+
             self._initial_leverage_set = True
 
     def _handle_account_info(self, info: Dict[str, Any]) -> None:
