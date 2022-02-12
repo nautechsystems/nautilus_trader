@@ -441,7 +441,7 @@ cdef class OrderFactory:
         quantity : Quantity
             The orders quantity (> 0).
         trailing_offset : Decimal
-            The trailing offset for the trigger (STOP) price.
+            The trailing offset for the trigger price (STOP).
         trigger_price : Price, optional
             The order trigger price (STOP). If ``None`` then will typically default
             to the delta of market price and `trailing_offset`.
@@ -526,9 +526,9 @@ cdef class OrderFactory:
         quantity : Quantity
             The orders quantity (> 0).
         trailing_offset : Decimal
-            The trailing offset for the trigger (STOP) price.
+            The trailing offset for the trigger price (STOP).
         limit_offset : Decimal
-            The trailing offset for the order (LIMIT) price.
+            The trailing offset for the order price (LIMIT).
         price : Price, optional
             The order price (LIMIT). If ``None`` then will typically default to the
             delta of market price and `limit_offset`.
@@ -615,9 +615,9 @@ cdef class OrderFactory:
         quantity : Quantity
             The entry orders quantity (> 0).
         stop_loss : Price
-            The stop-loss child order trigger (STOP) price.
+            The stop-loss child order trigger price (STOP).
         take_profit : Price
-            The take-profit child order (LIMIT) price.
+            The take-profit child order price (LIMIT).
         tif_bracket : TimeInForce {``DAY``, ``GTC``}, optional
             The bracket orders time-in-force .
 
@@ -744,9 +744,9 @@ cdef class OrderFactory:
         entry : Price
             The entry LIMIT order price.
         stop_loss : Price
-            The stop-loss child order trigger (STOP) price.
+            The stop-loss child order trigger price (STOP).
         take_profit : Price
-            The take-profit child order (LIMIT) price.
+            The take-profit child order price (LIMIT).
         tif : TimeInForce {``DAY``, ``GTC``}, optional
             The entry orders time-in-force .
         expire_time : datetime, optional

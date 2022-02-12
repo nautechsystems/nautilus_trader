@@ -111,9 +111,9 @@ cdef class OrderStatusReport(ExecutionReport):
     trigger_type : TriggerType, default ``NONE``
         The reported order trigger type.
     limit_offset : Decimal, optional
-        The trailing offset for the order (LIMIT) price.
+        The trailing offset for the order price (LIMIT).
     trailing_offset : Decimal, optional
-        The trailing offset for the trigger (STOP) price.
+        The trailing offset for the trigger price (STOP).
     offset_type : TrailingOffsetType, default ``NONE``
         The order trailing offset type.
     avg_px : Decimal, optional
