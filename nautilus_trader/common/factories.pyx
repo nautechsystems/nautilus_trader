@@ -139,9 +139,9 @@ cdef class OrderFactory:
             The orders side.
         quantity : Quantity
             The orders quantity (> 0).
-        time_in_force : TimeInForce, optional
+        time_in_force : TimeInForce, default ``GTC``
             The orders time-in-force. Often not applicable for market orders.
-        reduce_only : bool, optional
+        reduce_only : bool, default False
             If the order carries the 'reduce-only' execution instruction.
         tags : str, optional
             The custom user tags for the order. These are optional and can
@@ -205,13 +205,13 @@ cdef class OrderFactory:
             The orders quantity (> 0).
         price : Price
             The orders price.
-        time_in_force : TimeInForce, optional
+        time_in_force : TimeInForce, default ``GTC``
             The orders time-in-force.
         expire_time : datetime, optional
             The order expiration (for ``GTD`` orders).
-        post_only : bool, optional
+        post_only : bool, default False
             If the order will only provide liquidity (make a market).
-        reduce_only : bool, optional
+        reduce_only : bool, default False
             If the order carries the 'reduce-only' execution instruction.
         display_qty : Quantity, optional
             The quantity of the order to display on the public book (iceberg).
@@ -282,13 +282,13 @@ cdef class OrderFactory:
             The orders quantity (> 0).
         trigger_price : Price
             The orders trigger price (STOP).
-        trigger_type : TriggerType
+        trigger_type : TriggerType, default ``DEFAULT``
             The order trigger type.
-        time_in_force : TimeInForce, optional
+        time_in_force : TimeInForce, default ``GTC``
             The orders time-in-force.
         expire_time : datetime, optional
             The order expiration (for ``GTD`` orders).
-        reduce_only : bool, optional
+        reduce_only : bool, default False
             If the order carries the 'reduce-only' execution instruction.
         tags : str, optional
             The custom user tags for the order. These are optional and can
@@ -359,15 +359,15 @@ cdef class OrderFactory:
             The orders limit price.
         trigger_price : Price
             The orders trigger stop price.
-        trigger_type : TriggerType
+        trigger_type : TriggerType, default ``DEFAULT``
             The order trigger type.
-        time_in_force : TimeInForce, optional
+        time_in_force : TimeInForce, default ``GTC``
             The orders time-in-force.
         expire_time : datetime, optional
             The order expiration (for ``GTD`` orders).
-        post_only : bool, optional
+        post_only : bool, default False
             If the order will only provide liquidity (make a market).
-        reduce_only : bool, optional
+        reduce_only : bool, default False
             If the order carries the 'reduce-only' execution instruction.
         display_qty : Quantity, optional
             The quantity of the order to display on the public book (iceberg).
@@ -445,15 +445,15 @@ cdef class OrderFactory:
         trigger_price : Price, optional
             The order trigger price (STOP). If ``None`` then will typically default
             to the delta of market price and `trailing_offset`.
-        trigger_type : TriggerType, optional
+        trigger_type : TriggerType, default ``DEFAULT``
             The order trigger type.
-        offset_type : TrailingOffsetType, optional
+        offset_type : TrailingOffsetType, default ``PRICE``
             The order trailing offset type.
-        time_in_force : TimeInForce, optional
+        time_in_force : TimeInForce, default ``GTC``
             The orders time-in-force.
         expire_time : datetime, optional
             The order expiration (for ``GTD`` orders).
-        reduce_only : bool, optional
+        reduce_only : bool, default False
             If the order carries the 'reduce-only' execution instruction.
         tags : str, optional
             The custom user tags for the order. These are optional and can
@@ -535,17 +535,17 @@ cdef class OrderFactory:
         trigger_price : Price, optional
             The order trigger price (STOP). If ``None`` then will typically default
             to the delta of market price and `trailing_offset`.
-        trigger_type : TriggerType, optional
+        trigger_type : TriggerType, default ``DEFAULT``
             The order trigger type.
-        offset_type : TrailingOffsetType, optional
+        offset_type : TrailingOffsetType, default ``PRICE``
             The order trailing offset type.
-        time_in_force : TimeInForce, optional
+        time_in_force : TimeInForce, default ``GTC``
             The orders time-in-force.
         expire_time : datetime, optional
             The order expiration (for ``GTD`` orders).
-        post_only : bool, optional
+        post_only : bool, default False
             If the order will only provide liquidity (make a market).
-        reduce_only : bool, optional
+        reduce_only : bool, default False
             If the order carries the 'reduce-only' execution instruction.
         display_qty : Quantity, optional
             The quantity of the order to display on the public book (iceberg).
@@ -753,7 +753,7 @@ cdef class OrderFactory:
             The order expiration (for ``GTD`` orders).
         tif_bracket : TimeInForce {``DAY``, ``GTC``}, optional
             The bracket orders time-in-force.
-        post_only : bool, optional
+        post_only : bool, default False
             If the entry order will only provide liquidity (make a market).
 
         Returns
