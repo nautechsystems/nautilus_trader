@@ -102,9 +102,9 @@ cdef class CacheFacade:
     cpdef list orders_closed(self, Venue venue=*, InstrumentId instrument_id=*, StrategyId strategy_id=*)
     cpdef list orders_inflight(self, Venue venue=*, InstrumentId instrument_id=*, StrategyId strategy_id=*)
     cpdef bint order_exists(self, ClientOrderId client_order_id) except *
-    cpdef bint is_order_inflight(self, ClientOrderId client_order_id) except *
     cpdef bint is_order_open(self, ClientOrderId client_order_id) except *
     cpdef bint is_order_closed(self, ClientOrderId client_order_id) except *
+    cpdef bint is_order_inflight(self, ClientOrderId client_order_id) except *
     cpdef int orders_open_count(self, Venue venue=*, InstrumentId instrument_id=*, StrategyId strategy_id=*) except *
     cpdef int orders_closed_count(self, Venue venue=*, InstrumentId instrument_id=*, StrategyId strategy_id=*) except *
     cpdef int orders_inflight_count(self, Venue venue=*, InstrumentId instrument_id=*, StrategyId strategy_id=*) except *
