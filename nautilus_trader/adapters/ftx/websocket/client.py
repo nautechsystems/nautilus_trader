@@ -84,7 +84,7 @@ class FTXWebSocketClient(WebSocketClient):
         """
         await super().connect(ws_url=self._base_url, start=start, **ws_kwargs)
 
-    async def post_connect(self):
+    async def post_connection(self):
         """
         Actions to be performed post connection.
         """
@@ -110,6 +110,17 @@ class FTXWebSocketClient(WebSocketClient):
 
         await self.send_json(login)
         self._log.info("Session authenticated.")
+
+    async def post_reconnection(self):
+        """
+        Actions to be performed post reconnection.
+        """
+        # Re-login and authenticate
+        await self.post_connection()
+
+        # Resubscribe to all streams
+        for subscription in self._streams:
+            await self.send_json({"op": "subscribe", **subscription})
 
     async def _subscribe(self, subscription: Dict) -> None:
         if subscription not in self._streams:
