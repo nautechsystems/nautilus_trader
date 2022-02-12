@@ -20,6 +20,7 @@ from nautilus_trader.adapters.ftx.factories import FTXLiveDataClientFactory
 from nautilus_trader.adapters.ftx.factories import FTXLiveExecutionClientFactory
 from nautilus_trader.examples.strategies.volatility_market_maker import VolatilityMarketMaker
 from nautilus_trader.examples.strategies.volatility_market_maker import VolatilityMarketMakerConfig
+from nautilus_trader.infrastructure.config import CacheDatabaseConfig
 from nautilus_trader.live.config import TradingNodeConfig
 from nautilus_trader.live.node import TradingNode
 
@@ -37,7 +38,7 @@ config_node = TradingNodeConfig(
     exec_engine={
         "recon_lookback_mins": 1440,
     },
-    # cache_database=CacheDatabaseConfig(),
+    cache_database=CacheDatabaseConfig(),
     data_clients={
         "FTX": {
             # "api_key": "YOUR_FTX_API_KEY",

@@ -318,7 +318,7 @@ cdef class Portfolio(PortfolioFacade):
         )
 
         result_maint = None
-        if account.is_margin_account():
+        if account.is_margin_account:
             positions_open = self._cache.positions_open(
                 venue=None,  # Faster query filtering
                 instrument_id=tick.instrument_id,
@@ -336,7 +336,7 @@ cdef class Portfolio(PortfolioFacade):
         cdef Money result_unrealized_pnl = self._calculate_unrealized_pnl(tick.instrument_id)
 
         # Check portfolio initialization
-        if result_init is not None and (account.is_cash_account() or (result_maint is not None and result_unrealized_pnl)):
+        if result_init is not None and (account.is_cash_account or (result_maint is not None and result_unrealized_pnl)):
             self._pending_calcs.discard(tick.instrument_id)
             if not self._pending_calcs:
                 self.initialized = True
@@ -601,7 +601,7 @@ cdef class Portfolio(PortfolioFacade):
             )
             return None
 
-        if account.is_cash_account():
+        if account.is_cash_account:
             return None
 
         return account.margins_init()
@@ -630,7 +630,7 @@ cdef class Portfolio(PortfolioFacade):
             )
             return None
 
-        if account.is_cash_account():
+        if account.is_cash_account:
             return None
 
         return account.margins_maint()

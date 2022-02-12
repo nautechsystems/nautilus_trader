@@ -497,7 +497,7 @@ cdef class SimulatedExchange:
         balance.free = Money(balance.free + adjustment, adjustment.currency)
 
         cdef list margins = []
-        if account.is_margin_account():
+        if account.is_margin_account:
             margins = list(account.margins().values())
 
         # Generate and handle event
@@ -1657,7 +1657,7 @@ cdef class SimulatedExchange:
 
         # Set leverages
         cdef Account account = self.get_account()
-        if account.is_margin_account():
+        if account.is_margin_account:
             account.set_default_leverage(self.default_leverage)
             # Set instrument specific leverages
             for instrument_id, leverage in self.leverages.items():

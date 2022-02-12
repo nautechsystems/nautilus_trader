@@ -40,6 +40,7 @@ if __name__ == "__main__":
     # Configure backtest engine
     config = BacktestEngineConfig(
         trader_id="BACKTESTER-001",
+        exec_engine={"allow_cash_positions": True},  # Retain original behaviour for now
     )
     # Build the backtest engine
     engine = BacktestEngine(config=config)
