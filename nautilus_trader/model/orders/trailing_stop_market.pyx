@@ -82,11 +82,11 @@ cdef class TrailingStopMarketOrder(Order):
         The order initialization event ID.
     ts_init : int64
         The UNIX timestamp (nanoseconds) when the object was initialized.
-    reduce_only : bool, optional
+    reduce_only : bool, default False
         If the order carries the 'reduce-only' execution instruction.
     order_list_id : OrderListId, optional
         The order list ID associated with the order.
-    contingency_type : ContingencyType
+    contingency_type : ContingencyType, default ``NONE``
         The order contingency type.
     linked_order_ids : list[ClientOrderId], optional
         The order linked client order ID(s).
@@ -102,6 +102,8 @@ cdef class TrailingStopMarketOrder(Order):
         If `quantity` is not positive (> 0).
     ValueError
         If `trigger_type` is ``NONE``.
+    ValueError
+        If `offset_type` is ``NONE``.
     ValueError
         If `time_in_force` is ``GTD`` and `expire_time` is ``None`` or <= UNIX epoch.
     """
@@ -129,6 +131,7 @@ cdef class TrailingStopMarketOrder(Order):
         str tags=None,
     ):
         Condition.not_equal(trigger_type, TriggerType.NONE, "trigger_type", "NONE")
+        Condition.not_equal(offset_type, TrailingOffsetType.NONE, "offset_type", "NONE")
 
         cdef int64_t expire_time_ns = 0
         if time_in_force == TimeInForce.GTD:
