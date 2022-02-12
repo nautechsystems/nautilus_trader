@@ -36,9 +36,9 @@ types and how these map to their corresponding `PyObject` types.
    :maxdepth: 2
    :hidden:
    
-   1_environment_setup.md
-   2_coding_standards.md
-   3_cython.md
-   4_testing.md
-   5_packaged_data.md
+   environment_setup.md
+   coding_standards.md
+   cython.md
+   testing.md
+   packaged_data.md
 ```

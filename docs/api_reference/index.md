@@ -70,7 +70,7 @@ library, or from third party library dependencies.
    :hidden:
    
    accounting.md
-   adapters/0_index.md
+   adapters/index.md
    analysis.md
    backtest.md
    cache.md
@@ -81,7 +81,7 @@ library, or from third party library dependencies.
    indicators.md
    infrastructure.md
    live.md
-   model/0_index.md
+   model/index.md
    msgbus.md
    network.md
    persistence.md

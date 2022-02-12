@@ -49,8 +49,8 @@ source_suffix = [".rst", ".md"]
 
 # -- Options for HTML output -------------------------------------------------
 html_theme = "sphinx_material"
-html_logo = "artwork/nt-white.png"
-html_favicon = "artwork/favicon-32x32.png"
+html_logo = "_images/nt-white.png"
+html_favicon = "_images/favicon-32x32.png"
 html_title = ""
 html_sidebars = {"**": ["logo-text.html", "globaltoc.html", "localtoc.html", "searchbox.html"]}
 html_show_sphinx = False
@@ -75,27 +75,27 @@ html_theme_options = {
     "globaltoc_depth": 4,
     "nav_links": [
         {
-            "href": "/1_getting_started/0_index",
+            "href": "/getting_started/index",
             "internal": True,
             "title": "Getting Started",
         },
         {
-            "href": "/2_user_guide/0_index",
+            "href": "/user_guide/index",
             "internal": True,
             "title": "User Guide",
         },
         {
-            "href": "/3_api_reference/0_index",
+            "href": "/api_reference/index",
             "internal": True,
             "title": "API Reference",
         },
         {
-            "href": "/4_integrations/0_index",
+            "href": "/integrations/index",
             "internal": True,
             "title": "Integrations",
         },
         {
-            "href": "/5_developer_guide/0_index",
+            "href": "/developer_guide/index",
             "internal": True,
             "title": "Developer Guide",
         },
@@ -117,11 +117,11 @@ html_theme_options = {
     ],
     "heroes": {
         "index": "Documentation",
-        "1_getting_started/0_index": "Documentation",
-        "2_user_guide/0_index": "Documentation",
-        "3_api_reference/0_index": "Documentation",
-        "4_integrations/0_index": "Documentation",
-        "5_developer_guide/0_index": "Documentation",
+        "getting_started/index": "Documentation",
+        "user_guide/index": "Documentation",
+        "api_reference/index": "Documentation",
+        "integrations/index": "Documentation",
+        "developer_guide/index": "Documentation",
     },
     "version_dropdown": False,
     "table_classes": ["plain"],

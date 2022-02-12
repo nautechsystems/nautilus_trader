@@ -32,7 +32,7 @@ including FX, Equities, Futures, Options, CFDs, Crypto and Betting - across mult
 - **AI Agent Training:** Backtest engine fast enough to be used to train AI trading agents (RL/ES).
 - **Distributed:** Run backtests synchronously or as a graph distributed across a `dask` cluster.
 
-![Nautilus](https://github.com/nautechsystems/nautilus_trader/blob/develop/docs/artwork/nautilus-art.png?raw=true "nautilus")
+![Nautilus](https://github.com/nautechsystems/nautilus_trader/blob/develop/docs/_images/nautilus-art.png?raw=true "nautilus")
 > *nautilus - from ancient Greek 'sailor' and naus 'ship'.*
 >
 > *The nautilus shell consists of modular chambers with a growth factor which approximates a logarithmic spiral.
@@ -81,7 +81,7 @@ written in Cython, however the libraries can be accessed from both pure Python a
 - Maintainability
 - Deployability
 
-![Architecture](https://github.com/nautechsystems/nautilus_trader/blob/develop/docs/artwork/architecture-overview.png?raw=true "architecture")
+![Architecture](https://github.com/nautechsystems/nautilus_trader/blob/develop/docs/_images/architecture-overview.png?raw=true "architecture")
 
 
 ```{eval-rst}
@@ -89,9 +89,9 @@ written in Cython, however the libraries can be accessed from both pure Python a
    :maxdepth: 2
    :hidden:
    
-   1_getting_started/0_index.md
-   2_user_guide/0_index.md
-   3_api_reference/0_index.md
-   4_integrations/0_index.md
-   5_developer_guide/0_index.md
+   getting_started/index.md
+   user_guide/index.md
+   api_reference/index.md
+   integrations/index.md
+   developer_guide/index.md
 ```

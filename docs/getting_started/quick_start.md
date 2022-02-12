@@ -19,7 +19,7 @@ This section explains how to get up and running with NautilusTrader by running s
 FX data. The Nautilus maintainers have pre-loaded some existing data into the Nautilus storage 
 format (parquet) for this guide.
 
-For more details on how to load other data into Nautilus, see [Backtest Example](../2_user_guide/2_backtest_example.md)
+For more details on how to load other data into Nautilus, see [Backtest Example](../user_guide/backtest_example.md)
 
 
 ## Getting the sample data
