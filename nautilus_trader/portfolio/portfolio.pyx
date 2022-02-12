@@ -958,9 +958,11 @@ cdef class Portfolio(PortfolioFacade):
         for position in positions_open:
             net_position += position.net_qty
 
-        self._net_positions[instrument_id] = net_position
-        cdef str net_position_str = f"{net_position:,}".replace(",", "_")
-        self._log.info(f"{instrument_id} net_position={net_position_str}")
+        existing_position: Decimal = self._net_positions.get(instrument_id)
+        if existing_position is None or existing_position != net_position:
+            self._net_positions[instrument_id] = net_position
+            net_position_str = f"{net_position:,}".replace(",", "_")
+            self._log.info(f"{instrument_id} net_position={net_position_str}")
 
     cdef Money _calculate_unrealized_pnl(self, InstrumentId instrument_id):
         cdef Account account = self._cache.account_for_venue(instrument_id.venue)
