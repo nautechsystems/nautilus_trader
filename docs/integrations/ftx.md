@@ -28,7 +28,7 @@ custom data types:
 - `FTXTicker` returned when subscribing to FTX tickers (like a `QuoteTick` which 
 also includes `last_price`).
 
-See the FTX [API Reference](../3_api_reference/adapters/ftx.md) for full definitions.
+See the FTX [API Reference](../api_reference/adapters/ftx.md) for full definitions.
 
 ## Configuration
 The most common use case is to configure a live `TradingNode` to include FTX

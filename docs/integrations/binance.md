@@ -36,7 +36,7 @@ custom data types:
 - `BinanceTicker` returned when subscribing to Binance tickers (contains many prices and stats).
 - `BinanceBar` returned when requesting historical, or subscribing to, Binance bars (contains extra volume information).
 
-See the Binance [API Reference](../3_api_reference/adapters/binance.md) for full definitions.
+See the Binance [API Reference](../api_reference/adapters/binance.md) for full definitions.
 
 ## Configuration
 The most common use case is to configure a live `TradingNode` to include Binance 

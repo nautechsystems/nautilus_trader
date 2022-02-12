@@ -70,7 +70,7 @@ Each of the `Reader` classes takes a `line_parser` or `block_parser` function, a
 
 The FX data from `histdata` is stored in csv/text format, with fields `timestamp, bid_price, ask_price`. 
 
-For this example, we will use the `CSVReader` class, but we need to manually pass a header as the files do not contain one. The `CSVReader` has a couple of options, we'll be setting and `chunked=False` to process the data line-by-line and `as_dataframe=False` to process the data as a string rather than DataFrame. See the [API Reference](../3_api_reference/persistence.md) for more details.
+For this example, we will use the `CSVReader` class, but we need to manually pass a header as the files do not contain one. The `CSVReader` has a couple of options, we'll be setting and `chunked=False` to process the data line-by-line and `as_dataframe=False` to process the data as a string rather than DataFrame. See the [API Reference](../api_reference/persistence.md) for more details.
 
 ```python
 import datetime
@@ -125,7 +125,7 @@ however, you were adding data for financial or crypto markets, you could need to
 the catalog) an instrument corresponding to that instrument_id. Definitions for various other 
 instruments can be found in `nautilus_trader.model.instruments`.
 
-See [Instruments](./4_instruments.md) for more details on creating other instruments.
+See [Instruments](./instruments.md) for more details on creating other instruments.
 
 ```python
 from nautilus_trader.persistence.external.core import process_files, write_objects
