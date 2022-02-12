@@ -230,10 +230,9 @@ class TestOrders:
         assert order.status == OrderStatus.INITIALIZED
         assert order.event_count == 1
         assert isinstance(order.last_event, OrderInitialized)
-        assert order.is_active
+        assert not order.is_open
+        assert not order.is_closed
         assert not order.is_inflight
-        assert not order.is_working
-        assert not order.is_completed
         assert order.is_buy
         assert order.is_aggressive
         assert not order.is_sell
@@ -259,10 +258,9 @@ class TestOrders:
         assert order.event_count == 1
         assert isinstance(order.last_event, OrderInitialized)
         assert len(order.events) == 1
-        assert order.is_active
+        assert not order.is_open
+        assert not order.is_closed
         assert not order.is_inflight
-        assert not order.is_working
-        assert not order.is_completed
         assert not order.is_buy
         assert order.is_sell
         assert order.ts_last == 0
@@ -352,9 +350,9 @@ class TestOrders:
         assert order.status == OrderStatus.INITIALIZED
         assert order.time_in_force == TimeInForce.GTC
         assert order.is_passive
-        assert order.is_active
+        assert not order.is_open
         assert not order.is_aggressive
-        assert not order.is_completed
+        assert not order.is_closed
         assert isinstance(order.init_event, OrderInitialized)
         assert (
             str(order)
@@ -429,7 +427,7 @@ class TestOrders:
         assert order.status == OrderStatus.INITIALIZED
         assert order.time_in_force == TimeInForce.GTD
         assert order.expire_time == UNIX_EPOCH + timedelta(minutes=1)
-        assert not order.is_completed
+        assert not order.is_closed
         assert isinstance(order.init_event, OrderInitialized)
         assert (
             str(order)
@@ -456,8 +454,8 @@ class TestOrders:
         assert order.time_in_force == TimeInForce.GTC
         assert order.is_passive
         assert not order.is_aggressive
-        assert order.is_active
-        assert not order.is_completed
+        assert not order.is_open
+        assert not order.is_closed
         assert isinstance(order.init_event, OrderInitialized)
         assert (
             str(order)
@@ -529,7 +527,7 @@ class TestOrders:
         assert order.time_in_force == TimeInForce.GTC
         assert order.is_passive
         assert not order.is_aggressive
-        assert not order.is_completed
+        assert not order.is_closed
         assert isinstance(order.init_event, OrderInitialized)
         assert (
             str(order)
@@ -607,8 +605,8 @@ class TestOrders:
         assert order.offset_type == TrailingOffsetType.PRICE
         assert order.is_passive
         assert not order.is_aggressive
-        assert order.is_active
-        assert not order.is_completed
+        assert not order.is_open
+        assert not order.is_closed
         assert isinstance(order.init_event, OrderInitialized)
         assert (
             str(order)
@@ -635,8 +633,8 @@ class TestOrders:
         assert order.offset_type == TrailingOffsetType.PRICE
         assert order.is_passive
         assert not order.is_aggressive
-        assert order.is_active
-        assert not order.is_completed
+        assert not order.is_open
+        assert not order.is_closed
         assert isinstance(order.init_event, OrderInitialized)
         assert (
             str(order)
@@ -758,7 +756,7 @@ class TestOrders:
         assert order.time_in_force == TimeInForce.GTC
         assert order.is_passive
         assert not order.is_aggressive
-        assert not order.is_completed
+        assert not order.is_closed
         assert isinstance(order.init_event, OrderInitialized)
         assert (
             str(order)
@@ -785,7 +783,7 @@ class TestOrders:
         assert order.time_in_force == TimeInForce.GTC
         assert order.is_passive
         assert not order.is_aggressive
-        assert not order.is_completed
+        assert not order.is_closed
         assert isinstance(order.init_event, OrderInitialized)
         assert (
             str(order)
@@ -1067,8 +1065,8 @@ class TestOrders:
         assert order.status == OrderStatus.DENIED
         assert order.event_count == 2
         assert order.last_event == denied
-        assert not order.is_active
-        assert order.is_completed
+        assert not order.is_open
+        assert order.is_closed
 
     def test_apply_order_submitted_event(self):
         # Arrange
@@ -1087,10 +1085,9 @@ class TestOrders:
         assert order.status == OrderStatus.SUBMITTED
         assert order.event_count == 2
         assert order.last_event == submitted
-        assert order.is_active
         assert order.is_inflight
-        assert not order.is_working
-        assert not order.is_completed
+        assert not order.is_open
+        assert not order.is_closed
         assert not order.is_pending_update
         assert not order.is_pending_cancel
 
@@ -1109,10 +1106,9 @@ class TestOrders:
 
         # Assert
         assert order.status == OrderStatus.ACCEPTED
-        assert order.is_active
         assert not order.is_inflight
-        assert order.is_working
-        assert not order.is_completed
+        assert order.is_open
+        assert not order.is_closed
         assert (
             str(order)
             == "MarketOrder(BUY 100_000 AUD/USD.SIM MARKET GTC, status=ACCEPTED, client_order_id=O-19700101-000000-000-001-1, venue_order_id=1, tags=None)"  # noqa
@@ -1137,10 +1133,9 @@ class TestOrders:
 
         # Assert
         assert order.status == OrderStatus.REJECTED
-        assert not order.is_active
         assert not order.is_inflight
-        assert not order.is_working
-        assert order.is_completed
+        assert not order.is_open
+        assert order.is_closed
 
     def test_apply_order_expired_event(self):
         # Arrange
@@ -1161,10 +1156,9 @@ class TestOrders:
 
         # Assert
         assert order.status == OrderStatus.EXPIRED
-        assert not order.is_active
         assert not order.is_inflight
-        assert not order.is_working
-        assert order.is_completed
+        assert not order.is_open
+        assert order.is_closed
 
     def test_apply_order_triggered_event(self):
         # Arrange
@@ -1186,10 +1180,9 @@ class TestOrders:
 
         # Assert
         assert order.status == OrderStatus.TRIGGERED
-        assert order.is_active
         assert not order.is_inflight
-        assert order.is_working
-        assert not order.is_completed
+        assert order.is_open
+        assert not order.is_closed
 
     def test_order_status_pending_cancel(self):
         # Arrange
@@ -1207,10 +1200,9 @@ class TestOrders:
 
         # Assert
         assert order.status == OrderStatus.PENDING_CANCEL
-        assert order.is_active
         assert order.is_inflight
-        assert order.is_working
-        assert not order.is_completed
+        assert order.is_open
+        assert not order.is_closed
         assert not order.is_pending_update
         assert order.is_pending_cancel
         assert order.event_count == 4
@@ -1232,10 +1224,9 @@ class TestOrders:
 
         # Assert
         assert order.status == OrderStatus.CANCELED
-        assert not order.is_active
         assert not order.is_inflight
-        assert not order.is_working
-        assert order.is_completed
+        assert not order.is_open
+        assert order.is_closed
         assert not order.is_pending_update
         assert not order.is_pending_cancel
         assert order.event_count == 5
@@ -1256,10 +1247,9 @@ class TestOrders:
 
         # Assert
         assert order.status == OrderStatus.PENDING_UPDATE
-        assert order.is_active
         assert order.is_inflight
-        assert order.is_working
-        assert not order.is_completed
+        assert order.is_open
+        assert not order.is_closed
         assert order.is_pending_update
         assert not order.is_pending_cancel
         assert order.event_count == 4
@@ -1300,10 +1290,9 @@ class TestOrders:
         assert order.venue_order_id == VenueOrderId("1")
         assert order.quantity == Quantity.from_int(120000)
         assert order.trigger_price == Price.from_str("1.00001")
-        assert order.is_active
         assert not order.is_inflight
-        assert order.is_working
-        assert not order.is_completed
+        assert order.is_open
+        assert not order.is_closed
         assert order.event_count == 5
 
     def test_apply_order_updated_venue_id_change(self):
@@ -1369,10 +1358,9 @@ class TestOrders:
         assert order.leaves_qty == Quantity.zero()
         assert order.avg_px == Decimal("1.00001")
         assert len(order.trade_ids) == 1
-        assert not order.is_active
         assert not order.is_inflight
-        assert not order.is_working
-        assert order.is_completed
+        assert not order.is_open
+        assert order.is_closed
         assert order.ts_last == 0
 
     def test_apply_order_filled_event_to_market_order(self):
@@ -1402,10 +1390,9 @@ class TestOrders:
         assert order.filled_qty == Quantity.from_int(100000)
         assert order.avg_px == Decimal("1.00001")
         assert len(order.trade_ids) == 1
-        assert not order.is_active
         assert not order.is_inflight
-        assert not order.is_working
-        assert order.is_completed
+        assert not order.is_open
+        assert order.is_closed
         assert order.ts_last == 0
 
     def test_apply_partial_fill_events_to_market_order_results_in_partially_filled(
@@ -1451,10 +1438,9 @@ class TestOrders:
         assert order.leaves_qty == Quantity.from_int(40000)
         assert order.avg_px == Decimal("1.000014")
         assert len(order.trade_ids) == 2
-        assert order.is_active
         assert not order.is_inflight
-        assert order.is_working
-        assert not order.is_completed
+        assert order.is_open
+        assert not order.is_closed
         assert order.ts_last == 0
 
     def test_apply_filled_events_to_market_order_results_in_filled(self):
@@ -1508,10 +1494,9 @@ class TestOrders:
         assert order.filled_qty == Quantity.from_int(100000)
         assert order.avg_px == Decimal("1.000018571428571428571428571")
         assert len(order.trade_ids) == 3
-        assert not order.is_active
         assert not order.is_inflight
-        assert not order.is_working
-        assert order.is_completed
+        assert not order.is_open
+        assert order.is_closed
         assert order.ts_last == 0
 
     def test_apply_order_filled_event_to_buy_limit_order(self):
@@ -1556,10 +1541,9 @@ class TestOrders:
         assert order.price == Price.from_str("1.00000")
         assert order.avg_px == Decimal("1.00001")
         assert order.slippage == Decimal("0.00001")
-        assert not order.is_active
         assert not order.is_inflight
-        assert not order.is_working
-        assert order.is_completed
+        assert not order.is_open
+        assert order.is_closed
         assert order.ts_last == 0
 
     def test_apply_order_partially_filled_event_to_buy_limit_order(self):
@@ -1604,8 +1588,7 @@ class TestOrders:
         assert order.price == Price.from_str("1.00000")
         assert order.avg_px == Decimal("0.999999")
         assert order.slippage == Decimal("-0.000001")
-        assert order.is_active
         assert not order.is_inflight
-        assert order.is_working
-        assert not order.is_completed
+        assert order.is_open
+        assert not order.is_closed
         assert order.ts_last == 1_000_000_000, order.ts_last

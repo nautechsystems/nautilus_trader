@@ -202,7 +202,7 @@ class TestLiveExecutionReconciliation:
         # Assert
         assert result
         assert len(self.cache.orders()) == 1
-        assert len(self.cache.orders_working()) == 1
+        assert len(self.cache.orders_open()) == 1
         assert self.cache.orders()[0].status == OrderStatus.ACCEPTED
 
     @pytest.mark.asyncio
@@ -308,7 +308,7 @@ class TestLiveExecutionReconciliation:
         # Assert
         assert result
         assert len(self.cache.orders()) == 1
-        assert len(self.cache.orders_working()) == 1
+        assert len(self.cache.orders_open()) == 1
         assert self.cache.orders()[0].status == OrderStatus.TRIGGERED
 
     @pytest.mark.asyncio

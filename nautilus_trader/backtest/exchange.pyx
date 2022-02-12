@@ -331,9 +331,9 @@ cdef class SimulatedExchange:
         """
         return self._books.copy()
 
-    cpdef list get_working_orders(self, InstrumentId instrument_id=None):
+    cpdef list get_open_orders(self, InstrumentId instrument_id=None):
         """
-        Return the working orders at the exchange.
+        Return the open orders at the exchange.
 
         Parameters
         ----------
@@ -346,13 +346,13 @@ cdef class SimulatedExchange:
 
         """
         return (
-            self.get_working_bid_orders(instrument_id)
-            + self.get_working_ask_orders(instrument_id)
+            self.get_open_bid_orders(instrument_id)
+            + self.get_open_ask_orders(instrument_id)
         )
 
-    cpdef list get_working_bid_orders(self, InstrumentId instrument_id=None):
+    cpdef list get_open_bid_orders(self, InstrumentId instrument_id=None):
         """
-        Return the working bid orders at the exchange.
+        Return the open bid orders at the exchange.
 
         Parameters
         ----------
@@ -373,9 +373,9 @@ cdef class SimulatedExchange:
         else:
             return [o for o in self._orders_bid.get(instrument_id, [])]
 
-    cpdef list get_working_ask_orders(self, InstrumentId instrument_id=None):
+    cpdef list get_open_ask_orders(self, InstrumentId instrument_id=None):
         """
-        Return the working ask orders at the exchange.
+        Return the open ask orders at the exchange.
 
         Parameters
         ----------
@@ -568,7 +568,7 @@ cdef class SimulatedExchange:
         """
         Process the exchanges market for the given tick.
 
-        Market dynamics are simulated by auctioning working orders.
+        Market dynamics are simulated by auctioning open orders.
 
         Parameters
         ----------
@@ -596,7 +596,7 @@ cdef class SimulatedExchange:
         """
         Process the exchanges market for the given bar.
 
-        Market dynamics are simulated by auctioning working orders.
+        Market dynamics are simulated by auctioning open orders.
 
         Parameters
         ----------
@@ -816,7 +816,7 @@ cdef class SimulatedExchange:
                         f"{repr(command.client_order_id)} not found",
                     )
                     continue
-                if order.is_active_c():
+                if order.is_inflight_c() or order.is_open_c():
                     self._generate_order_pending_cancel(order)
                     self._cancel_order(order)
             elif isinstance(command, CancelAllOrders):
@@ -825,7 +825,7 @@ cdef class SimulatedExchange:
                     + self._orders_ask.get(command.instrument_id, [])
                 )
                 for order in orders:
-                    if order.is_active_c():
+                    if order.is_inflight_c() or order.is_open_c():
                         self._generate_order_pending_cancel(order)
                         self._cancel_order(order)
 
@@ -887,7 +887,7 @@ cdef class SimulatedExchange:
             if order.client_order_id in self._oto_orders:
                 parent = self.cache.order(order.parent_order_id)
                 assert parent is not None, "OTO parent not found"
-                if parent.status_c() == OrderStatus.REJECTED and order.is_active_c():
+                if parent.status_c() == OrderStatus.REJECTED and order.is_open_c():
                     self._generate_order_rejected(
                         order,
                         f"REJECT OTO from {parent.client_order_id}",
@@ -1160,7 +1160,7 @@ cdef class SimulatedExchange:
         for client_order_id in order.linked_order_ids:
             oco_order = self.cache.order(client_order_id)
             assert oco_order is not None, "OCO order not found"
-            if oco_order.is_active_c():
+            if oco_order.is_open_c():
                 self._cancel_order(oco_order, cancel_ocos=False)
 
     cdef void _expire_order(self, Order order) except *:
@@ -1219,7 +1219,7 @@ cdef class SimulatedExchange:
     cdef void _iterate_side(self, list orders, int64_t timestamp_ns) except *:
         cdef Order order
         for order in orders:
-            if not order.is_working_c():
+            if not order.is_open_c():
                 continue  # Orders state has changed since the loop started
             elif order.expire_time and timestamp_ns >= order.expire_time_ns:
                 self._delete_order(order)
@@ -1260,7 +1260,7 @@ cdef class SimulatedExchange:
                 return
 
             if order.is_post_only:  # Would be liquidity taker
-                self._delete_order(order)  # Remove order from working orders
+                self._delete_order(order)  # Remove order from open orders
                 self._generate_order_rejected(
                     order,
                     f"POST_ONLY LIMIT {order.side_string_c()} order "
@@ -1487,7 +1487,7 @@ cdef class SimulatedExchange:
             )
 
         if (
-            order.is_working_c()
+            order.is_open_c()
             and self.book_type == BookType.L1_TBBO
             and (order.type == OrderType.MARKET or order.type == OrderType.STOP_MARKET)
         ):
@@ -1538,7 +1538,7 @@ cdef class SimulatedExchange:
             liquidity_side=liquidity_side,
         )
 
-        if order.is_passive_c() and order.is_completed_c():
+        if order.is_passive_c() and order.is_closed_c():
             # Remove order from market
             self._delete_order(order)
 
@@ -1560,13 +1560,13 @@ cdef class SimulatedExchange:
                         f"Indexed {repr(order.position_id)} "
                         f"for {repr(child_order.client_order_id)}",
                     )
-                if not child_order.is_working_c():
+                if not child_order.is_open_c():
                     self._accept_order(child_order)
         elif order.contingency_type == ContingencyType.OCO:
             for client_order_id in order.linked_order_ids:
                 oco_order = self.cache.order(client_order_id)
                 assert oco_order is not None, "OCO order not found"
-                if order.is_completed_c() and oco_order.is_active_c():
+                if order.is_closed_c() and oco_order.is_open_c():
                     self._cancel_order(oco_order)
                 elif order.leaves_qty != oco_order.leaves_qty:
                     self._update_order(
@@ -1584,7 +1584,7 @@ cdef class SimulatedExchange:
         for order in self.cache.orders_for_position(venue_position_id):
             if (
                 order.is_reduce_only
-                and order.is_active_c()
+                and order.is_open_c()
                 and order.is_passive_c()
             ):
                 if position.quantity == 0:

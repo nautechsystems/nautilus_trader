@@ -195,12 +195,12 @@ class VolatilityMarketMaker(TradingStrategy):
             return
 
         # Maintain buy orders
-        if self.buy_order and self.buy_order.is_working:
+        if self.buy_order and self.buy_order.is_open:
             self.cancel_order(self.buy_order)
         self.create_buy_order(last)
 
         # Maintain sell orders
-        if self.sell_order and self.sell_order.is_working:
+        if self.sell_order and self.sell_order.is_open:
             self.cancel_order(self.sell_order)
         self.create_sell_order(last)
 
@@ -270,10 +270,10 @@ class VolatilityMarketMaker(TradingStrategy):
         # If order filled then replace order at atr multiple distance from the market
         if isinstance(event, OrderFilled):
             if event.order_side == OrderSide.BUY:
-                if self.buy_order.is_completed:
+                if self.buy_order.is_closed:
                     self.create_buy_order(last)
             elif event.order_side == OrderSide.SELL:
-                if self.sell_order.is_completed:
+                if self.sell_order.is_closed:
                     self.create_sell_order(last)
 
     def on_stop(self):

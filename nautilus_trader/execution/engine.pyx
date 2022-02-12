@@ -226,9 +226,9 @@ cdef class ExecutionEngine(Component):
 
     cpdef bint check_residuals(self) except *:
         """
-        Check for any residual active state and log warnings if found.
+        Check for any residual open state and log warnings if found.
 
-        Active state is considered working orders and open positions.
+        'Open state' is considered to be open orders and open positions.
 
         Returns
         -------

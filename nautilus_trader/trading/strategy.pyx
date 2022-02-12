@@ -597,7 +597,7 @@ cdef class TradingStrategy(Actor):
             return  # Cannot send command
 
         if (
-            order.is_completed_c()
+            order.is_closed_c()
             or order.is_pending_update_c()
             or order.is_pending_cancel_c()
         ):
@@ -640,7 +640,7 @@ cdef class TradingStrategy(Actor):
         Condition.not_none(order, "order")
         Condition.true(self.trader_id is not None, "The strategy has not been registered")
 
-        if order.is_completed_c() or order.is_pending_cancel_c():
+        if order.is_closed_c() or order.is_pending_cancel_c():
             self.log.warning(
                 f"Cannot cancel order: state is {order.status_string_c()}, {order}.",
             )
@@ -671,19 +671,19 @@ cdef class TradingStrategy(Actor):
         # instrument_id can be None
         Condition.true(self.trader_id is not None, "The strategy has not been registered")
 
-        cdef list working_orders = self.cache.orders_working(
+        cdef list open_orders = self.cache.orders_open(
             venue=None,  # Faster query filtering
             instrument_id=instrument_id,
             strategy_id=self.id,
         )
 
-        if not working_orders:
-            self.log.info("No working orders to cancel.")
+        if not open_orders:
+            self.log.info("No open orders to cancel.")
             return
 
-        cdef int count = len(working_orders)
+        cdef int count = len(open_orders)
         self.log.info(
-            f"Canceling {count} working order{'' if count == 1 else 's'}...",
+            f"Canceling {count} open order{'' if count == 1 else 's'}...",
         )
 
         cdef CancelAllOrders command = CancelAllOrders(

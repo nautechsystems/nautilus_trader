@@ -424,7 +424,7 @@ cdef class Trader(Component):
 
     cpdef void check_residuals(self) except *:
         """
-        Check for residual business objects such as working orders or open positions.
+        Check for residual open state such as open orders or open positions.
         """
         self._exec_engine.check_residuals()
 

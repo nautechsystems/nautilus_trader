@@ -130,10 +130,10 @@ cdef class Portfolio(PortfolioFacade):
 
         Performs all account calculations for the current order state.
         """
-        cdef list all_orders_working = self._cache.orders_working()
+        cdef list all_orders_open = self._cache.orders_open()
 
         cdef set instruments = set()
-        for order in all_orders_working:
+        for order in all_orders_open:
             instruments.add(order.instrument_id)
 
         # Update initial (order) margins to initialize portfolio
@@ -159,7 +159,7 @@ cdef class Portfolio(PortfolioFacade):
                 initialized = False
                 break
 
-            orders_working = self._cache.orders_working(
+            orders_open = self._cache.orders_open(
                 venue=None,  # Faster query filtering
                 instrument_id=instrument.id,
             )
@@ -167,16 +167,16 @@ cdef class Portfolio(PortfolioFacade):
             result = self._accounts.update_orders(
                 account=account,
                 instrument=instrument,
-                orders_working=[o for o in orders_working if o.is_passive_c()],
+                orders_open=[o for o in orders_open if o.is_passive_c()],
                 ts_event=account.last_event_c().ts_event,
             )
             if result is None:
                 initialized = False
 
-        cdef int working_count = len(all_orders_working)
+        cdef int open_count = len(all_orders_open)
         self._log.info(
-            f"Initialized {working_count} working order{'' if working_count == 1 else 's'}.",
-            color=LogColor.BLUE if working_count else LogColor.NORMAL,
+            f"Initialized {open_count} open order{'' if open_count == 1 else 's'}.",
+            color=LogColor.BLUE if open_count else LogColor.NORMAL,
         )
 
         self.initialized = initialized
@@ -291,7 +291,7 @@ cdef class Portfolio(PortfolioFacade):
             )
             return  # No instrument found
 
-        cdef list orders_working = self._cache.orders_working(
+        cdef list orders_open = self._cache.orders_open(
             venue=None,  # Faster query filtering
             instrument_id=tick.instrument_id,
         )
@@ -302,7 +302,7 @@ cdef class Portfolio(PortfolioFacade):
         cdef AccountState result_init = self._accounts.update_orders(
             account=account,
             instrument=instrument,
-            orders_working=[o for o in orders_working if o.is_passive_c()],
+            orders_open=[o for o in orders_open if o.is_passive_c()],
             ts_event=account.last_event_c().ts_event,
         )
 
@@ -409,7 +409,7 @@ cdef class Portfolio(PortfolioFacade):
                 fill=event,
             )
 
-        cdef list orders_working = self._cache.orders_working(
+        cdef list orders_open = self._cache.orders_open(
             venue=None,  # Faster query filtering
             instrument_id=event.instrument_id,
         )
@@ -419,7 +419,7 @@ cdef class Portfolio(PortfolioFacade):
         account_state = self._accounts.update_orders(
             account=account,
             instrument=instrument,
-            orders_working=[o for o in orders_working if o.is_passive_c()],
+            orders_open=[o for o in orders_open if o.is_passive_c()],
             ts_event=event.ts_event,
         )
 

@@ -238,9 +238,10 @@ cdef class LiveExecutionClient(ExecutionClient):
 
     async def generate_mass_status(self, lookback_mins: Optional[int]):
         """
-        Generate an execution state report based on the given list of active
-        orders.
+        Generate an execution mass status report.
 
+        Parameters
+        ----------
         lookback_mins : int, optional
             The maximum lookback for querying closed orders, trades and positions.
 

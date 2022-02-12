@@ -1326,7 +1326,7 @@ class TestRiskEngine:
         assert self.risk_engine.command_count == 1
         assert self.exec_engine.command_count == 0
 
-    def test_update_order_when_already_completed_then_denies(self):
+    def test_update_order_when_already_closed_then_denies(self):
         # Arrange
         self.exec_engine.start()
 
@@ -1525,7 +1525,7 @@ class TestRiskEngine:
         assert self.risk_engine.command_count == 1
         assert self.exec_engine.command_count == 0
 
-    def test_cancel_order_when_already_completed_then_denies(self):
+    def test_cancel_order_when_already_closed_then_denies(self):
         # Arrange
         self.exec_engine.start()
 
