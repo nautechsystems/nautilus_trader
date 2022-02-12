@@ -81,12 +81,7 @@ cdef class WebSocketClient:
         self.connection_retry_count = 0
         self.unknown_message_count = 0
 
-    async def connect(
-        self,
-        str ws_url,
-        bint start=True,
-        **ws_kwargs,
-    ) -> None:
+    async def connect(self, str ws_url, bint start=True, **ws_kwargs) -> None:
         Condition.valid_string(ws_url, "ws_url")
 
         self._log.debug(f"Connecting WebSocket to {ws_url}")
@@ -94,19 +89,35 @@ cdef class WebSocketClient:
         self._ws_url = ws_url
         self._ws_kwargs = ws_kwargs
         self._ws = await self._session.ws_connect(url=ws_url, **ws_kwargs)
-        await self.post_connect()
+        await self.post_connection()
         if start:
             task: Task = self._loop.create_task(self.start())
             self._tasks.append(task)
+            self._log.debug("WebSocket connected.")
         self.is_connected = True
-        self._log.debug("WebSocket connected.")
 
-    async def post_connect(self):
+    async def reconnect(self) -> None:
+        self._log.debug(f"Reconnecting WebSocket to {self._ws_url}")
+
+        self._ws = await self._session.ws_connect(url=self._ws_url, **self._ws_kwargs)
+        await self.post_reconnection()
+        self._log.debug("WebSocket reconnected.")
+
+    async def post_connection(self) -> None:
         """
         Actions to be performed post connection.
 
         This method is called before start(), override to implement additional
         connection related behaviour (sending other messages etc.).
+        """
+        pass
+
+    async def post_reconnection(self) -> None:
+        """
+        Actions to be performed post reconnection.
+
+        Override to implement additional
+        reconnection related behaviour (resubscribing etc.).
         """
         pass
 
@@ -172,12 +183,11 @@ cdef class WebSocketClient:
             await self._reconnect_backoff()
             self.connection_retry_count += 1
             self._log.debug(
-                f"Attempting reconnect "
-                f"(attempt: {self.connection_retry_count}) after exception.",
+                f"Attempting reconnect (attempt: {self.connection_retry_count}).",
             )
-            self._ws = await self._session.ws_connect(url=self._ws_url, **self._ws_kwargs)
+            await self.reconnect()
 
-    async def _reconnect_backoff(self):
+    async def _reconnect_backoff(self) -> None:
         cdef int backoff = 2 ** self.connection_retry_count
         self._log.debug(
             f"Exponential backoff attempt "
