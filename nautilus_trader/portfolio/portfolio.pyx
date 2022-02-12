@@ -128,18 +128,21 @@ cdef class Portfolio(PortfolioFacade):
         """
         Initialize the portfolios orders.
 
-        Performs all account calculations for the current order state.
+        Performs all account calculations for the current orders state.
         """
         cdef list all_orders_open = self._cache.orders_open()
 
         cdef set instruments = set()
+        cdef Order order
         for order in all_orders_open:
             instruments.add(order.instrument_id)
 
         # Update initial (order) margins to initialize portfolio
-        initialized = True
+        cdef bint initialized = True
         cdef:
             Order o
+            list orders_open
+            AccountState result
         for instrument_id in instruments:
             instrument = self._cache.instrument(instrument_id)
             if instrument is None:
@@ -193,11 +196,19 @@ cdef class Portfolio(PortfolioFacade):
         cdef list all_positions_open = self._cache.positions_open()
 
         cdef set instruments = set()
+        cdef Position position
         for position in all_positions_open:
             instruments.add(position.instrument_id)
 
+        cdef bint initialized = True
+
         # Update maintenance (position) margins to initialize portfolio
-        initialized = True
+        cdef:
+            InstrumentId instrument_id
+            Instrument instrument
+            list positions_open
+            Account account
+            AccountState result
         for instrument_id in instruments:
             positions_open = self._cache.positions_open(
                 venue=None,  # Faster query filtering
