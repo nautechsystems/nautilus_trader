@@ -210,7 +210,7 @@ class BinanceSpotExecutionClient(LiveExecutionClient):
             ts_event=response["updateTime"],
         )
 
-    async def _ping_listen_keys(self):
+    async def _ping_listen_keys(self) -> None:
         while True:
             self._log.debug(
                 f"Scheduled `ping_listen_keys` to run in " f"{self._ping_listen_keys_interval}s."
@@ -422,7 +422,7 @@ class BinanceSpotExecutionClient(LiveExecutionClient):
                 ts_event=self._clock.timestamp_ns(),  # TODO(cs): Parse from response
             )
 
-    async def _submit_market_order(self, order: MarketOrder):
+    async def _submit_market_order(self, order: MarketOrder) -> None:
         await self._account_spot.new_order(
             symbol=order.instrument_id.symbol.value,
             side=OrderSideParser.to_str_py(order.side),
@@ -432,7 +432,7 @@ class BinanceSpotExecutionClient(LiveExecutionClient):
             recv_window=5000,
         )
 
-    async def _submit_limit_order(self, order: LimitOrder):
+    async def _submit_limit_order(self, order: LimitOrder) -> None:
         if order.is_post_only:
             time_in_force = None
         else:
@@ -450,7 +450,7 @@ class BinanceSpotExecutionClient(LiveExecutionClient):
             recv_window=5000,
         )
 
-    async def _submit_stop_limit_order(self, order: StopLimitOrder):
+    async def _submit_stop_limit_order(self, order: StopLimitOrder) -> None:
         # Get current market price
         response: Dict[str, Any] = await self._market_spot.ticker_price(
             order.instrument_id.symbol.value
