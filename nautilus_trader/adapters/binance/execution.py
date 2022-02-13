@@ -544,7 +544,7 @@ class BinanceSpotExecutionClient(LiveExecutionClient):
             msg_type: str = data.get("e")
             if msg_type == "outboundAccountPosition":
                 self._handle_account_position(data)
-            elif msg_type == "TradeReport":
+            elif msg_type == "executionReport":
                 self._handle_execution_report(data)
         except Exception as ex:
             self._log.exception(ex)
