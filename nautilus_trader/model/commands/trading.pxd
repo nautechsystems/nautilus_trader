@@ -68,7 +68,7 @@ cdef class ModifyOrder(TradingCommand):
     """The updated quantity for the command.\n\n:returns: `Quantity` or ``None``"""
     cdef readonly Price price
     """The updated price for the command.\n\n:returns: `Price` or ``None``"""
-    cdef readonly Price trigger
+    cdef readonly Price trigger_price
     """The updated trigger price for the command.\n\n:returns: `Price` or ``None``"""
 
     @staticmethod

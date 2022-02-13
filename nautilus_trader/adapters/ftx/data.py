@@ -109,7 +109,8 @@ class FTXDataClient(LiveMarketDataClient):
             loop=loop,
             clock=clock,
             logger=logger,
-            handler=self._handle_ws_message,
+            msg_handler=self._handle_ws_message,
+            reconnect_handler=self._handle_ws_reconnect,
             key=client.api_key,
             secret=client.api_secret,
             us=us,
@@ -524,6 +525,10 @@ class FTXDataClient(LiveMarketDataClient):
             instrument_id = InstrumentId(Symbol(symbol), FTX_VENUE)
             self._instrument_ids[symbol] = instrument_id
         return instrument_id
+
+    def _handle_ws_reconnect(self):
+        # TODO(cs): Request order book snapshot?
+        pass
 
     def _handle_ws_message(self, raw: bytes):
         msg: Dict[str, Any] = orjson.loads(raw)

@@ -20,8 +20,8 @@ from nautilus_trader.adapters.binance.factories import BinanceLiveDataClientFact
 from nautilus_trader.adapters.binance.factories import BinanceLiveExecutionClientFactory
 from nautilus_trader.examples.strategies.ema_cross import EMACross
 from nautilus_trader.examples.strategies.ema_cross import EMACrossConfig
+from nautilus_trader.live.config import TradingNodeConfig
 from nautilus_trader.live.node import TradingNode
-from nautilus_trader.live.node import TradingNodeConfig
 
 
 # *** THIS IS A TEST STRATEGY WITH NO ALPHA ADVANTAGE WHATSOEVER. ***
@@ -34,7 +34,7 @@ from nautilus_trader.live.node import TradingNodeConfig
 config_node = TradingNodeConfig(
     trader_id="TESTER-001",
     log_level="INFO",
-    # cache_database=CacheDatabaseConfig(),  # Do not run with a Redis cache at the moment
+    # cache_database=CacheDatabaseConfig(),
     data_clients={
         "BINANCE": {
             # "api_key": "YOUR_BINANCE_API_KEY",

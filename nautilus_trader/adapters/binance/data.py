@@ -126,21 +126,21 @@ class BinanceDataClient(LiveMarketDataClient):
         if us:
             self._log.info("Set Binance US.", LogColor.BLUE)
 
-    def connect(self):
+    def connect(self) -> None:
         """
         Connect the client to Binance.
         """
         self._log.info("Connecting...")
         self._loop.create_task(self._connect())
 
-    def disconnect(self):
+    def disconnect(self) -> None:
         """
         Disconnect the client from Binance.
         """
         self._log.info("Disconnecting...")
         self._loop.create_task(self._disconnect())
 
-    async def _connect(self):
+    async def _connect(self) -> None:
         # Connect HTTP client
         if not self._client.connected:
             await self._client.connect()
@@ -159,13 +159,13 @@ class BinanceDataClient(LiveMarketDataClient):
         self._set_connected(True)
         self._log.info("Connected.")
 
-    async def _connect_websockets(self):
+    async def _connect_websockets(self) -> None:
         self._log.info("Awaiting subscriptions...")
         await asyncio.sleep(2)
         if self._ws_spot.has_subscriptions:
             await self._ws_spot.connect()
 
-    async def _update_instruments(self):
+    async def _update_instruments(self) -> None:
         while True:
             self._log.debug(
                 f"Scheduled `update_instruments` to run in "
@@ -175,7 +175,7 @@ class BinanceDataClient(LiveMarketDataClient):
             await self._instrument_provider.load_all_async()
             self._send_all_instruments_to_data_engine()
 
-    async def _disconnect(self):
+    async def _disconnect(self) -> None:
         # Cancel tasks
         if self._update_instruments_task:
             self._log.debug("Canceling `update_instruments` task...")
@@ -253,7 +253,7 @@ class BinanceDataClient(LiveMarketDataClient):
         instrument_id: InstrumentId,
         book_type: BookType,
         depth: Optional[int] = None,
-    ):
+    ) -> None:
         if book_type == BookType.L3_MBO:
             self._log.error(
                 "Cannot subscribe to order book deltas: "
@@ -455,7 +455,7 @@ class BinanceDataClient(LiveMarketDataClient):
         instrument_id: InstrumentId,
         limit: int,
         correlation_id: UUID4,
-    ):
+    ) -> None:
         response: List[Dict[str, Any]] = await self._spot.trades(instrument_id.symbol.value, limit)
 
         ticks: List[TradeTick] = [
@@ -520,7 +520,7 @@ class BinanceDataClient(LiveMarketDataClient):
         to_datetime: pd.Timestamp,
         limit: int,
         correlation_id: UUID4,
-    ):
+    ) -> None:
         if limit == 0 or limit > 1000:
             limit = 1000
 

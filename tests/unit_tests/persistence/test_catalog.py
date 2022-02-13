@@ -27,6 +27,7 @@ from nautilus_trader.model.data.base import GenericData
 from nautilus_trader.model.data.tick import QuoteTick
 from nautilus_trader.model.data.tick import TradeTick
 from nautilus_trader.model.enums import AggressorSide
+from nautilus_trader.model.identifiers import TradeId
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.instruments.betting import BettingInstrument
 from nautilus_trader.model.objects import Price
@@ -120,7 +121,7 @@ class TestPersistenceCatalog:
             price=Price.from_str("2.0"),
             size=Quantity.from_int(10),
             aggressor_side=AggressorSide.UNKNOWN,
-            trade_id="1",
+            trade_id=TradeId("1"),
             ts_event=0,
             ts_init=0,
         )
@@ -243,6 +244,20 @@ class TestPersistenceCatalog:
         # Assert
         bars = self.catalog.bars()
         assert len(bars) == 21
+
+    def test_catalog_bar_query_instrument_id(self):
+        # Arrange
+        bar = TestStubs.bar_5decimal()
+        write_objects(catalog=self.catalog, chunk=[bar])
+
+        # Act
+        objs = self.catalog.bars(instrument_ids=[TestStubs.audusd_id().value], as_nautilus=True)
+        data = self.catalog.bars(instrument_ids=[TestStubs.audusd_id().value])
+
+        # Assert
+        assert len(objs) == 1
+        assert data.shape[0] == 1
+        assert "instrument_id" in data.columns
 
     def test_catalog_projections(self):
         projections = {"tid": ds.field("trade_id")}

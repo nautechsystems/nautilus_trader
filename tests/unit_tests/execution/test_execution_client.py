@@ -22,6 +22,7 @@ from nautilus_trader.execution.client import ExecutionClient
 from nautilus_trader.execution.engine import ExecutionEngine
 from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.enums import AccountType
+from nautilus_trader.model.enums import OMSType
 from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import StrategyId
 from nautilus_trader.model.identifiers import TraderId
@@ -70,6 +71,7 @@ class TestExecutionClient:
 
         self.client = ExecutionClient(
             client_id=ClientId(self.venue.value),
+            oms_type=OMSType.HEDGING,
             account_type=AccountType.MARGIN,
             base_currency=USD,
             msgbus=self.msgbus,
@@ -91,6 +93,7 @@ class TestExecutionClient:
         # Arrange
         client = ExecutionClient(
             client_id=ClientId("IB"),
+            oms_type=OMSType.HEDGING,
             account_type=AccountType.MARGIN,
             base_currency=USD,
             msgbus=self.msgbus,

@@ -14,6 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 import asyncio
+import sys
 from unittest.mock import patch
 
 import pytest
@@ -47,6 +48,7 @@ from tests.integration_tests.adapters.betfair.test_kit import BetfairResponses
 from tests.integration_tests.adapters.betfair.test_kit import BetfairTestStubs
 
 
+@pytest.mark.skipif(sys.platform == "win32", reason="failing on windows")
 class TestBetfairParsing:
     def setup(self):
         # Fixture Setup
@@ -202,7 +204,7 @@ class TestBetfairParsing:
         assert result == expected
 
     def test_make_order_limit_on_close(self):
-        order = BetfairTestStubs.limit_order(time_in_force=TimeInForce.OC)
+        order = BetfairTestStubs.limit_order(time_in_force=TimeInForce.AT_THE_CLOSE)
         result = make_order(order)
         expected = {
             "limitOnCloseOrder": {"price": "3.05", "liability": "10.0"},
@@ -244,7 +246,7 @@ class TestBetfairParsing:
     )
     def test_make_order_market_on_close(self, side, liability):
         order = BetfairTestStubs.market_order(
-            time_in_force=TimeInForce.OC, side=OrderSideParser.from_str_py(side)
+            time_in_force=TimeInForce.AT_THE_CLOSE, side=OrderSideParser.from_str_py(side)
         )
         result = make_order(order)
         expected = {

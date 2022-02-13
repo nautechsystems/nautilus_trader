@@ -16,7 +16,6 @@
 #  Original author: Jeremy https://github.com/2pd
 # -------------------------------------------------------------------------------------------------
 
-
 import asyncio
 from typing import Callable
 

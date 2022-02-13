@@ -28,6 +28,8 @@ from nautilus_trader.model.events.order cimport OrderEvent
 from nautilus_trader.model.events.order cimport OrderFilled
 from nautilus_trader.model.identifiers cimport StrategyId
 from nautilus_trader.model.identifiers cimport Venue
+from nautilus_trader.model.instruments.base cimport Instrument
+from nautilus_trader.model.orders.base cimport Order
 from nautilus_trader.model.position cimport Position
 from nautilus_trader.trading.strategy cimport TradingStrategy
 
@@ -38,12 +40,16 @@ cdef class ExecutionEngine(Component):
     cdef PositionIdGenerator _pos_id_generator
     cdef dict _clients
     cdef dict _routing_map
-    cdef dict _oms_types
+    cdef dict _oms_overrides
 
+    cdef readonly bint allow_cash_positions
+    """If unleveraged spot cash assets should track positions.\n\n:returns: `bool`"""
     cdef readonly int command_count
     """The total count of commands received by the engine.\n\n:returns: `int`"""
     cdef readonly int event_count
     """The total count of events received by the engine.\n\n:returns: `int`"""
+    cdef readonly int report_count
+    """The total count of reports received by the engine.\n\n:returns: `int`"""
 
     cpdef int position_id_count(self, StrategyId strategy_id) except *
     cpdef bint check_integrity(self) except *
@@ -87,9 +93,10 @@ cdef class ExecutionEngine(Component):
 # -- EVENT HANDLERS --------------------------------------------------------------------------------
 
     cdef void _handle_event(self, OrderEvent event) except *
-    cdef OMSType _confirm_oms_type(self, Venue venue, StrategyId strategy_id) except *
-    cdef void _confirm_position_id(self, OrderFilled fill, OMSType oms_type) except *
+    cdef void _apply_event_to_order(self, Order order, OrderEvent event) except *
+    cdef OMSType _determine_oms_type(self, OrderFilled fill) except *
+    cdef void _determine_position_id(self, OrderFilled fill, OMSType oms_type) except *
     cdef void _handle_order_fill(self, OrderFilled fill, OMSType oms_type) except *
-    cdef void _open_position(self, OrderFilled fill, OMSType oms_type) except *
+    cdef void _open_position(self,  Instrument instrument, OrderFilled fill, OMSType oms_type) except *
     cdef void _update_position(self, Position position, OrderFilled fill, OMSType oms_type) except *
     cdef void _flip_position(self, Position position, OrderFilled fill, OMSType oms_type) except *

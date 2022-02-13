@@ -1,3 +1,48 @@
+# NautilusTrader 1.138.0 Beta
+
+## Release Notes
+
+Released on 15th February 2022 (UTC).
+
+**This release contains numerous method, parameter and property name changes**
+
+For consistency and standardization with other protocols, the `ExecutionId` type 
+has been renamed to `TradeId` as they express the same concept with a more 
+standardized terminology. In the interests of enforcing correctness and 
+safety this type is now utilized for the `TradeTick.trade_id`.
+
+### Breaking Changes
+- Renamed `working` orders to `open` orders including all associated methods and params.
+- Renamed `completed` orders to `closed` orders including all associated methods and params.
+- Removed `active` order concept (often confused with `open`).
+- Renamed `trigger` to `trigger_price`.
+- Renamed `StopMarketOrder.price` to `StopMarketOrder.trigger_price`.
+- Renamed all params related to a `StopMarketOrders` `price` to `trigger_price`.
+- Renamed `ExecutionId` to `TradeId`.
+- Renamed `execution_id` to `trade_id`.
+- Renamed `Order.trade_id` to `Order.last_trade_id` (for clarity).
+- Renamed other variations and references of 'execution ID' to 'trade ID'.
+- Renamed `contigency` to `contingency_type`.
+
+### Enhancements
+- Introduced the `TradeId` type to enforce `trade_id` typing.
+- Improve handling of unleveraged cash asset positions including Crypto and Fiat spot currency instruments.
+- Added `ExecEngineConfig` option `allow_cash_positions` (`False` by default).
+- Added `TrailingOffsetType` enum.
+- Added `TrailingStopMarketOrder`.
+- Added `TrailingStopLimitOrder`.
+- Added trailing order factory methods.
+- Added `trigger_type` param to stop orders.
+- Added `TriggerType` enum.
+- Large refactoring of order base and impl classes.
+- Overhaul of execution reports.
+- Overhaul of execution state reconciliation.
+
+### Fixes
+- Fixed WebSocket base reconnect handling.
+
+---
+
 # NautilusTrader 1.137.1 Beta
 
 ## Release Notes
@@ -807,7 +852,7 @@ None
 
 ### Fixes
 - `OrderBook.create` for `BookLevel.L3` now returns correct book.
-- Betfair handling of execution IDs.
+- Betfair handling of trade IDs.
 
 ---
 

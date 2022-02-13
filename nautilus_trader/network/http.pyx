@@ -17,7 +17,7 @@ import asyncio
 import socket
 import urllib.parse
 from ssl import SSLContext
-from typing import Dict, List, Optional, Union
+from typing import Any, Dict, List, Optional, Union
 
 import aiohttp
 import cython
@@ -45,7 +45,7 @@ cdef class HttpClient:
         The logger for the client.
     ttl_dns_cache : int
         The time to live for the DNS cache.
-    ssl: Union[None, bool, Fingerprint, SSLContext], default=False
+    ssl: Union[None, bool, Fingerprint, SSLContext], default False
         The ssl context to use for HTTPS.
     connector_kwargs : dict, optional
         The connector key word arguments.
@@ -138,7 +138,7 @@ cdef class HttpClient:
         method: str,
         url: str,
         headers: Optional[Dict[str, str]]=None,
-        json: Optional[Dict[str, str]]=None,
+        json: Optional[Dict[str, Any]]=None,
         **kwargs,
     ) -> ClientResponse:
         session: ClientSession = self._get_session()

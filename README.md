@@ -1,4 +1,4 @@
-# <img src="https://github.com/nautechsystems/nautilus_trader/blob/develop/docs/artwork/nautilus-trader-logo.png" width="500">
+# <img src="https://github.com/nautechsystems/nautilus_trader/blob/develop/docs/_images/nautilus-trader-logo.png" width="500">
 
 [![codacy-quality](https://api.codacy.com/project/badge/Grade/a1d3ccf7bccb4483b091975681a5cb23)](https://app.codacy.com/gh/nautechsystems/nautilus_trader?utm_source=github.com&utm_medium=referral&utm_content=nautechsystems/nautilus_trader&utm_campaign=Badge_Grade_Dashboard)
 [![codecov](https://codecov.io/gh/nautechsystems/nautilus_trader/branch/master/graph/badge.svg?token=DXO9QQI40H)](https://codecov.io/gh/nautechsystems/nautilus_trader)
@@ -6,7 +6,7 @@
 ![pypi-version](https://img.shields.io/pypi/v/nautilus_trader)
 ![pypi-format](https://img.shields.io/pypi/format/nautilus_trader?color=blue)
 [![Downloads](https://pepy.tech/badge/nautilus-trader)](https://pepy.tech/project/nautilus-trader)
-[![code-style: black](https://img.shields.io/badge/code%20style-black-000000.svg)](https://github.com/psf/black)
+[![discord](https://img.shields.io/discord/924497682343550976?color=768AD4&label=discord)](https://discord.gg/AUWVs3XaCS)
 
 | Branch    | Version | Status |
 |:----------|:--------|:-------|
@@ -22,9 +22,6 @@
 - **Website:** https://nautilustrader.io
 - **Docs:** https://docs.nautilustrader.io
 - **Support:** [support@nautilustrader.io](mailto:support@nautilustrader.io)
-
-## Community
-[![discord](https://img.shields.io/discord/924497682343550976?label=discord)](https://discord.com/channels/924497682343550976/924497682343550979)
 
 ## Introduction
 
@@ -58,7 +55,7 @@ including FX, Equities, Futures, Options, CFDs, Crypto and Betting - across mult
 - **AI Agent Training:** Backtest engine fast enough to be used to train AI trading agents (RL/ES).
 - **Distributed:** Run backtests synchronously or as a graph distributed across a `dask` cluster.
 
-![Alt text](https://github.com/nautechsystems/nautilus_trader/blob/develop/docs/artwork/nautilus-art.png?raw=true "nautilus")
+![Alt text](https://github.com/nautechsystems/nautilus_trader/blob/develop/docs/_images/nautilus-art.png?raw=true "nautilus")
 > *nautilus - from ancient Greek 'sailor' and naus 'ship'.*
 >
 > *The nautilus shell consists of modular chambers with a growth factor which approximates a logarithmic spiral.
@@ -90,9 +87,9 @@ developer/user communities.
 
 ## What is Cython?
 
-[Cython](https://cython.org) is a compiled programming language that aims to be a superset of the Python programming
-language, designed to give C-like performance with code that is written mostly in Python with
-optional additional C-inspired syntax.
+[Cython](https://cython.org) is a compiled programming language which aims to be a superset of the Python programming
+language, designed to give C-like performance with code that is written in Python - with
+optional C-inspired syntax.
 
 The project heavily utilizes Cython to provide static type safety and increased performance
 for Python through [C extension modules](https://docs.python.org/3/extending/extending.html). The vast majority of the production code is actually
@@ -100,7 +97,7 @@ written in Cython, however the libraries can be accessed from both pure Python a
 
 ## Architecture (data flow)
 
-![Architecture](https://github.com/nautechsystems/nautilus_trader/blob/develop/docs/artwork/architecture-overview.png?raw=true "architecture")
+![Architecture](https://github.com/nautechsystems/nautilus_trader/blob/develop/docs/_images/architecture-overview.png?raw=true "architecture")
 
 ## Quality Attributes
 
@@ -117,16 +114,16 @@ NautilusTrader is designed in a modular way to work with 'adapters' which provid
 connectivity to data publishers and/or trading venues - converting their raw API
 into a unified interface. The following integrations are currently supported:
 
-| Name                                                    | ID      | Type                    | Status                                                | Docs |
-|:--------------------------------------------------------|:--------|:------------------------|:------------------------------------------------------|:-----|
-[Betfair](https://betfair.com)                            | BETFAIR | Sports Betting Exchange | ![status](https://img.shields.io/badge/beta-yellow)   | [Guide](https://docs.nautilustrader.io/4_integrations/betfair.html) |
-[Binance](https://binance.com)                            | BINANCE | Crypto Exchange         | ![status](https://img.shields.io/badge/beta-yellow)   | [Guide](https://docs.nautilustrader.io/4_integrations/binance.html) |
-[Binance US](https://binance.us)                          | BINANCE | Crypto Exchange         | ![status](https://img.shields.io/badge/beta-yellow)   | [Guide](https://docs.nautilustrader.io/4_integrations/binance.html) |
-[FTX](https://ftx.com)                                    | FTX     | Crypto Exchange         | ![status](https://img.shields.io/badge/beta-yellow)   | [Guide](https://docs.nautilustrader.io/4_integrations/ftx.html) |
-[FTX US](https://ftx.us)                                  | FTX     | Crypto Exchange         | ![status](https://img.shields.io/badge/beta-yellow)   | [Guide](https://docs.nautilustrader.io/4_integrations/ftx.html) |
-[Interactive Brokers](https://www.interactivebrokers.com) | IB      | Brokerage (multi-venue) | ![status](https://img.shields.io/badge/planning-gray) | [Guide](https://docs.nautilustrader.io/4_integrations/ib.html) |
+| Name                                                    | ID      | Type                    | Status                                                | Docs                                                              |
+|:--------------------------------------------------------|:--------|:------------------------|:------------------------------------------------------|:------------------------------------------------------------------|
+[Betfair](https://betfair.com)                            | BETFAIR | Sports Betting Exchange | ![status](https://img.shields.io/badge/beta-yellow)   | [Guide](https://docs.nautilustrader.io/integrations/betfair.html) |
+[Binance](https://binance.com)                            | BINANCE | Crypto Exchange         | ![status](https://img.shields.io/badge/beta-yellow)   | [Guide](https://docs.nautilustrader.io/integrations/binance.html) |
+[Binance US](https://binance.us)                          | BINANCE | Crypto Exchange         | ![status](https://img.shields.io/badge/beta-yellow)   | [Guide](https://docs.nautilustrader.io/integrations/binance.html) |
+[FTX](https://ftx.com)                                    | FTX     | Crypto Exchange         | ![status](https://img.shields.io/badge/beta-yellow)   | [Guide](https://docs.nautilustrader.io/integrations/ftx.html)     |
+[FTX US](https://ftx.us)                                  | FTX     | Crypto Exchange         | ![status](https://img.shields.io/badge/beta-yellow)   | [Guide](https://docs.nautilustrader.io/integrations/ftx.html)     |
+[Interactive Brokers](https://www.interactivebrokers.com) | IB      | Brokerage (multi-venue) | ![status](https://img.shields.io/badge/planning-gray) | [Guide](https://docs.nautilustrader.io/integrations/ib.html)      |
 
-Refer to the [Integrations](https://docs.nautilustrader.io/4_integrations/0_index.html) documentation for further details.
+Refer to the [Integrations](https://docs.nautilustrader.io/integrations/index.html) documentation for further details.
 
 ## Installation
 
@@ -140,6 +137,29 @@ To install on ARM architectures such as MacBook Pro M1 / Apple Silicon, this sta
 https://stackoverflow.com/questions/65745683/how-to-install-scipy-on-apple-silicon-arm-m1
 
 Refer to the [Installation Guide](https://docs.nautilustrader.io/1_getting_started/1_installation.html) for other options and further details.
+
+## Versioning and releases
+
+NautilusTrader is currently following a bi-weekly beta release schedule.
+The API is becoming more stable, however breaking changes are still possible between releases.
+Documentation of these changes in the release notes are made on a best-effort basis.
+
+The `master` branch will always reflect the source code for the latest released version.
+
+The `develop` branch is normally very active with frequent commits, we aim to maintain a stable 
+passing build on this branch.
+
+The current roadmap has a goal of achieving a stable API for a `2.x` version. From this
+point we will follow a more formal process for releases, with deprecation periods for any API changes.
+
+## Makefile
+
+A `Makefile` is provided to automate most installation and build tasks. It provides the following targets:
+- `make install` -- Installs the package using poetry.
+- `make build` -- Runs the Cython build script.
+- `make clean` -- Cleans all none source artifacts from the repository.
+- `make docs` -- Builds the documentation HTML using Sphinx.
+- `make pre-commit` -- Runs the pre-commit checks over all files.
 
 ## Examples
 
@@ -157,7 +177,7 @@ You can access a complete running backtest example through Binder here!
 *Please note that currently Binder needs to build the platform from scratch which
 can take a significant amount of time. We are working to optimize this.*
 
-[![Binder](https://mybinder.org/badge_logo.svg)](https://mybinder.org/v2/gh/nautechsystems/nautilus_trader/develop?filepath=docs/1_getting_started/2_quick_start.ipynb)
+[![Binder](https://mybinder.org/badge_logo.svg)](https://mybinder.org/v2/gh/nautechsystems/nautilus_trader/develop?filepath=docs/getting_started/quick_start.ipynb)
 
 ## Minimal Strategy
 
@@ -215,7 +235,6 @@ class EMACross(TradingStrategy):
             elif self.portfolio.is_net_short(self.instrument_id):
                 self.flatten_all_positions(self.instrument_id)
                 self.buy()
-
         # SELL LOGIC
         elif self.fast_ema.value < self.slow_ema.value:
             if self.portfolio.is_flat(self.instrument_id):
@@ -261,34 +280,23 @@ class EMACross(TradingStrategy):
 
 ```
 
-## Release schedule
-
-NautilusTrader is currently following a bi-weekly release schedule.
-
 ## Development
 
-We aim to make the developer experience for this hybrid codebase of Cython and Python
-as pleasant as possible.
-Please refer to the [Developer Guide](https://docs.nautilustrader.io/5_developer_guide/0_index.html) for helpful information.
-
-## Makefile
-
-A `Makefile` is provided to automate most installation and build tasks. It provides the following targets:
-- `make install` -- Installs the package using poetry.
-- `make build` -- Runs the Cython build script.
-- `make clean` -- Cleans all none source artifacts from the repository.
-- `make docs` -- Builds the internal documentation HTML using Sphinx.
-- `make pre-commit` -- Runs the pre-commit checks over all files.
+We aim to provide the most pleasant developer experience possible for this hybrid codebase of Python, Cython and Rust.
+Please refer to the [Developer Guide](https://docs.nautilustrader.io/developer_guide/index.html) for helpful information.
 
 ## Contributing
 
-Involvement from the trading community is a goal for this project. All help is welcome!
-Developers can open issues on GitHub to discuss proposed enhancements/changes, or
-to make bug reports.
+Involvement from the trading community is a goal for this project, all help is welcome!
+Developers can open [issues](https://github.com/nautechsystems/nautilus_trader/issues) on GitHub to discuss proposed enhancements, changes, or
+to make bug reports. Questions and more general thoughts are best directed to a [discussions](https://github.com/nautechsystems/nautilus_trader/discussions) thread.
 
 Refer to the [CONTRIBUTING.md](https://github.com/nautechsystems/nautilus_trader/blob/master/CONTRIBUTING.md) for further information.
 
 Please make all pull requests to the `develop` branch.
+
+## Community
+We maintain a [Discord](https://discord.gg/AUWVs3XaCS) server where contributors and active users of NautilusTrader can interact!
 
 ## License
 
@@ -301,4 +309,4 @@ Contributors are also required to sign a standard Contributor License Agreement 
 Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
 https://nautechsystems.io
 
-![nautechsystems](https://github.com/nautechsystems/nautilus_trader/blob/develop/docs/artwork/ns-logo.png?raw=true "nautechsystems") ![cython](https://github.com/nautechsystems/nautilus_trader/blob/develop/docs/artwork/cython-logo.png?raw=true "cython")
+![nautechsystems](https://github.com/nautechsystems/nautilus_trader/blob/develop/docs/_images/ns-logo.png?raw=true "nautechsystems") ![cython](https://github.com/nautechsystems/nautilus_trader/blob/develop/docs/_images/cython-logo.png?raw=true "cython")

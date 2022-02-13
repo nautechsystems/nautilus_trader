@@ -1,37 +1,188 @@
-@import url('https://fonts.googleapis.com/css2?family=Lato:ital,wght@0,400;0,700;0,900;1,400;1,700;1,900&family=Open+Sans:ital,wght@0,400;0,600;1,400;1,600&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Open+Sans:wght@300;400;500;600;700;800&family=Playfair+Display:wght@400;500;600;700;800;900&display=swap');
 
 :root {
     /* Use softer blue from bootstrap's default info color */
     --pst-color-info: 23, 162, 184;
 }
-
+html, body {
+    background-color: #1d2228;
+}
+body, input {
+    color: #fff;
+    font-family: 'Open Sans', sans-serif;
+}
+h1, h2, h3, h4, h5, h6 {
+    font-family: 'Open Sans', sans-serif;
+}
 .header-logo img {
     width: auto;
 }
-
 .body {
     width: auto;
     font-family: 'Open Sans', sans-serif;
     color:#4A4A4A; /* numpy.org body color */
 }
-
 pre, code {
     font-size: 100%;
     line-height: 155%;
 }
+h1, h2, h3 {
+    color: #d2d7f99e !important;
+    font-weight: 500 !important;
+}
+.md-header-nav__button.md-logo * {
+    display: block;
+    width: 230px;
+    height: auto;
+}
+.md-header, .md-hero {
+    background-color: rgb(40, 47, 56) !important;
+}
+.md-header {
+    height: 2.8rem;
+}
+.md-tabs__list {
+    margin: 0 0 0px 13rem;
+}
+.md-tabs__link {
+    font-size: .7rem;
+    opacity: 0.8;
+}
+.md-typeset a {
+    color: #00bdd6 !important;
+}
+.md-typeset {  /* main body font */
+    font-size: .78rem;
+    line-height: 1.5;
+}
+.md-typeset h1 {
+    margin: 0 0 1rem !important;
+    color: #d2d7f99e !important;
+}
+.md-footer-copyright {
+    color: hsla(0,0%,100%,.3);
+    font-size: .67rem;
+}
+.md-footer-meta {
+    background-color: #16171d !important;
+    text-align: center;
+}
+.md-hero__inner {
+    margin-top: 0;
+    padding: 0 0.7rem 0.4rem;
+}
+.md-header-nav__button {
+    margin-left: 0;
+    padding-left: 0;
+    margin-top: 0;
+}
+.md-tabs {
+    box-shadow: 0 0 0.2rem rgb(0 0 0 / 10%), 0 0.2rem 0.4rem rgb(0 0 0 / 20%);
+    transition: transform .25s cubic-bezier(.1,.7,.1,1),box-shadow .25s;
+}
+.md-typeset code {
+    background-color: transparent;
+    color: #00bdd6;
+    display: inline-block;
+}
+.md-nav__link[data-md-state=blur] {
+    color: #00bdd6;
+}
+.md-footer-nav {
+    background-color: #181c21;
+}
+.toctree-wrapper.compound {
+    display: none;
+}
+.md-nav {
+    font-size: .7rem;
+}
+.md-nav__link--active, .md-nav__link:active, .md-nav__link:focus, .md-nav__link:hover {
+    color: #00bdd6;
+}
+.md-typeset .admonition, .md-typeset details {
+    font-size: 0.66rem;
+}
+.md-typeset blockquote {
+    border-left: 0.2rem solid #d2d7f952;
+}
+.md-typeset blockquote {
+    color: #d2d7f99e;
+    margin-left: 0;
+    margin-right: 0;
+}
+.md-header-nav__topic {
+    display: none;
+    width: 0 !important;
+}
+.md-typeset table:not([class]) th {
+background-color: rgba(0,0,0,.54);
+}
+.md-typeset pre {
+    color: #D3D3D3;
+}
 
-h1 {
-    font-family: "Lato", sans-serif;
-    color: #013243; /* warm black */
+@media only screen and (min-width: 60em) {
+    .md-search__inner {
+        padding: 0.34rem 0;
+    }
+}
+@media only screen and (max-width: 76.1875em) {
+    .md-nav {
+        background-color: transparent;
+    }
+    html .md-nav--primary .md-nav__title--site {
+        background-color: #282f38 !important;
+    }
+    html .md-nav--primary .md-nav__title--site .md-nav__button {
+        display: block;
+        left: 0;
+        width: 100%;
+        margin-left: 0;
+        padding-left: 0;
+    }
+    html .md-nav--primary .md-nav__title~.md-nav__list {
+        background-color: rgb(32 38 46 / 94%) !important;
+    }
+    .md-nav--primary .md-nav__item {  /* menus font */
+        font-size: 0.7rem;
+    }
+    .md-nav__list ul.md-nav__list {
+        padding-left: 24px;
+    }
+    .md-nav__list ul.md-nav__list .md-nav__item {
+        font-size: 0.65rem;
+    }
+    html .md-nav--primary .md-nav__title {
+        height: 4rem;
+    }
+
 }
 
 
-h2 {
-    color: #013243; /* warm black */
-    letter-spacing: -.03em;
+@media only screen and (min-width: 76.25em) {
+    .md-tabs {
+        background-color: rgb(32 38 46 / 94%) !important;
+    }
 }
 
-h3 {
-    color: #013243; /* warm black */
-    letter-spacing: -.03em;
+@media only screen and (max-width: 59.9375em) {
+    html .md-nav__link[for=__toc]~.md-nav {
+        display: none;
+    }
+    html .md-nav__link[for=__toc]:after {
+        content: none;
+    }
+    .md-nav__source {
+        background-color: #1d2228;
+        box-shadow: 0 0 0.2rem rgb(0 0 0 / 10%), 0 0.2rem 0.4rem rgb(0 0 0 / 20%);
+    }
+}
+
+@media only screen and (min-width: 45em) {
+    .md-footer-copyright {
+        max-width: 100%;
+        float: none;
+    }
+
 }

@@ -23,6 +23,7 @@ from nautilus_trader.common.logging import LogLevel
 from nautilus_trader.common.uuid import UUIDFactory
 from nautilus_trader.data.engine import DataEngine
 from nautilus_trader.execution.engine import ExecutionEngine
+from nautilus_trader.live.config import ExecEngineConfig
 from nautilus_trader.model.commands.trading import CancelOrder
 from nautilus_trader.model.commands.trading import ModifyOrder
 from nautilus_trader.model.commands.trading import SubmitOrder
@@ -48,8 +49,8 @@ from nautilus_trader.model.position import Position
 from nautilus_trader.msgbus.bus import MessageBus
 from nautilus_trader.portfolio.portfolio import Portfolio
 from nautilus_trader.risk.engine import RiskEngine
+from nautilus_trader.trading.config import TradingStrategyConfig
 from nautilus_trader.trading.strategy import TradingStrategy
-from nautilus_trader.trading.strategy import TradingStrategyConfig
 from tests.test_kit.mocks import MockCacheDatabase
 from tests.test_kit.mocks import MockExecutionClient
 from tests.test_kit.stubs import TestStubs
@@ -113,11 +114,14 @@ class TestExecutionEngine:
             logger=self.logger,
         )
 
+        config = ExecEngineConfig()
+        config.allow_cash_positions = True  # Retain original behaviour for now
         self.exec_engine = ExecutionEngine(
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
             logger=self.logger,
+            config=config,
         )
 
         self.risk_engine = RiskEngine(
@@ -837,7 +841,7 @@ class TestExecutionEngine:
         assert self.exec_engine.event_count == 1
         assert order.status == OrderStatus.INITIALIZED
 
-    def test_cancel_order_for_already_completed_order_logs_and_does_nothing(self):
+    def test_cancel_order_for_already_closed_order_logs_and_does_nothing(self):
         # Arrange
         self.exec_engine.start()
 
@@ -851,7 +855,7 @@ class TestExecutionEngine:
             logger=self.logger,
         )
 
-        # Push to OrderStatus.FILLED (completed)
+        # Push to OrderStatus.FILLED (closed)
         order = strategy.order_factory.market(
             AUDUSD_SIM.id,
             OrderSide.BUY,
@@ -888,7 +892,7 @@ class TestExecutionEngine:
         # Assert
         assert order.status == OrderStatus.FILLED
 
-    def test_modify_order_for_already_completed_order_logs_and_does_nothing(self):
+    def test_modify_order_for_already_closed_order_logs_and_does_nothing(self):
         # Arrange
         self.exec_engine.start()
 
@@ -902,7 +906,7 @@ class TestExecutionEngine:
             logger=self.logger,
         )
 
-        # Push to OrderStatus.FILLED (completed)
+        # Push to OrderStatus.FILLED (closed)
         order = strategy.order_factory.stop_market(
             AUDUSD_SIM.id,
             OrderSide.BUY,
@@ -931,8 +935,8 @@ class TestExecutionEngine:
             order.client_order_id,
             order.venue_order_id,
             Quantity.from_int(200000),
-            order.price,
             None,
+            order.trigger_price,
             self.uuid_factory.generate(),
             self.clock.timestamp_ns(),
         )
@@ -2003,7 +2007,7 @@ class TestExecutionEngine:
             venue_order_id=new_venue_id,
             quantity=order.quantity,
             price=order.price,
-            trigger=None,
+            trigger_price=None,
             ts_event=self.clock.timestamp_ns(),
             event_id=self.uuid_factory.generate(),
             ts_init=self.clock.timestamp_ns(),

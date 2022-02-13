@@ -194,6 +194,38 @@ class TestPersistenceParsers:
         )
         assert sum(in_.values()) == 21
 
+    def test_csv_reader_dataframe_separator(self):
+        bar_type = TestStubs.bartype_adabtc_binance_1min_last()
+        instrument = TestInstrumentProvider.adabtc_binance()
+        wrangler = BarDataWrangler(bar_type, instrument)
+
+        def parser(data):
+            data["timestamp"] = data["timestamp"].astype("datetime64[ms]")
+            bars = wrangler.process(data.set_index("timestamp"))
+            return bars
+
+        binance_spot_header = [
+            "timestamp",
+            "open",
+            "high",
+            "low",
+            "close",
+            "volume",
+            "ts_close",
+            "quote_volume",
+            "n_trades",
+            "taker_buy_base_volume",
+            "taker_buy_quote_volume",
+            "ignore",
+        ]
+        reader = CSVReader(block_parser=parser, header=binance_spot_header, separator="|")
+        in_ = process_files(
+            glob_path=f"{TEST_DATA_DIR}/ADABTC_pipe_separated-1m-2021-11-*.csv",
+            reader=reader,
+            catalog=self.catalog,
+        )
+        assert sum(in_.values()) == 10
+
     def test_text_reader(self):
         provider = BetfairInstrumentProvider.from_instruments([])
         reader = BetfairTestStubs.betfair_reader(provider)  # type: TextReader

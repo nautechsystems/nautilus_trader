@@ -19,6 +19,11 @@ import pydantic
 class ExecEngineConfig(pydantic.BaseModel):
     """
     Configuration for ``ExecutionEngine`` instances.
+
+    Parameters
+    ----------
+    allow_cash_positions : bool, default False
+        If unleveraged spot cash assets should track positions.
     """
 
-    pass  # No configuration currently
+    allow_cash_positions: bool = False

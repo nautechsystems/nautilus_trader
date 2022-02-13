@@ -61,6 +61,10 @@ from nautilus_trader.model.enums import TimeInForce
 from nautilus_trader.model.enums import TimeInForceParser
 from nautilus_trader.model.enums import TradingState
 from nautilus_trader.model.enums import TradingStateParser
+from nautilus_trader.model.enums import TrailingOffsetType
+from nautilus_trader.model.enums import TrailingOffsetTypeParser
+from nautilus_trader.model.enums import TriggerType
+from nautilus_trader.model.enums import TriggerTypeParser
 from nautilus_trader.model.enums import VenueStatus
 from nautilus_trader.model.enums import VenueStatusParser
 
@@ -621,14 +625,12 @@ class TestOMSType:
     def test_oms_type_parser_given_invalid_value_raises_value_error(self):
         # Arrange, Act, Assert
         with pytest.raises(ValueError):
-            OMSTypeParser.to_str_py(0)
-
-        with pytest.raises(ValueError):
             OMSTypeParser.from_str_py("")
 
     @pytest.mark.parametrize(
         "enum, expected",
         [
+            [OMSType.NONE, "NONE"],
             [OMSType.NETTING, "NETTING"],
             [OMSType.HEDGING, "HEDGING"],
         ],
@@ -643,6 +645,7 @@ class TestOMSType:
     @pytest.mark.parametrize(
         "string, expected",
         [
+            ["NONE", OMSType.NONE],
             ["NETTING", OMSType.NETTING],
             ["HEDGING", OMSType.HEDGING],
         ],
@@ -767,6 +770,8 @@ class TestOrderType:
             [OrderType.LIMIT, "LIMIT"],
             [OrderType.STOP_MARKET, "STOP_MARKET"],
             [OrderType.STOP_LIMIT, "STOP_LIMIT"],
+            [OrderType.TRAILING_STOP_MARKET, "TRAILING_STOP_MARKET"],
+            [OrderType.TRAILING_STOP_LIMIT, "TRAILING_STOP_LIMIT"],
         ],
     )
     def test_order_type_to_str(self, enum, expected):
@@ -783,6 +788,8 @@ class TestOrderType:
             ["LIMIT", OrderType.LIMIT],
             ["STOP_MARKET", OrderType.STOP_MARKET],
             ["STOP_LIMIT", OrderType.STOP_LIMIT],
+            ["TRAILING_STOP_MARKET", OrderType.TRAILING_STOP_MARKET],
+            ["TRAILING_STOP_LIMIT", OrderType.TRAILING_STOP_LIMIT],
         ],
     )
     def test_order_type_from_str(self, string, expected):
@@ -976,13 +983,13 @@ class TestTimeInForce:
     @pytest.mark.parametrize(
         "enum, expected",
         [
-            [TimeInForce.DAY, "DAY"],
             [TimeInForce.GTC, "GTC"],
             [TimeInForce.IOC, "IOC"],
             [TimeInForce.FOK, "FOK"],
-            [TimeInForce.FAK, "FAK"],
             [TimeInForce.GTD, "GTD"],
-            [TimeInForce.OC, "OC"],
+            [TimeInForce.DAY, "DAY"],
+            [TimeInForce.AT_THE_OPEN, "AT_THE_OPEN"],
+            [TimeInForce.AT_THE_CLOSE, "AT_THE_CLOSE"],
         ],
     )
     def test_time_in_force_to_str(self, enum, expected):
@@ -995,13 +1002,13 @@ class TestTimeInForce:
     @pytest.mark.parametrize(
         "string, expected",
         [
-            ["DAY", TimeInForce.DAY],
             ["GTC", TimeInForce.GTC],
             ["IOC", TimeInForce.IOC],
             ["FOK", TimeInForce.FOK],
-            ["FAK", TimeInForce.FAK],
             ["GTD", TimeInForce.GTD],
-            ["OC", TimeInForce.OC],
+            ["DAY", TimeInForce.DAY],
+            ["AT_THE_OPEN", TimeInForce.AT_THE_OPEN],
+            ["AT_THE_CLOSE", TimeInForce.AT_THE_CLOSE],
         ],
     )
     def test_time_in_force_from_str(self, string, expected):
@@ -1047,6 +1054,98 @@ class TestTradingState:
     def test_trading_state_from_str(self, string, expected):
         # Arrange, Act
         result = TradingStateParser.from_str_py(string)
+
+        # Assert
+        assert expected == result
+
+
+class TestTrailingOffsetType:
+    def test_trading_state_parser_given_invalid_value_raises_value_error(self):
+        # Arrange, Act, Assert
+        with pytest.raises(ValueError):
+            TrailingOffsetTypeParser.from_str_py("")
+
+    @pytest.mark.parametrize(
+        "enum, expected",
+        [
+            [TrailingOffsetType.NONE, "NONE"],
+            [TrailingOffsetType.PRICE, "PRICE"],
+            [TrailingOffsetType.BASIS_POINTS, "BASIS_POINTS"],
+            [TrailingOffsetType.TICKS, "TICKS"],
+            [TrailingOffsetType.PRICE_TIER, "PRICE_TIER"],
+        ],
+    )
+    def test_trailing_offset_type_to_str(self, enum, expected):
+        # Arrange, Act
+        result = TrailingOffsetTypeParser.to_str_py(enum)
+
+        # Assert
+        assert expected == result
+
+    @pytest.mark.parametrize(
+        "string, expected",
+        [
+            ["NONE", TrailingOffsetType.NONE],
+            ["PRICE", TrailingOffsetType.PRICE],
+            ["BASIS_POINTS", TrailingOffsetType.BASIS_POINTS],
+            ["TICKS", TrailingOffsetType.TICKS],
+            ["PRICE_TIER", TrailingOffsetType.PRICE_TIER],
+        ],
+    )
+    def test_trailing_offset_type_from_str(self, string, expected):
+        # Arrange, Act
+        result = TrailingOffsetTypeParser.from_str_py(string)
+
+        # Assert
+        assert expected == result
+
+
+class TestTriggerType:
+    def test_trigger_type_parser_given_invalid_value_raises_value_error(self):
+        # Arrange, Act, Assert
+        with pytest.raises(ValueError):
+            TriggerTypeParser.from_str_py("")
+
+    @pytest.mark.parametrize(
+        "enum, expected",
+        [
+            [TriggerType.NONE, "NONE"],
+            [TriggerType.DEFAULT, "DEFAULT"],
+            [TriggerType.LAST, "LAST"],
+            [TriggerType.BID_ASK, "BID_ASK"],
+            [TriggerType.DOUBLE_LAST, "DOUBLE_LAST"],
+            [TriggerType.DOUBLE_BID_ASK, "DOUBLE_BID_ASK"],
+            [TriggerType.LAST_OR_BID_ASK, "LAST_OR_BID_ASK"],
+            [TriggerType.MID_POINT, "MID_POINT"],
+            [TriggerType.MARK, "MARK"],
+            [TriggerType.INDEX, "INDEX"],
+        ],
+    )
+    def test_trigger_type_to_str(self, enum, expected):
+        # Arrange, Act
+        result = TriggerTypeParser.to_str_py(enum)
+
+        # Assert
+        assert expected == result
+
+    @pytest.mark.parametrize(
+        "string, expected",
+        [
+            ["NONE", TriggerType.NONE],
+            ["DEFAULT", TriggerType.DEFAULT],
+            ["LAST", TriggerType.LAST],
+            ["BID_ASK", TriggerType.BID_ASK],
+            ["DOUBLE_LAST", TriggerType.DOUBLE_LAST],
+            ["DOUBLE_BID_ASK", TriggerType.DOUBLE_BID_ASK],
+            ["LAST_OR_BID_ASK", TriggerType.LAST_OR_BID_ASK],
+            ["MID_POINT", TriggerType.MID_POINT],
+            ["MARK", TriggerType.MARK],
+            ["INDEX", TriggerType.INDEX],
+        ],
+    )
+    def test_trigger_type_from_str(self, string, expected):
+        # Arrange, Act
+        result = TriggerTypeParser.from_str_py(string)
 
         # Assert
         assert expected == result

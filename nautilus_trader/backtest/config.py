@@ -23,17 +23,16 @@ import pandas as pd
 import pydantic
 from dask.base import tokenize
 
-from nautilus_trader.cache.cache import CacheConfig
+from nautilus_trader.cache.config import CacheConfig
 from nautilus_trader.common.config import ImportableActorConfig
 from nautilus_trader.core.datetime import maybe_dt_to_unix_nanos
-from nautilus_trader.data.engine import DataEngineConfig
-from nautilus_trader.execution.engine import ExecEngineConfig
-from nautilus_trader.infrastructure.cache import CacheDatabaseConfig
+from nautilus_trader.data.config import DataEngineConfig
+from nautilus_trader.execution.config import ExecEngineConfig
+from nautilus_trader.infrastructure.config import CacheDatabaseConfig
 from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.persistence.config import PersistenceConfig
 from nautilus_trader.risk.config import RiskEngineConfig
 from nautilus_trader.trading.config import ImportableStrategyConfig
-from nautilus_trader.trading.strategy import TradingStrategy
 
 
 class Partialable:
@@ -208,9 +207,9 @@ class BacktestEngineConfig(pydantic.BaseModel):
 
     Parameters
     ----------
-    trader_id : str, default="BACKTESTER-000"
+    trader_id : str, default "BACKTESTER-000"
         The trader ID.
-    log_level : str, default="INFO"
+    log_level : str, default "INFO"
         The minimum log level for logging messages to stdout.
     cache : CacheConfig, optional
         The configuration for the cache.
@@ -222,9 +221,9 @@ class BacktestEngineConfig(pydantic.BaseModel):
         The configuration for the risk engine.
     exec_engine : ExecEngineConfig, optional
         The configuration for the execution engine.
-    bypass_logging : bool, default=False
+    bypass_logging : bool, default False
         If logging should be bypassed.
-    run_analysis : bool, default=True
+    run_analysis : bool, default True
         If post backtest performance analysis should be run.
 
     """
@@ -259,7 +258,7 @@ class BacktestRunConfig(Partialable):
     venues: Optional[List[BacktestVenueConfig]] = None
     data: Optional[List[BacktestDataConfig]] = None
     actors: Optional[List[ImportableActorConfig]] = None
-    strategies: Optional[List[Union[ImportableStrategyConfig, TradingStrategy]]] = None
+    strategies: Optional[List[ImportableStrategyConfig]] = None
     persistence: Optional[PersistenceConfig] = None
     batch_size_bytes: Optional[int] = None
 

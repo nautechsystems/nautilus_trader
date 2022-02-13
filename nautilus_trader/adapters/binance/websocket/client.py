@@ -44,6 +44,7 @@ class BinanceWebSocketClient(WebSocketClient):
             loop=loop,
             logger=logger,
             handler=handler,
+            max_retry_connection=6,
         )
 
         self._base_url = base_url or self.BASE_URL

@@ -30,8 +30,8 @@ from nautilus_trader.data.engine import DataEngine
 from nautilus_trader.examples.strategies.ema_cross import EMACross
 from nautilus_trader.examples.strategies.ema_cross import EMACrossConfig
 from nautilus_trader.execution.engine import ExecutionEngine
-from nautilus_trader.infrastructure.cache import CacheDatabaseConfig
 from nautilus_trader.infrastructure.cache import RedisCacheDatabase
+from nautilus_trader.infrastructure.config import CacheDatabaseConfig
 from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.currency import Currency
 from nautilus_trader.model.enums import AccountType
@@ -59,7 +59,7 @@ AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy("AUD/USD")
 # - A Redis instance listening on the default port 6379
 
 
-@pytest.mark.skipif(sys.platform == "win32", reason="Redis not available on windows.")
+@pytest.mark.skipif(sys.platform == "win32", reason="Redis not available on windows")
 class TestRedisCacheDatabase:
     def setup(self):
         # Fixture Setup
@@ -227,7 +227,7 @@ class TestRedisCacheDatabase:
         # Assert
         assert True  # No exceptions raised
 
-    def test_update_order_for_working_order(self):
+    def test_update_order_for_open_order(self):
         # Arrange
         order = self.strategy.order_factory.stop_market(
             AUDUSD_SIM.id,
@@ -249,7 +249,7 @@ class TestRedisCacheDatabase:
         # Assert
         assert self.database.load_order(order.client_order_id) == order
 
-    def test_update_order_for_completed_order(self):
+    def test_update_order_for_closed_order(self):
         # Arrange
         order = self.strategy.order_factory.market(
             AUDUSD_SIM.id,
@@ -537,7 +537,7 @@ class TestRedisCacheDatabase:
             OrderSide.BUY,
             Quantity.from_int(100000),
             price=Price.from_str("1.00000"),
-            trigger=Price.from_str("1.00010"),
+            trigger_price=Price.from_str("1.00010"),
         )
 
         self.database.add_order(order)
@@ -548,7 +548,7 @@ class TestRedisCacheDatabase:
         # Assert
         assert result == order
         assert result.price == order.price
-        assert result.trigger == order.trigger
+        assert result.trigger_price == order.trigger_price
 
     def test_load_position_when_no_position_in_database_returns_none(self):
         # Arrange
@@ -751,7 +751,7 @@ class TestRedisCacheDatabase:
         assert self.database.load_position(position1.id) is None
 
 
-@pytest.mark.skipif(sys.platform == "win32", reason="Redis not available on windows.")
+@pytest.mark.skipif(sys.platform == "win32", reason="Redis not available on windows")
 class TestExecutionCacheWithRedisDatabaseTests:
     def setup(self):
         # Fixture Setup

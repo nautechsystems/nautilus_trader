@@ -21,6 +21,7 @@ from typing import Any, Iterator, List, Set
 import fsspec
 import pandas as pd
 import pyarrow.dataset as ds
+import pyarrow.parquet as pq
 from dask.utils import parse_bytes
 from pyarrow.lib import ArrowInvalid
 
@@ -40,15 +41,16 @@ def dataset_batches(
         d: ds.Dataset = ds.dataset(file_meta.filename, filesystem=fs)
     except ArrowInvalid:
         return
-    filter_expr = (ds.field("ts_init") >= file_meta.start) & (ds.field("ts_init") <= file_meta.end)
-    scanner: ds.Scanner = d.scanner(filter=filter_expr, batch_size=n_rows)
-    for batch in scanner.to_batches():
-        if batch.num_rows == 0:
-            break
-        data = batch.to_pandas()
-        if file_meta.instrument_id:
-            data.loc[:, "instrument_id"] = file_meta.instrument_id
-        yield data
+    for fn in sorted(map(str, d.files)):
+        f = pq.ParquetFile(fs.open(fn))
+        for batch in f.iter_batches(batch_size=n_rows):
+            if batch.num_rows == 0:
+                break
+            df = batch.to_pandas()
+            df = df[(df["ts_init"] >= file_meta.start) & (df["ts_init"] <= file_meta.end)]
+            if file_meta.instrument_id:
+                df.loc[:, "instrument_id"] = file_meta.instrument_id
+            yield df
 
 
 def build_filenames(catalog: DataCatalog, data_configs: List[BacktestDataConfig]) -> List[FileMeta]:
@@ -98,13 +100,13 @@ def batch_files(
                 if next_buf is None:
                     completed.add(fn)
                     continue
-                buffer[fn] = buffer[fn].append(next_buf)
+                buffer[fn] = pd.concat([buffer[fn], next_buf])
 
         # Determine minimum timestamp
-        max_ts_per_frame = [df["ts_init"].max() for df in buffer.values() if not df.empty]
+        max_ts_per_frame = {fn: df["ts_init"].max() for fn, df in buffer.items() if not df.empty}
         if not max_ts_per_frame:
             continue
-        min_ts = min(max_ts_per_frame)
+        min_ts = min(max_ts_per_frame.values())
 
         # Filter buffer dataframes based on min_timestamp
         batches = []
@@ -112,17 +114,15 @@ def batch_files(
             df = buffer[f.filename]
             if df.empty:
                 continue
-            ts_filter = df["ts_init"] <= min_ts
+            ts_filter = df["ts_init"] <= min_ts  # min of max timestamps
             batch = df[ts_filter]
             buffer[f.filename] = df[~ts_filter]
-            # print(f"{f.filename} batch={len(batch)} buffer={len(buffer)}")
             objs = frame_to_nautilus(df=batch, cls=f.datatype)
             batches.append(objs)
             bytes_read += sum([sys.getsizeof(x) for x in objs])
 
         # Merge ticks
         values.extend(list(heapq.merge(*batches, key=lambda x: x.ts_init)))
-        # print(f"iter complete, {bytes_read=}, flushing at target={target_batch_size_bytes}")
         if bytes_read > target_batch_size_bytes:
             yield values
             bytes_read = 0

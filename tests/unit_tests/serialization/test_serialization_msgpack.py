@@ -14,6 +14,8 @@
 # -------------------------------------------------------------------------------------------------
 
 from base64 import b64encode
+from datetime import timedelta
+from decimal import Decimal
 
 import msgpack
 import pytest
@@ -36,6 +38,8 @@ from nautilus_trader.model.enums import LiquiditySide
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import OrderType
 from nautilus_trader.model.enums import TimeInForce
+from nautilus_trader.model.enums import TrailingOffsetType
+from nautilus_trader.model.enums import TriggerType
 from nautilus_trader.model.events.account import AccountState
 from nautilus_trader.model.events.order import OrderAccepted
 from nautilus_trader.model.events.order import OrderCanceled
@@ -57,10 +61,10 @@ from nautilus_trader.model.events.position import PositionOpened
 from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import ClientOrderId
 from nautilus_trader.model.identifiers import ComponentId
-from nautilus_trader.model.identifiers import ExecutionId
 from nautilus_trader.model.identifiers import OrderListId
 from nautilus_trader.model.identifiers import PositionId
 from nautilus_trader.model.identifiers import StrategyId
+from nautilus_trader.model.identifiers import TradeId
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.identifiers import VenueOrderId
 from nautilus_trader.model.objects import AccountBalance
@@ -71,6 +75,8 @@ from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.orders.limit import LimitOrder
 from nautilus_trader.model.orders.stop_limit import StopLimitOrder
 from nautilus_trader.model.orders.stop_market import StopMarketOrder
+from nautilus_trader.model.orders.trailing_stop_limit import TrailingStopLimitOrder
+from nautilus_trader.model.orders.trailing_stop_market import TrailingStopMarketOrder
 from nautilus_trader.model.orders.unpacker import OrderUnpacker
 from nautilus_trader.model.position import Position
 from nautilus_trader.serialization.msgpack.serializer import MsgPackSerializer
@@ -172,7 +178,7 @@ class TestMsgPackSerializer:
         # Assert
         assert unpacked == order
 
-    def test_pack_and_unpack_limit_orders_with_expire_time(self):
+    def test_pack_and_unpack_limit_orders_with_expiration(self):
         # Arrange
         order = LimitOrder(
             self.trader_id,
@@ -183,7 +189,7 @@ class TestMsgPackSerializer:
             Quantity(100000, precision=0),
             price=Price(1.00000, precision=5),
             time_in_force=TimeInForce.GTD,
-            expire_time=UNIX_EPOCH,
+            expire_time=UNIX_EPOCH + timedelta(minutes=1),
             init_id=UUID4(),
             ts_init=0,
         )
@@ -195,7 +201,7 @@ class TestMsgPackSerializer:
         # Assert
         assert unpacked == order
 
-    def test_pack_and_unpack_stop_market_orders_with_expire_time(self):
+    def test_pack_and_unpack_stop_market_orders(self):
         # Arrange
         order = StopMarketOrder(
             self.trader_id,
@@ -204,9 +210,34 @@ class TestMsgPackSerializer:
             ClientOrderId("O-123456"),
             OrderSide.BUY,
             Quantity(100000, precision=0),
-            price=Price(1.00000, precision=5),
+            trigger_price=Price(1.00000, precision=5),
+            trigger_type=TriggerType.DEFAULT,
+            time_in_force=TimeInForce.GTC,
+            expire_time=None,
+            init_id=UUID4(),
+            ts_init=0,
+        )
+
+        # Act
+        packed = OrderInitialized.to_dict(order.last_event)
+        unpacked = self.unpacker.unpack(packed)
+
+        # Assert
+        assert unpacked == order
+
+    def test_pack_and_unpack_stop_market_orders_with_expiration(self):
+        # Arrange
+        order = StopMarketOrder(
+            self.trader_id,
+            self.strategy_id,
+            AUDUSD_SIM.id,
+            ClientOrderId("O-123456"),
+            OrderSide.BUY,
+            Quantity(100000, precision=0),
+            trigger_price=Price(1.00000, precision=5),
+            trigger_type=TriggerType.DEFAULT,
             time_in_force=TimeInForce.GTD,
-            expire_time=UNIX_EPOCH,
+            expire_time=UNIX_EPOCH + timedelta(minutes=1),
             init_id=UUID4(),
             ts_init=0,
         )
@@ -228,7 +259,8 @@ class TestMsgPackSerializer:
             OrderSide.BUY,
             Quantity(100000, precision=0),
             price=Price(1.00000, precision=5),
-            trigger=Price(1.00010, precision=5),
+            trigger_price=Price(1.00010, precision=5),
+            trigger_type=TriggerType.BID_ASK,
             time_in_force=TimeInForce.GTC,
             expire_time=None,
             init_id=UUID4(),
@@ -242,7 +274,7 @@ class TestMsgPackSerializer:
         # Assert
         assert unpacked == order
 
-    def test_pack_and_unpack_stop_limit_orders_with_expire_time(self):
+    def test_pack_and_unpack_stop_limit_orders_with_expiration(self):
         # Arrange
         order = StopLimitOrder(
             self.trader_id,
@@ -252,9 +284,118 @@ class TestMsgPackSerializer:
             OrderSide.BUY,
             Quantity(100000, precision=0),
             price=Price(1.00000, precision=5),
-            trigger=Price(1.00010, precision=5),
+            trigger_price=Price(1.00010, precision=5),
+            trigger_type=TriggerType.LAST,
             time_in_force=TimeInForce.GTD,
-            expire_time=UNIX_EPOCH,
+            expire_time=UNIX_EPOCH + timedelta(minutes=1),
+            init_id=UUID4(),
+            ts_init=0,
+        )
+
+        # Act
+        packed = OrderInitialized.to_dict(order.last_event)
+        unpacked = self.unpacker.unpack(packed)
+
+        # Assert
+        assert unpacked == order
+
+    def test_pack_and_unpack_trailing_stop_market_orders_with_expiration(self):
+        # Arrange
+        order = TrailingStopMarketOrder(
+            self.trader_id,
+            self.strategy_id,
+            AUDUSD_SIM.id,
+            ClientOrderId("O-123456"),
+            OrderSide.BUY,
+            Quantity(100000, precision=0),
+            trigger_price=Price(1.00000, precision=5),
+            trigger_type=TriggerType.DEFAULT,
+            trailing_offset=Decimal("0.00010"),
+            offset_type=TrailingOffsetType.PRICE,
+            time_in_force=TimeInForce.GTD,
+            expire_time=UNIX_EPOCH + timedelta(minutes=1),
+            init_id=UUID4(),
+            ts_init=0,
+        )
+
+        # Act
+        packed = OrderInitialized.to_dict(order.last_event)
+        unpacked = self.unpacker.unpack(packed)
+
+        # Assert
+        assert unpacked == order
+
+    def test_pack_and_unpack_trailing_stop_market_orders_no_initial_prices(self):
+        # Arrange
+        order = TrailingStopMarketOrder(
+            self.trader_id,
+            self.strategy_id,
+            AUDUSD_SIM.id,
+            ClientOrderId("O-123456"),
+            OrderSide.BUY,
+            Quantity(100000, precision=0),
+            trigger_price=None,
+            trigger_type=TriggerType.DEFAULT,
+            trailing_offset=Decimal("0.00010"),
+            offset_type=TrailingOffsetType.PRICE,
+            time_in_force=TimeInForce.GTD,
+            expire_time=UNIX_EPOCH + timedelta(minutes=1),
+            init_id=UUID4(),
+            ts_init=0,
+        )
+
+        # Act
+        packed = OrderInitialized.to_dict(order.last_event)
+        unpacked = self.unpacker.unpack(packed)
+
+        # Assert
+        assert unpacked == order
+
+    def test_pack_and_unpack_trailing_stop_limit_orders_with_expiration(self):
+        # Arrange
+        order = TrailingStopLimitOrder(
+            self.trader_id,
+            self.strategy_id,
+            AUDUSD_SIM.id,
+            ClientOrderId("O-123456"),
+            OrderSide.BUY,
+            Quantity(100000, precision=0),
+            price=Price(1.00000, precision=5),
+            trigger_price=Price(1.00010, precision=5),
+            trigger_type=TriggerType.MARK,
+            limit_offset=Decimal("50"),
+            trailing_offset=Decimal("50"),
+            offset_type=TrailingOffsetType.TICKS,
+            time_in_force=TimeInForce.GTD,
+            expire_time=UNIX_EPOCH + timedelta(minutes=1),
+            init_id=UUID4(),
+            ts_init=0,
+        )
+
+        # Act
+        packed = OrderInitialized.to_dict(order.last_event)
+        unpacked = self.unpacker.unpack(packed)
+
+        # Assert
+        assert unpacked == order
+
+    def test_pack_and_unpack_trailing_stop_limit_orders_with_no_initial_prices(self):
+        # Arrange
+        order = TrailingStopLimitOrder(
+            self.trader_id,
+            self.strategy_id,
+            AUDUSD_SIM.id,
+            ClientOrderId("O-123456"),
+            OrderSide.BUY,
+            Quantity(100000, precision=0),
+            price=None,
+            trigger_price=None,
+            trigger_type=TriggerType.MARK,
+            limit_offset=Decimal("50"),
+            trailing_offset=Decimal("50"),
+            offset_type=TrailingOffsetType.TICKS,
+            time_in_force=TimeInForce.GTD,
+            expire_time=UNIX_EPOCH + timedelta(minutes=1),
             init_id=UUID4(),
             ts_init=0,
         )
@@ -463,13 +604,13 @@ class TestMsgPackSerializer:
             OrderType.MARKET,
             Quantity(100000, precision=0),
             TimeInForce.FOK,
+            post_only=False,
             reduce_only=True,
             options={},
             order_list_id=OrderListId("1"),
+            contingency_type=ContingencyType.OTO,
+            linked_order_ids=[ClientOrderId("O-123457"), ClientOrderId("O-123458")],
             parent_order_id=ClientOrderId("O-123455"),
-            child_order_ids=[ClientOrderId("O-123457"), ClientOrderId("O-123458")],
-            contingency=ContingencyType.OTO,
-            contingency_ids=[ClientOrderId("O-123457"), ClientOrderId("O-123458")],
             tags="ENTRY",
             event_id=UUID4(),
             ts_init=0,
@@ -485,10 +626,8 @@ class TestMsgPackSerializer:
     def test_serialize_and_deserialize_limit_order_initialized_events(self):
         # Arrange
         options = {
-            "ExpireTime": None,
-            "Price": "1.0010",
-            "PostOnly": True,
-            "Hidden": False,
+            "expire_time_ns": 1_000_000_000,
+            "price": "1.0010",
         }
 
         event = OrderInitialized(
@@ -500,13 +639,13 @@ class TestMsgPackSerializer:
             OrderType.LIMIT,
             Quantity(100000, precision=0),
             TimeInForce.DAY,
+            post_only=True,
             reduce_only=False,
             options=options,
             order_list_id=OrderListId("1"),
+            contingency_type=ContingencyType.OTO,
+            linked_order_ids=[ClientOrderId("O-123457"), ClientOrderId("O-123458")],
             parent_order_id=ClientOrderId("O-123455"),
-            child_order_ids=[ClientOrderId("O-123457"), ClientOrderId("O-123458")],
-            contingency=ContingencyType.OTO,
-            contingency_ids=[ClientOrderId("O-123457"), ClientOrderId("O-123458")],
             tags=None,
             event_id=UUID4(),
             ts_init=0,
@@ -523,8 +662,7 @@ class TestMsgPackSerializer:
     def test_serialize_and_deserialize_stop_market_order_initialized_events(self):
         # Arrange
         options = {
-            "ExpireTime": None,
-            "Price": "1.0005",
+            "trigger_price": "1.0005",
         }
 
         event = OrderInitialized(
@@ -536,13 +674,13 @@ class TestMsgPackSerializer:
             OrderType.STOP_MARKET,
             Quantity(100000, precision=0),
             TimeInForce.DAY,
+            post_only=False,
             reduce_only=True,
             options=options,
             order_list_id=OrderListId("1"),
+            contingency_type=ContingencyType.OTO,
+            linked_order_ids=[ClientOrderId("O-123457"), ClientOrderId("O-123458")],
             parent_order_id=ClientOrderId("O-123455"),
-            child_order_ids=[ClientOrderId("O-123457"), ClientOrderId("O-123458")],
-            contingency=ContingencyType.OTO,
-            contingency_ids=[ClientOrderId("O-123457"), ClientOrderId("O-123458")],
             tags=None,
             event_id=UUID4(),
             ts_init=0,
@@ -559,11 +697,9 @@ class TestMsgPackSerializer:
     def test_serialize_and_deserialize_stop_limit_order_initialized_events(self):
         # Arrange
         options = {
-            "ExpireTime": None,
-            "Price": "1.0005",
-            "Trigger": "1.0010",
-            "PostOnly": True,
-            "Hidden": False,
+            "expire_time_ns": None,
+            "price": "1.0005",
+            "trigger_price": "1.0010",
         }
 
         event = OrderInitialized(
@@ -575,13 +711,13 @@ class TestMsgPackSerializer:
             OrderType.STOP_LIMIT,
             Quantity(100000, precision=0),
             TimeInForce.DAY,
+            post_only=True,
             reduce_only=True,
             options=options,
             order_list_id=OrderListId("1"),
+            contingency_type=ContingencyType.OTO,
+            linked_order_ids=[ClientOrderId("O-123457"), ClientOrderId("O-123458")],
             parent_order_id=ClientOrderId("O-123455"),
-            child_order_ids=[ClientOrderId("O-123457"), ClientOrderId("O-123458")],
-            contingency=ContingencyType.OTO,
-            contingency_ids=[ClientOrderId("O-123457"), ClientOrderId("O-123458")],
             tags="entry,bulk",
             event_id=UUID4(),
             ts_init=0,
@@ -859,7 +995,7 @@ class TestMsgPackSerializer:
             AUDUSD_SIM.id,
             ClientOrderId("O-123456"),
             VenueOrderId("1"),
-            ExecutionId("E123456"),
+            TradeId("E123456"),
             PositionId("T123456"),
             OrderSide.SELL,
             OrderType.MARKET,
@@ -889,7 +1025,7 @@ class TestMsgPackSerializer:
             AUDUSD_SIM.id,
             ClientOrderId("O-123456"),
             VenueOrderId("1"),
-            ExecutionId("E123456"),
+            TradeId("E123456"),
             PositionId("T123456"),
             OrderSide.SELL,
             OrderType.MARKET,
