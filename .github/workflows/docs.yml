@@ -12,6 +12,12 @@ jobs:
     steps:
       - uses: actions/checkout@v2
 
+      # Rust setup
+      - name: Set up Rust environment
+        uses: hecrj/setup-rust-action@v1
+        with:
+          rust-version: stable
+
       # Python setup
       - name: Set up Python environment
         uses: actions/setup-python@v2

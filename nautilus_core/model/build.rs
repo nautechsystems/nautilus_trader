@@ -28,5 +28,5 @@ fn main() {
 
     cbindgen::generate_with_config(&crate_dir, config)
         .expect("Unable to generate bindings")
-        .write_to_file(crate_dir.join("nautilus_model.h"));
+        .write_to_file(crate_dir.join("../../nautilus_trader/core/nautilus_model.h"));
 }

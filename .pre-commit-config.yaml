@@ -36,7 +36,7 @@ repos:
       #      - id: fmt
       #        args: ["--manifest-path", "nautilus/Cargo.toml"]
       - id: cargo-check
-        args: ["--manifest-path", "nautilus/Cargo.toml"]
+        args: ["--manifest-path", "nautilus_core/Cargo.toml"]
 
   - repo: https://github.com/hadialqattan/pycln
     rev: v1.1.0

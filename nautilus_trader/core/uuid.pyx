@@ -14,11 +14,11 @@
 # -------------------------------------------------------------------------------------------------
 
 import re
-from nautilus.api.core cimport uuid4_free
-from nautilus.api.core cimport uuid4_free_raw
-from nautilus.api.core cimport uuid4_from_raw
-from nautilus.api.core cimport uuid4_new
-from nautilus.api.core cimport uuid4_to_raw
+from nautilus_trader.core.core cimport uuid4_free
+from nautilus_trader.core.core cimport uuid4_free_raw
+from nautilus_trader.core.core cimport uuid4_from_raw
+from nautilus_trader.core.core cimport uuid4_new
+from nautilus_trader.core.core cimport uuid4_to_raw
 from nautilus_trader.core.correctness cimport Condition
 
 

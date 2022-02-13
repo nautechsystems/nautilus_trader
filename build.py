@@ -19,6 +19,8 @@ from setuptools import Distribution
 from setuptools import Extension
 
 
+# The Cargo rustc mode
+CARGO_MODE = os.getenv("CARGO_MODE", "")
 # If DEBUG mode is enabled, include traces necessary for coverage, profiling and skip optimizations
 DEBUG_MODE = bool(os.getenv("DEBUG_MODE", ""))
 # If ANNOTATION mode is enabled, generate an annotated HTML version of the input source files
@@ -28,9 +30,29 @@ PARALLEL_BUILD = True if os.getenv("PARALLEL_BUILD", "true") == "true" else Fals
 # If SKIP_BUILD_COPY is enabled, prevents copying built *.so files back into the source tree
 SKIP_BUILD_COPY = bool(os.getenv("SKIP_BUILD_COPY", ""))
 
-##########################
-#  Cython build options  #
-##########################
+
+################################################################################
+#  RUST BUILD                                                                  #
+################################################################################
+# Directories with headers to include
+RUST_INCLUDES = glob.glob("nautilus_core/*/")
+RUST_LIBS_DIR = "debug" if CARGO_MODE == "" else "release"
+RUST_LIBS = [
+    f"nautilus_core/target/{RUST_LIBS_DIR}/libnautilus_core.a",
+    f"nautilus_core/target/{RUST_LIBS_DIR}/libnautilus_model.a",
+]
+
+
+def _build_rust_libs() -> None:
+    # Build the Rust libraries using Cargo
+    os.system("rustc --version")  # noqa
+    print("Compiling Rust libraries...")
+    os.system(f"(cd nautilus_core && cargo build{CARGO_MODE})")  # noqa
+
+
+################################################################################
+#  CYTHON BUILD                                                                #
+################################################################################
 # https://cython.readthedocs.io/en/latest/src/userguide/source_files_and_compilation.html
 
 Options.docstrings = True  # Include docstrings in modules
@@ -51,34 +73,6 @@ CYTHON_COMPILER_DIRECTIVES = {
     "linetrace": DEBUG_MODE,  # If we're debugging, turn on line tracing
     "warn.maybe_uninitialized": True,
 }
-
-
-##########################
-#       Rust build       #
-##########################
-RUST_LIBS = {
-    "nautilus_core": "nautilus/target/release/libnautilus_core.a",
-    "nautilus_model": "nautilus/target/release/libnautilus_model.a",
-}
-
-RUST_LINK_MAP = {
-    "nautilus_trader/core/uuid.pyx": [RUST_LIBS["nautilus_core"]],
-    "nautilus_trader/cache/cache.pyx": [RUST_LIBS["nautilus_core"]],
-    "nautilus_trader/common/clock.pyx": [RUST_LIBS["nautilus_core"]],
-    "nautilus_trader/execution/engine.pyx": [RUST_LIBS["nautilus_core"]],
-}
-
-# Directories with headers to include
-RUST_INCLUDES = glob.glob("nautilus/*/")
-CARGO_MODE = "" if DEBUG_MODE else " --release"
-
-
-def _build_rust_libs() -> None:
-    # Build the Rust libraries using Cargo
-    print("Compiling Rust libraries...")
-
-    os.system("rustc --version")  # noqa
-    os.system(f"(cd nautilus && cargo build{CARGO_MODE})")  # noqa
 
 
 def _build_extensions() -> List[Extension]:
@@ -107,7 +101,7 @@ def _build_extensions() -> List[Extension]:
             include_dirs=[".", np.get_include()] + RUST_INCLUDES,
             define_macros=define_macros,
             language="c",
-            extra_link_args=RUST_LINK_MAP.get(str(pyx)),
+            extra_link_args=RUST_LIBS,
             extra_compile_args=extra_compile_args,
         )
         for pyx in itertools.chain(Path("nautilus_trader").rglob("*.pyx"))

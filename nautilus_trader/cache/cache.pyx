@@ -19,14 +19,14 @@ from typing import Optional
 
 from libc.stdint cimport int64_t
 
-from nautilus.api.core cimport unix_timestamp
-from nautilus.api.core cimport unix_timestamp_us
 from nautilus_trader.accounting.accounts.base cimport Account
 from nautilus_trader.accounting.calculators cimport ExchangeRateCalculator
 from nautilus_trader.cache.base cimport CacheFacade
 from nautilus_trader.common.logging cimport LogColor
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.common.logging cimport LoggerAdapter
+from nautilus_trader.core.core cimport unix_timestamp
+from nautilus_trader.core.core cimport unix_timestamp_us
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.model.c_enums.oms_type cimport OMSType
 from nautilus_trader.model.c_enums.price_type cimport PriceType

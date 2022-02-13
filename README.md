@@ -13,11 +13,11 @@
 | `master`  | ![version](https://img.shields.io/endpoint?url=https%3A%2F%2Fraw.githubusercontent.com%2Fnautechsystems%2Fnautilus_trader%2Fmaster%2Fversion.json) | [![build](https://github.com/nautechsystems/nautilus_trader/actions/workflows/build.yml/badge.svg?branch=master)](https://github.com/nautechsystems/nautilus_trader/actions/workflows/build.yml) |
 | `develop` | ![version](https://img.shields.io/endpoint?url=https%3A%2F%2Fraw.githubusercontent.com%2Fnautechsystems%2Fnautilus_trader%2Fdevelop%2Fversion.json) | [![build](https://github.com/nautechsystems/nautilus_trader/actions/workflows/build.yml/badge.svg?branch=develop)](https://github.com/nautechsystems/nautilus_trader/actions/workflows/build.yml) |
 
-| Platform         | Rust    | Python |
-|:-----------------|:--------|:-------|
-| Linux (x86_64)   | `TBA`   | `3.8+` |
-| macOS (x86_64)   | `TBA`   | `3.8+` |
-| Windows (x86_64) | `TBA`   | `3.8+` |
+| Platform         | Rust      | Python |
+|:-----------------|:----------|:-------|
+| Linux (x86_64)   | `1.58.1+` | `3.8+` |
+| macOS (x86_64)   | `1.58.1+` | `3.8+` |
+| Windows (x86_64) | `1.58.1+` | `3.8+` |
 
 - **Website:** https://nautilustrader.io
 - **Docs:** https://docs.nautilustrader.io
@@ -95,6 +95,22 @@ The project heavily utilizes Cython to provide static type safety and increased 
 for Python through [C extension modules](https://docs.python.org/3/extending/extending.html). The vast majority of the production code is actually
 written in Cython, however the libraries can be accessed from both pure Python and Cython.
 
+## What is Rust?
+
+[Rust](https://www.rust-lang.org/) is a multi-paradigm programming language designed for performance and safety, especially safe
+concurrency. Rust is blazingly fast and memory-efficient (comparable to C and C++): with no runtime or
+garbage collector. It can power mission-critical systems, run on embedded devices, and easily
+integrates with other languages.
+
+Rust’s rich type system and ownership model guarantees memory-safety and thread-safety deterministically —
+eliminating many classes of bugs at compile-time.
+
+The project increasingly utilizes Rust for core performance-critical components. Python language binding is handled through
+Cython, with static libraries linked at compile-time before the wheel binaries are packaged, so a user
+does not need to have Rust installed to run NautilusTrader. In the future as more Rust code is introduced,
+[PyO3](https://pyo3.rs/v0.15.1/) will be leveraged for easier Python bindings. It is expected that eventually all Cython will
+be eliminated from the codebase.
+
 ## Architecture (data flow)
 
 ![Architecture](https://github.com/nautechsystems/nautilus_trader/blob/develop/docs/_images/architecture-overview.png?raw=true "architecture")
@@ -127,6 +143,8 @@ Refer to the [Integrations](https://docs.nautilustrader.io/integrations/index.ht
 
 ## Installation
 
+### From PyPI
+
 We recommend running the platform with the latest stable version of Python, and in a virtual environment to isolate the dependencies.
 
 To install the latest binary wheel from PyPI:
@@ -135,6 +153,38 @@ To install the latest binary wheel from PyPI:
 
 To install on ARM architectures such as MacBook Pro M1 / Apple Silicon, this stackoverflow thread is useful:
 https://stackoverflow.com/questions/65745683/how-to-install-scipy-on-apple-silicon-arm-m1
+
+### From Source
+Installation from source requires the latest stable `rustc` and `cargo` to compile the Rust libraries.
+For the Python part, it's possible to install from source using `pip` if you first install the build dependencies
+as specified in the `pyproject.toml`. However, we highly recommend installing using [poetry](https://python-poetry.org/) as below.
+
+1. Install [rustup](https://rustup.rs/) (the Rust toolchain installer):
+   - Linux and macOS:
+       ```
+       curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+       ```
+   - Windows:
+       - Download and install [`rustup-init.exe`](https://win.rustup.rs/x86_64)
+       - Install "Desktop development with C++" with [Build Tools for Visual Studio 2019](https://visualstudio.microsoft.com/thank-you-downloading-visual-studio/?sku=BuildTools&rel=16)
+
+2. Enable `cargo` in the current shell:
+   - Linux and macOS:
+       ```
+       source $HOME/.cargo/env
+       ```
+   - Windows:
+     - Start a new PowerShell
+
+3. Install poetry (or follow the installation guide on their site):
+
+       curl -sSL https://raw.githubusercontent.com/python-poetry/poetry/master/get-poetry.py | python -
+
+4. Clone the source with `git`, and install from the projects root directory:
+
+       git clone https://github.com/nautechsystems/nautilus_trader
+       cd nautilus_trader
+       poetry install --no-dev
 
 Refer to the [Installation Guide](https://docs.nautilustrader.io/1_getting_started/1_installation.html) for other options and further details.
 

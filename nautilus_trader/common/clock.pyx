@@ -25,16 +25,17 @@ from cpython.datetime cimport timedelta
 from cpython.datetime cimport tzinfo
 from libc.stdint cimport int64_t
 
-from nautilus.api.core cimport unix_timestamp
-from nautilus.api.core cimport unix_timestamp_ms
-from nautilus.api.core cimport unix_timestamp_ns
 from nautilus_trader.common.timer cimport LoopTimer
 from nautilus_trader.common.timer cimport TestTimer
 from nautilus_trader.common.timer cimport ThreadTimer
 from nautilus_trader.common.timer cimport TimeEventHandler
 from nautilus_trader.common.uuid cimport UUIDFactory
+from nautilus_trader.core.core cimport unix_timestamp
+from nautilus_trader.core.core cimport unix_timestamp_ms
+from nautilus_trader.core.core cimport unix_timestamp_ns
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.datetime cimport nanos_to_secs
+
 from nautilus_trader.core.datetime import nanos_to_millis
 
 

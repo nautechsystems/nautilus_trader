@@ -36,7 +36,6 @@ from nautilus_trader.execution.config import ExecEngineConfig
 
 from libc.stdint cimport int64_t
 
-from nautilus.api.core cimport unix_timestamp_ms
 from nautilus_trader.accounting.accounts.base cimport Account
 from nautilus_trader.cache.cache cimport Cache
 from nautilus_trader.common.clock cimport Clock
@@ -47,6 +46,7 @@ from nautilus_trader.common.logging cimport EVT
 from nautilus_trader.common.logging cimport RECV
 from nautilus_trader.common.logging cimport LogColor
 from nautilus_trader.common.logging cimport Logger
+from nautilus_trader.core.core cimport unix_timestamp_ms
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.fsm cimport InvalidStateTrigger
 from nautilus_trader.execution.client cimport ExecutionClient
