@@ -28,6 +28,7 @@ cdef class WebSocketClient:
     cdef bint _running
     cdef bint _stopped
     cdef bint _stopping
+    cdef bint _log_recv
 
     cdef readonly bint is_connected
     """If the client is connected.\n\n:returns: `bool`"""

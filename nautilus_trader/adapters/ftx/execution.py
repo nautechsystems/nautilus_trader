@@ -38,6 +38,7 @@ from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.logging import LogColor
 from nautilus_trader.common.logging import Logger
+from nautilus_trader.execution.reports import ExecutionMassStatus
 from nautilus_trader.execution.reports import OrderStatusReport
 from nautilus_trader.execution.reports import PositionStatusReport
 from nautilus_trader.execution.reports import TradeReport
@@ -142,14 +143,18 @@ class FTXExecutionClient(LiveExecutionClient):
             loop=loop,
             clock=clock,
             logger=logger,
-            handler=self._handle_ws_message,
+            msg_handler=self._handle_ws_message,
+            reconnect_handler=self._handle_ws_reconnect,
             key=client.api_key,
             secret=client.api_secret,
             us=us,
+            log_recv=True,  # For debugging
         )
+        self._ws_buffer: List[bytes] = []
 
         # Tasks
         self._task_poll_account: Optional[asyncio.Task] = None
+        self._task_buffer_ws_msgs: Optional[asyncio.Task] = None
 
         # Hot caches
         self._instrument_ids: Dict[str, InstrumentId] = {}
@@ -840,6 +845,34 @@ class FTXExecutionClient(LiveExecutionClient):
         except FTXError as ex:
             self._log.error(ex.message)  # type: ignore  # TODO(cs): Improve errors
 
+    def _handle_ws_reconnect(self):
+        self._loop.create_task(self._ws_reconnect_async())
+
+    async def _ws_reconnect_async(self):
+        report: ExecutionMassStatus = await self.generate_mass_status(lookback_mins=1)
+        self._send_mass_status_report(report)
+
+        await self._update_account_state()
+
+    async def _buffer_ws_msgs(self):
+        self._log.debug("Monitoring reconciliation...")
+        while self.reconciliation_active:
+            await self.sleep0()
+
+        if self._ws_buffer:
+            self._log.debug(
+                f"Draining {len(self._ws_buffer)} msgs from ws buffer...",
+            )
+
+        # Drain buffered websocket messages
+        while self._ws_buffer:
+            # Pop in received order
+            raw: bytes = self._ws_buffer.pop(0)
+            self._log.debug(f"Drained {str(raw)}.")
+            self._handle_ws_message(raw)
+
+        self._task_buffer_ws_msgs = None
+
     async def _poll_account_state(self) -> None:
         while True:
             await asyncio.sleep(self._account_polling_interval)
@@ -932,6 +965,14 @@ class FTXExecutionClient(LiveExecutionClient):
         return instrument_id
 
     def _handle_ws_message(self, raw: bytes):
+        if self.reconciliation_active:
+            self._log.debug(f"Buffered ws msg {str(raw)}")
+            self._ws_buffer.append(raw)
+            if self._task_buffer_ws_msgs is None:
+                task = self._loop.create_task(self._buffer_ws_msgs())
+                self._task_buffer_ws_msgs = task
+            return
+
         msg: Dict[str, Any] = orjson.loads(raw)
         channel: str = msg.get("channel")
         if channel is None:
