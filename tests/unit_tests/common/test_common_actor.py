@@ -112,6 +112,13 @@ class TestActor:
         self.data_engine.start()
         self.exec_engine.start()
 
+    def test_actor_fullname(self):
+        # Arrange
+        actor = Actor(config=ActorConfig(component_id=self.component_id))
+
+        # Act, Assert
+        assert actor.fullname() == "nautilus_trader.common.actor.Actor"
+
     def test_id(self):
         # Arrange, Act
         actor = Actor(config=ActorConfig(component_id=self.component_id))

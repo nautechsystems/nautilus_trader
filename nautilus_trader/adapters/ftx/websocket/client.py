@@ -37,16 +37,20 @@ class FTXWebSocketClient(WebSocketClient):
         loop: asyncio.AbstractEventLoop,
         clock: LiveClock,
         logger: Logger,
-        handler: Callable[[bytes], None],
+        msg_handler: Callable[[bytes], None],
+        reconnect_handler: Callable[[], None],
         key: Optional[str] = None,
         secret: Optional[str] = None,
         base_url: Optional[str] = None,
         us: bool = False,
+        log_recv: bool = False,
     ):
         super().__init__(
             loop=loop,
             logger=logger,
-            handler=handler,
+            handler=msg_handler,
+            max_retry_connection=6,
+            log_recv=log_recv,
         )
 
         self._clock = clock
@@ -56,6 +60,7 @@ class FTXWebSocketClient(WebSocketClient):
         self._key = key
         self._secret = secret
 
+        self._reconnect_handler = reconnect_handler
         self._streams: List[Dict] = []
 
     @property
@@ -83,7 +88,7 @@ class FTXWebSocketClient(WebSocketClient):
         """
         await super().connect(ws_url=self._base_url, start=start, **ws_kwargs)
 
-    async def post_connect(self):
+    async def post_connection(self):
         """
         Actions to be performed post connection.
         """
@@ -109,6 +114,19 @@ class FTXWebSocketClient(WebSocketClient):
 
         await self.send_json(login)
         self._log.info("Session authenticated.")
+
+    async def post_reconnection(self):
+        """
+        Actions to be performed post reconnection.
+        """
+        # Re-login and authenticate
+        await self.post_connection()
+
+        # Resubscribe to all streams
+        for subscription in self._streams:
+            await self.send_json({"op": "subscribe", **subscription})
+
+        self._reconnect_handler()
 
     async def _subscribe(self, subscription: Dict) -> None:
         if subscription not in self._streams:

@@ -34,10 +34,10 @@ from nautilus_trader.model.currency cimport Currency
 from nautilus_trader.model.data.bar cimport Bar
 from nautilus_trader.model.data.tick cimport Tick
 from nautilus_trader.model.identifiers cimport ClientOrderId
-from nautilus_trader.model.identifiers cimport ExecutionId
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.identifiers cimport PositionId
 from nautilus_trader.model.identifiers cimport StrategyId
+from nautilus_trader.model.identifiers cimport TradeId
 from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.model.identifiers cimport VenueOrderId
 from nautilus_trader.model.instruments.base cimport Instrument
@@ -47,7 +47,6 @@ from nautilus_trader.model.objects cimport Quantity
 from nautilus_trader.model.orderbook.book cimport OrderBook
 from nautilus_trader.model.orderbook.data cimport OrderBookData
 from nautilus_trader.model.orders.base cimport Order
-from nautilus_trader.model.orders.base cimport PassiveOrder
 from nautilus_trader.model.orders.limit cimport LimitOrder
 from nautilus_trader.model.orders.market cimport MarketOrder
 from nautilus_trader.model.orders.stop_limit cimport StopLimitOrder
@@ -89,22 +88,25 @@ cdef class SimulatedExchange:
     """The fill model for the exchange.\n\n:returns: `FillModel`"""
     cdef readonly bint reject_stop_orders
     """If stop orders are rejected on submission if in the market.\n\n:returns: `bool`"""
-    cdef readonly bint bar_execution
-    """If the exchange execution dynamics is based on bar data.\n\n:returns: `bool`"""
     cdef readonly list modules
     """The simulation modules registered with the exchange.\n\n:returns: `list[SimulationModule]`"""
     cdef readonly dict instruments
     """The exchange instruments.\n\n:returns: `dict[InstrumentId, Instrument]`"""
 
+
     cdef dict _instrument_indexer
 
     cdef dict _books
+    cdef dict _last
     cdef dict _last_bids
     cdef dict _last_asks
+    cdef dict _last_bid_bars
+    cdef dict _last_ask_bars
     cdef dict _order_index
     cdef dict _orders_bid
     cdef dict _orders_ask
     cdef dict _oto_orders
+    cdef bint _bar_execution
 
     cdef dict _symbol_pos_count
     cdef dict _symbol_ord_count
@@ -117,9 +119,9 @@ cdef class SimulatedExchange:
     cpdef Price best_ask_price(self, InstrumentId instrument_id)
     cpdef OrderBook get_book(self, InstrumentId instrument_id)
     cpdef dict get_books(self)
-    cpdef list get_working_orders(self, InstrumentId instrument_id=*)
-    cpdef list get_working_bid_orders(self, InstrumentId instrument_id=*)
-    cpdef list get_working_ask_orders(self, InstrumentId instrument_id=*)
+    cpdef list get_open_orders(self, InstrumentId instrument_id=*)
+    cpdef list get_open_bid_orders(self, InstrumentId instrument_id=*)
+    cpdef list get_open_ask_orders(self, InstrumentId instrument_id=*)
     cpdef Account get_account(self)
 
     cpdef void register_client(self, BacktestExecClient client) except *
@@ -132,6 +134,8 @@ cdef class SimulatedExchange:
     cpdef void process_order_book(self, OrderBookData data) except *
     cpdef void process_tick(self, Tick tick) except *
     cpdef void process_bar(self, Bar bar) except *
+    cdef void _process_trade_ticks_from_bar(self, OrderBook book, Bar bar) except *
+    cdef void _process_quote_ticks_from_bar(self, OrderBook book) except *
     cpdef void process(self, int64_t now_ns) except *
     cpdef void reset(self) except *
 
@@ -143,25 +147,25 @@ cdef class SimulatedExchange:
     cdef void _process_stop_market_order(self, StopMarketOrder order) except *
     cdef void _process_stop_limit_order(self, StopLimitOrder order) except *
     cdef void _update_limit_order(self, LimitOrder order, Quantity qty, Price price) except *
-    cdef void _update_stop_market_order(self, StopMarketOrder order, Quantity qty, Price price) except *
-    cdef void _update_stop_limit_order(self, StopLimitOrder order, Quantity qty, Price price, Price trigger) except *
+    cdef void _update_stop_market_order(self, StopMarketOrder order, Quantity qty, Price trigger_price) except *
+    cdef void _update_stop_limit_order(self, StopLimitOrder order, Quantity qty, Price price, Price trigger_price) except *
 
 # -- EVENT HANDLING --------------------------------------------------------------------------------
 
-    cdef void _accept_order(self, PassiveOrder order) except *
-    cdef void _update_order(self, PassiveOrder order, Quantity qty, Price price, Price trigger=*, bint update_ocos=*) except *
-    cdef void _update_oco_orders(self, PassiveOrder order) except *
-    cdef void _cancel_order(self, PassiveOrder order, bint cancel_ocos=*) except *
-    cdef void _cancel_oco_orders(self, PassiveOrder order) except *
-    cdef void _expire_order(self, PassiveOrder order) except *
+    cdef void _accept_order(self, Order order) except *
+    cdef void _update_order(self, Order order, Quantity qty, Price price=*, Price trigger_price=*, bint update_ocos=*) except *
+    cdef void _update_oco_orders(self, Order order) except *
+    cdef void _cancel_order(self, Order order, bint cancel_ocos=*) except *
+    cdef void _cancel_oco_orders(self, Order order) except *
+    cdef void _expire_order(self, Order order) except *
 
 # -- ORDER MATCHING ENGINE -------------------------------------------------------------------------
 
-    cdef void _add_order(self, PassiveOrder order) except *
+    cdef void _add_order(self, Order order) except *
     cdef void _delete_order(self, Order order) except *
     cdef void _iterate_matching_engine(self, InstrumentId instrument_id, int64_t timestamp_ns) except *
     cdef void _iterate_side(self, list orders, int64_t timestamp_ns) except *
-    cdef void _match_order(self, PassiveOrder order) except *
+    cdef void _match_order(self, Order order) except *
     cdef void _match_limit_order(self, LimitOrder order) except *
     cdef void _match_stop_market_order(self, StopMarketOrder order) except *
     cdef void _match_stop_limit_order(self, StopLimitOrder order) except *
@@ -169,9 +173,9 @@ cdef class SimulatedExchange:
     cdef bint _is_limit_matched(self, InstrumentId instrument_id, OrderSide side, Price price) except *
     cdef bint _is_stop_marketable(self, InstrumentId instrument_id, OrderSide side, Price price) except *
     cdef bint _is_stop_triggered(self, InstrumentId instrument_id, OrderSide side, Price price) except *
-    cdef list _determine_limit_price_and_volume(self, PassiveOrder order)
+    cdef list _determine_limit_price_and_volume(self, Order order)
     cdef list _determine_market_price_and_volume(self, Order order)
-    cdef void _fill_limit_order(self, PassiveOrder order, LiquiditySide liquidity_side) except *
+    cdef void _fill_limit_order(self, Order order, LiquiditySide liquidity_side) except *
     cdef void _fill_market_order(self, Order order, LiquiditySide liquidity_side) except *
     cdef void _apply_fills(
         self,
@@ -197,7 +201,7 @@ cdef class SimulatedExchange:
     cdef PositionId _get_position_id(self, Order order, bint generate=*)
     cdef PositionId _generate_venue_position_id(self, InstrumentId instrument_id)
     cdef VenueOrderId _generate_venue_order_id(self, InstrumentId instrument_id)
-    cdef ExecutionId _generate_execution_id(self)
+    cdef TradeId _generate_trade_id(self)
 
 # -- EVENT GENERATORS ------------------------------------------------------------------------------
 
@@ -223,10 +227,10 @@ cdef class SimulatedExchange:
         VenueOrderId venue_order_id,
         str reason,
     ) except *
-    cdef void _generate_order_updated(self, Order order, Quantity qty, Price price, Price trigger) except *
+    cdef void _generate_order_updated(self, Order order, Quantity qty, Price price, Price trigger_price) except *
     cdef void _generate_order_canceled(self, Order order) except *
     cdef void _generate_order_triggered(self, StopLimitOrder order) except *
-    cdef void _generate_order_expired(self, PassiveOrder order) except *
+    cdef void _generate_order_expired(self, Order order) except *
     cdef void _generate_order_filled(
         self,
         Order order,

@@ -37,8 +37,9 @@ from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.logging import LogColor
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.core.datetime import millis_to_nanos
-from nautilus_trader.execution.messages import ExecutionReport
-from nautilus_trader.execution.messages import OrderStatusReport
+from nautilus_trader.execution.reports import OrderStatusReport
+from nautilus_trader.execution.reports import PositionStatusReport
+from nautilus_trader.execution.reports import TradeReport
 from nautilus_trader.live.execution_client import LiveExecutionClient
 from nautilus_trader.model.c_enums.account_type import AccountType
 from nautilus_trader.model.c_enums.order_side import OrderSideParser
@@ -50,14 +51,15 @@ from nautilus_trader.model.commands.trading import ModifyOrder
 from nautilus_trader.model.commands.trading import SubmitOrder
 from nautilus_trader.model.commands.trading import SubmitOrderList
 from nautilus_trader.model.enums import LiquiditySide
+from nautilus_trader.model.enums import OMSType
 from nautilus_trader.model.enums import TimeInForce
 from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import ClientOrderId
-from nautilus_trader.model.identifiers import ExecutionId
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import StrategyId
 from nautilus_trader.model.identifiers import Symbol
+from nautilus_trader.model.identifiers import TradeId
 from nautilus_trader.model.identifiers import VenueOrderId
 from nautilus_trader.model.instruments.base import Instrument
 from nautilus_trader.model.objects import Money
@@ -111,6 +113,7 @@ class BinanceSpotExecutionClient(LiveExecutionClient):
         super().__init__(
             loop=loop,
             client_id=ClientId(BINANCE_VENUE.value),
+            oms_type=OMSType.NETTING,
             instrument_provider=instrument_provider,
             account_type=AccountType.CASH,
             base_currency=None,
@@ -207,7 +210,7 @@ class BinanceSpotExecutionClient(LiveExecutionClient):
             ts_event=response["updateTime"],
         )
 
-    async def _ping_listen_keys(self):
+    async def _ping_listen_keys(self) -> None:
         while True:
             self._log.debug(
                 f"Scheduled `ping_listen_keys` to run in " f"{self._ping_listen_keys_interval}s."
@@ -233,6 +236,125 @@ class BinanceSpotExecutionClient(LiveExecutionClient):
 
         self._set_connected(False)
         self._log.info("Disconnected.")
+
+    # -- EXECUTION REPORTS -------------------------------------------------------------------------
+
+    async def generate_order_status_report(
+        self,
+        venue_order_id: VenueOrderId = None,
+    ) -> Optional[OrderStatusReport]:
+        """
+        Generate an order status report for the given venue order ID.
+
+        If the order is not found, or an error occurs, then logs and returns
+        ``None``.
+
+        Parameters
+        ----------
+        venue_order_id : VenueOrderId, optional
+            The venue order ID (assigned by the venue) query filter.
+
+        Returns
+        -------
+        OrderStatusReport or ``None``
+
+        """
+        self._log.warning("Cannot generate OrderStatusReport: not yet implemented.")
+
+        return None
+
+    async def generate_order_status_reports(
+        self,
+        instrument_id: InstrumentId = None,
+        start: datetime = None,
+        end: datetime = None,
+        open_only: bool = False,
+    ) -> List[OrderStatusReport]:
+        """
+        Generate a list of order status reports with optional query filters.
+
+        The returned list may be empty if no orders match the given parameters.
+
+        Parameters
+        ----------
+        instrument_id : InstrumentId, optional
+            The instrument ID query filter.
+        start : datetime, optional
+            The start datetime query filter.
+        end : datetime, optional
+            The end datetime query filter.
+        open_only : bool, default False
+            If the query is for open orders only.
+
+        Returns
+        -------
+        list[OrderStatusReport]
+
+        """
+        self._log.warning("Cannot generate OrderStatusReports: not yet implemented.")
+
+        return []
+
+    async def generate_trade_reports(
+        self,
+        instrument_id: InstrumentId = None,
+        venue_order_id: VenueOrderId = None,
+        start: datetime = None,
+        end: datetime = None,
+    ) -> List[TradeReport]:
+        """
+        Generate a list of trade reports with optional query filters.
+
+        The returned list may be empty if no trades match the given parameters.
+
+        Parameters
+        ----------
+        instrument_id : InstrumentId, optional
+            The instrument ID query filter.
+        venue_order_id : VenueOrderId, optional
+            The venue order ID (assigned by the venue) query filter.
+        start : datetime, optional
+            The start datetime query filter.
+        end : datetime, optional
+            The end datetime query filter.
+
+        Returns
+        -------
+        list[TradeReport]
+
+        """
+        self._log.warning("Cannot generate TradeReports: not yet implemented.")
+
+        return []
+
+    async def generate_position_status_reports(
+        self,
+        instrument_id: InstrumentId = None,
+        start: datetime = None,
+        end: datetime = None,
+    ) -> List[PositionStatusReport]:
+        """
+        Generate a list of position status reports with optional query filters.
+
+        The returned list may be empty if no positions match the given parameters.
+
+        Parameters
+        ----------
+        instrument_id : InstrumentId, optional
+            The instrument ID query filter.
+        start : datetime, optional
+            The start datetime query filter.
+        end : datetime, optional
+            The end datetime query filter.
+
+        Returns
+        -------
+        list[PositionStatusReport]
+
+        """
+        self._log.warning("Cannot generate PositionStatusReports: not yet implemented.")
+
+        return []
 
     # -- COMMAND HANDLERS --------------------------------------------------------------------------
 
@@ -300,7 +422,7 @@ class BinanceSpotExecutionClient(LiveExecutionClient):
                 ts_event=self._clock.timestamp_ns(),  # TODO(cs): Parse from response
             )
 
-    async def _submit_market_order(self, order: MarketOrder):
+    async def _submit_market_order(self, order: MarketOrder) -> None:
         await self._account_spot.new_order(
             symbol=order.instrument_id.symbol.value,
             side=OrderSideParser.to_str_py(order.side),
@@ -310,7 +432,7 @@ class BinanceSpotExecutionClient(LiveExecutionClient):
             recv_window=5000,
         )
 
-    async def _submit_limit_order(self, order: LimitOrder):
+    async def _submit_limit_order(self, order: LimitOrder) -> None:
         if order.is_post_only:
             time_in_force = None
         else:
@@ -328,7 +450,7 @@ class BinanceSpotExecutionClient(LiveExecutionClient):
             recv_window=5000,
         )
 
-    async def _submit_stop_limit_order(self, order: StopLimitOrder):
+    async def _submit_stop_limit_order(self, order: StopLimitOrder) -> None:
         # Get current market price
         response: Dict[str, Any] = await self._market_spot.ticker_price(
             order.instrument_id.symbol.value
@@ -342,7 +464,7 @@ class BinanceSpotExecutionClient(LiveExecutionClient):
             time_in_force=TimeInForceParser.to_str_py(order.time_in_force),
             quantity=str(order.quantity),
             price=str(order.price),
-            stop_price=str(order.trigger),
+            stop_price=str(order.trigger_price),
             iceberg_qty=str(order.display_qty) if order.display_qty is not None else None,
             new_client_order_id=order.client_order_id.value,
             recv_window=5000,
@@ -350,7 +472,7 @@ class BinanceSpotExecutionClient(LiveExecutionClient):
 
     async def _submit_order_list(self, command: SubmitOrderList) -> None:
         for order in command.list:
-            if order.contingency_ids:  # TODO(cs): Implement
+            if order.linked_order_ids:  # TODO(cs): Implement
                 self._log.warning(f"Cannot yet handle contingency orders, {order}.")
             await self._submit_order(order)
 
@@ -390,12 +512,12 @@ class BinanceSpotExecutionClient(LiveExecutionClient):
                 ts_event=self._clock.timestamp_ns(),
             )
 
-        # Cancel all working orders
-        working_orders = self._cache.orders_working(
+        # Cancel all open orders
+        open_orders = self._cache.orders_open(
             instrument_id=command.instrument_id,
             strategy_id=command.strategy_id,
         )
-        for order in working_orders:
+        for order in open_orders:
             self.generate_order_pending_cancel(
                 strategy_id=order.strategy_id,
                 instrument_id=order.instrument_id,
@@ -410,59 +532,6 @@ class BinanceSpotExecutionClient(LiveExecutionClient):
             )
         except BinanceError as ex:
             self._log.error(ex.message)  # type: ignore  # TODO(cs): Improve errors
-
-    # -- RECONCILIATION ----------------------------------------------------------------------------
-
-    async def generate_order_status_report(self, order: Order) -> OrderStatusReport:  # type: ignore
-        """
-        Generate an order status report for the given order.
-
-        If an error occurs then logs and returns ``None``.
-
-        Parameters
-        ----------
-        order : Order
-            The order for the report.
-
-        Returns
-        -------
-        OrderStatusReport or ``None``
-
-        """
-        self._log.error(  # pragma: no cover
-            "Cannot generate order status report: not yet implemented.",
-        )
-
-    async def generate_exec_reports(
-        self,
-        venue_order_id: VenueOrderId,
-        symbol: Symbol,
-        since: datetime = None,
-    ) -> List[ExecutionReport]:  # type: ignore
-        """
-        Generate a list of execution reports.
-
-        The returned list may be empty if no trades match the given parameters.
-
-        Parameters
-        ----------
-        venue_order_id : VenueOrderId
-            The venue order ID for the trades.
-        symbol : Symbol
-            The symbol for the trades.
-        since : datetime, optional
-            The timestamp to filter trades on.
-
-        Returns
-        -------
-        list[ExecutionReport]
-
-        """
-        self._log.error(  # pragma: no cover
-            "Cannot generate execution report: not yet implemented.",
-        )
-
-        return []
 
     def _handle_user_ws_message(self, raw: bytes):
         msg: Dict[str, Any] = orjson.loads(raw)
@@ -509,7 +578,7 @@ class BinanceSpotExecutionClient(LiveExecutionClient):
         if strategy_id is None:
             # TODO(cs): Implement external order handling
             self._log.error(
-                f"Cannot handle execution report: " f"strategy ID for {client_order_id} not found.",
+                f"Cannot handle trade report: strategy ID for {client_order_id} not found.",
             )
             return
 
@@ -543,7 +612,7 @@ class BinanceSpotExecutionClient(LiveExecutionClient):
                 client_order_id=client_order_id,
                 venue_order_id=venue_order_id,
                 venue_position_id=None,  # NETTING accounts
-                execution_id=ExecutionId(str(data["t"])),  # Trade ID
+                trade_id=TradeId(str(data["t"])),  # Trade ID
                 order_side=OrderSideParser.from_str_py(data["S"]),
                 order_type=parse_order_type(order_type_str),
                 last_qty=Quantity.from_str(data["l"]),

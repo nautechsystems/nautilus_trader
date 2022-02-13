@@ -24,10 +24,10 @@ from nautilus_trader.model.currency cimport Currency
 from nautilus_trader.model.events.order cimport OrderFilled
 from nautilus_trader.model.identifiers cimport AccountId
 from nautilus_trader.model.identifiers cimport ClientOrderId
-from nautilus_trader.model.identifiers cimport ExecutionId
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.identifiers cimport PositionId
 from nautilus_trader.model.identifiers cimport StrategyId
+from nautilus_trader.model.identifiers cimport TradeId
 from nautilus_trader.model.identifiers cimport TraderId
 from nautilus_trader.model.objects cimport Money
 from nautilus_trader.model.objects cimport Price
@@ -36,7 +36,7 @@ from nautilus_trader.model.objects cimport Quantity
 
 cdef class Position:
     cdef list _events
-    cdef list _execution_ids
+    cdef list _trade_ids
     cdef object _buy_qty
     cdef object _sell_qty
     cdef dict _commissions
@@ -58,7 +58,7 @@ cdef class Position:
     cdef readonly PositionSide side
     """The current position side.\n\n:returns: `PositionSide`"""
     cdef readonly object net_qty
-    """The current net quantity (positive for position side``LONG``, negative for position side ``SHORT``).\n\n:returns: `Decimal`"""
+    """The current net quantity (positive for position side ``LONG``, negative for ``SHORT``).\n\n:returns: `Decimal`"""
     cdef readonly Quantity quantity
     """The current open quantity.\n\n:returns: `Quantity`"""
     cdef readonly Quantity peak_qty
@@ -103,10 +103,10 @@ cdef class Position:
 
     cdef list client_order_ids_c(self)
     cdef list venue_order_ids_c(self)
-    cdef list execution_ids_c(self)
+    cdef list trade_ids_c(self)
     cdef list events_c(self)
     cdef OrderFilled last_event_c(self)
-    cdef ExecutionId last_execution_id_c(self)
+    cdef TradeId last_trade_id_c(self)
     cdef int event_count_c(self) except *
     cdef bint is_long_c(self) except *
     cdef bint is_short_c(self) except *

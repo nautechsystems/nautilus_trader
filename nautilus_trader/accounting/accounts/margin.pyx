@@ -455,7 +455,7 @@ cdef class MarginAccount(Account):
             The transaction quantity.
         last_px : Decimal or Price
             The transaction price.
-        liquidity_side : LiquiditySide
+        liquidity_side : LiquiditySide {``MAKER``, ``TAKER``}
             The liquidity side for the transaction.
         inverse_as_quote : bool
             If inverse instrument calculations use quote currency (instead of base).
@@ -567,7 +567,7 @@ cdef class MarginAccount(Account):
         ----------
         instrument : Instrument
             The instrument for the calculation.
-        side : PositionSide
+        side : PositionSide {``LONG``, ``SHORT``}
             The currency position side.
         quantity : Quantity
             The currency position quantity.

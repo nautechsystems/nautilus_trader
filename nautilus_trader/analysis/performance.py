@@ -100,7 +100,7 @@ class PerformanceAnalyzer:
 
         """
         currency = realized_pnl.currency
-        realized_pnls = self._realized_pnls.get(currency, pd.Series())
+        realized_pnls = self._realized_pnls.get(currency, pd.Series(dtype=float64))
         realized_pnls.loc[position_id.value] = realized_pnl.as_double()
         self._realized_pnls[currency] = realized_pnls
 

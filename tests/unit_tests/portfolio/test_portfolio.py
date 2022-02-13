@@ -298,7 +298,7 @@ class TestPortfolio:
             )
             self.exec_engine.process(fill)
 
-    def test_update_orders_working_cash_account(self):
+    def test_update_orders_open_cash_account(self):
         # Arrange
         AccountFactory.register_calculated_account("BINANCE")
 
@@ -329,7 +329,7 @@ class TestPortfolio:
 
         self.portfolio.update_account(state)
 
-        # Create working order
+        # Create open order
         order = self.order_factory.limit(
             BTCUSDT_BINANCE.id,
             OrderSide.BUY,
@@ -347,7 +347,7 @@ class TestPortfolio:
         assert self.portfolio.balances_locked(BINANCE)[USDT].as_decimal() == 50100
 
     @pytest.mark.skip(reason="investigate margin cleanup")
-    def test_update_orders_working_margin_account(self):
+    def test_update_orders_open_margin_account(self):
         # Arrange
         AccountFactory.register_calculated_account("BINANCE")
 
@@ -383,7 +383,7 @@ class TestPortfolio:
 
         self.portfolio.update_account(state)
 
-        # Create two working orders
+        # Create two open orders
         order1 = self.order_factory.stop_market(
             BTCUSDT_BINANCE.id,
             OrderSide.BUY,
@@ -462,7 +462,7 @@ class TestPortfolio:
 
         self.portfolio.update_account(state)
 
-        # Create a passive order
+        # Create a limit order
         order1 = self.order_factory.limit(
             BETTING_INSTRUMENT.id,
             OrderSide.BUY,

@@ -13,6 +13,10 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+# ContingencyType <1385> field
+# FIX 5.0 SP2 EP266
+# https://www.onixs.biz/fix-dictionary/5.0.sp2.ep266/tagNum_1385.html
+
 
 cpdef enum ContingencyType:
     NONE = 0

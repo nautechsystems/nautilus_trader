@@ -66,6 +66,7 @@ cdef class BacktestExecClient(ExecutionClient):
     ):
         super().__init__(
             client_id=ClientId(exchange.id.value),
+            oms_type=exchange.oms_type,
             account_type=exchange.account_type,
             base_currency=exchange.base_currency,
             msgbus=msgbus,

@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: General Questions
+    url: https://github.com/nautechsystems/nautilus_trader/discussions
+    about: Please ask questions like "How do I achieve x?" here.
+  - name: Discord
+    url: https://discord.gg/AUWVs3XaCS
+    about: We maintain a Discord] server where contributors and active users can interact!

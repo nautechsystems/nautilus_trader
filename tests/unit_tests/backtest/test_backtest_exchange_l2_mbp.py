@@ -37,6 +37,7 @@ from nautilus_trader.model.enums import BookType
 from nautilus_trader.model.enums import OMSType
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import OrderStatus
+from nautilus_trader.model.identifiers import TradeId
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
@@ -236,7 +237,7 @@ class TestL2OrderBookExchange:
         assert order.avg_px == Decimal("15.93333333333333333333333333")
         assert self.exchange.get_account().balance_total(USD) == Money(999999.88, USD)
 
-    def test_passive_post_only_insert(self):
+    def test_post_only_insert(self):
         # Arrange: Prepare market
         self.cache.add_instrument(USDJPY_SIM)
         # Market is 10 @ 15
@@ -323,7 +324,7 @@ class TestL2OrderBookExchange:
             price=Price.from_str("14.0"),
             size=Quantity.from_int(1000),
             aggressor_side=AggressorSide.SELL,
-            trade_id="123456789",
+            trade_id=TradeId("123456789"),
             ts_event=0,
             ts_init=0,
         )

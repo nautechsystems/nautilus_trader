@@ -14,32 +14,56 @@
 # -------------------------------------------------------------------------------------------------
 
 import asyncio
+from decimal import Decimal
 from typing import Optional
 
-from cpython.datetime cimport datetime
-from cpython.datetime cimport timedelta
+from nautilus_trader.live.config import LiveExecEngineConfig
 
 from nautilus_trader.cache.cache cimport Cache
 from nautilus_trader.common.clock cimport LiveClock
+from nautilus_trader.common.logging cimport RECV
+from nautilus_trader.common.logging cimport RPT
 from nautilus_trader.common.logging cimport LogColor
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.common.queue cimport Queue
 from nautilus_trader.core.correctness cimport Condition
+from nautilus_trader.core.datetime cimport dt_to_unix_nanos
+from nautilus_trader.core.fsm cimport InvalidStateTrigger
 from nautilus_trader.core.message cimport Message
 from nautilus_trader.core.message cimport MessageCategory
 from nautilus_trader.execution.engine cimport ExecutionEngine
-from nautilus_trader.execution.messages cimport ExecutionMassStatus
-from nautilus_trader.execution.messages cimport OrderStatusReport
-from nautilus_trader.live.execution_client cimport LiveExecutionClient
+from nautilus_trader.execution.reports cimport ExecutionMassStatus
+from nautilus_trader.execution.reports cimport ExecutionReport
+from nautilus_trader.execution.reports cimport OrderStatusReport
+from nautilus_trader.execution.reports cimport PositionStatusReport
+from nautilus_trader.execution.reports cimport TradeReport
+from nautilus_trader.model.c_enums.liquidity_side cimport LiquiditySide
 from nautilus_trader.model.c_enums.order_status cimport OrderStatus
+from nautilus_trader.model.c_enums.order_type cimport OrderType
+from nautilus_trader.model.c_enums.trailing_offset_type cimport TrailingOffsetTypeParser
+from nautilus_trader.model.c_enums.trigger_type cimport TriggerTypeParser
 from nautilus_trader.model.commands.trading cimport TradingCommand
+from nautilus_trader.model.events.order cimport OrderAccepted
+from nautilus_trader.model.events.order cimport OrderCanceled
 from nautilus_trader.model.events.order cimport OrderEvent
-from nautilus_trader.model.identifiers cimport ClientId
+from nautilus_trader.model.events.order cimport OrderExpired
+from nautilus_trader.model.events.order cimport OrderFilled
+from nautilus_trader.model.events.order cimport OrderInitialized
+from nautilus_trader.model.events.order cimport OrderRejected
+from nautilus_trader.model.events.order cimport OrderTriggered
+from nautilus_trader.model.events.order cimport OrderUpdated
 from nautilus_trader.model.identifiers cimport ClientOrderId
+from nautilus_trader.model.identifiers cimport StrategyId
+from nautilus_trader.model.identifiers cimport TradeId
+from nautilus_trader.model.identifiers cimport VenueOrderId
+from nautilus_trader.model.instruments.base cimport Instrument
+from nautilus_trader.model.objects cimport Money
+from nautilus_trader.model.objects cimport Price
+from nautilus_trader.model.objects cimport Quantity
 from nautilus_trader.model.orders.base cimport Order
+from nautilus_trader.model.orders.unpacker cimport OrderUnpacker
+from nautilus_trader.model.position cimport Position
 from nautilus_trader.msgbus.bus cimport MessageBus
-
-from nautilus_trader.live.config import LiveExecEngineConfig
 
 
 cdef class LiveExecutionEngine(ExecutionEngine):
@@ -91,8 +115,16 @@ cdef class LiveExecutionEngine(ExecutionEngine):
         self._loop = loop
         self._queue = Queue(maxsize=config.qsize)
 
+        # Settings
+        self.recon_auto = config.recon_auto if config else True
+        self.recon_lookback_mins = config.recon_lookback_mins if config and config.recon_lookback_mins is not None else 0  # TODO: WIP!
+
         self._run_queue_task = None
         self.is_running = False
+
+        # Register endpoints
+        self._msgbus.register(endpoint="ExecEngine.reconcile_report", handler=self.reconcile_report)
+        self._msgbus.register(endpoint="ExecEngine.reconcile_mass_status", handler=self.reconcile_mass_status)
 
     def connect(self):
         """
@@ -130,121 +162,7 @@ cdef class LiveExecutionEngine(ExecutionEngine):
         """
         return self._queue.qsize()
 
-    async def reconcile_state(self, double timeout_secs) -> bool:
-        """
-        Reconcile the execution engines state with all execution clients.
-
-        The execution engine will collect all cached active orders and send
-        those to the relevant execution client(s) for a comparison with the
-        exchange(s) order status.
-
-        If a cached order does not match the exchanges order status then
-        the missing events will be generated. If there is not enough information
-        to reconcile a state then errors will be logged.
-
-        Parameters
-        ----------
-        timeout_secs : double
-            The seconds to allow for reconciliation before timing out.
-
-        Returns
-        -------
-        bool
-            True if states reconcile within timeout, else False.
-
-        Raises
-        ------
-        ValueError
-            If `timeout_secs` is not positive (> 0).
-
-        """
-        Condition.positive(timeout_secs, "timeout_secs")
-        cdef dict active_orders = {
-            order.client_order_id: order for order in self._cache.orders() if not order.is_completed_c()
-        }  # type: dict[ClientOrderId, Order]
-
-        if not active_orders:
-            return True  # Execution states reconciled
-
-        cdef int count = len(active_orders)
-        self._log.info(
-            f"Reconciling state: {count} active order{'s' if count > 1 else ''}...",
-            color=LogColor.BLUE,
-        )
-
-        # Initialize order status map
-        cdef dict client_orders = {
-            name: [] for name in self._clients.keys()
-        }   # type: dict[ClientId, list[Order]]
-
-        # Build order status map
-        cdef Order order
-        cdef LiveExecutionClient client
-        for order in active_orders.values():
-            client = self._routing_map.get(order.instrument_id.venue)
-            if client is None:
-                self._log.error(
-                    f"Cannot reconcile state: "
-                    f"No client found for {order.instrument_id.venue} for active {order}."
-                )
-                continue
-            client_orders[client.id].append(order)
-
-        cdef dict client_mass_status = {}  # type: dict[ClientId, ExecutionMassStatus]
-
-        # Generate state report for each client
-        for name, client in self._clients.items():
-            client_mass_status[name] = await client.generate_mass_status(client_orders[name])
-
-        # Reconcile order status
-        cdef ExecutionMassStatus mass_status
-        cdef OrderStatusReport order_status_report
-        for name, mass_status in client_mass_status.items():
-            order_reports = mass_status.order_reports()
-            if not order_reports:
-                continue
-            for order_status_report in order_reports.values():
-                order = active_orders.get(order_status_report.client_order_id)
-                if order is None:
-                    self._log.error(
-                        f"Cannot reconcile state: "
-                        f"No order found for {repr(order_status_report.client_order_id)}."
-                    )
-                    continue
-                exec_reports = mass_status.exec_reports().get(order.venue_order_id, [])
-                await self._clients[name].reconcile_state(order_status_report, order, exec_reports)
-
-        # Wait for state resolution until timeout...
-        cdef datetime timeout = self._clock.utc_now() + timedelta(seconds=timeout_secs)
-        cdef OrderStatusReport report
-        while True:
-            reconciled = True
-            for order in active_orders.values():
-                client = self._routing_map.get(order.instrument_id.venue)
-                if client is None:
-                    self._log.error(
-                        f"Cannot reconcile state: "
-                        f"No client found for {order.instrument_id.venue}."
-                    )
-                    return False  # Will never reconcile
-                mass_status = client_mass_status.get(client.id)
-                if mass_status is None:
-                    return False  # Will never reconcile
-                report = mass_status.order_reports().get(order.venue_order_id)
-                if report is None:
-                    return False  # Will never reconcile
-                if order.status_c() != report.order_status:
-                    reconciled = False  # Incorrect state on this loop
-                if report.order_status in (OrderStatus.FILLED, OrderStatus.PARTIALLY_FILLED):
-                    if order.filled_qty != report.filled_qty:
-                        reconciled = False  # Incorrect filled quantity on this loop
-            if reconciled:
-                break
-            if self._clock.utc_now() >= timeout:
-                return False
-            await asyncio.sleep(0)  # Sleep for one event loop cycle
-
-        return True  # Execution states reconciled
+# -- COMMANDS --------------------------------------------------------------------------------------
 
     cpdef void kill(self) except *:
         """
@@ -360,3 +278,546 @@ cdef class LiveExecutionEngine(ExecutionEngine):
     cdef void _enqueue_sentinel(self) except *:
         self._queue.put_nowait(self._sentinel)
         self._log.debug(f"Sentinel message placed on message queue.")
+
+    async def reconcile_state(self, double timeout_secs=10.0) -> bool:
+        """
+        Reconcile the execution engines state with all execution clients.
+
+        Parameters
+        ----------
+        timeout_secs : double, default 10.0
+            The seconds to allow for reconciliation before timing out.
+
+        Returns
+        -------
+        bool
+            True if states reconcile within timeout, else False.
+
+        Raises
+        ------
+        ValueError
+            If `timeout_secs` is not positive (> 0).
+
+        """
+        Condition.positive(timeout_secs, "timeout_secs")
+
+        # Request execution mass status report from clients
+        recon_lookback_mins = self.recon_lookback_mins if self.recon_lookback_mins > 0 else None
+        mass_status_coros = [
+            c.generate_mass_status(recon_lookback_mins) for c in self._clients.values()
+        ]
+        mass_status_all = await asyncio.gather(*mass_status_coros)
+
+        cdef list results = []
+
+        # Reconcile each mass status with the execution engine
+        for mass_status in mass_status_all:
+            result = self._reconcile_mass_status(mass_status)
+            results.append(result)
+
+        return all(results)
+
+    cpdef void reconcile_report(self, ExecutionReport report) except *:
+        """
+        Check the given execution report.
+
+        Parameters
+        ----------
+        report : Document
+            The execution report to check.
+
+        """
+        Condition.not_none(report, "report")
+
+        self._reconcile_report(report)
+
+    cpdef void reconcile_mass_status(self, ExecutionMassStatus report) except *:
+        """
+        Reconcile the given execution mass status report.
+
+        Parameters
+        ----------
+        report : Document
+            The execution mass status report to reconcile.
+
+        """
+        Condition.not_none(report, "report")
+
+        self._reconcile_mass_status(report)
+
+# -- RECONCILIATION --------------------------------------------------------------------------------
+
+    cdef bint _reconcile_report(self, ExecutionReport report) except *:
+        self._log.debug(f"{RECV}{RPT} {report}.")
+        self.report_count += 1
+
+        self._log.info(f"Reconciling {report}.", color=LogColor.BLUE)
+
+        cdef bint result
+        if isinstance(report, OrderStatusReport):
+            result = self._reconcile_order_report(report, [])  # No trades to reconcile
+        elif isinstance(report, TradeReport):
+            result = self._reconcile_trade_report_single(report)
+        elif isinstance(report, PositionStatusReport):
+            result = self._reconcile_position_report(report)
+        else:  # pragma: no cover (design-time error)
+            self._log.error(f"Cannot handle report: unrecognized {report}.")
+            return False
+
+        self._msgbus.publish_c(
+            topic=f"reports.execution"
+                  f".{report.instrument_id.venue}"
+                  f".{report.instrument_id.symbol}",
+            msg=report,
+        )
+
+        return result
+
+    cdef bint _reconcile_mass_status(self, ExecutionMassStatus mass_status) except *:
+        self._log.debug(f"{RECV}{RPT} {mass_status}.")
+        self.report_count += 1
+
+        self._log.info(
+            f"Reconciling ExecutionMassStatus for {mass_status.venue}.",
+            color=LogColor.BLUE,
+        )
+
+        cdef list results = []  # type: list[bool]
+
+        cdef:
+            VenueOrderId venue_order_id
+            OrderStatusReport order_report
+            list trades
+            bint result
+        # Reconcile all reported orders
+        for venue_order_id, order_report in mass_status.order_reports().items():
+            trades = mass_status.trade_reports().get(venue_order_id, [])
+            try:
+                result = self._reconcile_order_report(order_report, trades)
+            except InvalidStateTrigger as ex:
+                self._log.error(str(ex))
+                result = False
+            results.append(result)
+
+        cdef list position_reports  # type: list[PositionStatusReport]
+        # Reconcile all reported positions
+        for position_reports in mass_status.position_reports().values():
+            for report in position_reports:
+                result = self._reconcile_position_report(report)
+                results.append(result)
+
+        # Publish mass status
+        self._msgbus.publish_c(
+            topic=f"reports.execution.{mass_status.venue.value}",
+            msg=mass_status,
+        )
+
+        return all(results)
+
+    cdef bint _reconcile_order_report(self, OrderStatusReport report, list trades) except *:
+        cdef ClientOrderId client_order_id = report.client_order_id
+        if client_order_id is None:
+            client_order_id = self._cache.client_order_id(report.venue_order_id)
+            if client_order_id is None:
+                # Generate external client order ID
+                client_order_id = self._generate_client_order_id()
+            # Assign to report
+            report.client_order_id = client_order_id
+
+        cdef Order order = self._cache.order(client_order_id)
+        if order is None:
+            order = self._generate_external_order(report)
+            # Add to cache without determining any position ID initially
+            self._cache.add_order(order, position_id=None)
+
+        if report.order_status == OrderStatus.REJECTED:
+            if order.status_c() != OrderStatus.REJECTED:
+                self._generate_order_rejected(order, report)
+            return True  # Reconciled
+
+        if report.order_status == OrderStatus.ACCEPTED:
+            if order.status_c() != OrderStatus.ACCEPTED:
+                self._generate_order_accepted(order, report)
+            return True  # Reconciled
+
+        # Order must have been accepted from this point
+        if order.status_c() == OrderStatus.INITIALIZED or order.status_c() == OrderStatus.SUBMITTED:
+            self._generate_order_accepted(order, report)
+
+        # Update order quantity and price deltas
+        if self._should_update(order, report):
+            self._generate_order_updated(order, report)
+
+        if report.order_status == OrderStatus.TRIGGERED:
+            if order.status_c() != OrderStatus.TRIGGERED:
+                self._generate_order_triggered(order, report)
+            return True  # Reconciled
+
+        if report.order_status == OrderStatus.CANCELED:
+            if order.status_c() != OrderStatus.CANCELED:
+                if report.ts_triggered > 0:
+                    self._generate_order_triggered(order, report)
+                self._generate_order_canceled(order, report)
+            return True  # Reconciled
+
+        if report.order_status == OrderStatus.EXPIRED:
+            if order.status_c() != OrderStatus.EXPIRED:
+                if report.ts_triggered > 0:
+                    self._generate_order_triggered(order, report)
+                self._generate_order_expired(order, report)
+            return True  # Reconciled
+
+        # Order has some fills from this point
+        cdef Instrument instrument = self._cache.instrument(order.instrument_id)
+        if instrument is None:
+            self._log.error(
+                f"Cannot reconcile order {order.client_order_id}: "
+                f"instrument {order.instrument_id} not found.",
+            )
+            return False  # Failed
+
+        # Reconcile all trades
+        cdef TradeReport trade
+        for trade in trades:
+            self._reconcile_trade_report(order, trade, instrument)
+
+        # Check reported filled qty against order filled qty
+        cdef OrderFilled fill
+        if report.filled_qty != order.filled_qty:
+            # This is due to missing trade report(s), there may now be some
+            # information loss if multiple fills occurred to reach the reported
+            # state, or if commissions differed from the default.
+            fill = self._generate_inferred_fill(order, report, instrument)
+            self._handle_event(fill)
+            assert report.filled_qty == order.filled_qty
+            assert report.avg_px == order.avg_px
+
+        return True  # Reconciled
+
+    cdef bint _reconcile_trade_report_single(self, TradeReport report) except *:
+        cdef ClientOrderId client_order_id = self._cache.client_order_id(report.venue_order_id)
+        if client_order_id is None:
+            self._log.error(
+                "Cannot reconcile TradeReport: "
+                f"client order ID {client_order_id} not found.",
+            )
+            return False  # Failed
+
+        cdef Order order = self._cache.order(client_order_id)
+        if order is None:
+            self._log.error(
+                "Cannot reconcile TradeReport: "
+                f"no order for client order ID {client_order_id}",
+            )
+            return False  # Failed
+
+        cdef Instrument instrument = self._cache.instrument(order.instrument_id)
+        if instrument is None:
+            self._log.error(
+                f"Cannot reconcile order {order.client_order_id}: "
+                f"instrument {order.instrument_id} not found.",
+            )
+            return False  # Failed
+
+        return self._reconcile_trade_report(order, report, instrument)
+
+    cdef bint _reconcile_trade_report(self, Order order, TradeReport report, Instrument instrument) except *:
+        if report.trade_id in order.trade_ids_c():
+            return True  # Fill already applied (assumes consistent trades)
+        try:
+            self._generate_order_filled(order, report, instrument)
+        except InvalidStateTrigger as ex:
+            self._log.error(str(ex))
+            result = False
+        # Check correct ordering of fills
+        if report.ts_event < order.ts_last:
+            self._log.warning(
+                f"OrderFilled applied out of chronological order from {report}",
+            )
+        return True
+
+    cdef bint _reconcile_position_report(self, PositionStatusReport report) except *:
+        if report.venue_position_id is not None:
+            return self._reconcile_position_report_hedging(report)
+        else:
+            return self._reconcile_position_report_netting(report)
+
+    cdef bint _reconcile_position_report_hedging(self, PositionStatusReport report) except *:
+        cdef Position position = self._cache.position(report.venue_position_id)
+        if position is None:
+            self._log.error(
+                f"Cannot reconcile position: "
+                f"position ID {report.venue_position_id} not found.",
+            )
+            return False  # Failed
+        if position.net_qty != report.net_qty:
+            self._log.error(
+                f"Cannot reconcile position: "
+                f"position ID {report.venue_position_id} "
+                f"net qty {position.net_qty} != reported {report.net_qty}.",
+            )
+            return False  # Failed
+
+        return True  # Reconciled
+
+    cdef bint _reconcile_position_report_netting(self, PositionStatusReport report) except *:
+        cdef list positions_open = self._cache.positions_open(
+            venue=None,  # Faster query filtering
+            instrument_id=report.instrument_id,
+        )
+        net_qty = Decimal(0)
+        for position in positions_open:
+            net_qty += position.net_qty
+        if net_qty != report.net_qty:
+            self._log.error(
+                f"Cannot reconcile position: "
+                f"{report.instrument_id} "
+                f"net qty {net_qty} != reported {report.net_qty}.",
+            )
+            return False  # Failed
+
+        return True  # Reconciled
+
+    cdef ClientOrderId _generate_client_order_id(self):
+        return ClientOrderId(f"O-{self._uuid_factory.generate().value}")
+
+    cdef OrderFilled _generate_inferred_fill(
+        self,
+        Order order,
+        OrderStatusReport report,
+        Instrument instrument,
+    ):
+        # Infer liquidity side
+        cdef LiquiditySide liquidity_side = LiquiditySide.NONE
+        if (
+            order.type == OrderType.MARKET
+            or order.type == OrderType.STOP_MARKET
+            or order.type == OrderType.TRAILING_STOP_MARKET
+        ):
+            liquidity_side = LiquiditySide.TAKER
+        elif report.post_only:
+            liquidity_side = LiquiditySide.MAKER
+
+        # Calculate last qty
+        cdef Quantity last_qty = instrument.make_qty(report.filled_qty - order.filled_qty)
+
+        # Calculate last px
+        cdef Price last_px
+        if order.avg_px is None:
+            last_px = instrument.make_price(report.avg_px)
+        else:
+            report_cost: Decimal = report.avg_px * report.filled_qty
+            filled_cost: Decimal = order.avg_px * order.filled_qty
+            last_px = instrument.make_price((report_cost - filled_cost) / last_qty.as_decimal())
+
+        cdef Money notional_value = instrument.notional_value(last_qty, last_px)
+        cdef Money commission = Money(notional_value * instrument.taker_fee, instrument.quote_currency)
+
+        cdef OrderFilled filled = OrderFilled(
+            trader_id=order.trader_id,
+            strategy_id=order.strategy_id,
+            account_id=report.account_id,
+            instrument_id=report.instrument_id,
+            client_order_id=order.client_order_id,
+            venue_order_id=report.venue_order_id,
+            trade_id=TradeId(str({self._uuid_factory.generate().value})),
+            position_id=None,
+            order_side=order.side,
+            order_type=order.type,
+            last_qty=last_qty,
+            last_px=last_px,
+            currency=instrument.quote_currency,
+            commission=commission,
+            liquidity_side=liquidity_side,
+            event_id=self._uuid_factory.generate(),
+            ts_event=report.ts_last,
+            ts_init=self._clock.timestamp_ns(),
+            reconciliation=True,
+        )
+
+        self._log.warning(f"Generated inferred {filled}.")
+        return filled
+
+    cdef Order _generate_external_order(self, OrderStatusReport report):
+        # Prepare order options
+        cdef dict options = {}
+        if report.price is not None:
+            options["price"] = str(report.price)
+        if report.trigger_price is not None:
+            options["trigger_price"] = str(report.trigger_price)
+            options["trigger_type"] = TriggerTypeParser.to_str(report.trigger_type)
+        if report.limit_offset is not None:
+            options["limit_offset"] = str(report.limit_offset)
+            options["offset_type"] =  TrailingOffsetTypeParser.to_str(report.offset_type)
+        if report.trailing_offset is not None:
+            options["trailing_offset"] = str(report.trailing_offset)
+        if report.display_qty is not None:
+            options["display_qty"] = str(report.display_qty)
+        if report.expire_time is not None:
+            expire_time_ns: int = dt_to_unix_nanos(report.expire_time)
+            if expire_time_ns > 0:
+                options["expire_time_ns"] = expire_time_ns
+
+        cdef OrderInitialized initialized = OrderInitialized(
+            trader_id=self.trader_id,
+            strategy_id=StrategyId.external_c(),
+            instrument_id=report.instrument_id,
+            client_order_id=report.client_order_id,
+            order_side=report.order_side,
+            order_type=report.order_type,
+            quantity=report.quantity,
+            time_in_force=report.time_in_force,
+            post_only=report.post_only,
+            reduce_only=report.reduce_only,
+            options=options,
+            order_list_id=report.order_list_id,
+            contingency_type=report.contingency_type,
+            linked_order_ids=None,
+            parent_order_id=None,
+            tags="EXTERNAL",
+            event_id=self._uuid_factory.generate(),
+            ts_init=self._clock.timestamp_ns(),
+            reconciliation=True,
+        )
+
+        cdef Order order = OrderUnpacker.from_init_c(initialized)
+        self._log.debug(f"Generated {initialized}.")
+
+        return order
+
+    cdef void _generate_order_rejected(self, Order order, OrderStatusReport report) except *:
+        cdef OrderRejected rejected = OrderRejected(
+            trader_id=order.trader_id,
+            strategy_id=order.strategy_id,
+            account_id=report.account_id,
+            instrument_id=order.instrument_id,
+            client_order_id=order.client_order_id,
+            reason=report.cancel_reason or "UNKNOWN",
+            event_id=self._uuid_factory.generate(),
+            ts_event=report.ts_last,
+            ts_init=self._clock.timestamp_ns(),
+            reconciliation=True,
+        )
+        self._log.debug(f"Generated {rejected}.")
+        self._handle_event(rejected)
+
+    cdef void _generate_order_accepted(self, Order order, OrderStatusReport report) except *:
+        cdef OrderAccepted accepted = OrderAccepted(
+            trader_id=self.trader_id,
+            strategy_id=order.strategy_id,
+            account_id=report.account_id,
+            instrument_id=report.instrument_id,
+            client_order_id=report.client_order_id,
+            venue_order_id=report.venue_order_id,
+            event_id=self._uuid_factory.generate(),
+            ts_event=report.ts_accepted,
+            ts_init=self._clock.timestamp_ns(),
+            reconciliation=True,
+        )
+        self._log.debug(f"Generated {accepted}.")
+        self._handle_event(accepted)
+
+    cdef void _generate_order_triggered(self, Order order, OrderStatusReport report) except *:
+        cdef OrderTriggered triggered = OrderTriggered(
+            trader_id=self.trader_id,
+            strategy_id=order.strategy_id,
+            account_id=report.account_id,
+            instrument_id=report.instrument_id,
+            client_order_id=report.client_order_id,
+            venue_order_id=report.venue_order_id,
+            event_id=self._uuid_factory.generate(),
+            ts_event=report.ts_triggered,
+            ts_init=self._clock.timestamp_ns(),
+            reconciliation=True,
+        )
+        self._log.debug(f"Generated {triggered}.")
+        self._handle_event(triggered)
+
+    cdef void _generate_order_updated(self, Order order, OrderStatusReport report) except *:
+        cdef OrderUpdated updated = OrderUpdated(
+            trader_id=self.trader_id,
+            strategy_id=order.strategy_id,
+            account_id=report.account_id,
+            instrument_id=report.instrument_id,
+            client_order_id=report.client_order_id,
+            venue_order_id=report.venue_order_id,
+            quantity=report.quantity,
+            price=report.price,
+            trigger_price=report.trigger_price,
+            event_id=self._uuid_factory.generate(),
+            ts_event=report.ts_accepted,
+            ts_init=self._clock.timestamp_ns(),
+            reconciliation=True,
+        )
+        self._log.debug(f"Generated {updated}.")
+        self._handle_event(updated)
+
+    cdef void _generate_order_canceled(self, Order order, OrderStatusReport report) except *:
+        cdef OrderCanceled canceled = OrderCanceled(
+            trader_id=order.trader_id,
+            strategy_id=order.strategy_id,
+            account_id=report.account_id,
+            instrument_id=report.instrument_id,
+            client_order_id=report.client_order_id,
+            venue_order_id=report.venue_order_id,
+            event_id=self._uuid_factory.generate(),
+            ts_event=report.ts_last,
+            ts_init=self._clock.timestamp_ns(),
+            reconciliation=True,
+        )
+        self._log.debug(f"Generated {canceled}.")
+        self._handle_event(canceled)
+
+    cdef void _generate_order_expired(self, Order order, OrderStatusReport report) except *:
+        cdef OrderExpired expired = OrderExpired(
+            trader_id=order.trader_id,
+            strategy_id=order.strategy_id,
+            account_id=report.account_id,
+            instrument_id=report.instrument_id,
+            client_order_id=report.client_order_id,
+            venue_order_id=report.venue_order_id,
+            event_id=self._uuid_factory.generate(),
+            ts_event=report.ts_last,
+            ts_init=self._clock.timestamp_ns(),
+            reconciliation=True,
+        )
+        self._log.debug(f"Generated {expired}.")
+        self._handle_event(expired)
+
+    cdef void _generate_order_filled(self, Order order, TradeReport trade, Instrument instrument) except *:
+        cdef OrderFilled filled = OrderFilled(
+            trader_id=order.trader_id,
+            strategy_id=order.strategy_id,
+            account_id=trade.account_id,
+            instrument_id=trade.instrument_id,
+            client_order_id=order.client_order_id,
+            venue_order_id=trade.venue_order_id,
+            trade_id=trade.trade_id,
+            position_id=trade.venue_position_id,
+            order_side=order.side,
+            order_type=order.type,
+            last_qty=trade.last_qty,
+            last_px=trade.last_px,
+            currency=instrument.quote_currency,
+            commission=trade.commission,
+            liquidity_side=trade.liquidity_side,
+            event_id=self._uuid_factory.generate(),
+            ts_event=trade.ts_event,
+            ts_init=self._clock.timestamp_ns(),
+            reconciliation=True,
+        )
+        self._handle_event(filled)
+
+    cdef bint _should_update(self, Order order, OrderStatusReport report) except *:
+        if report.quantity != order.quantity:
+            return True
+        elif order.type == OrderType.LIMIT:
+            if report.price != order.price:
+                return True
+        elif order.type == OrderType.STOP_MARKET or order.type == OrderType.TRAILING_STOP_MARKET:
+            if report.trigger_price != order.trigger_price:
+                return True
+        elif order.type == OrderType.STOP_LIMIT or order.type == OrderType.TRAILING_STOP_LIMIT:
+            if report.trigger_price != order.trigger_price or report.price != order.price:
+                return True
+        return False

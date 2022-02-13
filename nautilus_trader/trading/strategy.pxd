@@ -30,7 +30,6 @@ from nautilus_trader.model.identifiers cimport TraderId
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
 from nautilus_trader.model.orders.base cimport Order
-from nautilus_trader.model.orders.base cimport PassiveOrder
 from nautilus_trader.model.orders.list cimport OrderList
 from nautilus_trader.model.position cimport Position
 from nautilus_trader.msgbus.bus cimport MessageBus
@@ -87,10 +86,10 @@ cdef class TradingStrategy(Actor):
     cpdef void submit_order_list(self, OrderList order_list) except *
     cpdef void modify_order(
         self,
-        PassiveOrder order,
+        Order order,
         Quantity quantity=*,
         Price price=*,
-        Price trigger=*,
+        Price trigger_price=*,
     ) except *
     cpdef void cancel_order(self, Order order) except *
     cpdef void cancel_all_orders(self, InstrumentId instrument_id) except *

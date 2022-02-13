@@ -418,35 +418,28 @@ class TestCache:
         assert self.cache.order_exists(order.client_order_id)
         assert order.client_order_id in self.cache.client_order_ids()
         assert order in self.cache.orders()
-        assert order in self.cache.orders_active()
-        assert order in self.cache.orders_active(instrument_id=order.instrument_id)
-        assert order in self.cache.orders_active(strategy_id=self.strategy.id)
-        assert order in self.cache.orders_active(
-            instrument_id=order.instrument_id, strategy_id=self.strategy.id
-        )
         assert order in self.cache.orders_inflight()
         assert order in self.cache.orders_inflight(instrument_id=order.instrument_id)
         assert order in self.cache.orders_inflight(strategy_id=self.strategy.id)
         assert order in self.cache.orders_inflight(
             instrument_id=order.instrument_id, strategy_id=self.strategy.id
         )
-        assert order not in self.cache.orders_working()
-        assert order not in self.cache.orders_working(instrument_id=order.instrument_id)
-        assert order not in self.cache.orders_working(strategy_id=self.strategy.id)
-        assert order not in self.cache.orders_working(
+        assert order not in self.cache.orders_open()
+        assert order not in self.cache.orders_open(instrument_id=order.instrument_id)
+        assert order not in self.cache.orders_open(strategy_id=self.strategy.id)
+        assert order not in self.cache.orders_open(
             instrument_id=order.instrument_id, strategy_id=self.strategy.id
         )
-        assert order not in self.cache.orders_completed()
-        assert order not in self.cache.orders_completed(instrument_id=order.instrument_id)
-        assert order not in self.cache.orders_completed(strategy_id=self.strategy.id)
-        assert order not in self.cache.orders_completed(
+        assert order not in self.cache.orders_closed()
+        assert order not in self.cache.orders_closed(instrument_id=order.instrument_id)
+        assert order not in self.cache.orders_closed(strategy_id=self.strategy.id)
+        assert order not in self.cache.orders_closed(
             instrument_id=order.instrument_id, strategy_id=self.strategy.id
         )
 
-        assert self.cache.orders_active_count() == 1
+        assert self.cache.orders_open_count() == 0
+        assert self.cache.orders_closed_count() == 0
         assert self.cache.orders_inflight_count() == 1
-        assert self.cache.orders_working_count() == 0
-        assert self.cache.orders_completed_count() == 0
         assert self.cache.orders_total_count() == 1
 
     def test_update_order_for_accepted_order(self):
@@ -473,10 +466,16 @@ class TestCache:
         assert self.cache.order_exists(order.client_order_id)
         assert order.client_order_id in self.cache.client_order_ids()
         assert order in self.cache.orders()
-        assert order in self.cache.orders_active()
-        assert order in self.cache.orders_active(instrument_id=order.instrument_id)
-        assert order in self.cache.orders_active(strategy_id=self.strategy.id)
-        assert order in self.cache.orders_active(
+        assert order in self.cache.orders_open()
+        assert order in self.cache.orders_open(instrument_id=order.instrument_id)
+        assert order in self.cache.orders_open(strategy_id=self.strategy.id)
+        assert order in self.cache.orders_open(
+            instrument_id=order.instrument_id, strategy_id=self.strategy.id
+        )
+        assert order not in self.cache.orders_closed()
+        assert order not in self.cache.orders_closed(instrument_id=order.instrument_id)
+        assert order not in self.cache.orders_closed(strategy_id=self.strategy.id)
+        assert order not in self.cache.orders_closed(
             instrument_id=order.instrument_id, strategy_id=self.strategy.id
         )
         assert order not in self.cache.orders_inflight()
@@ -486,26 +485,13 @@ class TestCache:
         assert order not in self.cache.orders_inflight(
             instrument_id=order.instrument_id, strategy_id=self.strategy.id
         )
-        assert order in self.cache.orders_working()
-        assert order in self.cache.orders_working(instrument_id=order.instrument_id)
-        assert order in self.cache.orders_working(strategy_id=self.strategy.id)
-        assert order in self.cache.orders_working(
-            instrument_id=order.instrument_id, strategy_id=self.strategy.id
-        )
-        assert order not in self.cache.orders_completed()
-        assert order not in self.cache.orders_completed(instrument_id=order.instrument_id)
-        assert order not in self.cache.orders_completed(strategy_id=self.strategy.id)
-        assert order not in self.cache.orders_completed(
-            instrument_id=order.instrument_id, strategy_id=self.strategy.id
-        )
 
-        assert self.cache.orders_active_count() == 1
+        assert self.cache.orders_open_count() == 1
+        assert self.cache.orders_closed_count() == 0
         assert self.cache.orders_inflight_count() == 0
-        assert self.cache.orders_working_count() == 1
-        assert self.cache.orders_completed_count() == 0
         assert self.cache.orders_total_count() == 1
 
-    def test_update_order_for_completed_order(self):
+    def test_update_order_for_closed_order(self):
         # Arrange
         order = self.strategy.order_factory.market(
             AUDUSD_SIM.id,
@@ -534,10 +520,16 @@ class TestCache:
         assert self.cache.order_exists(order.client_order_id)
         assert order.client_order_id in self.cache.client_order_ids()
         assert order in self.cache.orders()
-        assert order not in self.cache.orders_active()
-        assert order not in self.cache.orders_active(instrument_id=order.instrument_id)
-        assert order not in self.cache.orders_active(strategy_id=self.strategy.id)
-        assert order not in self.cache.orders_active(
+        assert order not in self.cache.orders_open()
+        assert order not in self.cache.orders_open(instrument_id=order.instrument_id)
+        assert order not in self.cache.orders_open(strategy_id=self.strategy.id)
+        assert order not in self.cache.orders_open(
+            instrument_id=order.instrument_id, strategy_id=self.strategy.id
+        )
+        assert order in self.cache.orders_closed()
+        assert order in self.cache.orders_closed(instrument_id=order.instrument_id)
+        assert order in self.cache.orders_closed(strategy_id=self.strategy.id)
+        assert order in self.cache.orders_closed(
             instrument_id=order.instrument_id, strategy_id=self.strategy.id
         )
         assert order not in self.cache.orders_inflight()
@@ -546,24 +538,11 @@ class TestCache:
         assert order not in self.cache.orders_inflight(
             instrument_id=order.instrument_id, strategy_id=self.strategy.id
         )
-        assert order not in self.cache.orders_working()
-        assert order not in self.cache.orders_working(instrument_id=order.instrument_id)
-        assert order not in self.cache.orders_working(strategy_id=self.strategy.id)
-        assert order not in self.cache.orders_working(
-            instrument_id=order.instrument_id, strategy_id=self.strategy.id
-        )
-        assert order in self.cache.orders_completed()
-        assert order in self.cache.orders_completed(instrument_id=order.instrument_id)
-        assert order in self.cache.orders_completed(strategy_id=self.strategy.id)
-        assert order in self.cache.orders_completed(
-            instrument_id=order.instrument_id, strategy_id=self.strategy.id
-        )
 
         assert self.cache.venue_order_id(order.client_order_id) == order.venue_order_id
-        assert self.cache.orders_active_count() == 0
+        assert self.cache.orders_open_count() == 0
+        assert self.cache.orders_closed_count() == 1
         assert self.cache.orders_inflight_count() == 0
-        assert self.cache.orders_working_count() == 0
-        assert self.cache.orders_completed_count() == 1
         assert self.cache.orders_total_count() == 1
 
     def test_update_position_for_open_position(self):
