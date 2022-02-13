@@ -2,9 +2,9 @@
 
 ## Release Notes
 
-Released on TBD.
+Released on 15th February 2022 (UTC).
 
-**This release contains numerous parameter and property name changes**
+**This release contains numerous method, parameter and property name changes**
 
 For consistency and standardization with other protocols, the `ExecutionId` type 
 has been renamed to `TradeId` as they express the same concept with a more 
