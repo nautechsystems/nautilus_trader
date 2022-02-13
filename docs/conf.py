@@ -105,11 +105,6 @@ html_theme_options = {
             "title": "Releases ⬀",
         },
         {
-            "href": "https://github.com/nautechsystems/nautilus_trader",
-            "internal": False,
-            "title": "GitHub ⬀",
-        },
-        {
             "href": "https://nautilustrader.io/",
             "internal": False,
             "title": "nautilustrader.io ⬀",
