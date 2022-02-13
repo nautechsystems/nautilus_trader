@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2021 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -25,7 +25,6 @@ from nautilus_trader.backtest.data.wranglers import TradeTickDataWrangler
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.data.aggregation import BarBuilder
-from nautilus_trader.data.aggregation import BulkTickBarBuilder
 from nautilus_trader.data.aggregation import TickBarAggregator
 from nautilus_trader.data.aggregation import TimeBarAggregator
 from nautilus_trader.data.aggregation import ValueBarAggregator
@@ -38,6 +37,7 @@ from nautilus_trader.model.data.tick import TradeTick
 from nautilus_trader.model.enums import AggressorSide
 from nautilus_trader.model.enums import BarAggregation
 from nautilus_trader.model.enums import PriceType
+from nautilus_trader.model.identifiers import TradeId
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from tests.test_kit.mocks import ObjectStorer
@@ -296,7 +296,7 @@ class TestTickBarAggregator:
             price=Price.from_str("1.00001"),
             size=Quantity.from_int(1),
             aggressor_side=AggressorSide.BUY,
-            trade_id="123456",
+            trade_id=TradeId("123456"),
             ts_event=0,
             ts_init=0,
         )
@@ -383,7 +383,7 @@ class TestTickBarAggregator:
             price=Price.from_str("1.00001"),
             size=Quantity.from_int(1),
             aggressor_side=AggressorSide.BUY,
-            trade_id="123456",
+            trade_id=TradeId("123456"),
             ts_event=0,
             ts_init=0,
         )
@@ -393,7 +393,7 @@ class TestTickBarAggregator:
             price=Price.from_str("1.00002"),
             size=Quantity.from_int(1),
             aggressor_side=AggressorSide.BUY,
-            trade_id="123457",
+            trade_id=TradeId("123457"),
             ts_event=0,
             ts_init=0,
         )
@@ -403,7 +403,7 @@ class TestTickBarAggregator:
             price=Price.from_str("1.00000"),
             size=Quantity.from_int(1),
             aggressor_side=AggressorSide.BUY,
-            trade_id="123458",
+            trade_id=TradeId("123458"),
             ts_event=0,
             ts_init=0,
         )
@@ -535,7 +535,7 @@ class TestVolumeBarAggregator:
             price=Price.from_str("1.00001"),
             size=Quantity.from_int(1),
             aggressor_side=AggressorSide.BUY,
-            trade_id="123456",
+            trade_id=TradeId("123456"),
             ts_event=0,
             ts_init=0,
         )
@@ -622,7 +622,7 @@ class TestVolumeBarAggregator:
             price=Price.from_str("1.00001"),
             size=Quantity.from_int(3000),
             aggressor_side=AggressorSide.BUY,
-            trade_id="123456",
+            trade_id=TradeId("123456"),
             ts_event=0,
             ts_init=0,
         )
@@ -632,7 +632,7 @@ class TestVolumeBarAggregator:
             price=Price.from_str("1.00002"),
             size=Quantity.from_int(4000),
             aggressor_side=AggressorSide.BUY,
-            trade_id="123457",
+            trade_id=TradeId("123457"),
             ts_event=0,
             ts_init=0,
         )
@@ -642,7 +642,7 @@ class TestVolumeBarAggregator:
             price=Price.from_str("1.00000"),
             size=Quantity.from_int(3000),
             aggressor_side=AggressorSide.BUY,
-            trade_id="123458",
+            trade_id=TradeId("123458"),
             ts_event=0,
             ts_init=0,
         )
@@ -746,7 +746,7 @@ class TestVolumeBarAggregator:
             price=Price.from_str("1.00001"),
             size=Quantity.from_int(2000),
             aggressor_side=AggressorSide.BUY,
-            trade_id="123456",
+            trade_id=TradeId("123456"),
             ts_event=0,
             ts_init=0,
         )
@@ -756,7 +756,7 @@ class TestVolumeBarAggregator:
             price=Price.from_str("1.00002"),
             size=Quantity.from_int(3000),
             aggressor_side=AggressorSide.BUY,
-            trade_id="123457",
+            trade_id=TradeId("123457"),
             ts_event=0,
             ts_init=0,
         )
@@ -766,7 +766,7 @@ class TestVolumeBarAggregator:
             price=Price.from_str("1.00000"),
             size=Quantity.from_int(25000),
             aggressor_side=AggressorSide.BUY,
-            trade_id="123458",
+            trade_id=TradeId("123458"),
             ts_event=0,
             ts_init=0,
         )
@@ -912,7 +912,7 @@ class TestTestValueBarAggregator:
             price=Price.from_str("15000.00"),
             size=Quantity.from_str("3.5"),
             aggressor_side=AggressorSide.BUY,
-            trade_id="123456",
+            trade_id=TradeId("123456"),
             ts_event=0,
             ts_init=0,
         )
@@ -1001,7 +1001,7 @@ class TestTestValueBarAggregator:
             price=Price.from_str("20.00001"),
             size=Quantity.from_str("3000.00"),
             aggressor_side=AggressorSide.BUY,
-            trade_id="123456",
+            trade_id=TradeId("123456"),
             ts_event=0,
             ts_init=0,
         )
@@ -1011,7 +1011,7 @@ class TestTestValueBarAggregator:
             price=Price.from_str("20.00002"),
             size=Quantity.from_str("4000.00"),
             aggressor_side=AggressorSide.BUY,
-            trade_id="123457",
+            trade_id=TradeId("123457"),
             ts_event=0,
             ts_init=0,
         )
@@ -1021,7 +1021,7 @@ class TestTestValueBarAggregator:
             price=Price.from_str("20.00000"),
             size=Quantity.from_str("5000.00"),
             aggressor_side=AggressorSide.BUY,
-            trade_id="123458",
+            trade_id=TradeId("123458"),
             ts_event=0,
             ts_init=0,
         )
@@ -1231,29 +1231,3 @@ class TestTimeBarAggregator:
         assert Price.from_str("1.000035") == bar_store.get_store()[0].close
         assert Quantity.from_int(2) == bar_store.get_store()[0].volume
         assert 60_000_000_000 == bar_store.get_store()[0].ts_init
-
-
-class TestBulkTickBarBuilder:
-    def test_given_list_of_ticks_aggregates_tick_bars(self):
-        # Arrange
-        instrument = TestInstrumentProvider.default_fx_ccy("USD/JPY")
-        wrangler = QuoteTickDataWrangler(instrument)
-        provider = TestDataProvider()
-        ticks = wrangler.process(provider.read_csv_ticks("truefx-usdjpy-ticks.csv"))
-
-        bar_store = ObjectStorer()
-        handler = bar_store.store
-        instrument_id = TestStubs.usdjpy_id()
-        bar_spec = BarSpecification(3, BarAggregation.TICK, PriceType.MID)
-        bar_type = BarType(instrument_id, bar_spec)
-
-        clock = TestClock()
-        logger = Logger(clock)
-
-        builder = BulkTickBarBuilder(instrument, bar_type, logger, handler)
-
-        # Act
-        builder.receive(ticks)
-
-        # Assert
-        assert len(bar_store.get_store()[0]) == 333

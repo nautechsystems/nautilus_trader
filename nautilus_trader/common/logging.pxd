@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2021 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -29,6 +29,8 @@ cdef str RECV
 cdef str SENT
 cdef str CMD
 cdef str EVT
+cdef str DOC
+cdef str RPT
 cdef str REQ
 cdef str RES
 

@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2021 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -57,6 +57,8 @@ RECV = "<--"
 SENT = "-->"
 CMD = "[CMD]"
 EVT = "[EVT]"
+DOC = "[DOC]"
+RPT = "[RPT]"
 REQ = "[REQ]"
 RES = "[RES]"
 
@@ -494,7 +496,7 @@ cpdef void nautilus_header(LoggerAdapter logger) except *:
     logger.info("\033[36m=================================================================")
     logger.info(f"\033[36m NAUTILUS TRADER - Automated Algorithmic Trading Platform")
     logger.info(f"\033[36m by Nautech Systems Pty Ltd.")
-    logger.info(f"\033[36m Copyright (C) 2015-2021. All rights reserved.")
+    logger.info(f"\033[36m Copyright (C) 2015-2022. All rights reserved.")
     logger.info("\033[36m=================================================================")
     logger.info("                                                                 ")
     logger.info("                            .......                              ")

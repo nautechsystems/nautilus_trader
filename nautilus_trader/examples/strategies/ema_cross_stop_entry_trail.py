@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2021 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -31,8 +31,8 @@ from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.instruments.base import Instrument
 from nautilus_trader.model.orderbook.book import OrderBook
 from nautilus_trader.model.orders.stop_market import StopMarketOrder
+from nautilus_trader.trading.config import TradingStrategyConfig
 from nautilus_trader.trading.strategy import TradingStrategy
-from nautilus_trader.trading.strategy import TradingStrategyConfig
 
 
 # *** THIS IS A TEST STRATEGY WITH NO ALPHA ADVANTAGE WHATSOEVER. ***
@@ -208,9 +208,11 @@ class EMACrossStopEntryTrail(TradingStrategy):
         if self.portfolio.is_flat(self.instrument_id):
             if self.entry is not None:
                 self.cancel_order(self.entry)
+
             # BUY LOGIC
             if self.fast_ema.value >= self.slow_ema.value:
                 self.entry_buy(bar)
+            # SELL LOGIC
             else:  # fast_ema.value < self.slow_ema.value
                 self.entry_sell(bar)
         else:

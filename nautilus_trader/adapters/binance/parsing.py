@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2021 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -34,6 +34,7 @@ from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import OrderType
 from nautilus_trader.model.enums import PriceType
 from nautilus_trader.model.identifiers import InstrumentId
+from nautilus_trader.model.identifiers import TradeId
 from nautilus_trader.model.objects import AccountBalance
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
@@ -66,13 +67,13 @@ def parse_diff_depth_stream_ws(
     ts_event: int = millis_to_nanos(msg["E"])
     update_id: int = msg["U"]
 
-    bid_deltas = [
+    bid_deltas: List[OrderBookDelta] = [
         parse_book_delta_ws(instrument_id, OrderSide.BUY, d, ts_event, ts_init, update_id)
-        for d in msg.get("b")
+        for d in msg["b"]
     ]
-    ask_deltas = [
+    ask_deltas: List[OrderBookDelta] = [
         parse_book_delta_ws(instrument_id, OrderSide.SELL, d, ts_event, ts_init, update_id)
-        for d in msg.get("a")
+        for d in msg["a"]
     ]
 
     return OrderBookDeltas(
@@ -157,7 +158,7 @@ def parse_trade_tick(instrument_id: InstrumentId, msg: Dict, ts_init: int) -> Tr
         price=Price.from_str(msg["price"]),
         size=Quantity.from_str(msg["qty"]),
         aggressor_side=AggressorSide.SELL if msg["isBuyerMaker"] else AggressorSide.BUY,
-        trade_id=str(msg["id"]),
+        trade_id=TradeId(str(msg["id"])),
         ts_event=millis_to_nanos(msg["time"]),
         ts_init=ts_init,
     )
@@ -169,7 +170,7 @@ def parse_trade_tick_ws(instrument_id: InstrumentId, msg: Dict, ts_init: int) ->
         price=Price.from_str(msg["p"]),
         size=Quantity.from_str(msg["q"]),
         aggressor_side=AggressorSide.SELL if msg["m"] else AggressorSide.BUY,
-        trade_id=str(msg["t"]),
+        trade_id=TradeId(str(msg["t"])),
         ts_event=millis_to_nanos(msg["T"]),
         ts_init=ts_init,
     )
@@ -261,7 +262,6 @@ def _parse_balances(
 
     balances: List[AccountBalance] = [
         AccountBalance(
-            currency=currency,
             total=Money(values[0], currency),
             locked=Money(values[1], currency),
             free=Money(values[2], currency),
@@ -306,12 +306,12 @@ def binance_order_type(order: Order, market_price: Decimal = None) -> str:  # no
                 return "STOP_LOSS"
     elif order.type == OrderType.STOP_LIMIT:
         if order.side == OrderSide.BUY:
-            if order.trigger < market_price:
+            if order.trigger_price < market_price:
                 return "TAKE_PROFIT_LIMIT"
             else:
                 return "STOP_LOSS_LIMIT"
         else:  # OrderSide.SELL
-            if order.trigger > market_price:
+            if order.trigger_price > market_price:
                 return "TAKE_PROFIT_LIMIT"
             else:
                 return "STOP_LOSS_LIMIT"

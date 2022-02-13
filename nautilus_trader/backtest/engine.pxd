@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2021 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -45,7 +45,7 @@ cdef class BacktestEngine:
     cdef DataEngine _data_engine
     cdef ExecutionEngine _exec_engine
     cdef RiskEngine _risk_engine
-    cdef LoggerAdapter _log
+    cdef readonly LoggerAdapter _log
     cdef Logger _logger
     cdef Logger _test_logger
 

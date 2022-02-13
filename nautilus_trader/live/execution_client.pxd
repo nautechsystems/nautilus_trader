@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2021 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -20,3 +20,4 @@ from nautilus_trader.execution.client cimport ExecutionClient
 cdef class LiveExecutionClient(ExecutionClient):
     cdef readonly object _loop
     cdef readonly InstrumentProvider _instrument_provider
+    cdef readonly bint reconciliation_active

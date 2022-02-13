@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2021 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -105,7 +105,7 @@ class TestParquetSerializer:
         assert deserialized == expected
         write_objects(catalog=self.catalog, chunk=[obj])
         df = self.catalog._query(cls=cls)
-        assert len(df) == 1
+        assert len(df) in (1, 2)
         nautilus = self.catalog._query(cls=cls, as_dataframe=False)[0]
         assert nautilus.ts_init == 0
         return True
@@ -120,6 +120,10 @@ class TestParquetSerializer:
     )
     def test_serialize_and_deserialize_tick(self, tick):
         self._test_serialization(obj=tick)
+
+    def test_serialize_and_deserialize_bar(self):
+        bar = TestStubs.bar_5decimal()
+        self._test_serialization(obj=bar)
 
     def test_serialize_and_deserialize_order_book_delta(self):
         delta = OrderBookDelta(
@@ -280,9 +284,14 @@ class TestParquetSerializer:
 
         write_objects(catalog=self.catalog, chunk=[event])
 
-    def test_serialize_and_deserialize_account_state(self):
-        event = TestStubs.event_cash_account_state()
-
+    @pytest.mark.parametrize(
+        "event",
+        [
+            TestStubs.event_cash_account_state(),
+            TestStubs.event_margin_account_state(),
+        ],
+    )
+    def test_serialize_and_deserialize_account_state(self, event):
         serialized = ParquetSerializer.serialize(event)
         [deserialized] = ParquetSerializer.deserialize(cls=AccountState, chunk=serialized)
 
@@ -422,9 +431,7 @@ class TestParquetSerializer:
         df = self.catalog.instruments()
         assert len(df) == 1
 
-    @pytest.mark.parametrize(
-        "name, obj", [(obj.__class__.__name__, obj) for obj in nautilus_objects()]
-    )
-    def test_serialize_and_deserialize_all(self, name, obj):
+    @pytest.mark.parametrize("obj", nautilus_objects())
+    def test_serialize_and_deserialize_all(self, obj):
         # Arrange, Act
         assert self._test_serialization(obj)

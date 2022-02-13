@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2021 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -54,6 +54,7 @@ class TestFTXInstrumentProvider:
             url_path: str,  # noqa (needed for mock)
             headers: Dict[str, Any] = None,  # noqa (needed for mock)
             payload: Dict[str, str] = None,  # noqa (needed for mock)
+            params: Dict[str, str] = None,  # noqa (needed for mock)
         ) -> bytes:
             return orjson.loads(responses.pop())
 
@@ -80,7 +81,7 @@ class TestFTXInstrumentProvider:
         assert self.provider.find(InstrumentId(Symbol("AAPL-1231"), Venue("FTX"))) is not None
         assert self.provider.find(InstrumentId(Symbol("AAPL/USD"), Venue("FTX"))) is not None
         assert self.provider.find(InstrumentId(Symbol("AAVE-PERP"), Venue("FTX"))) is not None
-        assert len(self.provider.currencies()) == 2
+        assert len(self.provider.currencies()) == 4
         assert "1INCH" in self.provider.currencies()
         assert "USD" in self.provider.currencies()
-        assert "AAPL" not in self.provider.currencies()
+        #  assert "AAPL" not in self.provider.currencies()  # TODO: Tokenized equities

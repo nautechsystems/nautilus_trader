@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2021 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -30,7 +30,6 @@ from nautilus_trader.examples.strategies.ema_cross import EMACrossConfig
 from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import OMSType
-from nautilus_trader.model.enums import VenueType
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.objects import Money
 
@@ -39,7 +38,6 @@ if __name__ == "__main__":
     # Configure backtest engine
     config = BacktestEngineConfig(
         trader_id="BACKTESTER-001",
-        use_data_cache=True,  # Pre-cache data for increased performance on repeated runs
     )
     # Build the backtest engine
     engine = BacktestEngine(config=config)
@@ -72,7 +70,6 @@ if __name__ == "__main__":
     # Add starting balances for single-currency or multi-currency accounts
     engine.add_venue(
         venue=SIM,
-        venue_type=VenueType.ECN,
         oms_type=OMSType.HEDGING,  # Venue will generate position IDs
         account_type=AccountType.MARGIN,
         base_currency=USD,  # Standard single-currency account

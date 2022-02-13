@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2021 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -235,7 +235,7 @@ cdef class TradeTick(Tick):
         The traded size.
     aggressor_side : AggressorSide
         The trade aggressor side.
-    trade_id : str
+    trade_id : TradeId
         The trade match ID.
     ts_event: int64
         The UNIX timestamp (nanoseconds) when the tick event occurred.
@@ -254,11 +254,10 @@ cdef class TradeTick(Tick):
         Price price not None,
         Quantity size not None,
         AggressorSide aggressor_side,
-        str trade_id not None,
+        TradeId trade_id not None,
         int64_t ts_event,
         int64_t ts_init,
     ):
-        Condition.valid_string(trade_id, "trade_id")
         super().__init__(instrument_id, ts_event, ts_init)
 
         self.price = price
@@ -274,11 +273,11 @@ cdef class TradeTick(Tick):
 
     def __str__(self) -> str:
         return (
-            f"{self.instrument_id},"
+            f"{self.instrument_id.value},"
             f"{self.price},"
             f"{self.size},"
             f"{AggressorSideParser.to_str(self.aggressor_side)},"
-            f"{self.trade_id},"
+            f"{self.trade_id.value},"
             f"{self.ts_event}"
         )
 
@@ -293,7 +292,7 @@ cdef class TradeTick(Tick):
             price=Price.from_str_c(values["price"]),
             size=Quantity.from_str_c(values["size"]),
             aggressor_side=AggressorSideParser.from_str(values["aggressor_side"]),
-            trade_id=values["trade_id"],
+            trade_id=TradeId(values["trade_id"]),
             ts_event=values["ts_event"],
             ts_init=values["ts_init"],
         )
@@ -307,7 +306,7 @@ cdef class TradeTick(Tick):
             "price": str(obj.price),
             "size": str(obj.size),
             "aggressor_side": AggressorSideParser.to_str(obj.aggressor_side),
-            "trade_id": obj.trade_id,
+            "trade_id": obj.trade_id.value,
             "ts_event": obj.ts_event,
             "ts_init": obj.ts_init,
         }

@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2021 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -70,8 +70,7 @@ class TestStrategyFactory:
         # Assert
         assert isinstance(strategy, EMACross)
         assert (
-            repr(config)
-            == "EMACrossConfig(component_id=None, order_id_tag='000', oms_type='HEDGING', "
+            repr(config) == "EMACrossConfig(component_id=None, order_id_tag='000', oms_type=None, "
             "instrument_id='AUD/USD.SIM', bar_type='AUD/USD.SIM-15-MINUTE-BID-EXTERNAL', "
             "fast_ema_period=10, slow_ema_period=20, trade_size=Decimal('1000000'))"  # noqa
         )

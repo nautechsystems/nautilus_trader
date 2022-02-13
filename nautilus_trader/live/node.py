@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2021 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -362,7 +362,6 @@ class TradingNode:
             else:
                 self._loop.run_until_complete(self._run())
                 return None
-
         except RuntimeError as ex:
             self._log.exception(ex)
             return None
@@ -381,7 +380,6 @@ class TradingNode:
                 self._loop.create_task(self._stop())
             else:
                 self._loop.run_until_complete(self._stop())
-
         except RuntimeError as ex:
             self._log.exception(ex)
 
@@ -467,13 +465,15 @@ class TradingNode:
         signals = (signal.SIGTERM, signal.SIGINT, signal.SIGABRT)
         for sig in signals:
             self._loop.add_signal_handler(sig, self._loop_sig_handler, sig)
-        self._log.debug(f"Event loop {signals} handling setup.")
+        self._log.debug(f"Event loop signal handling setup for {signals}.")
 
     def _setup_persistence(self, config: PersistenceConfig) -> None:
         # Setup persistence
         path = f"{config.catalog_path}/live/{self.instance_id}.feather"
         writer = FeatherWriter(
-            path=path, fs_protocol=config.fs_protocol, flush_interval=config.flush_interval
+            path=path,
+            fs_protocol=config.fs_protocol,
+            flush_interval=config.flush_interval,
         )
         self.persistence_writers.append(writer)
         self.trader.subscribe("*", writer.write)
@@ -539,10 +539,7 @@ class TradingNode:
             if not await self._exec_engine.reconcile_state(
                 timeout_secs=self._config.timeout_reconciliation,
             ):
-                self._log.warning(
-                    f"Timed out ({self._config.timeout_reconciliation}s) waiting for "
-                    f"execution state to reconcile."
-                )
+                self._log.error("Execution state could not be reconciled.")
                 return
             self._log.info("State reconciled.", color=LogColor.GREEN)
 

@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2021 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -15,8 +15,9 @@
 
 import asyncio
 import socket
+import urllib.parse
 from ssl import SSLContext
-from typing import Dict, List, Optional, Union
+from typing import Any, Dict, List, Optional, Union
 
 import aiohttp
 import cython
@@ -44,7 +45,7 @@ cdef class HttpClient:
         The logger for the client.
     ttl_dns_cache : int
         The time to live for the DNS cache.
-    ssl: Union[None, bool, Fingerprint, SSLContext], default=False
+    ssl: Union[None, bool, Fingerprint, SSLContext], default False
         The ssl context to use for HTTPS.
     connector_kwargs : dict, optional
         The connector key word arguments.
@@ -101,6 +102,10 @@ cdef class HttpClient:
         self._sessions_idx += 1
         return self._sessions[idx]
 
+    cpdef str _prepare_params(self, dict params):
+        # Encode a dict into a URL query string
+        return urllib.parse.urlencode(params)
+
     async def connect(self) -> None:
         self._log.debug("Connecting sessions...")
         self._sessions = [aiohttp.ClientSession(
@@ -133,7 +138,7 @@ cdef class HttpClient:
         method: str,
         url: str,
         headers: Optional[Dict[str, str]]=None,
-        json: Optional[Dict[str, str]]=None,
+        json: Optional[Dict[str, Any]]=None,
         **kwargs,
     ) -> ClientResponse:
         session: ClientSession = self._get_session()

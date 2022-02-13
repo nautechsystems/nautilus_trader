@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2021 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -19,19 +19,22 @@ from nautilus_trader.common.logging cimport LoggerAdapter
 cdef class WebSocketClient:
     cdef readonly object _loop
     cdef readonly LoggerAdapter _log
-    cdef readonly str _ws_url
-    cdef readonly dict _ws_kwargs
-
-    cdef object _handler
+    cdef str _ws_url
+    cdef dict _ws_kwargs
+    cdef object _ws
     cdef object _session
-    cdef object _socket
+    cdef object _handler
     cdef list _tasks
     cdef bint _running
     cdef bint _stopped
-    cdef bint _trigger_stop
-    cdef readonly int _connection_retry_count
-    cdef readonly int _unknown_message_count
-    cdef int _max_retry_connection
+    cdef bint _stopping
+    cdef bint _log_recv
 
     cdef readonly bint is_connected
     """If the client is connected.\n\n:returns: `bool`"""
+    cdef readonly int max_retry_connection
+    """The max connection retries.\n\n:returns: `int`"""
+    cdef readonly int connection_retry_count
+    """The current connection retry count.\n\n:returns: `int`"""
+    cdef readonly int unknown_message_count
+    """The current unknown message count.\n\n:returns: `int`"""

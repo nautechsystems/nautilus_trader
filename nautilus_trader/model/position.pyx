@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2021 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -21,7 +21,7 @@ from nautilus_trader.model.c_enums.order_side cimport OrderSideParser
 from nautilus_trader.model.c_enums.position_side cimport PositionSide
 from nautilus_trader.model.c_enums.position_side cimport PositionSideParser
 from nautilus_trader.model.events.order cimport OrderFilled
-from nautilus_trader.model.identifiers cimport ExecutionId
+from nautilus_trader.model.identifiers cimport TradeId
 from nautilus_trader.model.instruments.base cimport Instrument
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
@@ -58,7 +58,7 @@ cdef class Position:
         Condition.not_none(fill.position_id, "fill.position_id")
 
         self._events = []         # type: list[OrderFilled]
-        self._execution_ids = []  # type: list[ExecutionId]
+        self._trade_ids = []  # type: list[TradeId]
         self._buy_qty = Decimal(0)
         self._sell_qty = Decimal(0)
         self._commissions = {}
@@ -161,9 +161,9 @@ cdef class Position:
         # Note the inner set {}
         return sorted(list({fill.venue_order_id for fill in self._events}))
 
-    cdef list execution_ids_c(self):
+    cdef list trade_ids_c(self):
         # Checked for duplicate before appending to events
-        return [fill.execution_id for fill in self._events]
+        return [fill.trade_id for fill in self._events]
 
     cdef list events_c(self):
         return self._events.copy()
@@ -171,8 +171,8 @@ cdef class Position:
     cdef OrderFilled last_event_c(self):
         return self._events[-1]
 
-    cdef ExecutionId last_execution_id_c(self):
-        return self._events[-1].execution_id
+    cdef TradeId last_trade_id_c(self):
+        return self._events[-1].trade_id
 
     cdef int event_count_c(self) except *:
         return len(self._events)
@@ -246,16 +246,16 @@ cdef class Position:
         return self.venue_order_ids_c()
 
     @property
-    def execution_ids(self):
+    def trade_ids(self):
         """
-        The execution IDs associated with the position.
+        The trade match IDs associated with the position.
 
         Returns
         -------
-        list[ExecutionId]
+        list[TradeId]
 
         """
-        return self.execution_ids_c()
+        return self.trade_ids_c()
 
     @property
     def events(self):
@@ -282,16 +282,16 @@ cdef class Position:
         return self.last_event_c()
 
     @property
-    def last_execution_id(self):
+    def last_trade_id(self):
         """
-        The last execution ID for the position.
+        The last trade match ID for the position.
 
         Returns
         -------
-        ExecutionId
+        TradeId
 
         """
-        return self.last_execution_id_c()
+        return self.last_trade_id_c()
 
     @property
     def event_count(self):
@@ -369,7 +369,7 @@ cdef class Position:
 
         Parameters
         ----------
-        side : OrderSide
+        side : OrderSide {``BUY``, ``SELL``}
             The order side
 
         Returns
@@ -386,7 +386,7 @@ cdef class Position:
 
         Parameters
         ----------
-        side : OrderSide
+        side : OrderSide {``BUY``, ``SELL``}
 
         Returns
         -------
@@ -408,14 +408,14 @@ cdef class Position:
         Raises
         ------
         KeyError
-            If `fill.execution_id` already applied to the position.
+            If `fill.trade_id` already applied to the position.
 
         """
         Condition.not_none(fill, "fill")
-        Condition.not_in(fill.execution_id, self._execution_ids, "fill.execution_id", "self._execution_ids")
+        Condition.not_in(fill.trade_id, self._trade_ids, "fill.trade_id", "self._trade_ids")
 
         self._events.append(fill)
-        self._execution_ids.append(fill.execution_id)
+        self._trade_ids.append(fill.trade_id)
 
         # Calculate cumulative commission
         cdef Currency currency = fill.commission.currency

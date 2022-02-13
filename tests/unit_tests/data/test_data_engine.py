@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2021 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -43,6 +43,7 @@ from nautilus_trader.model.enums import PriceType
 from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import Symbol
+from nautilus_trader.model.identifiers import TradeId
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.instruments.base import Instrument
 from nautilus_trader.model.objects import Price
@@ -1338,7 +1339,7 @@ class TestDataEngine:
             price=Price.from_str("1050.00000"),
             size=Quantity.from_int(100),
             aggressor_side=AggressorSide.BUY,
-            trade_id="123456789",
+            trade_id=TradeId("123456789"),
             ts_event=0,
             ts_init=0,
         )
@@ -1383,7 +1384,7 @@ class TestDataEngine:
             price=Price.from_str("1050.00000"),
             size=Quantity.from_int(100),
             aggressor_side=AggressorSide.BUY,
-            trade_id="123456789",
+            trade_id=TradeId("123456789"),
             ts_event=0,
             ts_init=0,
         )

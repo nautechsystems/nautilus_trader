@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2021 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -67,10 +67,9 @@ cdef class Cache(CacheFacade):
     cdef dict _index_strategy_orders
     cdef dict _index_strategy_positions
     cdef set _index_orders
-    cdef set _index_orders_active
+    cdef set _index_orders_open
+    cdef set _index_orders_closed
     cdef set _index_orders_inflight
-    cdef set _index_orders_working
-    cdef set _index_orders_completed
     cdef set _index_positions
     cdef set _index_positions_open
     cdef set _index_positions_closed

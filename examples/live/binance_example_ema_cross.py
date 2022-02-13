@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2021 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -20,13 +20,15 @@ from nautilus_trader.adapters.binance.factories import BinanceLiveDataClientFact
 from nautilus_trader.adapters.binance.factories import BinanceLiveExecutionClientFactory
 from nautilus_trader.examples.strategies.ema_cross import EMACross
 from nautilus_trader.examples.strategies.ema_cross import EMACrossConfig
+from nautilus_trader.live.config import TradingNodeConfig
 from nautilus_trader.live.node import TradingNode
-from nautilus_trader.live.node import TradingNodeConfig
 
 
 # *** THIS IS A TEST STRATEGY WITH NO ALPHA ADVANTAGE WHATSOEVER. ***
 # *** IT IS NOT INTENDED TO BE USED TO TRADE LIVE WITH REAL MONEY. ***
 
+# *** THIS INTEGRATION IS STILL UNDER CONSTRUCTION. ***
+# *** PLEASE CONSIDER IT TO BE IN AN UNSTABLE BETA PHASE AND EXERCISE CAUTION. ***
 
 # Configure the trading node
 config_node = TradingNodeConfig(
@@ -37,7 +39,7 @@ config_node = TradingNodeConfig(
         "BINANCE": {
             # "api_key": "YOUR_BINANCE_API_KEY",
             # "api_secret": "YOUR_BINANCE_API_SECRET",
-            # "account_id": "YOUR_BINANCE_ACCOUNT_ID", (optional)
+            "us": False,  # If client is for Binance US
             "sandbox_mode": False,  # If client uses the testnet
         },
     },
@@ -45,7 +47,7 @@ config_node = TradingNodeConfig(
         "BINANCE": {
             # "api_key": "YOUR_BINANCE_API_KEY",
             # "api_secret": "YOUR_BINANCE_API_SECRET",
-            # "account_id": "YOUR_BINANCE_ACCOUNT_ID", (optional)
+            "us": False,  # If client is for Binance US
             "sandbox_mode": False,  # If client uses the testnet,
         },
     },

@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2021 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -31,7 +31,7 @@ from nautilus_trader.model.orderbook.book cimport OrderBook
 from nautilus_trader.model.orders.market cimport MarketOrder
 from nautilus_trader.trading.strategy cimport TradingStrategy
 
-from nautilus_trader.trading.strategy import TradingStrategyConfig
+from nautilus_trader.trading.config import TradingStrategyConfig
 
 
 # *** THIS IS A TEST STRATEGY WITH NO ALPHA ADVANTAGE WHATSOEVER. ***
@@ -76,8 +76,8 @@ cdef class EMACross(TradingStrategy):
     """
     A simple moving average cross example strategy.
 
-    When the fast EMA crosses the slow EMA then enter a position in that
-    direction.
+    When the fast EMA crosses the slow EMA then enter a position at the market
+    in that direction.
 
     Cancels all orders and flattens all positions on stop.
 
@@ -205,7 +205,6 @@ cdef class EMACross(TradingStrategy):
             elif self.portfolio.is_net_short(self.instrument_id):
                 self.flatten_all_positions(self.instrument_id)
                 self.buy()
-
         # SELL LOGIC
         elif self.fast_ema.value < self.slow_ema.value:
             if self.portfolio.is_flat(self.instrument_id):

@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2021 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -234,7 +234,7 @@ class BinanceSpotAccountHttpAPI:
         recv_window: Optional[int] = None,
     ) -> Dict[str, Any]:
         """
-        Cancel an active order.
+        Cancel an open order.
 
         Cancel Order (TRADE).
         `DELETE /api/v3/order`.
@@ -283,9 +283,9 @@ class BinanceSpotAccountHttpAPI:
         recv_window: Optional[int] = None,
     ) -> Dict[str, Any]:
         """
-        Cancel all active orders on a symbol. This includes OCO orders.
+        Cancel all open orders for a symbol. This includes OCO orders.
 
-        Cancel all Open Orders on a Symbol (TRADE).
+        Cancel all Open Orders for a Symbol (TRADE).
         `DELETE api/v3/openOrders`.
 
         Parameters
@@ -410,7 +410,7 @@ class BinanceSpotAccountHttpAPI:
         recv_window: Optional[int] = None,
     ) -> Dict[str, Any]:
         """
-        Get all account orders; active, canceled, or filled.
+        Get all account orders; open, or closed.
 
         All Orders (USER_DATA).
         `GET /api/v3/allOrders`.

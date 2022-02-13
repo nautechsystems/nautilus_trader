@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2021 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -22,6 +22,7 @@ from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.model.c_enums.contingency_type cimport ContingencyType
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
 from nautilus_trader.model.c_enums.time_in_force cimport TimeInForce
+from nautilus_trader.model.c_enums.trailing_offset_type cimport TrailingOffsetType
 from nautilus_trader.model.identifiers cimport ClientOrderId
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.identifiers cimport OrderListId
@@ -32,6 +33,8 @@ from nautilus_trader.model.orders.base cimport Order
 from nautilus_trader.model.orders.limit cimport LimitOrder
 from nautilus_trader.model.orders.list cimport OrderList
 from nautilus_trader.model.orders.stop_market cimport StopMarketOrder
+from nautilus_trader.model.orders.trailing_stop_limit cimport TrailingStopLimitOrder
+from nautilus_trader.model.orders.trailing_stop_market cimport TrailingStopMarketOrder
 
 
 cdef class OrderFactory:
@@ -132,13 +135,13 @@ cdef class OrderFactory:
         ----------
         instrument_id : InstrumentId
             The orders instrument ID.
-        order_side : OrderSide
+        order_side : OrderSide {``BUY``, ``SELL``}
             The orders side.
         quantity : Quantity
             The orders quantity (> 0).
-        time_in_force : TimeInForce, optional
+        time_in_force : TimeInForce, default ``GTC``
             The orders time-in-force. Often not applicable for market orders.
-        reduce_only : bool
+        reduce_only : bool, default False
             If the order carries the 'reduce-only' execution instruction.
         tags : str, optional
             The custom user tags for the order. These are optional and can
@@ -153,7 +156,7 @@ cdef class OrderFactory:
         ValueError
             If `quantity` is not positive (> 0).
         ValueError
-            If `time_in_force` is other than ``GTC``, ``IOC``, ``FOK`` or ``OC``.
+            If `time_in_force` is other than ``GTC``, ``IOC``, ``FOK``, ``AT_THE_OPEN`` or ``AT_THE_CLOSE``.
 
         """
         return MarketOrder(
@@ -168,10 +171,9 @@ cdef class OrderFactory:
             init_id=self._uuid_factory.generate(),
             ts_init=self._clock.timestamp_ns(),
             order_list_id=None,
+            contingency_type=ContingencyType.NONE,
+            linked_order_ids=None,
             parent_order_id=None,
-            child_order_ids=None,
-            contingency=ContingencyType.NONE,
-            contingency_ids=None,
             tags=tags,
         )
 
@@ -197,19 +199,19 @@ cdef class OrderFactory:
         ----------
         instrument_id : InstrumentId
             The orders instrument ID.
-        order_side : OrderSide
+        order_side : OrderSide {``BUY``, ``SELL``}
             The orders side.
         quantity : Quantity
             The orders quantity (> 0).
         price : Price
             The orders price.
-        time_in_force : TimeInForce, optional
+        time_in_force : TimeInForce, default ``GTC``
             The orders time-in-force.
         expire_time : datetime, optional
-            The order expire time (for ``GTD`` orders).
-        post_only : bool, optional
+            The order expiration (for ``GTD`` orders).
+        post_only : bool, default False
             If the order will only provide liquidity (make a market).
-        reduce_only : bool, optional
+        reduce_only : bool, default False
             If the order carries the 'reduce-only' execution instruction.
         display_qty : Quantity, optional
             The quantity of the order to display on the public book (iceberg).
@@ -226,7 +228,7 @@ cdef class OrderFactory:
         ValueError
             If `quantity` is not positive (> 0).
         ValueError
-            If `time_in_force` is ``GTD`` and `expire_time` is ``None``.
+            If `time_in_force` is ``GTD`` and `expire_time` is ``None`` or <= UNIX epoch.
         ValueError
             If `display_qty` is negative (< 0) or greater than `quantity`.
 
@@ -247,10 +249,9 @@ cdef class OrderFactory:
             reduce_only=reduce_only,
             display_qty=display_qty,
             order_list_id=None,
+            contingency_type=ContingencyType.NONE,
+            linked_order_ids=None,
             parent_order_id=None,
-            child_order_ids=None,
-            contingency=ContingencyType.NONE,
-            contingency_ids=None,
             tags=tags,
         )
 
@@ -259,14 +260,15 @@ cdef class OrderFactory:
         InstrumentId instrument_id,
         OrderSide order_side,
         Quantity quantity,
-        Price price,
+        Price trigger_price,
+        TriggerType trigger_type=TriggerType.DEFAULT,
         TimeInForce time_in_force=TimeInForce.GTC,
         datetime expire_time=None,
         bint reduce_only=False,
         str tags=None,
     ):
         """
-        Create a new stop-market order.
+        Create a new stop-market trigger order.
 
         If the time-in-force is ``GTD`` then a valid expire time must be given.
 
@@ -274,17 +276,19 @@ cdef class OrderFactory:
         ----------
         instrument_id : InstrumentId
             The orders instrument ID.
-        order_side : OrderSide
+        order_side : OrderSide {``BUY``, ``SELL``}
             The orders side.
         quantity : Quantity
             The orders quantity (> 0).
-        price : Price
-            The orders price.
-        time_in_force : TimeInForce, optional
+        trigger_price : Price
+            The orders trigger price (STOP).
+        trigger_type : TriggerType, default ``DEFAULT``
+            The order trigger type.
+        time_in_force : TimeInForce, default ``GTC``
             The orders time-in-force.
         expire_time : datetime, optional
-            The order expire time (for ``GTD`` orders).
-        reduce_only : bool,
+            The order expiration (for ``GTD`` orders).
+        reduce_only : bool, default False
             If the order carries the 'reduce-only' execution instruction.
         tags : str, optional
             The custom user tags for the order. These are optional and can
@@ -299,7 +303,7 @@ cdef class OrderFactory:
         ValueError
             If `quantity` is not positive (> 0).
         ValueError
-            If `time_in_force` is ``GTD`` and `expire_time` is ``None``.
+            If `time_in_force` is ``GTD`` and `expire_time` is ``None`` or <= UNIX epoch.
 
         """
         return StopMarketOrder(
@@ -309,17 +313,17 @@ cdef class OrderFactory:
             client_order_id=self._id_generator.generate(),
             order_side=order_side,
             quantity=quantity,
-            price=price,
+            trigger_price=trigger_price,
+            trigger_type=trigger_type,
             time_in_force=time_in_force,
             expire_time=expire_time,
             init_id=self._uuid_factory.generate(),
             ts_init=self._clock.timestamp_ns(),
             reduce_only=reduce_only,
             order_list_id=None,
+            contingency_type=ContingencyType.NONE,
+            linked_order_ids=None,
             parent_order_id=None,
-            child_order_ids=None,
-            contingency=ContingencyType.NONE,
-            contingency_ids=None,
             tags=tags,
         )
 
@@ -329,7 +333,8 @@ cdef class OrderFactory:
         OrderSide order_side,
         Quantity quantity,
         Price price,
-        Price trigger,
+        Price trigger_price,
+        TriggerType trigger_type=TriggerType.DEFAULT,
         TimeInForce time_in_force=TimeInForce.GTC,
         datetime expire_time=None,
         bint post_only=False,
@@ -338,7 +343,7 @@ cdef class OrderFactory:
         str tags=None,
     ):
         """
-        Create a new stop-limit order.
+        Create a new stop-limit trigger order.
 
         If the time-in-force is ``GTD`` then a valid expire time must be given.
 
@@ -346,21 +351,23 @@ cdef class OrderFactory:
         ----------
         instrument_id : InstrumentId
             The orders instrument ID.
-        order_side : OrderSide
+        order_side : OrderSide {``BUY``, ``SELL``}
             The orders side.
         quantity : Quantity
             The orders quantity (> 0).
         price : Price
             The orders limit price.
-        trigger : Price
-            The orders stop trigger price.
-        time_in_force : TimeInForce, optional
+        trigger_price : Price
+            The orders trigger stop price.
+        trigger_type : TriggerType, default ``DEFAULT``
+            The order trigger type.
+        time_in_force : TimeInForce, default ``GTC``
             The orders time-in-force.
         expire_time : datetime, optional
-            The order expire time (for ``GTD`` orders).
-        post_only : bool, optional
+            The order expiration (for ``GTD`` orders).
+        post_only : bool, default False
             If the order will only provide liquidity (make a market).
-        reduce_only : bool, optional
+        reduce_only : bool, default False
             If the order carries the 'reduce-only' execution instruction.
         display_qty : Quantity, optional
             The quantity of the order to display on the public book (iceberg).
@@ -377,7 +384,7 @@ cdef class OrderFactory:
         ValueError
             If `quantity` is not positive (> 0).
         ValueError
-            If `time_in_force` is ``GTD`` and `expire_time` is ``None``.
+            If `time_in_force` is ``GTD`` and `expire_time` is ``None`` or <= UNIX epoch.
         ValueError
             If `display_qty` is negative (< 0) or greater than `quantity`.
 
@@ -390,7 +397,8 @@ cdef class OrderFactory:
             order_side=order_side,
             quantity=quantity,
             price=price,
-            trigger=trigger,
+            trigger_price=trigger_price,
+            trigger_type=trigger_type,
             time_in_force=time_in_force,
             expire_time=expire_time,
             init_id=self._uuid_factory.generate(),
@@ -399,10 +407,190 @@ cdef class OrderFactory:
             reduce_only=reduce_only,
             display_qty=display_qty,
             order_list_id=None,
+            contingency_type=ContingencyType.NONE,
+            linked_order_ids=None,
             parent_order_id=None,
-            child_order_ids=None,
-            contingency=ContingencyType.NONE,
-            contingency_ids=None,
+            tags=tags,
+        )
+
+    cpdef TrailingStopMarketOrder trailing_stop_market(
+        self,
+        InstrumentId instrument_id,
+        OrderSide order_side,
+        Quantity quantity,
+        trailing_offset: Decimal,
+        Price trigger_price=None,
+        TriggerType trigger_type=TriggerType.DEFAULT,
+        TrailingOffsetType offset_type=TrailingOffsetType.PRICE,
+        TimeInForce time_in_force=TimeInForce.GTC,
+        datetime expire_time=None,
+        bint reduce_only=False,
+        str tags=None,
+    ):
+        """
+        Create a new trailing stop-market trigger order.
+
+        If the time-in-force is ``GTD`` then a valid expire time must be given.
+
+        Parameters
+        ----------
+        instrument_id : InstrumentId
+            The orders instrument ID.
+        order_side : OrderSide {``BUY``, ``SELL``}
+            The orders side.
+        quantity : Quantity
+            The orders quantity (> 0).
+        trailing_offset : Decimal
+            The trailing offset for the trigger price (STOP).
+        trigger_price : Price, optional
+            The order trigger price (STOP). If ``None`` then will typically default
+            to the delta of market price and `trailing_offset`.
+        trigger_type : TriggerType, default ``DEFAULT``
+            The order trigger type.
+        offset_type : TrailingOffsetType, default ``PRICE``
+            The order trailing offset type.
+        time_in_force : TimeInForce, default ``GTC``
+            The orders time-in-force.
+        expire_time : datetime, optional
+            The order expiration (for ``GTD`` orders).
+        reduce_only : bool, default False
+            If the order carries the 'reduce-only' execution instruction.
+        tags : str, optional
+            The custom user tags for the order. These are optional and can
+            contain any arbitrary delimiter if required.
+
+        Returns
+        -------
+        TrailingStopMarketOrder
+
+        Raises
+        ------
+        ValueError
+            If `quantity` is not positive (> 0).
+        ValueError
+            If `time_in_force` is ``GTD`` and `expire_time` is ``None`` or <= UNIX epoch.
+
+        """
+        return TrailingStopMarketOrder(
+            trader_id=self.trader_id,
+            strategy_id=self.strategy_id,
+            instrument_id=instrument_id,
+            client_order_id=self._id_generator.generate(),
+            order_side=order_side,
+            quantity=quantity,
+            trigger_price=trigger_price,
+            trigger_type=trigger_type,
+            trailing_offset=trailing_offset,
+            offset_type=offset_type,
+            time_in_force=time_in_force,
+            expire_time=expire_time,
+            init_id=self._uuid_factory.generate(),
+            ts_init=self._clock.timestamp_ns(),
+            reduce_only=reduce_only,
+            order_list_id=None,
+            contingency_type=ContingencyType.NONE,
+            linked_order_ids=None,
+            parent_order_id=None,
+            tags=tags,
+        )
+
+    cpdef TrailingStopLimitOrder trailing_stop_limit(
+        self,
+        InstrumentId instrument_id,
+        OrderSide order_side,
+        Quantity quantity,
+        limit_offset: Decimal,
+        trailing_offset: Decimal,
+        Price price=None,
+        Price trigger_price=None,
+        TriggerType trigger_type=TriggerType.DEFAULT,
+        TrailingOffsetType offset_type=TrailingOffsetType.PRICE,
+        TimeInForce time_in_force=TimeInForce.GTC,
+        datetime expire_time=None,
+        bint post_only=False,
+        bint reduce_only=False,
+        Quantity display_qty=None,
+        str tags=None,
+    ):
+        """
+        Create a new trailing stop-limit trigger order.
+
+        If the time-in-force is ``GTD`` then a valid expire time must be given.
+
+        Parameters
+        ----------
+        instrument_id : InstrumentId
+            The orders instrument ID.
+        order_side : OrderSide {``BUY``, ``SELL``}
+            The orders side.
+        quantity : Quantity
+            The orders quantity (> 0).
+        trailing_offset : Decimal
+            The trailing offset for the trigger price (STOP).
+        limit_offset : Decimal
+            The trailing offset for the order price (LIMIT).
+        price : Price, optional
+            The order price (LIMIT). If ``None`` then will typically default to the
+            delta of market price and `limit_offset`.
+        trigger_price : Price, optional
+            The order trigger price (STOP). If ``None`` then will typically default
+            to the delta of market price and `trailing_offset`.
+        trigger_type : TriggerType, default ``DEFAULT``
+            The order trigger type.
+        offset_type : TrailingOffsetType, default ``PRICE``
+            The order trailing offset type.
+        time_in_force : TimeInForce, default ``GTC``
+            The orders time-in-force.
+        expire_time : datetime, optional
+            The order expiration (for ``GTD`` orders).
+        post_only : bool, default False
+            If the order will only provide liquidity (make a market).
+        reduce_only : bool, default False
+            If the order carries the 'reduce-only' execution instruction.
+        display_qty : Quantity, optional
+            The quantity of the order to display on the public book (iceberg).
+        tags : str, optional
+            The custom user tags for the order. These are optional and can
+            contain any arbitrary delimiter if required.
+
+        Returns
+        -------
+        TrailingStopLimitOrder
+
+        Raises
+        ------
+        ValueError
+            If `quantity` is not positive (> 0).
+        ValueError
+            If `time_in_force` is ``GTD`` and `expire_time` is ``None`` or <= UNIX epoch.
+        ValueError
+            If `display_qty` is negative (< 0) or greater than `quantity`.
+
+        """
+        return TrailingStopLimitOrder(
+            trader_id=self.trader_id,
+            strategy_id=self.strategy_id,
+            instrument_id=instrument_id,
+            client_order_id=self._id_generator.generate(),
+            order_side=order_side,
+            quantity=quantity,
+            price=price,
+            trigger_price=trigger_price,
+            trigger_type=trigger_type,
+            limit_offset=limit_offset,
+            trailing_offset=trailing_offset,
+            offset_type=offset_type,
+            time_in_force=time_in_force,
+            expire_time=expire_time,
+            init_id=self._uuid_factory.generate(),
+            ts_init=self._clock.timestamp_ns(),
+            post_only=post_only,
+            reduce_only=reduce_only,
+            display_qty=display_qty,
+            order_list_id=None,
+            contingency_type=ContingencyType.NONE,
+            linked_order_ids=None,
+            parent_order_id=None,
             tags=tags,
         )
 
@@ -422,14 +610,14 @@ cdef class OrderFactory:
         ----------
         instrument_id : InstrumentId
             The orders instrument ID.
-        order_side : OrderSide
+        order_side : OrderSide {``BUY``, ``SELL``}
             The entry orders side.
         quantity : Quantity
             The entry orders quantity (> 0).
         stop_loss : Price
-            The stop-loss child order stop price.
+            The stop-loss child order trigger price (STOP).
         take_profit : Price
-            The take-profit child order limit price.
+            The take-profit child order price (LIMIT).
         tif_bracket : TimeInForce {``DAY``, ``GTC``}, optional
             The bracket orders time-in-force .
 
@@ -476,10 +664,9 @@ cdef class OrderFactory:
             init_id=self._uuid_factory.generate(),
             ts_init=self._clock.timestamp_ns(),
             order_list_id=order_list_id,
+            contingency_type=ContingencyType.OTO,
+            linked_order_ids=[stop_loss_client_order_id, take_profit_client_order_id],
             parent_order_id=None,
-            child_order_ids=[stop_loss_client_order_id, take_profit_client_order_id],
-            contingency=ContingencyType.OTO,
-            contingency_ids=[stop_loss_client_order_id, take_profit_client_order_id],
             tags="ENTRY",
         )
 
@@ -490,17 +677,17 @@ cdef class OrderFactory:
             client_order_id=stop_loss_client_order_id,
             order_side=Order.opposite_side_c(entry_order.side),
             quantity=quantity,
-            price=stop_loss,
+            trigger_price=stop_loss,
+            trigger_type=TriggerType.DEFAULT,
             time_in_force=tif_bracket,
             expire_time=None,
             init_id=self._uuid_factory.generate(),
             ts_init=self._clock.timestamp_ns(),
             reduce_only=True,
             order_list_id=order_list_id,
+            contingency_type=ContingencyType.OCO,
+            linked_order_ids=[take_profit_client_order_id],
             parent_order_id=entry_client_order_id,
-            child_order_ids=None,
-            contingency=ContingencyType.OCO,
-            contingency_ids=[take_profit_client_order_id],
             tags="STOP_LOSS",
         )
 
@@ -519,10 +706,9 @@ cdef class OrderFactory:
             post_only=True,
             reduce_only=True,
             order_list_id=order_list_id,
+            contingency_type=ContingencyType.OCO,
+            linked_order_ids=[stop_loss_client_order_id],
             parent_order_id=entry_client_order_id,
-            child_order_ids=None,
-            contingency=ContingencyType.OCO,
-            contingency_ids=[stop_loss_client_order_id],
             tags="TAKE_PROFIT",
         )
 
@@ -551,23 +737,23 @@ cdef class OrderFactory:
         ----------
         instrument_id : InstrumentId
             The orders instrument ID.
-        order_side : OrderSide
+        order_side : OrderSide {``BUY``, ``SELL``}
             The entry orders side.
         quantity : Quantity
             The entry orders quantity (> 0).
         entry : Price
             The entry LIMIT order price.
         stop_loss : Price
-            The stop-loss child order stop price.
+            The stop-loss child order trigger price (STOP).
         take_profit : Price
-            The take-profit child order limit price.
+            The take-profit child order price (LIMIT).
         tif : TimeInForce {``DAY``, ``GTC``}, optional
             The entry orders time-in-force .
         expire_time : datetime, optional
-            The order expire time (for ``GTD`` orders).
+            The order expiration (for ``GTD`` orders).
         tif_bracket : TimeInForce {``DAY``, ``GTC``}, optional
             The bracket orders time-in-force.
-        post_only : bool
+        post_only : bool, default False
             If the entry order will only provide liquidity (make a market).
 
         Returns
@@ -622,10 +808,9 @@ cdef class OrderFactory:
             ts_init=self._clock.timestamp_ns(),
             post_only=post_only,
             order_list_id=order_list_id,
+            contingency_type=ContingencyType.OTO,
+            linked_order_ids=[stop_loss_client_order_id, take_profit_client_order_id],
             parent_order_id=None,
-            child_order_ids=[stop_loss_client_order_id, take_profit_client_order_id],
-            contingency=ContingencyType.OTO,
-            contingency_ids=[stop_loss_client_order_id, take_profit_client_order_id],
             tags="ENTRY",
         )
 
@@ -636,17 +821,17 @@ cdef class OrderFactory:
             client_order_id=stop_loss_client_order_id,
             order_side=Order.opposite_side_c(entry_order.side),
             quantity=quantity,
-            price=stop_loss,
+            trigger_price=stop_loss,
+            trigger_type=TriggerType.DEFAULT,
             time_in_force=tif_bracket,
             expire_time=None,
             init_id=self._uuid_factory.generate(),
             ts_init=self._clock.timestamp_ns(),
             reduce_only=True,
             order_list_id=order_list_id,
+            contingency_type=ContingencyType.OCO,
+            linked_order_ids=[take_profit_client_order_id],
             parent_order_id=entry_client_order_id,
-            child_order_ids=None,
-            contingency=ContingencyType.OCO,
-            contingency_ids=[take_profit_client_order_id],
             tags="STOP_LOSS",
         )
 
@@ -666,9 +851,9 @@ cdef class OrderFactory:
             reduce_only=True,
             display_qty=None,
             order_list_id=order_list_id,
+            contingency_type=ContingencyType.OCO,
+            linked_order_ids=[stop_loss_client_order_id],
             parent_order_id=entry_client_order_id,
-            contingency=ContingencyType.OCO,
-            contingency_ids=[stop_loss_client_order_id],
             tags="TAKE_PROFIT",
         )
 

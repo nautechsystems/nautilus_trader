@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2021 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -51,6 +51,9 @@ cdef class TraderId(ComponentId):
 
 cdef class StrategyId(ComponentId):
     cpdef str get_tag(self)
+    cpdef bint is_external(self)
+    @staticmethod
+    cdef StrategyId external_c()
 
 
 cdef class AccountId(Identifier):
@@ -83,5 +86,5 @@ cdef class PositionId(Identifier):
     pass
 
 
-cdef class ExecutionId(Identifier):
+cdef class TradeId(Identifier):
     pass

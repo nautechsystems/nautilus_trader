@@ -1,8 +1,98 @@
-# NautilusTrader 1.136.0 Beta - Release Notes
+# NautilusTrader 1.138.0 Beta
 
-Released TBD
+## Release Notes
 
-## Breaking Changes
+Released on 15th February 2022 (UTC).
+
+**This release contains numerous method, parameter and property name changes**
+
+For consistency and standardization with other protocols, the `ExecutionId` type 
+has been renamed to `TradeId` as they express the same concept with a more 
+standardized terminology. In the interests of enforcing correctness and 
+safety this type is now utilized for the `TradeTick.trade_id`.
+
+### Breaking Changes
+- Renamed `working` orders to `open` orders including all associated methods and params.
+- Renamed `completed` orders to `closed` orders including all associated methods and params.
+- Removed `active` order concept (often confused with `open`).
+- Renamed `trigger` to `trigger_price`.
+- Renamed `StopMarketOrder.price` to `StopMarketOrder.trigger_price`.
+- Renamed all params related to a `StopMarketOrders` `price` to `trigger_price`.
+- Renamed `ExecutionId` to `TradeId`.
+- Renamed `execution_id` to `trade_id`.
+- Renamed `Order.trade_id` to `Order.last_trade_id` (for clarity).
+- Renamed other variations and references of 'execution ID' to 'trade ID'.
+- Renamed `contigency` to `contingency_type`.
+
+### Enhancements
+- Introduced the `TradeId` type to enforce `trade_id` typing.
+- Improve handling of unleveraged cash asset positions including Crypto and Fiat spot currency instruments.
+- Added `ExecEngineConfig` option `allow_cash_positions` (`False` by default).
+- Added `TrailingOffsetType` enum.
+- Added `TrailingStopMarketOrder`.
+- Added `TrailingStopLimitOrder`.
+- Added trailing order factory methods.
+- Added `trigger_type` param to stop orders.
+- Added `TriggerType` enum.
+- Large refactoring of order base and impl classes.
+- Overhaul of execution reports.
+- Overhaul of execution state reconciliation.
+
+### Fixes
+- Fixed WebSocket base reconnect handling.
+
+---
+
+# NautilusTrader 1.137.1 Beta
+
+## Release Notes
+
+Released on 15th January 2022 (UTC).
+
+This is a patch release which fixes moderate to high severity security vulnerabilities in
+`pillow < 9.0.0`:
+- PIL.ImageMath.eval allows evaluation of arbitrary expressions, such as ones that use the Python exec method.
+- path_getbbox in path.c has a buffer over-read during initialization of ImagePath.Path.
+- path_getbbox in path.c improperly initializes ImagePath.Path.
+
+This release upgrades to `pillow 9.0.0`.
+
+---
+
+# NautilusTrader 1.137.0 Beta
+
+## Release Notes
+
+Released on 12th January 2022 (UTC).
+
+### Breaking Changes
+- Removed redundant `currency` param from `AccountBalance`.
+- Renamed `local_symbol` to `native_symbol`.
+- Removed the `VenueType` enum and `venue_type` param in favour of a `routing` bool flag.
+- Removed `account_id` param from execution client factories and constructors.
+- Changed venue generated IDs (order, execution, position) which now begin with the venue ID.
+
+### Enhancements
+- Added FTX integration for testing.
+- Added FTX US configuration option.
+- Added Binance US configuration option.
+- Added `MarginBalance` object to assist with margin account functionality.
+
+### Fixes
+- Fixed parsing of `BarType` with symbols including hyphens `-`.
+- Fixed `BinanceTicker` `__repr__` (was missing whitespace after a comma).
+- Fixed `DataEngine` requests for historical `TradeTick`.
+- Fixed `DataEngine` `_handle_data_response` typing of `data` to `object`.
+
+---
+
+# NautilusTrader 1.136.0 Beta
+
+## Release Notes
+
+Released on 29th December 2021.
+
+### Breaking Changes
 - Changed `subscribe_data(...)` method (`client_id` now optional).
 - Changed `unsubscribe_data(...)` method (`client_id` now optional).
 - Changed `publish_data(...)` method (added `data_type`).
@@ -10,10 +100,10 @@ Released TBD
 - Renamed `MessageBus.has_subscribers` method param to `pattern`.`
 - Removed `subscribe_strategy_data(...)` method.
 - Removed `unsubscribe_strategy_data(...)` method.
-- Removed `publish_strategy_data(...) method`.
+- Removed `publish_strategy_data(...)` method.
 - Renamed `CryptoSwap` to `CryptoPerpetual`.
 
-## Enhancements
+### Enhancements
 - Can now modify or cancel in-flight orders live and backtest.
 - Updated `CancelOrder` to allow None `venue_order_id`.
 - Updated `ModifyOrder` to allow None `venue_order_id`.
@@ -23,38 +113,42 @@ Released TBD
 - Updated `OrderModifyRejected` to allow None `venue_order_id`.
 - Added `DataType.topic` string for improved message bus handling.
 
-## Fixes
+### Fixes
 - Implemented comparisons for `DataType`, `BarSpecification` and `BarType`.
 - Fixed `QuoteTickDataWrangler.process_bar_data` with `random_seed`.
 
 ---
 
-# NautilusTrader 1.135.0 Beta - Release Notes
+# NautilusTrader 1.135.0 Beta
 
-Released 13th, December 2021
+## Release Notes
 
-## Breaking Changes
+Released on 13th December 2021.
+
+### Breaking Changes
 - Renamed `match_id` to `trade_id`.
 
-## Enhancements
+### Enhancements
 - Added bars method to `DataCatalog`.
 - Improved parsing of Binance historical bars data.
 - Added `CancelAllOrders` command.
 - Added bulk cancel capability to Binance integration.
 - Added bulk cancel capability to Betfair integration.
 
-## Fixes
+### Fixes
 - Fixed handling of `cpu_freq` call in logging for ARM architecture.
 - Fixed market order fill edge case for bar data
 - Fixed handling of `GenericData` in backtests.
 
 ---
 
-# NautilusTrader 1.134.0 Beta - Release Notes
+# NautilusTrader 1.134.0 Beta
 
-Released on 22nd, November 2021
+## Release Notes
 
-## Breaking Changes
+Released on 22nd November 2021.
+
+### Breaking Changes
 - Changed `hidden` order option to `display_qty` to support iceberg orders.
 - Renamed `Trader.component_ids()` to `Trader.actor_ids()`.
 - Renamed `Trader.component_states()` to `Trader.actor_states()`.
@@ -62,23 +156,25 @@ Released on 22nd, November 2021
 - Renamed `Trader.add_components()` to `Trader.add_actors()`.
 - Renamed `Trader.clear_components()` to `Trader.clear_actors()`.
 
-## Enhancements
+### Enhancements
 - Added initial implementation of Binance SPOT integration (beta stage testing).
 - Added support for display quantity/iceberg orders.
 
-## Fixes
+### Fixes
 - Fixed `Actor` clock time advancement in backtest engine.
 
 ---
 
-# NautilusTrader 1.133.0 Beta - Release Notes
+# NautilusTrader 1.133.0 Beta
 
-Released on 8th, November 2021
+## Release Notes
 
-## Breaking Changes
+Released on 8th November 2021.
+
+### Breaking Changes
 None
 
-## Enhancements
+### Enhancements
 - Added `LatencyModel` for simulated exchange.
 - Added `last_update_id` to order books.
 - Added `update_id` to order book data.
@@ -88,21 +184,23 @@ None
 - Added orjson default serializer for arrow.
 - Reorganized example strategies and launch scripts.
 
-## Fixes
+### Fixes
 - Fixed logic for partial fills in backtests.
 - Various Betfair integration fixes.
 - Various `BacktestNode` fixes.
 
 ---
 
-# NautilusTrader 1.132.0 Beta - Release Notes
+# NautilusTrader 1.132.0 Beta
 
-Released on 24th, October 2021
+## Release Notes
 
-## Breaking Changes
+Released on 24th October 2021.
+
+### Breaking Changes
 - `Actor` constructor now takes `ActorConfig`.
 
-## Enhancements
+### Enhancements
 - Added `ActorConfig`.
 - Added `ImportableActorConfig`.
 - Added `ActorFactory`.
@@ -110,23 +208,25 @@ Released on 24th, October 2021
 - Improved network base classes.
 - Refine `InstrumentProvider`.
 
-## Fixes
+### Fixes
 - Fixed persistence config for `BacktestNode`.
 - Various Betfair integration fixes.
 
 ---
 
-# NautilusTrader 1.131.0 Beta - Release Notes
+# NautilusTrader 1.131.0 Beta
 
-Released on 10th, October 2021
+## Release Notes
 
-## Breaking Changes
+Released on 10th October 2021.
+
+### Breaking Changes
 - Renamed `nanos_to_unix_dt` to `unix_nanos_to_dt` (more accurate name).
 - Changed `Clock.set_time_alert(...)` method signature.
 - Changed `Clock.set_timer(...)` method signature.
 - Removed `pd.Timestamp` from `TimeEvent`.
 
-## Enhancements
+### Enhancements
 - `OrderList` submission and OTO, OCO contingencies now operational.
 - Added `Cache.orders_for_position(...)` method.
 - Added `Cache.position_for_order(...)` method.
@@ -140,7 +240,7 @@ Released on 10th, October 2021
 - Added `fill_stop_at_price` simulated exchange option.
 - Improve timer and time event efficiency.
 
-## Fixes
+### Fixes
 - Fixed `OrderUpdated` leaves quantity calculation.
 - Fixed contingency order logic at the exchange.
 - Fixed indexing of orders for a position in the cache.
@@ -148,16 +248,18 @@ Released on 10th, October 2021
 
 ---
 
-# NautilusTrader 1.130.0 Beta - Release Notes
+# NautilusTrader 1.130.0 Beta
 
-Released on 26th, September 2021
+## Release Notes
 
-## Breaking Changes
+Released on 26th September 2021.
+
+### Breaking Changes
 - `BacktestEngine.run` method signature change.
 - Renamed `BookLevel` to `BookType`.
 - Renamed `FillModel` params.
 
-## Enhancements
+### Enhancements
 - Added streaming backtest machinery.
 - Added `quantstats` (removed `empyrical`).
 - Added `BacktestEngine.run_streaming()`.
@@ -167,7 +269,7 @@ Released on 26th, September 2021
 - Improved logging for `BacktestEngine`.
 - Improved parquet serialization and machinery.
 
-## Fixes
+### Fixes
 - Fixed `SimulatedExchange` message processing.
 - Fixed `BacktestEngine` event ordering in main loop.
 - Fixed locked balance calculation for `CASH` accounts.
@@ -178,17 +280,19 @@ Released on 26th, September 2021
 
 ---
 
-# NautilusTrader 1.129.0 Beta - Release Notes
+# NautilusTrader 1.129.0 Beta
 
-Released on 12th, September 2021
+## Release Notes
 
-## Breaking Changes
+Released on 12th September 2021.
+
+### Breaking Changes
 - Removed CCXT adapter (#428).
 - Backtest configuration changes.
 - Renamed `UpdateOrder` to `ModifyOrder` (terminology standardization).
 - Renamed `DeltaType` to `BookAction` (terminology standardization).
 
-## Enhancements
+### Enhancements
 - Added `BacktestNode`.
 - Added `BookIntegrityError` with improved integrity checks for order books.
 - Added order custom user tags.
@@ -199,7 +303,7 @@ Released on 12th, September 2021
 - Refined backtest configuration options.
 - Improved efficiency of `UUID4` using the `fastuuid` Rust bindings.
 
-## Fixes
+### Fixes
 - Fixed Redis loss of precision for `int64_t` nanosecond timestamps (#363).
 - Fixed behavior of `reduce_only` orders for both submission and filling (#437).
 - Fixed PnL calculation for `CASH` accounts when commission negative (#436).
@@ -208,20 +312,20 @@ Released on 12th, September 2021
 
 # NautilusTrader 1.128.0 Beta - Release Notes
 
-Released on 30th, August 2021
+Released on 30th August 2021.
 
 This release continues the focus on the core system, with upgrades and cleanups
 to the component base class. The concept of an `active` order has been introduced, 
 which is an order whose state can change (is not a `completed` order).
 
-## Breaking Changes
+### Breaking Changes
 - All configuration due `pydantic` upgrade.
 - Throttling config now takes string e.g. "100/00:00:01" which is 100 / second.
 - Renamed `DataProducerFacade` to `DataProducer`.
 - Renamed `fill.side` to `fill.order_side` (clarity and standardization).
 - Renamed `fill.type` to `fill.order_type` (clarity and standardization).
 
-## Enhancements
+### Enhancements
 - Added serializable configuration classes leveraging `pydantic`.
 - Improved adding bar data to `BacktestEngine`.
 - Added `BacktestEngine.add_bar_objects()`.
@@ -242,14 +346,16 @@ which is an order whose state can change (is not a `completed` order).
 - Added `ComponentTrigger.FAULTED`.
 - Wired up `Ticker` data type.
 
-## Fixes
+### Fixes
 - `DataEngine.subscribed_bars()` now reports internally aggregated bars also.
 
 ---
 
-# NautilusTrader 1.127.0 Beta - Release Notes
+# NautilusTrader 1.127.0 Beta
 
-Released on 17th, August 2021
+## Release Notes
+
+Released on 17th August 2021.
 
 This release has again focused on core areas of the platform, including a 
 significant overhaul of accounting and portfolio components. The wiring between 
@@ -262,14 +368,14 @@ enhancements, increased performance, and full async support.
 There has also been some further renaming to continue to align the platform
 as closely as possible with established terminology in the domain.
 
-## Breaking Changes
+### Breaking Changes
 - Moved margin calculation methods from `Instrument` to `Account`.
 - Removed redundant `Portfolio.register_account`.
 - Renamed `OrderState` to `OrderStatus`.
 - Renamed `Order.state` to `Order.status`.
 - Renamed `msgbus.message_bus` to `msgbus.bus`.
 
-## Enhancements
+### Enhancements
 - Betfair adapter re-write.
 - Extracted `accounting` subpackage.
 - Extracted `portfolio` subpackage.
@@ -282,39 +388,43 @@ as closely as possible with established terminology in the domain.
 - Added `ExecutionClient.create_account` for custom account classes.
 - Separate `PortfolioFacade` from `Portfolio`.
 
-## Fixes
+### Fixes
 - Data subscription handling in `DataEngine`.
 - `Cash` accounts no longer generate spurious margins.
 - Fix `TimeBarAggregator._stored_close_ns` property name.
 
 ---
 
-# NautilusTrader 1.126.1 Beta - Release Notes
+# NautilusTrader 1.126.1 Beta
 
-Released on 3rd, August 2021
+## Release Notes
+
+Released on 3rd August 2021.
 
 This is a patch release which fixes a bug involving `NotImplementedError` 
 exception handling when subscribing to order book deltas when not supported by 
 a client. This bug affected CCXT order book subscriptions.
 
-## Breaking Changes
+### Breaking Changes
 None
 
-## Enhancements
+### Enhancements
 None
 
-## Fixes
+### Fixes
 - Fix `DataEngine` order book subscription handling.
 
 ---
 
-# NautilusTrader 1.126.0 Beta - Release Notes
+# NautilusTrader 1.126.0 Beta
 
-Released on 2nd, August 2021
+## Release Notes
+
+Released on 2nd August 2021.
 
 This release sees the completion of the initial implementation of the 
-`MessageBus`, with data now being handled by PUB/SUB patterns, along with the 
-additions of point-to-point and REQ/REP messaging functionality.
+`MessageBus`, with data now being handled by Pub/Sub patterns, along with the 
+additions of point-to-point and Req/Rep messaging functionality.
 
 An `Actor` base class has been abstracted from `TradingStrategy` which allows
 custom components to be added to a `Trader` which aren't necessarily trading 
@@ -344,13 +454,13 @@ concepts may be frustrating, however whilst still in a beta phase - we're taking
 the opportunity to lay a solid foundation for this project to continue to growth 
 in the years ahead.
 
-## Breaking Changes
+### Breaking Changes
 - Renamed `timestamp_ns` to `ts_init`.
 - Renamed `ts_recv_ns` to `ts_event`.
 - Renamed various event timestamp parameters to `ts_event`.
 - Removed null object methods on identifiers.
 
-## Enhancements
+### Enhancements
 - Added `Actor` component base class.
 - Added `MessageBus.register()`.
 - Added `MessageBus.send()`.
@@ -360,19 +470,21 @@ in the years ahead.
 - Added `Trader.add_components()`.
 - Added `Trader.add_log_sink()`.
 
-## Fixes
+### Fixes
 - Various Betfair adapter patches and fixes.
 - `ExecutionEngine` position flip logic in certain edge cases.
 
 ---
 
-# NautilusTrader 1.125.0 Beta - Release Notes
+# NautilusTrader 1.125.0 Beta
 
-Released on 18th, July 2021
+## Release Notes
+
+Released on 18th July 2021.
 
 This release introduces a major re-architecture of the internal messaging system.
 A common message bus has been implemented which now handles all events via a 
-PUB/SUB messaging pattern. The next release will see all data being handled by 
+Pub/Sub messaging pattern. The next release will see all data being handled by 
 the message bus, please see the related issue for further details on this enhancement.
 
 Another notable feature is the introduction of the order 'in-flight' concept, 
@@ -384,13 +496,13 @@ The `Throttler` has been refactored and optimized further. There has also been
 extensive reorganization of the model sub-package, standardization of identifiers
 on events, along with numerous 'under the hood' cleanups and two bug fixes.
 
-## Breaking Changes
+### Breaking Changes
 - Renamed `MessageType` enum to `MessageCategory`.
 - Renamed `fill.order_side` to `fill.side`.
 - Renamed `fill.order_type` to `fill.type`.
 - All `Event` serialization due to domain refactorings.
 
-## Enhancements
+### Enhancements
 - Added `MessageBus` class.
 - Added `TraderId` to `Order` and `Position`.
 - Added `OrderType` to OrderFilled.
@@ -405,42 +517,46 @@ on events, along with numerous 'under the hood' cleanups and two bug fixes.
 - Removed redundant `BypassCacheDatabase`.
 - Introduced `mypy` to the codebase.
 
-## Fixes
+### Fixes
 - Fixed backtest log timestamping.
 - Fixed backtest duplicate initial account event.
 
 ---
 
-# NautilusTrader 1.124.0 Beta - Release Notes
+# NautilusTrader 1.124.0 Beta
 
-Released on 6th, July 2021
+## Release Notes
+
+Released on 6th July 2021.
 
 This release sees the expansion of pre-trade risk check options (see 
 `RiskEngine` class documentation). There has also been extensive 'under the 
 hood' code cleanup and consolidation.
 
-## Breaking Changes
+### Breaking Changes
 - Renamed `Position.opened_timestamp_ns` to `ts_opened_ns`.
 - Renamed `Position.closed_timestamp_ns` to `ts_closed_ns`.
 - Renamed `Position.open_duration_ns` to `duration_ns`.
 - Renamed Loggers `bypass_logging` to `bypass`.
 - Refactored `PositionEvent` types.
 
-## Enhancements
+### Enhancements
 - Add pre-trade risk checks to `RiskEngine` iteration 2.
 - Improve `Throttler` functionality and performance.
 - Removed redundant `OrderInvalid` state and associated code.
 - Improve analysis reports.
 
-## Fixes
+### Fixes
 - PnL calculations for `CASH` account types.
 - Various event serializations.
 
 ---
 
-# NautilusTrader 1.123.0 Beta - Release Notes
+# NautilusTrader 1.123.0 Beta
 
-Released on 20th, June 2021
+## Release Notes
+
+Released on 20th June 2021.
 
 A major feature of this release is a complete re-design of serialization for the
 platform, along with initial support for the [Parquet](https://parquet.apache.org/) format.
@@ -453,7 +569,7 @@ with `_ns` accordingly.
 
 Initial scaffolding for new backtest data tooling has been added.
 
-## Breaking Changes
+### Breaking Changes
 - Renamed `OrderState.PENDING_REPLACE` to `OrderState.PENDING_UPDATE`
 - Renamed `timestamp_origin_ns` to `ts_event_ns`.
 - Renamed `timestamp_ns` for data to `ts_recv_ns`.
@@ -469,7 +585,7 @@ Initial scaffolding for new backtest data tooling has been added.
 - Renamed `OrderBookLevel` to `BookLevel`.
 - Renamed `Order.volume` to `Order.size`.
 
-## Enhancements
+### Enhancements
 - Adapter dependencies are now optional extras at installation.
 - Added arrow/parquet serialization.
 - Added object `to_dict()` and `from_dict()` methods.
@@ -485,16 +601,18 @@ Initial scaffolding for new backtest data tooling has been added.
 - Removed redundant `ObjectCache` and `IdentifierCache`.
 - Removed redundant string constants.
 
-## Fixes
+### Fixes
 - Fixed millis to nanos in `CCXTExecutionClient`.
 - Added missing trigger to `UpdateOrder` handling.
 - Removed all `import *`.
 
 ---
 
-# NautilusTrader 1.122.0 Beta - Release Notes
+# NautilusTrader 1.122.0 Beta
 
-Released on 6th, June 2021
+## Release Notes
+
+Released on 6th June 2021.
 
 This release includes numerous breaking changes with a view to enhancing the core
 functionality and API of the platform. The data and execution caches have been 
@@ -502,7 +620,7 @@ unified for simplicity. There have also been large changes to the accounting
 functionality, with 'hooks' added in preparation for accurate calculation and 
 handling of margins.
 
-## Breaking Changes
+### Breaking Changes
 - Renamed `Account.balance()` to `Account.balance_total()`.
 - Consolidated`TradingStrategy.data` into `TradingStrategy.cache`.
 - Consolidated `TradingStrategy.execution` into `TradingStrategy.cache`.
@@ -516,7 +634,7 @@ handling of margins.
 - Renamed `default_currency` to `base_currency`.
 - Removed `cost_currency` property from `Instrument`.
 
-## Enhancements
+### Enhancements
 - `ExecutionClient` now has the option of calculating account state.
 - Unified data and execution caches into single `Cache`.
 - Improved configuration options and naming.
@@ -528,16 +646,18 @@ handling of margins.
 - Added `get_cost_currency()` to `Instrument`.
 - Added `get_base_currency()` to `Instrument`.
 
-## Fixes
+### Fixes
 - Fixed `Order.is_working` for `PENDING_CANCEL` and `PENDING_REPLACE` states.
 - Fixed loss of precision for nanosecond timestamps in Redis.
 - Fixed state reconciliation when uninstantiated client.
 
 ---
 
-# NautilusTrader 1.121.0 Beta - Release Notes
+# NautilusTrader 1.121.0 Beta
 
-Released on 30th, May 2021
+## Release Notes
+
+Released on 30th May 2021.
 
 In this release there has been a major change to the use of inlines for method
 signatures. From the Cython docs:
@@ -551,14 +671,14 @@ to the performance of the system - and so they have been removed to reduce
 module level functions will be passed to the C compiler with the expected 
 result of inlining the function.
 
-## Breaking Changes
+### Breaking Changes
 - `BacktestEngine.add_venue` added `venue_type` to method params.
 - `ExecutionClient` added `venue_type` to constructor params.
 - `TraderId` instantiation.
 - `StrategyId` instantiation.
 - `Instrument` serialization.
 
-## Enhancements
+### Enhancements
 - `Portfolio` pending calculations if data not immediately available.
 - Added `instruments` subpackage with expanded class definitions.
 - Added `timestamp_origin_ns` timestamp when originally occurred.
@@ -571,36 +691,40 @@ result of inlining the function.
 - Improved param typing for identifier generators.
 - Improved log formatting of `Money` and `Quantity` thousands commas.
 
-## Fixes
+### Fixes
 - CCXT `TICK_SIZE` precision mode - size precisions (BitMEX, FTX).
 - State reconciliation (various bugs).
 
 ---
 
-# NautilusTrader 1.120.0 Beta - Release Notes
+# NautilusTrader 1.120.0 Beta
+
+## Release Notes
 
 This release focuses on simplifications and enhancements of existing machinery.
 
-## Breaking Changes
+### Breaking Changes
 - `Position` now requires an `Instrument` param.
 - `is_inverse` removed from `OrderFilled`.
 - `ClientId` removed from `TradingCommand` and subclasses.
 - `AccountId` removed from `TradingCommand` and subclasses.
 - `TradingCommand` serialization.
 
-## Enhancements
+### Enhancements
 - Added `Instrument` methods to `ExecutionCache`.
 - Added `Venue` filter to cache queries.
 - Moved order validations into `RiskEngine`.
 - Refactored `RiskEngine`.
 - Removed routing type information from identifiers.
 
-## Fixes
+### Fixes
 None
 
 ---
 
-# NautilusTrader 1.119.0 Beta - Release Notes
+# NautilusTrader 1.119.0 Beta
+
+## Release Notes
 
 This release applies another major refactoring to the value object API for
 `BaseDecimal` and its subclasses `Price` and `Quantity`. Previously a precision
@@ -621,12 +745,12 @@ field for the currency code.
 of responsibility and cleans up the registration sequence and allows a more
 natural flow of command and event messages.
 
-## Breaking Changes
+### Breaking Changes
 - Serializations involving `Money`.
 - Changed usage of `Price` and `Quantity`.
 - Renamed `BypassExecutionDatabase` to `BypassCacheDatabase`.
 
-## Enhancements
+### Enhancements
 - Rewired `RiskEngine` and `ExecutionEngine` sequence.
 - Added `Instrument` database operations.
 - Added `MsgPackInstrumentSerializer`.
@@ -639,18 +763,20 @@ natural flow of command and event messages.
 - Added `Instrument.make_qty()`.
 - Improved serialization of `Money`.
 
-## Fixes
+### Fixes
 - Handling of precision for `decimal.Decimal` values passed to value objects.
 
 ---
 
-# NautilusTrader 1.118.0 Beta - Release Notes
+# NautilusTrader 1.118.0 Beta
+
+## Release Notes
 
 This release simplifies the backtesting workflow by removing the need for the 
 intermediate `BacktestDataContainer`. There has also been some simplifications
 for `OrderFill` events, as well as additional order states and events.
 
-## Breaking Changes
+### Breaking Changes
 - Standardized all 'cancelled' references to 'canceled'.
 - `SimulatedExchange` no longer generates `OrderAccepted` for `MarketOrder`.
 - Removed redundant `BacktestDataContainer`.
@@ -660,7 +786,7 @@ for `OrderFill` events, as well as additional order states and events.
 - `BacktestMarketDataClient` no longer needs instruments.
 - Rename `PerformanceAnalyzer.get_realized_pnls` to `.realized_pnls`.
 
-## Enhancements
+### Enhancements
 - Re-engineered `BacktestEngine` to take data directly.
 - Added `OrderState.PENDING_CANCEL`.
 - Added `OrderState.PENDING_REPLACE`.
@@ -673,7 +799,7 @@ for `OrderFill` events, as well as additional order states and events.
 - Consolidated event generation into `ExecutionClient` base class.
 - Refactored `SimulatedExchange` for greater clarity.
 
-## Fixes
+### Fixes
 - `ExecutionCache` positions open queries.
 - Exchange accounting for exchange `OMSType.NETTING`.
 - Position flipping logic for exchange `OMSType.NETTING`.
@@ -683,7 +809,9 @@ for `OrderFill` events, as well as additional order states and events.
 
 ---
 
-# NautilusTrader 1.117.0 Beta - Release Notes
+# NautilusTrader 1.117.0 Beta
+
+## Release Notes
 
 The major thrust of this release is added support for order book data in
 backtests. The `SimulatedExchange` now maintains order books of each instrument
@@ -691,63 +819,69 @@ and will accurately simulate market impact with L2/L3 data. For quote and trade
 tick data a L1 order book is used as a proxy. A future release will include 
 improved fill modelling assumptions and customizations.
 
-## Breaking Changes
+### Breaking Changes
 - `OrderBook.create` now takes `Instrument` and `BookLevel`.
 
-## Enhancements
+### Enhancements
 - `SimulatedExchange` now maintains order books internally.
 - `LiveLogger` now exhibits better blocking behavior and logging.
 
-## Fixes
+### Fixes
 - Various patches to the `Betfair` adapter.
 - Documentation builds.
 
 ---
 
-# NautilusTrader 1.116.1 Beta - Release Notes
+# NautilusTrader 1.116.1 Beta
+
+## Release Notes
 
 Announcing official Windows 64-bit support.
 
 Several bugs have been identified and fixed.
 
-## Breaking Changes
+### Breaking Changes
 None
 
-## Enhancements
+### Enhancements
 - Performance test refactoring.
 - Remove redundant performance harness.
 - Add `Queue.peek()` to high-performance queue.
 - GitHub action refactoring, CI for Windows.
 - Builds for 32-bit platforms.
 
-## Fixes
+### Fixes
 - `OrderBook.create` for `BookLevel.L3` now returns correct book.
-- Betfair handling of execution IDs.
+- Betfair handling of trade IDs.
 
 ---
 
-# NautilusTrader 1.116.0 Beta - Release Notes
+# NautilusTrader 1.116.0 Beta
+
+## Release Notes
 
 **This release includes substantial breaking changes.**
 
 Further fundamental changes to the core API have been made.
 
-## Breaking Changes
+### Breaking Changes
 - Introduce `ClientId` for data and execution client identification.
 - Standardize client IDs to upper case.
 - Rename `OrderBookOperation` to `OrderBookDelta`.
 - Rename `OrderBookOperations` to `OrderBookDeltas`.
 - Rename `OrderBookOperationType` to `OrderBookDeltaType`.
 
-## Enhancements
+### Enhancements
 None
 
-## Fixes
+### Fixes
 None
 
 ---
 
-# NautilusTrader 1.115.0 Beta - Release Notes
+# NautilusTrader 1.115.0 Beta
+
+## Release Notes
 
 **This release includes substantial breaking changes.**
 
@@ -761,75 +895,81 @@ longer made sense to refer to it through `Order.id`, and so this was changed to
 its full name `Order.venue_order_id`. This naturally resulted in `ClientOrderId`(s)
 being renamed in properties and variables from `cl_ord_id` to `client_order_id`.
 
-## Breaking Changes
+### Breaking Changes
 - Rename `OrderId` to `VenueOrderId`.
 - Rename `Order.id` to `Order.venue_order_id`.
 - Rename `Order.cl_ord_id` to `Order.client_order_id`.
 - Rename `AssetClass.STOCK` to `AssetClass.EQUITY`.
 - Remove redundant flag `generate_position_ids` (handled by `OMSType`).
 
-## Enhancements
+### Enhancements
 - Introduce integration for Betfair.
 - Add `AssetClass.METAL` and `AssetClass.ENERGY`.
 - Add `VenueStatusEvent`, `InstrumentStatusEvent` and `InstrumentClosePrice`.
 - Usage of `np.ndarray` to improve function and indicator performance.
 
-## Fixes
+### Fixes
 - LiveLogger log message when blocking.
 
 ---
 
-# NautilusTrader 1.114.0 Beta - Release Notes
+# NautilusTrader 1.114.0 Beta
+
+## Release Notes
 
 **This release includes substantial breaking changes.**
 
 Further standardization of naming conventions along with internal refinements
 and fixes.
 
-## Breaking Changes
+### Breaking Changes
 - Rename `AmendOrder` to `UpdateOrder`.
 - Rename `OrderAmended` to `OrderUpdated`.
 - Rename `amend` and `amended` related methods to `update` and `updated`.
 - Rename `OrderCancelReject` to `OrderCancelRejected` (standardize tense).
 
-## Enhancements
+### Enhancements
 - Improve efficiency of data wrangling.
 - Simplify `Logger` and general system logging.
 - Add `stdout` and `stderr` log streams with configuration.
 - Add `OrderBookData` base class.
 
-## Fixes
+### Fixes
 - Backtest handling of `GenericData` and `OrderBook` related data.
 - Backtest `DataClient` creation logic prevented client registering.
 
 ---
 
-# NautilusTrader 1.113.0 Beta - Release Notes
+# NautilusTrader 1.113.0 Beta
+
+## Release Notes
 
 **This release includes substantial breaking changes.**
 
 Further standardization of naming conventions along with internal refinements
 and fixes.
 
-## Breaking Changes
+### Breaking Changes
 - Rename `AmendOrder` to `UpdateOrder`.
 - Rename `OrderAmended` to `OrderUpdated`.
 - Rename `amend` and `amended` related methods to `update` and `updated`.
 - Rename `OrderCancelReject` to `OrderCancelRejected` (standardize tense).
 
-## Enhancements
+### Enhancements
 - Introduce `OrderUpdateRejected`, event separated for clarity.
 - Refined LiveLogger: Now runs on event loop with high-performance `Queue`.
 - Improved flexibility of when strategies are added to a `BacktestEngine`.
 - Improved checks for `VenueOrderId` equality when applying order events.
 
-## Fixes
+### Fixes
 - Removed `UNDEFINED` enum values. Do not allow invalid values to be represented
 in the system (prefer throwing exceptions).
 
 ---
 
-# NautilusTrader 1.112.0 Beta - Release Notes
+# NautilusTrader 1.112.0 Beta
+
+## Release Notes
 
 **This release includes substantial breaking changes.**
 
@@ -843,7 +983,7 @@ There has also been some standardization of naming conventions to align more
 closely with established financial market terminology with reference to the
 FIX5.0 SP2 specification, and CME MDP 3.0.
 
-## Breaking Changes
+### Breaking Changes
 - Move `BarType` into `Bar` as a property.
 - Change signature of `Bar` handling methods due to above.
 - Remove `Instrument.leverage` (incorrect place for concept).
@@ -858,26 +998,28 @@ FIX5.0 SP2 specification, and CME MDP 3.0.
 - Rename `Position.relative_quantity` to `Position.relative_qty`.
 - Rename `Position.peak_quantity` to `Position.peak_qty`.
 
-## Enhancements
+### Enhancements
 - Standardize nanosecond timestamps.
 - Add time unit conversion functions as found in `nautilus_trader.core.datetime`.
 - Add optional `broker` property to `Venue` to assist with routing.
 - Enhance state reconciliation from both `LiveExecutionEngine` and `LiveExecutionClient`.
 - Add internal messages to aid state reconciliation.
 
-## Fixes
+### Fixes
 - `DataCache` incorrectly caching bars.
 
 ---
 
-# NautilusTrader 1.111.0 Beta - Release Notes
+# NautilusTrader 1.111.0 Beta
+
+## Release Notes
 
 This release adds further enhancements to the platform.
 
-## Breaking Changes
+### Breaking Changes
 None
 
-## Enhancements
+### Enhancements
 - `RiskEngine` built out including configuration options hook and
   `LiveRiskEngine` implementation.
 - Add generic `Throttler`.
@@ -888,13 +1030,15 @@ None
 - Add ISO 4217 codes.
 - Add currency names.
 
-## Fixes
+### Fixes
 - Queue `put` coroutines in live engines when blocking at `maxlen` was not
   creating a task on the event loop.
 
 ---
 
-# NautilusTrader 1.110.0 Beta - Release Notes
+# NautilusTrader 1.110.0 Beta
+
+## Release Notes
 
 This release applies one more major change to the identifier API. `Security` has
 been renamed to `InstrumentId` for greater clarity that the object is an identifier,
@@ -905,7 +1049,7 @@ handling of custom data in backtests.
 
 A `RiskEngine` base class has also been scaffolded.
 
-## Breaking Changes
+### Breaking Changes
 - `Security` renamed to `InstrumentId`.
 - `Instrument.security` renamed to `Instrument.id`.
 - `Data` becomes an abstract base class with `timestamp` and `unix_timestamp`
@@ -913,39 +1057,43 @@ A `RiskEngine` base class has also been scaffolded.
 - `Data` and `DataType` moved to `model.data`.
 - `on_data` methods now take `GenericData`.
 
-## Enhancements
+### Enhancements
 - Add `GenericData`.
 - Add `Future` instrument.
 
-## Fixes
+### Fixes
 None
 
 ---
 
-# NautilusTrader 1.109.0 Beta - Release Notes
+# NautilusTrader 1.109.0 Beta
+
+## Release Notes
 
 The main thrust of this release is to refine and further bed down the changes
 to the identifier model via `InstrumentId`, and fix some bugs.
 
 Errors in the CCXT clients caused by the last release have been addressed.
 
-## Breaking Changes
+### Breaking Changes
 - `InstrumentId` now takes first class value object `Symbol`.
 - `InstrumentId` `asset_class` and `asset_type` no longer optional.
 - `SimulatedExchange.venue` changed to `SimulatedExchange.id`.
 
-## Enhancements
+### Enhancements
 - Ensure `TestTimer` advances monotonically increase.
 - Add `AssetClass.BETTING`.
 
-## Fixes
+### Fixes
 - CCXT data and execution clients regarding `instrument_id` vs `symbol` naming.
 - `InstrumentId` equality and hashing.
 - Various docstrings.
 
 ---
 
-# NautilusTrader 1.108.0 Beta - Release Notes
+# NautilusTrader 1.108.0 Beta
+
+## Release Notes
 
 This release executes a major refactoring of `Symbol` and how securities are
 generally identified within the platform. This will allow a smoother integration
@@ -956,18 +1104,18 @@ Previously the `Symbol` identifier also included a venue which confused the conc
 The replacement `Security` identifier more clearly expresses the domain with a
 symbol string, a primary `Venue`, `AssetClass` and `AssetType` properties.
 
-## Breaking Changes
+### Breaking Changes
 - All previous serializations.
 - `Security` replaces `Symbol` with expanded properties.
 - `AssetClass.EQUITY` changed to `AssetClass.STOCK`.
 - `from_serializable_string` changed to `from_serializable_str`.
 - `to_serializable_string` changed to `to_serializable_str`.
 
-## Enhancements
+### Enhancements
 - Reports now include full instrument_id name.
 - Add `AssetType.WARRANT`.
 
-## Fixes
+### Fixes
 - `StopLimitOrder` serialization.
 
 ---
@@ -979,13 +1127,13 @@ This is a patch release which applies various fixes and refactorings.
 The behaviour of the `StopLimitOrder` continued to be fixed and refined.
 `SimulatedExchange` was refactored further to reduce complexity.
 
-## Breaking Changes
+### Breaking Changes
 None
 
-## Enhancements
+### Enhancements
 None
 
-## Fixes
+### Fixes
 - `TRIGGERED` states in order FSM.
 - `StopLimitOrder` triggering behaviour.
 - `OrderFactory.stop_limit` missing `post_only` and `hidden`.
@@ -993,7 +1141,9 @@ None
 
 ---
 
-# NautilusTrader 1.107.0 Beta - Release Notes
+# NautilusTrader 1.107.0 Beta
+
+## Release Notes
 
 The main thrust of this release is to refine some subtleties relating to order
 matching and amendment behaviour for improved realism. This involved a fairly substantial refactoring
@@ -1005,35 +1155,37 @@ and amendment.
 
 Test coverage was moderately increased.
 
-## Breaking Changes
+### Breaking Changes
 None
 
-## Enhancements
+### Enhancements
 - Refactored `SimulatedExchange` order matching and amendment logic.
 - Add `risk` subpackage to group risk components.
 
-## Fixes
+### Fixes
 - `StopLimitOrder` triggering behaviour.
 - All flake8 warnings.
 
 ---
 
-# NautilusTrader 1.106.0 Beta - Release Notes
+# NautilusTrader 1.106.0 Beta
+
+## Release Notes
 
 The main thrust of this release is to introduce the Interactive Brokers
 integration, and begin adding platform capabilities to support this effort.
 
-## Breaking Changes
+### Breaking Changes
 - `from_serializable_string` methods changed to `from_serializable_str`.
 
-## Enhancements
+### Enhancements
 - Scaffold Interactive Brokers integration in `adapters/ib`.
 - Add the `Future` instrument type.
 - Add the `StopLimitOrder` order type.
 - Add the `Data` and `DataType` types to support custom data handling.
 - Add the `InstrumentId` identifier types initial implementation to support extending the platforms capabilities.
 
-## Fixes
+### Fixes
 - `BracketOrder` correctness.
 - CCXT precision parsing bug.
 - Some log formatting.

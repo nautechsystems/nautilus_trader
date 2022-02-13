@@ -1,9 +1,24 @@
+# -------------------------------------------------------------------------------------------------
+#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
+#  https://nautechsystems.io
+#
+#  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
+#  You may not use this file except in compliance with the License.
+#  You may obtain a copy of the License at https://www.gnu.org/licenses/lgpl-3.0.en.html
+#
+#  Unless required by applicable law or agreed to in writing, software
+#  distributed under the License is distributed on an "AS IS" BASIS,
+#  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+#  See the License for the specific language governing permissions and
+#  limitations under the License.
+# -------------------------------------------------------------------------------------------------
+
 from typing import Any, List
 
 from nautilus_trader.backtest.data.providers import TestInstrumentProvider
 from nautilus_trader.model.enums import OrderSide
-from nautilus_trader.model.identifiers import ExecutionId
 from nautilus_trader.model.identifiers import PositionId
+from nautilus_trader.model.identifiers import TradeId
 from nautilus_trader.model.position import Position
 from tests.test_kit.stubs import TestStubs
 
@@ -23,11 +38,17 @@ def nautilus_objects() -> List[Any]:
     position_id = PositionId("P-001")
     buy = TestStubs.limit_order()
     buy_submitted, buy_accepted, buy_filled = _make_order_events(
-        buy, instrument=instrument, position_id=position_id, execution_id=ExecutionId("BUY")
+        buy,
+        instrument=instrument,
+        position_id=position_id,
+        trade_id=TradeId("BUY"),
     )
     sell = TestStubs.limit_order(side=OrderSide.SELL)
     _, _, sell_filled = _make_order_events(
-        sell, instrument=instrument, position_id=position_id, execution_id=ExecutionId("SELL")
+        sell,
+        instrument=instrument,
+        position_id=position_id,
+        trade_id=TradeId("SELL"),
     )
     open_position = Position(instrument=instrument, fill=buy_filled)
     closed_position = Position(instrument=instrument, fill=buy_filled)
@@ -43,6 +64,7 @@ def nautilus_objects() -> List[Any]:
         TestStubs.event_component_state_changed(),
         TestStubs.event_trading_state_changed(),
         TestStubs.event_betting_account_state(),
+        TestStubs.event_cash_account_state(),
         TestStubs.event_margin_account_state(),
         # ORDERS
         TestStubs.event_order_accepted(buy),
@@ -50,7 +72,9 @@ def nautilus_objects() -> List[Any]:
         TestStubs.event_order_pending_update(buy_accepted),
         TestStubs.event_order_pending_cancel(buy_accepted),
         TestStubs.event_order_filled(
-            order=buy, instrument=instrument, position_id=open_position.id
+            order=buy,
+            instrument=instrument,
+            position_id=open_position.id,
         ),
         TestStubs.event_order_canceled(buy_accepted),
         TestStubs.event_order_expired(buy),

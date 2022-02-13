@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2021 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -29,12 +29,15 @@ Alternative implementations can be written on top of the generic engine - which
 just need to override the `execute` and `process` methods.
 """
 
-from libc.stdint cimport int64_t
-
 from decimal import Decimal
 from typing import Optional
 
+from nautilus_trader.execution.config import ExecEngineConfig
+
+from libc.stdint cimport int64_t
+
 from nautilus.api.core cimport unix_timestamp_ms
+from nautilus_trader.accounting.accounts.base cimport Account
 from nautilus_trader.cache.cache cimport Cache
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.component cimport Component
@@ -50,8 +53,6 @@ from nautilus_trader.execution.client cimport ExecutionClient
 from nautilus_trader.model.c_enums.oms_type cimport OMSType
 from nautilus_trader.model.c_enums.oms_type cimport OMSTypeParser
 from nautilus_trader.model.c_enums.position_side cimport PositionSide
-from nautilus_trader.model.c_enums.venue_type cimport VenueType
-from nautilus_trader.model.c_enums.venue_type cimport VenueTypeParser
 from nautilus_trader.model.commands.trading cimport CancelAllOrders
 from nautilus_trader.model.commands.trading cimport CancelOrder
 from nautilus_trader.model.commands.trading cimport ModifyOrder
@@ -70,12 +71,11 @@ from nautilus_trader.model.identifiers cimport PositionId
 from nautilus_trader.model.identifiers cimport StrategyId
 from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.model.instruments.base cimport Instrument
+from nautilus_trader.model.instruments.currency cimport CurrencySpot
 from nautilus_trader.model.objects cimport Money
 from nautilus_trader.model.objects cimport Quantity
 from nautilus_trader.model.orders.base cimport Order
 from nautilus_trader.msgbus.bus cimport MessageBus
-
-from nautilus_trader.execution.config import ExecEngineConfig
 
 
 cdef class ExecutionEngine(Component):
@@ -126,7 +126,7 @@ cdef class ExecutionEngine(Component):
 
         self._clients = {}           # type: dict[ClientId, ExecutionClient]
         self._routing_map = {}       # type: dict[Venue, ExecutionClient]
-        self._oms_types = {}         # type: dict[StrategyId, OMSType]
+        self._oms_overrides = {}     # type: dict[StrategyId, OMSType]
         self._default_client = None  # type: Optional[ExecutionClient]
 
         self._pos_id_generator = PositionIdGenerator(
@@ -134,9 +134,13 @@ cdef class ExecutionEngine(Component):
             clock=clock,
         )
 
+        # Settings
+        self.allow_cash_positions = config.allow_cash_positions
+
         # Counters
         self.command_count = 0
         self.event_count = 0
+        self.report_count = 0
 
         # Register endpoints
         self._msgbus.register(endpoint="ExecEngine.execute", handler=self.execute)
@@ -227,9 +231,9 @@ cdef class ExecutionEngine(Component):
 
     cpdef bint check_residuals(self) except *:
         """
-        Check for any residual active state and log warnings if found.
+        Check for any residual open state and log warnings if found.
 
-        Active state is considered working orders and open positions.
+        'Open state' is considered to be open orders and open positions.
 
         Returns
         -------
@@ -245,8 +249,8 @@ cdef class ExecutionEngine(Component):
         """
         Register the given execution client with the execution engine.
 
-        If the client.venue_type == ``BROKERAGE_MULTI_VENUE`` and a default client
-        has not been previously registered then will be registered as such.
+        If the `client.venue` is ``None`` and a default routing client has not
+        been previously registered then will be registered as such.
 
         Parameters
         ----------
@@ -264,24 +268,22 @@ cdef class ExecutionEngine(Component):
 
         self._clients[client.id] = client
 
-        if client.venue_type == VenueType.BROKERAGE_MULTI_VENUE:
+        routing_log = ""
+        if client.venue is None:
             if self._default_client is None:
                 self._default_client = client
-                self._log.info(
-                    f"Registered ExecutionClient {client} BROKERAGE_MULTI_VENUE."
-                )
+                routing_log = " for default routing"
         else:
             self._routing_map[client.venue] = client
-            self._log.info(
-                f"Registered ExecutionClient {client} {VenueTypeParser.to_str(client.venue_type)}."
-            )
+
+        self._log.info(f"Registered ExecutionClient-{client}{routing_log}.")
 
     cpdef void register_default_client(self, ExecutionClient client) except *:
         """
-        Register the given client as the default client (when a specific venue
-        routing cannot be found).
+        Register the given client as the default routing client (when a specific
+        venue routing cannot be found).
 
-        Any existing default client will be overwritten.
+        Any existing default routing client will be overwritten.
 
         Parameters
         ----------
@@ -293,10 +295,7 @@ cdef class ExecutionEngine(Component):
 
         self._default_client = client
 
-        self._log.info(
-            f"Registered default ExecutionClient {client} "
-            f"{VenueTypeParser.to_str(client.venue_type)}.",
-        )
+        self._log.info(f"Registered ExecutionClient-{client} for default routing.")
 
     cpdef void register_venue_routing(self, ExecutionClient client, Venue venue) except *:
         """
@@ -321,10 +320,7 @@ cdef class ExecutionEngine(Component):
 
         self._routing_map[venue] = client
 
-        self._log.info(
-            f"Registered ExecutionClient {client} {VenueTypeParser.to_str(client.venue_type)} "
-            f"for routing to {venue}."
-        )
+        self._log.info(f"Registered ExecutionClient-{client} for routing to {venue}.")
 
     cpdef void register_oms_type(self, TradingStrategy strategy) except *:
         """
@@ -338,7 +334,7 @@ cdef class ExecutionEngine(Component):
         """
         Condition.not_none(strategy, "strategy")
 
-        self._oms_types[strategy.id] = strategy.oms_type
+        self._oms_overrides[strategy.id] = strategy.oms_type
 
         self._log.info(
             f"Registered OMS.{OMSTypeParser.to_str(strategy.oms_type)} "
@@ -365,13 +361,13 @@ cdef class ExecutionEngine(Component):
 
         del self._clients[client.id]
 
-        if client.venue_type == VenueType.BROKERAGE_MULTI_VENUE:
+        if client.venue is None:
             if self._default_client == client:
                 self._default_client = None
         else:
             del self._routing_map[client.venue]
 
-        self._log.info(f"Deregistered ExecutionClient {client}.")
+        self._log.info(f"Deregistered {client}.")
 
 # -- ABSTRACT METHODS ------------------------------------------------------------------------------
 
@@ -406,6 +402,7 @@ cdef class ExecutionEngine(Component):
 
         self.command_count = 0
         self.event_count = 0
+        self.report_count = 0
 
     cpdef void _dispose(self) except *:
         cdef ExecutionClient client
@@ -521,7 +518,7 @@ cdef class ExecutionEngine(Component):
             self._handle_cancel_order(client, command)
         elif isinstance(command, CancelAllOrders):
             self._handle_cancel_all_orders(client, command)
-        else:
+        else:  # pragma: no cover (design-time error)
             self._log.error(f"Cannot handle command: unrecognized {command}.")
 
     cdef void _handle_submit_order(self, ExecutionClient client, SubmitOrder command) except *:
@@ -591,11 +588,16 @@ cdef class ExecutionEngine(Component):
                 color=LogColor.GREEN,
             )
 
-        cdef OMSType oms_type = self._oms_types.get(event.strategy_id, OMSType.HEDGING)
-
+        cdef OMSType oms_type
         if isinstance(event, OrderFilled):
-            self._confirm_position_id(event, oms_type)
+            oms_type = self._determine_oms_type(event)
+            self._determine_position_id(event, oms_type)
+            self._apply_event_to_order(order, event)
+            self._handle_order_fill(event, oms_type)
+        else:
+            self._apply_event_to_order(order, event)
 
+    cdef void _apply_event_to_order(self, Order order, OrderEvent event) except *:
         try:
             order.apply(event)
         except InvalidStateTrigger as ex:
@@ -616,10 +618,21 @@ cdef class ExecutionEngine(Component):
             msg=event,
         )
 
-        if isinstance(event, OrderFilled):
-            self._handle_order_fill(event, oms_type)
+    cdef OMSType _determine_oms_type(self, OrderFilled fill) except *:
+        cdef ExecutionClient client
+        # Check for strategy OMS override
+        cdef OMSType oms_type = self._oms_overrides.get(fill.strategy_id, OMSType.NONE)
+        if oms_type == OMSType.NONE:
+            # Use native venue OMS
+            client = self._routing_map.get(fill.instrument_id.venue, self._default_client)
+            if client is None:
+                return OMSType.NETTING
+            else:
+                return client.oms_type
 
-    cdef void _confirm_position_id(self, OrderFilled fill, OMSType oms_type) except *:
+        return oms_type
+
+    cdef void _determine_position_id(self, OrderFilled fill, OMSType oms_type) except *:
         # Fetch ID from cache
         cdef PositionId position_id = self._cache.position_id(fill.client_order_id)
         if position_id is not None:
@@ -640,27 +653,44 @@ cdef class ExecutionEngine(Component):
             # Assign new position ID
             fill.position_id = self._pos_id_generator.generate(fill.strategy_id)
         elif oms_type == OMSType.NETTING:
-            # Assign netted position ID singleton
+            # Assign netted position ID
             fill.position_id = PositionId(f"{fill.instrument_id.value}-{fill.strategy_id.value}")
         else:  # pragma: no cover
             raise ValueError(f"invalid OMSType, was {oms_type}")
 
     cdef void _handle_order_fill(self, OrderFilled fill, OMSType oms_type) except *:
-        cdef Position position = self._cache.position(fill.position_id)
-        if position is None:
-            self._open_position(fill, oms_type)
-        else:
-            self._update_position(position, fill, oms_type)
-
-    cdef void _open_position(self, OrderFilled fill, OMSType oms_type) except *:
         cdef Instrument instrument = self._cache.load_instrument(fill.instrument_id)
         if instrument is None:
             self._log.error(
-                f"Cannot open position: "
-                f"no instrument found for {fill.instrument_id.value}, {fill}."
+                f"Cannot handle order fill: "
+                f"no instrument found for {fill.instrument_id}, {fill}."
             )
             return
 
+        cdef Account account = self._cache.account_for_venue(fill.instrument_id.venue)
+        if account is None:
+            self._log.error(
+                f"Cannot handle order fill: "
+                f"no account found for {fill.instrument_id.venue}, {fill}."
+            )
+            return
+
+        if self.allow_cash_positions:
+            pass
+        elif (
+            isinstance(instrument, CurrencySpot)
+            and account.is_cash_account
+            or (account.is_margin_account and account.leverage(instrument.id) == 1)
+        ):
+            return  # No spot cash positions
+
+        cdef Position position = self._cache.position(fill.position_id)
+        if position is None:
+            self._open_position(instrument, fill, oms_type)
+        else:
+            self._update_position(position, fill, oms_type)
+
+    cdef void _open_position(self, Instrument instrument, OrderFilled fill, OMSType oms_type) except *:
         cdef Position position = Position(instrument, fill)
         self._cache.add_position(position, oms_type)
 
@@ -740,7 +770,7 @@ cdef class ExecutionEngine(Component):
                 instrument_id=fill.instrument_id,
                 client_order_id=fill.client_order_id,
                 venue_order_id=fill.venue_order_id,
-                execution_id=fill.execution_id,
+                trade_id=fill.trade_id,
                 position_id=fill.position_id,
                 order_side=fill.order_side,
                 order_type=fill.order_type,
@@ -773,7 +803,7 @@ cdef class ExecutionEngine(Component):
             instrument_id=fill.instrument_id,
             client_order_id=fill.client_order_id,
             venue_order_id=fill.venue_order_id,
-            execution_id=fill.execution_id,
+            trade_id=fill.trade_id,
             position_id=position_id_flip,
             order_side=fill.order_side,
             order_type=fill.order_type,

@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2021 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -21,6 +21,8 @@ from nautilus_trader.model.orders.limit cimport LimitOrder
 from nautilus_trader.model.orders.market cimport MarketOrder
 from nautilus_trader.model.orders.stop_limit cimport StopLimitOrder
 from nautilus_trader.model.orders.stop_market cimport StopMarketOrder
+from nautilus_trader.model.orders.trailing_stop_limit cimport TrailingStopLimitOrder
+from nautilus_trader.model.orders.trailing_stop_market cimport TrailingStopMarketOrder
 
 
 cdef class OrderUnpacker:
@@ -44,6 +46,10 @@ cdef class OrderUnpacker:
             return StopMarketOrder.create(init=init)
         elif init.type == OrderType.STOP_LIMIT:
             return StopLimitOrder.create(init=init)
+        elif init.type == OrderType.TRAILING_STOP_MARKET:
+            return TrailingStopMarketOrder.create(init=init)
+        elif init.type == OrderType.TRAILING_STOP_LIMIT:
+            return TrailingStopLimitOrder.create(init=init)
         else:  # pragma: no cover (design-time error)
             raise RuntimeError("invalid order type")
 

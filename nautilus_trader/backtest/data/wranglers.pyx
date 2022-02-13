@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2021 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -16,6 +16,7 @@
 from copy import copy
 
 import numpy as np
+
 from libc.stdint cimport int64_t
 
 import random
@@ -29,6 +30,7 @@ from nautilus_trader.model.c_enums.aggressor_side cimport AggressorSideParser
 from nautilus_trader.model.data.bar cimport Bar
 from nautilus_trader.model.data.bar cimport BarType
 from nautilus_trader.model.data.tick cimport QuoteTick
+from nautilus_trader.model.identifiers cimport TradeId
 from nautilus_trader.model.instruments.base cimport Instrument
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
@@ -291,7 +293,7 @@ cdef class TradeTickDataWrangler:
             price=Price(values[0], self.instrument.price_precision),
             size=Quantity(values[1], self.instrument.size_precision),
             aggressor_side=AggressorSideParser.from_str(values[2]),
-            trade_id=values[3],
+            trade_id=TradeId(values[3]),
             ts_event=ts_event,
             ts_init=ts_init,
         )

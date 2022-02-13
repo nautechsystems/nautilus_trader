@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2021 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -128,7 +128,7 @@ class TestPersistenceParsers:
             # Replace str repr with "fully qualified" string we can `eval`
             replacements = {
                 b"id=BTC/USDT.BINANCE": b"instrument_id=InstrumentId(Symbol('BTC/USDT'), venue=Venue('BINANCE'))",
-                b"local_symbol=BTCUSDT": b"local_symbol=Symbol('BTCUSDT')",
+                b"native_symbol=BTCUSDT": b"native_symbol=Symbol('BTCUSDT')",
                 b"price_increment=0.01": b"price_increment=Price.from_str('0.01')",
                 b"size_increment=0.000001": b"size_increment=Quantity.from_str('0.000001')",
                 b"margin_init=0": b"margin_init=Decimal(0)",
@@ -193,6 +193,38 @@ class TestPersistenceParsers:
             catalog=self.catalog,
         )
         assert sum(in_.values()) == 21
+
+    def test_csv_reader_dataframe_separator(self):
+        bar_type = TestStubs.bartype_adabtc_binance_1min_last()
+        instrument = TestInstrumentProvider.adabtc_binance()
+        wrangler = BarDataWrangler(bar_type, instrument)
+
+        def parser(data):
+            data["timestamp"] = data["timestamp"].astype("datetime64[ms]")
+            bars = wrangler.process(data.set_index("timestamp"))
+            return bars
+
+        binance_spot_header = [
+            "timestamp",
+            "open",
+            "high",
+            "low",
+            "close",
+            "volume",
+            "ts_close",
+            "quote_volume",
+            "n_trades",
+            "taker_buy_base_volume",
+            "taker_buy_quote_volume",
+            "ignore",
+        ]
+        reader = CSVReader(block_parser=parser, header=binance_spot_header, separator="|")
+        in_ = process_files(
+            glob_path=f"{TEST_DATA_DIR}/ADABTC_pipe_separated-1m-2021-11-*.csv",
+            reader=reader,
+            catalog=self.catalog,
+        )
+        assert sum(in_.values()) == 10
 
     def test_text_reader(self):
         provider = BetfairInstrumentProvider.from_instruments([])

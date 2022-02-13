@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2021 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -26,6 +26,10 @@ cdef class OrderTypeParser:
             return "STOP_MARKET"
         elif value == 4:
             return "STOP_LIMIT"
+        elif value == 5:
+            return "TRAILING_STOP_MARKET"
+        elif value == 6:
+            return "TRAILING_STOP_LIMIT"
         else:
             raise ValueError(f"value was invalid, was {value}")
 
@@ -39,6 +43,10 @@ cdef class OrderTypeParser:
             return OrderType.STOP_MARKET
         elif value == "STOP_LIMIT":
             return OrderType.STOP_LIMIT
+        elif value == "TRAILING_STOP_MARKET":
+            return OrderType.TRAILING_STOP_MARKET
+        elif value == "TRAILING_STOP_LIMIT":
+            return OrderType.TRAILING_STOP_LIMIT
         else:
             raise ValueError(f"value was invalid, was {value}")
 

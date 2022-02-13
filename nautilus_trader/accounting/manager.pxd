@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2021 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -36,10 +36,10 @@ cdef class AccountsManager:
     cdef CacheFacade _cache
 
     cdef AccountState update_balances(self, Account account, Instrument instrument, OrderFilled fill)
-    cdef AccountState update_orders(self, Account account, Instrument instrument, list passive_orders_working, int64_t ts_event)
+    cdef AccountState update_orders(self, Account account, Instrument instrument, list orders_open, int64_t ts_event)
     cdef AccountState update_positions(self, MarginAccount account, Instrument instrument, list positions_open, int64_t ts_event)
-    cdef AccountState _update_balance_locked(self, CashAccount account, Instrument instrument, list passive_orders_working, int64_t ts_event)
-    cdef AccountState _update_margin_init(self, MarginAccount account, Instrument instrument, list passive_orders_working, int64_t ts_event)
+    cdef AccountState _update_balance_locked(self, CashAccount account, Instrument instrument, list orders_open, int64_t ts_event)
+    cdef AccountState _update_margin_init(self, MarginAccount account, Instrument instrument, list orders_open, int64_t ts_event)
     cdef void _update_balance_single_currency(self, Account account, OrderFilled fill, Money pnl) except *
     cdef void _update_balance_multi_currency(self, Account account, OrderFilled fill, list pnls) except *
     cdef AccountState _generate_account_state(self, Account account, int64_t ts_event)

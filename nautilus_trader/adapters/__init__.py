@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2021 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -15,4 +15,7 @@
 
 """
 The `adapters` subpackage provides integrations for data providers, brokerages, and exchanges.
+
+Generally each integration will implement lower level HTTP REST and/or WebSocket clients for the
+exchange/venue API, which the rest of the components can then be built on top of.
 """

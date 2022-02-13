@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2021 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -424,7 +424,7 @@ cdef class Trader(Component):
 
     cpdef void check_residuals(self) except *:
         """
-        Check for residual business objects such as working orders or open positions.
+        Check for residual open state such as open orders or open positions.
         """
         self._exec_engine.check_residuals()
 

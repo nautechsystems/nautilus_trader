@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2021 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -29,8 +29,6 @@ from nautilus_trader.adapters.betfair.common import BETFAIR_VENUE
 from nautilus_trader.adapters.betfair.common import price_to_probability
 from nautilus_trader.adapters.betfair.common import probability_to_price
 from nautilus_trader.adapters.betfair.parsing import betfair_account_to_account_state
-from nautilus_trader.adapters.betfair.parsing import generate_order_status_report
-from nautilus_trader.adapters.betfair.parsing import generate_trades_list
 from nautilus_trader.adapters.betfair.parsing import order_cancel_all_to_betfair
 from nautilus_trader.adapters.betfair.parsing import order_cancel_to_betfair
 from nautilus_trader.adapters.betfair.parsing import order_submit_to_betfair
@@ -45,25 +43,26 @@ from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.core.datetime import millis_to_nanos
 from nautilus_trader.core.datetime import nanos_to_secs
 from nautilus_trader.core.datetime import secs_to_nanos
-from nautilus_trader.execution.messages import ExecutionReport
-from nautilus_trader.execution.messages import OrderStatusReport
+from nautilus_trader.execution.reports import OrderStatusReport
+from nautilus_trader.execution.reports import PositionStatusReport
+from nautilus_trader.execution.reports import TradeReport
 from nautilus_trader.live.execution_client import LiveExecutionClient
 from nautilus_trader.model.c_enums.account_type import AccountType
 from nautilus_trader.model.c_enums.liquidity_side import LiquiditySide
 from nautilus_trader.model.c_enums.order_type import OrderType
-from nautilus_trader.model.c_enums.venue_type import VenueType
 from nautilus_trader.model.commands.trading import CancelAllOrders
 from nautilus_trader.model.commands.trading import CancelOrder
 from nautilus_trader.model.commands.trading import ModifyOrder
 from nautilus_trader.model.commands.trading import SubmitOrder
 from nautilus_trader.model.commands.trading import SubmitOrderList
 from nautilus_trader.model.currency import Currency
+from nautilus_trader.model.enums import OMSType
 from nautilus_trader.model.events.account import AccountState
 from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import ClientOrderId
-from nautilus_trader.model.identifiers import ExecutionId
-from nautilus_trader.model.identifiers import Symbol
+from nautilus_trader.model.identifiers import InstrumentId
+from nautilus_trader.model.identifiers import TradeId
 from nautilus_trader.model.identifiers import VenueOrderId
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
@@ -82,8 +81,6 @@ class BetfairExecutionClient(LiveExecutionClient):
         The event loop for the client.
     client : BetfairClient
         The Betfair HttpClient.
-    account_id : AccountId
-        The account ID for the client.
     base_currency : Currency
         The account base currency for the client.
     msgbus : MessageBus
@@ -104,7 +101,6 @@ class BetfairExecutionClient(LiveExecutionClient):
         self,
         loop: asyncio.AbstractEventLoop,
         client: BetfairClient,
-        account_id: AccountId,
         base_currency: Currency,
         msgbus: MessageBus,
         cache: Cache,
@@ -116,17 +112,15 @@ class BetfairExecutionClient(LiveExecutionClient):
         super().__init__(
             loop=loop,
             client_id=ClientId(BETFAIR_VENUE.value),
-            instrument_provider=instrument_provider
-            or BetfairInstrumentProvider(client=client, logger=logger, market_filter=market_filter),
-            venue_type=VenueType.EXCHANGE,
-            account_id=account_id,
+            oms_type=OMSType.NETTING,
             account_type=AccountType.BETTING,
             base_currency=base_currency,
+            instrument_provider=instrument_provider
+            or BetfairInstrumentProvider(client=client, logger=logger, market_filter=market_filter),
             msgbus=msgbus,
             cache=cache,
             clock=clock,
             logger=logger,
-            config={"name": "BetfairExecClient"},
         )
 
         self._client: BetfairClient = client
@@ -138,9 +132,10 @@ class BetfairExecutionClient(LiveExecutionClient):
 
         self.venue_order_id_to_client_order_id: Dict[VenueOrderId, ClientOrderId] = {}
         self.pending_update_order_client_ids: Set[Tuple[ClientOrderId, VenueOrderId]] = set()
-        self.published_executions: Dict[ClientOrderId, ExecutionId] = defaultdict(list)
+        self.published_executions: Dict[ClientOrderId, TradeId] = defaultdict(list)
 
-        AccountFactory.register_calculated_account(account_id.issuer)
+        self._set_account_id(AccountId(BETFAIR_VENUE.value, "001"))  # TODO(cs): Temporary
+        AccountFactory.register_calculated_account(BETFAIR_VENUE.value)
 
     # -- CONNECTION HANDLERS -----------------------------------------------------------------------
 
@@ -218,6 +213,125 @@ class BetfairExecutionClient(LiveExecutionClient):
         self._log.debug(f"Received account state: {account_state}, sending")
         self._send_account_state(account_state)
         self._log.debug("Initial Account state completed")
+
+    # -- EXECUTION REPORTS -------------------------------------------------------------------------
+
+    async def generate_order_status_report(
+        self,
+        venue_order_id: VenueOrderId = None,
+    ) -> Optional[OrderStatusReport]:
+        """
+        Generate an order status report for the given venue order ID.
+
+        If the order is not found, or an error occurs, then logs and returns
+        ``None``.
+
+        Parameters
+        ----------
+        venue_order_id : VenueOrderId, optional
+            The venue order ID (assigned by the venue) query filter.
+
+        Returns
+        -------
+        OrderStatusReport or ``None``
+
+        """
+        self._log.warning("Cannot generate OrderStatusReport: not yet implemented.")
+
+        return None
+
+    async def generate_order_status_reports(
+        self,
+        instrument_id: InstrumentId = None,
+        start: datetime = None,
+        end: datetime = None,
+        open_only: bool = False,
+    ) -> List[OrderStatusReport]:
+        """
+        Generate a list of order status reports with optional query filters.
+
+        The returned list may be empty if no orders match the given parameters.
+
+        Parameters
+        ----------
+        instrument_id : InstrumentId, optional
+            The instrument ID query filter.
+        start : datetime, optional
+            The start datetime query filter.
+        end : datetime, optional
+            The end datetime query filter.
+        open_only : bool, default False
+            If the query is for open orders only.
+
+        Returns
+        -------
+        list[OrderStatusReport]
+
+        """
+        self._log.warning("Cannot generate OrderStatusReports: not yet implemented.")
+
+        return []
+
+    async def generate_trade_reports(
+        self,
+        instrument_id: InstrumentId = None,
+        venue_order_id: VenueOrderId = None,
+        start: datetime = None,
+        end: datetime = None,
+    ) -> List[TradeReport]:
+        """
+        Generate a list of trade reports with optional query filters.
+
+        The returned list may be empty if no trades match the given parameters.
+
+        Parameters
+        ----------
+        instrument_id : InstrumentId, optional
+            The instrument ID query filter.
+        venue_order_id : VenueOrderId, optional
+            The venue order ID (assigned by the venue) query filter.
+        start : datetime, optional
+            The start datetime query filter.
+        end : datetime, optional
+            The end datetime query filter.
+
+        Returns
+        -------
+        list[TradeReport]
+
+        """
+        self._log.warning("Cannot generate TradeReports: not yet implemented.")
+
+        return []
+
+    async def generate_position_status_reports(
+        self,
+        instrument_id: InstrumentId = None,
+        start: datetime = None,
+        end: datetime = None,
+    ) -> List[PositionStatusReport]:
+        """
+        Generate a list of position status reports with optional query filters.
+
+        The returned list may be empty if no positions match the given parameters.
+
+        Parameters
+        ----------
+        instrument_id : InstrumentId, optional
+            The instrument ID query filter.
+        start : datetime, optional
+            The start datetime query filter.
+        end : datetime, optional
+            The end datetime query filter.
+
+        Returns
+        -------
+        list[PositionStatusReport]
+
+        """
+        self._log.warning("Cannot generate PositionStatusReports: not yet implemented.")
+
+        return []
 
     # -- COMMAND HANDLERS --------------------------------------------------------------------------
 
@@ -398,7 +512,7 @@ class BetfairExecutionClient(LiveExecutionClient):
                 price=price_to_probability(
                     str(update_instruction["instruction"]["limitOrder"]["price"])
                 ),
-                trigger=None,  # Not applicable for Betfair
+                trigger_price=None,  # Not applicable for Betfair
                 ts_event=self._clock.timestamp_ns(),
                 venue_order_id_modified=True,
             )
@@ -475,10 +589,10 @@ class BetfairExecutionClient(LiveExecutionClient):
     def cancel_all_orders(self, command: CancelAllOrders) -> None:
         PyCondition.not_none(command, "command")
 
-        working_orders = self._cache.working_orders(instrument_id=command.instrument_id)
+        open_orders = self._cache.open_orders(instrument_id=command.instrument_id)
 
-        # TODO(cs): Temporary solution generating individual cancels for all working orders
-        for order in working_orders:
+        # TODO(cs): Temporary solution generating individual cancels for all open orders
+        for order in open_orders:
             command = CancelOrder(
                 trader_id=command.trader_id,
                 strategy_id=command.strategy_id,
@@ -501,7 +615,7 @@ class BetfairExecutionClient(LiveExecutionClient):
     # TODO(cs): Currently not in use as old behavior restored to cancel orders individually
     async def _cancel_all_orders(self, command: CancelAllOrders) -> None:
         # TODO(cs): I've had to duplicate the logic as couldn't refactor and tease
-        #  apart the cancel rejects and execution report. This will possibly fail
+        #  apart the cancel rejects and trade report. This will possibly fail
         #  badly if there are any API errors...
         self._log.debug(f"Received cancel all orders: {command}")
 
@@ -520,7 +634,7 @@ class BetfairExecutionClient(LiveExecutionClient):
                 await self.on_api_exception(exc=exc)
             self._log.error(f"Cancel failed: {exc}")
             # TODO(cs): Will probably just need to recover the client order ID
-            #  and order ID from the execution report?
+            #  and order ID from the trade report?
             # self.generate_order_cancel_rejected(
             #     strategy_id=command.strategy_id,
             #     instrument_id=command.instrument_id,
@@ -539,7 +653,7 @@ class BetfairExecutionClient(LiveExecutionClient):
                 reason = f"{result.get('errorCode', 'Error')}: {report['errorCode']}"
                 self._log.error(f"cancel failed - {reason}")
                 # TODO(cs): Will probably just need to recover the client order ID
-                #  and order ID from the execution report?
+                #  and order ID from the trade report?
                 # self.generate_order_cancel_rejected(
                 #     strategy_id=command.strategy_id,
                 #     instrument_id=command.instrument_id,
@@ -669,8 +783,8 @@ class BetfairExecutionClient(LiveExecutionClient):
 
         # Check for any portion executed
         if update["sm"] > 0 and update["sm"] > order.filled_qty:
-            execution_id = create_execution_id(update)
-            if execution_id not in self.published_executions[client_order_id]:
+            trade_id = create_trade_id(update)
+            if trade_id not in self.published_executions[client_order_id]:
                 fill_qty = update["sm"] - order.filled_qty
                 fill_price = self._determine_fill_price(update=update, order=order)
                 self.generate_order_filled(
@@ -679,7 +793,7 @@ class BetfairExecutionClient(LiveExecutionClient):
                     client_order_id=client_order_id,
                     venue_order_id=venue_order_id,
                     venue_position_id=None,  # Can be None
-                    execution_id=execution_id,
+                    trade_id=trade_id,
                     order_side=B2N_ORDER_STREAM_SIDE[update["side"]],
                     order_type=OrderType.LIMIT,
                     last_qty=Quantity(fill_qty, instrument.size_precision),
@@ -690,7 +804,7 @@ class BetfairExecutionClient(LiveExecutionClient):
                     liquidity_side=LiquiditySide.NONE,
                     ts_event=millis_to_nanos(update["md"]),
                 )
-                self.published_executions[client_order_id].append(execution_id)
+                self.published_executions[client_order_id].append(trade_id)
 
     def _determine_fill_price(self, update: Dict, order: Order):
         if "avp" not in update:
@@ -730,8 +844,8 @@ class BetfairExecutionClient(LiveExecutionClient):
 
         if update["sm"] > 0 and update["sm"] > order.filled_qty:
             self._log.debug("")
-            execution_id = create_execution_id(update)
-            if execution_id not in self.published_executions[client_order_id]:
+            trade_id = create_trade_id(update)
+            if trade_id not in self.published_executions[client_order_id]:
                 fill_qty = update["sm"] - order.filled_qty
                 fill_price = self._determine_fill_price(update=update, order=order)
                 # At least some part of this order has been filled
@@ -741,7 +855,7 @@ class BetfairExecutionClient(LiveExecutionClient):
                     client_order_id=client_order_id,
                     venue_order_id=venue_order_id,
                     venue_position_id=None,  # Can be None
-                    execution_id=execution_id,
+                    trade_id=trade_id,
                     order_side=B2N_ORDER_STREAM_SIDE[update["side"]],
                     order_type=OrderType.LIMIT,
                     last_qty=Quantity(fill_qty, instrument.size_precision),
@@ -752,10 +866,10 @@ class BetfairExecutionClient(LiveExecutionClient):
                     liquidity_side=LiquiditySide.TAKER,  # TODO - Fix this?
                     ts_event=millis_to_nanos(update["md"]),
                 )
-                self.published_executions[client_order_id].append(execution_id)
+                self.published_executions[client_order_id].append(trade_id)
 
         cancel_qty = update["sc"] + update["sl"] + update["sv"]
-        if cancel_qty > 0 and not order.is_completed:
+        if cancel_qty > 0 and not order.is_closed:
             assert (
                 update["sm"] + cancel_qty == update["s"]
             ), f"Size matched + canceled != total: {update}"
@@ -824,23 +938,8 @@ class BetfairExecutionClient(LiveExecutionClient):
         )
         return None
 
-    # -- RECONCILIATION -------------------------------------------------------------------------------
 
-    async def generate_order_status_report(self, order: Order) -> Optional[OrderStatusReport]:
-        self._log.debug(f"generate_order_status_report: {order}")
-        return await generate_order_status_report(self, order)
-
-    async def generate_exec_reports(
-        self,
-        venue_order_id: VenueOrderId,
-        symbol: Symbol,
-        since: Optional[datetime] = None,
-    ) -> List[ExecutionReport]:
-        self._log.debug(f"generate_exec_reports: {venue_order_id}, {symbol}, {since}")
-        return await generate_trades_list(self, venue_order_id, symbol, since)
-
-
-def create_execution_id(uo: Dict) -> ExecutionId:
+def create_trade_id(uo: Dict) -> TradeId:
     data: bytes = orjson.dumps(
         (
             uo["id"],
@@ -855,4 +954,4 @@ def create_execution_id(uo: Dict) -> ExecutionId:
             uo.get("sm"),
         )
     )
-    return ExecutionId(hashlib.sha1(data).hexdigest())  # noqa (S303 insecure SHA1)
+    return TradeId(hashlib.sha1(data).hexdigest())  # noqa (S303 insecure SHA1)

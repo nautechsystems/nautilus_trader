@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2021 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -14,6 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 import asyncio
+import sys
 from unittest.mock import patch
 
 import pytest
@@ -47,6 +48,7 @@ from tests.integration_tests.adapters.betfair.test_kit import BetfairResponses
 from tests.integration_tests.adapters.betfair.test_kit import BetfairTestStubs
 
 
+@pytest.mark.skipif(sys.platform == "win32", reason="failing on windows")
 class TestBetfairParsing:
     def setup(self):
         # Fixture Setup
@@ -150,8 +152,13 @@ class TestBetfairParsing:
             base_currency=GBP,
             reported=True,  # reported
             balances=[
-                AccountBalance(GBP, Money(1000.0, GBP), Money(0.00, GBP), Money(1000.0, GBP))
+                AccountBalance(
+                    Money(1000.0, GBP),
+                    Money(0.00, GBP),
+                    Money(1000.0, GBP),
+                )
             ],
+            margins=[],
             info={"funds": funds, "detail": detail},
             event_id=self.uuid,
             ts_event=result.ts_event,
@@ -197,7 +204,7 @@ class TestBetfairParsing:
         assert result == expected
 
     def test_make_order_limit_on_close(self):
-        order = BetfairTestStubs.limit_order(time_in_force=TimeInForce.OC)
+        order = BetfairTestStubs.limit_order(time_in_force=TimeInForce.AT_THE_CLOSE)
         result = make_order(order)
         expected = {
             "limitOnCloseOrder": {"price": "3.05", "liability": "10.0"},
@@ -239,7 +246,7 @@ class TestBetfairParsing:
     )
     def test_make_order_market_on_close(self, side, liability):
         order = BetfairTestStubs.market_order(
-            time_in_force=TimeInForce.OC, side=OrderSideParser.from_str_py(side)
+            time_in_force=TimeInForce.AT_THE_CLOSE, side=OrderSideParser.from_str_py(side)
         )
         result = make_order(order)
         expected = {

@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2021 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -21,7 +21,8 @@ import pytest
 
 from nautilus_trader.adapters.ftx.factories import get_cached_ftx_http_client
 from nautilus_trader.adapters.ftx.http.client import FTXHttpClient
-from nautilus_trader.adapters.ftx.providers import FTXInstrumentProvider
+
+# from nautilus_trader.adapters.ftx.providers import FTXInstrumentProvider
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.logging import Logger
 
@@ -40,18 +41,55 @@ async def test_ftx_http_client():
     )
     await client.connect()
 
+    # Test authentication works with account info
+    # response = await client.get_account_info()
+
     response = await client.list_markets(
         # market="ETH-PERP",
     )
-    print(json.dumps(response, indent=4))
 
-    provider = FTXInstrumentProvider(
-        client=client,
-        logger=Logger(clock=clock),
-    )
+    # provider = FTXInstrumentProvider(
+    #     client=client,
+    #     logger=Logger(clock=clock),
+    # )
 
-    await provider.load_all_async()
+    # await provider.load_all_async()
     # for instrument in provider.get_all().values():
     #     print(instrument)
+
+    # response = await client.get_historical_prices(
+    #     market="ETH/USD",
+    #     resolution=300,
+    # )
+
+    # response = await client.place_order(
+    #     market="ETH-PERP",
+    #     side="buy",
+    #     size="0.01",
+    #     order_type="market",
+    #     # price="5500",
+    #     # post_only=True,
+    #     # reduce_only=True,
+    # )
+
+    # response = await client.place_trigger_order(
+    #     market="ETH-PERP",
+    #     side="sell",
+    #     size="0.01",
+    #     order_type="stop",
+    #     # price="2540",
+    #     trigger_price="2500",
+    #     # trail_value="-20",
+    #     client_id="117",
+    #     # post_only=True,
+    #     # reduce_only=True,
+    # )
+
+    # response = await client.get_order_status("112461976236")
+
+    # response = await client.get_order_history()
+
+    # response = await client.get_order_status_by_client_id("001")
+    print(json.dumps(response, indent=4))
 
     await client.disconnect()

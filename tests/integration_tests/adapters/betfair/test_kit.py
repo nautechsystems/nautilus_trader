@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2021 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -46,6 +46,8 @@ from nautilus_trader.common.factories import OrderFactory
 from nautilus_trader.common.logging import LiveLogger
 from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.examples.strategies.orderbook_imbalance import OrderBookImbalanceConfig
+from nautilus_trader.execution.config import ExecEngineConfig
+from nautilus_trader.live.config import LiveExecEngineConfig
 from nautilus_trader.live.data_engine import LiveDataEngine
 from nautilus_trader.model.commands.trading import CancelOrder
 from nautilus_trader.model.commands.trading import ModifyOrder
@@ -152,12 +154,15 @@ class BetfairTestStubs:
 
     @staticmethod
     def exec_engine(event_loop, clock, live_logger):
+        config = LiveExecEngineConfig()
+        config.allow_cash_positions = True  # Retain original behaviour for now
         return MockLiveExecutionEngine(
             loop=event_loop,
             msgbus=TestStubs.msgbus(),
             cache=TestStubs.cache,
             clock=clock,
             logger=live_logger,
+            config=config,
         )
 
     @staticmethod
@@ -416,7 +421,7 @@ class BetfairTestStubs:
             venue_order_id=venue_order_id or VenueOrderId("001"),
             quantity=Quantity.from_int(50),
             price=Price(0.74347, precision=5),
-            trigger=None,
+            trigger_price=None,
             command_id=BetfairTestStubs.uuid(),
             ts_init=BetfairTestStubs.clock().timestamp_ns(),
         )
@@ -490,7 +495,6 @@ class BetfairTestStubs:
     def betfair_venue_config() -> BacktestVenueConfig:
         return BacktestVenueConfig(  # type: ignore
             name="BETFAIR",
-            venue_type="EXCHANGE",
             oms_type="NETTING",
             account_type="BETTING",
             base_currency="GBP",
@@ -519,7 +523,9 @@ class BetfairTestStubs:
         bypass_risk=False,
     ) -> BacktestRunConfig:
         engine_config = BacktestEngineConfig(
-            log_level="INFO", risk_engine=RiskEngineConfig(bypass=bypass_risk)
+            log_level="INFO",
+            exec_engine=ExecEngineConfig(allow_cash_positions=True),
+            risk_engine=RiskEngineConfig(bypass=bypass_risk),
         )
         base_data_config = BacktestDataConfig(  # type: ignore
             catalog_path=catalog_path,
@@ -995,7 +1001,7 @@ class BetfairDataProvider:
             venue_order_id=VenueOrderId("001"),
             quantity=Quantity.from_int(50),
             price=Price(0.74347, precision=5),
-            trigger=None,
+            trigger_price=None,
             command_id=BetfairTestStubs.uuid(),
             ts_init=BetfairTestStubs.clock().timestamp_ns(),
         )

@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2021 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -32,7 +32,7 @@ cdef class Bet:
         The price of the bet.
     quantity : Quantity
         The size of the bet.
-    side : OrderSide
+    side : OrderSide {``BUY``, ``SELL``}
         The side ( OrderSide.BUY = BACK, OrderSide.SELL = LAY ) of the bet.
 
     Raises

@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2021 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -62,7 +62,6 @@ from nautilus_trader.model.identifiers cimport TraderId
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
 from nautilus_trader.model.orders.base cimport Order
-from nautilus_trader.model.orders.base cimport PassiveOrder
 from nautilus_trader.model.orders.list cimport OrderList
 from nautilus_trader.model.orders.market cimport MarketOrder
 from nautilus_trader.model.position cimport Position
@@ -80,6 +79,8 @@ cdef class TradingStrategy(Actor):
     determines how positions are handled by the `ExecutionEngine`.
 
     Strategy OMS (Order Management System) types:
+     - ``NONE``: No specific type has been configured, will therefore default to
+       the native OMS type for each venue.
      - ``HEDGING``: A position ID will be assigned for each new position which
        is opened per instrument.
      - ``NETTING``: There will only ever be a single position for the strategy
@@ -110,7 +111,7 @@ cdef class TradingStrategy(Actor):
         component_id = type(self).__name__ if config.component_id is None else config.component_id
         self.id = StrategyId(f"{component_id}-{config.order_id_tag}")
 
-        self.oms_type = OMSTypeParser.from_str(config.oms_type)
+        self.oms_type = OMSTypeParser.from_str(str(config.oms_type).upper())
 
         # Indicators
         self._indicators = []             # type: list[Indicator]
@@ -392,7 +393,7 @@ cdef class TradingStrategy(Actor):
             self.log.debug("Saving state...")
             user_state = self.on_save()
             if len(user_state) > 0:
-                self.log.info(f"Saved state: {user_state}.", color=LogColor.BLUE)
+                self.log.info(f"Saved state: {list(user_state.keys())}.", color=LogColor.BLUE)
             else:
                 self.log.info("No user state to save.", color=LogColor.BLUE)
             return user_state
@@ -430,7 +431,7 @@ cdef class TradingStrategy(Actor):
         try:
             self.log.debug(f"Loading state...")
             self.on_load(state)
-            self.log.info(f"Loaded state {state}.", color=LogColor.BLUE)
+            self.log.info(f"Loaded state {list(state.keys())}.", color=LogColor.BLUE)
         except Exception as ex:
             self.log.exception(ex)
             raise
@@ -512,10 +513,10 @@ cdef class TradingStrategy(Actor):
 
     cpdef void modify_order(
         self,
-        PassiveOrder order,
+        Order order,
         Quantity quantity=None,
         Price price=None,
-        Price trigger=None,
+        Price trigger_price=None,
     ) except *:
         """
         Modify the given order with optional parameters and routing instructions.
@@ -531,14 +532,14 @@ cdef class TradingStrategy(Actor):
 
         Parameters
         ----------
-        order : PassiveOrder
+        order : Order
             The order to update.
         quantity : Quantity, optional
             The updated quantity for the given order.
         price : Price, optional
-            The updated price for the given order.
-        trigger : Price, optional
-            The updated trigger price for the given order.
+            The updated price for the given order (if applicable).
+        trigger_price : Price, optional
+            The updated trigger price for the given order (if applicable).
 
         Raises
         ------
@@ -551,8 +552,6 @@ cdef class TradingStrategy(Actor):
 
         """
         Condition.not_none(order, "order")
-        if trigger is not None:
-            Condition.equal(order.type, OrderType.STOP_LIMIT, "order.type", "STOP_LIMIT")
         Condition.true(self.trader_id is not None, "The strategy has not been registered")
 
         cdef bint updating = False  # Set validation flag (must become true)
@@ -560,23 +559,33 @@ cdef class TradingStrategy(Actor):
         if quantity is not None and quantity != order.quantity:
             updating = True
 
-        if price is not None and price != order.price:
-            updating = True
+        if price is not None:
+            Condition.true(
+                order.type == OrderType.LIMIT or order.type == OrderType.STOP_LIMIT,
+                fail_msg=f"{order.type_string_c()} orders do not have a LIMIT price"
+            )
+            if price != order.price:
+                updating = True
 
-        if trigger is not None:
-            if order.is_triggered_c():
+        if trigger_price is not None:
+            Condition.true(
+                order.type == OrderType.STOP_MARKET or order.type == OrderType.STOP_LIMIT,
+                fail_msg=f"{order.type_string_c()} orders do not have a STOP trigger price"
+            )
+            if order.type == OrderType.STOP_LIMIT and order.is_triggered_c():
                 self.log.warning(
                     f"Cannot create command ModifyOrder: "
                     f"Order with {repr(order.client_order_id)} already triggered.",
                 )
                 return
-            if trigger != order.trigger:
+            if trigger_price != order.trigger_price:
                 updating = True
 
         if not updating:
             self.log.error(
                 "Cannot create command ModifyOrder: "
-                "quantity, price and trigger were either None or the same as existing values.",
+                "quantity, price and trigger were either None "
+                "or the same as existing values.",
             )
             return
 
@@ -588,12 +597,13 @@ cdef class TradingStrategy(Actor):
             return  # Cannot send command
 
         if (
-            order.is_completed_c()
+            order.is_closed_c()
             or order.is_pending_update_c()
             or order.is_pending_cancel_c()
         ):
             self.log.warning(
-                f"Cannot create command ModifyOrder: state is {order.status_string_c()}, {order}.",
+                f"Cannot create command ModifyOrder: "
+                f"state is {order.status_string_c()}, {order}.",
             )
             return  # Cannot send command
 
@@ -605,7 +615,7 @@ cdef class TradingStrategy(Actor):
             order.venue_order_id,
             quantity,
             price,
-            trigger,
+            trigger_price,
             self.uuid_factory.generate(),
             self.clock.timestamp_ns(),
         )
@@ -630,7 +640,7 @@ cdef class TradingStrategy(Actor):
         Condition.not_none(order, "order")
         Condition.true(self.trader_id is not None, "The strategy has not been registered")
 
-        if order.is_completed_c() or order.is_pending_cancel_c():
+        if order.is_closed_c() or order.is_pending_cancel_c():
             self.log.warning(
                 f"Cannot cancel order: state is {order.status_string_c()}, {order}.",
             )
@@ -661,19 +671,19 @@ cdef class TradingStrategy(Actor):
         # instrument_id can be None
         Condition.true(self.trader_id is not None, "The strategy has not been registered")
 
-        cdef list working_orders = self.cache.orders_working(
+        cdef list open_orders = self.cache.orders_open(
             venue=None,  # Faster query filtering
             instrument_id=instrument_id,
             strategy_id=self.id,
         )
 
-        if not working_orders:
-            self.log.info("No working orders to cancel.")
+        if not open_orders:
+            self.log.info("No open orders to cancel.")
             return
 
-        cdef int count = len(working_orders)
+        cdef int count = len(open_orders)
         self.log.info(
-            f"Canceling {count} working order{'' if count == 1 else 's'}...",
+            f"Canceling {count} open order{'' if count == 1 else 's'}...",
         )
 
         cdef CancelAllOrders command = CancelAllOrders(

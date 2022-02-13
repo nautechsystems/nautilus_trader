@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2021 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -31,6 +31,8 @@ class LinePreprocessor:
     Used if the input data requires any preprocessing that may also be required
     as attributes on the resulting Nautilus objects that are created.
 
+    Examples
+    --------
     For example, if you were logging data in python with a prepended timestamp, as below:
 
     2021-06-29T06:03:14.528000 - {"op":"mcm","pt":1624946594395,"mc":[{"id":"1.179082386","rc":[{"atb":[[1.93,0]]}]}
@@ -39,16 +41,16 @@ class LinePreprocessor:
     also want to use this timestamp as the `ts_init` value in Nautilus. In
     this instance, you could use something along the lines of:
 
-    class LoggingLinePreprocessor(LinePreprocessor):
-        @staticmethod
-        def pre_process(line):
-            timestamp, json_data = line.split(' - ')
-            yield json_data, {'ts_init': pd.Timestamp(timestamp)}
-
-        @staticmethod
-        def post_process(obj: Any, state: dict):
-            obj.ts_init = state['ts_init']
-            return obj
+    >>> class LoggingLinePreprocessor(LinePreprocessor):
+    >>>    @staticmethod
+    >>>    def pre_process(line):
+    >>>        timestamp, json_data = line.split(' - ')
+    >>>        yield json_data, {'ts_init': pd.Timestamp(timestamp)}
+    >>>
+    >>>    @staticmethod
+    >>>    def post_process(obj: Any, state: dict):
+    >>>        obj.ts_init = state['ts_init']
+    >>>        return obj
     """
 
     def __init__(self):
@@ -224,13 +226,13 @@ class CSVReader(Reader):
         The readers instrument provider.
     instrument_provider_update
         Optional hook to call before `parser` for the purpose of loading instruments into an InstrumentProvider
-    header: List[str], default=None
+    header: List[str], default None
         If first row contains names of columns, header has to be set to `None`.
         If data starts right at the first row, header has to be provided the list of column names.
-    chunked: bool, default=True
+    chunked: bool, default True
         If chunked=False, each CSV line will be passed to `block_parser` individually, if chunked=True, the data
         passed will potentially contain many lines (a block).
-    as_dataframe: bool, default=False
+    as_dataframe: bool, default False
         If as_dataframe=True, the passes block will be parsed into a DataFrame before passing to `block_parser`.
     """
 
@@ -242,6 +244,7 @@ class CSVReader(Reader):
         header: Optional[List[str]] = None,
         chunked=True,
         as_dataframe=True,
+        separator=",",
     ):
         super().__init__(
             instrument_provider=instrument_provider,
@@ -252,11 +255,12 @@ class CSVReader(Reader):
         self.header_in_first_row = not header
         self.chunked = chunked
         self.as_dataframe = as_dataframe
+        self.separator = separator
 
     def parse(self, block: bytes) -> Generator:
         if self.header is None:
             header, block = block.split(b"\n", maxsplit=1)
-            self.header = header.decode().split(",")
+            self.header = header.decode().split(self.separator)
 
         self.buffer += block
         if b"\n" in block:
@@ -266,7 +270,7 @@ class CSVReader(Reader):
 
         # Prepare - a little gross but allows a lot of flexibility
         if self.as_dataframe:
-            df = pd.read_csv(BytesIO(process), names=self.header)
+            df = pd.read_csv(BytesIO(process), names=self.header, sep=self.separator)
             if self.chunked:
                 chunks = (df,)
             else:
@@ -275,7 +279,7 @@ class CSVReader(Reader):
             if self.chunked:
                 chunks = (process,)
             else:
-                chunks = tuple([dict(zip(self.header, line)) for line in process.split(b"\n")])  # type: ignore
+                chunks = tuple([dict(zip(self.header, line.split(bytes(self.separator)))) for line in process.split(b"\n")])  # type: ignore
 
         for chunk in chunks:
             if self.instrument_provider_update is not None:

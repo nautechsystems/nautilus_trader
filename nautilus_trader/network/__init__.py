@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2021 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -14,7 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 """
-The `network` subpackage provides generic components for networking clients.
+The `network` subpackage provides low-level base components for networking clients.
 
 The base classes can be inherited to assist with writing adapters for integrations with exchanges,
 brokerages, data providers/feeds and other venues or services.

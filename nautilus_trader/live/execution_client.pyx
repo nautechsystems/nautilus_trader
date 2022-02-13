@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2021 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -20,31 +20,23 @@ API which may be presented directly by an exchange, or broker intermediary.
 
 import asyncio
 import types
+from datetime import timedelta
+from typing import Optional
 
-import pandas as pd
 from cpython.datetime cimport datetime
 
 from nautilus_trader.cache.cache cimport Cache
 from nautilus_trader.common.clock cimport LiveClock
-from nautilus_trader.common.logging cimport LogColor
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.common.providers cimport InstrumentProvider
-from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.execution.client cimport ExecutionClient
-from nautilus_trader.execution.messages cimport ExecutionMassStatus
-from nautilus_trader.execution.messages cimport ExecutionReport
-from nautilus_trader.execution.messages cimport OrderStatusReport
+from nautilus_trader.execution.reports cimport ExecutionMassStatus
 from nautilus_trader.model.c_enums.account_type cimport AccountType
-from nautilus_trader.model.c_enums.order_status cimport OrderStatus
-from nautilus_trader.model.c_enums.order_status cimport OrderStatusParser
-from nautilus_trader.model.c_enums.venue_type cimport VenueType
+from nautilus_trader.model.c_enums.oms_type cimport OMSType
 from nautilus_trader.model.currency cimport Currency
-from nautilus_trader.model.identifiers cimport AccountId
 from nautilus_trader.model.identifiers cimport ClientId
-from nautilus_trader.model.identifiers cimport Symbol
+from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.identifiers cimport VenueOrderId
-from nautilus_trader.model.instruments.base cimport Instrument
-from nautilus_trader.model.orders.base cimport Order
 from nautilus_trader.msgbus.bus cimport MessageBus
 
 
@@ -60,10 +52,6 @@ cdef class LiveExecutionClient(ExecutionClient):
         The client ID.
     instrument_provider : InstrumentProvider
         The instrument provider for the client.
-    venue_type : VenueType
-        The client venue type.
-    account_id : AccountId
-        The account ID for the client.
     account_type : AccountType
         The account type for the client.
     base_currency : Currency, optional
@@ -79,6 +67,11 @@ cdef class LiveExecutionClient(ExecutionClient):
     config : dict[str, object], optional
         The configuration for the instance.
 
+    Raises
+    ------
+    ValueError
+        If `oms_type` is ``NONE`` value (must be defined).
+
     Warnings
     --------
     This class should not be used directly, but through a concrete subclass.
@@ -88,11 +81,10 @@ cdef class LiveExecutionClient(ExecutionClient):
         self,
         loop not None: asyncio.AbstractEventLoop,
         ClientId client_id not None,
-        InstrumentProvider instrument_provider not None,
-        VenueType venue_type,
-        AccountId account_id not None,
+        OMSType oms_type,
         AccountType account_type,
         Currency base_currency,  # Can be None
+        InstrumentProvider instrument_provider not None,
         MessageBus msgbus not None,
         Cache cache not None,
         LiveClock clock not None,
@@ -101,8 +93,7 @@ cdef class LiveExecutionClient(ExecutionClient):
     ):
         super().__init__(
             client_id=client_id,
-            venue_type=venue_type,
-            account_id=account_id,
+            oms_type=oms_type,
             account_type=account_type,
             base_currency=base_currency,
             msgbus=msgbus,
@@ -115,16 +106,18 @@ cdef class LiveExecutionClient(ExecutionClient):
         self._loop = loop
         self._instrument_provider = instrument_provider
 
-    def connect(self):
+        self.reconciliation_active = False
+
+    def connect(self) -> None:
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
-    def disconnect(self):
+    def disconnect(self) -> None:
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
     @types.coroutine
-    def sleep0(self):
+    def sleep0(self) -> None:
         # Skip one event loop run cycle.
         #
         # This is equivalent to `asyncio.sleep(0)` however avoids the overhead
@@ -134,20 +127,20 @@ cdef class LiveExecutionClient(ExecutionClient):
         # instead of creating a Future object.
         yield
 
-    async def run_after_delay(self, delay, coro):
+    async def run_after_delay(self, delay: float, coro) -> None:
         await asyncio.sleep(delay)
         return await coro
 
-    async def generate_order_status_report(self, Order order):
+    async def generate_order_status_report(self, VenueOrderId venue_order_id=None):
         """
-        Generate an order status report for the given order.
+        Generate an order status report for the given order identifier parameter(s).
 
-        If an error occurs then logs and returns ``None``.
+        If the order is not found, or an error occurs, then logs and returns ``None``.
 
         Parameters
         ----------
-        order : Order
-            The order for the report.
+        venue_order_id : VenueOrderId, optional
+            The venue order ID (assigned by the venue) query filter.
 
         Returns
         -------
@@ -156,212 +149,133 @@ cdef class LiveExecutionClient(ExecutionClient):
         """
         raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
-    async def generate_exec_reports(
+    async def generate_order_status_reports(
         self,
-        VenueOrderId venue_order_id,
-        Symbol symbol,
-        datetime since=None,
+        InstrumentId instrument_id=None,
+        datetime start=None,
+        datetime end=None,
+        bint open_only=False,
     ):
         """
-        Generate a list of execution reports.
+        Generate a list of order status reports with optional query filters.
+
+        The returned list may be empty if no orders match the given parameters.
+
+        Parameters
+        ----------
+        instrument_id : InstrumentId, optional
+            The instrument ID query filter.
+        start : datetime, optional
+            The start datetime query filter.
+        end : datetime, optional
+            The end datetime query filter.
+        open_only : bool, default False
+            If the query is for open orders only.
+
+        Returns
+        -------
+        list[OrderStatusReport]
+
+        """
+        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
+
+    async def generate_trade_reports(
+        self,
+        InstrumentId instrument_id=None,
+        VenueOrderId venue_order_id=None,
+        datetime start=None,
+        datetime end=None,
+    ):
+        """
+        Generate a list of trade reports with optional query filters.
 
         The returned list may be empty if no trades match the given parameters.
 
         Parameters
         ----------
-        venue_order_id : VenueOrderId
-            The venue order ID for the trades.
-        symbol : Symbol
-            The symbol for the trades.
-        since : datetime, optional
-            The timestamp to filter trades on.
+        instrument_id : InstrumentId, optional
+            The instrument ID query filter.
+        venue_order_id : VenueOrderId, optional
+            The venue order ID (assigned by the venue) query filter.
+        start : datetime, optional
+            The start datetime query filter.
+        end : datetime, optional
+            The end datetime query filter.
 
         Returns
         -------
-        list[ExecutionReport]
+        list[TradeReport]
 
         """
         raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
-    async def generate_mass_status(self, list active_orders):
+    async def generate_position_status_reports(
+        self,
+        InstrumentId instrument_id=None,
+        datetime start=None,
+        datetime end=None,
+    ):
         """
-        Generate an execution state report based on the given list of active
-        orders.
+        Generate a list of position status reports with optional query filters.
+
+        The returned list may be empty if no positions match the given parameters.
 
         Parameters
         ----------
-        active_orders : list[Order]
-            The orders which currently have an 'active' status.
+        instrument_id : InstrumentId, optional
+            The instrument ID query filter.
+        start : datetime, optional
+            The start datetime query filter.
+        end : datetime, optional
+            The end datetime query filter.
+
+        Returns
+        -------
+        list[PositionStatusReport]
+
+        """
+        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
+
+    async def generate_mass_status(self, lookback_mins: Optional[int]):
+        """
+        Generate an execution mass status report.
+
+        Parameters
+        ----------
+        lookback_mins : int, optional
+            The maximum lookback for querying closed orders, trades and positions.
 
         Returns
         -------
         ExecutionMassStatus
 
         """
-        Condition.not_none(active_orders, "active_orders")
-
         self._log.info(f"Generating ExecutionMassStatus for {self.id}...")
+
+        self.reconciliation_active = True
 
         cdef ExecutionMassStatus mass_status = ExecutionMassStatus(
             client_id=self.id,
             account_id=self.account_id,
+            venue=self.venue,
+            report_id=self._uuid_factory.generate(),
             ts_init=self._clock.timestamp_ns(),
         )
 
-        if not active_orders:
-            # Nothing to reconcile
-            return mass_status
+        since = None
+        if lookback_mins is not None:
+            since = self._clock.utc_now() - timedelta(minutes=lookback_mins)
 
-        cdef Order order
-        cdef OrderStatusReport order_report
-        cdef list exec_reports
-        for order in active_orders:
-            order_report = await self.generate_order_status_report(order)
-            if order_report:
-                mass_status.add_order_report(order_report)
+        reports = await asyncio.gather(
+            self.generate_order_status_reports(start=since),
+            self.generate_trade_reports(start=since),
+            self.generate_position_status_reports(start=since),
+        )
 
-            if order_report.order_status in (OrderStatus.PARTIALLY_FILLED, OrderStatus.FILLED):
-                exec_reports = await self.generate_exec_reports(
-                    venue_order_id=order.venue_order_id,
-                    symbol=order.instrument_id.symbol,
-                    since=pd.Timestamp(order.ts_init, tz="UTC"),
-                )
-                mass_status.add_exec_reports(order.venue_order_id, exec_reports)
+        mass_status.add_order_reports(reports=reports[0])
+        mass_status.add_trade_reports(reports=reports[1])
+        mass_status.add_position_reports(reports=reports[2])
+
+        self.reconciliation_active = False
 
         return mass_status
-
-    async def reconcile_state(
-        self,
-        OrderStatusReport report,
-        Order order=None,
-        list exec_reports=None,
-    ) -> bool:
-        """
-        Reconcile the given orders state based on the given report.
-
-        Parameters
-        ----------
-        report : OrderStatusReport
-            The order status report for reconciliation.
-        order : Order, optional
-            The order for reconciliation. If not supplied then will try to be
-            fetched from cache.
-        exec_reports : list[ExecutionReport]
-            The list of execution reports relating to the order.
-
-        Raises
-        ------
-        ValueError
-            If `report.client_order_id` is not equal to `order.client_order_id`.
-        ValueError
-            If `report.venue_order_id` is not equal to `order.venue_order_id`.
-
-        Returns
-        -------
-        bool
-            True if reconciliation event generation succeeded, else False.
-
-        """
-        Condition.not_none(report, "report")
-        if order:
-            Condition.equal(report.client_order_id, order.client_order_id, "report.client_order_id", "order.client_order_id")
-            Condition.equal(report.venue_order_id, order.venue_order_id, "report.venue_order_id", "order.venue_order_id")
-        else:
-            order = self._cache.order(report.client_order_id)
-            if order is None:
-                self._log.error(
-                    f"Cannot reconcile state for order {repr(report.venue_order_id)}, "
-                    f"cannot find order in the cache.")
-                return False  # Cannot reconcile state
-
-        if order.is_completed_c():
-            self._log.warning(
-                f"No reconciliation required for completed order {order}.")
-            return True
-
-        self._log.info(f"Reconciling state for {repr(order.venue_order_id)}...", color=LogColor.BLUE)
-
-        if report.order_status == OrderStatus.REJECTED:
-            # No VenueOrderId would have been assigned from the exchange
-            self._log.info("Generating OrderRejected event...", color=LogColor.BLUE)
-            self.generate_order_rejected(
-                order.strategy_id,
-                order.instrument_id,
-                report.client_order_id,
-                "unknown",
-                report.ts_init,
-            )
-            return True
-        elif report.order_status == OrderStatus.EXPIRED:
-            self._log.info("Generating OrderExpired event...", color=LogColor.BLUE)
-            self.generate_order_expired(
-                order.strategy_id,
-                order.instrument_id,
-                report.client_order_id,
-                report.venue_order_id,
-                report.ts_init,
-            )
-            return True
-        elif report.order_status == OrderStatus.CANCELED:
-            self._log.info("Generating OrderCanceled event...", color=LogColor.BLUE)
-            self.generate_order_canceled(
-                order.strategy_id,
-                order.instrument_id,
-                report.client_order_id,
-                report.venue_order_id,
-                report.ts_init,
-            )
-            return True
-        elif report.order_status == OrderStatus.ACCEPTED:
-            if order.status_c() == OrderStatus.SUBMITTED:
-                self._log.info("Generating OrderAccepted event...", color=LogColor.BLUE)
-                self.generate_order_accepted(
-                    order.strategy_id,
-                    order.instrument_id,
-                    report.client_order_id,
-                    report.venue_order_id,
-                    report.ts_init,
-                )
-            return True
-
-        # OrderStatus.PARTIALLY_FILLED or FILLED
-        if exec_reports is None:
-            self._log.error(
-                f"Cannot reconcile state for {repr(report.venue_order_id)}, "
-                f"no trades given for {OrderStatusParser.to_str(report.order_status)} order.")
-            return False  # Cannot reconcile state
-
-        cdef ExecutionReport exec_report
-        cdef Instrument instrument
-        for exec_report in exec_reports:
-            if exec_report.id in order.execution_ids_c():
-                continue  # Trade already applied
-            self._log.info(
-                f"Generating OrderFilled event for {repr(exec_report.id)}...",
-                color=LogColor.BLUE,
-            )
-
-            instrument = self._instrument_provider.find(order.instrument_id)
-            if instrument is None:
-                self._log.error(f"Cannot fill order: "
-                                f"no instrument found for {order.instrument_id}")
-                return False  # Cannot reconcile state
-
-            self.generate_order_filled(
-                strategy_id=order.strategy_id,
-                instrument_id=order.instrument_id,
-                client_order_id=order.client_order_id,
-                venue_order_id=order.venue_order_id,
-                venue_position_id=exec_report.venue_position_id,
-                execution_id=exec_report.id,
-                order_side=order.side,
-                order_type=order.type,
-                last_qty=exec_report.last_qty,
-                last_px=exec_report.last_px,
-                quote_currency=instrument.quote_currency,
-                commission=exec_report.commission,
-                liquidity_side=exec_report.liquidity_side,
-                ts_event=exec_report.ts_event,
-            )
-
-        return True

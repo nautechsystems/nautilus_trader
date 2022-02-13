@@ -7,7 +7,6 @@
 *.exp
 *.obj
 *.lib
-*.html
 *.log
 *.prof
 *.rdb
@@ -46,3 +45,5 @@ output.json
 .ipynb_checkpoints
 examples/backtest/notebooks/catalog
 nautilus_trader/**/.gitignore
+docs/**/*.ipynb
+!nautilus_trader/core/pytime.h

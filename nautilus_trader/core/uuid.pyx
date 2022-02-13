@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2021 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -29,10 +29,6 @@ cdef class UUID4:
     """
     Represents a pseudo-random UUID (universally unique identifier) version 4
     based on a 128-bit label as specified in RFC 4122.
-
-    Implemented under the hood with the `fastuuid` library which provides
-    CPython bindings to Rusts UUID library. Benched ~3x faster to instantiate
-    this class vs the Python standard `uuid.uuid4()` function.
 
     Parameters
     ----------

@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2021 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -17,7 +17,7 @@
 # -------------------------------------------------------------------------------------------------
 
 import asyncio
-from typing import Callable, List
+from typing import Callable, List, Optional
 
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.logging import Logger
@@ -29,21 +29,28 @@ class BinanceWebSocketClient(WebSocketClient):
     Provides a `Binance` streaming WebSocket client.
     """
 
+    BASE_URL = "wss://stream.binance.com:9443"
+
     def __init__(
         self,
         loop: asyncio.AbstractEventLoop,
         clock: LiveClock,
         logger: Logger,
         handler: Callable[[bytes], None],
-        base_url: str,
+        base_url: Optional[str] = None,
+        us: bool = False,
     ):
         super().__init__(
             loop=loop,
             logger=logger,
             handler=handler,
+            max_retry_connection=6,
         )
 
-        self._base_url = base_url
+        self._base_url = base_url or self.BASE_URL
+        if self._base_url == self.BASE_URL and us:
+            self._base_url = self._base_url.replace("com", "us")
+
         self._clock = clock
         self._streams: List[str] = []
 

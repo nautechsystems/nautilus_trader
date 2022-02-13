@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2021 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -13,11 +13,25 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from cpython.datetime cimport datetime
+from libc.stdint cimport int64_t
+
+from nautilus_trader.model.c_enums.trigger_type cimport TriggerType
 from nautilus_trader.model.events.order cimport OrderInitialized
-from nautilus_trader.model.orders.base cimport PassiveOrder
+from nautilus_trader.model.objects cimport Price
+from nautilus_trader.model.orders.base cimport Order
 
 
-cdef class StopMarketOrder(PassiveOrder):
+cdef class StopMarketOrder(Order):
+    cdef readonly Price trigger_price
+    """The order trigger price (STOP).\n\n:returns: `Price`"""
+    cdef readonly TriggerType trigger_type
+    """The trigger type for the order.\n\n:returns: `TriggerType`"""
+    cdef readonly datetime expire_time
+    """The order expiration.\n\n:returns: `datetime` or ``None``"""
+    cdef readonly int64_t expire_time_ns
+    """The order expiration (UNIX epoch nanoseconds), zero for no expiration.\n\n:returns: `int64`"""
+
 
     @staticmethod
     cdef StopMarketOrder create(OrderInitialized init)

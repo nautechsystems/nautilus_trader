@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2021 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -34,6 +34,8 @@ cdef class Account:
         self.id = event.account_id
         self.type = event.account_type
         self.base_currency = event.base_currency
+        self.is_cash_account = self.type == AccountType.CASH or self.type == AccountType.BETTING
+        self.is_margin_account = self.type == AccountType.MARGIN
         self.calculate_account_state = calculate_account_state
 
         self._events = [event]      # type: list[AccountState]  # `last_event_c()` guaranteed
@@ -59,12 +61,6 @@ cdef class Account:
         )
 
 # -- QUERIES ---------------------------------------------------------------------------------------
-
-    cdef bint is_cash_account(self) except *:
-        return self.type == AccountType.CASH
-
-    cdef bint is_margin_account(self) except *:
-        return self.type == AccountType.MARGIN
 
     cdef AccountState last_event_c(self):
         return self._events[-1]  # Guaranteed at least one event from initialization

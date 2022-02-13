@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2021 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -30,6 +30,7 @@ from nautilus_trader.common.logging import LiveLogger
 from nautilus_trader.common.logging import LoggerAdapter
 from nautilus_trader.common.logging import LogLevel
 from nautilus_trader.common.uuid import UUIDFactory
+from nautilus_trader.live.config import LiveExecEngineConfig
 from nautilus_trader.live.execution_engine import LiveExecutionEngine
 from nautilus_trader.model.currencies import GBP
 from nautilus_trader.model.events.order import OrderAccepted
@@ -93,12 +94,15 @@ class TestBetfairExecutionClient:
             logger=self.logger,
         )
 
+        config = LiveExecEngineConfig()
+        config.allow_cash_positions = True  # Retain original behaviour for now
         self.exec_engine = LiveExecutionEngine(
             loop=self.loop,
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
             logger=self.logger,
+            config=config,
         )
 
         self.betfair_client: BetfairClient = BetfairTestStubs.betfair_client(
@@ -112,7 +116,6 @@ class TestBetfairExecutionClient:
         self.client = BetfairExecutionClient(
             loop=asyncio.get_event_loop(),
             client=self.betfair_client,
-            account_id=self.account_id,
             base_currency=GBP,
             msgbus=self.msgbus,
             cache=self.cache,
@@ -558,7 +561,7 @@ class TestBetfairExecutionClient:
         assert result
 
     @pytest.mark.asyncio
-    async def test_duplicate_execution_id(self):
+    async def test_duplicate_trade_id(self):
         # Arrange
         await self._setup_account()
         for update in BetfairStreaming.ocm_DUPLICATE_EXECUTION():
@@ -587,11 +590,11 @@ class TestBetfairExecutionClient:
         # Second order example, partial fill followed by remainder filled
         assert (
             isinstance(fill2, OrderFilled)
-            and fill2.execution_id.value == "4721ad7594e7a4a4dffb1bacb0cb45ccdec0747a"
+            and fill2.trade_id.value == "4721ad7594e7a4a4dffb1bacb0cb45ccdec0747a"
         )
         assert (
             isinstance(fill3, OrderFilled)
-            and fill3.execution_id.value == "8b3e65be779968a3fdf2d72731c848c5153e88cd"
+            and fill3.trade_id.value == "8b3e65be779968a3fdf2d72731c848c5153e88cd"
         )
 
     @pytest.mark.asyncio

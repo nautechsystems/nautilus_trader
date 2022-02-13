@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2021 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -19,10 +19,10 @@ import pydantic
 from pydantic import PositiveFloat
 from pydantic import PositiveInt
 
-from nautilus_trader.cache.cache import CacheConfig
+from nautilus_trader.cache.config import CacheConfig
 from nautilus_trader.data.config import DataEngineConfig
 from nautilus_trader.execution.config import ExecEngineConfig
-from nautilus_trader.infrastructure.cache import CacheDatabaseConfig
+from nautilus_trader.infrastructure.config import CacheDatabaseConfig
 from nautilus_trader.persistence.config import PersistenceConfig
 from nautilus_trader.risk.config import RiskEngineConfig
 
@@ -46,8 +46,20 @@ class LiveRiskEngineConfig(RiskEngineConfig):
 class LiveExecEngineConfig(ExecEngineConfig):
     """
     Configuration for ``LiveExecEngine`` instances.
+
+    Parameters
+    ----------
+    recon_auto : bool
+        If reconciliation should automatically generate events to align state.
+    recon_lookback_mins : int, optional
+        The maximum lookback minutes to reconcile state for. If None then will
+        use the maximum lookback available from the venues.
+    qsize : PositiveInt
+        The queue size for the engines internal queue buffers.
     """
 
+    recon_auto: bool = True
+    recon_lookback_mins: Optional[PositiveInt] = None
     qsize: PositiveInt = 10000
 
 
@@ -57,9 +69,9 @@ class TradingNodeConfig(pydantic.BaseModel):
 
     Parameters
     ----------
-    trader_id : str, default="TRADER-000"
+    trader_id : str, default "TRADER-000"
         The trader ID for the node (must be a name and ID tag separated by a hyphen)
-    log_level : str, default="INFO"
+    log_level : str, default "INFO"
         The stdout log level for the node.
     cache : CacheConfig, optional
         The cache configuration.
@@ -71,11 +83,11 @@ class TradingNodeConfig(pydantic.BaseModel):
         The live risk engine configuration.
     exec_engine : LiveExecEngineConfig, optional
         The live execution engine configuration.
-    loop_debug : bool, default=False
+    loop_debug : bool, default False
         If the asyncio event loop should be in debug mode.
-    load_strategy_state : bool, default=True
+    load_strategy_state : bool, default True
         If trading strategy state should be loaded from the database on start.
-    save_strategy_state : bool, default=True
+    save_strategy_state : bool, default True
         If trading strategy state should be saved to the database on stop.
     timeout_connection : PositiveFloat (seconds)
         The timeout for all clients to connect and initialize.

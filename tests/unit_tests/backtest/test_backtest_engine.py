@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2021 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -42,7 +42,6 @@ from nautilus_trader.model.enums import InstrumentStatus
 from nautilus_trader.model.enums import OMSType
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import PriceType
-from nautilus_trader.model.enums import VenueType
 from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.objects import Money
@@ -82,7 +81,6 @@ class TestBacktestEngine:
 
         self.engine.add_venue(
             venue=Venue("SIM"),
-            venue_type=VenueType.BROKERAGE,
             oms_type=OMSType.HEDGING,
             account_type=AccountType.MARGIN,
             base_currency=USD,
@@ -470,22 +468,13 @@ class TestBacktestWithAddedBars:
         bid_bars = bid_wrangler.process(provider.read_csv_bars("fxcm-gbpusd-m1-bid-2012.csv"))
         ask_bars = ask_wrangler.process(provider.read_csv_bars("fxcm-gbpusd-m1-ask-2012.csv"))
 
+        # Add data
         self.engine.add_instrument(GBPUSD_SIM)
         self.engine.add_bars(bid_bars)
         self.engine.add_bars(ask_bars)
 
-        # Setup data
-        wrangler = QuoteTickDataWrangler(GBPUSD_SIM)
-        ticks = wrangler.process_bar_data(
-            bid_data=provider.read_csv_bars("fxcm-gbpusd-m1-bid-2012.csv"),
-            ask_data=provider.read_csv_bars("fxcm-gbpusd-m1-ask-2012.csv"),
-        )
-        self.engine.add_instrument(GBPUSD_SIM)
-        self.engine.add_ticks(ticks)
-
         self.engine.add_venue(
             venue=self.venue,
-            venue_type=VenueType.ECN,
             oms_type=OMSType.HEDGING,
             account_type=AccountType.MARGIN,
             base_currency=USD,
@@ -517,12 +506,14 @@ class TestBacktestWithAddedBars:
 
         # Assert
         assert strategy.fast_ema.count == 30117
-        assert self.engine.iteration == 180702
-        assert self.engine.portfolio.account(self.venue).balance_total(USD) == Money(977151.62, USD)
+        assert self.engine.iteration == 60234
+        assert self.engine.portfolio.account(self.venue).balance_total(USD) == Money(
+            1001736.86, USD
+        )
 
     def test_dump_pickled_data(self):
         # Arrange, # Act, # Assert
-        assert len(self.engine.dump_pickled_data()) == 34_700_594
+        assert len(self.engine.dump_pickled_data()) == 13013060
 
     def test_load_pickled_data(self):
         # Arrange
@@ -549,5 +540,7 @@ class TestBacktestWithAddedBars:
 
         # Assert
         assert strategy.fast_ema.count == 30117
-        assert self.engine.iteration == 180702
-        assert self.engine.portfolio.account(self.venue).balance_total(USD) == Money(977151.62, USD)
+        assert self.engine.iteration == 60234
+        assert self.engine.portfolio.account(self.venue).balance_total(USD) == Money(
+            1001736.86, USD
+        )

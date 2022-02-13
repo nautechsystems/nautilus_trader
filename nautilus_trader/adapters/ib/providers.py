@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2021 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -12,6 +12,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+
 import datetime
 import time
 from typing import Dict, List
@@ -152,7 +153,7 @@ class IBInstrumentProvider(InstrumentProvider):
         timestamp = time.time_ns()
         future = Future(
             instrument_id=instrument_id,
-            local_symbol=Symbol(details.contract.localSymbol),
+            native_symbol=Symbol(details.contract.localSymbol),
             asset_class=asset_class,
             currency=Currency.from_str(details.contract.currency),
             price_precision=price_precision,
@@ -178,7 +179,7 @@ class IBInstrumentProvider(InstrumentProvider):
         timestamp = time.time_ns()
         equity = Equity(
             instrument_id=instrument_id,
-            local_symbol=Symbol(details.contract.localSymbol),
+            native_symbol=Symbol(details.contract.localSymbol),
             currency=Currency.from_str(details.contract.currency),
             price_precision=price_precision,
             price_increment=Price(details.minTick, price_precision),

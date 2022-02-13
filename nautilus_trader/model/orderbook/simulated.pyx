@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2021 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -16,7 +16,6 @@
 from libc.stdint cimport uint8_t
 from libc.stdint cimport uint64_t
 
-from nautilus_trader.model.c_enums.aggressor_side cimport AggressorSide
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
 from nautilus_trader.model.data.tick cimport QuoteTick
 from nautilus_trader.model.data.tick cimport Tick
@@ -92,40 +91,32 @@ cdef class SimulatedL1OrderBook(L1OrderBook):
         self._update_ask(tick.ask, tick.ask_size)
 
     cdef void _update_trade_tick(self, TradeTick tick) except *:
-        if tick.aggressor_side == AggressorSide.SELL:  # TAKER hit the bid
-            self._update_bid(tick.price, tick.size)
-            if self._top_ask and self._top_bid.price >= self._top_ask.price:
-                self._top_ask.price = self._top_bid.price
-                self._top_ask_level.price = self._top_bid.price
-        elif tick.aggressor_side == AggressorSide.BUY:  # TAKER lifted the offer
-            self._update_ask(tick.price, tick.size)
-            if self._top_bid and self._top_ask.price <= self._top_bid.price:
-                self._top_bid.price = self._top_ask.price
-                self._top_bid_level.price = self._top_ask.price
+        self._update_bid(tick.price, tick.size)
+        self._update_ask(tick.price, tick.size)
 
     cdef void _update_bid(self, double price, double size) except *:
         cdef Order bid
         if self._top_bid is None:
-            bid = self._process_order(Order(price, size, OrderSide.BUY))
+            bid = Order(price, size, OrderSide.BUY, "B")
             self._add(bid, update_id=0)
             self._top_bid = bid
             self._top_bid_level = self.bids.top()
         else:
             self._top_bid_level.price = price
-            self._top_bid.update_price(price)
-            self._top_bid.update_size(size)
+            self._top_bid.price = price
+            self._top_bid.size = size
 
     cdef void _update_ask(self, double price, double size) except *:
         cdef Order ask
         if self._top_ask is None:
-            ask = self._process_order(Order(price, size, OrderSide.SELL))
+            ask = Order(price, size, OrderSide.SELL, "A")
             self._add(ask, update_id=0)
             self._top_ask = ask
             self._top_ask_level = self.asks.top()
         else:
             self._top_ask_level.price = price
-            self._top_ask.update_price(price)
-            self._top_ask.update_size(size)
+            self._top_ask.price = price
+            self._top_ask.size = size
 
 
 cdef class SimulatedL2OrderBook(L2OrderBook):

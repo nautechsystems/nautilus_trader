@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2021 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -15,13 +15,13 @@
 
 
 cpdef enum TimeInForce:
-    DAY = 1
-    GTC = 2  # Good till Canceled
-    IOC = 3  # Immediate or Cancel
-    FOK = 4  # Fill or Kill
-    FAK = 5  # Fill and Kill
-    GTD = 6  # Good till Date
-    OC = 7   # On Close
+    GTC = 1  # Good 'till Canceled
+    IOC = 2  # Immediate or Cancel
+    FOK = 3  # Fill or Kill
+    GTD = 4  # Good 'till Date
+    DAY = 5  # Good for session
+    AT_THE_OPEN = 6  # OPG
+    AT_THE_CLOSE = 7
 
 
 cdef class TimeInForceParser:

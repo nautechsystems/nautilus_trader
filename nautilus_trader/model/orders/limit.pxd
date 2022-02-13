@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2021 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -13,14 +13,22 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from cpython.datetime cimport datetime
+from libc.stdint cimport int64_t
+
 from nautilus_trader.model.events.order cimport OrderInitialized
+from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
-from nautilus_trader.model.orders.base cimport PassiveOrder
+from nautilus_trader.model.orders.base cimport Order
 
 
-cdef class LimitOrder(PassiveOrder):
-    cdef readonly bint is_post_only
-    """If the order will only provide liquidity (make a market).\n\n:returns: `bool`"""
+cdef class LimitOrder(Order):
+    cdef readonly Price price
+    """The order price (LIMIT).\n\n:returns: `Price`"""
+    cdef readonly datetime expire_time
+    """The order expiration.\n\n:returns: `datetime` or ``None``"""
+    cdef readonly int64_t expire_time_ns
+    """The order expiration (UNIX epoch nanoseconds), zero for no expiration.\n\n:returns: `int64`"""
     cdef readonly Quantity display_qty
     """The quantity of the order to display on the public book (iceberg).\n\n:returns: `Quantity` or ``None``"""
 

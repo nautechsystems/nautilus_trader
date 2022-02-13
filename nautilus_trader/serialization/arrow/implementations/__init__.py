@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2021 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -13,6 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 from nautilus_trader.serialization.arrow.implementations import account_state  # noqa: F401
+from nautilus_trader.serialization.arrow.implementations import bar  # noqa: F401
 from nautilus_trader.serialization.arrow.implementations import closing_prices  # noqa: F401
 from nautilus_trader.serialization.arrow.implementations import instruments  # noqa: F401
 from nautilus_trader.serialization.arrow.implementations import order_book  # noqa: F401

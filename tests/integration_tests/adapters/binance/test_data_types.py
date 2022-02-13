@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2021 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -53,7 +53,7 @@ class TestBinanceDataTypes:
         # Act, Assert
         assert (
             repr(ticker)
-            == "BinanceTicker(instrument_id=BTC/USDT.BINANCE, price_change=-94.99999800, price_change_percent=-95.960, weighted_avg_price=0.29628482, prev_close_price=0.10002000, last_price=4.00000200, last_qty=200.00000000, bid_price=4.00000000, ask_price=4.00000200, open_price=99.00000000, high_price=100.00000000, low_price=0.10000000, volume=8913.30000000, quote_volume=15.30000000, open_time_ms=1499783499040, close_time_ms=1499869899040, first_id=28385, last_id=28460, count=76, ts_event=1500000000000,ts_init=1500000000000)"  # noqa
+            == "BinanceTicker(instrument_id=BTC/USDT.BINANCE, price_change=-94.99999800, price_change_percent=-95.960, weighted_avg_price=0.29628482, prev_close_price=0.10002000, last_price=4.00000200, last_qty=200.00000000, bid_price=4.00000000, ask_price=4.00000200, open_price=99.00000000, high_price=100.00000000, low_price=0.10000000, volume=8913.30000000, quote_volume=15.30000000, open_time_ms=1499783499040, close_time_ms=1499869899040, first_id=28385, last_id=28460, count=76, ts_event=1500000000000, ts_init=1500000000000)"  # noqa
         )
 
     def test_binance_ticker_to_and_from_dict(self):

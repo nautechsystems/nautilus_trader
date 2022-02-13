@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2021 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -23,6 +23,7 @@ from nautilus_trader.common.events.risk import TradingStateChanged
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.common.uuid import UUIDFactory
 from nautilus_trader.core.message import Event
+from nautilus_trader.execution.config import ExecEngineConfig
 from nautilus_trader.execution.engine import ExecutionEngine
 from nautilus_trader.model.commands.trading import CancelOrder
 from nautilus_trader.model.commands.trading import ModifyOrder
@@ -33,7 +34,6 @@ from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import TradingState
-from nautilus_trader.model.enums import VenueType
 from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import ClientOrderId
 from nautilus_trader.model.identifiers import OrderListId
@@ -86,11 +86,14 @@ class TestRiskEngine:
             logger=self.logger,
         )
 
+        config = ExecEngineConfig()
+        config.allow_cash_positions = True  # Retain original behaviour for now
         self.exec_engine = ExecutionEngine(
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
             logger=self.logger,
+            config=config,
         )
 
         self.risk_engine = RiskEngine(
@@ -103,8 +106,6 @@ class TestRiskEngine:
 
         self.exec_client = MockExecutionClient(
             client_id=ClientId(self.venue.value),
-            venue_type=VenueType.ECN,
-            account_id=self.account_id,
             account_type=AccountType.MARGIN,
             base_currency=USD,
             msgbus=self.msgbus,
@@ -717,7 +718,7 @@ class TestRiskEngine:
         # Assert
         assert self.exec_engine.command_count == 0  # <-- command never reaches engine
 
-    def test_submit_order_when_market_order_and_no_market_to_check_then_denies(self):
+    def test_submit_order_when_market_order_and_no_market_then_logs_warning(self):
         # Arrange
         self.risk_engine.set_max_notional_per_order(AUDUSD_SIM.id, 1_000_000)
 
@@ -752,7 +753,7 @@ class TestRiskEngine:
         self.risk_engine.execute(submit_order)
 
         # Assert
-        assert self.exec_engine.command_count == 0  # <-- command never reaches engine
+        assert self.exec_engine.command_count == 1  # <-- command reaches engine with warning
 
     def test_submit_order_when_market_order_and_over_max_notional_then_denies(self):
         # Arrange
@@ -1329,7 +1330,7 @@ class TestRiskEngine:
         assert self.risk_engine.command_count == 1
         assert self.exec_engine.command_count == 0
 
-    def test_update_order_when_already_completed_then_denies(self):
+    def test_update_order_when_already_closed_then_denies(self):
         # Arrange
         self.exec_engine.start()
 
@@ -1528,7 +1529,7 @@ class TestRiskEngine:
         assert self.risk_engine.command_count == 1
         assert self.exec_engine.command_count == 0
 
-    def test_cancel_order_when_already_completed_then_denies(self):
+    def test_cancel_order_when_already_closed_then_denies(self):
         # Arrange
         self.exec_engine.start()
 

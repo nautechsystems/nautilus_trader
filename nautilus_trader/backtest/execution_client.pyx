@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2021 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -40,8 +40,6 @@ cdef class BacktestExecClient(ExecutionClient):
     ----------
     exchange : SimulatedExchange
         The simulated exchange for the backtest.
-    account_id : AccountId
-        The account ID for the client.
     msgbus : MessageBus
         The message bus for the client.
     cache : Cache
@@ -50,6 +48,8 @@ cdef class BacktestExecClient(ExecutionClient):
         The clock for the client.
     logger : Logger
         The logger for the client.
+    routing : bool
+        If multi-venue routing is enabled for the client.
     is_frozen_account : bool
         If the backtest run account is frozen.
     """
@@ -57,27 +57,28 @@ cdef class BacktestExecClient(ExecutionClient):
     def __init__(
         self,
         SimulatedExchange exchange not None,
-        AccountId account_id not None,
         MessageBus msgbus not None,
         Cache cache not None,
         TestClock clock not None,
         Logger logger not None,
+        bint routing=False,
         bint is_frozen_account=False,
     ):
         super().__init__(
             client_id=ClientId(exchange.id.value),
-            venue_type=exchange.venue_type,
-            account_id=account_id,
+            oms_type=exchange.oms_type,
             account_type=exchange.account_type,
             base_currency=exchange.base_currency,
             msgbus=msgbus,
             cache=cache,
             clock=clock,
             logger=logger,
+            config={"routing": True} if routing else None,
         )
 
+        self._set_account_id(AccountId(exchange.id.value, "001"))
         if not is_frozen_account:
-            AccountFactory.register_calculated_account(account_id.issuer)
+            AccountFactory.register_calculated_account(exchange.id.value)
 
         self._exchange = exchange
         self.is_connected = False

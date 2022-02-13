@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2021 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -173,7 +173,7 @@ class TestIdentifiers:
 
 
 class TestVenue:
-    def test_instrument_id_equality(self):
+    def test_venue_equality(self):
         # Arrange
         venue1 = InstrumentId(Symbol("AUD/USD"), Venue("SIM"))
         venue2 = InstrumentId(Symbol("AUD/USD"), Venue("IDEALPRO"))
@@ -234,3 +234,14 @@ class TestInstrumentId:
 
         # Assert
         assert instrument_id == result
+
+
+class TestStrategyId:
+    def test_is_external(self):
+        # Arrange
+        strategy1 = StrategyId("EXTERNAL")
+        strategy2 = StrategyId("MyStrategy-001")
+
+        # Act, Assert
+        assert strategy1.is_external()
+        assert not strategy2.is_external()

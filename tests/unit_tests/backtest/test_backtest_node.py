@@ -1,7 +1,23 @@
+# -------------------------------------------------------------------------------------------------
+#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
+#  https://nautechsystems.io
+#
+#  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
+#  You may not use this file except in compliance with the License.
+#  You may obtain a copy of the License at https://www.gnu.org/licenses/lgpl-3.0.en.html
+#
+#  Unless required by applicable law or agreed to in writing, software
+#  distributed under the License is distributed on an "AS IS" BASIS,
+#  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+#  See the License for the specific language governing permissions and
+#  limitations under the License.
+# -------------------------------------------------------------------------------------------------
+
 import sys
 from decimal import Decimal
 from typing import List
 
+import dask
 import pytest
 from dask.utils import parse_bytes
 
@@ -23,11 +39,11 @@ pytestmark = pytest.mark.skipif(sys.platform == "win32", reason="test path broke
 
 class TestBacktestNode:
     def setup(self):
+        dask.config.set(scheduler="single-threaded")
         data_catalog_setup()
         self.catalog = DataCatalog.from_env()
         self.venue_config = BacktestVenueConfig(
             name="SIM",
-            venue_type="ECN",
             oms_type="HEDGING",
             account_type="MARGIN",
             base_currency="USD",
@@ -86,7 +102,6 @@ class TestBacktestNode:
             "_run_delayed",
         ]
 
-    @pytest.mark.skip(reason="fix on develop")
     @pytest.mark.parametrize("batch_size_bytes", [None, parse_bytes("1mib")])
     def test_backtest_against_example_run(self, batch_size_bytes):
         """Replicate examples/fx_ema_cross_audusd_ticks.py backtest result."""
@@ -147,7 +162,6 @@ class TestBacktestNode:
         # Assert
         assert len(results) == 1
 
-    @pytest.mark.skip(reason="fix on develop")
     def test_backtest_build_graph(self):
         # Arrange
         node = BacktestNode()
@@ -157,9 +171,8 @@ class TestBacktestNode:
         result: List[BacktestResult] = tasks.compute()
 
         # Assert
-        assert len(result.results) == 1
+        assert len(result) == 1
 
-    @pytest.mark.skip(reason="fix on develop")
     def test_backtest_run_distributed(self):
         from distributed import Client
 

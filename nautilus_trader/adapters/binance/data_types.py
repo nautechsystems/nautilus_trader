@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2021 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -153,7 +153,7 @@ class BinanceTicker(Ticker):
             f"first_id={self.first_id}, "
             f"last_id={self.last_id}, "
             f"count={self.count}, "
-            f"ts_event={self.ts_event},"
+            f"ts_event={self.ts_event}, "
             f"ts_init={self.ts_init})"
         )
 

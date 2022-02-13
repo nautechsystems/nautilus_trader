@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2021 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -74,14 +74,15 @@ from nautilus_trader.model.events.position import PositionClosed
 from nautilus_trader.model.events.position import PositionOpened
 from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import ComponentId
-from nautilus_trader.model.identifiers import ExecutionId
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import StrategyId
 from nautilus_trader.model.identifiers import Symbol
+from nautilus_trader.model.identifiers import TradeId
 from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.identifiers import VenueOrderId
 from nautilus_trader.model.objects import AccountBalance
+from nautilus_trader.model.objects import MarginBalance
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
@@ -134,6 +135,10 @@ class TestStubs:
         return InstrumentId(Symbol("ETH/USD"), Venue("BITMEX"))
 
     @staticmethod
+    def ethusd_ftx_id() -> InstrumentId:
+        return InstrumentId(Symbol("ETH-PERP"), Venue("FTX"))
+
+    @staticmethod
     def btcusdt_binance_id() -> InstrumentId:
         return InstrumentId(Symbol("BTC/USDT"), Venue("BINANCE"))
 
@@ -156,6 +161,10 @@ class TestStubs:
     @staticmethod
     def usdjpy_id() -> InstrumentId:
         return InstrumentId(Symbol("USD/JPY"), Venue("SIM"))
+
+    @staticmethod
+    def audusd_idealpro_id() -> InstrumentId:
+        return InstrumentId(Symbol("AUD/USD"), Venue("IDEALPRO"))
 
     @staticmethod
     def ticker(instrument_id=None) -> Ticker:
@@ -211,7 +220,7 @@ class TestStubs:
             price=price or Price.from_str("1.001"),
             size=quantity or Quantity.from_int(100000),
             aggressor_side=aggressor_side or AggressorSide.BUY,
-            trade_id="123456",
+            trade_id=TradeId("123456"),
             ts_event=0,
             ts_init=0,
         )
@@ -228,7 +237,7 @@ class TestStubs:
             price=price or Price.from_str("1.00001"),
             size=quantity or Quantity.from_int(100000),
             aggressor_side=aggressor_side or AggressorSide.BUY,
-            trade_id="123456",
+            trade_id=TradeId("123456"),
             ts_event=0,
             ts_init=0,
         )
@@ -503,12 +512,12 @@ class TestStubs:
             reported=True,  # reported
             balances=[
                 AccountBalance(
-                    USD,
                     Money(1_000_000, USD),
                     Money(0, USD),
                     Money(1_000_000, USD),
-                )
+                ),
             ],
+            margins=[],
             info={},
             event_id=UUID4(),
             ts_event=0,
@@ -524,11 +533,17 @@ class TestStubs:
             reported=True,  # reported
             balances=[
                 AccountBalance(
-                    USD,
                     Money(1_000_000, USD),
                     Money(0, USD),
                     Money(1_000_000, USD),
-                )
+                ),
+            ],
+            margins=[
+                MarginBalance(
+                    Money(10_000, USD),
+                    Money(50_000, USD),
+                    TestStubs.audusd_id(),
+                ),
             ],
             info={},
             event_id=UUID4(),
@@ -545,12 +560,12 @@ class TestStubs:
             reported=False,  # reported
             balances=[
                 AccountBalance(
-                    GBP,
                     Money(1_000, GBP),
                     Money(0, GBP),
                     Money(1_000, GBP),
-                )
+                ),
             ],
+            margins=[],
             info={},
             event_id=UUID4(),
             ts_event=0,
@@ -633,7 +648,7 @@ class TestStubs:
         strategy_id=None,
         account_id=None,
         venue_order_id=None,
-        execution_id=None,
+        trade_id=None,
         position_id=None,
         last_qty=None,
         last_px=None,
@@ -649,8 +664,8 @@ class TestStubs:
                 account_id = TestStubs.account_id()
         if venue_order_id is None:
             venue_order_id = VenueOrderId("1")
-        if execution_id is None:
-            execution_id = ExecutionId(order.client_order_id.value.replace("O", "E"))
+        if trade_id is None:
+            trade_id = TradeId(order.client_order_id.value.replace("O", "E"))
         if position_id is None:
             position_id = order.position_id
         if last_px is None:
@@ -674,7 +689,7 @@ class TestStubs:
             instrument_id=instrument.id,
             client_order_id=order.client_order_id,
             venue_order_id=venue_order_id,
-            execution_id=execution_id,
+            trade_id=trade_id,
             position_id=position_id,
             order_side=order.side,
             order_type=order.type,
@@ -923,7 +938,7 @@ class TestStubs:
                         price=Price(d["trade"]["price"], 4),
                         size=Quantity(d["trade"]["volume"], 4),
                         aggressor_side=d["trade"]["side"],
-                        trade_id=(d["trade"]["trade_id"]),
+                        trade_id=TradeId(d["trade"]["trade_id"]),
                         ts_event=ts,
                         ts_init=ts,
                     ),

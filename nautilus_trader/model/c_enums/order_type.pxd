@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2021 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -19,6 +19,8 @@ cpdef enum OrderType:
     LIMIT = 2
     STOP_MARKET = 3
     STOP_LIMIT = 4
+    TRAILING_STOP_MARKET = 5
+    TRAILING_STOP_LIMIT = 6
 
 
 cdef class OrderTypeParser:

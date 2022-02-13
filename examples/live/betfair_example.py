@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2021 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -26,8 +26,8 @@ from nautilus_trader.common.logging import LiveLogger
 from nautilus_trader.examples.strategies.orderbook_imbalance import OrderBookImbalance
 from nautilus_trader.examples.strategies.orderbook_imbalance import OrderBookImbalanceConfig
 from nautilus_trader.infrastructure.config import CacheDatabaseConfig
+from nautilus_trader.live.config import TradingNodeConfig
 from nautilus_trader.live.node import TradingNode
-from nautilus_trader.live.node import TradingNodeConfig
 
 
 # *** THIS IS A TEST STRATEGY WITH NO ALPHA ADVANTAGE WHATSOEVER. ***
@@ -67,6 +67,7 @@ async def main(market_id: str):
         timeout_connection=30.0,
         log_level="DEBUG",
         cache_database=CacheDatabaseConfig(type="in-memory"),
+        exec_engine={"allow_cash_positions": True},  # Retain original behaviour for now
         data_clients={
             "BETFAIR": {
                 # "username": "YOUR_BETFAIR_USERNAME",

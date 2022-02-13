@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2021 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -17,6 +17,7 @@ from nautilus_trader.core.data cimport Data
 from nautilus_trader.model.c_enums.aggressor_side cimport AggressorSide
 from nautilus_trader.model.c_enums.price_type cimport PriceType
 from nautilus_trader.model.identifiers cimport InstrumentId
+from nautilus_trader.model.identifiers cimport TradeId
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
 
@@ -52,7 +53,7 @@ cdef class TradeTick(Tick):
     """The traded size.\n\n:returns: `Quantity`"""
     cdef readonly AggressorSide aggressor_side
     """The trade aggressor side.\n\n:returns: `AggressorSide`"""
-    cdef readonly str trade_id
+    cdef readonly TradeId trade_id
     """The trade match ID.\n\n:returns: `str`"""
 
     @staticmethod

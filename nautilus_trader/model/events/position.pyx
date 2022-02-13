@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2021 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -54,9 +54,9 @@ cdef class PositionEvent(Event):
         The strategy ID.
     from_order : ClientOrderId
         The client order ID for the order which initially opened the position.
-    entry : OrderSide
+    entry : OrderSide {``BUY``, ``SELL``}
         The position entry order side.
-    side : PositionSide
+    side : PositionSide {``FLAT``, ``LONG``, ``SHORT``}
         The current position side.
     net_qty : Decimal
         The current net quantity (positive for ``LONG``, negative for ``SHORT``).
@@ -233,9 +233,9 @@ cdef class PositionOpened(PositionEvent):
         The client order ID for the order which initially opened the position.
     strategy_id : StrategyId
         The strategy ID associated with the event.
-    entry : OrderSide
+    entry : OrderSide {``BUY``, ``SELL``}
         The position entry order side.
-    side : PositionSide
+    side : PositionSide {``LONG``, ``SHORT``}
         The current position side.
     net_qty : Decimal
         The current net quantity (positive for ``LONG``, negative for ``SHORT``).
@@ -476,9 +476,9 @@ cdef class PositionChanged(PositionEvent):
         The client order ID for the order which initially opened the position.
     strategy_id : StrategyId
         The strategy ID associated with the event.
-    entry : OrderSide
+    entry : OrderSide {``BUY``, ``SELL``}
         The position entry order side.
-    side : PositionSide
+    side : PositionSide {``FLAT``, ``LONG``, ``SHORT``}
         The current position side.
     net_qty : Decimal
         The current net quantity (positive for ``LONG``, negative for ``SHORT``).
@@ -750,9 +750,9 @@ cdef class PositionClosed(PositionEvent):
         The client order ID for the order which initially opened the position.
     strategy_id : StrategyId
         The strategy ID associated with the event.
-    entry : OrderSide
+    entry : OrderSide {``BUY``, ``SELL``}
         The position entry order side.
-    side : PositionSide
+    side : PositionSide {``FLAT``}
         The current position side.
     net_qty : Decimal
         The current net quantity (positive for ``LONG``, negative for ``SHORT``).

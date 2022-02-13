@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2021 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -42,10 +42,8 @@ from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import OrderStatus
 from nautilus_trader.model.enums import PositionSide
 from nautilus_trader.model.enums import TimeInForce
-from nautilus_trader.model.enums import VenueType
 from nautilus_trader.model.events.order import OrderAccepted
 from nautilus_trader.model.events.order import OrderRejected
-from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import ClientOrderId
 from nautilus_trader.model.identifiers import PositionId
 from nautilus_trader.model.identifiers import StrategyId
@@ -74,7 +72,6 @@ class TestSimulatedExchange:
         self.logger = Logger(clock=self.clock)
 
         self.trader_id = TestStubs.trader_id()
-        self.account_id = TestStubs.account_id()
 
         self.msgbus = MessageBus(
             trader_id=self.trader_id,
@@ -115,7 +112,6 @@ class TestSimulatedExchange:
 
         self.exchange = SimulatedExchange(
             venue=Venue("SIM"),
-            venue_type=VenueType.ECN,
             oms_type=OMSType.HEDGING,
             account_type=AccountType.MARGIN,
             base_currency=USD,
@@ -134,7 +130,6 @@ class TestSimulatedExchange:
 
         self.exec_client = BacktestExecClient(
             exchange=self.exchange,
-            account_id=self.account_id,
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
@@ -168,7 +163,7 @@ class TestSimulatedExchange:
         # Arrange, Act, Assert
         assert (
             repr(self.exchange)
-            == "SimulatedExchange(id=SIM, venue_type=ECN, oms_type=HEDGING, account_type=MARGIN)"
+            == "SimulatedExchange(id=SIM, oms_type=HEDGING, account_type=MARGIN)"
         )
 
     def test_process_quote_tick_updates_market(self):
@@ -203,9 +198,9 @@ class TestSimulatedExchange:
         assert self.exchange.best_bid_price(USDJPY_SIM.id) == Price.from_str("1.001")
         assert self.exchange.best_ask_price(USDJPY_SIM.id) == Price.from_str("1.001")
 
-    def test_get_working_orders_when_no_orders_returns_empty_dict(self):
+    def test_get_open_orders_when_no_orders_returns_empty_dict(self):
         # Arrange, Act
-        orders = self.exchange.get_working_orders()
+        orders = self.exchange.get_open_orders()
 
         assert orders == []
 
@@ -405,7 +400,7 @@ class TestSimulatedExchange:
 
         # Assert
         assert order.status == OrderStatus.CANCELED
-        assert len(self.exchange.get_working_orders()) == 0
+        assert len(self.exchange.get_open_orders()) == 0
 
     def test_submit_post_only_limit_order_when_marketable_then_rejects(self):
         # Arrange: Prepare market
@@ -431,7 +426,7 @@ class TestSimulatedExchange:
 
         # Assert
         assert order.status == OrderStatus.REJECTED
-        assert len(self.exchange.get_working_orders()) == 0
+        assert len(self.exchange.get_open_orders()) == 0
 
     def test_submit_limit_order(self):
         # Arrange: Prepare market
@@ -456,8 +451,8 @@ class TestSimulatedExchange:
 
         # Assert
         assert order.status == OrderStatus.ACCEPTED
-        assert len(self.exchange.get_working_orders()) == 1
-        assert order in self.exchange.get_working_orders()
+        assert len(self.exchange.get_open_orders()) == 1
+        assert order in self.exchange.get_open_orders()
 
     def test_submit_limit_order_when_marketable_then_fills(self):
         # Arrange: Prepare market
@@ -484,7 +479,7 @@ class TestSimulatedExchange:
         # Assert
         assert order.status == OrderStatus.FILLED
         assert order.liquidity_side == LiquiditySide.TAKER
-        assert len(self.exchange.get_working_orders()) == 0
+        assert len(self.exchange.get_open_orders()) == 0
 
     def test_submit_limit_order_fills_at_correct_price(self):
         # Arrange: Prepare market
@@ -598,7 +593,7 @@ class TestSimulatedExchange:
 
         # Assert
         assert order.status == OrderStatus.REJECTED
-        assert len(self.exchange.get_working_orders()) == 0
+        assert len(self.exchange.get_open_orders()) == 0
 
     def test_submit_stop_market_order(self):
         # Arrange: Prepare market
@@ -623,8 +618,8 @@ class TestSimulatedExchange:
 
         # Assert
         assert order.status == OrderStatus.ACCEPTED
-        assert len(self.exchange.get_working_orders()) == 1
-        assert order in self.exchange.get_working_orders()
+        assert len(self.exchange.get_open_orders()) == 1
+        assert order in self.exchange.get_open_orders()
 
     def test_submit_stop_limit_order_when_inside_market_rejects(self):
         # Arrange: Prepare market
@@ -641,7 +636,7 @@ class TestSimulatedExchange:
             OrderSide.SELL,
             Quantity.from_int(100000),
             price=Price.from_str("90.010"),
-            trigger=Price.from_str("90.02"),
+            trigger_price=Price.from_str("90.02"),
         )
 
         # Act
@@ -650,7 +645,7 @@ class TestSimulatedExchange:
 
         # Assert
         assert order.status == OrderStatus.REJECTED
-        assert len(self.exchange.get_working_orders()) == 0
+        assert len(self.exchange.get_open_orders()) == 0
 
     def test_submit_stop_limit_order(self):
         # Arrange: Prepare market
@@ -667,7 +662,7 @@ class TestSimulatedExchange:
             OrderSide.BUY,
             Quantity.from_int(100000),
             price=Price.from_str("90.000"),
-            trigger=Price.from_str("90.010"),
+            trigger_price=Price.from_str("90.010"),
         )
 
         # Act
@@ -676,8 +671,8 @@ class TestSimulatedExchange:
 
         # Assert
         assert order.status == OrderStatus.ACCEPTED
-        assert len(self.exchange.get_working_orders()) == 1
-        assert order in self.exchange.get_working_orders()
+        assert len(self.exchange.get_open_orders()) == 1
+        assert order in self.exchange.get_open_orders()
 
     def test_submit_reduce_only_order_when_no_position_rejects(self):
         # Arrange: Prepare market
@@ -702,7 +697,7 @@ class TestSimulatedExchange:
 
         # Assert
         assert order.status == OrderStatus.REJECTED
-        assert len(self.exchange.get_working_orders()) == 0
+        assert len(self.exchange.get_open_orders()) == 0
 
     def test_submit_reduce_only_order_when_would_increase_position_rejects(self):
         # Arrange: Prepare market
@@ -738,7 +733,7 @@ class TestSimulatedExchange:
         # Assert
         assert order1.status == OrderStatus.FILLED
         assert order2.status == OrderStatus.REJECTED
-        assert len(self.exchange.get_working_orders()) == 0
+        assert len(self.exchange.get_open_orders()) == 0
 
     def test_cancel_stop_order(self):
         # Arrange: Prepare market
@@ -766,7 +761,7 @@ class TestSimulatedExchange:
 
         # Assert
         assert order.status == OrderStatus.CANCELED
-        assert len(self.exchange.get_working_orders()) == 0
+        assert len(self.exchange.get_open_orders()) == 0
 
     def test_cancel_stop_order_when_order_does_not_exist_generates_cancel_reject(self):
         # Arrange
@@ -797,7 +792,7 @@ class TestSimulatedExchange:
             venue_order_id=VenueOrderId("001"),
             quantity=Quantity.from_int(100000),
             price=Price.from_str("110.000"),
-            trigger=None,
+            trigger_price=None,
             command_id=self.uuid_factory.generate(),
             ts_init=0,
         )
@@ -836,7 +831,7 @@ class TestSimulatedExchange:
 
         # Assert
         assert order.status == OrderStatus.ACCEPTED
-        assert len(self.exchange.get_working_orders()) == 1  # Order still working
+        assert len(self.exchange.get_open_orders()) == 1  # Order still open
         assert order.price == Price.from_str("90.001")  # Did not update
 
     def test_modify_post_only_limit_order_when_marketable_then_rejects_modify(self):
@@ -866,7 +861,7 @@ class TestSimulatedExchange:
 
         # Assert
         assert order.status == OrderStatus.ACCEPTED
-        assert len(self.exchange.get_working_orders()) == 1  # Order still working
+        assert len(self.exchange.get_open_orders()) == 1  # Order still open
         assert order.price == Price.from_str("90.001")  # Did not update
 
     def test_modify_limit_order_when_marketable_then_fills_order(self):
@@ -896,7 +891,7 @@ class TestSimulatedExchange:
 
         # Assert
         assert order.status == OrderStatus.FILLED
-        assert len(self.exchange.get_working_orders()) == 0
+        assert len(self.exchange.get_open_orders()) == 0
         assert order.avg_px == Price.from_str("90.005")
 
     def test_modify_stop_market_order_when_price_inside_market_then_rejects_modify(
@@ -922,13 +917,13 @@ class TestSimulatedExchange:
         self.exchange.process(0)
 
         # Act
-        self.strategy.modify_order(order, order.quantity, Price.from_str("90.005"))
+        self.strategy.modify_order(order, order.quantity, trigger_price=Price.from_str("90.005"))
         self.exchange.process(0)
 
         # Assert
         assert order.status == OrderStatus.ACCEPTED
-        assert len(self.exchange.get_working_orders()) == 1
-        assert order.price == Price.from_str("90.010")
+        assert len(self.exchange.get_open_orders()) == 1
+        assert order.trigger_price == Price.from_str("90.010")
 
     def test_modify_stop_market_order_when_price_valid_then_updates(self):
         # Arrange: Prepare market
@@ -951,13 +946,13 @@ class TestSimulatedExchange:
         self.exchange.process(0)
 
         # Act
-        self.strategy.modify_order(order, order.quantity, Price.from_str("90.011"))
+        self.strategy.modify_order(order, order.quantity, trigger_price=Price.from_str("90.011"))
         self.exchange.process(0)
 
         # Assert
         assert order.status == OrderStatus.ACCEPTED
-        assert len(self.exchange.get_working_orders()) == 1
-        assert order.price == Price.from_str("90.011")
+        assert len(self.exchange.get_open_orders()) == 1
+        assert order.trigger_price == Price.from_str("90.011")
 
     def test_modify_untriggered_stop_limit_order_when_price_inside_market_then_rejects_modify(
         self,
@@ -976,7 +971,7 @@ class TestSimulatedExchange:
             OrderSide.BUY,
             Quantity.from_int(100000),
             price=Price.from_str("90.000"),
-            trigger=Price.from_str("90.010"),
+            trigger_price=Price.from_str("90.010"),
         )
 
         self.strategy.submit_order(order)
@@ -988,8 +983,8 @@ class TestSimulatedExchange:
 
         # Assert
         assert order.status == OrderStatus.ACCEPTED
-        assert len(self.exchange.get_working_orders()) == 1
-        assert order.trigger == Price.from_str("90.010")
+        assert len(self.exchange.get_open_orders()) == 1
+        assert order.trigger_price == Price.from_str("90.010")
 
     def test_modify_untriggered_stop_limit_order_when_price_valid_then_amends(self):
         # Arrange: Prepare market
@@ -1006,7 +1001,7 @@ class TestSimulatedExchange:
             OrderSide.BUY,
             Quantity.from_int(100000),
             price=Price.from_str("90.000"),
-            trigger=Price.from_str("90.010"),
+            trigger_price=Price.from_str("90.010"),
         )
 
         self.strategy.submit_order(order)
@@ -1018,8 +1013,9 @@ class TestSimulatedExchange:
 
         # Assert
         assert order.status == OrderStatus.ACCEPTED
-        assert len(self.exchange.get_working_orders()) == 1
-        assert order.trigger == Price.from_str("90.011")
+        assert len(self.exchange.get_open_orders()) == 1
+        assert order.price == Price.from_str("90.011")
+        assert order.price == Price.from_str("90.011")
 
     def test_modify_triggered_post_only_stop_limit_order_when_price_inside_market_then_rejects_modify(
         self,
@@ -1038,7 +1034,7 @@ class TestSimulatedExchange:
             OrderSide.BUY,
             Quantity.from_int(100000),
             price=Price.from_str("90.000"),
-            trigger=Price.from_str("90.010"),
+            trigger_price=Price.from_str("90.010"),
             post_only=True,
         )
 
@@ -1061,7 +1057,7 @@ class TestSimulatedExchange:
         # Assert
         assert order.status == OrderStatus.TRIGGERED
         assert order.is_triggered
-        assert len(self.exchange.get_working_orders()) == 1
+        assert len(self.exchange.get_open_orders()) == 1
         assert order.price == Price.from_str("90.000")
 
     def test_modify_triggered_stop_limit_order_when_price_inside_market_then_fills(
@@ -1081,7 +1077,7 @@ class TestSimulatedExchange:
             OrderSide.BUY,
             Quantity.from_int(100000),
             price=Price.from_str("90.000"),
-            trigger=Price.from_str("90.010"),
+            trigger_price=Price.from_str("90.010"),
             post_only=False,
         )
 
@@ -1104,7 +1100,7 @@ class TestSimulatedExchange:
         # Assert
         assert order.status == OrderStatus.FILLED
         assert order.is_triggered
-        assert len(self.exchange.get_working_orders()) == 0
+        assert len(self.exchange.get_open_orders()) == 0
         assert order.price == Price.from_str("90.010")
 
     def test_modify_triggered_stop_limit_order_when_price_valid_then_amends(self):
@@ -1122,7 +1118,7 @@ class TestSimulatedExchange:
             OrderSide.BUY,
             Quantity.from_int(100000),
             price=Price.from_str("90.000"),
-            trigger=Price.from_str("90.010"),
+            trigger_price=Price.from_str("90.010"),
         )
 
         self.strategy.submit_order(order)
@@ -1144,7 +1140,7 @@ class TestSimulatedExchange:
         # Assert
         assert order.status == OrderStatus.TRIGGERED
         assert order.is_triggered
-        assert len(self.exchange.get_working_orders()) == 1
+        assert len(self.exchange.get_open_orders()) == 1
         assert order.price == Price.from_str("90.005")
 
     def test_order_fills_gets_commissioned(self):
@@ -1179,7 +1175,7 @@ class TestSimulatedExchange:
         self.strategy.submit_order(order)
         self.exchange.process(0)
 
-        position_id = PositionId("1-002")  # Generated by platform
+        position_id = PositionId("SIM-1-002")  # Generated by exchange
 
         self.strategy.submit_order(top_up_order)
         self.exchange.process(0)
@@ -1233,7 +1229,7 @@ class TestSimulatedExchange:
 
         # Assert
         assert order.status == OrderStatus.EXPIRED
-        assert len(self.exchange.get_working_orders()) == 0
+        assert len(self.exchange.get_open_orders()) == 0
 
     def test_process_quote_tick_fills_buy_stop_order(self):
         # Arrange: Prepare market
@@ -1269,7 +1265,7 @@ class TestSimulatedExchange:
         self.exchange.process_tick(tick2)
 
         # Assert
-        assert len(self.exchange.get_working_orders()) == 0
+        assert len(self.exchange.get_open_orders()) == 0
         assert order.status == OrderStatus.FILLED
         assert order.avg_px == Price.from_str("96.711")
         assert self.exchange.get_account().balance_total(USD) == Money(999995.72, USD)
@@ -1310,7 +1306,7 @@ class TestSimulatedExchange:
 
         # Assert
         assert order.status == OrderStatus.TRIGGERED
-        assert len(self.exchange.get_working_orders()) == 1
+        assert len(self.exchange.get_open_orders()) == 1
 
     def test_process_quote_tick_rejects_triggered_post_only_buy_stop_limit_order(self):
         # Arrange: Prepare market
@@ -1327,7 +1323,7 @@ class TestSimulatedExchange:
             OrderSide.BUY,
             Quantity.from_int(100000),
             price=Price.from_str("90.006"),
-            trigger=Price.from_str("90.006"),
+            trigger_price=Price.from_str("90.006"),
             post_only=True,
         )
 
@@ -1349,7 +1345,7 @@ class TestSimulatedExchange:
 
         # Assert
         assert order.status == OrderStatus.REJECTED
-        assert len(self.exchange.get_working_orders()) == 0
+        assert len(self.exchange.get_open_orders()) == 0
 
     def test_process_quote_tick_fills_triggered_buy_stop_limit_order(self):
         # Arrange: Prepare market
@@ -1366,7 +1362,7 @@ class TestSimulatedExchange:
             OrderSide.BUY,
             Quantity.from_int(100000),
             price=Price.from_str("90.001"),
-            trigger=Price.from_str("90.006"),
+            trigger_price=Price.from_str("90.006"),
         )
 
         self.strategy.submit_order(order)
@@ -1398,7 +1394,7 @@ class TestSimulatedExchange:
 
         # Assert
         assert order.status == OrderStatus.FILLED
-        assert len(self.exchange.get_working_orders()) == 0
+        assert len(self.exchange.get_open_orders()) == 0
 
     def test_process_quote_tick_fills_buy_limit_order(self):
         # Arrange: Prepare market
@@ -1435,7 +1431,7 @@ class TestSimulatedExchange:
 
         # Assert
         assert order.status == OrderStatus.FILLED
-        assert len(self.exchange.get_working_orders()) == 0
+        assert len(self.exchange.get_open_orders()) == 0
         assert order.avg_px == Price.from_str("90.001")
         assert self.exchange.get_account().balance_total(USD) == Money(999996.00, USD)
 
@@ -1474,7 +1470,7 @@ class TestSimulatedExchange:
 
         # Assert
         assert order.status == OrderStatus.FILLED
-        assert len(self.exchange.get_working_orders()) == 0
+        assert len(self.exchange.get_open_orders()) == 0
         assert order.avg_px == Price.from_str("90.000")
         assert self.exchange.get_account().balance_total(USD) == Money(999996.00, USD)
 
@@ -1513,7 +1509,7 @@ class TestSimulatedExchange:
 
         # Assert
         assert order.status == OrderStatus.FILLED
-        assert len(self.exchange.get_working_orders()) == 0
+        assert len(self.exchange.get_open_orders()) == 0
         assert order.avg_px == Price.from_str("90.101")
         assert self.exchange.get_account().balance_total(USD) == Money(999996.00, USD)
 
@@ -1581,7 +1577,7 @@ class TestSimulatedExchange:
             Quantity.from_int(50000),
         )
 
-        position_id = PositionId("1-001")  # Generated by platform
+        position_id = PositionId("SIM-1-001")  # Generated by exchange
 
         # Act 2
         self.strategy.submit_order(order_reduce, position_id)
@@ -1606,7 +1602,6 @@ class TestSimulatedExchange:
         # Arrange
         exchange = SimulatedExchange(
             venue=Venue("SIM"),
-            venue_type=VenueType.ECN,
             oms_type=OMSType.HEDGING,
             account_type=AccountType.MARGIN,
             base_currency=USD,
@@ -1678,7 +1673,7 @@ class TestSimulatedExchange:
         )
 
         # Act 2
-        self.strategy.submit_order(order_reduce, PositionId("1-001"))  # Generated by platform
+        self.strategy.submit_order(order_reduce, PositionId("SIM-1-001"))  # Generated by exchange
         self.exchange.process(0)
 
         # Assert
@@ -1717,7 +1712,7 @@ class TestSimulatedExchange:
             quantity=Quantity.from_int(300000),  # <-- overfill to attempt flip
             reduce_only=True,
         )
-        self.strategy.submit_order(exit, position_id=PositionId("1-001"))
+        self.strategy.submit_order(exit, position_id=PositionId("SIM-1-001"))
         self.exchange.process(0)
 
         # Assert
@@ -1754,7 +1749,7 @@ class TestSimulatedExchange:
             post_only=False,
             reduce_only=True,
         )
-        self.strategy.submit_order(exit, position_id=PositionId("1-001"))
+        self.strategy.submit_order(exit, position_id=PositionId("SIM-1-001"))
         self.exchange.process(0)
 
         tick = QuoteTick(
@@ -1850,7 +1845,6 @@ class TestBitmexExchange:
         self.logger = Logger(self.clock)
 
         self.trader_id = TestStubs.trader_id()
-        self.account_id = AccountId("BITMEX", "001")
 
         self.msgbus = MessageBus(
             trader_id=self.trader_id,
@@ -1891,7 +1885,6 @@ class TestBitmexExchange:
 
         self.exchange = SimulatedExchange(
             venue=Venue("BITMEX"),
-            venue_type=VenueType.EXCHANGE,
             oms_type=OMSType.NETTING,
             account_type=AccountType.MARGIN,
             base_currency=BTC,
@@ -1910,7 +1903,6 @@ class TestBitmexExchange:
 
         self.exec_client = BacktestExecClient(
             exchange=self.exchange,
-            account_id=self.account_id,
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,

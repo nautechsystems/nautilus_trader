@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2021 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -40,13 +40,15 @@ cdef class Account:
     """The accounts type.\n\n:returns: `AccountType`"""
     cdef readonly Currency base_currency
     """The accounts base currency (``None`` for multi-currency accounts).\n\n:returns: `Currency` or ``None``"""
+    cdef readonly bint is_cash_account
+    """If the account is a type of ``CASH`` account."""
+    cdef readonly bint is_margin_account
+    """If the account is a type of ``MARGIN`` account."""
     cdef readonly bint calculate_account_state
     """If the accounts state should be calculated by Nautilus.\n\n:returns: `bool`"""
 
 # -- QUERIES ---------------------------------------------------------------------------------------
 
-    cdef bint is_cash_account(self) except *
-    cdef bint is_margin_account(self) except *
     cdef AccountState last_event_c(self)
     cdef list events_c(self)
     cdef int event_count_c(self)

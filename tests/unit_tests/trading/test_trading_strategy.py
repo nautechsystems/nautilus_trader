@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2021 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -41,7 +41,6 @@ from nautilus_trader.model.enums import OMSType
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import OrderStatus
 from nautilus_trader.model.enums import PriceType
-from nautilus_trader.model.enums import VenueType
 from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import PositionId
 from nautilus_trader.model.identifiers import StrategyId
@@ -52,8 +51,8 @@ from nautilus_trader.model.objects import Quantity
 from nautilus_trader.msgbus.bus import MessageBus
 from nautilus_trader.portfolio.portfolio import Portfolio
 from nautilus_trader.risk.engine import RiskEngine
+from nautilus_trader.trading.config import TradingStrategyConfig
 from nautilus_trader.trading.strategy import TradingStrategy
-from nautilus_trader.trading.strategy import TradingStrategyConfig
 from tests.test_kit.mocks import KaboomStrategy
 from tests.test_kit.mocks import MockStrategy
 from tests.test_kit.stubs import TestStubs
@@ -75,7 +74,6 @@ class TestTradingStrategy:
         )
 
         self.trader_id = TestStubs.trader_id()
-        self.account_id = TestStubs.account_id()
 
         self.msgbus = MessageBus(
             trader_id=self.trader_id,
@@ -116,7 +114,6 @@ class TestTradingStrategy:
 
         self.exchange = SimulatedExchange(
             venue=Venue("SIM"),
-            venue_type=VenueType.ECN,
             oms_type=OMSType.HEDGING,
             account_type=AccountType.MARGIN,
             base_currency=USD,
@@ -143,7 +140,6 @@ class TestTradingStrategy:
 
         self.exec_client = BacktestExecClient(
             exchange=self.exchange,
-            account_id=self.account_id,
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
@@ -740,9 +736,9 @@ class TestTradingStrategy:
         # Assert
         assert order in strategy.cache.orders()
         assert strategy.cache.orders()[0].status == OrderStatus.FILLED
-        assert order.client_order_id not in strategy.cache.orders_working()
-        assert not strategy.cache.is_order_working(order.client_order_id)
-        assert strategy.cache.is_order_completed(order.client_order_id)
+        assert order.client_order_id not in strategy.cache.orders_open()
+        assert not strategy.cache.is_order_open(order.client_order_id)
+        assert strategy.cache.is_order_closed(order.client_order_id)
 
     def test_submit_order_list_with_valid_order_successfully_submits(self):
         # Arrange
@@ -773,9 +769,9 @@ class TestTradingStrategy:
         assert bracket.orders[2] in strategy.cache.orders()
         # TODO: Implement
         # assert bracket.orders[0].status == OrderStatus.ACCEPTED
-        # assert entry in strategy.cache.orders_working()
-        # assert strategy.cache.is_order_working(entry.client_order_id)
-        # assert not strategy.cache.is_order_completed(entry.client_order_id)
+        # assert entry in strategy.cache.orders_open()
+        # assert strategy.cache.is_order_open(entry.client_order_id)
+        # assert not strategy.cache.is_order_closed(entry.client_order_id)
 
     def test_cancel_order(self):
         # Arrange
@@ -806,11 +802,11 @@ class TestTradingStrategy:
         # Assert
         assert order in strategy.cache.orders()
         assert strategy.cache.orders()[0].status == OrderStatus.CANCELED
-        assert order.client_order_id == strategy.cache.orders_completed()[0].client_order_id
-        assert order not in strategy.cache.orders_working()
+        assert order.client_order_id == strategy.cache.orders_closed()[0].client_order_id
+        assert order not in strategy.cache.orders_open()
         assert strategy.cache.order_exists(order.client_order_id)
-        assert not strategy.cache.is_order_working(order.client_order_id)
-        assert strategy.cache.is_order_completed(order.client_order_id)
+        assert not strategy.cache.is_order_open(order.client_order_id)
+        assert strategy.cache.is_order_closed(order.client_order_id)
 
     def test_cancel_order_when_pending_cancel_does_not_submit_command(self):
         # Arrange
@@ -841,12 +837,12 @@ class TestTradingStrategy:
 
         # Assert
         assert strategy.cache.orders()[0].status == OrderStatus.PENDING_CANCEL
-        assert order in strategy.cache.orders_working()
+        assert order in strategy.cache.orders_open()
         assert strategy.cache.order_exists(order.client_order_id)
-        assert strategy.cache.is_order_working(order.client_order_id)
-        assert not strategy.cache.is_order_completed(order.client_order_id)
+        assert strategy.cache.is_order_open(order.client_order_id)
+        assert not strategy.cache.is_order_closed(order.client_order_id)
 
-    def test_cancel_order_when_completed_does_not_submit_command(self):
+    def test_cancel_order_when_closed_does_not_submit_command(self):
         # Arrange
         strategy = TradingStrategy()
         strategy.register(
@@ -875,10 +871,10 @@ class TestTradingStrategy:
 
         # Assert
         assert strategy.cache.orders()[0].status == OrderStatus.EXPIRED
-        assert order not in strategy.cache.orders_working()
+        assert order not in strategy.cache.orders_open()
         assert strategy.cache.order_exists(order.client_order_id)
-        assert not strategy.cache.is_order_working(order.client_order_id)
-        assert strategy.cache.is_order_completed(order.client_order_id)
+        assert not strategy.cache.is_order_open(order.client_order_id)
+        assert strategy.cache.is_order_closed(order.client_order_id)
 
     def test_modify_order_when_pending_update_does_not_submit_command(self):
         # Arrange
@@ -948,7 +944,7 @@ class TestTradingStrategy:
         # Assert
         assert self.exec_engine.command_count == 1
 
-    def test_modify_order_when_completed_does_not_submit_command(self):
+    def test_modify_order_when_closed_does_not_submit_command(self):
         # Arrange
         strategy = TradingStrategy()
         strategy.register(
@@ -1049,8 +1045,8 @@ class TestTradingStrategy:
         assert strategy.cache.orders()[0].quantity == Quantity.from_int(110000)
         assert strategy.cache.orders()[0].price == Price.from_str("90.001")
         assert strategy.cache.order_exists(order.client_order_id)
-        assert strategy.cache.is_order_working(order.client_order_id)
-        assert not strategy.cache.is_order_completed(order.client_order_id)
+        assert strategy.cache.is_order_open(order.client_order_id)
+        assert not strategy.cache.is_order_closed(order.client_order_id)
         assert strategy.portfolio.is_flat(order.instrument_id)
 
     def test_cancel_all_orders(self):
@@ -1093,8 +1089,8 @@ class TestTradingStrategy:
         assert order2 in self.cache.orders()
         assert self.cache.orders()[0].status == OrderStatus.CANCELED
         assert self.cache.orders()[1].status == OrderStatus.CANCELED
-        assert order1 in self.cache.orders_completed()
-        assert order2 in strategy.cache.orders_completed()
+        assert order1 in self.cache.orders_closed()
+        assert order2 in strategy.cache.orders_closed()
 
     def test_flatten_position_when_position_already_flat_does_nothing(self):
         # Arrange
@@ -1122,7 +1118,7 @@ class TestTradingStrategy:
 
         strategy.submit_order(order1)
         self.exchange.process(0)
-        strategy.submit_order(order2, PositionId("1-001"))  # Generated by exchange
+        strategy.submit_order(order2, PositionId("SIM-1-001"))  # Generated by exchange
         self.exchange.process(0)
 
         position = strategy.cache.positions_closed()[0]

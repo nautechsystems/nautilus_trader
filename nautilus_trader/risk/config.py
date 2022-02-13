@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2021 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -27,7 +27,7 @@ class RiskEngineConfig(pydantic.BaseModel):
     ----------
     bypass : bool
         If True then all risk checks are bypassed (will still check for duplicate IDs).
-    max_order_rate : str, default=100/00:00:01
+    max_order_rate : str, default 100/00:00:01
         The maximum order rate per timedelta.
     max_notional_per_order : Dict[str, str]
         The maximum notional value of an order per instrument ID.

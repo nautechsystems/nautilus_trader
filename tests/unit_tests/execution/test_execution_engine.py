@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2021 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -23,6 +23,7 @@ from nautilus_trader.common.logging import LogLevel
 from nautilus_trader.common.uuid import UUIDFactory
 from nautilus_trader.data.engine import DataEngine
 from nautilus_trader.execution.engine import ExecutionEngine
+from nautilus_trader.live.config import ExecEngineConfig
 from nautilus_trader.model.commands.trading import CancelOrder
 from nautilus_trader.model.commands.trading import ModifyOrder
 from nautilus_trader.model.commands.trading import SubmitOrder
@@ -32,10 +33,8 @@ from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import OrderStatus
-from nautilus_trader.model.enums import VenueType
 from nautilus_trader.model.events.order import OrderCanceled
 from nautilus_trader.model.events.order import OrderUpdated
-from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import ClientOrderId
 from nautilus_trader.model.identifiers import OrderListId
@@ -50,8 +49,8 @@ from nautilus_trader.model.position import Position
 from nautilus_trader.msgbus.bus import MessageBus
 from nautilus_trader.portfolio.portfolio import Portfolio
 from nautilus_trader.risk.engine import RiskEngine
+from nautilus_trader.trading.config import TradingStrategyConfig
 from nautilus_trader.trading.strategy import TradingStrategy
-from nautilus_trader.trading.strategy import TradingStrategyConfig
 from tests.test_kit.mocks import MockCacheDatabase
 from tests.test_kit.mocks import MockExecutionClient
 from tests.test_kit.stubs import TestStubs
@@ -115,11 +114,14 @@ class TestExecutionEngine:
             logger=self.logger,
         )
 
+        config = ExecEngineConfig()
+        config.allow_cash_positions = True  # Retain original behaviour for now
         self.exec_engine = ExecutionEngine(
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
             logger=self.logger,
+            config=config,
         )
 
         self.risk_engine = RiskEngine(
@@ -136,8 +138,6 @@ class TestExecutionEngine:
         self.venue = Venue("SIM")
         self.exec_client = MockExecutionClient(
             client_id=ClientId(self.venue.value),
-            venue_type=VenueType.ECN,
-            account_id=self.account_id,
             account_type=AccountType.MARGIN,
             base_currency=USD,
             msgbus=self.msgbus,
@@ -156,18 +156,17 @@ class TestExecutionEngine:
         assert result == [ClientId("SIM")]
         assert self.exec_engine.default_client is None
 
-    def test_register_brokerage_multi_venue_exec_client(self):
+    def test_register_exec_client_for_routing(self):
         # Arrange
         exec_client = MockExecutionClient(
             client_id=ClientId("IB"),
-            venue_type=VenueType.BROKERAGE_MULTI_VENUE,
-            account_id=AccountId("IB", "U1258001"),
             account_type=AccountType.MARGIN,
             base_currency=USD,
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
             logger=self.logger,
+            config={"routing": True},
         )
 
         # Act
@@ -184,14 +183,13 @@ class TestExecutionEngine:
         # Arrange
         exec_client = MockExecutionClient(
             client_id=ClientId("IB"),
-            venue_type=VenueType.BROKERAGE_MULTI_VENUE,
-            account_id=AccountId("IB", "U1258001"),
             account_type=AccountType.MARGIN,
             base_currency=USD,
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
             logger=self.logger,
+            config={"routing": True},
         )
 
         # Act
@@ -843,7 +841,7 @@ class TestExecutionEngine:
         assert self.exec_engine.event_count == 1
         assert order.status == OrderStatus.INITIALIZED
 
-    def test_cancel_order_for_already_completed_order_logs_and_does_nothing(self):
+    def test_cancel_order_for_already_closed_order_logs_and_does_nothing(self):
         # Arrange
         self.exec_engine.start()
 
@@ -857,7 +855,7 @@ class TestExecutionEngine:
             logger=self.logger,
         )
 
-        # Push to OrderStatus.FILLED (completed)
+        # Push to OrderStatus.FILLED (closed)
         order = strategy.order_factory.market(
             AUDUSD_SIM.id,
             OrderSide.BUY,
@@ -894,7 +892,7 @@ class TestExecutionEngine:
         # Assert
         assert order.status == OrderStatus.FILLED
 
-    def test_modify_order_for_already_completed_order_logs_and_does_nothing(self):
+    def test_modify_order_for_already_closed_order_logs_and_does_nothing(self):
         # Arrange
         self.exec_engine.start()
 
@@ -908,7 +906,7 @@ class TestExecutionEngine:
             logger=self.logger,
         )
 
-        # Push to OrderStatus.FILLED (completed)
+        # Push to OrderStatus.FILLED (closed)
         order = strategy.order_factory.stop_market(
             AUDUSD_SIM.id,
             OrderSide.BUY,
@@ -937,8 +935,8 @@ class TestExecutionEngine:
             order.client_order_id,
             order.venue_order_id,
             Quantity.from_int(200000),
-            order.price,
             None,
+            order.trigger_price,
             self.uuid_factory.generate(),
             self.clock.timestamp_ns(),
         )
@@ -2009,7 +2007,7 @@ class TestExecutionEngine:
             venue_order_id=new_venue_id,
             quantity=order.quantity,
             price=order.price,
-            trigger=None,
+            trigger_price=None,
             ts_event=self.clock.timestamp_ns(),
             event_id=self.uuid_factory.generate(),
             ts_init=self.clock.timestamp_ns(),

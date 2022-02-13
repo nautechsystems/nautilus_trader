@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2021 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -30,7 +30,6 @@ from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.datetime cimport secs_to_nanos
 from nautilus_trader.model.c_enums.bar_aggregation cimport BarAggregation
 from nautilus_trader.model.c_enums.bar_aggregation cimport BarAggregationParser
-from nautilus_trader.model.c_enums.price_type cimport PriceType
 from nautilus_trader.model.data.bar cimport Bar
 from nautilus_trader.model.data.bar cimport BarType
 from nautilus_trader.model.data.tick cimport QuoteTick
@@ -704,104 +703,3 @@ cdef class TimeBarAggregator(BarAggregator):
             return
 
         self._build_and_send(ts_event=event.ts_event)
-
-
-cdef class BulkTickBarBuilder:
-    """
-    Provides a temporary builder for tick bars from a bulk tick order.
-
-    Parameters
-    ----------
-    instrument : Instrument
-        The instrument for the aggregator.
-    bar_type : BarType
-        The bar_type to build.
-    logger : Logger
-        The logger for the bar aggregator.
-    callback : Callable[[Bar], None]
-        The delegate to call with the built bars.
-
-    Raises
-    ------
-    ValueError
-        If `callback` is not of type `Callable`.
-    ValueError
-        If `instrument.id` != `bar_type.instrument_id`.
-    """
-
-    def __init__(
-        self,
-        Instrument instrument not None,
-        BarType bar_type not None,
-        Logger logger not None,
-        callback not None: Callable[[Bar], None],
-    ):
-        Condition.callable(callback, "callback")
-
-        self.bars = []
-        self.aggregator = TickBarAggregator(
-            instrument=instrument,
-            bar_type=bar_type,
-            handler=self.bars.append,
-            logger=logger,
-        )
-        self.callback = callback
-
-    def receive(self, list ticks):
-        """
-        Receive the bulk list of ticks and build aggregated bars.
-
-        Then send the bar type and bars list on to the registered callback.
-
-        Parameters
-        ----------
-        ticks : list[Tick]
-            The ticks for aggregation.
-
-        """
-        Condition.not_none(ticks, "ticks")
-
-        if self.aggregator.bar_type.spec.price_type == PriceType.LAST:
-            for i in range(len(ticks)):
-                self.aggregator.handle_trade_tick(ticks[i])
-        else:
-            for i in range(len(ticks)):
-                self.aggregator.handle_quote_tick(ticks[i])
-
-        self.callback(self.bars)
-
-
-cdef class BulkTimeBarUpdater:
-    """
-    Provides a temporary updater for time bars from a bulk tick order.
-
-    Parameters
-    ----------
-    aggregator : TimeBarAggregator
-        The time bar aggregator to update.
-    """
-
-    def __init__(self, TimeBarAggregator aggregator not None):
-        self.aggregator = aggregator
-        self.start_time_ns = self.aggregator.next_close_ns - self.aggregator.interval_ns
-
-    def receive(self, list ticks):
-        """
-        Receive the bulk list of ticks and update the aggregator.
-
-        Parameters
-        ----------
-        ticks : list[Tick]
-            The ticks for updating.
-
-        """
-        if self.aggregator.bar_type.spec.price_type == PriceType.LAST:
-            for i in range(len(ticks)):
-                if ticks[i].ts_event < self.start_time_ns:
-                    continue  # Price not applicable to this bar
-                self.aggregator.handle_trade_tick(ticks[i])
-        else:
-            for i in range(len(ticks)):
-                if ticks[i].ts_event < self.start_time_ns:
-                    continue  # Price not applicable to this bar
-                self.aggregator.handle_quote_tick(ticks[i])

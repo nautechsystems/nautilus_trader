@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2021 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -19,6 +19,10 @@ from decimal import Decimal
 from typing import Dict, List, Optional, Union
 
 import pandas as pd
+
+from nautilus_trader.analysis.performance import PerformanceAnalyzer
+from nautilus_trader.backtest.config import BacktestEngineConfig
+from nautilus_trader.backtest.results import BacktestResult
 
 from cpython.datetime cimport datetime
 from libc.stdint cimport int64_t
@@ -50,11 +54,9 @@ from nautilus_trader.model.c_enums.account_type cimport AccountType
 from nautilus_trader.model.c_enums.aggregation_source cimport AggregationSource
 from nautilus_trader.model.c_enums.book_type cimport BookType
 from nautilus_trader.model.c_enums.oms_type cimport OMSType
-from nautilus_trader.model.c_enums.venue_type cimport VenueType
 from nautilus_trader.model.data.bar cimport Bar
 from nautilus_trader.model.data.base cimport GenericData
 from nautilus_trader.model.data.tick cimport Tick
-from nautilus_trader.model.identifiers cimport AccountId
 from nautilus_trader.model.identifiers cimport ClientId
 from nautilus_trader.model.identifiers cimport TraderId
 from nautilus_trader.model.identifiers cimport Venue
@@ -65,10 +67,6 @@ from nautilus_trader.portfolio.portfolio cimport Portfolio
 from nautilus_trader.risk.engine cimport RiskEngine
 from nautilus_trader.serialization.msgpack.serializer cimport MsgPackSerializer
 from nautilus_trader.trading.strategy cimport TradingStrategy
-
-from nautilus_trader.analysis.performance import PerformanceAnalyzer
-from nautilus_trader.backtest.config import BacktestEngineConfig
-from nautilus_trader.backtest.results import BacktestResult
 
 
 cdef class BacktestEngine:
@@ -500,7 +498,6 @@ cdef class BacktestEngine:
     def add_venue(
         self,
         Venue venue,
-        VenueType venue_type,
         OMSType oms_type,
         AccountType account_type,
         Currency base_currency,
@@ -512,7 +509,8 @@ cdef class BacktestEngine:
         FillModel fill_model=None,
         LatencyModel latency_model=None,
         BookType book_type=BookType.L1_TBBO,
-        bar_execution: bool=False,
+        routing: bool=False,
+        bar_execution: bool = False,
         reject_stop_orders: bool=True,
     ) -> None:
         """
@@ -522,8 +520,6 @@ cdef class BacktestEngine:
         ----------
         venue : Venue
             The exchange venue ID.
-        venue_type : VenueType
-            The type of venue (will determine venue -> client_id mapping).
         oms_type : OMSType {``HEDGING``, ``NETTING``}
             The order management system type for the exchange. If ``HEDGING`` will
             generate new position IDs.
@@ -547,6 +543,8 @@ cdef class BacktestEngine:
             The latency model for the exchange.
         book_type : BookType
             The default order book type for fill modelling.
+        routing : bool
+            If multi-venue routing should be enabled for the execution client.
         bar_execution : bool
             If the exchange execution dynamics is based on bar data.
         reject_stop_orders : bool
@@ -571,7 +569,6 @@ cdef class BacktestEngine:
         # Create exchange
         exchange = SimulatedExchange(
             venue=venue,
-            venue_type=venue_type,
             oms_type=oms_type,
             account_type=account_type,
             base_currency=base_currency,
@@ -596,11 +593,11 @@ cdef class BacktestEngine:
         # Create execution client for exchange
         exec_client = BacktestExecClient(
             exchange=exchange,
-            account_id=AccountId(venue.value, "001"),
             msgbus=self._msgbus,
             cache=self._cache,
             clock=self._test_clock,
             logger=self._test_logger,
+            routing=routing,
             is_frozen_account=is_frozen_account,
         )
 
@@ -912,6 +909,8 @@ cdef class BacktestEngine:
                 self._exchanges[data.instrument_id.venue].process_order_book(data)
             elif isinstance(data, Tick):
                 self._exchanges[data.instrument_id.venue].process_tick(data)
+            elif isinstance(data, Bar):
+                self._exchanges[data.type.instrument_id.venue].process_bar(data)
             for exchange in self._exchanges.values():
                 exchange.process(data.ts_init)
             self.iteration += 1

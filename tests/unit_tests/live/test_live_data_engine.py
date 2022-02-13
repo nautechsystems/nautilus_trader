@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2021 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -25,8 +25,8 @@ from nautilus_trader.core.data import Data
 from nautilus_trader.data.messages import DataRequest
 from nautilus_trader.data.messages import DataResponse
 from nautilus_trader.data.messages import Subscribe
+from nautilus_trader.live.config import LiveDataEngineConfig
 from nautilus_trader.live.data_engine import LiveDataEngine
-from nautilus_trader.live.data_engine import LiveDataEngineConfig
 from nautilus_trader.model.data.base import DataType
 from nautilus_trader.model.data.tick import QuoteTick
 from nautilus_trader.model.identifiers import ClientId

@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2021 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -83,12 +83,12 @@ class TestCashAccount:
             reported=True,
             balances=[
                 AccountBalance(
-                    USD,
                     Money(1_000_000, USD),
                     Money(0, USD),
                     Money(1_000_000, USD),
                 ),
             ],
+            margins=[],
             info={},
             event_id=UUID4(),
             ts_event=0,
@@ -119,18 +119,17 @@ class TestCashAccount:
             reported=True,
             balances=[
                 AccountBalance(
-                    BTC,
                     Money(10.00000000, BTC),
                     Money(0.00000000, BTC),
                     Money(10.00000000, BTC),
                 ),
                 AccountBalance(
-                    ETH,
                     Money(20.00000000, ETH),
                     Money(0.00000000, ETH),
                     Money(20.00000000, ETH),
                 ),
             ],
+            margins=[],
             info={},  # No default currency set
             event_id=UUID4(),
             ts_event=0,
@@ -174,18 +173,17 @@ class TestCashAccount:
             reported=True,
             balances=[
                 AccountBalance(
-                    BTC,
                     Money(10.00000000, BTC),
                     Money(0.00000000, BTC),
                     Money(10.00000000, BTC),
                 ),
                 AccountBalance(
-                    ETH,
                     Money(20.00000000, ETH),
                     Money(0.00000000, ETH),
                     Money(20.00000000, ETH),
                 ),
             ],
+            margins=[],
             info={},  # No default currency set
             event_id=UUID4(),
             ts_event=0,
@@ -202,18 +200,17 @@ class TestCashAccount:
             reported=True,
             balances=[
                 AccountBalance(
-                    BTC,
                     Money(9.00000000, BTC),
                     Money(0.50000000, BTC),
                     Money(8.50000000, BTC),
                 ),
                 AccountBalance(
-                    ETH,
                     Money(20.00000000, ETH),
                     Money(0.00000000, ETH),
                     Money(20.00000000, ETH),
                 ),
             ],
+            margins=[],
             info={},  # No default currency set
             event_id=UUID4(),
             ts_event=0,
@@ -243,12 +240,12 @@ class TestCashAccount:
             reported=True,
             balances=[
                 AccountBalance(
-                    USD,
                     Money(1_000_000.00, USD),
                     Money(0.00, USD),
                     Money(1_000_000.00, USD),
                 ),
             ],
+            margins=[],
             info={},  # No default currency set
             event_id=UUID4(),
             ts_event=0,
@@ -277,12 +274,12 @@ class TestCashAccount:
             reported=True,
             balances=[
                 AccountBalance(
-                    USD,
                     Money(1_000_000.00, USD),
                     Money(0.00, USD),
                     Money(1_000_000.00, USD),
                 ),
             ],
+            margins=[],
             info={},  # No default currency set
             event_id=UUID4(),
             ts_event=0,
@@ -311,12 +308,12 @@ class TestCashAccount:
             reported=True,
             balances=[
                 AccountBalance(
-                    USD,
                     Money(1_000_000.00, USD),
                     Money(0.00, USD),
                     Money(1_000_000.00, USD),
                 ),
             ],
+            margins=[],
             info={},  # No default currency set
             event_id=UUID4(),
             ts_event=0,
@@ -360,18 +357,17 @@ class TestCashAccount:
             reported=True,
             balances=[
                 AccountBalance(
-                    BTC,
                     Money(10.00000000, BTC),
                     Money(0.00000000, BTC),
                     Money(10.00000000, BTC),
                 ),
                 AccountBalance(
-                    ETH,
                     Money(20.00000000, ETH),
                     Money(0.00000000, ETH),
                     Money(20.00000000, ETH),
                 ),
             ],
+            margins=[],
             info={},  # No default currency set
             event_id=UUID4(),
             ts_event=0,
@@ -438,18 +434,17 @@ class TestCashAccount:
             reported=True,
             balances=[
                 AccountBalance(
-                    BTC,
                     Money(1.00000000, BTC),
                     Money(0.00000000, BTC),
                     Money(1.00000000, BTC),
                 ),
                 AccountBalance(
-                    ADA,
                     Money(1000.00000000, ADA),
                     Money(0.00000000, ADA),
                     Money(1000.00000000, ADA),
                 ),
             ],
+            margins=[],
             info={},  # No default currency set
             event_id=UUID4(),
             ts_event=0,

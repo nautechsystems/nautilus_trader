@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2021 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -40,8 +40,8 @@ from nautilus_trader.adapters.betfair.data_types import BSPOrderBookDelta
 from nautilus_trader.adapters.betfair.util import hash_json
 from nautilus_trader.adapters.betfair.util import one
 from nautilus_trader.common.uuid import UUIDFactory
-from nautilus_trader.execution.messages import ExecutionReport
-from nautilus_trader.execution.messages import OrderStatusReport
+from nautilus_trader.execution.reports import OrderStatusReport
+from nautilus_trader.execution.reports import TradeReport
 from nautilus_trader.model.commands.trading import CancelOrder
 from nautilus_trader.model.commands.trading import ModifyOrder
 from nautilus_trader.model.commands.trading import SubmitOrder
@@ -62,8 +62,8 @@ from nautilus_trader.model.enums import TimeInForce
 from nautilus_trader.model.events.account import AccountState
 from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import ClientOrderId
-from nautilus_trader.model.identifiers import ExecutionId
 from nautilus_trader.model.identifiers import Symbol
+from nautilus_trader.model.identifiers import TradeId
 from nautilus_trader.model.identifiers import VenueOrderId
 from nautilus_trader.model.instruments.betting import BettingInstrument
 from nautilus_trader.model.objects import AccountBalance
@@ -127,7 +127,7 @@ def _make_limit_order(order: Union[LimitOrder, MarketOrder]):
     price = str(float(_probability_to_price(probability=order.price, side=order.side)))
     size = _order_quantity_to_stake(quantity=order.quantity)
 
-    if order.time_in_force == TimeInForce.OC:
+    if order.time_in_force == TimeInForce.AT_THE_CLOSE:
         return {
             "orderType": "LIMIT_ON_CLOSE",
             "limitOnCloseOrder": {"price": price, "liability": size},
@@ -146,7 +146,7 @@ def _make_limit_order(order: Union[LimitOrder, MarketOrder]):
 
 
 def _make_market_order(order: Union[LimitOrder, MarketOrder]):
-    if order.time_in_force == TimeInForce.OC:
+    if order.time_in_force == TimeInForce.AT_THE_CLOSE:
         return {
             "orderType": "MARKET_ON_CLOSE",
             "marketOnCloseOrder": {
@@ -273,12 +273,12 @@ def betfair_account_to_account_state(
         reported=False,
         balances=[
             AccountBalance(
-                currency=currency,
                 total=Money(balance, currency),
                 locked=Money(locked, currency),
                 free=Money(free, currency),
             ),
         ],
+        margins=[],
         info={"funds": account_funds, "detail": account_detail},
         event_id=event_id,
         ts_event=ts_event,
@@ -286,13 +286,13 @@ def betfair_account_to_account_state(
     )
 
 
-EXECUTION_ID_KEYS = ("id", "p", "s", "side", "pt", "ot", "pd", "md", "avp", "sm")  # noqa:
+TRADE_ID_KEYS = ("id", "p", "s", "side", "pt", "ot", "pd", "md", "avp", "sm")  # noqa:
 
 
-def betfair_execution_id(uo) -> ExecutionId:
-    data = orjson.dumps({k: uo[k] for k in EXECUTION_ID_KEYS if uo.get(k)})
+def betfair_trade_id(uo) -> TradeId:
+    data = orjson.dumps({k: uo[k] for k in TRADE_ID_KEYS if uo.get(k)})
     hsh = hashlib.sha1(data).hexdigest()  # noqa: S303
-    return ExecutionId(hsh)
+    return TradeId(hsh)
 
 
 def _handle_market_snapshot(selection, instrument, ts_event, ts_init):
@@ -368,7 +368,7 @@ def _handle_market_trades(
             price=price_to_probability(str(price)),
             size=Quantity(volume, precision=4),
             aggressor_side=AggressorSide.UNKNOWN,
-            trade_id=trade_id,
+            trade_id=TradeId(trade_id),
             ts_event=ts_event,
             ts_init=ts_init,
         )
@@ -707,7 +707,7 @@ async def generate_order_status_report(self, order) -> Optional[OrderStatusRepor
 
 async def generate_trades_list(
     self, venue_order_id: VenueOrderId, symbol: Symbol, since: datetime = None  # type: ignore
-) -> List[ExecutionReport]:
+) -> List[TradeReport]:
     filled = self.client().betting.list_cleared_orders(
         bet_ids=[venue_order_id],
     )
@@ -717,11 +717,11 @@ async def generate_trades_list(
     fill = filled["clearedOrders"][0]
     ts_event = int(pd.Timestamp(fill["lastMatchedDate"]).to_datetime64())
     return [
-        ExecutionReport(
+        TradeReport(
             client_order_id=self.venue_order_id_to_client_order_id[venue_order_id],
             venue_order_id=VenueOrderId(fill["betId"]),
             venue_position_id=None,  # Can be None
-            execution_id=ExecutionId(fill["lastMatchedDate"]),
+            trade_id=TradeId(fill["lastMatchedDate"]),
             last_qty=Quantity.from_str(str(fill["sizeSettled"])),  # TODO: Incorrect precision?
             last_px=Price.from_str(str(fill["priceMatched"])),  # TODO: Incorrect precision?
             commission=None,  # Can be None

@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2021 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -33,8 +33,6 @@ from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import OMSType
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import OrderStatus
-from nautilus_trader.model.enums import VenueType
-from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Quantity
@@ -60,7 +58,6 @@ class TestSimulatedExchangeContingencyAdvancedOrders:
         )
 
         self.trader_id = TestStubs.trader_id()
-        self.account_id = TestStubs.account_id()
 
         self.msgbus = MessageBus(
             trader_id=self.trader_id,
@@ -101,7 +98,6 @@ class TestSimulatedExchangeContingencyAdvancedOrders:
 
         self.exchange = SimulatedExchange(
             venue=FTX,
-            venue_type=VenueType.EXCHANGE,
             oms_type=OMSType.NETTING,
             account_type=AccountType.MARGIN,
             base_currency=None,  # Multi-asset wallet
@@ -120,7 +116,6 @@ class TestSimulatedExchangeContingencyAdvancedOrders:
 
         self.exec_client = BacktestExecClient(
             exchange=self.exchange,
-            account_id=AccountId("FTX", "001"),
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
@@ -312,9 +307,9 @@ class TestSimulatedExchangeContingencyAdvancedOrders:
         assert bracket.orders[0].status == OrderStatus.FILLED
         assert bracket.orders[1].status == OrderStatus.ACCEPTED
         assert bracket.orders[2].status == OrderStatus.ACCEPTED
-        assert len(self.exchange.get_working_orders()) == 2
-        assert bracket.orders[1] in self.exchange.get_working_orders()
-        assert bracket.orders[2] in self.exchange.get_working_orders()
+        assert len(self.exchange.get_open_orders()) == 2
+        assert bracket.orders[1] in self.exchange.get_open_orders()
+        assert bracket.orders[2] in self.exchange.get_open_orders()
 
     def test_submit_bracket_limit_sell_fills_then_triggers_sl_and_tp(self):
         # Arrange: Prepare market
@@ -348,9 +343,9 @@ class TestSimulatedExchangeContingencyAdvancedOrders:
         assert bracket.orders[0].status == OrderStatus.FILLED
         assert bracket.orders[1].status == OrderStatus.ACCEPTED
         assert bracket.orders[2].status == OrderStatus.ACCEPTED
-        assert len(self.exchange.get_working_orders()) == 2
-        assert bracket.orders[1] in self.exchange.get_working_orders()
-        assert bracket.orders[2] in self.exchange.get_working_orders()
+        assert len(self.exchange.get_open_orders()) == 2
+        assert bracket.orders[1] in self.exchange.get_open_orders()
+        assert bracket.orders[2] in self.exchange.get_open_orders()
 
     def test_reject_bracket_entry_then_rejects_sl_and_tp(self):
         # Arrange: Prepare market
@@ -385,9 +380,9 @@ class TestSimulatedExchangeContingencyAdvancedOrders:
         assert bracket.orders[0].status == OrderStatus.REJECTED
         assert bracket.orders[1].status == OrderStatus.REJECTED
         assert bracket.orders[2].status == OrderStatus.REJECTED
-        assert len(self.exchange.get_working_orders()) == 0
-        assert bracket.orders[1] not in self.exchange.get_working_orders()
-        assert bracket.orders[2] not in self.exchange.get_working_orders()
+        assert len(self.exchange.get_open_orders()) == 0
+        assert bracket.orders[1] not in self.exchange.get_open_orders()
+        assert bracket.orders[2] not in self.exchange.get_open_orders()
 
     def test_filling_bracket_sl_cancels_tp_order(self):
         # Arrange: Prepare market
@@ -433,7 +428,7 @@ class TestSimulatedExchangeContingencyAdvancedOrders:
         assert bracket.orders[0].status == OrderStatus.FILLED
         assert bracket.orders[1].status == OrderStatus.CANCELED
         assert bracket.orders[2].status == OrderStatus.FILLED
-        assert len(self.exchange.get_working_orders()) == 0
+        assert len(self.exchange.get_open_orders()) == 0
         assert len(self.exchange.cache.positions_open()) == 0
 
     def test_filling_bracket_tp_cancels_sl_order(self):
@@ -480,7 +475,7 @@ class TestSimulatedExchangeContingencyAdvancedOrders:
         assert bracket.orders[0].status == OrderStatus.FILLED
         assert bracket.orders[1].status == OrderStatus.CANCELED
         assert bracket.orders[2].status == OrderStatus.FILLED
-        assert len(self.exchange.get_working_orders()) == 0
+        assert len(self.exchange.get_open_orders()) == 0
         assert len(self.exchange.cache.positions_open()) == 0
 
     def test_partial_fill_bracket_tp_updates_sl_order(self):
@@ -534,7 +529,7 @@ class TestSimulatedExchangeContingencyAdvancedOrders:
         assert sl.quantity == Quantity.from_int(5)
         assert tp.leaves_qty == Quantity.from_int(5)
         assert tp.quantity == Quantity.from_int(10)
-        assert len(self.exchange.get_working_orders()) == 2
+        assert len(self.exchange.get_open_orders()) == 2
         assert len(self.exchange.cache.positions_open()) == 1
 
     def test_modifying_bracket_tp_updates_sl_order(self):
@@ -572,7 +567,7 @@ class TestSimulatedExchangeContingencyAdvancedOrders:
         self.strategy.modify_order(
             order=sl,
             quantity=Quantity.from_int(5),
-            price=sl.price,
+            trigger_price=sl.trigger_price,
         )
         self.exchange.process(0)
 
@@ -582,7 +577,7 @@ class TestSimulatedExchangeContingencyAdvancedOrders:
         assert tp.status == OrderStatus.ACCEPTED
         assert sl.quantity == Quantity.from_int(5)
         assert tp.quantity == Quantity.from_int(5)
-        assert len(self.exchange.get_working_orders()) == 2
+        assert len(self.exchange.get_open_orders()) == 2
         assert len(self.exchange.cache.positions_open()) == 1
 
     def test_closing_position_cancels_bracket_ocos(self):
@@ -623,7 +618,7 @@ class TestSimulatedExchangeContingencyAdvancedOrders:
         assert en.status == OrderStatus.FILLED
         assert sl.status == OrderStatus.CANCELED
         assert tp.status == OrderStatus.CANCELED
-        assert len(self.exchange.get_working_orders()) == 0
+        assert len(self.exchange.get_open_orders()) == 0
         assert len(self.exchange.cache.positions_open()) == 0
 
     def test_partially_filling_position_updates_bracket_ocos(self):
@@ -674,5 +669,5 @@ class TestSimulatedExchangeContingencyAdvancedOrders:
         assert tp.status == OrderStatus.ACCEPTED
         assert sl.quantity == ETHUSD_FTX.make_qty(5.000)
         assert tp.quantity == ETHUSD_FTX.make_qty(5.000)
-        assert len(self.exchange.get_working_orders()) == 2
+        assert len(self.exchange.get_open_orders()) == 2
         assert len(self.exchange.cache.positions_open()) == 1

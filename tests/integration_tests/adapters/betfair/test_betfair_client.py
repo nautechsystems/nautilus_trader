@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2021 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -14,7 +14,6 @@
 # -------------------------------------------------------------------------------------------------
 
 import asyncio
-import sys
 
 import pytest
 
@@ -39,9 +38,6 @@ from tests.integration_tests.adapters.betfair.test_kit import BetfairResponses
 from tests.integration_tests.adapters.betfair.test_kit import BetfairTestStubs
 from tests.integration_tests.adapters.betfair.test_kit import mock_client_request
 from tests.test_kit.stubs import TestStubs
-
-
-pytestmark = pytest.mark.skipif(sys.version_info < (3, 8), reason="Mock client broken on 3.7")
 
 
 class TestBetfairClient:
@@ -170,7 +166,7 @@ class TestBetfairClient:
         instrument = BetfairTestStubs.betting_instrument()
         market_on_close_order = BetfairTestStubs.market_order(
             side=OrderSide.BUY,
-            time_in_force=TimeInForce.OC,
+            time_in_force=TimeInForce.AT_THE_CLOSE,
         )
         submit_order_command = SubmitOrder(
             trader_id=TestStubs.trader_id(),

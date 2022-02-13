@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2021 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -31,9 +31,9 @@ from nautilus_trader.model.enums import OrderType
 from nautilus_trader.model.enums import PositionSide
 from nautilus_trader.model.events.order import OrderFilled
 from nautilus_trader.model.identifiers import ClientOrderId
-from nautilus_trader.model.identifiers import ExecutionId
 from nautilus_trader.model.identifiers import PositionId
 from nautilus_trader.model.identifiers import StrategyId
+from nautilus_trader.model.identifiers import TradeId
 from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.model.identifiers import VenueOrderId
 from nautilus_trader.model.objects import Money
@@ -189,8 +189,8 @@ class TestPosition:
         assert position.event_count == 1
         assert position.client_order_ids == [order.client_order_id]
         assert position.venue_order_ids == [VenueOrderId("1")]
-        assert position.execution_ids == [ExecutionId("E-19700101-000000-000-001-1")]
-        assert position.last_execution_id == ExecutionId("E-19700101-000000-000-001-1")
+        assert position.trade_ids == [TradeId("E-19700101-000000-000-001-1")]
+        assert position.last_trade_id == TradeId("E-19700101-000000-000-001-1")
         assert position.id == PositionId("P-123456")
         assert len(position.events) == 1
         assert position.is_long
@@ -233,8 +233,8 @@ class TestPosition:
         assert position.ts_opened == 0
         assert position.avg_px_open == Decimal("1.00001")
         assert position.event_count == 1
-        assert position.execution_ids == [ExecutionId("E-19700101-000000-000-001-1")]
-        assert position.last_execution_id == ExecutionId("E-19700101-000000-000-001-1")
+        assert position.trade_ids == [TradeId("E-19700101-000000-000-001-1")]
+        assert position.last_trade_id == TradeId("E-19700101-000000-000-001-1")
         assert position.id == PositionId("P-123456")
         assert not position.is_long
         assert position.is_short
@@ -299,7 +299,7 @@ class TestPosition:
         fill1 = TestStubs.event_order_filled(
             order,
             instrument=AUDUSD_SIM,
-            execution_id=ExecutionId("1"),
+            trade_id=TradeId("1"),
             position_id=PositionId("P-123456"),
             strategy_id=StrategyId("S-001"),
             last_px=Price.from_str("1.00001"),
@@ -309,7 +309,7 @@ class TestPosition:
         fill2 = TestStubs.event_order_filled(
             order,
             instrument=AUDUSD_SIM,
-            execution_id=ExecutionId("2"),
+            trade_id=TradeId("2"),
             position_id=PositionId("P-123456"),
             strategy_id=StrategyId("S-001"),
             last_px=Price.from_str("1.00002"),
@@ -369,7 +369,7 @@ class TestPosition:
             order.instrument_id,
             order.client_order_id,
             VenueOrderId("2"),
-            ExecutionId("E2"),
+            TradeId("E2"),
             PositionId("T123456"),
             OrderSide.SELL,
             OrderType.MARKET,
@@ -437,7 +437,7 @@ class TestPosition:
         fill2 = TestStubs.event_order_filled(
             order2,
             instrument=AUDUSD_SIM,
-            execution_id=ExecutionId("1"),
+            trade_id=TradeId("1"),
             position_id=PositionId("P-19700101-000000-000-001-1"),
             strategy_id=StrategyId("S-001"),
             last_px=Price.from_str("1.00001"),
@@ -447,7 +447,7 @@ class TestPosition:
         fill3 = TestStubs.event_order_filled(
             order2,
             instrument=AUDUSD_SIM,
-            execution_id=ExecutionId("2"),
+            trade_id=TradeId("2"),
             position_id=PositionId("P-19700101-000000-000-001-1"),
             strategy_id=StrategyId("S-001"),
             last_px=Price.from_str("1.00003"),
@@ -521,9 +521,9 @@ class TestPosition:
         assert position.avg_px_open == Decimal("1.0")
         assert position.event_count == 2
         assert position.client_order_ids == [order1.client_order_id, order2.client_order_id]
-        assert position.execution_ids == [
-            ExecutionId("E-19700101-000000-000-001-1"),
-            ExecutionId("E-19700101-000000-000-001-2"),
+        assert position.trade_ids == [
+            TradeId("E-19700101-000000-000-001-1"),
+            TradeId("E-19700101-000000-000-001-2"),
         ]
         assert position.ts_closed == 0
         assert position.avg_px_close == Decimal("1.0")
@@ -739,7 +739,7 @@ class TestPosition:
             order.instrument_id,
             order.client_order_id,
             VenueOrderId("2"),
-            ExecutionId("E2"),
+            TradeId("E2"),
             PositionId("P-123456"),
             OrderSide.SELL,
             OrderType.MARKET,
@@ -762,7 +762,7 @@ class TestPosition:
             order.instrument_id,
             order.client_order_id,
             VenueOrderId("2"),
-            ExecutionId("E3"),
+            TradeId("E3"),
             PositionId("P-123456"),
             OrderSide.BUY,
             OrderType.MARKET,

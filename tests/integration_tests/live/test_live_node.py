@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2021 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -19,9 +19,9 @@ import pytest
 
 from nautilus_trader.adapters.betfair.factories import BetfairLiveDataClientFactory
 from nautilus_trader.adapters.betfair.factories import BetfairLiveExecutionClientFactory
-from nautilus_trader.infrastructure.cache import CacheDatabaseConfig
+from nautilus_trader.infrastructure.config import CacheDatabaseConfig
+from nautilus_trader.live.config import TradingNodeConfig
 from nautilus_trader.live.node import TradingNode
-from nautilus_trader.live.node import TradingNodeConfig
 
 
 class TestTradingNodeConfiguration:

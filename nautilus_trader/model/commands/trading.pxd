@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2021 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -37,7 +37,7 @@ cdef class TradingCommand(Command):
 
 cdef class SubmitOrder(TradingCommand):
     cdef readonly PositionId position_id
-    """The position ID associated with the command.\n\n:returns: `PositionId`"""
+    """The position ID associated with the command.\n\n:returns: `PositionId` or ``None``"""
     cdef readonly Order order
     """The order for the command.\n\n:returns: `Order`"""
 
@@ -68,7 +68,7 @@ cdef class ModifyOrder(TradingCommand):
     """The updated quantity for the command.\n\n:returns: `Quantity` or ``None``"""
     cdef readonly Price price
     """The updated price for the command.\n\n:returns: `Price` or ``None``"""
-    cdef readonly Price trigger
+    cdef readonly Price trigger_price
     """The updated trigger price for the command.\n\n:returns: `Price` or ``None``"""
 
     @staticmethod

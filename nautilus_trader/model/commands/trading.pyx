@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2021 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -327,12 +327,12 @@ cdef class ModifyOrder(TradingCommand):
     client_order_id : VenueOrderId
         The client order ID to update.
     venue_order_id : VenueOrderId, optional
-        The venue order ID to update.
+        The venue order ID (assigned by the venue) to update.
     quantity : Quantity, optional
         The quantity for the order update.
     price : Price, optional
         The price for the order update.
-    trigger : Price, optional
+    trigger_price : Price, optional
         The trigger price for the order update.
     command_id : UUID4
         The command ID.
@@ -353,7 +353,7 @@ cdef class ModifyOrder(TradingCommand):
         VenueOrderId venue_order_id,  # Can be None
         Quantity quantity,  # Can be None
         Price price,  # Can be None
-        Price trigger,  # Can be None
+        Price trigger_price,  # Can be None
         UUID4 command_id not None,
         int64_t ts_init,
     ):
@@ -369,7 +369,7 @@ cdef class ModifyOrder(TradingCommand):
         self.venue_order_id = venue_order_id
         self.quantity = quantity
         self.price = price
-        self.trigger = trigger
+        self.trigger_price = trigger_price
 
     def __str__(self) -> str:
         return (
@@ -379,7 +379,7 @@ cdef class ModifyOrder(TradingCommand):
             f"venue_order_id={self.venue_order_id}, "  # Can be None
             f"quantity={self.quantity.to_str()}, "
             f"price={self.price}, "
-            f"trigger={self.trigger})"
+            f"trigger_price={self.trigger_price})"
         )
 
     def __repr__(self) -> str:
@@ -392,7 +392,7 @@ cdef class ModifyOrder(TradingCommand):
             f"venue_order_id={self.venue_order_id}, "  # Can be None
             f"quantity={self.quantity.to_str()}, "
             f"price={self.price}, "
-            f"trigger={self.trigger}, "
+            f"trigger_price={self.trigger_price}, "
             f"command_id={self.id.value}, "
             f"ts_init={self.ts_init})"
         )
@@ -403,7 +403,7 @@ cdef class ModifyOrder(TradingCommand):
         cdef str v = values["venue_order_id"]
         cdef str q = values["quantity"]
         cdef str p = values["price"]
-        cdef str t = values["trigger"]
+        cdef str t = values["trigger_price"]
         return ModifyOrder(
             trader_id=TraderId(values["trader_id"]),
             strategy_id=StrategyId(values["strategy_id"]),
@@ -412,7 +412,7 @@ cdef class ModifyOrder(TradingCommand):
             venue_order_id=VenueOrderId(v) if v is not None else None,
             quantity=Quantity.from_str_c(q) if q is not None else None,
             price=Price.from_str_c(p) if p is not None else None,
-            trigger=Price.from_str_c(t) if t is not None else None,
+            trigger_price=Price.from_str_c(t) if t is not None else None,
             command_id=UUID4(values["command_id"]),
             ts_init=values["ts_init"],
         )
@@ -429,7 +429,7 @@ cdef class ModifyOrder(TradingCommand):
             "venue_order_id": obj.venue_order_id.value if obj.venue_order_id is not None else None,
             "quantity": str(obj.quantity) if obj.quantity is not None else None,
             "price": str(obj.price) if obj.price is not None else None,
-            "trigger": str(obj.trigger) if obj.trigger is not None else None,
+            "trigger_price": str(obj.trigger_price) if obj.trigger_price is not None else None,
             "command_id": obj.id.value,
             "ts_init": obj.ts_init,
         }
@@ -479,7 +479,7 @@ cdef class CancelOrder(TradingCommand):
     client_order_id : ClientOrderId
         The client order ID to cancel.
     venue_order_id : VenueOrderId, optional
-        The venue order ID to cancel.
+        The venue order ID (assigned by the venue) to cancel.
     command_id : UUID4
         The command ID.
     ts_init : int64

@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2021 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -31,8 +31,8 @@ from nautilus_trader.model.instruments.base import Instrument
 from nautilus_trader.model.orderbook.book import OrderBook
 from nautilus_trader.model.orderbook.data import OrderBookData
 from nautilus_trader.model.orders.market import MarketOrder
+from nautilus_trader.trading.config import TradingStrategyConfig
 from nautilus_trader.trading.strategy import TradingStrategy
-from nautilus_trader.trading.strategy import TradingStrategyConfig
 
 
 # *** THIS IS A TEST STRATEGY WITH NO ALPHA ADVANTAGE WHATSOEVER. ***
@@ -72,8 +72,8 @@ class EMACross(TradingStrategy):
     """
     A simple moving average cross example strategy.
 
-    When the fast EMA crosses the slow EMA then enter a position in that
-    direction.
+    When the fast EMA crosses the slow EMA then enter a position at the market
+    in that direction.
 
     Cancels all orders and flattens all positions on stop.
 
@@ -117,8 +117,8 @@ class EMACross(TradingStrategy):
         # Subscribe to live data
         self.subscribe_bars(self.bar_type)
         self.subscribe_quote_ticks(self.instrument_id)
+        # self.subscribe_trade_ticks(self.instrument_id)
         # self.subscribe_ticker(self.instrument_id)  # For debugging
-        # self.subscribe_trade_ticks(self.instrument_id)  # For debugging
         # self.subscribe_order_book_deltas(self.instrument_id, depth=20)  # For debugging
         # self.subscribe_order_book_snapshots(self.instrument_id, depth=20)  # For debugging
 
@@ -224,7 +224,6 @@ class EMACross(TradingStrategy):
             elif self.portfolio.is_net_short(self.instrument_id):
                 self.flatten_all_positions(self.instrument_id)
                 self.buy()
-
         # SELL LOGIC
         elif self.fast_ema.value < self.slow_ema.value:
             if self.portfolio.is_flat(self.instrument_id):
@@ -293,11 +292,10 @@ class EMACross(TradingStrategy):
         # Unsubscribe from data
         self.unsubscribe_bars(self.bar_type)
         self.unsubscribe_quote_ticks(self.instrument_id)
-
+        # self.unsubscribe_trade_ticks(self.instrument_id)
         # self.unsubscribe_ticker(self.instrument_id)
         # self.unsubscribe_order_book_deltas(self.instrument_id)
         # self.unsubscribe_order_book_snapshots(self.instrument_id)
-        # self.unsubscribe_trade_ticks(self.instrument_id)
 
     def on_reset(self):
         """
