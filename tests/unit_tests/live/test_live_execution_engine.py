@@ -170,10 +170,21 @@ class TestLiveExecutionEngine:
     async def test_message_qsize_at_max_blocks_on_put_command(self):
         # Arrange
         # Deregister test fixture ExecutionEngine from msgbus)
-        self.msgbus.deregister(endpoint="ExecEngine.execute", handler=self.exec_engine.execute)
-        self.msgbus.deregister(endpoint="ExecEngine.process", handler=self.exec_engine.process)
         self.msgbus.deregister(
-            endpoint="ExecEngine.reconcile_report", handler=self.exec_engine.reconcile_report
+            endpoint="ExecEngine.execute",
+            handler=self.exec_engine.execute,
+        )
+        self.msgbus.deregister(
+            endpoint="ExecEngine.process",
+            handler=self.exec_engine.process,
+        )
+        self.msgbus.deregister(
+            endpoint="ExecEngine.reconcile_report",
+            handler=self.exec_engine.reconcile_report,
+        )
+        self.msgbus.deregister(
+            endpoint="ExecEngine.reconcile_mass_status",
+            handler=self.exec_engine.reconcile_mass_status,
         )
 
         self.exec_engine = LiveExecutionEngine(
@@ -223,10 +234,21 @@ class TestLiveExecutionEngine:
     async def test_message_qsize_at_max_blocks_on_put_event(self):
         # Arrange
         # Deregister test fixture ExecutionEngine from msgbus)
-        self.msgbus.deregister(endpoint="ExecEngine.execute", handler=self.exec_engine.execute)
-        self.msgbus.deregister(endpoint="ExecEngine.process", handler=self.exec_engine.process)
         self.msgbus.deregister(
-            endpoint="ExecEngine.reconcile_report", handler=self.exec_engine.reconcile_report
+            endpoint="ExecEngine.execute",
+            handler=self.exec_engine.execute,
+        )
+        self.msgbus.deregister(
+            endpoint="ExecEngine.process",
+            handler=self.exec_engine.process,
+        )
+        self.msgbus.deregister(
+            endpoint="ExecEngine.reconcile_report",
+            handler=self.exec_engine.reconcile_report,
+        )
+        self.msgbus.deregister(
+            endpoint="ExecEngine.reconcile_mass_status",
+            handler=self.exec_engine.reconcile_mass_status,
         )
 
         self.exec_engine = LiveExecutionEngine(

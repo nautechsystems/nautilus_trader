@@ -55,6 +55,10 @@ cdef class WebSocketClient:
         The logger adapter for the client.
     handler : Callable[[bytes], None]
         The handler for receiving raw data.
+    max_retry_connection : int, default 0
+        The number of times to attempt a reconnection.
+    log_recv : bool, default False
+        If the raw received bytes for each message should be logged.
     """
 
     def __init__(
@@ -62,7 +66,8 @@ cdef class WebSocketClient:
         loop not None: asyncio.AbstractEventLoop,
         Logger logger not None: Logger,
         handler not None: Callable[[bytes], None],
-        max_retry_connection=0,
+        int max_retry_connection=0,
+        bint log_recv=False,
     ):
         self._loop = loop
         self._log = LoggerAdapter(component_name=type(self).__name__, logger=logger)
@@ -75,6 +80,7 @@ cdef class WebSocketClient:
         self._tasks: List[asyncio.Task] = []
         self._stopped = False
         self._stopping = False
+        self._log_recv = log_recv
 
         self.is_connected = False
         self.max_retry_connection = max_retry_connection
@@ -149,21 +155,21 @@ cdef class WebSocketClient:
             elif msg_type == ERROR:  # aiohttp specific
                 if self._stopping is True:
                     return
-                self._log.warning(f"Received {msg}.")
+                self._log.warning(f"[RECV] {msg}.")
                 raise ConnectionAbortedError("websocket aiohttp error")
             elif msg_type == CLOSE:  # Received CLOSE from server
                 if self._stopping is True:
                     return
-                self._log.warning(f"Received {msg}.")
+                self._log.warning(f"[RECV] {msg}.")
                 raise ConnectionAbortedError("websocket closed by server")
             elif msg_type == CLOSING or msg_type == CLOSED:  # aiohttp specific
                 if self._stopping is True:
                     return
-                self._log.warning(f"Received {msg}.")
+                self._log.warning(f"[RECV] {msg}.")
                 raise ConnectionAbortedError("websocket aiohttp closing or closed")
             else:
                 self._log.warning(
-                    f"Received unknown data type: {msg.type}, data: {msg.data}.",
+                    f"[RECV] unknown data type: {msg.type}, data: {msg.data}.",
                 )
                 self.unknown_message_count += 1
                 if self.unknown_message_count > 20:
@@ -188,7 +194,9 @@ cdef class WebSocketClient:
             await self.reconnect()
 
     async def _reconnect_backoff(self) -> None:
-        cdef int backoff = 2 ** self.connection_retry_count
+        if self.connection_retry_count == 0:
+            return  # Immediately attempt first reconnect
+        cdef double backoff = 1.5 ** self.connection_retry_count
         self._log.debug(
             f"Exponential backoff attempt "
             f"{self.connection_retry_count}, sleeping for {backoff}",
@@ -201,9 +209,12 @@ cdef class WebSocketClient:
         while not self._stopping:
             try:
                 raw = await self.receive()
+                if self._log_recv:
+                    self._log.debug(f"[RECV] {raw}.")
                 if raw is None:
                     continue
                 self._handler(raw)
+                self.connection_retry_count = 0
             except Exception as ex:
                 self._log.exception(ex)
                 break
