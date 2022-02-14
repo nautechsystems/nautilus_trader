@@ -12,20 +12,13 @@ For development we recommend using the PyCharm *Professional* edition IDE, as it
 
 The following steps are for UNIX-like systems, and only need to be completed once.
 
-1. Install `poetry`:
+1. Follow the [installation guide](../getting_started/installation.md) to setup the project with a modification to the final poetry command:
 
-       curl -sSL https://raw.githubusercontent.com/python-poetry/poetry/master/get-poetry.py | python -
+       poetry install
 
-2. Then install all Python package dependencies, and compile the C extensions:
+2. Setup the pre-commit hook which will then run automatically at commit:
 
-        poetry install
-   or
-
-        make
-
-4. Setup the pre-commit hook which will then run automatically at commit:
-
-        pre-commit install
+       pre-commit install
 
 ## Builds
 

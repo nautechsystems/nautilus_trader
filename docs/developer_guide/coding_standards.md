@@ -2,6 +2,7 @@
 
 ## Code Style
 The current codebase can be used as a guide for formatting conventions.
+Additional guidelines are provided below.
 
 ### Black
 
@@ -12,11 +13,11 @@ So there you could say we are “handcrafting towards”  *Black* stylistic conv
 
 ### Formatting
 
-1- For longer lines of code, and when passing more than a couple of arguments, you should take a new line which aligns at the next logical indent (rather than attempting a hanging 'vanity' alignment off an opening parenthesis). This practice conserves space to the right, ensures important code is more central in view, and is also robust to function/method name changes.
+1. For longer lines of code, and when passing more than a couple of arguments, you should take a new line which aligns at the next logical indent (rather than attempting a hanging 'vanity' alignment off an opening parenthesis). This practice conserves space to the right, ensures important code is more central in view, and is also robust to function/method name changes.
 
-2- The closing parenthesis should be located on a new line, aligned at the logical indent.
+2. The closing parenthesis should be located on a new line, aligned at the logical indent.
 
-3- Also ensure multiple hanging parameters or arguments end with a trailing comma:
+3. Also ensure multiple hanging parameters or arguments end with a trailing comma:
 
 ```python
 long_method_with_many_params(
@@ -32,9 +33,9 @@ One notable departure is that Python truthiness is not always taken advantage of
 
 There are two reasons for this;
 
-1- Cython can generate more efficient C code from `is None` and `is not None`, rather than entering the Python runtime to check the `PyObject` truthiness.
+1. Cython can generate more efficient C code from `is None` and `is not None`, rather than entering the Python runtime to check the `PyObject` truthiness.
 
-2- As per the [Google Python Style Guide](https://google.github.io/styleguide/pyguide.html) - it’s discouraged to use truthiness to check if an argument is/is not `None`, when there is a chance an unexpected object could be passed into the function or method which will yield an unexpected truthiness evaluation (which could result in a logical error type bug).
+2. As per the [Google Python Style Guide](https://google.github.io/styleguide/pyguide.html) - it’s discouraged to use truthiness to check if an argument is/is not `None`, when there is a chance an unexpected object could be passed into the function or method which will yield an unexpected truthiness evaluation (which could result in a logical error type bug).
 
 *“Always use if foo is None: (or is not None) to check for a None value. E.g., when testing whether a variable or argument that defaults to None was set to some other value. The other value might be a value that’s false in a boolean context!”*
 
@@ -51,3 +52,16 @@ The [NumPy docstring spec](https://numpydoc.readthedocs.io/en/latest/format.html
 
 ### Flake8
 [Flake8](https://github.com/pycqa/flake8) is utilized to lint the codebase. Current ignores can be found in the top-level `pre-commit-config.yaml`, with the justifications also commented.
+
+### Commit messages
+There are no strict restrictions on the style of your commit messages. Here are some guidelines:
+
+1. Limit subject titles to 50 characters or fewer. Capitalize subject line; use imperative voice; and do not end with period.
+
+2. Use 'imperative voice', i.e. the message should describe what the commit will do if applied.
+
+3. Optional: Use the body to explain change. Separate from subject with a blank line. Keep under 80 character width. You can use bullet points.
+    
+4. Optional: Provide # references to relevant issues or tickets.
+
+5. Optional: Provide any hyperlinks which are informative.
