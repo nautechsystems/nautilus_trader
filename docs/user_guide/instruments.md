@@ -36,7 +36,7 @@ instrument: Optional[Instrument] = provider.find(btcusdt)
 
 Or flexibly defined by the user through an `Instrument` constructor, or one of its more specific subclasses:
 ```python
-instrument = Instrument(...)  # <-- provide all necessary paramaters
+instrument = Instrument(...)  # <-- provide all necessary parameters
 ```
 See the full instrument [API Reference](../api_reference/model/instruments.md).
 
