@@ -41,6 +41,10 @@ extensions = [
 html_static_path = ["_static"]
 html_css_files = ["custom.css"]
 templates_path = ["_templates"]
+html_js_files = [
+    '_static/script.js',
+]
+
 
 comments_config = {"hypothesis": False, "utterances": False}
 exclude_patterns = ["**.ipynb_checkpoints", ".DS_Store", "Thumbs.db", "_build"]
@@ -148,3 +152,4 @@ napoleon_google_docstring = False
 napoleon_use_rtype = False
 
 pygments_style = "monokai.MonokaiStyle"
+

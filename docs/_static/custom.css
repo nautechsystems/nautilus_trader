@@ -121,6 +121,39 @@ background-color: rgba(0,0,0,.54);
 .md-typeset pre {
     color: #D3D3D3;
 }
+.py.attribute .sig-name.descname .pre {
+    color: #66d9ef;
+}
+/*.py.method span {
+    color: #ae81ff;
+}*/
+.py.class .pre {
+    color: #66d9ef;
+}
+dl.py.class {
+    background: rgb(0 0 0 / 12%);
+    color: #f8f8f2;
+    margin: 1em 0;
+    padding: 10px 10px 6px;
+    border-radius: 0.1rem;
+}
+
+.py.class .py.method, .py.class .py.attribute {
+    background: rgb(40 47 56 / 30%);
+    color: #f8f8f2;
+    margin: 1em 0;
+    padding: 10px 10px 6px;
+    border-radius: 0.1rem;
+}
+.py.class .docutils.literal.notranslate .pre{
+    color: #f92672;
+}
+.py.class em.sig-param .pre, .py.class .sig-return .pre {
+    color: #fff;
+}
+.md-source__facts li {
+    padding: 0 !important;
+}
 
 @media only screen and (min-width: 60em) {
     .md-search__inner {
