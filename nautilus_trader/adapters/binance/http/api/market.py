@@ -18,15 +18,15 @@
 
 from typing import Any, Dict, List, Optional
 
+from nautilus_trader.adapters.binance.common import convert_list_to_json_array
 from nautilus_trader.adapters.binance.common import format_symbol
 from nautilus_trader.adapters.binance.http.client import BinanceHttpClient
-from nautilus_trader.adapters.binance.http.parsing import convert_list_to_json_array
 from nautilus_trader.core.correctness import PyCondition
 
 
-class BinanceSpotMarketHttpAPI:
+class BinanceMarketHttpAPI:
     """
-    Provides access to the `Binance SPOT Market` HTTP REST API.
+    Provides access to the `Binance Market` HTTP REST API.
 
     Parameters
     ----------

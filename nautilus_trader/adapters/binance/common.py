@@ -13,6 +13,10 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+import json
+from enum import Enum
+from enum import unique
+
 from nautilus_trader.model.identifiers import Venue
 
 
@@ -21,3 +25,95 @@ BINANCE_VENUE = Venue("BINANCE")
 
 def format_symbol(symbol: str):
     return symbol.lower().replace("/", "")
+
+
+def convert_list_to_json_array(symbols):
+    if symbols is None:
+        return symbols
+    return json.dumps(symbols).replace(" ", "").replace("/", "")
+
+
+@unique
+class BinanceAccountType(Enum):
+    """Represents a `Binance` account type."""
+
+    SPOT = "SPOT"
+    MARGIN = "MARGIN"
+    FUTURES = "FUTURES"
+
+
+@unique
+class BinanceContractType(Enum):
+    """Represents a `Binance` derivatives contract type."""
+
+    PERPETUAL = "PERPETUAL"
+    CURRENT_MONTH = "CURRENT_MONTH"
+    NEXT_MONTH = "NEXT_MONTH"
+    CURRENT_QUARTER = "CURRENT_QUARTER"
+    NEXT_QUARTER = "NEXT_QUARTER"
+
+
+@unique
+class BinanceContractStatus(Enum):
+    """Represents a `Binance` contract status."""
+
+    PENDING_TRADING = "PENDING_TRADING"
+    TRADING = "TRADING"
+    PRE_DELIVERING = "PRE_DELIVERING"
+    DELIVERING = "DELIVERING"
+    DELIVERED = "DELIVERED"
+    PRE_SETTLE = "PRE_SETTLE"
+    SETTLING = "SETTLING"
+    CLOSE = "CLOSE"
+
+
+@unique
+class BinanceOrderStatus(Enum):
+    """Represents a `Binance` order status."""
+
+    NEW = "NEW"
+    PARTIALLY_FILLED = "PARTIALLY_FILLED"
+    FILLED = "FILLED"
+    CANCELED = "CANCELED"
+    REJECTED = "REJECTED"
+    EXPIRED = "EXPIRED"
+
+
+@unique
+class BinanceOrderType(Enum):
+    """Represents a `Binance` trigger price type."""
+
+    LIMIT = "LIMIT"
+    MARKET = "MARKET"
+    STOP = "STOP"
+    STOP_MARKET = "STOP_MARKET"
+    TAKE_PROFIT = "TAKE_PROFIT"
+    TAKE_PROFIT_MARKET = "TAKE_PROFIT_MARKET"
+    TRAILING_STOP_MARKET = "TRAILING_STOP_MARKET"
+
+
+@unique
+class BinancePositionSide(Enum):
+    """Represents a `Binance` position side."""
+
+    BOTH = "BOTH"
+    LONG = "LONG"
+    SHORT = "SHORT"
+
+
+@unique
+class BinanceTimeInForce(Enum):
+    """Represents a `Binance` order time in force."""
+
+    GTC = "GTC"
+    IOC = "IOC"
+    FOK = "FOK"
+    GTX = "GTX"  # Good Till Crossing (Post Only)
+
+
+@unique
+class BinanceWorkingType(Enum):
+    """Represents a `Binance` trigger price type."""
+
+    MARK_PRICE = "MARK_PRICE"
+    CONTRACT_PRICE = "CONTRACT_PRICE"

@@ -18,6 +18,7 @@ import os
 from functools import lru_cache
 from typing import Any, Dict, Optional
 
+from nautilus_trader.adapters.binance.common import BinanceAccountType
 from nautilus_trader.adapters.binance.data import BinanceDataClient
 from nautilus_trader.adapters.binance.execution import BinanceSpotExecutionClient
 from nautilus_trader.adapters.binance.http.client import BinanceHttpClient
@@ -178,6 +179,8 @@ class BinanceLiveDataClientFactory(LiveDataClientFactory):
             clock=clock,
             logger=logger,
             instrument_provider=provider,
+            account_type=BinanceAccountType(config.get("account_type", "SPOT").upper()),
+            base_url=config.get("base_url"),
             us=config.get("us", False),
         )
         return data_client
@@ -244,6 +247,8 @@ class BinanceLiveExecutionClientFactory(LiveExecutionClientFactory):
             clock=clock,
             logger=logger,
             instrument_provider=provider,
+            account_type=BinanceAccountType(config.get("account_type", "SPOT").upper()),
+            base_url=config.get("base_url"),
             us=config.get("us", False),
         )
         return exec_client

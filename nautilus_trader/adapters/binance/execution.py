@@ -21,8 +21,9 @@ from typing import Any, Dict, List, Optional
 import orjson
 
 from nautilus_trader.adapters.binance.common import BINANCE_VENUE
-from nautilus_trader.adapters.binance.http.api.spot_account import BinanceSpotAccountHttpAPI
-from nautilus_trader.adapters.binance.http.api.spot_market import BinanceSpotMarketHttpAPI
+from nautilus_trader.adapters.binance.common import BinanceAccountType
+from nautilus_trader.adapters.binance.http.api.account import BinanceAccountHttpAPI
+from nautilus_trader.adapters.binance.http.api.market import BinanceMarketHttpAPI
 from nautilus_trader.adapters.binance.http.api.user import BinanceUserDataHttpAPI
 from nautilus_trader.adapters.binance.http.client import BinanceHttpClient
 from nautilus_trader.adapters.binance.http.error import BinanceError
@@ -31,7 +32,7 @@ from nautilus_trader.adapters.binance.parsing import parse_account_balances
 from nautilus_trader.adapters.binance.parsing import parse_account_balances_ws
 from nautilus_trader.adapters.binance.parsing import parse_order_type
 from nautilus_trader.adapters.binance.providers import BinanceInstrumentProvider
-from nautilus_trader.adapters.binance.websocket.user import BinanceUserDataWebSocket
+from nautilus_trader.adapters.binance.websocket.client import BinanceWebSocketClient
 from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.logging import LogColor
@@ -95,6 +96,10 @@ class BinanceSpotExecutionClient(LiveExecutionClient):
         The logger for the client.
     instrument_provider : BinanceInstrumentProvider
         The instrument provider.
+    account_type : BinanceAccountType
+        The account type for the client.
+    base_url : str, optional
+        The base URL for the API endpoints.
     us : bool, default False
         If the client is for Binance US.
     """
@@ -108,6 +113,8 @@ class BinanceSpotExecutionClient(LiveExecutionClient):
         clock: LiveClock,
         logger: Logger,
         instrument_provider: BinanceInstrumentProvider,
+        account_type: BinanceAccountType = BinanceAccountType.SPOT,
+        base_url: Optional[str] = None,
         us: bool = False,
     ):
         super().__init__(
@@ -126,10 +133,13 @@ class BinanceSpotExecutionClient(LiveExecutionClient):
         self._client = client
         self._set_account_id(AccountId(BINANCE_VENUE.value, "master"))
 
+        self._account_type = account_type
+        self._base_url = base_url
+
         # HTTP API
-        self._account_spot = BinanceSpotAccountHttpAPI(client=self._client)
-        self._market_spot = BinanceSpotMarketHttpAPI(client=self._client)
-        self._user = BinanceUserDataHttpAPI(client=self._client)
+        self._http_account = BinanceAccountHttpAPI(client=self._client)
+        self._http_market = BinanceMarketHttpAPI(client=self._client)
+        self._http_user = BinanceUserDataHttpAPI(client=self._client)
 
         # Listen keys
         self._ping_listen_keys_interval: int = 60 * 5  # Once every 5 mins (hardcode)
@@ -139,11 +149,12 @@ class BinanceSpotExecutionClient(LiveExecutionClient):
         self._listen_key_isolated: Optional[str] = None
 
         # WebSocket API
-        self._ws_user_spot = BinanceUserDataWebSocket(
+        self._ws = BinanceWebSocketClient(
             loop=loop,
             clock=clock,
             logger=logger,
             handler=self._handle_user_ws_message,
+            base_url=self._base_url,
             us=us,
         )
 
@@ -178,19 +189,19 @@ class BinanceSpotExecutionClient(LiveExecutionClient):
             return
 
         # Authenticate API key and update account(s)
-        response: Dict[str, Any] = await self._account_spot.account(recv_window=5000)
+        response: Dict[str, Any] = await self._http_account.account(recv_window=5000)
 
         self._authenticate_api_key(response=response)
         self._update_account_state(response=response)
 
         # Get listen keys
-        response = await self._user.create_listen_key_spot()
+        response = await self._http_user.create_listen_key_spot()
         self._listen_key_spot = response["listenKey"]
         self._ping_listen_keys_task = self._loop.create_task(self._ping_listen_keys())
 
-        # Connect WebSocket clients
-        self._ws_user_spot.subscribe(key=self._listen_key_spot)
-        await self._ws_user_spot.connect()
+        # Connect WebSocket client
+        self._ws.subscribe(key=self._listen_key_spot)
+        await self._ws.connect()
 
         self._set_connected(True)
         self._log.info("Connected.")
@@ -218,7 +229,7 @@ class BinanceSpotExecutionClient(LiveExecutionClient):
             await asyncio.sleep(self._ping_listen_keys_interval)
             if self._listen_key_spot:
                 self._log.debug(f"Pinging WebSocket listen key {self._listen_key_spot}...")
-                await self._user.ping_listen_key_spot(self._listen_key_spot)
+                await self._http_user.ping_listen_key_spot(self._listen_key_spot)
 
     async def _disconnect(self) -> None:
         # Cancel tasks
@@ -227,8 +238,8 @@ class BinanceSpotExecutionClient(LiveExecutionClient):
             self._ping_listen_keys_task.cancel()
 
         # Disconnect WebSocket clients
-        if self._ws_user_spot.is_connected:
-            await self._ws_user_spot.disconnect()
+        if self._ws.is_connected:
+            await self._ws.disconnect()
 
         # Disconnect HTTP client
         if self._client.connected:
@@ -423,7 +434,7 @@ class BinanceSpotExecutionClient(LiveExecutionClient):
             )
 
     async def _submit_market_order(self, order: MarketOrder) -> None:
-        await self._account_spot.new_order(
+        await self._http_account.new_order(
             symbol=order.instrument_id.symbol.value,
             side=OrderSideParser.to_str_py(order.side),
             type="MARKET",
@@ -438,7 +449,7 @@ class BinanceSpotExecutionClient(LiveExecutionClient):
         else:
             time_in_force = TimeInForceParser.to_str_py(order.time_in_force)
 
-        await self._account_spot.new_order(
+        await self._http_account.new_order(
             symbol=order.instrument_id.symbol.value,
             side=OrderSideParser.to_str_py(order.side),
             type=binance_order_type(order=order),
@@ -452,12 +463,12 @@ class BinanceSpotExecutionClient(LiveExecutionClient):
 
     async def _submit_stop_limit_order(self, order: StopLimitOrder) -> None:
         # Get current market price
-        response: Dict[str, Any] = await self._market_spot.ticker_price(
+        response: Dict[str, Any] = await self._http_market.ticker_price(
             order.instrument_id.symbol.value
         )
         market_price = Decimal(response["price"])
 
-        await self._account_spot.new_order(
+        await self._http_account.new_order(
             symbol=order.instrument_id.symbol.value,
             side=OrderSideParser.to_str_py(order.side),
             type=binance_order_type(order=order, market_price=market_price),
@@ -488,7 +499,7 @@ class BinanceSpotExecutionClient(LiveExecutionClient):
         )
 
         try:
-            await self._account_spot.cancel_order(
+            await self._http_account.cancel_order(
                 symbol=command.instrument_id.symbol.value,
                 orig_client_order_id=command.client_order_id.value,
             )
@@ -527,7 +538,7 @@ class BinanceSpotExecutionClient(LiveExecutionClient):
             )
 
         try:
-            await self._account_spot.cancel_open_orders(
+            await self._http_account.cancel_open_orders(
                 symbol=command.instrument_id.symbol.value,
             )
         except BinanceError as ex:
