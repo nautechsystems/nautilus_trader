@@ -54,7 +54,7 @@ The [NumPy docstring spec](https://numpydoc.readthedocs.io/en/latest/format.html
 [Flake8](https://github.com/pycqa/flake8) is utilized to lint the codebase. Current ignores can be found in the top-level `pre-commit-config.yaml`, with the justifications also commented.
 
 ### Commit messages
-There are no strict restrictions on the style of your commit messages. Here are some guidelines:
+Here are some guidelines for the style of your commit messages:
 
 1. Limit subject titles to 50 characters or fewer. Capitalize subject line; use imperative voice; and do not end with period.
 
