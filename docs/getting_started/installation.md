@@ -4,8 +4,8 @@ The package is tested against Python 3.8, 3.9 and 3.10 on 64-bit Windows, macOS 
 We recommend running the platform with the latest stable version of Python, and 
 in a virtual environment to isolate the dependencies.
 
-To install on ARM architectures such as MacBook Pro M1 / Apple Silicon, this stackoverflow thread is useful:
-https://stackoverflow.com/questions/65745683/how-to-install-scipy-on-apple-silicon-arm-m1
+To install on ARM architectures such as MacBook Pro M1 / Apple Silicon, [this stackoverflow thread](https://stackoverflow.com/questions/65745683/how-to-install-scipy-on-apple-silicon-arm-m1)
+is useful:
 
 ## From PyPI
 To install the latest binary wheel (or sdist package) from PyPI:
@@ -30,7 +30,7 @@ as specified in the `pyproject.toml`. However, we highly recommend installing us
 
 1. Install [rustup](https://rustup.rs/) (the Rust toolchain installer):
    - Linux and macOS:
-       ```
+       ```bash
        curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
        ```
    - Windows:
@@ -39,7 +39,7 @@ as specified in the `pyproject.toml`. However, we highly recommend installing us
 
 2. Enable `cargo` in the current shell:
    - Linux and macOS:
-       ```
+       ```bash
        source $HOME/.cargo/env
        ```
    - Windows:

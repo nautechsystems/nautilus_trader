@@ -77,7 +77,7 @@ professional quantitative traders and trading firms.
 
 Python was originally created decades ago as a simple scripting language with a clean straight
 forward syntax. It has since evolved into a fully fledged general purpose object-oriented
-programming language. Based on the TIOBE index, Python is currently the most popular programming language in the world. 
+programming language. Based on the TIOBE index, Python is currently the most popular programming language in the world.
 Not only that, Python has become the _de facto lingua franca_ of data science, machine learning, and artificial intelligence.
 
 The language out of the box is not without its drawbacks however, especially in the context of
@@ -186,7 +186,7 @@ as specified in the `pyproject.toml`. However, we highly recommend installing us
        cd nautilus_trader
        poetry install --no-dev
 
-Refer to the [Installation Guide](https://docs.nautilustrader.io/1_getting_started/1_installation.html) for other options and further details.
+Refer to the [Installation Guide](https://docs.nautilustrader.io/getting_started/installation.html) for other options and further details.
 
 ## Versioning and releases
 
@@ -359,4 +359,5 @@ Contributors are also required to sign a standard Contributor License Agreement 
 Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
 https://nautechsystems.io
 
-![nautechsystems](https://github.com/nautechsystems/nautilus_trader/blob/develop/docs/_images/ns-logo.png?raw=true "nautechsystems") ![cython](https://github.com/nautechsystems/nautilus_trader/blob/develop/docs/_images/cython-logo.png?raw=true "cython")
+![nautechsystems](https://github.com/nautechsystems/nautilus_trader/blob/develop/docs/_images/ns-logo.png?raw=true "nautechsystems")
+<img src="https://github.com/nautechsystems/nautilus_trader/blob/develop/docs/_images/ferris.png" width="128">

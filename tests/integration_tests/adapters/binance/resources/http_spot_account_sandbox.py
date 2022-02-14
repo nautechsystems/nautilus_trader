@@ -20,7 +20,7 @@ import os
 import pytest
 
 from nautilus_trader.adapters.binance.factories import get_cached_binance_http_client
-from nautilus_trader.adapters.binance.http.api.spot_account import BinanceSpotAccountHttpAPI
+from nautilus_trader.adapters.binance.http.api.account import BinanceAccountHttpAPI
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.logging import Logger
 
@@ -39,7 +39,7 @@ async def test_binance_spot_account_http_client():
     )
     await client.connect()
 
-    account = BinanceSpotAccountHttpAPI(client=client)
+    account = BinanceAccountHttpAPI(client=client)
     response = await account.account(recv_window=5000)
     print(json.dumps(response, indent=4))
 
