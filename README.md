@@ -186,7 +186,7 @@ as specified in the `pyproject.toml`. However, we highly recommend installing us
        cd nautilus_trader
        poetry install --no-dev
 
-Refer to the [Installation Guide](https://docs.nautilustrader.io/1_getting_started/1_installation.html) for other options and further details.
+Refer to the [Installation Guide](https://docs.nautilustrader.io/getting_started/installation.html) for other options and further details.
 
 ## Versioning and releases
 
