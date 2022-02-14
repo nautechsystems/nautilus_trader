@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2021 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -21,7 +21,7 @@ use uuid::Uuid;
 #[repr(C)]
 #[derive(Clone, Hash, PartialEq, Eq)]
 pub struct UUID4 {
-    pub value: Box<String>,
+    value: Box<String>,
 }
 
 impl UUID4 {
@@ -49,9 +49,10 @@ impl UUID4 {
         UUID4::new()
     }
 
+    /// Expects `ptr` to be an array of valid UTF-8 chars.
     #[no_mangle]
     pub unsafe extern "C" fn uuid4_from_raw(ptr: *const c_char) -> UUID4 {
-        // SAFETY: Wraps and checks raw C string `ptr`, then converts to owned `String`
+        // Safety: Wraps and checks raw C string `ptr`, then converts to owned `String`
         UUID4::from(CStr::from_ptr(ptr).to_str().expect("invalid C string"))
     }
 
@@ -61,6 +62,7 @@ impl UUID4 {
         CString::new(bytes).expect("CString::new failed").into_raw()
     }
 
+    /// Expects `ptr` to be an array of valid UTF-8 chars.
     #[no_mangle]
     pub unsafe extern "C" fn uuid4_free_raw(ptr: *mut c_char) {
         // SAFETY: Retakes ownership of C string `ptr`, then drops

@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2021 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -13,21 +13,27 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+use crate::identifiers::base::Identifier;
 use std::fmt::{Debug, Display, Formatter, Result};
 
 #[repr(C)]
 #[derive(Clone, Hash, PartialEq)]
 pub struct Symbol {
-    pub value: Box<String>,
+    value: Box<String>,
 }
 
-impl Symbol {
-    pub fn from(s: &str) -> Symbol {
+impl Identifier for Symbol {
+    fn from_str(s: &str) -> Symbol {
         Symbol {
             value: Box::from(s.to_owned()),
         }
     }
+    fn value(&self) -> &str {
+        return self.value.as_str();
+    }
+}
 
+impl Symbol {
     //##########################################################################
     // C API
     //##########################################################################
@@ -71,15 +77,30 @@ impl Display for Symbol {
 
 #[cfg(test)]
 mod tests {
+    use crate::identifiers::base::Identifier;
     use crate::identifiers::symbol::Symbol;
 
     #[test]
+    fn symbol_value() {
+        let symbol = Symbol::from_str("ETH/USD");
+
+        assert_eq!(symbol.value(), "ETH/USD");
+    }
+
+    #[test]
+    fn symbol_len() {
+        let symbol = Symbol::from_str("ETH/USD");
+
+        assert_eq!(symbol.len(), 7);
+    }
+
+    #[test]
     fn symbol_from_str() {
-        let symbol1 = Symbol::from("XRD/USD");
-        let symbol2 = Symbol::from("BTC/USD");
+        let symbol1 = Symbol::from_str("XRD/USD");
+        let symbol2 = Symbol::from_str("BTC/USD");
 
         assert_eq!(symbol1, symbol1);
         assert_ne!(symbol1, symbol2);
-        assert_eq!(symbol1.to_string(), "XRD/USD")
+        assert_eq!(symbol1.value(), "XRD/USD");
     }
 }

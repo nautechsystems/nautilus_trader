@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2021 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -13,6 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+use crate::identifiers::base::Identifier;
 use crate::identifiers::symbol::Symbol;
 use crate::identifiers::venue::Venue;
 use std::fmt::{Debug, Display, Formatter, Result};
@@ -22,36 +23,35 @@ use std::fmt::{Debug, Display, Formatter, Result};
 pub struct InstrumentId {
     pub symbol: Symbol,
     pub venue: Venue,
-    pub value: Box<String>,
+    value: Box<String>,
+}
+
+impl Identifier for InstrumentId {
+    fn from_str(value: &str) -> InstrumentId {
+        let pieces: Vec<&str> = value.split(".").collect();
+        assert!(pieces.len() >= 2);
+        InstrumentId {
+            symbol: Symbol::from_str(pieces[0]),
+            venue: Venue::from_str(pieces[1]),
+            value: Box::new(value.parse().unwrap()),
+        }
+    }
+
+    fn value(&self) -> &str {
+        return self.value.as_str();
+    }
 }
 
 impl InstrumentId {
     pub fn new(symbol: Symbol, venue: Venue) -> InstrumentId {
-        let mut s = symbol.to_string();
-        s.push_str(".");
-        s.push_str(&venue.value);
+        let mut s = String::new();
+        s.push_str(symbol.value());
+        s.push_str(venue.value());
         InstrumentId {
             symbol,
             venue,
             value: Box::new(s),
         }
-    }
-
-    pub fn from_str(value: &str) -> InstrumentId {
-        let pieces: Vec<&str> = value.split(".").collect();
-        assert!(pieces.len() >= 2);
-        InstrumentId {
-            symbol: Symbol::from(&String::from(pieces[0])),
-            venue: Venue::from(&String::from(pieces[1])),
-            value: Box::new(value.parse().unwrap()),
-        }
-    }
-
-    pub fn to_string(self) -> String {
-        let mut output = self.symbol.value.to_string();
-        output.push_str("."); // Delimiter
-        output.push_str(&self.venue.to_string());
-        output
     }
 
     //##########################################################################
@@ -63,10 +63,7 @@ impl InstrumentId {
         let s = String::from_utf8(vec).expect("Invalid UTF-8 string");
         let pieces: Vec<&str> = s.split(".").collect();
         assert!(pieces.len() >= 2);
-        InstrumentId::new(
-            Symbol::from(&String::from(pieces[0])),
-            Venue::from(&String::from(pieces[1])),
-        )
+        InstrumentId::new(Symbol::from_str(pieces[0]), Venue::from_str(pieces[1]))
     }
 
     #[no_mangle]
@@ -76,7 +73,7 @@ impl InstrumentId {
 
     #[no_mangle]
     pub extern "C" fn instrument_id_len(id: InstrumentId) -> usize {
-        id.symbol.value.len()
+        id.symbol.value().len()
     }
 
     #[no_mangle]
@@ -87,18 +84,19 @@ impl InstrumentId {
 
 impl Debug for InstrumentId {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result {
-        write!(f, "{}.{}", self.symbol.value, self.venue.value)
+        write!(f, "{}.{}", self.symbol.value(), self.venue.value())
     }
 }
 
 impl Display for InstrumentId {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result {
-        write!(f, "{}.{}", self.symbol.value, self.venue.value)
+        write!(f, "{}.{}", self.symbol.value(), self.venue.value())
     }
 }
 
 #[cfg(test)]
 mod tests {
+    use crate::identifiers::base::Identifier;
     use crate::identifiers::instrument_id::InstrumentId;
 
     #[test]
@@ -108,8 +106,8 @@ mod tests {
 
         assert_eq!(instrument_id1, instrument_id1);
         assert_ne!(instrument_id1, instrument_id2);
-        assert_eq!(instrument_id1.symbol.value.len(), 8);
-        assert_eq!(instrument_id1.venue.value.len(), 7);
-        assert_eq!(instrument_id1.to_string(), "ETH/USDT.BINANCE")
+        assert_eq!(instrument_id1.symbol.value().len(), 8);
+        assert_eq!(instrument_id1.venue.value().len(), 7);
+        assert_eq!(instrument_id1.value(), "ETH/USDT.BINANCE")
     }
 }

@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2021 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -13,27 +13,34 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+use crate::identifiers::base::Identifier;
 use std::fmt::{Debug, Display, Formatter, Result};
 
 #[repr(C)]
 #[derive(Clone, Hash, PartialEq)]
 pub struct Venue {
-    pub value: Box<String>,
+    value: Box<String>,
 }
 
-impl Venue {
-    pub fn from(s: &str) -> Venue {
+impl Identifier for Venue {
+    fn from_str(s: &str) -> Venue {
         Venue {
             value: Box::from(s.to_owned()),
         }
     }
 
+    fn value(&self) -> &str {
+        return self.value.as_str();
+    }
+}
+
+impl Venue {
     //##########################################################################
     // C API
     //##########################################################################
     #[no_mangle]
     pub unsafe extern "C" fn venue_new(ptr: *mut u8, length: usize) -> Venue {
-        // SAFETY: Checks ptr is a valid UTF-8 string
+        // Safety: Expects `ptr` is an array of valid UTF-8 chars
         let vec = Vec::from_raw_parts(ptr, length, length);
         let s = String::from_utf8(vec).expect("Invalid UTF-8 string");
         Venue {
@@ -71,16 +78,17 @@ impl Display for Venue {
 
 #[cfg(test)]
 mod tests {
+    use crate::identifiers::base::Identifier;
     use crate::identifiers::venue::Venue;
 
     #[test]
     fn venue_from_str() {
-        let venue1 = Venue::from("XRD/USD");
-        let venue2 = Venue::from("BTC/USD");
+        let venue1 = Venue::from_str("XRD/USD");
+        let venue2 = Venue::from_str("BTC/USD");
 
         assert_eq!(venue1, venue1);
         assert_ne!(venue1, venue2);
         assert_eq!(venue1.value.len(), 7);
-        assert_eq!(venue1.to_string(), "XRD/USD")
+        assert_eq!(venue1.value(), "XRD/USD")
     }
 }
