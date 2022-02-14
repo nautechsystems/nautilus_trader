@@ -20,9 +20,10 @@ import orjson
 import pandas as pd
 
 from nautilus_trader.adapters.binance.common import BINANCE_VENUE
+from nautilus_trader.adapters.binance.common import BinanceAccountType
 from nautilus_trader.adapters.binance.data_types import BinanceBar
 from nautilus_trader.adapters.binance.data_types import BinanceTicker
-from nautilus_trader.adapters.binance.http.api.spot_market import BinanceSpotMarketHttpAPI
+from nautilus_trader.adapters.binance.http.api.market import BinanceMarketHttpAPI
 from nautilus_trader.adapters.binance.http.client import BinanceHttpClient
 from nautilus_trader.adapters.binance.http.error import BinanceError
 from nautilus_trader.adapters.binance.parsing import parse_bar
@@ -34,7 +35,7 @@ from nautilus_trader.adapters.binance.parsing import parse_ticker_ws
 from nautilus_trader.adapters.binance.parsing import parse_trade_tick
 from nautilus_trader.adapters.binance.parsing import parse_trade_tick_ws
 from nautilus_trader.adapters.binance.providers import BinanceInstrumentProvider
-from nautilus_trader.adapters.binance.websocket.spot import BinanceSpotWebSocket
+from nautilus_trader.adapters.binance.websocket.client import BinanceWebSocketClient
 from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.logging import LogColor
@@ -79,6 +80,10 @@ class BinanceDataClient(LiveMarketDataClient):
         The logger for the client.
     instrument_provider : BinanceInstrumentProvider
         The instrument provider.
+    account_type : BinanceAccountType
+        The account type for the client.
+    base_url : str, optional
+        The base URL for the API endpoints.
     us : bool, default False
         If the client is for Binance US.
     """
@@ -92,6 +97,8 @@ class BinanceDataClient(LiveMarketDataClient):
         clock: LiveClock,
         logger: Logger,
         instrument_provider: BinanceInstrumentProvider,
+        account_type: BinanceAccountType = BinanceAccountType.SPOT,
+        base_url: Optional[str] = None,
         us: bool = False,
     ):
         super().__init__(
@@ -105,19 +112,22 @@ class BinanceDataClient(LiveMarketDataClient):
         )
 
         self._client = client
+        self._account_type = account_type
+        self._base_url = base_url
 
         self._update_instrument_interval: int = 60 * 60  # Once per hour (hardcode)
         self._update_instruments_task: Optional[asyncio.Task] = None
 
         # HTTP API
-        self._spot = BinanceSpotMarketHttpAPI(client=self._client)
+        self._http_market = BinanceMarketHttpAPI(client=self._client)
 
         # WebSocket API
-        self._ws_spot = BinanceSpotWebSocket(
+        self._ws = BinanceWebSocketClient(
             loop=loop,
             clock=clock,
             logger=logger,
             handler=self._handle_spot_ws_message,
+            base_url=self._base_url,
             us=us,
         )
 
@@ -162,8 +172,8 @@ class BinanceDataClient(LiveMarketDataClient):
     async def _connect_websockets(self) -> None:
         self._log.info("Awaiting subscriptions...")
         await asyncio.sleep(2)
-        if self._ws_spot.has_subscriptions:
-            await self._ws_spot.connect()
+        if self._ws.has_subscriptions:
+            await self._ws.connect()
 
     async def _update_instruments(self) -> None:
         while True:
@@ -181,9 +191,9 @@ class BinanceDataClient(LiveMarketDataClient):
             self._log.debug("Canceling `update_instruments` task...")
             self._update_instruments_task.cancel()
 
-        # Disconnect WebSocket clients
-        if self._ws_spot.is_connected:
-            await self._ws_spot.disconnect()
+        # Disconnect WebSocket client
+        if self._ws.is_connected:
+            await self._ws.disconnect()
 
         # Disconnect HTTP client
         if self._client.connected:
@@ -276,21 +286,21 @@ class BinanceDataClient(LiveMarketDataClient):
                     "Valid depths are 5, 10 or 20.",
                 )
                 return
-            self._ws_spot.subscribe_partial_book_depth(
+            self._ws.subscribe_partial_book_depth(
                 symbol=instrument_id.symbol.value,
                 depth=depth,
                 speed=100,
             )
         else:
-            self._ws_spot.subscribe_diff_book_depth(
+            self._ws.subscribe_diff_book_depth(
                 symbol=instrument_id.symbol.value,
                 speed=100,
             )
 
-        while not self._ws_spot.is_connected:
+        while not self._ws.is_connected:
             await self.sleep0()
 
-        data: Dict[str, Any] = await self._spot.depth(
+        data: Dict[str, Any] = await self._http_market.depth(
             symbol=instrument_id.symbol.value,
             limit=depth,
         )
@@ -317,15 +327,15 @@ class BinanceDataClient(LiveMarketDataClient):
             self._handle_data(deltas)
 
     def subscribe_ticker(self, instrument_id: InstrumentId):
-        self._ws_spot.subscribe_ticker(instrument_id.symbol.value)
+        self._ws.subscribe_ticker(instrument_id.symbol.value)
         self._add_subscription_ticker(instrument_id)
 
     def subscribe_quote_ticks(self, instrument_id: InstrumentId):
-        self._ws_spot.subscribe_book_ticker(instrument_id.symbol.value)
+        self._ws.subscribe_book_ticker(instrument_id.symbol.value)
         self._add_subscription_quote_ticks(instrument_id)
 
     def subscribe_trade_ticks(self, instrument_id: InstrumentId):
-        self._ws_spot.subscribe_trades(instrument_id.symbol.value)
+        self._ws.subscribe_trades(instrument_id.symbol.value)
         self._add_subscription_trade_ticks(instrument_id)
 
     def subscribe_bars(self, bar_type: BarType):
@@ -355,7 +365,7 @@ class BinanceDataClient(LiveMarketDataClient):
                 f"was {BarAggregationParser.to_str_py(bar_type.spec.aggregation)}",
             )
 
-        self._ws_spot.subscribe_bars(
+        self._ws.subscribe_bars(
             symbol=bar_type.instrument_id.symbol.value,
             interval=f"{bar_type.spec.step}{resolution}",
         )
@@ -456,7 +466,9 @@ class BinanceDataClient(LiveMarketDataClient):
         limit: int,
         correlation_id: UUID4,
     ) -> None:
-        response: List[Dict[str, Any]] = await self._spot.trades(instrument_id.symbol.value, limit)
+        response: List[Dict[str, Any]] = await self._http_market.trades(
+            instrument_id.symbol.value, limit
+        )
 
         ticks: List[TradeTick] = [
             parse_trade_tick(
@@ -539,7 +551,7 @@ class BinanceDataClient(LiveMarketDataClient):
         start_time_ms = from_datetime.to_datetime64() * 1000 if from_datetime is not None else None
         end_time_ms = to_datetime.to_datetime64() * 1000 if to_datetime is not None else None
 
-        data: List[List[Any]] = await self._spot.klines(
+        data: List[List[Any]] = await self._http_market.klines(
             symbol=bar_type.instrument_id.symbol.value,
             interval=f"{bar_type.spec.step}{resolution}",
             start_time_ms=start_time_ms,

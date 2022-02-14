@@ -24,9 +24,9 @@ from nautilus_trader.adapters.binance.http.enums import NewOrderRespType
 from nautilus_trader.core.correctness import PyCondition
 
 
-class BinanceSpotAccountHttpAPI:
+class BinanceAccountHttpAPI:
     """
-    Provides access to the `Binance SPOT Account/Trade` HTTP REST API.
+    Provides access to the `Binance Account/Trade` HTTP REST API.
 
     Parameters
     ----------

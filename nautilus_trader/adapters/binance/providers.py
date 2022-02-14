@@ -19,7 +19,7 @@ from decimal import Decimal
 from typing import Any, Dict, List
 
 from nautilus_trader.adapters.binance.common import BINANCE_VENUE
-from nautilus_trader.adapters.binance.http.api.spot_market import BinanceSpotMarketHttpAPI
+from nautilus_trader.adapters.binance.http.api.market import BinanceMarketHttpAPI
 from nautilus_trader.adapters.binance.http.api.wallet import BinanceWalletHttpAPI
 from nautilus_trader.adapters.binance.http.client import BinanceHttpClient
 from nautilus_trader.adapters.binance.http.error import BinanceClientError
@@ -62,7 +62,7 @@ class BinanceInstrumentProvider(InstrumentProvider):
         self._log = LoggerAdapter(type(self).__name__, logger)
 
         self._wallet = BinanceWalletHttpAPI(self._client)
-        self._spot_market = BinanceSpotMarketHttpAPI(self._client)
+        self._spot_market = BinanceMarketHttpAPI(self._client)
 
         # Async loading flags
         self._loaded = False
