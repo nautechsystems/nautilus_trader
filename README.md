@@ -360,4 +360,4 @@ Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
 https://nautechsystems.io
 
 ![nautechsystems](https://github.com/nautechsystems/nautilus_trader/blob/develop/docs/_images/ns-logo.png?raw=true "nautechsystems")
-<img src="https://github.com/nautechsystems/nautilus_trader/blob/develop/docs/_images/ferris.png" width="200">
+<img src="https://github.com/nautechsystems/nautilus_trader/blob/develop/docs/_images/ferris.png" width="128">
