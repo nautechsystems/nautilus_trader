@@ -122,13 +122,13 @@ background-color: rgba(0,0,0,.54);
     color: #D3D3D3;
 }
 .py.attribute .sig-name.descname .pre {
-    color: #66d9ef;
+    color: #00bdd6;
 }
 /*.py.method span {
     color: #ae81ff;
 }*/
 .py.class .pre {
-    color: #66d9ef;
+    color: #00bdd6;
 }
 dl.py.class {
     background: rgb(0 0 0 / 12%);
