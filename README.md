@@ -151,8 +151,8 @@ To install the latest binary wheel from PyPI:
 
     pip install -U nautilus_trader
 
-To install on ARM architectures such as MacBook Pro M1 / Apple Silicon, this stackoverflow thread is useful:
-https://stackoverflow.com/questions/65745683/how-to-install-scipy-on-apple-silicon-arm-m1
+To install `numpy` and `scipy` on ARM architectures such as MacBook Pro M1 / Apple Silicon, [this stackoverflow thread](https://stackoverflow.com/questions/65745683/how-to-install-scipy-on-apple-silicon-arm-m1)
+is useful.
 
 ### From Source
 Installation from source requires the latest stable `rustc` and `cargo` to compile the Rust libraries.

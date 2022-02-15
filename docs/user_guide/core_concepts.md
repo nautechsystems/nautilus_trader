@@ -1,24 +1,32 @@
 # Core Concepts
 
-NautilusTrader has been built from the ground up to deliver the highest quality 
-performance and user experience. There are two main use cases for this software package.
+NautilusTrader has been built from the ground up to deliver optimal
+performance with a high quality user experience, within the bounds of a safe Python native environment. There are two main use cases for this software package:
 
 - Backtesting trading strategies.
 - Deploying trading strategies live.
 
-## Backtesting
-In our opinion, are two main reasons for conducting backtests on historical data;
-Verify the logic of trading strategy implementations.
-Getting an indication of likely performance if the alpha of the strategy remains into the future.
-Backtesting with an event-driven engine such as NautilusTrader is not intended to be the primary research method for alpha discovery, however it can facilitate this.
-One of the primary benefits of this platform is that the core machinery used inside the BacktestEngine is identical to the live trading system. This helps to ensure consistency between backtesting and live trading performance, when seeking to capitalize on alpha signals through a large sample size of trades, as expressed in the logic of the trading strategies.
-Only a small amount of example data is available in the tests/test_kit/data directory of the repository - as used in the examples. There are many sources of financial market and other data, and it is left to the user to source this for backtesting purposes.
-The platform is extremely flexible and open ended, you could inject dozens of different datasets into a BacktestEngine and run them simultaneously - with time being accurately simulated to nanosecond precision.
+## System Architecture
+From a high level architectural view, it's important to understand that the platform has been designed to run efficiently 
+on a single thread, for both backtesting and live trading. A lot of research and testing
+resulted in arriving at this design, as it was found the overhead of context switching between threads
+didn't pay off in the context of deterministic backtests.
+
+For live trading, extremely high performance (benchmarks pending) can be achieved running asynchronously on a single [event loop](https://docs.python.org/3/library/asyncio-eventloop.html), 
+especially leveraging the [uvloop](https://github.com/MagicStack/uvloop) implementation (available for Linux and macOS only).
+
+```{note}
+Of notable interest is that the LMAX exchange achieves award winning performance running on
+a single thread. You can read about their distributor pattern in [this interesting article](https://martinfowler.com/articles/lmax.html) by Martin Fowler.
+```
+
+What this means when considering the logic of how your trading will work
+within the system boundary, you can expect each component to consume messages
+in a predictable synchronous way (similar to the actor model).
 
 ## Trading Live
-A TradingNode hosts a fleet of trading strategies, with data able to be ingested from multiple data clients, and order execution through multiple execution clients.
+A `TradingNode` can host a fleet of trading strategies, with data able to be ingested from multiple data clients, and order execution through multiple execution clients.
 Live deployments can use both demo/paper trading accounts, or real accounts.
-Coming soon there will be further discussion of core concepts…
 
 ## Data Types
 The following market data types can be requested historically, and also subscribed to as live streams when available from a data publisher, and implemented in an integrations adapter.

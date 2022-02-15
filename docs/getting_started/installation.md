@@ -1,11 +1,11 @@
 # Installation
 
-The package is tested against Python 3.8, 3.9 and 3.10 on 64-bit Windows, macOS and Linux. 
+The package is tested against Python 3.8, 3.9 and 3.10 on 64-bit Linux, macOS and Windows. 
 We recommend running the platform with the latest stable version of Python, and 
 in a virtual environment to isolate the dependencies.
 
-To install on ARM architectures such as MacBook Pro M1 / Apple Silicon, [this stackoverflow thread](https://stackoverflow.com/questions/65745683/how-to-install-scipy-on-apple-silicon-arm-m1)
-is useful:
+To install `numpy` and `scipy` on ARM architectures such as MacBook Pro M1 / Apple Silicon, [this stackoverflow thread](https://stackoverflow.com/questions/65745683/how-to-install-scipy-on-apple-silicon-arm-m1)
+is useful.
 
 ## From PyPI
 To install the latest binary wheel (or sdist package) from PyPI:
