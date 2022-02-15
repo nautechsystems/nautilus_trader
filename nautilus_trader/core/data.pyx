@@ -45,3 +45,19 @@ cdef class Data:
             f"ts_event={self.ts_event}, "
             f"ts_init={self.ts_init})"
         )
+
+    @classmethod
+    def fully_qualified_name(cls) -> str:
+        """
+        Return the fully qualified name for the data object.
+
+        Returns
+        -------
+        str
+
+        References
+        ----------
+        https://www.python.org/dev/peps/pep-3155/
+
+        """
+        return cls.__module__ + '.' + cls.__qualname__

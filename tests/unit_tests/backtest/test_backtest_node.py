@@ -28,6 +28,7 @@ from nautilus_trader.backtest.engine import BacktestEngineConfig
 from nautilus_trader.backtest.node import BacktestNode
 from nautilus_trader.backtest.results import BacktestResult
 from nautilus_trader.examples.strategies.ema_cross import EMACrossConfig
+from nautilus_trader.model.data.tick import QuoteTick
 from nautilus_trader.persistence.catalog import DataCatalog
 from nautilus_trader.trading.config import ImportableStrategyConfig
 from tests.test_kit.mocks import aud_usd_data_loader
@@ -53,7 +54,7 @@ class TestBacktestNode:
         self.data_config = BacktestDataConfig(
             catalog_path="/root",
             catalog_fs_protocol="memory",
-            data_cls_path="nautilus_trader.model.data.tick.QuoteTick",
+            data_cls=QuoteTick,
             instrument_id="AUD/USD.SIM",
             start_time=1580398089820000000,
             end_time=1580504394501000000,

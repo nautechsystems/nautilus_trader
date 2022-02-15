@@ -27,6 +27,13 @@ AUDUSD = TestStubs.audusd_id()
 
 
 class TestOrderBookSnapshot:
+    def test_fully_qualified_name(self):
+        # Arrange, Act, Assert
+        assert (
+            OrderBookSnapshot.fully_qualified_name()
+            == "nautilus_trader.model.orderbook.data.OrderBookSnapshot"
+        )
+
     def test_hash_str_and_repr(self):
         # Arrange
         snapshot = OrderBookSnapshot(
@@ -96,6 +103,13 @@ class TestOrderBookSnapshot:
 
 
 class TestOrderBookDelta:
+    def test_fully_qualified_name(self):
+        # Arrange, Act, Assert
+        assert (
+            OrderBookDelta.fully_qualified_name()
+            == "nautilus_trader.model.orderbook.data.OrderBookDelta"
+        )
+
     def test_hash_str_and_repr(self):
         # Arrange
         order = Order(price=10, size=5, side=OrderSide.BUY)
@@ -187,6 +201,13 @@ class TestOrderBookDelta:
 
 
 class TestOrderBookDeltas:
+    def test_fully_qualified_name(self):
+        # Arrange, Act, Assert
+        assert (
+            OrderBookDeltas.fully_qualified_name()
+            == "nautilus_trader.model.orderbook.data.OrderBookDeltas"
+        )
+
     def test_hash_str_and_repr(self):
         # Arrange
         order1 = Order(price=10, size=5, side=OrderSide.BUY, id="1")

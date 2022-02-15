@@ -1,3 +1,20 @@
+# NautilusTrader 1.139.0 Beta
+
+## Release Notes
+
+Released on TBD (UTC).
+
+### Breaking Changes
+- Renamed `BacktestDataConfig.data_cls_path` to `data_cls`.
+
+### Enhancements
+- `BacktestDataConfig` now takes either a type of `Data` _or_ a fully qualified path string.
+
+### Fixes
+- Fixed non-deterministic config dask tokenization.
+
+---
+
 # NautilusTrader 1.138.0 Beta
 
 ## Release Notes
