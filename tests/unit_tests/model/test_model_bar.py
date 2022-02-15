@@ -261,6 +261,10 @@ class TestBarType:
 
 
 class TestBar:
+    def test_fully_qualified_name(self):
+        # Arrange, Act, Assert
+        assert Bar.fully_qualified_name() == "nautilus_trader.model.data.bar.Bar"
+
     def test_check_when_high_below_low_raises_value_error(self):
         # Arrange, Act, Assert
         with pytest.raises(ValueError):
