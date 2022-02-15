@@ -82,7 +82,7 @@ h1, h2, h3 {
 }
 .md-typeset code {
     background-color: transparent;
-    color: #00bdd6;
+    color: #f92672;
     display: inline-block;
 }
 .md-nav__link[data-md-state=blur] {
