@@ -183,7 +183,7 @@ cdef class Component:
     @classmethod
     def fully_qualified_name(cls) -> str:
         """
-        The fully qualified name for the component object.
+        Return the fully qualified name for the component object.
 
         Returns
         -------
