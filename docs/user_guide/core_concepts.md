@@ -51,12 +51,12 @@ The following BarAggregation options are possible;
 - `TICK`
 - `VOLUME`
 - `VALUE` (a.k.a Dollar bars)
-- `TICK_IMBALANCE` (TBA)
-- `TICK_RUNS` (TBA)
-- `VOLUME_IMBALANCE` (TBA)
-- `VOLUME_RUNS` (TBA)
-- `VALUE_IMBALANCE` (TBA)
-- `VALUE_RUNS` (TBA)
+- `TICK_IMBALANCE`
+- `TICK_RUNS`
+- `VOLUME_IMBALANCE`
+- `VOLUME_RUNS`
+- `VALUE_IMBALANCE`
+- `VALUE_RUNS`
 
 The price types and bar aggregations can be combined with step sizes >= 1 in any way through `BarSpecification`. 
 This enables maximum flexibility and now allows alternative bars to be produced for live trading.
