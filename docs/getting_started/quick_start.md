@@ -205,7 +205,7 @@ from nautilus_trader.backtest.config import BacktestDataConfig
 data = [
     BacktestDataConfig(
         catalog_path=str(catalog.path),
-        data_cls_path=f"{QuoteTick.__module__}.{QuoteTick.__name__}",
+        data_cls=QuoteTick,
         instrument_id=str(instruments[0].id),
         end_time="2020-01-05",
     )

@@ -107,14 +107,14 @@ class TestPersistenceStreaming:
         data_config = BacktestDataConfig(
             catalog_path="/root/",
             catalog_fs_protocol="memory",
-            data_cls_path=f"{NewsEventData.__module__}.NewsEventData",
+            data_cls=NewsEventData,
             client_id="NewsClient",
         )
         # Add some arbitrary instrument data to appease BacktestEngine
         instrument_data_config = BacktestDataConfig(
             catalog_path="/root/",
             catalog_fs_protocol="memory",
-            data_cls_path=f"{InstrumentStatusUpdate.__module__}.InstrumentStatusUpdate",
+            data_cls=InstrumentStatusUpdate,
         )
         run_config = BacktestRunConfig(
             data=[data_config, instrument_data_config],
