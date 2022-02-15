@@ -2,8 +2,11 @@
 
 Welcome to the user guide for NautilusTrader!
 
-Here you will find more in depth guides and tutorials. The guides are generally
-ordered from highest to lowest level, although they can also be read in any order.
+Here you will find more in depth guides and tutorials. 
+
+```{note}
+The guides are generally ordered from highest to lowest level (although they can also be read in any order).
+```
 
 Since the [API Reference](../api_reference/index.md) 
 documentation is generated from the latest source code, it should be considered
@@ -20,5 +23,6 @@ in the near future.
    core_concepts.md
    backtest_example.md
    loading_external_data.md
+   strategies.md
    instruments.md
 ```
