@@ -16,6 +16,7 @@
 import orjson
 import pyarrow as pa
 
+from nautilus_trader.adapters.ftx.data_types import FTXTicker
 from nautilus_trader.common.events.risk import TradingStateChanged
 from nautilus_trader.common.events.system import ComponentStateChanged
 from nautilus_trader.model.data.bar import Bar
@@ -44,6 +45,7 @@ from nautilus_trader.model.events.position import PositionChanged
 from nautilus_trader.model.events.position import PositionClosed
 from nautilus_trader.model.events.position import PositionOpened
 from nautilus_trader.model.instruments.betting import BettingInstrument
+from nautilus_trader.model.instruments.crypto_perp import CryptoPerpetual
 from nautilus_trader.model.instruments.currency import CurrencySpot
 from nautilus_trader.model.instruments.equity import Equity
 from nautilus_trader.model.instruments.future import Future
@@ -199,10 +201,10 @@ NAUTILUS_PARQUET_SCHEMA = {
             "reduce_only": pa.bool_(),
             # -- Options fields -- #
             "price": pa.string(),
-            "trigger_price": pa.float64(),
+            "trigger_price": pa.string(),
             "trigger_type": pa.dictionary(pa.int8(), pa.string()),
-            "limit_offset": pa.float64(),
-            "trailing_offset": pa.float64(),
+            "limit_offset": pa.string(),
+            "trailing_offset": pa.string(),
             "offset_type": pa.dictionary(pa.int8(), pa.string()),
             "expire_time_ns": pa.int64(),
             "display_qty": pa.string(),
@@ -554,6 +556,34 @@ NAUTILUS_PARQUET_SCHEMA = {
             "ts_event": pa.int64(),
         }
     ),
+    CryptoPerpetual: pa.schema(
+        {
+            "id": pa.dictionary(pa.int64(), pa.string()),
+            "native_symbol": pa.string(),
+            "base_currency": pa.dictionary(pa.int8(), pa.string()),
+            "quote_currency": pa.dictionary(pa.int8(), pa.string()),
+            "settlement_currency": pa.dictionary(pa.int8(), pa.string()),
+            "is_inverse": pa.bool_(),
+            "price_precision": pa.int64(),
+            "size_precision": pa.int64(),
+            "price_increment": pa.dictionary(pa.int8(), pa.string()),
+            "size_increment": pa.dictionary(pa.int8(), pa.string()),
+            "lot_size": pa.dictionary(pa.int8(), pa.string()),
+            "max_quantity": pa.dictionary(pa.int8(), pa.string()),
+            "min_quantity": pa.dictionary(pa.int8(), pa.string()),
+            "max_notional": pa.dictionary(pa.int8(), pa.string()),
+            "min_notional": pa.dictionary(pa.int8(), pa.string()),
+            "max_price": pa.dictionary(pa.int8(), pa.string()),
+            "min_price": pa.dictionary(pa.int8(), pa.string()),
+            "margin_init": pa.string(),
+            "margin_maint": pa.string(),
+            "maker_fee": pa.string(),
+            "taker_fee": pa.string(),
+            "info": pa.string(),
+            "ts_init": pa.int64(),
+            "ts_event": pa.int64(),
+        }
+    ),
     Equity: pa.schema(
         {
             "id": pa.dictionary(pa.int64(), pa.string()),
@@ -608,6 +638,18 @@ NAUTILUS_PARQUET_SCHEMA = {
             "kind": pa.dictionary(pa.int8(), pa.string()),
             "ts_init": pa.int64(),
             "ts_event": pa.int64(),
+        }
+    ),
+    FTXTicker: pa.schema(
+        {
+            "instrument_id": pa.dictionary(pa.int64(), pa.string()),
+            "bid": pa.string(),
+            "ask": pa.string(),
+            "bid_size": pa.string(),
+            "ask_size": pa.string(),
+            "last": pa.string(),
+            "ts_event": pa.int64(),
+            "ts_init": pa.int64(),
         }
     ),
 }
