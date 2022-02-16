@@ -1,0 +1,116 @@
+{
+  "exchangeFilters": [],
+  "rateLimits": [
+    {
+      "interval": "MINUTE",
+      "intervalNum": 1,
+      "limit": 2400,
+      "rateLimitType": "REQUEST_WEIGHT"
+    },
+    {
+      "interval": "MINUTE",
+      "intervalNum": 1,
+      "limit": 1200,
+      "rateLimitType": "ORDERS"
+    }
+  ],
+  "serverTime": 1565613908500,
+  "assets": [
+    {
+      "asset": "BUSD",
+      "marginAvailable": true,
+      "autoAssetExchange": 0
+    },
+    {
+      "asset": "USDT",
+      "marginAvailable": true,
+      "autoAssetExchange": 0
+    },
+    {
+      "asset": "BNB",
+      "marginAvailable": false,
+      "autoAssetExchange": null
+    }
+  ],
+  "symbols": [
+    {
+      "symbol": "BLZUSDT",
+      "pair": "BLZUSDT",
+      "contractType": "PERPETUAL",
+      "deliveryDate": 4133404800000,
+      "onboardDate": 1598252400000,
+      "status": "TRADING",
+      "maintMarginPercent": "2.5000",
+      "requiredMarginPercent": "5.0000",
+      "baseAsset": "BLZ",
+      "quoteAsset": "USDT",
+      "marginAsset": "USDT",
+      "pricePrecision": 5,
+      "quantityPrecision": 0,
+      "baseAssetPrecision": 8,
+      "quotePrecision": 8,
+      "underlyingType": "COIN",
+      "underlyingSubType": [
+        "STORAGE"
+      ],
+      "settlePlan": 0,
+      "triggerProtect": "0.15",
+      "filters": [
+        {
+          "filterType": "PRICE_FILTER",
+          "maxPrice": "300",
+          "minPrice": "0.0001",
+          "tickSize": "0.0001"
+        },
+        {
+          "filterType": "LOT_SIZE",
+          "maxQty": "10000000",
+          "minQty": "1",
+          "stepSize": "1"
+        },
+        {
+          "filterType": "MARKET_LOT_SIZE",
+          "maxQty": "590119",
+          "minQty": "1",
+          "stepSize": "1"
+        },
+        {
+          "filterType": "MAX_NUM_ORDERS",
+          "limit": 200
+        },
+        {
+          "filterType": "MAX_NUM_ALGO_ORDERS",
+          "limit": 100
+        },
+        {
+          "filterType": "MIN_NOTIONAL",
+          "notional": "1"
+        },
+        {
+          "filterType": "PERCENT_PRICE",
+          "multiplierUp": "1.1500",
+          "multiplierDown": "0.8500",
+          "multiplierDecimal": 4
+        }
+      ],
+      "OrderType": [
+        "LIMIT",
+        "MARKET",
+        "STOP",
+        "STOP_MARKET",
+        "TAKE_PROFIT",
+        "TAKE_PROFIT_MARKET",
+        "TRAILING_STOP_MARKET"
+      ],
+      "timeInForce": [
+        "GTC",
+        "IOC",
+        "FOK",
+        "GTX"
+      ],
+      "liquidationFee": "0.010000",
+      "marketTakeBound": "0.30"
+    }
+  ],
+  "timezone": "UTC"
+}

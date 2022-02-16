@@ -76,9 +76,9 @@ from nautilus_trader.msgbus.bus import MessageBus
 VALID_TIF = (TimeInForce.GTC, TimeInForce.FOK, TimeInForce.IOC)
 
 
-class BinanceSpotExecutionClient(LiveExecutionClient):
+class BinanceExecutionClient(LiveExecutionClient):
     """
-    Provides an execution client for Binance SPOT markets.
+    Provides an execution client for the `Binance` exchange.
 
     Parameters
     ----------
@@ -98,10 +98,8 @@ class BinanceSpotExecutionClient(LiveExecutionClient):
         The instrument provider.
     account_type : BinanceAccountType
         The account type for the client.
-    base_url : str, optional
-        The base URL for the API endpoints.
-    us : bool, default False
-        If the client is for Binance US.
+    base_url_ws : str, optional
+        The base URL for the WebSocket client.
     """
 
     def __init__(
@@ -114,8 +112,7 @@ class BinanceSpotExecutionClient(LiveExecutionClient):
         logger: Logger,
         instrument_provider: BinanceInstrumentProvider,
         account_type: BinanceAccountType = BinanceAccountType.SPOT,
-        base_url: Optional[str] = None,
-        us: bool = False,
+        base_url_ws: Optional[str] = None,
     ):
         super().__init__(
             loop=loop,
@@ -134,7 +131,6 @@ class BinanceSpotExecutionClient(LiveExecutionClient):
         self._set_account_id(AccountId(BINANCE_VENUE.value, "master"))
 
         self._account_type = account_type
-        self._base_url = base_url
 
         # HTTP API
         self._http_account = BinanceAccountHttpAPI(client=self._client)
@@ -154,15 +150,14 @@ class BinanceSpotExecutionClient(LiveExecutionClient):
             clock=clock,
             logger=logger,
             handler=self._handle_user_ws_message,
-            base_url=self._base_url,
-            us=us,
+            base_url=base_url_ws,
         )
 
         # Hot caches
         self._instrument_ids: Dict[str, InstrumentId] = {}
 
-        if us:
-            self._log.info("Set Binance US.", LogColor.BLUE)
+        self._log.info(f"Base URL HTTP {self._client._base_url}.", LogColor.BLUE)
+        self._log.info(f"Base URL WebSocket {base_url_ws}.", LogColor.BLUE)
 
     def connect(self) -> None:
         """
