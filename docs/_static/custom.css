@@ -97,7 +97,10 @@ h1, h2, h3 {
 .md-nav {
     font-size: .7rem;
 }
-.md-nav__link--active, .md-nav__link:active, .md-nav__link:focus, .md-nav__link:hover {
+.md-nav__link--active .md-nav__link, 
+.md-nav__link:active, 
+.md-nav__link:focus, 
+.md-nav__link:hover {
     color: #00bdd6;
 }
 .md-typeset .admonition, .md-typeset details {
@@ -153,18 +156,70 @@ dl.py.class {
 }
 .md-source__facts li {
     padding: 0 !important;
+
+}
+.md-nav__item {
+    position: relative;
+}
+.arrow {
+    color: #fff;
+    font-size: 10px;
+    transition: 0.25s ease;
+    display: inline-block;
+    vertical-align: middle;
+    position: absolute;
+    right: 0;
+    line-height: 19px;
+    text-align: center;
+    top: 0;
+    border-radius: 100%;
+    height: 0.9rem;
+    transition: background-color .25s,transform .25s;
+    width: 0.9rem;
+}
+.arrow:hover {
+    background-color: rgb(0 189 214 / 20%);
+    color: #fff!important;
+}
+.arrow.arrow-animate{
+    transform: rotate(180deg);
+    background-color: rgb(0 189 214 / 20%);
+    color: #fff!important;
+}
+/*.md-nav__link--active  .arrow.arrow-animate{
+    transform: rotate(180deg);
+}*/
+
+.md-nav__item .md-nav__link:hover,
+.md-nav__item:hover > .md-nav__link {
+    color: #00bdd6;
+}
+.md-nav__item:hover .arrow {
+    color: #00bdd6;
+}
+.submenu {
+    display: none;
+}
+/*.md-nav__link--active .submenu {
+    display: block;
+}*/
+.md-nav__link:hover/*,
+.md-nav__item.selected > .md-nav__link*/ {
+    color: #00bdd6 !important;
+}
+.md-nav__link--active .submenu .md-nav__link  {
+    color:  #fff;
 }
 
+ 
 @media only screen and (min-width: 60em) {
     .md-search__inner {
         padding: 0.34rem 0;
     }
 }
 @media only screen and (max-width: 76.1875em) {
-    .md-nav {
-        background-color: transparent;
-    }
-    html .md-nav--primary .md-nav__title--site {
+    .md-nav,
+    html .md-nav--primary .md-nav__title--site  {
         background-color: #282f38 !important;
     }
     html .md-nav--primary .md-nav__title--site .md-nav__button {
@@ -188,6 +243,13 @@ dl.py.class {
     }
     html .md-nav--primary .md-nav__title {
         height: 4rem;
+    }
+    .arrow {
+        top: 12px;
+        right: 10px;
+    }
+    .md-nav__item .md-nav__item a {
+        padding-left: 40px !important;
     }
 
 }

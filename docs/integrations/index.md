@@ -51,6 +51,8 @@ this means there is some normalization and standardization needed.
 ```{eval-rst}
 .. toctree::
    :maxdepth: 2
+   :glob:
+   :titlesonly:
    :hidden:
    
    betfair.md
