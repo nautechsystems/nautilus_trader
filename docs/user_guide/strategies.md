@@ -6,7 +6,7 @@ trading strategies, by inheriting `TradingStrategy` and implementing its methods
 Please refer to the [API Reference](../api_reference/trading.md#strategy) for a complete description
 of all the possible functionality.
 
-There are two main pieces to a Nautilus trading strategy:
+There are two main parts of a Nautilus trading strategy:
 - The strategy implementation itself, defined by inheriting `TradingStrategy`
 - The _optional_ strategy configuration, defined by inheriting `TradingStrategyConfig`
 
@@ -22,7 +22,7 @@ and firing up remote live trading possible.
 
 This configuration flexibility is actually opt in, in that you can actually choose not to have
 any strategy configuration beyond the parameters you choose to pass into your
-strategies constructor. If you would like to run distributed backtests or launch
+strategies' constructor. If you would like to run distributed backtests or launch
 live trading servers remotely, then you will need to define a configuration.
 
 Here is an example configuration:
