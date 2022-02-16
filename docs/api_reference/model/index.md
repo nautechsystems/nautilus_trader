@@ -7,6 +7,8 @@
 ```{eval-rst}
 .. toctree::
    :maxdepth: 2
+   :glob:
+   :titlesonly:
    :hidden:
    
    commands.md

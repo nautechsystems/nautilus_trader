@@ -41,7 +41,7 @@ extensions = [
 html_static_path = ["_static"]
 html_css_files = ["custom.css"]
 templates_path = ["_templates"]
-html_js_files = ["_static/script.js"]
+html_js_files = ["script.js"]
 
 
 comments_config = {"hypothesis": False, "utterances": False}
@@ -73,8 +73,8 @@ html_theme_options = {
     "theme_color": "#282f38",
     "touch_icon": "images/apple-icon-152x152.png",
     "master_doc": False,
-    "globaltoc_collapse": True,
-    "globaltoc_depth": 4,
+    "globaltoc_collapse": False,
+    "globaltoc_depth": 2,
     "nav_links": [
         {
             "href": "/getting_started/index",
