@@ -5,6 +5,7 @@ import itertools
 import os
 import platform
 import shutil
+import subprocess
 import sys
 from datetime import datetime
 from pathlib import Path
@@ -36,7 +37,7 @@ SKIP_BUILD_COPY = bool(os.getenv("SKIP_BUILD_COPY", ""))
 ################################################################################
 # Directories with headers to include
 RUST_INCLUDES = glob.glob("nautilus_core/*/")
-RUST_LIBS_DIR = "debug" if CARGO_MODE == "" else "release"
+RUST_LIBS_DIR = "debug" if CARGO_MODE in ("", "debug") else "release"
 RUST_LIBS = [
     f"nautilus_core/target/{RUST_LIBS_DIR}/libnautilus_core.a",
     f"nautilus_core/target/{RUST_LIBS_DIR}/libnautilus_model.a",
@@ -45,9 +46,8 @@ RUST_LIBS = [
 
 def _build_rust_libs() -> None:
     # Build the Rust libraries using Cargo
-    os.system("rustc --version")  # noqa
     print("Compiling Rust libraries...")
-    os.system(f"(cd nautilus_core && cargo build{CARGO_MODE})")  # noqa
+    os.system(f"(cd nautilus_core && cargo build {CARGO_MODE})")  # noqa
 
 
 ################################################################################
@@ -199,14 +199,16 @@ if __name__ == "__main__":
     # “64-bitness” of the current interpreter, it is more reliable to query the
     # sys.maxsize attribute:
     bits = "64-bit" if sys.maxsize > 2 ** 32 else "32-bit"
-    print("Project: nautilus_trader")
-    print(f"System:  {platform.system()} {bits}")
-    print(f"Python:  {platform.python_version()}")
-    print(f"Cython:  {cython_compiler_version}")
-    print(f"NumPy:   {np.__version__}")
+    rustc_version = subprocess.check_output(["rustc", "--version"])  # noqa
+    print(f"System: {platform.system()} {bits}")
+    print(f"Rust:   {rustc_version.lstrip(b'rustc ').decode()[:-1]}")
+    print(f"Python: {platform.python_version()}")
+    print(f"Cython: {cython_compiler_version}")
+    print(f"NumPy:  {np.__version__}")
     print("")
 
     print("Starting build...")
+    print(f"CARGO_MODE={CARGO_MODE}")
     print(f"DEBUG_MODE={DEBUG_MODE}")
     print(f"ANNOTATION_MODE={ANNOTATION_MODE}")
     print(f"PARALLEL_BUILD={PARALLEL_BUILD}")

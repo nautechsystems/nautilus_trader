@@ -13,6 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+mod c_raw;
 pub mod data;
 pub mod enums;
 pub mod identifiers;

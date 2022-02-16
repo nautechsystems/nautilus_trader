@@ -28,38 +28,8 @@ impl Identifier for Symbol {
             value: Box::from(s.to_owned()),
         }
     }
-    fn value(&self) -> &str {
-        return self.value.as_str();
-    }
-}
-
-impl Symbol {
-    //##########################################################################
-    // C API
-    //##########################################################################
-    #[no_mangle]
-    pub unsafe extern "C" fn symbol_new(ptr: *mut u8, length: usize) -> Symbol {
-        // SAFETY: Checks ptr is a valid UTF-8 string
-        let vec = Vec::from_raw_parts(ptr, length, length);
-        let s = String::from_utf8(vec).expect("Invalid UTF-8 string");
-        Symbol {
-            value: Box::from(s),
-        }
-    }
-
-    #[no_mangle]
-    pub extern "C" fn symbol_free(s: Symbol) {
-        drop(s); // Memory freed here
-    }
-
-    #[no_mangle]
-    pub extern "C" fn symbol_len(s: Symbol) -> usize {
-        s.value.len()
-    }
-
-    #[no_mangle]
-    pub extern "C" fn symbol_as_utf8(&self) -> *const u8 {
-        self.value.as_ptr()
+    fn as_str(&self) -> &str {
+        self.value.as_str()
     }
 }
 
@@ -81,26 +51,19 @@ mod tests {
     use crate::identifiers::symbol::Symbol;
 
     #[test]
-    fn symbol_value() {
-        let symbol = Symbol::from_str("ETH/USD");
-
-        assert_eq!(symbol.value(), "ETH/USD");
-    }
-
-    #[test]
-    fn symbol_len() {
-        let symbol = Symbol::from_str("ETH/USD");
-
-        assert_eq!(symbol.len(), 7);
-    }
-
-    #[test]
     fn symbol_from_str() {
         let symbol1 = Symbol::from_str("XRD/USD");
         let symbol2 = Symbol::from_str("BTC/USD");
 
         assert_eq!(symbol1, symbol1);
         assert_ne!(symbol1, symbol2);
-        assert_eq!(symbol1.value(), "XRD/USD");
+        assert_eq!(symbol1.as_str(), "XRD/USD");
+    }
+
+    #[test]
+    fn symbol_as_str() {
+        let symbol = Symbol::from_str("ETH-PERP");
+
+        assert_eq!(symbol.as_str(), "ETH-PERP");
     }
 }

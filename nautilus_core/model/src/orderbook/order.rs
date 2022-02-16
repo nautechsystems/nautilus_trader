@@ -19,7 +19,7 @@ use crate::objects::quantity::Quantity;
 use crate::orderbook::ladder::BookPrice;
 
 #[repr(C)]
-#[derive(Debug, Hash)]
+#[derive(Debug)]
 pub struct Order {
     pub price: Price,
     pub size: Quantity,
@@ -43,8 +43,8 @@ impl Order {
 
     pub fn from_vec(vec: Vec<&str>) -> Self {
         assert_eq!(vec.len(), 4);
-        let price = Price::new_from_str(&vec[0]);
-        let size = Quantity::new_from_str(&vec[1]);
+        let price = Price::new_from_str(vec[0]);
+        let size = Quantity::new_from_str(vec[1]);
         let side = match vec[2] {
             "B" => OrderSide::Buy,
             "S" => OrderSide::Sell,

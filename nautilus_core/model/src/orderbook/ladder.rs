@@ -21,7 +21,7 @@ use std::cmp::Ordering;
 use std::collections::{BTreeMap, HashMap};
 
 #[repr(C)]
-#[derive(Copy, Clone, Debug, Hash, Eq)]
+#[derive(Copy, Clone, Debug, Eq)]
 pub struct BookPrice {
     pub value: Price,
     pub side: OrderSide,
@@ -77,6 +77,10 @@ impl Ladder {
         self.levels.len()
     }
 
+    pub fn is_empty(&self) -> bool {
+        self.levels.len() == 0
+    }
+
     pub fn add_bulk(&mut self, orders: Vec<Order>) {
         for order in orders {
             self.add(order)
@@ -87,7 +91,7 @@ impl Ladder {
         let book_price = order.to_book_price();
         match self.levels.get_mut(&book_price) {
             None => {
-                let order_id = order.id.clone();
+                let order_id = order.id;
                 let level = Level::from_order(order);
                 self.cache.insert(order_id, book_price);
                 self.levels.insert(book_price, level);
@@ -109,8 +113,8 @@ impl Ladder {
                 } else {
                     // Price update, delete and insert at new level
                     level.delete(&order);
-                    if level.len() == 0 {
-                        self.levels.remove(&price);
+                    if level.is_empty() {
+                        self.levels.remove(price);
                     }
                     self.add(order);
                 }
@@ -124,7 +128,7 @@ impl Ladder {
             Some(price) => {
                 let level = self.levels.get_mut(&price).unwrap();
                 level.delete(&order);
-                if level.len() == 0 {
+                if level.is_empty() {
                     self.levels.remove(&price);
                 }
             }

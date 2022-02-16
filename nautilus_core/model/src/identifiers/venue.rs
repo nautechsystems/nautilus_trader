@@ -29,38 +29,8 @@ impl Identifier for Venue {
         }
     }
 
-    fn value(&self) -> &str {
-        return self.value.as_str();
-    }
-}
-
-impl Venue {
-    //##########################################################################
-    // C API
-    //##########################################################################
-    #[no_mangle]
-    pub unsafe extern "C" fn venue_new(ptr: *mut u8, length: usize) -> Venue {
-        // Safety: Expects `ptr` is an array of valid UTF-8 chars
-        let vec = Vec::from_raw_parts(ptr, length, length);
-        let s = String::from_utf8(vec).expect("Invalid UTF-8 string");
-        Venue {
-            value: Box::from(s.to_string()),
-        }
-    }
-
-    #[no_mangle]
-    pub extern "C" fn venue_free(v: Venue) {
-        drop(v); // Memory freed here
-    }
-
-    #[no_mangle]
-    pub extern "C" fn venue_len(v: Venue) -> usize {
-        v.value.len()
-    }
-
-    #[no_mangle]
-    pub extern "C" fn venue_as_utf8(&self) -> *const u8 {
-        self.value.as_ptr()
+    fn as_str(&self) -> &str {
+        self.value.as_str()
     }
 }
 
@@ -83,12 +53,18 @@ mod tests {
 
     #[test]
     fn venue_from_str() {
-        let venue1 = Venue::from_str("XRD/USD");
-        let venue2 = Venue::from_str("BTC/USD");
+        let venue1 = Venue::from_str("FTX");
+        let venue2 = Venue::from_str("IDEALPRO");
 
         assert_eq!(venue1, venue1);
         assert_ne!(venue1, venue2);
-        assert_eq!(venue1.value.len(), 7);
-        assert_eq!(venue1.value(), "XRD/USD")
+        assert_eq!(venue1.as_str(), "FTX")
+    }
+
+    #[test]
+    fn venue_as_str() {
+        let venue = Venue::from_str("FTX");
+
+        assert_eq!(venue.as_str(), "FTX")
     }
 }

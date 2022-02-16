@@ -111,7 +111,7 @@ repos:
             --max-complexity=10,
             --max-line-length=150,
             --statistics,
-            --ignore=C101 E203 E252 E402 D100 D101 D102 S101 S403 W503,
+            --ignore=C101 E203 E252 E402 D100 D101 D102 S101 S403 S404 W503,
         ]
       - id: flake8
         name: flake8 (Cython)
@@ -168,6 +168,7 @@ repos:
 # E999: SyntaxError: invalid syntax (cimport seen as invalid syntax)
 # S101: Use of assert detected (use of assert normal for pytest)
 # S403: Consider possible security implications associated with pickle module (pickle ok!)
+# S404: Consider possible security implications associated with subprocess module (subprocess ok!)
 
 # pydocstyle ignore justifications
 # --------------------------------

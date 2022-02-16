@@ -45,6 +45,10 @@ impl Level {
         self.orders.len()
     }
 
+    pub fn is_empty(&self) -> bool {
+        self.orders.len() == 0
+    }
+
     pub fn add_bulk(&mut self, orders: Vec<Order>) {
         for order in orders {
             self.add(order)
@@ -101,10 +105,6 @@ impl Level {
 impl PartialEq for Level {
     fn eq(&self, other: &Self) -> bool {
         self.price == other.price
-    }
-
-    fn ne(&self, other: &Self) -> bool {
-        self.price != other.price
     }
 }
 
@@ -189,6 +189,7 @@ mod tests {
 
         level.add(order);
 
+        assert_eq!(level.is_empty(), false);
         assert_eq!(level.len(), 1);
         assert_eq!(level.volume(), 10.0);
     }

@@ -19,37 +19,37 @@ use std::time::UNIX_EPOCH;
 /// Returns the current seconds since the UNIX epoch.
 #[no_mangle]
 pub extern "C" fn unix_timestamp() -> f64 {
-    return SystemTime::now()
+    SystemTime::now()
         .duration_since(UNIX_EPOCH)
-        .expect("Time went backwards")
-        .as_secs_f64();
+        .expect("Invalid system time")
+        .as_secs_f64()
 }
 
 /// Returns the current milliseconds since the UNIX epoch.
 #[no_mangle]
 pub extern "C" fn unix_timestamp_ms() -> i64 {
-    return SystemTime::now()
+    SystemTime::now()
         .duration_since(UNIX_EPOCH)
-        .expect("Time went backwards")
-        .as_millis() as i64;
+        .expect("Invalid system time")
+        .as_millis() as i64
 }
 
 /// Returns the current microseconds since the UNIX epoch.
 #[no_mangle]
 pub extern "C" fn unix_timestamp_us() -> i64 {
-    return SystemTime::now()
+    SystemTime::now()
         .duration_since(UNIX_EPOCH)
-        .expect("Time went backwards")
-        .as_micros() as i64;
+        .expect("Invalid system time")
+        .as_micros() as i64
 }
 
 /// Returns the current nanoseconds since the UNIX epoch.
 #[no_mangle]
 pub extern "C" fn unix_timestamp_ns() -> i64 {
-    return SystemTime::now()
+    SystemTime::now()
         .duration_since(UNIX_EPOCH)
-        .expect("Time went backwards")
-        .as_nanos() as i64;
+        .expect("Invalid system time")
+        .as_nanos() as i64
 }
 
 #[cfg(test)]

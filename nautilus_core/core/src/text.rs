@@ -15,10 +15,10 @@
 
 pub fn precision_from_str(s: &str) -> u8 {
     let lower_s = s.to_lowercase();
-    if lower_s.find(".").is_none() {
+    if lower_s.find('.').is_none() {
         return 0;
     }
-    return lower_s.split(".").last().unwrap().len() as u8;
+    return lower_s.split('.').last().unwrap().len() as u8;
     // TODO(cs): Implement scientific notation parsing
 }
 

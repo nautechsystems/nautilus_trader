@@ -15,8 +15,5 @@
 
 pub trait Identifier {
     fn from_str(value: &str) -> Self;
-    fn value(&self) -> &str;
-    fn len(&self) -> usize {
-        self.value().len()
-    }
+    fn as_str(&self) -> &str;
 }

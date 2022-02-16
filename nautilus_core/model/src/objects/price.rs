@@ -20,9 +20,9 @@ use std::fmt::{Debug, Display, Formatter, Result};
 use std::ops::{AddAssign, Mul, MulAssign};
 
 #[repr(C)]
-#[derive(Copy, Clone, Default, Hash)]
+#[derive(Copy, Clone, Default)]
 pub struct Price {
-    pub mantissa: i64,
+    value: i64,
     pub precision: u8,
 }
 
@@ -31,8 +31,7 @@ impl Price {
         assert!(precision <= 9);
         let diff = FIXED_EXPONENT - precision;
         Price {
-            mantissa: (value * 10_i32.pow(precision as u32) as f64) as i64
-                * 10_i64.pow(diff as u32),
+            value: (value * 10_i32.pow(precision as u32) as f64) as i64 * 10_i64.pow(diff as u32),
             precision,
         }
     }
@@ -47,28 +46,16 @@ impl Price {
     }
 
     pub fn is_zero(&self) -> bool {
-        self.mantissa == 0
+        self.value == 0
     }
     pub fn as_f64(&self) -> f64 {
-        (self.mantissa) as f64 * FIXED_PRECISION
-    }
-
-    //##########################################################################
-    // C API
-    //##########################################################################
-    #[no_mangle]
-    pub extern "C" fn price_new(value: f64, precision: u8) -> Self {
-        Price::new(value, precision)
+        (self.value) as f64 * FIXED_PRECISION
     }
 }
 
 impl PartialEq for Price {
     fn eq(&self, other: &Self) -> bool {
-        self.mantissa == other.mantissa
-    }
-
-    fn ne(&self, other: &Self) -> bool {
-        self.mantissa != other.mantissa
+        self.value == other.value
     }
 }
 
@@ -76,41 +63,41 @@ impl Eq for Price {}
 
 impl PartialOrd for Price {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        self.mantissa.partial_cmp(&other.mantissa)
+        self.value.partial_cmp(&other.value)
     }
 
     fn lt(&self, other: &Self) -> bool {
-        self.mantissa.lt(&other.mantissa)
+        self.value.lt(&other.value)
     }
 
     fn le(&self, other: &Self) -> bool {
-        self.mantissa.le(&other.mantissa)
+        self.value.le(&other.value)
     }
 
     fn gt(&self, other: &Self) -> bool {
-        self.mantissa.gt(&other.mantissa)
+        self.value.gt(&other.value)
     }
 
     fn ge(&self, other: &Self) -> bool {
-        self.mantissa.ge(&other.mantissa)
+        self.value.ge(&other.value)
     }
 }
 
 impl Ord for Price {
     fn cmp(&self, other: &Self) -> Ordering {
-        self.mantissa.cmp(&other.mantissa)
+        self.value.cmp(&other.value)
     }
 }
 
 impl AddAssign for Price {
     fn add_assign(&mut self, other: Self) {
-        self.mantissa += other.mantissa;
+        self.value += other.value;
     }
 }
 
 impl MulAssign<i64> for Price {
     fn mul_assign(&mut self, multiplier: i64) {
-        self.mantissa *= multiplier;
+        self.value *= multiplier;
     }
 }
 
@@ -118,7 +105,7 @@ impl Mul<i64> for Price {
     type Output = Self;
     fn mul(self, rhs: i64) -> Self {
         Price {
-            mantissa: self.mantissa * rhs,
+            value: self.value * rhs as i64,
             precision: self.precision,
         }
     }
@@ -146,7 +133,7 @@ mod tests {
         let price = Price::new(0.00812, 8);
 
         assert_eq!(price, price);
-        assert_eq!(price.mantissa, 8120000);
+        assert_eq!(price.value, 8120000);
         assert_eq!(price.precision, 8);
         assert_eq!(price.as_f64(), 0.00812);
         assert_eq!(price.to_string(), "0.00812000");
@@ -156,14 +143,14 @@ mod tests {
     fn price_minimum() {
         let price = Price::new(0.000000001, 9);
 
-        assert_eq!(price.mantissa, 1);
+        assert_eq!(price.value, 1);
         assert_eq!(price.to_string(), "0.000000001");
     }
     #[test]
     fn price_precision() {
         let price = Price::new(1.001, 2);
 
-        assert_eq!(price.mantissa, 1000000000);
+        assert_eq!(price.value, 1000000000);
         assert_eq!(price.to_string(), "1.00");
     }
 
@@ -172,7 +159,7 @@ mod tests {
         let price = Price::new_from_str("0.00812000");
 
         assert_eq!(price, price);
-        assert_eq!(price.mantissa, 8120000);
+        assert_eq!(price.value, 8120000);
         assert_eq!(price.precision, 8);
         assert_eq!(price.as_f64(), 0.00812);
         assert_eq!(price.to_string(), "0.00812000");
@@ -210,7 +197,7 @@ mod tests {
         let input_string = "44.123456";
         let price = Price::new_from_str(&input_string);
 
-        assert_eq!(price.mantissa, 44123456000);
+        assert_eq!(price.value, 44123456000);
         assert_eq!(price.precision, 6);
         assert_eq!(price.as_f64(), 44.123456000000004);
         assert_eq!(price.to_string(), "44.123456");

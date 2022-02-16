@@ -121,7 +121,6 @@ jobs:
     name: publish-sdist - Python 3.9 (ubuntu-latest)
     runs-on: ubuntu-latest
     env:
-      # Skip build copy to avoid *.so files being copied into the source
       SKIP_BUILD_COPY: true
 
     steps:
@@ -197,6 +196,8 @@ jobs:
         python-version: [ "3.8", "3.9", "3.10" ]
     name: publish_wheels - Python ${{ matrix.python-version }} (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
+    env:
+      CARGO_MODE: release
 
     steps:
       - uses: actions/checkout@v2

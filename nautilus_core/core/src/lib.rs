@@ -13,6 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+mod c_raw;
 pub mod text;
 pub mod time;
 pub mod uuid;

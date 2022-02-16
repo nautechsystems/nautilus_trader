@@ -28,7 +28,7 @@ pub struct InstrumentId {
 
 impl Identifier for InstrumentId {
     fn from_str(value: &str) -> InstrumentId {
-        let pieces: Vec<&str> = value.split(".").collect();
+        let pieces: Vec<&str> = value.split('.').collect();
         assert!(pieces.len() >= 2);
         InstrumentId {
             symbol: Symbol::from_str(pieces[0]),
@@ -37,60 +37,33 @@ impl Identifier for InstrumentId {
         }
     }
 
-    fn value(&self) -> &str {
-        return self.value.as_str();
+    fn as_str(&self) -> &str {
+        self.value.as_str()
     }
 }
 
 impl InstrumentId {
     pub fn new(symbol: Symbol, venue: Venue) -> InstrumentId {
         let mut s = String::new();
-        s.push_str(symbol.value());
-        s.push_str(venue.value());
+        s.push_str(symbol.as_str());
+        s.push_str(venue.as_str());
         InstrumentId {
             symbol,
             venue,
             value: Box::new(s),
         }
     }
-
-    //##########################################################################
-    // C API
-    //##########################################################################
-    pub unsafe fn instrument_id_new(ptr: *mut u8, length: usize) -> InstrumentId {
-        // SAFETY: Checks ptr is a valid UTF-8 string
-        let vec = Vec::from_raw_parts(ptr, length, length);
-        let s = String::from_utf8(vec).expect("Invalid UTF-8 string");
-        let pieces: Vec<&str> = s.split(".").collect();
-        assert!(pieces.len() >= 2);
-        InstrumentId::new(Symbol::from_str(pieces[0]), Venue::from_str(pieces[1]))
-    }
-
-    #[no_mangle]
-    pub extern "C" fn instrument_id_free(id: InstrumentId) {
-        drop(id); // Memory freed here
-    }
-
-    #[no_mangle]
-    pub extern "C" fn instrument_id_len(id: InstrumentId) -> usize {
-        id.symbol.value().len()
-    }
-
-    #[no_mangle]
-    pub extern "C" fn instrument_id_as_utf8(&self) -> *const u8 {
-        self.value.as_ptr()
-    }
 }
 
 impl Debug for InstrumentId {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result {
-        write!(f, "{}.{}", self.symbol.value(), self.venue.value())
+        write!(f, "{}.{}", self.symbol.as_str(), self.venue.as_str())
     }
 }
 
 impl Display for InstrumentId {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result {
-        write!(f, "{}.{}", self.symbol.value(), self.venue.value())
+        write!(f, "{}.{}", self.symbol.as_str(), self.venue.as_str())
     }
 }
 
@@ -106,8 +79,6 @@ mod tests {
 
         assert_eq!(instrument_id1, instrument_id1);
         assert_ne!(instrument_id1, instrument_id2);
-        assert_eq!(instrument_id1.symbol.value().len(), 8);
-        assert_eq!(instrument_id1.venue.value().len(), 7);
-        assert_eq!(instrument_id1.value(), "ETH/USDT.BINANCE")
+        assert_eq!(instrument_id1.as_str(), "ETH/USDT.BINANCE")
     }
 }
