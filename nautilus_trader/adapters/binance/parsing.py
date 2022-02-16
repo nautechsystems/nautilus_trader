@@ -17,7 +17,7 @@ from decimal import Decimal
 from typing import Dict, List, Tuple
 
 from nautilus_trader.adapters.binance.data_types import BinanceBar
-from nautilus_trader.adapters.binance.data_types import BinanceTicker
+from nautilus_trader.adapters.binance.data_types import BinanceSpotTicker
 from nautilus_trader.core.datetime import millis_to_nanos
 from nautilus_trader.model.c_enums.order_type import OrderTypeParser
 from nautilus_trader.model.currency import Currency
@@ -114,8 +114,8 @@ def parse_book_delta_ws(
     )
 
 
-def parse_ticker_ws(instrument_id: InstrumentId, msg: Dict, ts_init: int) -> BinanceTicker:
-    return BinanceTicker(
+def parse_spot_ticker_ws(instrument_id: InstrumentId, msg: Dict, ts_init: int) -> BinanceSpotTicker:
+    return BinanceSpotTicker(
         instrument_id=instrument_id,
         price_change=Decimal(msg["p"]),
         price_change_percent=Decimal(msg["P"]),
