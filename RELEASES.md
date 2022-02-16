@@ -6,6 +6,8 @@ Released on TBD (UTC).
 
 ### Breaking Changes
 - Renamed `BacktestDataConfig.data_cls_path` to `data_cls`.
+- Renamed `BinanceTicker` to `BinanceSpotTicker`.
+- Renamed `BinanceSpotExecutionClient` to `BinanceExecutionClient`.
 
 ### Enhancements
 - `BacktestDataConfig` now takes either a type of `Data` _or_ a fully qualified path string.
@@ -97,7 +99,7 @@ Released on 12th January 2022 (UTC).
 
 ### Fixes
 - Fixed parsing of `BarType` with symbols including hyphens `-`.
-- Fixed `BinanceTicker` `__repr__` (was missing whitespace after a comma).
+- Fixed `BinanceSpotTicker` `__repr__` (was missing whitespace after a comma).
 - Fixed `DataEngine` requests for historical `TradeTick`.
 - Fixed `DataEngine` `_handle_data_response` typing of `data` to `object`.
 
