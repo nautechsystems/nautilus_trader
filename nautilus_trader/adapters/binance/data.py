@@ -22,7 +22,7 @@ import pandas as pd
 from nautilus_trader.adapters.binance.common import BINANCE_VENUE
 from nautilus_trader.adapters.binance.common import BinanceAccountType
 from nautilus_trader.adapters.binance.data_types import BinanceBar
-from nautilus_trader.adapters.binance.data_types import BinanceTicker
+from nautilus_trader.adapters.binance.data_types import BinanceSpotTicker
 from nautilus_trader.adapters.binance.http.api.market import BinanceMarketHttpAPI
 from nautilus_trader.adapters.binance.http.client import BinanceHttpClient
 from nautilus_trader.adapters.binance.http.error import BinanceError
@@ -31,7 +31,7 @@ from nautilus_trader.adapters.binance.parsing import parse_bar_ws
 from nautilus_trader.adapters.binance.parsing import parse_book_snapshot_ws
 from nautilus_trader.adapters.binance.parsing import parse_diff_depth_stream_ws
 from nautilus_trader.adapters.binance.parsing import parse_quote_tick_ws
-from nautilus_trader.adapters.binance.parsing import parse_ticker_ws
+from nautilus_trader.adapters.binance.parsing import parse_spot_ticker_ws
 from nautilus_trader.adapters.binance.parsing import parse_trade_tick
 from nautilus_trader.adapters.binance.parsing import parse_trade_tick_ws
 from nautilus_trader.adapters.binance.providers import BinanceInstrumentProvider
@@ -62,7 +62,7 @@ from nautilus_trader.msgbus.bus import MessageBus
 
 class BinanceDataClient(LiveMarketDataClient):
     """
-    Provides a data client for the Binance exchange.
+    Provides a data client for the `Binance` exchange.
 
     Parameters
     ----------
@@ -82,10 +82,8 @@ class BinanceDataClient(LiveMarketDataClient):
         The instrument provider.
     account_type : BinanceAccountType
         The account type for the client.
-    base_url : str, optional
-        The base URL for the API endpoints.
-    us : bool, default False
-        If the client is for Binance US.
+    base_url_ws : str, optional
+        The base URL for the WebSocket client.
     """
 
     def __init__(
@@ -98,8 +96,7 @@ class BinanceDataClient(LiveMarketDataClient):
         logger: Logger,
         instrument_provider: BinanceInstrumentProvider,
         account_type: BinanceAccountType = BinanceAccountType.SPOT,
-        base_url: Optional[str] = None,
-        us: bool = False,
+        base_url_ws: Optional[str] = None,
     ):
         super().__init__(
             loop=loop,
@@ -113,7 +110,6 @@ class BinanceDataClient(LiveMarketDataClient):
 
         self._client = client
         self._account_type = account_type
-        self._base_url = base_url
 
         self._update_instrument_interval: int = 60 * 60  # Once per hour (hardcode)
         self._update_instruments_task: Optional[asyncio.Task] = None
@@ -127,14 +123,13 @@ class BinanceDataClient(LiveMarketDataClient):
             clock=clock,
             logger=logger,
             handler=self._handle_spot_ws_message,
-            base_url=self._base_url,
-            us=us,
+            base_url=base_url_ws,
         )
 
         self._book_buffer: Dict[InstrumentId, List[OrderBookData]] = {}
 
-        if us:
-            self._log.info("Set Binance US.", LogColor.BLUE)
+        self._log.info(f"Base URL HTTP {self._client._base_url}.", LogColor.BLUE)
+        self._log.info(f"Base URL WebSocket {base_url_ws}.", LogColor.BLUE)
 
     def connect(self) -> None:
         """
@@ -658,7 +653,7 @@ class BinanceDataClient(LiveMarketDataClient):
             symbol=Symbol(data["s"]),
             venue=BINANCE_VENUE,
         )
-        ticker: BinanceTicker = parse_ticker_ws(
+        ticker: BinanceSpotTicker = parse_spot_ticker_ws(
             instrument_id=instrument_id,
             msg=data,
             ts_init=self._clock.timestamp_ns(),

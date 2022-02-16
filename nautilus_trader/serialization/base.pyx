@@ -15,6 +15,8 @@
 
 from typing import Any, Callable, Dict
 
+from nautilus_trader.adapters.ftx.data_types import FTXTicker
+
 from nautilus_trader.common.events.risk cimport TradingStateChanged
 from nautilus_trader.common.events.system cimport ComponentStateChanged
 from nautilus_trader.core.correctness cimport Condition
@@ -57,7 +59,6 @@ from nautilus_trader.model.instruments.option cimport Option
 
 
 # Default mappings for Nautilus objects
-
 _OBJECT_TO_DICT_MAP: Dict[str, Callable[[None], Dict]] = {
     CancelOrder.__name__: CancelOrder.to_dict_c,
     SubmitOrder.__name__: SubmitOrder.to_dict_c,
@@ -97,6 +98,7 @@ _OBJECT_TO_DICT_MAP: Dict[str, Callable[[None], Dict]] = {
     InstrumentStatusUpdate.__name__: InstrumentStatusUpdate.to_dict_c,
     VenueStatusUpdate.__name__: VenueStatusUpdate.to_dict_c,
     InstrumentClosePrice.__name__: InstrumentClosePrice.to_dict_c,
+    FTXTicker.__name__: FTXTicker.to_dict,
 }
 
 
@@ -140,6 +142,7 @@ _OBJECT_FROM_DICT_MAP: Dict[str, Callable[[Dict], Any]] = {
     InstrumentStatusUpdate.__name__: InstrumentStatusUpdate.from_dict_c,
     VenueStatusUpdate.__name__: VenueStatusUpdate.from_dict_c,
     InstrumentClosePrice.__name__: InstrumentClosePrice.from_dict_c,
+    FTXTicker.__name__: FTXTicker.from_dict,
 }
 
 

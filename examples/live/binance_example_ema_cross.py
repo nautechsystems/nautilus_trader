@@ -40,7 +40,8 @@ config_node = TradingNodeConfig(
             # "api_key": "YOUR_BINANCE_API_KEY",
             # "api_secret": "YOUR_BINANCE_API_SECRET",
             "account_type": "spot",
-            "base_url": None,
+            "base_url_http": None,
+            "base_url_ws": None,
             "us": False,  # If client is for Binance US
             "sandbox_mode": False,  # If client uses the testnet
         },
@@ -50,7 +51,8 @@ config_node = TradingNodeConfig(
             # "api_key": "YOUR_BINANCE_API_KEY",
             # "api_secret": "YOUR_BINANCE_API_SECRET",
             "account_type": "spot",
-            "base_url": None,
+            "base_url_http": None,
+            "base_url_ws": None,
             "us": False,  # If client is for Binance US
             "sandbox_mode": False,  # If client uses the testnet,
         },

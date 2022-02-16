@@ -30,7 +30,7 @@ class BinanceWebSocketClient(WebSocketClient):
     Provides a `Binance` streaming WebSocket client.
     """
 
-    BASE_URL = "wss://stream.binance.com:9443"
+    BASE_URL = "wss://stream.binance.com:9443"  # Default SPOT
 
     def __init__(
         self,
@@ -39,7 +39,6 @@ class BinanceWebSocketClient(WebSocketClient):
         logger: Logger,
         handler: Callable[[bytes], None],
         base_url: Optional[str] = None,
-        us: bool = False,
     ):
         super().__init__(
             loop=loop,
@@ -49,8 +48,6 @@ class BinanceWebSocketClient(WebSocketClient):
         )
 
         self._base_url = base_url or self.BASE_URL
-        if self._base_url == self.BASE_URL and us:
-            self._base_url = self._base_url.replace("com", "us")
 
         self._clock = clock
         self._streams: List[str] = []

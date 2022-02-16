@@ -39,7 +39,8 @@ class BinanceAccountType(Enum):
 
     SPOT = "SPOT"
     MARGIN = "MARGIN"
-    FUTURES = "FUTURES"
+    FUTURES_USDT = "FUTURES_USDT"
+    FUTURES_COIN = "FUTURES_COIN"
 
 
 @unique
