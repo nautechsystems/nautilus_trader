@@ -178,12 +178,12 @@ dl.py.class {
     width: 0.9rem;
 }
 .arrow:hover {
-    background-color: rgb(0 189 214 / 20%);
-    color: #fff!important;
+    background-color: rgb(40, 47, 56) !important;
+    color: #00bdd6;
 }
 .arrow.arrow-animate{
     transform: rotate(90deg);
-    background-color: rgb(0 189 214 / 20%);
+    background-color: rgb(40, 47, 56) !important;
     color: #fff!important;
 }
 /*.md-nav__link--active  .arrow.arrow-animate{
