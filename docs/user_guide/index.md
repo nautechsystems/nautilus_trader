@@ -17,7 +17,9 @@ in the near future.
 
 ```{eval-rst}
 .. toctree::
-   :maxdepth: 2
+   :maxdepth: 1
+   :glob:
+   :titlesonly:
    :hidden:
    
    core_concepts.md

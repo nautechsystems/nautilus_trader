@@ -65,7 +65,9 @@ library, or from third party library dependencies.
 
 ```{eval-rst}
 .. toctree::
-   :maxdepth: 2
+   :maxdepth: 1
+   :glob:
+   :titlesonly:
    :hidden:
    
    accounting.md

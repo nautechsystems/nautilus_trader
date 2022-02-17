@@ -10,6 +10,8 @@ Then read through the [quick start](quick_start.md) guide.
 ```{eval-rst}
 .. toctree::
    :maxdepth: 2
+   :glob:
+   :titlesonly:
    :hidden:
    
    installation.md

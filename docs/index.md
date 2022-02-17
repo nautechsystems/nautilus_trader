@@ -86,9 +86,11 @@ written in Cython, however the libraries can be accessed from both pure Python a
 
 ```{eval-rst}
 .. toctree::
-   :maxdepth: 2
+   :maxdepth: 1
+   :glob:
+   :titlesonly:
    :hidden:
-   
+
    getting_started/index.md
    user_guide/index.md
    api_reference/index.md
