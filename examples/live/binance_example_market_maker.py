@@ -44,7 +44,7 @@ config_node = TradingNodeConfig(
             "base_url_http": None,
             "base_url_ws": None,
             "us": False,  # If client is for Binance US
-            "sandbox_mode": False,  # If client uses the testnet
+            "sandbox_mode": True,  # If client uses the testnet
         },
     },
     exec_clients={
@@ -55,7 +55,7 @@ config_node = TradingNodeConfig(
             "base_url_http": None,
             "base_url_ws": None,
             "us": False,  # If client is for Binance US
-            "sandbox_mode": False,  # If client uses the testnet,
+            "sandbox_mode": True,  # If client uses the testnet,
         },
     },
     timeout_connection=5.0,
