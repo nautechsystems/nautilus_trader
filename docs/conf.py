@@ -74,7 +74,7 @@ html_theme_options = {
     "touch_icon": "images/apple-icon-152x152.png",
     "master_doc": False,
     "globaltoc_collapse": False,
-    "globaltoc_depth": 2,
+    "globaltoc_depth": 3,
     "nav_links": [
         {
             "href": "/getting_started/index",
