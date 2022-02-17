@@ -182,7 +182,7 @@ dl.py.class {
     color: #fff!important;
 }
 .arrow.arrow-animate{
-    transform: rotate(180deg);
+    transform: rotate(90deg);
     background-color: rgb(0 189 214 / 20%);
     color: #fff!important;
 }
@@ -210,7 +210,9 @@ dl.py.class {
 .md-nav__link--active .submenu .md-nav__link  {
     color:  #fff;
 }
-
+.md-nav__link--active .submenu .md-nav__link--active > a {
+    color: #00bdd6;
+}
  
 @media only screen and (min-width: 60em) {
     .md-search__inner {
