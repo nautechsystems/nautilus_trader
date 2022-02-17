@@ -15,12 +15,14 @@
 
 use std::ffi::CStr;
 use std::os::raw::c_char;
+use crate::enums::BookLevel;
 use crate::identifiers::base::Identifier;
 use crate::identifiers::instrument_id::InstrumentId;
 use crate::identifiers::symbol::Symbol;
 use crate::identifiers::venue::Venue;
 use crate::objects::price::Price;
 use crate::objects::quantity::Quantity;
+use crate::orderbook::book::OrderBook;
 
 #[no_mangle]
 pub unsafe extern "C" fn symbol_new(ptr: *mut u8, length: usize) -> Symbol {
@@ -58,6 +60,8 @@ pub extern "C" fn venue_as_utf8(v: Venue) -> *const u8 {
     v.as_str().as_ptr()
 }
 
+/// Expects `ptr` to be an array of valid UTF-8 chars with a null byte terminator.
+#[no_mangle]
 pub unsafe fn instrument_id_from_raw(ptr: *const c_char) -> InstrumentId {
     // SAFETY: Checks ptr is a valid UTF-8 string
     let s = CStr::from_ptr(ptr).to_str().expect("invalid C string");
@@ -105,4 +109,12 @@ mod tests {
             assert_eq!(result.venue, Venue::from_str("BINANCE"));
         }
     }
+}
+
+#[no_mangle]
+pub extern "C" fn order_book_new(
+    instrument_id: InstrumentId,
+    book_level: BookLevel,
+) -> OrderBook {
+    OrderBook::new(instrument_id, book_level)
 }

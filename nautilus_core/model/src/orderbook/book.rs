@@ -70,15 +70,4 @@ impl OrderBook {
             OrderSide::Sell => self.asks.delete(order),
         }
     }
-
-    //##########################################################################
-    // C API
-    //##########################################################################
-    #[no_mangle]
-    pub extern "C" fn order_book_new(
-        instrument_id: InstrumentId,
-        book_level: BookLevel,
-    ) -> OrderBook {
-        OrderBook::new(instrument_id, book_level)
-    }
 }

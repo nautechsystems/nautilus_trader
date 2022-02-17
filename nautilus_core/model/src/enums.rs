@@ -38,10 +38,11 @@ pub enum PriceType {
 
 #[repr(C)]
 #[derive(Copy, Clone, Debug, Hash, PartialEq, Eq)]
+#[allow(non_camel_case_types)]
 pub enum BookLevel {
-    L1 = 1,
-    L2 = 2,
-    L3 = 3,
+    L1_TBBO = 1,
+    L2_MBP = 2,
+    L3_MBO = 3,
 }
 
 #[repr(C)]

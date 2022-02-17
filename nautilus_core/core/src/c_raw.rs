@@ -22,7 +22,7 @@ pub extern "C" fn uuid4_new() -> UUID4 {
     UUID4::new()
 }
 
-/// Expects `ptr` to be an array of valid UTF-8 chars.
+/// Expects `ptr` to be an array of valid UTF-8 chars with a null byte terminator.
 #[no_mangle]
 pub unsafe extern "C" fn uuid4_from_raw(ptr: *const c_char) -> UUID4 {
     // SAFETY: Wraps and checks raw C string `ptr`, then converts to owned `String`

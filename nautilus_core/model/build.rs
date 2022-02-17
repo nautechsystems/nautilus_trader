@@ -26,7 +26,11 @@ fn main() {
     let config = cbindgen::Config::from_file("cbindgen.toml")
         .expect("Unable to find cbindgen.toml configuration file");
 
-    cbindgen::generate_with_config(&crate_dir, config)
+    cbindgen::generate_with_config(&crate_dir, config.clone())
+        .expect("Unable to generate bindings")
+        .write_to_file(crate_dir.join("nautilus_model.h"));
+
+    cbindgen::generate_with_config(&crate_dir, config.clone())
         .expect("Unable to generate bindings")
         .write_to_file(crate_dir.join("../../nautilus_trader/core/nautilus_model.h"));
 }
