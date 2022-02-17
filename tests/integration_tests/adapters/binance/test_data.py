@@ -90,13 +90,13 @@ class TestBinanceDataClient:
     async def test_connect(self, monkeypatch):
         # Arrange: prepare data for monkey patch
         response1 = pkgutil.get_data(
-            package="tests.integration_tests.adapters.binance.resources.responses",
-            resource="wallet_trading_fee.json",
+            package="tests.integration_tests.adapters.binance.resources.http_responses",
+            resource="http_wallet_trading_fee.json",
         )
 
         response2 = pkgutil.get_data(
-            package="tests.integration_tests.adapters.binance.resources.responses",
-            resource="spot_market_exchange_info.json",
+            package="tests.integration_tests.adapters.binance.resources.http_responses",
+            resource="http_spot_market_exchange_info.json",
         )
 
         responses = [response2, response1]
@@ -128,13 +128,13 @@ class TestBinanceDataClient:
     async def test_disconnect(self, monkeypatch):
         # Arrange: prepare data for monkey patch
         response1 = pkgutil.get_data(
-            package="tests.integration_tests.adapters.binance.resources.responses",
-            resource="wallet_trading_fee.json",
+            package="tests.integration_tests.adapters.binance.resources.http_responses",
+            resource="http_wallet_trading_fee.json",
         )
 
         response2 = pkgutil.get_data(
-            package="tests.integration_tests.adapters.binance.resources.responses",
-            resource="spot_market_exchange_info.json",
+            package="tests.integration_tests.adapters.binance.resources.http_responses",
+            resource="http_spot_market_exchange_info.json",
         )
 
         responses = [response2, response1]
@@ -169,13 +169,13 @@ class TestBinanceDataClient:
     async def test_subscribe_instruments(self, monkeypatch):
         # Arrange: prepare data for monkey patch
         response1 = pkgutil.get_data(
-            package="tests.integration_tests.adapters.binance.resources.responses",
-            resource="wallet_trading_fee.json",
+            package="tests.integration_tests.adapters.binance.resources.http_responses",
+            resource="http_wallet_trading_fee.json",
         )
 
         response2 = pkgutil.get_data(
-            package="tests.integration_tests.adapters.binance.resources.responses",
-            resource="spot_market_exchange_info.json",
+            package="tests.integration_tests.adapters.binance.resources.http_responses",
+            resource="http_spot_market_exchange_info.json",
         )
 
         responses = [response2, response1]
@@ -211,13 +211,13 @@ class TestBinanceDataClient:
     async def test_subscribe_instrument(self, monkeypatch):
         # Arrange: prepare data for monkey patch
         response1 = pkgutil.get_data(
-            package="tests.integration_tests.adapters.binance.resources.responses",
-            resource="wallet_trading_fee.json",
+            package="tests.integration_tests.adapters.binance.resources.http_responses",
+            resource="http_wallet_trading_fee.json",
         )
 
         response2 = pkgutil.get_data(
-            package="tests.integration_tests.adapters.binance.resources.responses",
-            resource="spot_market_exchange_info.json",
+            package="tests.integration_tests.adapters.binance.resources.http_responses",
+            resource="http_spot_market_exchange_info.json",
         )
 
         responses = [response2, response1]
@@ -253,13 +253,13 @@ class TestBinanceDataClient:
     async def test_subscribe_quote_ticks(self, monkeypatch):
         # Arrange: prepare data for monkey patch
         response1 = pkgutil.get_data(
-            package="tests.integration_tests.adapters.binance.resources.responses",
-            resource="wallet_trading_fee.json",
+            package="tests.integration_tests.adapters.binance.resources.http_responses",
+            resource="http_wallet_trading_fee.json",
         )
 
         response2 = pkgutil.get_data(
-            package="tests.integration_tests.adapters.binance.resources.responses",
-            resource="spot_market_exchange_info.json",
+            package="tests.integration_tests.adapters.binance.resources.http_responses",
+            resource="http_spot_market_exchange_info.json",
         )
 
         responses = [response2, response1]
@@ -295,8 +295,8 @@ class TestBinanceDataClient:
         self.data_client.subscribe_quote_ticks(ethusdt)
 
         raw_book_tick = pkgutil.get_data(
-            package="tests.integration_tests.adapters.binance.resources.streaming",
-            resource="ws_book_ticker.json",
+            package="tests.integration_tests.adapters.binance.resources.ws_messages",
+            resource="ws_spot_ticker_book.json",
         )
 
         # Assert
@@ -310,13 +310,13 @@ class TestBinanceDataClient:
     async def test_subscribe_trade_ticks(self, monkeypatch):
         # Arrange: prepare data for monkey patch
         response1 = pkgutil.get_data(
-            package="tests.integration_tests.adapters.binance.resources.responses",
-            resource="wallet_trading_fee.json",
+            package="tests.integration_tests.adapters.binance.resources.http_responses",
+            resource="http_wallet_trading_fee.json",
         )
 
         response2 = pkgutil.get_data(
-            package="tests.integration_tests.adapters.binance.resources.responses",
-            resource="spot_market_exchange_info.json",
+            package="tests.integration_tests.adapters.binance.resources.http_responses",
+            resource="http_spot_market_exchange_info.json",
         )
 
         responses = [response2, response1]
@@ -352,8 +352,8 @@ class TestBinanceDataClient:
         self.data_client.subscribe_trade_ticks(ethusdt)
 
         raw_trade = pkgutil.get_data(
-            package="tests.integration_tests.adapters.binance.resources.streaming",
-            resource="ws_trade.json",
+            package="tests.integration_tests.adapters.binance.resources.ws_messages",
+            resource="ws_spot_trade.json",
         )
 
         # Assert

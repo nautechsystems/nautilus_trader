@@ -27,10 +27,10 @@ from nautilus_trader.adapters.binance.http.api.market import BinanceMarketHttpAP
 from nautilus_trader.adapters.binance.http.api.user import BinanceUserDataHttpAPI
 from nautilus_trader.adapters.binance.http.client import BinanceHttpClient
 from nautilus_trader.adapters.binance.http.error import BinanceError
-from nautilus_trader.adapters.binance.parsing import binance_order_type
-from nautilus_trader.adapters.binance.parsing import parse_account_balances
-from nautilus_trader.adapters.binance.parsing import parse_account_balances_ws
-from nautilus_trader.adapters.binance.parsing import parse_order_type
+from nautilus_trader.adapters.binance.parsing.common import binance_order_type
+from nautilus_trader.adapters.binance.parsing.common import parse_order_type
+from nautilus_trader.adapters.binance.parsing.http import parse_account_balances_http
+from nautilus_trader.adapters.binance.parsing.websocket import parse_account_balances_ws
 from nautilus_trader.adapters.binance.providers import BinanceInstrumentProvider
 from nautilus_trader.adapters.binance.websocket.client import BinanceWebSocketClient
 from nautilus_trader.cache.cache import Cache
@@ -210,7 +210,7 @@ class BinanceExecutionClient(LiveExecutionClient):
 
     def _update_account_state(self, response: Dict[str, Any]) -> None:
         self.generate_account_state(
-            balances=parse_account_balances(raw_balances=response["balances"]),
+            balances=parse_account_balances_http(raw_balances=response["balances"]),
             margins=[],
             reported=True,
             ts_event=response["updateTime"],

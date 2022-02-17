@@ -12,3 +12,33 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+
+import pkgutil
+
+import orjson
+
+from nautilus_trader.adapters.binance.parsing.websocket import parse_spot_ticker_24hr_ws
+from nautilus_trader.backtest.data.providers import TestInstrumentProvider
+
+
+ETHUSDT = TestInstrumentProvider.ethusdt_binance()
+
+
+class TestBinanceWebSocketParsing:
+    def test_parse_spot_ticker(self):
+        # Arrange
+        data = pkgutil.get_data(
+            package="tests.integration_tests.adapters.binance.resources.ws_messages",
+            resource="ws_spot_ticker_24hr.json",
+        )
+        msg = orjson.loads(data)
+
+        # Act
+        result = parse_spot_ticker_24hr_ws(
+            instrument_id=ETHUSDT.id,
+            msg=msg,
+            ts_init=9999999999999991,
+        )
+
+        # Assert
+        assert result.instrument_id == ETHUSDT.id
