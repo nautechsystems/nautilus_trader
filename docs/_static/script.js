@@ -1,5 +1,20 @@
 $(document).ready(function(){
 
+	$("ul.md-nav__list li").each(function() {
+
+		if ($(this).hasClass("md-nav__link--active")) {
+  			$(this).find('.arrow').addClass("arrow-animate");
+  			$(this).find('.submenu').slideDown(200, ani(this));
+		}
+
+		if($('.md-nav__link--active').length > 0) {
+			$('.md-nav__list li:has(.md-nav__link--active)').addClass('md-nav__link--active');
+			$('.md-nav__list li:has(.md-nav__link--active)').find('.arrow').addClass("arrow-animate");
+			$('.md-nav__list li:has(.md-nav__link--active)').find('.submenu').slideDown(200, ani(this));
+		}
+	});
+
+
 	$('#menu').children('ul.md-nav__list').on('click', 'li .arrow', function(e) {
 	    e.preventDefault();
 	    $(this).parent().find('.arrow').addClass("arrow-animate");
