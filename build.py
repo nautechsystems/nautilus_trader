@@ -199,7 +199,7 @@ if __name__ == "__main__":
     # universal files containing multiple architectures. To determine the
     # “64-bitness” of the current interpreter, it is more reliable to query the
     # sys.maxsize attribute:
-    bits = "64-bit" if sys.maxsize > 2 ** 32 else "32-bit"
+    bits = "64-bit" if sys.maxsize > 2**32 else "32-bit"
     rustc_version = subprocess.check_output(["rustc", "--version"])  # noqa
     print(f"System: {platform.system()} {bits}")
     print(f"Rust:   {rustc_version.lstrip(b'rustc ').decode()[:-1]}")

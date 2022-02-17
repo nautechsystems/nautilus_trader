@@ -328,7 +328,7 @@ class TestInstrumentProvider:
             quote_currency=Currency.from_str(quote_currency),
             price_precision=price_precision,
             size_precision=0,
-            price_increment=Price(1 / 10 ** price_precision, price_precision),
+            price_increment=Price(1 / 10**price_precision, price_precision),
             size_increment=Quantity.from_int(1),
             lot_size=Quantity.from_str("1000"),
             max_quantity=Quantity.from_str("1e7"),

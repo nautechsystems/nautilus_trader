@@ -30,7 +30,7 @@ fn main() {
         .expect("Unable to generate bindings")
         .write_to_file(crate_dir.join("nautilus_core.h"));
 
-    cbindgen::generate_with_config(&crate_dir, config.clone())
+    cbindgen::generate_with_config(&crate_dir, config)
         .expect("Unable to generate bindings")
         .write_to_file(crate_dir.join("../../nautilus_trader/core/nautilus_core.h"));
 }

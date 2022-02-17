@@ -13,8 +13,6 @@
 //  limitations under the License.
 // ------------------------------------------------------------------------------------------------
 
-use std::ffi::CStr;
-use std::os::raw::c_char;
 use crate::enums::BookLevel;
 use crate::identifiers::base::Identifier;
 use crate::identifiers::instrument_id::InstrumentId;
@@ -23,6 +21,8 @@ use crate::identifiers::venue::Venue;
 use crate::objects::price::Price;
 use crate::objects::quantity::Quantity;
 use crate::orderbook::book::OrderBook;
+use std::ffi::CStr;
+use std::os::raw::c_char;
 
 #[no_mangle]
 pub unsafe extern "C" fn symbol_new(ptr: *mut u8, length: usize) -> Symbol {
@@ -92,11 +92,11 @@ pub extern "C" fn quantity_new(value: f64, precision: u8) -> Quantity {
 
 #[cfg(test)]
 mod tests {
-    use std::ffi::CString;
     use crate::c_raw::instrument_id_from_raw;
     use crate::identifiers::base::Identifier;
     use crate::identifiers::symbol::Symbol;
     use crate::identifiers::venue::Venue;
+    use std::ffi::CString;
 
     #[test]
     fn test_instrument_id_new() {
@@ -112,9 +112,6 @@ mod tests {
 }
 
 #[no_mangle]
-pub extern "C" fn order_book_new(
-    instrument_id: InstrumentId,
-    book_level: BookLevel,
-) -> OrderBook {
+pub extern "C" fn order_book_new(instrument_id: InstrumentId, book_level: BookLevel) -> OrderBook {
     OrderBook::new(instrument_id, book_level)
 }
