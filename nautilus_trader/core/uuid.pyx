@@ -14,12 +14,13 @@
 # -------------------------------------------------------------------------------------------------
 
 import re
-from nautilus_trader.core.core cimport uuid4_free
-from nautilus_trader.core.core cimport uuid4_free_raw
-from nautilus_trader.core.core cimport uuid4_from_raw
-from nautilus_trader.core.core cimport uuid4_new
-from nautilus_trader.core.core cimport uuid4_to_raw
+
 from nautilus_trader.core.correctness cimport Condition
+from nautilus_trader.core.rust.core cimport uuid4_free
+from nautilus_trader.core.rust.core cimport uuid4_free_raw
+from nautilus_trader.core.rust.core cimport uuid4_from_raw
+from nautilus_trader.core.rust.core cimport uuid4_new
+from nautilus_trader.core.rust.core cimport uuid4_to_raw
 
 
 _UUID_REGEX = re.compile("[0-F]{8}-([0-F]{4}-){3}[0-F]{12}", re.I)
@@ -48,7 +49,7 @@ cdef class UUID4:
     def __init__(self, str value=None):
         if value is None:
             # Create a new UUID4 from rust
-            self._uuid4 = uuid4_new()  # `self._uuid4` owned from rust
+            self._uuid4 = <UUID4_C>uuid4_new()  # owned from rust
             return
 
         Condition.true(_UUID_REGEX.match(value), "value is not a valid UUID")

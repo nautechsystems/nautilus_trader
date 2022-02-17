@@ -86,6 +86,11 @@ pub extern "C" fn price_new(value: f64, precision: u8) -> Price {
 }
 
 #[no_mangle]
+pub extern "C" fn price_eq(a: &Price, b: &Price) -> u8 {
+    a.eq(b) as u8
+}
+
+#[no_mangle]
 pub extern "C" fn quantity_new(value: f64, precision: u8) -> Quantity {
     Quantity::new(value, precision)
 }

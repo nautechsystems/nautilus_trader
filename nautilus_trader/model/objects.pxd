@@ -15,6 +15,7 @@
 
 from libc.stdint cimport uint8_t
 
+from nautilus_trader.core.rust.model cimport Price as Price_C
 from nautilus_trader.model.currency cimport Currency
 from nautilus_trader.model.identifiers cimport InstrumentId
 
@@ -48,7 +49,9 @@ cdef class Quantity(BaseDecimal):
     cdef Quantity from_int_c(int value)
 
 
-cdef class Price(BaseDecimal):
+cdef class Price:
+    cdef Price_C _price
+
     @staticmethod
     cdef Price from_str_c(str value)
 

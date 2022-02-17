@@ -35,7 +35,7 @@ pub extern "C" fn uuid4_to_raw(uuid: &UUID4) -> *const c_char {
     CString::new(bytes).expect("CString::new failed").into_raw()
 }
 
-/// Expects `ptr` to be an array of valid UTF-8 chars.
+/// Expects `ptr` to be an array of valid UTF-8 chars with a null byte terminator.
 #[no_mangle]
 pub unsafe extern "C" fn uuid4_free_raw(ptr: *mut c_char) {
     // SAFETY: Retakes ownership of C string `ptr`, then drops

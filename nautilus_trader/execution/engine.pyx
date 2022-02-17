@@ -46,9 +46,9 @@ from nautilus_trader.common.logging cimport EVT
 from nautilus_trader.common.logging cimport RECV
 from nautilus_trader.common.logging cimport LogColor
 from nautilus_trader.common.logging cimport Logger
-from nautilus_trader.core.core cimport unix_timestamp_ms
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.fsm cimport InvalidStateTrigger
+from nautilus_trader.core.rust.core cimport unix_timestamp_ms
 from nautilus_trader.execution.client cimport ExecutionClient
 from nautilus_trader.model.c_enums.oms_type cimport OMSType
 from nautilus_trader.model.c_enums.oms_type cimport OMSTypeParser

@@ -12,20 +12,3 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
-
-cdef extern from "nautilus_model.h":
-    cdef enum OrderSide:
-        Buy,
-        Sell,
-
-    cdef struct Symbol:
-        pass
-
-    cdef struct Venue:
-        pass
-
-    cdef Symbol symbol_new(char *ptr)
-    char *symbol_as_bytes(Symbol *ptr)
-
-    cdef Venue venue_new(char *ptr)
-    char *venue_as_bytes(Venue *ptr)
