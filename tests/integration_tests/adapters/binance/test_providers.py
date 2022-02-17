@@ -36,13 +36,13 @@ class TestBinanceInstrumentProvider:
     ):
         # Arrange: prepare data for monkey patch
         response1 = pkgutil.get_data(
-            package="tests.integration_tests.adapters.binance.resources.responses",
-            resource="wallet_trading_fee.json",
+            package="tests.integration_tests.adapters.binance.resources.http_responses",
+            resource="http_wallet_trading_fee.json",
         )
 
         response2 = pkgutil.get_data(
-            package="tests.integration_tests.adapters.binance.resources.responses",
-            resource="spot_market_exchange_info.json",
+            package="tests.integration_tests.adapters.binance.resources.http_responses",
+            resource="http_spot_market_exchange_info.json",
         )
 
         responses = [response2, response1]
