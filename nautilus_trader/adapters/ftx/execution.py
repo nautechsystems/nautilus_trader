@@ -163,6 +163,7 @@ class FTXExecutionClient(LiveExecutionClient):
         self._order_ids: Dict[VenueOrderId, ClientOrderId] = {}
         self._order_types: Dict[VenueOrderId, OrderType] = {}
         self._triggers: Dict[int, VenueOrderId] = {}
+        self._open_triggers: Dict[int, ClientOrderId] = {}
 
         # Settings
         self._account_polling_interval = account_polling_interval
@@ -732,13 +733,16 @@ class FTXExecutionClient(LiveExecutionClient):
             trigger_price=str(order.trigger_price),
             reduce_only=order.is_reduce_only,
         )
+        # Cache open trigger ID
+        trigger_id: int = response["id"]
         self.generate_order_accepted(
             strategy_id=order.strategy_id,
             instrument_id=order.instrument_id,
             client_order_id=order.client_order_id,
-            venue_order_id=VenueOrderId(str(response["id"])),
+            venue_order_id=VenueOrderId(str(trigger_id)),
             ts_event=self._clock.timestamp_ns(),
         )
+        self._open_triggers[trigger_id] = order.client_order_id
 
     async def _submit_stop_limit_order(
         self,
@@ -1049,6 +1053,15 @@ class FTXExecutionClient(LiveExecutionClient):
         client_order_id = self._order_ids.get(venue_order_id)
         if client_order_id is None:
             client_order_id = ClientOrderId(str(uuid.uuid4()))
+            # TODO(cs): WIP
+            # triggers = await self._http_client.get_trigger_order_triggers(venue_order_id.value)
+            #
+            # for trigger in triggers:
+            #     client_order_id = self._open_triggers.get(trigger)
+            #     if client_order_id is not None:
+            #         break
+            # if client_order_id is None:
+            #     client_order_id = ClientOrderId(str(uuid.uuid4()))
 
         # Fetch strategy ID
         strategy_id: StrategyId = self._cache.strategy_id_for_order(client_order_id)
