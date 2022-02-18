@@ -225,6 +225,12 @@ cdef class Order:
     cdef str tif_string_c(self):
         return TimeInForceParser.to_str(self.time_in_force)
 
+    cdef bint has_price_c(self) except *:
+        raise NotImplementedError("method must be implemented in subclass")  # pragma: no cover
+
+    cdef bint has_trigger_price_c(self) except *:
+        raise NotImplementedError("method must be implemented in subclass")  # pragma: no cover
+
     cdef bint is_buy_c(self) except *:
         return self.side == OrderSide.BUY
 
@@ -384,6 +390,30 @@ cdef class Order:
 
         """
         return self.event_count_c()
+
+    @property
+    def has_price(self):
+        """
+        If the order has a `price` property.
+
+        Returns
+        -------
+        bool
+
+        """
+        return self.has_price_c()
+
+    @property
+    def has_trigger_price(self):
+        """
+        If the order has a `trigger_price` property.
+
+        Returns
+        -------
+        bool
+
+        """
+        return self.has_trigger_price_c()
 
     @property
     def is_buy(self):

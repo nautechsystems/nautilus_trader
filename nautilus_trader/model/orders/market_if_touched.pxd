@@ -13,22 +13,25 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from cpython.datetime cimport datetime
+from libc.stdint cimport int64_t
 
-cpdef enum OrderType:
-    MARKET = 1
-    LIMIT = 2
-    STOP_MARKET = 3
-    STOP_LIMIT = 4
-    MARKET_IF_TOUCHED = 5
-    LIMIT_IF_TOUCHED = 6
-    TRAILING_STOP_MARKET = 7
-    TRAILING_STOP_LIMIT = 8
+from nautilus_trader.model.c_enums.trigger_type cimport TriggerType
+from nautilus_trader.model.events.order cimport OrderInitialized
+from nautilus_trader.model.objects cimport Price
+from nautilus_trader.model.orders.base cimport Order
 
 
-cdef class OrderTypeParser:
+cdef class MarketIfTouchedOrder(Order):
+    cdef readonly Price trigger_price
+    """The order trigger price (STOP).\n\n:returns: `Price`"""
+    cdef readonly TriggerType trigger_type
+    """The trigger type for the order.\n\n:returns: `TriggerType`"""
+    cdef readonly datetime expire_time
+    """The order expiration.\n\n:returns: `datetime` or ``None``"""
+    cdef readonly int64_t expire_time_ns
+    """The order expiration (UNIX epoch nanoseconds), zero for no expiration.\n\n:returns: `int64`"""
+
 
     @staticmethod
-    cdef str to_str(int value)
-
-    @staticmethod
-    cdef OrderType from_str(str value) except *
+    cdef MarketIfTouchedOrder create(OrderInitialized init)
