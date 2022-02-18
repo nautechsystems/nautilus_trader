@@ -124,6 +124,8 @@ cdef class Order:
     cdef str type_string_c(self)
     cdef str side_string_c(self)
     cdef str tif_string_c(self)
+    cdef bint has_price_c(self) except *
+    cdef bint has_trigger_price_c(self) except *
     cdef bint is_buy_c(self) except *
     cdef bint is_sell_c(self) except *
     cdef bint is_passive_c(self) except *

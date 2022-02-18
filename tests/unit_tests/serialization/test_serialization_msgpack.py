@@ -73,6 +73,8 @@ from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.orders.limit import LimitOrder
+from nautilus_trader.model.orders.limit_if_touched import LimitIfTouchedOrder
+from nautilus_trader.model.orders.market_if_touched import MarketIfTouchedOrder
 from nautilus_trader.model.orders.stop_limit import StopLimitOrder
 from nautilus_trader.model.orders.stop_market import StopMarketOrder
 from nautilus_trader.model.orders.trailing_stop_limit import TrailingStopLimitOrder
@@ -252,6 +254,55 @@ class TestMsgPackSerializer:
     def test_pack_and_unpack_stop_limit_orders(self):
         # Arrange
         order = StopLimitOrder(
+            self.trader_id,
+            self.strategy_id,
+            AUDUSD_SIM.id,
+            ClientOrderId("O-123456"),
+            OrderSide.BUY,
+            Quantity(100000, precision=0),
+            price=Price(1.00000, precision=5),
+            trigger_price=Price(1.00010, precision=5),
+            trigger_type=TriggerType.BID_ASK,
+            time_in_force=TimeInForce.GTC,
+            expire_time=None,
+            init_id=UUID4(),
+            ts_init=0,
+        )
+
+        # Act
+        packed = OrderInitialized.to_dict(order.last_event)
+        unpacked = self.unpacker.unpack(packed)
+
+        # Assert
+        assert unpacked == order
+
+    def test_pack_and_unpack_market_if_touched_orders(self):
+        # Arrange
+        order = MarketIfTouchedOrder(
+            self.trader_id,
+            self.strategy_id,
+            AUDUSD_SIM.id,
+            ClientOrderId("O-123456"),
+            OrderSide.BUY,
+            Quantity(100000, precision=0),
+            trigger_price=Price(1.00000, precision=5),
+            trigger_type=TriggerType.DEFAULT,
+            time_in_force=TimeInForce.GTD,
+            expire_time=UNIX_EPOCH + timedelta(minutes=1),
+            init_id=UUID4(),
+            ts_init=0,
+        )
+
+        # Act
+        packed = OrderInitialized.to_dict(order.last_event)
+        unpacked = self.unpacker.unpack(packed)
+
+        # Assert
+        assert unpacked == order
+
+    def test_pack_and_unpack_limit_if_touched_orders(self):
+        # Arrange
+        order = LimitIfTouchedOrder(
             self.trader_id,
             self.strategy_id,
             AUDUSD_SIM.id,

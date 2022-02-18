@@ -10,7 +10,13 @@ Released on TBD (UTC).
 - Renamed `BinanceSpotExecutionClient` to `BinanceExecutionClient`.
 
 ### Enhancements
-- `BacktestDataConfig` now takes either a type of `Data` _or_ a fully qualified path string.
+- Added `OrderType.MARKET_IF_TOUCHED`.
+- Added `OrderType.LIMIT_IF_TOUCHED`.
+- Added `MarketIfTouched` order type.
+- Added `LimitIfTouched` order type.
+- Added `Order.has_price` property (convenience).
+- Added `Order.has_trigger_price` property (convenience).
+- Improved `BacktestDataConfig` API: now takes either a type of `Data` _or_ a fully qualified path string.
 
 ### Fixes
 - Fixed non-deterministic config dask tokenization.

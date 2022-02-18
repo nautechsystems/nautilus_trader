@@ -46,7 +46,7 @@ from nautilus_trader.model.orders.base cimport Order
 
 cdef class StopMarketOrder(Order):
     """
-    Represents a stop-market conditional order.
+    Represents a `stop-market` conditional order.
 
     Parameters
     ----------
@@ -165,6 +165,12 @@ cdef class StopMarketOrder(Order):
         self.expire_time = expire_time
         self.expire_time_ns = expire_time_ns
 
+    cdef bint has_price_c(self) except *:
+        return False
+
+    cdef bint has_trigger_price_c(self) except *:
+        return True
+
     cpdef str info(self):
         """
         Return a summary description of the order.
@@ -225,7 +231,7 @@ cdef class StopMarketOrder(Order):
     @staticmethod
     cdef StopMarketOrder create(OrderInitialized init):
         """
-        Return a stop-market order from the given initialized event.
+        Return a `stop-market` order from the given initialized event.
 
         Parameters
         ----------

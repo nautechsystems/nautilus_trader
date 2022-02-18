@@ -49,7 +49,7 @@ from nautilus_trader.model.orders.base cimport Order
 
 cdef class TrailingStopMarketOrder(Order):
     """
-    Represents a trailing stop-market conditional order.
+    Represents a `trailing-stop-market` conditional order.
 
     Parameters
     ----------
@@ -182,6 +182,12 @@ cdef class TrailingStopMarketOrder(Order):
         self.expire_time = expire_time
         self.expire_time_ns = expire_time_ns
 
+    cdef bint has_price_c(self) except *:
+        return False
+
+    cdef bint has_trigger_price_c(self) except *:
+        return True
+
     cpdef str info(self):
         """
         Return a summary description of the order.
@@ -245,7 +251,7 @@ cdef class TrailingStopMarketOrder(Order):
     @staticmethod
     cdef TrailingStopMarketOrder create(OrderInitialized init):
         """
-        Return a stop-market order from the given initialized event.
+        Return a `trailing-stop-market` order from the given initialized event.
 
         Parameters
         ----------
@@ -259,7 +265,7 @@ cdef class TrailingStopMarketOrder(Order):
         Raises
         ------
         ValueError
-            If `init.type` is not equal to ``STOP_MARKET``.
+            If `init.type` is not equal to ``TRAILING_STOP_MARKET``.
 
         """
         Condition.not_none(init, "init")

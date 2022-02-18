@@ -45,9 +45,9 @@ from nautilus_trader.model.objects cimport Quantity
 from nautilus_trader.model.orders.base cimport Order
 
 
-cdef class StopLimitOrder(Order):
+cdef class LimitIfTouchedOrder(Order):
     """
-    Represents a `stop-limit` conditional order.
+    Represents a `limit-if-touched` (LIT) conditional order.
 
     Parameters
     ----------
@@ -163,7 +163,7 @@ cdef class StopLimitOrder(Order):
             instrument_id=instrument_id,
             client_order_id=client_order_id,
             order_side=order_side,
-            order_type=OrderType.STOP_LIMIT,
+            order_type=OrderType.LIMIT_IF_TOUCHED,
             quantity=quantity,
             time_in_force=time_in_force,
             post_only=post_only,
@@ -255,9 +255,9 @@ cdef class StopLimitOrder(Order):
         }
 
     @staticmethod
-    cdef StopLimitOrder create(OrderInitialized init):
+    cdef LimitIfTouchedOrder create(OrderInitialized init):
         """
-        Return a `stop-limit` order from the given initialized event.
+        Return a `limit-if-touched` order from the given initialized event.
 
         Parameters
         ----------
@@ -266,20 +266,20 @@ cdef class StopLimitOrder(Order):
 
         Returns
         -------
-        StopLimitOrder
+        LimitIfTouchedOrder
 
         Raises
         ------
         ValueError
-            If `init.type` is not equal to ``STOP_LIMIT``.
+            If `init.type` is not equal to ``LIMIT_IF_TOUCHED``.
 
         """
         Condition.not_none(init, "init")
-        Condition.equal(init.type, OrderType.STOP_LIMIT, "init.type", "OrderType")
+        Condition.equal(init.type, OrderType.LIMIT_IF_TOUCHED, "init.type", "OrderType")
 
         cdef str display_qty_str = init.options.get("display_qty")
 
-        return StopLimitOrder(
+        return LimitIfTouchedOrder(
             trader_id=init.trader_id,
             strategy_id=init.strategy_id,
             instrument_id=init.instrument_id,

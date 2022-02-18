@@ -50,7 +50,7 @@ from nautilus_trader.model.orders.base cimport Order
 
 cdef class TrailingStopLimitOrder(Order):
     """
-    Represents a trailing stop-limit conditional order.
+    Represents a `trailing-stop-limit` conditional order.
 
     Parameters
     ----------
@@ -211,6 +211,12 @@ cdef class TrailingStopLimitOrder(Order):
         self.is_triggered = False
         self.ts_triggered = 0
 
+    cdef bint has_price_c(self) except *:
+        return True
+
+    cdef bint has_trigger_price_c(self) except *:
+        return True
+
     cpdef str info(self):
         """
         Return a summary description of the order.
@@ -279,7 +285,7 @@ cdef class TrailingStopLimitOrder(Order):
     @staticmethod
     cdef TrailingStopLimitOrder create(OrderInitialized init):
         """
-        Return a stop-limit order from the given initialized event.
+        Return a `trailing-stop-limit` order from the given initialized event.
 
         Parameters
         ----------
@@ -293,7 +299,7 @@ cdef class TrailingStopLimitOrder(Order):
         Raises
         ------
         ValueError
-            If `init.type` is not equal to ``STOP_LIMIT``.
+            If `init.type` is not equal to ``TRAILING_STOP_LIMIT``.
 
         """
         Condition.not_none(init, "init")
