@@ -98,7 +98,7 @@ written in Cython, however the libraries can be accessed from both pure Python a
 ## What is Rust?
 
 [Rust](https://www.rust-lang.org/) is a multi-paradigm programming language designed for performance and safety, especially safe
-concurrency. Rust is blazingly fast and memory-efficient (comparable to C and C++): with no runtime or
+concurrency. Rust is blazingly fast and memory-efficient (comparable to C and C++) with no runtime or
 garbage collector. It can power mission-critical systems, run on embedded devices, and easily
 integrates with other languages.
 
