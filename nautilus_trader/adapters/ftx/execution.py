@@ -148,7 +148,9 @@ class FTXExecutionClient(LiveExecutionClient):
             key=client.api_key,
             secret=client.api_secret,
             us=us,
-            log_recv=True,  # For debugging
+            auto_ping_interval=15.0,  # Recommended by FTX
+            # log_send=True,  # Uncomment for development and debugging
+            # log_recv=True,  # Uncomment for development and debugging
         )
         self._ws_buffer: List[bytes] = []
 
@@ -156,7 +158,7 @@ class FTXExecutionClient(LiveExecutionClient):
         self._task_poll_account: Optional[asyncio.Task] = None
         self._task_buffer_ws_msgs: Optional[asyncio.Task] = None
 
-        # Hot caches
+        # Hot Caches
         self._instrument_ids: Dict[str, InstrumentId] = {}
         self._order_ids: Dict[VenueOrderId, ClientOrderId] = {}
         self._order_types: Dict[VenueOrderId, OrderType] = {}

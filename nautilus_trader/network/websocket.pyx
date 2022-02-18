@@ -21,7 +21,7 @@ from typing import Callable, List, Optional
 import aiohttp
 import orjson
 from aiohttp import WSMessage
-
+from nautilus_trader.common.logging cimport LogColor
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.common.logging cimport LoggerAdapter
 from nautilus_trader.core.correctness cimport Condition
@@ -57,8 +57,12 @@ cdef class WebSocketClient:
         The handler for receiving raw data.
     max_retry_connection : int, default 0
         The number of times to attempt a reconnection.
+    pong_msg : bytes, optional
+        The pong message expected from the server (used to filter).
+    log_send : bool, default False
+        If the raw sent bytes for each message should be logged.
     log_recv : bool, default False
-        If the raw received bytes for each message should be logged.
+        If the raw recv bytes for each message should be logged.
     """
 
     def __init__(
@@ -67,6 +71,8 @@ cdef class WebSocketClient:
         Logger logger not None: Logger,
         handler not None: Callable[[bytes], None],
         int max_retry_connection=0,
+        bytes pong_msg=None,
+        bint log_send=False,
         bint log_recv=False,
     ):
         self._loop = loop
@@ -80,6 +86,8 @@ cdef class WebSocketClient:
         self._tasks: List[asyncio.Task] = []
         self._stopped = False
         self._stopping = False
+        self._pong_msg = pong_msg
+        self._log_send = log_send
         self._log_recv = log_recv
 
         self.is_connected = False
@@ -88,6 +96,26 @@ cdef class WebSocketClient:
         self.unknown_message_count = 0
 
     async def connect(self, str ws_url, bint start=True, **ws_kwargs) -> None:
+        """
+        Connect the WebSocket client.
+
+        Will call `post_connection()` prior to starting receive loop.
+
+        Parameters
+        ----------
+        ws_url : str
+            The endpoint URL to connect to.
+        start : bool, default True
+            If the WebSocket should start its receive loop.
+        ws_kwargs : dict
+            The optional kwargs for connection.
+
+        Raises
+        ------
+        ValueError
+            If `ws_url` is not a valid string.
+
+        """
         Condition.valid_string(ws_url, "ws_url")
 
         self._log.debug(f"Connecting WebSocket to {ws_url}")
@@ -102,45 +130,68 @@ cdef class WebSocketClient:
             self._log.debug("WebSocket connected.")
         self.is_connected = True
 
+    async def post_connection(self) -> None:
+        """
+        Actions to be performed post connection.
+
+        """
+        # Override to implement additional connection related behaviour
+        # (sending other messages etc.).
+        pass
+
     async def reconnect(self) -> None:
+        """
+        Reconnect the WebSocket client session.
+
+        Will call `post_reconnection()` following connection.
+
+        """
         self._log.debug(f"Reconnecting WebSocket to {self._ws_url}")
 
         self._ws = await self._session.ws_connect(url=self._ws_url, **self._ws_kwargs)
         await self.post_reconnection()
         self._log.debug("WebSocket reconnected.")
 
-    async def post_connection(self) -> None:
-        """
-        Actions to be performed post connection.
-
-        This method is called before start(), override to implement additional
-        connection related behaviour (sending other messages etc.).
-        """
-        pass
-
     async def post_reconnection(self) -> None:
         """
         Actions to be performed post reconnection.
 
-        Override to implement additional
-        reconnection related behaviour (resubscribing etc.).
         """
+        # Override to implement additional reconnection related behaviour
+        # (resubscribing etc.).
         pass
 
     async def disconnect(self) -> None:
+        """
+        Disconnect the WebSocket client session.
+
+        Will call `post_disconnection()`.
+
+        """
         self._log.debug("Closing WebSocket...")
         self._stopping = True
         await self._ws.close()
         while not self._stopped:
             await self._sleep0()
         self.is_connected = False
+        await self.post_disconnection()
         self._log.debug("WebSocket closed.")
+
+    async def post_disconnection(self) -> None:
+        """
+        Actions to be performed post disconnection.
+
+        """
+        # Override to implement additional disconnection related behaviour
+        # (canceling ping tasks etc.).
+        pass
 
     async def send_json(self, dict msg) -> None:
         await self.send(orjson.dumps(msg))
 
     async def send(self, bytes raw) -> None:
-        self._log.debug(f"[SEND] {raw}")
+        if self._log_send:
+            self._log.info(f"[SEND] {raw}", LogColor.BLUE)
         await self._ws.send_bytes(raw)
 
     async def receive(self) -> Optional[bytes]:
@@ -210,9 +261,11 @@ cdef class WebSocketClient:
             try:
                 raw = await self.receive()
                 if self._log_recv:
-                    self._log.debug(f"[RECV] {raw}.")
+                    self._log.info(f"[RECV] {raw}.", LogColor.BLUE)
                 if raw is None:
                     continue
+                if self._pong_msg is not None and raw == self._pong_msg:
+                    continue  # Filter pong message
                 self._handler(raw)
                 self.connection_retry_count = 0
             except Exception as ex:

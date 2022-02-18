@@ -16,9 +16,12 @@ Released on TBD (UTC).
 - Added `LimitIfTouched` order type.
 - Added `Order.has_price` property (convenience).
 - Added `Order.has_trigger_price` property (convenience).
+- Added WebSocket `log_send` and `log_recv` config options.
+- Added WebSocket `auto_ping_interval` (seconds) config option.
 - Improved `BacktestDataConfig` API: now takes either a type of `Data` _or_ a fully qualified path string.
 
 ### Fixes
+- Fixed FTX execution WebSocket 'ping strategy'.
 - Fixed non-deterministic config dask tokenization.
 
 ---
