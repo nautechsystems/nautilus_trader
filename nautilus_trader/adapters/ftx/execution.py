@@ -27,11 +27,11 @@ from nautilus_trader.accounting.factory import AccountFactory
 from nautilus_trader.adapters.ftx.common import FTX_VENUE
 from nautilus_trader.adapters.ftx.http.client import FTXHttpClient
 from nautilus_trader.adapters.ftx.http.error import FTXError
-from nautilus_trader.adapters.ftx.parsing import parse_order_fill
-from nautilus_trader.adapters.ftx.parsing import parse_order_status
-from nautilus_trader.adapters.ftx.parsing import parse_order_type
-from nautilus_trader.adapters.ftx.parsing import parse_position
-from nautilus_trader.adapters.ftx.parsing import parse_trigger_order_status
+from nautilus_trader.adapters.ftx.parsing.common import parse_order_fill
+from nautilus_trader.adapters.ftx.parsing.common import parse_order_type
+from nautilus_trader.adapters.ftx.parsing.common import parse_position
+from nautilus_trader.adapters.ftx.parsing.http import parse_order_status_http
+from nautilus_trader.adapters.ftx.parsing.http import parse_trigger_order_status_http
 from nautilus_trader.adapters.ftx.providers import FTXInstrumentProvider
 from nautilus_trader.adapters.ftx.websocket.client import FTXWebSocketClient
 from nautilus_trader.cache.cache import Cache
@@ -278,7 +278,7 @@ class FTXExecutionClient(LiveExecutionClient):
             )
             return None
 
-        return parse_order_status(
+        return parse_order_status_http(
             account_id=self.account_id,
             instrument=instrument,
             data=response,
@@ -378,7 +378,7 @@ class FTXExecutionClient(LiveExecutionClient):
                     )
                     continue
 
-                report: OrderStatusReport = parse_order_status(
+                report: OrderStatusReport = parse_order_status_http(
                     account_id=self.account_id,
                     instrument=instrument,
                     data=data,
@@ -448,7 +448,7 @@ class FTXExecutionClient(LiveExecutionClient):
                     )
                     continue
 
-                report: OrderStatusReport = parse_trigger_order_status(
+                report: OrderStatusReport = parse_trigger_order_status_http(
                     account_id=self.account_id,
                     instrument=instrument,
                     triggers=self._triggers,

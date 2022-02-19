@@ -24,13 +24,13 @@ from nautilus_trader.adapters.ftx.data_types import FTXTicker
 from nautilus_trader.adapters.ftx.http.client import FTXHttpClient
 from nautilus_trader.adapters.ftx.http.error import FTXClientError
 from nautilus_trader.adapters.ftx.http.error import FTXError
-from nautilus_trader.adapters.ftx.parsing import parse_bars
-from nautilus_trader.adapters.ftx.parsing import parse_book_partial_ws
-from nautilus_trader.adapters.ftx.parsing import parse_book_update_ws
-from nautilus_trader.adapters.ftx.parsing import parse_market
-from nautilus_trader.adapters.ftx.parsing import parse_quote_tick_ws
-from nautilus_trader.adapters.ftx.parsing import parse_ticker_ws
-from nautilus_trader.adapters.ftx.parsing import parse_trade_ticks_ws
+from nautilus_trader.adapters.ftx.parsing.common import parse_instrument
+from nautilus_trader.adapters.ftx.parsing.http import parse_bars_http
+from nautilus_trader.adapters.ftx.parsing.websocket import parse_book_partial_ws
+from nautilus_trader.adapters.ftx.parsing.websocket import parse_book_update_ws
+from nautilus_trader.adapters.ftx.parsing.websocket import parse_quote_tick_ws
+from nautilus_trader.adapters.ftx.parsing.websocket import parse_ticker_ws
+from nautilus_trader.adapters.ftx.parsing.websocket import parse_trade_ticks_ws
 from nautilus_trader.adapters.ftx.providers import FTXInstrumentProvider
 from nautilus_trader.adapters.ftx.websocket.client import FTXWebSocketClient
 from nautilus_trader.cache.cache import Cache
@@ -491,7 +491,7 @@ class FTXDataClient(LiveMarketDataClient):
             while len(data) > limit:
                 data.pop(0)  # Pop left
 
-        bars: List[Bar] = parse_bars(
+        bars: List[Bar] = parse_bars_http(
             instrument=instrument,
             bar_type=bar_type,
             data=data,
@@ -566,7 +566,7 @@ class FTXDataClient(LiveMarketDataClient):
             return
 
         for _, data in data["data"].items():
-            instrument: Instrument = parse_market(
+            instrument: Instrument = parse_instrument(
                 account_info=account_info,
                 data=data,
                 ts_init=self._clock.timestamp_ns(),
