@@ -53,11 +53,11 @@ class ImportableStrategyConfig(ImportableActorConfig):
     Parameters
     ----------
     path : str, optional
-        The fully-qualified name of the module.
+        The fully qualified name of the module.
     source : bytes, optional
         The strategy source code.
     config : Union[TradingStrategyConfig, str]
-
+        The strategy configuration
     """
 
     path: Optional[str]
