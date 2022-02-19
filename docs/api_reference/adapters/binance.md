@@ -8,20 +8,30 @@
    :member-order: bysource
 ```
 
-## Data
+## Factories
 
 ```{eval-rst}
-.. automodule:: nautilus_trader.adapters.binance.data
+.. automodule:: nautilus_trader.adapters.binance.factories
    :show-inheritance:
    :inherited-members:
    :members:
    :member-order: bysource
 ```
 
-## Data Types
+## Providers
 
 ```{eval-rst}
-.. automodule:: nautilus_trader.adapters.binance.data_types
+.. automodule:: nautilus_trader.adapters.binance.providers
+   :show-inheritance:
+   :inherited-members:
+   :members:
+   :member-order: bysource
+```
+
+## Data
+
+```{eval-rst}
+.. automodule:: nautilus_trader.adapters.binance.data
    :show-inheritance:
    :inherited-members:
    :members:
@@ -38,30 +48,22 @@
    :member-order: bysource
 ```
 
-## Factories
+## Core
+
+### Types
 
 ```{eval-rst}
-.. automodule:: nautilus_trader.adapters.binance.factories
+.. automodule:: nautilus_trader.adapters.binance.core.types
    :show-inheritance:
    :inherited-members:
    :members:
    :member-order: bysource
 ```
 
-## Parsing
+### Enums
 
 ```{eval-rst}
-.. automodule:: nautilus_trader.adapters.binance.parsing
-   :show-inheritance:
-   :inherited-members:
-   :members:
-   :member-order: bysource
-```
-
-## Providers
-
-```{eval-rst}
-.. automodule:: nautilus_trader.adapters.binance.providers
+.. automodule:: nautilus_trader.adapters.binance.core.enums
    :show-inheritance:
    :inherited-members:
    :members:
