@@ -44,7 +44,7 @@ from nautilus_trader.model.orders.base cimport Order
 
 cdef class LimitOrder(Order):
     """
-    Represents a limit order.
+    Represents a `limit` order.
 
     Parameters
     ----------
@@ -169,6 +169,12 @@ cdef class LimitOrder(Order):
         self.expire_time_ns = expire_time_ns
         self.display_qty = display_qty
 
+    cdef bint has_price_c(self) except *:
+        return True
+
+    cdef bint has_trigger_price_c(self) except *:
+        return False
+
     cpdef str info(self):
         """
         Return a summary description of the order.
@@ -229,7 +235,7 @@ cdef class LimitOrder(Order):
     @staticmethod
     cdef LimitOrder create(OrderInitialized init):
         """
-        Return a limit order from the given initialized event.
+        Return a `limit` order from the given initialized event.
 
         Parameters
         ----------

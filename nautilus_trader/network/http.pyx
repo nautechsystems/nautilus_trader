@@ -84,10 +84,26 @@ cdef class HttpClient:
 
     @property
     def connected(self) -> bool:
+        """
+        If the HTTP client is connected.
+
+        Returns
+        -------
+        bool
+
+        """
         return len(self._sessions) > 0
 
     @property
     def session(self) -> ClientSession:
+        """
+        The current HTTP client session.
+
+        Returns
+        -------
+        aiohttp.ClientSession
+
+        """
         return self._get_session()
 
     @cython.boundscheck(False)
@@ -107,6 +123,10 @@ cdef class HttpClient:
         return urllib.parse.urlencode(params)
 
     async def connect(self) -> None:
+        """
+        Connect the HTTP client session.
+
+        """
         self._log.debug("Connecting sessions...")
         self._sessions = [aiohttp.ClientSession(
             connector=aiohttp.TCPConnector(
@@ -128,6 +148,10 @@ cdef class HttpClient:
         self._log.debug(f"Connected sessions: {self._sessions}.")
 
     async def disconnect(self) -> None:
+        """
+        Disconnect the HTTP client session.
+
+        """
         for session in self._sessions:
             self._log.debug(f"Closing session: {session}...")
             await session.close()

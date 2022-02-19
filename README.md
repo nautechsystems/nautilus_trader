@@ -98,7 +98,7 @@ written in Cython, however the libraries can be accessed from both pure Python a
 ## What is Rust?
 
 [Rust](https://www.rust-lang.org/) is a multi-paradigm programming language designed for performance and safety, especially safe
-concurrency. Rust is blazingly fast and memory-efficient (comparable to C and C++): with no runtime or
+concurrency. Rust is blazingly fast and memory-efficient (comparable to C and C++) with no runtime or
 garbage collector. It can power mission-critical systems, run on embedded devices, and easily
 integrates with other languages.
 
@@ -130,14 +130,15 @@ NautilusTrader is designed in a modular way to work with 'adapters' which provid
 connectivity to data publishers and/or trading venues - converting their raw API
 into a unified interface. The following integrations are currently supported:
 
-| Name                                                    | ID      | Type                    | Status                                                | Docs                                                              |
-|:--------------------------------------------------------|:--------|:------------------------|:------------------------------------------------------|:------------------------------------------------------------------|
-[Betfair](https://betfair.com)                            | BETFAIR | Sports Betting Exchange | ![status](https://img.shields.io/badge/beta-yellow)   | [Guide](https://docs.nautilustrader.io/integrations/betfair.html) |
-[Binance](https://binance.com)                            | BINANCE | Crypto Exchange         | ![status](https://img.shields.io/badge/beta-yellow)   | [Guide](https://docs.nautilustrader.io/integrations/binance.html) |
-[Binance US](https://binance.us)                          | BINANCE | Crypto Exchange         | ![status](https://img.shields.io/badge/beta-yellow)   | [Guide](https://docs.nautilustrader.io/integrations/binance.html) |
-[FTX](https://ftx.com)                                    | FTX     | Crypto Exchange         | ![status](https://img.shields.io/badge/beta-yellow)   | [Guide](https://docs.nautilustrader.io/integrations/ftx.html)     |
-[FTX US](https://ftx.us)                                  | FTX     | Crypto Exchange         | ![status](https://img.shields.io/badge/beta-yellow)   | [Guide](https://docs.nautilustrader.io/integrations/ftx.html)     |
-[Interactive Brokers](https://www.interactivebrokers.com) | IB      | Brokerage (multi-venue) | ![status](https://img.shields.io/badge/planning-gray) | [Guide](https://docs.nautilustrader.io/integrations/ib.html)      |
+| Name                                                    | ID      | Type                    | Status                                                  | Docs                                                              |
+|:--------------------------------------------------------|:--------|:------------------------|:--------------------------------------------------------|:------------------------------------------------------------------|
+[Betfair](https://betfair.com)                            | BETFAIR | Sports Betting Exchange | ![status](https://img.shields.io/badge/beta-yellow)     | [Guide](https://docs.nautilustrader.io/integrations/betfair.html) |
+[Binance](https://binance.com)                            | BINANCE | Crypto Exchange         | ![status](https://img.shields.io/badge/beta-yellow)     | [Guide](https://docs.nautilustrader.io/integrations/binance.html) |
+[Binance US](https://binance.us)                          | BINANCE | Crypto Exchange         | ![status](https://img.shields.io/badge/beta-yellow)     | [Guide](https://docs.nautilustrader.io/integrations/binance.html) |
+[Binance Futures](https://www.binance.com/en/futures)     | BINANCE | Crypto Exchange         | ![status](https://img.shields.io/badge/building-orange) | [Guide](https://docs.nautilustrader.io/integrations/binance.html) |
+[FTX](https://ftx.com)                                    | FTX     | Crypto Exchange         | ![status](https://img.shields.io/badge/beta-yellow)     | [Guide](https://docs.nautilustrader.io/integrations/ftx.html)     |
+[FTX US](https://ftx.us)                                  | FTX     | Crypto Exchange         | ![status](https://img.shields.io/badge/beta-yellow)     | [Guide](https://docs.nautilustrader.io/integrations/ftx.html)     |
+[Interactive Brokers](https://www.interactivebrokers.com) | IB      | Brokerage (multi-venue) | ![status](https://img.shields.io/badge/planning-gray)   | [Guide](https://docs.nautilustrader.io/integrations/ib.html)      |
 
 Refer to the [Integrations](https://docs.nautilustrader.io/integrations/index.html) documentation for further details.
 

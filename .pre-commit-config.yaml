@@ -39,7 +39,7 @@ repos:
         args: ["--manifest-path", "nautilus_core/Cargo.toml"]
 
   - repo: https://github.com/hadialqattan/pycln
-    rev: v1.1.0
+    rev: v1.2.0
     hooks:
       - id: pycln
         name: pycln (Python unused imports)

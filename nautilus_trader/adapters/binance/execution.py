@@ -20,8 +20,8 @@ from typing import Any, Dict, List, Optional
 
 import orjson
 
-from nautilus_trader.adapters.binance.common import BINANCE_VENUE
-from nautilus_trader.adapters.binance.common import BinanceAccountType
+from nautilus_trader.adapters.binance.core.constants import BINANCE_VENUE
+from nautilus_trader.adapters.binance.core.enums import BinanceAccountType
 from nautilus_trader.adapters.binance.http.api.account import BinanceAccountHttpAPI
 from nautilus_trader.adapters.binance.http.api.market import BinanceMarketHttpAPI
 from nautilus_trader.adapters.binance.http.api.user import BinanceUserDataHttpAPI
@@ -133,16 +133,14 @@ class BinanceExecutionClient(LiveExecutionClient):
         self._account_type = account_type
 
         # HTTP API
-        self._http_account = BinanceAccountHttpAPI(client=self._client)
-        self._http_market = BinanceMarketHttpAPI(client=self._client)
-        self._http_user = BinanceUserDataHttpAPI(client=self._client)
+        self._http_account = BinanceAccountHttpAPI(client=self._client, account_type=account_type)
+        self._http_market = BinanceMarketHttpAPI(client=self._client, account_type=account_type)
+        self._http_user = BinanceUserDataHttpAPI(client=self._client, account_type=account_type)
 
         # Listen keys
         self._ping_listen_keys_interval: int = 60 * 5  # Once every 5 mins (hardcode)
         self._ping_listen_keys_task: Optional[asyncio.Task] = None
-        self._listen_key_spot: Optional[str] = None
-        self._listen_key_margin: Optional[str] = None
-        self._listen_key_isolated: Optional[str] = None
+        self._listen_key: Optional[str] = None
 
         # WebSocket API
         self._ws = BinanceWebSocketClient(
@@ -190,12 +188,12 @@ class BinanceExecutionClient(LiveExecutionClient):
         self._update_account_state(response=response)
 
         # Get listen keys
-        response = await self._http_user.create_listen_key_spot()
-        self._listen_key_spot = response["listenKey"]
+        response = await self._http_user.create_listen_key()
+        self._listen_key = response["listenKey"]
         self._ping_listen_keys_task = self._loop.create_task(self._ping_listen_keys())
 
         # Connect WebSocket client
-        self._ws.subscribe(key=self._listen_key_spot)
+        self._ws.subscribe(key=self._listen_key)
         await self._ws.connect()
 
         self._set_connected(True)
@@ -222,9 +220,9 @@ class BinanceExecutionClient(LiveExecutionClient):
                 f"Scheduled `ping_listen_keys` to run in " f"{self._ping_listen_keys_interval}s."
             )
             await asyncio.sleep(self._ping_listen_keys_interval)
-            if self._listen_key_spot:
-                self._log.debug(f"Pinging WebSocket listen key {self._listen_key_spot}...")
-                await self._http_user.ping_listen_key_spot(self._listen_key_spot)
+            if self._listen_key:
+                self._log.debug(f"Pinging WebSocket listen key {self._listen_key}...")
+                await self._http_user.ping_listen_key(self._listen_key)
 
     async def _disconnect(self) -> None:
         # Cancel tasks

@@ -10,12 +10,6 @@ This integration is still under construction. Please consider it to be in an
 unstable beta phase and exercise caution.
 ```
 
-```{note}
-Binance offers different account types including `spot`, `margin` and 
-`futures`. NautilusTrader currently supports `spot` account trading, with 
-support for the other account types on the way.
-```
-
 ## Overview
 The following documentation assumes a trader is setting up for both live market 
 data feeds, and trade execution. The Binance integration consists of several 
@@ -50,14 +44,20 @@ config = TradingNodeConfig(
         "BINANCE": {
             "api_key": "YOUR_BINANCE_API_KEY",
             "api_secret": "YOUR_BINANCE_API_SECRET",
-            "us": False,
+            "account_type": "spot",  # {spot, margin, futures_usdt, futures_coin}
+            "base_url_http": None,  # Override with custom endpoint
+            "base_url_ws": None,  # Override with custom endpoint
+            "us": False,  # If client is for Binance US
         },
     },
     exec_clients={
         "BINANCE": {
             "api_key": "YOUR_BINANCE_API_KEY",
             "api_secret": "YOUR_BINANCE_API_SECRET",
-            "us": False,
+            "account_type": "spot",  # {spot, margin, futures_usdt, futures_coin}
+            "base_url_http": None,  # Override with custom endpoint
+            "base_url_ws": None,  # Override with custom endpoint
+            "us": False,  # If client is for Binance US
         },
     },
 )
@@ -80,14 +80,61 @@ node.build()
 ### API credentials
 There are two options for supplying your credentials to the Binance clients.
 Either pass the corresponding `api_key` and `api_secret` values to the config dictionaries, or
-set the following environment variables: 
+set the following environment variables for live clients: 
 - `BINANCE_API_KEY`
 - `BINANCE_API_SECRET`
 
+Or for clients connecting to testnets, you can set:
+- `BINANCE_TESTNET_API_KEY`
+- `BINANCE_TESTNET_API_SECRET`
+
 When starting the trading node, you'll receive immediate confirmation of whether your
 credentials are valid and have trading permissions.
+
+### Account Type
+All the Binance account types will be supported for live trading. Set the account type
+through the `account_type` option as a string. The account type options are:
+- `spot`
+- `margin`
+- `futures_usdt` (USDT or BUSD stablecoins as collateral)
+- `futures_coin` (other cryptocurrency as collateral)
+
+```{note}
+Binance does not currently offer a testnet for COIN-M futures.
+```
+
+### Base URL overrides
+It's possible to override the default base URLs for both HTTP Rest and
+WebSocket APIs. This is useful for configuring API clusters for performance reasons, 
+or when Binance has provided you with specialized endpoints.
 
 ### Binance US
 There is support for Binance US accounts by setting the `us` option in the configs
 to `True` (this is `False` by default). All functionality available to US accounts
 should behave identically to standard Binance.
+
+### Testnets
+It's also possible to configure one or both clients to connect to the Binance testnet.
+Simply set the `testnet` option to `True` (this is `False` by default):
+
+```python
+config = TradingNodeConfig(
+    ...,  # Omitted
+    data_clients={
+        "BINANCE": {
+            "api_key": "YOUR_BINANCE_TESTNET_API_KEY",
+            "api_secret": "YOUR_BINANCE_TESTNET_API_SECRET",
+            "account_type": "spot",  # {spot, margin, futures_usdt}
+            "testnet": True,  # If client uses the testnet
+        },
+    },
+    exec_clients={
+        "BINANCE": {
+            "api_key": "YOUR_BINANCE_TESTNET_API_KEY",
+            "api_secret": "YOUR_BINANCE_TESTNET_API_SECRET",
+            "account_type": "spot",  # {spot, margin, futures_usdt}
+            "testnet": True,  # If client uses the testnet
+        },
+    },
+)
+```

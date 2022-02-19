@@ -16,10 +16,12 @@
 
 from decimal import Decimal
 
-from nautilus_trader.adapters.binance.factories import BinanceLiveDataClientFactory
-from nautilus_trader.adapters.binance.factories import BinanceLiveExecutionClientFactory
-from nautilus_trader.examples.strategies.volatility_market_maker import VolatilityMarketMaker
-from nautilus_trader.examples.strategies.volatility_market_maker import VolatilityMarketMakerConfig
+from nautilus_trader.adapters.ftx.factories import FTXLiveDataClientFactory
+from nautilus_trader.adapters.ftx.factories import FTXLiveExecutionClientFactory
+from nautilus_trader.examples.strategies.ema_cross_stop_entry_trail import EMACrossStopEntryTrail
+from nautilus_trader.examples.strategies.ema_cross_stop_entry_trail import (
+    EMACrossStopEntryTrailConfig,
+)
 from nautilus_trader.infrastructure.config import CacheDatabaseConfig
 from nautilus_trader.live.config import TradingNodeConfig
 from nautilus_trader.live.node import TradingNode
@@ -35,27 +37,24 @@ from nautilus_trader.live.node import TradingNode
 config_node = TradingNodeConfig(
     trader_id="TESTER-001",
     log_level="INFO",
+    exec_engine={
+        "recon_lookback_mins": 1440,
+    },
     cache_database=CacheDatabaseConfig(),
     data_clients={
-        "BINANCE": {
-            # "api_key": "YOUR_BINANCE_API_KEY",
-            # "api_secret": "YOUR_BINANCE_API_SECRET",
-            "account_type": "spot",
-            "base_url_http": None,
-            "base_url_ws": None,
-            "us": False,  # If client is for Binance US
-            "sandbox_mode": True,  # If client uses the testnet
+        "FTX": {
+            # "api_key": "YOUR_FTX_API_KEY",
+            # "api_secret": "YOUR_FTX_API_SECRET",
+            # "subaccount": "YOUR_FTX_SUBACCOUNT", (optional)
+            "us": False,  # If client is for FTX US
         },
     },
     exec_clients={
-        "BINANCE": {
-            # "api_key": "YOUR_BINANCE_API_KEY",
-            # "api_secret": "YOUR_BINANCE_API_SECRET",
-            "account_type": "spot",
-            "base_url_http": None,
-            "base_url_ws": None,
-            "us": False,  # If client is for Binance US
-            "sandbox_mode": True,  # If client uses the testnet,
+        "FTX": {
+            # "api_key": "YOUR_FTX_API_KEY",
+            # "api_secret": "YOUR_FTX_API_SECRET",
+            # "subaccount": "YOUR_FTX_SUBACCOUNT", (optional)
+            "us": False,  # If client is for FTX US
         },
     },
     timeout_connection=5.0,
@@ -68,22 +67,24 @@ config_node = TradingNodeConfig(
 node = TradingNode(config=config_node)
 
 # Configure your strategy
-strat_config = VolatilityMarketMakerConfig(
-    instrument_id="ETHUSDT.BINANCE",
-    bar_type="ETHUSDT.BINANCE-1-MINUTE-LAST-EXTERNAL",
+strat_config = EMACrossStopEntryTrailConfig(
+    instrument_id="ETH-PERP.FTX",
+    bar_type="ETH-PERP.FTX-1-MINUTE-LAST-INTERNAL",
+    fast_ema_period=10,
+    slow_ema_period=20,
     atr_period=20,
-    atr_multiple=6.0,
+    trail_atr_multiple=3.0,
     trade_size=Decimal("0.01"),
 )
 # Instantiate your strategy
-strategy = VolatilityMarketMaker(config=strat_config)
+strategy = EMACrossStopEntryTrail(config=strat_config)
 
 # Add your strategies and modules
 node.trader.add_strategy(strategy)
 
 # Register your client factories with the node (can take user defined factories)
-node.add_data_client_factory("BINANCE", BinanceLiveDataClientFactory)
-node.add_exec_client_factory("BINANCE", BinanceLiveExecutionClientFactory)
+node.add_data_client_factory("FTX", FTXLiveDataClientFactory)
+node.add_exec_client_factory("FTX", FTXLiveExecutionClientFactory)
 node.build()
 
 

@@ -19,8 +19,10 @@ cpdef enum OrderType:
     LIMIT = 2
     STOP_MARKET = 3
     STOP_LIMIT = 4
-    TRAILING_STOP_MARKET = 5
-    TRAILING_STOP_LIMIT = 6
+    MARKET_IF_TOUCHED = 5
+    LIMIT_IF_TOUCHED = 6
+    TRAILING_STOP_MARKET = 7
+    TRAILING_STOP_LIMIT = 8
 
 
 cdef class OrderTypeParser:

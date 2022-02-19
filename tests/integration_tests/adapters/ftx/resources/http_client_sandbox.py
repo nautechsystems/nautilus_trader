@@ -80,7 +80,7 @@ async def test_ftx_http_client():
     #     # price="2540",
     #     trigger_price="2500",
     #     # trail_value="-20",
-    #     client_id="117",
+    #     # client_id="117",
     #     # post_only=True,
     #     # reduce_only=True,
     # )

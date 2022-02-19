@@ -46,7 +46,7 @@ cdef set _MARKET_ORDER_VALID_TIF = {
 
 cdef class MarketOrder(Order):
     """
-    Represents a market order.
+    Represents a `market` order.
 
     Parameters
     ----------
@@ -134,6 +134,12 @@ cdef class MarketOrder(Order):
         )
         super().__init__(init=init)
 
+    cdef bint has_price_c(self) except *:
+        return False
+
+    cdef bint has_trigger_price_c(self) except *:
+        return False
+
     cpdef dict to_dict(self):
         """
         Return a dictionary representation of this object.
@@ -173,7 +179,7 @@ cdef class MarketOrder(Order):
     @staticmethod
     cdef MarketOrder create(OrderInitialized init):
         """
-        Return an order from the given initialized event.
+        Return a `market` order from the given initialized event.
 
         Parameters
         ----------

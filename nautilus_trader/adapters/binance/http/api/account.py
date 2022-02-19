@@ -18,9 +18,10 @@
 
 from typing import Any, Dict, Optional
 
-from nautilus_trader.adapters.binance.common import format_symbol
+from nautilus_trader.adapters.binance.core.enums import BinanceAccountType
 from nautilus_trader.adapters.binance.http.client import BinanceHttpClient
 from nautilus_trader.adapters.binance.http.enums import NewOrderRespType
+from nautilus_trader.adapters.binance.http.functions import format_symbol
 from nautilus_trader.core.correctness import PyCondition
 
 
@@ -34,12 +35,23 @@ class BinanceAccountHttpAPI:
         The Binance REST API client.
     """
 
-    BASE_ENDPOINT = "/api/v3/"
-
-    def __init__(self, client: BinanceHttpClient):
+    def __init__(
+        self,
+        client: BinanceHttpClient,
+        account_type: BinanceAccountType = BinanceAccountType.SPOT,
+    ):
         PyCondition.not_none(client, "client")
 
         self.client = client
+
+        if account_type in (BinanceAccountType.SPOT, BinanceAccountType.MARGIN):
+            self.BASE_ENDPOINT = "/api/v3/"
+        elif account_type == BinanceAccountType.FUTURES_USDT:
+            self.BASE_ENDPOINT = "/fapi/v1/"
+        elif account_type == BinanceAccountType.FUTURES_COIN:
+            self.BASE_ENDPOINT = "/dapi/v1/"
+        else:  # pragma: no cover (design-time error)
+            raise RuntimeError(f"invalid Binance account type, was {account_type}")
 
     async def new_order_test(
         self,

@@ -16,7 +16,7 @@
 import orjson
 import pyarrow as pa
 
-from nautilus_trader.adapters.ftx.data_types import FTXTicker
+from nautilus_trader.adapters.ftx.core.types import FTXTicker
 from nautilus_trader.common.events.risk import TradingStateChanged
 from nautilus_trader.common.events.system import ComponentStateChanged
 from nautilus_trader.model.data.bar import Bar

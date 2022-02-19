@@ -28,6 +28,8 @@ cdef class WebSocketClient:
     cdef bint _running
     cdef bint _stopped
     cdef bint _stopping
+    cdef bytes _pong_msg
+    cdef bint _log_send
     cdef bint _log_recv
 
     cdef readonly bint is_connected

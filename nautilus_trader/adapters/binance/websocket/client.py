@@ -19,7 +19,7 @@
 import asyncio
 from typing import Callable, List, Optional
 
-from nautilus_trader.adapters.binance.common import format_symbol
+from nautilus_trader.adapters.binance.http.functions import format_symbol
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.network.websocket import WebSocketClient
