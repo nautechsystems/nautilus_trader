@@ -13,7 +13,14 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from nautilus_trader.model.identifiers import Venue
+import json
 
 
-FTX_VENUE = Venue("FTX")
+def format_symbol(symbol: str):
+    return symbol.lower().replace("/", "")
+
+
+def convert_list_to_json_array(symbols):
+    if symbols is None:
+        return symbols
+    return json.dumps(symbols).replace(" ", "").replace("/", "")

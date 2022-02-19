@@ -1,99 +1,117 @@
 {
-  "exchangeFilters": [],
+  "timezone": "UTC",
+  "serverTime": 1645233611962,
+  "futuresType": "U_MARGINED",
   "rateLimits": [
     {
+      "rateLimitType": "REQUEST_WEIGHT",
       "interval": "MINUTE",
       "intervalNum": 1,
-      "limit": 2400,
-      "rateLimitType": "REQUEST_WEIGHT"
+      "limit": 6000
     },
     {
+      "rateLimitType": "ORDERS",
       "interval": "MINUTE",
       "intervalNum": 1,
-      "limit": 1200,
-      "rateLimitType": "ORDERS"
+      "limit": 1200
+    },
+    {
+      "rateLimitType": "ORDERS",
+      "interval": "SECOND",
+      "intervalNum": 10,
+      "limit": 300
     }
   ],
-  "serverTime": 1565613908500,
+  "exchangeFilters": [],
   "assets": [
-    {
-      "asset": "BUSD",
-      "marginAvailable": true,
-      "autoAssetExchange": 0
-    },
     {
       "asset": "USDT",
       "marginAvailable": true,
-      "autoAssetExchange": 0
+      "autoAssetExchange": "-100"
+    },
+    {
+      "asset": "BTC",
+      "marginAvailable": true,
+      "autoAssetExchange": "-0.00100000"
     },
     {
       "asset": "BNB",
-      "marginAvailable": false,
-      "autoAssetExchange": null
+      "marginAvailable": true,
+      "autoAssetExchange": "-0.00100000"
+    },
+    {
+      "asset": "ETH",
+      "marginAvailable": true,
+      "autoAssetExchange": "-0.00100000"
+    },
+    {
+      "asset": "BUSD",
+      "marginAvailable": true,
+      "autoAssetExchange": "-100"
     }
   ],
   "symbols": [
     {
-      "symbol": "BLZUSDT",
-      "pair": "BLZUSDT",
+      "symbol": "BTCUSDT",
+      "pair": "BTCUSDT",
       "contractType": "PERPETUAL",
-      "deliveryDate": 4133404800000,
-      "onboardDate": 1598252400000,
+      "deliveryDate": 4133404802000,
+      "onboardDate": 1569398400000,
       "status": "TRADING",
       "maintMarginPercent": "2.5000",
       "requiredMarginPercent": "5.0000",
-      "baseAsset": "BLZ",
+      "baseAsset": "BTC",
       "quoteAsset": "USDT",
       "marginAsset": "USDT",
-      "pricePrecision": 5,
-      "quantityPrecision": 0,
+      "pricePrecision": 2,
+      "quantityPrecision": 3,
       "baseAssetPrecision": 8,
       "quotePrecision": 8,
       "underlyingType": "COIN",
-      "underlyingSubType": [
-        "STORAGE"
-      ],
+      "underlyingSubType": [],
       "settlePlan": 0,
-      "triggerProtect": "0.15",
+      "triggerProtect": "0.0500",
+      "liquidationFee": "0.012000",
+      "marketTakeBound": "0.30",
       "filters": [
         {
+          "minPrice": "402",
+          "maxPrice": "1246396.60",
           "filterType": "PRICE_FILTER",
-          "maxPrice": "300",
-          "minPrice": "0.0001",
-          "tickSize": "0.0001"
+          "tickSize": "0.10"
         },
         {
+          "stepSize": "0.001",
           "filterType": "LOT_SIZE",
-          "maxQty": "10000000",
-          "minQty": "1",
-          "stepSize": "1"
+          "maxQty": "1000",
+          "minQty": "0.001"
         },
         {
+          "stepSize": "0.001",
           "filterType": "MARKET_LOT_SIZE",
-          "maxQty": "590119",
-          "minQty": "1",
-          "stepSize": "1"
+          "maxQty": "1000",
+          "minQty": "0.001"
         },
         {
-          "filterType": "MAX_NUM_ORDERS",
-          "limit": 200
+          "limit": 200,
+          "filterType": "MAX_NUM_ORDERS"
         },
         {
-          "filterType": "MAX_NUM_ALGO_ORDERS",
-          "limit": 100
+          "limit": 10,
+          "filterType": "MAX_NUM_ALGO_ORDERS"
         },
         {
-          "filterType": "MIN_NOTIONAL",
-          "notional": "1"
+          "notional": "10",
+          "filterType": "MIN_NOTIONAL"
         },
         {
-          "filterType": "PERCENT_PRICE",
-          "multiplierUp": "1.1500",
-          "multiplierDown": "0.8500",
-          "multiplierDecimal": 4
+          "multiplierDown": "0.5454",
+          "multiplierUp": "1.1000",
+          "multiplierDecimal": "4",
+          "filterType": "PERCENT_PRICE"
         }
       ],
-      "OrderType": [
+      "orderTypes": [
         "LIMIT",
         "MARKET",
         "STOP",
@@ -107,10 +125,83 @@
         "IOC",
         "FOK",
         "GTX"
+      ]
+    },
+    {
+      "symbol": "ETHUSDT",
+      "pair": "ETHUSDT",
+      "contractType": "PERPETUAL",
+      "deliveryDate": 4133404800000,
+      "onboardDate": 1569398400000,
+      "status": "TRADING",
+      "maintMarginPercent": "2.5000",
+      "requiredMarginPercent": "5.0000",
+      "baseAsset": "ETH",
+      "quoteAsset": "USDT",
+      "marginAsset": "USDT",
+      "pricePrecision": 2,
+      "quantityPrecision": 3,
+      "baseAssetPrecision": 8,
+      "quotePrecision": 8,
+      "underlyingType": "COIN",
+      "underlyingSubType": [],
+      "settlePlan": 0,
+      "triggerProtect": "0.0500",
+      "liquidationFee": "0.030000",
+      "marketTakeBound": "0.10",
+      "filters": [
+        {
+          "minPrice": "28.23",
+          "maxPrice": "144004.03",
+          "filterType": "PRICE_FILTER",
+          "tickSize": "0.01"
+        },
+        {
+          "stepSize": "0.001",
+          "filterType": "LOT_SIZE",
+          "maxQty": "10000",
+          "minQty": "0.001"
+        },
+        {
+          "stepSize": "0.001",
+          "filterType": "MARKET_LOT_SIZE",
+          "maxQty": "10000",
+          "minQty": "0.001"
+        },
+        {
+          "limit": 200,
+          "filterType": "MAX_NUM_ORDERS"
+        },
+        {
+          "limit": 10,
+          "filterType": "MAX_NUM_ALGO_ORDERS"
+        },
+        {
+          "notional": "10",
+          "filterType": "MIN_NOTIONAL"
+        },
+        {
+          "multiplierDown": "0.9000",
+          "multiplierUp": "1.1000",
+          "multiplierDecimal": "4",
+          "filterType": "PERCENT_PRICE"
+        }
       ],
-      "liquidationFee": "0.010000",
-      "marketTakeBound": "0.30"
+      "orderTypes": [
+        "LIMIT",
+        "MARKET",
+        "STOP",
+        "STOP_MARKET",
+        "TAKE_PROFIT",
+        "TAKE_PROFIT_MARKET",
+        "TRAILING_STOP_MARKET"
+      ],
+      "timeInForce": [
+        "GTC",
+        "IOC",
+        "FOK",
+        "GTX"
+      ]
     }
-  ],
-  "timezone": "UTC"
+    ]
 }

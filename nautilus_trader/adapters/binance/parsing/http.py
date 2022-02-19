@@ -15,7 +15,7 @@
 
 from typing import Dict, List
 
-from nautilus_trader.adapters.binance.data_types import BinanceBar
+from nautilus_trader.adapters.binance.core.types import BinanceBar
 from nautilus_trader.adapters.binance.parsing.common import parse_balances
 from nautilus_trader.core.datetime import millis_to_nanos
 from nautilus_trader.model.data.bar import BarType

@@ -19,7 +19,7 @@ import os
 
 import pytest
 
-from nautilus_trader.adapters.binance.common import BinanceAccountType
+from nautilus_trader.adapters.binance.core.enums import BinanceAccountType
 from nautilus_trader.adapters.binance.factories import get_cached_binance_http_client
 from nautilus_trader.adapters.binance.http.api.market import BinanceMarketHttpAPI
 from nautilus_trader.adapters.binance.providers import BinanceInstrumentProvider
@@ -45,7 +45,7 @@ async def test_binance_futures_testnet_market_http_client():
 
     account_type = BinanceAccountType.FUTURES_USDT
     market = BinanceMarketHttpAPI(client=client, account_type=account_type)
-    response = await market.exchange_info()
+    response = await market.exchange_info(symbol="BTCUSDT")
     print(json.dumps(response, indent=4))
 
     provider = BinanceInstrumentProvider(
