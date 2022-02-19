@@ -32,14 +32,12 @@ class BinanceWalletHttpAPI:
         The Binance REST API client.
     """
 
-    BASE_ENDPOINT = "/sapi/v1/"
-
     def __init__(self, client: BinanceHttpClient):
         PyCondition.not_none(client, "client")
 
         self.client = client
 
-    async def trade_fee(
+    async def trade_fee_spot(
         self,
         symbol: Optional[str] = None,
         recv_window: Optional[int] = None,
@@ -73,6 +71,44 @@ class BinanceWalletHttpAPI:
 
         return await self.client.sign_request(
             http_method="GET",
-            url_path=self.BASE_ENDPOINT + "asset/tradeFee",
+            url_path="/sapi/v1/asset/tradeFee",
+            payload=payload,
+        )
+
+    async def commission_rate_futures(
+        self,
+        symbol: Optional[str] = None,
+        recv_window: Optional[int] = None,
+    ) -> List[Dict[str, str]]:
+        """
+        Fetch trade fee.
+
+        `GET /sapi/v1/asset/tradeFee`
+
+        Parameters
+        ----------
+        symbol : str, optional
+            The trading pair. If None then queries for all symbols.
+        recv_window : int, optional
+            The acceptable receive window for the response.
+
+        Returns
+        -------
+        list[dict[str, str]]
+
+        References
+        ----------
+        https://binance-docs.github.io/apidocs/spot/en/#trade-fee-user_data
+
+        """
+        payload: Dict[str, str] = {}
+        if symbol is not None:
+            payload["symbol"] = symbol
+        if recv_window is not None:
+            payload["recv_window"] = str(recv_window)
+
+        return await self.client.sign_request(
+            http_method="GET",
+            url_path="/fapi/v1/commissionRate",
             payload=payload,
         )

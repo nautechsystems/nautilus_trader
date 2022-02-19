@@ -16,9 +16,10 @@
 import asyncio
 import time
 from decimal import Decimal
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 from nautilus_trader.adapters.binance.common import BINANCE_VENUE
+from nautilus_trader.adapters.binance.common import BinanceAccountType
 from nautilus_trader.adapters.binance.http.api.market import BinanceMarketHttpAPI
 from nautilus_trader.adapters.binance.http.api.wallet import BinanceWalletHttpAPI
 from nautilus_trader.adapters.binance.http.client import BinanceHttpClient
@@ -54,15 +55,17 @@ class BinanceInstrumentProvider(InstrumentProvider):
         self,
         client: BinanceHttpClient,
         logger: Logger,
+        account_type: BinanceAccountType = BinanceAccountType.SPOT,
     ):
         super().__init__()
 
         self.venue = BINANCE_VENUE
         self._client = client
+        self._account_type = account_type
         self._log = LoggerAdapter(type(self).__name__, logger)
 
         self._wallet = BinanceWalletHttpAPI(self._client)
-        self._spot_market = BinanceMarketHttpAPI(self._client)
+        self._market = BinanceMarketHttpAPI(self._client, account_type=account_type)
 
         # Async loading flags
         self._loaded = False
@@ -98,8 +101,10 @@ class BinanceInstrumentProvider(InstrumentProvider):
 
         # Get current commission rates
         try:
-            fee_res: List[Dict[str, str]] = await self._wallet.trade_fee()
-            fees: Dict[str, Dict[str, str]] = {s["symbol"]: s for s in fee_res}
+            fees: Optional[Dict[str, Dict[str, str]]] = None
+            if self._account_type in (BinanceAccountType.SPOT, BinanceAccountType.MARGIN):
+                fee_res: List[Dict[str, str]] = await self._wallet.trade_fee_spot()
+                fees = {s["symbol"]: s for s in fee_res}
         except BinanceClientError:
             self._log.error(
                 "Cannot load instruments: API key authentication failed "
@@ -108,7 +113,7 @@ class BinanceInstrumentProvider(InstrumentProvider):
             return
 
         # Get exchange info for all assets
-        assets_res: Dict[str, Any] = await self._spot_market.exchange_info()
+        assets_res: Dict[str, Any] = await self._market.exchange_info()
         server_time_ns: int = millis_to_nanos(assets_res["serverTime"])
 
         for info in assets_res["symbols"]:
@@ -158,12 +163,19 @@ class BinanceInstrumentProvider(InstrumentProvider):
                 min_notional = Money(min_notional_filter["minNotional"], currency=quote_currency)
             max_price = Price(float(price_filter["maxPrice"]), precision=price_precision)
             min_price = Price(float(price_filter["minPrice"]), precision=price_precision)
-            pair_fees = fees.get(native_symbol.value)
-            maker_fee: Decimal = Decimal(0)
-            taker_fee: Decimal = Decimal(0)
-            if pair_fees:
-                maker_fee = Decimal(pair_fees["makerCommission"])
-                taker_fee = Decimal(pair_fees["takerCommission"])
+
+            # Parse fees
+            if fees is not None:
+                pair_fees = fees.get(native_symbol.value)
+                maker_fee: Decimal = Decimal(0)
+                taker_fee: Decimal = Decimal(0)
+                if pair_fees:
+                    maker_fee = Decimal(pair_fees["makerCommission"])
+                    taker_fee = Decimal(pair_fees["takerCommission"])
+            else:
+                # Futures commissions
+                maker_fee = Decimal("0.0002")  # TODO
+                taker_fee = Decimal("0.0004")  # TODO
 
             # Create instrument
             instrument = CurrencySpot(

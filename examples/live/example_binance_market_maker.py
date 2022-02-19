@@ -40,22 +40,22 @@ config_node = TradingNodeConfig(
         "BINANCE": {
             # "api_key": "YOUR_BINANCE_API_KEY",
             # "api_secret": "YOUR_BINANCE_API_SECRET",
-            "account_type": "spot",
-            "base_url_http": None,
-            "base_url_ws": None,
+            "account_type": "spot",  # {spot, margin, futures_usdt, futures_coin}
+            "base_url_http": None,  # Override with custom endpoint
+            "base_url_ws": None,  # Override with custom endpoint
             "us": False,  # If client is for Binance US
-            "sandbox_mode": True,  # If client uses the testnet
+            "testnet": False,  # If client uses the testnet
         },
     },
     exec_clients={
         "BINANCE": {
             # "api_key": "YOUR_BINANCE_API_KEY",
             # "api_secret": "YOUR_BINANCE_API_SECRET",
-            "account_type": "spot",
-            "base_url_http": None,
-            "base_url_ws": None,
+            "account_type": "spot",  # {spot, margin, futures_usdt, futures_coin}
+            "base_url_http": None,  # Override with custom endpoint
+            "base_url_ws": None,  # Override with custom endpoint
             "us": False,  # If client is for Binance US
-            "sandbox_mode": True,  # If client uses the testnet,
+            "testnet": False,  # If client uses the testnet,
         },
     },
     timeout_connection=5.0,

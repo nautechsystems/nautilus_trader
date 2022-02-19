@@ -45,7 +45,7 @@ class TestBinanceUserHttpAPI:
         mock_send_request = mocker.patch(target="aiohttp.client.ClientSession.request")
 
         # Act
-        await self.api.trade_fee()
+        await self.api.trade_fee_spot()
 
         # Assert
         request = mock_send_request.call_args.kwargs
