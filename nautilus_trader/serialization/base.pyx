@@ -15,7 +15,7 @@
 
 from typing import Any, Callable, Dict
 
-from nautilus_trader.adapters.ftx.data_types import FTXTicker
+from nautilus_trader.adapters.ftx.core.types import FTXTicker
 
 from nautilus_trader.common.events.risk cimport TradingStateChanged
 from nautilus_trader.common.events.system cimport ComponentStateChanged

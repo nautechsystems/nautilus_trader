@@ -18,7 +18,7 @@ from typing import Any, Dict, List
 
 import pandas as pd
 
-from nautilus_trader.adapters.ftx.common import FTX_VENUE
+from nautilus_trader.adapters.ftx.core.constants import FTX_VENUE
 from nautilus_trader.adapters.ftx.parsing.common import parse_order_type
 from nautilus_trader.adapters.ftx.parsing.common import parse_status
 from nautilus_trader.core.datetime import secs_to_nanos

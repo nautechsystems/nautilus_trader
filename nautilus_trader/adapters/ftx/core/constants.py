@@ -13,4 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from nautilus_trader.serialization.arrow import implementations  # noqa: F401
+from nautilus_trader.model.identifiers import Venue
+
+
+FTX_VENUE = Venue("FTX")
