@@ -45,7 +45,8 @@ from nautilus_trader.model.events.position import PositionChanged
 from nautilus_trader.model.events.position import PositionClosed
 from nautilus_trader.model.events.position import PositionOpened
 from nautilus_trader.model.instruments.betting import BettingInstrument
-from nautilus_trader.model.instruments.crypto_perp import CryptoPerpetual
+from nautilus_trader.model.instruments.crypto_future import CryptoFuture
+from nautilus_trader.model.instruments.crypto_perpetual import CryptoPerpetual
 from nautilus_trader.model.instruments.currency import CurrencySpot
 from nautilus_trader.model.instruments.equity import Equity
 from nautilus_trader.model.instruments.future import Future
@@ -568,7 +569,33 @@ NAUTILUS_PARQUET_SCHEMA = {
             "size_precision": pa.int64(),
             "price_increment": pa.dictionary(pa.int8(), pa.string()),
             "size_increment": pa.dictionary(pa.int8(), pa.string()),
-            "lot_size": pa.dictionary(pa.int8(), pa.string()),
+            "max_quantity": pa.dictionary(pa.int8(), pa.string()),
+            "min_quantity": pa.dictionary(pa.int8(), pa.string()),
+            "max_notional": pa.dictionary(pa.int8(), pa.string()),
+            "min_notional": pa.dictionary(pa.int8(), pa.string()),
+            "max_price": pa.dictionary(pa.int8(), pa.string()),
+            "min_price": pa.dictionary(pa.int8(), pa.string()),
+            "margin_init": pa.string(),
+            "margin_maint": pa.string(),
+            "maker_fee": pa.string(),
+            "taker_fee": pa.string(),
+            "info": pa.string(),
+            "ts_init": pa.int64(),
+            "ts_event": pa.int64(),
+        }
+    ),
+    CryptoFuture: pa.schema(
+        {
+            "id": pa.dictionary(pa.int64(), pa.string()),
+            "native_symbol": pa.string(),
+            "underlying": pa.dictionary(pa.int8(), pa.string()),
+            "quote_currency": pa.dictionary(pa.int8(), pa.string()),
+            "settlement_currency": pa.dictionary(pa.int8(), pa.string()),
+            "expiry_date": pa.dictionary(pa.int8(), pa.string()),
+            "price_precision": pa.int64(),
+            "size_precision": pa.int64(),
+            "price_increment": pa.dictionary(pa.int8(), pa.string()),
+            "size_increment": pa.dictionary(pa.int8(), pa.string()),
             "max_quantity": pa.dictionary(pa.int8(), pa.string()),
             "min_quantity": pa.dictionary(pa.int8(), pa.string()),
             "max_notional": pa.dictionary(pa.int8(), pa.string()),

@@ -26,7 +26,8 @@ from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.currencies import USDT
 from nautilus_trader.model.enums import OptionKindParser
 from nautilus_trader.model.instruments.base import Instrument
-from nautilus_trader.model.instruments.crypto_perp import CryptoPerpetual
+from nautilus_trader.model.instruments.crypto_future import CryptoFuture
+from nautilus_trader.model.instruments.crypto_perpetual import CryptoPerpetual
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
@@ -39,6 +40,7 @@ AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy("AUD/USD")
 USDJPY_SIM = TestInstrumentProvider.default_fx_ccy("USD/JPY")
 XBTUSD_BITMEX = TestInstrumentProvider.xbtusd_bitmex()
 BTCUSDT_BINANCE = TestInstrumentProvider.btcusdt_binance()
+BTCUSDT_220325 = TestInstrumentProvider.btcusdt_future_binance()
 ETHUSD_BITMEX = TestInstrumentProvider.ethusd_bitmex()
 AAPL_EQUITY = TestInstrumentProvider.aapl_equity()
 ES_FUTURE = TestInstrumentProvider.es_future()
@@ -149,7 +151,7 @@ class TestInstrument:
         # Assert
         assert result == BTCUSDT_BINANCE
 
-    def test_crypto_swap_instrument_to_dict(self):
+    def test_crypto_perpetual_instrument_to_dict(self):
         # Arrange, Act
         result = CryptoPerpetual.to_dict(XBTUSD_BITMEX)
 
@@ -177,6 +179,39 @@ class TestInstrument:
             "margin_maint": "0.0035",
             "maker_fee": "-0.00025",
             "taker_fee": "0.00075",
+            "ts_event": 0,
+            "ts_init": 0,
+            "info": None,
+        }
+
+    def test_crypto_future_instrument_to_dict(self):
+        # Arrange, Act
+        result = CryptoFuture.to_dict(BTCUSDT_220325)
+
+        # Assert
+        assert CryptoFuture.from_dict(result) == BTCUSDT_220325
+        assert result == {
+            "type": "CryptoFuture",
+            "id": "BTCUSDT_220325.BINANCE",
+            "native_symbol": "BTCUSDT",
+            "underlying": "BTC",
+            "quote_currency": "USDT",
+            "settlement_currency": "USDT",
+            "expiry_date": "2022-03-25",
+            "price_precision": 2,
+            "price_increment": "0.01",
+            "size_precision": 6,
+            "size_increment": "0.000001",
+            "max_quantity": "9000.000000",
+            "min_quantity": "0.000001",
+            "max_notional": None,
+            "min_notional": "10.00000000 USDT",
+            "max_price": "1000000.00",
+            "min_price": "0.01",
+            "margin_init": "0",
+            "margin_maint": "0",
+            "maker_fee": "0.001",
+            "taker_fee": "0.001",
             "ts_event": 0,
             "ts_init": 0,
             "info": None,

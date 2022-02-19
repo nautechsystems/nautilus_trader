@@ -15,28 +15,22 @@
 
 import asyncio
 import time
-from decimal import Decimal
 from typing import Any, Dict, List, Optional
 
 from nautilus_trader.adapters.binance.core.constants import BINANCE_VENUE
 from nautilus_trader.adapters.binance.core.enums import BinanceAccountType
+from nautilus_trader.adapters.binance.core.enums import BinanceContractType
 from nautilus_trader.adapters.binance.http.api.market import BinanceMarketHttpAPI
 from nautilus_trader.adapters.binance.http.api.wallet import BinanceWalletHttpAPI
 from nautilus_trader.adapters.binance.http.client import BinanceHttpClient
 from nautilus_trader.adapters.binance.http.error import BinanceClientError
+from nautilus_trader.adapters.binance.parsing.http import parse_future_instrument_http
+from nautilus_trader.adapters.binance.parsing.http import parse_perpetual_instrument_http
+from nautilus_trader.adapters.binance.parsing.http import parse_spot_instrument_http
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.common.logging import LoggerAdapter
 from nautilus_trader.common.providers import InstrumentProvider
 from nautilus_trader.core.datetime import millis_to_nanos
-from nautilus_trader.core.text import precision_from_str
-from nautilus_trader.model.currency import Currency
-from nautilus_trader.model.enums import CurrencyType
-from nautilus_trader.model.identifiers import InstrumentId
-from nautilus_trader.model.identifiers import Symbol
-from nautilus_trader.model.instruments.currency import CurrencySpot
-from nautilus_trader.model.objects import Money
-from nautilus_trader.model.objects import Price
-from nautilus_trader.model.objects import Quantity
 
 
 class BinanceInstrumentProvider(InstrumentProvider):
@@ -113,98 +107,49 @@ class BinanceInstrumentProvider(InstrumentProvider):
             return
 
         # Get exchange info for all assets
-        assets_res: Dict[str, Any] = await self._market.exchange_info()
-        server_time_ns: int = millis_to_nanos(assets_res["serverTime"])
+        response: Dict[str, Any] = await self._market.exchange_info()
+        server_time_ns: int = millis_to_nanos(response["serverTime"])
 
-        for info in assets_res["symbols"]:
-            native_symbol = Symbol(info["symbol"])
-
-            # Create base asset
-            base_asset: str = info["baseAsset"]
-            base_currency = Currency(
-                code=base_asset,
-                precision=info["baseAssetPrecision"],
-                iso4217=0,  # Currently undetermined for crypto assets
-                name=base_asset,
-                currency_type=CurrencyType.CRYPTO,
-            )
-
-            # Create quote asset
-            quote_asset: str = info["quoteAsset"]
-            quote_currency = Currency(
-                code=quote_asset,
-                precision=info["quoteAssetPrecision"],
-                iso4217=0,  # Currently undetermined for crypto assets
-                name=quote_asset,
-                currency_type=CurrencyType.CRYPTO,
-            )
-
-            # symbol = Symbol(base_currency.code + "/" + quote_currency.code)
-            instrument_id = InstrumentId(symbol=native_symbol, venue=BINANCE_VENUE)
-
-            # Parse instrument filters
-            symbol_filters = {f["filterType"]: f for f in info["filters"]}
-            price_filter = symbol_filters.get("PRICE_FILTER")
-            lot_size_filter = symbol_filters.get("LOT_SIZE")
-            min_notional_filter = symbol_filters.get("MIN_NOTIONAL")
-            # market_lot_size_filter = symbol_filters.get("MARKET_LOT_SIZE")
-
-            tick_size = price_filter["tickSize"].rstrip("0")
-            step_size = lot_size_filter["stepSize"].rstrip("0")
-            price_precision = precision_from_str(tick_size)
-            size_precision = precision_from_str(step_size)
-            price_increment = Price.from_str(tick_size)
-            size_increment = Quantity.from_str(step_size)
-            lot_size = Quantity.from_str(step_size)
-            max_quantity = Quantity(float(lot_size_filter["maxQty"]), precision=size_precision)
-            min_quantity = Quantity(float(lot_size_filter["minQty"]), precision=size_precision)
-            min_notional = None
-            if min_notional_filter is not None:
-                min_notional = Money(min_notional_filter["minNotional"], currency=quote_currency)
-            max_price = Price(float(price_filter["maxPrice"]), precision=price_precision)
-            min_price = Price(float(price_filter["minPrice"]), precision=price_precision)
-
-            # Parse fees
-            if fees is not None:
-                pair_fees = fees.get(native_symbol.value)
-                maker_fee: Decimal = Decimal(0)
-                taker_fee: Decimal = Decimal(0)
-                if pair_fees:
-                    maker_fee = Decimal(pair_fees["makerCommission"])
-                    taker_fee = Decimal(pair_fees["takerCommission"])
+        for data in response["symbols"]:
+            contract_type_str = data.get("contractType")
+            if contract_type_str is None:  # SPOT
+                instrument = parse_spot_instrument_http(
+                    data=data,
+                    fees=fees,
+                    ts_event=server_time_ns,
+                    ts_init=time.time_ns(),
+                )
+                self.add_currency(currency=instrument.base_currency)
             else:
-                # Futures commissions
-                maker_fee = Decimal("0.0002")  # TODO
-                taker_fee = Decimal("0.0004")  # TODO
+                if contract_type_str == "" and data.get("status") == "PENDING_TRADING":
+                    continue  # Not yet defined
 
-            # Create instrument
-            instrument = CurrencySpot(
-                instrument_id=instrument_id,
-                native_symbol=native_symbol,
-                base_currency=base_currency,
-                quote_currency=quote_currency,
-                price_precision=price_precision,
-                size_precision=size_precision,
-                price_increment=price_increment,
-                size_increment=size_increment,
-                lot_size=lot_size,
-                max_quantity=max_quantity,
-                min_quantity=min_quantity,
-                max_notional=None,
-                min_notional=min_notional,
-                max_price=max_price,
-                min_price=min_price,
-                margin_init=Decimal(0),
-                margin_maint=Decimal(0),
-                maker_fee=maker_fee,
-                taker_fee=taker_fee,
-                ts_event=server_time_ns,
-                ts_init=time.time_ns(),
-                info=info,
-            )
+                contract_type = BinanceContractType(contract_type_str)
+                if contract_type == BinanceContractType.PERPETUAL:
+                    instrument = parse_perpetual_instrument_http(
+                        data=data,
+                        ts_event=server_time_ns,
+                        ts_init=time.time_ns(),
+                    )
+                    self.add_currency(currency=instrument.base_currency)
+                elif contract_type in (
+                    BinanceContractType.CURRENT_MONTH,
+                    BinanceContractType.CURRENT_QUARTER,
+                    BinanceContractType.NEXT_MONTH,
+                    BinanceContractType.NEXT_QUARTER,
+                ):
+                    instrument = parse_future_instrument_http(
+                        data=data,
+                        ts_event=server_time_ns,
+                        ts_init=time.time_ns(),
+                    )
+                    self.add_currency(currency=instrument.underlying)
+                else:  # pragma: no cover (design-time error)
+                    raise RuntimeError(
+                        f"invalid BinanceContractType, was {contract_type}",
+                    )
 
-            self.add_currency(currency=base_currency)
-            self.add_currency(currency=quote_currency)
+            self.add_currency(currency=instrument.quote_currency)
             self.add(instrument=instrument)
 
         # Set async loading flags

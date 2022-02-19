@@ -88,6 +88,7 @@ from tests.test_kit.stubs import TestStubs
 
 AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy("AUD/USD")
 ETHUSDT_BINANCE = TestInstrumentProvider.ethusdt_binance()
+BTCUSDT_220325 = TestInstrumentProvider.btcusdt_future_binance()
 
 
 class TestMsgPackSerializer:
@@ -127,7 +128,7 @@ class TestMsgPackSerializer:
         print(b64encode(serialized))
         print(deserialized)
 
-    def test_serialize_and_deserialize_crypto_swap_instrument(self):
+    def test_serialize_and_deserialize_crypto_perpetual_instrument(self):
         # Arrange, Act
         serialized = self.serializer.serialize(ETHUSDT_BINANCE)
         deserialized = self.serializer.deserialize(serialized)
@@ -137,13 +138,13 @@ class TestMsgPackSerializer:
         print(b64encode(serialized))
         print(deserialized)
 
-    def test_serialize_and_deserialize_crypto_instrument(self):
+    def test_serialize_and_deserialize_crypto_future_instrument(self):
         # Arrange, Act
-        serialized = self.serializer.serialize(ETHUSDT_BINANCE)
+        serialized = self.serializer.serialize(BTCUSDT_220325)
         deserialized = self.serializer.deserialize(serialized)
 
         # Assert
-        assert deserialized == ETHUSDT_BINANCE
+        assert deserialized == BTCUSDT_220325
         print(b64encode(serialized))
         print(deserialized)
 

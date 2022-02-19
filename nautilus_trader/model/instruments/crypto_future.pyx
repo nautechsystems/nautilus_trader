@@ -13,11 +13,12 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from decimal import Decimal
+
 import orjson
 
+from cpython.datetime cimport date
 from libc.stdint cimport int64_t
-
-from decimal import Decimal
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.model.c_enums.asset_class cimport AssetClass
@@ -31,9 +32,9 @@ from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
 
 
-cdef class CryptoPerpetual(Instrument):
+cdef class CryptoFuture(Instrument):
     """
-    Represents a crypto perpetual swap instrument.
+    Represents a Crypto futures contract instrument.
 
     Parameters
     ----------
@@ -41,14 +42,12 @@ cdef class CryptoPerpetual(Instrument):
         The instrument ID for the instrument.
     native_symbol : Symbol
         The native/local symbol on the exchange for the instrument.
-    base_currency : Currency, optional
-        The base currency.
+    underlying : Currency, optional
+        The underlying asset.
     quote_currency : Currency
-        The quote currency.
-    quote_currency : Currency
-        The settlement currency.
-    is_inverse : Currency
-        If the instrument costing is inverse (quantity expressed in quote currency units).
+        The contract quote currency.
+    expiry_date : date
+        The contract expiry date.
     price_precision : int
         The price decimal precision.
     size_precision : int
@@ -118,10 +117,10 @@ cdef class CryptoPerpetual(Instrument):
         self,
         InstrumentId instrument_id not None,
         Symbol native_symbol not None,
-        Currency base_currency not None,
+        Currency underlying not None,
         Currency quote_currency not None,
         Currency settlement_currency not None,
-        bint is_inverse,
+        date expiry_date,
         int price_precision,
         int size_precision,
         Price price_increment not None,
@@ -144,9 +143,9 @@ cdef class CryptoPerpetual(Instrument):
             instrument_id=instrument_id,
             native_symbol=native_symbol,
             asset_class=AssetClass.CRYPTO,
-            asset_type=AssetType.SWAP,
+            asset_type=AssetType.FUTURE,
             quote_currency=quote_currency,
-            is_inverse=is_inverse,
+            is_inverse=False,
             price_precision=price_precision,
             size_precision=size_precision,
             price_increment=price_increment,
@@ -168,12 +167,9 @@ cdef class CryptoPerpetual(Instrument):
             info=info,
         )
 
-        self.base_currency = base_currency
+        self.underlying = underlying
         self.settlement_currency = settlement_currency
-        if settlement_currency != base_currency and settlement_currency != quote_currency:
-            self.is_quanto = True
-        else:
-            self.is_quanto = False
+        self.expiry_date = expiry_date
 
     cpdef Currency get_base_currency(self):
         """
@@ -184,10 +180,10 @@ cdef class CryptoPerpetual(Instrument):
         Currency
 
         """
-        return self.base_currency
+        return self.underlying
 
     @staticmethod
-    cdef CryptoPerpetual from_dict_c(dict values):
+    cdef CryptoFuture from_dict_c(dict values):
         Condition.not_none(values, "values")
         cdef str max_q = values["max_quantity"]
         cdef str min_q = values["min_quantity"]
@@ -196,13 +192,13 @@ cdef class CryptoPerpetual(Instrument):
         cdef str max_p = values["max_price"]
         cdef str min_p = values["min_price"]
         cdef bytes info = values["info"]
-        return CryptoPerpetual(
+        return CryptoFuture(
             instrument_id=InstrumentId.from_str_c(values["id"]),
             native_symbol=Symbol(values["native_symbol"]),
-            base_currency=Currency.from_str_c(values["base_currency"]),
+            underlying=Currency.from_str_c(values["underlying"]),
             quote_currency=Currency.from_str_c(values["quote_currency"]),
             settlement_currency=Currency.from_str_c(values["settlement_currency"]),
-            is_inverse=values["is_inverse"],
+            expiry_date=date.fromisoformat(values['expiry_date']),
             price_precision=values["price_precision"],
             size_precision=values["size_precision"],
             price_increment=Price.from_str_c(values["price_increment"]),
@@ -223,16 +219,16 @@ cdef class CryptoPerpetual(Instrument):
         )
 
     @staticmethod
-    cdef dict to_dict_c(CryptoPerpetual obj):
+    cdef dict to_dict_c(CryptoFuture obj):
         Condition.not_none(obj, "obj")
         return {
-            "type": "CryptoPerpetual",
+            "type": "CryptoFuture",
             "id": obj.id.value,
             "native_symbol": obj.native_symbol.value,
-            "base_currency": obj.base_currency.code,
+            "underlying": obj.underlying.code,
             "quote_currency": obj.quote_currency.code,
             "settlement_currency": obj.settlement_currency.code,
-            "is_inverse": obj.is_inverse,
+            "expiry_date": obj.expiry_date.isoformat(),
             "price_precision": obj.price_precision,
             "price_increment": str(obj.price_increment),
             "size_precision": obj.size_precision,
@@ -253,7 +249,7 @@ cdef class CryptoPerpetual(Instrument):
         }
 
     @staticmethod
-    def from_dict(dict values) -> CryptoPerpetual:
+    def from_dict(dict values) -> CryptoFuture:
         """
         Return an instrument from the given initialization values.
 
@@ -264,13 +260,13 @@ cdef class CryptoPerpetual(Instrument):
 
         Returns
         -------
-        CryptoPerpetual
+        CryptoFuture
 
         """
-        return CryptoPerpetual.from_dict_c(values)
+        return CryptoFuture.from_dict_c(values)
 
     @staticmethod
-    def to_dict(CryptoPerpetual obj):
+    def to_dict(CryptoFuture obj):
         """
         Return a dictionary representation of this object.
 
@@ -279,4 +275,4 @@ cdef class CryptoPerpetual(Instrument):
         dict[str, object]
 
         """
-        return CryptoPerpetual.to_dict_c(obj)
+        return CryptoFuture.to_dict_c(obj)

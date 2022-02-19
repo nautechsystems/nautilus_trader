@@ -13,6 +13,22 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-"""
-Provides an API integration for the FTX Crypto exchange.
-"""
+from cpython.datetime cimport date
+
+from nautilus_trader.model.currency cimport Currency
+from nautilus_trader.model.instruments.base cimport Instrument
+
+
+cdef class CryptoFuture(Instrument):
+    cdef readonly Currency underlying
+    """The underlying asset for the contract.\n\n:returns: `Currency`"""
+    cdef readonly Currency settlement_currency
+    """The settlement currency for the contract.\n\n:returns: `Currency`"""
+    cdef readonly date expiry_date
+    """The expiry date for the contract.\n\n:returns: `date`"""
+
+    @staticmethod
+    cdef CryptoFuture from_dict_c(dict values)
+
+    @staticmethod
+    cdef dict to_dict_c(CryptoFuture obj)
