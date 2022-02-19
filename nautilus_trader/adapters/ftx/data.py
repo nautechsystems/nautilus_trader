@@ -19,8 +19,8 @@ from typing import Any, Dict, List, Optional
 import orjson
 import pandas as pd
 
-from nautilus_trader.adapters.ftx.common import FTX_VENUE
-from nautilus_trader.adapters.ftx.data_types import FTXTicker
+from nautilus_trader.adapters.ftx.core.constants import FTX_VENUE
+from nautilus_trader.adapters.ftx.core.types import FTXTicker
 from nautilus_trader.adapters.ftx.http.client import FTXHttpClient
 from nautilus_trader.adapters.ftx.http.error import FTXClientError
 from nautilus_trader.adapters.ftx.http.error import FTXError

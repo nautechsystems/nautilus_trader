@@ -17,7 +17,7 @@ import asyncio
 import time
 from typing import Any, Dict, List
 
-from nautilus_trader.adapters.ftx.common import FTX_VENUE
+from nautilus_trader.adapters.ftx.core.constants import FTX_VENUE
 from nautilus_trader.adapters.ftx.http.client import FTXHttpClient
 from nautilus_trader.adapters.ftx.http.error import FTXClientError
 from nautilus_trader.adapters.ftx.parsing.common import parse_instrument

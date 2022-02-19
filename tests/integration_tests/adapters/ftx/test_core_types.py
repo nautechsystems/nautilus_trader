@@ -13,7 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from nautilus_trader.adapters.ftx.data_types import FTXTicker
+from nautilus_trader.adapters.ftx.core.types import FTXTicker
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from tests.test_kit.stubs import TestStubs

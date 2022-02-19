@@ -17,7 +17,7 @@ from typing import Any, Dict, List
 
 import pandas as pd
 
-from nautilus_trader.adapters.ftx.data_types import FTXTicker
+from nautilus_trader.adapters.ftx.core.types import FTXTicker
 from nautilus_trader.core.datetime import secs_to_nanos
 from nautilus_trader.model.data.tick import QuoteTick
 from nautilus_trader.model.data.tick import TradeTick
