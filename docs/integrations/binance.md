@@ -93,8 +93,11 @@ credentials are valid and have trading permissions.
 
 ### Account Type
 All the Binance account types will be supported for live trading. Set the account type
-through the `account_type` option as a string. Options are `spot`, `margin`, `futures_usdt` (USDT or
-BUSD stablecoins as collateral), `futures_coin` (other cryptocurrency as collateral).
+through the `account_type` option as a string. The account type options are:
+- `spot`
+- `margin`
+- `futures_usdt` (USDT or BUSD stablecoins as collateral)
+- `futures_coin` (other cryptocurrency as collateral)
 
 ```{note}
 Binance does not currently offer a testnet for COIN-M futures.
@@ -103,7 +106,7 @@ Binance does not currently offer a testnet for COIN-M futures.
 ### Base URL overrides
 It's possible to override the default base URLs for both HTTP Rest and
 WebSocket APIs. This is useful for configuring API clusters for performance reasons, 
-or when Binance has provided you specialized endpoints.
+or when Binance has provided you with specialized endpoints.
 
 ### Binance US
 There is support for Binance US accounts by setting the `us` option in the configs
