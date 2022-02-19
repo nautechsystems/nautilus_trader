@@ -32,6 +32,17 @@ custom data types:
 
 See the Binance [API Reference](../api_reference/adapters/binance.md) for full definitions.
 
+## Symbology
+As per the Nautilus unification policy for symbols, the native Binance symbols are used where possible including for
+spot assets and futures contracts. However, because NautilusTrader is capable of multi-venue + multi-account
+trading, it's necessary to explicitly clarify the difference between `BTCUSDT` as the spot and margin traded
+pair, and the `BTCUSDT` perpetual futures contract (this symbol is used for _both_ natively by Binance). Therefore, NautilusTrader appends `-PERP` to all native perpetual symbols.
+E.g. for Binance Futures, the said instruments symbol is `BTCUSDT-PERP` within the Nautilus system boundary.
+
+```{note}
+This convention of appending `-PERP` to perpetual futures is also adopted by [FTX](ftx.md).
+```
+
 ## Configuration
 The most common use case is to configure a live `TradingNode` to include Binance 
 data and execution clients. To achieve this, add a `BINANCE` section to your client

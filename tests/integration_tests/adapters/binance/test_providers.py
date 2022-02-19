@@ -82,7 +82,6 @@ class TestBinanceInstrumentProvider:
         assert "ETH" in self.provider.currencies()
         assert "USDT" in self.provider.currencies()
 
-    @pytest.mark.skip(reason="WIP")
     @pytest.mark.asyncio
     async def test_load_all_async_for_futures_markets(
         self,
@@ -129,10 +128,17 @@ class TestBinanceInstrumentProvider:
         await self.provider.load_all_async()
 
         # Assert
-        assert self.provider.count == 2
-        # assert self.provider.find(InstrumentId(Symbol("BTCUSDT"), Venue("BINANCE"))) is not None
-        # assert self.provider.find(InstrumentId(Symbol("ETHUSDT"), Venue("BINANCE"))) is not None
-        # assert len(self.provider.currencies()) == 3
-        # assert "BTC" in self.provider.currencies()
-        # assert "ETH" in self.provider.currencies()
-        # assert "USDT" in self.provider.currencies()
+        assert self.provider.count == 3
+        assert (
+            self.provider.find(InstrumentId(Symbol("BTCUSDT-PERP"), Venue("BINANCE"))) is not None
+        )
+        assert (
+            self.provider.find(InstrumentId(Symbol("ETHUSDT-PERP"), Venue("BINANCE"))) is not None
+        )
+        assert (
+            self.provider.find(InstrumentId(Symbol("BTCUSDT_220325"), Venue("BINANCE"))) is not None
+        )
+        assert len(self.provider.currencies()) == 3
+        assert "BTC" in self.provider.currencies()
+        assert "ETH" in self.provider.currencies()
+        assert "USDT" in self.provider.currencies()

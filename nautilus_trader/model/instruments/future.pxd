@@ -20,7 +20,9 @@ from nautilus_trader.model.instruments.base cimport Instrument
 
 cdef class Future(Instrument):
     cdef readonly str underlying
+    """The underlying asset for the contract.\n\n:returns: `str`"""
     cdef readonly date expiry_date
+    """The expiry date for the contract.\n\n:returns: `date`"""
 
     @staticmethod
     cdef Future from_dict_c(dict values)

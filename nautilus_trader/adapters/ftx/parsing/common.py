@@ -39,7 +39,7 @@ from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import TradeId
 from nautilus_trader.model.identifiers import VenueOrderId
 from nautilus_trader.model.instruments.base import Instrument
-from nautilus_trader.model.instruments.crypto_perp import CryptoPerpetual
+from nautilus_trader.model.instruments.crypto_perpetual import CryptoPerpetual
 from nautilus_trader.model.instruments.currency import CurrencySpot
 from nautilus_trader.model.instruments.future import Future
 from nautilus_trader.model.objects import Money

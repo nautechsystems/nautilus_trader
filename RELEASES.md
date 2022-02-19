@@ -10,6 +10,8 @@ Released on TBD (UTC).
 - Renamed `BinanceSpotExecutionClient` to `BinanceExecutionClient`.
 
 ### Enhancements
+- Added initial implementation of Binance Futures.
+- Added `CryptoFuture` instrument.
 - Added `OrderType.MARKET_IF_TOUCHED`.
 - Added `OrderType.LIMIT_IF_TOUCHED`.
 - Added `MarketIfTouched` order type.

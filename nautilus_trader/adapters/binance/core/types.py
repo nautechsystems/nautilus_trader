@@ -26,7 +26,7 @@ from nautilus_trader.model.objects import Quantity
 
 class BinanceSpotTicker(Ticker):
     """
-    Represents a `Binance SPOT` 24hr ticker statistics.
+    Represents a `Binance SPOT` 24hr statistics ticker.
 
     This data type includes the raw data provided by `Binance`.
 
