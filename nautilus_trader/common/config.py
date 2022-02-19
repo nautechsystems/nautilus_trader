@@ -44,7 +44,7 @@ class ImportableActorConfig(pydantic.BaseModel):
     Parameters
     ----------
     path : str, optional
-        The fully-qualified name of the module.
+        The fully qualified name of the module.
     config : Union[ActorConfig, str]
 
     """

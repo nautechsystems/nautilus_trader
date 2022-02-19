@@ -2,12 +2,13 @@
 
 The `Instrument` base class represents the core specification for any tradable financial market instrument. There are
 currently a number of subclasses representing a range of asset classes and asset types which are supported by the platform:
-- `CurrencySpot` (can represent both Fiat FX and Crypto)
-- `CryptoPerpetual` (perpetual swap derivative)
-- `BettingInstrument`
 - `Equity`
 - `Future`
 - `Option`
+- `CurrencySpot` (can represent both Fiat FX and Crypto currencies)
+- `CryptoPerpetual` (perpetual swap derivative)
+- `CryptoFuture` (Crypto underlying, quotes and settlement)
+- `BettingInstrument`
 
 All instruments should have a unique `InstrumentId` which is made up of both the native symbol and venue ID, separated by a period e.g. `ETH-PERP.FTX`.
 
