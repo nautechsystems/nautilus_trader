@@ -45,7 +45,7 @@ class TestBinanceUserHttpAPI:
         mock_send_request = mocker.patch(target="aiohttp.client.ClientSession.request")
 
         # Act
-        await self.api.create_listen_key_spot()
+        await self.api.create_listen_key()
 
         # Assert
         request = mock_send_request.call_args.kwargs
@@ -59,7 +59,7 @@ class TestBinanceUserHttpAPI:
         mock_send_request = mocker.patch(target="aiohttp.client.ClientSession.request")
 
         # Act
-        await self.api.ping_listen_key_spot(
+        await self.api.ping_listen_key(
             key="JUdsZc8CSmMUxg1wJha23RogrT3EuC8eV5UTbAOVTkF3XWofMzWoXtWmDAhy"
         )
 
@@ -79,7 +79,7 @@ class TestBinanceUserHttpAPI:
         mock_send_request = mocker.patch(target="aiohttp.client.ClientSession.request")
 
         # Act
-        await self.api.close_listen_key_spot(
+        await self.api.close_listen_key(
             key="JUdsZc8CSmMUxg1wJha23RogrT3EuC8eV5UTbAOVTkF3XWofMzWoXtWmDAhy"
         )
 
@@ -87,60 +87,6 @@ class TestBinanceUserHttpAPI:
         request = mock_send_request.call_args.kwargs
         assert request["method"] == "DELETE"
         assert request["url"] == "https://api.binance.com/api/v3/userDataStream"
-        assert (
-            request["params"]
-            == "listenKey=JUdsZc8CSmMUxg1wJha23RogrT3EuC8eV5UTbAOVTkF3XWofMzWoXtWmDAhy"
-        )
-
-    @pytest.mark.asyncio
-    async def test_create_listen_key_margin(self, mocker):
-        # Arrange
-        await self.client.connect()
-        mock_send_request = mocker.patch(target="aiohttp.client.ClientSession.request")
-
-        # Act
-        await self.api.create_listen_key_margin()
-
-        # Assert
-        request = mock_send_request.call_args.kwargs
-        assert request["method"] == "POST"
-        assert request["url"] == "https://api.binance.com/sapi/v1/userDataStream"
-
-    @pytest.mark.asyncio
-    async def test_ping_listen_key_margin(self, mocker):
-        # Arrange
-        await self.client.connect()
-        mock_send_request = mocker.patch(target="aiohttp.client.ClientSession.request")
-
-        # Act
-        await self.api.ping_listen_key_margin(
-            key="JUdsZc8CSmMUxg1wJha23RogrT3EuC8eV5UTbAOVTkF3XWofMzWoXtWmDAhy"
-        )
-
-        # Assert
-        request = mock_send_request.call_args.kwargs
-        assert request["method"] == "PUT"
-        assert request["url"] == "https://api.binance.com/sapi/v1/userDataStream"
-        assert (
-            request["params"]
-            == "listenKey=JUdsZc8CSmMUxg1wJha23RogrT3EuC8eV5UTbAOVTkF3XWofMzWoXtWmDAhy"
-        )
-
-    @pytest.mark.asyncio
-    async def test_close_listen_key_margin(self, mocker):
-        # Arrange
-        await self.client.connect()
-        mock_send_request = mocker.patch(target="aiohttp.client.ClientSession.request")
-
-        # Act
-        await self.api.close_listen_key_margin(
-            key="JUdsZc8CSmMUxg1wJha23RogrT3EuC8eV5UTbAOVTkF3XWofMzWoXtWmDAhy"
-        )
-
-        # Assert
-        request = mock_send_request.call_args.kwargs
-        assert request["method"] == "DELETE"
-        assert request["url"] == "https://api.binance.com/sapi/v1/userDataStream"
         assert (
             request["params"]
             == "listenKey=JUdsZc8CSmMUxg1wJha23RogrT3EuC8eV5UTbAOVTkF3XWofMzWoXtWmDAhy"

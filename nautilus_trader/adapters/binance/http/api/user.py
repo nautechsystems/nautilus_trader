@@ -18,6 +18,7 @@
 
 from typing import Any, Dict
 
+from nautilus_trader.adapters.binance.common import BinanceAccountType
 from nautilus_trader.adapters.binance.common import format_symbol
 from nautilus_trader.adapters.binance.http.client import BinanceHttpClient
 from nautilus_trader.core.correctness import PyCondition
@@ -33,18 +34,29 @@ class BinanceUserDataHttpAPI:
         The Binance REST API client.
     """
 
-    BASE_ENDPOINT_SPOT = "/api/v3/userDataStream"
-    BASE_ENDPOINT_MARGIN = "/sapi/v1/userDataStream"
-    BASE_ENDPOINT_ISOLATED = "/sapi/v1/userDataStream/isolated"
-
-    def __init__(self, client: BinanceHttpClient):
+    def __init__(
+        self,
+        client: BinanceHttpClient,
+        account_type: BinanceAccountType = BinanceAccountType.SPOT,
+    ):
         PyCondition.not_none(client, "client")
 
         self.client = client
 
-    async def create_listen_key_spot(self) -> Dict[str, Any]:
+        if account_type == BinanceAccountType.SPOT:
+            self.BASE_ENDPOINT = "/api/v3/"
+        elif account_type == BinanceAccountType.MARGIN:
+            self.BASE_ENDPOINT = "sapi/v1/"
+        elif account_type == BinanceAccountType.FUTURES_USDT:
+            self.BASE_ENDPOINT = "/fapi/v1/"
+        elif account_type == BinanceAccountType.FUTURES_COIN:
+            self.BASE_ENDPOINT = "/dapi/v1/"
+        else:  # pragma: no cover (design-time error)
+            raise RuntimeError(f"invalid Binance account type, was {account_type}")
+
+    async def create_listen_key(self) -> Dict[str, Any]:
         """
-        Create a new listen key for the SPOT API.
+        Create a new listen key for the Binance API.
 
         Start a new user data stream. The stream will close after 60 minutes
         unless a keepalive is sent. If the account has an active listenKey,
@@ -52,7 +64,6 @@ class BinanceUserDataHttpAPI:
         minutes.
 
         Create a ListenKey (USER_STREAM).
-        `POST /api/v3/userDataStream `.
 
         Returns
         -------
@@ -65,10 +76,10 @@ class BinanceUserDataHttpAPI:
         """
         return await self.client.send_request(
             http_method="POST",
-            url_path=self.BASE_ENDPOINT_SPOT,
+            url_path=self.BASE_ENDPOINT + "userDataStream",
         )
 
-    async def ping_listen_key_spot(self, key: str) -> Dict[str, Any]:
+    async def ping_listen_key(self, key: str) -> Dict[str, Any]:
         """
         Ping/Keep-alive a listen key for the SPOT API.
 
@@ -77,7 +88,6 @@ class BinanceUserDataHttpAPI:
         30 minutes.
 
         Ping/Keep-alive a ListenKey (USER_STREAM).
-        `PUT /api/v3/userDataStream `
 
         Parameters
         ----------
@@ -95,16 +105,15 @@ class BinanceUserDataHttpAPI:
         """
         return await self.client.send_request(
             http_method="PUT",
-            url_path=self.BASE_ENDPOINT_SPOT,
+            url_path=self.BASE_ENDPOINT + "userDataStream",
             payload={"listenKey": key},
         )
 
-    async def close_listen_key_spot(self, key: str) -> Dict[str, Any]:
+    async def close_listen_key(self, key: str) -> Dict[str, Any]:
         """
         Close a listen key for the SPOT API.
 
         Close a ListenKey (USER_STREAM).
-        `DELETE /api/v3/userDataStream`.
 
         Parameters
         ----------
@@ -122,91 +131,7 @@ class BinanceUserDataHttpAPI:
         """
         return await self.client.send_request(
             http_method="DELETE",
-            url_path=self.BASE_ENDPOINT_SPOT,
-            payload={"listenKey": key},
-        )
-
-    async def create_listen_key_margin(self) -> Dict[str, Any]:
-        """
-        Create a new listen key for the MARGIN API.
-
-        Start a new user data stream. The stream will close after 60 minutes
-        unless a keepalive is sent. If the account has an active listenKey,
-        that listenKey will be returned and its validity will be extended for 60
-        minutes.
-
-        Create a ListenKey (USER_STREAM).
-        `POST /api/v3/userDataStream `.
-
-        Returns
-        -------
-        dict[str, Any]
-
-        References
-        ----------
-        https://binance-docs.github.io/apidocs/spot/en/#listen-key-margin
-
-        """
-        return await self.client.send_request(
-            http_method="POST",
-            url_path=self.BASE_ENDPOINT_MARGIN,
-        )
-
-    async def ping_listen_key_margin(self, key: str) -> Dict[str, Any]:
-        """
-        Ping/Keep-alive a listen key for the MARGIN API.
-
-        Keep-alive a user data stream to prevent a time-out. User data streams
-        will close after 60 minutes. It's recommended to send a ping about every
-        30 minutes.
-
-        Ping/Keep-alive a ListenKey (USER_STREAM).
-        `PUT /api/v3/userDataStream`.
-
-        Parameters
-        ----------
-        key : str
-            The listen key for the request.
-
-        Returns
-        -------
-        dict[str, Any]
-
-        References
-        ----------
-        https://binance-docs.github.io/apidocs/spot/en/#listen-key-margin
-
-        """
-        return await self.client.send_request(
-            http_method="PUT",
-            url_path=self.BASE_ENDPOINT_MARGIN,
-            payload={"listenKey": key},
-        )
-
-    async def close_listen_key_margin(self, key: str) -> Dict[str, Any]:
-        """
-        Close a listen key for the MARGIN API.
-
-        Close a ListenKey (USER_STREAM).
-        `DELETE /sapi/v1/userDataStream`.
-
-        Parameters
-        ----------
-        key : str
-            The listen key for the request.
-
-        Returns
-        -------
-        dict[str, Any]
-
-        References
-        ----------
-        https://binance-docs.github.io/apidocs/spot/en/#listen-key-margin
-
-        """
-        return await self.client.send_request(
-            http_method="DELETE",
-            url_path=self.BASE_ENDPOINT_MARGIN,
+            url_path=self.BASE_ENDPOINT + "userDataStream",
             payload={"listenKey": key},
         )
 
@@ -238,7 +163,7 @@ class BinanceUserDataHttpAPI:
         """
         return await self.client.send_request(
             http_method="POST",
-            url_path=self.BASE_ENDPOINT_ISOLATED,
+            url_path="/sapi/v1/userDataStream/isolated",
             payload={"symbol": format_symbol(symbol).upper()},
         )
 
@@ -271,7 +196,7 @@ class BinanceUserDataHttpAPI:
         """
         return await self.client.send_request(
             http_method="PUT",
-            url_path=self.BASE_ENDPOINT_ISOLATED,
+            url_path="/sapi/v1/userDataStream/isolated",
             payload={"listenKey": key, "symbol": format_symbol(symbol).upper()},
         )
 
@@ -300,6 +225,6 @@ class BinanceUserDataHttpAPI:
         """
         return await self.client.send_request(
             http_method="DELETE",
-            url_path=self.BASE_ENDPOINT_ISOLATED,
+            url_path="/sapi/v1/userDataStream/isolated",
             payload={"listenKey": key, "symbol": format_symbol(symbol).upper()},
         )

@@ -14,20 +14,19 @@
 # -------------------------------------------------------------------------------------------------
 
 import asyncio
+import json
 import os
 
 import pytest
 
 from nautilus_trader.adapters.binance.factories import get_cached_binance_http_client
-from nautilus_trader.adapters.binance.http.api.user import BinanceUserDataHttpAPI
-from nautilus_trader.adapters.binance.websocket.user import BinanceUserDataWebSocket
+from nautilus_trader.adapters.binance.http.api.wallet import BinanceWalletHttpAPI
 from nautilus_trader.common.clock import LiveClock
-from nautilus_trader.common.logging import LiveLogger
 from nautilus_trader.common.logging import Logger
 
 
 @pytest.mark.asyncio
-async def test_binance_websocket_client():
+async def test_binance_futures_testnet_wallet_http_client():
     loop = asyncio.get_event_loop()
     clock = LiveClock()
 
@@ -35,25 +34,15 @@ async def test_binance_websocket_client():
         loop=loop,
         clock=clock,
         logger=Logger(clock=clock),
-        key=os.getenv("BINANCE_API_KEY"),
-        secret=os.getenv("BINANCE_API_SECRET"),
+        key=os.getenv("BINANCE_TESTNET_API_KEY"),
+        secret=os.getenv("BINANCE_TESTNET_API_SECRET"),
+        base_url="https://testnet.binancefuture.com",
+        is_testnet=True,
     )
+
+    wallet = BinanceWalletHttpAPI(client=client)
     await client.connect()
+    response = await wallet.commission_rate_futures(symbol="BTCUSDT")
+    print(json.dumps(response, indent=4))
 
-    user = BinanceUserDataHttpAPI(client=client)
-    response = await user.create_listen_key()
-    key = response["listenKey"]
-
-    ws = BinanceUserDataWebSocket(
-        loop=loop,
-        clock=clock,
-        logger=LiveLogger(loop=loop, clock=clock),
-        handler=print,
-    )
-
-    ws.subscribe(key=key)
-
-    await ws.connect(start=True)
-    await asyncio.sleep(4)
-    await ws.close()
     await client.disconnect()
