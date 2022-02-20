@@ -43,7 +43,7 @@ impl Order {
 
     pub fn from_vec(vec: Vec<&str>) -> Self {
         assert_eq!(vec.len(), 4);
-        let price = Price::new_from_str(vec[0]);
+        let price = Price::from_str(vec[0]);
         let size = Quantity::new_from_str(vec[1]);
         let side = match vec[2] {
             "B" => OrderSide::Buy,

@@ -33,14 +33,11 @@ impl Price {
         let pow1 = 10_i64.pow(precision as u32);
         let pow2 = 10_i64.pow((FIXED_EXPONENT - precision) as u32);
         let rounded = (value * pow1 as f64).round() as i64;
-        let frac_units = rounded * pow2;
-        Price {
-            value: frac_units,
-            precision,
-        }
+        let value = rounded * pow2;
+        Price { value, precision }
     }
 
-    pub fn new_from_str(input: &str) -> Self {
+    pub fn from_str(input: &str) -> Self {
         let float_from_input = input.parse::<f64>();
         let float_res = match float_from_input {
             Ok(number) => number,
@@ -187,7 +184,7 @@ mod tests {
 
     #[test]
     fn price_new_from_str() {
-        let price = Price::new_from_str("0.00812000");
+        let price = Price::from_str("0.00812000");
 
         assert_eq!(price, price);
         assert_eq!(price.value, 8120000);
@@ -232,7 +229,7 @@ mod tests {
     fn price_display_works() {
         use std::fmt::Write as FmtWrite;
         let input_string = "44.12";
-        let price = Price::new_from_str(&input_string);
+        let price = Price::from_str(&input_string);
         let mut res = String::new();
 
         write!(&mut res, "{}", price).unwrap();
@@ -243,7 +240,7 @@ mod tests {
     fn price_display() {
         use std::fmt::Write as FmtWrite;
         let input_string = "44.123456";
-        let price = Price::new_from_str(&input_string);
+        let price = Price::from_str(&input_string);
 
         assert_eq!(price.value, 44123456000);
         assert_eq!(price.precision, 6);

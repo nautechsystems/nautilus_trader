@@ -22,6 +22,7 @@ use crate::objects::price::Price;
 use crate::objects::quantity::Quantity;
 use crate::orderbook::book::OrderBook;
 use std::ffi::CStr;
+use std::ops::{AddAssign, SubAssign};
 use std::os::raw::c_char;
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -99,12 +100,22 @@ pub extern "C" fn price_new(value: f64, precision: u8) -> Price {
 
 #[no_mangle]
 pub extern "C" fn price_free(price: Price) {
-    drop(price);  // Memory freed here
+    drop(price); // Memory freed here
 }
 
 #[no_mangle]
 pub extern "C" fn price_as_f64(price: &Price) -> f64 {
     price.as_f64()
+}
+
+#[no_mangle]
+pub extern "C" fn price_add_assign(mut a: Price, b: Price) {
+    a.add_assign(b);
+}
+
+#[no_mangle]
+pub extern "C" fn price_sub_assign(mut a: Price, b: Price) {
+    a.sub_assign(b);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -117,12 +128,32 @@ pub extern "C" fn quantity_new(value: f64, precision: u8) -> Quantity {
 
 #[no_mangle]
 pub extern "C" fn quantity_free(qty: Quantity) {
-    drop(qty);  // Memory freed here
+    drop(qty); // Memory freed here
 }
 
 #[no_mangle]
 pub extern "C" fn quantity_as_f64(qty: &Quantity) -> f64 {
     qty.as_f64()
+}
+
+#[no_mangle]
+pub extern "C" fn quantity_add_assign(mut a: Quantity, b: Quantity) {
+    a.add_assign(b);
+}
+
+#[no_mangle]
+pub extern "C" fn quantity_add_assign_u64(mut a: Quantity, b: u64) {
+    a.add_assign(b);
+}
+
+#[no_mangle]
+pub extern "C" fn quantity_sub_assign(mut a: Quantity, b: Quantity) {
+    a.sub_assign(b);
+}
+
+#[no_mangle]
+pub extern "C" fn quantity_sub_assign_u64(mut a: Quantity, b: u64) {
+    a.sub_assign(b);
 }
 
 #[cfg(test)]

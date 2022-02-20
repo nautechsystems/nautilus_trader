@@ -519,7 +519,7 @@ class TestRiskEngine:
             AUDUSD_SIM.id,
             OrderSide.BUY,
             Quantity.from_int(100000),
-            Price.from_str("0.9999999999999999"),  # <- invalid price
+            Price.from_str("0.999999999"),  # <- invalid price
         )
 
         submit_order = SubmitOrder(
@@ -592,7 +592,7 @@ class TestRiskEngine:
             OrderSide.BUY,
             Quantity.from_int(100000),
             Price.from_str("1.00000"),
-            Price.from_str("0.999999999999999"),  # <- invalid trigger
+            Price.from_str("0.999999999"),  # <- invalid trigger
         )
 
         submit_order = SubmitOrder(
@@ -627,7 +627,7 @@ class TestRiskEngine:
         order = strategy.order_factory.limit(
             AUDUSD_SIM.id,
             OrderSide.BUY,
-            Quantity.from_str("1.111111111111111111"),  # <- invalid quantity
+            Quantity.from_str("1.111111111"),  # <- invalid quantity
             Price.from_str("1.00000"),
         )
 

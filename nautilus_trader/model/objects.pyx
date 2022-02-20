@@ -256,6 +256,8 @@ cdef class Quantity:
     ------
     ValueError
         If `value` is negative (< 0).
+    ValueError
+        If `precision` greater than 9.
     OverflowError
         If `precision` is negative (< 0).
 
@@ -407,7 +409,9 @@ cdef class Quantity:
 
     @staticmethod
     cdef Quantity from_str_c(str value):
-        return Quantity(float(value), precision=precision_from_str(value))
+        cdef uint8_t precision = precision_from_str(value)
+        Condition.true(precision <= 9, "invalid precision was > 9")
+        return Quantity(float(value), precision=precision)
 
     @staticmethod
     cdef Quantity from_int_c(int value):
@@ -456,6 +460,11 @@ cdef class Quantity:
         The decimal precision will be inferred from the number of digits
         following the '.' point (if no point then precision zero).
 
+        Raises
+        ------
+        ValueError
+            If inferred precision greater than 9.
+
         """
         Condition.not_none(value, "value")
 
@@ -494,11 +503,17 @@ cdef class Quantity:
         return f"{quantity_as_f64(&self._qty):,.{self._qty.precision}f}".replace(",", "_")
 
     cpdef void add_assign(self, Quantity other) except *:
-        assert other._qty.precision <= self._qty.precision
+        Condition.true(
+            other._qty.precision <= self._qty.precision,
+            "other precision was greater than assigning quantity precision",
+        )
         self._qty.value += other.raw_int64()
 
     cpdef void sub_assign(self, Quantity other) except *:
-        assert other._qty.precision <= self._qty.precision
+        Condition.true(
+            other._qty.precision <= self._qty.precision,
+            "other precision was greater than assigning quantity precision",
+        )
         self._qty.value -= other.raw_int64()
 
     cpdef object as_decimal(self):
@@ -543,6 +558,8 @@ cdef class Price:
 
     Raises
     ------
+    ValueError
+        If `precision` greater than 9.
     OverflowError
         If `precision` is negative (< 0).
 
@@ -552,6 +569,7 @@ cdef class Price:
     """
 
     def __init__(self, double value, uint8_t precision):
+        Condition.true(precision <= 9, "invalid precision was > 9")
         self._price = price_new(value, precision)
 
     def __eq__(self, other) -> bool:
@@ -689,7 +707,9 @@ cdef class Price:
 
     @staticmethod
     cdef Price from_str_c(str value):
-        return Price(float(value), precision=precision_from_str(value))
+        cdef uint8_t precision = precision_from_str(value)
+        Condition.true(precision <= 9, "invalid precision was > 9")
+        return Price(float(value), precision=precision)
 
     @staticmethod
     cdef Price from_int_c(int value):
@@ -708,6 +728,16 @@ cdef class Price:
         Returns
         -------
         Price
+
+        Warnings
+        --------
+        The decimal precision will be inferred from the number of digits
+        following the '.' point (if no point then precision zero).
+
+        Raises
+        ------
+        ValueError
+            If inferred precision greater than 9.
 
         """
         Condition.not_none(value, "value")
@@ -736,11 +766,17 @@ cdef class Price:
         return Price.from_int_c(value)
 
     cpdef void add_assign(self, Price other) except *:
-        assert other._price.precision <= self._price.precision
+        Condition.true(
+            other._qty.precision <= self._qty.precision,
+            "other precision was greater than assigning price precision",
+        )
         self._price.value += other.raw_int64()
 
     cpdef void sub_assign(self, Price other) except *:
-        assert other._price.precision <= self._price.precision
+        Condition.true(
+            other._qty.precision <= self._qty.precision,
+            "other precision was greater than assigning price precision",
+        )
         self._price.value -= other.raw_int64()
 
     cpdef object as_decimal(self):

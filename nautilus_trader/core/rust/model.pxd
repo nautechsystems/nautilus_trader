@@ -80,10 +80,22 @@ cdef extern from "../includes/model.h":
 
   double price_as_f64(const Price_t *price);
 
+  void price_add_assign(Price_t a, Price_t b);
+
+  void price_sub_assign(Price_t a, Price_t b);
+
   Quantity_t quantity_new(double value, uint8_t precision);
 
   void quantity_free(Quantity_t qty);
 
   double quantity_as_f64(const Quantity_t *qty);
+
+  void quantity_add_assign(Quantity_t a, Quantity_t b);
+
+  void quantity_add_assign_u64(Quantity_t a, uint64_t b);
+
+  void quantity_sub_assign(Quantity_t a, Quantity_t b);
+
+  void quantity_sub_assign_u64(Quantity_t a, uint64_t b);
 
   OrderBook order_book_new(InstrumentId instrument_id, BookLevel book_level);

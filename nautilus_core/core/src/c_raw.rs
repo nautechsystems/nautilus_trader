@@ -17,7 +17,6 @@ use crate::uuid::UUID4;
 use std::ffi::{CStr, CString};
 use std::os::raw::c_char;
 
-
 #[no_mangle]
 pub extern "C" fn uuid4_new() -> UUID4 {
     UUID4::new()

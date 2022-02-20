@@ -17,7 +17,7 @@ use crate::objects::{FIXED_EXPONENT, FIXED_PRECISION};
 use nautilus_core::text::precision_from_str;
 use std::cmp::Ordering;
 use std::fmt::{Debug, Display, Formatter, Result};
-use std::ops::{Add, AddAssign, Mul, MulAssign, Sub};
+use std::ops::{Add, AddAssign, Mul, MulAssign, Sub, SubAssign};
 
 #[repr(C)]
 #[derive(Clone, Default)]
@@ -34,11 +34,8 @@ impl Quantity {
         let pow1 = 10_u64.pow(precision as u32);
         let pow2 = 10_u64.pow((FIXED_EXPONENT - precision) as u32);
         let rounded = (value * pow1 as f64).round() as u64;
-        let frac_units = rounded * pow2;
-        Quantity {
-            value: frac_units,
-            precision,
-        }
+        let value = rounded * pow2;
+        Quantity { value, precision }
     }
 
     pub fn new_from_str(input: &str) -> Self {
@@ -134,6 +131,24 @@ impl Mul<u64> for Quantity {
 impl AddAssign for Quantity {
     fn add_assign(&mut self, other: Self) {
         self.value += other.value;
+    }
+}
+
+impl AddAssign<u64> for Quantity {
+    fn add_assign(&mut self, other: u64) {
+        self.value += other;
+    }
+}
+
+impl SubAssign for Quantity {
+    fn sub_assign(&mut self, other: Self) {
+        self.value -= other.value;
+    }
+}
+
+impl SubAssign<u64> for Quantity {
+    fn sub_assign(&mut self, other: u64) {
+        self.value -= other;
     }
 }
 

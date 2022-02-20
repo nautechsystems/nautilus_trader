@@ -26,7 +26,7 @@ fn main() {
     // Generate C headers
     let config_c = cbindgen::Config::from_file("cbindgen.toml")
         .expect("Unable to find cbindgen.toml configuration file");
-    
+
     cbindgen::generate_with_config(&crate_dir, config_c.clone())
         .expect("Unable to generate bindings")
         .write_to_file(crate_dir.join("core.h"));
@@ -34,11 +34,11 @@ fn main() {
     cbindgen::generate_with_config(&crate_dir, config_c)
         .expect("Unable to generate bindings")
         .write_to_file(crate_dir.join("../../nautilus_trader/core/includes/core.h"));
-    
+
     // Generate Cython definitions
     let config_cython = cbindgen::Config::from_file("cbindgen_cython.toml")
         .expect("Unable to find cbindgen.toml configuration file");
-    
+
     cbindgen::generate_with_config(&crate_dir, config_cython)
         .expect("Unable to generate bindings")
         .write_to_file(crate_dir.join("../../nautilus_trader/core/rust/core.pxd"));
