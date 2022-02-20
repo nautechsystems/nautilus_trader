@@ -13,8 +13,8 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from nautilus_trader.core.rust.core cimport UUID4 as UUID4_C
+from nautilus_trader.core.rust.core cimport UUID4_t
 
 
 cdef class UUID4:
-    cdef UUID4_C _uuid4
+    cdef UUID4_t _uuid4

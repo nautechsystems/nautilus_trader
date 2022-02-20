@@ -13,9 +13,11 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from libc.stdint cimport int64_t
 from libc.stdint cimport uint8_t
 
-from nautilus_trader.core.rust.model cimport Price as Price_C
+from nautilus_trader.core.rust.model cimport Price_t
+from nautilus_trader.core.rust.model cimport Quantity_t
 from nautilus_trader.model.currency cimport Currency
 from nautilus_trader.model.identifiers cimport InstrumentId
 
@@ -36,8 +38,18 @@ cdef class BaseDecimal:
     cpdef double as_double(self) except *
 
 
-cdef class Quantity(BaseDecimal):
+cdef class Quantity:
+    cdef Quantity_t _qty
+
+    cdef int64_t raw_int64(self)
+
     cpdef str to_str(self)
+
+    @staticmethod
+    cdef object _extract_decimal(object obj)
+
+    @staticmethod
+    cdef bint _compare(a, b, int op) except *
 
     @staticmethod
     cdef Quantity zero_c(uint8_t precision)
@@ -48,15 +60,33 @@ cdef class Quantity(BaseDecimal):
     @staticmethod
     cdef Quantity from_int_c(int value)
 
+    cpdef void add_assign(self, Quantity other) except *
+    cpdef void sub_assign(self, Quantity other) except *
+    cpdef object as_decimal(self)
+    cpdef double as_double(self) except *
+
 
 cdef class Price:
-    cdef Price_C _price
+    cdef Price_t _price
+
+    cdef int64_t raw_int64(self)
+
+    @staticmethod
+    cdef object _extract_decimal(object obj)
+
+    @staticmethod
+    cdef bint _compare(a, b, int op) except *
 
     @staticmethod
     cdef Price from_str_c(str value)
 
     @staticmethod
     cdef Price from_int_c(int value)
+
+    cpdef void add_assign(self, Price other) except *
+    cpdef void sub_assign(self, Price other) except *
+    cpdef object as_decimal(self)
+    cpdef double as_double(self) except *
 
 
 cdef class Money(BaseDecimal):

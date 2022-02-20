@@ -36,12 +36,13 @@ SKIP_BUILD_COPY = bool(os.getenv("SKIP_BUILD_COPY", ""))
 #  RUST BUILD                                                                  #
 ################################################################################
 # Directories with headers to include
-RUST_INCLUDES = glob.glob("nautilus_core/*/")
+RUST_INCLUDES = glob.glob("nautilus_trader/core/includes")
 RUST_LIBS_DIR = "debug" if CARGO_MODE in ("", "debug") else "release"
 RUST_LIBS = [
     f"nautilus_core/target/{RUST_LIBS_DIR}/libnautilus_core.a",
     f"nautilus_core/target/{RUST_LIBS_DIR}/libnautilus_model.a",
 ]
+# Later we can be more selective about which libs are included where - to optimize binary sizes
 
 
 def _build_rust_libs() -> None:

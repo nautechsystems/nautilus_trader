@@ -21,7 +21,7 @@ use std::cmp::Ordering;
 use std::collections::{BTreeMap, HashMap};
 
 #[repr(C)]
-#[derive(Copy, Clone, Debug, Eq)]
+#[derive(Clone, Debug, Eq)]
 pub struct BookPrice {
     pub value: Price,
     pub side: OrderSide,
@@ -93,7 +93,7 @@ impl Ladder {
             None => {
                 let order_id = order.id;
                 let level = Level::from_order(order);
-                self.cache.insert(order_id, book_price);
+                self.cache.insert(order_id, book_price.clone());
                 self.levels.insert(book_price, level);
             }
             Some(level) => {

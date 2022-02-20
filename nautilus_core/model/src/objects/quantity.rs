@@ -17,10 +17,10 @@ use crate::objects::{FIXED_EXPONENT, FIXED_PRECISION};
 use nautilus_core::text::precision_from_str;
 use std::cmp::Ordering;
 use std::fmt::{Debug, Display, Formatter, Result};
-use std::ops::{AddAssign, Mul, MulAssign};
+use std::ops::{Add, AddAssign, Mul, MulAssign, Sub};
 
 #[repr(C)]
-#[derive(Copy, Clone, Default)]
+#[derive(Clone, Default)]
 pub struct Quantity {
     value: u64,
     pub precision: u8,
@@ -28,10 +28,15 @@ pub struct Quantity {
 
 impl Quantity {
     pub fn new(value: f64, precision: u8) -> Self {
+        assert!(value >= 0.0);
         assert!(precision <= 9);
-        let diff = FIXED_EXPONENT - precision;
+
+        let pow1 = 10_u64.pow(precision as u32);
+        let pow2 = 10_u64.pow((FIXED_EXPONENT - precision) as u32);
+        let rounded = (value * pow1 as f64).round() as u64;
+        let frac_units = rounded * pow2;
         Quantity {
-            value: (value * 10_i32.pow(precision as u32) as f64) as u64 * 10_u64.pow(diff as u32),
+            value: frac_units,
             precision,
         }
     }
@@ -89,6 +94,43 @@ impl Ord for Quantity {
     }
 }
 
+impl Add for Quantity {
+    type Output = Self;
+    fn add(self, rhs: Self) -> Self::Output {
+        Quantity {
+            value: self.value - rhs.value,
+            precision: self.precision,
+        }
+    }
+}
+
+impl Sub for Quantity {
+    type Output = Self;
+    fn sub(self, rhs: Self) -> Self::Output {
+        Quantity {
+            value: self.value - rhs.value,
+            precision: self.precision,
+        }
+    }
+}
+
+impl Mul for Quantity {
+    type Output = Self;
+    fn mul(self, rhs: Self) -> Self::Output {
+        Quantity {
+            value: self.value * rhs.value,
+            precision: self.precision,
+        }
+    }
+}
+
+impl Mul<u64> for Quantity {
+    type Output = u64;
+    fn mul(self, rhs: u64) -> Self::Output {
+        self.value * rhs
+    }
+}
+
 impl AddAssign for Quantity {
     fn add_assign(&mut self, other: Self) {
         self.value += other.value;
@@ -98,16 +140,6 @@ impl AddAssign for Quantity {
 impl MulAssign<u64> for Quantity {
     fn mul_assign(&mut self, multiplier: u64) {
         self.value *= multiplier;
-    }
-}
-
-impl Mul<u64> for Quantity {
-    type Output = Self;
-    fn mul(self, rhs: u64) -> Self {
-        Quantity {
-            value: self.value * rhs,
-            precision: self.precision,
-        }
     }
 }
 

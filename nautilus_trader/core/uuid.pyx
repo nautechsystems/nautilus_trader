@@ -49,7 +49,7 @@ cdef class UUID4:
     def __init__(self, str value=None):
         if value is None:
             # Create a new UUID4 from rust
-            self._uuid4 = <UUID4_C>uuid4_new()  # owned from rust
+            self._uuid4 = uuid4_new()  # owned from rust
             return
 
         Condition.true(_UUID_REGEX.match(value), "value is not a valid UUID")

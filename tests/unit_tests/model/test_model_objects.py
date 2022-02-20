@@ -590,6 +590,16 @@ class TestBaseDecimal:
 
 
 class TestPrice:
+    def test_equality(self):
+        # Arrange, Act
+        price1 = Price(1.0, precision=1)
+        price2 = Price(1.5, precision=1)
+
+        # Assert
+        assert price1 == price1
+        assert price1 != price2
+        assert price2 > price1
+
     def test_from_int_returns_expected_value(self):
         # Arrange, Act
         price = Price.from_int(100)
@@ -603,7 +613,7 @@ class TestPrice:
         [
             ["100.11", "100.11", 2],
             ["1E7", "10000000", 0],
-            ["1E-7", "1E-7", 7],
+            ["1E-7", "0.0000001", 7],
             ["1e-2", "0.01", 2],
         ],
     )

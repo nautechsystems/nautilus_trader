@@ -38,7 +38,7 @@ impl Order {
     }
 
     pub fn to_book_price(&self) -> BookPrice {
-        BookPrice::new(self.price, self.side)
+        BookPrice::new(self.price.clone(), self.side)
     }
 
     pub fn from_vec(vec: Vec<&str>) -> Self {

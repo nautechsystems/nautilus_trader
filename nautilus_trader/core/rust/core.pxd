@@ -2,26 +2,25 @@
 
 from libc.stdint cimport int64_t
 
-
 cdef extern from "../includes/core.h":
 
   cdef struct String:
     pass
 
-  cdef struct UUID4:
+  cdef struct UUID4_t:
     String *value;
 
-  UUID4 uuid4_new();
+  UUID4_t uuid4_new();
 
   # Expects `ptr` to be an array of valid UTF-8 chars with a null byte terminator.
-  UUID4 uuid4_from_raw(const char *ptr);
+  UUID4_t uuid4_from_raw(const char *ptr);
 
-  const char *uuid4_to_raw(const UUID4 *uuid);
+  const char *uuid4_to_raw(const UUID4_t *uuid);
 
   # Expects `ptr` to be an array of valid UTF-8 chars with a null byte terminator.
   void uuid4_free_raw(char *ptr);
 
-  void uuid4_free(UUID4 uuid);
+  void uuid4_free(UUID4_t uuid);
 
   # Returns the current seconds since the UNIX epoch.
   double unix_timestamp();

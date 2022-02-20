@@ -17,10 +17,10 @@ use crate::objects::{FIXED_EXPONENT, FIXED_PRECISION};
 use nautilus_core::text::precision_from_str;
 use std::cmp::Ordering;
 use std::fmt::{Debug, Display, Formatter, Result};
-use std::ops::{AddAssign, Mul, MulAssign};
+use std::ops::{Add, AddAssign, Mul, MulAssign, Sub, SubAssign};
 
 #[repr(C)]
-#[derive(Copy, Clone, Default)]
+#[derive(Clone, Default)]
 pub struct Price {
     value: i64,
     pub precision: u8,
@@ -29,9 +29,13 @@ pub struct Price {
 impl Price {
     pub fn new(value: f64, precision: u8) -> Self {
         assert!(precision <= 9);
-        let diff = FIXED_EXPONENT - precision;
+
+        let pow1 = 10_i64.pow(precision as u32);
+        let pow2 = 10_i64.pow((FIXED_EXPONENT - precision) as u32);
+        let rounded = (value * pow1 as f64).round() as i64;
+        let frac_units = rounded * pow2;
         Price {
-            value: (value * 10_i32.pow(precision as u32) as f64) as i64 * 10_i64.pow(diff as u32),
+            value: frac_units,
             precision,
         }
     }
@@ -89,25 +93,51 @@ impl Ord for Price {
     }
 }
 
+impl Add for Price {
+    type Output = Self;
+    fn add(self, rhs: Price) -> Self::Output {
+        Price {
+            value: self.value + rhs.value,
+            precision: self.precision,
+        }
+    }
+}
+
+impl Sub for Price {
+    type Output = Self;
+    fn sub(self, rhs: Price) -> Self::Output {
+        Price {
+            value: self.value - rhs.value,
+            precision: self.precision,
+        }
+    }
+}
+
+impl Mul for Price {
+    type Output = Self;
+    fn mul(self, rhs: Price) -> Self {
+        Price {
+            value: self.value * rhs.value,
+            precision: self.precision,
+        }
+    }
+}
+
 impl AddAssign for Price {
     fn add_assign(&mut self, other: Self) {
         self.value += other.value;
     }
 }
 
-impl MulAssign<i64> for Price {
-    fn mul_assign(&mut self, multiplier: i64) {
-        self.value *= multiplier;
+impl SubAssign for Price {
+    fn sub_assign(&mut self, other: Self) {
+        self.value -= other.value;
     }
 }
 
-impl Mul<i64> for Price {
-    type Output = Self;
-    fn mul(self, rhs: i64) -> Self {
-        Price {
-            value: self.value * rhs as i64,
-            precision: self.precision,
-        }
+impl MulAssign for Price {
+    fn mul_assign(&mut self, multiplier: Self) {
+        self.value *= multiplier.value;
     }
 }
 
@@ -146,6 +176,7 @@ mod tests {
         assert_eq!(price.value, 1);
         assert_eq!(price.to_string(), "0.000000001");
     }
+
     #[test]
     fn price_precision() {
         let price = Price::new(1.001, 2);
@@ -178,6 +209,23 @@ mod tests {
         assert!(Price::new(0.9, 1) < Price::new(1.0, 1));
         assert!(Price::new(0.9, 1) <= Price::new(1.0, 2));
         assert!(Price::new(0.9, 1) <= Price::new(1.0, 1));
+    }
+
+    #[test]
+    fn test_add() {
+        let price1 = Price::new(1.000, 3);
+        let price2 = Price::new(1.011, 3);
+
+        let price3 = price1 + price2;
+        assert_eq!(price3.value, 2011000000)
+    }
+
+    #[test]
+    fn test_add_assign() {
+        let mut price = Price::new(1.000, 3);
+        price += Price::new(1.011, 3);
+
+        assert_eq!(price.value, 2011000000)
     }
 
     #[test]

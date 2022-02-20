@@ -24,6 +24,9 @@ use crate::orderbook::book::OrderBook;
 use std::ffi::CStr;
 use std::os::raw::c_char;
 
+////////////////////////////////////////////////////////////////////////////////
+// Symbol
+////////////////////////////////////////////////////////////////////////////////
 #[no_mangle]
 pub unsafe extern "C" fn symbol_new(ptr: *mut u8, length: usize) -> Symbol {
     // SAFETY: Checks ptr is a valid UTF-8 string
@@ -42,6 +45,9 @@ pub extern "C" fn symbol_as_utf8(s: Symbol) -> *const u8 {
     s.as_str().as_ptr()
 }
 
+////////////////////////////////////////////////////////////////////////////////
+// Venue
+////////////////////////////////////////////////////////////////////////////////
 #[no_mangle]
 pub unsafe extern "C" fn venue_new(ptr: *mut u8, length: usize) -> Venue {
     // SAFETY: Expects `ptr` is an array of valid UTF-8 chars
@@ -70,6 +76,9 @@ pub unsafe fn instrument_id_from_raw(ptr: *const c_char) -> InstrumentId {
     InstrumentId::new(Symbol::from_str(pieces[0]), Venue::from_str(pieces[1]))
 }
 
+////////////////////////////////////////////////////////////////////////////////
+// InstrumentId
+////////////////////////////////////////////////////////////////////////////////
 #[no_mangle]
 pub extern "C" fn instrument_id_free(id: InstrumentId) {
     drop(id); // Memory freed here
@@ -80,19 +89,40 @@ pub extern "C" fn instrument_id_as_utf8(id: InstrumentId) -> *const u8 {
     id.as_str().as_ptr()
 }
 
+////////////////////////////////////////////////////////////////////////////////
+// Price
+////////////////////////////////////////////////////////////////////////////////
 #[no_mangle]
 pub extern "C" fn price_new(value: f64, precision: u8) -> Price {
     Price::new(value, precision)
 }
 
 #[no_mangle]
-pub extern "C" fn price_eq(a: &Price, b: &Price) -> u8 {
-    a.eq(b) as u8
+pub extern "C" fn price_free(price: Price) {
+    drop(price);  // Memory freed here
 }
 
 #[no_mangle]
+pub extern "C" fn price_as_f64(price: &Price) -> f64 {
+    price.as_f64()
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// Quantity
+////////////////////////////////////////////////////////////////////////////////
+#[no_mangle]
 pub extern "C" fn quantity_new(value: f64, precision: u8) -> Quantity {
     Quantity::new(value, precision)
+}
+
+#[no_mangle]
+pub extern "C" fn quantity_free(qty: Quantity) {
+    drop(qty);  // Memory freed here
+}
+
+#[no_mangle]
+pub extern "C" fn quantity_as_f64(qty: &Quantity) -> f64 {
+    qty.as_f64()
 }
 
 #[cfg(test)]
@@ -116,6 +146,9 @@ mod tests {
     }
 }
 
+////////////////////////////////////////////////////////////////////////////////
+// OrderBook
+////////////////////////////////////////////////////////////////////////////////
 #[no_mangle]
 pub extern "C" fn order_book_new(instrument_id: InstrumentId, book_level: BookLevel) -> OrderBook {
     OrderBook::new(instrument_id, book_level)

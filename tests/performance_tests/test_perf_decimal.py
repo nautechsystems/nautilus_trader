@@ -19,6 +19,7 @@ from decimal import Decimal
 from nautilus_trader.core.inspect import get_size_of
 from nautilus_trader.model.objects import BaseDecimal
 from nautilus_trader.model.objects import Price
+from tests.test_kit.performance import PerformanceBench
 from tests.test_kit.performance import PerformanceHarness
 
 
@@ -101,13 +102,22 @@ class TestDecimalPerformance(PerformanceHarness):
         # ~0.0ms / ~0.4μs / 353ns minimum of 100,000 runs @ 1 iteration each run.
 
     def test_make_price(self):
-        self.benchmark.pedantic(
-            target=Price,
-            args=(1.23456, 5),
+        # self.benchmark.pedantic(
+        #     target=Price,
+        #     args=(1.23456, 5),
+        #     iterations=1,
+        #     rounds=100_000,
+        # )
+        def make_price():
+            Price(1.23456, 5)
+
+        PerformanceBench.profile_function(
+            target=make_price,
+            runs=100_000,
             iterations=1,
-            rounds=100_000,
         )
         # ~0.0ms / ~0.5μs / 526ns minimum of 100,000 runs @ 1 iteration each run.
+        # ~0.0ms / ~0.2μs / 193ns minimum of 100,000 runs @ 1 iteration each run.
 
     def test_make_price_from_float(self):
         self.benchmark.pedantic(
