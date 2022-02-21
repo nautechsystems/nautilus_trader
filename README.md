@@ -138,7 +138,7 @@ into a unified interface. The following integrations are currently supported:
 [Binance Futures](https://www.binance.com/en/futures)     | BINANCE | Crypto Exchange         | ![status](https://img.shields.io/badge/building-orange) | [Guide](https://docs.nautilustrader.io/integrations/binance.html) |
 [FTX](https://ftx.com)                                    | FTX     | Crypto Exchange         | ![status](https://img.shields.io/badge/beta-yellow)     | [Guide](https://docs.nautilustrader.io/integrations/ftx.html)     |
 [FTX US](https://ftx.us)                                  | FTX     | Crypto Exchange         | ![status](https://img.shields.io/badge/beta-yellow)     | [Guide](https://docs.nautilustrader.io/integrations/ftx.html)     |
-[Interactive Brokers](https://www.interactivebrokers.com) | IB      | Brokerage (multi-venue) | ![status](https://img.shields.io/badge/planning-gray)   | [Guide](https://docs.nautilustrader.io/integrations/ib.html)      |
+[Interactive Brokers](https://www.interactivebrokers.com) | IB      | Brokerage (multi-venue) | ![status](https://img.shields.io/badge/building-orange) | [Guide](https://docs.nautilustrader.io/integrations/ib.html)      |
 
 Refer to the [Integrations](https://docs.nautilustrader.io/integrations/index.html) documentation for further details.
 
