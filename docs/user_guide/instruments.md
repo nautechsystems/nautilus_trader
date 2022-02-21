@@ -1,6 +1,6 @@
 # Instruments
 
-The `Instrument` base class represents the core specification (or definition) for any tradable financial market instrument. There are
+The `Instrument` base class represents the core specification (or definition) for any tradable asset/contract. There are
 currently a number of subclasses representing a range of _asset classes_ and _asset types_ which are supported by the platform:
 - `Equity` (generic Equity)
 - `Future` (generic Futures Contract)
@@ -117,7 +117,7 @@ published limits _can_ result in the exchange rejecting orders.
 Instrument objects also offer a convenient way to create correct prices
 and quantities based on given values.
 
-```{note}
+```{tip}
 This is the recommended method for creating valid prices and quantities, e.g. before 
 passing them to the order factory to create an order.
 ```
