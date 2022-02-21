@@ -117,16 +117,16 @@ published limits _can_ result in the exchange rejecting orders.
 Instrument objects also offer a convenient way to create correct prices
 and quantities based on given values.
 
-```{tip}
-This is the recommended method for creating valid prices and quantities, e.g. before 
-passing them to the order factory to create an order.
-```
-
 ```python
 instrument = self.cache.instrument(instrument_id)
 
 price = instrument.make_price(0.90500)
 quantity = instrument.make_qty(150)
+```
+
+```{tip}
+This is the recommended method for creating valid prices and quantities, e.g. before 
+passing them to the order factory to create an order.
 ```
 
 ## Margins and Fees
