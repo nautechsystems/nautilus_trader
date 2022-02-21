@@ -15,29 +15,33 @@
 
 use crate::enums::OrderSide;
 use crate::identifiers::instrument_id::InstrumentId;
-use crate::objects::price::Price;
-use crate::objects::quantity::Quantity;
+use crate::identifiers::trade_id::TradeId;
+use crate::primitives::price::Price;
+use crate::primitives::quantity::Quantity;
+use nautilus_core::time::Timestamp;
 
 /// Represents a single quote tick in a financial market.
 #[repr(C)]
+#[derive(Clone, Hash, PartialEq, Debug)]
 pub struct QuoteTick {
     pub instrument_id: InstrumentId,
     pub bid: Price,
     pub ask: Price,
     pub bid_size: Quantity,
     pub ask_size: Quantity,
-    pub ts_event: i64,
-    pub ts_init: i64,
+    pub ts_event: Timestamp,
+    pub ts_init: Timestamp,
 }
 
 /// Represents a single trade tick in a financial market.
 #[repr(C)]
+#[derive(Clone, Hash, PartialEq, Debug)]
 pub struct TradeTick {
     pub instrument_id: InstrumentId,
     pub price: Price,
     pub size: Quantity,
     pub side: OrderSide,
-    pub match_id: String,
-    pub ts_event: i64,
-    pub ts_init: i64,
+    pub trade_id: TradeId,
+    pub ts_event: Timestamp,
+    pub ts_init: Timestamp,
 }

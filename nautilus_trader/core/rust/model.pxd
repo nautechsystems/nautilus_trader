@@ -35,7 +35,6 @@ cdef extern from "../includes/model.h":
   cdef struct InstrumentId:
     Symbol symbol;
     Venue venue;
-    String *value;
 
   cdef struct Price_t:
     int64_t value;

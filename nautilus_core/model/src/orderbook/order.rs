@@ -14,9 +14,9 @@
 // -------------------------------------------------------------------------------------------------
 
 use crate::enums::OrderSide;
-use crate::objects::price::Price;
-use crate::objects::quantity::Quantity;
 use crate::orderbook::ladder::BookPrice;
+use crate::primitives::price::Price;
+use crate::primitives::quantity::Quantity;
 
 #[repr(C)]
 #[derive(Debug)]

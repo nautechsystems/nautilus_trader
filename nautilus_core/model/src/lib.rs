@@ -17,5 +17,5 @@ mod c_raw;
 pub mod data;
 pub mod enums;
 pub mod identifiers;
-pub mod objects;
 pub mod orderbook;
+pub mod primitives;

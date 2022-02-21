@@ -13,63 +13,42 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use crate::identifiers::base::Identifier;
 use crate::identifiers::symbol::Symbol;
 use crate::identifiers::venue::Venue;
 use std::fmt::{Debug, Display, Formatter, Result};
 
 #[repr(C)]
-#[derive(Clone, Hash, PartialEq)]
+#[derive(Clone, Hash, PartialEq, Debug)]
 pub struct InstrumentId {
     pub symbol: Symbol,
     pub venue: Venue,
-    value: Box<String>,
 }
 
-impl Identifier for InstrumentId {
-    fn from_str(value: &str) -> InstrumentId {
+impl InstrumentId {
+    pub fn from_str(value: &str) -> InstrumentId {
         let pieces: Vec<&str> = value.split('.').collect();
-        assert!(pieces.len() >= 2);
+        assert!(pieces.len() >= 2, "malformed instrument ID");
         InstrumentId {
             symbol: Symbol::from_str(pieces[0]),
             venue: Venue::from_str(pieces[1]),
-            value: Box::new(value.parse().unwrap()),
         }
-    }
-
-    fn as_str(&self) -> &str {
-        self.value.as_str()
     }
 }
 
 impl InstrumentId {
     pub fn new(symbol: Symbol, venue: Venue) -> InstrumentId {
-        let mut s = String::new();
-        s.push_str(symbol.as_str());
-        s.push_str(venue.as_str());
-        InstrumentId {
-            symbol,
-            venue,
-            value: Box::new(s),
-        }
-    }
-}
-
-impl Debug for InstrumentId {
-    fn fmt(&self, f: &mut Formatter<'_>) -> Result {
-        write!(f, "{}.{}", self.symbol.as_str(), self.venue.as_str())
+        InstrumentId { symbol, venue }
     }
 }
 
 impl Display for InstrumentId {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result {
-        write!(f, "{}.{}", self.symbol.as_str(), self.venue.as_str())
+        write!(f, "{}.{}", self.symbol, self.venue)
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use crate::identifiers::base::Identifier;
     use crate::identifiers::instrument_id::InstrumentId;
 
     #[test]
@@ -79,6 +58,6 @@ mod tests {
 
         assert_eq!(instrument_id1, instrument_id1);
         assert_ne!(instrument_id1, instrument_id2);
-        assert_eq!(instrument_id1.as_str(), "ETH/USDT.BINANCE")
+        assert_eq!(instrument_id1.to_string(), "ETH/USDT.BINANCE")
     }
 }

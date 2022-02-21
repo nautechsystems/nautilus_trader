@@ -13,11 +13,12 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use crate::objects::{FIXED_EXPONENT, FIXED_PRECISION};
+use crate::primitives::{FIXED_EXPONENT, FIXED_PRECISION};
 use nautilus_core::text::precision_from_str;
 use std::cmp::Ordering;
 use std::fmt::{Debug, Display, Formatter, Result};
-use std::ops::{Add, AddAssign, Mul, MulAssign, Sub, SubAssign};
+use std::hash::{Hash, Hasher};
+use std::ops::{Add, AddAssign, Mul, MulAssign, Neg, Sub, SubAssign};
 
 #[repr(C)]
 #[derive(Clone, Default)]
@@ -54,6 +55,12 @@ impl Price {
     }
 }
 
+impl Hash for Price {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.value.hash(state)
+    }
+}
+
 impl PartialEq for Price {
     fn eq(&self, other: &Self) -> bool {
         self.value == other.value
@@ -87,6 +94,16 @@ impl PartialOrd for Price {
 impl Ord for Price {
     fn cmp(&self, other: &Self) -> Ordering {
         self.value.cmp(&other.value)
+    }
+}
+
+impl Neg for Price {
+    type Output = Self;
+    fn neg(self) -> Self::Output {
+        Price {
+            value: -self.value,
+            precision: self.precision,
+        }
     }
 }
 
@@ -138,6 +155,27 @@ impl MulAssign for Price {
     }
 }
 
+impl Add<f64> for Price {
+    type Output = f64;
+    fn add(self, rhs: f64) -> Self::Output {
+        self.as_f64() + rhs
+    }
+}
+
+impl Sub<f64> for Price {
+    type Output = f64;
+    fn sub(self, rhs: f64) -> Self::Output {
+        self.as_f64() - rhs
+    }
+}
+
+impl Mul<f64> for Price {
+    type Output = f64;
+    fn mul(self, rhs: f64) -> Self::Output {
+        self.as_f64() * rhs
+    }
+}
+
 impl Debug for Price {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result {
         write!(f, "{:.*}", self.precision as usize, self.as_f64())
@@ -153,7 +191,7 @@ impl Display for Price {
 #[allow(unused_imports)] // warning: unused import: `std::fmt::Write as FmtWrite`
 #[cfg(test)]
 mod tests {
-    use crate::objects::price::Price;
+    use crate::primitives::price::Price;
 
     #[test]
     fn price_new() {

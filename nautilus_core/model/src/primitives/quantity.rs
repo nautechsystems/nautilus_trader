@@ -13,10 +13,11 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use crate::objects::{FIXED_EXPONENT, FIXED_PRECISION};
+use crate::primitives::{FIXED_EXPONENT, FIXED_PRECISION};
 use nautilus_core::text::precision_from_str;
 use std::cmp::Ordering;
 use std::fmt::{Debug, Display, Formatter, Result};
+use std::hash::{Hash, Hasher};
 use std::ops::{Add, AddAssign, Mul, MulAssign, Sub, SubAssign};
 
 #[repr(C)]
@@ -52,6 +53,12 @@ impl Quantity {
     }
     pub fn as_f64(&self) -> f64 {
         (self.value) as f64 * FIXED_PRECISION
+    }
+}
+
+impl Hash for Quantity {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.value.hash(state)
     }
 }
 
@@ -95,7 +102,7 @@ impl Add for Quantity {
     type Output = Self;
     fn add(self, rhs: Self) -> Self::Output {
         Quantity {
-            value: self.value - rhs.value,
+            value: self.value + rhs.value,
             precision: self.precision,
         }
     }
@@ -118,13 +125,6 @@ impl Mul for Quantity {
             value: self.value * rhs.value,
             precision: self.precision,
         }
-    }
-}
-
-impl Mul<u64> for Quantity {
-    type Output = u64;
-    fn mul(self, rhs: u64) -> Self::Output {
-        self.value * rhs
     }
 }
 
@@ -173,7 +173,7 @@ impl Display for Quantity {
 #[allow(unused_imports)] // warning: unused import: `std::fmt::Write as FmtWrite`
 #[cfg(test)]
 mod tests {
-    use crate::objects::quantity::Quantity;
+    use crate::primitives::quantity::Quantity;
 
     #[test]
     fn qty_new() {

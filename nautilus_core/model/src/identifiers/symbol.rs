@@ -13,29 +13,19 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use crate::identifiers::base::Identifier;
 use std::fmt::{Debug, Display, Formatter, Result};
 
 #[repr(C)]
-#[derive(Clone, Hash, PartialEq)]
+#[derive(Clone, Hash, PartialEq, Debug)]
 pub struct Symbol {
     value: Box<String>,
 }
 
-impl Identifier for Symbol {
-    fn from_str(s: &str) -> Symbol {
+impl Symbol {
+    pub fn from_str(s: &str) -> Symbol {
         Symbol {
             value: Box::from(s.to_owned()),
         }
-    }
-    fn as_str(&self) -> &str {
-        self.value.as_str()
-    }
-}
-
-impl Debug for Symbol {
-    fn fmt(&self, f: &mut Formatter<'_>) -> Result {
-        write!(f, "{}", self.value)
     }
 }
 
@@ -47,7 +37,6 @@ impl Display for Symbol {
 
 #[cfg(test)]
 mod tests {
-    use crate::identifiers::base::Identifier;
     use crate::identifiers::symbol::Symbol;
 
     #[test]
@@ -57,13 +46,13 @@ mod tests {
 
         assert_eq!(symbol1, symbol1);
         assert_ne!(symbol1, symbol2);
-        assert_eq!(symbol1.as_str(), "XRD/USD");
+        assert_eq!(symbol1.to_string(), "XRD/USD");
     }
 
     #[test]
     fn symbol_as_str() {
         let symbol = Symbol::from_str("ETH-PERP");
 
-        assert_eq!(symbol.as_str(), "ETH-PERP");
+        assert_eq!(symbol.to_string(), "ETH-PERP");
     }
 }

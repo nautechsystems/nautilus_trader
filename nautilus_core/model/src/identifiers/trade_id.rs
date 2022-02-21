@@ -14,22 +14,27 @@
 // -------------------------------------------------------------------------------------------------
 
 use std::fmt::{Debug, Display, Formatter, Result};
+use std::str::FromStr;
 
 #[repr(C)]
 #[derive(Clone, Hash, PartialEq, Debug)]
-pub struct Venue {
-    value: Box<String>,
+pub struct TradeId {
+    value: u64,
 }
 
-impl Venue {
-    pub fn from_str(s: &str) -> Venue {
-        Venue {
-            value: Box::from(s.to_owned()),
+impl TradeId {
+    pub fn new(value: u64) -> TradeId {
+        TradeId { value }
+    }
+
+    pub fn from_str(s: &str) -> TradeId {
+        TradeId {
+            value: u64::from_str(s).expect("u64::from_str failed"),
         }
     }
 }
 
-impl Display for Venue {
+impl Display for TradeId {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result {
         write!(f, "{}", self.value)
     }
@@ -37,22 +42,15 @@ impl Display for Venue {
 
 #[cfg(test)]
 mod tests {
-    use crate::identifiers::venue::Venue;
+    use crate::identifiers::trade_id::TradeId;
 
     #[test]
-    fn venue_from_str() {
-        let venue1 = Venue::from_str("FTX");
-        let venue2 = Venue::from_str("IDEALPRO");
+    fn test_instrument_id_from_str() {
+        let trade_id1 = TradeId::from_str("123456789");
+        let trade_id2 = TradeId::from_str("234567890");
 
-        assert_eq!(venue1, venue1);
-        assert_ne!(venue1, venue2);
-        assert_eq!(venue1.to_string(), "FTX")
-    }
-
-    #[test]
-    fn venue_as_str() {
-        let venue = Venue::from_str("FTX");
-
-        assert_eq!(venue.to_string(), "FTX")
+        assert_eq!(trade_id1, trade_id1);
+        assert_ne!(trade_id1, trade_id2);
+        assert_eq!(trade_id1.value, 123456789)
     }
 }

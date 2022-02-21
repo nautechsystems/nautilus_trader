@@ -13,8 +13,28 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+use std::fmt::{Debug, Display, Formatter, Result};
 use std::time::SystemTime;
 use std::time::UNIX_EPOCH;
+
+/// Represents a timestamp in UNIX nanoseconds.
+#[repr(C)]
+#[derive(Clone, Hash, PartialEq, Eq, Debug)]
+pub struct Timestamp {
+    value: i64,
+}
+
+impl Default for Timestamp {
+    fn default() -> Self {
+        Timestamp { value: 0 }
+    }
+}
+
+impl Display for Timestamp {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result {
+        write!(f, "{}", self.value)
+    }
+}
 
 /// Returns the current seconds since the UNIX epoch.
 #[no_mangle]

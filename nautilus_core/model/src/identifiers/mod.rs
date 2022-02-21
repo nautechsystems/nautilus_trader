@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-pub mod base;
 pub mod instrument_id;
 pub mod symbol;
+pub mod trade_id;
 pub mod venue;

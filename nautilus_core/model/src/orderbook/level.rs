@@ -153,11 +153,11 @@ impl Display for Level {
 #[cfg(test)]
 mod tests {
     use crate::enums::OrderSide;
-    use crate::objects::price::Price;
-    use crate::objects::quantity::Quantity;
     use crate::orderbook::ladder::BookPrice;
     use crate::orderbook::level::Level;
     use crate::orderbook::order::Order;
+    use crate::primitives::price::Price;
+    use crate::primitives::quantity::Quantity;
 
     #[test]
     fn level_comparisons_bid_side() {

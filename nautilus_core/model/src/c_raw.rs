@@ -14,13 +14,12 @@
 // ------------------------------------------------------------------------------------------------
 
 use crate::enums::BookLevel;
-use crate::identifiers::base::Identifier;
 use crate::identifiers::instrument_id::InstrumentId;
 use crate::identifiers::symbol::Symbol;
 use crate::identifiers::venue::Venue;
-use crate::objects::price::Price;
-use crate::objects::quantity::Quantity;
 use crate::orderbook::book::OrderBook;
+use crate::primitives::price::Price;
+use crate::primitives::quantity::Quantity;
 use std::ffi::CStr;
 use std::ops::{AddAssign, SubAssign};
 use std::os::raw::c_char;
@@ -43,7 +42,7 @@ pub extern "C" fn symbol_free(s: Symbol) {
 
 #[no_mangle]
 pub extern "C" fn symbol_as_utf8(s: Symbol) -> *const u8 {
-    s.as_str().as_ptr()
+    s.to_string().as_ptr()
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -64,7 +63,7 @@ pub extern "C" fn venue_free(v: Venue) {
 
 #[no_mangle]
 pub extern "C" fn venue_as_utf8(v: Venue) -> *const u8 {
-    v.as_str().as_ptr()
+    v.to_string().as_ptr()
 }
 
 /// Expects `ptr` to be an array of valid UTF-8 chars with a null byte terminator.
@@ -87,7 +86,7 @@ pub extern "C" fn instrument_id_free(id: InstrumentId) {
 
 #[no_mangle]
 pub extern "C" fn instrument_id_as_utf8(id: InstrumentId) -> *const u8 {
-    id.as_str().as_ptr()
+    id.to_string().as_ptr()
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -159,7 +158,6 @@ pub extern "C" fn quantity_sub_assign_u64(mut a: Quantity, b: u64) {
 #[cfg(test)]
 mod tests {
     use crate::c_raw::instrument_id_from_raw;
-    use crate::identifiers::base::Identifier;
     use crate::identifiers::symbol::Symbol;
     use crate::identifiers::venue::Venue;
     use std::ffi::CString;
