@@ -33,7 +33,8 @@ from nautilus_trader.model.objects cimport Quantity
 
 cdef class CryptoPerpetual(Instrument):
     """
-    Represents a Crypto perpetual swap instrument.
+    Represents a Crypto `Perpetual Futures` contract instrument (a.k.a. `Perpetual
+    Swap`).
 
     Parameters
     ----------

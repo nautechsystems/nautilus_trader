@@ -3,6 +3,10 @@
 The heart of the NautilusTrader user experience is in writing and working with
 trading strategies, by inheriting `TradingStrategy` and implementing its methods.
 
+Using the basic building blocks of data ingest and order management (which we will discuss
+below), it's possible to implement any type of trading strategy including positional, momentum, re-balancing,
+pairs trading, market making etc.
+
 Please refer to the [API Reference](../api_reference/trading.md#strategy) for a complete description
 of all the possible functionality.
 
@@ -65,4 +69,34 @@ example the above config would result in a strategy ID of `MyStrategy-001`.
 
 ```{tip}
 See the `StrategyId` [documentation](../api_reference/model/identifiers.md) for further details.
+```
+
+## Implementation
+Since a trading strategy is a class which inherits from `TradingStrategy`, you must define
+a constructor where you can handle initialization. Minimally the base/super class needs to be initialized:
+
+```python
+class MyStrategy(TradingStrategy):
+    def __init__(self):
+        super().__init__()  # <-- the super class must be called to initialize the strategy
+```
+
+As per the above, it's also possible to define a configuration. Here we simply add an instrument ID
+as a string, to parameterize the instrument the strategy will trade.
+
+```python
+class MyStrategyConfig(TradingStrategyConfig):
+    instrument_id: str
+
+class MyStrategy(TradingStrategy):
+    def __init__(self, config: MyStrategyConfig):
+        super().__init__(config)
+
+        # Configuration
+        self.instrument_id = InstrumentId.from_str(config.instrument_id)
+```
+
+```{note}
+Even though it often makes sense to define a strategy which will trade a single
+instrument. There is actually no limit to the number of instruments for a single strategy.
 ```
