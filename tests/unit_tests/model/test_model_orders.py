@@ -230,6 +230,8 @@ class TestOrders:
         assert order.status == OrderStatus.INITIALIZED
         assert order.event_count == 1
         assert isinstance(order.last_event, OrderInitialized)
+        assert not order.has_price
+        assert not order.has_trigger_price
         assert not order.is_open
         assert not order.is_closed
         assert not order.is_inflight
@@ -258,6 +260,8 @@ class TestOrders:
         assert order.event_count == 1
         assert isinstance(order.last_event, OrderInitialized)
         assert len(order.events) == 1
+        assert not order.has_price
+        assert not order.has_trigger_price
         assert not order.is_open
         assert not order.is_closed
         assert not order.is_inflight
@@ -349,6 +353,8 @@ class TestOrders:
         assert order.type == OrderType.LIMIT
         assert order.status == OrderStatus.INITIALIZED
         assert order.time_in_force == TimeInForce.GTC
+        assert order.has_price
+        assert not order.has_trigger_price
         assert order.is_passive
         assert not order.is_open
         assert not order.is_aggressive
@@ -452,6 +458,8 @@ class TestOrders:
         assert order.type == OrderType.STOP_MARKET
         assert order.status == OrderStatus.INITIALIZED
         assert order.time_in_force == TimeInForce.GTC
+        assert not order.has_price
+        assert order.has_trigger_price
         assert order.is_passive
         assert not order.is_aggressive
         assert not order.is_open
@@ -525,6 +533,8 @@ class TestOrders:
         assert order.type == OrderType.STOP_LIMIT
         assert order.status == OrderStatus.INITIALIZED
         assert order.time_in_force == TimeInForce.GTC
+        assert order.has_price
+        assert order.has_trigger_price
         assert order.is_passive
         assert not order.is_aggressive
         assert not order.is_closed
@@ -588,6 +598,160 @@ class TestOrders:
             "ts_init": 0,
         }
 
+    def test_market_if_touched_order(self):
+        # Arrange, Act
+        order = self.order_factory.market_if_touched(
+            AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100000),
+            Price.from_str("1.00000"),
+            TriggerType.BID_ASK,
+        )
+
+        # Assert
+        assert order.type == OrderType.MARKET_IF_TOUCHED
+        assert order.status == OrderStatus.INITIALIZED
+        assert order.time_in_force == TimeInForce.GTC
+        assert not order.has_price
+        assert order.has_trigger_price
+        assert order.is_passive
+        assert not order.is_aggressive
+        assert not order.is_open
+        assert not order.is_closed
+        assert isinstance(order.init_event, OrderInitialized)
+        assert (
+            str(order)
+            == "MarketIfTouchedOrder(BUY 100_000 AUD/USD.SIM MARKET_IF_TOUCHED @ 1.00000[BID_ASK] GTC, status=INITIALIZED, client_order_id=O-19700101-000000-000-001-1, venue_order_id=None, tags=None)"  # noqa
+        )
+        assert (
+            repr(order)
+            == "MarketIfTouchedOrder(BUY 100_000 AUD/USD.SIM MARKET_IF_TOUCHED @ 1.00000[BID_ASK] GTC, status=INITIALIZED, client_order_id=O-19700101-000000-000-001-1, venue_order_id=None, tags=None)"  # noqa
+        )
+
+    def test_market_if_touched_order_to_dict(self):
+        # Arrange
+        order = self.order_factory.market_if_touched(
+            AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100000),
+            Price.from_str("1.00000"),
+        )
+
+        # Act
+        result = order.to_dict()
+
+        # Assert
+        assert result == {
+            "trader_id": "TESTER-000",
+            "strategy_id": "S-001",
+            "instrument_id": "AUD/USD.SIM",
+            "client_order_id": "O-19700101-000000-000-001-1",
+            "venue_order_id": None,
+            "position_id": None,
+            "account_id": None,
+            "last_trade_id": None,
+            "type": "MARKET_IF_TOUCHED",
+            "side": "BUY",
+            "quantity": "100000",
+            "trigger_price": "1.00000",
+            "trigger_type": "DEFAULT",
+            "expire_time_ns": None,
+            "time_in_force": "GTC",
+            "filled_qty": "0",
+            "liquidity_side": "NONE",
+            "avg_px": None,
+            "slippage": "0",
+            "status": "INITIALIZED",
+            "is_reduce_only": False,
+            "order_list_id": None,
+            "contingency_type": "NONE",
+            "linked_order_ids": None,
+            "parent_order_id": None,
+            "tags": None,
+            "ts_last": 0,
+            "ts_init": 0,
+        }
+
+    def test_initialize_limit_if_touched_order(self):
+        # Arrange, Act
+        order = self.order_factory.limit_if_touched(
+            AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100000),
+            Price.from_str("1.00000"),
+            Price.from_str("1.10010"),
+            tags="ENTRY",
+        )
+
+        # Assert
+        assert order.type == OrderType.LIMIT_IF_TOUCHED
+        assert order.status == OrderStatus.INITIALIZED
+        assert order.time_in_force == TimeInForce.GTC
+        assert order.has_price
+        assert order.has_trigger_price
+        assert order.is_passive
+        assert not order.is_aggressive
+        assert not order.is_closed
+        assert isinstance(order.init_event, OrderInitialized)
+        assert (
+            str(order)
+            == "LimitIfTouchedOrder(BUY 100_000 AUD/USD.SIM LIMIT_IF_TOUCHED @ 1.10010-STOP[DEFAULT] 1.00000-LIMIT GTC, status=INITIALIZED, client_order_id=O-19700101-000000-000-001-1, venue_order_id=None, tags=ENTRY)"  # noqa
+        )
+        assert (
+            repr(order)
+            == "LimitIfTouchedOrder(BUY 100_000 AUD/USD.SIM LIMIT_IF_TOUCHED @ 1.10010-STOP[DEFAULT] 1.00000-LIMIT GTC, status=INITIALIZED, client_order_id=O-19700101-000000-000-001-1, venue_order_id=None, tags=ENTRY)"  # noqa
+        )
+
+    def test_limit_if_touched_order_to_dict(self):
+        # Arrange
+        order = self.order_factory.limit_if_touched(
+            AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100000),
+            Price.from_str("1.00000"),
+            Price.from_str("1.10010"),
+            trigger_type=TriggerType.MARK,
+            tags="STOP_LOSS",
+        )
+
+        # Act
+        result = order.to_dict()
+
+        # Assert
+        assert result == {
+            "trader_id": "TESTER-000",
+            "strategy_id": "S-001",
+            "instrument_id": "AUD/USD.SIM",
+            "client_order_id": "O-19700101-000000-000-001-1",
+            "venue_order_id": None,
+            "position_id": None,
+            "account_id": None,
+            "last_trade_id": None,
+            "type": "LIMIT_IF_TOUCHED",
+            "side": "BUY",
+            "quantity": "100000",
+            "price": "1.00000",
+            "trigger_price": "1.10010",
+            "trigger_type": "MARK",
+            "expire_time_ns": None,
+            "time_in_force": "GTC",
+            "filled_qty": "0",
+            "liquidity_side": "NONE",
+            "avg_px": None,
+            "slippage": "0",
+            "status": "INITIALIZED",
+            "is_post_only": False,
+            "is_reduce_only": False,
+            "display_qty": None,
+            "order_list_id": None,
+            "contingency_type": "NONE",
+            "linked_order_ids": None,
+            "parent_order_id": None,
+            "tags": "STOP_LOSS",
+            "ts_last": 0,
+            "ts_init": 0,
+        }
+
     def test_initialize_trailing_stop_market_order(self):
         # Arrange, Act
         order = self.order_factory.trailing_stop_market(
@@ -603,6 +767,8 @@ class TestOrders:
         assert order.status == OrderStatus.INITIALIZED
         assert order.time_in_force == TimeInForce.GTC
         assert order.offset_type == TrailingOffsetType.PRICE
+        assert not order.has_price
+        assert order.has_trigger_price
         assert order.is_passive
         assert not order.is_aggressive
         assert not order.is_open
@@ -754,6 +920,8 @@ class TestOrders:
         assert order.type == OrderType.TRAILING_STOP_LIMIT
         assert order.status == OrderStatus.INITIALIZED
         assert order.time_in_force == TimeInForce.GTC
+        assert order.has_price
+        assert order.has_trigger_price
         assert order.is_passive
         assert not order.is_aggressive
         assert not order.is_closed

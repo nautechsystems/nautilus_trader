@@ -13,8 +13,8 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import datetime
 import pathlib
+from datetime import date
 from decimal import Decimal
 from typing import Optional
 
@@ -41,7 +41,8 @@ from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.instruments.betting import BettingInstrument
-from nautilus_trader.model.instruments.crypto_perp import CryptoPerpetual
+from nautilus_trader.model.instruments.crypto_future import CryptoFuture
+from nautilus_trader.model.instruments.crypto_perpetual import CryptoPerpetual
 from nautilus_trader.model.instruments.currency import CurrencySpot
 from nautilus_trader.model.instruments.equity import Equity
 from nautilus_trader.model.instruments.future import Future
@@ -163,6 +164,51 @@ class TestInstrumentProvider:
             margin_maint=Decimal("0.35"),
             maker_fee=Decimal("0.0001"),
             taker_fee=Decimal("0.0001"),
+            ts_event=0,
+            ts_init=0,
+        )
+
+    @staticmethod
+    def btcusdt_future_binance(expiry: date = None) -> CryptoFuture:
+        """
+        Return the Binance BTC/USDT instrument for backtesting.
+
+        Parameters
+        ----------
+        expiry : date, optional
+            The expiry date for the contract.
+
+        Returns
+        -------
+        CryptoFuture
+
+        """
+        if expiry is None:
+            expiry = date(2022, 3, 25)
+        return CryptoFuture(
+            instrument_id=InstrumentId(
+                symbol=Symbol(f"BTCUSDT_{expiry.strftime('%y%m%d')}"),
+                venue=Venue("BINANCE"),
+            ),
+            native_symbol=Symbol("BTCUSDT"),
+            underlying=BTC,
+            quote_currency=USDT,
+            settlement_currency=USDT,
+            expiry_date=expiry,
+            price_precision=2,
+            size_precision=6,
+            price_increment=Price(1e-02, precision=2),
+            size_increment=Quantity(1e-06, precision=6),
+            max_quantity=Quantity(9000, precision=6),
+            min_quantity=Quantity(1e-06, precision=6),
+            max_notional=None,
+            min_notional=Money(10.00000000, USDT),
+            max_price=Price(1000000, precision=2),
+            min_price=Price(0.01, precision=2),
+            margin_init=Decimal(0),
+            margin_maint=Decimal(0),
+            maker_fee=Decimal("0.001"),
+            taker_fee=Decimal("0.001"),
             ts_event=0,
             ts_init=0,
         )
@@ -328,7 +374,7 @@ class TestInstrumentProvider:
             quote_currency=Currency.from_str(quote_currency),
             price_precision=price_precision,
             size_precision=0,
-            price_increment=Price(1 / 10 ** price_precision, price_precision),
+            price_increment=Price(1 / 10**price_precision, price_precision),
             size_increment=Quantity.from_int(1),
             lot_size=Quantity.from_str("1000"),
             max_quantity=Quantity.from_str("1e7"),
@@ -398,7 +444,7 @@ class TestInstrumentProvider:
             multiplier=Quantity.from_int(1),
             lot_size=Quantity.from_int(1),
             underlying="ES",
-            expiry_date=datetime.date(2021, 12, 17),
+            expiry_date=date(2021, 12, 17),
             ts_event=0,
             ts_init=0,
         )
@@ -416,7 +462,7 @@ class TestInstrumentProvider:
             lot_size=Quantity.from_int(1),
             underlying="AAPL",
             kind=OptionKind.CALL,
-            expiry_date=datetime.date(2021, 12, 17),
+            expiry_date=date(2021, 12, 17),
             strike_price=Price.from_str("149.00"),
             ts_event=0,
             ts_init=0,

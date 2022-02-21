@@ -43,6 +43,8 @@ class FTXWebSocketClient(WebSocketClient):
         secret: Optional[str] = None,
         base_url: Optional[str] = None,
         us: bool = False,
+        auto_ping_interval: Optional[float] = None,
+        log_send: bool = False,
         log_recv: bool = False,
     ):
         super().__init__(
@@ -50,6 +52,8 @@ class FTXWebSocketClient(WebSocketClient):
             logger=logger,
             handler=msg_handler,
             max_retry_connection=6,
+            pong_msg=b'{"type": "pong"}',
+            log_send=log_send,
             log_recv=log_recv,
         )
 
@@ -63,6 +67,10 @@ class FTXWebSocketClient(WebSocketClient):
         self._reconnect_handler = reconnect_handler
         self._streams: List[Dict] = []
 
+        # Tasks
+        self._auto_ping_interval = auto_ping_interval
+        self._task_auto_ping: Optional[asyncio.Task] = None
+
     @property
     def subscriptions(self):
         return self._streams.copy()
@@ -75,23 +83,9 @@ class FTXWebSocketClient(WebSocketClient):
             return False
 
     async def connect(self, start: bool = True, **ws_kwargs) -> None:
-        """
-        Connect to the FTX WebSocket endpoint.
-
-        Parameters
-        ----------
-        start : bool
-            If the WebSocket should be immediately started following connection.
-        ws_kwargs : dict[str, Any]
-            The optional kwargs for connection.
-
-        """
         await super().connect(ws_url=self._base_url, start=start, **ws_kwargs)
 
     async def post_connection(self):
-        """
-        Actions to be performed post connection.
-        """
         if self._key is None or self._secret is None:
             self._log.info("Unauthenticated session (no credentials provided).")
             return
@@ -113,12 +107,13 @@ class FTXWebSocketClient(WebSocketClient):
         }
 
         await self.send_json(login)
+
+        if self._auto_ping_interval and self._task_auto_ping is None:
+            self._task_auto_ping = self._loop.create_task(self._auto_ping())
+
         self._log.info("Session authenticated.")
 
     async def post_reconnection(self):
-        """
-        Actions to be performed post reconnection.
-        """
         # Re-login and authenticate
         await self.post_connection()
 
@@ -127,6 +122,19 @@ class FTXWebSocketClient(WebSocketClient):
             await self.send_json({"op": "subscribe", **subscription})
 
         self._reconnect_handler()
+
+    async def post_disconnection(self) -> None:
+        if self._task_auto_ping is not None:
+            self._task_auto_ping.cancel()
+            self._task_auto_ping = None  # Clear canceled task
+
+    async def _auto_ping(self) -> None:
+        while True:
+            await asyncio.sleep(self._auto_ping_interval)
+            await self._ping()
+
+    async def _ping(self) -> None:
+        await self.send_json({"op": "ping"})
 
     async def _subscribe(self, subscription: Dict) -> None:
         if subscription not in self._streams:

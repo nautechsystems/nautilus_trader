@@ -34,7 +34,9 @@ from nautilus_trader.model.objects cimport Quantity
 
 cdef class CurrencySpot(Instrument):
     """
-    Represents a spot currency instrument.
+    Represents a generic spot currency instrument.
+
+    Can represent both Fiat FX and Crypto currency pairs.
 
     Parameters
     ----------

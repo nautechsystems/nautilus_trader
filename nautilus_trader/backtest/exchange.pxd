@@ -49,8 +49,6 @@ from nautilus_trader.model.orderbook.data cimport OrderBookData
 from nautilus_trader.model.orders.base cimport Order
 from nautilus_trader.model.orders.limit cimport LimitOrder
 from nautilus_trader.model.orders.market cimport MarketOrder
-from nautilus_trader.model.orders.stop_limit cimport StopLimitOrder
-from nautilus_trader.model.orders.stop_market cimport StopMarketOrder
 from nautilus_trader.model.position cimport Position
 
 
@@ -92,7 +90,6 @@ cdef class SimulatedExchange:
     """The simulation modules registered with the exchange.\n\n:returns: `list[SimulationModule]`"""
     cdef readonly dict instruments
     """The exchange instruments.\n\n:returns: `dict[InstrumentId, Instrument]`"""
-
 
     cdef dict _instrument_indexer
 
@@ -144,11 +141,11 @@ cdef class SimulatedExchange:
     cdef void _process_order(self, Order order) except *
     cdef void _process_market_order(self, MarketOrder order) except *
     cdef void _process_limit_order(self, LimitOrder order) except *
-    cdef void _process_stop_market_order(self, StopMarketOrder order) except *
-    cdef void _process_stop_limit_order(self, StopLimitOrder order) except *
+    cdef void _process_stop_market_order(self, Order order) except *
+    cdef void _process_stop_limit_order(self, Order order) except *
     cdef void _update_limit_order(self, LimitOrder order, Quantity qty, Price price) except *
-    cdef void _update_stop_market_order(self, StopMarketOrder order, Quantity qty, Price trigger_price) except *
-    cdef void _update_stop_limit_order(self, StopLimitOrder order, Quantity qty, Price price, Price trigger_price) except *
+    cdef void _update_stop_market_order(self, Order order, Quantity qty, Price trigger_price) except *
+    cdef void _update_stop_limit_order(self, Order order, Quantity qty, Price price, Price trigger_price) except *
 
 # -- EVENT HANDLING --------------------------------------------------------------------------------
 
@@ -167,8 +164,8 @@ cdef class SimulatedExchange:
     cdef void _iterate_side(self, list orders, int64_t timestamp_ns) except *
     cdef void _match_order(self, Order order) except *
     cdef void _match_limit_order(self, LimitOrder order) except *
-    cdef void _match_stop_market_order(self, StopMarketOrder order) except *
-    cdef void _match_stop_limit_order(self, StopLimitOrder order) except *
+    cdef void _match_stop_market_order(self, Order order) except *
+    cdef void _match_stop_limit_order(self, Order order) except *
     cdef bint _is_limit_marketable(self, InstrumentId instrument_id, OrderSide side, Price price) except *
     cdef bint _is_limit_matched(self, InstrumentId instrument_id, OrderSide side, Price price) except *
     cdef bint _is_stop_marketable(self, InstrumentId instrument_id, OrderSide side, Price price) except *
@@ -229,7 +226,7 @@ cdef class SimulatedExchange:
     ) except *
     cdef void _generate_order_updated(self, Order order, Quantity qty, Price price, Price trigger_price) except *
     cdef void _generate_order_canceled(self, Order order) except *
-    cdef void _generate_order_triggered(self, StopLimitOrder order) except *
+    cdef void _generate_order_triggered(self, Order order) except *
     cdef void _generate_order_expired(self, Order order) except *
     cdef void _generate_order_filled(
         self,

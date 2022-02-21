@@ -226,7 +226,7 @@ class EMACrossStopEntryTrail(TradingStrategy):
             instrument_id=self.instrument_id,
             order_side=OrderSide.BUY,
             quantity=self.instrument.make_qty(self.trade_size),
-            price=self.instrument.make_price(last_bar.low + (self.tick_size * 2)),
+            trigger_price=self.instrument.make_price(last_bar.high + (self.tick_size * 2)),
         )
 
         self.entry = order
@@ -246,7 +246,7 @@ class EMACrossStopEntryTrail(TradingStrategy):
             instrument_id=self.instrument_id,
             order_side=OrderSide.SELL,
             quantity=self.instrument.make_qty(self.trade_size),
-            price=self.instrument.make_price(last_bar.low - (self.tick_size * 2)),
+            trigger_price=self.instrument.make_price(last_bar.low - (self.tick_size * 2)),
         )
 
         self.entry = order
@@ -268,7 +268,7 @@ class EMACrossStopEntryTrail(TradingStrategy):
             instrument_id=self.instrument_id,
             order_side=OrderSide.BUY,
             quantity=self.instrument.make_qty(self.trade_size),
-            price=self.instrument.make_price(price),
+            trigger_price=self.instrument.make_price(price),
             reduce_only=True,
         )
 
@@ -285,7 +285,7 @@ class EMACrossStopEntryTrail(TradingStrategy):
             instrument_id=self.instrument_id,
             order_side=OrderSide.SELL,
             quantity=self.instrument.make_qty(self.trade_size),
-            price=self.instrument.make_price(price),
+            trigger_price=self.instrument.make_price(price),
             reduce_only=True,
         )
 

@@ -414,6 +414,8 @@ class TestParquetSerializer:
     @pytest.mark.parametrize(
         "instrument",
         [
+            TestInstrumentProvider.xbtusd_bitmex(),
+            TestInstrumentProvider.btcusdt_future_binance(),
             TestInstrumentProvider.btcusdt_binance(),
             TestInstrumentProvider.aapl_equity(),
             TestInstrumentProvider.es_future(),

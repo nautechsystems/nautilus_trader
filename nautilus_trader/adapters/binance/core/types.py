@@ -24,9 +24,9 @@ from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 
 
-class BinanceTicker(Ticker):
+class BinanceSpotTicker(Ticker):
     """
-    Represents a `Binance` 24hr ticker statistics.
+    Represents a `Binance SPOT` 24hr statistics ticker.
 
     This data type includes the raw data provided by `Binance`.
 
@@ -158,9 +158,9 @@ class BinanceTicker(Ticker):
         )
 
     @staticmethod
-    def from_dict(values: Dict[str, Any]) -> "BinanceTicker":
+    def from_dict(values: Dict[str, Any]) -> "BinanceSpotTicker":
         """
-        Return a `Binance` ticker parsed from the given values.
+        Return a `Binance SPOT` ticker parsed from the given values.
 
         Parameters
         ----------
@@ -169,10 +169,10 @@ class BinanceTicker(Ticker):
 
         Returns
         -------
-        BinanceTicker
+        BinanceSpotTicker
 
         """
-        return BinanceTicker(
+        return BinanceSpotTicker(
             instrument_id=InstrumentId.from_str(values["instrument_id"]),
             price_change=Decimal(values["price_change"]),
             price_change_percent=Decimal(values["price_change_percent"]),
@@ -197,7 +197,7 @@ class BinanceTicker(Ticker):
         )
 
     @staticmethod
-    def to_dict(obj: "BinanceTicker") -> Dict[str, Any]:
+    def to_dict(obj: "BinanceSpotTicker") -> Dict[str, Any]:
         """
         Return a dictionary representation of this object.
 

@@ -359,7 +359,7 @@ class FTXHttpClient(HttpClient):
         side: str,
         size: str,
         order_type: str,
-        client_id: str,
+        client_id: str = None,
         price: Optional[str] = None,
         trigger_price: Optional[str] = None,
         trail_value: Optional[str] = None,

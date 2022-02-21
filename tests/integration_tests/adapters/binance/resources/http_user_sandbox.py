@@ -40,7 +40,7 @@ async def test_binance_spot_account_http_client():
     await client.connect()
 
     user = BinanceUserDataHttpAPI(client=client)
-    response = await user.create_listen_key_spot()
+    response = await user.create_listen_key()
 
     print(json.dumps(response, indent=4))
 

@@ -15,8 +15,13 @@
 
 import asyncio
 
+import pytest
+
+from nautilus_trader.adapters.binance.core.enums import BinanceAccountType
 from nautilus_trader.adapters.binance.factories import BinanceLiveDataClientFactory
 from nautilus_trader.adapters.binance.factories import BinanceLiveExecutionClientFactory
+from nautilus_trader.adapters.binance.factories import _get_http_base_url
+from nautilus_trader.adapters.binance.factories import _get_ws_base_url
 from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.logging import LiveLogger
@@ -55,6 +60,140 @@ class TestBinanceFactories:
             database=self.cache_db,
             logger=self.logger,
         )
+
+    @pytest.mark.parametrize(
+        "account_type, config, expected",
+        [
+            [
+                BinanceAccountType.SPOT,
+                {"us": False, "testnet": False},
+                "https://api.binance.com",
+            ],
+            [
+                BinanceAccountType.MARGIN,
+                {"us": False, "testnet": False},
+                "https://sapi.binance.com",
+            ],
+            [
+                BinanceAccountType.FUTURES_USDT,
+                {"us": False, "testnet": False},
+                "https://fapi.binance.com",
+            ],
+            [
+                BinanceAccountType.FUTURES_COIN,
+                {"us": False, "testnet": False},
+                "https://dapi.binance.com",
+            ],
+            [
+                BinanceAccountType.SPOT,
+                {"us": True, "testnet": False},
+                "https://api.binance.us",
+            ],
+            [
+                BinanceAccountType.MARGIN,
+                {"us": True, "testnet": False},
+                "https://sapi.binance.us",
+            ],
+            [
+                BinanceAccountType.FUTURES_USDT,
+                {"us": True, "testnet": False},
+                "https://fapi.binance.us",
+            ],
+            [
+                BinanceAccountType.FUTURES_COIN,
+                {"us": True, "testnet": False},
+                "https://dapi.binance.us",
+            ],
+            [
+                BinanceAccountType.SPOT,
+                {"us": False, "testnet": True},
+                "https://testnet.binance.vision/api",
+            ],
+            [
+                BinanceAccountType.MARGIN,
+                {"us": False, "testnet": True},
+                "https://testnet.binance.vision/api",
+            ],
+            [
+                BinanceAccountType.FUTURES_USDT,
+                {"us": False, "testnet": True},
+                "https://testnet.binancefuture.com",
+            ],
+        ],
+    )
+    def test_get_http_base_url(self, account_type, config, expected):
+        # Arrange, Act
+        base_url = _get_http_base_url(account_type, config)
+
+        # Assert
+        assert base_url == expected
+
+    @pytest.mark.parametrize(
+        "account_type, config, expected",
+        [
+            [
+                BinanceAccountType.SPOT,
+                {"us": False, "testnet": False},
+                "wss://stream.binance.com:9443",
+            ],
+            [
+                BinanceAccountType.MARGIN,
+                {"us": False, "testnet": False},
+                "wss://stream.binance.com:9443",
+            ],
+            [
+                BinanceAccountType.FUTURES_USDT,
+                {"us": False, "testnet": False},
+                "wss://fstream.binance.com",
+            ],
+            [
+                BinanceAccountType.FUTURES_COIN,
+                {"us": False, "testnet": False},
+                "wss://dstream.binance.com",
+            ],
+            [
+                BinanceAccountType.SPOT,
+                {"us": True, "testnet": False},
+                "wss://stream.binance.us:9443",
+            ],
+            [
+                BinanceAccountType.MARGIN,
+                {"us": True, "testnet": False},
+                "wss://stream.binance.us:9443",
+            ],
+            [
+                BinanceAccountType.FUTURES_USDT,
+                {"us": True, "testnet": False},
+                "wss://fstream.binance.us",
+            ],
+            [
+                BinanceAccountType.FUTURES_COIN,
+                {"us": True, "testnet": False},
+                "wss://dstream.binance.us",
+            ],
+            [
+                BinanceAccountType.SPOT,
+                {"us": False, "testnet": True},
+                "wss://testnet.binance.vision/ws",
+            ],
+            [
+                BinanceAccountType.MARGIN,
+                {"us": False, "testnet": True},
+                "wss://testnet.binance.vision/ws",
+            ],
+            [
+                BinanceAccountType.FUTURES_USDT,
+                {"us": False, "testnet": True},
+                "wss://stream.binancefuture.com",
+            ],
+        ],
+    )
+    def test_get_ws_base_url(self, account_type, config, expected):
+        # Arrange, Act
+        base_url = _get_ws_base_url(account_type, config)
+
+        # Assert
+        assert base_url == expected
 
     def test_binance_live_data_client_factory(self, binance_http_client):
         # Arrange, Act

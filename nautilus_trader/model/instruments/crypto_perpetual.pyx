@@ -13,11 +13,11 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from decimal import Decimal
+
 import orjson
 
 from libc.stdint cimport int64_t
-
-from decimal import Decimal
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.model.c_enums.asset_class cimport AssetClass
@@ -33,7 +33,8 @@ from nautilus_trader.model.objects cimport Quantity
 
 cdef class CryptoPerpetual(Instrument):
     """
-    Represents a crypto perpetual swap instrument.
+    Represents a Crypto `Perpetual Futures` contract instrument (a.k.a. `Perpetual
+    Swap`).
 
     Parameters
     ----------
