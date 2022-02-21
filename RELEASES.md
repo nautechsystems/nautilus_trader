@@ -6,11 +6,24 @@ Released on TBD (UTC).
 
 ### Breaking Changes
 - Renamed `BacktestDataConfig.data_cls_path` to `data_cls`.
+- Renamed `BinanceTicker` to `BinanceSpotTicker`.
+- Renamed `BinanceSpotExecutionClient` to `BinanceExecutionClient`.
 
 ### Enhancements
-- `BacktestDataConfig` now takes either a type of `Data` _or_ a fully qualified path string.
+- Added initial implementation of Binance Futures.
+- Added `CryptoFuture` instrument.
+- Added `OrderType.MARKET_IF_TOUCHED`.
+- Added `OrderType.LIMIT_IF_TOUCHED`.
+- Added `MarketIfTouched` order type.
+- Added `LimitIfTouched` order type.
+- Added `Order.has_price` property (convenience).
+- Added `Order.has_trigger_price` property (convenience).
+- Added WebSocket `log_send` and `log_recv` config options.
+- Added WebSocket `auto_ping_interval` (seconds) config option.
+- Improved `BacktestDataConfig` API: now takes either a type of `Data` _or_ a fully qualified path string.
 
 ### Fixes
+- Fixed FTX execution WebSocket 'ping strategy'.
 - Fixed non-deterministic config dask tokenization.
 
 ---
@@ -97,7 +110,7 @@ Released on 12th January 2022 (UTC).
 
 ### Fixes
 - Fixed parsing of `BarType` with symbols including hyphens `-`.
-- Fixed `BinanceTicker` `__repr__` (was missing whitespace after a comma).
+- Fixed `BinanceSpotTicker` `__repr__` (was missing whitespace after a comma).
 - Fixed `DataEngine` requests for historical `TradeTick`.
 - Fixed `DataEngine` `_handle_data_response` typing of `data` to `object`.
 

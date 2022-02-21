@@ -20,17 +20,17 @@ from typing import Any, Dict, List, Optional
 
 import orjson
 
-from nautilus_trader.adapters.binance.common import BINANCE_VENUE
-from nautilus_trader.adapters.binance.common import BinanceAccountType
+from nautilus_trader.adapters.binance.core.constants import BINANCE_VENUE
+from nautilus_trader.adapters.binance.core.enums import BinanceAccountType
 from nautilus_trader.adapters.binance.http.api.account import BinanceAccountHttpAPI
 from nautilus_trader.adapters.binance.http.api.market import BinanceMarketHttpAPI
 from nautilus_trader.adapters.binance.http.api.user import BinanceUserDataHttpAPI
 from nautilus_trader.adapters.binance.http.client import BinanceHttpClient
 from nautilus_trader.adapters.binance.http.error import BinanceError
-from nautilus_trader.adapters.binance.parsing import binance_order_type
-from nautilus_trader.adapters.binance.parsing import parse_account_balances
-from nautilus_trader.adapters.binance.parsing import parse_account_balances_ws
-from nautilus_trader.adapters.binance.parsing import parse_order_type
+from nautilus_trader.adapters.binance.parsing.common import binance_order_type
+from nautilus_trader.adapters.binance.parsing.common import parse_order_type
+from nautilus_trader.adapters.binance.parsing.http import parse_account_balances_http
+from nautilus_trader.adapters.binance.parsing.websocket import parse_account_balances_ws
 from nautilus_trader.adapters.binance.providers import BinanceInstrumentProvider
 from nautilus_trader.adapters.binance.websocket.client import BinanceWebSocketClient
 from nautilus_trader.cache.cache import Cache
@@ -76,9 +76,9 @@ from nautilus_trader.msgbus.bus import MessageBus
 VALID_TIF = (TimeInForce.GTC, TimeInForce.FOK, TimeInForce.IOC)
 
 
-class BinanceSpotExecutionClient(LiveExecutionClient):
+class BinanceExecutionClient(LiveExecutionClient):
     """
-    Provides an execution client for Binance SPOT markets.
+    Provides an execution client for the `Binance` exchange.
 
     Parameters
     ----------
@@ -98,10 +98,8 @@ class BinanceSpotExecutionClient(LiveExecutionClient):
         The instrument provider.
     account_type : BinanceAccountType
         The account type for the client.
-    base_url : str, optional
-        The base URL for the API endpoints.
-    us : bool, default False
-        If the client is for Binance US.
+    base_url_ws : str, optional
+        The base URL for the WebSocket client.
     """
 
     def __init__(
@@ -114,8 +112,7 @@ class BinanceSpotExecutionClient(LiveExecutionClient):
         logger: Logger,
         instrument_provider: BinanceInstrumentProvider,
         account_type: BinanceAccountType = BinanceAccountType.SPOT,
-        base_url: Optional[str] = None,
-        us: bool = False,
+        base_url_ws: Optional[str] = None,
     ):
         super().__init__(
             loop=loop,
@@ -134,19 +131,16 @@ class BinanceSpotExecutionClient(LiveExecutionClient):
         self._set_account_id(AccountId(BINANCE_VENUE.value, "master"))
 
         self._account_type = account_type
-        self._base_url = base_url
 
         # HTTP API
-        self._http_account = BinanceAccountHttpAPI(client=self._client)
-        self._http_market = BinanceMarketHttpAPI(client=self._client)
-        self._http_user = BinanceUserDataHttpAPI(client=self._client)
+        self._http_account = BinanceAccountHttpAPI(client=self._client, account_type=account_type)
+        self._http_market = BinanceMarketHttpAPI(client=self._client, account_type=account_type)
+        self._http_user = BinanceUserDataHttpAPI(client=self._client, account_type=account_type)
 
         # Listen keys
         self._ping_listen_keys_interval: int = 60 * 5  # Once every 5 mins (hardcode)
         self._ping_listen_keys_task: Optional[asyncio.Task] = None
-        self._listen_key_spot: Optional[str] = None
-        self._listen_key_margin: Optional[str] = None
-        self._listen_key_isolated: Optional[str] = None
+        self._listen_key: Optional[str] = None
 
         # WebSocket API
         self._ws = BinanceWebSocketClient(
@@ -154,15 +148,14 @@ class BinanceSpotExecutionClient(LiveExecutionClient):
             clock=clock,
             logger=logger,
             handler=self._handle_user_ws_message,
-            base_url=self._base_url,
-            us=us,
+            base_url=base_url_ws,
         )
 
         # Hot caches
         self._instrument_ids: Dict[str, InstrumentId] = {}
 
-        if us:
-            self._log.info("Set Binance US.", LogColor.BLUE)
+        self._log.info(f"Base URL HTTP {self._client._base_url}.", LogColor.BLUE)
+        self._log.info(f"Base URL WebSocket {base_url_ws}.", LogColor.BLUE)
 
     def connect(self) -> None:
         """
@@ -195,12 +188,12 @@ class BinanceSpotExecutionClient(LiveExecutionClient):
         self._update_account_state(response=response)
 
         # Get listen keys
-        response = await self._http_user.create_listen_key_spot()
-        self._listen_key_spot = response["listenKey"]
+        response = await self._http_user.create_listen_key()
+        self._listen_key = response["listenKey"]
         self._ping_listen_keys_task = self._loop.create_task(self._ping_listen_keys())
 
         # Connect WebSocket client
-        self._ws.subscribe(key=self._listen_key_spot)
+        self._ws.subscribe(key=self._listen_key)
         await self._ws.connect()
 
         self._set_connected(True)
@@ -215,7 +208,7 @@ class BinanceSpotExecutionClient(LiveExecutionClient):
 
     def _update_account_state(self, response: Dict[str, Any]) -> None:
         self.generate_account_state(
-            balances=parse_account_balances(raw_balances=response["balances"]),
+            balances=parse_account_balances_http(raw_balances=response["balances"]),
             margins=[],
             reported=True,
             ts_event=response["updateTime"],
@@ -227,9 +220,9 @@ class BinanceSpotExecutionClient(LiveExecutionClient):
                 f"Scheduled `ping_listen_keys` to run in " f"{self._ping_listen_keys_interval}s."
             )
             await asyncio.sleep(self._ping_listen_keys_interval)
-            if self._listen_key_spot:
-                self._log.debug(f"Pinging WebSocket listen key {self._listen_key_spot}...")
-                await self._http_user.ping_listen_key_spot(self._listen_key_spot)
+            if self._listen_key:
+                self._log.debug(f"Pinging WebSocket listen key {self._listen_key}...")
+                await self._http_user.ping_listen_key(self._listen_key)
 
     async def _disconnect(self) -> None:
         # Cancel tasks

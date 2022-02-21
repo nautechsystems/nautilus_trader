@@ -13,7 +13,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import uuid
 from decimal import Decimal
 from heapq import heappush
 from typing import Dict
@@ -72,8 +71,6 @@ from nautilus_trader.model.orderbook.data cimport Order as OrderBookOrder
 from nautilus_trader.model.orders.base cimport Order
 from nautilus_trader.model.orders.limit cimport LimitOrder
 from nautilus_trader.model.orders.market cimport MarketOrder
-from nautilus_trader.model.orders.stop_limit cimport StopLimitOrder
-from nautilus_trader.model.orders.stop_market cimport StopMarketOrder
 from nautilus_trader.model.position cimport Position
 
 
@@ -921,9 +918,9 @@ cdef class SimulatedExchange:
             self._process_market_order(order)
         elif order.type == OrderType.LIMIT:
             self._process_limit_order(order)
-        elif order.type == OrderType.STOP_MARKET:
+        elif order.type == OrderType.STOP_MARKET or order.type == OrderType.MARKET_IF_TOUCHED:
             self._process_stop_market_order(order)
-        elif order.type == OrderType.STOP_LIMIT:
+        elif order.type == OrderType.STOP_LIMIT or order.type == OrderType.LIMIT_IF_TOUCHED:
             self._process_stop_limit_order(order)
         else:  # pragma: no cover (design-time error)
             raise RuntimeError("unsupported order type")
@@ -959,7 +956,7 @@ cdef class SimulatedExchange:
             # Filling as liquidity taker
             self._fill_limit_order(order, LiquiditySide.TAKER)
 
-    cdef void _process_stop_market_order(self, StopMarketOrder order) except *:
+    cdef void _process_stop_market_order(self, Order order) except *:
         if self._is_stop_marketable(order.instrument_id, order.side, order.trigger_price):
             if self.reject_stop_orders:
                 self._generate_order_rejected(
@@ -974,7 +971,7 @@ cdef class SimulatedExchange:
         # Order is valid and accepted
         self._accept_order(order)
 
-    cdef void _process_stop_limit_order(self, StopLimitOrder order) except *:
+    cdef void _process_stop_limit_order(self, Order order) except *:
         if self._is_stop_marketable(order.instrument_id, order.side, order.trigger_price):
             self._generate_order_rejected(
                 order,
@@ -1016,7 +1013,7 @@ cdef class SimulatedExchange:
 
     cdef void _update_stop_market_order(
         self,
-        StopMarketOrder order,
+        Order order,
         Quantity qty,
         Price trigger_price,
     ) except *:
@@ -1037,7 +1034,7 @@ cdef class SimulatedExchange:
 
     cdef void _update_stop_limit_order(
         self,
-        StopLimitOrder order,
+        Order order,
         Quantity qty,
         Price price,
         Price trigger_price,
@@ -1099,11 +1096,11 @@ cdef class SimulatedExchange:
             if price is None:
                 price = order.price
             self._update_limit_order(order, qty, price)
-        elif order.type == OrderType.STOP_MARKET:
+        elif order.type == OrderType.STOP_MARKET or order.type == OrderType.MARKET_IF_TOUCHED:
             if trigger_price is None:
                 trigger_price = order.trigger_price
             self._update_stop_market_order(order, qty, trigger_price)
-        elif order.type == OrderType.STOP_LIMIT:
+        elif order.type == OrderType.STOP_LIMIT or order.type == OrderType.LIMIT_IF_TOUCHED:
             if price is None:
                 price = order.price
             if trigger_price is None:
@@ -1126,8 +1123,8 @@ cdef class SimulatedExchange:
                 self._update_order(
                     oco_order,
                     order.leaves_qty,
-                    price=oco_order.price if oco_order.type == OrderType.LIMIT or oco_order.type == OrderType.STOP_LIMIT else None,  # noqa TODO(cs): Temporary will refactor!
-                    trigger_price=oco_order.trigger_price if oco_order.type == OrderType.STOP_MARKET or oco_order.type == OrderType.STOP_LIMIT else None,  # noqa TODO(cs): Temporary will refactor!
+                    price=oco_order.price if oco_order.has_price_c() else None,
+                    trigger_price=oco_order.trigger_price if oco_order.has_trigger_price_c() else None,
                     update_ocos=False,
                 )
 
@@ -1231,9 +1228,9 @@ cdef class SimulatedExchange:
     cdef void _match_order(self, Order order) except *:
         if order.type == OrderType.LIMIT:
             self._match_limit_order(order)
-        elif order.type == OrderType.STOP_MARKET:
+        elif order.type == OrderType.STOP_MARKET or order.type == OrderType.MARKET_IF_TOUCHED:
             self._match_stop_market_order(order)
-        elif order.type == OrderType.STOP_LIMIT:
+        elif order.type == OrderType.STOP_LIMIT or order.type == OrderType.LIMIT_IF_TOUCHED:
             self._match_stop_limit_order(order)
         else:  # pragma: no cover (design-time error)
             raise ValueError(f"invalid OrderType, was {order.type}")
@@ -1242,12 +1239,12 @@ cdef class SimulatedExchange:
         if self._is_limit_matched(order.instrument_id, order.side, order.price):
             self._fill_limit_order(order, LiquiditySide.MAKER)
 
-    cdef void _match_stop_market_order(self, StopMarketOrder order) except *:
+    cdef void _match_stop_market_order(self, Order order) except *:
         if self._is_stop_triggered(order.instrument_id, order.side, order.trigger_price):
             # Triggered stop places market order
             self._fill_market_order(order, LiquiditySide.TAKER)
 
-    cdef void _match_stop_limit_order(self, StopLimitOrder order) except *:
+    cdef void _match_stop_limit_order(self, Order order) except *:
         if order.is_triggered:
             if self._is_limit_matched(order.instrument_id, order.side, order.price):
                 self._fill_limit_order(order, LiquiditySide.MAKER)
@@ -1572,8 +1569,8 @@ cdef class SimulatedExchange:
                     self._update_order(
                         oco_order,
                         order.leaves_qty,
-                        price=order.price if order.type == OrderType.LIMIT or order.type == OrderType.STOP_LIMIT else None,  # noqa TODO(cs): Temporary will refactor!
-                        trigger_price=order.trigger_price if order.type == OrderType.STOP_MARKET or order.type == OrderType.STOP_LIMIT else None,  # noqa TODO(cs): Temporary will refactor!
+                        price=oco_order.price if oco_order.has_price_c() else None,
+                        trigger_price=oco_order.trigger_price if oco_order.has_trigger_price_c() else None,
                         update_ocos=False,
                     )
 
@@ -1593,8 +1590,8 @@ cdef class SimulatedExchange:
                     self._update_order(
                         order,
                         position.quantity,
-                        price=order.price if order.type == OrderType.LIMIT or order.type == OrderType.STOP_LIMIT else None,  # noqa TODO(cs): Temporary will refactor!
-                        trigger_price=order.trigger_price if order.type == OrderType.STOP_MARKET or order.type == OrderType.STOP_LIMIT else None,  # noqa TODO(cs): Temporary will refactor!
+                        price=order.price if order.has_price_c() else None,
+                        trigger_price=order.trigger_price if order.has_trigger_price_c() else None,
                     )
 
 # -- IDENTIFIER GENERATORS -------------------------------------------------------------------------
@@ -1775,7 +1772,7 @@ cdef class SimulatedExchange:
             ts_event=self._clock.timestamp_ns(),
         )
 
-    cdef void _generate_order_triggered(self, StopLimitOrder order) except *:
+    cdef void _generate_order_triggered(self, Order order) except *:
         self.exec_client.generate_order_triggered(
             strategy_id=order.strategy_id,
             instrument_id=order.instrument_id,

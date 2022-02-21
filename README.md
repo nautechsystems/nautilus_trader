@@ -44,7 +44,7 @@ including FX, Equities, Futures, Options, CFDs, Crypto and Betting - across mult
 
 ## Features
 
-- **Fast:** C-level speed through Cython. Asynchronous networking with `uvloop`.
+- **Fast:** C-level speed through Cython. Asynchronous networking with [uvloop](https://github.com/MagicStack/uvloop).
 - **Reliable:** Type safety through Cython. Redis backed performant state persistence.
 - **Flexible:** OS independent, runs on Linux, macOS, Windows. Deploy using Docker.
 - **Integrated:** Modular adapters mean any REST, WebSocket, or FIX API can be integrated.
@@ -53,7 +53,7 @@ including FX, Equities, Futures, Options, CFDs, Crypto and Betting - across mult
 - **Live:** Use identical strategy implementations between backtesting and live deployments.
 - **Multi-venue:** Multiple venue capabilities facilitate market making and statistical arbitrage strategies.
 - **AI Agent Training:** Backtest engine fast enough to be used to train AI trading agents (RL/ES).
-- **Distributed:** Run backtests synchronously or as a graph distributed across a `dask` cluster.
+- **Distributed:** Run backtests synchronously or as a graph distributed across a [dask](https://dask.org/) cluster.
 
 ![Alt text](https://github.com/nautechsystems/nautilus_trader/blob/develop/docs/_images/nautilus-art.png?raw=true "nautilus")
 > *nautilus - from ancient Greek 'sailor' and naus 'ship'.*
@@ -98,7 +98,7 @@ written in Cython, however the libraries can be accessed from both pure Python a
 ## What is Rust?
 
 [Rust](https://www.rust-lang.org/) is a multi-paradigm programming language designed for performance and safety, especially safe
-concurrency. Rust is blazingly fast and memory-efficient (comparable to C and C++): with no runtime or
+concurrency. Rust is blazingly fast and memory-efficient (comparable to C and C++) with no runtime or
 garbage collector. It can power mission-critical systems, run on embedded devices, and easily
 integrates with other languages.
 
@@ -130,14 +130,15 @@ NautilusTrader is designed in a modular way to work with 'adapters' which provid
 connectivity to data publishers and/or trading venues - converting their raw API
 into a unified interface. The following integrations are currently supported:
 
-| Name                                                    | ID      | Type                    | Status                                                | Docs                                                              |
-|:--------------------------------------------------------|:--------|:------------------------|:------------------------------------------------------|:------------------------------------------------------------------|
-[Betfair](https://betfair.com)                            | BETFAIR | Sports Betting Exchange | ![status](https://img.shields.io/badge/beta-yellow)   | [Guide](https://docs.nautilustrader.io/integrations/betfair.html) |
-[Binance](https://binance.com)                            | BINANCE | Crypto Exchange         | ![status](https://img.shields.io/badge/beta-yellow)   | [Guide](https://docs.nautilustrader.io/integrations/binance.html) |
-[Binance US](https://binance.us)                          | BINANCE | Crypto Exchange         | ![status](https://img.shields.io/badge/beta-yellow)   | [Guide](https://docs.nautilustrader.io/integrations/binance.html) |
-[FTX](https://ftx.com)                                    | FTX     | Crypto Exchange         | ![status](https://img.shields.io/badge/beta-yellow)   | [Guide](https://docs.nautilustrader.io/integrations/ftx.html)     |
-[FTX US](https://ftx.us)                                  | FTX     | Crypto Exchange         | ![status](https://img.shields.io/badge/beta-yellow)   | [Guide](https://docs.nautilustrader.io/integrations/ftx.html)     |
-[Interactive Brokers](https://www.interactivebrokers.com) | IB      | Brokerage (multi-venue) | ![status](https://img.shields.io/badge/planning-gray) | [Guide](https://docs.nautilustrader.io/integrations/ib.html)      |
+| Name                                                    | ID      | Type                    | Status                                                  | Docs                                                              |
+|:--------------------------------------------------------|:--------|:------------------------|:--------------------------------------------------------|:------------------------------------------------------------------|
+[Betfair](https://betfair.com)                            | BETFAIR | Sports Betting Exchange | ![status](https://img.shields.io/badge/beta-yellow)     | [Guide](https://docs.nautilustrader.io/integrations/betfair.html) |
+[Binance](https://binance.com)                            | BINANCE | Crypto Exchange         | ![status](https://img.shields.io/badge/beta-yellow)     | [Guide](https://docs.nautilustrader.io/integrations/binance.html) |
+[Binance US](https://binance.us)                          | BINANCE | Crypto Exchange         | ![status](https://img.shields.io/badge/beta-yellow)     | [Guide](https://docs.nautilustrader.io/integrations/binance.html) |
+[Binance Futures](https://www.binance.com/en/futures)     | BINANCE | Crypto Exchange         | ![status](https://img.shields.io/badge/building-orange) | [Guide](https://docs.nautilustrader.io/integrations/binance.html) |
+[FTX](https://ftx.com)                                    | FTX     | Crypto Exchange         | ![status](https://img.shields.io/badge/beta-yellow)     | [Guide](https://docs.nautilustrader.io/integrations/ftx.html)     |
+[FTX US](https://ftx.us)                                  | FTX     | Crypto Exchange         | ![status](https://img.shields.io/badge/beta-yellow)     | [Guide](https://docs.nautilustrader.io/integrations/ftx.html)     |
+[Interactive Brokers](https://www.interactivebrokers.com) | IB      | Brokerage (multi-venue) | ![status](https://img.shields.io/badge/building-orange) | [Guide](https://docs.nautilustrader.io/integrations/ib.html)      |
 
 Refer to the [Integrations](https://docs.nautilustrader.io/integrations/index.html) documentation for further details.
 
@@ -346,7 +347,7 @@ Refer to the [CONTRIBUTING.md](https://github.com/nautechsystems/nautilus_trader
 Please make all pull requests to the `develop` branch.
 
 ## Community
-We maintain a [Discord](https://discord.gg/AUWVs3XaCS) server where contributors and active users of NautilusTrader can interact!
+Chat with contributors and active users of NautilusTrader on our [Discord](https://discord.gg/AUWVs3XaCS) server!
 
 ## License
 

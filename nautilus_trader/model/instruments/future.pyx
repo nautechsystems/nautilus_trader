@@ -32,7 +32,7 @@ from nautilus_trader.model.objects cimport Quantity
 
 cdef class Future(Instrument):
     """
-    Represents a futures contract instrument.
+    Represents a generic deliverable Futures Contract instrument.
 
     Parameters
     ----------

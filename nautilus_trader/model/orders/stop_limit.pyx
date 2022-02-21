@@ -47,7 +47,7 @@ from nautilus_trader.model.orders.base cimport Order
 
 cdef class StopLimitOrder(Order):
     """
-    Represents a stop-limit conditional order.
+    Represents a `stop-limit` conditional order.
 
     Parameters
     ----------
@@ -188,6 +188,12 @@ cdef class StopLimitOrder(Order):
         self.is_triggered = False
         self.ts_triggered = 0
 
+    cdef bint has_price_c(self) except *:
+        return True
+
+    cdef bint has_trigger_price_c(self) except *:
+        return True
+
     cpdef str info(self):
         """
         Return a summary description of the order.
@@ -251,7 +257,7 @@ cdef class StopLimitOrder(Order):
     @staticmethod
     cdef StopLimitOrder create(OrderInitialized init):
         """
-        Return a stop-limit order from the given initialized event.
+        Return a `stop-limit` order from the given initialized event.
 
         Parameters
         ----------

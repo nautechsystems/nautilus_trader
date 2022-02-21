@@ -1,0 +1,16 @@
+[
+  {
+    "symbol": "BTCUSDT",
+    "longShortRatio": "1.4342",
+    "longAccount": "0.5891",
+    "shortAccount": "0.4108",
+    "timestamp": "1583139600000"
+  },
+  {
+    "symbol": "BTCUSDT",
+    "longShortRatio": "1.4337",
+    "longAccount": "0.3583",
+    "shortAccount": "0.6417",
+    "timestamp": "1583139900000"
+  }
+]

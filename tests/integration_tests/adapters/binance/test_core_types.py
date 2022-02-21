@@ -15,8 +15,8 @@
 
 from decimal import Decimal
 
-from nautilus_trader.adapters.binance.data_types import BinanceBar
-from nautilus_trader.adapters.binance.data_types import BinanceTicker
+from nautilus_trader.adapters.binance.core.types import BinanceBar
+from nautilus_trader.adapters.binance.core.types import BinanceSpotTicker
 from nautilus_trader.model.data.bar import BarType
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
@@ -26,7 +26,7 @@ from tests.test_kit.stubs import TestStubs
 class TestBinanceDataTypes:
     def test_binance_ticker_repr(self):
         # Arrange
-        ticker = BinanceTicker(
+        ticker = BinanceSpotTicker(
             instrument_id=TestStubs.btcusdt_binance_id(),
             price_change=Decimal("-94.99999800"),
             price_change_percent=Decimal("-95.960"),
@@ -53,12 +53,12 @@ class TestBinanceDataTypes:
         # Act, Assert
         assert (
             repr(ticker)
-            == "BinanceTicker(instrument_id=BTC/USDT.BINANCE, price_change=-94.99999800, price_change_percent=-95.960, weighted_avg_price=0.29628482, prev_close_price=0.10002000, last_price=4.00000200, last_qty=200.00000000, bid_price=4.00000000, ask_price=4.00000200, open_price=99.00000000, high_price=100.00000000, low_price=0.10000000, volume=8913.30000000, quote_volume=15.30000000, open_time_ms=1499783499040, close_time_ms=1499869899040, first_id=28385, last_id=28460, count=76, ts_event=1500000000000, ts_init=1500000000000)"  # noqa
+            == "BinanceSpotTicker(instrument_id=BTC/USDT.BINANCE, price_change=-94.99999800, price_change_percent=-95.960, weighted_avg_price=0.29628482, prev_close_price=0.10002000, last_price=4.00000200, last_qty=200.00000000, bid_price=4.00000000, ask_price=4.00000200, open_price=99.00000000, high_price=100.00000000, low_price=0.10000000, volume=8913.30000000, quote_volume=15.30000000, open_time_ms=1499783499040, close_time_ms=1499869899040, first_id=28385, last_id=28460, count=76, ts_event=1500000000000, ts_init=1500000000000)"  # noqa
         )
 
     def test_binance_ticker_to_and_from_dict(self):
         # Arrange
-        ticker = BinanceTicker(
+        ticker = BinanceSpotTicker(
             instrument_id=TestStubs.btcusdt_binance_id(),
             price_change=Decimal("-94.99999800"),
             price_change_percent=Decimal("-95.960"),
@@ -86,9 +86,9 @@ class TestBinanceDataTypes:
         values = ticker.to_dict(ticker)
 
         # Assert
-        BinanceTicker.from_dict(values)
+        BinanceSpotTicker.from_dict(values)
         assert values == {
-            "type": "BinanceTicker",
+            "type": "BinanceSpotTicker",
             "instrument_id": "BTC/USDT.BINANCE",
             "price_change": "-94.99999800",
             "price_change_percent": "-95.960",

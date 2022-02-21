@@ -14,5 +14,5 @@
 # -------------------------------------------------------------------------------------------------
 
 """
-Provides an API integration for the FTX crypto exchange.
+Provides an API integration for the FTX Crypto exchange.
 """

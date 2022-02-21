@@ -104,9 +104,12 @@ class FeatherWriter:
             keys=self._schemas[cls].names,
         )
         data = list(data.values())
-        batch = pa.record_batch(data, schema=self._schemas[cls])
-        writer.write_batch(batch)
-        self.check_flush()
+        try:
+            batch = pa.record_batch(data, schema=self._schemas[cls])
+            writer.write_batch(batch)
+            self.check_flush()
+        except Exception as ex:
+            print(str(ex), cls, data)
 
     def check_flush(self):
         now = datetime.datetime.now()

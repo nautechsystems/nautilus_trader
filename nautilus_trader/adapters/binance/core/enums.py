@@ -13,24 +13,8 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import json
 from enum import Enum
 from enum import unique
-
-from nautilus_trader.model.identifiers import Venue
-
-
-BINANCE_VENUE = Venue("BINANCE")
-
-
-def format_symbol(symbol: str):
-    return symbol.lower().replace("/", "")
-
-
-def convert_list_to_json_array(symbols):
-    if symbols is None:
-        return symbols
-    return json.dumps(symbols).replace(" ", "").replace("/", "")
 
 
 @unique
@@ -39,7 +23,8 @@ class BinanceAccountType(Enum):
 
     SPOT = "SPOT"
     MARGIN = "MARGIN"
-    FUTURES = "FUTURES"
+    FUTURES_USDT = "FUTURES_USDT"
+    FUTURES_COIN = "FUTURES_COIN"
 
 
 @unique
