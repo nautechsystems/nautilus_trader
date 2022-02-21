@@ -34,6 +34,7 @@ from nautilus_trader.model.orders.limit_if_touched cimport LimitIfTouchedOrder
 from nautilus_trader.model.orders.list cimport OrderList
 from nautilus_trader.model.orders.market cimport MarketOrder
 from nautilus_trader.model.orders.market_if_touched cimport MarketIfTouchedOrder
+from nautilus_trader.model.orders.market_to_limit cimport MarketToLimitOrder
 from nautilus_trader.model.orders.stop_limit cimport StopLimitOrder
 from nautilus_trader.model.orders.stop_market cimport StopMarketOrder
 from nautilus_trader.model.orders.trailing_stop_limit cimport TrailingStopLimitOrder
@@ -104,6 +105,18 @@ cdef class OrderFactory:
         TimeInForce time_in_force=*,
         datetime expire_time=*,
         bint post_only=*,
+        bint reduce_only=*,
+        Quantity display_qty=*,
+        str tags=*,
+    )
+
+    cpdef MarketToLimitOrder market_to_limit(
+        self,
+        InstrumentId instrument_id,
+        OrderSide order_side,
+        Quantity quantity,
+        TimeInForce time_in_force=*,
+        datetime expire_time=*,
         bint reduce_only=*,
         Quantity display_qty=*,
         str tags=*,

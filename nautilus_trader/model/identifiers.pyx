@@ -67,7 +67,7 @@ cdef class Identifier:
 
 cdef class Symbol(Identifier):
     """
-    Represents a valid ticker symbol ID for a tradeable financial market
+    Represents a valid ticker symbol ID for a tradable financial market
     instrument.
 
     The ID value must be unique for a trading venue.

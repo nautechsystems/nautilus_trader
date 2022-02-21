@@ -35,7 +35,7 @@ from nautilus_trader.model.objects cimport Quantity
 
 cdef class BettingInstrument(Instrument):
     """
-    Represents an instrument in the betting market.
+    Represents an instrument in a betting market.
     """
 
     def __init__(

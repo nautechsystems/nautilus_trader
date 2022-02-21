@@ -47,6 +47,7 @@ from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.orders.base import Order
 from nautilus_trader.model.orders.market import MarketOrder
+from nautilus_trader.model.orders.market_to_limit import MarketToLimitOrder
 from nautilus_trader.model.orders.stop_limit import StopLimitOrder
 from nautilus_trader.model.orders.stop_market import StopMarketOrder
 from tests.test_kit.stubs import UNIX_EPOCH
@@ -119,7 +120,7 @@ class TestOrders:
                 AUDUSD_SIM.id,
                 ClientOrderId("O-123456"),
                 OrderSide.BUY,
-                Quantity.zero(),
+                Quantity.zero(),  # <- invalid
                 TimeInForce.DAY,
                 UUID4(),
                 0,
@@ -134,7 +135,7 @@ class TestOrders:
                 AUDUSD_SIM.id,
                 ClientOrderId("O-123456"),
                 OrderSide.BUY,
-                Quantity.zero(),
+                Quantity.from_int(100000),
                 TimeInForce.GTD,  # <-- invalid
                 UUID4(),
                 0,
@@ -173,6 +174,22 @@ class TestOrders:
                 ts_init=0,
                 time_in_force=TimeInForce.GTD,
                 expire_time=None,
+            )
+
+    def test_market_to_limit_order_with_invalid_tif_raises_value_error(self):
+        # Arrange, Act, Assert
+        with pytest.raises(ValueError):
+            MarketToLimitOrder(
+                self.trader_id,
+                self.strategy_id,
+                AUDUSD_SIM.id,
+                ClientOrderId("O-123456"),
+                OrderSide.BUY,
+                Quantity.from_int(100000),
+                TimeInForce.AT_THE_CLOSE,  # <-- invalid
+                None,
+                UUID4(),
+                0,
             )
 
     def test_overfill_limit_buy_order_raises_value_error(self):
@@ -598,7 +615,83 @@ class TestOrders:
             "ts_init": 0,
         }
 
-    def test_market_if_touched_order(self):
+    def test_initialize_market_to_limit_order(self):
+        # Arrange, Act
+        order = self.order_factory.market_to_limit(
+            AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100000),
+            time_in_force=TimeInForce.GTD,
+            expire_time=UNIX_EPOCH + timedelta(hours=1),
+        )
+
+        # Assert
+        assert order.type == OrderType.MARKET_TO_LIMIT
+        assert order.status == OrderStatus.INITIALIZED
+        assert order.time_in_force == TimeInForce.GTD
+        assert order.expire_time == UNIX_EPOCH + timedelta(hours=1)
+        assert order.expire_time_ns == 3600000000000
+        assert not order.has_price
+        assert not order.has_trigger_price
+        assert order.is_passive
+        assert not order.is_aggressive
+        assert not order.is_open
+        assert not order.is_closed
+        assert isinstance(order.init_event, OrderInitialized)
+        assert (
+            str(order)
+            == "MarketToLimitOrder(BUY 100_000 AUD/USD.SIM MARKET_TO_LIMIT @ None GTD 1970-01-01T01:00:00.000Z, status=INITIALIZED, client_order_id=O-19700101-000000-000-001-1, venue_order_id=None, tags=None)"  # noqa
+        )
+        assert (
+            repr(order)
+            == "MarketToLimitOrder(BUY 100_000 AUD/USD.SIM MARKET_TO_LIMIT @ None GTD 1970-01-01T01:00:00.000Z, status=INITIALIZED, client_order_id=O-19700101-000000-000-001-1, venue_order_id=None, tags=None)"  # noqa
+        )
+
+    def test_market_to_limit_order_to_dict(self):
+        # Arrange
+        order = self.order_factory.market_to_limit(
+            AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100000),
+            time_in_force=TimeInForce.GTD,
+            expire_time=UNIX_EPOCH + timedelta(hours=1),
+        )
+
+        # Act
+        result = order.to_dict()
+
+        # Assert
+        assert result == {
+            "trader_id": "TESTER-000",
+            "strategy_id": "S-001",
+            "instrument_id": "AUD/USD.SIM",
+            "client_order_id": "O-19700101-000000-000-001-1",
+            "venue_order_id": None,
+            "position_id": None,
+            "account_id": None,
+            "last_trade_id": None,
+            "type": "MARKET_TO_LIMIT",
+            "side": "BUY",
+            "quantity": "100000",
+            "price": "None",
+            "time_in_force": "GTD",
+            "expire_time_ns": 3600000000000,
+            "reduce_only": False,
+            "filled_qty": "0",
+            "avg_px": None,
+            "slippage": "0",
+            "status": "INITIALIZED",
+            "order_list_id": None,
+            "contingency_type": "NONE",
+            "display_qty": None,
+            "linked_order_ids": None,
+            "parent_order_id": None,
+            "tags": None,
+            "ts_last": 0,
+            "ts_init": 0,
+        }
+
+    def test_initialize_market_if_touched_order(self):
         # Arrange, Act
         order = self.order_factory.market_if_touched(
             AUDUSD_SIM.id,

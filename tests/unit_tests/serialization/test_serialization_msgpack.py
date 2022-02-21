@@ -75,6 +75,7 @@ from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.orders.limit import LimitOrder
 from nautilus_trader.model.orders.limit_if_touched import LimitIfTouchedOrder
 from nautilus_trader.model.orders.market_if_touched import MarketIfTouchedOrder
+from nautilus_trader.model.orders.market_to_limit import MarketToLimitOrder
 from nautilus_trader.model.orders.stop_limit import StopLimitOrder
 from nautilus_trader.model.orders.stop_market import StopMarketOrder
 from nautilus_trader.model.orders.trailing_stop_limit import TrailingStopLimitOrder
@@ -266,6 +267,28 @@ class TestMsgPackSerializer:
             trigger_type=TriggerType.BID_ASK,
             time_in_force=TimeInForce.GTC,
             expire_time=None,
+            init_id=UUID4(),
+            ts_init=0,
+        )
+
+        # Act
+        packed = OrderInitialized.to_dict(order.last_event)
+        unpacked = self.unpacker.unpack(packed)
+
+        # Assert
+        assert unpacked == order
+
+    def test_pack_and_unpack_market_to_limit__orders(self):
+        # Arrange
+        order = MarketToLimitOrder(
+            self.trader_id,
+            self.strategy_id,
+            AUDUSD_SIM.id,
+            ClientOrderId("O-123456"),
+            OrderSide.BUY,
+            Quantity(100000, precision=0),
+            time_in_force=TimeInForce.GTD,  # <-- invalid
+            expire_time=UNIX_EPOCH + timedelta(minutes=1),
             init_id=UUID4(),
             ts_init=0,
         )
