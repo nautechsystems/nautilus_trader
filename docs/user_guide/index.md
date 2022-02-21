@@ -27,4 +27,5 @@ in the near future.
    loading_external_data.md
    strategies.md
    instruments.md
+   orders.md
 ```
