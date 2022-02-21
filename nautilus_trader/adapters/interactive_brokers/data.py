@@ -129,7 +129,7 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
     async def _disconnect(self):
         # Disconnect clients
         if self._client.isConnected():
-            await self._client.disconnect()
+            self._client.disconnect()
 
         self._set_connected(False)
         self._log.info("Disconnected.")
