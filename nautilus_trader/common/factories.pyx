@@ -34,6 +34,7 @@ from nautilus_trader.model.orders.limit cimport LimitOrder
 from nautilus_trader.model.orders.limit_if_touched cimport LimitIfTouchedOrder
 from nautilus_trader.model.orders.list cimport OrderList
 from nautilus_trader.model.orders.market_if_touched cimport MarketIfTouchedOrder
+from nautilus_trader.model.orders.market_to_limit cimport MarketToLimitOrder
 from nautilus_trader.model.orders.stop_market cimport StopMarketOrder
 from nautilus_trader.model.orders.trailing_stop_limit cimport TrailingStopLimitOrder
 from nautilus_trader.model.orders.trailing_stop_market cimport TrailingStopMarketOrder
@@ -144,7 +145,7 @@ cdef class OrderFactory:
             The orders side.
         quantity : Quantity
             The orders quantity (> 0).
-        time_in_force : TimeInForce, default ``GTC``
+        time_in_force : TimeInForce {``GTC``, ``IOC``, ``FOK``, ``AT_THE_OPEN``, ``AT_THE_CLOSE``}, default ``GTC``
             The orders time-in-force. Often not applicable for market orders.
         reduce_only : bool, default False
             If the order carries the 'reduce-only' execution instruction.
@@ -411,6 +412,72 @@ cdef class OrderFactory:
             post_only=post_only,
             reduce_only=reduce_only,
             display_qty=display_qty,
+            order_list_id=None,
+            contingency_type=ContingencyType.NONE,
+            linked_order_ids=None,
+            parent_order_id=None,
+            tags=tags,
+        )
+
+    cpdef MarketToLimitOrder market_to_limit(
+        self,
+        InstrumentId instrument_id,
+        OrderSide order_side,
+        Quantity quantity,
+        TimeInForce time_in_force=TimeInForce.GTC,
+        datetime expire_time=None,
+        bint reduce_only=False,
+        Quantity display_qty=None,
+        str tags=None,
+    ):
+        """
+        Create a new `market` order.
+
+        Parameters
+        ----------
+        instrument_id : InstrumentId
+            The orders instrument ID.
+        order_side : OrderSide {``BUY``, ``SELL``}
+            The orders side.
+        quantity : Quantity
+            The orders quantity (> 0).
+        time_in_force : TimeInForce {``GTC``, ``GTD``, ``IOC``, ``FOK``}, default ``GTC``
+            The orders time-in-force.
+        expire_time : datetime, optional
+            The order expiration (for ``GTD`` orders).
+        reduce_only : bool, default False
+            If the order carries the 'reduce-only' execution instruction.
+        display_qty : Quantity, optional
+            The quantity of the limit order to display on the public book (iceberg).
+        tags : str, optional
+            The custom user tags for the order. These are optional and can
+            contain any arbitrary delimiter if required.
+
+        Returns
+        -------
+        MarketToLimitOrder
+
+        Raises
+        ------
+        ValueError
+            If `quantity` is not positive (> 0).
+        ValueError
+            If `time_in_force` is other than ``GTC``, ``GTD``, ``IOC`` or ``FOK``.
+
+        """
+        return MarketToLimitOrder(
+            trader_id=self.trader_id,
+            strategy_id=self.strategy_id,
+            instrument_id=instrument_id,
+            client_order_id=self._id_generator.generate(),
+            order_side=order_side,
+            quantity=quantity,
+            time_in_force=time_in_force,
+            expire_time=expire_time,
+            reduce_only=reduce_only,
+            display_qty=display_qty,
+            init_id=self._uuid_factory.generate(),
+            ts_init=self._clock.timestamp_ns(),
             order_list_id=None,
             contingency_type=ContingencyType.NONE,
             linked_order_ids=None,

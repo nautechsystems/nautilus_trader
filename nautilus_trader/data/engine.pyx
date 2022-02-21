@@ -1169,7 +1169,7 @@ cdef class DataEngine(Component):
             raise RuntimeError(
                 f"Cannot start aggregator: "
                 f"BarAggregation.{bar_type.spec.aggregation_string_c()} "
-                f"not currently supported in this version"
+                f"not supported in open-source"
             )
 
         # Add aggregator

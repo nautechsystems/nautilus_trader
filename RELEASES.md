@@ -12,8 +12,10 @@ Released on TBD (UTC).
 ### Enhancements
 - Added initial implementation of Binance Futures.
 - Added `CryptoFuture` instrument.
+- Added `OrderType.MARKET_TO_LIMIT`.
 - Added `OrderType.MARKET_IF_TOUCHED`.
 - Added `OrderType.LIMIT_IF_TOUCHED`.
+- Added `MarketToLimit` order type.
 - Added `MarketIfTouched` order type.
 - Added `LimitIfTouched` order type.
 - Added `Order.has_price` property (convenience).

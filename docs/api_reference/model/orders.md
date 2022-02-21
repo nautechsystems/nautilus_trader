@@ -44,6 +44,16 @@
    :member-order: bysource
 ```
 
+## Market-To-Limit
+
+```{eval-rst}
+.. automodule:: nautilus_trader.model.orders.market_to_limit
+   :show-inheritance:
+   :inherited-members:
+   :members:
+   :member-order: bysource
+```
+
 ## Market-If-Touched
 
 ```{eval-rst}
