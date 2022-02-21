@@ -44,6 +44,7 @@ from nautilus_trader.model.c_enums.oms_type cimport OMSTypeParser
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
 from nautilus_trader.model.c_enums.order_status cimport OrderStatus
 from nautilus_trader.model.c_enums.order_type cimport OrderType
+from nautilus_trader.model.c_enums.order_type cimport OrderTypeParser
 from nautilus_trader.model.c_enums.price_type cimport PriceType
 from nautilus_trader.model.commands.trading cimport CancelAllOrders
 from nautilus_trader.model.commands.trading cimport CancelOrder
@@ -923,7 +924,10 @@ cdef class SimulatedExchange:
         elif order.type == OrderType.STOP_LIMIT or order.type == OrderType.LIMIT_IF_TOUCHED:
             self._process_stop_limit_order(order)
         else:  # pragma: no cover (design-time error)
-            raise RuntimeError("unsupported order type")
+            raise RuntimeError(
+                f"{OrderTypeParser.to_str(order.type)} "
+                f"orders are not supported for backtesting in this version",
+            )
 
     cdef void _process_market_order(self, MarketOrder order) except *:
         # Check market exists
