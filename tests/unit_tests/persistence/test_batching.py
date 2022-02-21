@@ -24,6 +24,7 @@ from nautilus_trader.backtest.config import BacktestDataConfig
 from nautilus_trader.backtest.config import BacktestRunConfig
 from nautilus_trader.backtest.node import BacktestNode
 from nautilus_trader.model.data.venue import InstrumentStatusUpdate
+from nautilus_trader.model.orderbook.data import OrderBookData
 from nautilus_trader.persistence.batching import batch_files
 from nautilus_trader.persistence.catalog import DataCatalog
 from nautilus_trader.persistence.external.core import process_files
@@ -61,7 +62,7 @@ class TestPersistenceBatching:
         base = BacktestDataConfig(
             catalog_path=str(self.catalog.path),
             catalog_fs_protocol=self.catalog.fs.protocol,
-            data_cls_path="nautilus_trader.model.orderbook.data.OrderBookData",
+            data_cls=OrderBookData,
         )
 
         iter_batches = batch_files(
@@ -97,7 +98,7 @@ class TestPersistenceBatching:
         data_config = BacktestDataConfig(
             catalog_path="/root/",
             catalog_fs_protocol="memory",
-            data_cls_path=f"{NewsEventData.__module__}.NewsEventData",
+            data_cls=NewsEventData,
             client_id="NewsClient",
         )
         # Add some arbitrary instrument data to appease BacktestEngine
@@ -105,7 +106,7 @@ class TestPersistenceBatching:
             catalog_path="/root/",
             catalog_fs_protocol="memory",
             instrument_id=self.catalog.instruments(as_nautilus=True)[0].id.value,
-            data_cls_path=f"{InstrumentStatusUpdate.__module__}.InstrumentStatusUpdate",
+            data_cls=InstrumentStatusUpdate,
         )
         run_config = BacktestRunConfig(
             data=[data_config, instrument_data_config],

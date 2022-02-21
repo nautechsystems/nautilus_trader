@@ -46,10 +46,13 @@ from nautilus_trader.common.factories import OrderFactory
 from nautilus_trader.common.logging import LiveLogger
 from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.examples.strategies.orderbook_imbalance import OrderBookImbalanceConfig
+from nautilus_trader.execution.config import ExecEngineConfig
+from nautilus_trader.live.config import LiveExecEngineConfig
 from nautilus_trader.live.data_engine import LiveDataEngine
 from nautilus_trader.model.commands.trading import CancelOrder
 from nautilus_trader.model.commands.trading import ModifyOrder
 from nautilus_trader.model.commands.trading import SubmitOrder
+from nautilus_trader.model.data.tick import TradeTick
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import TimeInForce
 from nautilus_trader.model.events.order import OrderAccepted
@@ -62,6 +65,7 @@ from nautilus_trader.model.identifiers import VenueOrderId
 from nautilus_trader.model.instruments.betting import BettingInstrument
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
+from nautilus_trader.model.orderbook.data import OrderBookData
 from nautilus_trader.model.orders.limit import LimitOrder
 from nautilus_trader.model.orders.market import MarketOrder
 from nautilus_trader.persistence.config import PersistenceConfig
@@ -152,12 +156,15 @@ class BetfairTestStubs:
 
     @staticmethod
     def exec_engine(event_loop, clock, live_logger):
+        config = LiveExecEngineConfig()
+        config.allow_cash_positions = True  # Retain original behaviour for now
         return MockLiveExecutionEngine(
             loop=event_loop,
             msgbus=TestStubs.msgbus(),
             cache=TestStubs.cache,
             clock=clock,
             logger=live_logger,
+            config=config,
         )
 
     @staticmethod
@@ -518,7 +525,9 @@ class BetfairTestStubs:
         bypass_risk=False,
     ) -> BacktestRunConfig:
         engine_config = BacktestEngineConfig(
-            log_level="INFO", risk_engine=RiskEngineConfig(bypass=bypass_risk)
+            log_level="INFO",
+            exec_engine=ExecEngineConfig(allow_cash_positions=True),
+            risk_engine=RiskEngineConfig(bypass=bypass_risk),
         )
         base_data_config = BacktestDataConfig(  # type: ignore
             catalog_path=catalog_path,
@@ -529,11 +538,11 @@ class BetfairTestStubs:
             venues=[BetfairTestStubs.betfair_venue_config()],
             data=[
                 base_data_config.replace(
-                    data_cls_path="nautilus_trader.model.data.tick.TradeTick",
+                    data_cls=TradeTick,
                     instrument_id=instrument_id,
                 ),
                 base_data_config.replace(
-                    data_cls_path="nautilus_trader.model.orderbook.data.OrderBookData",
+                    data_cls=OrderBookData,
                     instrument_id=instrument_id,
                 ),
             ],

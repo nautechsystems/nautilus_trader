@@ -35,7 +35,8 @@ cdef class Instrument(Data):
     """
     The base class for all instruments.
 
-    Represents a tradeable financial market instrument or trading pair.
+    Represents a tradable financial market instrument. This class can be used to
+    define an instrument, or act as a parent class for more specific instruments.
 
     Parameters
     ----------

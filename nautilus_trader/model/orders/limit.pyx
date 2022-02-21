@@ -44,7 +44,7 @@ from nautilus_trader.model.orders.base cimport Order
 
 cdef class LimitOrder(Order):
     """
-    Represents a limit order.
+    Represents a `limit` order.
 
     Parameters
     ----------
@@ -70,15 +70,15 @@ cdef class LimitOrder(Order):
         The order initialization event ID.
     ts_init : int64
         The UNIX timestamp (nanoseconds) when the object was initialized.
-    post_only : bool, optional
+    post_only : bool, default False
         If the order will only provide liquidity (make a market).
-    reduce_only : bool, optional
+    reduce_only : bool, default False
         If the order carries the 'reduce-only' execution instruction.
     display_qty : Quantity, optional
         The quantity of the order to display on the public book (iceberg).
     order_list_id : OrderListId, optional
         The order list ID associated with the order.
-    contingency_type : ContingencyType
+    contingency_type : ContingencyType, default ``NONE``
         The order contingency type.
     linked_order_ids : list[ClientOrderId], optional
         The order linked client order ID(s).
@@ -169,6 +169,12 @@ cdef class LimitOrder(Order):
         self.expire_time_ns = expire_time_ns
         self.display_qty = display_qty
 
+    cdef bint has_price_c(self) except *:
+        return True
+
+    cdef bint has_trigger_price_c(self) except *:
+        return False
+
     cpdef str info(self):
         """
         Return a summary description of the order.
@@ -229,7 +235,7 @@ cdef class LimitOrder(Order):
     @staticmethod
     cdef LimitOrder create(OrderInitialized init):
         """
-        Return a limit order from the given initialized event.
+        Return a `limit` order from the given initialized event.
 
         Parameters
         ----------

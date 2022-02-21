@@ -17,10 +17,10 @@ import asyncio
 import time
 from typing import Any, Dict, List
 
-from nautilus_trader.adapters.ftx.common import FTX_VENUE
+from nautilus_trader.adapters.ftx.core.constants import FTX_VENUE
 from nautilus_trader.adapters.ftx.http.client import FTXHttpClient
 from nautilus_trader.adapters.ftx.http.error import FTXClientError
-from nautilus_trader.adapters.ftx.parsing import parse_market
+from nautilus_trader.adapters.ftx.parsing.common import parse_instrument
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.common.logging import LoggerAdapter
 from nautilus_trader.common.providers import InstrumentProvider
@@ -97,7 +97,7 @@ class FTXInstrumentProvider(InstrumentProvider):
         for data in assets_res:
             asset_type = data["type"]
 
-            instrument: Instrument = parse_market(
+            instrument: Instrument = parse_instrument(
                 account_info=account_info,
                 data=data,
                 ts_init=time.time_ns(),

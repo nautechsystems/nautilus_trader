@@ -46,7 +46,7 @@ cdef set _MARKET_ORDER_VALID_TIF = {
 
 cdef class MarketOrder(Order):
     """
-    Represents a market order.
+    Represents a `market` order.
 
     Parameters
     ----------
@@ -62,15 +62,17 @@ cdef class MarketOrder(Order):
         The order side.
     quantity : Quantity
         The order quantity (> 0).
+    time_in_force : TimeInForce {``GTC``, ``IOC``, ``FOK``, ``AT_THE_OPEN``, ``AT_THE_CLOSE``}
+        The order time-in-force.
     init_id : UUID4
         The order initialization event ID.
     ts_init : int64
         The UNIX timestamp (nanoseconds) when the object was initialized.
-    reduce_only : bool, optional
+    reduce_only : bool, default False
         If the order carries the 'reduce-only' execution instruction.
     order_list_id : OrderListId, optional
         The order list ID associated with the order.
-    contingency_type : ContingencyType
+    contingency_type : ContingencyType, default ``NONE``
         The order contingency type.
     linked_order_ids : list[ClientOrderId], optional
         The order linked client order ID(s).
@@ -134,6 +136,27 @@ cdef class MarketOrder(Order):
         )
         super().__init__(init=init)
 
+    cdef bint has_price_c(self) except *:
+        return False
+
+    cdef bint has_trigger_price_c(self) except *:
+        return False
+
+    cpdef str info(self):
+        """
+        Return a summary description of the order.
+
+        Returns
+        -------
+        str
+
+        """
+        return (
+            f"{OrderSideParser.to_str(self.side)} {self.quantity.to_str()} {self.instrument_id} "
+            f"{OrderTypeParser.to_str(self.type)} "
+            f"{TimeInForceParser.to_str(self.time_in_force)}"
+        )
+
     cpdef dict to_dict(self):
         """
         Return a dictionary representation of this object.
@@ -173,7 +196,7 @@ cdef class MarketOrder(Order):
     @staticmethod
     cdef MarketOrder create(OrderInitialized init):
         """
-        Return an order from the given initialized event.
+        Return a `market` order from the given initialized event.
 
         Parameters
         ----------
@@ -209,19 +232,4 @@ cdef class MarketOrder(Order):
             linked_order_ids=init.linked_order_ids,
             parent_order_id=init.parent_order_id,
             tags=init.tags,
-        )
-
-    cpdef str info(self):
-        """
-        Return a summary description of the order.
-
-        Returns
-        -------
-        str
-
-        """
-        return (
-            f"{OrderSideParser.to_str(self.side)} {self.quantity.to_str()} {self.instrument_id} "
-            f"{OrderTypeParser.to_str(self.type)} "
-            f"{TimeInForceParser.to_str(self.time_in_force)}"
         )

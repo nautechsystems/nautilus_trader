@@ -128,18 +128,21 @@ cdef class Portfolio(PortfolioFacade):
         """
         Initialize the portfolios orders.
 
-        Performs all account calculations for the current order state.
+        Performs all account calculations for the current orders state.
         """
-        cdef list all_orders_working = self._cache.orders_working()
+        cdef list all_orders_open = self._cache.orders_open()
 
         cdef set instruments = set()
-        for order in all_orders_working:
+        cdef Order order
+        for order in all_orders_open:
             instruments.add(order.instrument_id)
 
         # Update initial (order) margins to initialize portfolio
-        initialized = True
+        cdef bint initialized = True
         cdef:
             Order o
+            list orders_open
+            AccountState result
         for instrument_id in instruments:
             instrument = self._cache.instrument(instrument_id)
             if instrument is None:
@@ -159,7 +162,7 @@ cdef class Portfolio(PortfolioFacade):
                 initialized = False
                 break
 
-            orders_working = self._cache.orders_working(
+            orders_open = self._cache.orders_open(
                 venue=None,  # Faster query filtering
                 instrument_id=instrument.id,
             )
@@ -167,16 +170,16 @@ cdef class Portfolio(PortfolioFacade):
             result = self._accounts.update_orders(
                 account=account,
                 instrument=instrument,
-                orders_working=[o for o in orders_working if o.is_passive_c()],
+                orders_open=[o for o in orders_open if o.is_passive_c()],
                 ts_event=account.last_event_c().ts_event,
             )
             if result is None:
                 initialized = False
 
-        cdef int working_count = len(all_orders_working)
+        cdef int open_count = len(all_orders_open)
         self._log.info(
-            f"Initialized {working_count} working order{'' if working_count == 1 else 's'}.",
-            color=LogColor.BLUE if working_count else LogColor.NORMAL,
+            f"Initialized {open_count} open order{'' if open_count == 1 else 's'}.",
+            color=LogColor.BLUE if open_count else LogColor.NORMAL,
         )
 
         self.initialized = initialized
@@ -193,11 +196,19 @@ cdef class Portfolio(PortfolioFacade):
         cdef list all_positions_open = self._cache.positions_open()
 
         cdef set instruments = set()
+        cdef Position position
         for position in all_positions_open:
             instruments.add(position.instrument_id)
 
+        cdef bint initialized = True
+
         # Update maintenance (position) margins to initialize portfolio
-        initialized = True
+        cdef:
+            InstrumentId instrument_id
+            Instrument instrument
+            list positions_open
+            Account account
+            AccountState result
         for instrument_id in instruments:
             positions_open = self._cache.positions_open(
                 venue=None,  # Faster query filtering
@@ -291,7 +302,7 @@ cdef class Portfolio(PortfolioFacade):
             )
             return  # No instrument found
 
-        cdef list orders_working = self._cache.orders_working(
+        cdef list orders_open = self._cache.orders_open(
             venue=None,  # Faster query filtering
             instrument_id=tick.instrument_id,
         )
@@ -302,12 +313,12 @@ cdef class Portfolio(PortfolioFacade):
         cdef AccountState result_init = self._accounts.update_orders(
             account=account,
             instrument=instrument,
-            orders_working=[o for o in orders_working if o.is_passive_c()],
+            orders_open=[o for o in orders_open if o.is_passive_c()],
             ts_event=account.last_event_c().ts_event,
         )
 
         result_maint = None
-        if account.is_margin_account():
+        if account.is_margin_account:
             positions_open = self._cache.positions_open(
                 venue=None,  # Faster query filtering
                 instrument_id=tick.instrument_id,
@@ -325,7 +336,7 @@ cdef class Portfolio(PortfolioFacade):
         cdef Money result_unrealized_pnl = self._calculate_unrealized_pnl(tick.instrument_id)
 
         # Check portfolio initialization
-        if result_init is not None and (account.is_cash_account() or (result_maint is not None and result_unrealized_pnl)):
+        if result_init is not None and (account.is_cash_account or (result_maint is not None and result_unrealized_pnl)):
             self._pending_calcs.discard(tick.instrument_id)
             if not self._pending_calcs:
                 self.initialized = True
@@ -409,7 +420,7 @@ cdef class Portfolio(PortfolioFacade):
                 fill=event,
             )
 
-        cdef list orders_working = self._cache.orders_working(
+        cdef list orders_open = self._cache.orders_open(
             venue=None,  # Faster query filtering
             instrument_id=event.instrument_id,
         )
@@ -419,7 +430,7 @@ cdef class Portfolio(PortfolioFacade):
         account_state = self._accounts.update_orders(
             account=account,
             instrument=instrument,
-            orders_working=[o for o in orders_working if o.is_passive_c()],
+            orders_open=[o for o in orders_open if o.is_passive_c()],
             ts_event=event.ts_event,
         )
 
@@ -590,7 +601,7 @@ cdef class Portfolio(PortfolioFacade):
             )
             return None
 
-        if account.is_cash_account():
+        if account.is_cash_account:
             return None
 
         return account.margins_init()
@@ -619,7 +630,7 @@ cdef class Portfolio(PortfolioFacade):
             )
             return None
 
-        if account.is_cash_account():
+        if account.is_cash_account:
             return None
 
         return account.margins_maint()
@@ -947,9 +958,11 @@ cdef class Portfolio(PortfolioFacade):
         for position in positions_open:
             net_position += position.net_qty
 
-        self._net_positions[instrument_id] = net_position
-        cdef str net_position_str = f"{net_position:,}".replace(",", "_")
-        self._log.info(f"{instrument_id} net_position={net_position_str}")
+        existing_position: Decimal = self._net_positions.get(instrument_id)
+        if existing_position is None or existing_position != net_position:
+            self._net_positions[instrument_id] = net_position
+            net_position_str = f"{net_position:,}".replace(",", "_")
+            self._log.info(f"{instrument_id} net_position={net_position_str}")
 
     cdef Money _calculate_unrealized_pnl(self, InstrumentId instrument_id):
         cdef Account account = self._cache.account_for_venue(instrument_id.venue)

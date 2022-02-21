@@ -30,6 +30,7 @@ from nautilus_trader.common.logging import LiveLogger
 from nautilus_trader.common.logging import LoggerAdapter
 from nautilus_trader.common.logging import LogLevel
 from nautilus_trader.common.uuid import UUIDFactory
+from nautilus_trader.live.config import LiveExecEngineConfig
 from nautilus_trader.live.execution_engine import LiveExecutionEngine
 from nautilus_trader.model.currencies import GBP
 from nautilus_trader.model.events.order import OrderAccepted
@@ -93,12 +94,15 @@ class TestBetfairExecutionClient:
             logger=self.logger,
         )
 
+        config = LiveExecEngineConfig()
+        config.allow_cash_positions = True  # Retain original behaviour for now
         self.exec_engine = LiveExecutionEngine(
             loop=self.loop,
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
             logger=self.logger,
+            config=config,
         )
 
         self.betfair_client: BetfairClient = BetfairTestStubs.betfair_client(

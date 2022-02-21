@@ -23,6 +23,7 @@ from nautilus_trader.common.events.risk import TradingStateChanged
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.common.uuid import UUIDFactory
 from nautilus_trader.core.message import Event
+from nautilus_trader.execution.config import ExecEngineConfig
 from nautilus_trader.execution.engine import ExecutionEngine
 from nautilus_trader.model.commands.trading import CancelOrder
 from nautilus_trader.model.commands.trading import ModifyOrder
@@ -85,11 +86,14 @@ class TestRiskEngine:
             logger=self.logger,
         )
 
+        config = ExecEngineConfig()
+        config.allow_cash_positions = True  # Retain original behaviour for now
         self.exec_engine = ExecutionEngine(
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
             logger=self.logger,
+            config=config,
         )
 
         self.risk_engine = RiskEngine(
@@ -1326,7 +1330,7 @@ class TestRiskEngine:
         assert self.risk_engine.command_count == 1
         assert self.exec_engine.command_count == 0
 
-    def test_update_order_when_already_completed_then_denies(self):
+    def test_update_order_when_already_closed_then_denies(self):
         # Arrange
         self.exec_engine.start()
 
@@ -1525,7 +1529,7 @@ class TestRiskEngine:
         assert self.risk_engine.command_count == 1
         assert self.exec_engine.command_count == 0
 
-    def test_cancel_order_when_already_completed_then_denies(self):
+    def test_cancel_order_when_already_closed_then_denies(self):
         # Arrange
         self.exec_engine.start()
 

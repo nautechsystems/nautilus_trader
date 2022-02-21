@@ -19,18 +19,18 @@ from typing import Any, Dict, List, Optional
 import orjson
 import pandas as pd
 
-from nautilus_trader.adapters.ftx.common import FTX_VENUE
-from nautilus_trader.adapters.ftx.data_types import FTXTicker
+from nautilus_trader.adapters.ftx.core.constants import FTX_VENUE
+from nautilus_trader.adapters.ftx.core.types import FTXTicker
 from nautilus_trader.adapters.ftx.http.client import FTXHttpClient
 from nautilus_trader.adapters.ftx.http.error import FTXClientError
 from nautilus_trader.adapters.ftx.http.error import FTXError
-from nautilus_trader.adapters.ftx.parsing import parse_bars
-from nautilus_trader.adapters.ftx.parsing import parse_book_partial_ws
-from nautilus_trader.adapters.ftx.parsing import parse_book_update_ws
-from nautilus_trader.adapters.ftx.parsing import parse_market
-from nautilus_trader.adapters.ftx.parsing import parse_quote_tick_ws
-from nautilus_trader.adapters.ftx.parsing import parse_ticker_ws
-from nautilus_trader.adapters.ftx.parsing import parse_trade_ticks_ws
+from nautilus_trader.adapters.ftx.parsing.common import parse_instrument
+from nautilus_trader.adapters.ftx.parsing.http import parse_bars_http
+from nautilus_trader.adapters.ftx.parsing.websocket import parse_book_partial_ws
+from nautilus_trader.adapters.ftx.parsing.websocket import parse_book_update_ws
+from nautilus_trader.adapters.ftx.parsing.websocket import parse_quote_tick_ws
+from nautilus_trader.adapters.ftx.parsing.websocket import parse_ticker_ws
+from nautilus_trader.adapters.ftx.parsing.websocket import parse_trade_ticks_ws
 from nautilus_trader.adapters.ftx.providers import FTXInstrumentProvider
 from nautilus_trader.adapters.ftx.websocket.client import FTXWebSocketClient
 from nautilus_trader.cache.cache import Cache
@@ -109,7 +109,8 @@ class FTXDataClient(LiveMarketDataClient):
             loop=loop,
             clock=clock,
             logger=logger,
-            handler=self._handle_ws_message,
+            msg_handler=self._handle_ws_message,
+            reconnect_handler=self._handle_ws_reconnect,
             key=client.api_key,
             secret=client.api_secret,
             us=us,
@@ -490,7 +491,7 @@ class FTXDataClient(LiveMarketDataClient):
             while len(data) > limit:
                 data.pop(0)  # Pop left
 
-        bars: List[Bar] = parse_bars(
+        bars: List[Bar] = parse_bars_http(
             instrument=instrument,
             bar_type=bar_type,
             data=data,
@@ -524,6 +525,10 @@ class FTXDataClient(LiveMarketDataClient):
             instrument_id = InstrumentId(Symbol(symbol), FTX_VENUE)
             self._instrument_ids[symbol] = instrument_id
         return instrument_id
+
+    def _handle_ws_reconnect(self):
+        # TODO(cs): Request order book snapshot?
+        pass
 
     def _handle_ws_message(self, raw: bytes):
         msg: Dict[str, Any] = orjson.loads(raw)
@@ -561,7 +566,7 @@ class FTXDataClient(LiveMarketDataClient):
             return
 
         for _, data in data["data"].items():
-            instrument: Instrument = parse_market(
+            instrument: Instrument = parse_instrument(
                 account_info=account_info,
                 data=data,
                 ts_init=self._clock.timestamp_ns(),

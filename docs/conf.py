@@ -16,7 +16,7 @@ import sys
 
 
 sys.path.insert(0, os.path.abspath(".."))
-
+sys.path.append(os.path.abspath("./_pygments"))
 
 # -- Project information -----------------------------------------------------
 project = "NautilusTrader"
@@ -41,6 +41,8 @@ extensions = [
 html_static_path = ["_static"]
 html_css_files = ["custom.css"]
 templates_path = ["_templates"]
+html_js_files = ["script.js"]
+
 
 comments_config = {"hypothesis": False, "utterances": False}
 exclude_patterns = ["**.ipynb_checkpoints", ".DS_Store", "Thumbs.db", "_build"]
@@ -49,8 +51,8 @@ source_suffix = [".rst", ".md"]
 
 # -- Options for HTML output -------------------------------------------------
 html_theme = "sphinx_material"
-html_logo = "artwork/nt-white.png"
-html_favicon = "artwork/favicon-32x32.png"
+html_logo = "_images/nt-white.png"
+html_favicon = "_images/favicon-32x32.png"
 html_title = ""
 html_sidebars = {"**": ["logo-text.html", "globaltoc.html", "localtoc.html", "searchbox.html"]}
 html_show_sphinx = False
@@ -67,35 +69,35 @@ html_theme_options = {
     "html_minify": False,
     "html_prettify": True,
     "color_primary": "#282f38",
-    "color_accent": "#00bdd6",
-    "theme_color": "#2C2E43",
+    "color_accent": "#282f38",
+    "theme_color": "#282f38",
     "touch_icon": "images/apple-icon-152x152.png",
     "master_doc": False,
-    "globaltoc_collapse": True,
-    "globaltoc_depth": 4,
+    "globaltoc_collapse": False,
+    "globaltoc_depth": 3,
     "nav_links": [
         {
-            "href": "/1_getting_started/0_index",
+            "href": "/getting_started/index",
             "internal": True,
             "title": "Getting Started",
         },
         {
-            "href": "/2_user_guide/0_index",
+            "href": "/user_guide/index",
             "internal": True,
             "title": "User Guide",
         },
         {
-            "href": "/3_api_reference/0_index",
+            "href": "/api_reference/index",
             "internal": True,
             "title": "API Reference",
         },
         {
-            "href": "/4_integrations/0_index",
+            "href": "/integrations/index",
             "internal": True,
             "title": "Integrations",
         },
         {
-            "href": "/5_developer_guide/0_index",
+            "href": "/developer_guide/index",
             "internal": True,
             "title": "Developer Guide",
         },
@@ -105,11 +107,6 @@ html_theme_options = {
             "title": "Releases ⬀",
         },
         {
-            "href": "https://github.com/nautechsystems/nautilus_trader",
-            "internal": False,
-            "title": "GitHub ⬀",
-        },
-        {
             "href": "https://nautilustrader.io/",
             "internal": False,
             "title": "nautilustrader.io ⬀",
@@ -117,11 +114,11 @@ html_theme_options = {
     ],
     "heroes": {
         "index": "Documentation",
-        "1_getting_started/0_index": "Documentation",
-        "2_user_guide/0_index": "Documentation",
-        "3_api_reference/0_index": "Documentation",
-        "4_integrations/0_index": "Documentation",
-        "5_developer_guide/0_index": "Documentation",
+        "getting_started/index": "Documentation",
+        "user_guide/index": "Documentation",
+        "api_reference/index": "Documentation",
+        "integrations/index": "Documentation",
+        "developer_guide/index": "Documentation",
     },
     "version_dropdown": False,
     "table_classes": ["plain"],
@@ -151,3 +148,5 @@ napoleon_google_docstring = False
 
 # Do not show the return type as separate section
 napoleon_use_rtype = False
+
+pygments_style = "monokai.MonokaiStyle"

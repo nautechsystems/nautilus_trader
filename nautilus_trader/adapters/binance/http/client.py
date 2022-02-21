@@ -41,7 +41,7 @@ class BinanceHttpClient(HttpClient):
     Provides a `Binance` asynchronous HTTP client.
     """
 
-    BASE_URL = "https://api.binance.com"
+    BASE_URL = "https://api.binance.com"  # Default SPOT
 
     def __init__(
         self,
@@ -51,7 +51,6 @@ class BinanceHttpClient(HttpClient):
         key: Optional[str] = None,
         secret: Optional[str] = None,
         base_url: Optional[str] = None,
-        us: bool = False,
         timeout: Optional[int] = None,
         show_limit_usage: bool = False,
     ):
@@ -63,8 +62,6 @@ class BinanceHttpClient(HttpClient):
         self._key = key
         self._secret = secret
         self._base_url = base_url or self.BASE_URL
-        if self._base_url == self.BASE_URL and us:
-            self._base_url = self._base_url.replace("com", "us")
         self._show_limit_usage = show_limit_usage
         self._proxies = None
         self._headers: Dict[str, Any] = {

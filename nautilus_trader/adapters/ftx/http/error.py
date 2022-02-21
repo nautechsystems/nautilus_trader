@@ -19,24 +19,25 @@ class FTXError(Exception):
     The base class for all `FTX` specific errors.
     """
 
-
-class FTXServerError(FTXError):
-    """
-    Represents a `FTX` specific 500 series HTTP error.
-    """
-
     def __init__(self, status, message, headers):
         self.status = status
         self.message = message
         self.headers = headers
+
+
+class FTXServerError(FTXError):
+    """
+    Represents an `FTX` specific 500 series HTTP error.
+    """
+
+    def __init__(self, status, message, headers):
+        super().__init__(status, message, headers)
 
 
 class FTXClientError(FTXError):
     """
-    Represents a `FTX` specific 400 series HTTP error.
+    Represents an `FTX` specific 400 series HTTP error.
     """
 
     def __init__(self, status, message, headers):
-        self.status = status
-        self.message = message
-        self.headers = headers
+        super().__init__(status, message, headers)

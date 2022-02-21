@@ -25,6 +25,7 @@ from dask.base import tokenize
 
 from nautilus_trader.cache.config import CacheConfig
 from nautilus_trader.common.config import ImportableActorConfig
+from nautilus_trader.core.data import Data
 from nautilus_trader.core.datetime import maybe_dt_to_unix_nanos
 from nautilus_trader.data.config import DataEngineConfig
 from nautilus_trader.execution.config import ExecEngineConfig
@@ -82,6 +83,7 @@ class Partialable:
         return self.__class__(**{**{k: getattr(self, k) for k in self.fields()}, **kwargs})
 
     def __dask_tokenize__(self):
+        self.__post_init__()  # Ensures token determinism
         return tuple(self.fields())
 
     def __repr__(self):  # Adding -> causes error: Module has no attribute "_repr_fn"
@@ -111,6 +113,7 @@ class BacktestVenueConfig(Partialable):
     # modules: Optional[List[SimulationModule]] = None  # TODO(cs): Implement next iteration
 
     def __dask_tokenize__(self):
+        self.__post_init__()  # Ensures token determinism
         values = [
             self.name,
             self.oms_type,
@@ -131,7 +134,7 @@ class BacktestDataConfig(Partialable):
     """
 
     catalog_path: str
-    data_cls_path: Optional[str] = None
+    data_cls: Optional[Union[type, str]] = None
     catalog_fs_protocol: Optional[str] = None
     catalog_fs_storage_options: Optional[Dict] = None
     instrument_id: Optional[str] = None
@@ -140,9 +143,17 @@ class BacktestDataConfig(Partialable):
     filter_expr: Optional[str] = None
     client_id: Optional[str] = None
 
+    def __post_init__(self):
+        if not isinstance(self.data_cls, str):
+            if not hasattr(self.data_cls, Data.fully_qualified_name.__name__):
+                raise TypeError(
+                    f"`data_cls` is not a valid `Data` class, was {type(self.data_cls)}",
+                )
+            self.data_cls = self.data_cls.fully_qualified_name()
+
     @property
     def data_type(self):
-        mod_path, cls_name = self.data_cls_path.rsplit(".", maxsplit=1)
+        mod_path, cls_name = self.data_cls.rsplit(".", maxsplit=1)
         mod = importlib.import_module(mod_path)
         return getattr(mod, cls_name)
 

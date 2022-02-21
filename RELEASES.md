@@ -1,10 +1,42 @@
+# NautilusTrader 1.139.0 Beta
+
+## Release Notes
+
+Released on TBD (UTC).
+
+### Breaking Changes
+- Renamed `BacktestDataConfig.data_cls_path` to `data_cls`.
+- Renamed `BinanceTicker` to `BinanceSpotTicker`.
+- Renamed `BinanceSpotExecutionClient` to `BinanceExecutionClient`.
+
+### Enhancements
+- Added initial implementation of Binance Futures.
+- Added `CryptoFuture` instrument.
+- Added `OrderType.MARKET_TO_LIMIT`.
+- Added `OrderType.MARKET_IF_TOUCHED`.
+- Added `OrderType.LIMIT_IF_TOUCHED`.
+- Added `MarketToLimit` order type.
+- Added `MarketIfTouched` order type.
+- Added `LimitIfTouched` order type.
+- Added `Order.has_price` property (convenience).
+- Added `Order.has_trigger_price` property (convenience).
+- Added WebSocket `log_send` and `log_recv` config options.
+- Added WebSocket `auto_ping_interval` (seconds) config option.
+- Improved `BacktestDataConfig` API: now takes either a type of `Data` _or_ a fully qualified path string.
+
+### Fixes
+- Fixed FTX execution WebSocket 'ping strategy'.
+- Fixed non-deterministic config dask tokenization.
+
+---
+
 # NautilusTrader 1.138.0 Beta
 
 ## Release Notes
 
-Released on TBD.
+Released on 15th February 2022 (UTC).
 
-**This release contains numerous parameter and property name changes**
+**This release contains numerous method, parameter and property name changes**
 
 For consistency and standardization with other protocols, the `ExecutionId` type 
 has been renamed to `TradeId` as they express the same concept with a more 
@@ -12,6 +44,9 @@ standardized terminology. In the interests of enforcing correctness and
 safety this type is now utilized for the `TradeTick.trade_id`.
 
 ### Breaking Changes
+- Renamed `working` orders to `open` orders including all associated methods and params.
+- Renamed `completed` orders to `closed` orders including all associated methods and params.
+- Removed `active` order concept (often confused with `open`).
 - Renamed `trigger` to `trigger_price`.
 - Renamed `StopMarketOrder.price` to `StopMarketOrder.trigger_price`.
 - Renamed all params related to a `StopMarketOrders` `price` to `trigger_price`.
@@ -23,6 +58,8 @@ safety this type is now utilized for the `TradeTick.trade_id`.
 
 ### Enhancements
 - Introduced the `TradeId` type to enforce `trade_id` typing.
+- Improve handling of unleveraged cash asset positions including Crypto and Fiat spot currency instruments.
+- Added `ExecEngineConfig` option `allow_cash_positions` (`False` by default).
 - Added `TrailingOffsetType` enum.
 - Added `TrailingStopMarketOrder`.
 - Added `TrailingStopLimitOrder`.
@@ -32,6 +69,9 @@ safety this type is now utilized for the `TradeTick.trade_id`.
 - Large refactoring of order base and impl classes.
 - Overhaul of execution reports.
 - Overhaul of execution state reconciliation.
+
+### Fixes
+- Fixed WebSocket base reconnect handling.
 
 ---
 
@@ -72,7 +112,7 @@ Released on 12th January 2022 (UTC).
 
 ### Fixes
 - Fixed parsing of `BarType` with symbols including hyphens `-`.
-- Fixed `BinanceTicker` `__repr__` (was missing whitespace after a comma).
+- Fixed `BinanceSpotTicker` `__repr__` (was missing whitespace after a comma).
 - Fixed `DataEngine` requests for historical `TradeTick`.
 - Fixed `DataEngine` `_handle_data_response` typing of `data` to `object`.
 

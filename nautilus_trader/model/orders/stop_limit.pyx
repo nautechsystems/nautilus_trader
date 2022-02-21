@@ -47,7 +47,7 @@ from nautilus_trader.model.orders.base cimport Order
 
 cdef class StopLimitOrder(Order):
     """
-    Represents a stop-limit conditional order.
+    Represents a `stop-limit` conditional order.
 
     Parameters
     ----------
@@ -77,15 +77,15 @@ cdef class StopLimitOrder(Order):
         The order initialization event ID.
     ts_init : int64
         The UNIX timestamp (nanoseconds) when the object was initialized.
-    post_only : bool, optional
+    post_only : bool, default False
         If the ``LIMIT`` order will only provide liquidity (once triggered).
-    reduce_only : bool, optional
+    reduce_only : bool, default False
         If the ``LIMIT`` order carries the 'reduce-only' execution instruction.
     display_qty : Quantity, optional
         The quantity of the ``LIMIT`` order to display on the public book (iceberg).
     order_list_id : OrderListId, optional
         The order list ID associated with the order.
-    contingency_type : ContingencyType
+    contingency_type : ContingencyType, default ``NONE``
         The order contingency type.
     linked_order_ids : list[ClientOrderId], optional
         The order linked client order ID(s).
@@ -188,6 +188,12 @@ cdef class StopLimitOrder(Order):
         self.is_triggered = False
         self.ts_triggered = 0
 
+    cdef bint has_price_c(self) except *:
+        return True
+
+    cdef bint has_trigger_price_c(self) except *:
+        return True
+
     cpdef str info(self):
         """
         Return a summary description of the order.
@@ -251,7 +257,7 @@ cdef class StopLimitOrder(Order):
     @staticmethod
     cdef StopLimitOrder create(OrderInitialized init):
         """
-        Return a stop-limit order from the given initialized event.
+        Return a `stop-limit` order from the given initialized event.
 
         Parameters
         ----------

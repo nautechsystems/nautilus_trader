@@ -49,7 +49,7 @@ from nautilus_trader.model.orders.base cimport Order
 
 cdef class TrailingStopMarketOrder(Order):
     """
-    Represents a trailing stop-market conditional order.
+    Represents a `trailing-stop-market` conditional order.
 
     Parameters
     ----------
@@ -71,7 +71,7 @@ cdef class TrailingStopMarketOrder(Order):
     trigger_type : TriggerType
         The order trigger type.
     trailing_offset : Decimal
-        The trailing offset for the trigger (STOP) price.
+        The trailing offset for the trigger price (STOP).
     offset_type : TrailingOffsetType
         The order trailing offset type.
     time_in_force : TimeInForce
@@ -82,11 +82,11 @@ cdef class TrailingStopMarketOrder(Order):
         The order initialization event ID.
     ts_init : int64
         The UNIX timestamp (nanoseconds) when the object was initialized.
-    reduce_only : bool, optional
+    reduce_only : bool, default False
         If the order carries the 'reduce-only' execution instruction.
     order_list_id : OrderListId, optional
         The order list ID associated with the order.
-    contingency_type : ContingencyType
+    contingency_type : ContingencyType, default ``NONE``
         The order contingency type.
     linked_order_ids : list[ClientOrderId], optional
         The order linked client order ID(s).
@@ -102,6 +102,8 @@ cdef class TrailingStopMarketOrder(Order):
         If `quantity` is not positive (> 0).
     ValueError
         If `trigger_type` is ``NONE``.
+    ValueError
+        If `offset_type` is ``NONE``.
     ValueError
         If `time_in_force` is ``GTD`` and `expire_time` is ``None`` or <= UNIX epoch.
     """
@@ -129,6 +131,7 @@ cdef class TrailingStopMarketOrder(Order):
         str tags=None,
     ):
         Condition.not_equal(trigger_type, TriggerType.NONE, "trigger_type", "NONE")
+        Condition.not_equal(offset_type, TrailingOffsetType.NONE, "offset_type", "NONE")
 
         cdef int64_t expire_time_ns = 0
         if time_in_force == TimeInForce.GTD:
@@ -178,6 +181,12 @@ cdef class TrailingStopMarketOrder(Order):
         self.offset_type = offset_type
         self.expire_time = expire_time
         self.expire_time_ns = expire_time_ns
+
+    cdef bint has_price_c(self) except *:
+        return False
+
+    cdef bint has_trigger_price_c(self) except *:
+        return True
 
     cpdef str info(self):
         """
@@ -242,7 +251,7 @@ cdef class TrailingStopMarketOrder(Order):
     @staticmethod
     cdef TrailingStopMarketOrder create(OrderInitialized init):
         """
-        Return a stop-market order from the given initialized event.
+        Return a `trailing-stop-market` order from the given initialized event.
 
         Parameters
         ----------
@@ -256,7 +265,7 @@ cdef class TrailingStopMarketOrder(Order):
         Raises
         ------
         ValueError
-            If `init.type` is not equal to ``STOP_MARKET``.
+            If `init.type` is not equal to ``TRAILING_STOP_MARKET``.
 
         """
         Condition.not_none(init, "init")

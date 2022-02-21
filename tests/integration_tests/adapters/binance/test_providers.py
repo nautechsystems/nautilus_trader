@@ -19,6 +19,7 @@ from typing import Dict
 import orjson
 import pytest
 
+from nautilus_trader.adapters.binance.core.enums import BinanceAccountType
 from nautilus_trader.adapters.binance.http.client import BinanceHttpClient
 from nautilus_trader.adapters.binance.providers import BinanceInstrumentProvider
 from nautilus_trader.model.identifiers import InstrumentId
@@ -28,7 +29,7 @@ from nautilus_trader.model.identifiers import Venue
 
 class TestBinanceInstrumentProvider:
     @pytest.mark.asyncio
-    async def test_load_all_async(
+    async def test_load_all_async_for_spot_markets(
         self,
         binance_http_client,
         live_logger,
@@ -36,13 +37,13 @@ class TestBinanceInstrumentProvider:
     ):
         # Arrange: prepare data for monkey patch
         response1 = pkgutil.get_data(
-            package="tests.integration_tests.adapters.binance.resources.responses",
-            resource="wallet_trading_fee.json",
+            package="tests.integration_tests.adapters.binance.resources.http_responses",
+            resource="http_wallet_trading_fee.json",
         )
 
         response2 = pkgutil.get_data(
-            package="tests.integration_tests.adapters.binance.resources.responses",
-            resource="spot_market_exchange_info.json",
+            package="tests.integration_tests.adapters.binance.resources.http_responses",
+            resource="http_spot_market_exchange_info.json",
         )
 
         responses = [response2, response1]
@@ -66,6 +67,7 @@ class TestBinanceInstrumentProvider:
         self.provider = BinanceInstrumentProvider(
             client=binance_http_client,
             logger=live_logger,
+            account_type=BinanceAccountType.SPOT,
         )
 
         # Act
@@ -75,6 +77,67 @@ class TestBinanceInstrumentProvider:
         assert self.provider.count == 2
         assert self.provider.find(InstrumentId(Symbol("BTCUSDT"), Venue("BINANCE"))) is not None
         assert self.provider.find(InstrumentId(Symbol("ETHUSDT"), Venue("BINANCE"))) is not None
+        assert len(self.provider.currencies()) == 3
+        assert "BTC" in self.provider.currencies()
+        assert "ETH" in self.provider.currencies()
+        assert "USDT" in self.provider.currencies()
+
+    @pytest.mark.asyncio
+    async def test_load_all_async_for_futures_markets(
+        self,
+        binance_http_client,
+        live_logger,
+        monkeypatch,
+    ):
+        # Arrange: prepare data for monkey patch
+        # response1 = pkgutil.get_data(
+        #     package="tests.integration_tests.adapters.binance.resources.http_responses",
+        #     resource="http_wallet_trading_fee.json",
+        # )
+
+        response2 = pkgutil.get_data(
+            package="tests.integration_tests.adapters.binance.resources.http_responses",
+            resource="http_futures_usdt_exchange_info.json",
+        )
+
+        responses = [response2]
+
+        # Mock coroutine for patch
+        async def mock_send_request(
+            self,  # noqa (needed for mock)
+            http_method: str,  # noqa (needed for mock)
+            url_path: str,  # noqa (needed for mock)
+            payload: Dict[str, str],  # noqa (needed for mock)
+        ) -> bytes:
+            return orjson.loads(responses.pop())
+
+        # Apply mock coroutine to client
+        monkeypatch.setattr(
+            target=BinanceHttpClient,
+            name="send_request",
+            value=mock_send_request,
+        )
+
+        self.provider = BinanceInstrumentProvider(
+            client=binance_http_client,
+            logger=live_logger,
+            account_type=BinanceAccountType.FUTURES_USDT,
+        )
+
+        # Act
+        await self.provider.load_all_async()
+
+        # Assert
+        assert self.provider.count == 3
+        assert (
+            self.provider.find(InstrumentId(Symbol("BTCUSDT-PERP"), Venue("BINANCE"))) is not None
+        )
+        assert (
+            self.provider.find(InstrumentId(Symbol("ETHUSDT-PERP"), Venue("BINANCE"))) is not None
+        )
+        assert (
+            self.provider.find(InstrumentId(Symbol("BTCUSDT_220325"), Venue("BINANCE"))) is not None
+        )
         assert len(self.provider.currencies()) == 3
         assert "BTC" in self.provider.currencies()
         assert "ETH" in self.provider.currencies()

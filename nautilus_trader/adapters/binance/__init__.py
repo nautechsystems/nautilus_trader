@@ -14,5 +14,5 @@
 # -------------------------------------------------------------------------------------------------
 
 """
-Provides an API integration for the Binance crypto exchange.
+Provides an API integration for the Binance Crypto exchange.
 """

@@ -124,6 +124,7 @@ cdef class LiveExecutionEngine(ExecutionEngine):
 
         # Register endpoints
         self._msgbus.register(endpoint="ExecEngine.reconcile_report", handler=self.reconcile_report)
+        self._msgbus.register(endpoint="ExecEngine.reconcile_mass_status", handler=self.reconcile_mass_status)
 
     def connect(self):
         """
@@ -631,6 +632,7 @@ cdef class LiveExecutionEngine(ExecutionEngine):
             event_id=self._uuid_factory.generate(),
             ts_event=report.ts_last,
             ts_init=self._clock.timestamp_ns(),
+            reconciliation=True,
         )
 
         self._log.warning(f"Generated inferred {filled}.")

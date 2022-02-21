@@ -36,6 +36,7 @@ from nautilus_trader.execution.config import ExecEngineConfig
 
 from libc.stdint cimport int64_t
 
+from nautilus_trader.accounting.accounts.base cimport Account
 from nautilus_trader.cache.cache cimport Cache
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.component cimport Component
@@ -70,6 +71,7 @@ from nautilus_trader.model.identifiers cimport PositionId
 from nautilus_trader.model.identifiers cimport StrategyId
 from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.model.instruments.base cimport Instrument
+from nautilus_trader.model.instruments.currency cimport CurrencySpot
 from nautilus_trader.model.objects cimport Money
 from nautilus_trader.model.objects cimport Quantity
 from nautilus_trader.model.orders.base cimport Order
@@ -131,6 +133,9 @@ cdef class ExecutionEngine(Component):
             trader_id=msgbus.trader_id,
             clock=clock,
         )
+
+        # Settings
+        self.allow_cash_positions = config.allow_cash_positions
 
         # Counters
         self.command_count = 0
@@ -226,9 +231,9 @@ cdef class ExecutionEngine(Component):
 
     cpdef bint check_residuals(self) except *:
         """
-        Check for any residual active state and log warnings if found.
+        Check for any residual open state and log warnings if found.
 
-        Active state is considered working orders and open positions.
+        'Open state' is considered to be open orders and open positions.
 
         Returns
         -------
@@ -654,21 +659,38 @@ cdef class ExecutionEngine(Component):
             raise ValueError(f"invalid OMSType, was {oms_type}")
 
     cdef void _handle_order_fill(self, OrderFilled fill, OMSType oms_type) except *:
-        cdef Position position = self._cache.position(fill.position_id)
-        if position is None:
-            self._open_position(fill, oms_type)
-        else:
-            self._update_position(position, fill, oms_type)
-
-    cdef void _open_position(self, OrderFilled fill, OMSType oms_type) except *:
         cdef Instrument instrument = self._cache.load_instrument(fill.instrument_id)
         if instrument is None:
             self._log.error(
-                f"Cannot open position: "
-                f"no instrument found for {fill.instrument_id.value}, {fill}."
+                f"Cannot handle order fill: "
+                f"no instrument found for {fill.instrument_id}, {fill}."
             )
             return
 
+        cdef Account account = self._cache.account_for_venue(fill.instrument_id.venue)
+        if account is None:
+            self._log.error(
+                f"Cannot handle order fill: "
+                f"no account found for {fill.instrument_id.venue}, {fill}."
+            )
+            return
+
+        if self.allow_cash_positions:
+            pass
+        elif (
+            isinstance(instrument, CurrencySpot)
+            and account.is_cash_account
+            or (account.is_margin_account and account.leverage(instrument.id) == 1)
+        ):
+            return  # No spot cash positions
+
+        cdef Position position = self._cache.position(fill.position_id)
+        if position is None:
+            self._open_position(instrument, fill, oms_type)
+        else:
+            self._update_position(position, fill, oms_type)
+
+    cdef void _open_position(self, Instrument instrument, OrderFilled fill, OMSType oms_type) except *:
         cdef Position position = Position(instrument, fill)
         self._cache.add_position(position, oms_type)
 

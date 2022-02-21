@@ -589,10 +589,10 @@ class BetfairExecutionClient(LiveExecutionClient):
     def cancel_all_orders(self, command: CancelAllOrders) -> None:
         PyCondition.not_none(command, "command")
 
-        working_orders = self._cache.working_orders(instrument_id=command.instrument_id)
+        open_orders = self._cache.open_orders(instrument_id=command.instrument_id)
 
-        # TODO(cs): Temporary solution generating individual cancels for all working orders
-        for order in working_orders:
+        # TODO(cs): Temporary solution generating individual cancels for all open orders
+        for order in open_orders:
             command = CancelOrder(
                 trader_id=command.trader_id,
                 strategy_id=command.strategy_id,
@@ -869,7 +869,7 @@ class BetfairExecutionClient(LiveExecutionClient):
                 self.published_executions[client_order_id].append(trade_id)
 
         cancel_qty = update["sc"] + update["sl"] + update["sv"]
-        if cancel_qty > 0 and not order.is_completed:
+        if cancel_qty > 0 and not order.is_closed:
             assert (
                 update["sm"] + cancel_qty == update["s"]
             ), f"Size matched + canceled != total: {update}"

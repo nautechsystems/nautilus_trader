@@ -19,22 +19,23 @@ from typing import Any, Dict, List, Optional
 import orjson
 import pandas as pd
 
-from nautilus_trader.adapters.binance.common import BINANCE_VENUE
-from nautilus_trader.adapters.binance.data_types import BinanceBar
-from nautilus_trader.adapters.binance.data_types import BinanceTicker
-from nautilus_trader.adapters.binance.http.api.spot_market import BinanceSpotMarketHttpAPI
+from nautilus_trader.adapters.binance.core.constants import BINANCE_VENUE
+from nautilus_trader.adapters.binance.core.enums import BinanceAccountType
+from nautilus_trader.adapters.binance.core.types import BinanceBar
+from nautilus_trader.adapters.binance.core.types import BinanceSpotTicker
+from nautilus_trader.adapters.binance.http.api.market import BinanceMarketHttpAPI
 from nautilus_trader.adapters.binance.http.client import BinanceHttpClient
 from nautilus_trader.adapters.binance.http.error import BinanceError
-from nautilus_trader.adapters.binance.parsing import parse_bar
-from nautilus_trader.adapters.binance.parsing import parse_bar_ws
-from nautilus_trader.adapters.binance.parsing import parse_book_snapshot_ws
-from nautilus_trader.adapters.binance.parsing import parse_diff_depth_stream_ws
-from nautilus_trader.adapters.binance.parsing import parse_quote_tick_ws
-from nautilus_trader.adapters.binance.parsing import parse_ticker_ws
-from nautilus_trader.adapters.binance.parsing import parse_trade_tick
-from nautilus_trader.adapters.binance.parsing import parse_trade_tick_ws
+from nautilus_trader.adapters.binance.parsing.http import parse_bar_http
+from nautilus_trader.adapters.binance.parsing.http import parse_trade_tick_http
+from nautilus_trader.adapters.binance.parsing.websocket import parse_bar_ws
+from nautilus_trader.adapters.binance.parsing.websocket import parse_book_snapshot_ws
+from nautilus_trader.adapters.binance.parsing.websocket import parse_diff_depth_stream_ws
+from nautilus_trader.adapters.binance.parsing.websocket import parse_quote_tick_ws
+from nautilus_trader.adapters.binance.parsing.websocket import parse_spot_ticker_24hr_ws
+from nautilus_trader.adapters.binance.parsing.websocket import parse_trade_tick_ws
 from nautilus_trader.adapters.binance.providers import BinanceInstrumentProvider
-from nautilus_trader.adapters.binance.websocket.spot import BinanceSpotWebSocket
+from nautilus_trader.adapters.binance.websocket.client import BinanceWebSocketClient
 from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.logging import LogColor
@@ -61,7 +62,7 @@ from nautilus_trader.msgbus.bus import MessageBus
 
 class BinanceDataClient(LiveMarketDataClient):
     """
-    Provides a data client for the Binance exchange.
+    Provides a data client for the `Binance` exchange.
 
     Parameters
     ----------
@@ -79,8 +80,10 @@ class BinanceDataClient(LiveMarketDataClient):
         The logger for the client.
     instrument_provider : BinanceInstrumentProvider
         The instrument provider.
-    us : bool, default False
-        If the client is for Binance US.
+    account_type : BinanceAccountType
+        The account type for the client.
+    base_url_ws : str, optional
+        The base URL for the WebSocket client.
     """
 
     def __init__(
@@ -92,7 +95,8 @@ class BinanceDataClient(LiveMarketDataClient):
         clock: LiveClock,
         logger: Logger,
         instrument_provider: BinanceInstrumentProvider,
-        us: bool = False,
+        account_type: BinanceAccountType = BinanceAccountType.SPOT,
+        base_url_ws: Optional[str] = None,
     ):
         super().__init__(
             loop=loop,
@@ -105,42 +109,43 @@ class BinanceDataClient(LiveMarketDataClient):
         )
 
         self._client = client
+        self._account_type = account_type
 
         self._update_instrument_interval: int = 60 * 60  # Once per hour (hardcode)
         self._update_instruments_task: Optional[asyncio.Task] = None
 
         # HTTP API
-        self._spot = BinanceSpotMarketHttpAPI(client=self._client)
+        self._http_market = BinanceMarketHttpAPI(client=self._client)
 
         # WebSocket API
-        self._ws_spot = BinanceSpotWebSocket(
+        self._ws = BinanceWebSocketClient(
             loop=loop,
             clock=clock,
             logger=logger,
             handler=self._handle_spot_ws_message,
-            us=us,
+            base_url=base_url_ws,
         )
 
         self._book_buffer: Dict[InstrumentId, List[OrderBookData]] = {}
 
-        if us:
-            self._log.info("Set Binance US.", LogColor.BLUE)
+        self._log.info(f"Base URL HTTP {self._client._base_url}.", LogColor.BLUE)
+        self._log.info(f"Base URL WebSocket {base_url_ws}.", LogColor.BLUE)
 
-    def connect(self):
+    def connect(self) -> None:
         """
         Connect the client to Binance.
         """
         self._log.info("Connecting...")
         self._loop.create_task(self._connect())
 
-    def disconnect(self):
+    def disconnect(self) -> None:
         """
         Disconnect the client from Binance.
         """
         self._log.info("Disconnecting...")
         self._loop.create_task(self._disconnect())
 
-    async def _connect(self):
+    async def _connect(self) -> None:
         # Connect HTTP client
         if not self._client.connected:
             await self._client.connect()
@@ -159,13 +164,13 @@ class BinanceDataClient(LiveMarketDataClient):
         self._set_connected(True)
         self._log.info("Connected.")
 
-    async def _connect_websockets(self):
+    async def _connect_websockets(self) -> None:
         self._log.info("Awaiting subscriptions...")
         await asyncio.sleep(2)
-        if self._ws_spot.has_subscriptions:
-            await self._ws_spot.connect()
+        if self._ws.has_subscriptions:
+            await self._ws.connect()
 
-    async def _update_instruments(self):
+    async def _update_instruments(self) -> None:
         while True:
             self._log.debug(
                 f"Scheduled `update_instruments` to run in "
@@ -175,15 +180,15 @@ class BinanceDataClient(LiveMarketDataClient):
             await self._instrument_provider.load_all_async()
             self._send_all_instruments_to_data_engine()
 
-    async def _disconnect(self):
+    async def _disconnect(self) -> None:
         # Cancel tasks
         if self._update_instruments_task:
             self._log.debug("Canceling `update_instruments` task...")
             self._update_instruments_task.cancel()
 
-        # Disconnect WebSocket clients
-        if self._ws_spot.is_connected:
-            await self._ws_spot.disconnect()
+        # Disconnect WebSocket client
+        if self._ws.is_connected:
+            await self._ws.disconnect()
 
         # Disconnect HTTP client
         if self._client.connected:
@@ -253,7 +258,7 @@ class BinanceDataClient(LiveMarketDataClient):
         instrument_id: InstrumentId,
         book_type: BookType,
         depth: Optional[int] = None,
-    ):
+    ) -> None:
         if book_type == BookType.L3_MBO:
             self._log.error(
                 "Cannot subscribe to order book deltas: "
@@ -276,21 +281,21 @@ class BinanceDataClient(LiveMarketDataClient):
                     "Valid depths are 5, 10 or 20.",
                 )
                 return
-            self._ws_spot.subscribe_partial_book_depth(
+            self._ws.subscribe_partial_book_depth(
                 symbol=instrument_id.symbol.value,
                 depth=depth,
                 speed=100,
             )
         else:
-            self._ws_spot.subscribe_diff_book_depth(
+            self._ws.subscribe_diff_book_depth(
                 symbol=instrument_id.symbol.value,
                 speed=100,
             )
 
-        while not self._ws_spot.is_connected:
+        while not self._ws.is_connected:
             await self.sleep0()
 
-        data: Dict[str, Any] = await self._spot.depth(
+        data: Dict[str, Any] = await self._http_market.depth(
             symbol=instrument_id.symbol.value,
             limit=depth,
         )
@@ -317,15 +322,15 @@ class BinanceDataClient(LiveMarketDataClient):
             self._handle_data(deltas)
 
     def subscribe_ticker(self, instrument_id: InstrumentId):
-        self._ws_spot.subscribe_ticker(instrument_id.symbol.value)
+        self._ws.subscribe_ticker(instrument_id.symbol.value)
         self._add_subscription_ticker(instrument_id)
 
     def subscribe_quote_ticks(self, instrument_id: InstrumentId):
-        self._ws_spot.subscribe_book_ticker(instrument_id.symbol.value)
+        self._ws.subscribe_book_ticker(instrument_id.symbol.value)
         self._add_subscription_quote_ticks(instrument_id)
 
     def subscribe_trade_ticks(self, instrument_id: InstrumentId):
-        self._ws_spot.subscribe_trades(instrument_id.symbol.value)
+        self._ws.subscribe_trades(instrument_id.symbol.value)
         self._add_subscription_trade_ticks(instrument_id)
 
     def subscribe_bars(self, bar_type: BarType):
@@ -355,7 +360,7 @@ class BinanceDataClient(LiveMarketDataClient):
                 f"was {BarAggregationParser.to_str_py(bar_type.spec.aggregation)}",
             )
 
-        self._ws_spot.subscribe_bars(
+        self._ws.subscribe_bars(
             symbol=bar_type.instrument_id.symbol.value,
             interval=f"{bar_type.spec.step}{resolution}",
         )
@@ -455,11 +460,13 @@ class BinanceDataClient(LiveMarketDataClient):
         instrument_id: InstrumentId,
         limit: int,
         correlation_id: UUID4,
-    ):
-        response: List[Dict[str, Any]] = await self._spot.trades(instrument_id.symbol.value, limit)
+    ) -> None:
+        response: List[Dict[str, Any]] = await self._http_market.trades(
+            instrument_id.symbol.value, limit
+        )
 
         ticks: List[TradeTick] = [
-            parse_trade_tick(
+            parse_trade_tick_http(
                 msg=t,
                 instrument_id=instrument_id,
                 ts_init=self._clock.timestamp_ns(),
@@ -520,7 +527,7 @@ class BinanceDataClient(LiveMarketDataClient):
         to_datetime: pd.Timestamp,
         limit: int,
         correlation_id: UUID4,
-    ):
+    ) -> None:
         if limit == 0 or limit > 1000:
             limit = 1000
 
@@ -539,7 +546,7 @@ class BinanceDataClient(LiveMarketDataClient):
         start_time_ms = from_datetime.to_datetime64() * 1000 if from_datetime is not None else None
         end_time_ms = to_datetime.to_datetime64() * 1000 if to_datetime is not None else None
 
-        data: List[List[Any]] = await self._spot.klines(
+        data: List[List[Any]] = await self._http_market.klines(
             symbol=bar_type.instrument_id.symbol.value,
             interval=f"{bar_type.spec.step}{resolution}",
             start_time_ms=start_time_ms,
@@ -548,7 +555,12 @@ class BinanceDataClient(LiveMarketDataClient):
         )
 
         bars: List[BinanceBar] = [
-            parse_bar(bar_type, values=b, ts_init=self._clock.timestamp_ns()) for b in data
+            parse_bar_http(
+                bar_type,
+                values=b,
+                ts_init=self._clock.timestamp_ns(),
+            )
+            for b in data
         ]
         partial: BinanceBar = bars.pop()
 
@@ -565,13 +577,16 @@ class BinanceDataClient(LiveMarketDataClient):
         msg: Dict[str, Any] = orjson.loads(raw)
         data: Dict[str, Any] = msg.get("data")
 
+        # TODO(cs): Uncomment for development
+        # self._log.info(str(msg), LogColor.GREEN)
+
         msg_type: str = data.get("e")
         if msg_type is None:
             self._handle_market_update(msg, data)
         elif msg_type == "depthUpdate":
             self._handle_depth_update(data)
         elif msg_type == "24hrTicker":
-            self._handle_24hr_ticker(data)
+            self._handle_ticker_24hr(data)
         elif msg_type == "trade":
             self._handle_trade(data)
         elif msg_type == "kline":
@@ -641,12 +656,12 @@ class BinanceDataClient(LiveMarketDataClient):
             return
         self._handle_data(book_deltas)
 
-    def _handle_24hr_ticker(self, data: Dict[str, Any]):
+    def _handle_ticker_24hr(self, data: Dict[str, Any]):
         instrument_id = InstrumentId(
             symbol=Symbol(data["s"]),
             venue=BINANCE_VENUE,
         )
-        ticker: BinanceTicker = parse_ticker_ws(
+        ticker: BinanceSpotTicker = parse_spot_ticker_24hr_ws(
             instrument_id=instrument_id,
             msg=data,
             ts_init=self._clock.timestamp_ns(),

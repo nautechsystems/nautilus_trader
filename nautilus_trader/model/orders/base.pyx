@@ -225,6 +225,12 @@ cdef class Order:
     cdef str tif_string_c(self):
         return TimeInForceParser.to_str(self.time_in_force)
 
+    cdef bint has_price_c(self) except *:
+        raise NotImplementedError("method must be implemented in subclass")  # pragma: no cover
+
+    cdef bint has_trigger_price_c(self) except *:
+        raise NotImplementedError("method must be implemented in subclass")  # pragma: no cover
+
     cdef bint is_buy_c(self) except *:
         return self.side == OrderSide.BUY
 
@@ -246,15 +252,22 @@ cdef class Order:
     cdef bint is_child_order_c(self) except *:
         return self.parent_order_id is not None
 
-    cdef bint is_active_c(self) except *:
+    cdef bint is_open_c(self) except *:
         return (
-            self._fsm.state == OrderStatus.INITIALIZED
-            or self._fsm.state == OrderStatus.SUBMITTED
-            or self._fsm.state == OrderStatus.ACCEPTED
+            self._fsm.state == OrderStatus.ACCEPTED
             or self._fsm.state == OrderStatus.TRIGGERED
             or self._fsm.state == OrderStatus.PENDING_CANCEL
             or self._fsm.state == OrderStatus.PENDING_UPDATE
             or self._fsm.state == OrderStatus.PARTIALLY_FILLED
+        )
+
+    cdef bint is_closed_c(self) except *:
+        return (
+            self._fsm.state == OrderStatus.DENIED
+            or self._fsm.state == OrderStatus.REJECTED
+            or self._fsm.state == OrderStatus.CANCELED
+            or self._fsm.state == OrderStatus.EXPIRED
+            or self._fsm.state == OrderStatus.FILLED
         )
 
     cdef bint is_inflight_c(self) except *:
@@ -264,29 +277,11 @@ cdef class Order:
             or self._fsm.state == OrderStatus.PENDING_UPDATE
         )
 
-    cdef bint is_working_c(self) except *:
-        return (
-            self._fsm.state == OrderStatus.ACCEPTED
-            or self._fsm.state == OrderStatus.TRIGGERED
-            or self._fsm.state == OrderStatus.PENDING_CANCEL
-            or self._fsm.state == OrderStatus.PENDING_UPDATE
-            or self._fsm.state == OrderStatus.PARTIALLY_FILLED
-        )
-
     cdef bint is_pending_update_c(self) except *:
         return self._fsm.state == OrderStatus.PENDING_UPDATE
 
     cdef bint is_pending_cancel_c(self) except *:
         return self._fsm.state == OrderStatus.PENDING_CANCEL
-
-    cdef bint is_completed_c(self) except *:
-        return (
-            self._fsm.state == OrderStatus.DENIED
-            or self._fsm.state == OrderStatus.REJECTED
-            or self._fsm.state == OrderStatus.CANCELED
-            or self._fsm.state == OrderStatus.EXPIRED
-            or self._fsm.state == OrderStatus.FILLED
-        )
 
     @property
     def symbol(self):
@@ -397,6 +392,30 @@ cdef class Order:
         return self.event_count_c()
 
     @property
+    def has_price(self):
+        """
+        If the order has a `price` property.
+
+        Returns
+        -------
+        bool
+
+        """
+        return self.has_price_c()
+
+    @property
+    def has_trigger_price(self):
+        """
+        If the order has a `trigger_price` property.
+
+        Returns
+        -------
+        bool
+
+        """
+        return self.has_trigger_price_c()
+
+    @property
     def is_buy(self):
         """
         If the order side is ``BUY``.
@@ -481,29 +500,6 @@ cdef class Order:
         return self.is_child_order_c()
 
     @property
-    def is_active(self):
-        """
-        If the order is active (**not** completed).
-
-        An order is considered active when its state can change.
-        The possible states of active orders include;
-
-        - ``INITIALIZED``
-        - ``SUBMITTED``
-        - ``ACCEPTED``
-        - ``TRIGGERED``
-        - ``PENDING_CANCEL``
-        - ``PENDING_UPDATE``
-        - ``PARTIALLY_FILLED``
-
-        Returns
-        -------
-        bool
-
-        """
-        return self.is_active_c()
-
-    @property
     def is_inflight(self):
         """
         If the order is in-flight (order request sent to the trading venue).
@@ -522,11 +518,11 @@ cdef class Order:
         return self.is_inflight_c()
 
     @property
-    def is_working(self):
+    def is_open(self):
         """
-        If the order is working (open) at the trading venue.
+        If the order is open at the trading venue.
 
-        An order is considered working when its status is any of;
+        An order is considered open when its status is any of;
 
         - ``ACCEPTED``
         - ``TRIGGERED``
@@ -539,41 +535,16 @@ cdef class Order:
         bool
 
         """
-        return self.is_working_c()
+        return self.is_open_c()
 
     @property
-    def is_pending_update(self):
+    def is_closed(self):
         """
-        If current order.status is ``PENDING_UPDATE``.
+        If the order is closed.
 
-        Returns
-        -------
-        bool
+        An order is considered closed when its state can no longer change.
+        The possible states of closed orders include;
 
-        """
-        return self.is_pending_update_c()
-
-    @property
-    def is_pending_cancel(self):
-        """
-        If current order.status is ``PENDING_CANCEL``.
-
-        Returns
-        -------
-        bool
-
-        """
-        return self.is_pending_cancel_c()
-
-    @property
-    def is_completed(self):
-        """
-        If the order is completed (closed).
-
-        An order is considered completed when its state can no longer change.
-        The possible states of completed orders include;
-
-        - ``INVALID``
         - ``DENIED``
         - ``REJECTED``
         - ``CANCELED``
@@ -585,7 +556,31 @@ cdef class Order:
         bool
 
         """
-        return self.is_completed_c()
+        return self.is_closed_c()
+
+    @property
+    def is_pending_update(self):
+        """
+        If current `order.status` is ``PENDING_UPDATE``.
+
+        Returns
+        -------
+        bool
+
+        """
+        return self.is_pending_update_c()
+
+    @property
+    def is_pending_cancel(self):
+        """
+        If current `order.status` is ``PENDING_CANCEL``.
+
+        Returns
+        -------
+        bool
+
+        """
+        return self.is_pending_cancel_c()
 
     @staticmethod
     cdef OrderSide opposite_side_c(OrderSide side) except *:
@@ -665,7 +660,7 @@ cdef class Order:
         ValueError
             If `self.venue_order_id` and `event.venue_order_id` are both not ``None``, and are not equal.
         InvalidStateTrigger
-            If `event` is not a valid trigger from the current order status.
+            If `event` is not a valid trigger from the current `order.status`.
         KeyError
             If `event` is `OrderFilled` and `event.trade_id` already applied to the order.
 

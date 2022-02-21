@@ -41,7 +41,7 @@ async def test_binance_websocket_client():
     await client.connect()
 
     user = BinanceUserDataHttpAPI(client=client)
-    response = await user.create_listen_key_spot()
+    response = await user.create_listen_key()
     key = response["listenKey"]
 
     ws = BinanceUserDataWebSocket(

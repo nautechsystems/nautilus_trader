@@ -23,6 +23,7 @@ from nautilus_trader.common.logging import LogLevel
 from nautilus_trader.common.uuid import UUIDFactory
 from nautilus_trader.data.engine import DataEngine
 from nautilus_trader.execution.engine import ExecutionEngine
+from nautilus_trader.live.config import ExecEngineConfig
 from nautilus_trader.model.commands.trading import CancelOrder
 from nautilus_trader.model.commands.trading import ModifyOrder
 from nautilus_trader.model.commands.trading import SubmitOrder
@@ -113,11 +114,14 @@ class TestExecutionEngine:
             logger=self.logger,
         )
 
+        config = ExecEngineConfig()
+        config.allow_cash_positions = True  # Retain original behaviour for now
         self.exec_engine = ExecutionEngine(
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
             logger=self.logger,
+            config=config,
         )
 
         self.risk_engine = RiskEngine(
@@ -837,7 +841,7 @@ class TestExecutionEngine:
         assert self.exec_engine.event_count == 1
         assert order.status == OrderStatus.INITIALIZED
 
-    def test_cancel_order_for_already_completed_order_logs_and_does_nothing(self):
+    def test_cancel_order_for_already_closed_order_logs_and_does_nothing(self):
         # Arrange
         self.exec_engine.start()
 
@@ -851,7 +855,7 @@ class TestExecutionEngine:
             logger=self.logger,
         )
 
-        # Push to OrderStatus.FILLED (completed)
+        # Push to OrderStatus.FILLED (closed)
         order = strategy.order_factory.market(
             AUDUSD_SIM.id,
             OrderSide.BUY,
@@ -888,7 +892,7 @@ class TestExecutionEngine:
         # Assert
         assert order.status == OrderStatus.FILLED
 
-    def test_modify_order_for_already_completed_order_logs_and_does_nothing(self):
+    def test_modify_order_for_already_closed_order_logs_and_does_nothing(self):
         # Arrange
         self.exec_engine.start()
 
@@ -902,7 +906,7 @@ class TestExecutionEngine:
             logger=self.logger,
         )
 
-        # Push to OrderStatus.FILLED (completed)
+        # Push to OrderStatus.FILLED (closed)
         order = strategy.order_factory.stop_market(
             AUDUSD_SIM.id,
             OrderSide.BUY,

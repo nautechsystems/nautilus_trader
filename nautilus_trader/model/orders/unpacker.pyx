@@ -18,7 +18,10 @@ from nautilus_trader.model.c_enums.order_type cimport OrderType
 from nautilus_trader.model.events.order cimport OrderInitialized
 from nautilus_trader.model.orders.base cimport Order
 from nautilus_trader.model.orders.limit cimport LimitOrder
+from nautilus_trader.model.orders.limit_if_touched cimport LimitIfTouchedOrder
 from nautilus_trader.model.orders.market cimport MarketOrder
+from nautilus_trader.model.orders.market_if_touched cimport MarketIfTouchedOrder
+from nautilus_trader.model.orders.market_to_limit cimport MarketToLimitOrder
 from nautilus_trader.model.orders.stop_limit cimport StopLimitOrder
 from nautilus_trader.model.orders.stop_market cimport StopMarketOrder
 from nautilus_trader.model.orders.trailing_stop_limit cimport TrailingStopLimitOrder
@@ -46,6 +49,12 @@ cdef class OrderUnpacker:
             return StopMarketOrder.create(init=init)
         elif init.type == OrderType.STOP_LIMIT:
             return StopLimitOrder.create(init=init)
+        elif init.type == OrderType.MARKET_TO_LIMIT:
+            return MarketToLimitOrder.create(init=init)
+        elif init.type == OrderType.MARKET_IF_TOUCHED:
+            return MarketIfTouchedOrder.create(init=init)
+        elif init.type == OrderType.LIMIT_IF_TOUCHED:
+            return LimitIfTouchedOrder.create(init=init)
         elif init.type == OrderType.TRAILING_STOP_MARKET:
             return TrailingStopMarketOrder.create(init=init)
         elif init.type == OrderType.TRAILING_STOP_LIMIT:

@@ -28,6 +28,7 @@ from nautilus_trader.model.events.order cimport OrderEvent
 from nautilus_trader.model.events.order cimport OrderFilled
 from nautilus_trader.model.identifiers cimport StrategyId
 from nautilus_trader.model.identifiers cimport Venue
+from nautilus_trader.model.instruments.base cimport Instrument
 from nautilus_trader.model.orders.base cimport Order
 from nautilus_trader.model.position cimport Position
 from nautilus_trader.trading.strategy cimport TradingStrategy
@@ -41,6 +42,8 @@ cdef class ExecutionEngine(Component):
     cdef dict _routing_map
     cdef dict _oms_overrides
 
+    cdef readonly bint allow_cash_positions
+    """If unleveraged spot cash assets should track positions.\n\n:returns: `bool`"""
     cdef readonly int command_count
     """The total count of commands received by the engine.\n\n:returns: `int`"""
     cdef readonly int event_count
@@ -94,6 +97,6 @@ cdef class ExecutionEngine(Component):
     cdef OMSType _determine_oms_type(self, OrderFilled fill) except *
     cdef void _determine_position_id(self, OrderFilled fill, OMSType oms_type) except *
     cdef void _handle_order_fill(self, OrderFilled fill, OMSType oms_type) except *
-    cdef void _open_position(self, OrderFilled fill, OMSType oms_type) except *
+    cdef void _open_position(self,  Instrument instrument, OrderFilled fill, OMSType oms_type) except *
     cdef void _update_position(self, Position position, OrderFilled fill, OMSType oms_type) except *
     cdef void _flip_position(self, Position position, OrderFilled fill, OMSType oms_type) except *
