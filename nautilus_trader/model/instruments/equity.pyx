@@ -30,7 +30,7 @@ from nautilus_trader.model.objects cimport Quantity
 
 cdef class Equity(Instrument):
     """
-    Represents an Equity instrument.
+    Represents a generic Equity instrument.
 
     Parameters
     ----------
