@@ -1,100 +1,66 @@
-import asyncio
+from unittest.mock import patch
 
 import pytest
+from ib_insync import Contract
 
-from nautilus_trader.adapters.interactive_brokers.factories import (
-    InteractiveBrokersLiveDataClientFactory,
-)
-from nautilus_trader.cache.cache import Cache
-from nautilus_trader.common.clock import LiveClock
-from nautilus_trader.common.enums import LogLevel
-from nautilus_trader.common.logging import LiveLogger
-from nautilus_trader.model.data.ticker import Ticker
-from nautilus_trader.msgbus.bus import MessageBus
-from tests.test_kit.mocks import MockCacheDatabase
-from tests.test_kit.stubs import TestStubs
+from nautilus_trader.model.enums import BookType
+from tests.integration_tests.adapters.interactive_brokers.base import InteractiveBrokersTestBase
+from tests.integration_tests.adapters.interactive_brokers.test_kit import IBTestStubs
 
 
-class TestInteractiveBrokersData:
+class TestInteractiveBrokersData(InteractiveBrokersTestBase):
     def setup(self):
-        # Fixture Setup
-        self.loop = asyncio.get_event_loop()
-        self.clock = LiveClock()
-        self.logger = LiveLogger(
-            loop=self.loop,
-            clock=self.clock,
-            level_stdout=LogLevel.DEBUG,
-        )
+        super().setup()
 
-        self.trader_id = TestStubs.trader_id()
-        self.strategy_id = TestStubs.strategy_id()
-        self.account_id = TestStubs.account_id()
-
-        self.msgbus = MessageBus(
-            trader_id=self.trader_id,
-            clock=self.clock,
-            logger=self.logger,
-        )
-
-        self.cache_db = MockCacheDatabase(
-            logger=self.logger,
-        )
-
-        self.cache = Cache(
-            database=self.cache_db,
-            logger=self.logger,
-        )
-
-        # Arrange, Act
-        self.data_client = InteractiveBrokersLiveDataClientFactory.create(
-            loop=self.loop,
-            name="IB",
-            config={},
-            msgbus=self.msgbus,
-            cache=self.cache,
-            clock=self.clock,
-            logger=self.logger,
-        )
+    def instrument_setup(self, instrument, contract_details):
+        self.data_client.instrument_provider.contract_details[instrument.id] = contract_details
+        self.data_client.instrument_provider.contract_id_to_instrument_id[
+            contract_details.contract.conId
+        ] = instrument.id
 
     def _async_setup(self, loop):
-        # Fixture Setup
-        self.loop = loop
-        self.clock = LiveClock()
-        self.logger = LiveLogger(
-            loop=self.loop,
-            clock=self.clock,
-            level_stdout=LogLevel.DEBUG,
-        )
+        pass
 
-        self.trader_id = TestStubs.trader_id()
-        self.strategy_id = TestStubs.strategy_id()
-        self.account_id = TestStubs.account_id()
-
-        self.msgbus = MessageBus(
-            trader_id=self.trader_id,
-            clock=self.clock,
-            logger=self.logger,
-        )
-
-        self.cache_db = MockCacheDatabase(
-            logger=self.logger,
-        )
-
-        self.cache = Cache(
-            database=self.cache_db,
-            logger=self.logger,
-        )
-
-        # Arrange, Act
-        self.data_client = InteractiveBrokersLiveDataClientFactory.create(
-            loop=self.loop,
-            name="IB",
-            config={},
-            msgbus=self.msgbus,
-            cache=self.cache,
-            clock=self.clock,
-            logger=self.logger,
-        )
+    #     # Fixture Setup
+    #     self.loop = loop
+    #     self.clock = LiveClock()
+    #     self.logger = LiveLogger(
+    #         loop=self.loop,
+    #         clock=self.clock,
+    #         level_stdout=LogLevel.DEBUG,
+    #     )
+    #
+    #     self.trader_id = TestStubs.trader_id()
+    #     self.strategy_id = TestStubs.strategy_id()
+    #     self.account_id = TestStubs.account_id()
+    #
+    #     self.msgbus = MessageBus(
+    #         trader_id=self.trader_id,
+    #         clock=self.clock,
+    #         logger=self.logger,
+    #     )
+    #
+    #     self.cache_db = MockCacheDatabase(
+    #         logger=self.logger,
+    #     )
+    #
+    #     self.cache = Cache(
+    #         database=self.cache_db,
+    #         logger=self.logger,
+    #     )
+    #
+    #     # Arrange, Act
+    #     with patch("nautilus_trader.adapters.interactive_brokers.factories.get_cached_ib_client"):
+    #
+    #         self.data_client = InteractiveBrokersLiveDataClientFactory.create(
+    #             loop=self.loop,
+    #             name="IB",
+    #             config={},
+    #             msgbus=self.msgbus,
+    #             cache=self.cache,
+    #             clock=self.clock,
+    #             logger=self.logger,
+    #         )
 
     @pytest.mark.asyncio
     async def test_factory(self, event_loop):
@@ -108,23 +74,83 @@ class TestInteractiveBrokersData:
         assert data_client is not None
 
     @pytest.mark.asyncio
-    async def test_subscribe_trade_ticks(self, event_loop, instrument_aapl, contract_details_aapl):
+    async def test_subscribe_trade_ticks(self, event_loop):
         # Arrange
+        instrument_aapl = IBTestStubs.instrument("AAPL", "NASDAQ")
         self._async_setup(loop=event_loop)
-
-        # Act
-        results = []
-
-        def collect(ticker: Ticker):
-            results.append(ticker)
-
-        self.data_client._on_ticker_update = collect
         self.data_client.instrument_provider.contract_details[
             instrument_aapl.id
-        ] = contract_details_aapl
+        ] = IBTestStubs.contract_details("AAPL")
 
-        instrument_id = instrument_aapl.id
-        self.data_client.subscribe_trade_ticks(instrument_id=instrument_id)
+        # Act
+        with patch.object(self.data_client, "_client") as mock:
+            self.data_client.subscribe_trade_ticks(instrument_id=instrument_aapl.id)
 
         # Assert
-        await asyncio.sleep(10)
+        mock_call = mock.method_calls[0]
+        assert mock_call[0] == "reqMktData"
+        assert mock_call[1] == ()
+        assert mock_call[2] == {
+            "contract": Contract(
+                secType="STK",
+                conId=265598,
+                symbol="AAPL",
+                exchange="SMART",
+                primaryExchange="NASDAQ",
+                currency="USD",
+                localSymbol="AAPL",
+                tradingClass="NMS",
+            ),
+        }
+
+    @pytest.mark.asyncio
+    async def test_subscribe_order_book_deltas(self, event_loop):
+        # Arrange
+        instrument = IBTestStubs.instrument("AAPL", "NASDAQ")
+        self.instrument_setup(instrument, IBTestStubs.contract_details("AAPL"))
+
+        # Act
+        with patch.object(self.data_client, "_client") as mock:
+            self.data_client.subscribe_order_book_deltas(
+                instrument_id=instrument.id, book_type=BookType.L2_MBP
+            )
+
+        # Assert
+        mock_call = mock.method_calls[0]
+        assert mock_call[0] == "reqMktDepth"
+        assert mock_call[1] == ()
+        assert mock_call[2] == {
+            "contract": Contract(
+                secType="STK",
+                conId=265598,
+                symbol="AAPL",
+                exchange="SMART",
+                primaryExchange="NASDAQ",
+                currency="USD",
+                localSymbol="AAPL",
+                tradingClass="NMS",
+            ),
+            "numRows": 5,
+        }
+
+    @pytest.mark.asyncio
+    async def test_on_book_update(self, event_loop):
+        # Arrange
+        self.instrument_setup(
+            IBTestStubs.instrument("EURUSD", "IDEALPRO"), IBTestStubs.contract_details("EURUSD")
+        )
+
+        # Act
+        for ticker in IBTestStubs.market_depth(name="eurusd"):
+            self.data_client._on_book_update(ticker=ticker)
+
+    @pytest.mark.asyncio
+    async def test_on_ticker_update(self, event_loop):
+        # Arrange
+        self.instrument_setup(
+            IBTestStubs.instrument("EURUSD", "IDEALPRO"), IBTestStubs.contract_details("EURUSD")
+        )
+
+        # Act
+        for ticker in IBTestStubs.tickers("eurusd"):
+            self.data_client._on_ticker_update(ticker=ticker)

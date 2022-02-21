@@ -66,6 +66,7 @@ class InteractiveBrokersInstrumentProvider(InstrumentProvider):
         self._port = port
         self._client_id = client_id
         self.contract_details: Dict[InstrumentId, ContractDetails] = {}
+        self.contract_id_to_instrument_id: Dict[int, InstrumentId] = {}
 
     def connect(self):
         self._client.connect(
@@ -111,3 +112,4 @@ class InteractiveBrokersInstrumentProvider(InstrumentProvider):
             )
             self.add(instrument)
             self.contract_details[instrument.id] = details
+            self.contract_id_to_instrument_id[details.contract.conId] = instrument.id

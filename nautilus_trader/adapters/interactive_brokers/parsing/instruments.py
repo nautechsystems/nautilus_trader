@@ -1,5 +1,6 @@
 import datetime
 import time
+from decimal import Decimal
 
 from ib_insync import ContractDetails
 
@@ -9,6 +10,7 @@ from nautilus_trader.model.enums import AssetClass
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.instruments.base import Instrument
+from nautilus_trader.model.instruments.currency import CurrencySpot
 from nautilus_trader.model.instruments.equity import Equity
 from nautilus_trader.model.instruments.future import Future
 from nautilus_trader.model.instruments.option import Option
@@ -47,6 +49,8 @@ def parse_instrument(
         return parse_equity_contract(instrument_id=instrument_id, details=contract_details)
     elif security_type == "FUT":
         return parse_future_contract(instrument_id=instrument_id, details=contract_details)
+    elif security_type == "CASH":
+        return parse_cash_contract(instrument_id=instrument_id, details=contract_details)
     else:
         raise ValueError(f"Unknown {security_type=}")
 
@@ -82,7 +86,7 @@ def parse_future_contract(
     timestamp = time.time_ns()
     future = Future(
         instrument_id=instrument_id,
-        local_symbol=Symbol(details.contract.localSymbol),
+        native_symbol=Symbol(details.contract.localSymbol),
         asset_class=sec_type_to_asset_class(details.underSecType),
         currency=Currency.from_str(details.contract.currency),
         price_precision=price_precision,
@@ -109,7 +113,7 @@ def parse_option_contract(
     timestamp = time.time_ns()
     future = Option(
         instrument_id=instrument_id,
-        local_symbol=Symbol(details.contract.localSymbol),
+        native_symbol=Symbol(details.contract.localSymbol),
         asset_class=asset_class,
         currency=Currency.from_str(details.contract.currency),
         price_precision=price_precision,
@@ -125,3 +129,35 @@ def parse_option_contract(
     )
 
     return future
+
+
+def parse_cash_contract(
+    instrument_id: InstrumentId,
+    details: ContractDetails,
+) -> Option:
+    price_precision: int = _tick_size_to_precision(details.minTick)
+    timestamp = time.time_ns()
+    currency = CurrencySpot(
+        instrument_id=instrument_id,
+        native_symbol=Symbol(details.contract.localSymbol),
+        base_currency=Currency.from_str(details.contract.currency),
+        quote_currency=Currency.from_str(details.contract.symbol),
+        price_precision=price_precision,
+        size_precision=Quantity.from_int(1),
+        price_increment=Price(details.minTick, price_precision),
+        size_increment=Quantity(details.sizeMinTick or 1, 1),
+        lot_size=None,
+        max_quantity=None,
+        min_quantity=None,
+        max_notional=None,
+        min_notional=None,
+        max_price=None,
+        min_price=None,
+        margin_init=Decimal(0),
+        margin_maint=Decimal(0),
+        maker_fee=Decimal(0),
+        taker_fee=Decimal(0),
+        ts_event=timestamp,
+        ts_init=timestamp,
+    )
+    return currency

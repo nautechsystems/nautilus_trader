@@ -15,7 +15,7 @@
 
 
 import asyncio
-from typing import Dict, Optional
+from typing import Dict, List
 
 import ib_insync
 from ib_insync import ContractDetails
@@ -23,16 +23,27 @@ from ib_insync import Ticker
 
 from nautilus_trader.adapters.interactive_brokers.common import IB_VENUE
 from nautilus_trader.adapters.interactive_brokers.common import ContractId
+from nautilus_trader.adapters.interactive_brokers.parsing.data import IB_SIDE
+from nautilus_trader.adapters.interactive_brokers.parsing.data import MKT_DEPTH_OPERATIONS
+from nautilus_trader.adapters.interactive_brokers.parsing.data import _trade_id
 from nautilus_trader.adapters.interactive_brokers.providers import (
     InteractiveBrokersInstrumentProvider,
 )
 from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.logging import Logger
+from nautilus_trader.common.logging import defaultdict
+from nautilus_trader.core.datetime import dt_to_unix_nanos
 from nautilus_trader.live.data_client import LiveMarketDataClient
+from nautilus_trader.model.data.tick import TradeTick
+from nautilus_trader.model.enums import AggressorSide
 from nautilus_trader.model.enums import BookType
 from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import InstrumentId
+from nautilus_trader.model.objects import Price
+from nautilus_trader.model.objects import Quantity
+from nautilus_trader.model.orderbook.data import Order
+from nautilus_trader.model.orderbook.data import OrderBookDelta
 from nautilus_trader.msgbus.bus import MessageBus
 
 
@@ -83,7 +94,7 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
             config={"name": "InteractiveBrokersDataClient"},
         )
         self._client = client
-        self._tickers: Dict[ContractId, Ticker] = {}
+        self._tickers: Dict[ContractId, List[Ticker]] = defaultdict(list)
         self.instrument_provider = instrument_provider
 
     def connect(self):
@@ -127,7 +138,7 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
         self,
         instrument_id: InstrumentId,
         book_type: BookType,
-        depth: Optional[int] = 0,
+        depth: int = 5,
         kwargs=None,
     ):
         """
@@ -153,14 +164,14 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
     def _subscribe_order_book_deltas_L1(self, instrument_id: InstrumentId):
         raise NotImplementedError
 
-    def _subscribe_order_book_deltas_L2(self, instrument_id: InstrumentId, depth: int):
+    def _subscribe_order_book_deltas_L2(self, instrument_id: InstrumentId, depth: int = 5):
         contract_details: ContractDetails = self.instrument_provider.contract_details[instrument_id]
         ticker = self._client.reqMktDepth(
             contract=contract_details.contract,
             numRows=depth,
         )
-        ticker.updateEvent += self._on_ticker_update
-        self._tickers[ContractId(ticker.contract.conId)] = ticker
+        ticker.updateEvent += self._on_book_update
+        self._tickers[ContractId(ticker.contract.conId)].append(ticker)
 
     def subscribe_trade_ticks(self, instrument_id: InstrumentId):
         contract_details: ContractDetails = self.instrument_provider.contract_details[instrument_id]
@@ -168,7 +179,40 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
             contract=contract_details.contract,
         )
         ticker.updateEvent += self._on_ticker_update
-        self._tickers[ContractId(ticker.contract.conId)] = ticker
+        self._tickers[ContractId(ticker.contract.conId)].append(ticker)
+
+    def _on_book_update(self, ticker: Ticker):
+        instrument_id = self.instrument_provider.contract_id_to_instrument_id[ticker.contract.conId]
+        for depth in ticker.domTicks:
+            update = OrderBookDelta(
+                instrument_id=instrument_id,
+                book_type=BookType.L2_MBP,
+                action=MKT_DEPTH_OPERATIONS[depth.operation],
+                order=Order(
+                    price=Price.from_str(str(depth.price)),
+                    size=Quantity.from_str(str(depth.size)),
+                    side=IB_SIDE[depth.side],
+                ),
+                ts_event=dt_to_unix_nanos(depth.time),
+                ts_init=self._clock.timestamp_ns(),
+            )
+            self._handle_data(update)
 
     def _on_ticker_update(self, ticker: Ticker):
-        self._log.debug(str(ticker))
+        instrument_id = self.instrument_provider.contract_id_to_instrument_id[ticker.contract.conId]
+        for tick in ticker.ticks:
+            price = str(tick.price)
+            size = str(tick.size)
+            ts_event = dt_to_unix_nanos(tick.time)
+            update = TradeTick(
+                instrument_id=instrument_id,
+                price=Price.from_str(price),
+                size=Quantity.from_str(size),
+                aggressor_side=AggressorSide.UNKNOWN,
+                trade_id=_trade_id(
+                    symbol=instrument_id.value, ts_event=ts_event, price=price, size=size
+                ),
+                ts_event=ts_event,
+                ts_init=self._clock.timestamp_ns(),
+            )
+            self._handle_data(update)

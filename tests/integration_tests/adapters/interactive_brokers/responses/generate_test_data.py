@@ -1,14 +1,18 @@
+import asyncio
+import copy
+import os
 import pickle
-from functools import lru_cache
 
-from ib_insync import IB
+from ib_insync import Contract
 from ib_insync import ContractDetails
 from ib_insync import Forex
 from ib_insync import Future
 from ib_insync import Option
 from ib_insync import Stock
 
-from nautilus_trader.adapters.ib.gateway import IBGateway
+from nautilus_trader.adapters.interactive_brokers.factories import get_cached_ib_client
+from tests.integration_tests.adapters.interactive_brokers.test_kit import CONTRACT_PATH
+from tests.integration_tests.adapters.interactive_brokers.test_kit import STREAMING_PATH
 
 
 CONTRACTS = [
@@ -26,26 +30,66 @@ CONTRACTS = [
 ]
 
 
-@lru_cache()
-def get_client() -> IB:
-    gw = IBGateway()
-    try:
-        gw.start()
-    except ValueError:
-        pass
-    return gw.client
-
-
 def generate_test_data():
-    client = get_client()
+    ib = get_cached_ib_client(os.environ["TWS_USERNAME"], os.environ["TWS_PASSWORD"])
     for spec in CONTRACTS:
         cls = spec.pop("cls")
-        results = client.reqContractDetails(cls(**spec))
+        results = ib.reqContractDetails(cls(**spec))
         print(f"Found {len(results)}, using first instance")
         c: ContractDetails = results[0]
         with open(f"./responses/contracts/{c.contract.localSymbol}.pkl", "wb") as f:
             f.write(pickle.dumps(c))
 
 
+def generate_contract(sec_type, filename: str, **kwargs):
+    ib = get_cached_ib_client(os.environ["TWS_USERNAME"], os.environ["TWS_PASSWORD"])
+    [contract] = ib.qualifyContracts(Contract.create(secType=sec_type, **kwargs))
+    [details] = ib.reqContractDetails(contract=contract)
+
+    with open(CONTRACT_PATH / f"{filename}.pkl".lower(), "wb") as f:
+        f.write(pickle.dumps(details))
+
+
+async def generate_market_depth(n_records=50):
+    ib = get_cached_ib_client(os.environ["TWS_USERNAME"], os.environ["TWS_PASSWORD"])
+    [contract] = ib.qualifyContracts(Forex("EURUSD"))
+    ticker = ib.reqMktDepth(contract=contract)
+
+    data = []
+
+    def record(x):
+        data.append(copy.copy(x))
+
+    ticker.updateEvent += record
+
+    while len(data) < n_records:
+        await asyncio.sleep(0.1)
+
+    with open(STREAMING_PATH / "eurusd_depth.pkl", "wb") as f:
+        f.write(pickle.dumps(data))
+
+
+async def generate_ticks(n_records=50):
+    ib = get_cached_ib_client(os.environ["TWS_USERNAME"], os.environ["TWS_PASSWORD"])
+    [contract] = ib.qualifyContracts(Forex("EURUSD"))
+    ticker = ib.reqMktData(contract=contract)
+
+    data = []
+
+    def record(x):
+        data.append(copy.copy(x))
+
+    ticker.updateEvent += record
+
+    while len(data) < n_records:
+        await asyncio.sleep(0.1)
+
+    with open(STREAMING_PATH / "eurusd_ticker.pkl", "wb") as f:
+        f.write(pickle.dumps(data))
+
+
 if __name__ == "__main__":
-    generate_test_data()
+    pass
+    # generate_test_data()
+    # asyncio.run(generate_market_depth())
+    generate_contract(sec_type="CASH", filename="eurusd", pair="EURUSD")
