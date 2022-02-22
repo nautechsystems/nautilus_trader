@@ -102,3 +102,6 @@ class TestIBInstrumentProvider:
         # Assert
         expected = {138979238: InstrumentId.from_str("CLZ2.NYMEX")}
         assert self.provider.contract_id_to_instrument_id == expected
+
+    def test_filters(self):
+        pass

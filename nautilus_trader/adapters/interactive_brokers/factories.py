@@ -14,13 +14,14 @@
 # -------------------------------------------------------------------------------------------------
 
 import asyncio
-import os
 from functools import lru_cache
-from typing import Any, Dict
+from typing import Dict
 
 import ib_insync
 
 from nautilus_trader.adapters.interactive_brokers.common import IB_VENUE
+from nautilus_trader.adapters.interactive_brokers.config import InteractiveBrokersDataClientConfig
+from nautilus_trader.adapters.interactive_brokers.config import InteractiveBrokersExecClientConfig
 from nautilus_trader.adapters.interactive_brokers.data import InteractiveBrokersDataClient
 from nautilus_trader.adapters.interactive_brokers.execution import InteractiveBrokersExecutionClient
 from nautilus_trader.adapters.interactive_brokers.gateway import InteractiveBrokersGateway
@@ -47,7 +48,7 @@ def get_cached_ib_client(
     host: str = "127.0.0.1",
     port: int = 4001,
     connect=True,
-    timeout=15,
+    timeout=90,
 ) -> ib_insync.IB:
     """
     Cache and return a InteractiveBrokers HTTP client with the given key and secret.
@@ -130,7 +131,7 @@ class InteractiveBrokersLiveDataClientFactory(LiveDataClientFactory):
     def create(
         loop: asyncio.AbstractEventLoop,
         name: str,
-        config: Dict[str, Any],
+        config: InteractiveBrokersDataClientConfig,
         msgbus: MessageBus,
         cache: Cache,
         clock: LiveClock,
@@ -165,10 +166,10 @@ class InteractiveBrokersLiveDataClientFactory(LiveDataClientFactory):
 
         """
         client = get_cached_ib_client(
-            username=config.get("username") or os.environ["TWS_USERNAME"],
-            password=config.get("password") or os.environ["TWS_PASSWORD"],
-            host=config.get("host") or "127.0.0.1",
-            port=config.get("port") or 4001,
+            username=config.username,
+            password=config.password,
+            host=config.gateway_host,
+            port=config.gateway_port,
         )
 
         # Get instrument provider singleton
@@ -196,7 +197,7 @@ class InteractiveBrokersLiveExecutionClientFactory(LiveExecutionClientFactory):
     def create(
         loop: asyncio.AbstractEventLoop,
         name: str,
-        config: Dict[str, Any],
+        config: InteractiveBrokersExecClientConfig,
         msgbus: MessageBus,
         cache: Cache,
         clock: LiveClock,
@@ -232,20 +233,17 @@ class InteractiveBrokersLiveExecutionClientFactory(LiveExecutionClientFactory):
 
         """
         client = get_cached_ib_client(
-            username=config.get("username") or os.environ["TWS_USERNAME"],
-            password=config.get("password") or os.environ["TWS_PASSWORD"],
-            host=config.get("host") or "127.0.0.1",
-            port=config.get("port") or 4001,
+            username=config.username,
+            password=config.password,
+            host=config.gateway_host,
+            port=config.gateway_port,
         )
 
         # Get instrument provider singleton
         provider = get_cached_interactive_brokers_instrument_provider(client=client, logger=logger)
 
-        # Get account ID env variable or set default
-        account_id_env_var = os.getenv(config.get("account_id", ""), "001")
-
         # Set account ID
-        account_id = AccountId(IB_VENUE.value, account_id_env_var)
+        account_id = AccountId(IB_VENUE.value, config.account_id)
 
         # Create client
         exec_client = InteractiveBrokersExecutionClient(

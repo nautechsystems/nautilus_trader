@@ -13,7 +13,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 import logging
-import os
 from enum import IntEnum
 from time import sleep
 from typing import Optional
@@ -26,10 +25,11 @@ from ib_insync import IB
 class ContainerStatus(IntEnum):
     NO_CONTAINER = 1
     CONTAINER_CREATED = 2
-    CONTAINER_STOPPED = 2
-    NOT_LOGGED_IN = 3
-    READY = 4
-    UNKNOWN = 5
+    CONTAINER_STARTING = 3
+    CONTAINER_STOPPED = 4
+    NOT_LOGGED_IN = 5
+    READY = 6
+    UNKNOWN = 7
 
 
 class InteractiveBrokersGateway:
@@ -42,16 +42,16 @@ class InteractiveBrokersGateway:
 
     def __init__(
         self,
-        username: Optional[str] = None,
-        password: Optional[str] = None,
+        username: str,
+        password: str,
         host="localhost",
         port=4001,
         trading_mode="paper",
         start=False,
         logger=None,
     ):
-        self.username = username or os.environ["TWS_USERNAME"]
-        self.password = password or os.environ["TWS_PASSWORD"]
+        self.username = username
+        self.password = password
         self.trading_mode = trading_mode
         self.host = host
         self.port = port
@@ -74,8 +74,11 @@ class InteractiveBrokersGateway:
         container = self.container
         if container is None:
             return ContainerStatus.NO_CONTAINER
-        elif container.status == "running" and self.is_logged_in(container=container):
-            return ContainerStatus.READY
+        elif container.status == "running":
+            if self.is_logged_in(container=container):
+                return ContainerStatus.READY
+            else:
+                return ContainerStatus.CONTAINER_STARTING
         elif container.status in ("stopped", "exited"):
             return ContainerStatus.CONTAINER_STOPPED
         else:
@@ -122,7 +125,7 @@ class InteractiveBrokersGateway:
         elif status in broken_statuses:
             self.log.debug(f"{status=}, removing existing container")
             self.stop()
-        elif status == ContainerStatus.READY:
+        elif status in (ContainerStatus.READY, ContainerStatus.CONTAINER_STARTING):
             raise ContainerExists
 
         self.log.debug("Starting new container")

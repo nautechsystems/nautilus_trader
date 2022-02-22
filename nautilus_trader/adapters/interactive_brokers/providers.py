@@ -12,14 +12,14 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
-from typing import Dict, List
+from typing import Dict, List, Optional
 
 import ib_insync
 from ib_insync import ContractDetails
 
+from nautilus_trader.adapters.interactive_brokers.common import IB_VENUE
 from nautilus_trader.adapters.interactive_brokers.parsing.instruments import parse_instrument
 from nautilus_trader.common.logging import Logger
-from nautilus_trader.common.logging import LoggerAdapter
 from nautilus_trader.common.providers import InstrumentProvider
 from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.model.identifiers import InstrumentId
@@ -58,10 +58,9 @@ class InteractiveBrokersInstrumentProvider(InstrumentProvider):
             The unique client ID number for the connection.
 
         """
-        super().__init__()
+        super().__init__(venue=IB_VENUE, logger=logger)
 
         self._client = client
-        self._log = LoggerAdapter(type(self).__name__, logger)
         self._host = host
         self._port = port
         self._client_id = client_id
@@ -74,6 +73,28 @@ class InteractiveBrokersInstrumentProvider(InstrumentProvider):
             port=self._port,
             clientId=self._client_id,
         )
+
+    async def load_all_async(self, filters: Optional[Dict] = None) -> None:
+        raise NotImplementedError(
+            f"load_all not implemented to {self.__class__.__name__}"
+        )  # pragma: no cover
+
+    @staticmethod
+    def _one_not_both(a, b):
+        return a or b and not (a and b)
+
+    async def load_ids_async(
+        self,
+        instrument_ids: List[InstrumentId],
+        filters: Optional[Dict] = None,
+    ) -> None:
+        assert self._one_not_both(instrument_ids, filters)
+        """Abstract method (implement in subclass)."""
+        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
+
+    async def load_async(self, instrument_id: InstrumentId, filters: Optional[Dict] = None):
+        """Abstract method (implement in subclass)."""
+        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
     def load(self, symbol: str, exchange: str, **kwargs):
         """

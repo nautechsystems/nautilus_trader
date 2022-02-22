@@ -13,10 +13,11 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
-
+from nautilus_trader.adapters.interactive_brokers.config import InteractiveBrokersDataClientConfig
 from nautilus_trader.adapters.interactive_brokers.factories import (
     InteractiveBrokersLiveDataClientFactory,
 )
+from nautilus_trader.live.config import InstrumentProviderConfig
 from nautilus_trader.live.config import TradingNodeConfig
 from nautilus_trader.live.node import TradingNode
 
@@ -32,16 +33,14 @@ config_node = TradingNodeConfig(
     trader_id="TESTER-001",
     log_level="INFO",
     data_clients={
-        "IB": {
-            # "api_key": "YOUR_IB_USERNAME",
-            # "api_secret": "YOUR_IB_PASSWORD",
-        },
+        "IB": InteractiveBrokersDataClientConfig(
+            instrument_provider=InstrumentProviderConfig(
+                filters=tuple({"symbol": "EURUSD", "exchange": "IDEALPRO"}.items())
+            )
+        ),
     },
     # exec_clients={
-    #     "IB": {
-    #         # "api_key": "YOUR_IB_USERNAME",
-    #         # "api_secret": "YOUR_IB_PASSWORD",
-    #     },
+    #     "IB": InteractiveBrokersExecClientConfig(),
     # },
     timeout_connection=5.0,
     timeout_reconciliation=5.0,
