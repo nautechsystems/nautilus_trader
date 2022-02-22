@@ -32,6 +32,7 @@ from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.logging import LiveLogger
 from nautilus_trader.common.logging import Logger
+from nautilus_trader.live.config import InstrumentProviderConfig
 from nautilus_trader.live.factories import LiveDataClientFactory
 from nautilus_trader.live.factories import LiveExecutionClientFactory
 from nautilus_trader.model.identifiers import AccountId
@@ -100,6 +101,7 @@ def get_cached_ib_client(
 @lru_cache(1)
 def get_cached_interactive_brokers_instrument_provider(
     client: ib_insync.IB,
+    config: InstrumentProviderConfig,
     logger: Logger,
 ) -> InteractiveBrokersInstrumentProvider:
     """
@@ -111,6 +113,8 @@ def get_cached_interactive_brokers_instrument_provider(
     ----------
     client : InteractiveBrokersHttpClient
         The client for the instrument provider.
+    config: InstrumentProviderConfig
+        The instrument provider config
     logger : Logger
         The logger for the instrument provider.
 
@@ -119,7 +123,7 @@ def get_cached_interactive_brokers_instrument_provider(
     InteractiveBrokersInstrumentProvider
 
     """
-    return InteractiveBrokersInstrumentProvider(client=client, logger=logger)
+    return InteractiveBrokersInstrumentProvider(client=client, config=config, logger=logger)
 
 
 class InteractiveBrokersLiveDataClientFactory(LiveDataClientFactory):
@@ -173,7 +177,9 @@ class InteractiveBrokersLiveDataClientFactory(LiveDataClientFactory):
         )
 
         # Get instrument provider singleton
-        provider = get_cached_interactive_brokers_instrument_provider(client=client, logger=logger)
+        provider = get_cached_interactive_brokers_instrument_provider(
+            client=client, config=config.instrument_provider, logger=logger
+        )
 
         # Create client
         data_client = InteractiveBrokersDataClient(
@@ -240,8 +246,9 @@ class InteractiveBrokersLiveExecutionClientFactory(LiveExecutionClientFactory):
         )
 
         # Get instrument provider singleton
-        provider = get_cached_interactive_brokers_instrument_provider(client=client, logger=logger)
-
+        provider = get_cached_interactive_brokers_instrument_provider(
+            client=client, config=config.instrument_provider, logger=logger
+        )
         # Set account ID
         account_id = AccountId(IB_VENUE.value, config.account_id)
 

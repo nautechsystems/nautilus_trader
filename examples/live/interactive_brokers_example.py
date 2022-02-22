@@ -39,7 +39,8 @@ config_node = TradingNodeConfig(
     data_clients={
         "IB": InteractiveBrokersDataClientConfig(
             instrument_provider=InstrumentProviderConfig(
-                filters=tuple({"symbol": "EURUSD", "exchange": "IDEALPRO"}.items())
+                filters=tuple({"pair": "EURUSD"}.items()),
+                load_ids=(("EURUSD.IDEALPRO",)),
             )
         ),
     },

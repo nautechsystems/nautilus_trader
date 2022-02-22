@@ -81,6 +81,9 @@ class InstrumentProviderConfig(pydantic.BaseModel):
     load_ids: Optional[FrozenSet[str]] = None
     filters: Optional[FrozenSet[Tuple[str, Any]]] = None
 
+    def __hash__(self):  # make hashable BaseModel subclass
+        return hash((type(self),) + tuple(self.__dict__.values()))
+
 
 class LiveDataClientConfig(pydantic.BaseModel):
     """

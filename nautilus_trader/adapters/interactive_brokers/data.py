@@ -95,7 +95,6 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
         )
         self._client = client
         self._tickers: Dict[ContractId, List[Ticker]] = defaultdict(list)
-        self.instrument_provider = instrument_provider
 
     def connect(self):
         """
@@ -108,9 +107,10 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
         # Connect client
         if not self._client.isConnected():
             await self._client.connect()
-        # TODO - load any instruments?
+
+        # Load instruments based on config
         # try:
-        #     await self._instrument_provider.load_all_or_wait_async()
+        await self._instrument_provider.initialize()
         # except Exception as ex:
         #     self._log.exception(ex)
         #     return

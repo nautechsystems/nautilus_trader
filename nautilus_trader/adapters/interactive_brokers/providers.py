@@ -17,11 +17,12 @@ from typing import Dict, List, Optional
 import ib_insync
 from ib_insync import ContractDetails
 
+from nautilus_trader.adapters.betfair.util import one
 from nautilus_trader.adapters.interactive_brokers.common import IB_VENUE
 from nautilus_trader.adapters.interactive_brokers.parsing.instruments import parse_instrument
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.common.providers import InstrumentProvider
-from nautilus_trader.core.correctness import PyCondition
+from nautilus_trader.live.config import InstrumentProviderConfig
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import Venue
@@ -36,6 +37,7 @@ class InteractiveBrokersInstrumentProvider(InstrumentProvider):
     def __init__(
         self,
         client: ib_insync.IB,
+        config: InstrumentProviderConfig,
         logger: Logger,
         host: str = "127.0.0.1",
         port: int = 7497,
@@ -48,6 +50,8 @@ class InteractiveBrokersInstrumentProvider(InstrumentProvider):
         ----------
         client : ib_insync.IB
             The Interactive Brokers client.
+        config : InstrumentProviderConfig
+            The instrument provider config
         logger : Logger
             The logger for the instrument provider.
         host : str
@@ -58,7 +62,13 @@ class InteractiveBrokersInstrumentProvider(InstrumentProvider):
             The unique client ID number for the connection.
 
         """
-        super().__init__(venue=IB_VENUE, logger=logger)
+        super().__init__(
+            venue=IB_VENUE,
+            logger=logger,
+            load_all_on_start=config.load_all,
+            load_ids_on_start=set(config.load_ids) if config.load_ids else None,
+            filters=set(config.filters) if config.filters else None,
+        )
 
         self._client = client
         self._host = host
@@ -66,13 +76,6 @@ class InteractiveBrokersInstrumentProvider(InstrumentProvider):
         self._client_id = client_id
         self.contract_details: Dict[InstrumentId, ContractDetails] = {}
         self.contract_id_to_instrument_id: Dict[int, InstrumentId] = {}
-
-    def connect(self):
-        self._client.connect(
-            host=self._host,
-            port=self._port,
-            clientId=self._client_id,
-        )
 
     async def load_all_async(self, filters: Optional[Dict] = None) -> None:
         raise NotImplementedError(f"load_all not implemented to {self.__class__.__name__}")
@@ -87,14 +90,13 @@ class InteractiveBrokersInstrumentProvider(InstrumentProvider):
         filters: Optional[Dict] = None,
     ) -> None:
         assert self._one_not_both(instrument_ids, filters)
-        """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
+        await self.load(**dict(filters))
 
     async def load_async(self, instrument_id: InstrumentId, filters: Optional[Dict] = None):
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
-    def load(self, symbol: str, exchange: str, **kwargs):
+    async def load(self, **kwargs):
         """
         Search and load the instrument for the given symbol, exchange and (optional) kwargs
 
@@ -109,24 +111,19 @@ class InteractiveBrokersInstrumentProvider(InstrumentProvider):
                 secType, conId, symbol, lastTradeDateOrContractMonth, strike, right, multiplier, exchange,
                 primaryExchange, currency, localSymbol, tradingClass, includeExpired, secIdType, secId,
                 comboLegsDescrip, comboLegs,  deltaNeutralContract
-
         """
-        PyCondition.not_none(symbol, "instrument_id")
-        PyCondition.not_none(exchange, "details")
-
-        if not self._client.client.CONNECTED:
-            self.connect()
-
-        contract = ib_insync.contract.Contract(symbol=symbol, exchange=exchange, **kwargs)
-        contract_details: List[ContractDetails] = self._client.reqContractDetails(contract=contract)
+        contract = ib_insync.contract.Forex(**kwargs)
+        qualified = await self._client.qualifyContractsAsync(contract)
+        qualified = one(qualified)
+        contract_details: List[ContractDetails] = await self._client.reqContractDetailsAsync(
+            contract=qualified
+        )
         if not contract_details:
-            raise ValueError(
-                f"No contract details found for the given symbol ({symbol}) and exchange ({exchange})"
-            )
+            raise ValueError(f"No contract details found for the given kwargs ({kwargs})")
 
         for details in contract_details:
             instrument: Instrument = parse_instrument(
-                instrument_id=InstrumentId(Symbol(symbol), Venue(exchange)),
+                instrument_id=InstrumentId(Symbol(qualified.pair()), Venue(qualified.exchange)),
                 contract_details=details,
             )
             self.add(instrument)
