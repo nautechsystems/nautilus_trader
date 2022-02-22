@@ -63,7 +63,10 @@ class TestFTXFactories:
         data_client = FTXLiveDataClientFactory.create(
             loop=self.loop,
             name="FTX",
-            config=FTXDataClientConfig(),
+            config=FTXDataClientConfig(  # noqa (S106 Possible hardcoded password)
+                api_key="SOME_FTX_API_KEY",
+                api_secret="SOME_FTX_API_SECRET",
+            ),
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
@@ -77,7 +80,10 @@ class TestFTXFactories:
         exec_client = FTXLiveExecutionClientFactory.create(
             loop=self.loop,
             name="FTX",
-            config=FTXExecClientConfig(),
+            config=FTXExecClientConfig(  # noqa (S106 Possible hardcoded password)
+                api_key="SOME_FTX_API_KEY",
+                api_secret="SOME_FTX_API_SECRET",
+            ),
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
