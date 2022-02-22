@@ -268,7 +268,10 @@ class TestBinanceFactories:
         data_client = BinanceLiveDataClientFactory.create(
             loop=self.loop,
             name="BINANCE",
-            config=BinanceDataClientConfig(),
+            config=BinanceDataClientConfig(  # noqa (S106 Possible hardcoded password)
+                api_key="SOME_BINANCE_API_KEY",
+                api_secret="SOME_BINANCE_API_SECRET",
+            ),
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
@@ -282,7 +285,10 @@ class TestBinanceFactories:
         exec_client = BinanceLiveExecutionClientFactory.create(
             loop=self.loop,
             name="BINANCE",
-            config=BinanceExecClientConfig(),
+            config=BinanceExecClientConfig(  # noqa (S106 Possible hardcoded password)
+                api_key="SOME_BINANCE_API_KEY",
+                api_secret="SOME_BINANCE_API_SECRET",
+            ),
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
