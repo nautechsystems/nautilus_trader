@@ -16,6 +16,8 @@
 
 from decimal import Decimal
 
+from nautilus_trader.adapters.ftx.config import FTXDataClientConfig
+from nautilus_trader.adapters.ftx.config import FTXExecClientConfig
 from nautilus_trader.adapters.ftx.factories import FTXLiveDataClientFactory
 from nautilus_trader.adapters.ftx.factories import FTXLiveExecutionClientFactory
 from nautilus_trader.examples.strategies.ema_cross_stop_entry_trail import EMACrossStopEntryTrail
@@ -42,20 +44,20 @@ config_node = TradingNodeConfig(
     },
     cache_database=CacheDatabaseConfig(),
     data_clients={
-        "FTX": {
-            # "api_key": "YOUR_FTX_API_KEY",
-            # "api_secret": "YOUR_FTX_API_SECRET",
-            # "subaccount": "YOUR_FTX_SUBACCOUNT", (optional)
-            "us": False,  # If client is for FTX US
-        },
+        "FTX": FTXDataClientConfig(
+            api_key=None,  # "YOUR_FTX_API_KEY"
+            api_secret=None,  # "YOUR_FTX_API_SECRET"
+            subaccount=None,  # "YOUR_FTX_SUBACCOUNT"
+            us=False,  # If client is for FTX US
+        ),
     },
     exec_clients={
-        "FTX": {
-            # "api_key": "YOUR_FTX_API_KEY",
-            # "api_secret": "YOUR_FTX_API_SECRET",
-            # "subaccount": "YOUR_FTX_SUBACCOUNT", (optional)
-            "us": False,  # If client is for FTX US
-        },
+        "FTX": FTXExecClientConfig(
+            api_key=None,  # "YOUR_FTX_API_KEY"
+            api_secret=None,  # "YOUR_FTX_API_SECRET"
+            subaccount=None,  # "YOUR_FTX_SUBACCOUNT"
+            us=False,  # If client is for FTX US
+        ),
     },
     timeout_connection=5.0,
     timeout_reconciliation=5.0,

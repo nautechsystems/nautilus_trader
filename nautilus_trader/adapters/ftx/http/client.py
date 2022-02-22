@@ -206,6 +206,9 @@ class FTXHttpClient(HttpClient):
     async def list_futures(self) -> List[Dict[str, Any]]:
         return await self._send_request(http_method="GET", url_path="futures")
 
+    async def get_market(self, market: str) -> Dict[str, Any]:
+        return await self._send_request(http_method="GET", url_path=f"markets/{market}")
+
     async def list_markets(self) -> List[Dict[str, Any]]:
         return await self._send_request(http_method="GET", url_path="markets")
 

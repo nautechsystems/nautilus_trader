@@ -16,11 +16,15 @@
 
 from decimal import Decimal
 
+from nautilus_trader.adapters.binance.config import BinanceDataClientConfig
+from nautilus_trader.adapters.binance.config import BinanceExecClientConfig
+from nautilus_trader.adapters.binance.core.enums import BinanceAccountType
 from nautilus_trader.adapters.binance.factories import BinanceLiveDataClientFactory
 from nautilus_trader.adapters.binance.factories import BinanceLiveExecutionClientFactory
 from nautilus_trader.examples.strategies.volatility_market_maker import VolatilityMarketMaker
 from nautilus_trader.examples.strategies.volatility_market_maker import VolatilityMarketMakerConfig
 from nautilus_trader.infrastructure.config import CacheDatabaseConfig
+from nautilus_trader.live.config import InstrumentProviderConfig
 from nautilus_trader.live.config import TradingNodeConfig
 from nautilus_trader.live.node import TradingNode
 
@@ -37,26 +41,30 @@ config_node = TradingNodeConfig(
     log_level="INFO",
     cache_database=CacheDatabaseConfig(),
     data_clients={
-        "BINANCE": {
-            # "api_key": "YOUR_BINANCE_API_KEY",
-            # "api_secret": "YOUR_BINANCE_API_SECRET",
-            "account_type": "spot",  # {spot, margin, futures_usdt, futures_coin}
-            "base_url_http": None,  # Override with custom endpoint
-            "base_url_ws": None,  # Override with custom endpoint
-            "us": False,  # If client is for Binance US
-            "testnet": False,  # If client uses the testnet
-        },
+        "BINANCE": BinanceDataClientConfig(
+            api_key=None,  # "YOUR_BINANCE_API_KEY"
+            api_secret=None,  # "YOUR_BINANCE_API_SECRET"
+            account_type=BinanceAccountType.SPOT,
+            base_url_http=None,  # Override with custom endpoint
+            base_url_ws=None,  # Override with custom endpoint
+            us=False,  # If client is for Binance US
+            testnet=False,  # If client uses the testnet
+            instrument_provider=InstrumentProviderConfig(load_all=True),
+        ),
     },
     exec_clients={
-        "BINANCE": {
-            # "api_key": "YOUR_BINANCE_API_KEY",
-            # "api_secret": "YOUR_BINANCE_API_SECRET",
-            "account_type": "spot",  # {spot, margin, futures_usdt, futures_coin}
-            "base_url_http": None,  # Override with custom endpoint
-            "base_url_ws": None,  # Override with custom endpoint
-            "us": False,  # If client is for Binance US
-            "testnet": False,  # If client uses the testnet,
-        },
+        "BINANCE": BinanceExecClientConfig(
+            api_key=None,  # "YOUR_BINANCE_API_KEY"
+            api_secret=None,  # "YOUR_BINANCE_API_SECRET"
+            account_type=BinanceAccountType.SPOT,
+            base_url_http=None,  # Override with custom endpoint
+            base_url_ws=None,  # Override with custom endpoint
+            us=False,  # If client is for Binance US
+            testnet=False,  # If client uses the testnet
+            load_all_instruments=True,  # If load all instruments on start
+            load_instrument_ids=[],  # Optionally pass a list of instrument IDs
+            instrument_provider=InstrumentProviderConfig(load_all=True),
+        ),
     },
     timeout_connection=5.0,
     timeout_reconciliation=5.0,

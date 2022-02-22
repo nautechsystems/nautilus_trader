@@ -117,7 +117,10 @@ class TestLiveMarketDataClientTests:
         self.client = LiveMarketDataClient(
             loop=self.loop,
             client_id=ClientId(BINANCE.value),
-            instrument_provider=InstrumentProvider(),
+            instrument_provider=InstrumentProvider(
+                venue=Venue("SIM"),
+                logger=self.logger,
+            ),
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
