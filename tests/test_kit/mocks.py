@@ -25,6 +25,7 @@ from fsspec.implementations.memory import MemoryFileSystem
 from nautilus_trader.accounting.accounts.base import Account
 from nautilus_trader.cache.database import CacheDatabase
 from nautilus_trader.common.actor import Actor
+from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.config import ActorConfig
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.common.providers import InstrumentProvider
@@ -888,7 +889,8 @@ def aud_usd_data_loader():
     from tests.test_kit.stubs import TestStubs
     from tests.unit_tests.backtest.test_backtest_config import TEST_DATA_DIR
 
-    instrument = TestInstrumentProvider.default_fx_ccy("AUD/USD", venue=Venue("SIM"))
+    venue = Venue("SIM")
+    instrument = TestInstrumentProvider.default_fx_ccy("AUD/USD", venue=venue)
 
     def parse_csv_tick(df, instrument_id):
         yield instrument
@@ -905,8 +907,13 @@ def aud_usd_data_loader():
             )
             yield tick
 
+    clock = TestClock()
+    logger = Logger(clock)
     catalog = DataCatalog.from_env()
-    instrument_provider = InstrumentProvider()
+    instrument_provider = InstrumentProvider(
+        venue=venue,
+        logger=logger,
+    )
     instrument_provider.add(instrument)
     process_files(
         glob_path=f"{TEST_DATA_DIR}/truefx-audusd-ticks.csv",

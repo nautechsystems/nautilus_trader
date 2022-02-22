@@ -13,36 +13,8 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from nautilus_trader.common.clock import TestClock
-from nautilus_trader.common.logging import Logger
-from nautilus_trader.common.providers import InstrumentProvider
 from nautilus_trader.model.identifiers import Venue
-from tests.test_kit.stubs import TestStubs
 
 
-BITMEX = Venue("BITMEX")
-AUDUSD = TestStubs.audusd_id()
-
-
-class TestInstrumentProvider:
-    def setup(self):
-        # Fixture Setup
-        clock = TestClock()
-        self.provider = InstrumentProvider(
-            venue=BITMEX,
-            logger=Logger(clock),
-        )
-
-    def test_get_all_when_no_instruments_returns_empty_dict(self):
-        # Arrange, Act
-        result = self.provider.get_all()
-
-        # Assert
-        assert result == {}
-
-    def test_find_when_no_instruments_returns_none(self):
-        # Arrange, Act
-        result = self.provider.find(AUDUSD)
-
-        # Assert
-        assert result is None
+# It's recommended to have one constant for the venue
+TEMPLATE_VENUE = Venue("TEMPLATE")

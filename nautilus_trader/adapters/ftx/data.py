@@ -141,7 +141,7 @@ class FTXDataClient(LiveMarketDataClient):
         if not self._http_client.connected:
             await self._http_client.connect()
         try:
-            await self._instrument_provider.load_all_or_wait_async()
+            await self._instrument_provider.initialize()
         except FTXError as ex:
             self._log.exception(ex)
             return

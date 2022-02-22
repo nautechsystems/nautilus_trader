@@ -116,7 +116,7 @@ class BetfairExecutionClient(LiveExecutionClient):
             account_type=AccountType.BETTING,
             base_currency=base_currency,
             instrument_provider=instrument_provider
-            or BetfairInstrumentProvider(client=client, logger=logger, market_filter=market_filter),
+            or BetfairInstrumentProvider(client=client, logger=logger, filters=market_filter),
             msgbus=msgbus,
             cache=cache,
             clock=clock,

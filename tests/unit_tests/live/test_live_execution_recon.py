@@ -124,7 +124,10 @@ class TestLiveExecutionReconciliation:
             client_id=ClientId(SIM.value),
             account_type=AccountType.CASH,
             base_currency=USD,
-            instrument_provider=InstrumentProvider(),
+            instrument_provider=InstrumentProvider(
+                venue=SIM,
+                logger=self.logger,
+            ),
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,

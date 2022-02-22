@@ -176,7 +176,7 @@ class BinanceExecutionClient(LiveExecutionClient):
         if not self._client.connected:
             await self._client.connect()
         try:
-            await self._instrument_provider.load_all_or_wait_async()
+            await self._instrument_provider.initialize()
         except BinanceError as ex:
             self._log.exception(ex)
             return
