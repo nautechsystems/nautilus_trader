@@ -11,6 +11,7 @@ crate-type = ["rlib", "staticlib"]
 [dependencies]
 cbindgen = "^0.20.0"
 uuid = { version = "^0.8.2", features = ["v4"] }
+pyo3 = "^0.15.1"
 
 [build-dependencies]
 cbindgen = "^0.20.0"

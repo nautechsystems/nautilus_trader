@@ -4,97 +4,97 @@ from libc.stdint cimport uintptr_t, uint8_t, uint64_t, int64_t
 
 cdef extern from "../includes/model.h":
 
-  const uint8_t FIXED_EXPONENT # = 9
+    const uint8_t FIXED_EXPONENT # = 9
 
-  const double FIXED_PRECISION # = 0.000000001
+    const double FIXED_PRECISION # = 0.000000001
 
-  cdef enum BookLevel:
-    L1_TBBO # = 1,
-    L2_MBP # = 2,
-    L3_MBO # = 3,
+    cdef enum BookLevel:
+        L1_TBBO # = 1,
+        L2_MBP # = 2,
+        L3_MBO # = 3,
 
-  cdef enum OrderSide:
-    Buy # = 1,
-    Sell # = 2,
+    cdef enum OrderSide:
+        Buy # = 1,
+        Sell # = 2,
 
-  cdef struct BTreeMap_BookPrice__Level:
-    pass
+    cdef struct BTreeMap_BookPrice__Level:
+        pass
 
-  cdef struct HashMap_u64__BookPrice:
-    pass
+    cdef struct HashMap_u64__BookPrice:
+        pass
 
-  cdef struct String:
-    pass
+    cdef struct String:
+        pass
 
-  cdef struct Symbol:
-    String *value;
+    cdef struct Symbol:
+        String *value;
 
-  cdef struct Venue:
-    String *value;
+    cdef struct Venue:
+        String *value;
 
-  cdef struct InstrumentId:
-    Symbol symbol;
-    Venue venue;
+    cdef struct InstrumentId:
+        Symbol symbol;
+        Venue venue;
 
-  cdef struct Price_t:
-    int64_t value;
-    uint8_t precision;
+    cdef struct Price_t:
+        int64_t value;
+        uint8_t precision;
 
-  cdef struct Quantity_t:
-    uint64_t value;
-    uint8_t precision;
+    cdef struct Quantity_t:
+        uint64_t value;
+        uint8_t precision;
 
-  cdef struct Ladder:
-    OrderSide side;
-    BTreeMap_BookPrice__Level *levels;
-    HashMap_u64__BookPrice *cache;
+    cdef struct Ladder:
+        OrderSide side;
+        BTreeMap_BookPrice__Level *levels;
+        HashMap_u64__BookPrice *cache;
 
-  cdef struct OrderBook:
-    Ladder bids;
-    Ladder asks;
-    InstrumentId instrument_id;
-    BookLevel book_level;
-    OrderSide last_side;
-    int64_t ts_last;
+    cdef struct OrderBook:
+        Ladder bids;
+        Ladder asks;
+        InstrumentId instrument_id;
+        BookLevel book_level;
+        OrderSide last_side;
+        int64_t ts_last;
 
-  Symbol symbol_new(uint8_t *ptr, uintptr_t length);
+    Symbol symbol_new(uint8_t *ptr, uintptr_t length);
 
-  void symbol_free(Symbol s);
+    void symbol_free(Symbol s);
 
-  const uint8_t *symbol_as_utf8(Symbol s);
+    const uint8_t *symbol_as_utf8(Symbol s);
 
-  Venue venue_new(uint8_t *ptr, uintptr_t length);
+    Venue venue_new(uint8_t *ptr, uintptr_t length);
 
-  void venue_free(Venue v);
+    void venue_free(Venue v);
 
-  const uint8_t *venue_as_utf8(Venue v);
+    const uint8_t *venue_as_utf8(Venue v);
 
-  void instrument_id_free(InstrumentId id);
+    void instrument_id_free(InstrumentId id);
 
-  const uint8_t *instrument_id_as_utf8(InstrumentId id);
+    const uint8_t *instrument_id_as_utf8(InstrumentId id);
 
-  Price_t price_new(double value, uint8_t precision);
+    Price_t price_new(double value, uint8_t precision);
 
-  void price_free(Price_t price);
+    void price_free(Price_t price);
 
-  double price_as_f64(const Price_t *price);
+    double price_as_f64(const Price_t *price);
 
-  void price_add_assign(Price_t a, Price_t b);
+    void price_add_assign(Price_t a, Price_t b);
 
-  void price_sub_assign(Price_t a, Price_t b);
+    void price_sub_assign(Price_t a, Price_t b);
 
-  Quantity_t quantity_new(double value, uint8_t precision);
+    Quantity_t quantity_new(double value, uint8_t precision);
 
-  void quantity_free(Quantity_t qty);
+    void quantity_free(Quantity_t qty);
 
-  double quantity_as_f64(const Quantity_t *qty);
+    double quantity_as_f64(const Quantity_t *qty);
 
-  void quantity_add_assign(Quantity_t a, Quantity_t b);
+    void quantity_add_assign(Quantity_t a, Quantity_t b);
 
-  void quantity_add_assign_u64(Quantity_t a, uint64_t b);
+    void quantity_add_assign_u64(Quantity_t a, uint64_t b);
 
-  void quantity_sub_assign(Quantity_t a, Quantity_t b);
+    void quantity_sub_assign(Quantity_t a, Quantity_t b);
 
-  void quantity_sub_assign_u64(Quantity_t a, uint64_t b);
+    void quantity_sub_assign_u64(Quantity_t a, uint64_t b);
 
-  OrderBook order_book_new(InstrumentId instrument_id, BookLevel book_level);
+    OrderBook order_book_new(InstrumentId instrument_id, BookLevel book_level);

@@ -12,6 +12,7 @@ crate-type = ["rlib", "staticlib"]
 cbindgen = "^0.20.0"
 chrono = "^0.4.19"
 rust_decimal = "^1.21.0"
+pyo3 = "^0.15.1"
 
 nautilus_core = { path = "../core" }
 

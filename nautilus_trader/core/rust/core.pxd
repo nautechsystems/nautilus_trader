@@ -4,32 +4,26 @@ from libc.stdint cimport int64_t
 
 cdef extern from "../includes/core.h":
 
-  cdef struct String:
-    pass
+    cdef struct String:
+        pass
 
-  cdef struct UUID4_t:
-    String *value;
+    cdef struct UUID4_t:
+        String *value;
 
-  UUID4_t uuid4_new();
+    UUID4_t uuid4_new();
 
-  # Expects `ptr` to be an array of valid UTF-8 chars with a null byte terminator.
-  UUID4_t uuid4_from_raw(const char *ptr);
+    UUID4_t uuid4_from_pystring(str pystring);
 
-  const char *uuid4_to_raw(const UUID4_t *uuid);
+    void uuid4_free(UUID4_t uuid);
 
-  # Expects `ptr` to be an array of valid UTF-8 chars with a null byte terminator.
-  void uuid4_free_raw(char *ptr);
+    # Returns the current seconds since the UNIX epoch.
+    double unix_timestamp();
 
-  void uuid4_free(UUID4_t uuid);
+    # Returns the current milliseconds since the UNIX epoch.
+    int64_t unix_timestamp_ms();
 
-  # Returns the current seconds since the UNIX epoch.
-  double unix_timestamp();
+    # Returns the current microseconds since the UNIX epoch.
+    int64_t unix_timestamp_us();
 
-  # Returns the current milliseconds since the UNIX epoch.
-  int64_t unix_timestamp_ms();
-
-  # Returns the current microseconds since the UNIX epoch.
-  int64_t unix_timestamp_us();
-
-  # Returns the current nanoseconds since the UNIX epoch.
-  int64_t unix_timestamp_ns();
+    # Returns the current nanoseconds since the UNIX epoch.
+    int64_t unix_timestamp_ns();
