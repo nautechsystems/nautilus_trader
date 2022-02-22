@@ -56,7 +56,7 @@ class BinanceWalletHttpAPI:
 
         Returns
         -------
-        list[dict[str, str]]
+        list[dict[str, str]] or dict[str, str
 
         References
         ----------
