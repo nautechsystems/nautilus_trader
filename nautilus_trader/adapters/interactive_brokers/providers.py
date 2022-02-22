@@ -75,9 +75,7 @@ class InteractiveBrokersInstrumentProvider(InstrumentProvider):
         )
 
     async def load_all_async(self, filters: Optional[Dict] = None) -> None:
-        raise NotImplementedError(
-            f"load_all not implemented to {self.__class__.__name__}"
-        )  # pragma: no cover
+        raise NotImplementedError(f"load_all not implemented to {self.__class__.__name__}")
 
     @staticmethod
     def _one_not_both(a, b):

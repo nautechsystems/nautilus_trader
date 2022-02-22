@@ -145,5 +145,7 @@ class OrderBookImbalance(TradingStrategy):
 
     def on_stop(self):
         """Actions to be performed when the strategy is stopped."""
+        if self.instrument is None:
+            return
         self.cancel_all_orders(self.instrument.id)
         self.flatten_all_positions(self.instrument.id)
