@@ -16,7 +16,7 @@
 import asyncio
 import os
 from functools import lru_cache
-from typing import Dict, FrozenSet, Optional
+from typing import Dict, Optional
 
 from nautilus_trader.adapters.ftx.config import FTXDataClientConfig
 from nautilus_trader.adapters.ftx.config import FTXExecClientConfig
@@ -26,6 +26,7 @@ from nautilus_trader.adapters.ftx.http.client import FTXHttpClient
 from nautilus_trader.adapters.ftx.providers import FTXInstrumentProvider
 from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.clock import LiveClock
+from nautilus_trader.common.config import InstrumentProviderConfig
 from nautilus_trader.common.logging import LiveLogger
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.live.factories import LiveDataClientFactory
@@ -101,9 +102,7 @@ def get_cached_ftx_http_client(
 def get_cached_ftx_instrument_provider(
     client: FTXHttpClient,
     logger: Logger,
-    load_all_on_start: bool = True,
-    load_ids_on_start: Optional[FrozenSet[str]] = None,
-    filters: Optional[Dict] = None,
+    config: InstrumentProviderConfig,
 ) -> FTXInstrumentProvider:
     """
     Cache and return an FTXInstrumentProvider.
@@ -116,12 +115,8 @@ def get_cached_ftx_instrument_provider(
         The client for the instrument provider.
     logger : Logger
         The logger for the instrument provider.
-    load_all_on_start : bool, default False
-        If all venue instruments should be loaded on start.
-    load_ids_on_start : List[str], optional
-        The list of instrument IDs to be loaded on start (if `load_all_instruments` is False).
-    filters : Dict, optional
-        The venue specific instrument loading filters to apply.
+    config : InstrumentProviderConfig
+        The configuration for the instrument provider.
 
     Returns
     -------
@@ -131,9 +126,7 @@ def get_cached_ftx_instrument_provider(
     return FTXInstrumentProvider(
         client=client,
         logger=logger,
-        load_all_on_start=load_all_on_start,
-        load_ids_on_start=load_ids_on_start,
-        filters=filters,
+        config=config,
     )
 
 
@@ -191,9 +184,7 @@ class FTXLiveDataClientFactory(LiveDataClientFactory):
         provider = get_cached_ftx_instrument_provider(
             client=client,
             logger=logger,
-            load_all_on_start=config.instrument_provider.load_all,
-            load_ids_on_start=config.instrument_provider.load_ids,
-            filters=config.instrument_provider.filters,
+            config=config.instrument_provider,
         )
 
         # Create client
@@ -264,9 +255,7 @@ class FTXLiveExecutionClientFactory(LiveExecutionClientFactory):
         provider = get_cached_ftx_instrument_provider(
             client=client,
             logger=logger,
-            load_all_on_start=config.instrument_provider.load_all,
-            load_ids_on_start=config.instrument_provider.load_ids,
-            filters=config.instrument_provider.filters,
+            config=config.instrument_provider,
         )
 
         # Create client

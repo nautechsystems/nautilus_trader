@@ -16,7 +16,7 @@
 import asyncio
 import os
 from functools import lru_cache
-from typing import Dict, List, Optional, Union
+from typing import Dict, Optional, Union
 
 from nautilus_trader.adapters.binance.config import BinanceDataClientConfig
 from nautilus_trader.adapters.binance.config import BinanceExecClientConfig
@@ -27,6 +27,7 @@ from nautilus_trader.adapters.binance.http.client import BinanceHttpClient
 from nautilus_trader.adapters.binance.providers import BinanceInstrumentProvider
 from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.clock import LiveClock
+from nautilus_trader.common.config import InstrumentProviderConfig
 from nautilus_trader.common.logging import LiveLogger
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.live.factories import LiveDataClientFactory
@@ -104,9 +105,7 @@ def get_cached_binance_instrument_provider(
     client: BinanceHttpClient,
     logger: Logger,
     account_type: BinanceAccountType,
-    load_all_on_start: bool = True,
-    load_ids_on_start: Optional[List[str]] = None,
-    filters: Optional[Dict] = None,
+    config: InstrumentProviderConfig,
 ) -> BinanceInstrumentProvider:
     """
     Cache and return a BinanceInstrumentProvider.
@@ -121,12 +120,8 @@ def get_cached_binance_instrument_provider(
         The logger for the instrument provider.
     account_type : BinanceAccountType
         The Binance account type for the instrument provider.
-    load_all_on_start : bool, default False
-        If all venue instruments should be loaded on start.
-    load_ids_on_start : List[str], optional
-        The list of instrument IDs to be loaded on start (if `load_all_instruments` is False).
-    filters : Dict, optional
-        The venue specific instrument loading filters to apply.
+    config : InstrumentProviderConfig
+        The configuration for the instrument provider.
 
     Returns
     -------
@@ -137,9 +132,7 @@ def get_cached_binance_instrument_provider(
         client=client,
         logger=logger,
         account_type=account_type,
-        load_all_on_start=load_all_on_start,
-        load_ids_on_start=load_ids_on_start,
-        filters=filters,
+        config=config,
     )
 
 
@@ -206,9 +199,7 @@ class BinanceLiveDataClientFactory(LiveDataClientFactory):
             client=client,
             logger=logger,
             account_type=config.account_type,
-            load_all_on_start=config.instrument_provider.load_all,
-            load_ids_on_start=config.instrument_provider.load_ids,
-            filters=config.instrument_provider.filters,
+            config=config.instrument_provider,
         )
 
         # Create client
@@ -289,9 +280,7 @@ class BinanceLiveExecutionClientFactory(LiveExecutionClientFactory):
             client=client,
             logger=logger,
             account_type=config.account_type,
-            load_all_on_start=config.instrument_provider.load_all,
-            load_ids_on_start=config.instrument_provider.load_ids,
-            filters=config.instrument_provider.filters,
+            config=config.instrument_provider,
         )
 
         # Create client

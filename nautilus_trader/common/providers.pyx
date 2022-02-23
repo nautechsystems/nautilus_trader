@@ -16,6 +16,8 @@
 import asyncio
 from typing import Dict, List, Optional
 
+from nautilus_trader.common.config import InstrumentProviderConfig
+
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.common.logging cimport LoggerAdapter
 from nautilus_trader.core.correctness cimport Condition
@@ -35,12 +37,8 @@ cdef class InstrumentProvider:
         The venue for the provider.
     logger : Logger
         The logger for the provider.
-    load_all_on_start : bool, default False
-        If all venue instruments should be loaded on start.
-    load_ids_on_start : List[str], optional
-        The list of instrument IDs to be loaded on start (if `load_all_instruments` is False).
-    filters : Dict, optional
-        The venue specific instrument loading filters to apply.
+    config :InstrumentProviderConfig, optional
+        The instrument provider config.
 
     Warnings
     --------
@@ -51,10 +49,10 @@ cdef class InstrumentProvider:
         self,
         Venue venue not None,
         Logger logger not None,
-        bint load_all_on_start=False,
-        load_ids_on_start=None,
-        filters=None,
+        config: Optional[InstrumentProviderConfig]=None,
     ):
+        if config is None:
+            config = InstrumentProviderConfig()
         self._log = LoggerAdapter(type(self).__name__, logger)
 
         self.venue = venue
@@ -62,9 +60,9 @@ cdef class InstrumentProvider:
         self._currencies = {}   # type: dict[str, Currency]
 
         # Settings
-        self._load_all_on_start = load_all_on_start
-        self._load_ids_on_start = load_ids_on_start
-        self._filters = filters
+        self._load_all_on_start = config.load_all
+        self._load_ids_on_start = config.load_ids
+        self._filters = config.filters
 
         # Async loading flags
         self._loaded = False
