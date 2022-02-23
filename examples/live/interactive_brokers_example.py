@@ -13,10 +13,14 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+from decimal import Decimal
+
 from nautilus_trader.adapters.interactive_brokers.config import InteractiveBrokersDataClientConfig
 from nautilus_trader.adapters.interactive_brokers.factories import (
     InteractiveBrokersLiveDataClientFactory,
 )
+from nautilus_trader.examples.strategies.orderbook_imbalance import OrderBookImbalance
+from nautilus_trader.examples.strategies.orderbook_imbalance import OrderBookImbalanceConfig
 from nautilus_trader.live.config import InstrumentProviderConfig
 from nautilus_trader.live.config import TradingNodeConfig
 from nautilus_trader.live.node import TradingNode
@@ -35,7 +39,8 @@ config_node = TradingNodeConfig(
     data_clients={
         "IB": InteractiveBrokersDataClientConfig(
             instrument_provider=InstrumentProviderConfig(
-                filters=tuple({"symbol": "EURUSD", "exchange": "IDEALPRO"}.items())
+                filters=tuple({"pair": "EURUSD"}.items()),
+                load_ids=(("EURUSD.IDEALPRO",)),
             )
         ),
     },
@@ -53,16 +58,15 @@ config_node = TradingNodeConfig(
 node = TradingNode(config=config_node)
 
 # Configure your strategy
-# strat_config = EMACrossConfig(
-#     instrument_id="AAPL.SMART",
-#     trade_size=Decimal("0.01"),
-#     order_id_tag="001",
-# )
+strategy_config = OrderBookImbalanceConfig(
+    instrument_id="EURUSD.IDEALPRO",
+    max_trade_size=Decimal("10"),
+)
 # Instantiate your strategy
-# strategy = EMACross(config=strat_config)
+strategy = OrderBookImbalance(config=strategy_config)
 
 # Add your strategies and modules
-# node.trader.add_strategy(strategy)
+node.trader.add_strategy(strategy)
 
 # Register your client factories with the node (can take user defined factories)
 node.add_data_client_factory("IB", InteractiveBrokersLiveDataClientFactory)
