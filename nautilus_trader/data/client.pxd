@@ -25,11 +25,14 @@ from nautilus_trader.model.data.bar cimport BarType
 from nautilus_trader.model.data.base cimport DataType
 from nautilus_trader.model.identifiers cimport InstrumentId
 
+from nautilus_trader.model.identifiers import Venue
+
 
 cdef class DataClient(Component):
     cdef readonly Cache _cache
     cdef set _subscriptions_generic
-
+    cdef readonly Venue venue
+    """The clients venue ID (if not a routing client).\n\n:returns: `Venue` or ``None``"""
     cdef readonly bint is_connected
     """If the client is connected.\n\n:returns: `bool`"""
 

@@ -42,6 +42,8 @@ cdef class DataEngine(Component):
     cdef Cache _cache
 
     cdef dict _clients
+    cdef DataClient _default_client
+    cdef dict _routing_map
     cdef dict _order_book_intervals
     cdef dict _bar_aggregators
 
