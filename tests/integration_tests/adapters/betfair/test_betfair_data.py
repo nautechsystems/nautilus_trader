@@ -74,7 +74,7 @@ def instrument_list(mock_load_markets_metadata, loop: asyncio.AbstractEventLoop)
     logger = LiveLogger(loop=loop, clock=LiveClock(), level_stdout=LogLevel.ERROR)
     client = BetfairTestStubs.betfair_client(loop=loop, logger=logger)
     logger = LiveLogger(loop=loop, clock=LiveClock(), level_stdout=LogLevel.DEBUG)
-    instrument_provider = BetfairInstrumentProvider(client=client, logger=logger, market_filter={})
+    instrument_provider = BetfairInstrumentProvider(client=client, logger=logger, filters={})
 
     # Load instruments
     market_ids = BetfairDataProvider.market_ids()

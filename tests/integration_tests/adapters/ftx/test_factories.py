@@ -15,6 +15,8 @@
 
 import asyncio
 
+from nautilus_trader.adapters.ftx.config import FTXDataClientConfig
+from nautilus_trader.adapters.ftx.config import FTXExecClientConfig
 from nautilus_trader.adapters.ftx.factories import FTXLiveDataClientFactory
 from nautilus_trader.adapters.ftx.factories import FTXLiveExecutionClientFactory
 from nautilus_trader.cache.cache import Cache
@@ -61,7 +63,10 @@ class TestFTXFactories:
         data_client = FTXLiveDataClientFactory.create(
             loop=self.loop,
             name="FTX",
-            config={"api_key": "SOME_FTX_API_KEY", "api_secret": "SOME_FTX_API_SECRET"},
+            config=FTXDataClientConfig(  # noqa (S106 Possible hardcoded password)
+                api_key="SOME_FTX_API_KEY",
+                api_secret="SOME_FTX_API_SECRET",
+            ),
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
@@ -75,7 +80,10 @@ class TestFTXFactories:
         exec_client = FTXLiveExecutionClientFactory.create(
             loop=self.loop,
             name="FTX",
-            config={"api_key": "SOME_FTX_API_KEY", "api_secret": "SOME_FTX_API_SECRET"},
+            config=FTXExecClientConfig(  # noqa (S106 Possible hardcoded password)
+                api_key="SOME_FTX_API_KEY",
+                api_secret="SOME_FTX_API_SECRET",
+            ),
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,

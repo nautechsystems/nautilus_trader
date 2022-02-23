@@ -42,7 +42,6 @@ class TestBetfairInstrumentProvider:
         self.provider = BetfairInstrumentProvider(
             client=self.client,
             logger=BetfairTestStubs.live_logger(BetfairTestStubs.clock()),
-            market_filter=None,
         )
 
     @pytest.mark.asyncio

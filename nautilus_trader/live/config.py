@@ -13,7 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from typing import Any, Dict, Optional
+from typing import Any, Dict, FrozenSet, Optional, Tuple
 
 import pydantic
 from pydantic import PositiveFloat
@@ -63,6 +63,51 @@ class LiveExecEngineConfig(ExecEngineConfig):
     qsize: PositiveInt = 10000
 
 
+class InstrumentProviderConfig(pydantic.BaseModel):
+    """
+    Configuration for ``InstrumentProvider`` instances.
+
+    Parameters
+    ----------
+    load_all : bool, default False
+        If all venue instruments should be loaded on start.
+    load_ids : FrozenSet[str], optional
+        The list of instrument IDs to be loaded on start (if `load_all_instruments` is False).
+    filters : [FrozenSet[Tuple[str, Any]], optional
+        The venue specific instrument loading filters to apply.
+    """
+
+    load_all: bool = False
+    load_ids: Optional[FrozenSet[str]] = None
+    filters: Optional[FrozenSet[Tuple[str, Any]]] = None
+
+
+class LiveDataClientConfig(pydantic.BaseModel):
+    """
+    Configuration for ``LiveDataClient`` instances.
+
+    Parameters
+    ----------
+    instrument_provider : InstrumentProviderConfig
+        The clients instrument provider configuration.
+    """
+
+    instrument_provider: InstrumentProviderConfig = InstrumentProviderConfig()
+
+
+class LiveExecClientConfig(pydantic.BaseModel):
+    """
+    Configuration for ``LiveExecutionClient`` instances.
+
+    Parameters
+    ----------
+    instrument_provider : InstrumentProviderConfig
+        The clients instrument provider configuration.
+    """
+
+    instrument_provider: InstrumentProviderConfig = InstrumentProviderConfig()
+
+
 class TradingNodeConfig(pydantic.BaseModel):
     """
     Configuration for ``TradingNode`` instances.
@@ -99,9 +144,9 @@ class TradingNodeConfig(pydantic.BaseModel):
         The timeout for all engine clients to disconnect.
     check_residuals_delay : PositiveFloat (seconds)
         The delay after stopping the node to check residual state before final shutdown.
-    data_clients : dict[str, dict[str, Any]], optional
+    data_clients : dict[str, LiveDataClientConfig], optional
         The data client configurations.
-    exec_clients : dict[str, dict[str, Any]], optional
+    exec_clients : dict[str, LiveExecClientConfig], optional
         The execution client configurations.
     persistence : LivePersistenceConfig, optional
         The config for enabling persistence via feather files
@@ -122,6 +167,6 @@ class TradingNodeConfig(pydantic.BaseModel):
     timeout_portfolio: PositiveFloat = 10.0
     timeout_disconnection: PositiveFloat = 10.0
     check_residuals_delay: PositiveFloat = 10.0
-    data_clients: Dict[str, Dict[str, Any]] = {}
-    exec_clients: Dict[str, Dict[str, Any]] = {}
+    data_clients: Dict[str, LiveDataClientConfig] = {}
+    exec_clients: Dict[str, LiveExecClientConfig] = {}
     persistence: Optional[PersistenceConfig] = None
