@@ -26,6 +26,7 @@ from nautilus_trader.adapters.binance.http.error import BinanceClientError
 from nautilus_trader.adapters.binance.parsing.http import parse_future_instrument_http
 from nautilus_trader.adapters.binance.parsing.http import parse_perpetual_instrument_http
 from nautilus_trader.adapters.binance.parsing.http import parse_spot_instrument_http
+from nautilus_trader.common.config import InstrumentProviderConfig
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.common.providers import InstrumentProvider
 from nautilus_trader.core.correctness import PyCondition
@@ -43,12 +44,8 @@ class BinanceInstrumentProvider(InstrumentProvider):
         The client for the provider.
     logger : Logger
         The logger for the provider.
-    load_all_on_start : bool, default False
-        If all venue instruments should be loaded on start.
-    load_ids_on_start : List[str], optional
-        The list of instrument IDs to be loaded on start (if `load_all_instruments` is False).
-    filters : Dict, optional
-        The venue specific instrument loading filters to apply.
+    config : InstrumentProviderConfig, optional
+        The configuration for the provider.
     """
 
     def __init__(
@@ -56,16 +53,12 @@ class BinanceInstrumentProvider(InstrumentProvider):
         client: BinanceHttpClient,
         logger: Logger,
         account_type: BinanceAccountType = BinanceAccountType.SPOT,
-        load_all_on_start: bool = True,
-        load_ids_on_start: Optional[List[str]] = None,
-        filters: Optional[Dict] = None,
+        config: Optional[InstrumentProviderConfig] = None,
     ):
         super().__init__(
             venue=BINANCE_VENUE,
             logger=logger,
-            load_all_on_start=load_all_on_start,
-            load_ids_on_start=load_ids_on_start,
-            filters=filters,
+            config=config,
         )
 
         self._client = client
