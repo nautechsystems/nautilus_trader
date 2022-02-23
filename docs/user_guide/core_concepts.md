@@ -72,9 +72,12 @@ The following account types are available for both live and backtest environment
 ## Order Types
 The following order types are available (when possible on an exchange);
 
-- `Market`
-- `Limit`
-- `StopMarket`
-- `StopLimit`
-- `TrailingStopMarket`
-- `TrailingStopLimit`
+- `MARKET`
+- `LIMIT`
+- `STOP_MARKET`
+- `STOP_LIMIT`
+- `MARKET_TO_LIMIT`
+- `MARKET_IF_TOUCHED`
+- `LIMIT_IF_TOUCHED`
+- `TRAILING_STOP_MARKET`
+- `TRAILING_STOP_LIMIT`
