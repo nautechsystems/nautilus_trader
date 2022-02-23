@@ -153,14 +153,14 @@ class TradingNodeBuilder:
         if not config:
             self._log.warning("No `data_clients` configuration found.")
 
-        for name, options in config.items():
+        for name, client_config in config.items():
             pieces = name.partition("-")
             factory = self._data_factories[pieces[0]]
 
             client = factory.create(
                 loop=self._loop,
                 name=name,
-                config=options,
+                config=client_config,
                 msgbus=self._msgbus,
                 cache=self._cache,
                 clock=self._clock,
@@ -187,14 +187,14 @@ class TradingNodeBuilder:
         if not config:
             self._log.warning("No `exec_clients` configuration found.")
 
-        for name, options in config.items():
+        for name, client_config in config.items():
             pieces = name.partition("-")
             factory = self._exec_factories[pieces[0]]
 
             client = factory.create(
                 loop=self._loop,
                 name=name,
-                config=options,
+                config=client_config,
                 msgbus=self._msgbus,
                 cache=self._cache,
                 clock=self._clock,
@@ -202,3 +202,14 @@ class TradingNodeBuilder:
             )
 
             self._exec_engine.register_client(client)
+
+            # Default client config
+            if client_config.routing.default:
+                self._exec_engine.register_default_client(client)
+
+            # Venue routing config
+            venues = client_config.routing.venues or []
+            for venue in venues:
+                if not isinstance(venue, Venue):
+                    venue = Venue(venue)
+                self._exec_engine.register_venue_routing(client, venue)

@@ -73,6 +73,7 @@ repos:
         ]
         additional_dependencies: [
             pydantic,
+            types-frozendict,
             types-orjson,
             types-pytz,
             types-redis,
