@@ -15,22 +15,35 @@
 
 use crate::uuid::UUID4;
 use pyo3::types::PyString;
-use pyo3::Python;
+use pyo3::{Python};
 
 #[no_mangle]
 pub extern "C" fn uuid4_new() -> UUID4 {
     UUID4::new()
 }
 
+
 #[no_mangle]
 pub extern "C" fn uuid4_from_pystring(pystring: PyString) -> UUID4 {
-    Python::with_gil(|_py| UUID4::from_str(pystring.to_str().unwrap()))
+    Python::with_gil(|_py| -> UUID4 { UUID4::from_str(pystring.to_str().unwrap()) })
 }
 
 // #[no_mangle]
 // pub extern "C" fn uuid4_to_pystring(uuid: &UUID4) -> PyString {
-//     Python::with_gil(|py| PyString::new(py, uuid.to_string().as_str()))
+//     //Python::with_gil(|py| -> PyString { PyString::new(py, uuid.to_string().as_str()) })
 // }
+
+// #[no_mangle]
+// pub extern "C" fn uuid4_to_pystring(uuid: &UUID4) -> *mut ffi::PyObject {
+//     let py = Python::with_gil();
+//     let pystr: Py<PyString> = PyString::new(py, uuid.to_string().as_str()) }).into();
+//     pystr.into_ptr()
+// }
+
+#[no_mangle]
+pub extern "C" fn uuid4_free(uuid: UUID4) {
+    drop(uuid); // Memory freed here
+}
 
 // /// Expects `ptr` to be an array of valid UTF-8 chars with a null byte terminator.
 // #[no_mangle]
@@ -52,10 +65,7 @@ pub extern "C" fn uuid4_from_pystring(pystring: PyString) -> UUID4 {
 //     drop(CString::from_raw(ptr));
 // }
 
-#[no_mangle]
-pub extern "C" fn uuid4_free(uuid: UUID4) {
-    drop(uuid); // Memory freed here
-}
+
 
 #[cfg(test)]
 mod tests {

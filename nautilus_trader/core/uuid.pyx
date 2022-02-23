@@ -19,9 +19,8 @@ from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.rust.core cimport uuid4_free
 from nautilus_trader.core.rust.core cimport uuid4_from_pystring
 from nautilus_trader.core.rust.core cimport uuid4_new
+from nautilus_trader.core.rust.core cimport uuid4_to_pystring
 
-
-#from nautilus_trader.core.rust.core cimport uuid4_to_pystring
 
 _UUID_REGEX = re.compile("[0-F]{8}-([0-F]{4}-){3}[0-F]{12}", re.I)
 
@@ -55,12 +54,11 @@ cdef class UUID4:
         Condition.true(_UUID_REGEX.match(value), "value is not a valid UUID")
         self._uuid4 = uuid4_from_pystring(value)
 
-    # def __getstate__(self):
-    #     return self.value
-    #
-    # def __setstate__(self, value):
-    #     cdef bytes encoded = value.encode("utf-8") + b"\x00"
-    #     self._uuid4 = uuid4_from_pystring(value)
+    def __getstate__(self):
+        return self.value
+
+    def __setstate__(self, value):
+        self._uuid4 = uuid4_from_pystring(value)
 
     def __eq__(self, UUID4 other) -> bool:
         return self.value == other.value
@@ -79,5 +77,4 @@ cdef class UUID4:
 
     @property
     def value(self) -> str:
-        #return str(uuid4_to_pystring(&self._uuid4))
-        return "hello world!"
+        return uuid4_to_pystring(&self._uuid4)
