@@ -13,14 +13,27 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from nautilus_trader.common.logging cimport LoggerAdapter
 from nautilus_trader.model.currency cimport Currency
 from nautilus_trader.model.identifiers cimport InstrumentId
+from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.model.instruments.base cimport Instrument
 
 
 cdef class InstrumentProvider:
     cdef dict _instruments
     cdef dict _currencies
+
+    cdef bint _load_all_on_start
+    cdef set _load_ids_on_start
+
+    cdef bint _loaded
+    cdef bint _loading
+
+    cdef readonly LoggerAdapter _log
+    cdef readonly object _filters
+    cdef readonly Venue venue
+    """The providers venue.\n\n:returns: `Venue`"""
 
     cpdef void add_currency(self, Currency currency) except *
     cpdef void add(self, Instrument instrument) except *

@@ -794,7 +794,7 @@ python-versions = ">=3.7"
 
 [[package]]
 name = "platformdirs"
-version = "2.5.0"
+version = "2.5.1"
 description = "A small Python module for determining appropriate platform-specific dirs, e.g. a \"user data dir\"."
 category = "dev"
 optional = false
@@ -1486,7 +1486,7 @@ test = ["coverage", "pytest", "pytest-cov"]
 
 [[package]]
 name = "unidecode"
-version = "1.3.2"
+version = "1.3.3"
 description = "ASCII transliterations of Unicode text"
 category = "dev"
 optional = false
@@ -2507,8 +2507,8 @@ pillow = [
     {file = "Pillow-9.0.0.tar.gz", hash = "sha256:ee6e2963e92762923956fe5d3479b1fdc3b76c83f290aad131a2f98c3df0593e"},
 ]
 platformdirs = [
-    {file = "platformdirs-2.5.0-py3-none-any.whl", hash = "sha256:30671902352e97b1eafd74ade8e4a694782bd3471685e78c32d0fdfd3aa7e7bb"},
-    {file = "platformdirs-2.5.0.tar.gz", hash = "sha256:8ec11dfba28ecc0715eb5fb0147a87b1bf325f349f3da9aab2cd6b50b96b692b"},
+    {file = "platformdirs-2.5.1-py3-none-any.whl", hash = "sha256:bcae7cab893c2d310a711b70b24efb93334febe65f8de776ee320b517471e227"},
+    {file = "platformdirs-2.5.1.tar.gz", hash = "sha256:7535e70dfa32e84d4b34996ea99c5e432fa29a708d0f4e394bbcb2a8faa4f16d"},
 ]
 pluggy = [
     {file = "pluggy-1.0.0-py2.py3-none-any.whl", hash = "sha256:74134bbf457f031a36d68416e1509f34bd5ccc019f0bcc952c7b909d06b37bd3"},
@@ -2938,8 +2938,8 @@ uc-micro-py = [
     {file = "uc_micro_py-1.0.1-py3-none-any.whl", hash = "sha256:316cfb8b6862a0f1d03540f0ae6e7b033ff1fa0ddbe60c12cbe0d4cec846a69f"},
 ]
 unidecode = [
-    {file = "Unidecode-1.3.2-py3-none-any.whl", hash = "sha256:215fe33c9d1c889fa823ccb66df91b02524eb8cc8c9c80f9c5b8129754d27829"},
-    {file = "Unidecode-1.3.2.tar.gz", hash = "sha256:669898c1528912bcf07f9819dc60df18d057f7528271e31f8ec28cc88ef27504"},
+    {file = "Unidecode-1.3.3-py3-none-any.whl", hash = "sha256:a5a8a4b6fb033724ffba8502af2e65ca5bfc3dd53762dedaafe4b0134ad42e3c"},
+    {file = "Unidecode-1.3.3.tar.gz", hash = "sha256:8521f2853fd250891dc27d156a9d30e61c4e76319da963c4a1c27083a909ac30"},
 ]
 urllib3 = [
     {file = "urllib3-1.26.8-py2.py3-none-any.whl", hash = "sha256:000ca7f471a233c2251c6c7023ee85305721bfdf18621ebff4fd17a8653427ed"},

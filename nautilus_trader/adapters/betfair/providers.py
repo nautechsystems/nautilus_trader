@@ -14,7 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 import time
-from typing import Dict, List, Optional, Set
+from typing import Dict, FrozenSet, List, Optional, Set
 
 import pandas as pd
 
@@ -27,7 +27,6 @@ from nautilus_trader.adapters.betfair.util import chunk
 from nautilus_trader.adapters.betfair.util import flatten_tree
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.logging import Logger
-from nautilus_trader.common.logging import LoggerAdapter
 from nautilus_trader.common.providers import InstrumentProvider
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.instruments.betting import BettingInstrument
@@ -43,22 +42,31 @@ class BetfairInstrumentProvider(InstrumentProvider):
         The client for the provider.
     logger : Logger
         The logger for the provider.
-    market_filter : dict, optional
-        The market filter for the provider.
+    load_all_on_start : bool, default False
+        If all venue instruments should be loaded on start.
+    load_ids_on_start : List[str], optional
+        The list of instrument IDs to be loaded on start (if `load_all_instruments` is False).
+    filters : Dict, optional
+        The venue specific instrument loading filters to apply.
     """
 
     def __init__(
         self,
         client: BetfairClient,
         logger: Logger,
-        market_filter: Optional[Dict] = None,
+        load_all_on_start: bool = True,
+        load_ids_on_start: Optional[FrozenSet[str]] = None,
+        filters: Optional[Dict] = None,
     ):
-        super().__init__()
+        super().__init__(
+            venue=BETFAIR_VENUE,
+            logger=logger,
+            load_all_on_start=load_all_on_start,
+            load_ids_on_start=load_ids_on_start,
+            filters=filters,
+        )
 
-        self.market_filter = market_filter or {}
-        self.venue = BETFAIR_VENUE
         self._client = client
-        self._log = LoggerAdapter("BetfairInstrumentProvider", logger)
         self._cache: Dict[InstrumentId, BettingInstrument] = {}
         self._account_currency = None
         self._missing_instruments: Set[BettingInstrument] = set()
@@ -75,7 +83,7 @@ class BetfairInstrumentProvider(InstrumentProvider):
         Load all instruments for the venue.
         """
         currency = await self.get_account_currency()
-        market_filter = market_filter or self.market_filter
+        market_filter = market_filter or self._filters
 
         self._log.info(f"Loading markets with market_filter={market_filter}")
         markets = await load_markets(self._client, market_filter=market_filter)
