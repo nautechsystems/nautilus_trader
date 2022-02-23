@@ -162,6 +162,7 @@ cdef class BacktestMarketDataClient(MarketDataClient):
         Cache cache not None,
         Clock clock not None,
         Logger logger not None,
+        dict config=None,
     ):
         super().__init__(
             client_id=client_id,
@@ -169,6 +170,7 @@ cdef class BacktestMarketDataClient(MarketDataClient):
             cache=cache,
             clock=clock,
             logger=logger,
+            config=config,
         )
 
         self.is_connected = False

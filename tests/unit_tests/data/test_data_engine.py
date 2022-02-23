@@ -155,6 +155,45 @@ class TestDataEngine:
         # Assert
         assert ClientId(BINANCE.value) in self.data_engine.registered_clients()
 
+    def test_register_exec_client_for_routing(self):
+        # Arrange
+        exec_client = BacktestMarketDataClient(
+            client_id=ClientId(BINANCE.value),
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            logger=self.logger,
+            config={"routing": True},
+        )
+
+        # Act
+        self.data_engine.register_client(exec_client)
+
+        # Assert
+        assert self.data_engine.default_client == exec_client.id
+        assert self.data_engine.registered_clients() == [
+            exec_client.id,
+        ]
+
+    def test_register_venue_routing(self):
+        # Arrange
+        exec_client = BacktestMarketDataClient(
+            client_id=ClientId(BINANCE.value),
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            logger=self.logger,
+            config={"routing": True},
+        )
+        # Act
+        self.data_engine.register_venue_routing(exec_client, Venue("NYMEX"))
+
+        # Assert
+        assert self.data_engine.default_client is None
+        assert self.data_engine.registered_clients() == [
+            exec_client.id,
+        ]
+
     def test_deregister_client_successfully_removes_client(self):
         # Arrange
         self.data_engine.register_client(self.binance_client)

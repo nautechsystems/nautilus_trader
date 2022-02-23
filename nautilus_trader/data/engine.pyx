@@ -65,11 +65,9 @@ from nautilus_trader.model.data.venue cimport InstrumentClosePrice
 from nautilus_trader.model.data.venue cimport InstrumentStatusUpdate
 from nautilus_trader.model.data.venue cimport StatusUpdate
 from nautilus_trader.model.identifiers cimport ClientId
-
-from nautilus_trader.model.identifiers import ComponentId
-from nautilus_trader.model.identifiers import Venue
-
+from nautilus_trader.model.identifiers cimport ComponentId
 from nautilus_trader.model.identifiers cimport InstrumentId
+from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.model.instruments.base cimport Instrument
 from nautilus_trader.model.orderbook.book cimport OrderBook
 from nautilus_trader.model.orderbook.data cimport OrderBookData
@@ -138,6 +136,18 @@ cdef class DataEngine(Component):
         self._msgbus.register(endpoint="DataEngine.request", handler=self.request)
         self._msgbus.register(endpoint="DataEngine.response", handler=self.response)
 
+    @property
+    def default_client(self):
+        """
+        The default execution client registered with the engine.
+
+        Returns
+        -------
+        Optional[ClientId]
+
+        """
+        return self._default_client.id if self._default_client is not None else None
+
 # --REGISTRATION -----------------------------------------------------------------------------------
 
     cpdef list registered_clients(self):
@@ -171,7 +181,15 @@ cdef class DataEngine(Component):
 
         self._clients[client.id] = client
 
-        self._log.info(f"Registered DataClient-{client}.")
+        routing_log = ""
+        if client.venue is None:
+            if self._default_client is None:
+                self._default_client = client
+                routing_log = " for default routing"
+        else:
+            self._routing_map[client.venue] = client
+
+        self._log.info(f"Registered DataClient-{client}{routing_log}.")
 
     cpdef void register_venue_routing(self, DataClient client, Venue venue) except *:
         """
@@ -211,13 +229,14 @@ cdef class DataEngine(Component):
         Condition.not_none(client, "client")
         Condition.is_in(client.id, self._clients, "client.id", "self._clients")
 
+        del self._clients[client.id]
+
         if client.venue is None:
             if self._default_client == client:
                 self._default_client = None
         else:
             del self._routing_map[client.venue]
 
-        del self._clients[client.id]
         self._log.info(f"Deregistered {client}.")
 
 # -- SUBSCRIPTIONS ---------------------------------------------------------------------------------

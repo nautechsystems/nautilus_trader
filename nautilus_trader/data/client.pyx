@@ -75,6 +75,7 @@ cdef class DataClient(Component):
         )
 
         self._cache = cache
+        self.venue = Venue(client_id.value) if not config.get("routing") else None
 
         # Subscriptions
         self._subscriptions_generic = set()  # type: set[DataType]
