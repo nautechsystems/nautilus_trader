@@ -21,10 +21,12 @@ from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.logging import LiveLogger
 from nautilus_trader.common.logging import LoggerAdapter
 from nautilus_trader.core.correctness import PyCondition
+from nautilus_trader.live.config import LiveDataClientConfig
 from nautilus_trader.live.data_engine import LiveDataEngine
 from nautilus_trader.live.execution_engine import LiveExecutionEngine
 from nautilus_trader.live.factories import LiveDataClientFactory
 from nautilus_trader.live.factories import LiveExecutionClientFactory
+from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.msgbus.bus import MessageBus
 
 
@@ -136,7 +138,7 @@ class TradingNodeBuilder:
 
         self._exec_factories[name] = factory
 
-    def build_data_clients(self, config: Dict):
+    def build_data_clients(self, config: Dict[str, LiveDataClientConfig]):
         """
         Build the data clients with the given configuration.
 
@@ -166,6 +168,9 @@ class TradingNodeBuilder:
             )
 
             self._data_engine.register_client(client)
+            if options.venue_routing:
+                for venue in options.venue_routing:
+                    self._data_engine.register_venue_routing(client, Venue(venue))
 
     def build_exec_clients(self, config: Dict):
         """

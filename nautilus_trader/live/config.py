@@ -93,6 +93,7 @@ class LiveDataClientConfig(pydantic.BaseModel):
     """
 
     instrument_provider: InstrumentProviderConfig = InstrumentProviderConfig()
+    venue_routing: Optional[tuple[str]] = None
 
 
 class LiveExecClientConfig(pydantic.BaseModel):
@@ -106,6 +107,7 @@ class LiveExecClientConfig(pydantic.BaseModel):
     """
 
     instrument_provider: InstrumentProviderConfig = InstrumentProviderConfig()
+    venue_routing: Optional[tuple[str]] = None
 
 
 class TradingNodeConfig(pydantic.BaseModel):
