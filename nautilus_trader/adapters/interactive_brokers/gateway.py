@@ -134,6 +134,7 @@ class InteractiveBrokersGateway:
             name=self.CONTAINER_NAME,
             detach=True,
             ports={"4001": "4001"},
+            platform="amd64",
             environment={
                 "TWSUSERID": self.username,
                 "TWSPASSWORD": self.password,
