@@ -99,6 +99,7 @@ h1, h2, h3 {
 }
 .md-nav__link--active .md-nav__link, 
 .md-nav__link:active, 
+.parent-active-menu > a,
 .md-nav__link:focus, 
 .md-nav__link:hover {
     color: #00bdd6;
