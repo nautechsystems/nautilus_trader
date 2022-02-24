@@ -64,6 +64,7 @@ node = TradingNode(config=config_node)
 strategy_config = OrderBookImbalanceConfig(
     instrument_id="EURUSD.IDEALPRO",
     max_trade_size=Decimal("10"),
+    trigger_imbalance_ratio=0.0000000001,
 )
 # Instantiate your strategy
 strategy = OrderBookImbalance(config=strategy_config)

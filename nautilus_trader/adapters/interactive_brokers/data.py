@@ -160,13 +160,17 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
         if book_type == BookType.L1_TBBO:
             self._subscribe_order_book_deltas_L1(instrument_id=instrument_id)
         elif book_type == BookType.L2_MBP:
+            if depth == 0:
+                depth = 5  # depth=0 is default for nautilus, but not handled by Interactive Brokers
             self._subscribe_order_book_deltas_L2(instrument_id=instrument_id, depth=depth)
 
     def _subscribe_order_book_deltas_L1(self, instrument_id: InstrumentId):
         raise NotImplementedError
 
     def _subscribe_order_book_deltas_L2(self, instrument_id: InstrumentId, depth: int = 5):
-        contract_details: ContractDetails = self.instrument_provider.contract_details[instrument_id]
+        contract_details: ContractDetails = self._instrument_provider.contract_details[
+            instrument_id
+        ]
         ticker = self._client.reqMktDepth(
             contract=contract_details.contract,
             numRows=depth,
@@ -175,7 +179,9 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
         self._tickers[ContractId(ticker.contract.conId)].append(ticker)
 
     def subscribe_trade_ticks(self, instrument_id: InstrumentId):
-        contract_details: ContractDetails = self.instrument_provider.contract_details[instrument_id]
+        contract_details: ContractDetails = self._instrument_provider.contract_details[
+            instrument_id
+        ]
         ticker = self._client.reqMktData(
             contract=contract_details.contract,
         )
@@ -183,7 +189,9 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
         self._tickers[ContractId(ticker.contract.conId)].append(ticker)
 
     def _on_book_update(self, ticker: Ticker):
-        instrument_id = self.instrument_provider.contract_id_to_instrument_id[ticker.contract.conId]
+        instrument_id = self._instrument_provider.contract_id_to_instrument_id[
+            ticker.contract.conId
+        ]
         for depth in ticker.domTicks:
             update = OrderBookDelta(
                 instrument_id=instrument_id,
@@ -200,7 +208,9 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
             self._handle_data(update)
 
     def _on_ticker_update(self, ticker: Ticker):
-        instrument_id = self.instrument_provider.contract_id_to_instrument_id[ticker.contract.conId]
+        instrument_id = self._instrument_provider.contract_id_to_instrument_id[
+            ticker.contract.conId
+        ]
         for tick in ticker.ticks:
             price = str(tick.price)
             size = str(tick.size)

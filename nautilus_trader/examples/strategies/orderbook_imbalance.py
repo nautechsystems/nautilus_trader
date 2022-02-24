@@ -120,6 +120,7 @@ class OrderBookImbalance(TradingStrategy):
         ask_volume = self._book.best_ask_qty()
         if not (bid_volume and ask_volume):
             return
+        self.log.info(f"Book: {self._book.best_bid_price()} @ {self._book.best_ask_price()}")
         smaller = min(bid_volume, ask_volume)
         larger = max(bid_volume, ask_volume)
         ratio = smaller / larger
