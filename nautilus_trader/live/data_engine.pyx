@@ -16,6 +16,8 @@
 import asyncio
 from typing import Optional
 
+from nautilus_trader.live.config import LiveDataEngineConfig
+
 from nautilus_trader.cache.cache cimport Cache
 from nautilus_trader.common.clock cimport LiveClock
 from nautilus_trader.common.logging cimport Logger
@@ -29,8 +31,6 @@ from nautilus_trader.data.messages cimport DataCommand
 from nautilus_trader.data.messages cimport DataRequest
 from nautilus_trader.data.messages cimport DataResponse
 from nautilus_trader.msgbus.bus cimport MessageBus
-
-from nautilus_trader.live.config import LiveDataEngineConfig
 
 
 cdef class LiveDataEngine(DataEngine):

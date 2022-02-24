@@ -66,7 +66,7 @@ class LiveExecEngineConfig(ExecEngineConfig):
 
 class RoutingConfig(pydantic.BaseModel):
     """
-    Configuration for execution client order routing.
+    Configuration for live client message routing.
 
     default : bool
         If the client should be registered as the default routing client
@@ -87,9 +87,12 @@ class LiveDataClientConfig(pydantic.BaseModel):
     ----------
     instrument_provider : InstrumentProviderConfig
         The clients instrument provider configuration.
+    routing : RoutingConfig
+        The clients message routing config.
     """
 
     instrument_provider: InstrumentProviderConfig = InstrumentProviderConfig()
+    routing: RoutingConfig = RoutingConfig()
 
 
 class LiveExecClientConfig(pydantic.BaseModel):
@@ -101,7 +104,7 @@ class LiveExecClientConfig(pydantic.BaseModel):
     instrument_provider : InstrumentProviderConfig
         The clients instrument provider configuration.
     routing : RoutingConfig
-        The clients execution routing config.
+        The clients message routing config.
     """
 
     instrument_provider: InstrumentProviderConfig = InstrumentProviderConfig()

@@ -21,7 +21,7 @@ from nautilus_trader.adapters.binance.config import BinanceDataClientConfig
 from nautilus_trader.adapters.binance.config import BinanceExecClientConfig
 from nautilus_trader.adapters.binance.core.enums import BinanceAccountType
 from nautilus_trader.adapters.binance.factories import BinanceLiveDataClientFactory
-from nautilus_trader.adapters.binance.factories import BinanceLiveExecutionClientFactory
+from nautilus_trader.adapters.binance.factories import BinanceLiveExecClientFactory
 from nautilus_trader.adapters.binance.factories import _get_http_base_url
 from nautilus_trader.adapters.binance.factories import _get_ws_base_url
 from nautilus_trader.cache.cache import Cache
@@ -282,7 +282,7 @@ class TestBinanceFactories:
 
     def test_binance_live_exec_client_factory(self, binance_http_client):
         # Arrange, Act
-        exec_client = BinanceLiveExecutionClientFactory.create(
+        exec_client = BinanceLiveExecClientFactory.create(
             loop=self.loop,
             name="BINANCE",
             config=BinanceExecClientConfig(  # noqa (S106 Possible hardcoded password)

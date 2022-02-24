@@ -21,7 +21,7 @@ which can be used together or separately depending on the users needs.
 - `BinanceDataClient` provides a market data feed manager
 - `BinanceExecutionClient` provides an account management and trade execution gateway
 - `BinanceLiveDataClientFactory` creation factory for Binance data clients (used by the trading node builder)
-- `BinanceLiveExecutionClientFactory` creation factory for Binance execution clients (used by the trading node builder)
+- `BinanceLiveExecClientFactory` creation factory for Binance execution clients (used by the trading node builder)
 
 ```{notes}
 Most users will simply define a configuration for a live trading node (as below), 
@@ -86,7 +86,7 @@ node = TradingNode(config=config)
 
 # Register the client factories with the node
 node.add_data_client_factory("BINANCE", BinanceLiveDataClientFactory)
-node.add_exec_client_factory("BINANCE", BinanceLiveExecutionClientFactory)
+node.add_exec_client_factory("BINANCE", BinanceLiveExecClientFactory)
 
 # Finally build the node
 node.build()

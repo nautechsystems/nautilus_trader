@@ -122,6 +122,7 @@ class TestLiveExecutionReconciliation:
         self.client = MockLiveExecutionClient(
             loop=self.loop,
             client_id=ClientId(SIM.value),
+            venue=SIM,
             account_type=AccountType.CASH,
             base_currency=USD,
             instrument_provider=InstrumentProvider(

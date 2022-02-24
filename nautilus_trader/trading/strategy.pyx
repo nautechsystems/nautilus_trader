@@ -39,14 +39,14 @@ from nautilus_trader.common.logging cimport LogColor
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.message cimport Event
+from nautilus_trader.execution.messages cimport CancelAllOrders
+from nautilus_trader.execution.messages cimport CancelOrder
+from nautilus_trader.execution.messages cimport ModifyOrder
+from nautilus_trader.execution.messages cimport SubmitOrder
+from nautilus_trader.execution.messages cimport SubmitOrderList
 from nautilus_trader.indicators.base.indicator cimport Indicator
 from nautilus_trader.model.c_enums.oms_type cimport OMSTypeParser
 from nautilus_trader.model.c_enums.order_type cimport OrderType
-from nautilus_trader.model.commands.trading cimport CancelAllOrders
-from nautilus_trader.model.commands.trading cimport CancelOrder
-from nautilus_trader.model.commands.trading cimport ModifyOrder
-from nautilus_trader.model.commands.trading cimport SubmitOrder
-from nautilus_trader.model.commands.trading cimport SubmitOrderList
 from nautilus_trader.model.data.bar cimport Bar
 from nautilus_trader.model.data.bar cimport BarType
 from nautilus_trader.model.data.tick cimport QuoteTick
@@ -442,6 +442,7 @@ cdef class TradingStrategy(Actor):
         self,
         Order order,
         PositionId position_id=None,
+        ClientId client_id=None,
     ) except *:
         """
         Submit the given order with optional position ID and routing instructions.
@@ -455,6 +456,9 @@ cdef class TradingStrategy(Actor):
             The order to submit.
         position_id : PositionId, optional
             The position ID to submit the order against.
+        client_id : ClientId, optional
+            The specific client ID for the command.
+            If ``None`` then will be inferred from the venue in the instrument ID.
 
         """
         Condition.not_none(order, "order")
@@ -473,11 +477,12 @@ cdef class TradingStrategy(Actor):
             order,
             self.uuid_factory.generate(),
             self.clock.timestamp_ns(),
+            client_id,
         )
 
         self._send_exec_cmd(command)
 
-    cpdef void submit_order_list(self, OrderList order_list) except *:
+    cpdef void submit_order_list(self, OrderList order_list, ClientId client_id=None) except *:
         """
         Submit the given order list.
 
@@ -488,6 +493,9 @@ cdef class TradingStrategy(Actor):
         ----------
         order_list : OrderList
             The order list to submit.
+        client_id : ClientId, optional
+            The specific client ID for the command. Otherwise will infer.
+            If ``None`` then will be inferred from the venue in the instrument ID.
 
         """
         Condition.not_none(order_list, "order_list")
@@ -507,6 +515,7 @@ cdef class TradingStrategy(Actor):
             order_list,
             self.uuid_factory.generate(),
             self.clock.timestamp_ns(),
+            client_id,
         )
 
         self._send_exec_cmd(command)
@@ -517,6 +526,7 @@ cdef class TradingStrategy(Actor):
         Quantity quantity=None,
         Price price=None,
         Price trigger_price=None,
+        ClientId client_id=None,
     ) except *:
         """
         Modify the given order with optional parameters and routing instructions.
@@ -540,6 +550,9 @@ cdef class TradingStrategy(Actor):
             The updated price for the given order (if applicable).
         trigger_price : Price, optional
             The updated trigger price for the given order (if applicable).
+        client_id : ClientId, optional
+            The specific client ID for the command.
+            If ``None`` then will be inferred from the venue in the instrument ID.
 
         Raises
         ------
@@ -618,11 +631,12 @@ cdef class TradingStrategy(Actor):
             trigger_price,
             self.uuid_factory.generate(),
             self.clock.timestamp_ns(),
+            client_id,
         )
 
         self._send_exec_cmd(command)
 
-    cpdef void cancel_order(self, Order order) except *:
+    cpdef void cancel_order(self, Order order, ClientId client_id=None) except *:
         """
         Cancel the given order with optional routing instructions.
 
@@ -635,6 +649,9 @@ cdef class TradingStrategy(Actor):
         ----------
         order : Order
             The order to cancel.
+        client_id : ClientId, optional
+            The specific client ID for the command.
+            If ``None`` then will be inferred from the venue in the instrument ID.
 
         """
         Condition.not_none(order, "order")
@@ -654,11 +671,12 @@ cdef class TradingStrategy(Actor):
             order.venue_order_id,
             self.uuid_factory.generate(),
             self.clock.timestamp_ns(),
+            client_id,
         )
 
         self._send_exec_cmd(command)
 
-    cpdef void cancel_all_orders(self, InstrumentId instrument_id) except *:
+    cpdef void cancel_all_orders(self, InstrumentId instrument_id, ClientId client_id=None) except *:
         """
         Cancel all orders for this strategy for the given instrument ID.
 
@@ -666,6 +684,9 @@ cdef class TradingStrategy(Actor):
         ----------
         instrument_id : InstrumentId
             The instrument for the orders to cancel.
+        client_id : ClientId, optional
+            The specific client ID for the command.
+            If ``None`` then will be inferred from the venue in the instrument ID.
 
         """
         # instrument_id can be None
@@ -692,11 +713,12 @@ cdef class TradingStrategy(Actor):
             instrument_id,
             self.uuid_factory.generate(),
             self.clock.timestamp_ns(),
+            client_id,
         )
 
         self._send_exec_cmd(command)
 
-    cpdef void flatten_position(self, Position position) except *:
+    cpdef void flatten_position(self, Position position, ClientId client_id=None) except *:
         """
         Flatten the given position.
 
@@ -707,6 +729,9 @@ cdef class TradingStrategy(Actor):
         ----------
         position : Position
             The position to flatten.
+        client_id : ClientId, optional
+            The specific client ID for the command.
+            If ``None`` then will be inferred from the venue in the instrument ID.
 
         """
         Condition.not_none(position, "position")
@@ -742,11 +767,12 @@ cdef class TradingStrategy(Actor):
             order,
             self.uuid_factory.generate(),
             self.clock.timestamp_ns(),
+            client_id,
         )
 
         self._send_exec_cmd(command)
 
-    cpdef void flatten_all_positions(self, InstrumentId instrument_id) except *:
+    cpdef void flatten_all_positions(self, InstrumentId instrument_id, ClientId client_id=None) except *:
         """
         Flatten all positions for the given instrument ID for this strategy.
 
@@ -754,6 +780,9 @@ cdef class TradingStrategy(Actor):
         ----------
         instrument_id : InstrumentId
             The instrument for the positions to flatten.
+        client_id : ClientId, optional
+            The specific client ID for the command.
+            If ``None`` then will be inferred from the venue in the instrument ID.
 
         """
         # instrument_id can be None
@@ -774,7 +803,7 @@ cdef class TradingStrategy(Actor):
 
         cdef Position position
         for position in positions_open:
-            self.flatten_position(position)
+            self.flatten_position(position, client_id)
 
 # -- HANDLERS --------------------------------------------------------------------------------------
 

@@ -26,10 +26,10 @@ from nautilus_trader.common.enums import ComponentState
 from nautilus_trader.common.events.system import ComponentStateChanged
 from nautilus_trader.common.factories import OrderFactory
 from nautilus_trader.core.uuid import UUID4
-from nautilus_trader.model.commands.trading import CancelOrder
-from nautilus_trader.model.commands.trading import ModifyOrder
-from nautilus_trader.model.commands.trading import SubmitOrder
-from nautilus_trader.model.commands.trading import SubmitOrderList
+from nautilus_trader.execution.messages import CancelOrder
+from nautilus_trader.execution.messages import ModifyOrder
+from nautilus_trader.execution.messages import SubmitOrder
+from nautilus_trader.execution.messages import SubmitOrderList
 from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.currencies import USDT
 from nautilus_trader.model.enums import AccountType
@@ -59,6 +59,7 @@ from nautilus_trader.model.events.position import PositionChanged
 from nautilus_trader.model.events.position import PositionClosed
 from nautilus_trader.model.events.position import PositionOpened
 from nautilus_trader.model.identifiers import AccountId
+from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import ClientOrderId
 from nautilus_trader.model.identifiers import ComponentId
 from nautilus_trader.model.identifiers import OrderListId
@@ -497,6 +498,7 @@ class TestMsgPackSerializer:
             order,
             UUID4(),
             0,
+            ClientId("SIM"),
         )
 
         # Act
@@ -524,6 +526,7 @@ class TestMsgPackSerializer:
         )
 
         command = SubmitOrderList(
+            client_id=ClientId("SIM"),
             trader_id=self.trader_id,
             strategy_id=StrategyId("SCALPER-001"),
             order_list=bracket,
@@ -541,7 +544,7 @@ class TestMsgPackSerializer:
         print(b64encode(serialized))
         print(command)
 
-    def test_serialize_and_deserialize_amend_order_commands(self):
+    def test_serialize_and_deserialize_modify_order_commands(self):
         # Arrange
         command = ModifyOrder(
             self.trader_id,
@@ -575,6 +578,7 @@ class TestMsgPackSerializer:
             VenueOrderId("001"),
             UUID4(),
             0,
+            ClientId("SIM-001"),
         )
 
         # Act
@@ -995,7 +999,7 @@ class TestMsgPackSerializer:
         # Assert
         assert deserialized == event
 
-    def test_serialize_and_deserialize_order_amended_events(self):
+    def test_serialize_and_deserialize_order_modify_events(self):
         # Arrange
         event = OrderUpdated(
             self.trader_id,

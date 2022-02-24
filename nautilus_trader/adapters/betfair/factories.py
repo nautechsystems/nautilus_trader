@@ -28,7 +28,7 @@ from nautilus_trader.common.logging import LiveLogger
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.common.logging import LoggerAdapter
 from nautilus_trader.live.factories import LiveDataClientFactory
-from nautilus_trader.live.factories import LiveExecutionClientFactory
+from nautilus_trader.live.factories import LiveExecClientFactory
 from nautilus_trader.model.currency import Currency
 from nautilus_trader.msgbus.bus import MessageBus
 
@@ -198,7 +198,7 @@ class BetfairLiveDataClientFactory(LiveDataClientFactory):
         return data_client
 
 
-class BetfairLiveExecutionClientFactory(LiveExecutionClientFactory):
+class BetfairLiveExecClientFactory(LiveExecClientFactory):
     """
     Provides data and execution clients for Betfair.
     """

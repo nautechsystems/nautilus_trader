@@ -22,8 +22,8 @@ from nautilus_trader.data.client cimport MarketDataClient
 from nautilus_trader.data.messages cimport DataCommand
 from nautilus_trader.data.messages cimport DataRequest
 from nautilus_trader.data.messages cimport DataResponse
-from nautilus_trader.data.messages cimport Subscribe
-from nautilus_trader.data.messages cimport Unsubscribe
+from nautilus_trader.data.messages cimport VenueSubscribe
+from nautilus_trader.data.messages cimport VenueUnsubscribe
 from nautilus_trader.model.data.bar cimport Bar
 from nautilus_trader.model.data.bar cimport BarType
 from nautilus_trader.model.data.base cimport DataType
@@ -34,14 +34,17 @@ from nautilus_trader.model.data.ticker cimport Ticker
 from nautilus_trader.model.data.venue cimport InstrumentClosePrice
 from nautilus_trader.model.data.venue cimport StatusUpdate
 from nautilus_trader.model.identifiers cimport InstrumentId
+from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.model.instruments.base cimport Instrument
 from nautilus_trader.model.orderbook.data cimport OrderBookData
 
 
 cdef class DataEngine(Component):
     cdef Cache _cache
+    cdef DataClient _default_client
 
     cdef dict _clients
+    cdef dict _routing_map
     cdef dict _order_book_intervals
     cdef dict _bar_aggregators
 
@@ -59,8 +62,9 @@ cdef class DataEngine(Component):
 
 # -- REGISTRATION ----------------------------------------------------------------------------------
 
-    cpdef list registered_clients(self)
     cpdef void register_client(self, DataClient client) except *
+    cpdef void register_default_client(self, DataClient client) except *
+    cpdef void register_venue_routing(self, DataClient client, Venue venue) except *
     cpdef void deregister_client(self, DataClient client) except *
 
 # -- ABSTRACT METHODS ------------------------------------------------------------------------------
@@ -91,8 +95,8 @@ cdef class DataEngine(Component):
 # -- COMMAND HANDLERS ------------------------------------------------------------------------------
 
     cdef void _execute_command(self, DataCommand command) except *
-    cdef void _handle_subscribe(self, DataClient client, Subscribe command) except *
-    cdef void _handle_unsubscribe(self, DataClient client, Unsubscribe command) except *
+    cdef void _handle_subscribe(self, DataClient client, VenueSubscribe command) except *
+    cdef void _handle_unsubscribe(self, DataClient client, VenueUnsubscribe command) except *
     cdef void _handle_subscribe_instrument(self, MarketDataClient client, InstrumentId instrument_id) except *
     cdef void _handle_subscribe_order_book_deltas(self, MarketDataClient client, InstrumentId instrument_id, dict metadata) except *  # noqa
     cdef void _handle_subscribe_order_book_snapshots(self, MarketDataClient client, InstrumentId instrument_id, dict metadata) except *  # noqa

@@ -75,6 +75,7 @@ class TestDataClient:
 
         self.client = DataClient(
             client_id=ClientId("TEST_PROVIDER"),
+            venue=self.venue,
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
@@ -152,6 +153,7 @@ class TestMarketDataClient:
 
         self.client = MarketDataClient(
             client_id=ClientId(self.venue.value),
+            venue=self.venue,
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,

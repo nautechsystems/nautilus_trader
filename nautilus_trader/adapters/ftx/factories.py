@@ -30,7 +30,7 @@ from nautilus_trader.common.config import InstrumentProviderConfig
 from nautilus_trader.common.logging import LiveLogger
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.live.factories import LiveDataClientFactory
-from nautilus_trader.live.factories import LiveExecutionClientFactory
+from nautilus_trader.live.factories import LiveExecClientFactory
 from nautilus_trader.msgbus.bus import MessageBus
 
 
@@ -201,7 +201,7 @@ class FTXLiveDataClientFactory(LiveDataClientFactory):
         return data_client
 
 
-class FTXLiveExecutionClientFactory(LiveExecutionClientFactory):
+class FTXLiveExecClientFactory(LiveExecClientFactory):
     """
     Provides an `FTX` live execution client factory.
     """
