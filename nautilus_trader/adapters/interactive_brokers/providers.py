@@ -65,9 +65,7 @@ class InteractiveBrokersInstrumentProvider(InstrumentProvider):
         super().__init__(
             venue=IB_VENUE,
             logger=logger,
-            load_all_on_start=config.load_all,
-            load_ids_on_start=set(config.load_ids) if config.load_ids else None,
-            filters=set(config.filters) if config.filters else None,
+            config=config,
         )
 
         self._client = client
