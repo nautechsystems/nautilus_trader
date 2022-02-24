@@ -145,9 +145,10 @@ class InteractiveBrokersGateway:
 
         if wait is not None:
             for _ in range(wait):
-                if self.is_logged_in:
+                if self.is_logged_in(container=self._container):
                     break
                 else:
+                    self.log.debug("Waiting for IB Gateway to start ..")
                     sleep(1)
             else:
                 raise GatewayLoginFailure

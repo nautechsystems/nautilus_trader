@@ -20,3 +20,5 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
     """
     Provides an execution client for Interactive Brokers TWS API.
     """
+
+    pass

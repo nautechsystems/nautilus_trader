@@ -34,7 +34,7 @@ from nautilus_trader.common.logging import LiveLogger
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.live.config import InstrumentProviderConfig
 from nautilus_trader.live.factories import LiveDataClientFactory
-from nautilus_trader.live.factories import LiveExecutionClientFactory
+from nautilus_trader.live.factories import LiveExecClientFactory
 from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.msgbus.bus import MessageBus
 
@@ -194,7 +194,7 @@ class InteractiveBrokersLiveDataClientFactory(LiveDataClientFactory):
         return data_client
 
 
-class InteractiveBrokersLiveExecutionClientFactory(LiveExecutionClientFactory):
+class InteractiveBrokersLiveExecutionClientFactory(LiveExecClientFactory):
     """
     Provides a `InteractiveBrokers` live execution client factory.
     """

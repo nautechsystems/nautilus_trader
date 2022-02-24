@@ -22,6 +22,7 @@ from nautilus_trader.adapters.interactive_brokers.factories import (
 from nautilus_trader.examples.strategies.orderbook_imbalance import OrderBookImbalance
 from nautilus_trader.examples.strategies.orderbook_imbalance import OrderBookImbalanceConfig
 from nautilus_trader.live.config import InstrumentProviderConfig
+from nautilus_trader.live.config import RoutingConfig
 from nautilus_trader.live.config import TradingNodeConfig
 from nautilus_trader.live.node import TradingNode
 
@@ -41,7 +42,8 @@ config_node = TradingNodeConfig(
             instrument_provider=InstrumentProviderConfig(
                 filters=tuple({"pair": "EURUSD"}.items()),
                 load_ids=(("EURUSD.IDEALPRO",)),
-            )
+            ),
+            routing=RoutingConfig(venues={"IDEALPRO"}),
         ),
     },
     # exec_clients={

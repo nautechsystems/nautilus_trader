@@ -86,6 +86,7 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
         super().__init__(
             loop=loop,
             client_id=ClientId(IB_VENUE.value),
+            venue=None,
             instrument_provider=instrument_provider,
             msgbus=msgbus,
             cache=cache,
