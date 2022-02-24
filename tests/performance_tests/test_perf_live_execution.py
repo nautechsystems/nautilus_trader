@@ -21,10 +21,10 @@ from nautilus_trader.backtest.data.providers import TestInstrumentProvider
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.common.uuid import UUIDFactory
+from nautilus_trader.execution.messages import SubmitOrder
 from nautilus_trader.live.data_engine import LiveDataEngine
 from nautilus_trader.live.execution_engine import LiveExecutionEngine
 from nautilus_trader.live.risk_engine import LiveRiskEngine
-from nautilus_trader.model.commands.trading import SubmitOrder
 from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.identifiers import AccountId
@@ -98,6 +98,7 @@ class TestLiveExecutionPerformance(PerformanceHarness):
 
         self.exec_client = MockExecutionClient(
             client_id=ClientId("BINANCE"),
+            venue=BINANCE,
             account_type=AccountType.CASH,
             base_currency=None,  # Multi-currency account
             msgbus=self.msgbus,
@@ -141,6 +142,7 @@ class TestLiveExecutionPerformance(PerformanceHarness):
         )
 
         command = SubmitOrder(
+            None,
             self.trader_id,
             self.strategy.id,
             None,

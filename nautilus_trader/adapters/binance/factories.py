@@ -31,7 +31,7 @@ from nautilus_trader.common.config import InstrumentProviderConfig
 from nautilus_trader.common.logging import LiveLogger
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.live.factories import LiveDataClientFactory
-from nautilus_trader.live.factories import LiveExecutionClientFactory
+from nautilus_trader.live.factories import LiveExecClientFactory
 from nautilus_trader.msgbus.bus import MessageBus
 
 
@@ -217,7 +217,7 @@ class BinanceLiveDataClientFactory(LiveDataClientFactory):
         return data_client
 
 
-class BinanceLiveExecutionClientFactory(LiveExecutionClientFactory):
+class BinanceLiveExecClientFactory(LiveExecClientFactory):
     """
     Provides a `Binance` live execution client factory.
     """

@@ -19,7 +19,7 @@ from decimal import Decimal
 from nautilus_trader.adapters.ftx.config import FTXDataClientConfig
 from nautilus_trader.adapters.ftx.config import FTXExecClientConfig
 from nautilus_trader.adapters.ftx.factories import FTXLiveDataClientFactory
-from nautilus_trader.adapters.ftx.factories import FTXLiveExecutionClientFactory
+from nautilus_trader.adapters.ftx.factories import FTXLiveExecClientFactory
 from nautilus_trader.examples.strategies.ema_cross_stop_entry_trail import EMACrossStopEntryTrail
 from nautilus_trader.examples.strategies.ema_cross_stop_entry_trail import (
     EMACrossStopEntryTrailConfig,
@@ -86,7 +86,7 @@ node.trader.add_strategy(strategy)
 
 # Register your client factories with the node (can take user defined factories)
 node.add_data_client_factory("FTX", FTXLiveDataClientFactory)
-node.add_exec_client_factory("FTX", FTXLiveExecutionClientFactory)
+node.add_exec_client_factory("FTX", FTXLiveExecClientFactory)
 node.build()
 
 

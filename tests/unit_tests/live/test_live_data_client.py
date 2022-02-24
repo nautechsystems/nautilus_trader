@@ -68,6 +68,7 @@ class TestLiveDataClientTests:
         self.client = LiveDataClient(
             loop=self.loop,
             client_id=ClientId("BLOOMBERG"),
+            venue=None,  # Multi-venue
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
@@ -117,6 +118,7 @@ class TestLiveMarketDataClientTests:
         self.client = LiveMarketDataClient(
             loop=self.loop,
             client_id=ClientId(BINANCE.value),
+            venue=BINANCE,
             instrument_provider=InstrumentProvider(
                 venue=Venue("SIM"),
                 logger=self.logger,

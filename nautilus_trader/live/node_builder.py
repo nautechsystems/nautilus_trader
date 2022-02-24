@@ -24,7 +24,7 @@ from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.live.data_engine import LiveDataEngine
 from nautilus_trader.live.execution_engine import LiveExecutionEngine
 from nautilus_trader.live.factories import LiveDataClientFactory
-from nautilus_trader.live.factories import LiveExecutionClientFactory
+from nautilus_trader.live.factories import LiveExecClientFactory
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.msgbus.bus import MessageBus
 
@@ -75,7 +75,7 @@ class TradingNodeBuilder:
         self._exec_engine = exec_engine
 
         self._data_factories: Dict[str, LiveDataClientFactory] = {}
-        self._exec_factories: Dict[str, LiveExecutionClientFactory] = {}
+        self._exec_factories: Dict[str, LiveExecClientFactory] = {}
 
     def add_data_client_factory(self, name: str, factory):
         """
@@ -85,7 +85,7 @@ class TradingNodeBuilder:
         ----------
         name : str
             The name of the client.
-        factory : LiveDataClientFactory or LiveExecutionClientFactory
+        factory : LiveDataClientFactory or LiveExecClientFactory
             The factory to add.
 
         Raises
@@ -114,7 +114,7 @@ class TradingNodeBuilder:
         ----------
         name : str
             The name of the client.
-        factory : LiveDataClientFactory or LiveExecutionClientFactory
+        factory : LiveDataClientFactory or LiveExecClientFactory
             The factory to add.
 
         Raises
@@ -129,10 +129,8 @@ class TradingNodeBuilder:
         PyCondition.not_none(factory, "factory")
         PyCondition.not_in(name, self._exec_factories, "name", "self._exec_factories")
 
-        if not issubclass(factory, LiveExecutionClientFactory):
-            self._log.error(
-                f"Factory was not of type `LiveExecutionClientFactory` " f"was {factory}."
-            )
+        if not issubclass(factory, LiveExecClientFactory):
+            self._log.error(f"Factory was not of type `LiveExecClientFactory` " f"was {factory}.")
             return
 
         self._exec_factories[name] = factory
@@ -167,6 +165,17 @@ class TradingNodeBuilder:
             )
 
             self._data_engine.register_client(client)
+
+            # Default client config
+            if client_config.routing.default:
+                self._data_engine.register_default_client(client)
+
+            # Venue routing config
+            venues = client_config.routing.venues or []
+            for venue in venues:
+                if not isinstance(venue, Venue):
+                    venue = Venue(venue)
+                self._data_engine.register_venue_routing(client, venue)
 
     def build_exec_clients(self, config: Dict):
         """

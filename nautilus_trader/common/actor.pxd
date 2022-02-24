@@ -93,14 +93,15 @@ cdef class Actor(Component):
 # -- SUBSCRIPTIONS ---------------------------------------------------------------------------------
 
     cpdef void subscribe_data(self, DataType data_type, ClientId client_id=*) except *
-    cpdef void subscribe_instruments(self, Venue venue) except *
-    cpdef void subscribe_instrument(self, InstrumentId instrument_id) except *
+    cpdef void subscribe_instruments(self, Venue venue, ClientId client_id=*) except *
+    cpdef void subscribe_instrument(self, InstrumentId instrument_id, ClientId client_id=*) except *
     cpdef void subscribe_order_book_deltas(
         self,
         InstrumentId instrument_id,
         BookType book_type=*,
         int depth=*,
         dict kwargs=*,
+        ClientId client_id= *
     ) except *
     cpdef void subscribe_order_book_snapshots(
         self,
@@ -109,23 +110,25 @@ cdef class Actor(Component):
         int depth=*,
         int interval_ms=*,
         dict kwargs=*,
+        ClientId client_id= *
     ) except *
-    cpdef void subscribe_ticker(self, InstrumentId instrument_id) except *
-    cpdef void subscribe_quote_ticks(self, InstrumentId instrument_id) except *
-    cpdef void subscribe_trade_ticks(self, InstrumentId instrument_id) except *
-    cpdef void subscribe_bars(self, BarType bar_type) except *
-    cpdef void subscribe_venue_status_updates(self, Venue venue) except *
-    cpdef void subscribe_instrument_status_updates(self, InstrumentId instrument_id) except *
-    cpdef void subscribe_instrument_close_prices(self, InstrumentId instrument_id) except *
+    cpdef void subscribe_ticker(self, InstrumentId instrument_id, ClientId client_id=*) except *
+    cpdef void subscribe_quote_ticks(self, InstrumentId instrument_id, ClientId client_id=*) except *
+    cpdef void subscribe_trade_ticks(self, InstrumentId instrument_id, ClientId client_id=*) except *
+    cpdef void subscribe_bars(self, BarType bar_type, ClientId client_id=*) except *
+    cpdef void subscribe_venue_status_updates(self, Venue venue, ClientId client_id=*) except *
+    cpdef void subscribe_instrument_status_updates(self, InstrumentId instrument_id, ClientId client_id=*) except *
+    cpdef void subscribe_instrument_close_prices(self, InstrumentId instrument_id, ClientId client_id=*) except *
     cpdef void unsubscribe_data(self, DataType data_type, ClientId client_id=*) except *
-    cpdef void unsubscribe_instruments(self, Venue venue) except *
-    cpdef void unsubscribe_instrument(self, InstrumentId instrument_id) except *
-    cpdef void unsubscribe_order_book_deltas(self, InstrumentId instrument_id) except *
-    cpdef void unsubscribe_order_book_snapshots(self, InstrumentId instrument_id, int interval_ms=*) except *
-    cpdef void unsubscribe_ticker(self, InstrumentId instrument_id) except *
-    cpdef void unsubscribe_quote_ticks(self, InstrumentId instrument_id) except *
-    cpdef void unsubscribe_trade_ticks(self, InstrumentId instrument_id) except *
-    cpdef void unsubscribe_bars(self, BarType bar_type) except *
+    cpdef void unsubscribe_instruments(self, Venue venue, ClientId client_id=*) except *
+    cpdef void unsubscribe_instrument(self, InstrumentId instrument_id, ClientId client_id=*) except *
+    cpdef void unsubscribe_order_book_deltas(self, InstrumentId instrument_id, ClientId client_id=*) except *
+    cpdef void unsubscribe_order_book_snapshots(self, InstrumentId instrument_id, int interval_ms=*, ClientId client_id=*) except *
+    cpdef void unsubscribe_ticker(self, InstrumentId instrument_id, ClientId client_id=*) except *
+    cpdef void unsubscribe_quote_ticks(self, InstrumentId instrument_id, ClientId client_id=*) except *
+    cpdef void unsubscribe_trade_ticks(self, InstrumentId instrument_id, ClientId client_id=*) except *
+    cpdef void unsubscribe_bars(self, BarType bar_type, ClientId client_id=*) except *
+    cpdef void unsubscribe_venue_status_updates(self, Venue venue, ClientId client_id=*) except *
     cpdef void publish_data(self, DataType data_type, Data data) except *
 
 # -- REQUESTS --------------------------------------------------------------------------------------
@@ -136,18 +139,21 @@ cdef class Actor(Component):
         InstrumentId instrument_id,
         datetime from_datetime=*,
         datetime to_datetime=*,
+        ClientId client_id=*,
     ) except *
     cpdef void request_trade_ticks(
         self,
         InstrumentId instrument_id,
         datetime from_datetime=*,
         datetime to_datetime=*,
+        ClientId client_id= *,
     ) except *
     cpdef void request_bars(
         self,
         BarType bar_type,
         datetime from_datetime=*,
         datetime to_datetime=*,
+        ClientId client_id= *,
     ) except *
 
 # -- HANDLERS --------------------------------------------------------------------------------------

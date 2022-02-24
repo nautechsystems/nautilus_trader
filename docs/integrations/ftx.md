@@ -19,7 +19,7 @@ which can be used together or separately depending on the users needs.
 - `FTXDataClient` provides a market data feed manager
 - `FTXExecutionClient` provides an account management and trade execution gateway
 - `FTXLiveDataClientFactory` creation factory for FTX data clients (used by the trading node builder)
-- `FTXLiveExecutionClientFactory` creation factory for FTX execution clients (used by the trading node builder)
+- `FTXLiveExecClientFactory` creation factory for FTX execution clients (used by the trading node builder)
 
 ```{notes}
 Most users will simply define a configuration for a live trading node (as below), 
@@ -69,7 +69,7 @@ node = TradingNode(config=config)
 
 # Register the client factories with the node
 node.add_data_client_factory("FTX", FTXLiveDataClientFactory)
-node.add_exec_client_factory("FTX", FTXLiveExecutionClientFactory)
+node.add_exec_client_factory("FTX", FTXLiveExecClientFactory)
 
 # Finally build the node
 node.build()

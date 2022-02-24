@@ -18,6 +18,7 @@ from nautilus_trader.core.message cimport Request
 from nautilus_trader.core.message cimport Response
 from nautilus_trader.model.data.base cimport DataType
 from nautilus_trader.model.identifiers cimport ClientId
+from nautilus_trader.model.identifiers cimport Venue
 
 
 cdef class DataCommand(Command):
@@ -49,3 +50,26 @@ cdef class DataResponse(Response):
     """The response data type.\n\n:returns: `type`"""
     cdef readonly object data
     """The response data.\n\n:returns: `object`"""
+
+
+cdef class VenueDataCommand(DataCommand):
+    cdef readonly Venue venue
+    """The venue for the command.\n\n:returns: `Venue`"""
+
+
+cdef class VenueSubscribe(VenueDataCommand):
+    pass
+
+
+cdef class VenueUnsubscribe(VenueDataCommand):
+    pass
+
+
+cdef class VenueDataRequest(DataRequest):
+    cdef readonly Venue venue
+    """The venue for the command.\n\n:returns: `Venue`"""
+
+
+cdef class VenueDataResponse(DataResponse):
+    cdef readonly Venue venue
+    """The venue for the command.\n\n:returns: `Venue`"""

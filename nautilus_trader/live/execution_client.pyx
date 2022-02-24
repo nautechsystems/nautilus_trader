@@ -36,6 +36,7 @@ from nautilus_trader.model.c_enums.oms_type cimport OMSType
 from nautilus_trader.model.currency cimport Currency
 from nautilus_trader.model.identifiers cimport ClientId
 from nautilus_trader.model.identifiers cimport InstrumentId
+from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.model.identifiers cimport VenueOrderId
 from nautilus_trader.msgbus.bus cimport MessageBus
 
@@ -50,6 +51,8 @@ cdef class LiveExecutionClient(ExecutionClient):
         The event loop for the client.
     client_id : ClientId
         The client ID.
+    venue : Venue, optional
+        The client venue. If multi-venue then can be ``None``.
     instrument_provider : InstrumentProvider
         The instrument provider for the client.
     account_type : AccountType
@@ -81,6 +84,7 @@ cdef class LiveExecutionClient(ExecutionClient):
         self,
         loop not None: asyncio.AbstractEventLoop,
         ClientId client_id not None,
+        Venue venue,  # Can be None
         OMSType oms_type,
         AccountType account_type,
         Currency base_currency,  # Can be None
@@ -93,6 +97,7 @@ cdef class LiveExecutionClient(ExecutionClient):
     ):
         super().__init__(
             client_id=client_id,
+            venue=venue,
             oms_type=oms_type,
             account_type=account_type,
             base_currency=base_currency,
