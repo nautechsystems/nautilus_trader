@@ -20,7 +20,7 @@ from nautilus_trader.adapters.binance.config import BinanceDataClientConfig
 from nautilus_trader.adapters.binance.config import BinanceExecClientConfig
 from nautilus_trader.adapters.binance.core.enums import BinanceAccountType
 from nautilus_trader.adapters.binance.factories import BinanceLiveDataClientFactory
-from nautilus_trader.adapters.binance.factories import BinanceLiveExecutionClientFactory
+from nautilus_trader.adapters.binance.factories import BinanceLiveExecClientFactory
 from nautilus_trader.examples.strategies.volatility_market_maker import VolatilityMarketMaker
 from nautilus_trader.examples.strategies.volatility_market_maker import VolatilityMarketMakerConfig
 from nautilus_trader.infrastructure.config import CacheDatabaseConfig
@@ -91,7 +91,7 @@ node.trader.add_strategy(strategy)
 
 # Register your client factories with the node (can take user defined factories)
 node.add_data_client_factory("BINANCE", BinanceLiveDataClientFactory)
-node.add_exec_client_factory("BINANCE", BinanceLiveExecutionClientFactory)
+node.add_exec_client_factory("BINANCE", BinanceLiveExecClientFactory)
 node.build()
 
 

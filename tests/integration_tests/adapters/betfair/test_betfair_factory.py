@@ -23,7 +23,7 @@ from nautilus_trader.adapters.betfair.common import BETFAIR_VENUE
 from nautilus_trader.adapters.betfair.data import BetfairDataClient
 from nautilus_trader.adapters.betfair.execution import BetfairExecutionClient
 from nautilus_trader.adapters.betfair.factories import BetfairLiveDataClientFactory
-from nautilus_trader.adapters.betfair.factories import BetfairLiveExecutionClientFactory
+from nautilus_trader.adapters.betfair.factories import BetfairLiveExecClientFactory
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.logging import LiveLogger
 from nautilus_trader.common.logging import LoggerAdapter
@@ -82,7 +82,7 @@ class TestBetfairFactory:
                 clock=self.clock,
                 logger=self.logger,
             )
-            exec_client = BetfairLiveExecutionClientFactory.create(
+            exec_client = BetfairLiveExecClientFactory.create(
                 loop=asyncio.get_event_loop(),
                 name=BETFAIR_VENUE.value,
                 config=exec_config,

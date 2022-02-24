@@ -40,6 +40,8 @@ cdef class DataClient(Component):
     ----------
     client_id : ClientId
         The data client ID.
+    venue : Venue, optional
+        The client venue. If multi-venue then can be ``None``.
     msgbus : MessageBus
         The message bus for the client.
     clock : Clock
@@ -57,6 +59,7 @@ cdef class DataClient(Component):
     def __init__(
         self,
         ClientId client_id not None,
+        Venue venue,  # Can be None
         MessageBus msgbus not None,
         Cache cache not None,
         Clock clock not None,
@@ -75,6 +78,8 @@ cdef class DataClient(Component):
         )
 
         self._cache = cache
+
+        self.venue = venue
 
         # Subscriptions
         self._subscriptions_generic = set()  # type: set[DataType]
@@ -184,7 +189,9 @@ cdef class MarketDataClient(DataClient):
     Parameters
     ----------
     client_id : ClientId
-        The data client ID (normally the venue).
+        The data client ID.
+    venue : Venue, optional
+        The client venue. If multi-venue then can be ``None``.
     msgbus : MessageBus
         The message bus for the client.
     cache : Cache
@@ -204,6 +211,7 @@ cdef class MarketDataClient(DataClient):
     def __init__(
         self,
         ClientId client_id not None,
+        Venue venue,  # Can be None
         MessageBus msgbus not None,
         Cache cache not None,
         Clock clock not None,
@@ -212,6 +220,7 @@ cdef class MarketDataClient(DataClient):
     ):
         super().__init__(
             client_id=client_id,
+            venue=venue,
             msgbus=msgbus,
             cache=cache,
             clock=clock,

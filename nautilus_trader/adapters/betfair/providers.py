@@ -14,7 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 import time
-from typing import Dict, FrozenSet, List, Optional, Set
+from typing import Dict, List, Optional, Set
 
 import pandas as pd
 
@@ -26,6 +26,7 @@ from nautilus_trader.adapters.betfair.parsing import parse_handicap
 from nautilus_trader.adapters.betfair.util import chunk
 from nautilus_trader.adapters.betfair.util import flatten_tree
 from nautilus_trader.common.clock import LiveClock
+from nautilus_trader.common.config import InstrumentProviderConfig
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.common.providers import InstrumentProvider
 from nautilus_trader.model.identifiers import InstrumentId
@@ -42,28 +43,27 @@ class BetfairInstrumentProvider(InstrumentProvider):
         The client for the provider.
     logger : Logger
         The logger for the provider.
-    load_all_on_start : bool, default False
-        If all venue instruments should be loaded on start.
-    load_ids_on_start : List[str], optional
-        The list of instrument IDs to be loaded on start (if `load_all_instruments` is False).
-    filters : Dict, optional
-        The venue specific instrument loading filters to apply.
+    config : InstrumentProviderConfig, optional
+        The configuration for the provider.
     """
 
     def __init__(
         self,
         client: BetfairClient,
         logger: Logger,
-        load_all_on_start: bool = True,
-        load_ids_on_start: Optional[FrozenSet[str]] = None,
         filters: Optional[Dict] = None,
+        config: Optional[InstrumentProviderConfig] = None,
     ):
+        if config is None:
+            config = InstrumentProviderConfig(
+                load_all_on_start=True,
+                load_ids_on_start=None,
+                filters=filters,
+            )
         super().__init__(
             venue=BETFAIR_VENUE,
             logger=logger,
-            load_all_on_start=load_all_on_start,
-            load_ids_on_start=load_ids_on_start,
-            filters=filters,
+            config=config,
         )
 
         self._client = client

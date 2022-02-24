@@ -14,12 +14,13 @@
 # -------------------------------------------------------------------------------------------------
 
 import time
-from typing import Any, Dict, FrozenSet, List, Optional
+from typing import Any, Dict, List, Optional
 
 from nautilus_trader.adapters.ftx.core.constants import FTX_VENUE
 from nautilus_trader.adapters.ftx.http.client import FTXHttpClient
 from nautilus_trader.adapters.ftx.http.error import FTXClientError
 from nautilus_trader.adapters.ftx.parsing.common import parse_instrument
+from nautilus_trader.common.config import InstrumentProviderConfig
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.common.providers import InstrumentProvider
 from nautilus_trader.core.correctness import PyCondition
@@ -37,22 +38,20 @@ class FTXInstrumentProvider(InstrumentProvider):
         The client for the provider.
     logger : Logger
         The logger for the provider.
+    config : InstrumentProviderConfig, optional
+        The configuration for the provider.
     """
 
     def __init__(
         self,
         client: FTXHttpClient,
         logger: Logger,
-        load_all_on_start: bool = True,
-        load_ids_on_start: Optional[FrozenSet[str]] = None,
-        filters: Optional[Dict] = None,
+        config: Optional[InstrumentProviderConfig] = None,
     ):
         super().__init__(
             venue=FTX_VENUE,
             logger=logger,
-            load_all_on_start=load_all_on_start,
-            load_ids_on_start=load_ids_on_start,
-            filters=filters,
+            config=config,
         )
 
         self._client = client

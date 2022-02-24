@@ -1066,7 +1066,7 @@ cdef class BacktestEngine:
             self._log.info("\033[36m-----------------------------------------------------------------")
 
     def _add_data_client_if_not_exists(self, ClientId client_id) -> None:
-        if client_id not in self._data_engine.registered_clients():
+        if client_id not in self._data_engine.registered_clients:
             client = BacktestDataClient(
                 client_id=client_id,
                 msgbus=self._msgbus,
@@ -1079,7 +1079,7 @@ cdef class BacktestEngine:
     def _add_market_data_client_if_not_exists(self, Venue venue) -> None:
         # TODO(cs): Assumption that client_id = venue
         cdef ClientId client_id = ClientId(venue.value)
-        if client_id not in self._data_engine.registered_clients():
+        if client_id not in self._data_engine.registered_clients:
             client = BacktestMarketDataClient(
                 client_id=client_id,
                 msgbus=self._msgbus,

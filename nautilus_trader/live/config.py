@@ -13,13 +13,14 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from typing import Any, Dict, FrozenSet, Optional, Tuple
+from typing import Dict, FrozenSet, Optional
 
 import pydantic
 from pydantic import PositiveFloat
 from pydantic import PositiveInt
 
 from nautilus_trader.cache.config import CacheConfig
+from nautilus_trader.common.config import InstrumentProviderConfig
 from nautilus_trader.data.config import DataEngineConfig
 from nautilus_trader.execution.config import ExecEngineConfig
 from nautilus_trader.infrastructure.config import CacheDatabaseConfig
@@ -63,23 +64,19 @@ class LiveExecEngineConfig(ExecEngineConfig):
     qsize: PositiveInt = 10000
 
 
-class InstrumentProviderConfig(pydantic.BaseModel):
+class RoutingConfig(pydantic.BaseModel):
     """
-    Configuration for ``InstrumentProvider`` instances.
+    Configuration for live client message routing.
 
-    Parameters
-    ----------
-    load_all : bool, default False
-        If all venue instruments should be loaded on start.
-    load_ids : FrozenSet[str], optional
-        The list of instrument IDs to be loaded on start (if `load_all_instruments` is False).
-    filters : [FrozenSet[Tuple[str, Any]], optional
-        The venue specific instrument loading filters to apply.
+    default : bool
+        If the client should be registered as the default routing client
+        (when a specific venue routing cannot be found).
+    venues : List[str], optional
+        The venues to register for routing.
     """
 
-    load_all: bool = False
-    load_ids: Optional[FrozenSet[str]] = None
-    filters: Optional[FrozenSet[Tuple[str, Any]]] = None
+    default: bool = False
+    venues: Optional[FrozenSet[str]] = None
 
     def __hash__(self):  # make hashable BaseModel subclass
         return hash((type(self),) + tuple(self.__dict__.values()))
@@ -93,9 +90,12 @@ class LiveDataClientConfig(pydantic.BaseModel):
     ----------
     instrument_provider : InstrumentProviderConfig
         The clients instrument provider configuration.
+    routing : RoutingConfig
+        The clients message routing config.
     """
 
     instrument_provider: InstrumentProviderConfig = InstrumentProviderConfig()
+    routing: RoutingConfig = RoutingConfig()
 
 
 class LiveExecClientConfig(pydantic.BaseModel):
@@ -106,9 +106,12 @@ class LiveExecClientConfig(pydantic.BaseModel):
     ----------
     instrument_provider : InstrumentProviderConfig
         The clients instrument provider configuration.
+    routing : RoutingConfig
+        The clients message routing config.
     """
 
     instrument_provider: InstrumentProviderConfig = InstrumentProviderConfig()
+    routing: RoutingConfig = RoutingConfig()
 
 
 class TradingNodeConfig(pydantic.BaseModel):

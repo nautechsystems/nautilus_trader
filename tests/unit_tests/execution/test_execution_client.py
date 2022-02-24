@@ -71,6 +71,7 @@ class TestExecutionClient:
 
         self.client = ExecutionClient(
             client_id=ClientId(self.venue.value),
+            venue=self.venue,
             oms_type=OMSType.HEDGING,
             account_type=AccountType.MARGIN,
             base_currency=USD,
@@ -93,6 +94,7 @@ class TestExecutionClient:
         # Arrange
         client = ExecutionClient(
             client_id=ClientId("IB"),
+            venue=None,  # Multi-venue
             oms_type=OMSType.HEDGING,
             account_type=AccountType.MARGIN,
             base_currency=USD,

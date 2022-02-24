@@ -225,3 +225,235 @@ cdef class DataResponse(Response):
             f"correlation_id={self.correlation_id}, "
             f"id={self.id})"
         )
+
+
+cdef class VenueDataCommand(DataCommand):
+    """
+    The abstract base class for all venue data commands.
+
+    Parameters
+    ----------
+    client_id : ClientId
+        The data client ID for the command.
+    venue : Venue, optional
+        The venue for the command.
+    data_type : type
+        The data type for the command.
+    command_id : UUID4
+        The command ID.
+    ts_init : int64
+        The UNIX timestamp (nanoseconds) when the object was initialized.
+
+    Warnings
+    --------
+    This class should not be used directly, but through a concrete subclass.
+    """
+
+    def __init__(
+        self,
+        ClientId client_id,  # Can be None
+        Venue venue not None,
+        DataType data_type not None,
+        UUID4 command_id not None,
+        int64_t ts_init,
+    ):
+        super().__init__(
+            client_id or ClientId(venue.value),
+            data_type,
+            command_id,
+            ts_init,
+        )
+
+        self.venue = venue
+
+    def __str__(self) -> str:
+        return f"{type(self).__name__}({self.data_type})"
+
+    def __repr__(self) -> str:
+        return (
+            f"{type(self).__name__}("
+            f"client_id={self.client_id.value}, "
+            f"venue={self.venue}, "
+            f"data_type={self.data_type}, "
+            f"id={self.id})"
+        )
+
+
+cdef class VenueSubscribe(VenueDataCommand):
+    """
+    Represents a command to subscribe to data.
+
+    Parameters
+    ----------
+    client_id : ClientId
+        The data client ID for the command.
+    venue : Venue, optional
+        The venue for the command.
+    data_type : type
+        The data type for the subscription.
+    command_id : UUID4
+        The command ID.
+    ts_init : int64
+        The UNIX timestamp (nanoseconds) when the object was initialized.
+    """
+
+    def __init__(
+        self,
+        ClientId client_id,  # Can be None
+        Venue venue not None,
+        DataType data_type not None,
+        UUID4 command_id not None,
+        int64_t ts_init,
+    ):
+        super().__init__(
+            client_id,
+            venue,
+            data_type,
+            command_id,
+            ts_init,
+        )
+
+
+cdef class VenueUnsubscribe(VenueDataCommand):
+    """
+    Represents a command to unsubscribe from data.
+
+    Parameters
+    ----------
+    client_id : ClientId
+        The data client ID for the command.
+    venue : Venue, optional
+        The venue for the command.
+    data_type : type
+        The data type to unsubscribe from.
+    command_id : UUID4
+        The command ID.
+    ts_init : int64
+        The UNIX timestamp (nanoseconds) when the object was initialized.
+    """
+
+    def __init__(
+        self,
+        ClientId client_id,  # Can be None
+        Venue venue not None,
+        DataType data_type not None,
+        UUID4 command_id not None,
+        int64_t ts_init,
+    ):
+        super().__init__(
+            client_id,
+            venue,
+            data_type,
+            command_id,
+            ts_init,
+        )
+
+
+cdef class VenueDataRequest(DataRequest):
+    """
+    Represents a request for data.
+
+    Parameters
+    ----------
+    client_id : ClientId
+        The data client ID for the request.
+    venue : Venue, optional
+        The venue for the command.
+    data_type : type
+        The data type for the request.
+    callback : Callable[[Any], None]
+        The delegate to call with the data.
+    request_id : UUID4
+        The request ID.
+    ts_init : int64
+        The UNIX timestamp (nanoseconds) when the object was initialized.
+    """
+
+    def __init__(
+        self,
+        ClientId client_id,  # Can be None
+        Venue venue not None,
+        DataType data_type not None,
+        callback not None: Callable[[Any], None],
+        UUID4 request_id not None,
+        int64_t ts_init,
+    ):
+        super().__init__(
+            client_id or ClientId(venue.value),
+            data_type,
+            callback,
+            request_id,
+            ts_init,
+        )
+
+        self.venue = venue
+
+    def __str__(self) -> str:
+        return f"{type(self).__name__}({self.data_type})"
+
+    def __repr__(self) -> str:
+        return (
+            f"{type(self).__name__}("
+            f"client_id={self.client_id.value}, "
+            f"venue={self.venue}, "
+            f"data_type={self.data_type}, "
+            f"callback={self.callback}, "
+            f"id={self.id})"
+        )
+
+
+cdef class VenueDataResponse(DataResponse):
+    """
+    Represents a response with data.
+
+    Parameters
+    ----------
+    client_id : ClientId
+        The data client ID of the response.
+    venue : Venue, optional
+        The venue for the command.
+    data_type : type
+        The data type of the response.
+    data : object
+        The data of the response.
+    correlation_id : UUID4
+        The correlation ID.
+    response_id : UUID4
+        The response ID.
+    ts_init : int64
+        The UNIX timestamp (nanoseconds) when the object was initialized.
+    """
+
+    def __init__(
+        self,
+        ClientId client_id,  # Can be None
+        Venue venue not None,
+        DataType data_type not None,
+        data not None,
+        UUID4 correlation_id not None,
+        UUID4 response_id not None,
+        int64_t ts_init,
+    ):
+        super().__init__(
+            client_id or ClientId(venue.value),
+            data_type,
+            data,
+            correlation_id,
+            response_id,
+            ts_init,
+        )
+
+        self.venue = venue
+
+    def __str__(self) -> str:
+        return f"{type(self).__name__}({self.data_type})"
+
+    def __repr__(self) -> str:
+        return (
+            f"{type(self).__name__}("
+            f"client_id={self.client_id.value}, "
+            f"venue={self.venue}, "
+            f"data_type={self.data_type}, "
+            f"correlation_id={self.correlation_id}, "
+            f"id={self.id})"
+        )
