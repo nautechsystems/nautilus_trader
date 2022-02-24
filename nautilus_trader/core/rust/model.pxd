@@ -36,14 +36,6 @@ cdef extern from "../includes/model.h":
         Symbol symbol;
         Venue venue;
 
-    cdef struct Price_t:
-        int64_t value;
-        uint8_t precision;
-
-    cdef struct Quantity_t:
-        uint64_t value;
-        uint8_t precision;
-
     cdef struct Ladder:
         OrderSide side;
         BTreeMap_BookPrice__Level *levels;
@@ -57,21 +49,33 @@ cdef extern from "../includes/model.h":
         OrderSide last_side;
         int64_t ts_last;
 
-    Symbol symbol_new(uint8_t *ptr, uintptr_t length);
+    cdef struct Price_t:
+        int64_t value;
+        uint8_t precision;
 
-    void symbol_free(Symbol s);
+    cdef struct Quantity_t:
+        uint64_t value;
+        uint8_t precision;
 
-    const uint8_t *symbol_as_utf8(Symbol s);
+    # Expects `ptr` to be an array of valid UTF-8 chars with a null byte terminator.
+    Symbol symbol_from_cstring(const char *ptr);
 
-    Venue venue_new(uint8_t *ptr, uintptr_t length);
+    const char *symbol_to_cstring(Symbol symbol);
 
-    void venue_free(Venue v);
+    void symbol_free(Symbol symbol);
 
-    const uint8_t *venue_as_utf8(Venue v);
+    # Expects `ptr` to be an array of valid UTF-8 chars with a null byte terminator.
+    Venue venue_from_cstring(const char *ptr);
 
-    void instrument_id_free(InstrumentId id);
+    const char *venue_to_cstring(Venue venue);
 
-    const uint8_t *instrument_id_as_utf8(InstrumentId id);
+    void venue_free(Venue venue);
+
+    const char *instrument_id_to_cstring(InstrumentId instrument_id);
+
+    void instrument_id_free(InstrumentId instrument_id);
+
+    OrderBook order_book_new(InstrumentId instrument_id, BookLevel book_level);
 
     Price_t price_new(double value, uint8_t precision);
 
@@ -96,5 +100,3 @@ cdef extern from "../includes/model.h":
     void quantity_sub_assign(Quantity_t a, Quantity_t b);
 
     void quantity_sub_assign_u64(Quantity_t a, uint64_t b);
-
-    OrderBook order_book_new(InstrumentId instrument_id, BookLevel book_level);

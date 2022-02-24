@@ -15,5 +15,3 @@ header = '"../includes/core.h"'
 
 [export.rename]
 "UUID4" = "UUID4_t"
-"PyString" = "str"
-"Py<PyString>" = "str"

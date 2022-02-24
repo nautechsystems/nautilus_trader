@@ -11,8 +11,17 @@
 //  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 //  See the License for the specific language governing permissions and
 //  limitations under the License.
-// -------------------------------------------------------------------------------------------------
+// ------------------------------------------------------------------------------------------------
 
-pub mod text;
-pub mod time;
-pub mod uuid;
+use crate::enums::BookLevel;
+use crate::identifiers::instrument_id::InstrumentId;
+use crate::orderbook::book::OrderBook;
+
+////////////////////////////////////////////////////////////////////////////////
+// OrderBook
+////////////////////////////////////////////////////////////////////////////////
+
+#[no_mangle]
+pub extern "C" fn order_book_new(instrument_id: InstrumentId, book_level: BookLevel) -> OrderBook {
+    OrderBook::new(instrument_id, book_level)
+}

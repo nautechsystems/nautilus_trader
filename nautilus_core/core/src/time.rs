@@ -77,25 +77,25 @@ mod tests {
     use crate::time;
 
     #[test]
-    fn unix_timestamp_returns_positive() {
+    fn test_unix_timestamp_returns_positive() {
         let result = time::unix_timestamp();
         assert!(result > 1610000000.0)
     }
 
     #[test]
-    fn unix_timestamp_ms_returns_positive() {
+    fn test_unix_timestamp_ms_returns_positive() {
         let result = time::unix_timestamp_ms();
         assert!(result > 1610000000000)
     }
 
     #[test]
-    fn unix_timestamp_us_returns_positive() {
+    fn test_unix_timestamp_us_returns_positive() {
         let result = time::unix_timestamp_us();
         assert!(result > 1610000000000000)
     }
 
     #[test]
-    fn unix_timestamp_ns_returns_positive() {
+    fn test_unix_timestamp_ns_returns_positive() {
         let result = time::unix_timestamp_ns();
         assert!(result > 1610000000000000)
     }

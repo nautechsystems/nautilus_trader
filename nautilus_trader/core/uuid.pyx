@@ -16,10 +16,11 @@
 import re
 
 from nautilus_trader.core.correctness cimport Condition
+from nautilus_trader.core.rust.core cimport cstring_free
 from nautilus_trader.core.rust.core cimport uuid4_free
-from nautilus_trader.core.rust.core cimport uuid4_from_pystring
+from nautilus_trader.core.rust.core cimport uuid4_from_cstring
 from nautilus_trader.core.rust.core cimport uuid4_new
-from nautilus_trader.core.rust.core cimport uuid4_to_pystring
+from nautilus_trader.core.rust.core cimport uuid4_to_cstring
 
 
 _UUID_REGEX = re.compile("[0-F]{8}-([0-F]{4}-){3}[0-F]{12}", re.I)
@@ -52,13 +53,13 @@ cdef class UUID4:
             return
 
         Condition.true(_UUID_REGEX.match(value), "value is not a valid UUID")
-        self._uuid4 = uuid4_from_pystring(value)
+        self._uuid4 = self._uuid4_from_pystring(value)
 
     def __getstate__(self):
         return self.value
 
     def __setstate__(self, value):
-        self._uuid4 = uuid4_from_pystring(value)
+        self._uuid4 = self._uuid4_from_pystring(value)
 
     def __eq__(self, UUID4 other) -> bool:
         return self.value == other.value
@@ -75,6 +76,16 @@ cdef class UUID4:
     def __del__(self) -> None:
         uuid4_free(self._uuid4)  # `self._uuid4` moved to rust (then dropped)
 
+    cdef UUID4_t _uuid4_from_pystring(self, str value) except *:
+        cdef bytes encoded = value.encode("utf-8")
+        return uuid4_from_cstring(<char *>encoded)  # `encoded` moved to rust, `uuid4` owned from rust
+
+    cdef str _uuid4_to_pystring(self):
+        cdef char *ptr = <char *>uuid4_to_cstring(&self._uuid4)  # `ptr` owned from rust
+        cdef str value = ptr.decode()  # Copy to `utf8`
+        cstring_free(ptr)  # `ptr` moved to rust (then dropped)
+        return value
+
     @property
     def value(self) -> str:
-        return uuid4_to_pystring(&self._uuid4)
+        return self._uuid4_to_pystring()

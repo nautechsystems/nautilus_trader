@@ -22,6 +22,12 @@ pub struct Venue {
 }
 
 impl Venue {
+    pub fn from_string(s: String) -> Venue {
+        Venue {
+            value: Box::from(s),
+        }
+    }
+
     pub fn from_str(s: &str) -> Venue {
         Venue {
             value: Box::from(s.to_owned()),
@@ -40,7 +46,7 @@ mod tests {
     use crate::identifiers::venue::Venue;
 
     #[test]
-    fn venue_from_str() {
+    fn test_venue_from_str() {
         let venue1 = Venue::from_str("FTX");
         let venue2 = Venue::from_str("IDEALPRO");
 
@@ -50,7 +56,7 @@ mod tests {
     }
 
     #[test]
-    fn venue_as_str() {
+    fn test_venue_as_str() {
         let venue = Venue::from_str("FTX");
 
         assert_eq!(venue.to_string(), "FTX")
