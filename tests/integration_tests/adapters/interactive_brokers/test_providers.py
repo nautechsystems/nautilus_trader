@@ -16,10 +16,15 @@ import asyncio
 from unittest.mock import MagicMock
 from unittest.mock import patch
 
+import pytest
+from ib_insync import Contract
+from ib_insync import Forex
+
 from nautilus_trader.adapters.interactive_brokers.providers import (
     InteractiveBrokersInstrumentProvider,
 )
 from nautilus_trader.common.clock import LiveClock
+from nautilus_trader.common.config import InstrumentProviderConfig
 from nautilus_trader.common.logging import LiveLogger
 from nautilus_trader.common.logging import LogLevel
 from nautilus_trader.model.enums import AssetClass
@@ -41,8 +46,23 @@ class TestIBInstrumentProvider:
             clock=self.clock,
             level_stdout=LogLevel.DEBUG,
         )
-        self.provider = InteractiveBrokersInstrumentProvider(client=self.ib, logger=self.logger)
-        self.provider.connect()
+        self.provider = InteractiveBrokersInstrumentProvider(
+            client=self.ib, logger=self.logger, config=InstrumentProviderConfig()
+        )
+
+    @pytest.mark.parametrize(
+        "filters, expected",
+        [
+            ({"secType": "CASH", "pair": "EURUSD", "exchange": "IDEALPRO"}, Forex("EURUSD")),
+            (
+                {"secType": "STK", "symbol": "AAPL", "exchange": "SMART", "currency": "USD"},
+                Contract("STK", symbol="AAPL", exchange="SMART", currency="USD"),
+            ),
+        ],
+    )
+    def test_parse_contract(self, filters, expected):
+        result = self.provider._parse_contract(**filters)
+        assert result == expected
 
     def test_load_equity_contract_instrument(self):
         # Arrange
@@ -56,7 +76,7 @@ class TestIBInstrumentProvider:
         with patch.object(
             self.provider._client, "reqContractDetails", return_value=[contract_details]
         ):
-            self.provider.load("AAPL", "NASDAQ")
+            self.provider.load(secType="STK", symbol="AAPL", exchange="NASDAQ")
             equity = self.provider.find(instrument_id)
 
         # Assert

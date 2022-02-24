@@ -15,7 +15,9 @@
 from typing import Dict, List, Optional
 
 import ib_insync
+from ib_insync import Contract
 from ib_insync import ContractDetails
+from ib_insync import Forex
 
 from nautilus_trader.adapters.betfair.util import one
 from nautilus_trader.adapters.interactive_brokers.common import IB_VENUE
@@ -76,11 +78,18 @@ class InteractiveBrokersInstrumentProvider(InstrumentProvider):
         self.contract_id_to_instrument_id: Dict[int, InstrumentId] = {}
 
     async def load_all_async(self, filters: Optional[Dict] = None) -> None:
-        raise NotImplementedError(f"load_all not implemented to {self.__class__.__name__}")
+        await self.load(**filters)
 
     @staticmethod
     def _one_not_both(a, b):
         return a or b and not (a and b)
+
+    @staticmethod
+    def _parse_contract(**kwargs) -> Contract:
+        sec_type = kwargs.pop("secType", None)
+        if sec_type == "CASH":
+            return Forex(**kwargs)
+        return Contract(secType=sec_type, **kwargs)
 
     async def load_ids_async(
         self,
@@ -88,7 +97,7 @@ class InteractiveBrokersInstrumentProvider(InstrumentProvider):
         filters: Optional[Dict] = None,
     ) -> None:
         assert self._one_not_both(instrument_ids, filters)
-        await self.load(**dict(filters))
+        await self.load(**dict(filters or {}))
 
     async def load_async(self, instrument_id: InstrumentId, filters: Optional[Dict] = None):
         """Abstract method (implement in subclass)."""
@@ -110,7 +119,7 @@ class InteractiveBrokersInstrumentProvider(InstrumentProvider):
                 primaryExchange, currency, localSymbol, tradingClass, includeExpired, secIdType, secId,
                 comboLegsDescrip, comboLegs,  deltaNeutralContract
         """
-        contract = ib_insync.contract.Forex(**kwargs)
+        contract = self._parse_contract(**kwargs)
         qualified = await self._client.qualifyContractsAsync(contract)
         qualified = one(qualified)
         contract_details: List[ContractDetails] = await self._client.reqContractDetailsAsync(

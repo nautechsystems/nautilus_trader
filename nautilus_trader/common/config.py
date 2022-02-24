@@ -18,6 +18,7 @@ import importlib.util
 from typing import Any, Dict, FrozenSet, Optional, Union
 
 import pydantic
+from frozendict import frozendict
 from pydantic import validator
 
 from nautilus_trader.core.correctness import PyCondition
@@ -121,7 +122,7 @@ class InstrumentProviderConfig(pydantic.BaseModel):
 
     @validator("filters")
     def validate_filters(cls, value):
-        pass  # TODO
+        return frozendict(value)
 
     def __eq__(self, other):
         return (

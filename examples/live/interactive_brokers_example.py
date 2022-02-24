@@ -39,9 +39,10 @@ config_node = TradingNodeConfig(
     log_level="INFO",
     data_clients={
         "IB": InteractiveBrokersDataClientConfig(
+            gateway_host="100.125.47.118",
             instrument_provider=InstrumentProviderConfig(
-                filters=tuple({"pair": "EURUSD"}.items()),
-                load_ids=(("EURUSD.IDEALPRO",)),
+                filters=tuple({"secType": "CASH", "pair": "EURUSD"}.items()),
+                load_all=True,
             ),
             routing=RoutingConfig(venues={"IDEALPRO"}),
         ),
@@ -49,7 +50,7 @@ config_node = TradingNodeConfig(
     # exec_clients={
     #     "IB": InteractiveBrokersExecClientConfig(),
     # },
-    timeout_connection=5.0,
+    timeout_connection=30.0,
     timeout_reconciliation=5.0,
     timeout_portfolio=5.0,
     timeout_disconnection=5.0,
