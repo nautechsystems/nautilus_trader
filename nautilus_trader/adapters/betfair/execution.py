@@ -190,8 +190,8 @@ class BetfairExecutionClient(LiveExecutionClient):
             await asyncio.sleep(1)
 
     # -- ERROR HANDLING --------------------------------------------------------------------------
-    async def on_api_exception(self, exc: BetfairAPIError):
-        if exc.kind == "INVALID_SESSION_INFORMATION":
+    async def on_api_exception(self, ex: BetfairAPIError):
+        if ex.kind == "INVALID_SESSION_INFORMATION":
             # Session is invalid, need to reconnect
             self._log.warning("Invalid session error, reconnecting..")
             await self._client.disconnect()
@@ -359,10 +359,10 @@ class BetfairExecutionClient(LiveExecutionClient):
         place_order = order_submit_to_betfair(command=command, instrument=instrument)
         try:
             result = await self._client.place_orders(**place_order)
-        except Exception as exc:
-            if isinstance(exc, BetfairAPIError):
-                await self.on_api_exception(exc=exc)
-            self._log.warning(f"Submit failed: {exc}")
+        except Exception as ex:
+            if isinstance(ex, BetfairAPIError):
+                await self.on_api_exception(ex=ex)
+            self._log.warning(f"Submit failed: {ex}")
             self.generate_order_rejected(
                 strategy_id=command.strategy_id,
                 instrument_id=command.instrument_id,
@@ -465,10 +465,10 @@ class BetfairExecutionClient(LiveExecutionClient):
         )
         try:
             result = await self._client.replace_orders(**kw)
-        except Exception as exc:
-            if isinstance(exc, BetfairAPIError):
-                await self.on_api_exception(exc=exc)
-            self._log.warning(f"Modify failed: {exc}")
+        except Exception as ex:
+            if isinstance(ex, BetfairAPIError):
+                await self.on_api_exception(ex=ex)
+            self._log.warning(f"Modify failed: {ex}")
             self.generate_order_modify_rejected(
                 strategy_id=command.strategy_id,
                 instrument_id=command.instrument_id,
@@ -543,10 +543,10 @@ class BetfairExecutionClient(LiveExecutionClient):
         # Send to client
         try:
             result = await self._client.cancel_orders(**cancel_order)
-        except Exception as exc:
-            if isinstance(exc, BetfairAPIError):
-                await self.on_api_exception(exc=exc)
-            self._log.warning(f"Cancel failed: {exc}")
+        except Exception as ex:
+            if isinstance(ex, BetfairAPIError):
+                await self.on_api_exception(ex=ex)
+            self._log.warning(f"Cancel failed: {ex}")
             self.generate_order_cancel_rejected(
                 strategy_id=command.strategy_id,
                 instrument_id=command.instrument_id,
@@ -630,10 +630,10 @@ class BetfairExecutionClient(LiveExecutionClient):
         # Send to client
         try:
             result = await self._client.cancel_orders(**cancel_orders)
-        except Exception as exc:
-            if isinstance(exc, BetfairAPIError):
-                await self.on_api_exception(exc=exc)
-            self._log.error(f"Cancel failed: {exc}")
+        except Exception as ex:
+            if isinstance(ex, BetfairAPIError):
+                await self.on_api_exception(ex=ex)
+            self._log.error(f"Cancel failed: {ex}")
             # TODO(cs): Will probably just need to recover the client order ID
             #  and order ID from the trade report?
             # self.generate_order_cancel_rejected(

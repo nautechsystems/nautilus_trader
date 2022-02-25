@@ -475,7 +475,7 @@ cdef class ExecutionMassStatus(Document):
     def __repr__(self) -> str:
         return (
             f"{type(self).__name__}("
-            f"client_id={self.client_id.value}, "
+            f"client_id={self.client_id}, "
             f"account_id={self.account_id.value}, "
             f"venue={self.venue.value}, "
             f"order_reports={self._order_reports}, "

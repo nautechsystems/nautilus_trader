@@ -16,6 +16,8 @@
 from datetime import timedelta
 from decimal import Decimal
 
+import pytest
+
 from nautilus_trader.backtest.data.providers import TestInstrumentProvider
 from nautilus_trader.backtest.exchange import SimulatedExchange
 from nautilus_trader.backtest.execution_client import BacktestExecClient
@@ -1767,6 +1769,30 @@ class TestSimulatedExchange:
         assert exit.status == OrderStatus.FILLED
         assert exit.filled_qty == Quantity.from_int(200000)
         assert exit.avg_px == Price.from_str("11.000")
+
+    def test_empty_instruments(self):
+        with pytest.raises(ValueError) as ex:
+            self.exchange = SimulatedExchange(
+                venue=Venue("SIM"),
+                oms_type=OMSType.HEDGING,
+                account_type=AccountType.MARGIN,
+                base_currency=USD,
+                starting_balances=[Money(1_000_000, USD)],
+                default_leverage=Decimal(50),
+                leverages={},
+                is_frozen_account=False,
+                instruments=[],
+                modules=[],
+                fill_model=FillModel(),
+                cache=self.cache,
+                clock=self.clock,
+                logger=self.logger,
+                latency_model=LatencyModel(0),
+            )
+        assert (
+            ex.value.args[0]
+            == "Cannot initialize `SimulatedExchange`: Venue 'SIM' has no instruments"
+        )
 
     def test_latency_model_submit_order(self):
         # Arrange

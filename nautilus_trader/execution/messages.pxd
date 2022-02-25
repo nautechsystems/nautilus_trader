@@ -29,7 +29,7 @@ from nautilus_trader.model.orders.list cimport OrderList
 
 cdef class TradingCommand(Command):
     cdef readonly ClientId client_id
-    """The execution client ID for the command.\n\n:returns: `ClientId`"""
+    """The execution client ID for the command.\n\n:returns: `ClientId` or ``None``"""
     cdef readonly TraderId trader_id
     """The trader ID associated with the command.\n\n:returns: `TraderId`"""
     cdef readonly StrategyId strategy_id
