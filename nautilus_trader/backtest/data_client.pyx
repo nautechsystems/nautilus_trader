@@ -67,6 +67,7 @@ cdef class BacktestDataClient(DataClient):
     ):
         super().__init__(
             client_id=client_id,
+            venue=Venue(client_id.value),
             msgbus=msgbus,
             cache=cache,
             clock=clock,
@@ -165,6 +166,7 @@ cdef class BacktestMarketDataClient(MarketDataClient):
     ):
         super().__init__(
             client_id=client_id,
+            venue=Venue(client_id.value),
             msgbus=msgbus,
             cache=cache,
             clock=clock,

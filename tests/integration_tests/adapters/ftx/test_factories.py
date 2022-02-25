@@ -18,7 +18,7 @@ import asyncio
 from nautilus_trader.adapters.ftx.config import FTXDataClientConfig
 from nautilus_trader.adapters.ftx.config import FTXExecClientConfig
 from nautilus_trader.adapters.ftx.factories import FTXLiveDataClientFactory
-from nautilus_trader.adapters.ftx.factories import FTXLiveExecutionClientFactory
+from nautilus_trader.adapters.ftx.factories import FTXLiveExecClientFactory
 from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.logging import LiveLogger
@@ -77,7 +77,7 @@ class TestFTXFactories:
 
     def test_ftx_live_exec_client_factory(self, ftx_http_client):
         # Arrange, Act
-        exec_client = FTXLiveExecutionClientFactory.create(
+        exec_client = FTXLiveExecClientFactory.create(
             loop=self.loop,
             name="FTX",
             config=FTXExecClientConfig(  # noqa (S106 Possible hardcoded password)

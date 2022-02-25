@@ -43,6 +43,11 @@ from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.core.datetime import millis_to_nanos
 from nautilus_trader.core.datetime import nanos_to_secs
 from nautilus_trader.core.datetime import secs_to_nanos
+from nautilus_trader.execution.messages import CancelAllOrders
+from nautilus_trader.execution.messages import CancelOrder
+from nautilus_trader.execution.messages import ModifyOrder
+from nautilus_trader.execution.messages import SubmitOrder
+from nautilus_trader.execution.messages import SubmitOrderList
 from nautilus_trader.execution.reports import OrderStatusReport
 from nautilus_trader.execution.reports import PositionStatusReport
 from nautilus_trader.execution.reports import TradeReport
@@ -50,11 +55,6 @@ from nautilus_trader.live.execution_client import LiveExecutionClient
 from nautilus_trader.model.c_enums.account_type import AccountType
 from nautilus_trader.model.c_enums.liquidity_side import LiquiditySide
 from nautilus_trader.model.c_enums.order_type import OrderType
-from nautilus_trader.model.commands.trading import CancelAllOrders
-from nautilus_trader.model.commands.trading import CancelOrder
-from nautilus_trader.model.commands.trading import ModifyOrder
-from nautilus_trader.model.commands.trading import SubmitOrder
-from nautilus_trader.model.commands.trading import SubmitOrderList
 from nautilus_trader.model.currency import Currency
 from nautilus_trader.model.enums import OMSType
 from nautilus_trader.model.events.account import AccountState
@@ -112,6 +112,7 @@ class BetfairExecutionClient(LiveExecutionClient):
         super().__init__(
             loop=loop,
             client_id=ClientId(BETFAIR_VENUE.value),
+            venue=BETFAIR_VENUE,
             oms_type=OMSType.NETTING,
             account_type=AccountType.BETTING,
             base_currency=base_currency,

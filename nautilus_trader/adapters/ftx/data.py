@@ -97,6 +97,7 @@ class FTXDataClient(LiveMarketDataClient):
         super().__init__(
             loop=loop,
             client_id=ClientId(FTX_VENUE.value),
+            venue=FTX_VENUE,
             instrument_provider=instrument_provider,
             msgbus=msgbus,
             cache=cache,

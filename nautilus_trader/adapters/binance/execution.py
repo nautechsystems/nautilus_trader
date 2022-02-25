@@ -38,6 +38,11 @@ from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.logging import LogColor
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.core.datetime import millis_to_nanos
+from nautilus_trader.execution.messages import CancelAllOrders
+from nautilus_trader.execution.messages import CancelOrder
+from nautilus_trader.execution.messages import ModifyOrder
+from nautilus_trader.execution.messages import SubmitOrder
+from nautilus_trader.execution.messages import SubmitOrderList
 from nautilus_trader.execution.reports import OrderStatusReport
 from nautilus_trader.execution.reports import PositionStatusReport
 from nautilus_trader.execution.reports import TradeReport
@@ -46,11 +51,6 @@ from nautilus_trader.model.c_enums.account_type import AccountType
 from nautilus_trader.model.c_enums.order_side import OrderSideParser
 from nautilus_trader.model.c_enums.order_type import OrderType
 from nautilus_trader.model.c_enums.time_in_force import TimeInForceParser
-from nautilus_trader.model.commands.trading import CancelAllOrders
-from nautilus_trader.model.commands.trading import CancelOrder
-from nautilus_trader.model.commands.trading import ModifyOrder
-from nautilus_trader.model.commands.trading import SubmitOrder
-from nautilus_trader.model.commands.trading import SubmitOrderList
 from nautilus_trader.model.enums import LiquiditySide
 from nautilus_trader.model.enums import OMSType
 from nautilus_trader.model.enums import TimeInForce
@@ -117,6 +117,7 @@ class BinanceExecutionClient(LiveExecutionClient):
         super().__init__(
             loop=loop,
             client_id=ClientId(BINANCE_VENUE.value),
+            venue=BINANCE_VENUE,
             oms_type=OMSType.NETTING,
             instrument_provider=instrument_provider,
             account_type=AccountType.CASH,

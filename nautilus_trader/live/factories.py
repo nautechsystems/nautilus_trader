@@ -64,9 +64,9 @@ class LiveDataClientFactory:
         raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
 
-class LiveExecutionClientFactory:
+class LiveExecClientFactory:
     """
-    Provides a factory for creating `LiveDataClient` instances.
+    Provides a factory for creating `LiveExecutionClient` instances.
     """
 
     @staticmethod

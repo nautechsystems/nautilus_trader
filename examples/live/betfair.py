@@ -18,7 +18,7 @@ import asyncio
 import traceback
 
 from nautilus_trader.adapters.betfair.factories import BetfairLiveDataClientFactory
-from nautilus_trader.adapters.betfair.factories import BetfairLiveExecutionClientFactory
+from nautilus_trader.adapters.betfair.factories import BetfairLiveExecClientFactory
 from nautilus_trader.adapters.betfair.factories import get_cached_betfair_client
 from nautilus_trader.adapters.betfair.factories import get_cached_betfair_instrument_provider
 from nautilus_trader.common.clock import LiveClock
@@ -105,7 +105,7 @@ async def main(market_id: str):
 
     # Register your client factories with the node (can take user defined factories)
     node.add_data_client_factory("BETFAIR", BetfairLiveDataClientFactory)
-    node.add_exec_client_factory("BETFAIR", BetfairLiveExecutionClientFactory)
+    node.add_exec_client_factory("BETFAIR", BetfairLiveExecClientFactory)
     node.build()
 
     try:

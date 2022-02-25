@@ -31,6 +31,8 @@ just need to override the `execute`, `process`, `send` and `receive` methods.
 
 from typing import Callable, Optional
 
+from nautilus_trader.data.config import DataEngineConfig
+
 from cpython.datetime cimport timedelta
 
 from nautilus_trader.common.clock cimport Clock
@@ -54,6 +56,9 @@ from nautilus_trader.data.messages cimport DataRequest
 from nautilus_trader.data.messages cimport DataResponse
 from nautilus_trader.data.messages cimport Subscribe
 from nautilus_trader.data.messages cimport Unsubscribe
+from nautilus_trader.data.messages cimport VenueDataCommand
+from nautilus_trader.data.messages cimport VenueSubscribe
+from nautilus_trader.data.messages cimport VenueUnsubscribe
 from nautilus_trader.model.c_enums.bar_aggregation cimport BarAggregation
 from nautilus_trader.model.c_enums.price_type cimport PriceType
 from nautilus_trader.model.data.bar cimport Bar
@@ -65,14 +70,12 @@ from nautilus_trader.model.data.venue cimport InstrumentClosePrice
 from nautilus_trader.model.data.venue cimport InstrumentStatusUpdate
 from nautilus_trader.model.data.venue cimport StatusUpdate
 from nautilus_trader.model.identifiers cimport ClientId
-from nautilus_trader.model.identifiers import ComponentId
+from nautilus_trader.model.identifiers cimport ComponentId
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.instruments.base cimport Instrument
 from nautilus_trader.model.orderbook.book cimport OrderBook
 from nautilus_trader.model.orderbook.data cimport OrderBookData
 from nautilus_trader.msgbus.bus cimport MessageBus
-
-from nautilus_trader.data.config import DataEngineConfig
 
 
 cdef class DataEngine(Component):
@@ -116,6 +119,8 @@ cdef class DataEngine(Component):
         self._cache = cache
 
         self._clients = {}               # type: dict[ClientId, DataClient]
+        self._routing_map = {}           # type: dict[Venue, DataClient]
+        self._default_client = None      # type: Optional[DataClient]
         self._order_book_intervals = {}  # type: dict[(InstrumentId, int), list[Callable[[Bar], None]]]
         self._bar_aggregators = {}       # type: dict[BarType, BarAggregator]
 
@@ -131,11 +136,10 @@ cdef class DataEngine(Component):
         self._msgbus.register(endpoint="DataEngine.request", handler=self.request)
         self._msgbus.register(endpoint="DataEngine.response", handler=self.response)
 
-# --REGISTRATION -----------------------------------------------------------------------------------
-
-    cpdef list registered_clients(self):
+    @property
+    def registered_clients(self):
         """
-        Return the data clients registered with the data engine.
+        The execution clients registered with the engine.
 
         Returns
         -------
@@ -143,6 +147,20 @@ cdef class DataEngine(Component):
 
         """
         return sorted(list(self._clients.keys()))
+
+    @property
+    def default_client(self):
+        """
+        The default data client registered with the engine.
+
+        Returns
+        -------
+        Optional[ClientId]
+
+        """
+        return self._default_client.id if self._default_client is not None else None
+
+# --REGISTRATION -----------------------------------------------------------------------------------
 
     cpdef void register_client(self, DataClient client) except *:
         """
@@ -164,7 +182,59 @@ cdef class DataEngine(Component):
 
         self._clients[client.id] = client
 
-        self._log.info(f"Registered DataClient-{client}.")
+        routing_log = ""
+        if client.venue is None:
+            if self._default_client is None:
+                self._default_client = client
+                routing_log = " for default routing"
+        else:
+            self._routing_map[client.venue] = client
+
+        self._log.info(f"Registered {client}{routing_log}.")
+
+    cpdef void register_default_client(self, DataClient client) except *:
+        """
+        Register the given client as the default routing client (when a specific
+        venue routing cannot be found).
+
+        Any existing default routing client will be overwritten.
+
+        Parameters
+        ----------
+        client : DataClient
+            The client to register.
+
+        """
+        Condition.not_none(client, "client")
+
+        self._default_client = client
+
+        self._log.info(f"Registered {client} for default routing.")
+
+    cpdef void register_venue_routing(self, DataClient client, Venue venue) except *:
+        """
+        Register the given client to route orders to the given venue.
+
+        Any existing client in the routing map for the given venue will be
+        overwritten.
+
+        Parameters
+        ----------
+        venue : Venue
+            The venue to route orders to.
+        client : ExecutionClient
+            The client for the venue routing.
+
+        """
+        Condition.not_none(client, "client")
+        Condition.not_none(venue, "venue")
+
+        if client.id not in self._clients:
+            self._clients[client.id] = client
+
+        self._routing_map[venue] = client
+
+        self._log.info(f"Registered ExecutionClient-{client} for routing to {venue}.")
 
     cpdef void deregister_client(self, DataClient client) except *:
         """
@@ -481,20 +551,32 @@ cdef class DataEngine(Component):
 
         cdef DataClient client = self._clients.get(command.client_id)
         if client is None:
-            self._log.error(
-                f"Cannot handle command: "
-                f"no client registered for '{command.client_id}', {command}.",
-            )
-            return  # No client to handle command
+            if isinstance(command, VenueDataCommand):
+                self._routing_map.get(
+                    command.venue,
+                    self._default_client,
+                )
+            else:
+                client = self._default_client
+                if client is None:
+                    self._log.error(
+                        f"Cannot execute command: "
+                        f"No data client configured for {command.client_id}, {command}."
+                    )
+                    return  # No client to handle command
 
-        if isinstance(command, Subscribe):
+        if isinstance(command, VenueSubscribe):
             self._handle_subscribe(client, command)
-        elif isinstance(command, Unsubscribe):
+        elif isinstance(command, Subscribe):
+            self._handle_subscribe_data(client, command.data_type)
+        elif isinstance(command, VenueUnsubscribe):
             self._handle_unsubscribe(client, command)
+        elif isinstance(command, Unsubscribe):
+            self._handle_unsubscribe_data(client, command.data_type)
         else:
             self._log.error(f"Cannot handle command: unrecognized {command}.")
 
-    cdef void _handle_subscribe(self, DataClient client, Subscribe command) except *:
+    cdef void _handle_subscribe(self, DataClient client, VenueSubscribe command) except *:
         if command.data_type.type == Instrument:
             self._handle_subscribe_instrument(
                 client,
@@ -543,9 +625,10 @@ cdef class DataEngine(Component):
                 command.data_type.metadata.get("instrument_id"),
             )
         else:
-            self._handle_subscribe_data(client, command.data_type)
+            self._log.error(
+                f"Cannot handle command: unrecognized type {command.data_type.type} {command}.")
 
-    cdef void _handle_unsubscribe(self, DataClient client, Unsubscribe command) except *:
+    cdef void _handle_unsubscribe(self, DataClient client, VenueUnsubscribe command) except *:
         if command.data_type.type == Instrument:
             self._handle_unsubscribe_instrument(
                 client,
@@ -584,7 +667,7 @@ cdef class DataEngine(Component):
                 command.data_type.metadata.get("bar_type"),
             )
         else:
-            self._handle_unsubscribe_data(client, command.data_type)
+            self._log.error(f"Cannot handle command: unrecognized type {command.data_type.type} {command}.")
 
     cdef void _handle_subscribe_instrument(
         self,

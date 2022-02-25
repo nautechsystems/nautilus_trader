@@ -23,12 +23,12 @@ from nautilus_trader.common.logging import LogLevel
 from nautilus_trader.common.uuid import UUIDFactory
 from nautilus_trader.data.engine import DataEngine
 from nautilus_trader.execution.engine import ExecutionEngine
+from nautilus_trader.execution.messages import CancelOrder
+from nautilus_trader.execution.messages import ModifyOrder
+from nautilus_trader.execution.messages import SubmitOrder
+from nautilus_trader.execution.messages import SubmitOrderList
+from nautilus_trader.execution.messages import TradingCommand
 from nautilus_trader.live.config import ExecEngineConfig
-from nautilus_trader.model.commands.trading import CancelOrder
-from nautilus_trader.model.commands.trading import ModifyOrder
-from nautilus_trader.model.commands.trading import SubmitOrder
-from nautilus_trader.model.commands.trading import SubmitOrderList
-from nautilus_trader.model.commands.trading import TradingCommand
 from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import OrderSide
@@ -138,6 +138,7 @@ class TestExecutionEngine:
         self.venue = Venue("SIM")
         self.exec_client = MockExecutionClient(
             client_id=ClientId(self.venue.value),
+            venue=self.venue,
             account_type=AccountType.MARGIN,
             base_currency=USD,
             msgbus=self.msgbus,
@@ -160,6 +161,7 @@ class TestExecutionEngine:
         # Arrange
         exec_client = MockExecutionClient(
             client_id=ClientId("IB"),
+            venue=None,  # Multi-venue
             account_type=AccountType.MARGIN,
             base_currency=USD,
             msgbus=self.msgbus,
@@ -183,6 +185,7 @@ class TestExecutionEngine:
         # Arrange
         exec_client = MockExecutionClient(
             client_id=ClientId("IB"),
+            venue=None,  # Multi-venue
             account_type=AccountType.MARGIN,
             base_currency=USD,
             msgbus=self.msgbus,
@@ -290,6 +293,7 @@ class TestExecutionEngine:
     def test_given_random_command_logs_and_continues(self):
         # Arrange
         random = TradingCommand(
+            None,
             self.trader_id,
             self.strategy_id,
             AUDUSD_SIM.id,

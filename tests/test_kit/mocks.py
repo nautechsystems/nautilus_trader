@@ -408,6 +408,8 @@ class MockExecutionClient(ExecutionClient):
     ----------
     client_id : ClientId
         The client ID.
+    venue : Venue, optional
+        The client venue. If multi-venue then can be ``None``.
     account_type : AccountType
         The account type for the client.
     base_currency : Currency, optional
@@ -425,6 +427,7 @@ class MockExecutionClient(ExecutionClient):
     def __init__(
         self,
         client_id,
+        venue,
         account_type,
         base_currency,
         msgbus,
@@ -435,6 +438,7 @@ class MockExecutionClient(ExecutionClient):
     ):
         super().__init__(
             client_id=client_id,
+            venue=venue,
             oms_type=OMSType.HEDGING,
             account_type=account_type,
             base_currency=base_currency,
@@ -495,6 +499,8 @@ class MockLiveExecutionClient(LiveExecutionClient):
     ----------
     client_id : ClientId
         The client ID.
+    venue : Venue, optional
+        The client venue. If multi-venue then can be ``None``.
     account_type : AccountType
         The account type for the client.
     base_currency : Currency, optional
@@ -515,6 +521,7 @@ class MockLiveExecutionClient(LiveExecutionClient):
         self,
         loop,
         client_id,
+        venue,
         account_type,
         base_currency,
         instrument_provider,
@@ -526,6 +533,7 @@ class MockLiveExecutionClient(LiveExecutionClient):
         super().__init__(
             loop=loop,
             client_id=client_id,
+            venue=venue,
             oms_type=OMSType.HEDGING,
             account_type=account_type,
             base_currency=base_currency,

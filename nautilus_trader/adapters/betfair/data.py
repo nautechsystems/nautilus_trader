@@ -83,6 +83,7 @@ class BetfairDataClient(LiveMarketDataClient):
         super().__init__(
             loop=loop,
             client_id=ClientId(BETFAIR_VENUE.value),
+            venue=BETFAIR_VENUE,
             instrument_provider=instrument_provider
             or BetfairInstrumentProvider(client=client, logger=logger, filters=market_filter),
             msgbus=msgbus,
