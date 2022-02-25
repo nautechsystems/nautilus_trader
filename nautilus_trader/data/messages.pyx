@@ -57,7 +57,7 @@ cdef class DataCommand(Command):
         UUID4 command_id not None,
         int64_t ts_init,
     ):
-        Condition.true(client_id or venue, "Both `client_id` and `venue` were ``None``.")
+        Condition.true(client_id or venue, "Both `client_id` and `venue` were None")
         super().__init__(command_id, ts_init)
 
         self.client_id = client_id
@@ -194,7 +194,7 @@ cdef class DataRequest(Request):
         UUID4 request_id not None,
         int64_t ts_init,
     ):
-        Condition.true(client_id or venue, "Both `client_id` and `venue` were ``None``.")
+        Condition.true(client_id or venue, "Both `client_id` and `venue` were None")
         super().__init__(
             callback,
             request_id,
@@ -257,7 +257,7 @@ cdef class DataResponse(Response):
         UUID4 response_id not None,
         int64_t ts_init,
     ):
-        Condition.true(client_id or venue, "Both `client_id` and `venue` were ``None``.")
+        Condition.true(client_id or venue, "Both `client_id` and `venue` were None")
         super().__init__(
             correlation_id,
             response_id,

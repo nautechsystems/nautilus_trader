@@ -13,11 +13,14 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+import pytest
+
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.uuid import UUIDFactory
 from nautilus_trader.data.messages import DataRequest
 from nautilus_trader.data.messages import DataResponse
 from nautilus_trader.data.messages import Subscribe
+from nautilus_trader.data.messages import Unsubscribe
 from nautilus_trader.model.data.base import DataType
 from nautilus_trader.model.data.tick import QuoteTick
 from nautilus_trader.model.data.tick import TradeTick
@@ -36,6 +39,56 @@ class TestDataMessage:
         # Fixture Setup
         self.clock = TestClock()
         self.uuid_factory = UUIDFactory()
+
+    def test_data_messages_when_client_id_and_venue_none_raise_value_error(self):
+        # Arrange, Act , Assert
+        with pytest.raises(ValueError) as ex:
+            Subscribe(
+                client_id=None,
+                venue=None,
+                data_type=DataType(str, {"type": "newswire"}),
+                command_id=self.uuid_factory.generate(),
+                ts_init=self.clock.timestamp_ns(),
+            )
+        assert ex.type == ValueError
+        assert ex.match("Both `client_id` and `venue` were None")
+
+        with pytest.raises(ValueError) as ex:
+            Unsubscribe(
+                client_id=None,
+                venue=None,
+                data_type=DataType(str, {"type": "newswire"}),
+                command_id=self.uuid_factory.generate(),
+                ts_init=self.clock.timestamp_ns(),
+            )
+        assert ex.type == ValueError
+        assert ex.match("Both `client_id` and `venue` were None")
+
+        with pytest.raises(ValueError) as ex:
+            handler = []
+            DataRequest(
+                client_id=None,
+                venue=None,
+                data_type=DataType(QuoteTick),
+                callback=handler.append,
+                request_id=self.uuid_factory.generate(),
+                ts_init=self.clock.timestamp_ns(),
+            )
+        assert ex.type == ValueError
+        assert ex.match("Both `client_id` and `venue` were None")
+
+        with pytest.raises(ValueError) as ex:
+            DataResponse(
+                client_id=None,
+                venue=None,
+                data_type=DataType(QuoteTick),
+                data=[],
+                correlation_id=self.uuid_factory.generate(),
+                response_id=self.uuid_factory.generate(),
+                ts_init=self.clock.timestamp_ns(),
+            )
+        assert ex.type == ValueError
+        assert ex.match("Both `client_id` and `venue` were None")
 
     def test_data_command_str_and_repr(self):
         # Arrange, Act
