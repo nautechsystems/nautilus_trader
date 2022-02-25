@@ -141,7 +141,6 @@ dl.py.class {
     padding: 10px 10px 6px;
     border-radius: 0.1rem;
 }
-
 .py.class .py.method, .py.class .py.attribute {
     background: rgb(40 47 56 / 30%);
     color: #f8f8f2;
@@ -176,7 +175,7 @@ dl.py.class {
     height: 0.9rem;
     width: 0.9rem;
     transition: background-color .25s,transform .25s;
-    z-index: 99;
+    z-index: 9999;
     display: flex;
     display: -webkit-box;
     display: -webkit-flex;
@@ -231,7 +230,9 @@ dl.py.class {
 .md-nav__link--active .submenu .md-nav__link--active > a {
     color: #00bdd6;
 }
-
+.md-nav__link {
+    width: 80%;
+}
 
 @media only screen and (min-width: 60em) {
     .md-search__inner {
@@ -267,14 +268,14 @@ dl.py.class {
         height: 4rem;
     }
     .arrow {
-        top: 12px;
+        top: 8px;
         right: 16px;
     }
     .md-nav__item .md-nav__item a {
         padding-left: 0 !important;
     }
     .md-nav--primary .md-nav__link {
-        padding: 0.2rem 0.8rem 0.2rem 0;
+        padding: 0.3rem 0 0.3rem 0;
     }
 
 }
