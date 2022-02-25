@@ -22,6 +22,12 @@ pub struct Symbol {
 }
 
 impl Symbol {
+    pub fn from_string(s: String) -> Symbol {
+        Symbol {
+            value: Box::from(s),
+        }
+    }
+
     pub fn from_str(s: &str) -> Symbol {
         Symbol {
             value: Box::from(s.to_owned()),
@@ -40,7 +46,7 @@ mod tests {
     use crate::identifiers::symbol::Symbol;
 
     #[test]
-    fn symbol_from_str() {
+    fn test_symbol_from_str() {
         let symbol1 = Symbol::from_str("XRD/USD");
         let symbol2 = Symbol::from_str("BTC/USD");
 
@@ -50,7 +56,7 @@ mod tests {
     }
 
     #[test]
-    fn symbol_as_str() {
+    fn test_symbol_as_str() {
         let symbol = Symbol::from_str("ETH-PERP");
 
         assert_eq!(symbol.to_string(), "ETH-PERP");

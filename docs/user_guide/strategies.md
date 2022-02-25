@@ -1,7 +1,8 @@
 # Strategies
 
 The heart of the NautilusTrader user experience is in writing and working with
-trading strategies, by inheriting `TradingStrategy` and implementing its methods.
+trading strategies. Defining a trading strategy is achieved by inheriting the `TradingStrategy` class, 
+and implementing the methods required by the strategy.
 
 Using the basic building blocks of data ingest and order management (which we will discuss
 below), it's possible to implement any type of trading strategy including positional, momentum, re-balancing,
@@ -11,8 +12,8 @@ Please refer to the [API Reference](../api_reference/trading.md#strategy) for a 
 of all the possible functionality.
 
 There are two main parts of a Nautilus trading strategy:
-- The strategy implementation itself, defined by inheriting `TradingStrategy`
-- The _optional_ strategy configuration, defined by inheriting `TradingStrategyConfig`
+- The strategy implementation itself, defined by inheriting the `TradingStrategy` class
+- The _optional_ strategy configuration, defined by inheriting the `TradingStrategyConfig` class
 
 ```{note}
 Once a strategy is defined, the same source can be used for backtesting and live trading.
@@ -24,9 +25,9 @@ over where and how a trading strategy can be instantiated. This includes being a
 to serialize strategies and their configurations over the wire, making distributed backtesting
 and firing up remote live trading possible.
 
-This configuration flexibility is actually opt in, in that you can actually choose not to have
+This configuration flexibility is actually opt-in, in that you can actually choose not to have
 any strategy configuration beyond the parameters you choose to pass into your
-strategies' constructor. If you would like to run distributed backtests or launch
+strategies' constructor. However, if you would like to run distributed backtests or launch
 live trading servers remotely, then you will need to define a configuration.
 
 Here is an example configuration:
@@ -54,11 +55,11 @@ config = MyStrategy(
 
 ### Multiple strategies
 If you intend running multiple instances of the same strategy, with different
-configurations (such as on different instruments), then you will need to define
+configurations (such as trading different instruments), then you will need to define
 a unique `order_id_tag` for each of these strategies (as shown above).
 
 ```{note}
-The platform has built in safety measures in the event that two strategies share a
+The platform has built-in safety measures in the event that two strategies share a
 duplicated strategy ID, then an exception will be thrown that the strategy ID has already been registered.
 ```
 
@@ -98,5 +99,6 @@ class MyStrategy(TradingStrategy):
 
 ```{note}
 Even though it often makes sense to define a strategy which will trade a single
-instrument. There is actually no limit to the number of instruments for a single strategy.
+instrument. There is actually no limit to the number of instruments a single strategy
+can work with.
 ```

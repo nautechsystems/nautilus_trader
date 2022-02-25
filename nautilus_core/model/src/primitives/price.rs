@@ -194,7 +194,7 @@ mod tests {
     use crate::primitives::price::Price;
 
     #[test]
-    fn price_new() {
+    fn test_price_new() {
         let price = Price::new(0.00812, 8);
 
         assert_eq!(price, price);
@@ -205,7 +205,7 @@ mod tests {
     }
 
     #[test]
-    fn price_minimum() {
+    fn test_price_minimum() {
         let price = Price::new(0.000000001, 9);
 
         assert_eq!(price.value, 1);
@@ -213,7 +213,7 @@ mod tests {
     }
 
     #[test]
-    fn price_precision() {
+    fn test_price_precision() {
         let price = Price::new(1.001, 2);
 
         assert_eq!(price.value, 1000000000);
@@ -221,7 +221,7 @@ mod tests {
     }
 
     #[test]
-    fn price_new_from_str() {
+    fn test_price_new_from_str() {
         let price = Price::from_str("0.00812000");
 
         assert_eq!(price, price);
@@ -232,7 +232,7 @@ mod tests {
     }
 
     #[test]
-    fn price_equality() {
+    fn test_price_equality() {
         assert_eq!(Price::new(1.0, 1), Price::new(1.0, 1));
         assert_eq!(Price::new(1.0, 1), Price::new(1.0, 2));
         assert_ne!(Price::new(1.1, 1), Price::new(1.0, 1));
@@ -264,7 +264,7 @@ mod tests {
     }
 
     #[test]
-    fn price_display_works() {
+    fn test_price_display_works() {
         use std::fmt::Write as FmtWrite;
         let input_string = "44.12";
         let price = Price::from_str(&input_string);
@@ -275,7 +275,7 @@ mod tests {
     }
 
     #[test]
-    fn price_display() {
+    fn test_price_display() {
         use std::fmt::Write as FmtWrite;
         let input_string = "44.123456";
         let price = Price::from_str(&input_string);

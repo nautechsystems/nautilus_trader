@@ -1,6 +1,6 @@
 [package]
 name = "nautilus_core"
-version = "0.1.1"
+version = "0.1.0"
 authors = ["Nautech Systems <info@nautechsystems.io>"]
 edition = "2021"
 

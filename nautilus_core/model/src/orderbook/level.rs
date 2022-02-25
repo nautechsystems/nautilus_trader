@@ -160,7 +160,7 @@ mod tests {
     use crate::primitives::quantity::Quantity;
 
     #[test]
-    fn level_comparisons_bid_side() {
+    fn test_level_comparisons_bid_side() {
         let level0 = Level::new(BookPrice::new(Price::new(1.00, 2), OrderSide::Buy));
         let level1 = Level::new(BookPrice::new(Price::new(1.01, 2), OrderSide::Buy));
 
@@ -169,7 +169,7 @@ mod tests {
     }
 
     #[test]
-    fn level_comparisons_ask_side() {
+    fn test_level_comparisons_ask_side() {
         let level0 = Level::new(BookPrice::new(Price::new(1.00, 2), OrderSide::Sell));
         let level1 = Level::new(BookPrice::new(Price::new(1.01, 2), OrderSide::Sell));
 
@@ -178,7 +178,7 @@ mod tests {
     }
 
     #[test]
-    fn level_add_one_order() {
+    fn test_level_add_one_order() {
         let mut level = Level::new(BookPrice::new(Price::new(1.00, 2), OrderSide::Buy));
         let order = Order::new(
             Price::new(1.00, 2),
@@ -195,7 +195,7 @@ mod tests {
     }
 
     #[test]
-    fn level_add_multiple_orders() {
+    fn test_level_add_multiple_orders() {
         let mut level = Level::new(BookPrice::new(Price::new(2.00, 2), OrderSide::Buy));
         let order1 = Order::new(
             Price::new(2.00, 2),
@@ -219,7 +219,7 @@ mod tests {
     }
 
     #[test]
-    fn level_update_order() {
+    fn test_level_update_order() {
         let mut level = Level::new(BookPrice::new(Price::new(1.00, 2), OrderSide::Buy));
         let order1 = Order::new(
             Price::new(1.00, 2),
@@ -243,7 +243,7 @@ mod tests {
     }
 
     #[test]
-    fn level_update_order_with_zero_size_deletes() {
+    fn test_level_update_order_with_zero_size_deletes() {
         let mut level = Level::new(BookPrice::new(Price::new(1.00, 2), OrderSide::Buy));
         let order1 = Order::new(
             Price::new(1.00, 2),

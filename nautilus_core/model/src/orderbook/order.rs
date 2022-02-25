@@ -54,13 +54,21 @@ impl Order {
     }
 }
 
-#[test]
-fn order_from_str_vec() {
-    let input = vec!["1.00000", "100", "B", "123"];
-    let order = Order::from_vec(input);
+#[cfg(test)]
+mod tests {
+    use crate::enums::OrderSide;
+    use crate::orderbook::order::Order;
+    use crate::primitives::price::Price;
+    use crate::primitives::quantity::Quantity;
 
-    assert_eq!(order.price, Price::new(1.0, 0));
-    assert_eq!(order.size, Quantity::new(100.0, 0));
-    assert_eq!(order.side, OrderSide::Buy);
-    assert_eq!(order.id, 0);
+    #[test]
+    fn test_order_from_str_vec() {
+        let input = vec!["1.00000", "100", "B", "123"];
+        let order = Order::from_vec(input);
+
+        assert_eq!(order.price, Price::new(1.0, 0));
+        assert_eq!(order.size, Quantity::new(100.0, 0));
+        assert_eq!(order.side, OrderSide::Buy);
+        assert_eq!(order.id, 0);
+    }
 }

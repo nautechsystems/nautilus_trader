@@ -18,3 +18,6 @@ from nautilus_trader.core.rust.core cimport UUID4_t
 
 cdef class UUID4:
     cdef UUID4_t _uuid4
+
+    cdef UUID4_t _uuid4_from_pystring(self, str value) except *
+    cdef str _uuid4_to_pystring(self)
