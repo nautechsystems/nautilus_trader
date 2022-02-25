@@ -32,7 +32,6 @@ h1, h2, h3 {
 }
 .md-header-nav__button.md-logo * {
     display: block;
-    width: 230px;
     height: auto;
 }
 .md-header, .md-hero {
@@ -233,6 +232,13 @@ dl.py.class {
 .md-nav__link {
     width: 80%;
 }
+.md-tabs {
+    overflow: initial;
+}
+.md-tabs__item {
+    padding-right: 0.4rem;
+    padding-left: 0.4rem;
+}
 
 @media only screen and (min-width: 60em) {
     .md-search__inner {
@@ -240,6 +246,9 @@ dl.py.class {
     }
 }
 @media only screen and (max-width: 76.1875em) {
+    .md-nav__button img {
+        width: auto;
+    }
     .md-nav,
     html .md-nav--primary .md-nav__title--site  {
         background-color: #282f38 !important;
@@ -248,7 +257,7 @@ dl.py.class {
         display: block;
         left: 0;
         width: 100%;
-        margin-left: 0;
+        margin-left: 5px;
         padding-left: 0;
     }
     html .md-nav--primary .md-nav__title~.md-nav__list {
@@ -277,7 +286,12 @@ dl.py.class {
     .md-nav--primary .md-nav__link {
         padding: 0.3rem 0 0.3rem 0;
     }
-
+    html .md-nav--primary .md-nav__title--site .md-nav__button {
+        top: -10px;
+    }
+    .md-nav--primary {
+        overflow-y: auto;
+    }
 }
 
 
