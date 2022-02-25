@@ -552,7 +552,7 @@ cdef class DataEngine(Component):
         cdef DataClient client = self._clients.get(command.client_id)
         if client is None:
             if isinstance(command, VenueDataCommand):
-                self._routing_map.get(
+                client = self._routing_map.get(
                     command.venue,
                     self._default_client,
                 )
