@@ -151,7 +151,10 @@ cdef class SimulatedExchange:
         bint bar_execution=False,
         bint reject_stop_orders=True,
     ):
-        Condition.not_empty(instruments, "instruments")
+        try:
+            Condition.not_empty(instruments, "instruments")
+        except ValueError as e:
+            raise ValueError(f"Venue `{venue}` has no instruments") from e
         Condition.list_type(instruments, Instrument, "instruments", "Instrument")
         Condition.not_empty(starting_balances, "starting_balances")
         Condition.list_type(starting_balances, Money, "starting_balances")
