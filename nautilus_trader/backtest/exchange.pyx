@@ -151,7 +151,7 @@ cdef class SimulatedExchange:
         bint bar_execution=False,
         bint reject_stop_orders=True,
     ):
-        Condition.true(instruments, f"Failing to initialise `SimulatedExchange`, Venue `{venue}` has no instruments")
+        Condition.true(instruments, f"Cannot initialize `SimulatedExchange`, Venue `{venue}` has no instruments")
         Condition.list_type(instruments, Instrument, "instruments", "Instrument")
         Condition.not_empty(starting_balances, "starting_balances")
         Condition.list_type(starting_balances, Money, "starting_balances")
