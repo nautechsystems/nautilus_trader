@@ -61,7 +61,7 @@ cdef class InstrumentProvider:
 
         # Settings
         self._load_all_on_start = config.load_all
-        self._load_ids_on_start = config.load_ids
+        self._load_ids_on_start = set(config.load_ids) if config.load_ids is not None else None
         self._filters = config.filters
 
         # Async loading flags
