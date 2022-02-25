@@ -1791,7 +1791,7 @@ class TestSimulatedExchange:
             )
         assert (
             ex.value.args[0]
-            == "Cannot initialize `SimulatedExchange`, Venue `SIM` has no instruments"
+            == "Cannot initialize `SimulatedExchange`: Venue 'SIM' has no instruments"
         )
 
     def test_latency_model_submit_order(self):
