@@ -1789,7 +1789,10 @@ class TestSimulatedExchange:
                 logger=self.logger,
                 latency_model=LatencyModel(0),
             )
-        assert exc.value.args[0] == "Venue `SIM` has no instruments"
+        assert (
+            exc.value.args[0]
+            == "Failing to initialise `SimulatedExchange`, Venue `SIM` has no instruments"
+        )
 
     def test_latency_model_submit_order(self):
         # Arrange
