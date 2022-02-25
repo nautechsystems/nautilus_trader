@@ -172,6 +172,7 @@ cdef class DataClient(Component):
     cpdef void _handle_data_response(self, DataType data_type, object data, UUID4 correlation_id) except *:
         cdef DataResponse response = DataResponse(
             client_id=self.id,
+            venue=self.venue,
             data_type=data_type,
             data=data,
             correlation_id=correlation_id,
@@ -741,6 +742,7 @@ cdef class MarketDataClient(DataClient):
     cpdef void _handle_quote_ticks(self, InstrumentId instrument_id, list ticks, UUID4 correlation_id) except *:
         cdef DataResponse response = DataResponse(
             client_id=self.id,
+            venue=self.venue,
             data_type=DataType(QuoteTick, metadata={"instrument_id": instrument_id}),
             data=ticks,
             correlation_id=correlation_id,
@@ -753,6 +755,7 @@ cdef class MarketDataClient(DataClient):
     cpdef void _handle_trade_ticks(self, InstrumentId instrument_id, list ticks, UUID4 correlation_id) except *:
         cdef DataResponse response = DataResponse(
             client_id=self.id,
+            venue=self.venue,
             data_type=DataType(TradeTick, metadata={"instrument_id": instrument_id}),
             data=ticks,
             correlation_id=correlation_id,
@@ -765,6 +768,7 @@ cdef class MarketDataClient(DataClient):
     cpdef void _handle_bars(self, BarType bar_type, list bars, Bar partial, UUID4 correlation_id) except *:
         cdef DataResponse response = DataResponse(
             client_id=self.id,
+            venue=self.venue,
             data_type=DataType(Bar, metadata={"bar_type": bar_type, "Partial": partial}),
             data=bars,
             correlation_id=correlation_id,
