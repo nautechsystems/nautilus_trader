@@ -32,6 +32,7 @@ h1, h2, h3 {
 }
 .md-header-nav__button.md-logo * {
     display: block;
+    width: 230px;
     height: auto;
 }
 .md-header, .md-hero {
@@ -98,7 +99,6 @@ h1, h2, h3 {
 }
 .md-nav__link--active .md-nav__link, 
 .md-nav__link:active, 
-.parent-active-menu > a,
 .md-nav__link:focus, 
 .md-nav__link:hover {
     color: #00bdd6;
@@ -140,6 +140,7 @@ dl.py.class {
     padding: 10px 10px 6px;
     border-radius: 0.1rem;
 }
+
 .py.class .py.method, .py.class .py.attribute {
     background: rgb(40 47 56 / 30%);
     color: #f8f8f2;
@@ -174,7 +175,7 @@ dl.py.class {
     height: 0.9rem;
     width: 0.9rem;
     transition: background-color .25s,transform .25s;
-    z-index: 9999;
+    z-index: 99;
     display: flex;
     display: -webkit-box;
     display: -webkit-flex;
@@ -194,12 +195,12 @@ dl.py.class {
     flex: 0 0 auto;
 }
 .arrow:hover {
-    background-color: rgb(40, 47, 56) !important;
-    color: #00bdd6;
+    background-color: rgb(0 189 214 / 20%);
+    color: #fff!important;
 }
 .arrow.arrow-animate{
     transform: rotate(90deg);
-    background-color: rgb(40, 47, 56) !important;
+    background-color: rgb(0 189 214 / 20%);
     color: #fff!important;
 }
 /*.md-nav__link--active  .arrow.arrow-animate{
@@ -229,16 +230,7 @@ dl.py.class {
 .md-nav__link--active .submenu .md-nav__link--active > a {
     color: #00bdd6;
 }
-.md-nav__link {
-    width: 80%;
-}
-.md-tabs {
-    overflow: initial;
-}
-.md-tabs__item {
-    padding-right: 0.4rem;
-    padding-left: 0.4rem;
-}
+
 
 @media only screen and (min-width: 60em) {
     .md-search__inner {
@@ -246,9 +238,6 @@ dl.py.class {
     }
 }
 @media only screen and (max-width: 76.1875em) {
-    .md-nav__button img {
-        width: auto;
-    }
     .md-nav,
     html .md-nav--primary .md-nav__title--site  {
         background-color: #282f38 !important;
@@ -257,7 +246,7 @@ dl.py.class {
         display: block;
         left: 0;
         width: 100%;
-        margin-left: 5px;
+        margin-left: 0;
         padding-left: 0;
     }
     html .md-nav--primary .md-nav__title~.md-nav__list {
@@ -277,21 +266,16 @@ dl.py.class {
         height: 4rem;
     }
     .arrow {
-        top: 8px;
+        top: 12px;
         right: 16px;
     }
     .md-nav__item .md-nav__item a {
         padding-left: 0 !important;
     }
     .md-nav--primary .md-nav__link {
-        padding: 0.3rem 0 0.3rem 0;
+        padding: 0.2rem 0.8rem 0.2rem 0;
     }
-    html .md-nav--primary .md-nav__title--site .md-nav__button {
-        top: -10px;
-    }
-    .md-nav--primary {
-        overflow-y: auto;
-    }
+
 }
 
 
