@@ -90,7 +90,7 @@ cdef class SubmitOrder(TradingCommand):
     ts_init : int64
         The UNIX timestamp (nanoseconds) when the object was initialized.
     client_id : ClientId, optional
-        The execution client ID for the command. If ``None`` then will be inferred.
+        The execution client ID for the command.
 
     References
     ----------
@@ -222,7 +222,7 @@ cdef class SubmitOrderList(TradingCommand):
     ts_init : int64
         The UNIX timestamp (nanoseconds) when the object was initialized.
     client_id : ClientId, optional
-        The execution client ID for the command. If ``None`` then will be inferred.
+        The execution client ID for the command.
 
     References
     ----------
@@ -358,7 +358,7 @@ cdef class ModifyOrder(TradingCommand):
     ts_init : int64
         The UNIX timestamp (nanoseconds) when the object was initialized.
     client_id : ClientId, optional
-        The execution client ID for the command. If ``None`` then will be inferred.
+        The execution client ID for the command.
 
     References
     ----------
@@ -512,7 +512,7 @@ cdef class CancelOrder(TradingCommand):
     ts_init : int64
         The UNIX timestamp (nanoseconds) when the object was initialized.
     client_id : ClientId, optional
-        The execution client ID for the command. If ``None`` then will be inferred.
+        The execution client ID for the command.
 
     References
     ----------
@@ -643,7 +643,7 @@ cdef class CancelAllOrders(TradingCommand):
     ts_init : int64
         The UNIX timestamp (nanoseconds) when the object was initialized.
     client_id : ClientId, optional
-        The execution client ID for the command. If ``None`` then will be inferred.
+        The execution client ID for the command.
     """
 
     def __init__(
