@@ -302,7 +302,7 @@ class TestBinanceDataClient:
         )
 
         # Assert
-        self.data_client._handle_spot_ws_message(raw_book_tick)
+        self.data_client._handle_ws_message(raw_book_tick)
         await asyncio.sleep(1)
 
         assert self.data_engine.data_count == 3
@@ -360,7 +360,7 @@ class TestBinanceDataClient:
         )
 
         # Assert
-        self.data_client._handle_spot_ws_message(raw_trade)
+        self.data_client._handle_ws_message(raw_trade)
         await asyncio.sleep(1)
 
         assert self.data_engine.data_count == 3
