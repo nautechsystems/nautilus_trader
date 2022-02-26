@@ -79,7 +79,7 @@ class TestBinanceUserHttpAPI:
         mock_send_request = mocker.patch(target="aiohttp.client.ClientSession.request")
 
         # Act
-        await self.api.close_listen_key(
+        await self.api.close_listen_key_spot(
             key="JUdsZc8CSmMUxg1wJha23RogrT3EuC8eV5UTbAOVTkF3XWofMzWoXtWmDAhy"
         )
 
