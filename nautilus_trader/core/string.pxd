@@ -17,5 +17,3 @@ from libc.stdint cimport uint8_t
 
 
 cpdef uint8_t precision_from_str(str value) except *
-cpdef str format_bytes(double size)
-cpdef str pad_string(str string, int final_length, str pad=*)

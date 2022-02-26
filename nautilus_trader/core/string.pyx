@@ -15,7 +15,6 @@
 
 import cython
 
-from libc.math cimport pow
 from libc.stdint cimport uint8_t
 
 from nautilus_trader.core.correctness cimport Condition
@@ -58,61 +57,3 @@ cpdef inline uint8_t precision_from_str(str value) except *:
     else:
         # If does not contain "." then partition[2] will be ""
         return len(value.partition('.')[2])
-
-
-cdef dict POWER_LABELS = {
-    0: "bytes",
-    1: "KB",
-    2: "MB",
-    3: "GB",
-    4: "TB"
-}
-
-cpdef inline str format_bytes(double size):
-    """
-    Return the formatted bytes size.
-
-    Parameters
-    ----------
-    size : double
-        The size in bytes.
-
-    Returns
-    -------
-    str
-
-    """
-    Condition.not_negative(size, "size")
-
-    cdef double power = pow(2, 10)
-
-    cdef int n = 0
-    while size >= power:
-        size /= power
-        n += 1
-    return f"{round(size, 2):,} {POWER_LABELS[n]}"
-
-
-cpdef inline str pad_string(str string, int final_length, str pad=" "):
-    """
-    Return the given string front padded.
-
-    Parameters
-    ----------
-    string : str
-        The string to pad.
-    final_length : int
-        The final length to pad to.
-    pad : str
-        The padding character.
-
-    Returns
-    -------
-    str
-
-    """
-    Condition.not_none(string, "string")
-    Condition.not_negative_int(final_length, "length")
-    Condition.not_none(pad, "pad")
-
-    return ((final_length - len(string)) * pad) + string

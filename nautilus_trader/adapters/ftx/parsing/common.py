@@ -20,7 +20,7 @@ from typing import Any, Dict, Optional
 import pandas as pd
 
 from nautilus_trader.adapters.ftx.core.constants import FTX_VENUE
-from nautilus_trader.core.text import precision_from_str
+from nautilus_trader.core.string import precision_from_str
 from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.execution.reports import PositionStatusReport
 from nautilus_trader.execution.reports import TradeReport
