@@ -117,7 +117,7 @@ class BinanceAccountHttpAPI:
 
         """
         payload: Dict[str, str] = {
-            "symbol": format_symbol(symbol).upper(),
+            "symbol": format_symbol(symbol),
             "side": side,
             "type": type,
         }
@@ -208,7 +208,7 @@ class BinanceAccountHttpAPI:
 
         """
         payload: Dict[str, str] = {
-            "symbol": format_symbol(symbol).upper(),
+            "symbol": format_symbol(symbol),
             "side": side,
             "type": type,
         }
@@ -273,7 +273,7 @@ class BinanceAccountHttpAPI:
         https://binance-docs.github.io/apidocs/spot/en/#cancel-order-trade
 
         """
-        payload: Dict[str, str] = {"symbol": format_symbol(symbol).upper()}
+        payload: Dict[str, str] = {"symbol": format_symbol(symbol)}
         if order_id is not None:
             payload["orderId"] = str(order_id)
         if orig_client_order_id is not None:
@@ -316,7 +316,7 @@ class BinanceAccountHttpAPI:
         https://binance-docs.github.io/apidocs/spot/en/#cancel-all-open-orders-on-a-symbol-trade
 
         """
-        payload: Dict[str, str] = {"symbol": format_symbol(symbol).upper()}
+        payload: Dict[str, str] = {"symbol": format_symbol(symbol)}
         if recv_window is not None:
             payload["recvWindow"] = str(recv_window)
 
@@ -359,7 +359,7 @@ class BinanceAccountHttpAPI:
         https://binance-docs.github.io/apidocs/spot/en/#query-order-user_data
 
         """
-        payload: Dict[str, str] = {"symbol": format_symbol(symbol).upper()}
+        payload: Dict[str, str] = {"symbol": format_symbol(symbol)}
         if order_id is not None:
             payload["orderId"] = order_id
         if orig_client_order_id is not None:
@@ -402,7 +402,7 @@ class BinanceAccountHttpAPI:
         """
         payload: Dict[str, str] = {}
         if symbol is not None:
-            payload["symbol"] = format_symbol(symbol).upper()
+            payload["symbol"] = format_symbol(symbol)
         if recv_window is not None:
             payload["recvWindow"] = str(recv_window)
 
@@ -451,7 +451,7 @@ class BinanceAccountHttpAPI:
         https://binance-docs.github.io/apidocs/spot/en/#all-orders-user_data
 
         """
-        payload: Dict[str, str] = {"symbol": format_symbol(symbol).upper()}
+        payload: Dict[str, str] = {"symbol": format_symbol(symbol)}
         if order_id is not None:
             payload["orderId"] = order_id
         if start_time is not None:
@@ -534,7 +534,7 @@ class BinanceAccountHttpAPI:
 
         """
         payload: Dict[str, str] = {
-            "symbol": format_symbol(symbol).upper(),
+            "symbol": format_symbol(symbol),
             "side": side,
             "quantity": quantity,
             "price": price,
@@ -603,7 +603,7 @@ class BinanceAccountHttpAPI:
         https://binance-docs.github.io/apidocs/spot/en/#cancel-oco-trade
 
         """
-        payload: Dict[str, str] = {"symbol": format_symbol(symbol).upper()}
+        payload: Dict[str, str] = {"symbol": format_symbol(symbol)}
         if order_list_id is not None:
             payload["orderListId"] = order_list_id
         if list_client_order_id is not None:
@@ -827,7 +827,7 @@ class BinanceAccountHttpAPI:
 
 
         """
-        payload: Dict[str, str] = {"symbol": format_symbol(symbol).upper()}
+        payload: Dict[str, str] = {"symbol": format_symbol(symbol)}
         if from_id is not None:
             payload["fromId"] = from_id
         if order_id is not None:
