@@ -23,7 +23,7 @@ pub fn into_cstring(s: String) -> *const c_char {
 }
 
 pub unsafe fn from_cstring(ptr: *const c_char) -> String {
-    // SAFETY: Retakes ownership of C string `ptr`
+    // SAFETY: Takes ownership of C string `ptr`
     CStr::from_ptr(ptr)
         .to_str()
         .expect("CStr::from_ptr failed")
@@ -39,17 +39,20 @@ pub unsafe extern "C" fn cstring_free(ptr: *const c_char) {
 
 pub fn precision_from_str(s: &str) -> u8 {
     let lower_s = s.to_lowercase();
+    // Handle scientific notation
+    if lower_s.find("e-").is_some() {
+        return lower_s.split("e-").last().unwrap().parse::<u8>().unwrap();
+    }
     if lower_s.find('.').is_none() {
         return 0;
     }
     return lower_s.split('.').last().unwrap().len() as u8;
-    // TODO(cs): Implement scientific notation parsing
 }
 
 #[cfg(test)]
 mod tests {
-    use crate::text::precision_from_str;
-    use crate::text::{cstring_free, from_cstring, into_cstring};
+    use crate::string::{precision_from_str};
+    use crate::string::{cstring_free, from_cstring, into_cstring};
     use std::ffi::CString;
 
     #[test]
@@ -82,8 +85,16 @@ mod tests {
 
     #[test]
     fn test_precision_from_str() {
+        assert_eq!(precision_from_str(""), 0);
+        assert_eq!(precision_from_str("0"), 0);
         assert_eq!(precision_from_str("1"), 0);
+        assert_eq!(precision_from_str("1.0"), 1);
         assert_eq!(precision_from_str("2.1"), 1);
         assert_eq!(precision_from_str("2.204622"), 6);
+        assert_eq!(precision_from_str("0.000000001"), 9);
+        assert_eq!(precision_from_str("1e-8"), 8);
+        assert_eq!(precision_from_str("2e-9"), 9);
+        assert_eq!(precision_from_str("1e8"), 0);
+        assert_eq!(precision_from_str("2e8"), 0);
     }
 }

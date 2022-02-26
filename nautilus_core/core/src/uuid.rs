@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use crate::text::into_cstring;
+use crate::string::into_cstring;
 use std::ffi::CStr;
 use std::fmt::{Debug, Display, Formatter, Result};
 use std::os::raw::c_char;

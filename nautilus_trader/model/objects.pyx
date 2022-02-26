@@ -16,6 +16,7 @@
 """Defines fundamental value objects for the trading domain."""
 
 import decimal
+from typing import Union
 
 import cython
 
@@ -35,7 +36,7 @@ from nautilus_trader.core.rust.model cimport price_new
 from nautilus_trader.core.rust.model cimport quantity_as_f64
 from nautilus_trader.core.rust.model cimport quantity_free
 from nautilus_trader.core.rust.model cimport quantity_new
-from nautilus_trader.core.text cimport precision_from_str
+from nautilus_trader.core.string cimport precision_from_str
 from nautilus_trader.model.currency cimport Currency
 from nautilus_trader.model.identifiers cimport InstrumentId
 
@@ -286,63 +287,63 @@ cdef class Quantity:
     def __ge__(self, other) -> bool:
         return Quantity._compare(self, other, Py_GE)
 
-    def __add__(a, b) -> decimal.Decimal or float:
-        if isinstance(b, float):
+    def __add__(a, b) -> Union[decimal.Decimal, float]:
+        if isinstance(a, float) or isinstance(b, float):
             return float(a) + float(b)
         return Quantity._extract_decimal(a) + Quantity._extract_decimal(b)
 
-    def __radd__(b, a) -> decimal.Decimal or float:
-        if isinstance(b, float):
+    def __radd__(b, a) -> Union[decimal.Decimal, float]:
+        if isinstance(a, float) or isinstance(b, float):
             return float(a) + float(b)
         return Quantity._extract_decimal(a) + Quantity._extract_decimal(b)
 
-    def __sub__(a, b) -> decimal.Decimal or float:
-        if isinstance(b, float):
+    def __sub__(a, b) -> Union[decimal.Decimal, float]:
+        if isinstance(a, float) or isinstance(b, float):
             return float(a) - float(b)
         return Quantity._extract_decimal(a) - Quantity._extract_decimal(b)
 
-    def __rsub__(b, a) -> decimal.Decimal or float:
-        if isinstance(b, float):
+    def __rsub__(b, a) -> Union[decimal.Decimal, float]:
+        if isinstance(a, float) or isinstance(b, float):
             return float(a) - float(b)
         return Quantity._extract_decimal(a) - Quantity._extract_decimal(b)
 
-    def __mul__(a, b) -> decimal.Decimal or float:
-        if isinstance(b, float):
+    def __mul__(a, b) -> Union[decimal.Decimal, float]:
+        if isinstance(a, float) or isinstance(b, float):
             return float(a) * float(b)
         return Quantity._extract_decimal(a) * Quantity._extract_decimal(b)
 
-    def __rmul__(b, a) -> decimal.Decimal or float:
-        if isinstance(b, float):
+    def __rmul__(b, a) -> Union[decimal.Decimal, float]:
+        if isinstance(a, float) or isinstance(b, float):
             return float(a) * float(b)
         return Quantity._extract_decimal(a) * Quantity._extract_decimal(b)
 
-    def __truediv__(a, b) -> decimal.Decimal or float:
-        if isinstance(b, float):
+    def __truediv__(a, b) -> Union[decimal.Decimal, float]:
+        if isinstance(a, float) or isinstance(b, float):
             return float(a) / float(b)
         return Quantity._extract_decimal(a) / Quantity._extract_decimal(b)
 
-    def __rtruediv__(b, a) -> decimal.Decimal or float:
-        if isinstance(b, float):
+    def __rtruediv__(b, a) -> Union[decimal.Decimal, float]:
+        if isinstance(a, float) or isinstance(b, float):
             return float(a) / float(b)
         return Quantity._extract_decimal(a) / Quantity._extract_decimal(b)
 
-    def __floordiv__(a, b) -> decimal.Decimal or float:
-        if isinstance(b, float):
+    def __floordiv__(a, b) -> Union[decimal.Decimal, float]:
+        if isinstance(a, float) or isinstance(b, float):
             return float(a) // float(b)
         return Quantity._extract_decimal(a) // Quantity._extract_decimal(b)
 
-    def __rfloordiv__(b, a) -> decimal.Decimal or float:
-        if isinstance(b, float):
+    def __rfloordiv__(b, a) -> Union[decimal.Decimal, float]:
+        if isinstance(a, float) or isinstance(b, float):
             return float(a) // float(b)
         return Quantity._extract_decimal(a) // Quantity._extract_decimal(b)
 
-    def __mod__(a, b) -> decimal.Decimal or float:
-        if isinstance(b, float):
+    def __mod__(a, b) -> Union[decimal.Decimal, float]:
+        if isinstance(a, float) or isinstance(b, float):
             return float(a) % float(b)
         return Quantity._extract_decimal(a) % Quantity._extract_decimal(b)
 
-    def __rmod__(b, a) -> decimal.Decimal or float:
-        if isinstance(b, float):
+    def __rmod__(b, a) -> Union[decimal.Decimal, float]:
+        if isinstance(a, float) or isinstance(b, float):
             return float(a) % float(b)
         return Quantity._extract_decimal(a) * Quantity._extract_decimal(b)
 
@@ -359,16 +360,16 @@ cdef class Quantity:
         return round(self.as_decimal(), ndigits)
 
     def __float__(self) -> float:
-        return quantity_as_f64(&self._qty)
+        return self.as_f64_c()
 
     def __int__(self) -> int:
-        return int(quantity_as_f64(&self._qty))
+        return int(self.as_f64_c())
 
     def __hash__(self) -> int:
         return hash(self._qty.value)
 
     def __str__(self) -> str:
-        return f"{quantity_as_f64(&self._qty):.{self._qty.precision}f}"
+        return f"{self.as_f64_c():.{self._qty.precision}f}"
 
     def __repr__(self) -> str:
         return f"{type(self).__name__}('{self}')"
@@ -376,14 +377,19 @@ cdef class Quantity:
     def __del__(self) -> None:
         quantity_free(self._qty)  # `self._qty` moved to rust (then dropped)
 
-    cdef int64_t raw_int64(self):
+    cdef int64_t raw_int64_c(self):
         return self._qty.value
+
+    cdef double as_f64_c(self):
+        return quantity_as_f64(&self._qty)
 
     @staticmethod
     cdef object _extract_decimal(object obj):
+        assert not isinstance(obj, float)  # Design-time error
         if hasattr(obj, "as_decimal"):
             return obj.as_decimal()
-        return obj
+        else:
+            return decimal.Decimal(obj)
 
     @staticmethod
     cdef bint _compare(a, b, int op) except *:
@@ -410,7 +416,7 @@ cdef class Quantity:
     @staticmethod
     cdef Quantity from_str_c(str value):
         cdef uint8_t precision = precision_from_str(value)
-        Condition.true(precision <= 9, "invalid precision was > 9")
+        Condition.true(precision <= 9, "invalid precision, was > 9")
         return Quantity(float(value), precision=precision)
 
     @staticmethod
@@ -500,21 +506,21 @@ cdef class Quantity:
         str
 
         """
-        return f"{quantity_as_f64(&self._qty):,.{self._qty.precision}f}".replace(",", "_")
+        return f"{self.as_f64_c():,.{self._qty.precision}f}".replace(",", "_")
 
     cpdef void add_assign(self, Quantity other) except *:
         Condition.true(
             other._qty.precision <= self._qty.precision,
             "other precision was greater than assigning quantity precision",
         )
-        self._qty.value += other.raw_int64()
+        self._qty.value += other.raw_int64_c()
 
     cpdef void sub_assign(self, Quantity other) except *:
         Condition.true(
             other._qty.precision <= self._qty.precision,
             "other precision was greater than assigning quantity precision",
         )
-        self._qty.value -= other.raw_int64()
+        self._qty.value -= other.raw_int64_c()
 
     cpdef object as_decimal(self):
         """
@@ -525,7 +531,7 @@ cdef class Quantity:
         Decimal
 
         """
-        return decimal.Decimal(f"{quantity_as_f64(&self._qty):.{self._qty.precision}f}")
+        return decimal.Decimal(f"{self.as_double():.{self._qty.precision}f}")
 
     cpdef double as_double(self) except *:
         """
@@ -536,7 +542,7 @@ cdef class Quantity:
         double
 
         """
-        return quantity_as_f64(&self._qty)
+        return self.as_f64_c()
 
 
 @cython.auto_pickle(True)
@@ -569,7 +575,7 @@ cdef class Price:
     """
 
     def __init__(self, double value, uint8_t precision):
-        Condition.true(precision <= 9, "invalid precision was > 9")
+        Condition.true(precision <= 9, "invalid precision, was > 9")
         self._price = price_new(value, precision)
 
     def __eq__(self, other) -> bool:
@@ -587,64 +593,63 @@ cdef class Price:
     def __ge__(self, other) -> bool:
         return Price._compare(self, other, Py_GE)
 
-    def __add__(a, b) -> decimal.Decimal or float:
-        if isinstance(b, float):
+    def __add__(a, b) -> Union[decimal.Decimal, float]:
+        if isinstance(a, float) or isinstance(b, float):
             return float(a) + float(b)
         return Price._extract_decimal(a) + Price._extract_decimal(b)
 
-    def __radd__(b, a) -> decimal.Decimal or float:
-        if isinstance(b, float):
+    def __radd__(b, a) -> Union[decimal.Decimal, float]:
+        if isinstance(a, float) or isinstance(b, float):
             return float(a) + float(b)
         return Price._extract_decimal(a) + Price._extract_decimal(b)
 
-    def __sub__(a, b) -> decimal.Decimal or float:
-        if isinstance(b, float):
+    def __sub__(a, b) -> Union[decimal.Decimal, float]:
+        if isinstance(a, float) or isinstance(b, float):
             return float(a) - float(b)
         return Price._extract_decimal(a) - Price._extract_decimal(b)
 
-    def __rsub__(b, a) -> decimal.Decimal or float:
-        if isinstance(b, float):
+    def __rsub__(b, a) -> Union[decimal.Decimal, float]:
+        if isinstance(a, float) or isinstance(b, float):
             return float(a) - float(b)
         return Price._extract_decimal(a) - Price._extract_decimal(b)
 
-    def __mul__(a, b) -> decimal.Decimal or float:
-        cdef Price self = a
-        if isinstance(b, float):
+    def __mul__(a, b) -> Union[decimal.Decimal, float]:
+        if isinstance(a, float) or isinstance(b, float):
             return float(a) * float(b)
         return Price._extract_decimal(a) * Price._extract_decimal(b)
 
-    def __rmul__(b, a) -> decimal.Decimal or float:
-        if isinstance(b, float):
+    def __rmul__(b, a) -> Union[decimal.Decimal, float]:
+        if isinstance(a, float) or isinstance(b, float):
             return float(a) * float(b)
         return Price._extract_decimal(a) * Price._extract_decimal(b)
 
-    def __truediv__(a, b) -> decimal.Decimal or float:
-        if isinstance(b, float):
+    def __truediv__(a, b) -> Union[decimal.Decimal, float]:
+        if isinstance(a, float) or isinstance(b, float):
             return float(a) / float(b)
         return Price._extract_decimal(a) / Price._extract_decimal(b)
 
-    def __rtruediv__(b, a) -> decimal.Decimal or float:
-        if isinstance(b, float):
+    def __rtruediv__(b, a) -> Union[decimal.Decimal, float]:
+        if isinstance(a, float) or isinstance(b, float):
             return float(a) / float(b)
         return Price._extract_decimal(a) / Price._extract_decimal(b)
 
-    def __floordiv__(a, b) -> decimal.Decimal or float:
-        if isinstance(b, float):
+    def __floordiv__(a, b) -> Union[decimal.Decimal, float]:
+        if isinstance(a, float) or isinstance(b, float):
             return float(a) // float(b)
         return Price._extract_decimal(a) // Price._extract_decimal(b)
 
-    def __rfloordiv__(b, a) -> decimal.Decimal or float:
-        if isinstance(b, float):
+    def __rfloordiv__(b, a) -> Union[decimal.Decimal, float]:
+        if isinstance(a, float) or isinstance(b, float):
             return float(a) // float(b)
         return Price._extract_decimal(a) // Price._extract_decimal(b)
 
-    def __mod__(a, b) -> decimal.Decimal or float:
-        if isinstance(b, float):
+    def __mod__(a, b) -> Union[decimal.Decimal, float]:
+        if isinstance(a, float) or isinstance(b, float):
             return float(a) % float(b)
         return Price._extract_decimal(a) % Price._extract_decimal(b)
 
-    def __rmod__(b, a) -> decimal.Decimal or float:
-        if isinstance(b, float):
+    def __rmod__(b, a) -> Union[decimal.Decimal, float]:
+        if isinstance(a, float) or isinstance(b, float):
             return float(a) % float(b)
         return Price._extract_decimal(a) * Price._extract_decimal(b)
 
@@ -661,16 +666,16 @@ cdef class Price:
         return round(self.as_decimal(), ndigits)
 
     def __float__(self) -> float:
-        return price_as_f64(&self._price)
+        return self.as_f64_c()
 
     def __int__(self) -> int:
-        return int(price_as_f64(&self._price))
+        return int(self.as_f64_c())
 
     def __hash__(self) -> int:
         return hash(self._price.value)
 
     def __str__(self) -> str:
-        return f"{price_as_f64(&self._price):.{self._price.precision}f}"
+        return f"{self.as_f64_c():.{self._price.precision}f}"
 
     def __repr__(self) -> str:
         return f"{type(self).__name__}('{self}')"
@@ -678,14 +683,19 @@ cdef class Price:
     def __del__(self) -> None:
         price_free(self._price)  # `self._price` moved to rust (then dropped)
 
-    cdef int64_t raw_int64(self):
+    cdef int64_t raw_int64_c(self):
         return self._price.value
+
+    cdef double as_f64_c(self):
+        return price_as_f64(&self._price)
 
     @staticmethod
     cdef object _extract_decimal(object obj):
+        assert not isinstance(obj, float)  # Design-time error
         if hasattr(obj, "as_decimal"):
             return obj.as_decimal()
-        return obj
+        else:
+            return decimal.Decimal(obj)
 
     @staticmethod
     cdef bint _compare(a, b, int op) except *:
@@ -708,7 +718,7 @@ cdef class Price:
     @staticmethod
     cdef Price from_str_c(str value):
         cdef uint8_t precision = precision_from_str(value)
-        Condition.true(precision <= 9, "invalid precision was > 9")
+        Condition.true(precision <= 9, "invalid precision, was > 9")
         return Price(float(value), precision=precision)
 
     @staticmethod
@@ -765,20 +775,6 @@ cdef class Price:
 
         return Price.from_int_c(value)
 
-    cpdef void add_assign(self, Price other) except *:
-        Condition.true(
-            other._qty.precision <= self._qty.precision,
-            "other precision was greater than assigning price precision",
-        )
-        self._price.value += other.raw_int64()
-
-    cpdef void sub_assign(self, Price other) except *:
-        Condition.true(
-            other._qty.precision <= self._qty.precision,
-            "other precision was greater than assigning price precision",
-        )
-        self._price.value -= other.raw_int64()
-
     cpdef object as_decimal(self):
         """
         Return the value as a built-in `Decimal`.
@@ -788,7 +784,7 @@ cdef class Price:
         Decimal
 
         """
-        return decimal.Decimal(f"{price_as_f64(&self._price):.{self._price.precision}f}")
+        return decimal.Decimal(f"{self.as_double():.{self._price.precision}f}")
 
     cpdef double as_double(self) except *:
         """
@@ -799,7 +795,21 @@ cdef class Price:
         double
 
         """
-        return price_as_f64(&self._price)
+        return self.as_f64_c()
+
+    cpdef void add_assign(self, Price other) except *:
+        Condition.true(
+            other._qty.precision <= self._qty.precision,
+            "other precision was greater than assigning price precision",
+        )
+        self._price.value += other.raw_int64_c()
+
+    cpdef void sub_assign(self, Price other) except *:
+        Condition.true(
+            other._qty.precision <= self._qty.precision,
+            "other precision was greater than assigning price precision",
+        )
+        self._price.value -= other.raw_int64_c()
 
 
 cdef class Money(BaseDecimal):

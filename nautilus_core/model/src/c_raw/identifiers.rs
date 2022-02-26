@@ -16,7 +16,7 @@
 use crate::identifiers::instrument_id::InstrumentId;
 use crate::identifiers::symbol::Symbol;
 use crate::identifiers::venue::Venue;
-use nautilus_core::text::{from_cstring, into_cstring};
+use nautilus_core::string::{from_cstring, into_cstring};
 use std::os::raw::c_char;
 
 ////////////////////////////////////////////////////////////////////////////////

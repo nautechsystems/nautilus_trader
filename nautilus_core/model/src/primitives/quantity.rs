@@ -14,7 +14,7 @@
 // -------------------------------------------------------------------------------------------------
 
 use crate::primitives::{FIXED_EXPONENT, FIXED_PRECISION};
-use nautilus_core::text::precision_from_str;
+use nautilus_core::string::precision_from_str;
 use std::cmp::Ordering;
 use std::fmt::{Debug, Display, Formatter, Result};
 use std::hash::{Hash, Hasher};
@@ -52,7 +52,7 @@ impl Quantity {
         self.value == 0
     }
     pub fn as_f64(&self) -> f64 {
-        (self.value) as f64 * FIXED_PRECISION
+        (self.value as f64) * FIXED_PRECISION
     }
 }
 

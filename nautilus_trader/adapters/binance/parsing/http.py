@@ -21,7 +21,7 @@ from nautilus_trader.adapters.binance.core.constants import BINANCE_VENUE
 from nautilus_trader.adapters.binance.core.types import BinanceBar
 from nautilus_trader.adapters.binance.parsing.common import parse_balances
 from nautilus_trader.core.datetime import millis_to_nanos
-from nautilus_trader.core.text import precision_from_str
+from nautilus_trader.core.string import precision_from_str
 from nautilus_trader.model.currency import Currency
 from nautilus_trader.model.data.bar import BarType
 from nautilus_trader.model.data.tick import TradeTick

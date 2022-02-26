@@ -15,7 +15,17 @@
 
 from libc.stdint cimport uint8_t
 
+from nautilus_trader.core.rust.core cimport cstring_free
+
+
+cdef inline const char* pystr_to_cstring(str value) except *:
+    return value.encode("utf-8") + b"\x00"
+
+
+cdef inline str cstring_to_pystr(const char* ptr):
+    cdef str value = ptr.decode()  # Copy to `utf8`
+    cstring_free(ptr)  # `ptr` moved to rust (then dropped)
+    return value
+
 
 cpdef uint8_t precision_from_str(str value) except *
-cpdef str format_bytes(double size)
-cpdef str pad_string(str string, int final_length, str pad=*)
