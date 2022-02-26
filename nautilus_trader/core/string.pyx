@@ -26,21 +26,26 @@ cpdef inline uint8_t precision_from_str(str value) except *:
     """
     Return the decimal precision inferred from the given string.
     Can accept scientific notation strings including an 'e' character.
+
     Parameters
     ----------
     value : str
         The string value to parse.
+
     Returns
     -------
     uint8
+
     Raises
     ------
     ValueError
         If value is not a valid string.
+
     Notes
     -----
     If not scientific notation and no decimal point '.', then precision will be
     inferred as zero.
+
     """
     Condition.valid_string(value, "value")
 
