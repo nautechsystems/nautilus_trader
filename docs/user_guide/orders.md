@@ -10,13 +10,13 @@ as possible. This allows traders to define certain conditions and instructions f
 order execution and management, which allows essentially any type of trading strategy to be created.
 
 ## Types
-The two main order types are _market_ orders and _limit_ orders. All the other order
+The two main types of orders are _market_ orders and _limit_ orders. All the other order
 types are built from these two fundamental types, in terms of liquidity provision they
 are exact opposites. Market orders demand liquidity and require immediate trading at the best
 price available. Conversely, limit orders provide liquidity, they act as standing orders in a limit order book 
 at a specified price limit.
 
-The order types available within the platform are (using the enum values):
+The order types available for the platform are (using the enum values):
 - `MARKET`
 - `LIMIT`
 - `STOP_MARKET`
