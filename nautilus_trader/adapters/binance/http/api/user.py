@@ -165,7 +165,7 @@ class BinanceUserDataHttpAPI:
         return await self.client.send_request(
             http_method="POST",
             url_path="/sapi/v1/userDataStream/isolated",
-            payload={"symbol": format_symbol(symbol).upper()},
+            payload={"symbol": format_symbol(symbol)},
         )
 
     async def ping_listen_key_isolated_margin(self, symbol: str, key: str) -> Dict[str, Any]:
@@ -198,7 +198,7 @@ class BinanceUserDataHttpAPI:
         return await self.client.send_request(
             http_method="PUT",
             url_path="/sapi/v1/userDataStream/isolated",
-            payload={"listenKey": key, "symbol": format_symbol(symbol).upper()},
+            payload={"listenKey": key, "symbol": format_symbol(symbol)},
         )
 
     async def close_listen_key_isolated_margin(self, symbol: str, key: str) -> Dict[str, Any]:
@@ -227,7 +227,7 @@ class BinanceUserDataHttpAPI:
         return await self.client.send_request(
             http_method="DELETE",
             url_path="/sapi/v1/userDataStream/isolated",
-            payload={"listenKey": key, "symbol": format_symbol(symbol).upper()},
+            payload={"listenKey": key, "symbol": format_symbol(symbol)},
         )
 
     async def create_listen_key_futures(self) -> Dict[str, Any]:

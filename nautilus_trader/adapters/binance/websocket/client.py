@@ -96,7 +96,7 @@ class BinanceWebSocketClient(WebSocketClient):
         Update Speed: Real-time
 
         """
-        self._add_stream(f"{format_symbol(symbol)}@aggTrade")
+        self._add_stream(f"{format_symbol(symbol).lower()}@aggTrade")
 
     def subscribe_trades(self, symbol: str):
         """
@@ -107,7 +107,7 @@ class BinanceWebSocketClient(WebSocketClient):
         Update Speed: Real-time
 
         """
-        self._add_stream(f"{format_symbol(symbol)}@trade")
+        self._add_stream(f"{format_symbol(symbol).lower()}@trade")
 
     def subscribe_bars(self, symbol: str, interval: str):
         """
@@ -135,7 +135,7 @@ class BinanceWebSocketClient(WebSocketClient):
         Update Speed: 2000ms
 
         """
-        self._add_stream(f"{format_symbol(symbol)}@kline_{interval}")
+        self._add_stream(f"{format_symbol(symbol).lower()}@kline_{interval}")
 
     def subscribe_mini_ticker(self, symbol: str = None):
         """
@@ -151,7 +151,7 @@ class BinanceWebSocketClient(WebSocketClient):
         if symbol is None:
             self._add_stream("!miniTicker@arr")
         else:
-            self._add_stream(f"{format_symbol(symbol)}@miniTicker")
+            self._add_stream(f"{format_symbol(symbol).lower()}@miniTicker")
 
     def subscribe_ticker(self, symbol: str = None):
         """
@@ -167,7 +167,7 @@ class BinanceWebSocketClient(WebSocketClient):
         if symbol is None:
             self._add_stream("!ticker@arr")
         else:
-            self._add_stream(f"{format_symbol(symbol)}@ticker")
+            self._add_stream(f"{format_symbol(symbol).lower()}@ticker")
 
     def subscribe_book_ticker(self, symbol: str = None):
         """
@@ -182,7 +182,7 @@ class BinanceWebSocketClient(WebSocketClient):
         if symbol is None:
             self._add_stream("!bookTicker")
         else:
-            self._add_stream(f"{format_symbol(symbol)}@bookTicker")
+            self._add_stream(f"{format_symbol(symbol).lower()}@bookTicker")
 
     def subscribe_partial_book_depth(self, symbol: str, depth: int, speed: int):
         """
@@ -193,7 +193,7 @@ class BinanceWebSocketClient(WebSocketClient):
         Update Speed: 1000ms or 100ms
 
         """
-        self._add_stream(f"{format_symbol(symbol)}@depth{depth}@{speed}ms")
+        self._add_stream(f"{format_symbol(symbol).lower()}@depth{depth}@{speed}ms")
 
     def subscribe_diff_book_depth(self, symbol: str, speed: int):
         """
@@ -204,7 +204,7 @@ class BinanceWebSocketClient(WebSocketClient):
         Order book price and quantity depth updates used to locally manage an order book.
 
         """
-        self._add_stream(f"{format_symbol(symbol)}@depth@{speed}ms")
+        self._add_stream(f"{format_symbol(symbol).lower()}@depth@{speed}ms")
 
     def subscribe_mark_price(self, symbol: str = None, speed: int = None):
         """
@@ -218,4 +218,4 @@ class BinanceWebSocketClient(WebSocketClient):
         if symbol is None:
             self._add_stream("!markPrice@arr")
         else:
-            self._add_stream(f"{symbol.lower()}@markPrice@{speed / 1000}s")
+            self._add_stream(f"{format_symbol(symbol).lower()}@markPrice@{speed / 1000}s")
