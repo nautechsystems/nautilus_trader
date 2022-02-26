@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use crate::primitives::{FIXED_EXPONENT, FIXED_PRECISION};
+use crate::primitives::fixed::{f64_to_fixed_u64, fixed_u64_to_f64};
 use nautilus_core::string::precision_from_str;
 use std::cmp::Ordering;
 use std::fmt::{Debug, Display, Formatter, Result};
@@ -21,22 +21,20 @@ use std::hash::{Hash, Hasher};
 use std::ops::{Add, AddAssign, Mul, MulAssign, Sub, SubAssign};
 
 #[repr(C)]
-#[derive(Clone, Default)]
+#[derive(Eq, Clone, Default)]
 pub struct Quantity {
-    value: u64,
+    fixed: u64,
     pub precision: u8,
 }
 
 impl Quantity {
     pub fn new(value: f64, precision: u8) -> Self {
         assert!(value >= 0.0);
-        assert!(precision <= 9);
 
-        let pow1 = 10_u64.pow(precision as u32);
-        let pow2 = 10_u64.pow((FIXED_EXPONENT - precision) as u32);
-        let rounded = (value * pow1 as f64).round() as u64;
-        let value = rounded * pow2;
-        Quantity { value, precision }
+        Quantity {
+            fixed: f64_to_fixed_u64(value, precision),
+            precision,
+        }
     }
 
     pub fn new_from_str(input: &str) -> Self {
@@ -49,52 +47,50 @@ impl Quantity {
     }
 
     pub fn is_zero(&self) -> bool {
-        self.value == 0
+        self.fixed == 0
     }
     pub fn as_f64(&self) -> f64 {
-        (self.value as f64) * FIXED_PRECISION
+        fixed_u64_to_f64(self.fixed)
     }
 }
 
 impl Hash for Quantity {
     fn hash<H: Hasher>(&self, state: &mut H) {
-        self.value.hash(state)
+        self.fixed.hash(state)
     }
 }
 
 impl PartialEq for Quantity {
     fn eq(&self, other: &Self) -> bool {
-        self.value == other.value
+        self.fixed == other.fixed
     }
 }
 
-impl Eq for Quantity {}
-
 impl PartialOrd for Quantity {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        self.value.partial_cmp(&other.value)
+        self.fixed.partial_cmp(&other.fixed)
     }
 
     fn lt(&self, other: &Self) -> bool {
-        self.value.lt(&other.value)
+        self.fixed.lt(&other.fixed)
     }
 
     fn le(&self, other: &Self) -> bool {
-        self.value.le(&other.value)
+        self.fixed.le(&other.fixed)
     }
 
     fn gt(&self, other: &Self) -> bool {
-        self.value.gt(&other.value)
+        self.fixed.gt(&other.fixed)
     }
 
     fn ge(&self, other: &Self) -> bool {
-        self.value.ge(&other.value)
+        self.fixed.ge(&other.fixed)
     }
 }
 
 impl Ord for Quantity {
     fn cmp(&self, other: &Self) -> Ordering {
-        self.value.cmp(&other.value)
+        self.fixed.cmp(&other.fixed)
     }
 }
 
@@ -102,7 +98,7 @@ impl Add for Quantity {
     type Output = Self;
     fn add(self, rhs: Self) -> Self::Output {
         Quantity {
-            value: self.value + rhs.value,
+            fixed: self.fixed + rhs.fixed,
             precision: self.precision,
         }
     }
@@ -112,7 +108,7 @@ impl Sub for Quantity {
     type Output = Self;
     fn sub(self, rhs: Self) -> Self::Output {
         Quantity {
-            value: self.value - rhs.value,
+            fixed: self.fixed - rhs.fixed,
             precision: self.precision,
         }
     }
@@ -122,7 +118,7 @@ impl Mul for Quantity {
     type Output = Self;
     fn mul(self, rhs: Self) -> Self::Output {
         Quantity {
-            value: self.value * rhs.value,
+            fixed: self.fixed * rhs.fixed,
             precision: self.precision,
         }
     }
@@ -130,31 +126,31 @@ impl Mul for Quantity {
 
 impl AddAssign for Quantity {
     fn add_assign(&mut self, other: Self) {
-        self.value += other.value;
+        self.fixed += other.fixed;
     }
 }
 
 impl AddAssign<u64> for Quantity {
     fn add_assign(&mut self, other: u64) {
-        self.value += other;
+        self.fixed += other;
     }
 }
 
 impl SubAssign for Quantity {
     fn sub_assign(&mut self, other: Self) {
-        self.value -= other.value;
+        self.fixed -= other.fixed;
     }
 }
 
 impl SubAssign<u64> for Quantity {
     fn sub_assign(&mut self, other: u64) {
-        self.value -= other;
+        self.fixed -= other;
     }
 }
 
 impl MulAssign<u64> for Quantity {
     fn mul_assign(&mut self, multiplier: u64) {
-        self.value *= multiplier;
+        self.fixed *= multiplier;
     }
 }
 
@@ -180,7 +176,7 @@ mod tests {
         let qty = Quantity::new(0.00812, 8);
 
         assert_eq!(qty, qty);
-        assert_eq!(qty.value, 8120000);
+        assert_eq!(qty.fixed, 8120000);
         assert_eq!(qty.precision, 8);
         assert_eq!(qty.as_f64(), 0.00812);
         assert_eq!(qty.to_string(), "0.00812000");
@@ -190,14 +186,14 @@ mod tests {
     fn qty_minimum() {
         let qty = Quantity::new(0.000000001, 9);
 
-        assert_eq!(qty.value, 1);
+        assert_eq!(qty.fixed, 1);
         assert_eq!(qty.to_string(), "0.000000001");
     }
     #[test]
     fn qty_precision() {
         let qty = Quantity::new(1.001, 2);
 
-        assert_eq!(qty.value, 1000000000);
+        assert_eq!(qty.fixed, 1000000000);
         assert_eq!(qty.to_string(), "1.00");
     }
 
@@ -206,7 +202,7 @@ mod tests {
         let qty = Quantity::new_from_str("0.00812000");
 
         assert_eq!(qty, qty);
-        assert_eq!(qty.value, 8120000);
+        assert_eq!(qty.fixed, 8120000);
         assert_eq!(qty.precision, 8);
         assert_eq!(qty.as_f64(), 0.00812);
         assert_eq!(qty.to_string(), "0.00812000");

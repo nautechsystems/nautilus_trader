@@ -26,6 +26,10 @@ class BinanceAccountType(Enum):
     FUTURES_USDT = "FUTURES_USDT"
     FUTURES_COIN = "FUTURES_COIN"
 
+    @property
+    def is_futures(self) -> bool:
+        return self in (BinanceAccountType.FUTURES_USDT, BinanceAccountType.FUTURES_COIN)
+
 
 @unique
 class BinanceContractType(Enum):

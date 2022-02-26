@@ -19,8 +19,8 @@
 from typing import Any, Dict
 
 from nautilus_trader.adapters.binance.core.enums import BinanceAccountType
+from nautilus_trader.adapters.binance.core.functions import format_symbol
 from nautilus_trader.adapters.binance.http.client import BinanceHttpClient
-from nautilus_trader.adapters.binance.http.functions import format_symbol
 from nautilus_trader.core.correctness import PyCondition
 
 
@@ -42,6 +42,7 @@ class BinanceUserDataHttpAPI:
         PyCondition.not_none(client, "client")
 
         self.client = client
+        self.account_type = account_type
 
         if account_type == BinanceAccountType.SPOT:
             self.BASE_ENDPOINT = "/api/v3/"
@@ -56,7 +57,7 @@ class BinanceUserDataHttpAPI:
 
     async def create_listen_key(self) -> Dict[str, Any]:
         """
-        Create a new listen key for the Binance API.
+        Create a new listen key for the Binance SPOT or MARGIN API.
 
         Start a new user data stream. The stream will close after 60 minutes
         unless a keepalive is sent. If the account has an active listenKey,
@@ -81,7 +82,7 @@ class BinanceUserDataHttpAPI:
 
     async def ping_listen_key(self, key: str) -> Dict[str, Any]:
         """
-        Ping/Keep-alive a listen key for the SPOT API.
+        Ping/Keep-alive a listen key for the Binance SPOT or MARGIN API.
 
         Keep-alive a user data stream to prevent a time-out. User data streams
         will close after 60 minutes. It's recommended to send a ping about every
@@ -109,9 +110,9 @@ class BinanceUserDataHttpAPI:
             payload={"listenKey": key},
         )
 
-    async def close_listen_key(self, key: str) -> Dict[str, Any]:
+    async def close_listen_key_spot(self, key: str) -> Dict[str, Any]:
         """
-        Close a listen key for the SPOT API.
+        Close a listen key for the Binance SPOT or MARGIN API.
 
         Close a ListenKey (USER_STREAM).
 
@@ -227,4 +228,83 @@ class BinanceUserDataHttpAPI:
             http_method="DELETE",
             url_path="/sapi/v1/userDataStream/isolated",
             payload={"listenKey": key, "symbol": format_symbol(symbol).upper()},
+        )
+
+    async def create_listen_key_futures(self) -> Dict[str, Any]:
+        """
+        Create a new listen key for the Binance FUTURES_USDT or FUTURES_COIN API.
+
+        Start a new user data stream. The stream will close after 60 minutes
+        unless a keepalive is sent. If the account has an active listenKey,
+        that listenKey will be returned and its validity will be extended for 60
+        minutes.
+
+        Create a ListenKey (USER_STREAM).
+
+        Returns
+        -------
+        dict[str, Any]
+
+        References
+        ----------
+        https://binance-docs.github.io/apidocs/futures/en/#start-user-data-stream-user_stream
+
+        """
+        return await self.client.send_request(
+            http_method="POST",
+            url_path=self.BASE_ENDPOINT + "listenKey",
+        )
+
+    async def ping_listen_key_futures(self, key: str) -> Dict[str, Any]:
+        """
+        Ping/Keep-alive a listen key for the Binance FUTURES_USDT or FUTURES_COIN API.
+
+        Keep-alive a user data stream to prevent a time-out. User data streams
+        will close after 60 minutes. It's recommended to send a ping about every
+        30 minutes.
+
+        Ping/Keep-alive a ListenKey (USER_STREAM).
+
+        Parameters
+        ----------
+        key : str
+            The listen key for the request.
+
+        Returns
+        -------
+        dict[str, Any]
+
+        References
+        ----------
+        https://binance-docs.github.io/apidocs/futures/en/#keepalive-user-data-stream-user_stream
+
+        """
+        return await self.client.send_request(
+            http_method="PUT",
+            url_path=self.BASE_ENDPOINT + "listenKey",
+            payload={"listenKey": key},
+        )
+
+    async def close_listen_key_spot_futures(self, key: str) -> Dict[str, Any]:
+        """
+        Close a user data stream for the Binance FUTURES_USDT or FUTURES_COIN API.
+
+        Parameters
+        ----------
+        key : str
+            The listen key for the request.
+
+        Returns
+        -------
+        dict[str, Any]
+
+        References
+        ----------
+        https://binance-docs.github.io/apidocs/futures/en/#close-user-data-stream-user_stream
+
+        """
+        return await self.client.send_request(
+            http_method="DELETE",
+            url_path=self.BASE_ENDPOINT + "listenKey",
+            payload={"listenKey": key},
         )

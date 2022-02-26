@@ -17,7 +17,7 @@ import pkgutil
 
 import orjson
 
-from nautilus_trader.adapters.binance.parsing.websocket import parse_spot_ticker_24hr_ws
+from nautilus_trader.adapters.binance.parsing.websocket import parse_ticker_24hr_spot_ws
 from nautilus_trader.backtest.data.providers import TestInstrumentProvider
 
 
@@ -34,7 +34,7 @@ class TestBinanceWebSocketParsing:
         msg = orjson.loads(data)
 
         # Act
-        result = parse_spot_ticker_24hr_ws(
+        result = parse_ticker_24hr_spot_ws(
             instrument_id=ETHUSDT.id,
             msg=msg,
             ts_init=9999999999999991,

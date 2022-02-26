@@ -13,9 +13,32 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-pub mod balance;
-pub mod currency;
-pub mod fixed;
-pub mod money;
-pub mod price;
-pub mod quantity;
+use crate::enums::CurrencyType;
+
+#[repr(C)]
+#[derive(Eq, PartialEq, Clone, Hash, Debug)]
+pub struct Currency {
+    pub code: Box<String>,
+    pub precision: u8,
+    pub iso4217: u16,
+    pub name: Box<String>,
+    pub currency_type: CurrencyType,
+}
+
+impl Currency {
+    pub fn new(
+        code: &str,
+        precision: u8,
+        iso4217: u16,
+        name: &str,
+        currency_type: CurrencyType,
+    ) -> Currency {
+        Currency {
+            code: Box::from(code.to_string()),
+            precision,
+            iso4217,
+            name: Box::from(name.to_string()),
+            currency_type,
+        }
+    }
+}

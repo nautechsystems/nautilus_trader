@@ -366,7 +366,7 @@ cdef class Quantity:
         return int(self.as_f64_c())
 
     def __hash__(self) -> int:
-        return hash(self._qty.value)
+        return hash(self._qty.fixed)
 
     def __str__(self) -> str:
         return f"{self.as_f64_c():.{self._qty.precision}f}"
@@ -377,8 +377,8 @@ cdef class Quantity:
     def __del__(self) -> None:
         quantity_free(self._qty)  # `self._qty` moved to rust (then dropped)
 
-    cdef int64_t raw_int64_c(self):
-        return self._qty.value
+    cdef int64_t fixed_int64_c(self):
+        return self._qty.fixed
 
     cdef double as_f64_c(self):
         return quantity_as_f64(&self._qty)
@@ -513,14 +513,14 @@ cdef class Quantity:
             other._qty.precision <= self._qty.precision,
             "other precision was greater than assigning quantity precision",
         )
-        self._qty.value += other.raw_int64_c()
+        self._qty.value += other.fixed_int64_c()
 
     cpdef void sub_assign(self, Quantity other) except *:
         Condition.true(
             other._qty.precision <= self._qty.precision,
             "other precision was greater than assigning quantity precision",
         )
-        self._qty.value -= other.raw_int64_c()
+        self._qty.value -= other.fixed_int64_c()
 
     cpdef object as_decimal(self):
         """
@@ -672,7 +672,7 @@ cdef class Price:
         return int(self.as_f64_c())
 
     def __hash__(self) -> int:
-        return hash(self._price.value)
+        return hash(self._price.fixed)
 
     def __str__(self) -> str:
         return f"{self.as_f64_c():.{self._price.precision}f}"
@@ -683,8 +683,8 @@ cdef class Price:
     def __del__(self) -> None:
         price_free(self._price)  # `self._price` moved to rust (then dropped)
 
-    cdef int64_t raw_int64_c(self):
-        return self._price.value
+    cdef int64_t fixed_int64_c(self):
+        return self._price.fixed
 
     cdef double as_f64_c(self):
         return price_as_f64(&self._price)
@@ -802,14 +802,14 @@ cdef class Price:
             other._qty.precision <= self._qty.precision,
             "other precision was greater than assigning price precision",
         )
-        self._price.value += other.raw_int64_c()
+        self._price.fixed += other.fixed_int64_c()
 
     cpdef void sub_assign(self, Price other) except *:
         Condition.true(
             other._qty.precision <= self._qty.precision,
             "other precision was greater than assigning price precision",
         )
-        self._price.value -= other.raw_int64_c()
+        self._price.fixed -= other.fixed_int64_c()
 
 
 cdef class Money(BaseDecimal):

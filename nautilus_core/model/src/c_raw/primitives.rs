@@ -13,9 +13,14 @@
 //  limitations under the License.
 // ------------------------------------------------------------------------------------------------
 
+use crate::primitives::currency::Currency;
+use crate::primitives::money::Money;
 use crate::primitives::price::Price;
 use crate::primitives::quantity::Quantity;
 use std::ops::{AddAssign, SubAssign};
+use std::os::raw::c_char;
+use nautilus_core::string::{from_cstring, into_cstring};
+use crate::enums::CurrencyType;
 
 ////////////////////////////////////////////////////////////////////////////////
 // Price
@@ -80,5 +85,68 @@ pub extern "C" fn quantity_sub_assign(mut a: Quantity, b: Quantity) {
 
 #[no_mangle]
 pub extern "C" fn quantity_sub_assign_u64(mut a: Quantity, b: u64) {
+    a.sub_assign(b);
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// Currency
+////////////////////////////////////////////////////////////////////////////////
+#[no_mangle]
+pub unsafe extern "C" fn currency_new(
+    code_ptr: *const c_char,
+    precision: u8,
+    iso4217: u16,
+    name_ptr: *const c_char,
+    currency_type: CurrencyType,
+) -> Currency {
+    Currency::new(
+        from_cstring(code_ptr).as_str(),
+        precision,
+        iso4217,
+        from_cstring(name_ptr).as_str(),
+        currency_type,
+    )
+}
+
+#[no_mangle]
+pub extern "C" fn currency_free(currency: Currency) {
+    drop(currency); // Memory freed here
+}
+
+#[no_mangle]
+pub extern "C" fn currency_code_to_cstring(currency: &Currency) -> *const c_char {
+    into_cstring(currency.code.to_string())
+}
+
+#[no_mangle]
+pub extern "C" fn currency_name_to_cstring(currency: &Currency) -> *const c_char {
+    into_cstring(currency.name.to_string())
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// Money
+////////////////////////////////////////////////////////////////////////////////
+#[no_mangle]
+pub extern "C" fn money_new(amount: f64, currency: Currency) -> Money {
+    Money::new(amount, currency)
+}
+
+#[no_mangle]
+pub extern "C" fn money_free(money: Money) {
+    drop(money); // Memory freed here
+}
+
+#[no_mangle]
+pub extern "C" fn money_as_f64(qty: &Money) -> f64 {
+    qty.as_f64()
+}
+
+#[no_mangle]
+pub extern "C" fn money_add_assign(mut a: Money, b: Money) {
+    a.add_assign(b);
+}
+
+#[no_mangle]
+pub extern "C" fn money_sub_assign(mut a: Money, b: Money) {
     a.sub_assign(b);
 }

@@ -27,7 +27,7 @@ pub struct InstrumentId {
 impl InstrumentId {
     pub fn from_str(value: &str) -> InstrumentId {
         let pieces: Vec<&str> = value.split('.').collect();
-        assert!(pieces.len() >= 2, "malformed instrument ID");
+        assert!(pieces.len() >= 2, "malformed `InstrumentId` string");
         InstrumentId {
             symbol: Symbol::from_str(pieces[0]),
             venue: Venue::from_str(pieces[1]),

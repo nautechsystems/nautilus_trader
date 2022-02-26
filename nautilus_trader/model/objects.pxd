@@ -41,7 +41,7 @@ cdef class BaseDecimal:
 cdef class Quantity:
     cdef Quantity_t _qty
 
-    cdef int64_t raw_int64_c(self)
+    cdef int64_t fixed_int64_c(self)
     cdef double as_f64_c(self)
 
     cpdef str to_str(self)
@@ -70,7 +70,7 @@ cdef class Quantity:
 cdef class Price:
     cdef Price_t _price
 
-    cdef int64_t raw_int64_c(self)
+    cdef int64_t fixed_int64_c(self)
     cdef double as_f64_c(self)
 
     @staticmethod

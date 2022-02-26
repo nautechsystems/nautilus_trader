@@ -17,6 +17,8 @@ from collections import deque
 from decimal import Decimal
 from typing import Optional
 
+from nautilus_trader.cache.config import CacheConfig
+
 from libc.stdint cimport int64_t
 
 from nautilus_trader.accounting.accounts.base cimport Account
@@ -43,11 +45,11 @@ from nautilus_trader.model.identifiers cimport StrategyId
 from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.model.identifiers cimport VenueOrderId
 from nautilus_trader.model.instruments.base cimport Instrument
+from nautilus_trader.model.instruments.crypto_perpetual cimport CryptoPerpetual
+from nautilus_trader.model.instruments.currency cimport CurrencySpot
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.orders.base cimport Order
 from nautilus_trader.trading.strategy cimport TradingStrategy
-
-from nautilus_trader.cache.config import CacheConfig
 
 
 cdef class Cache(CacheFacade):
@@ -1059,7 +1061,7 @@ cdef class Cache(CacheFacade):
         """
         self._instruments[instrument.id] = instrument
 
-        if instrument.get_base_currency() is not None:
+        if isinstance(instrument, (CurrencySpot, CryptoPerpetual)):
             self._xrate_symbols[instrument.id] = (
                 f"{instrument.base_currency}/{instrument.quote_currency}"
             )

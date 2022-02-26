@@ -19,9 +19,9 @@
 from typing import Any, Dict, Optional
 
 from nautilus_trader.adapters.binance.core.enums import BinanceAccountType
+from nautilus_trader.adapters.binance.core.functions import format_symbol
 from nautilus_trader.adapters.binance.http.client import BinanceHttpClient
 from nautilus_trader.adapters.binance.http.enums import NewOrderRespType
-from nautilus_trader.adapters.binance.http.functions import format_symbol
 from nautilus_trader.core.correctness import PyCondition
 
 

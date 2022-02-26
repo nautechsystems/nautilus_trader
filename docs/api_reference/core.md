@@ -44,6 +44,16 @@
    :member-order: bysource
 ```
 
+## Stats
+
+```{eval-rst}
+.. automodule:: nautilus_trader.core.stats
+   :show-inheritance:
+   :inherited-members:
+   :members:
+   :member-order: bysource
+```
+
 ## UUID
 
 ```{eval-rst}

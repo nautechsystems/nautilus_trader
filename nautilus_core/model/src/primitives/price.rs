@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use crate::primitives::{FIXED_EXPONENT, FIXED_PRECISION};
+use crate::primitives::fixed::{f64_to_fixed_i64, fixed_i64_to_f64};
 use nautilus_core::string::precision_from_str;
 use std::cmp::Ordering;
 use std::fmt::{Debug, Display, Formatter, Result};
@@ -21,21 +21,18 @@ use std::hash::{Hash, Hasher};
 use std::ops::{Add, AddAssign, Mul, MulAssign, Neg, Sub, SubAssign};
 
 #[repr(C)]
-#[derive(Clone, Default)]
+#[derive(Eq, Clone, Default)]
 pub struct Price {
-    value: i64,
+    fixed: i64,
     pub precision: u8,
 }
 
 impl Price {
     pub fn new(value: f64, precision: u8) -> Self {
-        assert!(precision <= 9);
-
-        let pow1 = 10_i64.pow(precision as u32);
-        let pow2 = 10_i64.pow((FIXED_EXPONENT - precision) as u32);
-        let rounded = (value * pow1 as f64).round() as i64;
-        let value = rounded * pow2;
-        Price { value, precision }
+        Price {
+            fixed: f64_to_fixed_i64(value, precision),
+            precision,
+        }
     }
 
     pub fn from_str(input: &str) -> Self {
@@ -48,52 +45,50 @@ impl Price {
     }
 
     pub fn is_zero(&self) -> bool {
-        self.value == 0
+        self.fixed == 0
     }
     pub fn as_f64(&self) -> f64 {
-        (self.value as f64) * FIXED_PRECISION
+        fixed_i64_to_f64(self.fixed)
     }
 }
 
 impl Hash for Price {
     fn hash<H: Hasher>(&self, state: &mut H) {
-        self.value.hash(state)
+        self.fixed.hash(state)
     }
 }
 
 impl PartialEq for Price {
     fn eq(&self, other: &Self) -> bool {
-        self.value == other.value
+        self.fixed == other.fixed
     }
 }
 
-impl Eq for Price {}
-
 impl PartialOrd for Price {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        self.value.partial_cmp(&other.value)
+        self.fixed.partial_cmp(&other.fixed)
     }
 
     fn lt(&self, other: &Self) -> bool {
-        self.value.lt(&other.value)
+        self.fixed.lt(&other.fixed)
     }
 
     fn le(&self, other: &Self) -> bool {
-        self.value.le(&other.value)
+        self.fixed.le(&other.fixed)
     }
 
     fn gt(&self, other: &Self) -> bool {
-        self.value.gt(&other.value)
+        self.fixed.gt(&other.fixed)
     }
 
     fn ge(&self, other: &Self) -> bool {
-        self.value.ge(&other.value)
+        self.fixed.ge(&other.fixed)
     }
 }
 
 impl Ord for Price {
     fn cmp(&self, other: &Self) -> Ordering {
-        self.value.cmp(&other.value)
+        self.fixed.cmp(&other.fixed)
     }
 }
 
@@ -101,7 +96,7 @@ impl Neg for Price {
     type Output = Self;
     fn neg(self) -> Self::Output {
         Price {
-            value: -self.value,
+            fixed: -self.fixed,
             precision: self.precision,
         }
     }
@@ -111,7 +106,7 @@ impl Add for Price {
     type Output = Self;
     fn add(self, rhs: Price) -> Self::Output {
         Price {
-            value: self.value + rhs.value,
+            fixed: self.fixed + rhs.fixed,
             precision: self.precision,
         }
     }
@@ -121,7 +116,7 @@ impl Sub for Price {
     type Output = Self;
     fn sub(self, rhs: Price) -> Self::Output {
         Price {
-            value: self.value - rhs.value,
+            fixed: self.fixed - rhs.fixed,
             precision: self.precision,
         }
     }
@@ -131,7 +126,7 @@ impl Mul for Price {
     type Output = Self;
     fn mul(self, rhs: Price) -> Self {
         Price {
-            value: self.value * rhs.value,
+            fixed: self.fixed * rhs.fixed,
             precision: self.precision,
         }
     }
@@ -139,19 +134,19 @@ impl Mul for Price {
 
 impl AddAssign for Price {
     fn add_assign(&mut self, other: Self) {
-        self.value += other.value;
+        self.fixed += other.fixed;
     }
 }
 
 impl SubAssign for Price {
     fn sub_assign(&mut self, other: Self) {
-        self.value -= other.value;
+        self.fixed -= other.fixed;
     }
 }
 
 impl MulAssign for Price {
     fn mul_assign(&mut self, multiplier: Self) {
-        self.value *= multiplier.value;
+        self.fixed *= multiplier.fixed;
     }
 }
 
@@ -198,7 +193,7 @@ mod tests {
         let price = Price::new(0.00812, 8);
 
         assert_eq!(price, price);
-        assert_eq!(price.value, 8120000);
+        assert_eq!(price.fixed, 8120000);
         assert_eq!(price.precision, 8);
         assert_eq!(price.as_f64(), 0.00812);
         assert_eq!(price.to_string(), "0.00812000");
@@ -208,7 +203,7 @@ mod tests {
     fn test_price_minimum() {
         let price = Price::new(0.000000001, 9);
 
-        assert_eq!(price.value, 1);
+        assert_eq!(price.fixed, 1);
         assert_eq!(price.to_string(), "0.000000001");
     }
 
@@ -216,7 +211,7 @@ mod tests {
     fn test_price_precision() {
         let price = Price::new(1.001, 2);
 
-        assert_eq!(price.value, 1000000000);
+        assert_eq!(price.fixed, 1000000000);
         assert_eq!(price.to_string(), "1.00");
     }
 
@@ -225,7 +220,7 @@ mod tests {
         let price = Price::from_str("0.00812000");
 
         assert_eq!(price, price);
-        assert_eq!(price.value, 8120000);
+        assert_eq!(price.fixed, 8120000);
         assert_eq!(price.precision, 8);
         assert_eq!(price.as_f64(), 0.00812);
         assert_eq!(price.to_string(), "0.00812000");
@@ -252,7 +247,7 @@ mod tests {
         let price2 = Price::new(1.011, 3);
 
         let price3 = price1 + price2;
-        assert_eq!(price3.value, 2011000000)
+        assert_eq!(price3.fixed, 2011000000)
     }
 
     #[test]
@@ -260,7 +255,7 @@ mod tests {
         let mut price = Price::new(1.000, 3);
         price += Price::new(1.011, 3);
 
-        assert_eq!(price.value, 2011000000)
+        assert_eq!(price.fixed, 2011000000)
     }
 
     #[test]
@@ -280,7 +275,7 @@ mod tests {
         let input_string = "44.123456";
         let price = Price::from_str(&input_string);
 
-        assert_eq!(price.value, 44123456000);
+        assert_eq!(price.fixed, 44123456000);
         assert_eq!(price.precision, 6);
         assert_eq!(price.as_f64(), 44.123456000000004);
         assert_eq!(price.to_string(), "44.123456");

@@ -13,7 +13,16 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from libc.stdint cimport uint8_t
+from libc.stdint cimport uint16_t
+
 from nautilus_trader.core.correctness cimport Condition
+from nautilus_trader.core.rust.model cimport currency_code_to_cstring
+from nautilus_trader.core.rust.model cimport currency_free
+from nautilus_trader.core.rust.model cimport currency_name_to_cstring
+from nautilus_trader.core.rust.model cimport currency_new
+from nautilus_trader.core.string cimport cstring_to_pystr
+from nautilus_trader.core.string cimport pystr_to_cstring
 from nautilus_trader.model.c_enums.currency_type cimport CurrencyType
 from nautilus_trader.model.c_enums.currency_type cimport CurrencyTypeParser
 from nautilus_trader.model.currencies cimport _CURRENCY_MAP
@@ -59,30 +68,60 @@ cdef class Currency:
         Condition.valid_string(name, "name")
         Condition.not_negative_int(precision, "precision")
 
-        self.code = code
-        self.name = name
-        self.precision = precision
-        self.iso4217 = iso4217
-        self.currency_type = currency_type
+        self._currency = currency_new(
+            pystr_to_cstring(code),
+            precision,
+            iso4217,
+            pystr_to_cstring(name),
+            currency_type,
+        )
 
     def __eq__(self, Currency other) -> bool:
         return self.code == other.code and self.precision == other.precision
 
     def __hash__(self) -> int:
-        return hash((self.code, self.precision))
+        return hash(str(self))
 
     def __str__(self) -> str:
-        return self.code
+        return cstring_to_pystr(currency_code_to_cstring(&self._currency))
 
     def __repr__(self) -> str:
         return (
             f"{type(self).__name__}("
-            f"code={self.code}, "
-            f"name={self.name}, "
-            f"precision={self.precision}, "
-            f"iso4217={self.iso4217}, "
-            f"type={CurrencyTypeParser.to_str(self.currency_type)})"
+            f"code={cstring_to_pystr(currency_code_to_cstring(&self._currency))}, "
+            f"name={cstring_to_pystr(currency_name_to_cstring(&self._currency))}, "
+            f"precision={self._currency.precision}, "
+            f"iso4217={self._currency.iso4217}, "
+            f"type={CurrencyTypeParser.to_str(<CurrencyType>self._currency.currency_type)})"
         )
+
+    def __del__(self) -> None:
+        currency_free(self._currency)  # `self._currency` moved to rust (then dropped)
+
+    @property
+    def code(self) -> str:
+        """The currency ID code."""
+        return cstring_to_pystr(currency_code_to_cstring(&self._currency))
+
+    @property
+    def precision(self) -> int:
+        """The currency decimal precision."""
+        return self._currency.precision
+
+    @property
+    def iso4217(self) -> int:
+        """The currency ISO 4217 code."""
+        return self._currency.iso4217
+
+    @property
+    def name(self) -> str:
+        """The currency name."""
+        return cstring_to_pystr(currency_name_to_cstring(&self._currency))
+
+    @property
+    def currency_type(self) -> CurrencyType:
+        """The currency type."""
+        return <CurrencyType>self._currency.currency_type
 
     @staticmethod
     cdef void register_c(Currency currency, bint overwrite=False) except *:
@@ -136,7 +175,7 @@ cdef class Currency:
         if currency is None:
             return False
 
-        return currency.currency_type == CurrencyType.FIAT
+        return <CurrencyType>currency._currency.currency_type == CurrencyType.FIAT
 
     @staticmethod
     cdef bint is_crypto_c(str code):
@@ -144,7 +183,7 @@ cdef class Currency:
         if currency is None:
             return False
 
-        return currency.currency_type == CurrencyType.CRYPTO
+        return <CurrencyType>currency._currency.currency_type == CurrencyType.CRYPTO
 
     @staticmethod
     def is_fiat(str code):

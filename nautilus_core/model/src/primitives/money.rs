@@ -13,58 +13,175 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use crate::enums::CurrencyType;
-use rust_decimal::Decimal;
-use std::fmt;
-use std::str::FromStr;
+use crate::primitives::currency::Currency;
+use crate::primitives::fixed::{f64_to_fixed_i64, fixed_i64_to_f64};
+use std::cmp::Ordering;
+use std::fmt::{Display, Formatter, Result};
+use std::hash::{Hash, Hasher};
+use std::ops::{Add, AddAssign, Mul, MulAssign, Neg, Sub, SubAssign};
 
-pub struct Currency {
-    pub code: String,
-    pub precision: u8,
-    pub currency_type: CurrencyType,
-}
-
+#[repr(C)]
+#[derive(Eq, Clone)]
 pub struct Money {
-    pub amount: Decimal,
+    fixed: i64,
     pub currency: Currency,
 }
 
 impl Money {
-    pub fn new(amount: Decimal, currency: Currency) -> Money {
+    pub fn new(amount: f64, currency: Currency) -> Money {
         Money {
-            amount: Decimal::from_str(&format!("{:.*}", currency.precision as usize, amount))
-                .unwrap(),
+            fixed: f64_to_fixed_i64(amount, currency.precision),
             currency,
+        }
+    }
+
+    pub fn is_zero(&self) -> bool {
+        self.fixed == 0
+    }
+    pub fn as_f64(&self) -> f64 {
+        fixed_i64_to_f64(self.fixed)
+    }
+}
+
+impl Hash for Money {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.fixed.hash(state);
+        self.currency.hash(state);
+    }
+}
+
+impl PartialEq for Money {
+    fn eq(&self, other: &Self) -> bool {
+        self.fixed == other.fixed && self.currency == other.currency
+    }
+}
+
+impl PartialOrd for Money {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        self.fixed.partial_cmp(&other.fixed)
+    }
+
+    fn lt(&self, other: &Self) -> bool {
+        assert_eq!(self.currency, other.currency);
+        self.fixed.lt(&other.fixed)
+    }
+
+    fn le(&self, other: &Self) -> bool {
+        assert_eq!(self.currency, other.currency);
+        self.fixed.le(&other.fixed)
+    }
+
+    fn gt(&self, other: &Self) -> bool {
+        assert_eq!(self.currency, other.currency);
+        self.fixed.gt(&other.fixed)
+    }
+
+    fn ge(&self, other: &Self) -> bool {
+        assert_eq!(self.currency, other.currency);
+        self.fixed.ge(&other.fixed)
+    }
+}
+
+impl Ord for Money {
+    fn cmp(&self, other: &Self) -> Ordering {
+        assert_eq!(self.currency, other.currency);
+        self.fixed.cmp(&other.fixed)
+    }
+}
+
+impl Neg for Money {
+    type Output = Self;
+    fn neg(self) -> Self::Output {
+        Money {
+            fixed: -self.fixed,
+            currency: self.currency,
         }
     }
 }
 
-impl fmt::Display for Money {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(
-            f,
-            "{:.*} {}",
-            self.currency.precision as usize, self.amount, self.currency.code
-        )
+
+impl Add for Money {
+    type Output = Self;
+    fn add(self, rhs: Money) -> Self::Output {
+        assert_eq!(self.currency, rhs.currency);
+        Money {
+            fixed: self.fixed + rhs.fixed,
+            currency: self.currency,
+        }
     }
 }
 
-pub struct AccountBalance {
-    pub currency: Currency,
-    pub total: Money,
-    pub locked: Money,
-    pub free: Money,
+impl Sub for Money {
+    type Output = Self;
+    fn sub(self, rhs: Money) -> Self::Output {
+        assert_eq!(self.currency, rhs.currency);
+        Money {
+            fixed: self.fixed - rhs.fixed,
+            currency: self.currency,
+        }
+    }
 }
 
-// impl AccountBalance {
-//     pub fn new(currency:)
-// }
-impl fmt::Display for AccountBalance {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+impl Mul for Money {
+    type Output = Self;
+    fn mul(self, rhs: Money) -> Self {
+        assert_eq!(self.currency, rhs.currency);
+        Money {
+            fixed: self.fixed * rhs.fixed,
+            currency: self.currency,
+        }
+    }
+}
+
+impl AddAssign for Money {
+    fn add_assign(&mut self, other: Self) {
+        assert_eq!(self.currency, other.currency);
+        self.fixed += other.fixed;
+    }
+}
+
+impl SubAssign for Money {
+    fn sub_assign(&mut self, other: Self) {
+        assert_eq!(self.currency, other.currency);
+        self.fixed -= other.fixed;
+    }
+}
+
+impl MulAssign for Money {
+    fn mul_assign(&mut self, multiplier: Self) {
+        self.fixed *= multiplier.fixed;
+    }
+}
+
+impl Add<f64> for Money {
+    type Output = f64;
+    fn add(self, rhs: f64) -> Self::Output {
+        self.as_f64() + rhs
+    }
+}
+
+impl Sub<f64> for Money {
+    type Output = f64;
+    fn sub(self, rhs: f64) -> Self::Output {
+        self.as_f64() - rhs
+    }
+}
+
+impl Mul<f64> for Money {
+    type Output = f64;
+    fn mul(self, rhs: f64) -> Self::Output {
+        self.as_f64() * rhs
+    }
+}
+
+impl Display for Money {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result {
         write!(
             f,
-            "{} {} {} {}",
-            self.currency.code, self.total, self.locked, self.free,
+            "{:.*} {}",
+            self.currency.precision as usize,
+            self.as_f64(),
+            self.currency.code
         )
     }
 }
@@ -72,33 +189,33 @@ impl fmt::Display for AccountBalance {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::enums::CurrencyType;
 
     #[test]
     fn test_money_new_usd() {
-        let usd = Currency {
-            code: String::from("USD"),
-            precision: 2,
-            currency_type: CurrencyType::Fiat,
-        };
-        let money = Money {
-            amount: Decimal::new(1000, 0),
-            currency: usd,
-        };
+        let usd = Currency::new(
+            "USD",
+            2,
+            840,
+            "United States dollar",
+            CurrencyType::FIAT,
+        );
+        let money = Money::new(1000.0, usd);
 
         assert_eq!("1000.00 USD", money.to_string());
     }
 
     #[test]
     fn test_money_new_btc() {
-        let btc = Currency {
-            code: String::from("BTC"),
-            precision: 8,
-            currency_type: CurrencyType::Fiat,
-        };
-        let money = Money {
-            amount: Decimal::new(103, 1),
-            currency: btc,
-        };
+        let btc = Currency::new(
+            "BTC",
+            8,
+            0,
+            "Bitcoin",
+            CurrencyType::FIAT,
+        );
+
+        let money = Money::new(10.3, btc);
 
         assert_eq!("10.30000000 BTC", money.to_string());
     }

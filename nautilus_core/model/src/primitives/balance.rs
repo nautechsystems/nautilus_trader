@@ -13,9 +13,23 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-pub mod balance;
-pub mod currency;
-pub mod fixed;
-pub mod money;
-pub mod price;
-pub mod quantity;
+use crate::primitives::currency::Currency;
+use crate::primitives::money::Money;
+use std::fmt;
+
+pub struct AccountBalance {
+    pub currency: Currency,
+    pub total: Money,
+    pub locked: Money,
+    pub free: Money,
+}
+
+impl fmt::Display for AccountBalance {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "{} {} {} {}",
+            self.currency.code, self.total, self.locked, self.free,
+        )
+    }
+}

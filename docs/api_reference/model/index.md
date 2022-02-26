@@ -11,7 +11,6 @@
    :titlesonly:
    :hidden:
    
-   commands.md
    currency.md
    data.md
    events.md

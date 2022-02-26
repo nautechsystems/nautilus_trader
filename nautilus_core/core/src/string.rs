@@ -16,6 +16,7 @@
 use std::ffi::{CStr, CString};
 use std::os::raw::c_char;
 
+#[no_mangle]
 pub fn into_cstring(s: String) -> *const c_char {
     CString::new(s.into_bytes())
         .expect("CString::new failed")
@@ -51,7 +52,7 @@ pub fn precision_from_str(s: &str) -> u8 {
 
 #[cfg(test)]
 mod tests {
-    use crate::string::{precision_from_str};
+    use crate::string::precision_from_str;
     use crate::string::{cstring_free, from_cstring, into_cstring};
     use std::ffi::CString;
 

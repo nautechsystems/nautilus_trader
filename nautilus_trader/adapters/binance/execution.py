@@ -22,14 +22,19 @@ import orjson
 
 from nautilus_trader.adapters.binance.core.constants import BINANCE_VENUE
 from nautilus_trader.adapters.binance.core.enums import BinanceAccountType
+from nautilus_trader.adapters.binance.core.functions import format_symbol
+from nautilus_trader.adapters.binance.core.functions import parse_symbol
 from nautilus_trader.adapters.binance.http.api.account import BinanceAccountHttpAPI
 from nautilus_trader.adapters.binance.http.api.market import BinanceMarketHttpAPI
 from nautilus_trader.adapters.binance.http.api.user import BinanceUserDataHttpAPI
 from nautilus_trader.adapters.binance.http.client import BinanceHttpClient
 from nautilus_trader.adapters.binance.http.error import BinanceError
-from nautilus_trader.adapters.binance.parsing.common import binance_order_type
+from nautilus_trader.adapters.binance.parsing.common import binance_order_type_futures
+from nautilus_trader.adapters.binance.parsing.common import binance_order_type_spot
 from nautilus_trader.adapters.binance.parsing.common import parse_order_type
-from nautilus_trader.adapters.binance.parsing.http import parse_account_balances_http
+from nautilus_trader.adapters.binance.parsing.http import parse_account_balances_futures_http
+from nautilus_trader.adapters.binance.parsing.http import parse_account_balances_spot_http
+from nautilus_trader.adapters.binance.parsing.http import parse_account_margins_http
 from nautilus_trader.adapters.binance.parsing.websocket import parse_account_balances_ws
 from nautilus_trader.adapters.binance.providers import BinanceInstrumentProvider
 from nautilus_trader.adapters.binance.websocket.client import BinanceWebSocketClient
@@ -131,7 +136,8 @@ class BinanceExecutionClient(LiveExecutionClient):
         self._client = client
         self._set_account_id(AccountId(BINANCE_VENUE.value, "master"))
 
-        self._account_type = account_type
+        self._binance_account_type = account_type
+        self._log.info(f"Account type: {self._binance_account_type.value}.", LogColor.BLUE)
 
         # HTTP API
         self._http_account = BinanceAccountHttpAPI(client=self._client, account_type=account_type)
@@ -189,7 +195,11 @@ class BinanceExecutionClient(LiveExecutionClient):
         self._update_account_state(response=response)
 
         # Get listen keys
-        response = await self._http_user.create_listen_key()
+        if self._binance_account_type in (BinanceAccountType.SPOT, BinanceAccountType.MARGIN):
+            response = await self._http_user.create_listen_key()
+        else:
+            response = await self._http_user.create_listen_key_futures()
+
         self._listen_key = response["listenKey"]
         self._ping_listen_keys_task = self._loop.create_task(self._ping_listen_keys())
 
@@ -208,9 +218,16 @@ class BinanceExecutionClient(LiveExecutionClient):
             self._log.error("Binance API key does not have trading permissions.")
 
     def _update_account_state(self, response: Dict[str, Any]) -> None:
+        if self._binance_account_type.is_futures:
+            balances = parse_account_balances_futures_http(raw_balances=response["assets"])
+            margins = parse_account_margins_http(raw_balances=response["assets"])
+        else:
+            balances = parse_account_balances_spot_http(raw_balances=response["balances"])
+            margins = []
+
         self.generate_account_state(
-            balances=parse_account_balances_http(raw_balances=response["balances"]),
-            margins=[],
+            balances=balances,
+            margins=margins,
             reported=True,
             ts_event=response["updateTime"],
         )
@@ -223,7 +240,10 @@ class BinanceExecutionClient(LiveExecutionClient):
             await asyncio.sleep(self._ping_listen_keys_interval)
             if self._listen_key:
                 self._log.debug(f"Pinging WebSocket listen key {self._listen_key}...")
-                await self._http_user.ping_listen_key(self._listen_key)
+                if self._binance_account_type.is_futures:
+                    await self._http_user.ping_listen_key_futures(self._listen_key)
+                else:
+                    await self._http_user.ping_listen_key(self._listen_key)
 
     async def _disconnect(self) -> None:
         # Cancel tasks
@@ -424,12 +444,12 @@ class BinanceExecutionClient(LiveExecutionClient):
                 instrument_id=order.instrument_id,
                 client_order_id=order.client_order_id,
                 reason=ex.message,  # type: ignore  # TODO(cs): Improve errors
-                ts_event=self._clock.timestamp_ns(),  # TODO(cs): Parse from response
+                ts_event=self._clock.timestamp_ns(),
             )
 
     async def _submit_market_order(self, order: MarketOrder) -> None:
         await self._http_account.new_order(
-            symbol=order.instrument_id.symbol.value,
+            symbol=format_symbol(order.instrument_id.symbol.value),
             side=OrderSideParser.to_str_py(order.side),
             type="MARKET",
             quantity=str(order.quantity),
@@ -438,15 +458,21 @@ class BinanceExecutionClient(LiveExecutionClient):
         )
 
     async def _submit_limit_order(self, order: LimitOrder) -> None:
-        if order.is_post_only:
-            time_in_force = None
+        time_in_force = TimeInForceParser.to_str_py(order.time_in_force)
+
+        if self._binance_account_type.is_futures:
+            order_type = "LIMIT"
+            if order.is_post_only:
+                time_in_force = "GTX"
         else:
-            time_in_force = TimeInForceParser.to_str_py(order.time_in_force)
+            if order.is_post_only:
+                time_in_force = None
+            order_type = binance_order_type_spot(order)
 
         await self._http_account.new_order(
-            symbol=order.instrument_id.symbol.value,
+            symbol=format_symbol(order.instrument_id.symbol.value),
             side=OrderSideParser.to_str_py(order.side),
-            type=binance_order_type(order=order),
+            type=order_type,
             time_in_force=time_in_force,
             quantity=str(order.quantity),
             price=str(order.price),
@@ -462,10 +488,15 @@ class BinanceExecutionClient(LiveExecutionClient):
         )
         market_price = Decimal(response["price"])
 
+        if self._binance_account_type.is_futures:
+            order_type = binance_order_type_futures(order, market_price=market_price)
+        else:
+            order_type = binance_order_type_spot(order, market_price=market_price)
+
         await self._http_account.new_order(
-            symbol=order.instrument_id.symbol.value,
+            symbol=format_symbol(order.instrument_id.symbol.value),
             side=OrderSideParser.to_str_py(order.side),
-            type=binance_order_type(order=order, market_price=market_price),
+            type=order_type,
             time_in_force=TimeInForceParser.to_str_py(order.time_in_force),
             quantity=str(order.quantity),
             price=str(order.price),
@@ -494,7 +525,7 @@ class BinanceExecutionClient(LiveExecutionClient):
 
         try:
             await self._http_account.cancel_order(
-                symbol=command.instrument_id.symbol.value,
+                symbol=format_symbol(command.instrument_id.symbol.value),
                 orig_client_order_id=command.client_order_id.value,
             )
         except BinanceError as ex:
@@ -533,7 +564,7 @@ class BinanceExecutionClient(LiveExecutionClient):
 
         try:
             await self._http_account.cancel_open_orders(
-                symbol=command.instrument_id.symbol.value,
+                symbol=format_symbol(command.instrument_id.symbol.value),
             )
         except BinanceError as ex:
             self._log.error(ex.message)  # type: ignore  # TODO(cs): Improve errors
@@ -566,7 +597,7 @@ class BinanceExecutionClient(LiveExecutionClient):
         execution_type: str = data["x"]
 
         # Parse instrument ID
-        symbol: str = data["s"]
+        symbol: str = parse_symbol(data["s"], account_type=self._binance_account_type)
         instrument_id: Optional[InstrumentId] = self._instrument_ids.get(symbol)
         if not instrument_id:
             instrument_id = InstrumentId(Symbol(symbol), BINANCE_VENUE)

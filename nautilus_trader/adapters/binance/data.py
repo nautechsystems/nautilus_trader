@@ -21,6 +21,7 @@ import pandas as pd
 
 from nautilus_trader.adapters.binance.core.constants import BINANCE_VENUE
 from nautilus_trader.adapters.binance.core.enums import BinanceAccountType
+from nautilus_trader.adapters.binance.core.functions import parse_symbol
 from nautilus_trader.adapters.binance.core.types import BinanceBar
 from nautilus_trader.adapters.binance.core.types import BinanceSpotTicker
 from nautilus_trader.adapters.binance.http.api.market import BinanceMarketHttpAPI
@@ -32,7 +33,7 @@ from nautilus_trader.adapters.binance.parsing.websocket import parse_bar_ws
 from nautilus_trader.adapters.binance.parsing.websocket import parse_book_snapshot_ws
 from nautilus_trader.adapters.binance.parsing.websocket import parse_diff_depth_stream_ws
 from nautilus_trader.adapters.binance.parsing.websocket import parse_quote_tick_ws
-from nautilus_trader.adapters.binance.parsing.websocket import parse_spot_ticker_24hr_ws
+from nautilus_trader.adapters.binance.parsing.websocket import parse_ticker_24hr_spot_ws
 from nautilus_trader.adapters.binance.parsing.websocket import parse_trade_tick_ws
 from nautilus_trader.adapters.binance.providers import BinanceInstrumentProvider
 from nautilus_trader.adapters.binance.websocket.client import BinanceWebSocketClient
@@ -110,20 +111,21 @@ class BinanceDataClient(LiveMarketDataClient):
         )
 
         self._client = client
-        self._account_type = account_type
+        self._binance_account_type = account_type
+        self._log.info(f"Account type: {self._binance_account_type.value}.", LogColor.BLUE)
 
         self._update_instrument_interval: int = 60 * 60  # Once per hour (hardcode)
         self._update_instruments_task: Optional[asyncio.Task] = None
 
         # HTTP API
-        self._http_market = BinanceMarketHttpAPI(client=self._client)
+        self._http_market = BinanceMarketHttpAPI(client=self._client, account_type=account_type)
 
         # WebSocket API
         self._ws = BinanceWebSocketClient(
             loop=loop,
             clock=clock,
             logger=logger,
-            handler=self._handle_spot_ws_message,
+            handler=self._handle_ws_message,
             base_url=base_url_ws,
         )
 
@@ -574,7 +576,7 @@ class BinanceDataClient(LiveMarketDataClient):
         for currency in self._instrument_provider.currencies().values():
             self._cache.add_currency(currency)
 
-    def _handle_spot_ws_message(self, raw: bytes):
+    def _handle_ws_message(self, raw: bytes):
         msg: Dict[str, Any] = orjson.loads(raw)
         data: Dict[str, Any] = msg.get("data")
 
@@ -584,14 +586,21 @@ class BinanceDataClient(LiveMarketDataClient):
         msg_type: str = data.get("e")
         if msg_type is None:
             self._handle_market_update(msg, data)
-        elif msg_type == "depthUpdate":
-            self._handle_depth_update(data)
+            return
+
+        symbol_str = parse_symbol(data["s"], account_type=self._binance_account_type)
+        instrument_id = InstrumentId(symbol=Symbol(symbol_str), venue=BINANCE_VENUE)
+
+        if msg_type == "depthUpdate":
+            self._handle_depth_update(instrument_id, data)
+        elif msg_type == "bookTicker":
+            self._handle_quote_tick(instrument_id, data)
         elif msg_type == "24hrTicker":
-            self._handle_ticker_24hr(data)
+            self._handle_ticker_24hr(instrument_id, data)
         elif msg_type == "trade":
-            self._handle_trade(data)
+            self._handle_trade(instrument_id, data)
         elif msg_type == "kline":
-            self._handle_kline(data)
+            self._handle_kline(instrument_id, data)
         else:
             self._log.error(f"Unrecognized websocket message type, was {msg_type}")
             return
@@ -605,7 +614,9 @@ class BinanceDataClient(LiveMarketDataClient):
                 symbol=msg["stream"].partition("@")[0].upper(),
             )
         else:
-            self._handle_quote_tick(data)
+            symbol_str = parse_symbol(data["s"], account_type=self._binance_account_type)
+            instrument_id = InstrumentId(symbol=Symbol(symbol_str), venue=BINANCE_VENUE)
+            self._handle_quote_tick(instrument_id, data)
 
     def _handle_book_snapshot(
         self,
@@ -614,7 +625,7 @@ class BinanceDataClient(LiveMarketDataClient):
         last_update_id: int,
     ):
         instrument_id = InstrumentId(
-            symbol=Symbol(symbol),
+            symbol=Symbol(parse_symbol(symbol, account_type=self._binance_account_type)),
             venue=BINANCE_VENUE,
         )
         book_snapshot: OrderBookSnapshot = parse_book_snapshot_ws(
@@ -629,11 +640,7 @@ class BinanceDataClient(LiveMarketDataClient):
             return
         self._handle_data(book_snapshot)
 
-    def _handle_quote_tick(self, data: Dict[str, Any]):
-        instrument_id = InstrumentId(
-            symbol=Symbol(data["s"]),
-            venue=BINANCE_VENUE,
-        )
+    def _handle_quote_tick(self, instrument_id: InstrumentId, data: Dict[str, Any]):
         quote_tick: QuoteTick = parse_quote_tick_ws(
             instrument_id=instrument_id,
             msg=data,
@@ -641,11 +648,7 @@ class BinanceDataClient(LiveMarketDataClient):
         )
         self._handle_data(quote_tick)
 
-    def _handle_depth_update(self, data: Dict[str, Any]):
-        instrument_id = InstrumentId(
-            symbol=Symbol(data["s"]),
-            venue=BINANCE_VENUE,
-        )
+    def _handle_depth_update(self, instrument_id: InstrumentId, data: Dict[str, Any]):
         book_deltas: OrderBookDeltas = parse_diff_depth_stream_ws(
             instrument_id=instrument_id,
             msg=data,
@@ -657,23 +660,15 @@ class BinanceDataClient(LiveMarketDataClient):
             return
         self._handle_data(book_deltas)
 
-    def _handle_ticker_24hr(self, data: Dict[str, Any]):
-        instrument_id = InstrumentId(
-            symbol=Symbol(data["s"]),
-            venue=BINANCE_VENUE,
-        )
-        ticker: BinanceSpotTicker = parse_spot_ticker_24hr_ws(
+    def _handle_ticker_24hr(self, instrument_id: InstrumentId, data: Dict[str, Any]):
+        ticker: BinanceSpotTicker = parse_ticker_24hr_spot_ws(
             instrument_id=instrument_id,
             msg=data,
             ts_init=self._clock.timestamp_ns(),
         )
         self._handle_data(ticker)
 
-    def _handle_trade(self, data: Dict[str, Any]):
-        instrument_id = InstrumentId(
-            symbol=Symbol(data["s"]),
-            venue=BINANCE_VENUE,
-        )
+    def _handle_trade(self, instrument_id: InstrumentId, data: Dict[str, Any]):
         trade_tick: TradeTick = parse_trade_tick_ws(
             instrument_id=instrument_id,
             msg=data,
@@ -681,14 +676,10 @@ class BinanceDataClient(LiveMarketDataClient):
         )
         self._handle_data(trade_tick)
 
-    def _handle_kline(self, data: Dict[str, Any]):
+    def _handle_kline(self, instrument_id: InstrumentId, data: Dict[str, Any]):
         kline = data["k"]
         if data["E"] < kline["T"]:
             return  # Bar has not closed yet
-        instrument_id = InstrumentId(
-            symbol=Symbol(kline["s"]),
-            venue=BINANCE_VENUE,
-        )
         bar: BinanceBar = parse_bar_ws(
             instrument_id=instrument_id,
             kline=kline,

@@ -36,8 +36,8 @@ impl BookPrice {
 impl PartialOrd for BookPrice {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         match self.side {
-            OrderSide::Buy => Some(other.value.cmp(&self.value)),
-            OrderSide::Sell => Some(self.value.cmp(&other.value)),
+            OrderSide::BUY => Some(other.value.cmp(&self.value)),
+            OrderSide::SELL => Some(self.value.cmp(&other.value)),
         }
     }
 }
@@ -51,8 +51,8 @@ impl PartialEq for BookPrice {
 impl Ord for BookPrice {
     fn cmp(&self, other: &Self) -> Ordering {
         match self.side {
-            OrderSide::Buy => other.value.cmp(&self.value),
-            OrderSide::Sell => self.value.cmp(&other.value),
+            OrderSide::BUY => other.value.cmp(&self.value),
+            OrderSide::SELL => self.value.cmp(&other.value),
         }
     }
 }
@@ -162,10 +162,10 @@ mod tests {
     #[test]
     fn test_book_price_bid_sorting() {
         let mut bid_prices = vec![
-            BookPrice::new(Price::new(2.0, 0), OrderSide::Buy),
-            BookPrice::new(Price::new(4.0, 0), OrderSide::Buy),
-            BookPrice::new(Price::new(1.0, 0), OrderSide::Buy),
-            BookPrice::new(Price::new(3.0, 0), OrderSide::Buy),
+            BookPrice::new(Price::new(2.0, 0), OrderSide::BUY),
+            BookPrice::new(Price::new(4.0, 0), OrderSide::BUY),
+            BookPrice::new(Price::new(1.0, 0), OrderSide::BUY),
+            BookPrice::new(Price::new(3.0, 0), OrderSide::BUY),
         ];
 
         bid_prices.sort();
@@ -176,10 +176,10 @@ mod tests {
     #[test]
     fn test_book_price_ask_sorting() {
         let mut ask_prices = vec![
-            BookPrice::new(Price::new(2.0, 0), OrderSide::Sell),
-            BookPrice::new(Price::new(4.0, 0), OrderSide::Sell),
-            BookPrice::new(Price::new(1.0, 0), OrderSide::Sell),
-            BookPrice::new(Price::new(3.0, 0), OrderSide::Sell),
+            BookPrice::new(Price::new(2.0, 0), OrderSide::SELL),
+            BookPrice::new(Price::new(4.0, 0), OrderSide::SELL),
+            BookPrice::new(Price::new(1.0, 0), OrderSide::SELL),
+            BookPrice::new(Price::new(3.0, 0), OrderSide::SELL),
         ];
 
         ask_prices.sort();
@@ -189,11 +189,11 @@ mod tests {
 
     #[test]
     fn test_ladder_add_single_order() {
-        let mut ladder = Ladder::new(OrderSide::Buy);
+        let mut ladder = Ladder::new(OrderSide::BUY);
         let order = Order::new(
             Price::new(10.00, 2),
             Quantity::new(20.0, 0),
-            OrderSide::Buy,
+            OrderSide::BUY,
             0,
         );
 
@@ -207,29 +207,29 @@ mod tests {
 
     #[test]
     fn test_ladder_add_multiple_buy_orders() {
-        let mut ladder = Ladder::new(OrderSide::Buy);
+        let mut ladder = Ladder::new(OrderSide::BUY);
         let order1 = Order::new(
             Price::new(10.00, 2),
             Quantity::new(20.0, 0),
-            OrderSide::Buy,
+            OrderSide::BUY,
             0,
         );
         let order2 = Order::new(
             Price::new(9.00, 2),
             Quantity::new(30.0, 0),
-            OrderSide::Buy,
+            OrderSide::BUY,
             0,
         );
         let order3 = Order::new(
             Price::new(9.00, 2),
             Quantity::new(50.0, 0),
-            OrderSide::Buy,
+            OrderSide::BUY,
             0,
         );
         let order4 = Order::new(
             Price::new(8.00, 2),
             Quantity::new(200.0, 0),
-            OrderSide::Buy,
+            OrderSide::BUY,
             0,
         );
 
@@ -243,29 +243,29 @@ mod tests {
 
     #[test]
     fn test_ladder_add_multiple_sell_orders() {
-        let mut ladder = Ladder::new(OrderSide::Sell);
+        let mut ladder = Ladder::new(OrderSide::SELL);
         let order1 = Order::new(
             Price::new(11.00, 2),
             Quantity::new(20.0, 0),
-            OrderSide::Sell,
+            OrderSide::SELL,
             0,
         );
         let order2 = Order::new(
             Price::new(12.00, 2),
             Quantity::new(30.0, 0),
-            OrderSide::Sell,
+            OrderSide::SELL,
             0,
         );
         let order3 = Order::new(
             Price::new(12.00, 2),
             Quantity::new(50.0, 0),
-            OrderSide::Sell,
+            OrderSide::SELL,
             0,
         );
         let order4 = Order::new(
             Price::new(13.00, 2),
             Quantity::new(200.0, 0),
-            OrderSide::Sell,
+            OrderSide::SELL,
             0,
         );
 
@@ -279,11 +279,11 @@ mod tests {
 
     #[test]
     fn test_ladder_update_buy_order_price() {
-        let mut ladder = Ladder::new(OrderSide::Buy);
+        let mut ladder = Ladder::new(OrderSide::BUY);
         let order = Order::new(
             Price::new(11.00, 2),
             Quantity::new(20.0, 0),
-            OrderSide::Buy,
+            OrderSide::BUY,
             1,
         );
 
@@ -292,7 +292,7 @@ mod tests {
         let order = Order::new(
             Price::new(11.10, 2),
             Quantity::new(20.0, 0),
-            OrderSide::Buy,
+            OrderSide::BUY,
             1,
         );
 
@@ -309,11 +309,11 @@ mod tests {
 
     #[test]
     fn test_ladder_update_sell_order_price() {
-        let mut ladder = Ladder::new(OrderSide::Sell);
+        let mut ladder = Ladder::new(OrderSide::SELL);
         let order = Order::new(
             Price::new(11.00, 2),
             Quantity::new(20.0, 0),
-            OrderSide::Sell,
+            OrderSide::SELL,
             1,
         );
 
@@ -322,7 +322,7 @@ mod tests {
         let order = Order::new(
             Price::new(11.10, 2),
             Quantity::new(20.0, 0),
-            OrderSide::Sell,
+            OrderSide::SELL,
             1,
         );
 
@@ -339,11 +339,11 @@ mod tests {
 
     #[test]
     fn test_ladder_update_buy_order_size() {
-        let mut ladder = Ladder::new(OrderSide::Buy);
+        let mut ladder = Ladder::new(OrderSide::BUY);
         let order = Order::new(
             Price::new(11.00, 2),
             Quantity::new(20.0, 0),
-            OrderSide::Buy,
+            OrderSide::BUY,
             1,
         );
 
@@ -352,7 +352,7 @@ mod tests {
         let order = Order::new(
             Price::new(11.00, 2),
             Quantity::new(10.0, 0),
-            OrderSide::Buy,
+            OrderSide::BUY,
             1,
         );
 
@@ -366,11 +366,11 @@ mod tests {
 
     #[test]
     fn test_ladder_update_sell_order_size() {
-        let mut ladder = Ladder::new(OrderSide::Sell);
+        let mut ladder = Ladder::new(OrderSide::SELL);
         let order = Order::new(
             Price::new(11.00, 2),
             Quantity::new(20.0, 0),
-            OrderSide::Sell,
+            OrderSide::SELL,
             1,
         );
 
@@ -379,7 +379,7 @@ mod tests {
         let order = Order::new(
             Price::new(11.00, 2),
             Quantity::new(10.0, 0),
-            OrderSide::Sell,
+            OrderSide::SELL,
             1,
         );
 
@@ -393,11 +393,11 @@ mod tests {
 
     #[test]
     fn test_ladder_delete_buy_order() {
-        let mut ladder = Ladder::new(OrderSide::Buy);
+        let mut ladder = Ladder::new(OrderSide::BUY);
         let order = Order::new(
             Price::new(11.00, 2),
             Quantity::new(20.0, 0),
-            OrderSide::Buy,
+            OrderSide::BUY,
             1,
         );
 
@@ -406,7 +406,7 @@ mod tests {
         let order = Order::new(
             Price::new(11.00, 2),
             Quantity::new(10.0, 0),
-            OrderSide::Buy,
+            OrderSide::BUY,
             1,
         );
 
@@ -420,11 +420,11 @@ mod tests {
 
     #[test]
     fn test_ladder_delete_sell_order() {
-        let mut ladder = Ladder::new(OrderSide::Sell);
+        let mut ladder = Ladder::new(OrderSide::SELL);
         let order = Order::new(
             Price::new(10.00, 2),
             Quantity::new(10.0, 0),
-            OrderSide::Sell,
+            OrderSide::SELL,
             1,
         );
 
@@ -433,7 +433,7 @@ mod tests {
         let order = Order::new(
             Price::new(10.00, 2),
             Quantity::new(10.0, 0),
-            OrderSide::Sell,
+            OrderSide::SELL,
             1,
         );
 

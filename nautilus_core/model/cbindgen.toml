@@ -7,5 +7,6 @@ no_includes = true
 tab_width = 4
 
 [export.rename]
+"Currency" = "Currency_t"
 "Price" = "Price_t"
 "Quantity" = "Quantity_t"
