@@ -56,9 +56,6 @@ from nautilus_trader.data.messages cimport DataRequest
 from nautilus_trader.data.messages cimport DataResponse
 from nautilus_trader.data.messages cimport Subscribe
 from nautilus_trader.data.messages cimport Unsubscribe
-from nautilus_trader.data.messages cimport VenueDataCommand
-from nautilus_trader.data.messages cimport VenueSubscribe
-from nautilus_trader.data.messages cimport VenueUnsubscribe
 from nautilus_trader.model.c_enums.bar_aggregation cimport BarAggregation
 from nautilus_trader.model.c_enums.price_type cimport PriceType
 from nautilus_trader.model.data.bar cimport Bar
@@ -551,32 +548,25 @@ cdef class DataEngine(Component):
 
         cdef DataClient client = self._clients.get(command.client_id)
         if client is None:
-            if isinstance(command, VenueDataCommand):
-                client = self._routing_map.get(
-                    command.venue,
-                    self._default_client,
+            client = self._routing_map.get(
+                command.venue,
+                self._default_client,
+            )
+            if client is None:
+                self._log.error(
+                    f"Cannot execute command: "
+                    f"No data client configured for {command.client_id}, {command}."
                 )
-            else:
-                client = self._default_client
-                if client is None:
-                    self._log.error(
-                        f"Cannot execute command: "
-                        f"No data client configured for {command.client_id}, {command}."
-                    )
-                    return  # No client to handle command
+                return  # No client to handle command
 
-        if isinstance(command, VenueSubscribe):
+        if isinstance(command, Subscribe):
             self._handle_subscribe(client, command)
-        elif isinstance(command, Subscribe):
-            self._handle_subscribe_data(client, command.data_type)
-        elif isinstance(command, VenueUnsubscribe):
-            self._handle_unsubscribe(client, command)
         elif isinstance(command, Unsubscribe):
-            self._handle_unsubscribe_data(client, command.data_type)
+            self._handle_unsubscribe(client, command)
         else:
             self._log.error(f"Cannot handle command: unrecognized {command}.")
 
-    cdef void _handle_subscribe(self, DataClient client, VenueSubscribe command) except *:
+    cdef void _handle_subscribe(self, DataClient client, Subscribe command) except *:
         if command.data_type.type == Instrument:
             self._handle_subscribe_instrument(
                 client,
@@ -625,10 +615,9 @@ cdef class DataEngine(Component):
                 command.data_type.metadata.get("instrument_id"),
             )
         else:
-            self._log.error(
-                f"Cannot handle command: unrecognized type {command.data_type.type} {command}.")
+            self._handle_subscribe_data(client, command.data_type)
 
-    cdef void _handle_unsubscribe(self, DataClient client, VenueUnsubscribe command) except *:
+    cdef void _handle_unsubscribe(self, DataClient client, Unsubscribe command) except *:
         if command.data_type.type == Instrument:
             self._handle_unsubscribe_instrument(
                 client,
@@ -667,7 +656,7 @@ cdef class DataEngine(Component):
                 command.data_type.metadata.get("bar_type"),
             )
         else:
-            self._log.error(f"Cannot handle command: unrecognized type {command.data_type.type} {command}.")
+            self._handle_unsubscribe_data(client, command.data_type)
 
     cdef void _handle_subscribe_instrument(
         self,
@@ -999,9 +988,15 @@ cdef class DataEngine(Component):
 
         cdef DataClient client = self._clients.get(request.client_id)
         if client is None:
-            self._log.error(f"Cannot handle request: "
-                            f"no client registered for '{request.client_id}', {request}.")
-            return  # No client to handle request
+            client = self._routing_map.get(
+                request.venue,
+                self._default_client,
+            )
+            if client is None:
+                self._log.error(
+                    f"Cannot handle request: "
+                    f"no client registered for '{request.client_id}', {request}.")
+                return  # No client to handle request
 
         if request.data_type.type == QuoteTick:
             Condition.true(isinstance(client, MarketDataClient), "client was not a MarketDataClient")

@@ -48,9 +48,6 @@ from nautilus_trader.data.messages cimport DataRequest
 from nautilus_trader.data.messages cimport DataResponse
 from nautilus_trader.data.messages cimport Subscribe
 from nautilus_trader.data.messages cimport Unsubscribe
-from nautilus_trader.data.messages cimport VenueDataRequest
-from nautilus_trader.data.messages cimport VenueSubscribe
-from nautilus_trader.data.messages cimport VenueUnsubscribe
 from nautilus_trader.model.c_enums.book_type cimport BookType
 from nautilus_trader.model.data.bar cimport Bar
 from nautilus_trader.model.data.bar cimport BarType
@@ -556,6 +553,7 @@ cdef class Actor(Component):
 
         cdef Subscribe command = Subscribe(
             client_id=client_id,
+            venue=None,
             data_type=data_type,
             command_id=self._uuid_factory.generate(),
             ts_init=self._clock.timestamp_ns(),
@@ -586,7 +584,7 @@ cdef class Actor(Component):
             handler=self.handle_instrument,
         )
 
-        cdef VenueSubscribe command = VenueSubscribe(
+        cdef Subscribe command = Subscribe(
             client_id=client_id,
             venue=instrument_id.venue,
             data_type=DataType(Instrument, metadata={"instrument_id": instrument_id}),
@@ -617,7 +615,7 @@ cdef class Actor(Component):
             handler=self.handle_instrument,
         )
 
-        cdef VenueSubscribe command = VenueSubscribe(
+        cdef Subscribe command = Subscribe(
             client_id=client_id,
             venue=venue,
             data_type=DataType(Instrument),
@@ -664,7 +662,7 @@ cdef class Actor(Component):
             handler=self.handle_order_book_delta,
         )
 
-        cdef VenueSubscribe command = VenueSubscribe(
+        cdef Subscribe command = Subscribe(
             client_id=client_id,
             venue=instrument_id.venue,
             data_type=DataType(OrderBookData, metadata={
@@ -739,7 +737,7 @@ cdef class Actor(Component):
             handler=self.handle_order_book,
         )
 
-        cdef VenueSubscribe command = VenueSubscribe(
+        cdef Subscribe command = Subscribe(
             client_id=client_id,
             venue=instrument_id.venue,
             data_type=DataType(OrderBook, metadata={
@@ -778,7 +776,7 @@ cdef class Actor(Component):
             handler=self.handle_ticker,
         )
 
-        cdef VenueSubscribe command = VenueSubscribe(
+        cdef Subscribe command = Subscribe(
             client_id=client_id,
             venue=instrument_id.venue,
             data_type=DataType(Ticker, metadata={"instrument_id": instrument_id}),
@@ -811,7 +809,7 @@ cdef class Actor(Component):
             handler=self.handle_quote_tick,
         )
 
-        cdef VenueSubscribe command = VenueSubscribe(
+        cdef Subscribe command = Subscribe(
             client_id=client_id,
             venue=instrument_id.venue,
             data_type=DataType(QuoteTick, metadata={"instrument_id": instrument_id}),
@@ -844,7 +842,7 @@ cdef class Actor(Component):
             handler=self.handle_trade_tick,
         )
 
-        cdef VenueSubscribe command = VenueSubscribe(
+        cdef Subscribe command = Subscribe(
             client_id=client_id,
             venue=instrument_id.venue,
             data_type=DataType(TradeTick, metadata={"instrument_id": instrument_id}),
@@ -875,7 +873,7 @@ cdef class Actor(Component):
             handler=self.handle_bar,
         )
 
-        cdef VenueSubscribe command = VenueSubscribe(
+        cdef Subscribe command = Subscribe(
             client_id=client_id,
             venue=bar_type.instrument_id.venue,
             data_type=DataType(Bar, metadata={"bar_type": bar_type}),
@@ -927,7 +925,7 @@ cdef class Actor(Component):
             handler=self.handle_instrument_status_update,
         )
 
-        cdef VenueSubscribe command = VenueSubscribe(
+        cdef Subscribe command = Subscribe(
             client_id=client_id,
             venue=instrument_id.venue,
             data_type=DataType(InstrumentStatusUpdate, metadata={"instrument_id": instrument_id}),
@@ -958,7 +956,7 @@ cdef class Actor(Component):
             handler=self.handle_instrument_close_price,
         )
 
-        cdef VenueSubscribe command = VenueSubscribe(
+        cdef Subscribe command = Subscribe(
             client_id=client_id,
             venue=instrument_id.venue,
             data_type=DataType(InstrumentClosePrice, metadata={"instrument_id": instrument_id}),
@@ -994,6 +992,7 @@ cdef class Actor(Component):
 
         cdef Unsubscribe command = Unsubscribe(
             client_id=client_id,
+            venue=None,
             data_type=data_type,
             command_id=self._uuid_factory.generate(),
             ts_init=self._clock.timestamp_ns(),
@@ -1022,7 +1021,7 @@ cdef class Actor(Component):
             handler=self.handle_instrument,
         )
 
-        cdef VenueUnsubscribe command = VenueUnsubscribe(
+        cdef Unsubscribe command = Unsubscribe(
             client_id=client_id,
             venue=venue,
             data_type=DataType(Instrument),
@@ -1055,7 +1054,7 @@ cdef class Actor(Component):
             handler=self.handle_instrument,
         )
 
-        cdef VenueUnsubscribe command = VenueUnsubscribe(
+        cdef Unsubscribe command = Unsubscribe(
             client_id=client_id,
             venue=instrument_id.venue,
             data_type=DataType(Instrument, metadata={"instrument_id": instrument_id}),
@@ -1088,7 +1087,7 @@ cdef class Actor(Component):
             handler=self.handle_order_book_delta,
         )
 
-        cdef VenueUnsubscribe command = VenueUnsubscribe(
+        cdef Unsubscribe command = Unsubscribe(
             client_id=client_id,
             venue=instrument_id.venue,
             data_type=DataType(OrderBookData, metadata={"instrument_id": instrument_id}),
@@ -1131,7 +1130,7 @@ cdef class Actor(Component):
             handler=self.handle_order_book,
         )
 
-        cdef VenueUnsubscribe command = VenueUnsubscribe(
+        cdef Unsubscribe command = Unsubscribe(
             client_id=client_id,
             venue=instrument_id.venue,
             data_type=DataType(OrderBook, metadata={
@@ -1167,7 +1166,7 @@ cdef class Actor(Component):
             handler=self.handle_ticker,
         )
 
-        cdef VenueUnsubscribe command = VenueUnsubscribe(
+        cdef Unsubscribe command = Unsubscribe(
             client_id=client_id,
             venue=instrument_id.venue,
             data_type=DataType(Ticker, metadata={"instrument_id": instrument_id}),
@@ -1200,7 +1199,7 @@ cdef class Actor(Component):
             handler=self.handle_quote_tick,
         )
 
-        cdef VenueUnsubscribe command = VenueUnsubscribe(
+        cdef Unsubscribe command = Unsubscribe(
             client_id=client_id,
             venue=instrument_id.venue,
             data_type=DataType(QuoteTick, metadata={"instrument_id": instrument_id}),
@@ -1233,7 +1232,7 @@ cdef class Actor(Component):
             handler=self.handle_trade_tick,
         )
 
-        cdef VenueUnsubscribe command = VenueUnsubscribe(
+        cdef Unsubscribe command = Unsubscribe(
             client_id=client_id,
             venue=instrument_id.venue,
             data_type=DataType(TradeTick, metadata={"instrument_id": instrument_id}),
@@ -1264,7 +1263,7 @@ cdef class Actor(Component):
             handler=self.handle_bar,
         )
 
-        cdef VenueUnsubscribe command = VenueUnsubscribe(
+        cdef Unsubscribe command = Unsubscribe(
             client_id=client_id,
             venue=bar_type.instrument_id.venue,
             data_type=DataType(Bar, metadata={"bar_type": bar_type}),
@@ -1335,6 +1334,7 @@ cdef class Actor(Component):
 
         cdef DataRequest request = DataRequest(
             client_id=client_id,
+            venue=None,
             data_type=data_type,
             callback=self._handle_data_response,
             request_id=self._uuid_factory.generate(),
@@ -1378,7 +1378,7 @@ cdef class Actor(Component):
             Condition.true(from_datetime < to_datetime, "from_datetime was >= to_datetime")
         Condition.true(self.trader_id is not None, "The actor has not been registered")
 
-        cdef VenueDataRequest request = VenueDataRequest(
+        cdef DataRequest request = DataRequest(
             client_id=client_id,
             venue=instrument_id.venue,
             data_type=DataType(QuoteTick, metadata={
@@ -1428,7 +1428,7 @@ cdef class Actor(Component):
             Condition.true(from_datetime < to_datetime, "from_datetime was >= to_datetime")
         Condition.true(self.trader_id is not None, "The actor has not been registered")
 
-        cdef VenueDataRequest request = VenueDataRequest(
+        cdef DataRequest request = DataRequest(
             client_id=client_id,
             venue=instrument_id.venue,
             data_type=DataType(TradeTick, metadata={
@@ -1483,7 +1483,7 @@ cdef class Actor(Component):
             Condition.true(from_datetime < to_datetime, "from_datetime was >= to_datetime")
         Condition.true(self.trader_id is not None, "The actor has not been registered")
 
-        cdef VenueDataRequest request = VenueDataRequest(
+        cdef DataRequest request = DataRequest(
             client_id=client_id,
             venue=bar_type.instrument_id.venue,
             data_type=DataType(Bar, metadata={

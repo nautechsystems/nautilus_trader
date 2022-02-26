@@ -37,7 +37,7 @@ cdef class TradingCommand(Command):
     Parameters
     ----------
     client_id : ClientId, optional
-        The execution client ID for the command. If ``None`` then will be inferred.
+        The execution client ID for the command.
     trader_id : TraderId
         The trader ID for the command.
     strategy_id : StrategyId
@@ -65,7 +65,7 @@ cdef class TradingCommand(Command):
     ):
         super().__init__(command_id, ts_init)
 
-        self.client_id = client_id or ClientId(instrument_id.venue.value)
+        self.client_id = client_id
         self.trader_id = trader_id
         self.strategy_id = strategy_id
         self.instrument_id = instrument_id
@@ -90,7 +90,7 @@ cdef class SubmitOrder(TradingCommand):
     ts_init : int64
         The UNIX timestamp (nanoseconds) when the object was initialized.
     client_id : ClientId, optional
-        The execution client ID for the command. If ``None`` then will be inferred.
+        The execution client ID for the command.
 
     References
     ----------
@@ -131,7 +131,7 @@ cdef class SubmitOrder(TradingCommand):
     def __repr__(self) -> str:
         return (
             f"{type(self).__name__}("
-            f"client_id={self.client_id.value}, "
+            f"client_id={self.client_id}, "
             f"trader_id={self.trader_id.value}, "
             f"strategy_id={self.strategy_id.value}, "
             f"instrument_id={self.instrument_id.value}, "
@@ -145,9 +145,10 @@ cdef class SubmitOrder(TradingCommand):
     @staticmethod
     cdef SubmitOrder from_dict_c(dict values):
         Condition.not_none(values, "values")
+        cdef str c = values["client_id"]
         cdef str p = values["position_id"]
         return SubmitOrder(
-            client_id=ClientId(values["client_id"]),
+            client_id=ClientId(c) if c is not None else None,
             trader_id=TraderId(values["trader_id"]),
             strategy_id=StrategyId(values["strategy_id"]),
             position_id=PositionId(p) if p is not None else None,
@@ -161,7 +162,7 @@ cdef class SubmitOrder(TradingCommand):
         Condition.not_none(obj, "obj")
         return {
             "type": "SubmitOrder",
-            "client_id": obj.client_id.value,
+            "client_id": obj.client_id.value if obj.client_id is not None else None,
             "trader_id": obj.trader_id.value,
             "strategy_id": obj.strategy_id.value,
             "position_id": obj.position_id.value if obj.position_id is not None else None,
@@ -221,7 +222,7 @@ cdef class SubmitOrderList(TradingCommand):
     ts_init : int64
         The UNIX timestamp (nanoseconds) when the object was initialized.
     client_id : ClientId, optional
-        The execution client ID for the command. If ``None`` then will be inferred.
+        The execution client ID for the command.
 
     References
     ----------
@@ -258,7 +259,7 @@ cdef class SubmitOrderList(TradingCommand):
     def __repr__(self) -> str:
         return (
             f"{type(self).__name__}("
-            f"client_id={self.client_id.value}, "
+            f"client_id={self.client_id}, "
             f"trader_id={self.trader_id.value}, "
             f"strategy_id={self.strategy_id.value}, "
             f"instrument_id={self.instrument_id.value}, "
@@ -270,13 +271,14 @@ cdef class SubmitOrderList(TradingCommand):
     @staticmethod
     cdef SubmitOrderList from_dict_c(dict values):
         Condition.not_none(values, "values")
+        cdef str c = values["client_id"]
         cdef dict o_dict
         cdef OrderList order_list = OrderList(
             list_id=OrderListId(values["order_list_id"]),
             orders=[OrderUnpacker.unpack_c(o_dict) for o_dict in orjson.loads(values["orders"])],
         )
         return SubmitOrderList(
-            client_id=ClientId(values["client_id"]),
+            client_id=ClientId(c) if c is not None else None,
             trader_id=TraderId(values["trader_id"]),
             strategy_id=StrategyId(values["strategy_id"]),
             order_list=order_list,
@@ -290,7 +292,7 @@ cdef class SubmitOrderList(TradingCommand):
         cdef Order o
         return {
             "type": "SubmitOrderList",
-            "client_id": obj.client_id.value,
+            "client_id": obj.client_id.value if obj.client_id is not None else None,
             "trader_id": obj.trader_id.value,
             "strategy_id": obj.strategy_id.value,
             "order_list_id": obj.list.id.value,
@@ -356,7 +358,7 @@ cdef class ModifyOrder(TradingCommand):
     ts_init : int64
         The UNIX timestamp (nanoseconds) when the object was initialized.
     client_id : ClientId, optional
-        The execution client ID for the command. If ``None`` then will be inferred.
+        The execution client ID for the command.
 
     References
     ----------
@@ -406,7 +408,7 @@ cdef class ModifyOrder(TradingCommand):
     def __repr__(self) -> str:
         return (
             f"{type(self).__name__}("
-            f"client_id={self.client_id.value}, "
+            f"client_id={self.client_id}, "
             f"trader_id={self.trader_id.value}, "
             f"strategy_id={self.strategy_id.value}, "
             f"instrument_id={self.instrument_id.value}, "
@@ -422,12 +424,13 @@ cdef class ModifyOrder(TradingCommand):
     @staticmethod
     cdef ModifyOrder from_dict_c(dict values):
         Condition.not_none(values, "values")
+        cdef str c = values["client_id"]
         cdef str v = values["venue_order_id"]
         cdef str q = values["quantity"]
         cdef str p = values["price"]
         cdef str t = values["trigger_price"]
         return ModifyOrder(
-            client_id=ClientId(values["client_id"]),
+            client_id=ClientId(c) if c is not None else None,
             trader_id=TraderId(values["trader_id"]),
             strategy_id=StrategyId(values["strategy_id"]),
             instrument_id=InstrumentId.from_str_c(values["instrument_id"]),
@@ -445,7 +448,7 @@ cdef class ModifyOrder(TradingCommand):
         Condition.not_none(obj, "obj")
         return {
             "type": "ModifyOrder",
-            "client_id": obj.client_id.value,
+            "client_id": obj.client_id.value if obj.client_id is not None else None,
             "trader_id": obj.trader_id.value,
             "strategy_id": obj.strategy_id.value,
             "instrument_id": obj.instrument_id.value,
@@ -509,7 +512,7 @@ cdef class CancelOrder(TradingCommand):
     ts_init : int64
         The UNIX timestamp (nanoseconds) when the object was initialized.
     client_id : ClientId, optional
-        The execution client ID for the command. If ``None`` then will be inferred.
+        The execution client ID for the command.
 
     References
     ----------
@@ -552,7 +555,7 @@ cdef class CancelOrder(TradingCommand):
     def __repr__(self) -> str:
         return (
             f"{type(self).__name__}("
-            f"client_id={self.client_id.value}, "
+            f"client_id={self.client_id}, "
             f"trader_id={self.trader_id.value}, "
             f"strategy_id={self.strategy_id.value}, "
             f"instrument_id={self.instrument_id.value}, "
@@ -565,9 +568,10 @@ cdef class CancelOrder(TradingCommand):
     @staticmethod
     cdef CancelOrder from_dict_c(dict values):
         Condition.not_none(values, "values")
+        cdef str c = values["client_id"]
         cdef str v = values["venue_order_id"]
         return CancelOrder(
-            client_id=ClientId(values["client_id"]),
+            client_id=ClientId(c) if c is not None else None,
             trader_id=TraderId(values["trader_id"]),
             strategy_id=StrategyId(values["strategy_id"]),
             instrument_id=InstrumentId.from_str_c(values["instrument_id"]),
@@ -582,7 +586,7 @@ cdef class CancelOrder(TradingCommand):
         Condition.not_none(obj, "obj")
         return {
             "type": "CancelOrder",
-            "client_id": obj.client_id.value,
+            "client_id": obj.client_id.value if obj.client_id is not None else None,
             "trader_id": obj.trader_id.value,
             "strategy_id": obj.strategy_id.value,
             "instrument_id": obj.instrument_id.value,
@@ -639,7 +643,7 @@ cdef class CancelAllOrders(TradingCommand):
     ts_init : int64
         The UNIX timestamp (nanoseconds) when the object was initialized.
     client_id : ClientId, optional
-        The execution client ID for the command. If ``None`` then will be inferred.
+        The execution client ID for the command.
     """
 
     def __init__(
@@ -669,7 +673,7 @@ cdef class CancelAllOrders(TradingCommand):
     def __repr__(self) -> str:
         return (
             f"{type(self).__name__}("
-            f"client_id={self.client_id.value}, "
+            f"client_id={self.client_id}, "
             f"trader_id={self.trader_id.value}, "
             f"strategy_id={self.strategy_id.value}, "
             f"instrument_id={self.instrument_id.value}, "
@@ -680,8 +684,9 @@ cdef class CancelAllOrders(TradingCommand):
     @staticmethod
     cdef CancelAllOrders from_dict_c(dict values):
         Condition.not_none(values, "values")
+        cdef str c = values["client_id"]
         return CancelAllOrders(
-            client_id=ClientId(values["client_id"]),
+            client_id=ClientId(c) if c is not None else None,
             trader_id=TraderId(values["trader_id"]),
             strategy_id=StrategyId(values["strategy_id"]),
             instrument_id=InstrumentId.from_str_c(values["instrument_id"]),
@@ -694,7 +699,7 @@ cdef class CancelAllOrders(TradingCommand):
         Condition.not_none(obj, "obj")
         return {
             "type": "CancelAllOrders",
-            "client_id": obj.client_id.value,
+            "client_id": obj.client_id.value if obj.client_id is not None else None,
             "trader_id": obj.trader_id.value,
             "strategy_id": obj.strategy_id.value,
             "instrument_id": obj.instrument_id.value,

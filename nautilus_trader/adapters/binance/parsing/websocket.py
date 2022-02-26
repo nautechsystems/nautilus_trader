@@ -18,7 +18,7 @@ from typing import Dict, List, Tuple
 
 from nautilus_trader.adapters.binance.core.types import BinanceBar
 from nautilus_trader.adapters.binance.core.types import BinanceSpotTicker
-from nautilus_trader.adapters.binance.parsing.common import parse_balances
+from nautilus_trader.adapters.binance.parsing.common import parse_balances_spot
 from nautilus_trader.core.datetime import millis_to_nanos
 from nautilus_trader.model.data.bar import BarSpecification
 from nautilus_trader.model.data.bar import BarType
@@ -36,10 +36,10 @@ from nautilus_trader.model.identifiers import TradeId
 from nautilus_trader.model.objects import AccountBalance
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
+from nautilus_trader.model.orderbook.data import Order
 from nautilus_trader.model.orderbook.data import OrderBookDelta
 from nautilus_trader.model.orderbook.data import OrderBookDeltas
 from nautilus_trader.model.orderbook.data import OrderBookSnapshot
-from nautilus_trader.model.orders.base import Order
 
 
 def parse_book_snapshot_ws(
@@ -111,7 +111,7 @@ def parse_book_delta_ws(
     )
 
 
-def parse_spot_ticker_24hr_ws(
+def parse_ticker_24hr_spot_ws(
     instrument_id: InstrumentId, msg: Dict, ts_init: int
 ) -> BinanceSpotTicker:
     return BinanceSpotTicker(
@@ -145,7 +145,7 @@ def parse_quote_tick_ws(instrument_id: InstrumentId, msg: Dict, ts_init: int) ->
         bid=Price.from_str(msg["b"]),
         ask=Price.from_str(msg["a"]),
         bid_size=Quantity.from_str(msg["B"]),
-        ask_size=Quantity.from_str(msg["B"]),
+        ask_size=Quantity.from_str(msg["A"]),
         ts_event=ts_init,
         ts_init=ts_init,
     )
@@ -209,4 +209,4 @@ def parse_bar_ws(
 
 
 def parse_account_balances_ws(raw_balances: List[Dict[str, str]]) -> List[AccountBalance]:
-    return parse_balances(raw_balances, "a", "f", "l")
+    return parse_balances_spot(raw_balances, "a", "f", "l")

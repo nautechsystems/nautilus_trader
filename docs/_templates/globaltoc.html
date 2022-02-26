@@ -5,21 +5,20 @@
     <ul class="md-nav__list">
     {%- for item in toctree_nodes recursive %}
       <li class="md-nav__item {% if item.current %} md-nav__link--active{% endif %}">
-      {% if "caption" in item %}
-        <span class="md-nav__link caption">{{ item.caption }}</span>
-      {% else %}
-        
+        {% if "caption" in item %}
+          <span class="md-nav__link caption">{{ item.caption }}</span>
+          {% else %}
           <a href="{{ item.href|e }}" class="md-nav__link">{{ item.contents }}</a>
           {%- set sphinx_material_include_searchbox=True %}
 
           {%- if item.children -%}
-          <span class="arrow">
-            <i class="fa-solid fa-chevron-right"></i>
-          </span>
+            <span class="arrow">
+              <i class="fa-solid fa-chevron-right"></i>
+            </span>
 
-        <ul class="submenu"> {{ loop(item.children) }}</ul>
-        {%- endif %}
-      {% endif %}
+            <ul class="submenu"> {{ loop(item.children) }}</ul>
+          {%- endif %}
+        {% endif %}
       </li>
     {%- endfor %}
     </ul>

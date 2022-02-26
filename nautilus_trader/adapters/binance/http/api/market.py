@@ -19,9 +19,9 @@
 from typing import Any, Dict, List, Optional
 
 from nautilus_trader.adapters.binance.core.enums import BinanceAccountType
+from nautilus_trader.adapters.binance.core.functions import convert_symbols_list_to_json_array
+from nautilus_trader.adapters.binance.core.functions import format_symbol
 from nautilus_trader.adapters.binance.http.client import BinanceHttpClient
-from nautilus_trader.adapters.binance.http.functions import convert_list_to_json_array
-from nautilus_trader.adapters.binance.http.functions import format_symbol
 from nautilus_trader.core.correctness import PyCondition
 
 
@@ -88,7 +88,7 @@ class BinanceMarketHttpAPI:
         """
         return await self.client.query(url_path=self.BASE_ENDPOINT + "time")
 
-    async def exchange_info(self, symbol: str = None, symbols: list = None) -> Dict[str, Any]:
+    async def exchange_info(self, symbol: str = None, symbols: List[str] = None) -> Dict[str, Any]:
         """
         Get current exchange trading rules and symbol information.
         Only either `symbol` or `symbols` should be passed.
@@ -100,7 +100,7 @@ class BinanceMarketHttpAPI:
         ----------
         symbol : str, optional
             The trading pair.
-        symbols : list[str], optional
+        symbols : List[str], optional
             The list of trading pairs.
 
         Returns
@@ -119,7 +119,7 @@ class BinanceMarketHttpAPI:
         if symbol is not None:
             payload["symbol"] = format_symbol(symbol).upper()
         if symbols is not None:
-            payload["symbols"] = convert_list_to_json_array(symbols)
+            payload["symbols"] = convert_symbols_list_to_json_array(symbols)
 
         return await self.client.query(
             url_path=self.BASE_ENDPOINT + "exchangeInfo",

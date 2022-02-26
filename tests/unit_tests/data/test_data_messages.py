@@ -13,14 +13,14 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+import pytest
+
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.uuid import UUIDFactory
 from nautilus_trader.data.messages import DataRequest
 from nautilus_trader.data.messages import DataResponse
 from nautilus_trader.data.messages import Subscribe
-from nautilus_trader.data.messages import VenueDataRequest
-from nautilus_trader.data.messages import VenueDataResponse
-from nautilus_trader.data.messages import VenueSubscribe
+from nautilus_trader.data.messages import Unsubscribe
 from nautilus_trader.model.data.base import DataType
 from nautilus_trader.model.data.tick import QuoteTick
 from nautilus_trader.model.data.tick import TradeTick
@@ -40,12 +40,63 @@ class TestDataMessage:
         self.clock = TestClock()
         self.uuid_factory = UUIDFactory()
 
+    def test_data_messages_when_client_id_and_venue_none_raise_value_error(self):
+        # Arrange, Act , Assert
+        with pytest.raises(ValueError) as ex:
+            Subscribe(
+                client_id=None,
+                venue=None,
+                data_type=DataType(str, {"type": "newswire"}),
+                command_id=self.uuid_factory.generate(),
+                ts_init=self.clock.timestamp_ns(),
+            )
+        assert ex.type == ValueError
+        assert ex.match("Both `client_id` and `venue` were None")
+
+        with pytest.raises(ValueError) as ex:
+            Unsubscribe(
+                client_id=None,
+                venue=None,
+                data_type=DataType(str, {"type": "newswire"}),
+                command_id=self.uuid_factory.generate(),
+                ts_init=self.clock.timestamp_ns(),
+            )
+        assert ex.type == ValueError
+        assert ex.match("Both `client_id` and `venue` were None")
+
+        with pytest.raises(ValueError) as ex:
+            handler = []
+            DataRequest(
+                client_id=None,
+                venue=None,
+                data_type=DataType(QuoteTick),
+                callback=handler.append,
+                request_id=self.uuid_factory.generate(),
+                ts_init=self.clock.timestamp_ns(),
+            )
+        assert ex.type == ValueError
+        assert ex.match("Both `client_id` and `venue` were None")
+
+        with pytest.raises(ValueError) as ex:
+            DataResponse(
+                client_id=None,
+                venue=None,
+                data_type=DataType(QuoteTick),
+                data=[],
+                correlation_id=self.uuid_factory.generate(),
+                response_id=self.uuid_factory.generate(),
+                ts_init=self.clock.timestamp_ns(),
+            )
+        assert ex.type == ValueError
+        assert ex.match("Both `client_id` and `venue` were None")
+
     def test_data_command_str_and_repr(self):
         # Arrange, Act
         command_id = self.uuid_factory.generate()
 
         command = Subscribe(
-            client_id=ClientId(BINANCE.value),
+            client_id=None,
+            venue=BINANCE,
             data_type=DataType(str, {"type": "newswire"}),
             command_id=command_id,
             ts_init=self.clock.timestamp_ns(),
@@ -55,7 +106,8 @@ class TestDataMessage:
         assert str(command) == "Subscribe(str{'type': 'newswire'})"
         assert repr(command) == (
             f"Subscribe("
-            f"client_id=BINANCE, "
+            f"client_id=None, "
+            f"venue=BINANCE, "
             f"data_type=str{{'type': 'newswire'}}, "
             f"id={command_id})"
         )
@@ -64,7 +116,7 @@ class TestDataMessage:
         # Arrange, Act
         command_id = self.uuid_factory.generate()
 
-        command = VenueSubscribe(
+        command = Subscribe(
             client_id=ClientId(BINANCE.value),
             venue=BINANCE,
             data_type=DataType(TradeTick, {"instrument_id": "BTCUSDT"}),
@@ -73,9 +125,9 @@ class TestDataMessage:
         )
 
         # Assert
-        assert str(command) == "VenueSubscribe(TradeTick{'instrument_id': 'BTCUSDT'})"
+        assert str(command) == "Subscribe(TradeTick{'instrument_id': 'BTCUSDT'})"
         assert repr(command) == (
-            f"VenueSubscribe("
+            f"Subscribe("
             f"client_id=BINANCE, "
             f"venue=BINANCE, "
             f"data_type=TradeTick{{'instrument_id': 'BTCUSDT'}}, "
@@ -88,7 +140,8 @@ class TestDataMessage:
         request_id = self.uuid_factory.generate()
 
         request = DataRequest(
-            client_id=ClientId(BINANCE.value),
+            client_id=None,
+            venue=BINANCE,
             data_type=DataType(
                 str,
                 metadata={  # str data type is invalid
@@ -110,7 +163,8 @@ class TestDataMessage:
         )
         assert repr(request) == (
             f"DataRequest("
-            f"client_id=BINANCE, "
+            f"client_id=None, "
+            f"venue=BINANCE, "
             f"data_type=str{{'instrument_id': InstrumentId('SOMETHING.RANDOM'), 'from_datetime': None, 'to_datetime': None, 'limit': 1000}}, "
             f"callback={repr(handler)}, "
             f"id={request_id})"
@@ -121,8 +175,8 @@ class TestDataMessage:
         handler = [].append
         request_id = self.uuid_factory.generate()
 
-        request = VenueDataRequest(
-            client_id=ClientId(BINANCE.value),
+        request = DataRequest(
+            client_id=None,
             venue=BINANCE,
             data_type=DataType(
                 TradeTick,
@@ -141,11 +195,11 @@ class TestDataMessage:
         # Assert
         assert (
             str(request)
-            == "VenueDataRequest(TradeTick{'instrument_id': InstrumentId('SOMETHING.RANDOM'), 'from_datetime': None, 'to_datetime': None, 'limit': 1000})"  # noqa
+            == "DataRequest(TradeTick{'instrument_id': InstrumentId('SOMETHING.RANDOM'), 'from_datetime': None, 'to_datetime': None, 'limit': 1000})"  # noqa
         )
         assert repr(request) == (
-            f"VenueDataRequest("
-            f"client_id=BINANCE, "
+            f"DataRequest("
+            f"client_id=None, "
             f"venue=BINANCE, "
             f"data_type=TradeTick{{'instrument_id': InstrumentId('SOMETHING.RANDOM'), 'from_datetime': None, 'to_datetime': None, 'limit': 1000}}, "
             f"callback={repr(handler)}, "
@@ -159,7 +213,8 @@ class TestDataMessage:
         instrument_id = InstrumentId(Symbol("AUD/USD"), IDEALPRO)
 
         response = DataResponse(
-            client_id=ClientId(BINANCE.value),
+            client_id=None,
+            venue=BINANCE,
             data_type=DataType(QuoteTick, metadata={"instrument_id": instrument_id}),
             data=[],
             correlation_id=correlation_id,
@@ -174,7 +229,8 @@ class TestDataMessage:
         )
         assert repr(response) == (
             f"DataResponse("
-            f"client_id=BINANCE, "
+            f"client_id=None, "
+            f"venue=BINANCE, "
             f"data_type=QuoteTick{{'instrument_id': InstrumentId('AUD/USD.IDEALPRO')}}, "
             f"correlation_id={correlation_id}, "
             f"id={response_id})"
@@ -186,9 +242,9 @@ class TestDataMessage:
         response_id = self.uuid_factory.generate()
         instrument_id = InstrumentId(Symbol("AUD/USD"), IDEALPRO)
 
-        response = VenueDataResponse(
+        response = DataResponse(
             client_id=ClientId("IB"),
-            venue=Venue("IDEAL_PRO"),
+            venue=Venue("IDEALPRO"),
             data_type=DataType(QuoteTick, metadata={"instrument_id": instrument_id}),
             data=[],
             correlation_id=correlation_id,
@@ -199,12 +255,12 @@ class TestDataMessage:
         # Assert
         assert (
             str(response)
-            == "VenueDataResponse(QuoteTick{'instrument_id': InstrumentId('AUD/USD.IDEALPRO')})"
+            == "DataResponse(QuoteTick{'instrument_id': InstrumentId('AUD/USD.IDEALPRO')})"
         )
         assert repr(response) == (
-            f"VenueDataResponse("
+            f"DataResponse("
             f"client_id=IB, "
-            f"venue=IDEAL_PRO, "
+            f"venue=IDEALPRO, "
             f"data_type=QuoteTick{{'instrument_id': InstrumentId('AUD/USD.IDEALPRO')}}, "
             f"correlation_id={correlation_id}, "
             f"id={response_id})"

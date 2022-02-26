@@ -14,13 +14,27 @@
 # -------------------------------------------------------------------------------------------------
 
 import json
+from typing import List
+
+from nautilus_trader.adapters.binance.core.enums import BinanceAccountType
+
+
+def parse_symbol(symbol: str, account_type: BinanceAccountType):
+    symbol = symbol.upper()
+    if account_type in (account_type.SPOT, account_type.MARGIN):
+        return symbol
+
+    # Parse Futures symbol
+    if symbol[-1].isdigit():
+        return symbol  # Deliverable
+    return symbol + "-PERP"
 
 
 def format_symbol(symbol: str):
-    return symbol.lower().replace("/", "")
+    return symbol.lower().replace(" ", "").replace("/", "").replace("-perp", "")
 
 
-def convert_list_to_json_array(symbols):
+def convert_symbols_list_to_json_array(symbols: List[str]):
     if symbols is None:
         return symbols
     return json.dumps(symbols).replace(" ", "").replace("/", "")

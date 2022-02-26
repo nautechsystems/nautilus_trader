@@ -122,7 +122,7 @@ class InstrumentProviderConfig(pydantic.BaseModel):
 
     @validator("filters")
     def validate_filters(cls, value):
-        return frozendict(value)
+        return frozendict(value) if value is not None else None
 
     def __eq__(self, other):
         return (

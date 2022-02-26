@@ -22,8 +22,8 @@ from nautilus_trader.data.client cimport MarketDataClient
 from nautilus_trader.data.messages cimport DataCommand
 from nautilus_trader.data.messages cimport DataRequest
 from nautilus_trader.data.messages cimport DataResponse
-from nautilus_trader.data.messages cimport VenueSubscribe
-from nautilus_trader.data.messages cimport VenueUnsubscribe
+from nautilus_trader.data.messages cimport Subscribe
+from nautilus_trader.data.messages cimport Unsubscribe
 from nautilus_trader.model.data.bar cimport Bar
 from nautilus_trader.model.data.bar cimport BarType
 from nautilus_trader.model.data.base cimport DataType
@@ -95,8 +95,8 @@ cdef class DataEngine(Component):
 # -- COMMAND HANDLERS ------------------------------------------------------------------------------
 
     cdef void _execute_command(self, DataCommand command) except *
-    cdef void _handle_subscribe(self, DataClient client, VenueSubscribe command) except *
-    cdef void _handle_unsubscribe(self, DataClient client, VenueUnsubscribe command) except *
+    cdef void _handle_subscribe(self, DataClient client, Subscribe command) except *
+    cdef void _handle_unsubscribe(self, DataClient client, Unsubscribe command) except *
     cdef void _handle_subscribe_instrument(self, MarketDataClient client, InstrumentId instrument_id) except *
     cdef void _handle_subscribe_order_book_deltas(self, MarketDataClient client, InstrumentId instrument_id, dict metadata) except *  # noqa
     cdef void _handle_subscribe_order_book_snapshots(self, MarketDataClient client, InstrumentId instrument_id, dict metadata) except *  # noqa
