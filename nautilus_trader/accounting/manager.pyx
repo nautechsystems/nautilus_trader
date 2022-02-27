@@ -16,6 +16,8 @@
 from decimal import Decimal
 from typing import Optional
 
+from nautilus_trader.accounting.error import AccountBalanceNegative
+
 from nautilus_trader.accounting.accounts.base cimport Account
 from nautilus_trader.accounting.accounts.cash cimport CashAccount
 from nautilus_trader.accounting.accounts.margin cimport MarginAccount
@@ -33,8 +35,6 @@ from nautilus_trader.model.instruments.base cimport Instrument
 from nautilus_trader.model.objects cimport AccountBalance
 from nautilus_trader.model.orders.base cimport Order
 from nautilus_trader.model.position cimport Position
-
-from nautilus_trader.accounting.error import AccountBalanceNegative
 
 
 cdef class AccountsManager:

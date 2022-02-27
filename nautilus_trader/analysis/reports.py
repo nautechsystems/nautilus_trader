@@ -20,7 +20,7 @@ import pandas as pd
 
 from nautilus_trader.accounting.accounts.base import Account
 from nautilus_trader.core.datetime import unix_nanos_to_dt
-from nautilus_trader.model.c_enums.order_status import OrderStatus
+from nautilus_trader.model.enums import OrderStatus
 from nautilus_trader.model.events.account import AccountState
 from nautilus_trader.model.orders.base import Order
 from nautilus_trader.model.position import Position
