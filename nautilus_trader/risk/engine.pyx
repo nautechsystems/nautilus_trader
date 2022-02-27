@@ -586,9 +586,7 @@ cdef class RiskEngine(Component):
         # CHECK PRICE
         ########################################################################
         cdef str risk_msg = None
-        if (
-            order.type == OrderType.LIMIT or order.type == OrderType.STOP_LIMIT
-        ):
+        if order.has_price_c():
             risk_msg = self._check_price(instrument, order.price)
             if risk_msg:
                 self._deny_order(order=order, reason=risk_msg)
@@ -597,7 +595,7 @@ cdef class RiskEngine(Component):
         ########################################################################
         # CHECK TRIGGER
         ########################################################################
-        if order.type == OrderType.STOP_MARKET or order.type == OrderType.STOP_LIMIT:
+        if order.has_trigger_price_c():
             risk_msg = self._check_price(instrument, order.trigger_price)
             if risk_msg:
                 self._deny_order(order=order, reason=f"trigger {risk_msg}")
@@ -645,7 +643,7 @@ cdef class RiskEngine(Component):
                                 f"Cannot check MARKET order risk: no prices for {instrument.id}.",
                             )
                             continue  # Cannot check order risk
-            elif order.type == OrderType.STOP_MARKET:
+            elif order.type == OrderType.STOP_MARKET or order.type == OrderType.MARKET_IF_TOUCHED:
                 last_px = order.trigger_price
             else:
                 last_px = order.price
