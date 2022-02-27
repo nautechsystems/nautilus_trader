@@ -1075,6 +1075,7 @@ class TestTrailingOffsetType:
         "enum, expected",
         [
             [TrailingOffsetType.NONE, "NONE"],
+            [TrailingOffsetType.DEFAULT, "DEFAULT"],
             [TrailingOffsetType.PRICE, "PRICE"],
             [TrailingOffsetType.BASIS_POINTS, "BASIS_POINTS"],
             [TrailingOffsetType.TICKS, "TICKS"],
@@ -1092,6 +1093,7 @@ class TestTrailingOffsetType:
         "string, expected",
         [
             ["NONE", TrailingOffsetType.NONE],
+            ["DEFAULT", TrailingOffsetType.DEFAULT],
             ["PRICE", TrailingOffsetType.PRICE],
             ["BASIS_POINTS", TrailingOffsetType.BASIS_POINTS],
             ["TICKS", TrailingOffsetType.TICKS],
