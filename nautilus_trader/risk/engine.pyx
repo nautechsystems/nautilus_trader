@@ -18,6 +18,8 @@ from typing import Dict, Optional
 
 import pandas as pd
 
+from nautilus_trader.risk.config import RiskEngineConfig
+
 from libc.stdint cimport int64_t
 
 from nautilus_trader.cache.base cimport CacheFacade
@@ -43,6 +45,7 @@ from nautilus_trader.model.c_enums.asset_type cimport AssetType
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
 from nautilus_trader.model.c_enums.order_status cimport OrderStatus
 from nautilus_trader.model.c_enums.order_type cimport OrderType
+from nautilus_trader.model.c_enums.order_type cimport OrderTypeParser
 from nautilus_trader.model.c_enums.trading_state cimport TradingState
 from nautilus_trader.model.c_enums.trading_state cimport TradingStateParser
 from nautilus_trader.model.data.tick cimport QuoteTick
@@ -58,8 +61,6 @@ from nautilus_trader.model.orders.list cimport OrderList
 from nautilus_trader.model.position cimport Position
 from nautilus_trader.msgbus.bus cimport MessageBus
 from nautilus_trader.portfolio.base cimport PortfolioFacade
-
-from nautilus_trader.risk.config import RiskEngineConfig
 
 
 cdef class RiskEngine(Component):
@@ -645,6 +646,15 @@ cdef class RiskEngine(Component):
                             continue  # Cannot check order risk
             elif order.type == OrderType.STOP_MARKET or order.type == OrderType.MARKET_IF_TOUCHED:
                 last_px = order.trigger_price
+            elif order.type == OrderType.TRAILING_STOP_MARKET or order.type == OrderType.TRAILING_STOP_LIMIT:
+                if order.trigger_price is None:
+                    self._log.warning(
+                        f"Cannot check {OrderTypeParser.to_str(order.type)} order risk: "
+                        f"no trigger price was set.",  # TODO(cs): Use last_trade += offset
+                    )
+                    continue  # Cannot assess risk
+                else:
+                    last_px = order.trigger_price
             else:
                 last_px = order.price
 
