@@ -44,6 +44,32 @@ class TestBinanceCoreFunctions:
     @pytest.mark.parametrize(
         "account_type, expected",
         [
+            [BinanceAccountType.SPOT, True],
+            [BinanceAccountType.MARGIN, False],
+            [BinanceAccountType.FUTURES_USDT, False],
+            [BinanceAccountType.FUTURES_COIN, False],
+        ],
+    )
+    def test_binance_account_type_is_spot(self, account_type, expected):
+        # Arrange, Act, Assert
+        assert account_type.is_spot == expected
+
+    @pytest.mark.parametrize(
+        "account_type, expected",
+        [
+            [BinanceAccountType.SPOT, False],
+            [BinanceAccountType.MARGIN, True],
+            [BinanceAccountType.FUTURES_USDT, False],
+            [BinanceAccountType.FUTURES_COIN, False],
+        ],
+    )
+    def test_binance_account_type_is_margin(self, account_type, expected):
+        # Arrange, Act, Assert
+        assert account_type.is_margin == expected
+
+    @pytest.mark.parametrize(
+        "account_type, expected",
+        [
             [BinanceAccountType.SPOT, False],
             [BinanceAccountType.MARGIN, False],
             [BinanceAccountType.FUTURES_USDT, True],
