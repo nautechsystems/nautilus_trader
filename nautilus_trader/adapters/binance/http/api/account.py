@@ -53,7 +53,73 @@ class BinanceAccountHttpAPI:
         else:  # pragma: no cover (design-time error)
             raise RuntimeError(f"invalid Binance account type, was {account_type}")
 
-    async def new_order_test(
+    async def change_position_mode(
+        self,
+        is_dual_side_position: bool,
+        recv_window: Optional[int] = None,
+    ):
+        """
+        Change Position Mode (TRADE).
+
+        `POST /fapi/v1/positionSide/dual (HMAC SHA256)`.
+
+        Parameters
+        ----------
+        is_dual_side_position : bool
+            If `Hedge Mode` will be set, otherwise `One-way` Mode.
+        recv_window : int, optional
+            The response receive window for the request (cannot be greater than 60000).
+
+        Returns
+        -------
+        dict[str, Any]
+
+        References
+        ----------
+        https://binance-docs.github.io/apidocs/futures/en/#change-position-mode-trade
+
+        """
+        payload: Dict[str, str] = {
+            "dualSidePosition": str(is_dual_side_position).lower(),
+        }
+        if recv_window is not None:
+            payload["recvWindow"] = str(recv_window)
+
+        return await self.client.sign_request(
+            http_method="POST",
+            url_path=self.BASE_ENDPOINT + "positionSide/dual",
+            payload=payload,
+        )
+
+    async def get_position_mode(
+        self,
+        recv_window: Optional[int] = None,
+    ):
+        """
+        Get Current Position Mode (USER_DATA).
+
+        `GET /fapi/v1/positionSide/dual (HMAC SHA256)`.
+
+        Parameters
+        ----------
+        recv_window : int, optional
+            The response receive window for the request (cannot be greater than 60000).
+
+        References
+        ----------
+        https://binance-docs.github.io/apidocs/futures/en/#get-current-position-mode-user_data
+        """
+        payload: Dict[str, str] = {}
+        if recv_window is not None:
+            payload["recvWindow"] = str(recv_window)
+
+        return await self.client.sign_request(
+            http_method="GET",
+            url_path=self.BASE_ENDPOINT + "positionSide/dual",
+            payload=payload,
+        )
+
+    async def new_order_test_spot(
         self,
         symbol: str,
         side: str,
@@ -146,7 +212,7 @@ class BinanceAccountHttpAPI:
             payload=payload,
         )
 
-    async def new_order(
+    async def new_order_spot(
         self,
         symbol: str,
         side: str,
@@ -226,6 +292,123 @@ class BinanceAccountHttpAPI:
             payload["stopPrice"] = stop_price
         if iceberg_qty is not None:
             payload["icebergQty"] = iceberg_qty
+        if new_order_resp_type is not None:
+            payload["newOrderRespType"] = new_order_resp_type.value
+        if recv_window is not None:
+            payload["recvWindow"] = str(recv_window)
+
+        return await self.client.sign_request(
+            http_method="POST",
+            url_path=self.BASE_ENDPOINT + "order",
+            payload=payload,
+        )
+
+    async def new_order_futures(  # noqa (too complex)
+        self,
+        symbol: str,
+        side: str,
+        type: str,
+        position_side: Optional[str] = "BOTH",
+        time_in_force: Optional[str] = None,
+        quantity: Optional[str] = None,
+        reduce_only: Optional[bool] = False,
+        price: Optional[str] = None,
+        new_client_order_id: Optional[str] = None,
+        stop_price: Optional[str] = None,
+        close_position: Optional[bool] = None,
+        activation_price: Optional[str] = None,
+        callback_rate: Optional[str] = None,
+        working_type: Optional[str] = None,
+        price_protect: Optional[bool] = None,
+        new_order_resp_type: NewOrderRespType = None,
+        recv_window: Optional[int] = None,
+    ) -> Dict[str, Any]:
+        """
+        Submit a new order.
+
+        Submit New Order (TRADE).
+        `POST /api/v3/order`.
+
+        Parameters
+        ----------
+        symbol : str
+            The symbol for the request.
+        side : str
+            The order side for the request.
+        type : str
+            The order type for the request.
+        position_side : str, {'BOTH', 'LONG', 'SHORT'}, default BOTH
+            The position side for the order.
+        time_in_force : str, optional
+            The order time in force for the request.
+        quantity : str, optional
+            The order quantity in base asset units for the request.
+        reduce_only : bool, optional
+            If the order will only reduce a position.
+        price : str, optional
+            The order price for the request.
+        new_client_order_id : str, optional
+            The client order ID for the request. A unique ID among open orders.
+            Automatically generated if not provided.
+        stop_price : str, optional
+            The order stop price for the request.
+            Used with STOP_LOSS, STOP_LOSS_LIMIT, TAKE_PROFIT, and TAKE_PROFIT_LIMIT orders.
+        close_position : bool, optional
+            If close all open positions for the given symbol.
+        activation_price : str, optional.
+            The price to activate a trailing stop.
+            Used with TRAILING_STOP_MARKET orders, default as the latest price(supporting different workingType).
+        callback_rate : str, optional
+            The percentage to trail the stop.
+            Used with TRAILING_STOP_MARKET orders, min 0.1, max 5 where 1 for 1%.
+        working_type : str {'MARK_PRICE', 'CONTRACT_PRICE'}, optional
+            The trigger type for the order. API default "CONTRACT_PRICE".
+        price_protect : bool, optional
+            If price protection is active.
+        new_order_resp_type : NewOrderRespType, optional
+            The response type for the order request.
+            MARKET and LIMIT order types default to FULL, all other orders default to ACK.
+        recv_window : int, optional
+            The response receive window for the request (cannot be greater than 60000).
+
+        Returns
+        -------
+        dict[str, Any]
+
+        References
+        ----------
+        https://binance-docs.github.io/apidocs/spot/en/#new-order-trade
+
+        """
+        payload: Dict[str, str] = {
+            "symbol": format_symbol(symbol),
+            "side": side,
+            "type": type,
+        }
+        if position_side is not None:
+            payload["positionSide"] = position_side
+        if time_in_force is not None:
+            payload["timeInForce"] = time_in_force
+        if quantity is not None:
+            payload["quantity"] = quantity
+        if reduce_only is not None:
+            payload["reduce_only"] = str(reduce_only).lower()
+        if price is not None:
+            payload["price"] = price
+        if new_client_order_id is not None:
+            payload["newClientOrderId"] = new_client_order_id
+        if stop_price is not None:
+            payload["stopPrice"] = stop_price
+        if close_position is not None:
+            payload["closePosition"] = str(close_position).lower()
+        if activation_price is not None:
+            payload["activationPrice"] = activation_price
+        if callback_rate is not None:
+            payload["callbackRate"] = callback_rate
+        if working_type is not None:
+            payload["workingType"] = working_type
+        if price_protect is not None:
+            payload["priceProtect"] = str(price_protect).lower()
         if new_order_resp_type is not None:
             payload["newOrderRespType"] = new_order_resp_type.value
         if recv_window is not None:

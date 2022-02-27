@@ -21,8 +21,10 @@ from nautilus_trader.adapters.binance.config import BinanceExecClientConfig
 from nautilus_trader.adapters.binance.core.enums import BinanceAccountType
 from nautilus_trader.adapters.binance.factories import BinanceLiveDataClientFactory
 from nautilus_trader.adapters.binance.factories import BinanceLiveExecClientFactory
-from nautilus_trader.examples.strategies.volatility_market_maker import VolatilityMarketMaker
-from nautilus_trader.examples.strategies.volatility_market_maker import VolatilityMarketMakerConfig
+from nautilus_trader.examples.strategies.ema_cross_stop_entry_trail import EMACrossStopEntryTrail
+from nautilus_trader.examples.strategies.ema_cross_stop_entry_trail import (
+    EMACrossStopEntryTrailConfig,
+)
 from nautilus_trader.infrastructure.config import CacheDatabaseConfig
 from nautilus_trader.live.config import InstrumentProviderConfig
 from nautilus_trader.live.config import TradingNodeConfig
@@ -43,7 +45,7 @@ config_node = TradingNodeConfig(
     data_clients={
         "BINANCE": BinanceDataClientConfig(
             api_key=None,  # "YOUR_BINANCE_TESTNET_API_KEY"
-            api_secret=None,  # "YOUR_BINANCE_TESTNET_API_KEY"
+            api_secret=None,  # "YOUR_BINANCE_TESTNET_API_SECRET"
             account_type=BinanceAccountType.FUTURES_USDT,
             base_url_http=None,  # Override with custom endpoint
             base_url_ws=None,  # Override with custom endpoint
@@ -55,7 +57,7 @@ config_node = TradingNodeConfig(
     exec_clients={
         "BINANCE": BinanceExecClientConfig(
             api_key=None,  # "YOUR_BINANCE_TESTNET_API_KEY"
-            api_secret=None,  # "YOUR_BINANCE_TESTNET_API_KEY"
+            api_secret=None,  # "YOUR_BINANCE_TESTNET_API_SECRET"
             account_type=BinanceAccountType.FUTURES_USDT,
             base_url_http=None,  # Override with custom endpoint
             base_url_ws=None,  # Override with custom endpoint
@@ -74,15 +76,17 @@ config_node = TradingNodeConfig(
 node = TradingNode(config=config_node)
 
 # Configure your strategy
-strat_config = VolatilityMarketMakerConfig(
+strat_config = EMACrossStopEntryTrailConfig(
     instrument_id="ETHUSDT-PERP.BINANCE",
     bar_type="ETHUSDT-PERP.BINANCE-1-MINUTE-LAST-EXTERNAL",
+    fast_ema_period=10,
+    slow_ema_period=20,
     atr_period=20,
-    atr_multiple=6.0,
+    trail_atr_multiple=3.0,
     trade_size=Decimal("0.01"),
 )
 # Instantiate your strategy
-strategy = VolatilityMarketMaker(config=strat_config)
+strategy = EMACrossStopEntryTrail(config=strat_config)
 
 # Add your strategies and modules
 node.trader.add_strategy(strategy)

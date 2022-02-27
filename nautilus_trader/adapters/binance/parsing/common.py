@@ -104,7 +104,7 @@ def parse_margins(
 
 
 def parse_order_type(order_type: str) -> OrderType:
-    if order_type == "STOP_LOSS":
+    if order_type in ("STOP", "STOP_LOSS"):
         return OrderType.STOP_MARKET
     elif order_type == "STOP_LOSS_LIMIT":
         return OrderType.STOP_LIMIT
@@ -112,6 +112,8 @@ def parse_order_type(order_type: str) -> OrderType:
         return OrderType.LIMIT
     elif order_type == "TAKE_PROFIT_LIMIT":
         return OrderType.STOP_LIMIT
+    elif order_type == "TAKE_PROFIT_MARKET":
+        return OrderType.MARKET_IF_TOUCHED
     elif order_type == "LIMIT_MAKER":
         return OrderType.LIMIT
     else:
@@ -126,18 +128,7 @@ def binance_order_type_spot(order: Order, market_price: Decimal = None) -> str: 
             return "LIMIT_MAKER"
         else:
             return "LIMIT"
-    elif order.type == OrderType.STOP_MARKET:
-        if order.side == OrderSide.BUY:
-            if order.price < market_price:
-                return "TAKE_PROFIT"
-            else:
-                return "STOP_LOSS"
-        else:  # OrderSide.SELL
-            if order.price > market_price:
-                return "TAKE_PROFIT"
-            else:
-                return "STOP_LOSS"
-    elif order.type == OrderType.STOP_LIMIT:
+    elif order.type in (OrderType.STOP_LIMIT, OrderType.LIMIT_IF_TOUCHED):
         if order.side == OrderSide.BUY:
             if order.trigger_price < market_price:
                 return "TAKE_PROFIT_LIMIT"
@@ -158,16 +149,13 @@ def binance_order_type_futures(order: Order, market_price: Decimal = None) -> st
     elif order.type == OrderType.LIMIT:
         return "LIMIT"
     elif order.type == OrderType.STOP_MARKET:
-        if order.side == OrderSide.BUY:
-            if order.price < market_price:
-                return "STOP_MARKET"
-            else:
-                return "STOP"
-        else:  # OrderSide.SELL
-            if order.price > market_price:
-                return "TAKE_PROFIT_MARKET"
-            else:
-                return "TAKE_PROFIT"
+        return "STOP_MARKET"
+    elif order.type == OrderType.STOP_LIMIT:
+        return "STOP"
+    elif order.type == OrderType.MARKET_IF_TOUCHED:
+        return "TAKE_PROFIT_MARKET"
+    elif order.type == OrderType.LIMIT_IF_TOUCHED:
+        return "TAKE_PROFIT"
     elif order.type == OrderType.TRAILING_STOP_MARKET:
         return "TRAILING_STOP_MARKET"
     else:  # pragma: no cover (design-time error)

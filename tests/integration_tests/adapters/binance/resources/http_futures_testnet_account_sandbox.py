@@ -43,26 +43,28 @@ async def test_binance_spot_account_http_client():
 
     account_type = BinanceAccountType.FUTURES_USDT
     account = BinanceAccountHttpAPI(client=client, account_type=account_type)
-    # response = await account.account(recv_window=5000)
+    response = await account.account(recv_window=5000)
 
-    response = await account.new_order(
-        symbol="ETHUSDT",
-        side="BUY",
-        type="LIMIT",
-        quantity="0.01",
-        time_in_force="GTC",
-        price="2000",
-        # iceberg_qty="0.005",
-        # stop_price="4200",
-        # new_client_order_id="O-20211120-021300-001-001-1",
-        recv_window=5000,
-    )
+    # response = await account.new_order_futures(
+    #     symbol="ETHUSDT",
+    #     side="SELL",
+    #     type="TAKE_PROFIT_MARKET",
+    #     quantity="0.01",
+    #     time_in_force="GTC",
+    #     # price="3000",
+    #     # iceberg_qty="0.005",
+    #     stop_price="3200",
+    #     working_type="CONTRACT_PRICE",
+    #     # new_client_order_id="O-20211120-021300-001-001-1",
+    #     recv_window=5000,
+    # )
     # response = await account.cancel_order(
     #     symbol="ETHUSDT",
-    #     orig_client_order_id="MNgQDTcfNkz2wUEtExGGj8",
+    #     orig_client_order_id="gxrRfr1wZp42rOZMsK6fbx",
     #     #new_client_order_id=str(uuid.uuid4()),
     #     recv_window=5000,
     # )
+
     print(json.dumps(response, indent=4))
 
     await client.disconnect()

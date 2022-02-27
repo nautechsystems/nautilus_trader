@@ -45,7 +45,7 @@ class TestBinanceSpotAccountHttpAPI:
         mock_send_request = mocker.patch(target="aiohttp.client.ClientSession.request")
 
         # Act
-        await self.api.new_order_test(
+        await self.api.new_order_test_spot(
             symbol="ETHUSDT",
             side="SELL",
             type="LIMIT",
@@ -70,7 +70,7 @@ class TestBinanceSpotAccountHttpAPI:
         mock_send_request = mocker.patch(target="aiohttp.client.ClientSession.request")
 
         # Act
-        await self.api.new_order(
+        await self.api.new_order_spot(
             symbol="ETHUSDT",
             side="SELL",
             type="LIMIT",
