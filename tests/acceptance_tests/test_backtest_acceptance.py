@@ -123,13 +123,13 @@ class TestBacktestAcceptanceTestsUSDJPY:
         self.engine.add_strategy(strategy)
 
         self.engine.run()
-        result1 = self.engine.analyzer.get_performance_stats_pnls()
+        result1 = self.engine.trader.analyzer.get_performance_stats_pnls()
 
         # Act
         self.engine.reset()
         self.engine.add_instrument(self.usdjpy)  # TODO(cs): Having to replace instrument
         self.engine.run()
-        result2 = self.engine.analyzer.get_performance_stats_pnls()
+        result2 = self.engine.trader.analyzer.get_performance_stats_pnls()
 
         # Assert
         assert all(result2) == all(result1)
