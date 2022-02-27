@@ -52,11 +52,11 @@ from nautilus_trader.execution.reports import OrderStatusReport
 from nautilus_trader.execution.reports import PositionStatusReport
 from nautilus_trader.execution.reports import TradeReport
 from nautilus_trader.live.execution_client import LiveExecutionClient
-from nautilus_trader.model.c_enums.account_type import AccountType
-from nautilus_trader.model.c_enums.liquidity_side import LiquiditySide
-from nautilus_trader.model.c_enums.order_type import OrderType
 from nautilus_trader.model.currency import Currency
+from nautilus_trader.model.enums import AccountType
+from nautilus_trader.model.enums import LiquiditySide
 from nautilus_trader.model.enums import OMSType
+from nautilus_trader.model.enums import OrderType
 from nautilus_trader.model.events.account import AccountState
 from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import ClientId
