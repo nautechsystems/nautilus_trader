@@ -1119,10 +1119,10 @@ cdef class Cache(CacheFacade):
 
         """
         Condition.not_none(order, "order")
-        Condition.not_in(order.client_order_id, self._orders, "order.client_order_id", "cached_orders")
-        Condition.not_in(order.client_order_id, self._index_orders, "order.client_order_id", "index_orders")
-        Condition.not_in(order.client_order_id, self._index_order_position, "order.client_order_id", "index_order_position")
-        Condition.not_in(order.client_order_id, self._index_order_strategy, "order.client_order_id", "index_order_strategy")
+        Condition.not_in(order.client_order_id, self._orders, "order.client_order_id", "_cached_orders")
+        Condition.not_in(order.client_order_id, self._index_orders, "order.client_order_id", "_index_orders")
+        Condition.not_in(order.client_order_id, self._index_order_position, "order.client_order_id", "_index_order_position")
+        Condition.not_in(order.client_order_id, self._index_order_strategy, "order.client_order_id", "_index_order_strategy")
 
         self._orders[order.client_order_id] = order
         self._index_orders.add(order.client_order_id)
@@ -1236,9 +1236,9 @@ cdef class Cache(CacheFacade):
         """
         Condition.not_none(position, "position")
         if oms_type == OMSType.HEDGING:
-            Condition.not_in(position.id, self._positions, "position.id", "cached_positions")
-            Condition.not_in(position.id, self._index_positions, "position.id", "index_positions")
-            Condition.not_in(position.id, self._index_positions_open, "position.id", "index_positions_open")
+            Condition.not_in(position.id, self._positions, "position.id", "_positions")
+            Condition.not_in(position.id, self._index_positions, "position.id", "_index_positions")
+            Condition.not_in(position.id, self._index_positions_open, "position.id", "_index_positions_open")
 
         self._positions[position.id] = position
         self._index_positions.add(position.id)

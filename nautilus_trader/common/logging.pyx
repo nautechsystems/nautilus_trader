@@ -161,7 +161,7 @@ cdef class Logger:
 
         """
         Condition.not_none(handler, "handler")
-        Condition.not_in(handler, self._sinks, "handler", "self._sinks")
+        Condition.not_in(handler, self._sinks, "handler", "_sinks")
 
         self._sinks.append(handler)
 
