@@ -4,20 +4,30 @@
 .. automodule:: nautilus_trader.analysis
 ```
 
-## Performance
+## Portfolio Analyzer
 
 ```{eval-rst}
-.. automodule:: nautilus_trader.analysis.performance
+.. automodule:: nautilus_trader.analysis.analyzer
    :show-inheritance:
    :inherited-members:
    :members:
    :member-order: bysource
 ```
 
-## Reports
+## Report Provider
 
 ```{eval-rst}
-.. automodule:: nautilus_trader.analysis.reports
+.. automodule:: nautilus_trader.analysis.reporter
+   :show-inheritance:
+   :inherited-members:
+   :members:
+   :member-order: bysource
+```
+
+## Portfolio Statistic
+
+```{eval-rst}
+.. automodule:: nautilus_trader.analysis.statistic
    :show-inheritance:
    :inherited-members:
    :members:

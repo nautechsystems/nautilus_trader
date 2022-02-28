@@ -12,3 +12,21 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+
+from nautilus_trader.analysis.statistics import expectancy  # noqa (being used)
+from nautilus_trader.analysis.statistics import long_ratio  # noqa (being used)
+from nautilus_trader.analysis.statistics import loser_avg  # noqa (being used)
+from nautilus_trader.analysis.statistics import loser_max  # noqa (being used)
+from nautilus_trader.analysis.statistics import loser_min  # noqa (being used)
+from nautilus_trader.analysis.statistics import profit_factor  # noqa (being used)
+from nautilus_trader.analysis.statistics import returns_annual_vol  # noqa (being used)
+from nautilus_trader.analysis.statistics import returns_avg  # noqa (being used)
+from nautilus_trader.analysis.statistics import returns_avg_loss  # noqa (being used)
+from nautilus_trader.analysis.statistics import returns_avg_win  # noqa (being used)
+from nautilus_trader.analysis.statistics import risk_return_ratio  # noqa (being used)
+from nautilus_trader.analysis.statistics import sharpe_ratio  # noqa (being used)
+from nautilus_trader.analysis.statistics import sortino_ratio  # noqa (being used)
+from nautilus_trader.analysis.statistics import win_rate  # noqa (being used)
+from nautilus_trader.analysis.statistics import winner_avg  # noqa (being used)
+from nautilus_trader.analysis.statistics import winner_max  # noqa (being used)
+from nautilus_trader.analysis.statistics import winner_min  # noqa (being used)

@@ -28,13 +28,13 @@ from nautilus_trader.model.position import Position
 
 class ReportProvider:
     """
-    Provides various trading reports.
+    Provides various portfolio analysis reports.
     """
 
     @staticmethod
     def generate_orders_report(orders: List[Order]) -> pd.DataFrame:
         """
-        Return an orders report dataframe.
+        Generate an orders report.
 
         Parameters
         ----------
@@ -56,7 +56,7 @@ class ReportProvider:
     @staticmethod
     def generate_order_fills_report(orders: List[Order]) -> pd.DataFrame:
         """
-        Return an order fills report dataframe.
+        Generate an order fills report.
 
         Parameters
         ----------
@@ -84,7 +84,7 @@ class ReportProvider:
     @staticmethod
     def generate_positions_report(positions: List[Position]) -> pd.DataFrame:
         """
-        Return a positions report dataframe.
+        Generate a positions report.
 
         Parameters
         ----------

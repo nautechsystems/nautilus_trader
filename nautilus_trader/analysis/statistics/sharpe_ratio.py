@@ -16,24 +16,15 @@
 from typing import Any, Optional
 
 import pandas as pd
+import quantstats
 
 from nautilus_trader.analysis.statistic import PortfolioStatistic
 
 
-class AvgWinner(PortfolioStatistic):
+class SharpeRatio(PortfolioStatistic):
     """
-    Calculates the average winner from a series of PnLs.
+    Calculates the Sharpe Ratio from returns.
     """
 
-    def calculate_from_realized_pnls(self, realized_pnls: pd.Series) -> Optional[Any]:
-        # Preconditions
-        if realized_pnls is None or realized_pnls.empty:
-            return 0.0
-
-        # Calculate statistic
-        pnls = realized_pnls.to_numpy()
-        winners = pnls[pnls > 0.0]
-        if len(winners) == 0:
-            return 0.0
-        else:
-            return winners.mean()
+    def calculate_from_returns(self, returns: pd.Series) -> Optional[Any]:
+        return quantstats.stats.sharpe(returns=returns)

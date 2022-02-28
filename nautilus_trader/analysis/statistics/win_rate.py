@@ -17,20 +17,15 @@ from typing import Any, Optional
 
 import pandas as pd
 
-from nautilus_trader.analysis.statistic import PerformanceStatistic
-from nautilus_trader.model.currency import Currency
+from nautilus_trader.analysis.statistic import PortfolioStatistic
 
 
-class WinRate(PerformanceStatistic):
+class WinRate(PortfolioStatistic):
     """
     Calculates the win rate from a realized PnLs series.
     """
 
-    @staticmethod
-    def calculate_from_realized_pnls(
-        currency: Currency,
-        realized_pnls: pd.Series[float],
-    ) -> Optional[Any]:
+    def calculate_from_realized_pnls(self, realized_pnls: pd.Series) -> Optional[Any]:
         # Preconditions
         if realized_pnls is None or realized_pnls.empty:
             return 0.0
@@ -38,4 +33,5 @@ class WinRate(PerformanceStatistic):
         # Calculate statistic
         winners = [x for x in realized_pnls if x > 0.0]
         losers = [x for x in realized_pnls if x <= 0.0]
+
         return len(winners) / float(max(1, (len(winners) + len(losers))))

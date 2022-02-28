@@ -5,6 +5,7 @@
 Released on TBD (UTC).
 
 ### Breaking Changes
+- Rename `PerformanceAnalyzer` to `PortfolioAnalyzer`.
 - Renamed `BacktestDataConfig.data_cls_path` to `data_cls`.
 - Renamed `BinanceTicker` to `BinanceSpotTicker`.
 - Renamed `BinanceSpotExecutionClient` to `BinanceExecutionClient`.
@@ -816,7 +817,7 @@ for `OrderFill` events, as well as additional order states and events.
 - Removed redundant `OrderFilled.leaves_qty`.
 - `BacktestEngine` constructor simplified.
 - `BacktestMarketDataClient` no longer needs instruments.
-- Rename `PerformanceAnalyzer.get_realized_pnls` to `.realized_pnls`.
+- Rename `PortfolioAnalyzer.get_realized_pnls` to `.realized_pnls`.
 
 ### Enhancements
 - Re-engineered `BacktestEngine` to take data directly.

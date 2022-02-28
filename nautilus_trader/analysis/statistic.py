@@ -18,29 +18,18 @@ from typing import Any, List, Optional
 
 import pandas as pd
 
-from nautilus_trader.model.currency import Currency
+from nautilus_trader.model.orders.base import Order
 from nautilus_trader.model.position import Position
 
 
-class PerformanceStatistic:
+class PortfolioStatistic:
     """
-    The abstract base class for all backtest performance statistics.
+    The abstract base class for all portfolio performance statistics.
 
+    Notes
+    -----
+    The return value should be a JSON serializable primitive.
     """
-
-    @classmethod
-    def name(cls) -> str:
-        """
-        Return the name for the statistic.
-
-        Returns
-        -------
-        str
-
-        """
-        klass = type(cls).__name__
-        matches = re.finditer(".+?(?:(?<=[a-z])(?=[A-Z])|(?<=[A-Z])(?=[A-Z][a-z])|$)", klass)
-        return " ".join([m.group(0) for m in matches])
 
     @classmethod
     def fully_qualified_name(cls) -> str:
@@ -58,98 +47,84 @@ class PerformanceStatistic:
         """
         return cls.__module__ + "." + cls.__qualname__
 
-    @staticmethod
-    def format_stat(stat: Any) -> str:
+    @property
+    def name(self) -> str:
         """
-        Return the statistic value as well formatted string for display.
-
-        Parameters
-        ----------
-        stat : Any
-            The statistic output to format.
+        Return the name for the statistic.
 
         Returns
         -------
         str
 
         """
-        # Override in implementation
-        return str(stat)
+        klass = type(self).__name__
+        matches = re.finditer(".+?(?:(?<=[a-z])(?=[A-Z])|(?<=[A-Z])(?=[A-Z][a-z])|$)", klass)
+        return " ".join([m.group(0) for m in matches])
 
-    @staticmethod
-    def format_stat_with_currency(stat: Any, currency: Currency) -> str:
+    def calculate_from_returns(self, returns: pd.Series) -> Optional[Any]:
         """
-        Return the statistic value as well formatted string for display.
+        Calculate the statistic value from the given raw returns.
 
         Parameters
         ----------
-        stat : Any
-            The statistic output to format.
-        currency : Currency, optional
-            The currency related to the statistic.
+        returns : pd.Series
+            The returns to use for the calculation.
 
         Returns
         -------
-        str
+        Any or ``None``
+            A JSON serializable primitive.
 
         """
-        # Override in implementation
-        if currency:
-            pass
-        return str(stat)
+        pass  # Override in implementation
 
-    @staticmethod
-    def calculate_from_positions(positions: List[Position]) -> Optional[Any]:
+    def calculate_from_realized_pnls(self, realized_pnls: pd.Series) -> Optional[Any]:
         """
-        Add a list of positions for the calculation.
+        Calculate the statistic value from the given raw realized PnLs.
+
+        Parameters
+        ----------
+        realized_pnls : pd.Series
+            The raw PnLs for the calculation.
+
+        Returns
+        -------
+        Any or ``None``
+            A JSON serializable primitive.
+
+        """
+        pass  # Override in implementation
+
+    def calculate_from_orders(self, orders: List[Order]) -> Optional[Any]:
+        """
+        Calculate the statistic value from the given orders.
+
+        Parameters
+        ----------
+        orders : List[Order]
+            The positions to use for the calculation.
+
+        Returns
+        -------
+        Any or ``None``
+            A JSON serializable primitive.
+
+        """
+        pass  # Override in implementation
+
+    def calculate_from_positions(self, positions: List[Position]) -> Optional[Any]:
+        """
+        Calculate the statistic value from the given positions.
 
         Parameters
         ----------
         positions : List[Position]
-            The positions for the calculation.
+            The positions to use for the calculation.
 
         Returns
         -------
-        Any or None
-
-        """
-        pass  # Override in implementation
-
-    @staticmethod
-    def calculate_from_realized_pnls(
-        currency: Currency,
-        realized_pnls: pd.Series[float],
-    ) -> Optional[Any]:
-        """
-        Calculate the statistic from the given realized PnLs.
-
-        Parameters
-        ----------
-        currency : Currency
-            The currency for the calculation.
-        realized_pnls : pd.Series[float]
-            The PnLs for the calculation.
-
-        Returns
-        -------
-        Any or None
-
-        """
-        pass  # Override in implementation
-
-    @staticmethod
-    def calculate_from_returns(returns: pd.Series[float]) -> Optional[Any]:
-        """
-        Add a returns' series for the calculation.
-
-        Parameters
-        ----------
-        returns : pd.Series[float]
-            The returns for the calculation.
-
-        Returns
-        -------
-        Any or None
+        Any or ``None``
+            A JSON serializable primitive.
 
         """
         pass  # Override in implementation
