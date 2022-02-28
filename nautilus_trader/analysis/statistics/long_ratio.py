@@ -40,5 +40,6 @@ class LongRatio(PortfolioStatistic):
 
         # Calculate statistic
         longs = [p for p in positions if p.entry == OrderSide.BUY]
+        value = len(longs) / len(positions)
 
-        return f"{len(longs) / len(positions):.{self.precision}f}"
+        return f"{value:.{self.precision}f}"
