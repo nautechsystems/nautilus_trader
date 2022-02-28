@@ -175,7 +175,7 @@ cdef class DataEngine(Component):
 
         """
         Condition.not_none(client, "client")
-        Condition.not_in(client.id, self._clients, "client", "self._clients")
+        Condition.not_in(client.id, self._clients, "client", "_clients")
 
         self._clients[client.id] = client
 
