@@ -20,9 +20,9 @@ import pandas as pd
 from nautilus_trader.analysis.statistic import PortfolioStatistic
 
 
-class AvgWinner(PortfolioStatistic):
+class Expectancy(PortfolioStatistic):
     """
-    Calculates the average winner from a series of PnLs.
+    Calculates the expectancy from a realized PnLs series.
     """
 
     def calculate_from_realized_pnls(self, realized_pnls: pd.Series) -> Optional[Any]:
@@ -33,7 +33,10 @@ class AvgWinner(PortfolioStatistic):
         # Calculate statistic
         pnls = realized_pnls.to_numpy()
         winners = pnls[pnls > 0.0]
-        if len(winners) == 0:
-            return 0.0
-        else:
-            return winners.mean()
+        losers = pnls[pnls <= 0.0]
+        win_rate = len(winners) / float(max(1, (len(winners) + len(losers))))
+        loss_rate = 1.0 - win_rate
+        avg_winner = winners.mean()
+        avg_loser = losers.mean()
+
+        return (avg_winner * win_rate) + (avg_loser * loss_rate)

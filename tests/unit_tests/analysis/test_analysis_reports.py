@@ -14,7 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 from nautilus_trader.accounting.accounts.margin import MarginAccount
-from nautilus_trader.analysis.reports import ReportProvider
+from nautilus_trader.analysis.reporter import ReportProvider
 from nautilus_trader.backtest.data.providers import TestInstrumentProvider
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.factories import OrderFactory

@@ -20,7 +20,6 @@ from typing import Dict, List, Optional, Union
 
 import pandas as pd
 
-from nautilus_trader.analysis.performance import PerformanceAnalyzer
 from nautilus_trader.backtest.config import BacktestEngineConfig
 from nautilus_trader.backtest.results import BacktestResult
 
@@ -559,7 +558,7 @@ cdef class BacktestEngine:
         if fill_model is None:
             fill_model = FillModel()
         Condition.not_none(venue, "venue")
-        Condition.not_in(venue, self._exchanges, "venue", "self._exchanges")
+        Condition.not_in(venue, self._exchanges, "venue", "_exchanges")
         Condition.not_empty(starting_balances, "starting_balances")
         Condition.list_type(modules, SimulationModule, "modules")
         Condition.type_or_none(fill_model, FillModel, "fill_model")
@@ -1037,7 +1036,7 @@ cdef class BacktestEngine:
                 module.log_diagnostics(self._log)
 
             self._log.info("\033[36m=================================================================")
-            self._log.info("\033[36m PERFORMANCE STATISTICS")
+            self._log.info("\033[36m PORTFOLIO PERFORMANCE")
             self._log.info("\033[36m=================================================================")
 
             # Find all positions for exchange venue
@@ -1051,16 +1050,22 @@ cdef class BacktestEngine:
 
             # Present PnL performance stats per asset
             for currency in account.currencies():
-                self._log.info(f" {str(currency)}")
+                self._log.info(f" PnL Statistics ({str(currency)})")
                 self._log.info("\033[36m-----------------------------------------------------------------")
-                for statistic in self.trader.analyzer.get_performance_stats_pnls_formatted(currency):
-                    self._log.info(statistic)
+                for stat in self.trader.analyzer.get_stats_pnls_formatted(currency):
+                    self._log.info(stat)
                 self._log.info("\033[36m-----------------------------------------------------------------")
 
-            self._log.info(" Returns")
+            self._log.info(" Returns Statistics")
             self._log.info("\033[36m-----------------------------------------------------------------")
-            for statistic in self.trader.analyzer.get_performance_stats_returns_formatted():
-                self._log.info(statistic)
+            for stat in self.trader.analyzer.get_stats_returns_formatted():
+                self._log.info(stat)
+            self._log.info("\033[36m-----------------------------------------------------------------")
+
+            self._log.info(" General Statistics")
+            self._log.info("\033[36m-----------------------------------------------------------------")
+            for stat in self.trader.analyzer.get_stats_general_formatted():
+                self._log.info(stat)
             self._log.info("\033[36m-----------------------------------------------------------------")
 
     def _add_data_client_if_not_exists(self, ClientId client_id) -> None:

@@ -18,25 +18,15 @@ from typing import Any, Optional
 import numpy as np
 import pandas as pd
 
-from nautilus_trader.analysis.statistic import PerformanceStatistic
-from nautilus_trader.model.currency import Currency
-from nautilus_trader.model.objects import Money
+from nautilus_trader.analysis.statistic import PortfolioStatistic
 
 
-class MinLoser(PerformanceStatistic):
+class MinLoser(PortfolioStatistic):
     """
     Calculates the minimum loser from a series of PnLs.
     """
 
-    @staticmethod
-    def format_stat_with_currency(stat: Any, currency: Currency) -> str:
-        return str(Money(stat, currency))
-
-    @staticmethod
-    def calculate_from_realized_pnls(
-        currency: Currency,
-        realized_pnls: pd.Series[float],
-    ) -> Optional[Any]:
+    def calculate_from_realized_pnls(self, realized_pnls: pd.Series) -> Optional[Any]:
         # Preconditions
         if realized_pnls is None or realized_pnls.empty:
             return 0.0
