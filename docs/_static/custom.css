@@ -32,7 +32,7 @@ h1, h2, h3 {
 }
 .md-header-nav__button.md-logo * {
     display: block;
-    height: 40px;
+    height: auto;
 }
 .md-header, .md-hero {
     background-color: rgb(40, 47, 56) !important;
@@ -75,9 +75,9 @@ h1, h2, h3 {
     padding-left: 0;
     margin-top: 0;
 }
-.md-header-nav__button:hover {
-    opacity: 1;
-}
+/*.md-header-nav__button:hover {*/
+/*    opacity: 1;*/
+/*}*/
 .md-tabs {
     box-shadow: 0 0 0.2rem rgb(0 0 0 / 10%), 0 0.2rem 0.4rem rgb(0 0 0 / 20%);
     transition: transform .25s cubic-bezier(.1,.7,.1,1),box-shadow .25s;
