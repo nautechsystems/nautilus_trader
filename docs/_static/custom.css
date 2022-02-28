@@ -32,7 +32,7 @@ h1, h2, h3 {
 }
 .md-header-nav__button.md-logo * {
     display: block;
-    height: auto;
+    height: 30px;
 }
 .md-header, .md-hero {
     background-color: rgb(40, 47, 56) !important;
@@ -327,5 +327,4 @@ em.sig-param .pre {
         max-width: 100%;
         float: none;
     }
-
 }
