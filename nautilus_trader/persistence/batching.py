@@ -48,6 +48,8 @@ def dataset_batches(
                 break
             df = batch.to_pandas()
             df = df[(df["ts_init"] >= file_meta.start) & (df["ts_init"] <= file_meta.end)]
+            if df.empty:
+                return
             if file_meta.instrument_id:
                 df.loc[:, "instrument_id"] = file_meta.instrument_id
             yield df
@@ -78,11 +80,11 @@ def frame_to_nautilus(df: pd.DataFrame, cls: type) -> List[Any]:
     return ParquetSerializer.deserialize(cls=cls, chunk=df.to_dict("records"))
 
 
-def batch_files(
+def batch_files(  # noqa: C901
     catalog: DataCatalog,
     data_configs: List[BacktestDataConfig],
     read_num_rows: int = 10000,
-    target_batch_size_bytes: int = parse_bytes("100mb"),  # noqa: B008
+    target_batch_size_bytes: int = parse_bytes("100mb"),  # noqa: B008,
 ):
     files = build_filenames(catalog=catalog, data_configs=data_configs)
     buffer = {fn.filename: pd.DataFrame() for fn in files}
@@ -92,6 +94,7 @@ def batch_files(
     completed: Set[str] = set()
     bytes_read = 0
     values = []
+    sent_count = 0
     while set([f.filename for f in files]) != completed:
         # Fill buffer (if required)
         for fn in buffer:
@@ -125,8 +128,13 @@ def batch_files(
         values.extend(list(heapq.merge(*batches, key=lambda x: x.ts_init)))
         if bytes_read > target_batch_size_bytes:
             yield values
+            sent_count += len(values)
             bytes_read = 0
             values = []
 
     if values:
         yield values
+        sent_count += len(values)
+
+    if sent_count == 0:
+        raise ValueError("No data found, check data_configs")
