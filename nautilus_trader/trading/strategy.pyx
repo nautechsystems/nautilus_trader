@@ -398,7 +398,7 @@ cdef class TradingStrategy(Actor):
                 self.log.info("No user state to save.", color=LogColor.BLUE)
             return user_state
         except Exception as ex:
-            self.log.exception(ex)
+            self.log.exception("Error on save", ex)
             raise  # Otherwise invalid state information could be saved
 
     cpdef void load(self, dict state) except *:
@@ -433,7 +433,7 @@ cdef class TradingStrategy(Actor):
             self.on_load(state)
             self.log.info(f"Loaded state {list(state.keys())}.", color=LogColor.BLUE)
         except Exception as ex:
-            self.log.exception(ex)
+            self.log.exception(f"Error on load {repr(state)}", ex)
             raise
 
 # -- TRADING COMMANDS ------------------------------------------------------------------------------
@@ -841,7 +841,7 @@ cdef class TradingStrategy(Actor):
             try:
                 self.on_quote_tick(tick)
             except Exception as ex:
-                self.log.exception(ex)
+                self.log.exception(f"Error on handling {repr(tick)}", ex)
                 raise
 
     cpdef void handle_trade_tick(self, TradeTick tick, bint is_historical=False) except *:
@@ -878,7 +878,7 @@ cdef class TradingStrategy(Actor):
             try:
                 self.on_trade_tick(tick)
             except Exception as ex:
-                self.log.exception(ex)
+                self.log.exception(f"Error on handling {repr(tick)}", ex)
                 raise
 
     cpdef void handle_bar(self, Bar bar, bint is_historical=False) except *:
@@ -915,7 +915,7 @@ cdef class TradingStrategy(Actor):
             try:
                 self.on_bar(bar)
             except Exception as ex:
-                self.log.exception(ex)
+                self.log.exception(f"Error on handling {repr(bar)}", ex)
                 raise
 
     cpdef void handle_event(self, Event event) except *:
@@ -945,7 +945,7 @@ cdef class TradingStrategy(Actor):
             try:
                 self.on_event(event)
             except Exception as ex:
-                self.log.exception(ex)
+                self.log.exception(f"Error on handling {repr(event)}", ex)
                 raise
 
 # -- EGRESS ----------------------------------------------------------------------------------------
