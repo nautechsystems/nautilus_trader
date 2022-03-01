@@ -107,12 +107,12 @@ When starting the trading node, you'll receive immediate confirmation of whether
 credentials are valid and have trading permissions.
 
 ### Account Type
-All the Binance account types will be supported for live trading. Set the account type
-through the `account_type` option as a string. The account type options are:
-- `spot`
-- `margin`
-- `futures_usdt` (USDT or BUSD stablecoins as collateral)
-- `futures_coin` (other cryptocurrency as collateral)
+All the Binance account types will be supported for live trading. Set the `account_type`
+using the `BinanceAccountType` enum. The account type options are:
+- `SPOT`
+- `MARGIN`
+- `FUTURES_USDT` (USDT or BUSD stablecoins as collateral)
+- `FUTURES_COIN` (other cryptocurrency as collateral)
 
 ```{note}
 Binance does not currently offer a testnet for COIN-M futures.

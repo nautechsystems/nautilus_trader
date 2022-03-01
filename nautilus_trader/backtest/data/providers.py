@@ -69,7 +69,7 @@ class TestInstrumentProvider:
         """
         return CurrencySpot(
             instrument_id=InstrumentId(
-                symbol=Symbol("ADA/BTC"),
+                symbol=Symbol("ADABTC"),
                 venue=Venue("BINANCE"),
             ),
             native_symbol=Symbol("ADABTC"),
@@ -97,7 +97,7 @@ class TestInstrumentProvider:
     @staticmethod
     def btcusdt_binance() -> CurrencySpot:
         """
-        Return the Binance BTC/USDT instrument for backtesting.
+        Return the Binance BTCUSDT instrument for backtesting.
 
         Returns
         -------
@@ -106,7 +106,7 @@ class TestInstrumentProvider:
         """
         return CurrencySpot(
             instrument_id=InstrumentId(
-                symbol=Symbol("BTC/USDT"),
+                symbol=Symbol("BTCUSDT"),
                 venue=Venue("BINANCE"),
             ),
             native_symbol=Symbol("BTCUSDT"),
@@ -134,7 +134,7 @@ class TestInstrumentProvider:
     @staticmethod
     def ethusdt_binance() -> CurrencySpot:
         """
-        Return the Binance ETH/USDT instrument for backtesting.
+        Return the Binance ETHUSDT instrument for backtesting.
 
         Returns
         -------
@@ -143,7 +143,7 @@ class TestInstrumentProvider:
         """
         return CurrencySpot(
             instrument_id=InstrumentId(
-                symbol=Symbol("ETH/USDT"),
+                symbol=Symbol("ETHUSDT"),
                 venue=Venue("BINANCE"),
             ),
             native_symbol=Symbol("ETHUSDT"),
@@ -171,7 +171,7 @@ class TestInstrumentProvider:
     @staticmethod
     def btcusdt_future_binance(expiry: date = None) -> CryptoFuture:
         """
-        Return the Binance BTC/USDT instrument for backtesting.
+        Return the Binance BTCUSDT instrument for backtesting.
 
         Parameters
         ----------
