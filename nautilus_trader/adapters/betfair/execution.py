@@ -713,8 +713,8 @@ class BetfairExecutionClient(LiveExecutionClient):
         try:
             awaitable = await coro
             return awaitable
-        except Exception as e:
-            self._log.exception(f"Unhandled exception: {e}")
+        except Exception as ex:
+            self._log.exception("Unhandled exception", ex)
 
     def client(self) -> BetfairClient:
         return self._client

@@ -204,7 +204,7 @@ class FTXExecutionClient(LiveExecutionClient):
         try:
             await self._instrument_provider.initialize()
         except FTXError as ex:
-            self._log.exception(ex)
+            self._log.exception("Error on connect", ex)
             return
 
         self._log.info("FTX API key authenticated.", LogColor.GREEN)
@@ -687,8 +687,12 @@ class FTXExecutionClient(LiveExecutionClient):
                 reason=ex.message,  # TODO(cs): Improve errors
                 ts_event=self._clock.timestamp_ns(),  # TODO(cs): Parse from response
             )
-        except Exception as ex:  # Catch all exceptions
-            self._log.exception(ex)
+        except Exception as ex:  # Catch all exceptions for now
+            self._log.exception(
+                f"Error on submit {repr(order)}"
+                f"{f'for {position}' if position is not None else ''}",
+                ex,
+            )
 
     async def _submit_market_order(self, order: MarketOrder) -> None:
         await self._http_client.place_order(

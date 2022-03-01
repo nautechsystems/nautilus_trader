@@ -194,7 +194,8 @@ class BacktestNode:
             # Manually write instruments
             instrument_ids = set(filter(None, (data.instrument_id for data in data_configs)))
             for instrument in catalog.instruments(
-                instrument_ids=list(instrument_ids), as_nautilus=True
+                instrument_ids=list(instrument_ids),
+                as_nautilus=True,
             ):
                 writer.write(instrument)
 

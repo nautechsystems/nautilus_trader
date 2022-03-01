@@ -1523,7 +1523,7 @@ cdef class Actor(Component):
             try:
                 self.on_instrument(instrument)
             except Exception as ex:
-                self._log.exception(ex)
+                self._log.exception(f"Error on handling {repr(instrument)}", ex)
                 raise
 
     cpdef void handle_order_book_delta(self, OrderBookData delta) except *:
@@ -1548,7 +1548,7 @@ cdef class Actor(Component):
             try:
                 self.on_order_book_delta(delta)
             except Exception as ex:
-                self._log.exception(ex)
+                self._log.exception(f"Error on handling {repr(delta)}", ex)
                 raise
 
     cpdef void handle_order_book(self, OrderBook order_book) except *:
@@ -1573,7 +1573,7 @@ cdef class Actor(Component):
             try:
                 self.on_order_book(order_book)
             except Exception as ex:
-                self._log.exception(ex)
+                self._log.exception(f"Error on handling {repr(order_book)}", ex)
                 raise
 
     cpdef void handle_ticker(self, Ticker ticker, bint is_historical=False) except *:
@@ -1603,7 +1603,7 @@ cdef class Actor(Component):
             try:
                 self.on_ticker(ticker)
             except Exception as ex:
-                self._log.exception(ex)
+                self._log.exception(f"Error on handling {repr(ticker)}", ex)
                 raise
 
     cpdef void handle_quote_tick(self, QuoteTick tick, bint is_historical=False) except *:
@@ -1633,7 +1633,7 @@ cdef class Actor(Component):
             try:
                 self.on_quote_tick(tick)
             except Exception as ex:
-                self._log.exception(ex)
+                self._log.exception(f"Error on handling {repr(tick)}", ex)
                 raise
 
     @cython.boundscheck(False)
@@ -1693,7 +1693,7 @@ cdef class Actor(Component):
             try:
                 self.on_trade_tick(tick)
             except Exception as ex:
-                self._log.exception(ex)
+                self._log.exception(f"Error on handling {repr(tick)}", ex)
                 raise
 
     @cython.boundscheck(False)
@@ -1753,7 +1753,7 @@ cdef class Actor(Component):
             try:
                 self.on_bar(bar)
             except Exception as ex:
-                self._log.exception(ex)
+                self._log.exception(f"Error on handling {repr(bar)}", ex)
                 raise
 
     @cython.boundscheck(False)
@@ -1812,7 +1812,7 @@ cdef class Actor(Component):
             try:
                 self.on_venue_status_update(update)
             except Exception as ex:
-                self._log.exception(ex)
+                self._log.exception(f"Error on handling {repr(update)}", ex)
                 raise
 
     cpdef void handle_instrument_status_update(self, InstrumentStatusUpdate update) except *:
@@ -1837,7 +1837,7 @@ cdef class Actor(Component):
             try:
                 self.on_instrument_status_update(update)
             except Exception as ex:
-                self._log.exception(ex)
+                self._log.exception(f"Error on handling {repr(update)}", ex)
                 raise
 
     cpdef void handle_instrument_close_price(self, InstrumentClosePrice update) except *:
@@ -1862,7 +1862,7 @@ cdef class Actor(Component):
             try:
                 self.on_instrument_close_price(update)
             except Exception as ex:
-                self._log.exception(ex)
+                self._log.exception(f"Error on handling {repr(update)}", ex)
                 raise
 
     cpdef void handle_data(self, Data data) except *:
@@ -1887,7 +1887,7 @@ cdef class Actor(Component):
             try:
                 self.on_data(data)
             except Exception as ex:
-                self._log.exception(ex)
+                self._log.exception(f"Error on handling {repr(data)}", ex)
                 raise
 
     cpdef void handle_event(self, Event event) except *:
@@ -1912,7 +1912,7 @@ cdef class Actor(Component):
             try:
                 self.on_event(event)
             except Exception as ex:
-                self._log.exception(ex)
+                self._log.exception(f"Error on handling {repr(event)}", ex)
                 raise
 
     cpdef void _handle_data_response(self, DataResponse response) except *:

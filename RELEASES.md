@@ -21,8 +21,10 @@ Released on TBD (UTC).
 - Added `LimitIfTouched` order type.
 - Added `Order.has_price` property (convenience).
 - Added `Order.has_trigger_price` property (convenience).
+- Added `msg` param to `LoggerAdapter.exception()`.
 - Added WebSocket `log_send` and `log_recv` config options.
 - Added WebSocket `auto_ping_interval` (seconds) config option.
+- Improved exception messages by providing helpful context.
 - Improved `BacktestDataConfig` API: now takes either a type of `Data` _or_ a fully qualified path string.
 
 ### Fixes

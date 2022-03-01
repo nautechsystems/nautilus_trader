@@ -71,9 +71,9 @@ class TestBetfairClient:
     @pytest.mark.asyncio
     async def test_exception_handling(self):
         with mock_client_request(response=BetfairResponses.account_funds_error()):
-            with pytest.raises(BetfairAPIError) as e:
+            with pytest.raises(BetfairAPIError) as ex:
                 await self.client.get_account_funds(wallet="not a real walltet")
-            assert e.value.message == "DSC-0018"
+            assert ex.value.message == "DSC-0018"
 
     @pytest.mark.asyncio
     async def test_list_navigation(self):
