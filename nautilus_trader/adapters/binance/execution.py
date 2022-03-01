@@ -14,7 +14,6 @@
 # -------------------------------------------------------------------------------------------------
 
 import asyncio
-import json
 from datetime import datetime
 from decimal import Decimal
 from typing import Any, Dict, List, Optional
@@ -193,7 +192,7 @@ class BinanceExecutionClient(LiveExecutionClient):
         try:
             await self._instrument_provider.initialize()
         except BinanceError as ex:
-            self._log.exception(ex)
+            self._log.exception("Error on connect", ex)
             return
 
         # Authenticate API key and update account(s)
@@ -456,9 +455,9 @@ class BinanceExecutionClient(LiveExecutionClient):
 
         try:
             if self._binance_account_type.is_spot:
-                await self._submit_market_order_spot(order)
+                await self._submit_order_spot(order)
             else:
-                await self._submit_market_order_futures(order)
+                await self._submit_order_futures(order)
         except BinanceError as ex:
             self.generate_order_rejected(
                 strategy_id=order.strategy_id,
@@ -695,7 +694,7 @@ class BinanceExecutionClient(LiveExecutionClient):
         data: Dict[str, Any] = msg.get("data")
 
         # TODO(cs): Uncomment for development
-        self._log.info(str(json.dumps(msg, indent=4)), color=LogColor.GREEN)
+        # self._log.info(str(json.dumps(msg, indent=4)), color=LogColor.GREEN)
 
         try:
             msg_type: str = data.get("e")
@@ -709,7 +708,7 @@ class BinanceExecutionClient(LiveExecutionClient):
                 ts_event = millis_to_nanos(data["E"])
                 self._handle_execution_report_futures(data["o"], ts_event)
         except Exception as ex:
-            self._log.exception(ex)
+            self._log.exception(f"Error on handling {repr(msg)}", ex)
 
     def _handle_account_update_spot(self, data: Dict[str, Any]):
         self.generate_account_state(
