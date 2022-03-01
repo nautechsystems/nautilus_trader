@@ -48,7 +48,9 @@ def dataset_batches(
                 break
             df = batch.to_pandas()
             df = df[(df["ts_init"] >= file_meta.start) & (df["ts_init"] <= file_meta.end)]
-            if file_meta.instrument_id and not df.empty:
+            if df.empty:
+                return
+            if file_meta.instrument_id:
                 df.loc[:, "instrument_id"] = file_meta.instrument_id
             yield df
 
@@ -98,7 +100,7 @@ def batch_files(
         for fn in buffer:
             if len(buffer[fn]) < read_num_rows:
                 next_buf = next(datasets[fn], None)
-                if next_buf is None :
+                if next_buf is None:
                     completed.add(fn)
                     continue
                 buffer[fn] = pd.concat([buffer[fn], next_buf])
