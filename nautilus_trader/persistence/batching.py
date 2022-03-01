@@ -48,7 +48,7 @@ def dataset_batches(
                 break
             df = batch.to_pandas()
             df = df[(df["ts_init"] >= file_meta.start) & (df["ts_init"] <= file_meta.end)]
-            if file_meta.instrument_id:
+            if file_meta.instrument_id and not df.empty:
                 df.loc[:, "instrument_id"] = file_meta.instrument_id
             yield df
 
@@ -92,12 +92,13 @@ def batch_files(
     completed: Set[str] = set()
     bytes_read = 0
     values = []
+    send_count = 0
     while set([f.filename for f in files]) != completed:
         # Fill buffer (if required)
         for fn in buffer:
             if len(buffer[fn]) < read_num_rows:
                 next_buf = next(datasets[fn], None)
-                if next_buf is None:
+                if next_buf is None :
                     completed.add(fn)
                     continue
                 buffer[fn] = pd.concat([buffer[fn], next_buf])
@@ -125,8 +126,13 @@ def batch_files(
         values.extend(list(heapq.merge(*batches, key=lambda x: x.ts_init)))
         if bytes_read > target_batch_size_bytes:
             yield values
+            sent_count += len(values)
             bytes_read = 0
             values = []
 
     if values:
         yield values
+        sent_count += len(values)
+
+    if send_count == 0:
+        raise ValueError(f"No data found, check data_configs")
