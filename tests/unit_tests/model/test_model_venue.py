@@ -46,7 +46,7 @@ class TestVenue:
     def test_instrument_status(self):
         # Arrange
         update = InstrumentStatusUpdate(
-            instrument_id=InstrumentId(Symbol("BTC/USDT"), Venue("BINANCE")),
+            instrument_id=InstrumentId(Symbol("BTCUSDT"), Venue("BINANCE")),
             status=InstrumentStatus.PAUSE,
             ts_event=0,
             ts_init=0,
@@ -54,14 +54,12 @@ class TestVenue:
 
         # Act, Assert
         assert InstrumentStatusUpdate.from_dict(InstrumentStatusUpdate.to_dict(update)) == update
-        assert "InstrumentStatusUpdate(instrument_id=BTC/USDT.BINANCE, status=PAUSE)" == repr(
-            update
-        )
+        assert "InstrumentStatusUpdate(instrument_id=BTCUSDT.BINANCE, status=PAUSE)" == repr(update)
 
     def test_instrument_close_price(self):
         # Arrange
         update = InstrumentClosePrice(
-            instrument_id=InstrumentId(Symbol("BTC/USDT"), Venue("BINANCE")),
+            instrument_id=InstrumentId(Symbol("BTCUSDT"), Venue("BINANCE")),
             close_price=Price(100.0, precision=0),
             close_type=InstrumentCloseType.EXPIRED,
             ts_event=0,
@@ -71,6 +69,6 @@ class TestVenue:
         # Act, Assert
         assert InstrumentClosePrice.from_dict(InstrumentClosePrice.to_dict(update)) == update
         assert (
-            "InstrumentClosePrice(instrument_id=BTC/USDT.BINANCE, close_price=100, close_type=EXPIRED)"
+            "InstrumentClosePrice(instrument_id=BTCUSDT.BINANCE, close_price=100, close_type=EXPIRED)"
             == repr(update)
         )

@@ -233,9 +233,9 @@ class TestBarType:
                 ),
             ],
             [
-                "BTC/USDT.BINANCE-100-TICK-LAST-INTERNAL",
+                "BTCUSDT.BINANCE-100-TICK-LAST-INTERNAL",
                 BarType(
-                    InstrumentId(Symbol("BTC/USDT"), Venue("BINANCE")),
+                    InstrumentId(Symbol("BTCUSDT"), Venue("BINANCE")),
                     BarSpecification(100, BarAggregation.TICK, PriceType.LAST),
                     AggregationSource.INTERNAL,
                 ),

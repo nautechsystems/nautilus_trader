@@ -148,7 +148,7 @@ cdef class InstrumentId(Identifier):
         Must be correctly formatted including characters either side of a single
         period.
 
-        Examples: "AUD/USD.IDEALPRO", "BTC/USDT.BINANCE"
+        Examples: "AUD/USD.IDEALPRO", "BTCUSDT.BINANCE"
 
         Parameters
         ----------

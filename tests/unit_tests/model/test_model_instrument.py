@@ -87,7 +87,7 @@ class TestInstrument:
         # Assert
         assert result == {
             "type": "Instrument",
-            "id": "BTC/USDT.BINANCE",
+            "id": "BTCUSDT.BINANCE",
             "native_symbol": "BTCUSDT",
             "asset_class": "CRYPTO",
             "asset_type": "SPOT",
@@ -118,7 +118,7 @@ class TestInstrument:
         # Arrange
         values = {
             "type": "Instrument",
-            "id": "BTC/USDT.BINANCE",
+            "id": "BTCUSDT.BINANCE",
             "native_symbol": "BTCUSDT",
             "asset_class": "CRYPTO",
             "asset_type": "SPOT",

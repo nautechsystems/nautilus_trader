@@ -38,7 +38,7 @@ provider = BinanceInstrumentProvider(
 )
 await self.provider.load_all_async()
 
-btcusdt = InstrumentId.from_str("BTC/USDT.BINANCE")
+btcusdt = InstrumentId.from_str("BTCUSDT.BINANCE")
 instrument = provider.find(btcusdt)
 ```
 
