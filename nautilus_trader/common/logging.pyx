@@ -464,21 +464,28 @@ cdef class LoggerAdapter:
 
         self._logger.log_c(record)
 
-    cpdef void exception(self, ex, dict annotations=None) except *:
+    cpdef void exception(
+        self,
+        str msg,
+        ex,
+        dict annotations=None,
+    ) except *:
         """
         Log the given exception including stack trace information.
 
         Parameters
         ----------
-        ex : Exception
+        msg : str
             The message to log.
+        ex : Exception
+            The exception to log.
         annotations : dict[str, object], optional
             The annotations for the log record.
 
         """
         Condition.not_none(ex, "ex")
 
-        cdef str ex_string = f"{type(ex).__name__}({ex})\n"
+        cdef str ex_string = f"{type(ex).__name__}({ex})"
         ex_type, ex_value, ex_traceback = sys.exc_info()
         stack_trace = traceback.format_exception(ex_type, ex_value, ex_traceback)
 
@@ -487,7 +494,7 @@ cdef class LoggerAdapter:
         for line in stack_trace[:len(stack_trace) - 1]:
             stack_trace_lines += line
 
-        self.error(f"{ex_string} {stack_trace_lines}", annotations=annotations)
+        self.error(f"{msg}\n{ex_string}\n{stack_trace_lines}", annotations=annotations)
 
 
 cpdef void nautilus_header(LoggerAdapter logger) except *:
