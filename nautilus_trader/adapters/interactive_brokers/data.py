@@ -15,7 +15,7 @@
 
 
 import asyncio
-from typing import Dict, List
+from typing import Callable, Dict, List
 
 import ib_insync
 from ib_insync import ContractDetails
@@ -135,6 +135,39 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
         self._set_connected(False)
         self._log.info("Disconnected.")
 
+    def subscribed_order_book_snapshots(
+        self,
+        instrument_id: InstrumentId,
+        book_type: BookType,
+        depth: int = 5,
+        kwargs=None,
+    ):
+        """
+        Subscribe to `OrderBook` data for the given instrument ID.
+
+        Parameters
+        ----------
+        instrument_id : InstrumentId
+            The order book instrument to subscribe to.
+        book_type : BookType {``L1_TBBO``, ``L2_MBP``, ``L3_MBO``}
+            The order book type.
+        depth : int, optional, default None
+            The maximum depth for the subscription.
+        kwargs : dict, optional
+            The keyword arguments for exchange specific parameters.
+
+        """
+        if book_type == BookType.L1_TBBO:
+            return self._request_market_depth(
+                instrument_id=instrument_id, handler=self._on_order_book_snapshot, depth=1
+            )
+        elif book_type == BookType.L2_MBP:
+            if depth == 0:
+                depth = 5  # depth=0 is default for nautilus, but not handled by Interactive Brokers
+            return self._request_market_depth(
+                instrument_id=instrument_id, handler=self._on_order_book_snapshot, depth=depth
+            )
+
     def subscribe_order_book_deltas(
         self,
         instrument_id: InstrumentId,
@@ -158,16 +191,17 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
 
         """
         if book_type == BookType.L1_TBBO:
-            self._subscribe_order_book_deltas_L1(instrument_id=instrument_id)
+            return self._request_market_depth(
+                instrument_id=instrument_id, handler=self._on_order_book_delta, depth=1
+            )
         elif book_type == BookType.L2_MBP:
             if depth == 0:
                 depth = 5  # depth=0 is default for nautilus, but not handled by Interactive Brokers
-            self._subscribe_order_book_deltas_L2(instrument_id=instrument_id, depth=depth)
+            return self._request_market_depth(
+                instrument_id=instrument_id, handler=self._on_order_book_delta, depth=depth
+            )
 
-    def _subscribe_order_book_deltas_L1(self, instrument_id: InstrumentId):
-        raise NotImplementedError
-
-    def _subscribe_order_book_deltas_L2(self, instrument_id: InstrumentId, depth: int = 5):
+    def _request_market_depth(self, instrument_id: InstrumentId, handler: Callable, depth: int = 5):
         contract_details: ContractDetails = self._instrument_provider.contract_details[
             instrument_id
         ]
@@ -175,7 +209,7 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
             contract=contract_details.contract,
             numRows=depth,
         )
-        ticker.updateEvent += self._on_book_update
+        ticker.updateEvent += handler
         self._tickers[ContractId(ticker.contract.conId)].append(ticker)
 
     def subscribe_trade_ticks(self, instrument_id: InstrumentId):
@@ -188,11 +222,30 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
         ticker.updateEvent += self._on_ticker_update
         self._tickers[ContractId(ticker.contract.conId)].append(ticker)
 
-    def _on_book_update(self, ticker: Ticker):
+    def _on_order_book_delta(self, ticker: Ticker):
         instrument_id = self._instrument_provider.contract_id_to_instrument_id[
             ticker.contract.conId
         ]
         for depth in ticker.domTicks:
+            update = OrderBookDelta(
+                instrument_id=instrument_id,
+                book_type=BookType.L2_MBP,
+                action=MKT_DEPTH_OPERATIONS[depth.operation],
+                order=Order(
+                    price=Price.from_str(str(depth.price)),
+                    size=Quantity.from_str(str(depth.size)),
+                    side=IB_SIDE[depth.side],
+                ),
+                ts_event=dt_to_unix_nanos(depth.time),
+                ts_init=self._clock.timestamp_ns(),
+            )
+            self._handle_data(update)
+
+    def _on_order_book_snapshot(self, ticker: Ticker):
+        instrument_id = self._instrument_provider.contract_id_to_instrument_id[
+            ticker.contract.conId
+        ]
+        for depth in ticker.domAsks:
             update = OrderBookDelta(
                 instrument_id=instrument_id,
                 book_type=BookType.L2_MBP,

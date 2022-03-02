@@ -13,18 +13,18 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
-from decimal import Decimal
 
 from nautilus_trader.adapters.interactive_brokers.config import InteractiveBrokersDataClientConfig
 from nautilus_trader.adapters.interactive_brokers.factories import (
     InteractiveBrokersLiveDataClientFactory,
 )
-from nautilus_trader.examples.strategies.orderbook_imbalance import OrderBookImbalance
-from nautilus_trader.examples.strategies.orderbook_imbalance import OrderBookImbalanceConfig
+from nautilus_trader.examples.strategies.subscribe import SubscribeStrategy
+from nautilus_trader.examples.strategies.subscribe import SubscribeStrategyConfig
 from nautilus_trader.live.config import InstrumentProviderConfig
 from nautilus_trader.live.config import RoutingConfig
 from nautilus_trader.live.config import TradingNodeConfig
 from nautilus_trader.live.node import TradingNode
+from nautilus_trader.model.enums import BookType
 
 
 # *** THIS IS A TEST STRATEGY WITH NO ALPHA ADVANTAGE WHATSOEVER. ***
@@ -39,7 +39,7 @@ config_node = TradingNodeConfig(
     log_level="INFO",
     data_clients={
         "IB": InteractiveBrokersDataClientConfig(
-            gateway_host="100.125.47.118",
+            gateway_host="127.0.0.1",
             instrument_provider=InstrumentProviderConfig(
                 filters=tuple({"secType": "CASH", "pair": "EURUSD"}.items()),
                 load_all=True,
@@ -61,13 +61,11 @@ config_node = TradingNodeConfig(
 node = TradingNode(config=config_node)
 
 # Configure your strategy
-strategy_config = OrderBookImbalanceConfig(
-    instrument_id="EURUSD.IDEALPRO",
-    max_trade_size=Decimal("10"),
-    trigger_imbalance_ratio=0.0000000001,
+strategy_config = SubscribeStrategyConfig(
+    instrument_id="EURUSD.IDEALPRO", book_type=BookType.L2_MBP, snapshots=True
 )
 # Instantiate your strategy
-strategy = OrderBookImbalance(config=strategy_config)
+strategy = SubscribeStrategy(config=strategy_config)
 
 # Add your strategies and modules
 node.trader.add_strategy(strategy)
