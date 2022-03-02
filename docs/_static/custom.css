@@ -32,7 +32,8 @@ h1, h2, h3 {
 }
 .md-header-nav__button.md-logo * {
     display: block;
-    height: 40px;
+    width: 230px;
+    height: auto;
 }
 .md-header, .md-hero {
     background-color: rgb(40, 47, 56) !important;
