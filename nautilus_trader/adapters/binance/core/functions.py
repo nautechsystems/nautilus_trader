@@ -31,10 +31,11 @@ def parse_symbol(symbol: str, account_type: BinanceAccountType):
 
 
 def format_symbol(symbol: str):
-    return symbol.lower().replace(" ", "").replace("/", "").replace("-perp", "")
+    return symbol.upper().replace(" ", "").replace("/", "").replace("-PERP", "")
 
 
 def convert_symbols_list_to_json_array(symbols: List[str]):
     if symbols is None:
         return symbols
-    return json.dumps(symbols).replace(" ", "").replace("/", "")
+    formatted_symbols: List[str] = [format_symbol(s) for s in symbols]
+    return json.dumps(formatted_symbols).replace(" ", "").replace("/", "")

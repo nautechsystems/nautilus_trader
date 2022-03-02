@@ -994,8 +994,8 @@ class TestTimeInForce:
             [TimeInForce.FOK, "FOK"],
             [TimeInForce.GTD, "GTD"],
             [TimeInForce.DAY, "DAY"],
-            [TimeInForce.AT_THE_OPEN, "AT_THE_OPEN"],
-            [TimeInForce.AT_THE_CLOSE, "AT_THE_CLOSE"],
+            [TimeInForce.ON_OPEN, "ON_OPEN"],
+            [TimeInForce.ON_CLOSE, "ON_CLOSE"],
         ],
     )
     def test_time_in_force_to_str(self, enum, expected):
@@ -1013,8 +1013,8 @@ class TestTimeInForce:
             ["FOK", TimeInForce.FOK],
             ["GTD", TimeInForce.GTD],
             ["DAY", TimeInForce.DAY],
-            ["AT_THE_OPEN", TimeInForce.AT_THE_OPEN],
-            ["AT_THE_CLOSE", TimeInForce.AT_THE_CLOSE],
+            ["ON_OPEN", TimeInForce.ON_OPEN],
+            ["ON_CLOSE", TimeInForce.ON_CLOSE],
         ],
     )
     def test_time_in_force_from_str(self, string, expected):
@@ -1075,6 +1075,7 @@ class TestTrailingOffsetType:
         "enum, expected",
         [
             [TrailingOffsetType.NONE, "NONE"],
+            [TrailingOffsetType.DEFAULT, "DEFAULT"],
             [TrailingOffsetType.PRICE, "PRICE"],
             [TrailingOffsetType.BASIS_POINTS, "BASIS_POINTS"],
             [TrailingOffsetType.TICKS, "TICKS"],
@@ -1092,6 +1093,7 @@ class TestTrailingOffsetType:
         "string, expected",
         [
             ["NONE", TrailingOffsetType.NONE],
+            ["DEFAULT", TrailingOffsetType.DEFAULT],
             ["PRICE", TrailingOffsetType.PRICE],
             ["BASIS_POINTS", TrailingOffsetType.BASIS_POINTS],
             ["TICKS", TrailingOffsetType.TICKS],

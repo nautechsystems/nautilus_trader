@@ -16,10 +16,9 @@
 from decimal import Decimal
 from typing import Dict, List, Tuple
 
-from nautilus_trader.model.c_enums.order_type import OrderTypeParser
 from nautilus_trader.model.currency import Currency
-from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import OrderType
+from nautilus_trader.model.enums import OrderTypeParser
 from nautilus_trader.model.objects import AccountBalance
 from nautilus_trader.model.objects import MarginBalance
 from nautilus_trader.model.objects import Money
@@ -104,7 +103,7 @@ def parse_margins(
 
 
 def parse_order_type(order_type: str) -> OrderType:
-    if order_type == "STOP_LOSS":
+    if order_type in ("STOP", "STOP_LOSS"):
         return OrderType.STOP_MARKET
     elif order_type == "STOP_LOSS_LIMIT":
         return OrderType.STOP_LIMIT
@@ -112,13 +111,15 @@ def parse_order_type(order_type: str) -> OrderType:
         return OrderType.LIMIT
     elif order_type == "TAKE_PROFIT_LIMIT":
         return OrderType.STOP_LIMIT
+    elif order_type == "TAKE_PROFIT_MARKET":
+        return OrderType.MARKET_IF_TOUCHED
     elif order_type == "LIMIT_MAKER":
         return OrderType.LIMIT
     else:
         return OrderTypeParser.from_str_py(order_type)
 
 
-def binance_order_type_spot(order: Order, market_price: Decimal = None) -> str:  # noqa
+def binance_order_type_spot(order: Order) -> str:
     if order.type == OrderType.MARKET:
         return "MARKET"
     elif order.type == OrderType.LIMIT:
@@ -126,48 +127,27 @@ def binance_order_type_spot(order: Order, market_price: Decimal = None) -> str: 
             return "LIMIT_MAKER"
         else:
             return "LIMIT"
-    elif order.type == OrderType.STOP_MARKET:
-        if order.side == OrderSide.BUY:
-            if order.price < market_price:
-                return "TAKE_PROFIT"
-            else:
-                return "STOP_LOSS"
-        else:  # OrderSide.SELL
-            if order.price > market_price:
-                return "TAKE_PROFIT"
-            else:
-                return "STOP_LOSS"
     elif order.type == OrderType.STOP_LIMIT:
-        if order.side == OrderSide.BUY:
-            if order.trigger_price < market_price:
-                return "TAKE_PROFIT_LIMIT"
-            else:
-                return "STOP_LOSS_LIMIT"
-        else:  # OrderSide.SELL
-            if order.trigger_price > market_price:
-                return "TAKE_PROFIT_LIMIT"
-            else:
-                return "STOP_LOSS_LIMIT"
+        return "STOP_LOSS_LIMIT"
+    elif order.type == OrderType.LIMIT_IF_TOUCHED:
+        return "TAKE_PROFIT_LIMIT"
     else:  # pragma: no cover (design-time error)
         raise RuntimeError("invalid order type")
 
 
-def binance_order_type_futures(order: Order, market_price: Decimal = None) -> str:  # noqa
+def binance_order_type_futures(order: Order) -> str:
     if order.type == OrderType.MARKET:
         return "MARKET"
     elif order.type == OrderType.LIMIT:
         return "LIMIT"
     elif order.type == OrderType.STOP_MARKET:
-        if order.side == OrderSide.BUY:
-            if order.price < market_price:
-                return "STOP_MARKET"
-            else:
-                return "STOP"
-        else:  # OrderSide.SELL
-            if order.price > market_price:
-                return "TAKE_PROFIT_MARKET"
-            else:
-                return "TAKE_PROFIT"
+        return "STOP_MARKET"
+    elif order.type == OrderType.STOP_LIMIT:
+        return "STOP"
+    elif order.type == OrderType.MARKET_IF_TOUCHED:
+        return "TAKE_PROFIT_MARKET"
+    elif order.type == OrderType.LIMIT_IF_TOUCHED:
+        return "TAKE_PROFIT"
     elif order.type == OrderType.TRAILING_STOP_MARKET:
         return "TRAILING_STOP_MARKET"
     else:  # pragma: no cover (design-time error)

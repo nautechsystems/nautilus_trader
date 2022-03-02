@@ -69,7 +69,7 @@ class TestInstrumentProvider:
         """
         return CurrencySpot(
             instrument_id=InstrumentId(
-                symbol=Symbol("ADA/BTC"),
+                symbol=Symbol("ADABTC"),
                 venue=Venue("BINANCE"),
             ),
             native_symbol=Symbol("ADABTC"),
@@ -97,7 +97,7 @@ class TestInstrumentProvider:
     @staticmethod
     def btcusdt_binance() -> CurrencySpot:
         """
-        Return the Binance BTC/USDT instrument for backtesting.
+        Return the Binance BTCUSDT instrument for backtesting.
 
         Returns
         -------
@@ -106,7 +106,7 @@ class TestInstrumentProvider:
         """
         return CurrencySpot(
             instrument_id=InstrumentId(
-                symbol=Symbol("BTC/USDT"),
+                symbol=Symbol("BTCUSDT"),
                 venue=Venue("BINANCE"),
             ),
             native_symbol=Symbol("BTCUSDT"),
@@ -134,7 +134,7 @@ class TestInstrumentProvider:
     @staticmethod
     def ethusdt_binance() -> CurrencySpot:
         """
-        Return the Binance ETH/USDT instrument for backtesting.
+        Return the Binance ETHUSDT instrument for backtesting.
 
         Returns
         -------
@@ -143,7 +143,7 @@ class TestInstrumentProvider:
         """
         return CurrencySpot(
             instrument_id=InstrumentId(
-                symbol=Symbol("ETH/USDT"),
+                symbol=Symbol("ETHUSDT"),
                 venue=Venue("BINANCE"),
             ),
             native_symbol=Symbol("ETHUSDT"),
@@ -169,9 +169,47 @@ class TestInstrumentProvider:
         )
 
     @staticmethod
+    def ethusdt_perp_binance() -> CurrencySpot:
+        """
+        Return the Binance ETHUSDT-PERP instrument for backtesting.
+
+        Returns
+        -------
+        CurrencySpot
+
+        """
+        return CryptoPerpetual(
+            instrument_id=InstrumentId(
+                symbol=Symbol("ETHUSDT-PERP"),
+                venue=Venue("BINANCE"),
+            ),
+            native_symbol=Symbol("ETHUSDT"),
+            base_currency=ETH,
+            quote_currency=USDT,
+            settlement_currency=USDT,
+            is_inverse=False,
+            price_precision=2,
+            size_precision=3,
+            price_increment=Price.from_str("0.01"),
+            size_increment=Quantity.from_str("0.001"),
+            max_quantity=Quantity.from_str("10000.000"),
+            min_quantity=Quantity.from_str("0.001"),
+            max_notional=None,
+            min_notional=Money(10.00, USDT),
+            max_price=Price.from_str("152588.43"),
+            min_price=Price.from_str("29.91"),
+            margin_init=Decimal("1.00"),
+            margin_maint=Decimal("0.35"),
+            maker_fee=Decimal("0.0002"),
+            taker_fee=Decimal("0.0004"),
+            ts_event=1646199312128000000,
+            ts_init=1646199342953849862,
+        )
+
+    @staticmethod
     def btcusdt_future_binance(expiry: date = None) -> CryptoFuture:
         """
-        Return the Binance BTC/USDT instrument for backtesting.
+        Return the Binance BTCUSDT instrument for backtesting.
 
         Parameters
         ----------

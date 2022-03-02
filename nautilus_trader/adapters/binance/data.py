@@ -155,7 +155,7 @@ class BinanceDataClient(LiveMarketDataClient):
         try:
             await self._instrument_provider.initialize()
         except BinanceError as ex:
-            self._log.exception(ex)
+            self._log.exception("Error on connect", ex)
             return
 
         self._send_all_instruments_to_data_engine()

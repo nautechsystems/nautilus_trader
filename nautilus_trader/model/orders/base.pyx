@@ -714,7 +714,7 @@ cdef class Order:
             if self.venue_order_id is None:
                 self.venue_order_id = event.venue_order_id
             else:
-                Condition.not_in(event.trade_id, self._trade_ids, "event.trade_id", "self._trade_ids")
+                Condition.not_in(event.trade_id, self._trade_ids, "event.trade_id", "_trade_ids")
             # Fill order
             if self.filled_qty + event.last_qty < self.quantity:
                 self._fsm.trigger(OrderStatus.PARTIALLY_FILLED)

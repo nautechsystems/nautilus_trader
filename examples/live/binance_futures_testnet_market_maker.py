@@ -13,6 +13,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+
 from decimal import Decimal
 
 from nautilus_trader.adapters.binance.config import BinanceDataClientConfig
@@ -41,8 +42,8 @@ config_node = TradingNodeConfig(
     cache_database=CacheDatabaseConfig(),
     data_clients={
         "BINANCE": BinanceDataClientConfig(
-            api_key=None,  # "YOUR_BINANCE_API_KEY"
-            api_secret=None,  # "YOUR_BINANCE_API_SECRET"
+            api_key=None,  # "YOUR_BINANCE_TESTNET_API_KEY"
+            api_secret=None,  # "YOUR_BINANCE_TESTNET_API_KEY"
             account_type=BinanceAccountType.FUTURES_USDT,
             base_url_http=None,  # Override with custom endpoint
             base_url_ws=None,  # Override with custom endpoint
@@ -53,8 +54,8 @@ config_node = TradingNodeConfig(
     },
     exec_clients={
         "BINANCE": BinanceExecClientConfig(
-            api_key=None,  # "YOUR_BINANCE_API_KEY"
-            api_secret=None,  # "YOUR_BINANCE_API_SECRET"
+            api_key=None,  # "YOUR_BINANCE_TESTNET_API_KEY"
+            api_secret=None,  # "YOUR_BINANCE_TESTNET_API_KEY"
             account_type=BinanceAccountType.FUTURES_USDT,
             base_url_http=None,  # Override with custom endpoint
             base_url_ws=None,  # Override with custom endpoint

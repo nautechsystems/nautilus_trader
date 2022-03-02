@@ -27,6 +27,14 @@ class BinanceAccountType(Enum):
     FUTURES_COIN = "FUTURES_COIN"
 
     @property
+    def is_spot(self):
+        return self == BinanceAccountType.SPOT
+
+    @property
+    def is_margin(self):
+        return self == BinanceAccountType.MARGIN
+
+    @property
     def is_futures(self) -> bool:
         return self in (BinanceAccountType.FUTURES_USDT, BinanceAccountType.FUTURES_COIN)
 

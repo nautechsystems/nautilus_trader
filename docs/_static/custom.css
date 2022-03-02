@@ -32,6 +32,7 @@ h1, h2, h3 {
 }
 .md-header-nav__button.md-logo * {
     display: block;
+    width: 230px;
     height: auto;
 }
 .md-header, .md-hero {
@@ -75,6 +76,9 @@ h1, h2, h3 {
     padding-left: 0;
     margin-top: 0;
 }
+/*.md-header-nav__button:hover {*/
+/*    opacity: 1;*/
+/*}*/
 .md-tabs {
     box-shadow: 0 0 0.2rem rgb(0 0 0 / 10%), 0 0.2rem 0.4rem rgb(0 0 0 / 20%);
     transition: transform .25s cubic-bezier(.1,.7,.1,1),box-shadow .25s;
@@ -239,7 +243,12 @@ dl.py.class {
     padding-right: 0.4rem;
     padding-left: 0.4rem;
 }
-
+dl.function.py .pre {
+    color: #00bdd6;
+}
+em.sig-param .pre {
+    color: #fff!important;
+}
 @media only screen and (min-width: 60em) {
     .md-search__inner {
         padding: 0.34rem 0;
@@ -283,14 +292,14 @@ dl.py.class {
     .md-nav__item .md-nav__item a {
         padding-left: 0 !important;
     }
-    .md-nav--primary .md-nav__link {
-        padding: 0.3rem 0 0.3rem 0;
-    }
     html .md-nav--primary .md-nav__title--site .md-nav__button {
         top: -10px;
     }
     .md-nav--primary {
         overflow-y: auto;
+    }
+    .md-nav--primary .md-nav__link {
+        padding: 0.2rem 0.8rem;
     }
 }
 
@@ -319,5 +328,4 @@ dl.py.class {
         max-width: 100%;
         float: none;
     }
-
 }

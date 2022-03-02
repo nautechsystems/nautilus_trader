@@ -127,7 +127,7 @@ class TestPersistenceParsers:
 
             # Replace str repr with "fully qualified" string we can `eval`
             replacements = {
-                b"id=BTC/USDT.BINANCE": b"instrument_id=InstrumentId(Symbol('BTC/USDT'), venue=Venue('BINANCE'))",
+                b"id=BTCUSDT.BINANCE": b"instrument_id=InstrumentId(Symbol('BTCUSDT'), venue=Venue('BINANCE'))",
                 b"native_symbol=BTCUSDT": b"native_symbol=Symbol('BTCUSDT')",
                 b"price_increment=0.01": b"price_increment=Price.from_str('0.01')",
                 b"size_increment=0.000001": b"size_increment=Quantity.from_str('0.000001')",

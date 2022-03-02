@@ -46,7 +46,7 @@ cdef class CryptoPerpetual(Instrument):
         The base currency.
     quote_currency : Currency
         The quote currency.
-    quote_currency : Currency
+    settlement_currency : Currency
         The settlement currency.
     is_inverse : Currency
         If the instrument costing is inverse (quantity expressed in quote currency units).

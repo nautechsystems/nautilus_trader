@@ -710,7 +710,7 @@ class TestPosition:
         assert position.avg_px_open == Decimal("99.98003629764065335753176042")
         assert (
             repr(position)
-            == "Position(LONG 19.00000 ETH/USDT.BINANCE, id=P-19700101-000000-000-001-1)"
+            == "Position(LONG 19.00000 ETHUSDT.BINANCE, id=P-19700101-000000-000-001-1)"
         )
 
     def test_position_closed_and_reopened_returns_expected_attributes(self):
@@ -896,7 +896,7 @@ class TestPosition:
         assert position.avg_px_open == Decimal("9999.881559220389805097451274")
         assert (
             repr(position)
-            == "Position(LONG 19.000000 BTC/USDT.BINANCE, id=P-19700101-000000-000-001-1)"
+            == "Position(LONG 19.000000 BTCUSDT.BINANCE, id=P-19700101-000000-000-001-1)"
         )
 
     def test_calculate_pnl_when_given_position_side_flat_returns_zero(self):

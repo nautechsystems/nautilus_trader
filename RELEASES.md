@@ -5,6 +5,7 @@
 Released on TBD (UTC).
 
 ### Breaking Changes
+- Rename `PerformanceAnalyzer` to `PortfolioAnalyzer`.
 - Renamed `BacktestDataConfig.data_cls_path` to `data_cls`.
 - Renamed `BinanceTicker` to `BinanceSpotTicker`.
 - Renamed `BinanceSpotExecutionClient` to `BinanceExecutionClient`.
@@ -20,8 +21,10 @@ Released on TBD (UTC).
 - Added `LimitIfTouched` order type.
 - Added `Order.has_price` property (convenience).
 - Added `Order.has_trigger_price` property (convenience).
+- Added `msg` param to `LoggerAdapter.exception()`.
 - Added WebSocket `log_send` and `log_recv` config options.
 - Added WebSocket `auto_ping_interval` (seconds) config option.
+- Improved exception messages by providing helpful context.
 - Improved `BacktestDataConfig` API: now takes either a type of `Data` _or_ a fully qualified path string.
 
 ### Fixes
@@ -816,7 +819,7 @@ for `OrderFill` events, as well as additional order states and events.
 - Removed redundant `OrderFilled.leaves_qty`.
 - `BacktestEngine` constructor simplified.
 - `BacktestMarketDataClient` no longer needs instruments.
-- Rename `PerformanceAnalyzer.get_realized_pnls` to `.realized_pnls`.
+- Rename `PortfolioAnalyzer.get_realized_pnls` to `.realized_pnls`.
 
 ### Enhancements
 - Re-engineered `BacktestEngine` to take data directly.

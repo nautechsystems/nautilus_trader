@@ -16,31 +16,56 @@
 import pytest
 
 from nautilus_trader.adapters.binance.core.enums import BinanceAccountType
-
-# from nautilus_trader.adapters.binance.core.functions import convert_symbols_list_to_json_array
+from nautilus_trader.adapters.binance.core.functions import convert_symbols_list_to_json_array
 from nautilus_trader.adapters.binance.core.functions import format_symbol
 
 
 class TestBinanceCoreFunctions:
     def test_format_symbol(self):
         # Arrange
-        symbol = "ETHUSDT-PERP"
+        symbol = "ethusdt-perp"
 
         # Act
         result = format_symbol(symbol)
 
         # Assert
-        assert result == "ethusdt"
+        assert result == "ETHUSDT"
 
-    # def test_convert_symbols_list_to_json_array(self):
-    #     # Arrange
-    #     symbols = ["BTCUSDT", "ETHUSDT-PERP", " XRDUSDT"]
-    #
-    #     # Act
-    #     result = convert_symbols_list_to_json_array(symbols)
-    #
-    #     # Assert
-    #     assert result == '["btcusdt", "ethusdt", "xrdusdt"]'
+    def test_convert_symbols_list_to_json_array(self):
+        # Arrange
+        symbols = ["BTCUSDT", "ETHUSDT-PERP", " XRDUSDT"]
+
+        # Act
+        result = convert_symbols_list_to_json_array(symbols)
+
+        # Assert
+        assert result == '["BTCUSDT","ETHUSDT","XRDUSDT"]'
+
+    @pytest.mark.parametrize(
+        "account_type, expected",
+        [
+            [BinanceAccountType.SPOT, True],
+            [BinanceAccountType.MARGIN, False],
+            [BinanceAccountType.FUTURES_USDT, False],
+            [BinanceAccountType.FUTURES_COIN, False],
+        ],
+    )
+    def test_binance_account_type_is_spot(self, account_type, expected):
+        # Arrange, Act, Assert
+        assert account_type.is_spot == expected
+
+    @pytest.mark.parametrize(
+        "account_type, expected",
+        [
+            [BinanceAccountType.SPOT, False],
+            [BinanceAccountType.MARGIN, True],
+            [BinanceAccountType.FUTURES_USDT, False],
+            [BinanceAccountType.FUTURES_COIN, False],
+        ],
+    )
+    def test_binance_account_type_is_margin(self, account_type, expected):
+        # Arrange, Act, Assert
+        assert account_type.is_margin == expected
 
     @pytest.mark.parametrize(
         "account_type, expected",

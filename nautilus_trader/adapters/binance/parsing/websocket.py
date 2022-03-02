@@ -18,6 +18,7 @@ from typing import Dict, List, Tuple
 
 from nautilus_trader.adapters.binance.core.types import BinanceBar
 from nautilus_trader.adapters.binance.core.types import BinanceSpotTicker
+from nautilus_trader.adapters.binance.parsing.common import parse_balances_futures
 from nautilus_trader.adapters.binance.parsing.common import parse_balances_spot
 from nautilus_trader.core.datetime import millis_to_nanos
 from nautilus_trader.model.data.bar import BarSpecification
@@ -146,7 +147,7 @@ def parse_quote_tick_ws(instrument_id: InstrumentId, msg: Dict, ts_init: int) ->
         ask=Price.from_str(msg["a"]),
         bid_size=Quantity.from_str(msg["B"]),
         ask_size=Quantity.from_str(msg["A"]),
-        ts_event=ts_init,
+        ts_event=ts_init,  # TODO: Investigate
         ts_init=ts_init,
     )
 
@@ -208,5 +209,9 @@ def parse_bar_ws(
     )
 
 
-def parse_account_balances_ws(raw_balances: List[Dict[str, str]]) -> List[AccountBalance]:
+def parse_account_balances_spot_ws(raw_balances: List[Dict[str, str]]) -> List[AccountBalance]:
     return parse_balances_spot(raw_balances, "a", "f", "l")
+
+
+def parse_account_balances_futures_ws(raw_balances: List[Dict[str, str]]) -> List[AccountBalance]:
+    return parse_balances_futures(raw_balances, "a", "wb", "bc", "bc")  # TODO(cs): Implement

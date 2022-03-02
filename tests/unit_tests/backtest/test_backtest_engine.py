@@ -201,7 +201,7 @@ class TestBacktestEngineData:
 
         # Assert
         log = "".join(capsys.readouterr())
-        assert "Added ETH/USDT.BINANCE Instrument." in log
+        assert "Added ETHUSDT.BINANCE Instrument." in log
 
     def test_add_order_book_snapshots_adds_to_engine(self, capsys):
         # Arrange
@@ -231,7 +231,7 @@ class TestBacktestEngineData:
 
         # Assert
         log = "".join(capsys.readouterr())
-        assert "Added 2 ETH/USDT.BINANCE OrderBookData elements." in log
+        assert "Added 2 ETHUSDT.BINANCE OrderBookData elements." in log
 
     def test_add_order_book_deltas_adds_to_engine(self, capsys):
         # Arrange
@@ -335,7 +335,7 @@ class TestBacktestEngineData:
 
         # Assert
         log = "".join(capsys.readouterr())
-        assert "Added 2 ETH/USDT.BINANCE OrderBookData elements." in log
+        assert "Added 2 ETHUSDT.BINANCE OrderBookData elements." in log
 
     def test_add_quote_ticks_adds_to_engine(self, capsys):
         # Arrange
@@ -368,7 +368,7 @@ class TestBacktestEngineData:
 
         # Assert
         log = "".join(capsys.readouterr())
-        assert "Added 69,806 ETH/USDT.BINANCE TradeTick elements." in log
+        assert "Added 69,806 ETHUSDT.BINANCE TradeTick elements." in log
 
     def test_add_bars_adds_to_engine(self, capsys):
         # Arrange

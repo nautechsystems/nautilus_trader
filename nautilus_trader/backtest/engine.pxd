@@ -66,8 +66,6 @@ cdef class BacktestEngine:
     """The backtest engine cache.\n\n:returns: `CacheFacade`"""
     cdef readonly PortfolioFacade portfolio
     """The backtest engine portfolio.\n\n:returns: `PortfolioFacade`"""
-    cdef readonly analyzer
-    """The performance analyzer for the backtest.\n\n:returns: `PerformanceAnalyzer`"""
     cdef readonly str run_config_id
     """The last backtest engine run config ID.\n\n:returns: `str` or ``None``"""
     cdef readonly UUID4 run_id

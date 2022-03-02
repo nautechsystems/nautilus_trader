@@ -123,13 +123,13 @@ class TestBacktestAcceptanceTestsUSDJPY:
         self.engine.add_strategy(strategy)
 
         self.engine.run()
-        result1 = self.engine.analyzer.get_performance_stats_pnls()
+        result1 = self.engine.trader.analyzer.get_performance_stats_pnls()
 
         # Act
         self.engine.reset()
         self.engine.add_instrument(self.usdjpy)  # TODO(cs): Having to replace instrument
         self.engine.run()
-        result2 = self.engine.analyzer.get_performance_stats_pnls()
+        result2 = self.engine.trader.analyzer.get_performance_stats_pnls()
 
         # Assert
         assert all(result2) == all(result1)
@@ -340,7 +340,7 @@ class TestBacktestAcceptanceTestsBTCPERPTradeBars:
     def test_run_ema_cross_with_minute_trade_bars(self):
         # Arrange
         wrangler = BarDataWrangler(
-            bar_type=BarType.from_str("BTC/USDT.BINANCE-1-MINUTE-LAST-EXTERNAL"),
+            bar_type=BarType.from_str("BTCUSDT.BINANCE-1-MINUTE-LAST-EXTERNAL"),
             instrument=self.btcusdt,
         )
 
@@ -355,7 +355,7 @@ class TestBacktestAcceptanceTestsBTCPERPTradeBars:
 
         config = EMACrossConfig(
             instrument_id=str(self.btcusdt.id),
-            bar_type="BTC/USDT.BINANCE-1-MINUTE-LAST-EXTERNAL",
+            bar_type="BTCUSDT.BINANCE-1-MINUTE-LAST-EXTERNAL",
             trade_size=Decimal(0.001),
             fast_ema=10,
             slow_ema=20,
@@ -390,7 +390,7 @@ class TestBacktestAcceptanceTestsBTCPERPTradeBars:
 
         config = EMACrossConfig(
             instrument_id=str(self.btcusdt.id),
-            bar_type="BTC/USDT.BINANCE-1-MINUTE-BID-INTERNAL",
+            bar_type="BTCUSDT.BINANCE-1-MINUTE-BID-INTERNAL",
             trade_size=Decimal(0.001),
             fast_ema=10,
             slow_ema=20,
@@ -519,7 +519,7 @@ class TestBacktestAcceptanceTestsETHUSDT:
         # Arrange
         config = EMACrossConfig(
             instrument_id=str(self.ethusdt.id),
-            bar_type="ETH/USDT.BINANCE-250-TICK-LAST-INTERNAL",
+            bar_type="ETHUSDT.BINANCE-250-TICK-LAST-INTERNAL",
             trade_size=Decimal(100),
             fast_ema=10,
             slow_ema=20,

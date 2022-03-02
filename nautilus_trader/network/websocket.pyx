@@ -269,7 +269,7 @@ cdef class WebSocketClient:
                 self._handler(raw)
                 self.connection_retry_count = 0
             except Exception as ex:
-                self._log.exception(ex)
+                self._log.exception(f"Error on receive", ex)
                 break
         self._log.debug("Stopped.")
         self._stopped = True
