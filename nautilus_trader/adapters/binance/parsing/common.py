@@ -17,7 +17,6 @@ from decimal import Decimal
 from typing import Dict, List, Tuple
 
 from nautilus_trader.model.currency import Currency
-from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import OrderType
 from nautilus_trader.model.enums import OrderTypeParser
 from nautilus_trader.model.objects import AccountBalance
@@ -120,7 +119,7 @@ def parse_order_type(order_type: str) -> OrderType:
         return OrderTypeParser.from_str_py(order_type)
 
 
-def binance_order_type_spot(order: Order, market_price: Decimal = None) -> str:  # noqa
+def binance_order_type_spot(order: Order) -> str:
     if order.type == OrderType.MARKET:
         return "MARKET"
     elif order.type == OrderType.LIMIT:
@@ -128,22 +127,15 @@ def binance_order_type_spot(order: Order, market_price: Decimal = None) -> str: 
             return "LIMIT_MAKER"
         else:
             return "LIMIT"
-    elif order.type in (OrderType.STOP_LIMIT, OrderType.LIMIT_IF_TOUCHED):
-        if order.side == OrderSide.BUY:
-            if order.trigger_price < market_price:
-                return "TAKE_PROFIT_LIMIT"
-            else:
-                return "STOP_LOSS_LIMIT"
-        else:  # OrderSide.SELL
-            if order.trigger_price > market_price:
-                return "TAKE_PROFIT_LIMIT"
-            else:
-                return "STOP_LOSS_LIMIT"
+    elif order.type == OrderType.STOP_LIMIT:
+        return "STOP_LOSS_LIMIT"
+    elif order.type == OrderType.LIMIT_IF_TOUCHED:
+        return "TAKE_PROFIT_LIMIT"
     else:  # pragma: no cover (design-time error)
         raise RuntimeError("invalid order type")
 
 
-def binance_order_type_futures(order: Order, market_price: Decimal = None) -> str:  # noqa
+def binance_order_type_futures(order: Order) -> str:
     if order.type == OrderType.MARKET:
         return "MARKET"
     elif order.type == OrderType.LIMIT:

@@ -15,7 +15,6 @@
 
 import asyncio
 from datetime import datetime
-from decimal import Decimal
 from typing import Any, Dict, List, Optional
 
 import orjson
@@ -397,14 +396,14 @@ class BinanceExecutionClient(LiveExecutionClient):
         if self._binance_account_type.is_spot and order.type not in VALID_ORDER_TYPES_SPOT:
             self._log.error(
                 f"Cannot submit order: {OrderTypeParser.to_str_py(order.type)} "
-                f"orders not supported by the Binance exchange for SPOT account types. "
+                f"orders not supported by the Binance exchange for SPOT accounts. "
                 f"Use any of {[OrderTypeParser.to_str_py(t) for t in VALID_ORDER_TYPES_SPOT]}",
             )
             return
         elif self._binance_account_type.is_futures and order.type not in VALID_ORDER_TYPES_FUTURES:
             self._log.error(
                 f"Cannot submit order: {OrderTypeParser.to_str_py(order.type)} "
-                f"orders not supported by the Binance exchange for FUTURES account types. "
+                f"orders not supported by the Binance exchange for FUTURES accounts. "
                 f"Use any of {[OrderTypeParser.to_str_py(t) for t in VALID_ORDER_TYPES_FUTURES]}",
             )
             return
@@ -419,10 +418,24 @@ class BinanceExecutionClient(LiveExecutionClient):
             return
 
         # Check post-only
-        if self._binance_account_type.is_spot and order.type == OrderType.STOP_LIMIT:
-            self._log.warning(
-                "STOP_LIMIT `post_only` orders not supported by the exchange. "
+        if (
+            self._binance_account_type.is_spot
+            and order.type == OrderType.STOP_LIMIT
+            and order.is_post_only
+        ):
+            self._log.error(
+                "Cannot submit order: STOP_LIMIT `post_only` orders not supported by the Binance exchange for SPOT accounts. "
                 "This order may become a liquidity TAKER."
+            )
+            return
+        elif (
+            self._binance_account_type.is_futures
+            and order.is_post_only
+            and order.type != OrderType.LIMIT
+        ):
+            self._log.error(
+                f"Cannot submit order: {OrderTypeParser.to_str_py(order.type)} `post_only` order. "
+                "Only LIMIT `post_only` orders supported by the Binance exchange for FUTURES accounts."
             )
             return
 
@@ -472,7 +485,7 @@ class BinanceExecutionClient(LiveExecutionClient):
             await self._submit_market_order_spot(order)
         elif order.type == OrderType.LIMIT:
             await self._submit_limit_order_spot(order)
-        elif order.type == OrderType.STOP_LIMIT:
+        elif order.type in (OrderType.STOP_LIMIT, OrderType.LIMIT_IF_TOUCHED):
             await self._submit_stop_limit_order_spot(order)
 
     async def _submit_order_futures(self, order: Order) -> None:
@@ -482,6 +495,8 @@ class BinanceExecutionClient(LiveExecutionClient):
             await self._submit_limit_order_futures(order)
         elif order.type in (OrderType.STOP_MARKET, OrderType.MARKET_IF_TOUCHED):
             await self._submit_stop_market_order_futures(order)
+        elif order.type in (OrderType.STOP_LIMIT, OrderType.LIMIT_IF_TOUCHED):
+            await self._submit_stop_limit_order_futures(order)
         elif order.type == OrderType.TRAILING_STOP_MARKET:
             await self._submit_trailing_stop_market_order_futures(order)
 
@@ -516,16 +531,10 @@ class BinanceExecutionClient(LiveExecutionClient):
         )
 
     async def _submit_stop_limit_order_spot(self, order: StopLimitOrder) -> None:
-        # Get current market price
-        response: Dict[str, Any] = await self._http_market.ticker_price(
-            order.instrument_id.symbol.value
-        )
-        market_price = Decimal(response["price"])
-
         await self._http_account.new_order_spot(
             symbol=format_symbol(order.instrument_id.symbol.value),
             side=OrderSideParser.to_str_py(order.side),
-            type=binance_order_type_spot(order, market_price=market_price),
+            type=binance_order_type_spot(order),
             time_in_force=TimeInForceParser.to_str_py(order.time_in_force),
             quantity=str(order.quantity),
             price=str(order.price),
@@ -583,6 +592,32 @@ class BinanceExecutionClient(LiveExecutionClient):
             type=binance_order_type_futures(order),
             time_in_force=TimeInForceParser.to_str_py(order.time_in_force),
             quantity=str(order.quantity),
+            stop_price=str(order.trigger_price),
+            working_type=working_type,
+            reduce_only=order.is_reduce_only,  # Cannot be sent with Hedge-Mode or closePosition
+            new_client_order_id=order.client_order_id.value,
+            recv_window=5000,
+        )
+
+    async def _submit_stop_limit_order_futures(self, order: StopMarketOrder) -> None:
+        if order.trigger_type in (TriggerType.DEFAULT, TriggerType.LAST):
+            working_type = "CONTRACT_PRICE"
+        elif order.trigger_type == TriggerType.MARK:
+            working_type = "MARK_PRICE"
+        else:
+            self._log.error(
+                f"Cannot submit order: invalid `order.trigger_type`, was "
+                f"{TriggerTypeParser.to_str_py(order.trigger_price)}. {order}",
+            )
+            return
+
+        await self._http_account.new_order_futures(
+            symbol=format_symbol(order.instrument_id.symbol.value),
+            side=OrderSideParser.to_str_py(order.side),
+            type=binance_order_type_futures(order),
+            time_in_force=TimeInForceParser.to_str_py(order.time_in_force),
+            quantity=str(order.quantity),
+            price=str(order.price),
             stop_price=str(order.trigger_price),
             working_type=working_type,
             reduce_only=order.is_reduce_only,  # Cannot be sent with Hedge-Mode or closePosition

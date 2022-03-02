@@ -21,6 +21,7 @@ VALID_ORDER_TYPES_SPOT = (
     OrderType.MARKET,
     OrderType.LIMIT,
     OrderType.STOP_LIMIT,
+    OrderType.LIMIT_IF_TOUCHED,
 )
 
 VALID_ORDER_TYPES_FUTURES = (

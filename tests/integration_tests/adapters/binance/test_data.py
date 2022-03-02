@@ -30,6 +30,7 @@ from nautilus_trader.common.config import InstrumentProviderConfig
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.common.uuid import UUIDFactory
 from nautilus_trader.data.engine import DataEngine
+from nautilus_trader.model.data.tick import QuoteTick
 from nautilus_trader.model.data.tick import TradeTick
 from nautilus_trader.model.enums import AggressorSide
 from nautilus_trader.model.identifiers import AccountId
@@ -268,9 +269,6 @@ class TestBinanceDataClient:
             handler=handler.append,
         )
 
-        self.data_client.connect()
-        await asyncio.sleep(1)
-
         # Act
         self.data_client.subscribe_quote_ticks(ETHUSDT_BINANCE.id)
 
@@ -285,6 +283,15 @@ class TestBinanceDataClient:
 
         assert self.data_engine.data_count == 1
         assert len(handler) == 1  # <-- handler received tick
+        assert handler[0] == QuoteTick(
+            instrument_id=ETHUSDT_BINANCE.id,
+            bid=Price.from_str("4507.24000000"),
+            ask=Price.from_str("4507.25000000"),
+            bid_size=Quantity.from_str("2.35950000"),
+            ask_size=Quantity.from_str("2.84570000"),
+            ts_event=1646199228120999936,
+            ts_init=handler[0].ts_init,
+        )
 
     @pytest.mark.asyncio
     async def test_subscribe_trade_ticks(self, monkeypatch):
