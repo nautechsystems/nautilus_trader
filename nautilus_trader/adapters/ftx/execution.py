@@ -48,13 +48,13 @@ from nautilus_trader.execution.reports import OrderStatusReport
 from nautilus_trader.execution.reports import PositionStatusReport
 from nautilus_trader.execution.reports import TradeReport
 from nautilus_trader.live.execution_client import LiveExecutionClient
-from nautilus_trader.model.c_enums.account_type import AccountType
-from nautilus_trader.model.c_enums.order_side import OrderSideParser
 from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.currency import Currency
+from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import LiquiditySide
 from nautilus_trader.model.enums import OMSType
 from nautilus_trader.model.enums import OrderSide
+from nautilus_trader.model.enums import OrderSideParser
 from nautilus_trader.model.enums import OrderStatus
 from nautilus_trader.model.enums import OrderType
 from nautilus_trader.model.enums import TimeInForce
@@ -204,7 +204,7 @@ class FTXExecutionClient(LiveExecutionClient):
         try:
             await self._instrument_provider.initialize()
         except FTXError as ex:
-            self._log.exception(ex)
+            self._log.exception("Error on connect", ex)
             return
 
         self._log.info("FTX API key authenticated.", LogColor.GREEN)
@@ -687,8 +687,12 @@ class FTXExecutionClient(LiveExecutionClient):
                 reason=ex.message,  # TODO(cs): Improve errors
                 ts_event=self._clock.timestamp_ns(),  # TODO(cs): Parse from response
             )
-        except Exception as ex:  # Catch all exceptions
-            self._log.exception(ex)
+        except Exception as ex:  # Catch all exceptions for now
+            self._log.exception(
+                f"Error on submit {repr(order)}"
+                f"{f'for {position}' if position is not None else ''}",
+                ex,
+            )
 
     async def _submit_market_order(self, order: MarketOrder) -> None:
         await self._http_client.place_order(

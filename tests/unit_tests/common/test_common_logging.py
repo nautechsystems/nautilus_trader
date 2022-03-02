@@ -160,6 +160,17 @@ class TestLoggerTests:
         # Assert
         assert True  # No exceptions raised
 
+    def test_log_exception_messages_to_console(self):
+        # Arrange
+        logger = Logger(clock=TestClock(), level_stdout=LogLevel.CRITICAL)
+        logger_adapter = LoggerAdapter(component_name="TEST_LOGGER", logger=logger)
+
+        # Act
+        logger_adapter.exception("We intentionally divided by zero!", ZeroDivisionError("Oops"))
+
+        # Assert
+        assert True  # No exceptions raised
+
     def test_register_sink_sends_records_to_sink(self):
         # Arrange
         sink = []

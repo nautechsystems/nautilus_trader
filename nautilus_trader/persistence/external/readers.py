@@ -325,8 +325,8 @@ class ParquetReader(ByteReader):
         try:
             df = pd.read_parquet(BytesIO(block))
             self.buffer = b""
-        except Exception as e:
-            logging.error(e)
+        except Exception as ex:
+            logging.exception(f"Error on parse {block[:128]!r}", ex)
             return
 
         if self.instrument_provider_update is not None:

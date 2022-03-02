@@ -412,7 +412,7 @@ cdef class Position:
 
         """
         Condition.not_none(fill, "fill")
-        Condition.not_in(fill.trade_id, self._trade_ids, "fill.trade_id", "self._trade_ids")
+        Condition.not_in(fill.trade_id, self._trade_ids, "fill.trade_id", "_trade_ids")
 
         self._events.append(fill)
         self._trade_ids.append(fill.trade_id)

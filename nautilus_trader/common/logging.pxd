@@ -103,7 +103,7 @@ cdef class LoggerAdapter:
     cpdef void warning(self, str msg, LogColor color=*, dict annotations=*) except *
     cpdef void error(self, str msg, LogColor color=*, dict annotations=*) except *
     cpdef void critical(self, str msg, LogColor color=*, dict annotations=*) except *
-    cpdef void exception(self, ex, dict annotations=*) except *
+    cpdef void exception(self, str msg, ex, dict annotations=*) except *
 
 
 cpdef void nautilus_header(LoggerAdapter logger) except *

@@ -24,14 +24,25 @@ from nautilus_trader.adapters.binance.core.constants import BINANCE_VENUE
 from nautilus_trader.adapters.binance.data import BinanceDataClient
 from nautilus_trader.adapters.binance.http.client import BinanceHttpClient
 from nautilus_trader.adapters.binance.providers import BinanceInstrumentProvider
+from nautilus_trader.backtest.data.providers import TestInstrumentProvider
 from nautilus_trader.common.clock import LiveClock
+from nautilus_trader.common.config import InstrumentProviderConfig
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.common.uuid import UUIDFactory
 from nautilus_trader.data.engine import DataEngine
+from nautilus_trader.model.data.tick import QuoteTick
+from nautilus_trader.model.data.tick import TradeTick
+from nautilus_trader.model.enums import AggressorSide
 from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import InstrumentId
+from nautilus_trader.model.identifiers import TradeId
+from nautilus_trader.model.objects import Price
+from nautilus_trader.model.objects import Quantity
 from nautilus_trader.msgbus.bus import MessageBus
 from tests.test_kit.stubs import TestStubs
+
+
+ETHUSDT_BINANCE = TestInstrumentProvider.ethusdt_binance()
 
 
 class TestBinanceDataClient:
@@ -67,6 +78,7 @@ class TestBinanceDataClient:
         self.provider = BinanceInstrumentProvider(
             client=self.http_client,
             logger=self.logger,
+            config=InstrumentProviderConfig(load_all=True),
         )
 
         self.data_engine = DataEngine(
@@ -165,7 +177,6 @@ class TestBinanceDataClient:
         # Assert
         assert not self.data_client.is_connected
 
-    @pytest.mark.skip(reason="test needs updating for provider config")
     @pytest.mark.asyncio
     async def test_subscribe_instruments(self, monkeypatch):
         # Arrange: prepare data for monkey patch
@@ -250,51 +261,16 @@ class TestBinanceDataClient:
         # Assert
         assert self.data_client.subscribed_instruments() == [ethusdt]
 
-    @pytest.mark.skip(reason="test needs updating for provider config")
     @pytest.mark.asyncio
     async def test_subscribe_quote_ticks(self, monkeypatch):
-        # Arrange: prepare data for monkey patch
-        response1 = pkgutil.get_data(
-            package="tests.integration_tests.adapters.binance.resources.http_responses",
-            resource="http_wallet_trading_fee.json",
-        )
-
-        response2 = pkgutil.get_data(
-            package="tests.integration_tests.adapters.binance.resources.http_responses",
-            resource="http_spot_market_exchange_info.json",
-        )
-
-        responses = [response2, response1]
-
-        # Mock coroutine for patch
-        async def mock_send_request(
-            self,  # noqa (needed for mock)
-            http_method: str,  # noqa (needed for mock)
-            url_path: str,  # noqa (needed for mock)
-            payload: Dict[str, str],  # noqa (needed for mock)
-        ) -> bytes:
-            return orjson.loads(responses.pop())
-
-        # Apply mock coroutine to client
-        monkeypatch.setattr(
-            target=BinanceHttpClient,
-            name="send_request",
-            value=mock_send_request,
-        )
-
-        ethusdt = InstrumentId.from_str("ETHUSDT.BINANCE")
-
         handler = []
         self.msgbus.subscribe(
             topic="data.quotes.BINANCE.ETHUSDT",
             handler=handler.append,
         )
 
-        self.data_client.connect()
-        await asyncio.sleep(1)
-
         # Act
-        self.data_client.subscribe_quote_ticks(ethusdt)
+        self.data_client.subscribe_quote_ticks(ETHUSDT_BINANCE.id)
 
         raw_book_tick = pkgutil.get_data(
             package="tests.integration_tests.adapters.binance.resources.ws_messages",
@@ -305,54 +281,28 @@ class TestBinanceDataClient:
         self.data_client._handle_ws_message(raw_book_tick)
         await asyncio.sleep(1)
 
-        assert self.data_engine.data_count == 3
+        assert self.data_engine.data_count == 1
         assert len(handler) == 1  # <-- handler received tick
+        assert handler[0] == QuoteTick(
+            instrument_id=ETHUSDT_BINANCE.id,
+            bid=Price.from_str("4507.24000000"),
+            ask=Price.from_str("4507.25000000"),
+            bid_size=Quantity.from_str("2.35950000"),
+            ask_size=Quantity.from_str("2.84570000"),
+            ts_event=handler[0].ts_init,  # TODO: WIP
+            ts_init=handler[0].ts_init,
+        )
 
-    @pytest.mark.skip(reason="test needs updating for provider config")
     @pytest.mark.asyncio
     async def test_subscribe_trade_ticks(self, monkeypatch):
-        # Arrange: prepare data for monkey patch
-        response1 = pkgutil.get_data(
-            package="tests.integration_tests.adapters.binance.resources.http_responses",
-            resource="http_wallet_trading_fee.json",
-        )
-
-        response2 = pkgutil.get_data(
-            package="tests.integration_tests.adapters.binance.resources.http_responses",
-            resource="http_spot_market_exchange_info.json",
-        )
-
-        responses = [response2, response1]
-
-        # Mock coroutine for patch
-        async def mock_send_request(
-            self,  # noqa (needed for mock)
-            http_method: str,  # noqa (needed for mock)
-            url_path: str,  # noqa (needed for mock)
-            payload: Dict[str, str],  # noqa (needed for mock)
-        ) -> bytes:
-            return orjson.loads(responses.pop())
-
-        # Apply mock coroutine to client
-        monkeypatch.setattr(
-            target=BinanceHttpClient,
-            name="send_request",
-            value=mock_send_request,
-        )
-
-        ethusdt = InstrumentId.from_str("ETHUSDT.BINANCE")
-
         handler = []
         self.msgbus.subscribe(
             topic="data.trades.BINANCE.ETHUSDT",
             handler=handler.append,
         )
 
-        self.data_client.connect()
-        await asyncio.sleep(1)
-
         # Act
-        self.data_client.subscribe_trade_ticks(ethusdt)
+        self.data_client.subscribe_trade_ticks(ETHUSDT_BINANCE.id)
 
         raw_trade = pkgutil.get_data(
             package="tests.integration_tests.adapters.binance.resources.ws_messages",
@@ -363,5 +313,14 @@ class TestBinanceDataClient:
         self.data_client._handle_ws_message(raw_trade)
         await asyncio.sleep(1)
 
-        assert self.data_engine.data_count == 3
+        assert self.data_engine.data_count == 1
         assert len(handler) == 1  # <-- handler received tick
+        assert handler[0] == TradeTick(
+            instrument_id=ETHUSDT_BINANCE.id,
+            price=Price.from_str("4149.74000000"),
+            size=Quantity.from_str("0.43870000"),
+            aggressor_side=AggressorSide.SELL,
+            trade_id=TradeId("705291099"),
+            ts_event=1639351062243000064,
+            ts_init=handler[0].ts_init,
+        )

@@ -366,7 +366,7 @@ cdef class Component:
                 action=None,
             )
         except Exception as ex:
-            self._log.exception(ex)
+            self._log.exception(f"{repr(self)}: Error on initialize", ex)
             raise
 
     cpdef void start(self) except *:
@@ -392,7 +392,7 @@ cdef class Component:
                 action=self._start,
             )
         except Exception as ex:
-            self._log.exception(ex)
+            self._log.exception(f"{repr(self)}: Error on start", ex)
             raise
         finally:
             self._trigger_fsm(
@@ -424,7 +424,7 @@ cdef class Component:
                 action=self._stop,
             )
         except Exception as ex:
-            self._log.exception(ex)
+            self._log.exception(f"{repr(self)}: Error on stop", ex)
             raise
         finally:
             self._trigger_fsm(
@@ -456,7 +456,7 @@ cdef class Component:
                 action=self._resume,
             )
         except Exception as ex:
-            self._log.exception(ex)
+            self._log.exception(f"{repr(self)}: Error on resume", ex)
             raise
         finally:
             self._trigger_fsm(
@@ -490,7 +490,7 @@ cdef class Component:
                 action=self._reset,
             )
         except Exception as ex:
-            self._log.exception(ex)
+            self._log.exception(f"{repr(self)}: Error on reset", ex)
             raise
         finally:
             self._trigger_fsm(
@@ -525,7 +525,7 @@ cdef class Component:
                 action=self._dispose,
             )
         except Exception as ex:
-            self._log.exception(ex)
+            self._log.exception(f"{repr(self)}: Error on dispose", ex)
             raise
         finally:
             self._trigger_fsm(
@@ -557,7 +557,7 @@ cdef class Component:
                 action=self._degrade,
             )
         except Exception as ex:
-            self._log.exception(ex)
+            self._log.exception(f"{repr(self)}: Error on degrade", ex)
             raise
         finally:
             self._trigger_fsm(
@@ -592,7 +592,7 @@ cdef class Component:
                 action=self._fault,
             )
         except Exception as ex:
-            self._log.exception(ex)
+            self._log.exception(f"{repr(self)}: Error on fault", ex)
             raise
         finally:
             self._trigger_fsm(
@@ -612,7 +612,7 @@ cdef class Component:
         try:
             self._fsm.trigger(trigger)
         except InvalidStateTrigger as ex:
-            self._log.exception(ex)
+            self._log.exception(f"{repr(self)} Error on state trigger", ex)
             raise  # Guards against component being put in an invalid state
 
         self._log.info(f"{self._fsm.state_string_c()}.{'..' if is_transitory else ''}")

@@ -265,7 +265,7 @@ cdef class ExecutionEngine(Component):
 
         """
         Condition.not_none(client, "client")
-        Condition.not_in(client.id, self._clients, "client.id", "self._clients")
+        Condition.not_in(client.id, self._clients, "client.id", "_clients")
 
         self._clients[client.id] = client
 
@@ -606,13 +606,10 @@ cdef class ExecutionEngine(Component):
         except InvalidStateTrigger as ex:
             self._log.warning(f"InvalidStateTrigger: {ex}, did not apply {event}")
             return
-        except ValueError as ex:
-            # Protection against invalid IDs
-            self._log.error(str(ex))
-            return
-        except KeyError as ex:
-            # Protection against duplicate fills
-            self._log.error(str(ex))
+        except (ValueError, KeyError) as ex:
+            # ValueError: Protection against invalid IDs
+            # KeyError: Protection against duplicate fills
+            self._log.exception(f"Error on applying {repr(event)} to {repr(order)}", ex)
             return
 
         self._cache.update_order(order)
@@ -723,7 +720,7 @@ cdef class ExecutionEngine(Component):
             # Protected against duplicate OrderFilled
             position.apply(fill)
         except KeyError as ex:
-            self._log.exception(ex)
+            self._log.exception(f"Error on applying {repr(fill)} to {repr(position)}", ex)
             return  # Not re-raising to avoid crashing engine
 
         self._cache.update_position(position)

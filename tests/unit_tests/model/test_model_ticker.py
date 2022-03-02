@@ -35,8 +35,8 @@ class TestTicker:
 
         # Act, Assert
         assert isinstance(hash(ticker), int)
-        assert str(ticker) == "Ticker(instrument_id=ETH/USDT.BINANCE, ts_event=0)"  # noqa
-        assert repr(ticker) == "Ticker(instrument_id=ETH/USDT.BINANCE, ts_event=0)"  # noqa
+        assert str(ticker) == "Ticker(instrument_id=ETHUSDT.BINANCE, ts_event=0)"  # noqa
+        assert repr(ticker) == "Ticker(instrument_id=ETHUSDT.BINANCE, ts_event=0)"  # noqa
 
     def test_to_dict_returns_expected_dict(self):
         # Arrange
@@ -52,7 +52,7 @@ class TestTicker:
         # Assert
         assert result == {
             "type": "Ticker",
-            "instrument_id": "ETH/USDT.BINANCE",
+            "instrument_id": "ETHUSDT.BINANCE",
             "ts_event": 0,
             "ts_init": 0,
         }

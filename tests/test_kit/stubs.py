@@ -140,15 +140,15 @@ class TestStubs:
 
     @staticmethod
     def btcusdt_binance_id() -> InstrumentId:
-        return InstrumentId(Symbol("BTC/USDT"), Venue("BINANCE"))
+        return InstrumentId(Symbol("BTCUSDT"), Venue("BINANCE"))
 
     @staticmethod
     def ethusdt_binance_id() -> InstrumentId:
-        return InstrumentId(Symbol("ETH/USDT"), Venue("BINANCE"))
+        return InstrumentId(Symbol("ETHUSDT"), Venue("BINANCE"))
 
     @staticmethod
     def adabtc_binance_id() -> InstrumentId:
-        return InstrumentId(Symbol("ADA/BTC"), Venue("BINANCE"))
+        return InstrumentId(Symbol("ADABTC"), Venue("BINANCE"))
 
     @staticmethod
     def audusd_id() -> InstrumentId:
@@ -346,7 +346,7 @@ class TestStubs:
         status: InstrumentStatus = None,
     ):
         return InstrumentStatusUpdate(
-            instrument_id=instrument_id or InstrumentId(Symbol("BTC/USDT"), Venue("BINANCE")),
+            instrument_id=instrument_id or InstrumentId(Symbol("BTCUSDT"), Venue("BINANCE")),
             status=status or InstrumentStatus.PAUSE,
             ts_event=0,
             ts_init=0,

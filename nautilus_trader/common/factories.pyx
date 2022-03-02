@@ -145,7 +145,7 @@ cdef class OrderFactory:
             The orders side.
         quantity : Quantity
             The orders quantity (> 0).
-        time_in_force : TimeInForce {``GTC``, ``IOC``, ``FOK``, ``AT_THE_OPEN``, ``AT_THE_CLOSE``}, default ``GTC``
+        time_in_force : TimeInForce {``GTC``, ``IOC``, ``FOK``, ``ON_OPEN``, ``ON_CLOSE``}, default ``GTC``
             The orders time-in-force. Often not applicable for market orders.
         reduce_only : bool, default False
             If the order carries the 'reduce-only' execution instruction.
@@ -162,7 +162,7 @@ cdef class OrderFactory:
         ValueError
             If `quantity` is not positive (> 0).
         ValueError
-            If `time_in_force` is other than ``GTC``, ``IOC``, ``FOK``, ``AT_THE_OPEN`` or ``AT_THE_CLOSE``.
+            If `time_in_force` is other than ``GTC``, ``IOC``, ``FOK``, ``ON_OPEN`` or ``ON_CLOSE``.
 
         """
         return MarketOrder(

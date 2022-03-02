@@ -177,7 +177,7 @@ cdef class MessageBus:
         """
         Condition.valid_string(endpoint, "endpoint")
         Condition.callable(handler, "handler")
-        Condition.not_in(endpoint, self._endpoints, "endpoint", "self._endpoints")
+        Condition.not_in(endpoint, self._endpoints, "endpoint", "_endpoints")
 
         self._endpoints[endpoint] = handler
 

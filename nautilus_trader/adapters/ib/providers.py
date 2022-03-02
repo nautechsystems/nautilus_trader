@@ -22,11 +22,11 @@ from ib_insync import ContractDetails
 
 from nautilus_trader.common.providers import InstrumentProvider
 from nautilus_trader.core.correctness import PyCondition
-from nautilus_trader.model.c_enums.asset_class import AssetClass
-from nautilus_trader.model.c_enums.asset_class import AssetClassParser
-from nautilus_trader.model.c_enums.asset_type import AssetType
-from nautilus_trader.model.c_enums.asset_type import AssetTypeParser
 from nautilus_trader.model.currency import Currency
+from nautilus_trader.model.enums import AssetClass
+from nautilus_trader.model.enums import AssetClassParser
+from nautilus_trader.model.enums import AssetType
+from nautilus_trader.model.enums import AssetTypeParser
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.instruments.base import Instrument

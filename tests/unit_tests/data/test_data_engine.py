@@ -652,7 +652,7 @@ class TestDataEngine:
         self.binance_client.start()
 
         handler = []
-        self.msgbus.subscribe(topic="data.instrument.BINANCE.ETH/USDT", handler=handler.append)
+        self.msgbus.subscribe(topic="data.instrument.BINANCE.ETHUSDT", handler=handler.append)
 
         subscribe = Subscribe(
             client_id=ClientId(BINANCE.value),
@@ -679,8 +679,8 @@ class TestDataEngine:
 
         handler1 = []
         handler2 = []
-        self.msgbus.subscribe(topic="data.instrument.BINANCE.ETH/USDT", handler=handler1.append)
-        self.msgbus.subscribe(topic="data.instrument.BINANCE.ETH/USDT", handler=handler2.append)
+        self.msgbus.subscribe(topic="data.instrument.BINANCE.ETHUSDT", handler=handler1.append)
+        self.msgbus.subscribe(topic="data.instrument.BINANCE.ETHUSDT", handler=handler2.append)
 
         subscribe1 = Subscribe(
             client_id=ClientId(BINANCE.value),
@@ -927,7 +927,7 @@ class TestDataEngine:
 
         handler = []
         self.msgbus.subscribe(
-            topic="data.book.snapshots.BINANCE.ETH/USDT.1000", handler=handler.append
+            topic="data.book.snapshots.BINANCE.ETHUSDT.1000", handler=handler.append
         )
 
         subscribe = Subscribe(
@@ -966,7 +966,7 @@ class TestDataEngine:
 
         handler = []
         self.msgbus.subscribe(
-            topic="data.book.snapshots.BINANCE.ETH/USDT.1000", handler=handler.append
+            topic="data.book.snapshots.BINANCE.ETHUSDT.1000", handler=handler.append
         )
 
         subscribe = Subscribe(
@@ -1013,7 +1013,7 @@ class TestDataEngine:
         self.data_engine.process(ETHUSDT_BINANCE)  # <-- add necessary instrument for test
 
         handler = []
-        self.msgbus.subscribe(topic="data.book.deltas.BINANCE.ETH/USDT", handler=handler.append)
+        self.msgbus.subscribe(topic="data.book.deltas.BINANCE.ETHUSDT", handler=handler.append)
 
         subscribe = Subscribe(
             client_id=ClientId(BINANCE.value),
@@ -1059,10 +1059,10 @@ class TestDataEngine:
         handler1 = []
         handler2 = []
         self.msgbus.subscribe(
-            topic="data.book.snapshots.BINANCE.ETH/USDT.1000", handler=handler1.append
+            topic="data.book.snapshots.BINANCE.ETHUSDT.1000", handler=handler1.append
         )
         self.msgbus.subscribe(
-            topic="data.book.snapshots.BINANCE.ETH/USDT.1000", handler=handler2.append
+            topic="data.book.snapshots.BINANCE.ETHUSDT.1000", handler=handler2.append
         )
 
         subscribe1 = Subscribe(
@@ -1236,7 +1236,7 @@ class TestDataEngine:
         self.binance_client.start()
 
         handler = []
-        self.msgbus.subscribe(topic="data.quotes.BINANCE.ETH/USDT", handler=handler.append)
+        self.msgbus.subscribe(topic="data.quotes.BINANCE.ETHUSDT", handler=handler.append)
 
         subscribe = Subscribe(
             client_id=ClientId(BINANCE.value),
@@ -1274,8 +1274,8 @@ class TestDataEngine:
         handler1 = []
         handler2 = []
 
-        self.msgbus.subscribe(topic="data.quotes.BINANCE.ETH/USDT", handler=handler1.append)
-        self.msgbus.subscribe(topic="data.quotes.BINANCE.ETH/USDT", handler=handler2.append)
+        self.msgbus.subscribe(topic="data.quotes.BINANCE.ETHUSDT", handler=handler1.append)
+        self.msgbus.subscribe(topic="data.quotes.BINANCE.ETHUSDT", handler=handler2.append)
 
         subscribe1 = Subscribe(
             client_id=ClientId(BINANCE.value),
@@ -1370,7 +1370,7 @@ class TestDataEngine:
         self.binance_client.start()
 
         handler = []
-        self.msgbus.subscribe(topic="data.trades.BINANCE.ETH/USDT", handler=handler.append)
+        self.msgbus.subscribe(topic="data.trades.BINANCE.ETHUSDT", handler=handler.append)
 
         subscribe = Subscribe(
             client_id=ClientId(BINANCE.value),
@@ -1407,8 +1407,8 @@ class TestDataEngine:
 
         handler1 = []
         handler2 = []
-        self.msgbus.subscribe(topic="data.trades.BINANCE.ETH/USDT", handler=handler1.append)
-        self.msgbus.subscribe(topic="data.trades.BINANCE.ETH/USDT", handler=handler2.append)
+        self.msgbus.subscribe(topic="data.trades.BINANCE.ETHUSDT", handler=handler1.append)
+        self.msgbus.subscribe(topic="data.trades.BINANCE.ETHUSDT", handler=handler2.append)
 
         subscribe1 = Subscribe(
             client_id=ClientId(BINANCE.value),

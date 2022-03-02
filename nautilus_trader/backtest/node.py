@@ -34,7 +34,6 @@ from nautilus_trader.common.actor import Actor
 from nautilus_trader.common.config import ActorFactory
 from nautilus_trader.common.config import ImportableActorConfig
 from nautilus_trader.core.inspect import is_nautilus_class
-from nautilus_trader.model.c_enums.book_type import BookTypeParser
 from nautilus_trader.model.currency import Currency
 from nautilus_trader.model.data.bar import Bar
 from nautilus_trader.model.data.base import DataType
@@ -43,6 +42,7 @@ from nautilus_trader.model.data.tick import QuoteTick
 from nautilus_trader.model.data.tick import TradeTick
 from nautilus_trader.model.data.venue import InstrumentStatusUpdate
 from nautilus_trader.model.enums import AccountType
+from nautilus_trader.model.enums import BookTypeParser
 from nautilus_trader.model.enums import OMSType
 from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import Venue
@@ -194,7 +194,8 @@ class BacktestNode:
             # Manually write instruments
             instrument_ids = set(filter(None, (data.instrument_id for data in data_configs)))
             for instrument in catalog.instruments(
-                instrument_ids=list(instrument_ids), as_nautilus=True
+                instrument_ids=list(instrument_ids),
+                as_nautilus=True,
             ):
                 writer.write(instrument)
 
