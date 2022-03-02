@@ -8,5 +8,6 @@ tab_width = 4
 
 [export.rename]
 "Currency" = "Currency_t"
+"Money" = "Money_t"
 "Price" = "Price_t"
 "Quantity" = "Quantity_t"

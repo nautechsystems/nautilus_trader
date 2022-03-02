@@ -17,11 +17,8 @@ from libc.stdint cimport uint8_t
 from libc.stdint cimport uint16_t
 
 from nautilus_trader.core.correctness cimport Condition
-from nautilus_trader.core.rust.model cimport currency_code_to_cstring
 from nautilus_trader.core.rust.model cimport currency_free
-from nautilus_trader.core.rust.model cimport currency_name_to_cstring
 from nautilus_trader.core.rust.model cimport currency_new
-from nautilus_trader.core.string cimport cstring_to_pystr
 from nautilus_trader.core.string cimport pystr_to_cstring
 from nautilus_trader.model.c_enums.currency_type cimport CurrencyType
 from nautilus_trader.model.c_enums.currency_type cimport CurrencyTypeParser
@@ -75,21 +72,43 @@ cdef class Currency:
             pystr_to_cstring(name),
             currency_type,
         )
+        self.code = code
+        self.name = name
+
+    def __getstate__(self):
+        return (
+            self.code,
+            self._currency.precision,
+            self._currency.iso4217,
+            self.name,
+            <CurrencyType>self._currency.currency_type,
+        )
+
+    def __setstate__(self, values):
+        self._currency = currency_new(
+            pystr_to_cstring(values[0]),
+            values[1],
+            values[2],
+            pystr_to_cstring(values[3]),
+            values[4],
+        )
+        self.code = values[0]
+        self.name = values[3]
 
     def __eq__(self, Currency other) -> bool:
-        return self.code == other.code and self.precision == other.precision
+        return self.code == other.code and self._currency.precision == other._currency.precision
 
     def __hash__(self) -> int:
-        return hash(str(self))
+        return hash((self.code, self.precision))
 
     def __str__(self) -> str:
-        return cstring_to_pystr(currency_code_to_cstring(&self._currency))
+        return self.code
 
     def __repr__(self) -> str:
         return (
             f"{type(self).__name__}("
-            f"code={cstring_to_pystr(currency_code_to_cstring(&self._currency))}, "
-            f"name={cstring_to_pystr(currency_name_to_cstring(&self._currency))}, "
+            f"code={self.code}, "
+            f"name={self.name}, "
             f"precision={self._currency.precision}, "
             f"iso4217={self._currency.iso4217}, "
             f"type={CurrencyTypeParser.to_str(<CurrencyType>self._currency.currency_type)})"
@@ -97,11 +116,6 @@ cdef class Currency:
 
     def __del__(self) -> None:
         currency_free(self._currency)  # `self._currency` moved to rust (then dropped)
-
-    @property
-    def code(self) -> str:
-        """The currency ID code."""
-        return cstring_to_pystr(currency_code_to_cstring(&self._currency))
 
     @property
     def precision(self) -> int:
@@ -112,11 +126,6 @@ cdef class Currency:
     def iso4217(self) -> int:
         """The currency ISO 4217 code."""
         return self._currency.iso4217
-
-    @property
-    def name(self) -> str:
-        """The currency name."""
-        return cstring_to_pystr(currency_name_to_cstring(&self._currency))
 
     @property
     def currency_type(self) -> CurrencyType:

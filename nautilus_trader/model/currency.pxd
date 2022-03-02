@@ -19,6 +19,11 @@ from nautilus_trader.core.rust.model cimport Currency_t
 cdef class Currency:
     cdef Currency_t _currency
 
+    cdef readonly str code
+    """The currency ID code.\n\n:returns: `str`"""
+    cdef readonly str name
+    """The currency name.\n\n:returns: `str`"""
+
     @staticmethod
     cdef void register_c(Currency currency, bint overwrite=*) except *
 

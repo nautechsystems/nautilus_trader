@@ -16,26 +16,11 @@
 from libc.stdint cimport int64_t
 from libc.stdint cimport uint8_t
 
+from nautilus_trader.core.rust.model cimport Money_t
 from nautilus_trader.core.rust.model cimport Price_t
 from nautilus_trader.core.rust.model cimport Quantity_t
 from nautilus_trader.model.currency cimport Currency
 from nautilus_trader.model.identifiers cimport InstrumentId
-
-
-cdef class BaseDecimal:
-    cdef object _value
-
-    cdef readonly uint8_t precision
-    """The decimal precision.\n\n:returns: `uint8`"""
-
-    @staticmethod
-    cdef object _extract_value(object obj)
-
-    @staticmethod
-    cdef bint _compare(a, b, int op) except *
-
-    cpdef object as_decimal(self)
-    cpdef double as_double(self) except *
 
 
 cdef class Quantity:
@@ -91,14 +76,27 @@ cdef class Price:
     cpdef double as_double(self) except *
 
 
-cdef class Money(BaseDecimal):
+cdef class Money:
+    cdef Money_t _money
+
     cdef readonly Currency currency
     """The currency of the money.\n\n:returns: `Currency`"""
+
+    cdef int64_t fixed_int64_c(self)
+    cdef double as_f64_c(self)
 
     @staticmethod
     cdef Money from_str_c(str value)
 
     cpdef str to_str(self)
+
+    @staticmethod
+    cdef object _extract_decimal(object obj)
+
+    cpdef void add_assign(self, Money other) except *
+    cpdef void sub_assign(self, Money other) except *
+    cpdef object as_decimal(self)
+    cpdef double as_double(self) except *
 
 
 cdef class AccountBalance:

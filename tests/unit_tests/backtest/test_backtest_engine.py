@@ -508,12 +508,12 @@ class TestBacktestWithAddedBars:
         assert strategy.fast_ema.count == 30117
         assert self.engine.iteration == 60234
         assert self.engine.portfolio.account(self.venue).balance_total(USD) == Money(
-            1001736.86, USD
+            1001736.78, USD
         )
 
     def test_dump_pickled_data(self):
         # Arrange, # Act, # Assert
-        assert len(self.engine.dump_pickled_data()) == 13013060
+        assert len(self.engine.dump_pickled_data()) == 11747971
 
     def test_load_pickled_data(self):
         # Arrange
@@ -542,5 +542,5 @@ class TestBacktestWithAddedBars:
         assert strategy.fast_ema.count == 30117
         assert self.engine.iteration == 60234
         assert self.engine.portfolio.account(self.venue).balance_total(USD) == Money(
-            1001736.86, USD
+            1001736.78, USD
         )

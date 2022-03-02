@@ -51,10 +51,14 @@ cdef class UUID4:
         if value is None:
             # Create a new UUID4 from rust
             self._uuid4 = uuid4_new()  # owned from rust
-            return
+            self.value = cstring_to_pystr(uuid4_to_cstring(&self._uuid4))
+        else:
+            Condition.true(_UUID_REGEX.match(value), "value is not a valid UUID")
+            self._uuid4 = self._uuid4_from_pystring(value)
+            self.value = value
 
-        Condition.true(_UUID_REGEX.match(value), "value is not a valid UUID")
-        self._uuid4 = self._uuid4_from_pystring(value)
+    cdef UUID4_t _uuid4_from_pystring(self, str value) except *:
+        return uuid4_from_cstring(pystr_to_cstring(value))  # `value` moved to rust, `uuid4` owned from rust
 
     def __getstate__(self):
         return self.value
@@ -76,13 +80,3 @@ cdef class UUID4:
 
     def __del__(self) -> None:
         uuid4_free(self._uuid4)  # `self._uuid4` moved to rust (then dropped)
-
-    cdef UUID4_t _uuid4_from_pystring(self, str value) except *:
-        return uuid4_from_cstring(pystr_to_cstring(value))  # `value` moved to rust, `uuid4` owned from rust
-
-    cdef str _uuid4_to_pystring(self):
-        return cstring_to_pystr(uuid4_to_cstring(&self._uuid4))
-
-    @property
-    def value(self) -> str:
-        return str(self._uuid4_to_pystring())

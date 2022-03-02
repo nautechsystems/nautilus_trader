@@ -14,5 +14,4 @@ header = '"../includes/core.h"'
 ]
 
 [export.rename]
-"bool" = "bint"
 "UUID4" = "UUID4_t"

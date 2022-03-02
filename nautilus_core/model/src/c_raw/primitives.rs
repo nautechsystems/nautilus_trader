@@ -127,7 +127,7 @@ pub extern "C" fn currency_name_to_cstring(currency: &Currency) -> *const c_char
 // Money
 ////////////////////////////////////////////////////////////////////////////////
 #[no_mangle]
-pub extern "C" fn money_new(amount: f64, currency: Currency) -> Money {
+pub extern "C" fn money_new(amount: f64, currency: &'static Currency) -> Money {
     Money::new(amount, currency)
 }
 
@@ -137,8 +137,8 @@ pub extern "C" fn money_free(money: Money) {
 }
 
 #[no_mangle]
-pub extern "C" fn money_as_f64(qty: &Money) -> f64 {
-    qty.as_f64()
+pub extern "C" fn money_as_f64(money: &Money) -> f64 {
+    money.as_f64()
 }
 
 #[no_mangle]
