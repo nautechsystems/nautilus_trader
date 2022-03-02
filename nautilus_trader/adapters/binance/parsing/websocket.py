@@ -147,7 +147,7 @@ def parse_quote_tick_ws(instrument_id: InstrumentId, msg: Dict, ts_init: int) ->
         ask=Price.from_str(msg["a"]),
         bid_size=Quantity.from_str(msg["B"]),
         ask_size=Quantity.from_str(msg["A"]),
-        ts_event=millis_to_nanos(msg["T"]),
+        ts_event=ts_init,  # TODO: Investigate
         ts_init=ts_init,
     )
 
