@@ -166,7 +166,7 @@ class TestBetfairClient:
         instrument = BetfairTestStubs.betting_instrument()
         market_on_close_order = BetfairTestStubs.market_order(
             side=OrderSide.BUY,
-            time_in_force=TimeInForce.AT_THE_CLOSE,
+            time_in_force=TimeInForce.ON_CLOSE,
         )
         submit_order_command = SubmitOrder(
             trader_id=TestStubs.trader_id(),
