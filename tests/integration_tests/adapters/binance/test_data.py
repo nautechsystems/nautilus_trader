@@ -289,7 +289,7 @@ class TestBinanceDataClient:
             ask=Price.from_str("4507.25000000"),
             bid_size=Quantity.from_str("2.35950000"),
             ask_size=Quantity.from_str("2.84570000"),
-            ts_event=1646199228120999936,
+            ts_event=handler[0].ts_init,  # TODO: WIP
             ts_init=handler[0].ts_init,
         )
 
