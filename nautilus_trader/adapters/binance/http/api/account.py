@@ -308,7 +308,7 @@ class BinanceAccountHttpAPI:
         symbol: str,
         side: str,
         type: str,
-        position_side: Optional[str] = "BOTH",
+        position_side: Optional[str] = None,
         time_in_force: Optional[str] = None,
         quantity: Optional[str] = None,
         reduce_only: Optional[bool] = False,
@@ -392,7 +392,7 @@ class BinanceAccountHttpAPI:
         if quantity is not None:
             payload["quantity"] = quantity
         if reduce_only is not None:
-            payload["reduce_only"] = str(reduce_only).lower()
+            payload["reduceOnly"] = str(reduce_only).lower()
         if price is not None:
             payload["price"] = price
         if new_client_order_id is not None:

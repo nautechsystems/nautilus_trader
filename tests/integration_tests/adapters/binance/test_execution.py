@@ -15,6 +15,7 @@
 
 import asyncio
 import pkgutil
+from decimal import Decimal
 from typing import Dict
 
 import aiohttp
@@ -22,6 +23,7 @@ import orjson
 import pytest
 
 from nautilus_trader.adapters.binance.core.constants import BINANCE_VENUE
+from nautilus_trader.adapters.binance.core.enums import BinanceAccountType
 from nautilus_trader.adapters.binance.execution import BinanceExecutionClient
 from nautilus_trader.adapters.binance.http.client import BinanceHttpClient
 from nautilus_trader.adapters.binance.providers import BinanceInstrumentProvider
@@ -35,6 +37,8 @@ from nautilus_trader.data.engine import DataEngine
 from nautilus_trader.execution.engine import ExecutionEngine
 from nautilus_trader.execution.messages import SubmitOrder
 from nautilus_trader.model.enums import OrderSide
+from nautilus_trader.model.enums import TrailingOffsetType
+from nautilus_trader.model.enums import TriggerType
 from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
@@ -121,6 +125,7 @@ class TestSpotBinanceExecutionClient:
             clock=self.clock,
             logger=self.logger,
             instrument_provider=self.provider,
+            account_type=BinanceAccountType.SPOT,
         )
 
         self.strategy = TradingStrategy()
@@ -133,7 +138,7 @@ class TestSpotBinanceExecutionClient:
             logger=self.logger,
         )
 
-    @pytest.mark.skip
+    @pytest.mark.skip(reason="WIP")
     @pytest.mark.asyncio
     async def test_connect(self, monkeypatch):
         # Arrange: prepare data for monkey patch
@@ -197,6 +202,36 @@ class TestSpotBinanceExecutionClient:
         assert self.exec_client.is_connected
 
     @pytest.mark.asyncio
+    async def test_submit_unsupported_order_logs_error(self, mocker):
+        # Arrange
+        mock_send_request = mocker.patch(
+            target="nautilus_trader.adapters.binance.http.client.BinanceHttpClient.send_request"
+        )
+
+        order = self.strategy.order_factory.market_to_limit(
+            instrument_id=ETHUSDT_BINANCE.id,
+            order_side=OrderSide.BUY,
+            quantity=Quantity.from_int(10),
+        )
+        self.cache.add_order(order, None)
+
+        submit_order = SubmitOrder(
+            trader_id=self.trader_id,
+            strategy_id=self.strategy.id,
+            position_id=None,
+            order=order,
+            command_id=UUID4(),
+            ts_init=0,
+        )
+
+        # Act
+        self.exec_client.submit_order(submit_order)
+        await asyncio.sleep(0.3)
+
+        # Assert
+        assert mock_send_request.call_args is None
+
+    @pytest.mark.asyncio
     async def test_submit_market_order(self, mocker):
         # Arrange
         mock_send_request = mocker.patch(
@@ -227,11 +262,12 @@ class TestSpotBinanceExecutionClient:
         request = mock_send_request.call_args[0]
         assert request[0] == "POST"
         assert request[1] == "/api/v3/order"
-        assert request[2]["newClientOrderId"] is not None
-        assert request[2]["quantity"] == "1"
-        assert request[2]["recvWindow"] == "5000"
-        assert request[2]["side"] == "BUY"
+        assert request[2]["symbol"] == "ETHUSDT"
         assert request[2]["type"] == "MARKET"
+        assert request[2]["side"] == "BUY"
+        assert request[2]["quantity"] == "1"
+        assert request[2]["newClientOrderId"] is not None
+        assert request[2]["recvWindow"] == "5000"
 
     @pytest.mark.asyncio
     async def test_submit_limit_order(self, mocker):
@@ -244,7 +280,7 @@ class TestSpotBinanceExecutionClient:
             instrument_id=ETHUSDT_BINANCE.id,
             order_side=OrderSide.BUY,
             quantity=Quantity.from_int(10),
-            price=Price.from_str("100050.80"),
+            price=Price.from_str("10050.80"),
         )
         self.cache.add_order(order, None)
 
@@ -265,8 +301,538 @@ class TestSpotBinanceExecutionClient:
         request = mock_send_request.call_args[0]
         assert request[0] == "POST"
         assert request[1] == "/api/v3/order"
-        assert request[2]["newClientOrderId"] is not None
-        assert request[2]["quantity"] == "10"
-        assert request[2]["recvWindow"] == "5000"
+        assert request[2]["symbol"] == "ETHUSDT"
         assert request[2]["side"] == "BUY"
         assert request[2]["type"] == "LIMIT"
+        assert request[2]["quantity"] == "10"
+        assert request[2]["newClientOrderId"] is not None
+        assert request[2]["recvWindow"] == "5000"
+        assert request[2]["signature"] is not None
+
+    @pytest.mark.asyncio
+    async def test_submit_stop_limit_order(self, mocker):
+        # Arrange
+        mock_send_request = mocker.patch(
+            target="nautilus_trader.adapters.binance.http.client.BinanceHttpClient.send_request"
+        )
+
+        order = self.strategy.order_factory.stop_limit(
+            instrument_id=ETHUSDT_BINANCE.id,
+            order_side=OrderSide.BUY,
+            quantity=Quantity.from_int(10),
+            price=Price.from_str("10050.80"),
+            trigger_price=Price.from_str("10050.00"),
+        )
+        self.cache.add_order(order, None)
+
+        submit_order = SubmitOrder(
+            trader_id=self.trader_id,
+            strategy_id=self.strategy.id,
+            position_id=None,
+            order=order,
+            command_id=UUID4(),
+            ts_init=0,
+        )
+
+        # Act
+        self.exec_client.submit_order(submit_order)
+        await asyncio.sleep(0.3)
+
+        # Assert
+        request = mock_send_request.call_args[0]
+        assert request[0] == "POST"
+        assert request[1] == "/api/v3/order"
+        assert request[2]["symbol"] == "ETHUSDT"
+        assert request[2]["side"] == "BUY"
+        assert request[2]["type"] == "STOP_LOSS_LIMIT"
+        assert request[2]["timeInForce"] == "GTC"
+        assert request[2]["quantity"] == "10"
+        assert request[2]["price"] == "10050.80"
+        assert request[2]["newClientOrderId"] is not None
+        assert request[2]["stopPrice"] == "10050.00"
+        assert request[2]["recvWindow"] == "5000"
+        assert request[2]["signature"] is not None
+
+    @pytest.mark.asyncio
+    async def test_submit_limit_if_touched_order(self, mocker):
+        # Arrange
+        mock_send_request = mocker.patch(
+            target="nautilus_trader.adapters.binance.http.client.BinanceHttpClient.send_request"
+        )
+
+        order = self.strategy.order_factory.limit_if_touched(
+            instrument_id=ETHUSDT_BINANCE.id,
+            order_side=OrderSide.SELL,
+            quantity=Quantity.from_int(10),
+            price=Price.from_str("10100.00"),
+            trigger_price=Price.from_str("10099.00"),
+        )
+        self.cache.add_order(order, None)
+
+        submit_order = SubmitOrder(
+            trader_id=self.trader_id,
+            strategy_id=self.strategy.id,
+            position_id=None,
+            order=order,
+            command_id=UUID4(),
+            ts_init=0,
+        )
+
+        # Act
+        self.exec_client.submit_order(submit_order)
+        await asyncio.sleep(0.3)
+
+        # Assert
+        request = mock_send_request.call_args[0]
+        assert request[0] == "POST"
+        assert request[1] == "/api/v3/order"
+        assert request[2]["symbol"] == "ETHUSDT"
+        assert request[2]["side"] == "SELL"
+        assert request[2]["type"] == "TAKE_PROFIT_LIMIT"
+        assert request[2]["timeInForce"] == "GTC"
+        assert request[2]["quantity"] == "10"
+        assert request[2]["price"] == "10100.00"
+        assert request[2]["newClientOrderId"] is not None
+        assert request[2]["stopPrice"] == "10099.00"
+        assert request[2]["recvWindow"] == "5000"
+        assert request[2]["signature"] is not None
+
+
+ETHUSDT_PERP_BINANCE = TestInstrumentProvider.ethusdt_perp_binance()
+
+
+class TestFuturesBinanceExecutionClient:
+    def setup(self):
+        # Fixture Setup
+        self.loop = asyncio.get_event_loop()
+        self.loop.set_debug(True)
+
+        self.clock = LiveClock()
+        self.uuid_factory = UUIDFactory()
+        self.logger = Logger(clock=self.clock)
+
+        self.trader_id = TestStubs.trader_id()
+        self.venue = BINANCE_VENUE
+        self.account_id = AccountId(self.venue.value, "001")
+
+        self.msgbus = MessageBus(
+            trader_id=self.trader_id,
+            clock=self.clock,
+            logger=self.logger,
+        )
+
+        self.cache = TestStubs.cache()
+
+        self.http_client = BinanceHttpClient(  # noqa: S106 (no hardcoded password)
+            loop=asyncio.get_event_loop(),
+            clock=self.clock,
+            logger=self.logger,
+            key="SOME_BINANCE_API_KEY",
+            secret="SOME_BINANCE_API_SECRET",
+        )
+
+        self.provider = BinanceInstrumentProvider(
+            client=self.http_client,
+            logger=self.logger,
+            config=InstrumentProviderConfig(load_all=True),
+        )
+
+        self.portfolio = Portfolio(
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            logger=self.logger,
+        )
+
+        self.data_engine = DataEngine(
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            logger=self.logger,
+        )
+
+        self.exec_engine = ExecutionEngine(
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            logger=self.logger,
+        )
+
+        self.risk_engine = RiskEngine(
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            logger=self.logger,
+        )
+
+        self.exec_client = BinanceExecutionClient(
+            loop=self.loop,
+            client=self.http_client,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            logger=self.logger,
+            instrument_provider=self.provider,
+            account_type=BinanceAccountType.FUTURES_USDT,
+        )
+
+        self.strategy = TradingStrategy()
+        self.strategy.register(
+            trader_id=self.trader_id,
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            logger=self.logger,
+        )
+
+    @pytest.mark.asyncio
+    async def test_submit_market_order(self, mocker):
+        # Arrange
+        mock_send_request = mocker.patch(
+            target="nautilus_trader.adapters.binance.http.client.BinanceHttpClient.send_request"
+        )
+
+        order = self.strategy.order_factory.market(
+            instrument_id=ETHUSDT_PERP_BINANCE.id,
+            order_side=OrderSide.BUY,
+            quantity=Quantity.from_int(1),
+        )
+        self.cache.add_order(order, None)
+
+        submit_order = SubmitOrder(
+            trader_id=self.trader_id,
+            strategy_id=self.strategy.id,
+            position_id=None,
+            order=order,
+            command_id=UUID4(),
+            ts_init=0,
+        )
+
+        # Act
+        self.exec_client.submit_order(submit_order)
+        await asyncio.sleep(0.3)
+
+        # Assert
+        request = mock_send_request.call_args[0]
+        assert request[0] == "POST"
+        assert request[1] == "/fapi/v1/order"
+        assert request[2]["symbol"] == "ETHUSDT"  # -PERP was stripped
+        assert request[2]["type"] == "MARKET"
+        assert request[2]["side"] == "BUY"
+        assert request[2]["quantity"] == "1"
+        assert request[2]["newClientOrderId"] is not None
+        assert request[2]["recvWindow"] == "5000"
+
+    @pytest.mark.asyncio
+    async def test_submit_limit_order(self, mocker):
+        # Arrange
+        mock_send_request = mocker.patch(
+            target="nautilus_trader.adapters.binance.http.client.BinanceHttpClient.send_request"
+        )
+
+        order = self.strategy.order_factory.limit(
+            instrument_id=ETHUSDT_PERP_BINANCE.id,
+            order_side=OrderSide.BUY,
+            quantity=Quantity.from_int(10),
+            price=Price.from_str("10050.80"),
+        )
+        self.cache.add_order(order, None)
+
+        submit_order = SubmitOrder(
+            trader_id=self.trader_id,
+            strategy_id=self.strategy.id,
+            position_id=None,
+            order=order,
+            command_id=UUID4(),
+            ts_init=0,
+        )
+
+        # Act
+        self.exec_client.submit_order(submit_order)
+        await asyncio.sleep(0.3)
+
+        # Assert
+        request = mock_send_request.call_args[0]
+        assert request[0] == "POST"
+        assert request[1] == "/fapi/v1/order"
+        assert request[2]["symbol"] == "ETHUSDT"  # -PERP was stripped
+        assert request[2]["side"] == "BUY"
+        assert request[2]["type"] == "LIMIT"
+        assert request[2]["quantity"] == "10"
+        assert request[2]["newClientOrderId"] is not None
+        assert request[2]["recvWindow"] == "5000"
+        assert request[2]["signature"] is not None
+
+    @pytest.mark.asyncio
+    async def test_submit_limit_post_only_order(self, mocker):
+        # Arrange
+        mock_send_request = mocker.patch(
+            target="nautilus_trader.adapters.binance.http.client.BinanceHttpClient.send_request"
+        )
+
+        order = self.strategy.order_factory.limit(
+            instrument_id=ETHUSDT_PERP_BINANCE.id,
+            order_side=OrderSide.BUY,
+            quantity=Quantity.from_int(10),
+            price=Price.from_str("10050.80"),
+            post_only=True,
+        )
+        self.cache.add_order(order, None)
+
+        submit_order = SubmitOrder(
+            trader_id=self.trader_id,
+            strategy_id=self.strategy.id,
+            position_id=None,
+            order=order,
+            command_id=UUID4(),
+            ts_init=0,
+        )
+
+        # Act
+        self.exec_client.submit_order(submit_order)
+        await asyncio.sleep(0.3)
+
+        # Assert
+        request = mock_send_request.call_args[0]
+        assert request[0] == "POST"
+        assert request[1] == "/fapi/v1/order"
+        assert request[2]["symbol"] == "ETHUSDT"  # -PERP was stripped
+        assert request[2]["side"] == "BUY"
+        assert request[2]["type"] == "LIMIT"
+        assert request[2]["timeInForce"] == "GTX"
+        assert request[2]["quantity"] == "10"
+        assert request[2]["reduceOnly"] == "false"
+        assert request[2]["price"] == "10050.80"
+        assert request[2]["newClientOrderId"] is not None
+        assert request[2]["recvWindow"] == "5000"
+        assert request[2]["signature"] is not None
+
+    @pytest.mark.asyncio
+    async def test_submit_stop_market_order(self, mocker):
+        # Arrange
+        mock_send_request = mocker.patch(
+            target="nautilus_trader.adapters.binance.http.client.BinanceHttpClient.send_request"
+        )
+
+        order = self.strategy.order_factory.stop_market(
+            instrument_id=ETHUSDT_PERP_BINANCE.id,
+            order_side=OrderSide.SELL,
+            quantity=Quantity.from_int(10),
+            trigger_price=Price.from_str("10099.00"),
+            reduce_only=True,
+        )
+        self.cache.add_order(order, None)
+
+        submit_order = SubmitOrder(
+            trader_id=self.trader_id,
+            strategy_id=self.strategy.id,
+            position_id=None,
+            order=order,
+            command_id=UUID4(),
+            ts_init=0,
+        )
+
+        # Act
+        self.exec_client.submit_order(submit_order)
+        await asyncio.sleep(0.3)
+
+        # Assert
+        request = mock_send_request.call_args[0]
+        assert request[0] == "POST"
+        assert request[1] == "/fapi/v1/order"
+        assert request[2]["symbol"] == "ETHUSDT"  # -PERP was stripped
+        assert request[2]["side"] == "SELL"
+        assert request[2]["type"] == "STOP_MARKET"
+        assert request[2]["timeInForce"] == "GTC"
+        assert request[2]["quantity"] == "10"
+        assert request[2]["reduceOnly"] == "true"
+        assert request[2]["newClientOrderId"] is not None
+        assert request[2]["stopPrice"] == "10099.00"
+        assert request[2]["workingType"] == "CONTRACT_PRICE"
+        assert request[2]["recvWindow"] == "5000"
+        assert request[2]["signature"] is not None
+
+    @pytest.mark.asyncio
+    async def test_submit_stop_limit_order(self, mocker):
+        # Arrange
+        mock_send_request = mocker.patch(
+            target="nautilus_trader.adapters.binance.http.client.BinanceHttpClient.send_request"
+        )
+
+        order = self.strategy.order_factory.stop_limit(
+            instrument_id=ETHUSDT_PERP_BINANCE.id,
+            order_side=OrderSide.BUY,
+            quantity=Quantity.from_int(10),
+            price=Price.from_str("10050.80"),
+            trigger_price=Price.from_str("10050.00"),
+            trigger_type=TriggerType.MARK,
+        )
+        self.cache.add_order(order, None)
+
+        submit_order = SubmitOrder(
+            trader_id=self.trader_id,
+            strategy_id=self.strategy.id,
+            position_id=None,
+            order=order,
+            command_id=UUID4(),
+            ts_init=0,
+        )
+
+        # Act
+        self.exec_client.submit_order(submit_order)
+        await asyncio.sleep(0.3)
+
+        # Assert
+        request = mock_send_request.call_args[0]
+        assert request[0] == "POST"
+        assert request[1] == "/fapi/v1/order"
+        assert request[2]["symbol"] == "ETHUSDT"  # -PERP was stripped
+        assert request[2]["side"] == "BUY"
+        assert request[2]["type"] == "STOP"
+        assert request[2]["timeInForce"] == "GTC"
+        assert request[2]["quantity"] == "10"
+        assert request[2]["price"] == "10050.80"
+        assert request[2]["newClientOrderId"] is not None
+        assert request[2]["stopPrice"] == "10050.00"
+        assert request[2]["workingType"] == "MARK_PRICE"
+        assert request[2]["recvWindow"] == "5000"
+        assert request[2]["signature"] is not None
+
+    @pytest.mark.asyncio
+    async def test_submit_market_if_touched_order(self, mocker):
+        # Arrange
+        mock_send_request = mocker.patch(
+            target="nautilus_trader.adapters.binance.http.client.BinanceHttpClient.send_request"
+        )
+
+        order = self.strategy.order_factory.market_if_touched(
+            instrument_id=ETHUSDT_PERP_BINANCE.id,
+            order_side=OrderSide.SELL,
+            quantity=Quantity.from_int(10),
+            trigger_price=Price.from_str("10099.00"),
+        )
+        self.cache.add_order(order, None)
+
+        submit_order = SubmitOrder(
+            trader_id=self.trader_id,
+            strategy_id=self.strategy.id,
+            position_id=None,
+            order=order,
+            command_id=UUID4(),
+            ts_init=0,
+        )
+
+        # Act
+        self.exec_client.submit_order(submit_order)
+        await asyncio.sleep(0.3)
+
+        # Assert
+        request = mock_send_request.call_args[0]
+        assert request[0] == "POST"
+        assert request[1] == "/fapi/v1/order"
+        assert request[2]["symbol"] == "ETHUSDT"  # -PERP was stripped
+        assert request[2]["side"] == "SELL"
+        assert request[2]["type"] == "TAKE_PROFIT_MARKET"
+        assert request[2]["timeInForce"] == "GTC"
+        assert request[2]["quantity"] == "10"
+        assert request[2]["newClientOrderId"] is not None
+        assert request[2]["stopPrice"] == "10099.00"
+        assert request[2]["recvWindow"] == "5000"
+        assert request[2]["signature"] is not None
+
+    @pytest.mark.asyncio
+    async def test_submit_limit_if_touched_order(self, mocker):
+        # Arrange
+        mock_send_request = mocker.patch(
+            target="nautilus_trader.adapters.binance.http.client.BinanceHttpClient.send_request"
+        )
+
+        order = self.strategy.order_factory.limit_if_touched(
+            instrument_id=ETHUSDT_PERP_BINANCE.id,
+            order_side=OrderSide.SELL,
+            quantity=Quantity.from_int(10),
+            price=Price.from_str("10050.80"),
+            trigger_price=Price.from_str("10099.00"),
+        )
+        self.cache.add_order(order, None)
+
+        submit_order = SubmitOrder(
+            trader_id=self.trader_id,
+            strategy_id=self.strategy.id,
+            position_id=None,
+            order=order,
+            command_id=UUID4(),
+            ts_init=0,
+        )
+
+        # Act
+        self.exec_client.submit_order(submit_order)
+        await asyncio.sleep(0.3)
+
+        # Assert
+        request = mock_send_request.call_args[0]
+        assert request[0] == "POST"
+        assert request[1] == "/fapi/v1/order"
+        assert request[2]["symbol"] == "ETHUSDT"  # -PERP was stripped
+        assert request[2]["side"] == "SELL"
+        assert request[2]["type"] == "TAKE_PROFIT"
+        assert request[2]["timeInForce"] == "GTC"
+        assert request[2]["quantity"] == "10"
+        assert request[2]["reduceOnly"] == "false"
+        assert request[2]["price"] == "10050.80"
+        assert request[2]["newClientOrderId"] is not None
+        assert request[2]["stopPrice"] == "10099.00"
+        assert request[2]["workingType"] == "CONTRACT_PRICE"
+        assert request[2]["recvWindow"] == "5000"
+        assert request[2]["signature"] is not None
+
+    @pytest.mark.asyncio
+    async def test_trailing_stop_market_order(self, mocker):
+        # Arrange
+        mock_send_request = mocker.patch(
+            target="nautilus_trader.adapters.binance.http.client.BinanceHttpClient.send_request"
+        )
+
+        order = self.strategy.order_factory.trailing_stop_market(
+            instrument_id=ETHUSDT_PERP_BINANCE.id,
+            order_side=OrderSide.SELL,
+            quantity=Quantity.from_int(10),
+            trailing_offset=Decimal("0.1"),
+            offset_type=TrailingOffsetType.BASIS_POINTS,
+            trigger_price=Price.from_str("10000.00"),
+            trigger_type=TriggerType.MARK,
+            reduce_only=True,
+        )
+        self.cache.add_order(order, None)
+
+        submit_order = SubmitOrder(
+            trader_id=self.trader_id,
+            strategy_id=self.strategy.id,
+            position_id=None,
+            order=order,
+            command_id=UUID4(),
+            ts_init=0,
+        )
+
+        # Act
+        self.exec_client.submit_order(submit_order)
+        await asyncio.sleep(0.3)
+
+        # Assert
+        request = mock_send_request.call_args[0]
+        assert request[0] == "POST"
+        assert request[1] == "/fapi/v1/order"
+        assert request[2]["symbol"] == "ETHUSDT"  # -PERP was stripped
+        assert request[2]["side"] == "SELL"
+        assert request[2]["type"] == "TRAILING_STOP_MARKET"
+        assert request[2]["timeInForce"] == "GTC"
+        assert request[2]["quantity"] == "10"
+        assert request[2]["reduceOnly"] == "true"
+        assert request[2]["newClientOrderId"] is not None
+        assert request[2]["activationPrice"] == "10000.00"
+        assert request[2]["callbackRate"] == "0.1"
+        assert request[2]["workingType"] == "MARK_PRICE"
+        assert request[2]["recvWindow"] == "5000"
+        assert request[2]["signature"] is not None
