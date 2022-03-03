@@ -46,7 +46,7 @@ a warning or error when a user attempts to perform said action
 All integrations must be compatible with the NautilusTrader API at the system boundary,
 this means there is some normalization and standardization needed.
 
-- All symbols will match the native/local symbol for the exchange
+- All symbols will match the native/local symbol for the exchange, unless there are conflicts (such as Binance using the same symbol for both spot and perpetual futures.)
 - All timestamps will be normalized to UNIX nanoseconds
 
 ```{eval-rst}
