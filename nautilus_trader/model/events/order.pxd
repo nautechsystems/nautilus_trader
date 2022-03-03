@@ -59,7 +59,7 @@ cdef class OrderInitialized(OrderEvent):
     cdef readonly Quantity quantity
     """The order quantity.\n\n:returns: `Quantity`"""
     cdef readonly TimeInForce time_in_force
-    """The order time-in-force.\n\n:returns: `TimeInForce`"""
+    """The order time in force.\n\n:returns: `TimeInForce`"""
     cdef readonly bint post_only
     """If the order will only provide liquidity (make a market).\n\n:returns: `bool`"""
     cdef readonly bint reduce_only

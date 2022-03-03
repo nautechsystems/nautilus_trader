@@ -472,7 +472,7 @@ class BinanceAccountHttpAPI:
             payload=payload,
         )
 
-    async def cancel_open_orders(
+    async def cancel_open_orders_spot(
         self,
         symbol: str,
         recv_window: Optional[int] = None,
@@ -506,6 +506,43 @@ class BinanceAccountHttpAPI:
         return await self.client.sign_request(
             http_method="DELETE",
             url_path=self.BASE_ENDPOINT + "openOrders",
+            payload=payload,
+        )
+
+    async def cancel_open_orders_futures(
+        self,
+        symbol: str,
+        recv_window: Optional[int] = None,
+    ) -> Dict[str, Any]:
+        """
+        Cancel all open orders for a symbol. This includes OCO orders.
+
+        Cancel all Open Orders for a Symbol (TRADE).
+        `DELETE /fapi/v1/allOpenOrders (HMAC SHA256)`.
+
+        Parameters
+        ----------
+        symbol : str
+            The symbol for the request.
+        recv_window : int, optional
+            The response receive window for the request (cannot be greater than 60000).
+
+        Returns
+        -------
+        dict[str, Any]
+
+        References
+        ----------
+        https://binance-docs.github.io/apidocs/spot/en/#cancel-all-open-orders-on-a-symbol-trade
+
+        """
+        payload: Dict[str, str] = {"symbol": format_symbol(symbol)}
+        if recv_window is not None:
+            payload["recvWindow"] = str(recv_window)
+
+        return await self.client.sign_request(
+            http_method="DELETE",
+            url_path=self.BASE_ENDPOINT + "allOpenOrders",
             payload=payload,
         )
 

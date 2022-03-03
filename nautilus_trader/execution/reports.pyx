@@ -80,7 +80,7 @@ cdef class OrderStatusReport(ExecutionReport):
         The reported order side.
     order_type : OrderType
         The reported order type.
-    time_in_force : TimeInForce
+    time_in_force : TimeInForce {``GTC``, ``IOC``, ``FOK``, ``GTD``, ``DAY``, ``ON_OPEN``, ``ON_CLOSE``}
         The reported order time in force.
     order_status : OrderStatus
         The reported order status at the exchange.

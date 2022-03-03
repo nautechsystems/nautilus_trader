@@ -78,7 +78,7 @@ cdef class Order:
     cdef readonly OrderType type
     """The order type.\n\n:returns: `OrderType`"""
     cdef readonly TimeInForce time_in_force
-    """The order time-in-force.\n\n:returns: `TimeInForce`"""
+    """The order time in force.\n\n:returns: `TimeInForce`"""
     cdef readonly LiquiditySide liquidity_side
     """The order liquidity side.\n\n:returns: `LiquiditySide`"""
     cdef readonly bint is_post_only

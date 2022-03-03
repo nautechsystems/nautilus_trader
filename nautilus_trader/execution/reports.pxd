@@ -61,7 +61,7 @@ cdef class OrderStatusReport(ExecutionReport):
     cdef readonly ContingencyType contingency_type
     """The reported orders contingency type.\n\n:returns: `ContingencyType`"""
     cdef readonly TimeInForce time_in_force
-    """The reported order time-in-force.\n\n:returns: `TimeInForce`"""
+    """The reported order time in force.\n\n:returns: `TimeInForce`"""
     cdef readonly datetime expire_time
     """The order expiration.\n\n:returns: `datetime` or ``None``"""
     cdef readonly OrderStatus order_status
