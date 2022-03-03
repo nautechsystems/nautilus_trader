@@ -23,8 +23,6 @@ from ib_insync import Ticker
 
 from nautilus_trader.adapters.interactive_brokers.common import IB_VENUE
 from nautilus_trader.adapters.interactive_brokers.common import ContractId
-from nautilus_trader.adapters.interactive_brokers.parsing.data import IB_SIDE
-from nautilus_trader.adapters.interactive_brokers.parsing.data import MKT_DEPTH_OPERATIONS
 from nautilus_trader.adapters.interactive_brokers.parsing.data import _trade_id
 from nautilus_trader.adapters.interactive_brokers.providers import (
     InteractiveBrokersInstrumentProvider,
@@ -42,8 +40,6 @@ from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
-from nautilus_trader.model.orderbook.data import Order
-from nautilus_trader.model.orderbook.data import OrderBookDelta
 from nautilus_trader.model.orderbook.data import OrderBookSnapshot
 from nautilus_trader.msgbus.bus import MessageBus
 
@@ -224,24 +220,24 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
         ticker.updateEvent += self._on_trade_ticker_update
         self._tickers[ContractId(ticker.contract.conId)].append(ticker)
 
-    def _on_order_book_delta(self, ticker: Ticker):
-        instrument_id = self._instrument_provider.contract_id_to_instrument_id[
-            ticker.contract.conId
-        ]
-        for depth in ticker.domTicks:
-            update = OrderBookDelta(
-                instrument_id=instrument_id,
-                book_type=BookType.L2_MBP,
-                action=MKT_DEPTH_OPERATIONS[depth.operation],
-                order=Order(
-                    price=Price.from_str(str(depth.price)),
-                    size=Quantity.from_str(str(depth.size)),
-                    side=IB_SIDE[depth.side],
-                ),
-                ts_event=dt_to_unix_nanos(depth.time),
-                ts_init=self._clock.timestamp_ns(),
-            )
-            self._handle_data(update)
+    # def _on_order_book_delta(self, ticker: Ticker):
+    #     instrument_id = self._instrument_provider.contract_id_to_instrument_id[
+    #         ticker.contract.conId
+    #     ]
+    #     for depth in ticker.domTicks:
+    #         update = OrderBookDelta(
+    #             instrument_id=instrument_id,
+    #             book_type=BookType.L2_MBP,
+    #             action=MKT_DEPTH_OPERATIONS[depth.operation],
+    #             order=Order(
+    #                 price=Price.from_str(str(depth.price)),
+    #                 size=Quantity.from_str(str(depth.size)),
+    #                 side=IB_SIDE[depth.side],
+    #             ),
+    #             ts_event=dt_to_unix_nanos(depth.time),
+    #             ts_init=self._clock.timestamp_ns(),
+    #         )
+    #         self._handle_data(update)
 
     def _on_order_book_snapshot(self, ticker: Ticker):
         instrument_id = self._instrument_provider.contract_id_to_instrument_id[
