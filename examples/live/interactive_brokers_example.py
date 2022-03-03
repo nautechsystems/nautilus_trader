@@ -62,7 +62,7 @@ node = TradingNode(config=config_node)
 
 # Configure your strategy
 strategy_config = SubscribeStrategyConfig(
-    instrument_id="EURUSD.IDEALPRO", book_type=BookType.L2_MBP, snapshots=True
+    instrument_id="EURUSD.IDEALPRO", book_type=BookType.L2_MBP, snapshots=True, trades=True
 )
 # Instantiate your strategy
 strategy = SubscribeStrategy(config=strategy_config)

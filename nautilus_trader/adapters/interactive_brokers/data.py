@@ -44,6 +44,7 @@ from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.orderbook.data import Order
 from nautilus_trader.model.orderbook.data import OrderBookDelta
+from nautilus_trader.model.orderbook.data import OrderBookSnapshot
 from nautilus_trader.msgbus.bus import MessageBus
 
 
@@ -135,7 +136,7 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
         self._set_connected(False)
         self._log.info("Disconnected.")
 
-    def subscribed_order_book_snapshots(
+    def subscribe_order_book_snapshots(
         self,
         instrument_id: InstrumentId,
         book_type: BookType,
@@ -190,16 +191,17 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
             The keyword arguments for exchange specific parameters.
 
         """
-        if book_type == BookType.L1_TBBO:
-            return self._request_market_depth(
-                instrument_id=instrument_id, handler=self._on_order_book_delta, depth=1
-            )
-        elif book_type == BookType.L2_MBP:
-            if depth == 0:
-                depth = 5  # depth=0 is default for nautilus, but not handled by Interactive Brokers
-            return self._request_market_depth(
-                instrument_id=instrument_id, handler=self._on_order_book_delta, depth=depth
-            )
+        raise NotImplementedError()  # Not working as expected yet
+        # if book_type == BookType.L1_TBBO:
+        #     return self._request_market_depth(
+        #         instrument_id=instrument_id, handler=self._on_order_book_delta, depth=1
+        #     )
+        # elif book_type == BookType.L2_MBP:
+        #     if depth == 0:
+        #         depth = 5  # depth=0 is default for nautilus, but not handled by Interactive Brokers
+        #     return self._request_market_depth(
+        #         instrument_id=instrument_id, handler=self._on_order_book_delta, depth=depth
+        #     )
 
     def _request_market_depth(self, instrument_id: InstrumentId, handler: Callable, depth: int = 5):
         contract_details: ContractDetails = self._instrument_provider.contract_details[
@@ -219,7 +221,7 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
         ticker = self._client.reqMktData(
             contract=contract_details.contract,
         )
-        ticker.updateEvent += self._on_ticker_update
+        ticker.updateEvent += self._on_trade_ticker_update
         self._tickers[ContractId(ticker.contract.conId)].append(ticker)
 
     def _on_order_book_delta(self, ticker: Ticker):
@@ -245,22 +247,19 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
         instrument_id = self._instrument_provider.contract_id_to_instrument_id[
             ticker.contract.conId
         ]
-        for depth in ticker.domAsks:
-            update = OrderBookDelta(
-                instrument_id=instrument_id,
-                book_type=BookType.L2_MBP,
-                action=MKT_DEPTH_OPERATIONS[depth.operation],
-                order=Order(
-                    price=Price.from_str(str(depth.price)),
-                    size=Quantity.from_str(str(depth.size)),
-                    side=IB_SIDE[depth.side],
-                ),
-                ts_event=dt_to_unix_nanos(depth.time),
-                ts_init=self._clock.timestamp_ns(),
-            )
-            self._handle_data(update)
+        ts_event = dt_to_unix_nanos(ticker.time)
+        ts_init = self._clock.timestamp_ns()
+        snapshot = OrderBookSnapshot(
+            book_type=BookType.L2_MBP,
+            instrument_id=instrument_id,
+            bids=[(level.price, level.size) for level in ticker.domBids],
+            asks=[(level.price, level.size) for level in ticker.domAsks],
+            ts_event=ts_event,
+            ts_init=ts_init,
+        )
+        self._handle_data(snapshot)
 
-    def _on_ticker_update(self, ticker: Ticker):
+    def _on_trade_ticker_update(self, ticker: Ticker):
         instrument_id = self._instrument_provider.contract_id_to_instrument_id[
             ticker.contract.conId
         ]
