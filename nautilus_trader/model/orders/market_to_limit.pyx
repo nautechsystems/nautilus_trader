@@ -40,17 +40,9 @@ from nautilus_trader.model.objects cimport Quantity
 from nautilus_trader.model.orders.base cimport Order
 
 
-cdef set _MARKET_TO_LIMIT_ORDER_VALID_TIF = {
-    TimeInForce.GTC,
-    TimeInForce.GTD,
-    TimeInForce.IOC,
-    TimeInForce.FOK,
-}
-
-
 cdef class MarketToLimitOrder(Order):
     """
-    Represents a `market-to-limit` order.
+    Represents a `Market-To-Limit` order.
 
     Parameters
     ----------
@@ -66,8 +58,8 @@ cdef class MarketToLimitOrder(Order):
         The order side.
     quantity : Quantity
         The order quantity (> 0).
-    time_in_force : TimeInForce {``GTC``, ``GTD``, ``IOC``, ``FOK``}
-        The order time-in-force.
+    time_in_force : TimeInForce {``GTC``, ``IOC``, ``FOK``, ``GTD``, ``DAY``}
+        The order time in force.
     expire_time : datetime, optional
         The order expiration.
     init_id : UUID4
@@ -95,7 +87,7 @@ cdef class MarketToLimitOrder(Order):
     ValueError
         If `quantity` is not positive (> 0).
     ValueError
-        If `time_in_force` is other than ``GTC``, ``GTD``, ``IOC`` or ``FOK``.
+        If `time_in_force` is ``ON_OPEN`` or ``ON_CLOSE``.
     """
 
     def __init__(
@@ -118,10 +110,9 @@ cdef class MarketToLimitOrder(Order):
         ClientOrderId parent_order_id=None,
         str tags=None,
     ):
-        Condition.true(
-            time_in_force in _MARKET_TO_LIMIT_ORDER_VALID_TIF,
-            fail_msg="time_in_force was != GTC, GTD, IOC, FOK",
-        )
+        Condition.not_equal(time_in_force, TimeInForce.ON_OPEN, "time_in_force", "ON_OPEN`")
+        Condition.not_equal(time_in_force, TimeInForce.ON_CLOSE, "time_in_force", "ON_CLOSE`")
+
         cdef int64_t expire_time_ns = 0
         if time_in_force == TimeInForce.GTD:
             # Must have an expire time
@@ -230,7 +221,7 @@ cdef class MarketToLimitOrder(Order):
     @staticmethod
     cdef MarketToLimitOrder create(OrderInitialized init):
         """
-        Return a `market-to-limit` order from the given initialized event.
+        Return a `Market-To-Limit` order from the given initialized event.
 
         Parameters
         ----------

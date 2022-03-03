@@ -135,7 +135,7 @@ cdef class OrderFactory:
         str tags=None,
     ):
         """
-        Create a new `market` order.
+        Create a new `Market` order.
 
         Parameters
         ----------
@@ -145,8 +145,8 @@ cdef class OrderFactory:
             The orders side.
         quantity : Quantity
             The orders quantity (> 0).
-        time_in_force : TimeInForce {``GTC``, ``IOC``, ``FOK``, ``ON_OPEN``, ``ON_CLOSE``}, default ``GTC``
-            The orders time-in-force. Often not applicable for market orders.
+        time_in_force : TimeInForce {``GTC``, ``IOC``, ``FOK``, ``DAY``, ``ON_OPEN``, ``ON_CLOSE``}, default ``GTC``
+            The orders time in force. Often not applicable for market orders.
         reduce_only : bool, default False
             If the order carries the 'reduce-only' execution instruction.
         tags : str, optional
@@ -162,7 +162,7 @@ cdef class OrderFactory:
         ValueError
             If `quantity` is not positive (> 0).
         ValueError
-            If `time_in_force` is other than ``GTC``, ``IOC``, ``FOK``, ``ON_OPEN`` or ``ON_CLOSE``.
+            If `time_in_force` is ``GTD``.
 
         """
         return MarketOrder(
@@ -197,9 +197,7 @@ cdef class OrderFactory:
         str tags=None,
     ):
         """
-        Create a new `limit` order.
-
-        If the time-in-force is ``GTD`` then a valid expire time must be given.
+        Create a new `Limit` order.
 
         Parameters
         ----------
@@ -211,8 +209,8 @@ cdef class OrderFactory:
             The orders quantity (> 0).
         price : Price
             The orders price.
-        time_in_force : TimeInForce, default ``GTC``
-            The orders time-in-force.
+        time_in_force : TimeInForce {``GTC``, ``IOC``, ``FOK``, ``GTD``, ``DAY``, ``ON_OPEN``, ``ON_CLOSE``}, default ``GTC``
+            The orders time in force.
         expire_time : datetime, optional
             The order expiration (for ``GTD`` orders).
         post_only : bool, default False
@@ -274,9 +272,7 @@ cdef class OrderFactory:
         str tags=None,
     ):
         """
-        Create a new `stop-market` conditional order.
-
-        If the time-in-force is ``GTD`` then a valid expire time must be given.
+        Create a new `Stop-Market` conditional order.
 
         Parameters
         ----------
@@ -290,8 +286,8 @@ cdef class OrderFactory:
             The orders trigger price (STOP).
         trigger_type : TriggerType, default ``DEFAULT``
             The order trigger type.
-        time_in_force : TimeInForce, default ``GTC``
-            The orders time-in-force.
+        time_in_force : TimeInForce  {``GTC``, ``IOC``, ``FOK``, ``GTD``, ``DAY``}, default ``GTC``
+            The orders time in force.
         expire_time : datetime, optional
             The order expiration (for ``GTD`` orders).
         reduce_only : bool, default False
@@ -308,6 +304,10 @@ cdef class OrderFactory:
         ------
         ValueError
             If `quantity` is not positive (> 0).
+        ValueError
+            If `trigger_type` is ``NONE``.
+        ValueError
+            If `time_in_force` is ``ON_OPEN`` or ``ON_CLOSE``.
         ValueError
             If `time_in_force` is ``GTD`` and `expire_time` is ``None`` or <= UNIX epoch.
 
@@ -349,9 +349,7 @@ cdef class OrderFactory:
         str tags=None,
     ):
         """
-        Create a new `stop-limit` conditional order.
-
-        If the time-in-force is ``GTD`` then a valid expire time must be given.
+        Create a new `Stop-Limit` conditional order.
 
         Parameters
         ----------
@@ -367,8 +365,8 @@ cdef class OrderFactory:
             The orders trigger stop price.
         trigger_type : TriggerType, default ``DEFAULT``
             The order trigger type.
-        time_in_force : TimeInForce, default ``GTC``
-            The orders time-in-force.
+        time_in_force : TimeInForce {``GTC``, ``IOC``, ``FOK``, ``GTD``, ``DAY``}, default ``GTC``
+            The orders time in force.
         expire_time : datetime, optional
             The order expiration (for ``GTD`` orders).
         post_only : bool, default False
@@ -389,6 +387,10 @@ cdef class OrderFactory:
         ------
         ValueError
             If `quantity` is not positive (> 0).
+        ValueError
+            If `trigger_type` is ``NONE``.
+        ValueError
+            If `time_in_force` is ``ON_OPEN`` or ``ON_CLOSE``.
         ValueError
             If `time_in_force` is ``GTD`` and `expire_time` is ``None`` or <= UNIX epoch.
         ValueError
@@ -431,7 +433,7 @@ cdef class OrderFactory:
         str tags=None,
     ):
         """
-        Create a new `market` order.
+        Create a new `Market` order.
 
         Parameters
         ----------
@@ -442,7 +444,7 @@ cdef class OrderFactory:
         quantity : Quantity
             The orders quantity (> 0).
         time_in_force : TimeInForce {``GTC``, ``GTD``, ``IOC``, ``FOK``}, default ``GTC``
-            The orders time-in-force.
+            The orders time in force.
         expire_time : datetime, optional
             The order expiration (for ``GTD`` orders).
         reduce_only : bool, default False
@@ -462,7 +464,7 @@ cdef class OrderFactory:
         ValueError
             If `quantity` is not positive (> 0).
         ValueError
-            If `time_in_force` is other than ``GTC``, ``GTD``, ``IOC`` or ``FOK``.
+            If `time_in_force` is ``ON_OPEN`` or ``ON_CLOSE``.
 
         """
         return MarketToLimitOrder(
@@ -498,9 +500,7 @@ cdef class OrderFactory:
         str tags=None,
     ):
         """
-        Create a new `market-if-touched` (MIT) conditional order.
-
-        If the time-in-force is ``GTD`` then a valid expire time must be given.
+        Create a new `Market-If-Touched` (MIT) conditional order.
 
         Parameters
         ----------
@@ -514,8 +514,8 @@ cdef class OrderFactory:
             The orders trigger price (STOP).
         trigger_type : TriggerType, default ``DEFAULT``
             The order trigger type.
-        time_in_force : TimeInForce, default ``GTC``
-            The orders time-in-force.
+        time_in_force : TimeInForce {``GTC``, ``IOC``, ``FOK``, ``GTD``, ``DAY``}, default ``GTC``
+            The orders time in force.
         expire_time : datetime, optional
             The order expiration (for ``GTD`` orders).
         reduce_only : bool, default False
@@ -532,6 +532,10 @@ cdef class OrderFactory:
         ------
         ValueError
             If `quantity` is not positive (> 0).
+        ValueError
+            If `trigger_type` is ``NONE``.
+        ValueError
+            If `time_in_force` is ``ON_OPEN`` or ``ON_CLOSE``.
         ValueError
             If `time_in_force` is ``GTD`` and `expire_time` is ``None`` or <= UNIX epoch.
 
@@ -573,9 +577,7 @@ cdef class OrderFactory:
         str tags=None,
     ):
         """
-        Create a new `limit-if-touched` (LIT) conditional order.
-
-        If the time-in-force is ``GTD`` then a valid expire time must be given.
+        Create a new `Limit-If-Touched` (LIT) conditional order.
 
         Parameters
         ----------
@@ -591,8 +593,8 @@ cdef class OrderFactory:
             The orders trigger stop price.
         trigger_type : TriggerType, default ``DEFAULT``
             The order trigger type.
-        time_in_force : TimeInForce, default ``GTC``
-            The orders time-in-force.
+        time_in_force : TimeInForce {``GTC``, ``IOC``, ``FOK``, ``GTD``, ``DAY``}, default ``GTC``
+            The orders time in force.
         expire_time : datetime, optional
             The order expiration (for ``GTD`` orders).
         post_only : bool, default False
@@ -613,6 +615,10 @@ cdef class OrderFactory:
         ------
         ValueError
             If `quantity` is not positive (> 0).
+        ValueError
+            If `trigger_type` is ``NONE``.
+        ValueError
+            If `time_in_force` is ``ON_OPEN`` or ``ON_CLOSE``.
         ValueError
             If `time_in_force` is ``GTD`` and `expire_time` is ``None`` or <= UNIX epoch.
         ValueError
@@ -658,9 +664,7 @@ cdef class OrderFactory:
         str tags=None,
     ):
         """
-        Create a new `trailing-stop-market` conditional order.
-
-        If the time-in-force is ``GTD`` then a valid expire time must be given.
+        Create a new `Trailing-Stop-Market` conditional order.
 
         Parameters
         ----------
@@ -679,8 +683,8 @@ cdef class OrderFactory:
             The order trigger type.
         offset_type : TrailingOffsetType, default ``PRICE``
             The order trailing offset type.
-        time_in_force : TimeInForce, default ``GTC``
-            The orders time-in-force.
+        time_in_force : TimeInForce {``GTC``, ``IOC``, ``FOK``, ``GTD``, ``DAY``}, default ``GTC``
+            The orders time in force.
         expire_time : datetime, optional
             The order expiration (for ``GTD`` orders).
         reduce_only : bool, default False
@@ -697,6 +701,12 @@ cdef class OrderFactory:
         ------
         ValueError
             If `quantity` is not positive (> 0).
+        ValueError
+            If `trigger_type` is ``NONE``.
+        ValueError
+            If `offset_type` is ``NONE``.
+        ValueError
+            If `time_in_force` is ``ON_OPEN`` or ``ON_CLOSE``.
         ValueError
             If `time_in_force` is ``GTD`` and `expire_time` is ``None`` or <= UNIX epoch.
 
@@ -743,9 +753,7 @@ cdef class OrderFactory:
         str tags=None,
     ):
         """
-        Create a new `trailing-stop-limit` conditional order.
-
-        If the time-in-force is ``GTD`` then a valid expire time must be given.
+        Create a new `Trailing-Stop-Limit` conditional order.
 
         Parameters
         ----------
@@ -769,8 +777,8 @@ cdef class OrderFactory:
             The order trigger type.
         offset_type : TrailingOffsetType, default ``PRICE``
             The order trailing offset type.
-        time_in_force : TimeInForce, default ``GTC``
-            The orders time-in-force.
+        time_in_force : TimeInForce {``GTC``, ``IOC``, ``FOK``, ``GTD``, ``DAY``}, default ``GTC``
+            The orders time in force.
         expire_time : datetime, optional
             The order expiration (for ``GTD`` orders).
         post_only : bool, default False
@@ -791,6 +799,12 @@ cdef class OrderFactory:
         ------
         ValueError
             If `quantity` is not positive (> 0).
+        ValueError
+            If `trigger_type` is ``NONE``.
+        ValueError
+            If `offset_type` is ``NONE``.
+        ValueError
+            If `time_in_force` is ``ON_OPEN`` or ``ON_CLOSE``.
         ValueError
             If `time_in_force` is ``GTD`` and `expire_time` is ``None`` or <= UNIX epoch.
         ValueError
@@ -849,7 +863,7 @@ cdef class OrderFactory:
         take_profit : Price
             The take-profit child order price (LIMIT).
         tif_bracket : TimeInForce {``DAY``, ``GTC``}, optional
-            The bracket orders time-in-force .
+            The bracket orders time in force.
 
         Returns
         -------
@@ -978,11 +992,11 @@ cdef class OrderFactory:
         take_profit : Price
             The take-profit child order price (LIMIT).
         tif : TimeInForce {``DAY``, ``GTC``}, optional
-            The entry orders time-in-force .
+            The entry orders time in force.
         expire_time : datetime, optional
             The order expiration (for ``GTD`` orders).
         tif_bracket : TimeInForce {``DAY``, ``GTC``}, optional
-            The bracket orders time-in-force.
+            The bracket orders time in force.
         post_only : bool, default False
             If the entry order will only provide liquidity (make a market).
 

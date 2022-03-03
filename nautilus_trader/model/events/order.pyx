@@ -121,8 +121,8 @@ cdef class OrderInitialized(OrderEvent):
         The order type.
     quantity : Quantity
         The order quantity.
-    time_in_force : TimeInForce
-        The order time-in-force.
+    time_in_force : TimeInForce {``GTC``, ``IOC``, ``FOK``, ``GTD``, ``DAY``, ``ON_OPEN``, ``ON_CLOSE``}
+        The order time in force.
     post_only : bool
         If the order will only provide liquidity (make a market).
     reduce_only : bool

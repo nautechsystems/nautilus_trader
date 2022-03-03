@@ -49,7 +49,7 @@ from nautilus_trader.model.orders.base cimport Order
 
 cdef class TrailingStopMarketOrder(Order):
     """
-    Represents a `trailing-stop-market` conditional order.
+    Represents a `Trailing-Stop-Market` conditional order.
 
     Parameters
     ----------
@@ -74,8 +74,8 @@ cdef class TrailingStopMarketOrder(Order):
         The trailing offset for the trigger price (STOP).
     offset_type : TrailingOffsetType
         The order trailing offset type.
-    time_in_force : TimeInForce
-        The order time-in-force.
+    time_in_force : TimeInForce {``GTC``, ``IOC``, ``FOK``, ``GTD``, ``DAY``}
+        The order time in force.
     expire_time : datetime, optional
         The order expiration.
     init_id : UUID4
@@ -105,8 +105,11 @@ cdef class TrailingStopMarketOrder(Order):
     ValueError
         If `offset_type` is ``NONE``.
     ValueError
+        If `time_in_force` is ``ON_OPEN`` or ``ON_CLOSE``.
+    ValueError
         If `time_in_force` is ``GTD`` and `expire_time` is ``None`` or <= UNIX epoch.
     """
+
     def __init__(
         self,
         TraderId trader_id not None,
@@ -132,6 +135,8 @@ cdef class TrailingStopMarketOrder(Order):
     ):
         Condition.not_equal(trigger_type, TriggerType.NONE, "trigger_type", "NONE")
         Condition.not_equal(offset_type, TrailingOffsetType.NONE, "offset_type", "NONE")
+        Condition.not_equal(time_in_force, TimeInForce.ON_OPEN, "time_in_force", "ON_OPEN`")
+        Condition.not_equal(time_in_force, TimeInForce.ON_CLOSE, "time_in_force", "ON_CLOSE`")
 
         cdef int64_t expire_time_ns = 0
         if time_in_force == TimeInForce.GTD:
@@ -251,7 +256,7 @@ cdef class TrailingStopMarketOrder(Order):
     @staticmethod
     cdef TrailingStopMarketOrder create(OrderInitialized init):
         """
-        Return a `trailing-stop-market` order from the given initialized event.
+        Return a `Trailing-Stop-Market` order from the given initialized event.
 
         Parameters
         ----------
