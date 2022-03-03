@@ -48,6 +48,20 @@ async def test_binance_spot_account_http_client():
     # response = await account.new_order_futures(
     #     symbol="ETHUSDT",
     #     side="SELL",
+    #     type="LIMIT",
+    #     quantity="0.01",
+    #     time_in_force="GTC",
+    #     price="3000",
+    #     # iceberg_qty="0.005",
+    #     # stop_price="3200",
+    #     # working_type="CONTRACT_PRICE",
+    #     # new_client_order_id="O-20211120-021300-001-001-1",
+    #     recv_window=5000,
+    # )
+
+    # response = await account.new_order_futures(
+    #     symbol="ETHUSDT",
+    #     side="SELL",
     #     type="TAKE_PROFIT_MARKET",
     #     quantity="0.01",
     #     time_in_force="GTC",
@@ -60,8 +74,8 @@ async def test_binance_spot_account_http_client():
     # )
     # response = await account.cancel_order(
     #     symbol="ETHUSDT",
-    #     orig_client_order_id="gxrRfr1wZp42rOZMsK6fbx",
-    #     #new_client_order_id=str(uuid.uuid4()),
+    #     orig_client_order_id="9YDq1gEAGjBkZmMbTSX1ww",
+    #     # new_client_order_id=str(uuid.uuid4()),
     #     recv_window=5000,
     # )
 
