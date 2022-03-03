@@ -39,8 +39,8 @@ cdef class MarketOrder(Order):
     """
     Represents a `Market` order.
 
-    - `Market-On-Open (MOO)` order type can be represented using ``ON_OPEN`` time in force.
-    - `Market-On-Close (MOC)` order type can be represented using ``ON_CLOSE`` time in force.
+    - A `Market-On-Open (MOO)` order type can be represented using an ``ON_OPEN`` time in force.
+    - A `Market-On-Close (MOC)` order type can be represented using an ``ON_CLOSE`` time in force.
 
     Parameters
     ----------

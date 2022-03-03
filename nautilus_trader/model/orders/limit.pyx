@@ -46,8 +46,8 @@ cdef class LimitOrder(Order):
     """
     Represents a `Limit` order.
 
-    - `Limit-On-Open (LOO)` order type can be represented using ``ON_OPEN`` time in force.
-    - `Limit-On-Close (LOC)` order type can be represented using ``ON_CLOSE`` time in force.
+    - A `Limit-On-Open (LOO)` order type can be represented using an ``ON_OPEN`` time in force.
+    - A `Limit-On-Close (LOC)` order type can be represented using an ``ON_CLOSE`` time in force.
 
     Parameters
     ----------
