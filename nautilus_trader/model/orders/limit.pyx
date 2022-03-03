@@ -44,7 +44,10 @@ from nautilus_trader.model.orders.base cimport Order
 
 cdef class LimitOrder(Order):
     """
-    Represents a `limit` order.
+    Represents a `Limit` order.
+
+    - `Limit-On-Open (LOO)` order type can be represented using ``ON_OPEN`` time in force.
+    - `Limit-On-Close (LOC)` order type can be represented using ``ON_CLOSE`` time in force.
 
     Parameters
     ----------
@@ -62,8 +65,8 @@ cdef class LimitOrder(Order):
         The order quantity (> 0).
     price : Price
         The order limit price.
-    time_in_force : TimeInForce
-        The order time-in-force.
+    time_in_force : TimeInForce {``GTC``, ``IOC``, ``FOK``, ``GTD``, ``DAY``, ``ON_OPEN``, ``ON_CLOSE``}
+        The order time in force.
     expire_time : datetime, optional
         The order expiration.
     init_id : UUID4
@@ -235,7 +238,7 @@ cdef class LimitOrder(Order):
     @staticmethod
     cdef LimitOrder create(OrderInitialized init):
         """
-        Return a `limit` order from the given initialized event.
+        Return a `Limit` order from the given initialized event.
 
         Parameters
         ----------
