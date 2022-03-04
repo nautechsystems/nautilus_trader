@@ -76,6 +76,7 @@ class InteractiveBrokersInstrumentProvider(InstrumentProvider):
         self._host = host
         self._port = port
         self._client_id = client_id
+        self.config = config
         self.contract_details: Dict[InstrumentId, ContractDetails] = {}
         self.contract_id_to_instrument_id: Dict[int, InstrumentId] = {}
 
