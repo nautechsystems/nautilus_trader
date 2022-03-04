@@ -25,7 +25,7 @@ For example, to install including the `distributed` extras using pip:
 
 ## From Source
 Installation from source requires the latest stable `rustc` and `cargo` to compile the Rust libraries.
-For the Python part, it's possible to install from sourcing using `pip` if you first install the build dependencies
+For the Python part, it's possible to install from source using `pip` if you first install the build dependencies
 as specified in the `pyproject.toml`. However, we highly recommend installing using [poetry](https://python-poetry.org/) as below.
 
 1. Install [rustup](https://rustup.rs/) (the Rust toolchain installer):

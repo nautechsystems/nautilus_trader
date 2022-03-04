@@ -35,7 +35,7 @@ from nautilus_trader.model.identifiers import TradeId
 from nautilus_trader.model.instruments.base import Instrument
 from nautilus_trader.model.instruments.crypto_future import CryptoFuture
 from nautilus_trader.model.instruments.crypto_perpetual import CryptoPerpetual
-from nautilus_trader.model.instruments.currency import CurrencySpot
+from nautilus_trader.model.instruments.currency_pair import CurrencyPair
 from nautilus_trader.model.objects import AccountBalance
 from nautilus_trader.model.objects import MarginBalance
 from nautilus_trader.model.objects import Money
@@ -148,7 +148,7 @@ def parse_spot_instrument_http(
         taker_fee = Decimal(pair_fees["takerCommission"])
 
     # Create instrument
-    return CurrencySpot(
+    return CurrencyPair(
         instrument_id=instrument_id,
         native_symbol=native_symbol,
         base_currency=base_currency,

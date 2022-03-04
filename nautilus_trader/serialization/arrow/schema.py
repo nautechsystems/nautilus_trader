@@ -47,7 +47,7 @@ from nautilus_trader.model.events.position import PositionOpened
 from nautilus_trader.model.instruments.betting import BettingInstrument
 from nautilus_trader.model.instruments.crypto_future import CryptoFuture
 from nautilus_trader.model.instruments.crypto_perpetual import CryptoPerpetual
-from nautilus_trader.model.instruments.currency import CurrencySpot
+from nautilus_trader.model.instruments.currency_pair import CurrencyPair
 from nautilus_trader.model.instruments.equity import Equity
 from nautilus_trader.model.instruments.future import Future
 from nautilus_trader.model.instruments.option import Option
@@ -531,7 +531,7 @@ NAUTILUS_PARQUET_SCHEMA = {
         },
         metadata={"type": "BettingInstrument"},
     ),
-    CurrencySpot: pa.schema(
+    CurrencyPair: pa.schema(
         {
             "id": pa.dictionary(pa.int64(), pa.string()),
             "native_symbol": pa.string(),

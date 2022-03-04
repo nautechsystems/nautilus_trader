@@ -40,7 +40,7 @@ from nautilus_trader.model.identifiers import TradeId
 from nautilus_trader.model.identifiers import VenueOrderId
 from nautilus_trader.model.instruments.base import Instrument
 from nautilus_trader.model.instruments.crypto_perpetual import CryptoPerpetual
-from nautilus_trader.model.instruments.currency import CurrencySpot
+from nautilus_trader.model.instruments.currency_pair import CurrencyPair
 from nautilus_trader.model.instruments.future import Future
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
@@ -191,7 +191,7 @@ def parse_instrument(
 
     if asset_type == "spot":
         # Create instrument
-        return CurrencySpot(
+        return CurrencyPair(
             instrument_id=instrument_id,
             native_symbol=native_symbol,
             base_currency=base_currency,

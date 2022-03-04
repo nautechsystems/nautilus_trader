@@ -13,21 +13,16 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-
-cpdef enum TimeInForce:
-    GTC = 1  # Good 'till Canceled
-    IOC = 2  # Immediate or Cancel
-    FOK = 3  # Fill or Kill
-    GTD = 4  # Good 'till Date
-    DAY = 5  # Good for session
-    AT_THE_OPEN = 6  # OPG
-    AT_THE_CLOSE = 7
+from nautilus_trader.model.currency cimport Currency
+from nautilus_trader.model.instruments.base cimport Instrument
 
 
-cdef class TimeInForceParser:
+cdef class CurrencyPair(Instrument):
+    cdef readonly Currency base_currency
+    """The base currency for the instrument.\n\n:returns: `Currency`"""
 
     @staticmethod
-    cdef str to_str(int value)
+    cdef CurrencyPair from_dict_c(dict values)
 
     @staticmethod
-    cdef TimeInForce from_str(str value) except *
+    cdef dict to_dict_c(CurrencyPair obj)

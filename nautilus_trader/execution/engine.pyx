@@ -72,7 +72,7 @@ from nautilus_trader.model.identifiers cimport PositionId
 from nautilus_trader.model.identifiers cimport StrategyId
 from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.model.instruments.base cimport Instrument
-from nautilus_trader.model.instruments.currency cimport CurrencySpot
+from nautilus_trader.model.instruments.currency_pair cimport CurrencyPair
 from nautilus_trader.model.objects cimport Money
 from nautilus_trader.model.objects cimport Quantity
 from nautilus_trader.model.orders.base cimport Order
@@ -678,7 +678,7 @@ cdef class ExecutionEngine(Component):
         if self.allow_cash_positions:
             pass
         elif (
-            isinstance(instrument, CurrencySpot)
+            isinstance(instrument, CurrencyPair)
             and account.is_cash_account
             or (account.is_margin_account and account.leverage(instrument.id) == 1)
         ):

@@ -107,7 +107,7 @@ cdef class AccountBalance:
     cdef readonly Money free
     """The account balance free for trading.\n\n:returns: `Money`"""
     cdef readonly Currency currency
-    """The currency of the account .\n\n:returns: `Currency`"""
+    """The currency of the account.\n\n:returns: `Currency`"""
 
     @staticmethod
     cdef AccountBalance from_dict_c(dict values)

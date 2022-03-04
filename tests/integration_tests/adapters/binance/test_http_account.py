@@ -114,7 +114,7 @@ class TestBinanceSpotAccountHttpAPI:
         mock_send_request = mocker.patch(target="aiohttp.client.ClientSession.request")
 
         # Act
-        await self.api.cancel_open_orders(
+        await self.api.cancel_open_orders_spot(
             symbol="ETHUSDT",
             recv_window=5000,
         )

@@ -80,7 +80,7 @@ cdef class OrderStatusReport(ExecutionReport):
         The reported order side.
     order_type : OrderType
         The reported order type.
-    time_in_force : TimeInForce
+    time_in_force : TimeInForce {``GTC``, ``IOC``, ``FOK``, ``GTD``, ``DAY``, ``AT_THE_OPEN``, ``AT_THE_CLOSE``}
         The reported order time in force.
     order_status : OrderStatus
         The reported order status at the exchange.
@@ -277,7 +277,7 @@ cdef class TradeReport(ExecutionReport):
         otherwise pass ``None`` and the execution engine OMS will handle
         position ID resolution.
     trade_id : TradeId
-        The reported trade match ID.
+        The reported trade match ID (assigned by the venue).
     order_side : OrderSide {``BUY``, ``SELL``}
         The reported order side for the trade.
     last_qty : Quantity

@@ -35,18 +35,12 @@ from nautilus_trader.model.objects cimport Quantity
 from nautilus_trader.model.orders.base cimport Order
 
 
-cdef set _MARKET_ORDER_VALID_TIF = {
-    TimeInForce.GTC,
-    TimeInForce.IOC,
-    TimeInForce.FOK,
-    TimeInForce.ON_OPEN,
-    TimeInForce.ON_CLOSE,
-}
-
-
 cdef class MarketOrder(Order):
     """
-    Represents a `market` order.
+    Represents a `Market` order.
+
+    - A `Market-On-Open (MOO)` order can be represented using a time in force of ``AT_THE_OPEN``.
+    - A `Market-On-Close (MOC)` order can be represented using a time in force of ``AT_THE_CLOSE``.
 
     Parameters
     ----------
@@ -62,8 +56,8 @@ cdef class MarketOrder(Order):
         The order side.
     quantity : Quantity
         The order quantity (> 0).
-    time_in_force : TimeInForce {``GTC``, ``IOC``, ``FOK``, ``ON_OPEN``, ``ON_CLOSE``}
-        The order time-in-force.
+    time_in_force : TimeInForce {``GTC``, ``IOC``, ``FOK``, ``DAY``, ``AT_THE_OPEN``, ``AT_THE_CLOSE``}
+        The order time in force.
     init_id : UUID4
         The order initialization event ID.
     ts_init : int64
@@ -87,7 +81,7 @@ cdef class MarketOrder(Order):
     ValueError
         If `quantity` is not positive (> 0).
     ValueError
-        If `time_in_force` is other than ``GTC``, ``IOC``, ``FOK``, ``ON_OPEN`` or ``ON_CLOSE``.
+        If `time_in_force` is ``GTD``.
     """
 
     def __init__(
@@ -108,10 +102,7 @@ cdef class MarketOrder(Order):
         ClientOrderId parent_order_id=None,
         str tags=None,
     ):
-        Condition.true(
-            time_in_force in _MARKET_ORDER_VALID_TIF,
-            fail_msg="time_in_force was != GTC, IOC, FOK, ON_OPEN, ON_CLOSE",
-        )
+        Condition.not_equal(time_in_force, TimeInForce.GTD, "time_in_force", "GTD")
 
         # Create initialization event
         cdef OrderInitialized init = OrderInitialized(

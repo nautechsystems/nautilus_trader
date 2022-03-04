@@ -67,7 +67,7 @@ from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import TradeId
 from nautilus_trader.model.identifiers import VenueOrderId
 from nautilus_trader.model.instruments.base import Instrument
-from nautilus_trader.model.instruments.currency import CurrencySpot
+from nautilus_trader.model.instruments.currency_pair import CurrencyPair
 from nautilus_trader.model.objects import AccountBalance
 from nautilus_trader.model.objects import MarginBalance
 from nautilus_trader.model.objects import Money
@@ -944,7 +944,7 @@ class FTXExecutionClient(LiveExecutionClient):
             )
             instruments: List[Instrument] = self._instrument_provider.list_all()
             for instrument in instruments:
-                if isinstance(instrument, CurrencySpot):
+                if isinstance(instrument, CurrencyPair):
                     self._log.debug(
                         f"Setting {self.account_id} leverage for {instrument.id} to 1X.",
                     )

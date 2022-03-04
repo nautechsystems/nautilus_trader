@@ -679,10 +679,16 @@ class BinanceExecutionClient(LiveExecutionClient):
         )
 
         try:
-            await self._http_account.cancel_order(
-                symbol=format_symbol(command.instrument_id.symbol.value),
-                orig_client_order_id=command.client_order_id.value,
-            )
+            if command.venue_order_id is not None:
+                await self._http_account.cancel_order(
+                    symbol=format_symbol(command.instrument_id.symbol.value),
+                    order_id=command.venue_order_id.value,
+                )
+            else:
+                await self._http_account.cancel_order(
+                    symbol=format_symbol(command.instrument_id.symbol.value),
+                    orig_client_order_id=command.client_order_id.value,
+                )
         except BinanceError as ex:
             self._log.error(ex.message)  # type: ignore  # TODO(cs): Improve errors
 
@@ -718,9 +724,14 @@ class BinanceExecutionClient(LiveExecutionClient):
             )
 
         try:
-            await self._http_account.cancel_open_orders(
-                symbol=format_symbol(command.instrument_id.symbol.value),
-            )
+            if self._binance_account_type.is_spot:
+                await self._http_account.cancel_open_orders_spot(
+                    symbol=format_symbol(command.instrument_id.symbol.value),
+                )
+            elif self._binance_account_type.is_futures:
+                await self._http_account.cancel_open_orders_futures(
+                    symbol=format_symbol(command.instrument_id.symbol.value),
+                )
         except BinanceError as ex:
             self._log.error(ex.message)  # type: ignore  # TODO(cs): Improve errors
 

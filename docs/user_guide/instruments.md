@@ -5,7 +5,7 @@ currently a number of subclasses representing a range of _asset classes_ and _as
 - `Equity` (generic Equity)
 - `Future` (generic Futures Contract)
 - `Option` (generic Options Contract)
-- `CurrencySpot` (generic currency pair i.e. can represent both Fiat FX and Crypto currency)
+- `CurrencyPair` (represents a Fiat FX or Crypto currency pair in a spot/cash market)
 - `CryptoPerpetual` (Perpetual Futures Contract a.k.a. Perpetual Swap)
 - `CryptoFuture` (Deliverable Futures Contract with Crypto assets as underlying, and for price quotes and settlement)
 - `BettingInstrument`
