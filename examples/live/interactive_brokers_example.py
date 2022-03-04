@@ -41,6 +41,7 @@ config_node = TradingNodeConfig(
         "IB": InteractiveBrokersDataClientConfig(
             gateway_host="127.0.0.1",
             instrument_provider=InstrumentProviderConfig(
+                load_all=True,
                 filters=tuple({"secType": "CASH", "pair": "EURUSD"}.items()),
                 #     filters=tuple(
                 #         {
@@ -60,7 +61,6 @@ config_node = TradingNodeConfig(
                 #             ),
                 #         }.items()
                 #     ),
-                #     load_all=True,
             ),
             routing=RoutingConfig(venues={"IDEALPRO"}),
         ),
@@ -80,8 +80,8 @@ node = TradingNode(config=config_node)
 
 # Configure your strategy
 strategy_config = SubscribeStrategyConfig(
-    instrument_id="EURUSD.IDEALPRO",
-    book_type=BookType.L2_MBP,
+    instrument_id="EUR/USD.IDEALPRO",
+    book_type=BookType.L1_TBBO,
     snapshots=False,
     trade_ticks=False,
     quote_ticks=True,

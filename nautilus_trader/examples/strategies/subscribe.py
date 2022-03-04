@@ -35,7 +35,7 @@ class SubscribeStrategyConfig(TradingStrategyConfig):
 
     instrument_id: str
     book_type: Optional[BookType] = None
-    snapshots: bool = False
+    snapshots: bool = True
     trade_ticks: bool = False
     quote_ticks: bool = False
 
@@ -70,19 +70,17 @@ class SubscribeStrategy(TradingStrategy):
             )
             if self.config.snapshots:
                 self.subscribe_order_book_snapshots(
-                    instrument_id=self.instrument_id,
-                    book_type=self.config.book_type,
+                    instrument_id=self.instrument_id, book_type=self.config.book_type
                 )
             else:
                 self.subscribe_order_book_deltas(
-                    instrument_id=self.instrument_id,
-                    book_type=self.config.book_type,
+                    instrument_id=self.instrument_id, book_type=self.config.book_type
                 )
 
-        if self.config.trades:
-            self.subscribe_trade_ticks(
-                instrument_id=self.instrument_id,
-            )
+        if self.config.trade_ticks:
+            self.subscribe_trade_ticks(instrument_id=self.instrument_id)
+        if self.config.quote_ticks:
+            self.subscribe_quote_ticks(instrument_id=self.instrument_id)
 
     def on_order_book_delta(self, data: OrderBookData):
         self.book.apply(data)

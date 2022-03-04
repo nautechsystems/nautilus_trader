@@ -207,28 +207,6 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
         #         instrument_id=instrument_id, handler=self._on_order_book_delta, depth=depth
         #     )
 
-    def _request_top_of_book(self, instrument_id: InstrumentId, handler: Callable):
-        contract_details: ContractDetails = self._instrument_provider.contract_details[
-            instrument_id
-        ]
-        ticker = self._client.reqTickByTickData(
-            contract=contract_details.contract,
-            tickType="BidAsk",
-        )
-        ticker.updateEvent += handler
-        self._tickers[ContractId(ticker.contract.conId)].append(ticker)
-
-    def _request_market_depth(self, instrument_id: InstrumentId, handler: Callable, depth: int = 5):
-        contract_details: ContractDetails = self._instrument_provider.contract_details[
-            instrument_id
-        ]
-        ticker = self._client.reqMktDepth(
-            contract=contract_details.contract,
-            numRows=depth,
-        )
-        ticker.updateEvent += handler
-        self._tickers[ContractId(ticker.contract.conId)].append(ticker)
-
     def subscribe_trade_ticks(self, instrument_id: InstrumentId):
         contract_details: ContractDetails = self._instrument_provider.contract_details[
             instrument_id
@@ -249,6 +227,28 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
         ticker.updateEvent += (
             partial(self._on_quote_tick_update, contract=contract_details.contract),
         )
+        self._tickers[ContractId(ticker.contract.conId)].append(ticker)
+
+    def _request_top_of_book(self, instrument_id: InstrumentId, handler: Callable):
+        contract_details: ContractDetails = self._instrument_provider.contract_details[
+            instrument_id
+        ]
+        ticker = self._client.reqTickByTickData(
+            contract=contract_details.contract,
+            tickType="BidAsk",
+        )
+        ticker.updateEvent += handler
+        self._tickers[ContractId(ticker.contract.conId)].append(ticker)
+
+    def _request_market_depth(self, instrument_id: InstrumentId, handler: Callable, depth: int = 5):
+        contract_details: ContractDetails = self._instrument_provider.contract_details[
+            instrument_id
+        ]
+        ticker = self._client.reqMktDepth(
+            contract=contract_details.contract,
+            numRows=depth,
+        )
+        ticker.updateEvent += handler
         self._tickers[ContractId(ticker.contract.conId)].append(ticker)
 
     # def _on_order_book_delta(self, ticker: Ticker):
