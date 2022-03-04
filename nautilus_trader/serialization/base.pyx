@@ -53,7 +53,7 @@ from nautilus_trader.model.instruments.base cimport Instrument
 from nautilus_trader.model.instruments.betting cimport BettingInstrument
 from nautilus_trader.model.instruments.crypto_future cimport CryptoFuture
 from nautilus_trader.model.instruments.crypto_perpetual cimport CryptoPerpetual
-from nautilus_trader.model.instruments.currency cimport CurrencySpot
+from nautilus_trader.model.instruments.currency_pair cimport CurrencyPair
 from nautilus_trader.model.instruments.equity cimport Equity
 from nautilus_trader.model.instruments.future cimport Future
 from nautilus_trader.model.instruments.option cimport Option
@@ -90,7 +90,7 @@ _OBJECT_TO_DICT_MAP: Dict[str, Callable[[None], Dict]] = {
     Equity.__name__: Equity.to_dict_c,
     Future.__name__: Future.to_dict_c,
     Option.__name__: Option.to_dict_c,
-    CurrencySpot.__name__: CurrencySpot.to_dict_c,
+    CurrencyPair.__name__: CurrencyPair.to_dict_c,
     CryptoPerpetual.__name__: CryptoPerpetual.to_dict_c,
     CryptoFuture.__name__: CryptoFuture.to_dict_c,
     TradeTick.__name__: TradeTick.to_dict_c,
@@ -135,7 +135,7 @@ _OBJECT_FROM_DICT_MAP: Dict[str, Callable[[Dict], Any]] = {
     Equity.__name__: Equity.from_dict_c,
     Future.__name__: Future.from_dict_c,
     Option.__name__: Option.from_dict_c,
-    CurrencySpot.__name__: CurrencySpot.from_dict_c,
+    CurrencyPair.__name__: CurrencyPair.from_dict_c,
     CryptoPerpetual.__name__: CryptoPerpetual.from_dict_c,
     CryptoFuture.__name__: CryptoFuture.from_dict_c,
     TradeTick.__name__: TradeTick.from_dict_c,

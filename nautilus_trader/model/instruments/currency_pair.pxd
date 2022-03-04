@@ -17,12 +17,12 @@ from nautilus_trader.model.currency cimport Currency
 from nautilus_trader.model.instruments.base cimport Instrument
 
 
-cdef class CurrencySpot(Instrument):
+cdef class CurrencyPair(Instrument):
     cdef readonly Currency base_currency
     """The base currency for the instrument.\n\n:returns: `Currency`"""
 
     @staticmethod
-    cdef CurrencySpot from_dict_c(dict values)
+    cdef CurrencyPair from_dict_c(dict values)
 
     @staticmethod
-    cdef dict to_dict_c(CurrencySpot obj)
+    cdef dict to_dict_c(CurrencyPair obj)
