@@ -145,7 +145,7 @@ class TestInteractiveBrokersData(InteractiveBrokersTestBase):
 
         # Act
         for ticker in IBTestStubs.market_depth(name="eurusd"):
-            self.data_client._on_order_book_snapshot(ticker=ticker)
+            self.data_client._on_order_book_snapshot(ticker=ticker, book_type=BookType.L2_MBP)
 
     @pytest.mark.asyncio
     async def test_on_ticker_update(self, event_loop):
@@ -175,4 +175,4 @@ class TestInteractiveBrokersData(InteractiveBrokersTestBase):
         )
 
         # Act
-        self.data_client._on_quote_tick(tick=quote_tick, contract=contract)
+        self.data_client._on_quote_tick_update(tick=quote_tick, contract=contract)
