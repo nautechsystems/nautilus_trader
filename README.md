@@ -110,7 +110,7 @@ Cython, with static libraries linked at compile-time before the wheel binaries a
 does not need to have Rust installed to run NautilusTrader. In the future as more Rust code is introduced,
 [PyO3](https://pyo3.rs/v0.15.1/) will be leveraged for easier Python bindings.
 
-The `rust-experimental` branch is likely to run for at least another release cycle while the Rust -> Python bindings for core objects 
+The `rust-experimental` branch is likely to run for at least another release cycle while the Python -> Rust bindings for core objects 
 are bedded down, and more automated testing is written. Present benchmarks show instantiation of core objects is between 2-3x faster
 even when wrapped in a Python class using Cython, with arithmetic comparisons achieving an order of magnitude improvement.
 
