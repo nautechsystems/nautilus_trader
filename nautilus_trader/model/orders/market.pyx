@@ -39,8 +39,8 @@ cdef class MarketOrder(Order):
     """
     Represents a `Market` order.
 
-    - A `Market-On-Open (MOO)` order type can be represented using an ``ON_OPEN`` time in force.
-    - A `Market-On-Close (MOC)` order type can be represented using an ``ON_CLOSE`` time in force.
+    - A `Market-On-Open (MOO)` order can be represented using a time in force of ``AT_THE_OPEN``.
+    - A `Market-On-Close (MOC)` order can be represented using a time in force of ``AT_THE_CLOSE``.
 
     Parameters
     ----------
@@ -56,7 +56,7 @@ cdef class MarketOrder(Order):
         The order side.
     quantity : Quantity
         The order quantity (> 0).
-    time_in_force : TimeInForce {``GTC``, ``IOC``, ``FOK``, ``DAY``, ``ON_OPEN``, ``ON_CLOSE``}
+    time_in_force : TimeInForce {``GTC``, ``IOC``, ``FOK``, ``DAY``, ``AT_THE_OPEN``, ``AT_THE_CLOSE``}
         The order time in force.
     init_id : UUID4
         The order initialization event ID.

@@ -20,8 +20,8 @@ cpdef enum TimeInForce:
     FOK = 3  # Fill or Kill
     GTD = 4  # Good 'till Date
     DAY = 5  # Good for session
-    ON_OPEN = 6  # OPG
-    ON_CLOSE = 7
+    AT_THE_OPEN = 6  # OPG
+    AT_THE_CLOSE = 7
 
 
 cdef class TimeInForceParser:

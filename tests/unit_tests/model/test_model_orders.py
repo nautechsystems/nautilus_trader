@@ -186,7 +186,7 @@ class TestOrders:
                 ClientOrderId("O-123456"),
                 OrderSide.BUY,
                 Quantity.from_int(100000),
-                TimeInForce.ON_CLOSE,  # <-- invalid
+                TimeInForce.AT_THE_CLOSE,  # <-- invalid
                 None,
                 UUID4(),
                 0,
