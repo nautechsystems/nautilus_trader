@@ -15,10 +15,13 @@
 
 
 import asyncio
+from functools import partial
 from typing import Callable, Dict, List
 
 import ib_insync
+from ib_insync import Contract
 from ib_insync import ContractDetails
+from ib_insync import TickByTickBidAsk
 from ib_insync import Ticker
 
 from nautilus_trader.adapters.interactive_brokers.common import IB_VENUE
@@ -33,6 +36,7 @@ from nautilus_trader.common.logging import Logger
 from nautilus_trader.common.logging import defaultdict
 from nautilus_trader.core.datetime import dt_to_unix_nanos
 from nautilus_trader.live.data_client import LiveMarketDataClient
+from nautilus_trader.model.data.tick import QuoteTick
 from nautilus_trader.model.data.tick import TradeTick
 from nautilus_trader.model.enums import AggressorSide
 from nautilus_trader.model.enums import BookType
@@ -156,8 +160,10 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
 
         """
         if book_type == BookType.L1_TBBO:
-            return self._request_market_depth(
-                instrument_id=instrument_id, handler=self._on_order_book_snapshot, depth=1
+            details = self.instrument_provider.contract_details[instrument_id]
+            return self._request_top_of_book(
+                instrument_id=instrument_id,
+                handler=partial(self._on_quote_tick, contract=details.contract),
             )
         elif book_type == BookType.L2_MBP:
             if depth == 0:
@@ -200,6 +206,17 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
         #         instrument_id=instrument_id, handler=self._on_order_book_delta, depth=depth
         #     )
 
+    def _request_top_of_book(self, instrument_id: InstrumentId, handler: Callable):
+        contract_details: ContractDetails = self._instrument_provider.contract_details[
+            instrument_id
+        ]
+        ticker = self._client.reqTickByTickData(
+            contract=contract_details.contract,
+            tickType="BidAsk",
+        )
+        ticker.updateEvent += handler
+        self._tickers[ContractId(ticker.contract.conId)].append(ticker)
+
     def _request_market_depth(self, instrument_id: InstrumentId, handler: Callable, depth: int = 5):
         contract_details: ContractDetails = self._instrument_provider.contract_details[
             instrument_id
@@ -240,12 +257,29 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
     #         )
     #         self._handle_data(update)
 
+    def _on_quote_tick(self, tick: TickByTickBidAsk, contract: Contract):
+        instrument_id = self._instrument_provider.contract_id_to_instrument_id[contract.conId]
+        ts_event = dt_to_unix_nanos(tick.time)
+        ts_init = self._clock.timestamp_ns()
+        quote_tick = QuoteTick(
+            instrument_id=instrument_id,
+            bid=Price.from_str(str(tick.bidPrice)),
+            bid_size=Quantity.from_str(str(tick.bidSize)),
+            ask=Price.from_str(str(tick.askPrice)),
+            ask_size=Quantity.from_str(str(tick.askSize)),
+            ts_event=ts_event,
+            ts_init=ts_init,
+        )
+        self._handle_data(quote_tick)
+
     def _on_order_book_snapshot(self, ticker: Ticker):
         instrument_id = self._instrument_provider.contract_id_to_instrument_id[
             ticker.contract.conId
         ]
         ts_event = dt_to_unix_nanos(ticker.time)
         ts_init = self._clock.timestamp_ns()
+        if not ticker.domBids or ticker.domAsks:
+            return
         snapshot = OrderBookSnapshot(
             book_type=BookType.L2_MBP,
             instrument_id=instrument_id,

@@ -15,6 +15,7 @@
 
 from typing import Optional
 
+from nautilus_trader.model.data.tick import QuoteTick
 from nautilus_trader.model.data.tick import TradeTick
 from nautilus_trader.model.enums import BookType
 from nautilus_trader.model.identifiers import InstrumentId
@@ -34,8 +35,9 @@ class SubscribeStrategyConfig(TradingStrategyConfig):
 
     instrument_id: str
     book_type: Optional[BookType] = None
-    snapshots: bool = True
-    trades: bool = False
+    snapshots: bool = False
+    trade_ticks: bool = False
+    quote_ticks: bool = False
 
 
 class SubscribeStrategy(TradingStrategy):
@@ -91,4 +93,7 @@ class SubscribeStrategy(TradingStrategy):
         self.log.info(str(self.book))
 
     def on_trade_tick(self, tick: TradeTick):
+        self.log.info(str(tick))
+
+    def on_quote_tick(self, tick: QuoteTick):
         self.log.info(str(tick))
