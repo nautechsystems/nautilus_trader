@@ -70,24 +70,36 @@ cdef extern from "../includes/model.h":
 
     cdef struct Money_t:
         int64_t fixed;
-        const Currency_t *currency;
+        Currency_t currency;
 
-    # Expects `ptr` to be an array of valid UTF-8 chars with a null byte terminator.
+    # Creates a new `Symbol` from the given raw C string `ptr`.
+    #
+    # # Safety
+    # Expects `ptr` to be an array of valid UTF-8 chars with the trailing nul byte terminator.
     Symbol symbol_from_cstring(const char *ptr);
 
-    const char *symbol_to_cstring(Symbol symbol);
+    # Create a C string pointer to the identifiers underlying UTF-8 chars value.
+    const char *symbol_to_cstring(const Symbol *symbol);
 
+    # Move the given `Symbol` identifier to Rust and then drop.
     void symbol_free(Symbol symbol);
 
-    # Expects `ptr` to be an array of valid UTF-8 chars with a null byte terminator.
+    # Creates a new `Venue` from the given raw C string `ptr`.
+    #
+    # # Safety
+    # Expects `ptr` to be an array of valid UTF-8 chars with the trailing nul byte terminator.
     Venue venue_from_cstring(const char *ptr);
 
-    const char *venue_to_cstring(Venue venue);
+    # Create a C string pointer to the identifiers underlying UTF-8 chars value.
+    const char *venue_to_cstring(const Venue *venue);
 
+    # Move the given `Venue` identifier to Rust and then drop.
     void venue_free(Venue venue);
 
-    const char *instrument_id_to_cstring(InstrumentId instrument_id);
+    # Create a C string pointer to the identifiers underlying UTF-8 chars value.
+    const char *instrument_id_to_cstring(const InstrumentId *instrument_id);
 
+    # Move the given `InstrumentId` to Rust and then drop.
     void instrument_id_free(InstrumentId instrument_id);
 
     OrderBook order_book_new(InstrumentId instrument_id, BookLevel book_level);
@@ -128,7 +140,7 @@ cdef extern from "../includes/model.h":
 
     const char *currency_name_to_cstring(const Currency_t *currency);
 
-    Money_t money_new(double amount, const Currency_t *currency);
+    Money_t money_new(double amount, Currency_t currency);
 
     void money_free(Money_t money);
 

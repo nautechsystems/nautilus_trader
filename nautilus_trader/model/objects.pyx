@@ -185,13 +185,13 @@ cdef class Quantity:
         return f"{type(self).__name__}('{self}')"
 
     def __del__(self) -> None:
-        quantity_free(self._qty)  # `self._qty` moved to rust (then dropped)
+        quantity_free(self._qty)  # `self._qty` moved to Rust (then dropped)
 
     cdef int64_t fixed_int64_c(self):
         return self._qty.fixed
 
     cdef double as_f64_c(self):
-        return quantity_as_f64(&self._qty)
+        return round(quantity_as_f64(&self._qty), self._qty.precision)
 
     @staticmethod
     cdef object _extract_decimal(object obj):
@@ -491,13 +491,13 @@ cdef class Price:
         return f"{type(self).__name__}('{self}')"
 
     def __del__(self) -> None:
-        price_free(self._price)  # `self._price` moved to rust (then dropped)
+        price_free(self._price)  # `self._price` moved to Rust (then dropped)
 
     cdef int64_t fixed_int64_c(self):
         return self._price.fixed
 
     cdef double as_f64_c(self):
-        return price_as_f64(&self._price)
+        return round(price_as_f64(&self._price), self._price.precision)
 
     @staticmethod
     cdef object _extract_decimal(object obj):
@@ -638,7 +638,7 @@ cdef class Money:
         if value is None:
             value = 0
 
-        self._money = money_new(float(value), <Currency_t *>&currency._currency)  # borrows wrapped `currency`
+        self._money = money_new(float(value), <Currency_t>currency._currency)  # borrows wrapped `currency`
         self.currency = currency
 
     def __getstate__(self):
@@ -646,7 +646,7 @@ cdef class Money:
 
     def __setstate__(self, values):
         cdef Currency currency = values[1]
-        self._money = money_new(float(values[0]), <Currency_t *>&currency._currency)
+        self._money = money_new(float(values[0]), <Currency_t>currency._currency)
         self.currency = currency
 
     def __eq__(self, Money other) -> bool:
@@ -757,13 +757,13 @@ cdef class Money:
         return f"{type(self).__name__}('{str(self)}', {self.currency.code})"
 
     def __del__(self) -> None:
-        money_free(self._money)  # `self._money` moved to rust (then dropped)
+        money_free(self._money)  # `self._money` moved to Rust (then dropped)
 
     cdef int64_t fixed_int64_c(self):
         return self._money.fixed
 
     cdef double as_f64_c(self):
-        return money_as_f64(&self._money)
+        return round(money_as_f64(&self._money), self._money.currency.precision)
 
     @staticmethod
     cdef object _extract_decimal(object obj):

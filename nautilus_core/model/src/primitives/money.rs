@@ -24,11 +24,11 @@ use std::ops::{Add, AddAssign, Mul, MulAssign, Neg, Sub, SubAssign};
 #[derive(Eq, Clone)]
 pub struct Money {
     fixed: i64,
-    pub currency: &'static Currency,
+    pub currency: Currency,
 }
 
 impl Money {
-    pub fn new(amount: f64, currency: &'static Currency) -> Money {
+    pub fn new(amount: f64, currency: Currency) -> Money {
         Money {
             fixed: f64_to_fixed_i64(amount, currency.precision),
             currency,
@@ -190,7 +190,6 @@ impl Display for Money {
 mod tests {
     use super::*;
     use crate::enums::CurrencyType;
-    use std::borrow::Cow;
 
     #[test]
     fn test_money_new_usd() {
@@ -216,7 +215,7 @@ mod tests {
             CurrencyType::FIAT,
         );
 
-        let money = Money::new(10.3, &btc);
+        let money = Money::new(10.3, btc);
 
         assert_eq!("10.30000000 BTC", money.to_string());
     }

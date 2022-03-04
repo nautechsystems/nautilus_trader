@@ -74,7 +74,7 @@ pub extern "C" fn uuid4_free(uuid4: UUID4) {
     drop(uuid4); // Memory freed here
 }
 
-/// Expects `ptr` to be an array of valid UTF-8 chars with a null byte terminator.
+/// Expects `ptr` to be an array of valid UTF-8 chars with the trailing nul byte terminator.
 #[no_mangle]
 pub unsafe extern "C" fn uuid4_from_cstring(ptr: *const c_char) -> UUID4 {
     // SAFETY: Wraps and checks raw C string `ptr`, then converts to owned `String`

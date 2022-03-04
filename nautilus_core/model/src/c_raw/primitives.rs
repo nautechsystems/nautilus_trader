@@ -127,7 +127,7 @@ pub extern "C" fn currency_name_to_cstring(currency: &Currency) -> *const c_char
 // Money
 ////////////////////////////////////////////////////////////////////////////////
 #[no_mangle]
-pub extern "C" fn money_new(amount: f64, currency: &'static Currency) -> Money {
+pub extern "C" fn money_new(amount: f64, currency: Currency) -> Money {
     Money::new(amount, currency)
 }
 

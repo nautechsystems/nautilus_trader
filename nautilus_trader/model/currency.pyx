@@ -115,7 +115,7 @@ cdef class Currency:
         )
 
     def __del__(self) -> None:
-        currency_free(self._currency)  # `self._currency` moved to rust (then dropped)
+        currency_free(self._currency)  # `self._currency` moved to Rust (then dropped)
 
     @property
     def precision(self) -> int:

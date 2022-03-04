@@ -108,7 +108,7 @@ class TestBacktestAcceptanceTestsUSDJPY:
         # Assert - Should return expected PnL
         assert strategy.fast_ema.count == 2689
         assert self.engine.iteration == 115044
-        assert self.engine.portfolio.account(self.venue).balance_total(USD) == Money(992811.26, USD)
+        assert self.engine.portfolio.account(self.venue).balance_total(USD) == Money(992811.19, USD)
 
     def test_rerun_ema_cross_strategy_returns_identical_performance(self):
         # Arrange
@@ -168,7 +168,7 @@ class TestBacktestAcceptanceTestsUSDJPY:
         assert strategy1.fast_ema.count == 2689
         assert strategy2.fast_ema.count == 2689
         assert self.engine.iteration == 115044
-        assert self.engine.portfolio.account(self.venue).balance_total(USD) == Money(985622.52, USD)
+        assert self.engine.portfolio.account(self.venue).balance_total(USD) == Money(985622.38, USD)
 
 
 class TestBacktestAcceptanceTestsGBPUSDBarsInternal:
@@ -228,7 +228,7 @@ class TestBacktestAcceptanceTestsGBPUSDBarsInternal:
         # Assert
         assert strategy.fast_ema.count == 8353
         assert self.engine.iteration == 120468
-        assert self.engine.portfolio.account(self.venue).balance_total(GBP) == Money(931346.81, GBP)
+        assert self.engine.portfolio.account(self.venue).balance_total(GBP) == Money(931346.76, GBP)
 
 
 class TestBacktestAcceptanceTestsGBPUSDBarsExternal:
@@ -308,7 +308,7 @@ class TestBacktestAcceptanceTestsGBPUSDBarsExternal:
         assert strategy.fast_ema.count == 30117
         assert self.engine.iteration == 60234
         ending_balance = self.engine.portfolio.account(self.venue).balance_total(USD)
-        assert ending_balance == Money(1016188.45, USD)
+        assert ending_balance == Money(1016187.69, USD)
 
 
 class TestBacktestAcceptanceTestsBTCPERPTradeBars:
@@ -462,7 +462,7 @@ class TestBacktestAcceptanceTestsAUDUSD:
         # Assert
         assert strategy.fast_ema.count == 1771
         assert self.engine.iteration == 100000
-        assert self.engine.portfolio.account(self.venue).balance_total(AUD) == Money(987920.04, AUD)
+        assert self.engine.portfolio.account(self.venue).balance_total(AUD) == Money(987919.96, AUD)
 
     def test_run_ema_cross_with_tick_bar_spec(self):
         # Arrange

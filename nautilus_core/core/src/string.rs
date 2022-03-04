@@ -16,7 +16,6 @@
 use std::ffi::{CStr, CString};
 use std::os::raw::c_char;
 
-#[no_mangle]
 pub fn into_cstring(s: String) -> *const c_char {
     CString::new(s.into_bytes())
         .expect("CString::new failed")
@@ -31,7 +30,7 @@ pub unsafe fn from_cstring(ptr: *const c_char) -> String {
         .to_owned()
 }
 
-/// Expects `ptr` to be an array of valid UTF-8 chars with a null byte terminator.
+/// Expects `ptr` to be an array of valid UTF-8 chars with the trailing nul byte terminator.
 #[no_mangle]
 pub unsafe extern "C" fn cstring_free(ptr: *const c_char) {
     // SAFETY: Retakes ownership of C string `ptr`, then drops

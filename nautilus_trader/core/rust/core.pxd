@@ -10,7 +10,7 @@ cdef extern from "../includes/core.h":
     cdef struct UUID4_t:
         String *value;
 
-    # Expects `ptr` to be an array of valid UTF-8 chars with a null byte terminator.
+    # Expects `ptr` to be an array of valid UTF-8 chars with the trailing nul byte terminator.
     void cstring_free(const char *ptr);
 
     # Returns the current seconds since the UNIX epoch.
@@ -29,7 +29,7 @@ cdef extern from "../includes/core.h":
 
     void uuid4_free(UUID4_t uuid4);
 
-    # Expects `ptr` to be an array of valid UTF-8 chars with a null byte terminator.
+    # Expects `ptr` to be an array of valid UTF-8 chars with the trailing nul byte terminator.
     UUID4_t uuid4_from_cstring(const char *ptr);
 
     const char *uuid4_to_cstring(const UUID4_t *uuid);
