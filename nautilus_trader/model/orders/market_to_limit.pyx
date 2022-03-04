@@ -87,7 +87,7 @@ cdef class MarketToLimitOrder(Order):
     ValueError
         If `quantity` is not positive (> 0).
     ValueError
-        If `time_in_force` is ``ON_OPEN`` or ``ON_CLOSE``.
+        If `time_in_force` is ``AT_THE_OPEN`` or ``AT_THE_CLOSE``.
     """
 
     def __init__(
@@ -110,8 +110,8 @@ cdef class MarketToLimitOrder(Order):
         ClientOrderId parent_order_id=None,
         str tags=None,
     ):
-        Condition.not_equal(time_in_force, TimeInForce.ON_OPEN, "time_in_force", "ON_OPEN`")
-        Condition.not_equal(time_in_force, TimeInForce.ON_CLOSE, "time_in_force", "ON_CLOSE`")
+        Condition.not_equal(time_in_force, TimeInForce.AT_THE_OPEN, "time_in_force", "AT_THE_OPEN`")
+        Condition.not_equal(time_in_force, TimeInForce.AT_THE_CLOSE, "time_in_force", "AT_THE_CLOSE`")
 
         cdef int64_t expire_time_ns = 0
         if time_in_force == TimeInForce.GTD:

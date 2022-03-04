@@ -297,7 +297,7 @@
         "betId": "240718820558",
         "placedDate": "2021-08-11T21:35:34.000Z",
         "persistenceType": "LAPSE",
-        "orderType": "MARKET_ON_CLOSE",
+        "orderType": "MARKET_AT_THE_CLOSE",
         "side": "BACK",
         "betOutcome": "LOST",
         "priceRequested": 2.79,
