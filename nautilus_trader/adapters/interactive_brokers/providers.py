@@ -122,6 +122,8 @@ class InteractiveBrokersInstrumentProvider(InstrumentProvider):
             # Regular contract
             return await self._client.reqContractDetailsAsync(contract=contract)
 
+    # TODO - Add futures
+
     # async def get_future_chain_details(self, underlying: Contract) -> List[ContractDetails]:
     #     chains = self._client.reqSecDefOptParams(
     #         underlying.symbol, "", underlying.secType, underlying.conId
@@ -135,16 +137,13 @@ class InteractiveBrokersInstrumentProvider(InstrumentProvider):
         min_strike=None,
         max_strike=None,
         kind=None,
+        exchange=None,
     ) -> List[ContractDetails]:
         chains = await self._client.reqSecDefOptParamsAsync(
             underlying.symbol, "", underlying.secType, underlying.conId
         )
 
-        chain = next(
-            c
-            for c in chains
-            if c.tradingClass == underlying.symbol and c.exchange == underlying.exchange
-        )
+        chain = one(chains)
 
         strikes = [
             strike
@@ -165,7 +164,7 @@ class InteractiveBrokersInstrumentProvider(InstrumentProvider):
                 expiration,
                 strike,
                 right,
-                "SMART",
+                exchange or "SMART",
             )
             for right in rights
             for expiration in expirations

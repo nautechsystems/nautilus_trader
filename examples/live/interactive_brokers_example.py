@@ -13,7 +13,6 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
-import json
 
 from nautilus_trader.adapters.interactive_brokers.config import InteractiveBrokersDataClientConfig
 from nautilus_trader.adapters.interactive_brokers.factories import (
@@ -42,25 +41,26 @@ config_node = TradingNodeConfig(
         "IB": InteractiveBrokersDataClientConfig(
             gateway_host="127.0.0.1",
             instrument_provider=InstrumentProviderConfig(
-                # filters=tuple({"secType": "CASH", "pair": "EURUSD"}.items()),
-                filters=tuple(
-                    {
-                        "secType": "STK",
-                        "symbol": "AAPL",
-                        "exchange": "CBOE",
-                        "currency": "USD",
-                        "build_options_chain": True,
-                        "option_kwargs": json.dumps(
-                            {
-                                "min_expiry": "20220601",
-                                "max_expiry": "20220701",
-                                "min_strike": 140,
-                                "max_strike": 150,
-                            }
-                        ),
-                    }.items()
-                ),
-                load_all=True,
+                filters=tuple({"secType": "CASH", "pair": "EURUSD"}.items()),
+                #     filters=tuple(
+                #         {
+                #             "secType": "STK",
+                #             "symbol": "9988",
+                #             "exchange": "SEHK",
+                #             "currency": "HKD",
+                #             "build_options_chain": True,
+                #             "option_kwargs": json.dumps(
+                #                 {
+                #                     "min_expiry": "20220601",
+                #                     "max_expiry": "20220701",
+                #                     "min_strike": 90,
+                #                     "max_strike": 110,
+                #                     "exchange": "SEHK"
+                #                 }
+                #             ),
+                #         }.items()
+                #     ),
+                #     load_all=True,
             ),
             routing=RoutingConfig(venues={"IDEALPRO"}),
         ),
