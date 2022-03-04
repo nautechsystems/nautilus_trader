@@ -39,3 +39,13 @@ class IBTestStubs:
     def tickers(name: str = "eurusd"):
         with open(STREAMING_PATH / f"{name}_ticker.pkl", "rb") as f:
             return pickle.loads(f.read())  # noqa: S301
+
+    @staticmethod
+    def historic_trades():
+        with open(RESPONSES_PATH / "historic/trade_ticks.pkl", "rb") as f:
+            return pickle.loads(f.read())  # noqa: S301
+
+    @staticmethod
+    def historic_bid_ask():
+        with open(RESPONSES_PATH / "historic/bid_ask_ticks.pkl", "rb") as f:
+            return pickle.loads(f.read())  # noqa: S301

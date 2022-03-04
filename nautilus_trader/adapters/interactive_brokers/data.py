@@ -23,7 +23,7 @@ from ib_insync import Ticker
 
 from nautilus_trader.adapters.interactive_brokers.common import IB_VENUE
 from nautilus_trader.adapters.interactive_brokers.common import ContractId
-from nautilus_trader.adapters.interactive_brokers.parsing.data import _trade_id
+from nautilus_trader.adapters.interactive_brokers.parsing.data import generate_trade_id
 from nautilus_trader.adapters.interactive_brokers.providers import (
     InteractiveBrokersInstrumentProvider,
 )
@@ -268,7 +268,7 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
                 price=Price.from_str(price),
                 size=Quantity.from_str(size),
                 aggressor_side=AggressorSide.UNKNOWN,
-                trade_id=_trade_id(
+                trade_id=generate_trade_id(
                     symbol=instrument_id.value, ts_event=ts_event, price=price, size=size
                 ),
                 ts_event=ts_event,

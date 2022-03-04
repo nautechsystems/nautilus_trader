@@ -24,7 +24,7 @@ IB_TICK_TYPE = {
 }
 
 
-def _trade_id(symbol: str, ts_event: int, price: str, size: str) -> TradeId:
+def generate_trade_id(symbol: str, ts_event: int, price: str, size: str) -> TradeId:
     hash_values = (symbol, ts_event, price, size)
     h = hashlib.sha256(orjson.dumps(hash_values))
     return TradeId(h.hexdigest())
