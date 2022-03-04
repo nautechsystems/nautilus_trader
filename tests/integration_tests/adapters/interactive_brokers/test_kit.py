@@ -1,8 +1,9 @@
 import pathlib
 import pickle
 
+from ib_insync import Contract
+
 from nautilus_trader.adapters.interactive_brokers.parsing.instruments import parse_instrument
-from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.instruments.equity import Equity
 from tests import TESTS_PACKAGE_ROOT
 
@@ -21,10 +22,13 @@ class IBTestStubs:
         )
 
     @staticmethod
-    def instrument(symbol: str, venue: str) -> Equity:
-        instrument_id = InstrumentId.from_str(f"{symbol}.{venue}")
+    def contract(secType="STK", symbol="AAPL", exchange="NASDAQ", **kwargs):
+        return Contract(secType=secType, symbol=symbol, exchange=exchange, **kwargs)
+
+    @staticmethod
+    def instrument(symbol: str) -> Equity:
         contract_details = IBTestStubs.contract_details(symbol)
-        return parse_instrument(instrument_id=instrument_id, contract_details=contract_details)
+        return parse_instrument(contract_details=contract_details)
 
     @staticmethod
     def market_depth(name: str = "eurusd"):

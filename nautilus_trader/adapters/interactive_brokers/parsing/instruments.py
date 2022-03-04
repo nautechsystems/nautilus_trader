@@ -7,8 +7,10 @@ from ib_insync import ContractDetails
 from nautilus_trader.model.c_enums.asset_class import AssetClassParser
 from nautilus_trader.model.currency import Currency
 from nautilus_trader.model.enums import AssetClass
+from nautilus_trader.model.enums import OptionKind
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import Symbol
+from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.instruments.base import Instrument
 from nautilus_trader.model.instruments.currency import CurrencySpot
 from nautilus_trader.model.instruments.equity import Equity
@@ -41,26 +43,27 @@ def sec_type_to_asset_class(sec_type: str):
 
 
 def parse_instrument(
-    instrument_id: InstrumentId,
     contract_details: ContractDetails,
 ) -> Instrument:
     security_type = contract_details.contract.secType
     if security_type == "STK":
-        return parse_equity_contract(instrument_id=instrument_id, details=contract_details)
+        return parse_equity_contract(details=contract_details)
     elif security_type == "FUT":
-        return parse_future_contract(instrument_id=instrument_id, details=contract_details)
+        return parse_future_contract(details=contract_details)
+    elif security_type == "OPT":
+        return parse_option_contract(details=contract_details)
     elif security_type == "CASH":
-        return parse_cash_contract(instrument_id=instrument_id, details=contract_details)
+        return parse_forex_contract(details=contract_details)
     else:
         raise ValueError(f"Unknown {security_type=}")
 
 
-def parse_equity_contract(
-    instrument_id: InstrumentId,
-    details: ContractDetails,
-) -> Equity:
+def parse_equity_contract(details: ContractDetails) -> Equity:
     price_precision: int = _tick_size_to_precision(details.minTick)
     timestamp = time.time_ns()
+    instrument_id = InstrumentId(
+        symbol=Symbol(details.contract.localSymbol), venue=Venue(details.contract.primaryExchange)
+    )
     equity = Equity(
         instrument_id=instrument_id,
         native_symbol=Symbol(details.contract.localSymbol),
@@ -79,11 +82,14 @@ def parse_equity_contract(
 
 
 def parse_future_contract(
-    instrument_id: InstrumentId,
     details: ContractDetails,
 ) -> Future:
     price_precision: int = _tick_size_to_precision(details.minTick)
     timestamp = time.time_ns()
+    instrument_id = InstrumentId(
+        symbol=Symbol(details.contract.localSymbol),
+        venue=Venue(details.contract.primaryExchange or details.contract.exchange),
+    )
     future = Future(
         instrument_id=instrument_id,
         native_symbol=Symbol(details.contract.localSymbol),
@@ -105,13 +111,22 @@ def parse_future_contract(
 
 
 def parse_option_contract(
-    instrument_id: InstrumentId,
-    asset_class: AssetClass,
     details: ContractDetails,
 ) -> Option:
     price_precision: int = _tick_size_to_precision(details.minTick)
     timestamp = time.time_ns()
-    future = Option(
+    instrument_id = InstrumentId(
+        symbol=Symbol(details.contract.localSymbol.replace("  ", "")),
+        venue=Venue(details.contract.primaryExchange or details.contract.exchange),
+    )
+    asset_class = {
+        "STK": AssetClass.EQUITY,
+    }[details.underSecType]
+    kind = {
+        "C": OptionKind.CALL,
+        "P": OptionKind.PUT,
+    }[details.contract.right]
+    option = Option(
         instrument_id=instrument_id,
         native_symbol=Symbol(details.contract.localSymbol),
         asset_class=asset_class,
@@ -121,22 +136,27 @@ def parse_option_contract(
         multiplier=Quantity.from_int(int(details.contract.multiplier)),
         lot_size=Quantity.from_int(1),
         underlying=details.underSymbol,
+        strike_price=Price.from_str(str(details.contract.strike)),
         expiry_date=datetime.datetime.strptime(
             details.contract.lastTradeDateOrContractMonth, "%Y%m%d"
         ).date(),
+        kind=kind,
         ts_event=timestamp,
         ts_init=timestamp,
     )
 
-    return future
+    return option
 
 
-def parse_cash_contract(
-    instrument_id: InstrumentId,
+def parse_forex_contract(
     details: ContractDetails,
 ) -> Option:
     price_precision: int = _tick_size_to_precision(details.minTick)
     timestamp = time.time_ns()
+    instrument_id = InstrumentId(
+        symbol=Symbol(f"{details.contract.symbol}/{details.contract.currency}"),
+        venue=Venue(details.contract.primaryExchange or details.contract.exchange),
+    )
     currency = CurrencySpot(
         instrument_id=instrument_id,
         native_symbol=Symbol(details.contract.localSymbol),

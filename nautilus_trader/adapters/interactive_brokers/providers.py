@@ -12,9 +12,13 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+import asyncio
+import json
 from typing import Dict, List, Optional
 
 import ib_insync
+import numpy as np
+import pandas as pd
 from ib_insync import Contract
 from ib_insync import ContractDetails
 from ib_insync import Forex
@@ -26,8 +30,6 @@ from nautilus_trader.common.logging import Logger
 from nautilus_trader.common.providers import InstrumentProvider
 from nautilus_trader.live.config import InstrumentProviderConfig
 from nautilus_trader.model.identifiers import InstrumentId
-from nautilus_trader.model.identifiers import Symbol
-from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.instruments.base import Instrument
 
 
@@ -103,16 +105,88 @@ class InteractiveBrokersInstrumentProvider(InstrumentProvider):
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
-    async def load(self, **kwargs):
+    async def get_contract_details(
+        self,
+        contract: Contract,
+        build_options_chain=False,
+        option_kwargs: Optional[str] = None,
+        build_futures_chain=False,
+    ) -> List[ContractDetails]:
+        if build_futures_chain:
+            return []
+        elif build_options_chain:
+            return await self.get_option_chain_details(
+                underlying=contract, **(json.loads(option_kwargs) or {})
+            )
+        else:
+            # Regular contract
+            return await self._client.reqContractDetailsAsync(contract=contract)
+
+    # async def get_future_chain_details(self, underlying: Contract) -> List[ContractDetails]:
+    #     chains = self._client.reqSecDefOptParams(
+    #         underlying.symbol, "", underlying.secType, underlying.conId
+    #     )
+
+    async def get_option_chain_details(
+        self,
+        underlying: Contract,
+        min_expiry=None,
+        max_expiry=None,
+        min_strike=None,
+        max_strike=None,
+        kind=None,
+    ) -> List[ContractDetails]:
+        chains = await self._client.reqSecDefOptParamsAsync(
+            underlying.symbol, "", underlying.secType, underlying.conId
+        )
+
+        chain = next(
+            c
+            for c in chains
+            if c.tradingClass == underlying.symbol and c.exchange == underlying.exchange
+        )
+
+        strikes = [
+            strike
+            for strike in chain.strikes
+            if (min_strike or -np.inf) <= strike <= (max_strike or np.inf)
+        ]
+        expirations = sorted(
+            exp
+            for exp in chain.expirations
+            if (pd.Timestamp(min_expiry or pd.Timestamp.min) <= pd.Timestamp(exp))
+            and (pd.Timestamp(exp) <= pd.Timestamp(max_expiry or pd.Timestamp.max))
+        )
+        rights = [kind] if kind is not None else ["P", "C"]
+
+        contracts = [
+            ib_insync.Option(
+                underlying.symbol,
+                expiration,
+                strike,
+                right,
+                "SMART",
+            )
+            for right in rights
+            for expiration in expirations
+            for strike in strikes
+        ]
+        qualified = await self._client.qualifyContractsAsync(*contracts)
+        details = await asyncio.gather(
+            *[self._client.reqContractDetailsAsync(contract=c) for c in qualified]
+        )
+        return [x for d in details for x in d]
+
+    async def load(self, build_options_chain=False, option_kwargs=None, **kwargs):
         """
         Search and load the instrument for the given symbol, exchange and (optional) kwargs
 
         Parameters
         ----------
-        symbol : str
-            The symbol to search for
-        exchange : str
-            The exchange that the symbol trades on
+        build_options_chain: bool (default: False)
+            Search for full option chain
+        option_kwargs: str (default: False)
+            JSON string for options filtering, available fields: min_expiry, max_expiry, min_strike, max_strike, kind
         kwargs: **kwargs
             Optional extra kwargs to search for, examples:
                 secType, conId, symbol, lastTradeDateOrContractMonth, strike, right, multiplier, exchange,
@@ -122,15 +196,14 @@ class InteractiveBrokersInstrumentProvider(InstrumentProvider):
         contract = self._parse_contract(**kwargs)
         qualified = await self._client.qualifyContractsAsync(contract)
         qualified = one(qualified)
-        contract_details: List[ContractDetails] = await self._client.reqContractDetailsAsync(
-            contract=qualified
+        contract_details: List[ContractDetails] = await self.get_contract_details(
+            qualified, build_options_chain=build_options_chain, option_kwargs=option_kwargs
         )
         if not contract_details:
             raise ValueError(f"No contract details found for the given kwargs ({kwargs})")
 
         for details in contract_details:
             instrument: Instrument = parse_instrument(
-                instrument_id=InstrumentId(Symbol(qualified.pair()), Venue(qualified.exchange)),
                 contract_details=details,
             )
             self.add(instrument)
