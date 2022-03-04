@@ -43,7 +43,7 @@ from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.instruments.betting import BettingInstrument
 from nautilus_trader.model.instruments.crypto_future import CryptoFuture
 from nautilus_trader.model.instruments.crypto_perpetual import CryptoPerpetual
-from nautilus_trader.model.instruments.currency import CurrencySpot
+from nautilus_trader.model.instruments.currency_pair import CurrencyPair
 from nautilus_trader.model.instruments.equity import Equity
 from nautilus_trader.model.instruments.future import Future
 from nautilus_trader.model.instruments.option import Option
@@ -58,16 +58,16 @@ class TestInstrumentProvider:
     """
 
     @staticmethod
-    def adabtc_binance() -> CurrencySpot:
+    def adabtc_binance() -> CurrencyPair:
         """
         Return the Binance ADA/BTC instrument for backtesting.
 
         Returns
         -------
-        CurrencySpot
+        CurrencyPair
 
         """
-        return CurrencySpot(
+        return CurrencyPair(
             instrument_id=InstrumentId(
                 symbol=Symbol("ADABTC"),
                 venue=Venue("BINANCE"),
@@ -95,16 +95,16 @@ class TestInstrumentProvider:
         )
 
     @staticmethod
-    def btcusdt_binance() -> CurrencySpot:
+    def btcusdt_binance() -> CurrencyPair:
         """
         Return the Binance BTCUSDT instrument for backtesting.
 
         Returns
         -------
-        CurrencySpot
+        CurrencyPair
 
         """
-        return CurrencySpot(
+        return CurrencyPair(
             instrument_id=InstrumentId(
                 symbol=Symbol("BTCUSDT"),
                 venue=Venue("BINANCE"),
@@ -132,16 +132,16 @@ class TestInstrumentProvider:
         )
 
     @staticmethod
-    def ethusdt_binance() -> CurrencySpot:
+    def ethusdt_binance() -> CurrencyPair:
         """
         Return the Binance ETHUSDT instrument for backtesting.
 
         Returns
         -------
-        CurrencySpot
+        CurrencyPair
 
         """
-        return CurrencySpot(
+        return CurrencyPair(
             instrument_id=InstrumentId(
                 symbol=Symbol("ETHUSDT"),
                 venue=Venue("BINANCE"),
@@ -169,13 +169,13 @@ class TestInstrumentProvider:
         )
 
     @staticmethod
-    def ethusdt_perp_binance() -> CurrencySpot:
+    def ethusdt_perp_binance() -> CryptoPerpetual:
         """
         Return the Binance ETHUSDT-PERP instrument for backtesting.
 
         Returns
         -------
-        CurrencySpot
+        CryptoPerpetual
 
         """
         return CryptoPerpetual(
@@ -252,16 +252,16 @@ class TestInstrumentProvider:
         )
 
     @staticmethod
-    def ethusd_ftx() -> CurrencySpot:
+    def ethusd_ftx() -> CurrencyPair:
         """
         Return the FTX ETH/USD instrument for backtesting.
 
         Returns
         -------
-        CurrencySpot
+        CurrencyPair
 
         """
-        return CurrencySpot(
+        return CurrencyPair(
             instrument_id=InstrumentId(
                 symbol=Symbol("ETH/USD"),
                 venue=Venue("FTX"),
@@ -365,9 +365,9 @@ class TestInstrumentProvider:
         )
 
     @staticmethod
-    def default_fx_ccy(symbol: str, venue: Venue = None) -> CurrencySpot:
+    def default_fx_ccy(symbol: str, venue: Venue = None) -> CurrencyPair:
         """
-        Return a default FX currency pair instrument from the given instrument_id.
+        Return a default FX currency pair instrument from the given symbol and venue.
 
         Parameters
         ----------
@@ -378,7 +378,7 @@ class TestInstrumentProvider:
 
         Returns
         -------
-        CurrencySpot
+        CurrencyPair
 
         Raises
         ------
@@ -405,7 +405,7 @@ class TestInstrumentProvider:
         else:
             price_precision = 5
 
-        return CurrencySpot(
+        return CurrencyPair(
             instrument_id=instrument_id,
             native_symbol=Symbol(symbol),
             base_currency=Currency.from_str(base_currency),
