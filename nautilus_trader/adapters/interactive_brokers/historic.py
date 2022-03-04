@@ -74,7 +74,7 @@ def back_fill_catalog(
                 [details] = ib.reqContractDetails(contract=contract)
                 instrument = parse_instrument(contract_details=details)
                 raw = fetch_market_data(
-                    contract=contract, date=date, kind=kind, tz_name=tz_name, ib=ib
+                    contract=contract, date=date.to_pydatetime(), kind=kind, tz_name=tz_name, ib=ib
                 )
                 if kind == "TRADES":
                     ticks = parse_historic_trade_ticks(
@@ -92,6 +92,8 @@ def back_fill_catalog(
 def fetch_market_data(
     contract: Contract, date: datetime.date, kind: str, tz_name: str, ib=None
 ) -> List:
+    if isinstance(date, datetime.datetime):
+        date = date.date()
     assert kind in ("TRADES", "BID_ASK")
     data: List = []
 
@@ -108,10 +110,12 @@ def fetch_market_data(
             what=kind,
         )
 
+        ticks = [t for t in ticks if t not in data]
+
         if not ticks or ticks[0].time < start_time:
             break
 
-        logger.debug(f"Received {len(ticks)} ticks")
+        logger.debug(f"Received {len(ticks)} ticks between {ticks[0].time} and {ticks[-1].time}")
 
         last_timestamp = pd.Timestamp(ticks[-1].time)
         last_date = last_timestamp.astimezone(tz_name).date()

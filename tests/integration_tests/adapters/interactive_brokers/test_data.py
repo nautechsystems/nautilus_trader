@@ -76,7 +76,7 @@ class TestInteractiveBrokersData(InteractiveBrokersTestBase):
     @pytest.mark.asyncio
     async def test_subscribe_trade_ticks(self, event_loop):
         # Arrange
-        instrument_aapl = IBTestStubs.instrument("AAPL", "NASDAQ")
+        instrument_aapl = IBTestStubs.instrument(symbol="AAPL")
         self._async_setup(loop=event_loop)
         self.data_client.instrument_provider.contract_details[
             instrument_aapl.id
@@ -106,12 +106,12 @@ class TestInteractiveBrokersData(InteractiveBrokersTestBase):
     @pytest.mark.asyncio
     async def test_subscribe_order_book_deltas(self, event_loop):
         # Arrange
-        instrument = IBTestStubs.instrument("AAPL", "NASDAQ")
+        instrument = IBTestStubs.instrument(symbol="AAPL")
         self.instrument_setup(instrument, IBTestStubs.contract_details("AAPL"))
 
         # Act
         with patch.object(self.data_client, "_client") as mock:
-            self.data_client.subscribe_order_book_deltas(
+            self.data_client.subscribe_order_book_snapshots(
                 instrument_id=instrument.id, book_type=BookType.L2_MBP
             )
 
@@ -137,20 +137,20 @@ class TestInteractiveBrokersData(InteractiveBrokersTestBase):
     async def test_on_book_update(self, event_loop):
         # Arrange
         self.instrument_setup(
-            IBTestStubs.instrument("EURUSD", "IDEALPRO"), IBTestStubs.contract_details("EURUSD")
+            IBTestStubs.instrument(symbol="EURUSD"), IBTestStubs.contract_details("EURUSD")
         )
 
         # Act
         for ticker in IBTestStubs.market_depth(name="eurusd"):
-            self.data_client._on_book_update(ticker=ticker)
+            self.data_client._on_order_book_snapshot(ticker=ticker)
 
     @pytest.mark.asyncio
     async def test_on_ticker_update(self, event_loop):
         # Arrange
         self.instrument_setup(
-            IBTestStubs.instrument("EURUSD", "IDEALPRO"), IBTestStubs.contract_details("EURUSD")
+            IBTestStubs.instrument(symbol="EURUSD"), IBTestStubs.contract_details("EURUSD")
         )
 
         # Act
         for ticker in IBTestStubs.tickers("eurusd"):
-            self.data_client._on_ticker_update(ticker=ticker)
+            self.data_client._on_trade_ticker_update(ticker=ticker)

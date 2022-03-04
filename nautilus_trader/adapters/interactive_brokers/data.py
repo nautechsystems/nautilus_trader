@@ -91,6 +91,7 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
             logger=logger,
             config={"name": "InteractiveBrokersDataClient"},
         )
+        self.instrument_provider = instrument_provider
         self._client = client
         self._tickers: Dict[ContractId, List[Ticker]] = defaultdict(list)
 

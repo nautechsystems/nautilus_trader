@@ -2,6 +2,7 @@ import asyncio
 import os
 from unittest.mock import patch
 
+from nautilus_trader.adapters.interactive_brokers.config import InteractiveBrokersDataClientConfig
 from nautilus_trader.adapters.interactive_brokers.factories import (
     InteractiveBrokersLiveDataClientFactory,
 )
@@ -53,7 +54,9 @@ class InteractiveBrokersTestBase:
             self.data_client = InteractiveBrokersLiveDataClientFactory.create(
                 loop=self.loop,
                 name="IB",
-                config={},
+                config=InteractiveBrokersDataClientConfig(  # noqa: S106
+                    username="test", password="test"
+                ),
                 msgbus=self.msgbus,
                 cache=self.cache,
                 clock=self.clock,
