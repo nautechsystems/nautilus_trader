@@ -110,7 +110,7 @@ cdef class TradeReport(ExecutionReport):
     cdef readonly PositionId venue_position_id
     """The reported venue position ID (assigned by the venue).\n\n:returns: `PositionId` or ``None``"""
     cdef readonly TradeId trade_id
-    """The reported trade match ID.\n\n:returns: `TradeId`"""
+    """The reported trade match ID (assigned by the venue).\n\n:returns: `TradeId`"""
     cdef readonly OrderSide order_side
     """The reported trades side.\n\n:returns: `OrderSide`"""
     cdef readonly Quantity last_qty
