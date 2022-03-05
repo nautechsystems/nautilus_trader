@@ -15,7 +15,42 @@
 
 # isort:skip_file
 
-"""Provides the C Enums as Python Enums for external use."""
+"""
+Defines the enums of the trading domain model.
+
+Account Type
+------------
+Represents a trading account type.
+
+>>> from nautilus_trader.model.enums import AccountType
+>>> AccountType.CASH
+<AccountType.CASH: 1>
+>>> AccountType.MARGIN
+<AccountType.MARGIN: 2>
+>>> AccountType.BETTING
+<AccountType.BETTING: 3>
+
+Aggregation Source
+------------------
+Represents where a bar was aggregated in relation to the platform.
+
+>>> from nautilus_trader.model.enums import AggregationSource
+>>> AggregationSource.EXTERNAL  # Bar was aggregated externally to the platform
+<AggregationSource.EXTERNAL: 1>
+>>> AggregationSource.INTERNAL  # Bar was aggregated internally within the platform
+<AggregationSource.INTERNAL: 2>
+
+Aggregssor Side
+---------------
+Represents the order side of the aggressor (liquidity taker) for a particular trade.
+
+>>> from nautilus_trader.model.enums import AggressorSide
+>>> AggressorSide.BUY
+<AggressorSide.BUY: 1>
+>>> AggressorSide.SELL
+<AggressorSide.SELL: 2>
+
+"""
 
 from nautilus_trader.model.c_enums.account_type import AccountType                         # noqa F401 (being used)
 from nautilus_trader.model.c_enums.account_type import AccountTypeParser                   # noqa F401 (being used)
