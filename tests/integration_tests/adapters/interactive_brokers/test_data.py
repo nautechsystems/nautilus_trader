@@ -21,55 +21,9 @@ class TestInteractiveBrokersData(InteractiveBrokersTestBase):
             contract_details.contract.conId
         ] = instrument.id
 
-    def _async_setup(self, loop):
-        pass
-
-    #     # Fixture Setup
-    #     self.loop = loop
-    #     self.clock = LiveClock()
-    #     self.logger = LiveLogger(
-    #         loop=self.loop,
-    #         clock=self.clock,
-    #         level_stdout=LogLevel.DEBUG,
-    #     )
-    #
-    #     self.trader_id = TestStubs.trader_id()
-    #     self.strategy_id = TestStubs.strategy_id()
-    #     self.account_id = TestStubs.account_id()
-    #
-    #     self.msgbus = MessageBus(
-    #         trader_id=self.trader_id,
-    #         clock=self.clock,
-    #         logger=self.logger,
-    #     )
-    #
-    #     self.cache_db = MockCacheDatabase(
-    #         logger=self.logger,
-    #     )
-    #
-    #     self.cache = Cache(
-    #         database=self.cache_db,
-    #         logger=self.logger,
-    #     )
-    #
-    #     # Arrange, Act
-    #     with patch("nautilus_trader.adapters.interactive_brokers.factories.get_cached_ib_client"):
-    #
-    #         self.data_client = InteractiveBrokersLiveDataClientFactory.create(
-    #             loop=self.loop,
-    #             name="IB",
-    #             config={},
-    #             msgbus=self.msgbus,
-    #             cache=self.cache,
-    #             clock=self.clock,
-    #             logger=self.logger,
-    #         )
-
     @pytest.mark.asyncio
     async def test_factory(self, event_loop):
         # Arrange
-        self._async_setup(loop=event_loop)
-
         # Act
         data_client = self.data_client
 
@@ -80,7 +34,6 @@ class TestInteractiveBrokersData(InteractiveBrokersTestBase):
     async def test_subscribe_trade_ticks(self, event_loop):
         # Arrange
         instrument_aapl = IBTestStubs.instrument(symbol="AAPL")
-        self._async_setup(loop=event_loop)
         self.data_client.instrument_provider.contract_details[
             instrument_aapl.id
         ] = IBTestStubs.contract_details("AAPL")

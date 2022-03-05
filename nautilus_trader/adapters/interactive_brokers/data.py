@@ -124,7 +124,7 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
 
     def disconnect(self):
         """
-        Disconnect the client from Binance.
+        Disconnect the client from Interactive Brokers.
         """
         self._log.info("Disconnecting...")
         self._loop.create_task(self._disconnect())

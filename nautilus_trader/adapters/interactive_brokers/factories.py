@@ -194,7 +194,7 @@ class InteractiveBrokersLiveDataClientFactory(LiveDataClientFactory):
         return data_client
 
 
-class InteractiveBrokersLiveExecutionClientFactory(LiveExecClientFactory):
+class InteractiveBrokersLiveExecClientFactory(LiveExecClientFactory):
     """
     Provides a `InteractiveBrokers` live execution client factory.
     """

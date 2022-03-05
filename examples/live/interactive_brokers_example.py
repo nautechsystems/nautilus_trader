@@ -78,13 +78,15 @@ config_node = TradingNodeConfig(
 # Instantiate the node with a configuration
 node = TradingNode(config=config_node)
 
+# TODO - test quote ticks, orderbook etc
+
 # Configure your strategy
 strategy_config = SubscribeStrategyConfig(
     instrument_id="EUR/USD.IDEALPRO",
     book_type=BookType.L1_TBBO,
     snapshots=False,
-    trade_ticks=False,
-    quote_ticks=True,
+    trade_ticks=True,
+    # quote_ticks=True,
 )
 # Instantiate your strategy
 strategy = SubscribeStrategy(config=strategy_config)
