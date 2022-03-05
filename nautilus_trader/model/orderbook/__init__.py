@@ -14,6 +14,5 @@
 # -------------------------------------------------------------------------------------------------
 
 """
-Defines fundamental machinery necessary to build and maintain full real-time and
-simulated order books.
+Defines real-time and simulated order book components.
 """
