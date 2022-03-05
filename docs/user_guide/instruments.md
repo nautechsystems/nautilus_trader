@@ -1,6 +1,6 @@
 # Instruments
 
-The `Instrument` base class represents the core specification (or definition) for any tradable asset/contract. There are
+The `Instrument` base class represents the core specification for any tradable asset/contract. There are
 currently a number of subclasses representing a range of _asset classes_ and _asset types_ which are supported by the platform:
 - `Equity` (generic Equity)
 - `Future` (generic Futures Contract)

@@ -14,6 +14,6 @@
 # -------------------------------------------------------------------------------------------------
 
 """
-Defines categories of trading instruments with specific properties dependent
+Defines tradable asset/contract instruments with specific properties dependent
 on the asset class and asset type.
 """
