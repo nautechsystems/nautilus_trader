@@ -13,14 +13,14 @@
 //  limitations under the License.
 // ------------------------------------------------------------------------------------------------
 
+use crate::enums::CurrencyType;
 use crate::primitives::currency::Currency;
 use crate::primitives::money::Money;
 use crate::primitives::price::Price;
 use crate::primitives::quantity::Quantity;
+use nautilus_core::string::{from_cstring, into_cstring};
 use std::ops::{AddAssign, SubAssign};
 use std::os::raw::c_char;
-use nautilus_core::string::{from_cstring, into_cstring};
-use crate::enums::CurrencyType;
 
 ////////////////////////////////////////////////////////////////////////////////
 // Price

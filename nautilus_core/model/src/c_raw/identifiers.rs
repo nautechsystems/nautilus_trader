@@ -100,10 +100,13 @@ pub extern "C" fn instrument_id_free(instrument_id: InstrumentId) {
 
 #[cfg(test)]
 mod tests {
-    use crate::c_raw::identifiers::{instrument_id_free, instrument_id_from_cstring, instrument_id_to_cstring, symbol_free, symbol_from_cstring, symbol_to_cstring, venue_free, venue_from_cstring, venue_to_cstring};
+    use crate::c_raw::identifiers::{
+        instrument_id_free, instrument_id_from_cstring, instrument_id_to_cstring, symbol_free,
+        symbol_from_cstring, symbol_to_cstring, venue_free, venue_from_cstring, venue_to_cstring,
+    };
+    use crate::identifiers::instrument_id::InstrumentId;
     use crate::identifiers::symbol::Symbol;
     use crate::identifiers::venue::Venue;
-    use crate::identifiers::instrument_id::InstrumentId;
 
     #[test]
     fn test_symbol_cstring_conversions() {

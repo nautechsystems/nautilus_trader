@@ -108,7 +108,7 @@ class TestBacktestAcceptanceTestsUSDJPY:
         # Assert - Should return expected PnL
         assert strategy.fast_ema.count == 2689
         assert self.engine.iteration == 115044
-        assert self.engine.portfolio.account(self.venue).balance_total(USD) == Money(992811.19, USD)
+        assert self.engine.portfolio.account(self.venue).balance_total(USD) == Money(992811.26, USD)
 
     def test_rerun_ema_cross_strategy_returns_identical_performance(self):
         # Arrange

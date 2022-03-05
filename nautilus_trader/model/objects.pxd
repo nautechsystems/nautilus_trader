@@ -15,6 +15,7 @@
 
 from libc.stdint cimport int64_t
 from libc.stdint cimport uint8_t
+from libc.stdint cimport uint64_t
 
 from nautilus_trader.core.rust.model cimport Money_t
 from nautilus_trader.core.rust.model cimport Price_t
@@ -26,7 +27,7 @@ from nautilus_trader.model.identifiers cimport InstrumentId
 cdef class Quantity:
     cdef Quantity_t _qty
 
-    cdef int64_t fixed_int64_c(self)
+    cdef uint64_t fixed_uint64_c(self)
     cdef double as_f64_c(self)
 
     cpdef str to_str(self)

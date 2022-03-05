@@ -47,6 +47,7 @@ impl Price {
     pub fn is_zero(&self) -> bool {
         self.fixed == 0
     }
+
     pub fn as_f64(&self) -> f64 {
         fixed_i64_to_f64(self.fixed)
     }

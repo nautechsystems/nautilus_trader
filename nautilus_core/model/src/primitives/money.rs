@@ -99,7 +99,6 @@ impl Neg for Money {
     }
 }
 
-
 impl Add for Money {
     type Output = Self;
     fn add(self, rhs: Money) -> Self::Output {
@@ -193,13 +192,7 @@ mod tests {
 
     #[test]
     fn test_money_new_usd() {
-        let usd = Currency::new(
-            "USD",
-            2,
-            840,
-            "United States dollar",
-            CurrencyType::FIAT,
-        );
+        let usd = Currency::new("USD", 2, 840, "United States dollar", CurrencyType::FIAT);
         let money = Money::new(1000.0, usd);
 
         assert_eq!("1000.00 USD", money.to_string());
@@ -207,13 +200,7 @@ mod tests {
 
     #[test]
     fn test_money_new_btc() {
-        let btc = Currency::new(
-            "BTC",
-            8,
-            0,
-            "Bitcoin",
-            CurrencyType::FIAT,
-        );
+        let btc = Currency::new("BTC", 8, 0, "Bitcoin", CurrencyType::FIAT);
 
         let money = Money::new(10.3, btc);
 

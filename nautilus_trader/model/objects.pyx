@@ -28,6 +28,7 @@ from cpython.object cimport Py_LT
 from cpython.object cimport PyObject_RichCompareBool
 from libc.stdint cimport int64_t
 from libc.stdint cimport uint8_t
+from libc.stdint cimport uint64_t
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.rust.model cimport Currency_t
@@ -187,11 +188,11 @@ cdef class Quantity:
     def __del__(self) -> None:
         quantity_free(self._qty)  # `self._qty` moved to Rust (then dropped)
 
-    cdef int64_t fixed_int64_c(self):
+    cdef uint64_t fixed_uint64_c(self):
         return self._qty.fixed
 
     cdef double as_f64_c(self):
-        return round(quantity_as_f64(&self._qty), self._qty.precision)
+        return quantity_as_f64(&self._qty)
 
     @staticmethod
     cdef object _extract_decimal(object obj):
@@ -323,14 +324,14 @@ cdef class Quantity:
             other._qty.precision <= self._qty.precision,
             "other precision was greater than assigning quantity precision",
         )
-        self._qty.value += other.fixed_int64_c()
+        self._qty.value += other.fixed_uint64_c()
 
     cpdef void sub_assign(self, Quantity other) except *:
         Condition.true(
             other._qty.precision <= self._qty.precision,
             "other precision was greater than assigning quantity precision",
         )
-        self._qty.value -= other.fixed_int64_c()
+        self._qty.value -= other.fixed_uint64_c()
 
     cpdef object as_decimal(self):
         """
@@ -497,7 +498,7 @@ cdef class Price:
         return self._price.fixed
 
     cdef double as_f64_c(self):
-        return round(price_as_f64(&self._price), self._price.precision)
+        return price_as_f64(&self._price)
 
     @staticmethod
     cdef object _extract_decimal(object obj):
@@ -763,7 +764,7 @@ cdef class Money:
         return self._money.fixed
 
     cdef double as_f64_c(self):
-        return round(money_as_f64(&self._money), self._money.currency.precision)
+        return money_as_f64(&self._money)
 
     @staticmethod
     cdef object _extract_decimal(object obj):
