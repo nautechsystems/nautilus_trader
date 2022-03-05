@@ -18,6 +18,8 @@ from typing import Any, Optional
 import pandas as pd
 
 from nautilus_trader.analysis.statistic import PortfolioStatistic
+from nautilus_trader.analysis.statistics.loser_avg import AvgLoser
+from nautilus_trader.analysis.statistics.winner_avg import AvgWinner
 
 
 class Expectancy(PortfolioStatistic):
@@ -31,12 +33,15 @@ class Expectancy(PortfolioStatistic):
             return 0.0
 
         # Calculate statistic
+        avg_winner: Optional[float] = AvgWinner().calculate_from_realized_pnls(realized_pnls)
+        avg_loser: Optional[float] = AvgLoser().calculate_from_realized_pnls(realized_pnls)
+        if avg_winner is None or avg_loser is None:
+            return 0.0
+
         pnls = realized_pnls.to_numpy()
         winners = pnls[pnls > 0.0]
         losers = pnls[pnls <= 0.0]
         win_rate = len(winners) / float(max(1, (len(winners) + len(losers))))
         loss_rate = 1.0 - win_rate
-        avg_winner = winners.mean()
-        avg_loser = losers.mean()
 
         return (avg_winner * win_rate) + (avg_loser * loss_rate)
