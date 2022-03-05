@@ -35,7 +35,7 @@ AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy("AUD/USD")
 GBPUSD_SIM = TestInstrumentProvider.default_fx_ccy("GBP/USD")
 
 
-class TestAnalyzer:
+class TestPortfolioAnalyzer:
     def setup(self):
         # Fixture Setup
         self.analyzer = PortfolioAnalyzer()
