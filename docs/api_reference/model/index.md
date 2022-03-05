@@ -13,6 +13,7 @@
    
    currency.md
    data.md
+   enums.md
    events.md
    identifiers.md
    instruments.md
