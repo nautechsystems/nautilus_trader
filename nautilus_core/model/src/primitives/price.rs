@@ -30,7 +30,7 @@ pub struct Price {
 impl Price {
     pub fn new(value: f64, precision: u8) -> Self {
         Price {
-            fixed: f64_to_fixed_i64(value, precision),
+            fixed: f64_to_fixed_i64(value, precision as i8),
             precision,
         }
     }

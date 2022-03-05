@@ -32,7 +32,7 @@ impl Quantity {
         assert!(value >= 0.0);
 
         Quantity {
-            fixed: f64_to_fixed_u64(value, precision),
+            fixed: f64_to_fixed_u64(value, precision as i8),
             precision,
         }
     }

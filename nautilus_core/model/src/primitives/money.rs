@@ -30,7 +30,7 @@ pub struct Money {
 impl Money {
     pub fn new(amount: f64, currency: Currency) -> Money {
         Money {
-            fixed: f64_to_fixed_i64(amount, currency.precision),
+            fixed: f64_to_fixed_i64(amount, currency.precision as i8),
             currency,
         }
     }

@@ -15,18 +15,18 @@
 
 use math::round;
 
-pub const FIXED_POWER: f64 = 1000000000.0;
-pub const FIXED_UNIT: f64 = 0.000000001;
+pub const FIXED_POWER: f64 = 1000000000.0;  // fixed power 10.0**9
+pub const FIXED_UNIT: f64 = 0.000000001; // fixed unit 10.0**-9
 
-pub fn f64_to_fixed_i64(value: f64, precision: u8) -> i64 {
+pub fn f64_to_fixed_i64(value: f64, precision: i8) -> i64 {
     assert!(precision <= 9);
-    let rounded = round::half_to_even(value, precision as i8);
+    let rounded = round::half_to_even(value, precision);
     (rounded * FIXED_POWER) as i64
 }
 
-pub fn f64_to_fixed_u64(value: f64, precision: u8) -> u64 {
+pub fn f64_to_fixed_u64(value: f64, precision: i8) -> u64 {
     assert!(precision <= 9);
-    let rounded = round::half_to_even(value, precision as i8);
+    let rounded = round::half_to_even(value, precision);
     (rounded * FIXED_POWER) as u64
 }
 
@@ -54,7 +54,7 @@ mod tests {
     #[case(-1.0, 1)]
     #[case(-1.1, 1)]
     #[case(-0.000000001, 9)]
-    fn test_f64_to_fixed_i64_to_fixed(#[case] value: f64, #[case] precision: u8) {
+    fn test_f64_to_fixed_i64_to_fixed(#[case] value: f64, #[case] precision: i8) {
         let fixed = f64_to_fixed_i64(value, precision);
         let result = fixed_i64_to_f64(fixed);
         assert_eq!(result, value);
@@ -65,7 +65,7 @@ mod tests {
     #[case(1.0, 1)]
     #[case(1.1, 1)]
     #[case(0.000000001, 9)]
-    fn test_f64_to_fixed_u64_to_fixed(#[case] value: f64, #[case] precision: u8) {
+    fn test_f64_to_fixed_u64_to_fixed(#[case] value: f64, #[case] precision: i8) {
         let fixed = f64_to_fixed_u64(value, precision);
         let result = fixed_u64_to_f64(fixed);
         assert_eq!(result, value);
