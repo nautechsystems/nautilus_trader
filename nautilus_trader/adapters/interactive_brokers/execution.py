@@ -165,12 +165,12 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
             contract=contract_details.contract,
             order=nautilus_order_to_ib_order(order=command.order),
         )
-        self._venue_order_id_to_client_order_id[trade.order.orderId] = command.order.clie
+        self._venue_order_id_to_client_order_id[trade.order.orderId] = command.order.client_order_id
 
     def _on_new_order(self, trade: Trade):
         self._log.debug(f"new_order: {Trade}")
         instrument_id = self._instrument_provider.contract_id_to_instrument_id[trade.contract.conId]
-        self.generate_order_accepted(strategy_id="", instrument_id=instrument_id)
+        self.generate_order_submitted(strategy_id="", instrument_id=instrument_id)
 
-    # def _on_open_order(self, trade: Trade):
-    #     self.generate_order_accepted()
+    def _on_open_order(self, trade: Trade):
+        self.generate_order_accepted()

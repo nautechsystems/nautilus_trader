@@ -44,7 +44,6 @@ from nautilus_trader.backtest.data.providers import TestDataProvider
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.factories import OrderFactory
 from nautilus_trader.common.logging import LiveLogger
-from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.examples.strategies.orderbook_imbalance import OrderBookImbalanceConfig
 from nautilus_trader.execution.config import ExecEngineConfig
 from nautilus_trader.execution.messages import CancelOrder
@@ -57,10 +56,8 @@ from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import TimeInForce
 from nautilus_trader.model.events.order import OrderAccepted
 from nautilus_trader.model.events.order import OrderSubmitted
-from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import ClientOrderId
 from nautilus_trader.model.identifiers import InstrumentId
-from nautilus_trader.model.identifiers import PositionId
 from nautilus_trader.model.identifiers import VenueOrderId
 from nautilus_trader.model.instruments.betting import BettingInstrument
 from nautilus_trader.model.objects import Price
@@ -130,20 +127,8 @@ class BetfairTestStubs:
         )
 
     @staticmethod
-    def position_id():
-        return PositionId("1")
-
-    @staticmethod
     def instrument_id():
         return BetfairTestStubs.betting_instrument().id
-
-    @staticmethod
-    def uuid():
-        return UUID4("038990c6-19d2-b5c8-37a6-fe91f9b7b9ed")
-
-    @staticmethod
-    def account_id() -> AccountId:
-        return AccountId(BETFAIR_VENUE.value, "000")
 
     @staticmethod
     def data_engine(event_loop, msgbus, clock, live_logger):
@@ -305,7 +290,7 @@ class BetfairTestStubs:
             price=price or Price.from_str("0.5"),
             time_in_force=TimeInForce.GTC,
             expire_time=None,
-            init_id=BetfairTestStubs.uuid(),
+            init_id=TestStubs.uuid(),
             ts_init=0,
             post_only=False,
             reduce_only=False,
@@ -325,10 +310,10 @@ class BetfairTestStubs:
         submitted = OrderSubmitted(
             trader_id=TestStubs.trader_id(),
             strategy_id=TestStubs.strategy_id(),
-            account_id=BetfairTestStubs.account_id(),
+            account_id=TestStubs.account_id(),
             instrument_id=BetfairTestStubs.instrument_id(),
             client_order_id=order.client_order_id,
-            event_id=BetfairTestStubs.uuid(),
+            event_id=TestStubs.uuid(),
             ts_event=ts_event,
             ts_init=ts_init,
         )
@@ -349,11 +334,11 @@ class BetfairTestStubs:
         accepted = OrderAccepted(
             trader_id=TestStubs.trader_id(),
             strategy_id=TestStubs.strategy_id(),
-            account_id=BetfairTestStubs.account_id(),
+            account_id=TestStubs.account_id(),
             instrument_id=BetfairTestStubs.instrument_id(),
             client_order_id=order.client_order_id,
             venue_order_id=venue_order_id or VenueOrderId("1"),
-            event_id=BetfairTestStubs.uuid(),
+            event_id=TestStubs.uuid(),
             ts_event=ts_event,
             ts_init=ts_init,
         )
@@ -376,7 +361,7 @@ class BetfairTestStubs:
             price=price or Price(0.33, precision=5),
             time_in_force=time_in_force,
             expire_time=None,
-            init_id=BetfairTestStubs.uuid(),
+            init_id=TestStubs.uuid(),
             ts_init=BetfairTestStubs.clock().timestamp_ns(),
         )
 
@@ -392,7 +377,7 @@ class BetfairTestStubs:
             order_side=side or OrderSide.BUY,
             quantity=Quantity.from_int(10),
             time_in_force=time_in_force or TimeInForce.GTC,
-            init_id=BetfairTestStubs.uuid(),
+            init_id=TestStubs.uuid(),
             ts_init=BetfairTestStubs.clock().timestamp_ns(),
         )
 
@@ -403,7 +388,7 @@ class BetfairTestStubs:
             strategy_id=TestStubs.strategy_id(),
             position_id=BetfairTestStubs.position_id(),
             order=order or BetfairTestStubs.limit_order(time_in_force=time_in_force),
-            command_id=BetfairTestStubs.uuid(),
+            command_id=TestStubs.uuid(),
             ts_init=BetfairTestStubs.clock().timestamp_ns(),
         )
 
@@ -424,7 +409,7 @@ class BetfairTestStubs:
             quantity=Quantity.from_int(50),
             price=Price(0.74347, precision=5),
             trigger_price=None,
-            command_id=BetfairTestStubs.uuid(),
+            command_id=TestStubs.uuid(),
             ts_init=BetfairTestStubs.clock().timestamp_ns(),
         )
 
@@ -436,7 +421,7 @@ class BetfairTestStubs:
             instrument_id=instrument_id or BetfairTestStubs.instrument_id(),
             client_order_id=client_order_id or ClientOrderId("O-20210410-022422-001-001-1"),
             venue_order_id=venue_order_id or VenueOrderId("228302937743"),
-            command_id=BetfairTestStubs.uuid(),
+            command_id=TestStubs.uuid(),
             ts_init=BetfairTestStubs.clock().timestamp_ns(),
         )
 
@@ -984,10 +969,10 @@ class BetfairDataProvider:
                 price=Price(0.33, precision=5),
                 time_in_force=TimeInForce.GTC,
                 expire_time=None,
-                init_id=BetfairTestStubs.uuid(),
+                init_id=TestStubs.uuid(),
                 ts_init=BetfairTestStubs.clock().timestamp_ns(),
             ),
-            command_id=BetfairTestStubs.uuid(),
+            command_id=TestStubs.uuid(),
             ts_init=BetfairTestStubs.clock().timestamp_ns(),
         )
 
@@ -1004,7 +989,7 @@ class BetfairDataProvider:
             quantity=Quantity.from_int(50),
             price=Price(0.74347, precision=5),
             trigger_price=None,
-            command_id=BetfairTestStubs.uuid(),
+            command_id=TestStubs.uuid(),
             ts_init=BetfairTestStubs.clock().timestamp_ns(),
         )
 
@@ -1016,7 +1001,7 @@ class BetfairDataProvider:
             instrument_id=BetfairTestStubs.instrument_id(),
             client_order_id=ClientOrderId("O-20210410-022422-001-001-1"),
             venue_order_id=VenueOrderId("229597791245"),
-            command_id=BetfairTestStubs.uuid(),
+            command_id=TestStubs.uuid(),
             ts_init=BetfairTestStubs.clock().timestamp_ns(),
         )
 

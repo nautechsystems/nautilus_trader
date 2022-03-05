@@ -3,8 +3,8 @@ import pathlib
 import pickle
 
 from ib_insync import Contract
-from ib_insync import LimitOrder
-from ib_insync import Order
+from ib_insync import LimitOrder as IBLimitOrder
+from ib_insync import Order as IBOrder
 from ib_insync import OrderStatus
 from ib_insync import Trade
 from ib_insync import TradeLogEntry
@@ -12,6 +12,7 @@ from ib_insync import TradeLogEntry
 from nautilus_trader.adapters.interactive_brokers.parsing.instruments import parse_instrument
 from nautilus_trader.model.instruments.equity import Equity
 from tests import TESTS_PACKAGE_ROOT
+from tests.test_kit.stubs import TestStubs
 
 
 TEST_PATH = pathlib.Path(TESTS_PACKAGE_ROOT + "/integration_tests/adapters/interactive_brokers/")
@@ -60,7 +61,7 @@ class IBTestStubs:
     def create_order(
         contract: Contract,
         status=OrderStatus.PendingSubmit,
-        order_type: Order = LimitOrder,
+        order_type: IBOrder = IBLimitOrder,
         side="SELL",
         price=1.11,
         size=20000,
@@ -74,7 +75,7 @@ class IBTestStubs:
 
 class IBExecTestStubs:
     @staticmethod
-    def order(
+    def ib_order(
         order_id: int = 1,
         client_id: int = 1,
         kind: str = "LIMIT",
@@ -83,7 +84,7 @@ class IBExecTestStubs:
         limit_price: float = 0.01,
     ):
         if kind == "LIMIT":
-            return LimitOrder(
+            return IBLimitOrder(
                 orderId=order_id,
                 clientId=client_id,
                 action=action,
@@ -119,7 +120,7 @@ class IBExecTestStubs:
     ) -> Trade:
         return Trade(
             contract=contract or IBTestStubs.contract_details("AAPL"),
-            order=order or IBExecTestStubs.order(),
+            order=order or TestStubs.order(),
             orderStatus=order_status,
             fills=fills or [],
             log=log or [],

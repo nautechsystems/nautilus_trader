@@ -16,7 +16,7 @@
 import asyncio
 from datetime import datetime
 from decimal import Decimal
-from typing import List
+from typing import List, Optional
 
 import orjson
 import pandas as pd
@@ -36,6 +36,7 @@ from nautilus_trader.core.data import Data
 from nautilus_trader.core.datetime import maybe_dt_to_unix_nanos
 from nautilus_trader.core.datetime import millis_to_nanos
 from nautilus_trader.core.uuid import UUID4
+from nautilus_trader.execution.messages import SubmitOrder
 from nautilus_trader.model.currencies import GBP
 from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.currency import Currency
@@ -75,6 +76,7 @@ from nautilus_trader.model.events.position import PositionOpened
 from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import ComponentId
 from nautilus_trader.model.identifiers import InstrumentId
+from nautilus_trader.model.identifiers import PositionId
 from nautilus_trader.model.identifiers import StrategyId
 from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import TradeId
@@ -440,12 +442,16 @@ class TestStubs:
         return TraderId("TESTER-000")
 
     @staticmethod
-    def account_id() -> AccountId:
-        return AccountId("SIM", "000")
+    def account_id(venue="SIM", account_id="000") -> AccountId:
+        return AccountId(venue, account_id)
 
     @staticmethod
     def strategy_id() -> StrategyId:
         return StrategyId("S-001")
+
+    @staticmethod
+    def position_id(position_id: str = "1") -> PositionId:
+        return PositionId("1")
 
     @staticmethod
     def cash_account():
@@ -773,6 +779,10 @@ class TestStubs:
         )
 
     @staticmethod
+    def uuid():
+        return UUID4("038990c6-19d2-b5c8-37a6-fe91f9b7b9ed")
+
+    @staticmethod
     def clock() -> LiveClock:
         return LiveClock()
 
@@ -1011,3 +1021,17 @@ class TestStubs:
             for data in orjson.loads(open(PACKAGE_ROOT + "/data/L3_feed.json").read())
             for msg in parser(data)
         ]
+
+    @staticmethod
+    def submit_order_command(
+        order=None,
+        position_id: Optional[str] = None,
+    ):
+        return SubmitOrder(
+            trader_id=TestStubs.trader_id(),
+            strategy_id=TestStubs.strategy_id(),
+            position_id=TestStubs.position_id(position_id),
+            order=order or TestStubs.order(),
+            command_id=TestStubs.uuid(),
+            ts_init=TestStubs.clock().timestamp_ns(),
+        )
