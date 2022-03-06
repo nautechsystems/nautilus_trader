@@ -101,10 +101,8 @@ ib = ["ib_insync"]
 ##########################################################
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-addopts = "-ra --new-first --failed-first"
+addopts = "-ra --new-first --failed-first --doctest-modules --doctest-glob=\"*.pyx\""
 filterwarnings = [
     "ignore::UserWarning",
     "ignore::DeprecationWarning",
 ]
-
-# TODO (move .coveragerc here once we're on coverage 5.x)
