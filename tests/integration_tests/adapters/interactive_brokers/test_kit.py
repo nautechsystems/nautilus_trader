@@ -77,6 +77,7 @@ class IBExecTestStubs:
     def ib_order(
         order_id: int = 1,
         client_id: int = 1,
+        permId: int = 0,
         kind: str = "LIMIT",
         action: str = "BUY",
         quantity: int = 1,
@@ -89,6 +90,7 @@ class IBExecTestStubs:
                 action=action,
                 totalQuantity=quantity,
                 lmtPrice=limit_price,
+                permId=permId,
             )
         else:
             raise RuntimeError

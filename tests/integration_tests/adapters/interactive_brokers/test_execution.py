@@ -4,6 +4,7 @@ import pytest
 from ib_insync import Contract
 from ib_insync import LimitOrder
 
+from nautilus_trader.model.identifiers import VenueOrderId
 from tests.integration_tests.adapters.interactive_brokers.base import InteractiveBrokersTestBase
 from tests.integration_tests.adapters.interactive_brokers.test_kit import IBExecTestStubs
 from tests.integration_tests.adapters.interactive_brokers.test_kit import IBTestStubs
@@ -90,5 +91,30 @@ class TestInteractiveBrokersData(InteractiveBrokersTestBase):
             "instrument_id": self.instrument.id,
             "client_order_id": TestStubs.client_order_id(),
             "ts_event": 1646449586871811000,
+        }
+        assert kwargs == expected
+
+    @pytest.mark.asyncio
+    async def test_on_open_order(self, event_loop):
+        # Arrange
+        self.instrument_setup()
+        self.exec_client._client_order_id_to_strategy_id[
+            TestStubs.client_order_id()
+        ] = TestStubs.strategy_id()
+        self.exec_client._venue_order_id_to_client_order_id[1] = TestStubs.client_order_id()
+        trade = IBExecTestStubs.trade_submitted()
+
+        # Act
+        with patch.object(self.exec_client, "generate_order_accepted") as mock:
+            self.exec_client._on_open_order(trade)
+
+        # Assert
+        name, args, kwargs = mock.mock_calls[0]
+        expected = {
+            "strategy_id": TestStubs.strategy_id(),
+            "instrument_id": self.instrument.id,
+            "client_order_id": TestStubs.client_order_id(),
+            "venue_order_id": VenueOrderId("189868420"),
+            "ts_event": 1646449588378175000,
         }
         assert kwargs == expected

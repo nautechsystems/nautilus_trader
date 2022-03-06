@@ -106,9 +106,9 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
 
         # Event hooks
         self._client.newOrderEvent += self._on_new_order
+        self._client.openOrderEvent += self._on_open_order
         # self._client.orderModifyEvent += self.on_modified_order
         # self._client.cancelOrderEvent += self.on_cancel_order
-        self._client.openOrderEvent += self._on_open_order
         # self._client.orderStatusEvent += self.on_order_status
         # self._client.execDetailsEvent += self.on_order_execution
 
@@ -185,4 +185,16 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
         )
 
     def _on_open_order(self, trade: Trade):
-        self.generate_order_accepted()
+        instrument_id = self._instrument_provider.contract_id_to_instrument_id[trade.contract.conId]
+        client_order_id = self._venue_order_id_to_client_order_id[trade.order.orderId]
+        strategy_id = self._client_order_id_to_strategy_id[client_order_id]
+        venue_order_id = VenueOrderId(str(trade.orderStatus.permId))
+        self.generate_order_accepted(
+            strategy_id=strategy_id,
+            instrument_id=instrument_id,
+            client_order_id=client_order_id,
+            venue_order_id=venue_order_id,
+            ts_event=dt_to_unix_nanos(trade.log[-1].time),
+        )
+        # We can remove the local `_venue_order_id_to_client_order_id` now, we have a permId
+        self._venue_order_id_to_client_order_id.pop(trade.order.orderId)
