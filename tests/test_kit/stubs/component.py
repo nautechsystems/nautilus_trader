@@ -46,7 +46,7 @@ class TestComponentStubs:
     @staticmethod
     def msgbus():
         return MessageBus(
-            trader_id=TestComponentStubs.clock,
+            trader_id=TestIdStubs.trader_id(),
             clock=TestComponentStubs.clock(),
             logger=TestComponentStubs.logger(),
         )

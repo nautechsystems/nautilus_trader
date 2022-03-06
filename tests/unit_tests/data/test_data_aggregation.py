@@ -41,7 +41,8 @@ from nautilus_trader.model.identifiers import TradeId
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from tests.test_kit.mocks import ObjectStorer
-from tests.test_kit.stubs import TestStubs
+from tests.test_kit.stubs.data import TestDataStubs
+from tests.test_kit.stubs.identities import TestIdStubs
 
 
 AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy("AUD/USD")
@@ -52,7 +53,7 @@ ETHUSDT_BINANCE = TestInstrumentProvider.ethusd_bitmex()
 class TestBarBuilder:
     def test_instantiate(self):
         # Arrange
-        bar_type = TestStubs.bartype_btcusdt_binance_100tick_last()
+        bar_type = TestDataStubs.bartype_btcusdt_binance_100tick_last()
         builder = BarBuilder(BTCUSDT_BINANCE, bar_type)
 
         # Act, Assert
@@ -62,7 +63,7 @@ class TestBarBuilder:
 
     def test_str_repr(self):
         # Arrange
-        bar_type = TestStubs.bartype_btcusdt_binance_100tick_last()
+        bar_type = TestDataStubs.bartype_btcusdt_binance_100tick_last()
         builder = BarBuilder(BTCUSDT_BINANCE, bar_type)
 
         # Act, Assert
@@ -77,7 +78,7 @@ class TestBarBuilder:
 
     def test_set_partial_updates_bar_to_expected_properties(self):
         # Arrange
-        bar_type = TestStubs.bartype_btcusdt_binance_100tick_last()
+        bar_type = TestDataStubs.bartype_btcusdt_binance_100tick_last()
         builder = BarBuilder(BTCUSDT_BINANCE, bar_type)
 
         partial_bar = Bar(
@@ -107,7 +108,7 @@ class TestBarBuilder:
 
     def test_set_partial_when_already_set_does_not_update(self):
         # Arrange
-        bar_type = TestStubs.bartype_btcusdt_binance_100tick_last()
+        bar_type = TestDataStubs.bartype_btcusdt_binance_100tick_last()
         builder = BarBuilder(BTCUSDT_BINANCE, bar_type)
 
         partial_bar1 = Bar(
@@ -149,7 +150,7 @@ class TestBarBuilder:
 
     def test_single_update_results_in_expected_properties(self):
         # Arrange
-        bar_type = TestStubs.bartype_btcusdt_binance_100tick_last()
+        bar_type = TestDataStubs.bartype_btcusdt_binance_100tick_last()
         builder = BarBuilder(BTCUSDT_BINANCE, bar_type)
 
         # Act
@@ -162,7 +163,7 @@ class TestBarBuilder:
 
     def test_single_update_when_timestamp_less_than_last_update_ignores(self):
         # Arrange
-        bar_type = TestStubs.bartype_btcusdt_binance_100tick_last()
+        bar_type = TestDataStubs.bartype_btcusdt_binance_100tick_last()
         builder = BarBuilder(BTCUSDT_BINANCE, bar_type)
         builder.update(Price.from_str("1.00000"), Quantity.from_str("1"), 1_000)
 
@@ -176,7 +177,7 @@ class TestBarBuilder:
 
     def test_multiple_updates_correctly_increments_count(self):
         # Arrange
-        bar_type = TestStubs.bartype_btcusdt_binance_100tick_last()
+        bar_type = TestDataStubs.bartype_btcusdt_binance_100tick_last()
         builder = BarBuilder(BTCUSDT_BINANCE, bar_type)
 
         # Act
@@ -191,7 +192,7 @@ class TestBarBuilder:
 
     def test_build_when_no_updates_raises_exception(self):
         # Arrange
-        bar_type = TestStubs.bartype_audusd_1min_bid()
+        bar_type = TestDataStubs.bartype_audusd_1min_bid()
         builder = BarBuilder(AUDUSD_SIM, bar_type)
 
         # Act, Assert
@@ -200,7 +201,7 @@ class TestBarBuilder:
 
     def test_build_when_received_updates_returns_expected_bar(self):
         # Arrange
-        bar_type = TestStubs.bartype_btcusdt_binance_100tick_last()
+        bar_type = TestDataStubs.bartype_btcusdt_binance_100tick_last()
         builder = BarBuilder(BTCUSDT_BINANCE, bar_type)
 
         builder.update(Price.from_str("1.00001"), Quantity.from_str("1.0"), 0)
@@ -226,7 +227,7 @@ class TestBarBuilder:
 
     def test_build_with_previous_close(self):
         # Arrange
-        bar_type = TestStubs.bartype_btcusdt_binance_100tick_last()
+        bar_type = TestDataStubs.bartype_btcusdt_binance_100tick_last()
         builder = BarBuilder(BTCUSDT_BINANCE, bar_type)
 
         builder.update(Price.from_str("1.00001"), Quantity.from_str("1.0"), 0)
@@ -866,7 +867,7 @@ class TestTestValueBarAggregator:
         # Arrange
         bar_store = ObjectStorer()
         handler = bar_store.store
-        instrument_id = TestStubs.audusd_id()
+        instrument_id = TestIdStubs.audusd_id()
         bar_spec = BarSpecification(100000, BarAggregation.VALUE, PriceType.BID)
         bar_type = BarType(instrument_id, bar_spec)
         aggregator = ValueBarAggregator(
@@ -897,7 +898,7 @@ class TestTestValueBarAggregator:
         # Arrange
         bar_store = ObjectStorer()
         handler = bar_store.store
-        instrument_id = TestStubs.audusd_id()
+        instrument_id = TestIdStubs.audusd_id()
         bar_spec = BarSpecification(100000, BarAggregation.VALUE, PriceType.LAST)
         bar_type = BarType(instrument_id, bar_spec)
         aggregator = ValueBarAggregator(
@@ -928,7 +929,7 @@ class TestTestValueBarAggregator:
         # Arrange
         bar_store = ObjectStorer()
         handler = bar_store.store
-        instrument_id = TestStubs.audusd_id()
+        instrument_id = TestIdStubs.audusd_id()
         bar_spec = BarSpecification(100000, BarAggregation.VALUE, PriceType.BID)
         bar_type = BarType(instrument_id, bar_spec)
         aggregator = ValueBarAggregator(
@@ -986,7 +987,7 @@ class TestTestValueBarAggregator:
         # Arrange
         bar_store = ObjectStorer()
         handler = bar_store.store
-        instrument_id = TestStubs.audusd_id()
+        instrument_id = TestIdStubs.audusd_id()
         bar_spec = BarSpecification(100000, BarAggregation.VALUE, PriceType.LAST)
         bar_type = BarType(instrument_id, bar_spec)
         aggregator = ValueBarAggregator(
@@ -1049,7 +1050,7 @@ class TestTestValueBarAggregator:
         # Arrange
         bar_store = ObjectStorer()
         handler = bar_store.store
-        instrument_id = TestStubs.audusd_id()
+        instrument_id = TestIdStubs.audusd_id()
         bar_spec = BarSpecification(1000, BarAggregation.VALUE, PriceType.MID)
         bar_type = BarType(instrument_id, bar_spec)
         aggregator = ValueBarAggregator(
@@ -1157,7 +1158,7 @@ class TestTimeBarAggregator:
         clock = TestClock()
         bar_store = ObjectStorer()
         handler = bar_store.store
-        instrument_id = TestStubs.audusd_id()
+        instrument_id = TestIdStubs.audusd_id()
         bar_type = BarType(instrument_id, bar_spec)
 
         # Act
@@ -1177,7 +1178,7 @@ class TestTimeBarAggregator:
         clock = TestClock()
         bar_store = ObjectStorer()
         handler = bar_store.store
-        instrument_id = TestStubs.audusd_id()
+        instrument_id = TestIdStubs.audusd_id()
         bar_spec = BarSpecification(1, BarAggregation.MINUTE, PriceType.MID)
         bar_type = BarType(instrument_id, bar_spec)
         aggregator = TimeBarAggregator(

@@ -57,7 +57,10 @@ from tests.integration_tests.adapters.betfair.test_kit import BetfairResponses
 from tests.integration_tests.adapters.betfair.test_kit import BetfairStreaming
 from tests.integration_tests.adapters.betfair.test_kit import BetfairTestStubs
 from tests.integration_tests.adapters.betfair.test_kit import mock_betfair_request
-from tests.test_kit.stubs import TestStubs
+from tests.test_kit.stubs.commands import TestCommandStubs
+from tests.test_kit.stubs.component import TestComponentStubs
+from tests.test_kit.stubs.execution import TestExecStubs
+from tests.test_kit.stubs.identities import TestIdStubs
 
 
 class TestBetfairExecutionClient:
@@ -69,7 +72,7 @@ class TestBetfairExecutionClient:
         self.clock = LiveClock()
         self.uuid_factory = UUIDFactory()
 
-        self.trader_id = TestStubs.trader_id()
+        self.trader_id = TestIdStubs.trader_id()
         self.venue = BETFAIR_VENUE
         self.account_id = AccountId(self.venue.value, "001")
 
@@ -83,9 +86,9 @@ class TestBetfairExecutionClient:
             logger=self.logger,
         )
 
-        self.cache = TestStubs.cache()
+        self.cache = TestComponentStubs.cache()
         self.cache.add_instrument(BetfairTestStubs.betting_instrument())
-        self.cache.add_account(TestStubs.betting_account(account_id=self.account_id))
+        self.cache.add_account(TestExecStubs.betting_account(account_id=self.account_id))
 
         self.portfolio = Portfolio(
             msgbus=self.msgbus,
@@ -212,7 +215,7 @@ class TestBetfairExecutionClient:
     @pytest.mark.asyncio
     async def test_submit_order_success(self):
         # Arrange
-        command = BetfairTestStubs.submit_order_command()
+        command = TestCommandStubs.submit_order_command()
         mock_betfair_request(self.betfair_client, BetfairResponses.betting_place_order_success())
 
         # Act
@@ -228,7 +231,7 @@ class TestBetfairExecutionClient:
     @pytest.mark.asyncio
     async def test_submit_order_error(self):
         # Arrange
-        command = BetfairTestStubs.submit_order_command()
+        command = TestCommandStubs.submit_order_command()
         mock_betfair_request(self.betfair_client, BetfairResponses.betting_place_order_error())
 
         # Act
@@ -290,8 +293,8 @@ class TestBetfairExecutionClient:
     @pytest.mark.asyncio
     async def test_modify_order_error_no_venue_id(self):
         # Arrange
-        order = BetfairTestStubs.make_submitted_order()
-        self.cache.add_order(order, position_id=BetfairTestStubs.position_id())
+        order = TestExecStubs.make_submitted_order()
+        self.cache.add_order(order, position_id=TestIdStubs.position_id())
 
         command = BetfairTestStubs.modify_order_command(
             instrument_id=order.instrument_id,
@@ -313,8 +316,8 @@ class TestBetfairExecutionClient:
     @pytest.mark.asyncio
     async def test_cancel_order_success(self):
         # Arrange
-        order = BetfairTestStubs.make_submitted_order()
-        self.cache.add_order(order, position_id=BetfairTestStubs.position_id())
+        order = TestExecStubs.make_submitted_order()
+        self.cache.add_order(order, position_id=TestIdStubs.position_id())
 
         command = BetfairTestStubs.cancel_order_command(
             instrument_id=order.instrument_id,
@@ -335,8 +338,8 @@ class TestBetfairExecutionClient:
     @pytest.mark.asyncio
     async def test_cancel_order_fail(self):
         # Arrange
-        order = BetfairTestStubs.make_submitted_order()
-        self.cache.add_order(order, position_id=BetfairTestStubs.position_id())
+        order = TestExecStubs.make_submitted_order()
+        self.cache.add_order(order, position_id=TestIdStubs.position_id())
 
         command = BetfairTestStubs.cancel_order_command(
             instrument_id=order.instrument_id,
@@ -363,7 +366,7 @@ class TestBetfairExecutionClient:
         submitted = BetfairTestStubs.make_submitted_order(
             client_order_id=client_order_id, quantity=Quantity.from_int(20)
         )
-        self.cache.add_order(submitted, position_id=BetfairTestStubs.position_id())
+        self.cache.add_order(submitted, position_id=TestIdStubs.position_id())
         self.client.venue_order_id_to_client_order_id[venue_order_id] = client_order_id
 
         # Act

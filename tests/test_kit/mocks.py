@@ -871,8 +871,6 @@ class MockReader(Reader):
 class NewsEventData(NewsEvent):
     """Generic data NewsEvent, needs to be defined here due to `inspect.is_nautilus_class`"""
 
-    pass
-
 
 def data_catalog_setup():
     """
@@ -894,7 +892,7 @@ def data_catalog_setup():
 
 def aud_usd_data_loader():
     from nautilus_trader.backtest.data.providers import TestInstrumentProvider
-    from tests.test_kit.stubs import TestStubs
+    from tests.test_kit.stubs.identities import TestIdStubs
     from tests.unit_tests.backtest.test_backtest_config import TEST_DATA_DIR
 
     venue = Venue("SIM")
@@ -926,7 +924,7 @@ def aud_usd_data_loader():
     process_files(
         glob_path=f"{TEST_DATA_DIR}/truefx-audusd-ticks.csv",
         reader=CSVReader(
-            block_parser=partial(parse_csv_tick, instrument_id=TestStubs.audusd_id()),
+            block_parser=partial(parse_csv_tick, instrument_id=TestIdStubs.audusd_id()),
             as_dataframe=True,
         ),
         instrument_provider=instrument_provider,

@@ -242,6 +242,8 @@ class TestEventStubs:
         if last_qty is None:
             last_qty = order.quantity
         if account is None:
+            from tests.test_kit.stubs.execution import TestExecStubs
+
             account = TestExecStubs.cash_account()
 
         commission = account.calculate_commission(

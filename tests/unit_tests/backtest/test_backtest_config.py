@@ -44,7 +44,7 @@ from tests.test_kit import PACKAGE_ROOT
 from tests.test_kit.mocks import NewsEventData
 from tests.test_kit.mocks import aud_usd_data_loader
 from tests.test_kit.mocks import data_catalog_setup
-from tests.test_kit.stubs import TestStubs
+from tests.test_kit.stubs.persistence import TestPersistenceStubs
 
 
 TEST_DATA_DIR = str(pathlib.Path(PACKAGE_ROOT).joinpath("data"))
@@ -229,10 +229,10 @@ class TestBacktestConfig:
 
     def test_backtest_data_config_generic_data(self):
         # Arrange
-        TestStubs.setup_news_event_persistence()
+        TestPersistenceStubs.setup_news_event_persistence()
         process_files(
             glob_path=f"{TEST_DATA_DIR}/news_events.csv",
-            reader=CSVReader(block_parser=TestStubs.news_event_parser),
+            reader=CSVReader(block_parser=TestPersistenceStubs.news_event_parser),
             catalog=self.catalog,
         )
         c = BacktestDataConfig(
@@ -248,10 +248,10 @@ class TestBacktestConfig:
 
     def test_backtest_data_config_filters(self):
         # Arrange
-        TestStubs.setup_news_event_persistence()
+        TestPersistenceStubs.setup_news_event_persistence()
         process_files(
             glob_path=f"{TEST_DATA_DIR}/news_events.csv",
-            reader=CSVReader(block_parser=TestStubs.news_event_parser),
+            reader=CSVReader(block_parser=TestPersistenceStubs.news_event_parser),
             catalog=self.catalog,
         )
         c = BacktestDataConfig(

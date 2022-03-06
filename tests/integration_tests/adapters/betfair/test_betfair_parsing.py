@@ -46,6 +46,8 @@ from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.orderbook.data import OrderBookDeltas
 from tests.integration_tests.adapters.betfair.test_kit import BetfairResponses
 from tests.integration_tests.adapters.betfair.test_kit import BetfairTestStubs
+from tests.test_kit.stubs.commands import TestCommandStubs
+from tests.test_kit.stubs.execution import TestExecStubs
 
 
 @pytest.mark.skipif(sys.platform == "win32", reason="failing on windows")
@@ -76,7 +78,7 @@ class TestBetfairParsing:
         assert result == betfair_quantity
 
     def test_order_submit_to_betfair(self):
-        command = BetfairTestStubs.submit_order_command()
+        command = TestCommandStubs.submit_order_command()
         result = order_submit_to_betfair(command=command, instrument=self.instrument)
         expected = {
             "customer_ref": command.id.value.replace("-", ""),
@@ -101,7 +103,7 @@ class TestBetfairParsing:
 
     def test_order_update_to_betfair(self):
         result = order_update_to_betfair(
-            command=BetfairTestStubs.modify_order_command(),
+            command=TestCommandStubs.modify_order_command(),
             side=OrderSide.BUY,
             venue_order_id=VenueOrderId("1"),
             instrument=self.instrument,
@@ -116,7 +118,7 @@ class TestBetfairParsing:
 
     def test_order_cancel_to_betfair(self):
         result = order_cancel_to_betfair(
-            command=BetfairTestStubs.cancel_order_command(), instrument=self.instrument
+            command=TestCommandStubs.cancel_order_command(), instrument=self.instrument
         )
         expected = {
             "market_id": "1.179082386",
@@ -195,7 +197,7 @@ class TestBetfairParsing:
         assert len(deltas.deltas) == 2
 
     def test_make_order_limit(self):
-        order = BetfairTestStubs.limit_order()
+        order = TestExecStubs.limit_order()
         result = make_order(order)
         expected = {
             "limitOrder": {"persistenceType": "PERSIST", "price": "3.05", "size": "10.0"},

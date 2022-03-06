@@ -133,7 +133,6 @@ class EMACross(TradingStrategy):
             The instrument received.
 
         """
-        pass
 
     def on_order_book_delta(self, data: OrderBookData):
         """
@@ -268,7 +267,6 @@ class EMACross(TradingStrategy):
             The data received.
 
         """
-        pass
 
     def on_event(self, event: Event):
         """
@@ -280,7 +278,6 @@ class EMACross(TradingStrategy):
             The event received.
 
         """
-        pass
 
     def on_stop(self):
         """
@@ -331,7 +328,6 @@ class EMACross(TradingStrategy):
             The strategy state dictionary.
 
         """
-        pass
 
     def on_dispose(self):
         """
@@ -340,4 +336,3 @@ class EMACross(TradingStrategy):
         Cleanup any resources used by the strategy here.
 
         """
-        pass

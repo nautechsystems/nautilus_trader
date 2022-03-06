@@ -50,6 +50,7 @@ from nautilus_trader.model.orderbook.data import OrderBookDeltas
 from nautilus_trader.model.orderbook.data import OrderBookSnapshot
 from nautilus_trader.model.orderbook.ladder import Ladder
 from tests.test_kit import PACKAGE_ROOT
+from tests.test_kit.stubs.identities import TestIdStubs
 
 
 class TestDataStubs:
@@ -187,7 +188,7 @@ class TestDataStubs:
 
     @staticmethod
     def bartype_adabtc_binance_1min_last() -> BarType:
-        return BarType(TestDataStubs.adabtc_binance_id(), TestDataStubs.bar_spec_1min_last())
+        return BarType(TestIdStubs.adabtc_binance_id(), TestDataStubs.bar_spec_1min_last())
 
     @staticmethod
     def bar_5decimal() -> Bar:
@@ -205,7 +206,7 @@ class TestDataStubs:
     @staticmethod
     def bar_3decimal() -> Bar:
         return Bar(
-            bar_type=TestIdStubs.bartype_usdjpy_1min_bid(),
+            bar_type=TestDataStubs.bartype_usdjpy_1min_bid(),
             open=Price.from_str("90.002"),
             high=Price.from_str("90.004"),
             low=Price.from_str("90.001"),

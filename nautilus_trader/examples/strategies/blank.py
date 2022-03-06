@@ -61,7 +61,6 @@ class MyStrategy(TradingStrategy):
 
     def on_start(self):
         """Actions to be performed on strategy start."""
-        pass
 
     def on_instrument(self, instrument: Instrument):
         """
@@ -74,7 +73,6 @@ class MyStrategy(TradingStrategy):
             The instrument received.
 
         """
-        pass
 
     def on_quote_tick(self, tick: QuoteTick):
         """
@@ -86,7 +84,6 @@ class MyStrategy(TradingStrategy):
             The quote tick received.
 
         """
-        pass
 
     def on_trade_tick(self, tick: TradeTick):
         """
@@ -98,7 +95,6 @@ class MyStrategy(TradingStrategy):
             The tick received.
 
         """
-        pass
 
     def on_bar(self, bar: Bar):
         """
@@ -110,19 +106,16 @@ class MyStrategy(TradingStrategy):
             The bar received.
 
         """
-        pass
 
     def buy(self):
         """
         Users simple buy method (example).
         """
-        pass
 
     def sell(self):
         """
         Users simple sell method (example).
         """
-        pass
 
     def on_data(self, data: Data):
         """
@@ -134,7 +127,6 @@ class MyStrategy(TradingStrategy):
             The data received.
 
         """
-        pass
 
     def on_event(self, event: Event):
         """
@@ -146,19 +138,16 @@ class MyStrategy(TradingStrategy):
             The event received.
 
         """
-        pass
 
     def on_stop(self):
         """
         Actions to be performed when the strategy is stopped.
         """
-        pass
 
     def on_reset(self):
         """
         Actions to be performed when the strategy is reset.
         """
-        pass
 
     def on_save(self) -> Dict[str, bytes]:
         """
@@ -186,7 +175,6 @@ class MyStrategy(TradingStrategy):
             The strategy state dictionary.
 
         """
-        pass
 
     def on_dispose(self):
         """
@@ -195,4 +183,3 @@ class MyStrategy(TradingStrategy):
         Cleanup any resources used by the strategy here.
 
         """
-        pass

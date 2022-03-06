@@ -23,4 +23,3 @@ write_objects = create_temp_table(write_objects)
 
 def migrate(catalog: DataCatalog, version_from: str, version_to: str):
     """Migrate the `catalog` between versions `version_from` and `version_to`"""
-    pass

@@ -152,7 +152,6 @@ class EMACrossStopEntryTrail(TradingStrategy):
             The instrument received.
 
         """
-        pass
 
     def on_order_book(self, order_book: OrderBook):
         """
@@ -176,7 +175,6 @@ class EMACrossStopEntryTrail(TradingStrategy):
             The quote tick received.
 
         """
-        pass
 
     def on_trade_tick(self, tick: TradeTick):
         """
@@ -188,7 +186,6 @@ class EMACrossStopEntryTrail(TradingStrategy):
             The tick received.
 
         """
-        pass
 
     def on_bar(self, bar: Bar):
         """
@@ -331,7 +328,6 @@ class EMACrossStopEntryTrail(TradingStrategy):
             The data received.
 
         """
-        pass
 
     def on_event(self, event: Event):
         """
@@ -402,7 +398,6 @@ class EMACrossStopEntryTrail(TradingStrategy):
             The strategy state dictionary.
 
         """
-        pass
 
     def on_dispose(self):
         """
@@ -411,4 +406,3 @@ class EMACrossStopEntryTrail(TradingStrategy):
         Cleanup any resources used by the strategy here.
 
         """
-        pass

@@ -18,12 +18,13 @@ from nautilus_trader.model.orderbook.book import L1OrderBook
 from nautilus_trader.model.orderbook.book import L2OrderBook
 from nautilus_trader.model.orderbook.book import L3OrderBook
 from nautilus_trader.model.orderbook.error import BookIntegrityError
-from tests.test_kit.stubs import TestStubs
+from tests.test_kit.stubs.data import TestDataStubs
+from tests.test_kit.stubs.identities import TestIdStubs
 
 
 def test_l3_feed():
     book = L3OrderBook(
-        instrument_id=TestStubs.audusd_id(),
+        instrument_id=TestIdStubs.audusd_id(),
         price_precision=5,
         size_precision=0,
     )
@@ -31,7 +32,7 @@ def test_l3_feed():
     # immediately, but we may get also delete later.
     skip_deletes = []
     i = 0
-    for i, m in enumerate(TestStubs.l3_feed()):  # noqa (B007)
+    for i, m in enumerate(TestDataStubs.l3_feed()):  # noqa (B007)
         if m["op"] == "update":
             book.update(order=m["order"])
             try:
@@ -51,7 +52,7 @@ def test_l3_feed():
 
 def test_l2_feed():
     book = L2OrderBook(
-        instrument_id=TestStubs.audusd_id(),
+        instrument_id=TestIdStubs.audusd_id(),
         price_precision=5,
         size_precision=0,
     )
@@ -63,7 +64,7 @@ def test_l2_feed():
         (68431, "8913f4bf-cc49-4e23-b05d-5eeed948a454"),
     ]
     i = 0
-    for i, m in enumerate(TestStubs.l2_feed()):
+    for i, m in enumerate(TestDataStubs.l2_feed()):
         if not m or m["op"] == "trade":
             pass
         elif (i, m["order"].id) in skip:
@@ -78,11 +79,11 @@ def test_l2_feed():
 
 def test_l1_orderbook():
     book = L1OrderBook(
-        instrument_id=TestStubs.audusd_id(),
+        instrument_id=TestIdStubs.audusd_id(),
         price_precision=5,
         size_precision=0,
     )
-    for i, m in enumerate(TestStubs.l1_feed()):  # noqa (B007)
+    for i, m in enumerate(TestDataStubs.l1_feed()):  # noqa (B007)
         # print(f"[{i}]", "\n", m, "\n", repr(ob), "\n")
         # print("")
         if m["op"] == "update":

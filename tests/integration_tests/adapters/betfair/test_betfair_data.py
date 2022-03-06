@@ -57,7 +57,8 @@ from tests.integration_tests.adapters.betfair.test_kit import BetfairDataProvide
 from tests.integration_tests.adapters.betfair.test_kit import BetfairResponses
 from tests.integration_tests.adapters.betfair.test_kit import BetfairStreaming
 from tests.integration_tests.adapters.betfair.test_kit import BetfairTestStubs
-from tests.test_kit.stubs import TestStubs
+from tests.test_kit.stubs.component import TestComponentStubs
+from tests.test_kit.stubs.identities import TestIdStubs
 
 
 INSTRUMENTS = []
@@ -104,7 +105,7 @@ class TestBetfairDataClient:
         self.clock = LiveClock()
         self.uuid_factory = UUIDFactory()
 
-        self.trader_id = TestStubs.trader_id()
+        self.trader_id = TestIdStubs.trader_id()
         self.uuid = UUID4()
         self.venue = BETFAIR_VENUE
 
@@ -118,7 +119,7 @@ class TestBetfairDataClient:
             logger=self.logger,
         )
 
-        self.cache = TestStubs.cache()
+        self.cache = TestComponentStubs.cache()
         self.cache.add_instrument(BetfairTestStubs.betting_instrument())
 
         self.portfolio = Portfolio(

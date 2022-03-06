@@ -1,6 +1,9 @@
-# class TestCommandStubs:
-#     @staticmethod
-#     def cancel_order_command():
+class TestCommandStubs:
+    @staticmethod
+    def cancel_order_command():
+        pass
+
+
 #         return CancelOrder(
 #             trader_id=TestIdentityStubs.trader_id(),
 #             strategy_id=TestIdentityStubs.strategy_id(),

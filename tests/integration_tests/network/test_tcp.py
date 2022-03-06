@@ -24,7 +24,7 @@ import pytest
 
 from nautilus_trader.network.socket import SocketClient
 from tests.integration_tests.adapters.betfair.test_kit import BetfairDataProvider
-from tests.test_kit.stubs import TestStubs
+from tests.test_kit.stubs.component import TestComponentStubs
 
 
 class ThreadedTCPServer(socketserver.ThreadingMixIn, socketserver.TCPServer):
@@ -110,7 +110,7 @@ async def test_client_recv(betfair_server, event_loop):
         port=betfair_server.server_address[1],
         loop=asyncio.get_event_loop(),
         handler=record,
-        logger=TestStubs.logger(),
+        logger=TestComponentStubs.logger(),
         ssl=False,
     )
     await client.connect()

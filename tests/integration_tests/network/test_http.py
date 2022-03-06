@@ -19,14 +19,14 @@ import sys
 import pytest
 
 from nautilus_trader.network.http import HttpClient
-from tests.test_kit.stubs import TestStubs
+from tests.test_kit.stubs.component import TestComponentStubs
 
 
 @pytest.fixture()
 async def client():
     client = HttpClient(
         loop=asyncio.get_event_loop(),
-        logger=TestStubs.logger(),
+        logger=TestComponentStubs.logger(),
     )
     await client.connect()
     return client
