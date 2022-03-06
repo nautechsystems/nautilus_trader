@@ -29,6 +29,9 @@ from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.core.correctness import PyCondition
+
+# TODO - Investigate `updateEvent`:  "Is emitted after a network packet has been handled."
+from nautilus_trader.core.datetime import dt_to_unix_nanos
 from nautilus_trader.execution.messages import SubmitOrder
 from nautilus_trader.live.execution_client import LiveExecutionClient
 from nautilus_trader.model.enums import AccountType
@@ -37,11 +40,9 @@ from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import ClientOrderId
 from nautilus_trader.model.identifiers import InstrumentId
+from nautilus_trader.model.identifiers import StrategyId
 from nautilus_trader.model.identifiers import VenueOrderId
 from nautilus_trader.msgbus.bus import MessageBus
-
-
-# TODO - Investigate `updateEvent`:  "Is emitted after a network packet has been handled."
 
 
 class InteractiveBrokersExecutionClient(LiveExecutionClient):
@@ -100,6 +101,8 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
         # Hot caches
         self._instrument_ids: Dict[str, InstrumentId] = {}
         self._venue_order_id_to_client_order_id: Dict[VenueOrderId, ClientOrderId] = {}
+        self._venue_order_id_to_venue_perm_id: Dict[VenueOrderId, ClientOrderId] = {}
+        self._client_order_id_to_strategy_id: Dict[ClientOrderId, StrategyId] = {}
 
         # Event hooks
         self._client.newOrderEvent += self._on_new_order
@@ -166,11 +169,20 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
             order=nautilus_order_to_ib_order(order=command.order),
         )
         self._venue_order_id_to_client_order_id[trade.order.orderId] = command.order.client_order_id
+        self._client_order_id_to_strategy_id[command.order.client_order_id] = command.strategy_id
 
     def _on_new_order(self, trade: Trade):
         self._log.debug(f"new_order: {Trade}")
         instrument_id = self._instrument_provider.contract_id_to_instrument_id[trade.contract.conId]
-        self.generate_order_submitted(strategy_id="", instrument_id=instrument_id)
+        client_order_id = self._venue_order_id_to_client_order_id[trade.order.orderId]
+        strategy_id = self._client_order_id_to_strategy_id[client_order_id]
+        assert trade.log
+        self.generate_order_submitted(
+            strategy_id=strategy_id,
+            instrument_id=instrument_id,
+            client_order_id=client_order_id,
+            ts_event=dt_to_unix_nanos(trade.log[-1].time),
+        )
 
     def _on_open_order(self, trade: Trade):
         self.generate_order_accepted()

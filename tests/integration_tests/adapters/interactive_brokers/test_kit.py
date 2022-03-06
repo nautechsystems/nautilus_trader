@@ -12,7 +12,6 @@ from ib_insync import TradeLogEntry
 from nautilus_trader.adapters.interactive_brokers.parsing.instruments import parse_instrument
 from nautilus_trader.model.instruments.equity import Equity
 from tests import TESTS_PACKAGE_ROOT
-from tests.test_kit.stubs import TestStubs
 
 
 TEST_PATH = pathlib.Path(TESTS_PACKAGE_ROOT + "/integration_tests/adapters/interactive_brokers/")
@@ -95,33 +94,124 @@ class IBExecTestStubs:
             raise RuntimeError
 
     @staticmethod
-    def order_status(status: str, order_id: int = 1) -> OrderStatus:
-        return OrderStatus(
-            orderId=order_id,
-            status=status,
-            filled=0.0,
-            remaining=0.0,
-            avgFillPrice=0.0,
-            permId=0,
-            parentId=0,
-            lastFillPrice=0.0,
-            clientId=0,
-            whyHeld="",
-            mktCapPrice=0.0,
+    def trade_pending_submit(contract=None, order: IBOrder = None) -> Trade:
+        contract = contract or IBTestStubs.contract_details("AAPL").contract
+        order = order or IBExecTestStubs.ib_order()
+        return Trade(
+            contract=contract,
+            order=order,
+            orderStatus=OrderStatus(
+                orderId=41,
+                status="PendingSubmit",
+                filled=0.0,
+                remaining=0.0,
+                avgFillPrice=0.0,
+                permId=0,
+                parentId=0,
+                lastFillPrice=0.0,
+                clientId=0,
+                whyHeld="",
+                mktCapPrice=0.0,
+            ),
+            fills=[],
+            log=[
+                TradeLogEntry(
+                    time=datetime.datetime(
+                        2022, 3, 5, 3, 6, 23, 492613, tzinfo=datetime.timezone.utc
+                    ),
+                    status="PendingSubmit",
+                    message="",
+                    errorCode=0,
+                ),
+            ],
         )
 
     @staticmethod
-    def trade_response(
-        order_status,
-        contract=None,
-        order=None,
-        fills=None,
-        log=None,
-    ) -> Trade:
+    def trade_pre_submit(contract=None, order: IBOrder = None) -> Trade:
+        contract = contract or IBTestStubs.contract_details("AAPL").contract
+        order = order or IBExecTestStubs.ib_order()
         return Trade(
-            contract=contract or IBTestStubs.contract_details("AAPL"),
-            order=order or TestStubs.order(),
-            orderStatus=order_status,
-            fills=fills or [],
-            log=log or [],
+            contract=contract,
+            order=order,
+            orderStatus=OrderStatus(
+                orderId=41,
+                status="PreSubmitted",
+                filled=0.0,
+                remaining=1.0,
+                avgFillPrice=0.0,
+                permId=189868420,
+                parentId=0,
+                lastFillPrice=0.0,
+                clientId=1,
+                whyHeld="",
+                mktCapPrice=0.0,
+            ),
+            fills=[],
+            log=[
+                TradeLogEntry(
+                    time=datetime.datetime(
+                        2022, 3, 5, 3, 6, 23, 492613, tzinfo=datetime.timezone.utc
+                    ),
+                    status="PendingSubmit",
+                    message="",
+                    errorCode=0,
+                ),
+                TradeLogEntry(
+                    time=datetime.datetime(
+                        2022, 3, 5, 3, 6, 26, 871811, tzinfo=datetime.timezone.utc
+                    ),
+                    status="PreSubmitted",
+                    message="",
+                    errorCode=0,
+                ),
+            ],
+        )
+
+    @staticmethod
+    def trade_submitted(contract=None, order: IBOrder = None) -> Trade:
+        contract = contract or IBTestStubs.contract_details("AAPL").contract
+        order = order or IBExecTestStubs.ib_order()
+        return Trade(
+            contract=contract,
+            order=order,
+            orderStatus=OrderStatus(
+                orderId=41,
+                status="Submitted",
+                filled=0.0,
+                remaining=1.0,
+                avgFillPrice=0.0,
+                permId=189868420,
+                parentId=0,
+                lastFillPrice=0.0,
+                clientId=1,
+                whyHeld="",
+                mktCapPrice=0.0,
+            ),
+            fills=[],
+            log=[
+                TradeLogEntry(
+                    time=datetime.datetime(
+                        2022, 3, 5, 3, 6, 23, 492613, tzinfo=datetime.timezone.utc
+                    ),
+                    status="PendingSubmit",
+                    message="",
+                    errorCode=0,
+                ),
+                TradeLogEntry(
+                    time=datetime.datetime(
+                        2022, 3, 5, 3, 6, 26, 871811, tzinfo=datetime.timezone.utc
+                    ),
+                    status="PreSubmitted",
+                    message="",
+                    errorCode=0,
+                ),
+                TradeLogEntry(
+                    time=datetime.datetime(
+                        2022, 3, 5, 3, 6, 28, 378175, tzinfo=datetime.timezone.utc
+                    ),
+                    status="Submitted",
+                    message="",
+                    errorCode=0,
+                ),
+            ],
         )

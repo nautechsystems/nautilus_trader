@@ -3,8 +3,12 @@ import os
 from unittest.mock import patch
 
 from nautilus_trader.adapters.interactive_brokers.config import InteractiveBrokersDataClientConfig
+from nautilus_trader.adapters.interactive_brokers.config import InteractiveBrokersExecClientConfig
 from nautilus_trader.adapters.interactive_brokers.factories import (
     InteractiveBrokersLiveDataClientFactory,
+)
+from nautilus_trader.adapters.interactive_brokers.factories import (
+    InteractiveBrokersLiveExecClientFactory,
 )
 from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.clock import LiveClock
@@ -55,6 +59,18 @@ class InteractiveBrokersTestBase:
                 loop=self.loop,
                 name="IB",
                 config=InteractiveBrokersDataClientConfig(  # noqa: S106
+                    username="test", password="test"
+                ),
+                msgbus=self.msgbus,
+                cache=self.cache,
+                clock=self.clock,
+                logger=self.logger,
+            )
+        with patch("nautilus_trader.adapters.interactive_brokers.factories.get_cached_ib_client"):
+            self.exec_client = InteractiveBrokersLiveExecClientFactory.create(
+                loop=self.loop,
+                name="IB",
+                config=InteractiveBrokersExecClientConfig(  # noqa: S106
                     username="test", password="test"
                 ),
                 msgbus=self.msgbus,

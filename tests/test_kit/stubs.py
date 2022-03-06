@@ -74,6 +74,7 @@ from nautilus_trader.model.events.position import PositionChanged
 from nautilus_trader.model.events.position import PositionClosed
 from nautilus_trader.model.events.position import PositionOpened
 from nautilus_trader.model.identifiers import AccountId
+from nautilus_trader.model.identifiers import ClientOrderId
 from nautilus_trader.model.identifiers import ComponentId
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import PositionId
@@ -450,8 +451,12 @@ class TestStubs:
         return StrategyId("S-001")
 
     @staticmethod
-    def position_id(position_id: str = "1") -> PositionId:
-        return PositionId("1")
+    def position_id(position_id: Optional[str]) -> PositionId:
+        return PositionId(position_id or "1")
+
+    @staticmethod
+    def client_order_id(client_order_id: str = "1") -> ClientOrderId:
+        return ClientOrderId(client_order_id)
 
     @staticmethod
     def cash_account():

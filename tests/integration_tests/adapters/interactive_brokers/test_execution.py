@@ -3,12 +3,7 @@ from unittest.mock import patch
 import pytest
 from ib_insync import Contract
 from ib_insync import LimitOrder
-from ib_insync import OrderStatus
 
-from nautilus_trader.adapters.interactive_brokers.config import InteractiveBrokersExecClientConfig
-from nautilus_trader.adapters.interactive_brokers.factories import (
-    InteractiveBrokersLiveExecClientFactory,
-)
 from tests.integration_tests.adapters.interactive_brokers.base import InteractiveBrokersTestBase
 from tests.integration_tests.adapters.interactive_brokers.test_kit import IBExecTestStubs
 from tests.integration_tests.adapters.interactive_brokers.test_kit import IBTestStubs
@@ -18,20 +13,13 @@ from tests.test_kit.stubs import TestStubs
 class TestInteractiveBrokersData(InteractiveBrokersTestBase):
     def setup(self):
         super().setup()
-        with patch("nautilus_trader.adapters.interactive_brokers.factories.get_cached_ib_client"):
-            self.exec_client = InteractiveBrokersLiveExecClientFactory.create(
-                loop=self.loop,
-                name="IB",
-                config=InteractiveBrokersExecClientConfig(  # noqa: S106
-                    username="test", password="test"
-                ),
-                msgbus=self.msgbus,
-                cache=self.cache,
-                clock=self.clock,
-                logger=self.logger,
-            )
+        self.instrument = IBTestStubs.instrument("AAPL")
+        self.contract_details = IBTestStubs.contract_details("AAPL")
+        self.contract = self.contract_details.contract
 
-    def instrument_setup(self, instrument, contract_details):
+    def instrument_setup(self, instrument=None, contract_details=None):
+        instrument = instrument or self.instrument
+        contract_details = contract_details or self.contract_details
         self.exec_client._instrument_provider.contract_details[instrument.id] = contract_details
         self.exec_client._instrument_provider.contract_id_to_instrument_id[
             contract_details.contract.conId
@@ -61,7 +49,6 @@ class TestInteractiveBrokersData(InteractiveBrokersTestBase):
             self.exec_client.submit_order(command=command)
 
         # Assert
-        result = mock.mock_calls[0].kwargs
         expected = {
             "contract": Contract(
                 secType="STK",
@@ -75,17 +62,33 @@ class TestInteractiveBrokersData(InteractiveBrokersTestBase):
             ),
             "order": LimitOrder(action="BUY", totalQuantity=10.0, lmtPrice=0.5),
         }
-        assert result == expected
+        name, args, kwargs = mock.mock_calls[0]
+        # Can't directly compare kwargs for some reason?
+        assert kwargs["contract"] == expected["contract"]
+        assert kwargs["order"].action == expected["order"].action
+        assert kwargs["order"].totalQuantity == expected["order"].totalQuantity
+        assert kwargs["order"].lmtPrice == expected["order"].lmtPrice
 
     @pytest.mark.asyncio
     async def test_on_new_order(self, event_loop):
         # Arrange
-        trade = IBExecTestStubs.trade_response(order_status=OrderStatus.PreSubmitted)
+        self.instrument_setup()
+        self.exec_client._client_order_id_to_strategy_id[
+            TestStubs.client_order_id()
+        ] = TestStubs.strategy_id()
+        self.exec_client._venue_order_id_to_client_order_id[1] = TestStubs.client_order_id()
+        trade = IBExecTestStubs.trade_pre_submit()
 
         # Act
-        with patch.object(self.exec_client, "generate_order_accepted") as mock:
+        with patch.object(self.exec_client, "generate_order_submitted") as mock:
             self.exec_client._on_new_order(trade)
 
         # Assert
-        mock_call = mock.method_calls[0]
-        assert mock_call
+        name, args, kwargs = mock.mock_calls[0]
+        expected = {
+            "strategy_id": TestStubs.strategy_id(),
+            "instrument_id": self.instrument.id,
+            "client_order_id": TestStubs.client_order_id(),
+            "ts_event": 1646449586871811000,
+        }
+        assert kwargs == expected
