@@ -50,6 +50,82 @@ Represents the order side of the aggressor (liquidity taker) for a particular tr
 >>> AggressorSide.SELL
 <AggressorSide.SELL: 2>
 
+Asset Class
+-----------
+Represents a group of investment vehicles with similar properties and risk profiles.
+
+>>> from nautilus_trader.model.enums import AssetClass
+>>> AssetClass.FX
+<AssetClass.FX: 1>
+>>> AssetClass.EQUITY
+<AssetClass.EQUITY: 2>
+>>> AssetClass.COMMODITY
+<AssetClass.COMMODITY: 3>
+>>> AssetClass.METAL
+<AssetClass.METAL: 4>
+>>> AssetClass.ENERGY
+<AssetClass.ENERGY: 5>
+>>> AssetClass.BOND
+<AssetClass.BOND: 6>
+>>> AssetClass.INDEX
+<AssetClass.INDEX: 7>
+>>> AssetClass.CRYPTO
+<AssetClass.CRYPTO: 8>
+>>> AssetClass.BETTING
+<AssetClass.BETTING: 9>
+
+Asset Type
+----------
+Represents a group of financial product types.
+
+>>> from nautilus_trader.model.enums import AssetType
+>>> AssetType.SPOT
+<AssetType.SPOT: 1>
+>>> AssetType.SWAP
+<AssetType.SWAP: 2>
+>>> AssetType.FUTURE
+<AssetType.FUTURE: 3>
+>>> AssetType.FORWARD
+<AssetType.FORWARD: 4>
+>>> AssetType.CFD
+<AssetType.CFD: 5>
+>>> AssetType.OPTION
+<AssetType.OPTION: 6>
+>>> AssetType.WARRANT
+<AssetType.WARRANT: 7>
+
+Bar Aggregation
+---------------
+Represents a method of aggregating an OHLCV bar.
+
+>>> from nautilus_trader.model.enums import BarAggregation
+>>> BarAggregation.TICK
+<BarAggregation.TICK: 1>
+>>> BarAggregation.TICK_IMBALANCE
+<BarAggregation.TICK_IMBALANCE: 2>
+>>> BarAggregation.TICK_RUNS
+<BarAggregation.TICK_RUNS: 3>
+>>> BarAggregation.VOLUME
+<BarAggregation.VOLUME: 4>
+>>> BarAggregation.VOLUME_IMBALANCE
+<BarAggregation.VOLUME_IMBALANCE: 5>
+>>> BarAggregation.VOLUME_RUNS
+<BarAggregation.VOLUME_RUNS: 6>
+>>> BarAggregation.VALUE
+<BarAggregation.VALUE: 7>
+>>> BarAggregation.VALUE_IMBALANCE
+<BarAggregation.VALUE_IMBALANCE: 8>
+>>> BarAggregation.VALUE_RUNS
+<BarAggregation.VALUE_RUNS: 9>
+>>> BarAggregation.SECOND
+<BarAggregation.SECOND: 10>
+>>> BarAggregation.MINUTE
+<BarAggregation.MINUTE: 11>
+>>> BarAggregation.HOUR
+<BarAggregation.HOUR: 12>
+>>> BarAggregation.DAY
+<BarAggregation.DAY: 13>
+
 """
 
 from nautilus_trader.model.c_enums.account_type import AccountType                         # noqa F401 (being used)
