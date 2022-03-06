@@ -49,6 +49,7 @@ from tests.integration_tests.adapters.betfair.test_kit import BetfairResponses
 from tests.integration_tests.adapters.betfair.test_kit import BetfairTestStubs
 from tests.test_kit.stubs.commands import TestCommandStubs
 from tests.test_kit.stubs.execution import TestExecStubs
+from tests.test_kit.stubs.identities import TestIdStubs
 
 
 @pytest.mark.skipif(sys.platform == "win32", reason="failing on windows")
@@ -218,7 +219,12 @@ class TestBetfairParsing:
         assert result == expected
 
     def test_make_order_limit_on_close(self):
-        order = BetfairTestStubs.limit_order(time_in_force=TimeInForce.AT_THE_CLOSE)
+        order = TestExecStubs.limit_order(
+            price=Price(0.33, precision=5),
+            quantity=Quantity.from_int(10),
+            instrument_id=TestIdStubs.betting_instrument_id(),
+            time_in_force=TimeInForce.AT_THE_CLOSE,
+        )
         result = make_order(order)
         expected = {
             "limitOnCloseOrder": {"price": "3.05", "liability": "10.0"},

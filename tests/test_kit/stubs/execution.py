@@ -20,6 +20,7 @@ from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import TimeInForce
 from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import ClientOrderId
+from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import StrategyId
 from nautilus_trader.model.identifiers import TradeId
 from nautilus_trader.model.identifiers import VenueOrderId
@@ -126,11 +127,12 @@ class TestExecStubs:
     @staticmethod
     def make_accepted_order(
         order: Optional[Order] = None,
+        instrument_id: Optional[InstrumentId] = None,
         account_id: Optional[AccountId] = None,
         venue_order_id: Optional[VenueOrderId] = None,
         **order_kwargs,
     ) -> LimitOrder:
-        order = order or TestExecStubs.limit_order(**order_kwargs)
+        order = order or TestExecStubs.limit_order(instrument_id=instrument_id, **order_kwargs)
         accepted = TestEventStubs.order_accepted(
             order=order, account_id=account_id, venue_order_id=venue_order_id
         )

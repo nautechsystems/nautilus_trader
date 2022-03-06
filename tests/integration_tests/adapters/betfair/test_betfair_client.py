@@ -134,7 +134,7 @@ class TestBetfairClient:
             price=Price.from_str("0.50"),
             quantity=Quantity.from_int(10),
         )
-        command = BetfairTestStubs.submit_order_command(order=limit_order)
+        command = TestCommandStubs.submit_order_command(order=limit_order)
         place_orders = order_submit_to_betfair(command=command, instrument=instrument)
         place_orders["instructions"][0]["customerOrderRef"] = "O-20210811-112151-000"
         with mock_client_request(response=BetfairResponses.betting_place_order_success()) as req:
@@ -153,7 +153,7 @@ class TestBetfairClient:
             price=Price.from_str("0.50"),
             quantity=Quantity.from_int(10),
         )
-        command = BetfairTestStubs.submit_order_command(order=limit_order)
+        command = TestCommandStubs.submit_order_command(order=limit_order)
         place_orders = order_submit_to_betfair(command=command, instrument=instrument)
         place_orders["instructions"][0]["customerOrderRef"] = "O-20210811-112151-000"
         with mock_client_request(response=BetfairResponses.betting_place_order_success()) as req:

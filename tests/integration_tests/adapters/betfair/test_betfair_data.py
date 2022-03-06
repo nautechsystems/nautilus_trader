@@ -198,9 +198,9 @@ class TestBetfairDataClient:
         await self.client._connect()
 
     def test_subscriptions(self):
-        self.client.subscribe_trade_ticks(BetfairTestStubs.instrument_id())
-        self.client.subscribe_instrument_status_updates(BetfairTestStubs.instrument_id())
-        self.client.subscribe_instrument_close_prices(BetfairTestStubs.instrument_id())
+        self.client.subscribe_trade_ticks(TestIdStubs.betting_instrument_id())
+        self.client.subscribe_instrument_status_updates(TestIdStubs.betting_instrument_id())
+        self.client.subscribe_instrument_close_prices(TestIdStubs.betting_instrument_id())
 
     def test_market_heartbeat(self):
         self.client._on_market_update(BetfairStreaming.mcm_HEARTBEAT())
@@ -461,7 +461,7 @@ class TestBetfairDataClient:
 
     def test_betfair_orderbook(self):
         book = L2OrderBook(
-            instrument_id=BetfairTestStubs.instrument_id(),
+            instrument_id=TestIdStubs.betting_instrument_id(),
             price_precision=2,
             size_precision=2,
         )

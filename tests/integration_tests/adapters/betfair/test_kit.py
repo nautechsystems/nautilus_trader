@@ -52,7 +52,7 @@ from nautilus_trader.model.instruments.betting import BettingInstrument
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.orderbook.data import OrderBookData
-from nautilus_trader.model.orders.limit import LimitOrder
+from nautilus_trader.model.orders.base import Order
 from nautilus_trader.model.orders.market import MarketOrder
 from nautilus_trader.persistence.config import PersistenceConfig
 from nautilus_trader.persistence.external.core import make_raw_files
@@ -198,41 +198,6 @@ class BetfairTestStubs:
         return client
 
     @staticmethod
-    def make_order(
-        instrument_id: Optional[InstrumentId] = None,
-        side: Optional[OrderSide] = None,
-        price: Optional[Price] = None,
-        quantity: Optional[Quantity] = None,
-        client_order_id: Optional[ClientOrderId] = None,
-    ) -> LimitOrder:
-        return TestExecStubs.limit_order(
-            instrument_id=instrument_id or TestIdStubs.betting_instrument_id(),
-            order_side=side,
-            quantity=quantity or Quantity.from_str("10"),
-            price=price or Price.from_str("0.5"),
-            client_order_id=client_order_id,
-        )
-
-    @staticmethod
-    def limit_order(
-        instrument_id: Optional[InstrumentId] = None,
-        time_in_force=TimeInForce.GTC,
-        price: Optional[Price] = None,
-        side: Optional[OrderSide] = None,
-        quantity: Optional[Quantity] = None,
-    ) -> LimitOrder:
-        return TestExecStubs.limit_order(
-            instrument_id=instrument_id or TestIdStubs.betting_instrument_id(),
-            client_order_id=ClientOrderId(
-                f"O-20210410-022422-001-001-{TestIdStubs.strategy_id().value}"
-            ),
-            order_side=side or OrderSide.BUY,
-            quantity=quantity or Quantity.from_int(10),
-            price=price or Price(0.33, precision=5),
-            time_in_force=time_in_force,
-        )
-
-    @staticmethod
     def market_order(side=None, time_in_force=None) -> MarketOrder:
         return TestExecStubs.market_order(
             instrument_id=TestIdStubs.betting_instrument_id(),
@@ -245,9 +210,25 @@ class BetfairTestStubs:
         )
 
     @staticmethod
+    def limit_order(
+        quantity: Optional[Quantity] = None,
+        price: Optional[Price] = None,
+        time_in_force: Optional[TimeInForce] = None,
+        **kwargs,
+    ):
+        return TestExecStubs.limit_order(
+            instrument_id=TestIdStubs.betting_instrument_id(),
+            quantity=quantity or Quantity.from_int(10),
+            price=price or Price(0.33, precision=5),
+            time_in_force=time_in_force,
+            **kwargs,
+        )
+
+    @staticmethod
     def submit_order_command(time_in_force=TimeInForce.GTC, order=None):
+        order = order or BetfairTestStubs.limit_order()
         return TestCommandStubs.submit_order_command(
-            order=order or BetfairTestStubs.limit_order(time_in_force=time_in_force),
+            order=order or TestExecStubs.limit_order(time_in_force=time_in_force),
         )
 
     @staticmethod
@@ -271,6 +252,11 @@ class BetfairTestStubs:
             client_order_id=client_order_id or ClientOrderId("O-20210410-022422-001-001-1"),
             venue_order_id=venue_order_id or VenueOrderId("228302937743"),
         )
+
+    @staticmethod
+    def make_submitted_order(order: Optional[Order] = None, **kwargs):
+        order = order or BetfairTestStubs.limit_order(**kwargs)
+        return TestExecStubs.make_submitted_order(order=order)
 
     @staticmethod
     def make_order_place_response(

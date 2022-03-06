@@ -101,4 +101,4 @@ class TestIdStubs:
 
     @staticmethod
     def venue_order_id() -> VenueOrderId:
-        return VenueOrderId("001")
+        return VenueOrderId("1")
