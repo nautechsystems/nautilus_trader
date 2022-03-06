@@ -32,9 +32,9 @@ from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
 
 
-cdef class CurrencySpot(Instrument):
+cdef class CurrencyPair(Instrument):
     """
-    Represents a generic spot currency instrument.
+    Represents a generic currency pair instrument in a spot/cash market.
 
     Can represent both Fiat FX and Crypto currency pairs.
 
@@ -54,7 +54,7 @@ cdef class CurrencySpot(Instrument):
         The trading size decimal precision.
     price_increment : Price
         The minimum price increment (tick size).
-    size_increment : Price
+    size_increment : Quantity
         The minimum size increment.
     lot_size : Quantity, optional
         The rounded lot unit size.
@@ -195,7 +195,7 @@ cdef class CurrencySpot(Instrument):
         return self.base_currency
 
     @staticmethod
-    cdef CurrencySpot from_dict_c(dict values):
+    cdef CurrencyPair from_dict_c(dict values):
         Condition.not_none(values, "values")
         cdef str lot_s = values["lot_size"]
         cdef str max_q = values["max_quantity"]
@@ -205,7 +205,7 @@ cdef class CurrencySpot(Instrument):
         cdef str max_p = values["max_price"]
         cdef str min_p = values["min_price"]
         cdef bytes info = values["info"]
-        return CurrencySpot(
+        return CurrencyPair(
             instrument_id=InstrumentId.from_str_c(values["id"]),
             native_symbol=Symbol(values["native_symbol"]),
             base_currency=Currency.from_str_c(values["base_currency"]),
@@ -231,10 +231,10 @@ cdef class CurrencySpot(Instrument):
         )
 
     @staticmethod
-    cdef dict to_dict_c(CurrencySpot obj):
+    cdef dict to_dict_c(CurrencyPair obj):
         Condition.not_none(obj, "obj")
         return {
-            "type": "CurrencySpot",
+            "type": "CurrencyPair",
             "id": obj.id.value,
             "native_symbol": obj.native_symbol.value,
             "base_currency": obj.base_currency.code,
@@ -260,7 +260,7 @@ cdef class CurrencySpot(Instrument):
         }
 
     @staticmethod
-    def from_dict(dict values) -> CurrencySpot:
+    def from_dict(dict values) -> CurrencyPair:
         """
         Return an instrument from the given initialization values.
 
@@ -271,13 +271,13 @@ cdef class CurrencySpot(Instrument):
 
         Returns
         -------
-        CurrencySpot
+        CurrencyPair
 
         """
-        return CurrencySpot.from_dict_c(values)
+        return CurrencyPair.from_dict_c(values)
 
     @staticmethod
-    def to_dict(CurrencySpot obj):
+    def to_dict(CurrencyPair obj):
         """
         Return a dictionary representation of this object.
 
@@ -286,4 +286,4 @@ cdef class CurrencySpot(Instrument):
         dict[str, object]
 
         """
-        return CurrencySpot.to_dict_c(obj)
+        return CurrencyPair.to_dict_c(obj)

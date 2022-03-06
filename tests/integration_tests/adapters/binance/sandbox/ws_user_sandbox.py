@@ -20,7 +20,7 @@ import pytest
 
 from nautilus_trader.adapters.binance.factories import get_cached_binance_http_client
 from nautilus_trader.adapters.binance.http.api.user import BinanceUserDataHttpAPI
-from nautilus_trader.adapters.binance.websocket.user import BinanceUserDataWebSocket
+from nautilus_trader.adapters.binance.websocket.client import BinanceWebSocketClient
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.logging import LiveLogger
 from nautilus_trader.common.logging import Logger
@@ -44,7 +44,7 @@ async def test_binance_websocket_client():
     response = await user.create_listen_key()
     key = response["listenKey"]
 
-    ws = BinanceUserDataWebSocket(
+    ws = BinanceWebSocketClient(
         loop=loop,
         clock=clock,
         logger=LiveLogger(loop=loop, clock=clock),

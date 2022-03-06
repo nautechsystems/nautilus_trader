@@ -29,9 +29,9 @@ cdef class TimeInForceParser:
         elif value == 5:
             return "DAY"
         elif value == 6:
-            return "ON_OPEN"
+            return "AT_THE_OPEN"
         elif value == 7:
-            return "ON_CLOSE"
+            return "AT_THE_CLOSE"
         else:
             raise ValueError(f"value was invalid, was {value}")
 
@@ -47,10 +47,10 @@ cdef class TimeInForceParser:
             return TimeInForce.GTD
         elif value == "DAY":
             return TimeInForce.DAY
-        elif value == "ON_OPEN":
-            return TimeInForce.ON_OPEN
-        elif value == "ON_CLOSE":
-            return TimeInForce.ON_CLOSE
+        elif value == "AT_THE_OPEN":
+            return TimeInForce.AT_THE_OPEN
+        elif value == "AT_THE_CLOSE":
+            return TimeInForce.AT_THE_CLOSE
         else:
             raise ValueError(f"value was invalid, was {value}")
 

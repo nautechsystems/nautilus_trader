@@ -5,7 +5,8 @@
 Released on TBD (UTC).
 
 ### Breaking Changes
-- Rename `PerformanceAnalyzer` to `PortfolioAnalyzer`.
+- Renamed `CurrencySpot` to `CurrencyPair`.
+- Renamed `PerformanceAnalyzer` to `PortfolioAnalyzer`.
 - Renamed `BacktestDataConfig.data_cls_path` to `data_cls`.
 - Renamed `BinanceTicker` to `BinanceSpotTicker`.
 - Renamed `BinanceSpotExecutionClient` to `BinanceExecutionClient`.

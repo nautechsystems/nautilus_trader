@@ -79,7 +79,7 @@ nox = "^2022.1.7"
 numpydoc = "^1.2.0"
 pre-commit = "^2.17.0"
 pytest = "^7.0.1"
-pytest-asyncio = "^0.18.1"
+pytest-asyncio = "^0.18.2"
 pytest-benchmark = "^3.4.1"
 pytest-cov = "2.10.1"  # Pinned at 2.10.1 due coverage 4.5.4
 pytest-mock = "^3.7.0"
@@ -101,10 +101,8 @@ ib = ["ib_insync", "docker"]
 ##########################################################
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-addopts = "-ra --new-first --failed-first"
+addopts = "-ra --new-first --failed-first --doctest-modules --doctest-glob=\"*.pyx\""
 filterwarnings = [
     "ignore::UserWarning",
     "ignore::DeprecationWarning",
 ]
-
-# TODO (move .coveragerc here once we're on coverage 5.x)

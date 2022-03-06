@@ -13,16 +13,30 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from nautilus_trader.model.currency cimport Currency
-from nautilus_trader.model.instruments.base cimport Instrument
+import pandas as pd
+
+from nautilus_trader.analysis.statistics.loser_min import MinLoser
 
 
-cdef class CurrencySpot(Instrument):
-    cdef readonly Currency base_currency
-    """The base currency for the instrument.\n\n:returns: `Currency`"""
+class TestMinLoserPortfolioStatistic:
+    def test_calculate_given_empty_series_returns_zero(self):
+        # Arrange
+        stat = MinLoser()
+        data = pd.Series()
 
-    @staticmethod
-    cdef CurrencySpot from_dict_c(dict values)
+        # Act
+        result = stat.calculate_from_realized_pnls(data)
 
-    @staticmethod
-    cdef dict to_dict_c(CurrencySpot obj)
+        # Assert
+        assert result == 0.0
+
+    def test_calculate_given_mix_of_pnls_returns_expected(self):
+        # Arrange
+        stat = MinLoser()
+        data = pd.Series([2.0, 1.0, -1.0, -2.0])
+
+        # Act
+        result = stat.calculate_from_realized_pnls(data)
+
+        # Assert
+        assert result == -1.0

@@ -1,10 +1,10 @@
 # Core Concepts
 
 NautilusTrader has been built from the ground up to deliver optimal
-performance with a high quality user experience, within the bounds of a safe Python native environment. There are two main use cases for this software package:
+performance with a high quality user experience, within the bounds of a robust Python native environment. There are two main use cases for this software package:
 
-- Backtesting trading strategies.
-- Deploying trading strategies live.
+- Backtesting trading strategies
+- Deploying trading strategies live
 
 ## System Architecture
 From a high level architectural view, it's important to understand that the platform has been designed to run efficiently 
@@ -17,7 +17,7 @@ especially leveraging the [uvloop](https://github.com/MagicStack/uvloop) impleme
 
 ```{note}
 Of interest is the LMAX exchange architectire, which achieves award winning performance running on
-a single thread. You can read about their distributor pattern in [this interesting article](https://martinfowler.com/articles/lmax.html) by Martin Fowler.
+a single thread. You can read about their _disruptor_ pattern based architecture in [this interesting article](https://martinfowler.com/articles/lmax.html) by Martin Fowler.
 ```
 
 When considering the logic of how your trading will work within the system boundary, you can expect each component to consume messages

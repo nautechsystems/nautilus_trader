@@ -17,12 +17,34 @@ from decimal import Decimal
 from typing import Dict, List, Tuple
 
 from nautilus_trader.model.currency import Currency
+from nautilus_trader.model.enums import BookType
+from nautilus_trader.model.enums import OrderStatus
 from nautilus_trader.model.enums import OrderType
 from nautilus_trader.model.enums import OrderTypeParser
+from nautilus_trader.model.enums import TimeInForce
+from nautilus_trader.model.enums import TriggerType
+from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.objects import AccountBalance
 from nautilus_trader.model.objects import MarginBalance
 from nautilus_trader.model.objects import Money
-from nautilus_trader.model.orders.base import Order
+from nautilus_trader.model.orderbook.data import Order
+from nautilus_trader.model.orderbook.data import OrderBookSnapshot
+
+
+def parse_book_snapshot(
+    instrument_id: InstrumentId, msg: Dict, update_id: int, ts_init: int
+) -> OrderBookSnapshot:
+    ts_event: int = ts_init
+
+    return OrderBookSnapshot(
+        instrument_id=instrument_id,
+        book_type=BookType.L2_MBP,
+        bids=[[float(o[0]), float(o[1])] for o in msg.get("bids")],
+        asks=[[float(o[0]), float(o[1])] for o in msg.get("asks")],
+        ts_event=ts_event,
+        ts_init=ts_init,
+        update_id=update_id,
+    )
 
 
 def parse_balances_spot(
@@ -102,7 +124,7 @@ def parse_margins(
     return margins
 
 
-def parse_order_type(order_type: str) -> OrderType:
+def parse_order_type_spot(order_type: str) -> OrderType:
     if order_type in ("STOP", "STOP_LOSS"):
         return OrderType.STOP_MARKET
     elif order_type == "STOP_LOSS_LIMIT":
@@ -152,3 +174,49 @@ def binance_order_type_futures(order: Order) -> str:
         return "TRAILING_STOP_MARKET"
     else:  # pragma: no cover (design-time error)
         raise RuntimeError("invalid order type")
+
+
+def parse_order_type_futures(order_type: str) -> OrderType:
+    if order_type == "STOP":
+        return OrderType.STOP_LIMIT
+    elif order_type == "STOP_LOSS_LIMIT":
+        return OrderType.STOP_LIMIT
+    elif order_type == "TAKE_PROFIT":
+        return OrderType.LIMIT_IF_TOUCHED
+    elif order_type == "TAKE_PROFIT_LIMIT":
+        return OrderType.STOP_LIMIT
+    elif order_type == "TAKE_PROFIT_MARKET":
+        return OrderType.MARKET_IF_TOUCHED
+    else:
+        return OrderType[order_type]
+
+
+def parse_order_status(status: str) -> OrderStatus:
+    if status == "NEW":
+        return OrderStatus.ACCEPTED
+    elif status == "CANCELED":
+        return OrderStatus.CANCELED
+    elif status == "PARTIALLY_FILLED":
+        return OrderStatus.PARTIALLY_FILLED
+    elif status == "FILLED":
+        return OrderStatus.FILLED
+    elif status == "EXPIRED":
+        return OrderStatus.EXPIRED
+    else:  # pragma: no cover (design-time error)
+        raise RuntimeError(f"unrecognized order status, was {status}")
+
+
+def parse_time_in_force(time_in_force: str) -> TimeInForce:
+    if time_in_force == "GTX":
+        return TimeInForce.GTC
+    else:
+        return TimeInForce[time_in_force]
+
+
+def parse_trigger_type(working_type: str) -> TriggerType:
+    if working_type == "CONTRACT_PRICE":
+        return TriggerType.LAST
+    elif working_type == "MARK_PRICE":
+        return TriggerType.MARK
+    else:  # pragma: no cover (design-time error)
+        return TriggerType.NONE

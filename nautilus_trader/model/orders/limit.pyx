@@ -46,8 +46,8 @@ cdef class LimitOrder(Order):
     """
     Represents a `Limit` order.
 
-    - A `Limit-On-Open (LOO)` order type can be represented using an ``ON_OPEN`` time in force.
-    - A `Limit-On-Close (LOC)` order type can be represented using an ``ON_CLOSE`` time in force.
+    - A `Limit-On-Open (LOO)` order can be represented using a time in force of ``AT_THE_OPEN``.
+    - A `Limit-On-Close (LOC)` order can be represented using a time in force of ``AT_THE_CLOSE``.
 
     Parameters
     ----------
@@ -65,7 +65,7 @@ cdef class LimitOrder(Order):
         The order quantity (> 0).
     price : Price
         The order limit price.
-    time_in_force : TimeInForce {``GTC``, ``IOC``, ``FOK``, ``GTD``, ``DAY``, ``ON_OPEN``, ``ON_CLOSE``}
+    time_in_force : TimeInForce {``GTC``, ``IOC``, ``FOK``, ``GTD``, ``DAY``, ``AT_THE_OPEN``, ``AT_THE_CLOSE``}
         The order time in force.
     expire_time : datetime, optional
         The order expiration.

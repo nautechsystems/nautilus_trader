@@ -25,7 +25,7 @@ from nautilus_trader.adapters.betfair.providers import BetfairInstrumentProvider
 from nautilus_trader.backtest.data.providers import TestInstrumentProvider
 from nautilus_trader.backtest.data.wranglers import BarDataWrangler
 from nautilus_trader.backtest.data.wranglers import QuoteTickDataWrangler
-from nautilus_trader.model.instruments.currency import CurrencySpot
+from nautilus_trader.model.instruments.currency_pair import CurrencyPair
 from nautilus_trader.persistence.catalog import DataCatalog
 from nautilus_trader.persistence.external.core import make_raw_files
 from nautilus_trader.persistence.external.core import process_files
@@ -117,7 +117,7 @@ class TestPersistenceParsers:
                 AssetClass,
                 USDT,
                 BTC,
-                CurrencySpot,
+                CurrencyPair,
                 InstrumentId,
                 Symbol,
                 Venue,
@@ -236,7 +236,7 @@ class TestPersistenceParsers:
     def test_byte_json_parser(self):
         def parser(block):
             for data in orjson.loads(block):
-                obj = CurrencySpot.from_dict(data)
+                obj = CurrencyPair.from_dict(data)
                 yield obj
 
         reader = ByteReader(block_parser=parser)

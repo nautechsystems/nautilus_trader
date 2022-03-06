@@ -17,7 +17,7 @@ import asyncio
 
 import pytest
 
-from nautilus_trader.adapters.binance.websocket.spot import BinanceSpotWebSocket
+from nautilus_trader.adapters.binance.websocket.client import BinanceWebSocketClient
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.logging import LiveLogger
 
@@ -27,7 +27,7 @@ async def test_binance_websocket_client():
     loop = asyncio.get_event_loop()
     clock = LiveClock()
 
-    client = BinanceSpotWebSocket(
+    client = BinanceWebSocketClient(
         loop=loop,
         clock=clock,
         logger=LiveLogger(loop=loop, clock=clock),

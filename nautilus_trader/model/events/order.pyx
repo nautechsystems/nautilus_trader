@@ -121,7 +121,7 @@ cdef class OrderInitialized(OrderEvent):
         The order type.
     quantity : Quantity
         The order quantity.
-    time_in_force : TimeInForce {``GTC``, ``IOC``, ``FOK``, ``GTD``, ``DAY``, ``ON_OPEN``, ``ON_CLOSE``}
+    time_in_force : TimeInForce {``GTC``, ``IOC``, ``FOK``, ``GTD``, ``DAY``, ``AT_THE_OPEN``, ``AT_THE_CLOSE``}
         The order time in force.
     post_only : bool
         If the order will only provide liquidity (make a market).
@@ -2118,9 +2118,9 @@ cdef class OrderFilled(OrderEvent):
     venue_order_id : VenueOrderId
         The venue order ID (assigned by the venue).
     trade_id : TradeId
-        The trade match ID.
+        The trade match ID (assigned by the venue).
     position_id : PositionId, optional
-        The position ID associated with the order fill.
+        The position ID associated with the order fill (assigned by the venue).
     order_side : OrderSide {``BUY``, ``SELL``}
         The execution order side.
     order_side : OrderType

@@ -67,9 +67,9 @@ class BinanceSpotTicker(Ticker):
     close_time_ms : int
         The UNIX timestamp (milliseconds) when the ticker closed.
     first_id : int
-        The first trade match ID for the ticker.
+        The first trade match ID (assigned by the venue) for the ticker.
     last_id : int
-        The last trade match ID for the ticker.
+        The last trade match ID (assigned by the venue) for the ticker.
     count : int
         The count of trades over the tickers time range.
     ts_event : int64

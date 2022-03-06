@@ -19,8 +19,8 @@ from typing import Any, Dict, List
 import pandas as pd
 
 from nautilus_trader.adapters.ftx.core.constants import FTX_VENUE
+from nautilus_trader.adapters.ftx.parsing.common import parse_order_status
 from nautilus_trader.adapters.ftx.parsing.common import parse_order_type
-from nautilus_trader.adapters.ftx.parsing.common import parse_status
 from nautilus_trader.core.datetime import secs_to_nanos
 from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.execution.reports import OrderStatusReport
@@ -50,7 +50,7 @@ def parse_order_status_http(
     client_id_str = data.get("clientId")
     price = data.get("price")
     avg_px = data["avgFillPrice"]
-    created_at = int(pd.to_datetime(data["createdAt"]).to_datetime64())
+    created_at = int(pd.to_datetime(data["createdAt"], utc=True).to_datetime64())
     return OrderStatusReport(
         account_id=account_id,
         instrument_id=InstrumentId(Symbol(data["market"]), FTX_VENUE),
@@ -59,7 +59,7 @@ def parse_order_status_http(
         order_side=OrderSide.BUY if data["side"] == "buy" else OrderSide.SELL,
         order_type=parse_order_type(data=data, price_str="price"),
         time_in_force=TimeInForce.IOC if data["ioc"] else TimeInForce.GTC,
-        order_status=parse_status(data),
+        order_status=parse_order_status(data),
         price=instrument.make_price(price) if price is not None else None,
         quantity=instrument.make_qty(data["size"]),
         filled_qty=instrument.make_qty(data["filledSize"]),
@@ -89,16 +89,16 @@ def parse_trigger_order_status_http(
     avg_px = data["avgFillPrice"]
     triggered_at = data["triggeredAt"]
     trail_value = data["trailValue"]
-    created_at = int(pd.to_datetime(data["createdAt"]).to_datetime64())
+    created_at = int(pd.to_datetime(data["createdAt"], utc=True).to_datetime64())
     return OrderStatusReport(
         account_id=account_id,
-        instrument_id=InstrumentId(Symbol(data["market"]), FTX_VENUE),
+        instrument_id=instrument.id,
         client_order_id=ClientOrderId(client_id_str) if client_id_str is not None else None,
         venue_order_id=parent_order_id or VenueOrderId(str(order_id)),
         order_side=OrderSide.BUY if data["side"] == "buy" else OrderSide.SELL,
         order_type=parse_order_type(data=data),
         time_in_force=TimeInForce.GTC,
-        order_status=parse_status(data),
+        order_status=parse_order_status(data),
         price=instrument.make_price(order_price) if order_price is not None else None,
         trigger_price=instrument.make_price(trigger_price) if trigger_price is not None else None,
         trigger_type=TriggerType.LAST,

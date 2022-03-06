@@ -34,10 +34,10 @@
    :member-order: bysource
 ```
 
-## Currency
+## Currency Pair
 
 ```{eval-rst}
-.. automodule:: nautilus_trader.model.instruments.currency
+.. automodule:: nautilus_trader.model.instruments.currency_pair
    :show-inheritance:
    :inherited-members:
    :members:

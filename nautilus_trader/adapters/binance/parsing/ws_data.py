@@ -40,23 +40,6 @@ from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.orderbook.data import Order
 from nautilus_trader.model.orderbook.data import OrderBookDelta
 from nautilus_trader.model.orderbook.data import OrderBookDeltas
-from nautilus_trader.model.orderbook.data import OrderBookSnapshot
-
-
-def parse_book_snapshot_ws(
-    instrument_id: InstrumentId, msg: Dict, update_id: int, ts_init: int
-) -> OrderBookSnapshot:
-    ts_event: int = ts_init
-
-    return OrderBookSnapshot(
-        instrument_id=instrument_id,
-        book_type=BookType.L2_MBP,
-        bids=[[float(o[0]), float(o[1])] for o in msg.get("bids")],
-        asks=[[float(o[0]), float(o[1])] for o in msg.get("asks")],
-        ts_event=ts_event,
-        ts_init=ts_init,
-        update_id=update_id,
-    )
 
 
 def parse_diff_depth_stream_ws(

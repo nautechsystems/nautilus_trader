@@ -236,7 +236,7 @@ cdef class TradeTick(Tick):
     aggressor_side : AggressorSide
         The trade aggressor side.
     trade_id : TradeId
-        The trade match ID.
+        The trade match ID (assigned by the venue).
     ts_event: int64
         The UNIX timestamp (nanoseconds) when the tick event occurred.
     ts_init: int64
