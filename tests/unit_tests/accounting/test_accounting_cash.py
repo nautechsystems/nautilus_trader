@@ -42,7 +42,7 @@ from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.position import Position
-from tests.test_kit.stubs import TestStubs
+from tests.test_kit.stubs.identities import TestIdStubs
 
 
 AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy("AUD/USD")
@@ -54,7 +54,7 @@ BTCUSDT_BINANCE = TestInstrumentProvider.btcusdt_binance()
 class TestCashAccount:
     def setup(self):
         # Fixture Setup
-        self.trader_id = TestStubs.trader_id()
+        self.trader_id = TestIdStubs.trader_id()
 
         self.order_factory = OrderFactory(
             trader_id=self.trader_id,
@@ -64,7 +64,7 @@ class TestCashAccount:
 
     def test_instantiated_accounts_basic_properties(self):
         # Arrange, Act
-        account = TestStubs.cash_account()
+        account = TestExecStubs.cash_account()
 
         # Assert
         assert account == account

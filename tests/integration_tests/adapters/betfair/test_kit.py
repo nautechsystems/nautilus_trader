@@ -40,26 +40,18 @@ from nautilus_trader.backtest.config import BacktestEngineConfig
 from nautilus_trader.backtest.config import BacktestRunConfig
 from nautilus_trader.backtest.config import BacktestVenueConfig
 from nautilus_trader.backtest.data.providers import TestDataProvider
-from nautilus_trader.common.clock import LiveClock
-from nautilus_trader.common.factories import OrderFactory
-from nautilus_trader.common.logging import LiveLogger
-from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.examples.strategies.orderbook_imbalance import OrderBookImbalanceConfig
 from nautilus_trader.execution.config import ExecEngineConfig
 from nautilus_trader.execution.messages import CancelOrder
 from nautilus_trader.execution.messages import ModifyOrder
 from nautilus_trader.execution.messages import SubmitOrder
-from nautilus_trader.live.config import LiveExecEngineConfig
-from nautilus_trader.live.data_engine import LiveDataEngine
 from nautilus_trader.model.data.tick import TradeTick
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import TimeInForce
 from nautilus_trader.model.events.order import OrderAccepted
 from nautilus_trader.model.events.order import OrderSubmitted
-from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import ClientOrderId
 from nautilus_trader.model.identifiers import InstrumentId
-from nautilus_trader.model.identifiers import PositionId
 from nautilus_trader.model.identifiers import VenueOrderId
 from nautilus_trader.model.instruments.betting import BettingInstrument
 from nautilus_trader.model.objects import Price
@@ -70,14 +62,11 @@ from nautilus_trader.model.orders.market import MarketOrder
 from nautilus_trader.persistence.config import PersistenceConfig
 from nautilus_trader.persistence.external.core import make_raw_files
 from nautilus_trader.persistence.external.readers import TextReader
-from nautilus_trader.portfolio.portfolio import Portfolio
 from nautilus_trader.risk.config import RiskEngineConfig
 from nautilus_trader.trading.config import ImportableStrategyConfig
 from tests import TESTS_PACKAGE_ROOT
 from tests.test_kit import PACKAGE_ROOT
-from tests.test_kit.mocks import MockLiveExecutionEngine
-from tests.test_kit.mocks import MockLiveRiskEngine
-from tests.test_kit.stubs import TestComponentStubs
+from tests.test_kit.stubs.component import TestComponentStubs
 
 
 TEST_PATH = pathlib.Path(TESTS_PACKAGE_ROOT + "/integration_tests/adapters/betfair/resources/")
