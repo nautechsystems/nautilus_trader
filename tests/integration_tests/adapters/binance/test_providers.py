@@ -97,7 +97,7 @@ class TestBinanceInstrumentProvider:
 
         response2 = pkgutil.get_data(
             package="tests.integration_tests.adapters.binance.resources.http_responses",
-            resource="http_futures_usdt_exchange_info.json",
+            resource="http_futures_market_exchange_info.json",
         )
 
         responses = [response2]

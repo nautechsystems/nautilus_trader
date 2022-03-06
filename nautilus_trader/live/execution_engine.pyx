@@ -554,7 +554,8 @@ cdef class LiveExecutionEngine(ExecutionEngine):
             self._log.error(
                 f"Cannot reconcile position: "
                 f"position ID {report.venue_position_id} "
-                f"net qty {position.net_qty} != reported {report.net_qty}.",
+                f"net qty {position.net_qty} != reported {report.net_qty}. "
+                f"{report}.",
             )
             return False  # Failed
 

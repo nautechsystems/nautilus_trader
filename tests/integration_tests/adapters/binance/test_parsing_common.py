@@ -15,7 +15,7 @@
 
 import pytest
 
-from nautilus_trader.adapters.binance.parsing.common import parse_order_type
+from nautilus_trader.adapters.binance.parsing.common import parse_order_type_spot
 from nautilus_trader.model.enums import OrderType
 
 
@@ -34,7 +34,7 @@ class TestBinanceCommonParsing:
     )
     def test_parse_order_type(self, order_type, expected):
         # Arrange, # Act
-        result = parse_order_type(order_type)
+        result = parse_order_type_spot(order_type)
 
         # Assert
         assert result == expected

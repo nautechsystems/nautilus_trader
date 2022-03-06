@@ -72,6 +72,10 @@ class FTXWebSocketClient(WebSocketClient):
         self._task_auto_ping: Optional[asyncio.Task] = None
 
     @property
+    def base_url(self) -> str:
+        return self._base_url
+
+    @property
     def subscriptions(self):
         return self._streams.copy()
 

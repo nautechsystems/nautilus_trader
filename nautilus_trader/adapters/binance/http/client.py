@@ -76,6 +76,10 @@ class BinanceHttpClient(HttpClient):
         # TODO(cs): Implement limit usage
 
     @property
+    def base_url(self) -> str:
+        return self._base_url
+
+    @property
     def api_key(self) -> str:
         return self._key
 

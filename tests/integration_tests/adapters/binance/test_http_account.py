@@ -315,7 +315,7 @@ class TestBinanceSpotAccountHttpAPI:
         mock_send_request = mocker.patch(target="aiohttp.client.ClientSession.request")
 
         # Act
-        await self.api.my_trades(
+        await self.api.get_account_trades(
             symbol="ETHUSDT",
             from_id="1",
             order_id="1",

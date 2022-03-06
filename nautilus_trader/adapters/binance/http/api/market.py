@@ -43,12 +43,13 @@ class BinanceMarketHttpAPI:
         PyCondition.not_none(client, "client")
 
         self.client = client
+        self.account_type = account_type
 
-        if account_type in (BinanceAccountType.SPOT, BinanceAccountType.MARGIN):
+        if self.account_type in (BinanceAccountType.SPOT, BinanceAccountType.MARGIN):
             self.BASE_ENDPOINT = "/api/v3/"
-        elif account_type == BinanceAccountType.FUTURES_USDT:
+        elif self.account_type == BinanceAccountType.FUTURES_USDT:
             self.BASE_ENDPOINT = "/fapi/v1/"
-        elif account_type == BinanceAccountType.FUTURES_COIN:
+        elif self.account_type == BinanceAccountType.FUTURES_COIN:
             self.BASE_ENDPOINT = "/dapi/v1/"
         else:  # pragma: no cover (design-time error)
             raise RuntimeError(f"invalid Binance account type, was {account_type}")

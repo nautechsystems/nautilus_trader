@@ -64,6 +64,10 @@ class FTXHttpClient(HttpClient):
         self._ftx_header = "FTX" if not us else "FTXUS"
 
     @property
+    def base_url(self) -> str:
+        return self._base_url
+
+    @property
     def api_key(self) -> str:
         return self._key
 

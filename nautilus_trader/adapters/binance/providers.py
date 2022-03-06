@@ -23,9 +23,9 @@ from nautilus_trader.adapters.binance.http.api.market import BinanceMarketHttpAP
 from nautilus_trader.adapters.binance.http.api.wallet import BinanceWalletHttpAPI
 from nautilus_trader.adapters.binance.http.client import BinanceHttpClient
 from nautilus_trader.adapters.binance.http.error import BinanceClientError
-from nautilus_trader.adapters.binance.parsing.http import parse_future_instrument_http
-from nautilus_trader.adapters.binance.parsing.http import parse_perpetual_instrument_http
-from nautilus_trader.adapters.binance.parsing.http import parse_spot_instrument_http
+from nautilus_trader.adapters.binance.parsing.http_data import parse_future_instrument_http
+from nautilus_trader.adapters.binance.parsing.http_data import parse_perpetual_instrument_http
+from nautilus_trader.adapters.binance.parsing.http_data import parse_spot_instrument_http
 from nautilus_trader.common.config import InstrumentProviderConfig
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.common.providers import InstrumentProvider

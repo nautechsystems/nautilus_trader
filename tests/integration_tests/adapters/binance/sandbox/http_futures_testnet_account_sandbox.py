@@ -43,7 +43,8 @@ async def test_binance_spot_account_http_client():
 
     account_type = BinanceAccountType.FUTURES_USDT
     account = BinanceAccountHttpAPI(client=client, account_type=account_type)
-    response = await account.account(recv_window=5000)
+
+    response = await account.get_account_trades(symbol="ETHUSDT")
 
     # response = await account.new_order_futures(
     #     symbol="ETHUSDT",
