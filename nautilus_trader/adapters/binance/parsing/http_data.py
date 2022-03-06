@@ -19,9 +19,6 @@ from typing import Any, Dict, List
 
 from nautilus_trader.adapters.binance.core.constants import BINANCE_VENUE
 from nautilus_trader.adapters.binance.core.types import BinanceBar
-from nautilus_trader.adapters.binance.parsing.common import parse_balances_futures
-from nautilus_trader.adapters.binance.parsing.common import parse_balances_spot
-from nautilus_trader.adapters.binance.parsing.common import parse_margins
 from nautilus_trader.core.datetime import millis_to_nanos
 from nautilus_trader.core.string import precision_from_str
 from nautilus_trader.model.currency import Currency
@@ -36,8 +33,6 @@ from nautilus_trader.model.instruments.base import Instrument
 from nautilus_trader.model.instruments.crypto_future import CryptoFuture
 from nautilus_trader.model.instruments.crypto_perpetual import CryptoPerpetual
 from nautilus_trader.model.instruments.currency_pair import CurrencyPair
-from nautilus_trader.model.objects import AccountBalance
-from nautilus_trader.model.objects import MarginBalance
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
@@ -70,20 +65,6 @@ def parse_bar_http(bar_type: BarType, values: List, ts_init: int) -> BinanceBar:
         ts_event=millis_to_nanos(values[0]),
         ts_init=ts_init,
     )
-
-
-def parse_account_balances_spot_http(raw_balances: List[Dict[str, str]]) -> List[AccountBalance]:
-    return parse_balances_spot(raw_balances, "asset", "free", "locked")
-
-
-def parse_account_balances_futures_http(raw_balances: List[Dict[str, str]]) -> List[AccountBalance]:
-    return parse_balances_futures(
-        raw_balances, "asset", "availableBalance", "initialMargin", "maintMargin"
-    )
-
-
-def parse_account_margins_http(raw_balances: List[Dict[str, str]]) -> List[MarginBalance]:
-    return parse_margins(raw_balances, "asset", "initialMargin", "maintMargin")
 
 
 def parse_spot_instrument_http(

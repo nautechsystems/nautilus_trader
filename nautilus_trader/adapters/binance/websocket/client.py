@@ -53,6 +53,10 @@ class BinanceWebSocketClient(WebSocketClient):
         self._streams: List[str] = []
 
     @property
+    def base_url(self) -> str:
+        return self._base_url
+
+    @property
     def subscriptions(self):
         return self._streams.copy()
 

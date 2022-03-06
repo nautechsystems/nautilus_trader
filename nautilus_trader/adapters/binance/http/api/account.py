@@ -16,7 +16,7 @@
 #  Original author: Jeremy https://github.com/2pd
 # -------------------------------------------------------------------------------------------------
 
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 from nautilus_trader.adapters.binance.core.enums import BinanceAccountType
 from nautilus_trader.adapters.binance.core.functions import format_symbol
@@ -43,12 +43,13 @@ class BinanceAccountHttpAPI:
         PyCondition.not_none(client, "client")
 
         self.client = client
+        self.account_type = account_type
 
-        if account_type in (BinanceAccountType.SPOT, BinanceAccountType.MARGIN):
+        if self.account_type in (BinanceAccountType.SPOT, BinanceAccountType.MARGIN):
             self.BASE_ENDPOINT = "/api/v3/"
-        elif account_type == BinanceAccountType.FUTURES_USDT:
+        elif self.account_type == BinanceAccountType.FUTURES_USDT:
             self.BASE_ENDPOINT = "/fapi/v1/"
-        elif account_type == BinanceAccountType.FUTURES_COIN:
+        elif self.account_type == BinanceAccountType.FUTURES_COIN:
             self.BASE_ENDPOINT = "/dapi/v1/"
         else:  # pragma: no cover (design-time error)
             raise RuntimeError(f"invalid Binance account type, was {account_type}")
@@ -597,12 +598,11 @@ class BinanceAccountHttpAPI:
         self,
         symbol: Optional[str] = None,
         recv_window: Optional[int] = None,
-    ) -> Dict[str, Any]:
+    ) -> List[Dict[str, Any]]:
         """
-        Get all open orders on a symbol.
+        Get all open orders for a symbol.
 
         Query Current Open Orders (USER_DATA).
-        `GET /api/v3/openOrders`.
 
         Parameters
         ----------
@@ -618,6 +618,7 @@ class BinanceAccountHttpAPI:
         References
         ----------
         https://binance-docs.github.io/apidocs/spot/en/#current-open-orders-user_data
+        https://binance-docs.github.io/apidocs/futures/en/#current-open-orders-user_data
 
         """
         payload: Dict[str, str] = {}
@@ -640,12 +641,11 @@ class BinanceAccountHttpAPI:
         end_time: Optional[int] = None,
         limit: Optional[int] = None,
         recv_window: Optional[int] = None,
-    ) -> Dict[str, Any]:
+    ) -> List[Dict[str, Any]]:
         """
-        Get all account orders; open, or closed.
+        Get all account orders (open, or closed).
 
         All Orders (USER_DATA).
-        `GET /api/v3/allOrders`.
 
         Parameters
         ----------
@@ -664,11 +664,12 @@ class BinanceAccountHttpAPI:
 
         Returns
         -------
-        dict[str, Any]
+        list[dict[str, Any]]
 
         References
         ----------
         https://binance-docs.github.io/apidocs/spot/en/#all-orders-user_data
+        https://binance-docs.github.io/apidocs/futures/en/#all-orders-user_data
 
         """
         payload: Dict[str, str] = {"symbol": format_symbol(symbol)}
@@ -1004,7 +1005,7 @@ class BinanceAccountHttpAPI:
             payload=payload,
         )
 
-    async def my_trades(
+    async def get_account_trades(
         self,
         symbol: str,
         from_id: Optional[str] = None,
@@ -1013,12 +1014,11 @@ class BinanceAccountHttpAPI:
         end_time: Optional[int] = None,
         limit: Optional[int] = None,
         recv_window: Optional[int] = None,
-    ) -> Dict[str, Any]:
+    ) -> List[Dict[str, Any]]:
         """
-        Get trades for a specific account and symbol.
+        Get trades for a specific account and symbol (SPOT and FUTURES).
 
         Account Trade List (USER_DATA)
-        `GET /api/v3/myTrades`.
 
         Parameters
         ----------
@@ -1039,12 +1039,11 @@ class BinanceAccountHttpAPI:
 
         Returns
         -------
-        dict[str, Any]
+        list[dict[str, Any]]
 
         References
         ----------
         https://binance-docs.github.io/apidocs/spot/en/#account-trade-list-user_data
-
 
         """
         payload: Dict[str, str] = {"symbol": format_symbol(symbol)}
@@ -1061,9 +1060,46 @@ class BinanceAccountHttpAPI:
         if recv_window is not None:
             payload["recvWindow"] = str(recv_window)
 
+        endpoint = "myTrades" if self.account_type.is_spot else "userTrades"
         return await self.client.sign_request(
             http_method="GET",
-            url_path=self.BASE_ENDPOINT + "myTrades",
+            url_path=self.BASE_ENDPOINT + endpoint,
+            payload=payload,
+        )
+
+    async def get_position_risk(
+        self,
+        symbol: Optional[str] = None,
+        recv_window: Optional[int] = None,
+    ):
+        """
+        Get current position information.
+
+        Position Information V2 (USER_DATA)**
+
+        ``GET /fapi/v2/positionRisk``
+
+        Parameters
+        ----------
+        symbol : str, optional
+            The trading pair. If None then queries for all symbols.
+        recv_window : int, optional
+            The acceptable receive window for the response.
+
+        References
+        ----------
+        https://binance-docs.github.io/apidocs/futures/en/#position-information-v2-user_data
+
+        """
+        payload: Dict[str, str] = {}
+        if symbol is not None:
+            payload["symbol"] = format_symbol(symbol)
+        if recv_window is not None:
+            payload["recv_window"] = str(recv_window)
+
+        return await self.client.sign_request(
+            http_method="GET",
+            url_path=self.BASE_ENDPOINT + "positionRisk",
             payload=payload,
         )
 

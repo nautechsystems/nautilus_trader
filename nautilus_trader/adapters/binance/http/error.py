@@ -22,24 +22,25 @@ class BinanceError(Exception):
     The base class for all `Binance` specific errors.
     """
 
-
-class BinanceServerError(BinanceError):
-    """
-    Represents a `Binance` specific 500 series HTTP error.
-    """
-
     def __init__(self, status, message, headers):
         self.status = status
         self.message = message
         self.headers = headers
+
+
+class BinanceServerError(BinanceError):
+    """
+    Represents an `Binance` specific 500 series HTTP error.
+    """
+
+    def __init__(self, status, message, headers):
+        super().__init__(status, message, headers)
 
 
 class BinanceClientError(BinanceError):
     """
-    Represents a `Binance` specific 400 series HTTP error.
+    Represents an `Binance` specific 400 series HTTP error.
     """
 
     def __init__(self, status, message, headers):
-        self.status = status
-        self.message = message
-        self.headers = headers
+        super().__init__(status, message, headers)
