@@ -105,12 +105,12 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
         self._client_order_id_to_strategy_id: Dict[ClientOrderId, StrategyId] = {}
 
         # Event hooks
+        # self._client.orderStatusEvent += self.on_order_status # TODO - Does this capture everything?
         self._client.newOrderEvent += self._on_new_order
         self._client.openOrderEvent += self._on_open_order
-        # self._client.orderModifyEvent += self.on_modified_order
-        # self._client.cancelOrderEvent += self.on_cancel_order
-        # self._client.orderStatusEvent += self.on_order_status
-        # self._client.execDetailsEvent += self.on_order_execution
+        self._client.orderModifyEvent += self._on_modified_order
+        self._client.cancelOrderEvent += self._on_cancel_order
+        self._client.execDetailsEvent += self._on_order_execution
 
     def connect(self):
         """
@@ -198,3 +198,12 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
         )
         # We can remove the local `_venue_order_id_to_client_order_id` now, we have a permId
         self._venue_order_id_to_client_order_id.pop(trade.order.orderId)
+
+    def _on_modified_order(self, trade: Trade):
+        raise NotImplementedError
+
+    def _on_cancel_order(self, trade: Trade):
+        raise NotImplementedError
+
+    def _on_order_execution(self, trade: Trade):
+        raise NotImplementedError
