@@ -4,6 +4,7 @@ import pickle
 
 from ib_insync import Contract
 from ib_insync import LimitOrder as IBLimitOrder
+from ib_insync import Order
 from ib_insync import Order as IBOrder
 from ib_insync import OrderStatus
 from ib_insync import Trade
@@ -58,18 +59,11 @@ class IBTestStubs:
 
     @staticmethod
     def create_order(
-        contract: Contract,
-        status=OrderStatus.PendingSubmit,
-        order_type: IBOrder = IBLimitOrder,
-        side="SELL",
-        price=1.11,
-        size=20000,
-    ) -> Trade:
-        now = datetime.datetime.now(datetime.timezone.utc)
-        orderStatus = OrderStatus(orderId=1, status=status)
-        logEntry = TradeLogEntry(now, orderStatus.status)
-        order = order_type(side, size, price)
-        return Trade(contract, order, orderStatus, [], [logEntry])
+        order_type=IBLimitOrder, side="BUY", lmtPrice=105.0, totalQuantity=100_000, **kwargs
+    ) -> Order:
+        if order_type == IBLimitOrder:
+            kwargs.update({"lmtPrice": lmtPrice})
+        return order_type(action=side, totalQuantity=totalQuantity, **kwargs)
 
 
 class IBExecTestStubs:
@@ -214,6 +208,78 @@ class IBExecTestStubs:
                     status="Submitted",
                     message="",
                     errorCode=0,
+                ),
+            ],
+        )
+
+    @staticmethod
+    def trade_pre_cancel(contract=None, order: IBOrder = None) -> Trade:
+        contract = contract or IBTestStubs.contract_details("AAPL").contract
+        order = order or IBExecTestStubs.ib_order()
+        return Trade(
+            contract=contract,
+            order=order,
+            orderStatus=OrderStatus(
+                orderId=41,
+                status="PreSubmitted",
+                filled=0.0,
+                remaining=1.0,
+                avgFillPrice=0.0,
+                permId=189868420,
+                parentId=0,
+                lastFillPrice=0.0,
+                clientId=1,
+                whyHeld="",
+                mktCapPrice=0.0,
+            ),
+            fills=[],
+            log=[
+                TradeLogEntry(
+                    time=datetime.datetime(
+                        2022, 3, 6, 2, 17, 18, 455087, tzinfo=datetime.timezone.utc
+                    ),
+                    status="PendingCancel",
+                    message="",
+                    errorCode=0,
+                )
+            ],
+        )
+
+    @staticmethod
+    def trade_canceled(contract=None, order: IBOrder = None) -> Trade:
+        contract = contract or IBTestStubs.contract_details("AAPL").contract
+        order = order or IBExecTestStubs.ib_order()
+        return Trade(
+            contract=contract,
+            order=order,
+            orderStatus=OrderStatus(
+                orderId=41,
+                status="Cancelled",
+                filled=0.0,
+                remaining=1.0,
+                avgFillPrice=0.0,
+                permId=189868420,
+                parentId=0,
+                lastFillPrice=0.0,
+                clientId=1,
+                whyHeld="",
+                mktCapPrice=0.0,
+            ),
+            fills=[],
+            log=[
+                TradeLogEntry(
+                    time=datetime.datetime(
+                        2022, 3, 6, 2, 17, 18, 455087, tzinfo=datetime.timezone.utc
+                    ),
+                    status="PendingCancel",
+                    message="",
+                    errorCode=0,
+                ),
+                TradeLogEntry(
+                    time=datetime.datetime(2022, 3, 6, 2, 23, 2, 847, tzinfo=datetime.timezone.utc),
+                    status="Cancelled",
+                    message="Error 10148, reqId 45: OrderId 45 that needs to be cancelled cannot be cancelled, state: PendingCancel.",
+                    errorCode=10148,
                 ),
             ],
         )

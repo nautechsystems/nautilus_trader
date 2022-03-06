@@ -11,7 +11,7 @@ from nautilus_trader.model.orders.market import MarketOrder as NautilusMarketOrd
 def nautilus_order_to_ib_order(order: NautilusOrder) -> IBOrder:
     if isinstance(order, NautilusMarketOrder):
         return IBMarketOrder(
-            action=order.side.name,
+            action=OrderSideParser.to_str_py(order.side),
             totalQuantity=order.quantity.as_double(),
         )
     elif isinstance(order, NautilusLimitOrder):

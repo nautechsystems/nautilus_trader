@@ -16,7 +16,8 @@ import asyncio
 from typing import Dict
 
 import ib_insync
-from ib_insync import Trade
+from ib_insync import Order as IBOrder
+from ib_insync import Trade as IBTrade
 
 from nautilus_trader.adapters.interactive_brokers.common import IB_VENUE
 from nautilus_trader.adapters.interactive_brokers.parsing.execution import (
@@ -32,6 +33,8 @@ from nautilus_trader.core.correctness import PyCondition
 
 # TODO - Investigate `updateEvent`:  "Is emitted after a network packet has been handled."
 from nautilus_trader.core.datetime import dt_to_unix_nanos
+from nautilus_trader.execution.messages import CancelOrder
+from nautilus_trader.execution.messages import ModifyOrder
 from nautilus_trader.execution.messages import SubmitOrder
 from nautilus_trader.live.execution_client import LiveExecutionClient
 from nautilus_trader.model.enums import AccountType
@@ -42,6 +45,9 @@ from nautilus_trader.model.identifiers import ClientOrderId
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import StrategyId
 from nautilus_trader.model.identifiers import VenueOrderId
+from nautilus_trader.model.instruments.base import Instrument
+from nautilus_trader.model.objects import Price
+from nautilus_trader.model.objects import Quantity
 from nautilus_trader.msgbus.bus import MessageBus
 
 
@@ -103,14 +109,15 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
         self._venue_order_id_to_client_order_id: Dict[VenueOrderId, ClientOrderId] = {}
         self._venue_order_id_to_venue_perm_id: Dict[VenueOrderId, ClientOrderId] = {}
         self._client_order_id_to_strategy_id: Dict[ClientOrderId, StrategyId] = {}
+        self._ib_insync_orders: Dict[ClientOrderId, IBTrade] = {}
 
         # Event hooks
         # self._client.orderStatusEvent += self.on_order_status # TODO - Does this capture everything?
         self._client.newOrderEvent += self._on_new_order
         self._client.openOrderEvent += self._on_open_order
-        self._client.orderModifyEvent += self._on_modified_order
-        self._client.cancelOrderEvent += self._on_cancel_order
-        self._client.execDetailsEvent += self._on_order_execution
+        self._client.orderModifyEvent += self._on_order_modify
+        self._client.cancelOrderEvent += self._on_order_cancel
+        self._client.execDetailsEvent += self._on_execution_detail
 
     def connect(self):
         """
@@ -164,15 +171,40 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
         PyCondition.not_none(command, "command")
 
         contract_details = self._instrument_provider.contract_details[command.instrument_id]
-        trade: Trade = self._client.placeOrder(
-            contract=contract_details.contract,
-            order=nautilus_order_to_ib_order(order=command.order),
-        )
+        order: IBOrder = nautilus_order_to_ib_order(order=command.order)
+        trade: IBTrade = self._client.placeOrder(contract=contract_details.contract, order=order)
         self._venue_order_id_to_client_order_id[trade.order.orderId] = command.order.client_order_id
         self._client_order_id_to_strategy_id[command.order.client_order_id] = command.strategy_id
+        self._ib_insync_orders[command.order.client_order_id] = trade
 
-    def _on_new_order(self, trade: Trade):
-        self._log.debug(f"new_order: {Trade}")
+    def modify_order(self, command: ModifyOrder) -> None:
+        """
+        ib_insync modifies orders by modifying the original order object and calling placeOrder again
+        """
+        PyCondition.not_none(command, "command")
+        # TODO - Can we just reconstruct the IBOrder object from the `command` ?
+        trade: IBTrade = self._ib_insync_orders[command.client_order_id]
+        order = trade.order
+        if order.totalQuantity != command.quantity:
+            order.totalQuantity = command.quantity.as_double()
+        if getattr(order, "lmtPrice", None) != command.price:
+            order.lmtPrice = command.price.as_double()
+        new_trade: IBTrade = self._client.placeOrder(contract=trade.contract, order=order)
+        self._ib_insync_orders[command.client_order_id] = new_trade
+
+    def cancel_order(self, command: CancelOrder) -> None:
+        """
+        ib_insync modifies orders by modifying the original order object and calling placeOrder again
+        """
+        PyCondition.not_none(command, "command")
+        # TODO - Can we just reconstruct the IBOrder object from the `command` ?
+        trade: IBTrade = self._ib_insync_orders[command.client_order_id]
+        order = trade.order
+        new_trade: IBTrade = self._client.cancelOrder(order=order)
+        self._ib_insync_orders[command.client_order_id] = new_trade
+
+    def _on_new_order(self, trade: IBTrade):
+        self._log.debug(f"new_order: {IBTrade}")
         instrument_id = self._instrument_provider.contract_id_to_instrument_id[trade.contract.conId]
         client_order_id = self._venue_order_id_to_client_order_id[trade.order.orderId]
         strategy_id = self._client_order_id_to_strategy_id[client_order_id]
@@ -184,7 +216,7 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
             ts_event=dt_to_unix_nanos(trade.log[-1].time),
         )
 
-    def _on_open_order(self, trade: Trade):
+    def _on_open_order(self, trade: IBTrade):
         instrument_id = self._instrument_provider.contract_id_to_instrument_id[trade.contract.conId]
         client_order_id = self._venue_order_id_to_client_order_id[trade.order.orderId]
         strategy_id = self._client_order_id_to_strategy_id[client_order_id]
@@ -199,11 +231,26 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
         # We can remove the local `_venue_order_id_to_client_order_id` now, we have a permId
         self._venue_order_id_to_client_order_id.pop(trade.order.orderId)
 
-    def _on_modified_order(self, trade: Trade):
+    def _on_order_modify(self, trade: IBTrade):
+        instrument_id = self._instrument_provider.contract_id_to_instrument_id[trade.contract.conId]
+        instrument: Instrument = self._cache.instrument(instrument_id)
+        client_order_id = self._venue_order_id_to_client_order_id[trade.order.orderId]
+        strategy_id = self._client_order_id_to_strategy_id[client_order_id]
+        venue_order_id = VenueOrderId(str(trade.orderStatus.permId))
+        self.generate_order_updated(
+            strategy_id=strategy_id,
+            instrument_id=instrument_id,
+            client_order_id=client_order_id,
+            venue_order_id=venue_order_id,
+            quantity=Quantity(trade.order.totalQuantity, precision=instrument.size_precision),
+            price=Price(trade.order.lmtPrice, precision=instrument.price_precision),
+            trigger_price=None,
+            ts_event=dt_to_unix_nanos(trade.log[-1].time),
+            venue_order_id_modified=False,  # TODO - does this happen?
+        )
+
+    def _on_order_cancel(self, trade: IBTrade):
         raise NotImplementedError
 
-    def _on_cancel_order(self, trade: Trade):
-        raise NotImplementedError
-
-    def _on_order_execution(self, trade: Trade):
+    def _on_execution_detail(self, trade: IBTrade):
         raise NotImplementedError

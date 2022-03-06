@@ -36,6 +36,8 @@ from nautilus_trader.core.data import Data
 from nautilus_trader.core.datetime import maybe_dt_to_unix_nanos
 from nautilus_trader.core.datetime import millis_to_nanos
 from nautilus_trader.core.uuid import UUID4
+from nautilus_trader.execution.messages import CancelOrder
+from nautilus_trader.execution.messages import ModifyOrder
 from nautilus_trader.execution.messages import SubmitOrder
 from nautilus_trader.model.currencies import GBP
 from nautilus_trader.model.currencies import USD
@@ -96,6 +98,7 @@ from nautilus_trader.model.orderbook.data import OrderBookDeltas
 from nautilus_trader.model.orderbook.data import OrderBookSnapshot
 from nautilus_trader.model.orderbook.ladder import Ladder
 from nautilus_trader.model.orders.limit import LimitOrder
+from nautilus_trader.model.orders.market import MarketOrder
 from nautilus_trader.msgbus.bus import MessageBus
 from nautilus_trader.portfolio.portfolio import Portfolio
 from nautilus_trader.serialization.arrow.serializer import register_parquet
@@ -459,6 +462,10 @@ class TestStubs:
         return ClientOrderId(client_order_id)
 
     @staticmethod
+    def venue_order_id(venue_order_id: str = "1") -> VenueOrderId:
+        return VenueOrderId(venue_order_id)
+
+    @staticmethod
     def cash_account():
         return AccountFactory.create(
             TestStubs.event_cash_account_state(account_id=TestStubs.account_id())
@@ -478,7 +485,12 @@ class TestStubs:
 
     @staticmethod
     def limit_order(
-        instrument_id=None, side=None, price=None, quantity=None, time_in_force=None
+        instrument_id=None,
+        side=None,
+        price=None,
+        quantity=None,
+        time_in_force=None,
+        venue_order_id: Optional[VenueOrderId] = None,
     ) -> LimitOrder:
         strategy = TestStubs.trading_strategy()
         order = strategy.order_factory.limit(
@@ -487,6 +499,19 @@ class TestStubs:
             quantity or Quantity.from_int(10),
             price or Price.from_str("0.50"),
             time_in_force=time_in_force or TimeInForce.GTC,
+        )
+        if venue_order_id is not None:
+            event = TestStubs.event_order_accepted(order=order, venue_order_id=venue_order_id)
+            order.apply(event)
+        return order
+
+    @staticmethod
+    def market_order(instrument_id=None, side=None, quantity=None) -> MarketOrder:
+        strategy = TestStubs.trading_strategy()
+        order = strategy.order_factory.market(
+            instrument_id or TestStubs.audusd_id(),
+            side or OrderSide.BUY,
+            quantity or Quantity.from_int(10),
         )
         return order
 
@@ -1039,4 +1064,37 @@ class TestStubs:
             order=order or TestStubs.order(),
             command_id=TestStubs.uuid(),
             ts_init=TestStubs.clock().timestamp_ns(),
+        )
+
+    @staticmethod
+    def modify_order_command(
+        instrument_id: InstrumentId,
+        new_price: Optional[Price] = None,
+        new_quantity: Optional[Quantity] = None,
+    ):
+        return ModifyOrder(
+            trader_id=TestStubs.trader_id(),
+            strategy_id=TestStubs.strategy_id(),
+            instrument_id=instrument_id,
+            client_order_id=TestStubs.client_order_id(),
+            venue_order_id=TestStubs.venue_order_id(),
+            quantity=new_quantity,
+            trigger_price=None,
+            price=new_price,
+            command_id=TestStubs.uuid(),
+            ts_init=TestStubs.clock().timestamp_ns(),
+            client_id=None,
+        )
+
+    @staticmethod
+    def cancel_order_command(instrument_id: InstrumentId):
+        return CancelOrder(
+            trader_id=TestStubs.trader_id(),
+            strategy_id=TestStubs.strategy_id(),
+            instrument_id=instrument_id,
+            client_order_id=TestStubs.client_order_id(),
+            venue_order_id=TestStubs.venue_order_id(),
+            command_id=TestStubs.uuid(),
+            ts_init=TestStubs.clock().timestamp_ns(),
+            client_id=None,
         )
