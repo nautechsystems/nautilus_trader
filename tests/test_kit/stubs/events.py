@@ -34,9 +34,11 @@ from nautilus_trader.model.events.order import OrderPendingUpdate
 from nautilus_trader.model.events.order import OrderRejected
 from nautilus_trader.model.events.order import OrderSubmitted
 from nautilus_trader.model.events.order import OrderTriggered
+from nautilus_trader.model.events.position import Optional
 from nautilus_trader.model.events.position import PositionChanged
 from nautilus_trader.model.events.position import PositionClosed
 from nautilus_trader.model.events.position import PositionOpened
+from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import ComponentId
 from nautilus_trader.model.identifiers import TradeId
 from nautilus_trader.model.identifiers import VenueOrderId
@@ -44,6 +46,7 @@ from nautilus_trader.model.objects import AccountBalance
 from nautilus_trader.model.objects import MarginBalance
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
+from nautilus_trader.model.orders.base import Order
 from tests.test_kit.stubs.identities import TestIdStubs
 
 
@@ -142,7 +145,10 @@ class TestEventStubs:
         )
 
     @staticmethod
-    def order_submitted(order, account_id=None) -> OrderSubmitted:
+    def order_submitted(
+        order: Order,
+        account_id: Optional[AccountId] = None,
+    ) -> OrderSubmitted:
         return OrderSubmitted(
             trader_id=order.trader_id,
             strategy_id=order.strategy_id,
@@ -162,7 +168,7 @@ class TestEventStubs:
             account_id=account_id or TestIdStubs.account_id(),
             instrument_id=order.instrument_id,
             client_order_id=order.client_order_id,
-            venue_order_id=venue_order_id or VenueOrderId("1"),
+            venue_order_id=venue_order_id or TestIdStubs.venue_order_id(),
             ts_event=0,
             event_id=UUID4(),
             ts_init=0,

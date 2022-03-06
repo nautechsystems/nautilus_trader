@@ -45,7 +45,7 @@ def nautilus_objects() -> List[Any]:
         position_id=position_id,
         trade_id=TradeId("BUY"),
     )
-    sell = TestExecStubs.limit_order(side=OrderSide.SELL)
+    sell = TestExecStubs.limit_order(order_side=OrderSide.SELL)
     _, _, sell_filled = _make_order_events(
         sell,
         instrument=instrument,

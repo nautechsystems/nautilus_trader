@@ -15,12 +15,14 @@
 
 from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.model.identifiers import AccountId
+from nautilus_trader.model.identifiers import ClientOrderId
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import PositionId
 from nautilus_trader.model.identifiers import StrategyId
 from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.model.identifiers import Venue
+from nautilus_trader.model.identifiers import VenueOrderId
 
 
 class TestIdStubs:
@@ -83,3 +85,20 @@ class TestIdStubs:
     @staticmethod
     def audusd_idealpro_id() -> InstrumentId:
         return InstrumentId(Symbol("AUD/USD"), Venue("IDEALPRO"))
+
+    @staticmethod
+    def betting_instrument_id():
+        return InstrumentId(
+            Symbol(
+                "AmericanFootball,NFL,29678534,20220207-233000,ODDS,SPECIAL,1.179082386,50214,0.0"
+            ),
+            Venue("BETFAIR"),
+        )
+
+    @staticmethod
+    def client_order_id() -> ClientOrderId:
+        return ClientOrderId("O-20210410-022422-001-001-1")
+
+    @staticmethod
+    def venue_order_id() -> VenueOrderId:
+        return VenueOrderId("001")

@@ -130,7 +130,7 @@ class TestBetfairClient:
         instrument = BetfairTestStubs.betting_instrument_handicap()
         limit_order = TestExecStubs.limit_order(
             instrument_id=instrument.id,
-            side=OrderSide.BUY,
+            order_side=OrderSide.BUY,
             price=Price.from_str("0.50"),
             quantity=Quantity.from_int(10),
         )
@@ -149,7 +149,7 @@ class TestBetfairClient:
         instrument = BetfairTestStubs.betting_instrument()
         limit_order = TestExecStubs.limit_order(
             instrument_id=instrument.id,
-            side=OrderSide.BUY,
+            order_side=OrderSide.BUY,
             price=Price.from_str("0.50"),
             quantity=Quantity.from_int(10),
         )
@@ -234,7 +234,9 @@ class TestBetfairClient:
     @pytest.mark.asyncio
     async def test_cancel_orders(self):
         instrument = BetfairTestStubs.betting_instrument()
-        cancel_command = TestCommandStubs.cancel_order_command()
+        cancel_command = TestCommandStubs.cancel_order_command(
+            venue_order_id=VenueOrderId("228302937743")
+        )
         cancel_order = order_cancel_to_betfair(command=cancel_command, instrument=instrument)
         with mock_client_request(response=BetfairResponses.betting_place_order_success()) as req:
             resp = await self.client.cancel_orders(**cancel_order)
