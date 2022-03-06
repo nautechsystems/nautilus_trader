@@ -13,7 +13,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import asyncio
 import bz2
 import contextlib
 import pathlib
@@ -78,7 +77,7 @@ from tests import TESTS_PACKAGE_ROOT
 from tests.test_kit import PACKAGE_ROOT
 from tests.test_kit.mocks import MockLiveExecutionEngine
 from tests.test_kit.mocks import MockLiveRiskEngine
-from tests.test_kit.stubs import TestStubs
+from tests.test_kit.stubs import TestComponentStubs
 
 
 TEST_PATH = pathlib.Path(TESTS_PACKAGE_ROOT + "/integration_tests/adapters/betfair/resources/")
@@ -110,73 +109,12 @@ class BetfairTestStubs:
     def instrument_provider(betfair_client) -> BetfairInstrumentProvider:
         return BetfairInstrumentProvider(
             client=betfair_client,
-            logger=BetfairTestStubs.live_logger(BetfairTestStubs.clock()),
-            # market_filter={"event_type_name": "Tennis"},
+            logger=TestComponentStubs.logger(),
         )
-
-    @staticmethod
-    def clock():
-        return LiveClock()
-
-    @staticmethod
-    def live_logger(clock):
-        return LiveLogger(loop=asyncio.get_event_loop(), clock=clock)
-
-    @staticmethod
-    def portfolio(clock, live_logger):
-        return Portfolio(
-            clock=clock,
-            logger=live_logger,
-        )
-
-    @staticmethod
-    def position_id():
-        return PositionId("1")
 
     @staticmethod
     def instrument_id():
         return BetfairTestStubs.betting_instrument().id
-
-    @staticmethod
-    def uuid():
-        return UUID4("038990c6-19d2-b5c8-37a6-fe91f9b7b9ed")
-
-    @staticmethod
-    def account_id() -> AccountId:
-        return AccountId(BETFAIR_VENUE.value, "000")
-
-    @staticmethod
-    def data_engine(event_loop, msgbus, clock, live_logger):
-        return LiveDataEngine(
-            loop=event_loop,
-            msgbus=msgbus,
-            clock=clock,
-            logger=live_logger,
-        )
-
-    @staticmethod
-    def exec_engine(event_loop, clock, live_logger):
-        config = LiveExecEngineConfig()
-        config.allow_cash_positions = True  # Retain original behaviour for now
-        return MockLiveExecutionEngine(
-            loop=event_loop,
-            msgbus=TestStubs.msgbus(),
-            cache=TestStubs.cache,
-            clock=clock,
-            logger=live_logger,
-            config=config,
-        )
-
-    @staticmethod
-    def risk_engine(event_loop, clock, live_logger):
-        return MockLiveRiskEngine(
-            loop=event_loop,
-            portfolio=TestStubs.portfolio(),
-            msgbus=TestStubs.msgbus(),
-            cache=TestStubs.cache(),
-            clock=clock,
-            logger=live_logger,
-        )
 
     @staticmethod
     def betting_instrument():
@@ -277,14 +215,6 @@ class BetfairTestStubs:
         return client
 
     @staticmethod
-    def order_factory():
-        return OrderFactory(
-            trader_id=TestStubs.trader_id(),
-            strategy_id=TestStubs.strategy_id(),
-            clock=BetfairTestStubs.clock(),
-        )
-
-    @staticmethod
     def make_order(
         factory=None,
         instrument_id: Optional[InstrumentId] = None,
@@ -293,7 +223,7 @@ class BetfairTestStubs:
         quantity: Optional[Quantity] = None,
         client_order_id: Optional[ClientOrderId] = None,
     ) -> LimitOrder:
-        order_factory = factory or BetfairTestStubs.order_factory()
+        order_factory = factory or TestComponentStubs.order_factory()
 
         return LimitOrder(
             trader_id=order_factory.trader_id,
