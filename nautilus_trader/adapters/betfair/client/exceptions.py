@@ -19,6 +19,8 @@ class BetfairError(Exception):
     The base class for all `Betfair` specific errors.
     """
 
+    pass
+
 
 class BetfairAPIError(BetfairError):
     """

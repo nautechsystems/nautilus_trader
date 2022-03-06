@@ -134,6 +134,7 @@ class VolatilityMarketMaker(TradingStrategy):
             The instrument received.
 
         """
+        pass
 
     def on_order_book(self, order_book: OrderBook):
         """
@@ -146,6 +147,7 @@ class VolatilityMarketMaker(TradingStrategy):
 
         """
         # self.log.info(str(order_book))  # For debugging (must add a subscription)
+        pass
 
     def on_order_book_delta(self, delta: OrderBookDelta):
         """
@@ -158,6 +160,7 @@ class VolatilityMarketMaker(TradingStrategy):
 
         """
         # self.log.info(str(delta), LogColor.GREEN)  # For debugging (must add a subscription)
+        pass
 
     def on_quote_tick(self, tick: QuoteTick):
         """
@@ -170,6 +173,7 @@ class VolatilityMarketMaker(TradingStrategy):
 
         """
         # self.log.info(f"Received {repr(tick)}")  # For debugging (must add a subscription)
+        pass
 
     def on_trade_tick(self, tick: TradeTick):
         """
@@ -182,6 +186,7 @@ class VolatilityMarketMaker(TradingStrategy):
 
         """
         # self.log.info(f"Received {repr(tick)}")  # For debugging (must add a subscription)
+        pass
 
     def on_bar(self, bar: Bar):
         """
@@ -264,6 +269,7 @@ class VolatilityMarketMaker(TradingStrategy):
             The data received.
 
         """
+        pass
 
     def on_event(self, event: Event):
         """
@@ -333,6 +339,7 @@ class VolatilityMarketMaker(TradingStrategy):
             The strategy state dictionary.
 
         """
+        pass
 
     def on_dispose(self):
         """
@@ -341,3 +348,4 @@ class VolatilityMarketMaker(TradingStrategy):
         Cleanup any resources used by the strategy here.
 
         """
+        pass

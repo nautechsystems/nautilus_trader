@@ -197,6 +197,7 @@ class EMACrossBracket(TradingStrategy):
             The data received.
 
         """
+        pass
 
     def on_event(self, event: Event):
         """
@@ -208,6 +209,7 @@ class EMACrossBracket(TradingStrategy):
             The event received.
 
         """
+        pass
 
     def on_stop(self):
         """
@@ -253,6 +255,7 @@ class EMACrossBracket(TradingStrategy):
             The strategy state dictionary.
 
         """
+        pass
 
     def on_dispose(self):
         """
@@ -261,3 +264,4 @@ class EMACrossBracket(TradingStrategy):
         Cleanup any resources used by the strategy here.
 
         """
+        pass

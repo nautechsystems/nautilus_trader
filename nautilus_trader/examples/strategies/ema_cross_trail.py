@@ -170,6 +170,7 @@ class EMACrossWithTrailingStop(TradingStrategy):
             The quote tick received.
 
         """
+        pass
 
     def on_trade_tick(self, tick: TradeTick):
         """
@@ -181,6 +182,7 @@ class EMACrossWithTrailingStop(TradingStrategy):
             The tick received.
 
         """
+        pass
 
     def on_bar(self, bar: Bar):
         """
@@ -378,6 +380,7 @@ class EMACrossWithTrailingStop(TradingStrategy):
             The strategy state dictionary.
 
         """
+        pass
 
     def on_dispose(self):
         """
@@ -386,3 +389,4 @@ class EMACrossWithTrailingStop(TradingStrategy):
         Cleanup any resources used by the strategy here.
 
         """
+        pass
