@@ -23,7 +23,7 @@ import pytest
 from nautilus_trader.adapters.binance.core.constants import BINANCE_VENUE
 from nautilus_trader.adapters.binance.data import BinanceDataClient
 from nautilus_trader.adapters.binance.http.client import BinanceHttpClient
-from nautilus_trader.adapters.binance.providers import BinanceInstrumentProvider
+from nautilus_trader.adapters.binance.spot.providers import BinanceSpotInstrumentProvider
 from nautilus_trader.backtest.data.providers import TestInstrumentProvider
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.config import InstrumentProviderConfig
@@ -76,7 +76,7 @@ class TestBinanceDataClient:
             secret="SOME_BINANCE_API_SECRET",
         )
 
-        self.provider = BinanceInstrumentProvider(
+        self.provider = BinanceSpotInstrumentProvider(
             client=self.http_client,
             logger=self.logger,
             config=InstrumentProviderConfig(load_all=True),

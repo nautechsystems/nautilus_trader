@@ -17,8 +17,8 @@ import asyncio
 
 import pytest
 
-from nautilus_trader.adapters.binance.http.api.market import BinanceMarketHttpAPI
 from nautilus_trader.adapters.binance.http.client import BinanceHttpClient
+from nautilus_trader.adapters.binance.spot.http.market import BinanceSpotMarketHttpAPI
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.logging import Logger
 
@@ -36,7 +36,7 @@ class TestBinanceSpotMarketHttpAPI:
             secret="SOME_BINANCE_API_SECRET",
         )
 
-        self.api = BinanceMarketHttpAPI(self.client)
+        self.api = BinanceSpotMarketHttpAPI(self.client)
 
     @pytest.mark.asyncio
     async def test_ping_sends_expected_request(self, mocker):

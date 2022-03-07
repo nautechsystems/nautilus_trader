@@ -20,7 +20,7 @@ import os
 import pytest
 
 from nautilus_trader.adapters.binance.factories import get_cached_binance_http_client
-from nautilus_trader.adapters.binance.http.api.wallet import BinanceWalletHttpAPI
+from nautilus_trader.adapters.binance.futures.http.wallet import BinanceFuturesWalletHttpAPI
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.logging import Logger
 
@@ -40,9 +40,9 @@ async def test_binance_futures_testnet_wallet_http_client():
         is_testnet=True,
     )
 
-    wallet = BinanceWalletHttpAPI(client=client)
+    wallet = BinanceFuturesWalletHttpAPI(client=client)
     await client.connect()
-    response = await wallet.commission_rate_futures(symbol="BTCUSDT")
+    response = await wallet.commission_rate(symbol="BTCUSDT")
     print(json.dumps(response, indent=4))
 
     await client.disconnect()

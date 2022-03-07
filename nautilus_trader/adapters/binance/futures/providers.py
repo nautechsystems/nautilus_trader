@@ -19,8 +19,8 @@ from typing import Any, Dict, List, Optional
 from nautilus_trader.adapters.binance.core.constants import BINANCE_VENUE
 from nautilus_trader.adapters.binance.core.enums import BinanceAccountType
 from nautilus_trader.adapters.binance.core.enums import BinanceContractType
-from nautilus_trader.adapters.binance.http.api.market import BinanceMarketHttpAPI
-from nautilus_trader.adapters.binance.http.api.wallet import BinanceWalletHttpAPI
+from nautilus_trader.adapters.binance.futures.http.market import BinanceFuturesMarketHttpAPI
+from nautilus_trader.adapters.binance.futures.http.wallet import BinanceFuturesWalletHttpAPI
 from nautilus_trader.adapters.binance.http.client import BinanceHttpClient
 from nautilus_trader.adapters.binance.http.error import BinanceClientError
 from nautilus_trader.adapters.binance.parsing.http_data import parse_future_instrument_http
@@ -34,7 +34,7 @@ from nautilus_trader.core.datetime import millis_to_nanos
 from nautilus_trader.model.identifiers import InstrumentId
 
 
-class BinanceInstrumentProvider(InstrumentProvider):
+class BinanceFuturesInstrumentProvider(InstrumentProvider):
     """
     Provides a means of loading `Instrument`s from the Binance API.
 
@@ -52,7 +52,7 @@ class BinanceInstrumentProvider(InstrumentProvider):
         self,
         client: BinanceHttpClient,
         logger: Logger,
-        account_type: BinanceAccountType = BinanceAccountType.SPOT,
+        account_type: BinanceAccountType = BinanceAccountType.FUTURES_USDT,
         config: Optional[InstrumentProviderConfig] = None,
     ):
         super().__init__(
@@ -64,8 +64,8 @@ class BinanceInstrumentProvider(InstrumentProvider):
         self._client = client
         self._account_type = account_type
 
-        self._wallet = BinanceWalletHttpAPI(self._client)
-        self._market = BinanceMarketHttpAPI(self._client, account_type=account_type)
+        self._wallet = BinanceFuturesWalletHttpAPI(self._client)
+        self._market = BinanceFuturesMarketHttpAPI(self._client, account_type=account_type)
 
     async def load_all_async(self, filters: Optional[Dict] = None) -> None:
         """
@@ -84,9 +84,6 @@ class BinanceInstrumentProvider(InstrumentProvider):
         # Get current commission rates
         try:
             fees: Optional[Dict[str, Dict[str, str]]] = None
-            if self._account_type in (BinanceAccountType.SPOT, BinanceAccountType.MARGIN):
-                fee_res: List[Dict[str, str]] = await self._wallet.trade_fee_spot()
-                fees = {s["symbol"]: s for s in fee_res}
         except BinanceClientError:
             self._log.error(
                 "Cannot load instruments: API key authentication failed "
@@ -137,9 +134,6 @@ class BinanceInstrumentProvider(InstrumentProvider):
         # Get current commission rates
         try:
             fees: Optional[Dict[str, Dict[str, str]]] = None
-            if self._account_type in (BinanceAccountType.SPOT, BinanceAccountType.MARGIN):
-                fee_res: List[Dict[str, str]] = await self._wallet.trade_fee_spot()  # type: ignore
-                fees = {s["symbol"]: s for s in fee_res}
         except BinanceClientError:
             self._log.error(
                 "Cannot load instruments: API key authentication failed "
@@ -186,9 +180,6 @@ class BinanceInstrumentProvider(InstrumentProvider):
         # Get current commission rates
         try:
             fees: Optional[Dict[str, str]] = None
-            if self._account_type in (BinanceAccountType.SPOT, BinanceAccountType.MARGIN):
-                fee_res: Dict[str, Any] = await self._wallet.trade_fee_spot(symbol=symbol)  # type: ignore
-                fees = fee_res["symbol"]
         except BinanceClientError:
             self._log.error(
                 "Cannot load instruments: API key authentication failed "

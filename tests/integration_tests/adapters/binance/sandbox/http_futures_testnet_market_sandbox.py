@@ -21,8 +21,8 @@ import pytest
 
 from nautilus_trader.adapters.binance.core.enums import BinanceAccountType
 from nautilus_trader.adapters.binance.factories import get_cached_binance_http_client
-from nautilus_trader.adapters.binance.http.api.market import BinanceMarketHttpAPI
-from nautilus_trader.adapters.binance.providers import BinanceInstrumentProvider
+from nautilus_trader.adapters.binance.futures.http.market import BinanceFuturesMarketHttpAPI
+from nautilus_trader.adapters.binance.futures.providers import BinanceFuturesInstrumentProvider
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.logging import Logger
 
@@ -44,11 +44,11 @@ async def test_binance_futures_testnet_market_http_client():
     await client.connect()
 
     account_type = BinanceAccountType.FUTURES_USDT
-    market = BinanceMarketHttpAPI(client=client, account_type=account_type)
+    market = BinanceFuturesMarketHttpAPI(client=client, account_type=account_type)
     response = await market.exchange_info(symbol="BTCUSDT")
     print(json.dumps(response, indent=4))
 
-    provider = BinanceInstrumentProvider(
+    provider = BinanceFuturesInstrumentProvider(
         client=client,
         logger=Logger(clock=clock),
         account_type=account_type,

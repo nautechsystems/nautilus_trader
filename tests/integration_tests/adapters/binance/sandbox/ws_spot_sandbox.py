@@ -14,12 +14,16 @@
 # -------------------------------------------------------------------------------------------------
 
 import asyncio
+import os
 
 import pytest
 
+from nautilus_trader.adapters.binance.factories import get_cached_binance_http_client
+from nautilus_trader.adapters.binance.spot.http.user import BinanceSpotUserDataHttpAPI
 from nautilus_trader.adapters.binance.websocket.client import BinanceWebSocketClient
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.logging import LiveLogger
+from nautilus_trader.common.logging import Logger
 
 
 @pytest.mark.asyncio
@@ -27,15 +31,29 @@ async def test_binance_websocket_client():
     loop = asyncio.get_event_loop()
     clock = LiveClock()
 
-    client = BinanceWebSocketClient(
+    client = get_cached_binance_http_client(
+        loop=loop,
+        clock=clock,
+        logger=Logger(clock=clock),
+        key=os.getenv("BINANCE_API_KEY"),
+        secret=os.getenv("BINANCE_API_SECRET"),
+    )
+    await client.connect()
+
+    user = BinanceSpotUserDataHttpAPI(client=client)
+    response = await user.create_listen_key()
+    key = response["listenKey"]
+
+    ws = BinanceWebSocketClient(
         loop=loop,
         clock=clock,
         logger=LiveLogger(loop=loop, clock=clock),
         handler=print,
     )
 
-    client.subscribe_ticker()
+    ws.subscribe(key=key)
 
-    await client.connect(start=True)
+    await ws.connect(start=True)
     await asyncio.sleep(4)
-    await client.close()
+    await ws.close()
+    await client.disconnect()

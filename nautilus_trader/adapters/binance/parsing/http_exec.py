@@ -15,6 +15,7 @@
 from decimal import Decimal
 from typing import Any, Dict, List
 
+from nautilus_trader.adapters.binance.messages.futures.order import BinanceFuturesOrderMsg
 from nautilus_trader.adapters.binance.parsing.common import parse_balances_futures
 from nautilus_trader.adapters.binance.parsing.common import parse_balances_spot
 from nautilus_trader.adapters.binance.parsing.common import parse_margins
@@ -98,36 +99,34 @@ def parse_order_report_spot_http(
 def parse_order_report_futures_http(
     account_id: AccountId,
     instrument_id: InstrumentId,
-    data: Dict[str, Any],
+    msg: BinanceFuturesOrderMsg,
     report_id: UUID4,
     ts_init: int,
 ) -> OrderStatusReport:
-    client_id_str = data.get("clientOrderId")
-    price = data.get("price")
-    trigger_price = Decimal(data["stopPrice"])
-    avg_px = Decimal(data["avgPrice"])
-    time_in_force = data["timeInForce"]
+    price = Decimal(msg.price)
+    trigger_price = Decimal(msg.stopPrice)
+    avg_px = Decimal(msg.avgPrice)
     return OrderStatusReport(
         account_id=account_id,
         instrument_id=instrument_id,
-        client_order_id=ClientOrderId(client_id_str) if client_id_str is not None else None,
-        venue_order_id=VenueOrderId(str(data["orderId"])),
-        order_side=OrderSide[data["side"].upper()],
-        order_type=parse_order_type_futures(data["type"].upper()),
-        time_in_force=parse_time_in_force(data["timeInForce"].upper()),
-        order_status=parse_order_status(data["status"].upper()),
-        price=Price.from_str(price) if price is not None else None,
-        quantity=Quantity.from_str(data["origQty"]),
-        filled_qty=Quantity.from_str(data["executedQty"]),
+        client_order_id=ClientOrderId(msg.clientOrderId) if msg.clientOrderId != "" else None,
+        venue_order_id=VenueOrderId(str(msg.orderId)),
+        order_side=OrderSide[msg.side.upper()],
+        order_type=parse_order_type_futures(msg.type.upper()),
+        time_in_force=parse_time_in_force(msg.timeInForce.upper()),
+        order_status=parse_order_status(msg.status.upper()),
+        price=Price.from_str(msg.price) if price is not None else None,
+        quantity=Quantity.from_str(msg.origQty),
+        filled_qty=Quantity.from_str(msg.executedQty),
         avg_px=avg_px if avg_px > 0 else None,
-        post_only=time_in_force == "GTX",
-        reduce_only=data["reduceOnly"],
+        post_only=msg.timeInForce == "GTX",
+        reduce_only=msg.reduceOnly,
         report_id=report_id,
-        ts_accepted=millis_to_nanos(data["time"]),
-        ts_last=millis_to_nanos(data["updateTime"]),
+        ts_accepted=millis_to_nanos(msg.time),
+        ts_last=millis_to_nanos(msg.updateTime),
         ts_init=ts_init,
         trigger_price=Price.from_str(str(trigger_price)) if trigger_price > 0 else None,
-        trigger_type=parse_trigger_type(data["workingType"]),
+        trigger_type=parse_trigger_type(msg.workingType),
     )
 
 
