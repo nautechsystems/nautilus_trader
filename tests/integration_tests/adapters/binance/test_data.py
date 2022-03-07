@@ -40,7 +40,7 @@ from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.msgbus.bus import MessageBus
 from tests.test_kit.stubs.component import TestComponentStubs
-from tests.test_kit.stubs.identities import TestIdStubs
+from tests.test_kit.stubs.identifiers import TestIdStubs
 
 
 ETHUSDT_BINANCE = TestInstrumentProvider.ethusdt_binance()

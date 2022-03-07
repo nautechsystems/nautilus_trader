@@ -48,7 +48,7 @@ from nautilus_trader.model.objects import Money
 from nautilus_trader.model.orderbook.data import OrderBookData
 from tests.integration_tests.adapters.betfair.test_kit import BetfairDataProvider
 from tests.test_kit import PACKAGE_ROOT
-from tests.test_kit.mocks import data_catalog_setup
+from tests.test_kit.mocks.data import data_catalog_setup
 
 
 class TestBacktestAcceptanceTestsUSDJPY:

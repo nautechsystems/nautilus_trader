@@ -47,14 +47,6 @@ class TestIdStubs:
         return PositionId("001")
 
     @staticmethod
-    def btcusd_bitmex_id() -> InstrumentId:
-        return InstrumentId(Symbol("BTC/USD"), Venue("BITMEX"))
-
-    @staticmethod
-    def ethusd_bitmex_id() -> InstrumentId:
-        return InstrumentId(Symbol("ETH/USD"), Venue("BITMEX"))
-
-    @staticmethod
     def ethusd_ftx_id() -> InstrumentId:
         return InstrumentId(Symbol("ETH-PERP"), Venue("FTX"))
 

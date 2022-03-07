@@ -42,7 +42,7 @@ from nautilus_trader.trading.config import TradingStrategyConfig
 from nautilus_trader.trading.strategy import TradingStrategy
 from nautilus_trader.trading.trader import Trader
 from tests.test_kit.stubs.component import TestComponentStubs
-from tests.test_kit.stubs.identities import TestIdStubs
+from tests.test_kit.stubs.identifiers import TestIdStubs
 
 
 USDJPY_SIM = TestInstrumentProvider.default_fx_ccy("USD/JPY")

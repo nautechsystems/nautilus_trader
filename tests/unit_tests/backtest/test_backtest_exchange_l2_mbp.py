@@ -46,10 +46,10 @@ from nautilus_trader.model.orderbook.book import OrderBook
 from nautilus_trader.msgbus.bus import MessageBus
 from nautilus_trader.portfolio.portfolio import Portfolio
 from nautilus_trader.risk.engine import RiskEngine
-from tests.test_kit.mocks import MockStrategy
+from tests.test_kit.mocks.strategies import MockStrategy
 from tests.test_kit.stubs.component import TestComponentStubs
 from tests.test_kit.stubs.data import TestDataStubs
-from tests.test_kit.stubs.identities import TestIdStubs
+from tests.test_kit.stubs.identifiers import TestIdStubs
 
 
 SIM = Venue("SIM")

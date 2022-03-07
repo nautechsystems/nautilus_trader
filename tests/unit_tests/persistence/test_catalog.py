@@ -41,10 +41,10 @@ from nautilus_trader.persistence.external.core import write_tables
 from nautilus_trader.persistence.external.readers import CSVReader
 from tests.integration_tests.adapters.betfair.test_kit import BetfairTestStubs
 from tests.test_kit import PACKAGE_ROOT
-from tests.test_kit.mocks import NewsEventData
-from tests.test_kit.mocks import data_catalog_setup
+from tests.test_kit.mocks.data import NewsEventData
+from tests.test_kit.mocks.data import data_catalog_setup
 from tests.test_kit.stubs.data import TestDataStubs
-from tests.test_kit.stubs.identities import TestIdStubs
+from tests.test_kit.stubs.identifiers import TestIdStubs
 from tests.test_kit.stubs.persistence import TestPersistenceStubs
 
 

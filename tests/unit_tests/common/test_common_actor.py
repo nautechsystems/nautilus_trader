@@ -44,13 +44,13 @@ from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.msgbus.bus import MessageBus
 from nautilus_trader.trading.filters import NewsEvent
 from nautilus_trader.trading.filters import NewsImpact
-from tests.test_kit.mocks import KaboomActor
-from tests.test_kit.mocks import MockActor
+from tests.test_kit.mocks.actors import KaboomActor
+from tests.test_kit.mocks.actors import MockActor
 from tests.test_kit.stubs import UNIX_EPOCH
 from tests.test_kit.stubs.component import TestComponentStubs
 from tests.test_kit.stubs.data import TestDataStubs
 from tests.test_kit.stubs.events import TestEventStubs
-from tests.test_kit.stubs.identities import TestIdStubs
+from tests.test_kit.stubs.identifiers import TestIdStubs
 
 
 AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy("AUD/USD")
