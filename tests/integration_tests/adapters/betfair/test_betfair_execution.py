@@ -57,7 +57,9 @@ from tests.integration_tests.adapters.betfair.test_kit import BetfairResponses
 from tests.integration_tests.adapters.betfair.test_kit import BetfairStreaming
 from tests.integration_tests.adapters.betfair.test_kit import BetfairTestStubs
 from tests.integration_tests.adapters.betfair.test_kit import mock_betfair_request
-from tests.test_kit.stubs import TestStubs
+from tests.test_kit.stubs.component import TestComponentStubs
+from tests.test_kit.stubs.execution import TestExecStubs
+from tests.test_kit.stubs.identities import TestIdStubs
 
 
 class TestBetfairExecutionClient:
@@ -69,7 +71,7 @@ class TestBetfairExecutionClient:
         self.clock = LiveClock()
         self.uuid_factory = UUIDFactory()
 
-        self.trader_id = TestStubs.trader_id()
+        self.trader_id = TestIdStubs.trader_id()
         self.venue = BETFAIR_VENUE
         self.account_id = AccountId(self.venue.value, "001")
 
@@ -83,9 +85,9 @@ class TestBetfairExecutionClient:
             logger=self.logger,
         )
 
-        self.cache = TestStubs.cache()
+        self.cache = TestComponentStubs.cache()
         self.cache.add_instrument(BetfairTestStubs.betting_instrument())
-        self.cache.add_account(TestStubs.betting_account(account_id=self.account_id))
+        self.cache.add_account(TestExecStubs.betting_account(account_id=self.account_id))
 
         self.portfolio = Portfolio(
             msgbus=self.msgbus,
@@ -181,8 +183,10 @@ class TestBetfairExecutionClient:
             client_order_id = ClientOrderId(str(c_id))
             venue_order_id = VenueOrderId(str(v_id))
             self._log.debug(f"Adding client_order_id=[{c_id}], venue_order_id=[{v_id}] ")
-            order = BetfairTestStubs.make_accepted_order(
-                venue_order_id=venue_order_id, client_order_id=client_order_id
+            order = TestExecStubs.make_accepted_order(
+                instrument_id=TestIdStubs.betting_instrument_id(),
+                venue_order_id=venue_order_id,
+                client_order_id=client_order_id,
             )
             self._log.debug(f"created order: {order}")
             venue_order_id_to_client_order_id[v_id] = order.client_order_id
@@ -245,7 +249,9 @@ class TestBetfairExecutionClient:
     async def test_modify_order_success(self):
         # Arrange
         venue_order_id = VenueOrderId("240808576108")
-        order = BetfairTestStubs.make_accepted_order(venue_order_id=venue_order_id)
+        order = TestExecStubs.make_accepted_order(
+            venue_order_id=venue_order_id, instrument_id=TestIdStubs.betting_instrument_id()
+        )
         command = BetfairTestStubs.modify_order_command(
             instrument_id=order.instrument_id,
             client_order_id=order.client_order_id,
@@ -268,7 +274,9 @@ class TestBetfairExecutionClient:
     async def test_modify_order_error_order_doesnt_exist(self):
         # Arrange
         venue_order_id = VenueOrderId("229435133092")
-        order = BetfairTestStubs.make_accepted_order(venue_order_id=venue_order_id)
+        order = TestExecStubs.make_accepted_order(
+            venue_order_id=venue_order_id, instrument_id=TestIdStubs.betting_instrument_id()
+        )
 
         command = BetfairTestStubs.modify_order_command(
             instrument_id=order.instrument_id,
@@ -291,7 +299,7 @@ class TestBetfairExecutionClient:
     async def test_modify_order_error_no_venue_id(self):
         # Arrange
         order = BetfairTestStubs.make_submitted_order()
-        self.cache.add_order(order, position_id=BetfairTestStubs.position_id())
+        self.cache.add_order(order, position_id=TestIdStubs.position_id())
 
         command = BetfairTestStubs.modify_order_command(
             instrument_id=order.instrument_id,
@@ -314,7 +322,7 @@ class TestBetfairExecutionClient:
     async def test_cancel_order_success(self):
         # Arrange
         order = BetfairTestStubs.make_submitted_order()
-        self.cache.add_order(order, position_id=BetfairTestStubs.position_id())
+        self.cache.add_order(order, position_id=TestIdStubs.position_id())
 
         command = BetfairTestStubs.cancel_order_command(
             instrument_id=order.instrument_id,
@@ -336,7 +344,7 @@ class TestBetfairExecutionClient:
     async def test_cancel_order_fail(self):
         # Arrange
         order = BetfairTestStubs.make_submitted_order()
-        self.cache.add_order(order, position_id=BetfairTestStubs.position_id())
+        self.cache.add_order(order, position_id=TestIdStubs.position_id())
 
         command = BetfairTestStubs.cancel_order_command(
             instrument_id=order.instrument_id,
@@ -363,7 +371,7 @@ class TestBetfairExecutionClient:
         submitted = BetfairTestStubs.make_submitted_order(
             client_order_id=client_order_id, quantity=Quantity.from_int(20)
         )
-        self.cache.add_order(submitted, position_id=BetfairTestStubs.position_id())
+        self.cache.add_order(submitted, position_id=TestIdStubs.position_id())
         self.client.venue_order_id_to_client_order_id[venue_order_id] = client_order_id
 
         # Act
@@ -605,12 +613,14 @@ class TestBetfairExecutionClient:
         await asyncio.sleep(1)
 
         balance = self.cache.account_for_venue(self.venue).balances()[GBP]
-        order = BetfairTestStubs.make_order(
-            price=Price.from_str("0.5"), quantity=Quantity.from_int(10)
+        order = TestExecStubs.limit_order(
+            instrument_id=TestIdStubs.betting_instrument_id(),
+            price=Price.from_str("0.5"),
+            quantity=Quantity.from_int(10),
         )
+        command = BetfairTestStubs.submit_order_command(order=order)
         self.cache.add_order(order=order, position_id=None)
         mock_betfair_request(self.betfair_client, BetfairResponses.betting_place_order_success())
-        command = BetfairTestStubs.submit_order_command(order=order)
         self.client.submit_order(command)
         await asyncio.sleep(0.01)
 

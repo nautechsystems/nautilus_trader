@@ -23,7 +23,6 @@ import pandas as pd
 from fsspec.implementations.github import GithubFileSystem
 from fsspec.implementations.local import LocalFileSystem
 
-from nautilus_trader.adapters.betfair.common import BETFAIR_VENUE
 from nautilus_trader.backtest.data.loaders import CSVBarDataLoader
 from nautilus_trader.backtest.data.loaders import CSVTickDataLoader
 from nautilus_trader.backtest.data.loaders import ParquetBarDataLoader
@@ -40,7 +39,6 @@ from nautilus_trader.model.enums import OptionKind
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import Venue
-from nautilus_trader.model.instruments.betting import BettingInstrument
 from nautilus_trader.model.instruments.crypto_future import CryptoFuture
 from nautilus_trader.model.instruments.crypto_perpetual import CryptoPerpetual
 from nautilus_trader.model.instruments.currency_pair import CurrencyPair
@@ -427,32 +425,6 @@ class TestInstrumentProvider:
             taker_fee=Decimal("0.00002"),
             ts_event=0,
             ts_init=0,
-        )
-
-    @staticmethod
-    def betting_instrument():
-        return BettingInstrument(
-            venue_name=BETFAIR_VENUE.value,
-            betting_type="ODDS",
-            competition_id="12282733",
-            competition_name="NFL",
-            event_country_code="GB",
-            event_id="29678534",
-            event_name="NFL",
-            event_open_date=pd.Timestamp("2022-02-07 23:30:00+00:00"),
-            event_type_id="6423",
-            event_type_name="American Football",
-            market_id="1.179082386",
-            market_name="AFC Conference Winner",
-            market_start_time=pd.Timestamp("2022-02-07 23:30:00+00:00"),
-            market_type="SPECIAL",
-            selection_handicap="",
-            selection_id="50214",
-            selection_name="Kansas City Chiefs",
-            currency="GBP",
-            ts_event=0,
-            ts_init=0,
-            tick_scheme_name="BETFAIR",
         )
 
     @staticmethod

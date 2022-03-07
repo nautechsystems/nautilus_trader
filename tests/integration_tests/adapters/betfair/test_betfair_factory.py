@@ -30,7 +30,8 @@ from nautilus_trader.common.logging import LoggerAdapter
 from nautilus_trader.common.logging import LogLevel
 from nautilus_trader.common.uuid import UUIDFactory
 from nautilus_trader.msgbus.bus import MessageBus
-from tests.test_kit.stubs import TestStubs
+from tests.test_kit.stubs.component import TestComponentStubs
+from tests.test_kit.stubs.identities import TestIdStubs
 
 
 class TestBetfairFactory:
@@ -42,7 +43,7 @@ class TestBetfairFactory:
         self.clock = LiveClock()
         self.uuid_factory = UUIDFactory()
 
-        self.trader_id = TestStubs.trader_id()
+        self.trader_id = TestIdStubs.trader_id()
         self.venue = BETFAIR_VENUE
 
         # Setup logging
@@ -54,7 +55,7 @@ class TestBetfairFactory:
             clock=self.clock,
             logger=self.logger,
         )
-        self.cache = TestStubs.cache()
+        self.cache = TestComponentStubs.cache()
 
     @pytest.mark.asyncio()
     def test_create(self):

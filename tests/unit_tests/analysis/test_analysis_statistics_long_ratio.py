@@ -24,7 +24,7 @@ from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.position import Position
-from tests.test_kit.stubs import TestStubs
+from tests.test_kit.stubs.events import TestEventStubs
 
 
 ETHUSD_FTX = TestInstrumentProvider.ethusd_ftx()
@@ -65,7 +65,7 @@ class TestLongRatioPortfolioStatistics:
             Quantity.from_int(1),
         )
 
-        fill1 = TestStubs.event_order_filled(
+        fill1 = TestEventStubs.order_filled(
             order1,
             instrument=ETHUSD_FTX,
             position_id=PositionId("P-1"),
@@ -73,7 +73,7 @@ class TestLongRatioPortfolioStatistics:
             last_px=Price.from_int(10_000),
         )
 
-        fill2 = TestStubs.event_order_filled(
+        fill2 = TestEventStubs.order_filled(
             order2,
             instrument=ETHUSD_FTX,
             position_id=PositionId("P-2"),
@@ -111,7 +111,7 @@ class TestLongRatioPortfolioStatistics:
             Quantity.from_int(1),
         )
 
-        fill1 = TestStubs.event_order_filled(
+        fill1 = TestEventStubs.order_filled(
             order1,
             instrument=ETHUSD_FTX,
             position_id=PositionId("P-1"),
@@ -119,7 +119,7 @@ class TestLongRatioPortfolioStatistics:
             last_px=Price.from_int(10_000),
         )
 
-        fill2 = TestStubs.event_order_filled(
+        fill2 = TestEventStubs.order_filled(
             order2,
             instrument=ETHUSD_FTX,
             position_id=PositionId("P-2"),

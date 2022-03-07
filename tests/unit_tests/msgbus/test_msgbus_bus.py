@@ -19,7 +19,7 @@ from nautilus_trader.common.uuid import UUIDFactory
 from nautilus_trader.core.message import Request
 from nautilus_trader.core.message import Response
 from nautilus_trader.msgbus.bus import MessageBus
-from tests.test_kit.stubs import TestStubs
+from tests.test_kit.stubs.identities import TestIdStubs
 
 
 class TestMessageBus:
@@ -29,7 +29,7 @@ class TestMessageBus:
         self.uuid_factory = UUIDFactory()
         self.logger = Logger(self.clock)
 
-        self.trader_id = TestStubs.trader_id()
+        self.trader_id = TestIdStubs.trader_id()
 
         self.handler = []
         self.msgbus = MessageBus(

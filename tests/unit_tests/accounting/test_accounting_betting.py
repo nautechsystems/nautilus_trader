@@ -36,13 +36,15 @@ from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.position import Position
 from tests.integration_tests.adapters.betfair.test_kit import BetfairTestStubs
-from tests.test_kit.stubs import TestStubs
+from tests.test_kit.stubs.events import TestEventStubs
+from tests.test_kit.stubs.execution import TestExecStubs
+from tests.test_kit.stubs.identities import TestIdStubs
 
 
 class TestBettingAccount:
     def setup(self):
         # Fixture Setup
-        self.trader_id = TestStubs.trader_id()
+        self.trader_id = TestIdStubs.trader_id()
         self.instrument = BetfairTestStubs.betting_instrument()
         self.order_factory = OrderFactory(
             trader_id=self.trader_id,
@@ -78,7 +80,7 @@ class TestBettingAccount:
             Quantity.from_int(volume),
         )
 
-        fill = TestStubs.event_order_filled(
+        fill = TestEventStubs.order_filled(
             order,
             instrument=self.instrument,
             position_id=PositionId(position_id),
@@ -89,7 +91,7 @@ class TestBettingAccount:
 
     def test_instantiated_accounts_basic_properties(self):
         # Arrange, Act
-        account = TestStubs.betting_account()
+        account = TestExecStubs.betting_account()
 
         # Assert
         assert account == account
@@ -259,7 +261,7 @@ class TestBettingAccount:
         self,
     ):
         # Arrange
-        account = TestStubs.cash_account()
+        account = TestExecStubs.cash_account()
 
         # Act, Assert
         with pytest.raises(ValueError):

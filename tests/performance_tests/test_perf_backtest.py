@@ -37,7 +37,7 @@ from nautilus_trader.model.objects import Money
 from nautilus_trader.trading.strategy import TradingStrategy
 from tests.test_kit import PACKAGE_ROOT
 from tests.test_kit.performance import PerformanceHarness
-from tests.test_kit.stubs import TestStubs
+from tests.test_kit.stubs.data import TestDataStubs
 
 
 USDJPY_SIM = TestInstrumentProvider.default_fx_ccy("USD/JPY")
@@ -106,7 +106,7 @@ class TestBacktestEnginePerformance(PerformanceHarness):
 
             config = EMACrossConfig(
                 instrument_id=str(USDJPY_SIM.id),
-                bar_type=str(TestStubs.bartype_usdjpy_1min_bid()),
+                bar_type=str(TestDataStubs.bartype_usdjpy_1min_bid()),
                 trade_size=Decimal(1_000_000),
                 fast_ema=10,
                 slow_ema=20,
@@ -156,7 +156,7 @@ class TestBacktestEnginePerformance(PerformanceHarness):
 
             config = EMACrossConfig(
                 instrument_id=str(USDJPY_SIM.id),
-                bar_type=str(TestStubs.bartype_usdjpy_1min_bid()),
+                bar_type=str(TestDataStubs.bartype_usdjpy_1min_bid()),
                 trade_size=Decimal(1_000_000),
                 fast_ema=10,
                 slow_ema=20,

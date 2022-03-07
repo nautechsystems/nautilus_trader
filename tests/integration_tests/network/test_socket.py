@@ -18,7 +18,7 @@ import asyncio
 import pytest
 
 from nautilus_trader.network.socket import SocketClient
-from tests.test_kit.stubs import TestStubs
+from tests.test_kit.stubs.component import TestComponentStubs
 
 
 @pytest.mark.asyncio
@@ -36,7 +36,7 @@ async def test_socket_base(socket_server, event_loop):
         port=port,
         loop=event_loop,
         handler=handler,
-        logger=TestStubs.logger(),
+        logger=TestComponentStubs.logger(),
         ssl=False,
     )
     await client.connect()

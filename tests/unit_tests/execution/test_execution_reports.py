@@ -41,10 +41,10 @@ from nautilus_trader.model.identifiers import VenueOrderId
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
-from tests.test_kit.stubs import TestStubs
+from tests.test_kit.stubs.identities import TestIdStubs
 
 
-AUDUSD_IDEALPRO = TestStubs.audusd_idealpro_id()
+AUDUSD_IDEALPRO = TestIdStubs.audusd_idealpro_id()
 
 
 class TestExecutionReports:

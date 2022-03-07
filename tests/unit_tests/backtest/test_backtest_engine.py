@@ -53,7 +53,7 @@ from nautilus_trader.model.orderbook.data import OrderBookDeltas
 from nautilus_trader.model.orderbook.data import OrderBookSnapshot
 from nautilus_trader.trading.strategy import TradingStrategy
 from tests.test_kit.stubs import MyData
-from tests.test_kit.stubs import TestStubs
+from tests.test_kit.stubs.data import TestDataStubs
 
 
 ETHUSDT_BINANCE = TestInstrumentProvider.ethusdt_binance()
@@ -444,13 +444,13 @@ class TestBacktestWithAddedBars:
         # Setup data
         bid_bar_type = BarType(
             instrument_id=GBPUSD_SIM.id,
-            bar_spec=TestStubs.bar_spec_1min_bid(),
+            bar_spec=TestDataStubs.bar_spec_1min_bid(),
             aggregation_source=AggregationSource.EXTERNAL,  # <-- important
         )
 
         ask_bar_type = BarType(
             instrument_id=GBPUSD_SIM.id,
-            bar_spec=TestStubs.bar_spec_1min_ask(),
+            bar_spec=TestDataStubs.bar_spec_1min_ask(),
             aggregation_source=AggregationSource.EXTERNAL,  # <-- important
         )
 
@@ -488,7 +488,7 @@ class TestBacktestWithAddedBars:
         # Arrange
         bar_type = BarType(
             instrument_id=GBPUSD_SIM.id,
-            bar_spec=TestStubs.bar_spec_1min_bid(),
+            bar_spec=TestDataStubs.bar_spec_1min_bid(),
             aggregation_source=AggregationSource.EXTERNAL,  # <-- important
         )
         config = EMACrossConfig(
@@ -519,7 +519,7 @@ class TestBacktestWithAddedBars:
         # Arrange
         bar_type = BarType(
             instrument_id=GBPUSD_SIM.id,
-            bar_spec=TestStubs.bar_spec_1min_bid(),
+            bar_spec=TestDataStubs.bar_spec_1min_bid(),
             aggregation_source=AggregationSource.EXTERNAL,  # <-- important
         )
         config = EMACrossConfig(

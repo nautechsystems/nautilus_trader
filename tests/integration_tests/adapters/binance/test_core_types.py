@@ -20,14 +20,15 @@ from nautilus_trader.adapters.binance.core.types import BinanceSpotTicker
 from nautilus_trader.model.data.bar import BarType
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
-from tests.test_kit.stubs import TestStubs
+from tests.test_kit.stubs.data import TestDataStubs
+from tests.test_kit.stubs.identities import TestIdStubs
 
 
 class TestBinanceDataTypes:
     def test_binance_ticker_repr(self):
         # Arrange
         ticker = BinanceSpotTicker(
-            instrument_id=TestStubs.btcusdt_binance_id(),
+            instrument_id=TestIdStubs.btcusdt_binance_id(),
             price_change=Decimal("-94.99999800"),
             price_change_percent=Decimal("-95.960"),
             weighted_avg_price=Decimal("0.29628482"),
@@ -59,7 +60,7 @@ class TestBinanceDataTypes:
     def test_binance_ticker_to_and_from_dict(self):
         # Arrange
         ticker = BinanceSpotTicker(
-            instrument_id=TestStubs.btcusdt_binance_id(),
+            instrument_id=TestIdStubs.btcusdt_binance_id(),
             price_change=Decimal("-94.99999800"),
             price_change_percent=Decimal("-95.960"),
             weighted_avg_price=Decimal("0.29628482"),
@@ -116,8 +117,8 @@ class TestBinanceDataTypes:
         # Arrange
         bar = BinanceBar(
             bar_type=BarType(
-                instrument_id=TestStubs.btcusdt_binance_id(),
-                bar_spec=TestStubs.bar_spec_1min_last(),
+                instrument_id=TestIdStubs.btcusdt_binance_id(),
+                bar_spec=TestDataStubs.bar_spec_1min_last(),
             ),
             open=Price.from_str("0.01634790"),
             high=Price.from_str("0.80000000"),
@@ -142,8 +143,8 @@ class TestBinanceDataTypes:
         # Arrange
         bar = BinanceBar(
             bar_type=BarType(
-                instrument_id=TestStubs.btcusdt_binance_id(),
-                bar_spec=TestStubs.bar_spec_1min_last(),
+                instrument_id=TestIdStubs.btcusdt_binance_id(),
+                bar_spec=TestDataStubs.bar_spec_1min_last(),
             ),
             open=Price.from_str("0.01634790"),
             high=Price.from_str("0.80000000"),
