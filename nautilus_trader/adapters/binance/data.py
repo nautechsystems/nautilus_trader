@@ -24,7 +24,7 @@ from nautilus_trader.adapters.binance.core.enums import BinanceAccountType
 from nautilus_trader.adapters.binance.core.functions import parse_symbol
 from nautilus_trader.adapters.binance.core.types import BinanceBar
 from nautilus_trader.adapters.binance.core.types import BinanceSpotTicker
-from nautilus_trader.adapters.binance.http.api.market import BinanceMarketHttpAPI
+from nautilus_trader.adapters.binance.futures.http.market import BinanceFuturesMarketHttpAPI
 from nautilus_trader.adapters.binance.http.client import BinanceHttpClient
 from nautilus_trader.adapters.binance.http.error import BinanceError
 from nautilus_trader.adapters.binance.parsing.common import parse_book_snapshot
@@ -35,12 +35,13 @@ from nautilus_trader.adapters.binance.parsing.ws_data import parse_diff_depth_st
 from nautilus_trader.adapters.binance.parsing.ws_data import parse_quote_tick_ws
 from nautilus_trader.adapters.binance.parsing.ws_data import parse_ticker_24hr_spot_ws
 from nautilus_trader.adapters.binance.parsing.ws_data import parse_trade_tick_ws
-from nautilus_trader.adapters.binance.providers import BinanceInstrumentProvider
+from nautilus_trader.adapters.binance.spot.http.market import BinanceSpotMarketHttpAPI
 from nautilus_trader.adapters.binance.websocket.client import BinanceWebSocketClient
 from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.logging import LogColor
 from nautilus_trader.common.logging import Logger
+from nautilus_trader.common.providers import InstrumentProvider
 from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.core.datetime import millis_to_nanos
 from nautilus_trader.core.uuid import UUID4
@@ -79,7 +80,7 @@ class BinanceDataClient(LiveMarketDataClient):
         The clock for the client.
     logger : Logger
         The logger for the client.
-    instrument_provider : BinanceInstrumentProvider
+    instrument_provider : InstrumentProvider
         The instrument provider.
     account_type : BinanceAccountType
         The account type for the client.
@@ -95,7 +96,7 @@ class BinanceDataClient(LiveMarketDataClient):
         cache: Cache,
         clock: LiveClock,
         logger: Logger,
-        instrument_provider: BinanceInstrumentProvider,
+        instrument_provider: InstrumentProvider,
         account_type: BinanceAccountType = BinanceAccountType.SPOT,
         base_url_ws: Optional[str] = None,
     ):
@@ -118,9 +119,12 @@ class BinanceDataClient(LiveMarketDataClient):
 
         # HTTP API
         self._http_client = client
-        self._http_market = BinanceMarketHttpAPI(
-            client=self._http_client, account_type=account_type
-        )
+        if account_type.is_spot:
+            self._http_market = BinanceSpotMarketHttpAPI(client=self._http_client)  # type: ignore
+        elif account_type.is_futures:
+            self._http_market = BinanceFuturesMarketHttpAPI(  # type: ignore
+                client=self._http_client, account_type=account_type
+            )
 
         # WebSocket API
         self._ws_client = BinanceWebSocketClient(
@@ -680,6 +684,8 @@ class BinanceDataClient(LiveMarketDataClient):
         self._handle_data(ticker)
 
     def _handle_trade(self, instrument_id: InstrumentId, data: Dict[str, Any]):
+        # raw = orjson.dumps(data)
+        # msg = msgspec.json.decode(raw, type=BinanceTradeMsg)
         trade_tick: TradeTick = parse_trade_tick_ws(
             instrument_id=instrument_id,
             msg=data,

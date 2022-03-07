@@ -24,9 +24,11 @@ import pytest
 
 from nautilus_trader.adapters.binance.core.constants import BINANCE_VENUE
 from nautilus_trader.adapters.binance.core.enums import BinanceAccountType
-from nautilus_trader.adapters.binance.execution import BinanceExecutionClient
+from nautilus_trader.adapters.binance.futures.execution import BinanceFuturesExecutionClient
+from nautilus_trader.adapters.binance.futures.providers import BinanceFuturesInstrumentProvider
 from nautilus_trader.adapters.binance.http.client import BinanceHttpClient
-from nautilus_trader.adapters.binance.providers import BinanceInstrumentProvider
+from nautilus_trader.adapters.binance.spot.execution import BinanceSpotExecutionClient
+from nautilus_trader.adapters.binance.spot.providers import BinanceSpotInstrumentProvider
 from nautilus_trader.backtest.data.providers import TestInstrumentProvider
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.config import InstrumentProviderConfig
@@ -83,7 +85,7 @@ class TestSpotBinanceExecutionClient:
             secret="SOME_BINANCE_API_SECRET",
         )
 
-        self.provider = BinanceInstrumentProvider(
+        self.provider = BinanceSpotInstrumentProvider(
             client=self.http_client,
             logger=self.logger,
             config=InstrumentProviderConfig(load_all=True),
@@ -118,7 +120,7 @@ class TestSpotBinanceExecutionClient:
             logger=self.logger,
         )
 
-        self.exec_client = BinanceExecutionClient(
+        self.exec_client = BinanceSpotExecutionClient(
             loop=self.loop,
             client=self.http_client,
             msgbus=self.msgbus,
@@ -432,7 +434,7 @@ class TestFuturesBinanceExecutionClient:
             secret="SOME_BINANCE_API_SECRET",
         )
 
-        self.provider = BinanceInstrumentProvider(
+        self.provider = BinanceFuturesInstrumentProvider(
             client=self.http_client,
             logger=self.logger,
             config=InstrumentProviderConfig(load_all=True),
@@ -467,7 +469,7 @@ class TestFuturesBinanceExecutionClient:
             logger=self.logger,
         )
 
-        self.exec_client = BinanceExecutionClient(
+        self.exec_client = BinanceFuturesExecutionClient(
             loop=self.loop,
             client=self.http_client,
             msgbus=self.msgbus,

@@ -13,14 +13,18 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from enum import Enum
+import msgspec
 
 
-class NewOrderRespType(Enum):
+class BinanceTradeMsg(msgspec.Struct):
     """
-    Represents a `Binance` newOrderRespType.
+    GET /fapi/v1/trades.
     """
 
-    ACK = "ACK"
-    RESULT = "RESULT"
-    FULL = "FULL"
+    id: int
+    price: str
+    qty: str
+    quoteQty: str
+    time: int
+    isBuyerMaker: bool
+    isBestMatch: bool

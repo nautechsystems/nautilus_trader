@@ -20,7 +20,7 @@ import os
 import pytest
 
 from nautilus_trader.adapters.binance.factories import get_cached_binance_http_client
-from nautilus_trader.adapters.binance.http.api.wallet import BinanceWalletHttpAPI
+from nautilus_trader.adapters.binance.spot.http.wallet import BinanceSpotWalletHttpAPI
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.logging import Logger
 
@@ -38,7 +38,7 @@ async def test_binance_spot_wallet_http_client():
         secret=os.getenv("BINANCE_API_SECRET"),
     )
 
-    wallet = BinanceWalletHttpAPI(client=client)
+    wallet = BinanceSpotWalletHttpAPI(client=client)
     await client.connect()
     response = await wallet.trade_fee_spot(symbol="BTCUSDT")
     print(json.dumps(response, indent=4))
