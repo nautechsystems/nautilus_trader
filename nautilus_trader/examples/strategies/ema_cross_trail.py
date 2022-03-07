@@ -147,6 +147,7 @@ class EMACrossWithTrailingStop(TradingStrategy):
             The instrument received.
 
         """
+        pass
 
     def on_order_book(self, order_book: OrderBook):
         """
@@ -314,6 +315,7 @@ class EMACrossWithTrailingStop(TradingStrategy):
             The data received.
 
         """
+        pass
 
     def on_event(self, event: Event):
         """
