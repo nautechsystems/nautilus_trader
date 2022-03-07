@@ -19,7 +19,7 @@ from nautilus_trader.common.uuid import UUIDFactory
 from nautilus_trader.core.message import Request
 from nautilus_trader.core.message import Response
 from nautilus_trader.msgbus.bus import MessageBus
-from tests.test_kit.stubs.identities import TestIdStubs
+from tests.test_kit.stubs.identifiers import TestIdStubs
 
 
 class TestMessageBus:

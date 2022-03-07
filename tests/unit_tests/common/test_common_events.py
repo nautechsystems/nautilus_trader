@@ -24,7 +24,7 @@ from nautilus_trader.common.events.system import ComponentStateChanged
 from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.model.enums import TradingState
 from nautilus_trader.model.identifiers import ComponentId
-from tests.test_kit.stubs.identities import TestIdStubs
+from tests.test_kit.stubs.identifiers import TestIdStubs
 
 
 class TestCommonEvents:

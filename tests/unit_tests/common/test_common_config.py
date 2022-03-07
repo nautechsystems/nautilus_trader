@@ -20,7 +20,7 @@ import pytest
 from nautilus_trader.common.config import ActorConfig
 from nautilus_trader.common.config import ActorFactory
 from nautilus_trader.common.config import ImportableActorConfig
-from tests.test_kit.mocks import MockActor
+from tests.test_kit.mocks.actors import MockActor
 
 
 class TestActorFactory:
@@ -51,7 +51,7 @@ class TestActorFactory:
             component_id="MyActor",
         )
         importable = ImportableActorConfig(
-            path="tests.test_kit.mocks:MockActor",
+            path="tests.test_kit.mocks.actors:MockActor",
             config=config,
         )
 

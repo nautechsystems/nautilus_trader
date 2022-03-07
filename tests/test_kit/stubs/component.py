@@ -24,10 +24,10 @@ from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.msgbus.bus import MessageBus
 from nautilus_trader.portfolio.portfolio import Portfolio
 from nautilus_trader.trading.strategy import TradingStrategy
-from tests.test_kit.mocks import MockLiveDataEngine
-from tests.test_kit.mocks import MockLiveExecutionEngine
-from tests.test_kit.mocks import MockLiveRiskEngine
-from tests.test_kit.stubs.identities import TestIdStubs
+from tests.test_kit.mocks.engines import MockLiveDataEngine
+from tests.test_kit.mocks.engines import MockLiveExecutionEngine
+from tests.test_kit.mocks.engines import MockLiveRiskEngine
+from tests.test_kit.stubs.identifiers import TestIdStubs
 
 
 class TestComponentStubs:

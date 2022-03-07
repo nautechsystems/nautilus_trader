@@ -64,7 +64,7 @@ from tests.test_kit import PACKAGE_ROOT
 from tests.test_kit.stubs.commands import TestCommandStubs
 from tests.test_kit.stubs.component import TestComponentStubs
 from tests.test_kit.stubs.execution import TestExecStubs
-from tests.test_kit.stubs.identities import TestIdStubs
+from tests.test_kit.stubs.identifiers import TestIdStubs
 
 
 TEST_PATH = pathlib.Path(TESTS_PACKAGE_ROOT + "/integration_tests/adapters/betfair/resources/")

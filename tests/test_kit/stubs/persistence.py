@@ -19,7 +19,7 @@ from nautilus_trader.core.datetime import maybe_dt_to_unix_nanos
 from nautilus_trader.model.currency import Currency
 from nautilus_trader.serialization.arrow.serializer import register_parquet
 from nautilus_trader.trading.filters import NewsImpact
-from tests.test_kit.mocks import NewsEventData
+from tests.test_kit.mocks.data import NewsEventData
 
 
 # TODO (bm) - this can probably be removed

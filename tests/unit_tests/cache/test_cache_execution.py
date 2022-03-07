@@ -48,7 +48,7 @@ from nautilus_trader.trading.strategy import TradingStrategy
 from tests.test_kit.stubs.data import TestDataStubs
 from tests.test_kit.stubs.events import TestEventStubs
 from tests.test_kit.stubs.execution import TestExecStubs
-from tests.test_kit.stubs.identities import TestIdStubs
+from tests.test_kit.stubs.identifiers import TestIdStubs
 
 
 AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy("AUD/USD")
