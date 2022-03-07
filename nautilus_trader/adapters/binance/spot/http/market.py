@@ -11,23 +11,18 @@
 #  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
-#
-#  Heavily refactored from MIT licensed github.com/binance/binance-connector-python
-#  Original author: Jeremy https://github.com/2pd
 # -------------------------------------------------------------------------------------------------
 
 from typing import Any, Dict, List, Optional
 
-from nautilus_trader.adapters.binance.core.enums import BinanceAccountType
 from nautilus_trader.adapters.binance.core.functions import convert_symbols_list_to_json_array
 from nautilus_trader.adapters.binance.core.functions import format_symbol
 from nautilus_trader.adapters.binance.http.client import BinanceHttpClient
-from nautilus_trader.core.correctness import PyCondition
 
 
-class BinanceMarketHttpAPI:
+class BinanceSpotMarketHttpAPI:
     """
-    Provides access to the `Binance Market` HTTP REST API.
+    Provides access to the `Binance FUTURES Market` HTTP REST API.
 
     Parameters
     ----------
@@ -35,24 +30,10 @@ class BinanceMarketHttpAPI:
         The Binance REST API client.
     """
 
-    def __init__(
-        self,
-        client: BinanceHttpClient,
-        account_type: BinanceAccountType = BinanceAccountType.SPOT,
-    ):
-        PyCondition.not_none(client, "client")
+    BASE_ENDPOINT = "/api/v3/"
 
+    def __init__(self, client: BinanceHttpClient):
         self.client = client
-        self.account_type = account_type
-
-        if self.account_type in (BinanceAccountType.SPOT, BinanceAccountType.MARGIN):
-            self.BASE_ENDPOINT = "/api/v3/"
-        elif self.account_type == BinanceAccountType.FUTURES_USDT:
-            self.BASE_ENDPOINT = "/fapi/v1/"
-        elif self.account_type == BinanceAccountType.FUTURES_COIN:
-            self.BASE_ENDPOINT = "/dapi/v1/"
-        else:  # pragma: no cover (design-time error)
-            raise RuntimeError(f"invalid Binance account type, was {account_type}")
 
     async def ping(self) -> Dict[str, Any]:
         """

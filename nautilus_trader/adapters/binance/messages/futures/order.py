@@ -13,14 +13,36 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from enum import Enum
+from typing import Optional
+
+import msgspec
 
 
-class NewOrderRespType(Enum):
+class BinanceFuturesOrderMsg(msgspec.Struct):
     """
-    Represents a `Binance` newOrderRespType.
+    Response from GET /fapi/v1/order (HMAC SHA256).
     """
 
-    ACK = "ACK"
-    RESULT = "RESULT"
-    FULL = "FULL"
+    avgPrice: str
+    clientOrderId: str
+    cumQuote: str
+    executedQty: str
+    orderId: int
+    origQty: str
+    origType: str
+    price: str
+    reduceOnly: bool
+    side: str
+    positionSide: str
+    status: str
+    stopPrice: str
+    closePosition: bool
+    symbol: str
+    time: int
+    timeInForce: str
+    type: str
+    activatePrice: Optional[str] = None
+    priceRate: Optional[str] = None
+    updateTime: int
+    workingType: str
+    priceProtect: bool

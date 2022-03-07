@@ -22,14 +22,17 @@ from nautilus_trader.adapters.binance.config import BinanceDataClientConfig
 from nautilus_trader.adapters.binance.config import BinanceExecClientConfig
 from nautilus_trader.adapters.binance.core.enums import BinanceAccountType
 from nautilus_trader.adapters.binance.data import BinanceDataClient
-from nautilus_trader.adapters.binance.execution import BinanceExecutionClient
+from nautilus_trader.adapters.binance.futures.execution import BinanceFuturesExecutionClient
+from nautilus_trader.adapters.binance.futures.providers import BinanceFuturesInstrumentProvider
 from nautilus_trader.adapters.binance.http.client import BinanceHttpClient
-from nautilus_trader.adapters.binance.providers import BinanceInstrumentProvider
+from nautilus_trader.adapters.binance.spot.execution import BinanceSpotExecutionClient
+from nautilus_trader.adapters.binance.spot.providers import BinanceSpotInstrumentProvider
 from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.config import InstrumentProviderConfig
 from nautilus_trader.common.logging import LiveLogger
 from nautilus_trader.common.logging import Logger
+from nautilus_trader.common.providers import InstrumentProvider
 from nautilus_trader.live.factories import LiveDataClientFactory
 from nautilus_trader.live.factories import LiveExecClientFactory
 from nautilus_trader.msgbus.bus import MessageBus
@@ -101,12 +104,12 @@ def get_cached_binance_http_client(
 
 
 @lru_cache(1)
-def get_cached_binance_instrument_provider(
+def get_cached_binance_spot_instrument_provider(
     client: BinanceHttpClient,
     logger: Logger,
     account_type: BinanceAccountType,
     config: InstrumentProviderConfig,
-) -> BinanceInstrumentProvider:
+) -> BinanceSpotInstrumentProvider:
     """
     Cache and return a BinanceInstrumentProvider.
 
@@ -125,10 +128,46 @@ def get_cached_binance_instrument_provider(
 
     Returns
     -------
-    BinanceInstrumentProvider
+    BinanceSpotInstrumentProvider
 
     """
-    return BinanceInstrumentProvider(
+    return BinanceSpotInstrumentProvider(
+        client=client,
+        logger=logger,
+        account_type=account_type,
+        config=config,
+    )
+
+
+@lru_cache(1)
+def get_cached_binance_futures_instrument_provider(
+    client: BinanceHttpClient,
+    logger: Logger,
+    account_type: BinanceAccountType,
+    config: InstrumentProviderConfig,
+) -> InstrumentProvider:
+    """
+    Cache and return a BinanceInstrumentProvider.
+
+    If a cached provider already exists, then that provider will be returned.
+
+    Parameters
+    ----------
+    client : BinanceHttpClient
+        The client for the instrument provider.
+    logger : Logger
+        The logger for the instrument provider.
+    account_type : BinanceAccountType
+        The Binance account type for the instrument provider.
+    config : InstrumentProviderConfig
+        The configuration for the instrument provider.
+
+    Returns
+    -------
+    BinanceFuturesInstrumentProvider
+
+    """
+    return BinanceFuturesInstrumentProvider(
         client=client,
         logger=logger,
         account_type=account_type,
@@ -195,12 +234,20 @@ class BinanceLiveDataClientFactory(LiveDataClientFactory):
         )
 
         # Get instrument provider singleton
-        provider: BinanceInstrumentProvider = get_cached_binance_instrument_provider(
-            client=client,
-            logger=logger,
-            account_type=config.account_type,
-            config=config.instrument_provider,
-        )
+        if config.account_type.is_spot or config.account_type.is_margin:
+            provider = get_cached_binance_spot_instrument_provider(
+                client=client,
+                logger=logger,
+                account_type=config.account_type,
+                config=config.instrument_provider,
+            )
+        else:
+            provider = get_cached_binance_futures_instrument_provider(
+                client=client,
+                logger=logger,
+                account_type=config.account_type,
+                config=config.instrument_provider,
+            )
 
         # Create client
         data_client = BinanceDataClient(
@@ -231,7 +278,7 @@ class BinanceLiveExecClientFactory(LiveExecClientFactory):
         cache: Cache,
         clock: LiveClock,
         logger: LiveLogger,
-    ) -> BinanceExecutionClient:
+    ) -> Union[BinanceSpotExecutionClient, BinanceFuturesExecutionClient]:
         """
         Create a new Binance execution client.
 
@@ -275,27 +322,52 @@ class BinanceLiveExecClientFactory(LiveExecClientFactory):
             is_testnet=config.testnet,
         )
 
-        # Get instrument provider singleton
-        provider: BinanceInstrumentProvider = get_cached_binance_instrument_provider(
-            client=client,
-            logger=logger,
-            account_type=config.account_type,
-            config=config.instrument_provider,
-        )
-
         # Create client
-        exec_client = BinanceExecutionClient(
-            loop=loop,
-            client=client,
-            msgbus=msgbus,
-            cache=cache,
-            clock=clock,
-            logger=logger,
-            instrument_provider=provider,
-            account_type=config.account_type,
-            base_url_ws=config.base_url_ws or base_url_ws_default,
-        )
-        return exec_client
+        if config.account_type in (BinanceAccountType.SPOT, BinanceAccountType.MARGIN):
+            # Get instrument provider singleton
+            provider = get_cached_binance_spot_instrument_provider(
+                client=client,
+                logger=logger,
+                account_type=config.account_type,
+                config=config.instrument_provider,
+            )
+
+            return BinanceSpotExecutionClient(
+                loop=loop,
+                client=client,
+                msgbus=msgbus,
+                cache=cache,
+                clock=clock,
+                logger=logger,
+                instrument_provider=provider,
+                account_type=config.account_type,
+                base_url_ws=config.base_url_ws or base_url_ws_default,
+            )
+        elif config.account_type in (
+            BinanceAccountType.FUTURES_USDT,
+            BinanceAccountType.FUTURES_COIN,
+        ):
+            # Get instrument provider singleton
+            provider = get_cached_binance_futures_instrument_provider(
+                client=client,
+                logger=logger,
+                account_type=config.account_type,
+                config=config.instrument_provider,
+            )
+
+            return BinanceFuturesExecutionClient(
+                loop=loop,
+                client=client,
+                msgbus=msgbus,
+                cache=cache,
+                clock=clock,
+                logger=logger,
+                instrument_provider=provider,
+                account_type=config.account_type,
+                base_url_ws=config.base_url_ws or base_url_ws_default,
+            )
+        else:
+            raise RuntimeError()  # TODO: WIP
 
 
 def _get_http_base_url(config: Union[BinanceDataClientConfig, BinanceExecClientConfig]) -> str:

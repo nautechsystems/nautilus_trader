@@ -17,8 +17,8 @@ import asyncio
 
 import pytest
 
-from nautilus_trader.adapters.binance.http.api.wallet import BinanceWalletHttpAPI
 from nautilus_trader.adapters.binance.http.client import BinanceHttpClient
+from nautilus_trader.adapters.binance.spot.http.wallet import BinanceSpotWalletHttpAPI
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.logging import Logger
 
@@ -36,7 +36,7 @@ class TestBinanceUserHttpAPI:
             secret="SOME_BINANCE_API_SECRET",
         )
 
-        self.api = BinanceWalletHttpAPI(self.client)
+        self.api = BinanceSpotWalletHttpAPI(self.client)
 
     @pytest.mark.asyncio
     async def test_trade_fee(self, mocker):
@@ -45,7 +45,7 @@ class TestBinanceUserHttpAPI:
         mock_send_request = mocker.patch(target="aiohttp.client.ClientSession.request")
 
         # Act
-        await self.api.trade_fee_spot()
+        await self.api.trade_fee()
 
         # Assert
         request = mock_send_request.call_args.kwargs
