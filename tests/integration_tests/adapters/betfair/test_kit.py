@@ -18,16 +18,18 @@ import contextlib
 import pathlib
 from asyncio import Future
 from functools import partial
-from typing import Optional
+from typing import Literal, Optional
 from unittest.mock import MagicMock
 from unittest.mock import patch
 
+import msgspec.json
 import numpy as np
 import orjson
 import pandas as pd
 from aiohttp import ClientResponse
 
 from nautilus_trader.adapters.betfair.client.core import BetfairClient
+from nautilus_trader.adapters.betfair.client.definitions.streaming_data import MarketChangeMessage
 from nautilus_trader.adapters.betfair.client.definitions.streaming_exec import OrderAccountChange
 from nautilus_trader.adapters.betfair.client.definitions.streaming_exec import OrderChangeMessage
 from nautilus_trader.adapters.betfair.client.definitions.streaming_exec import OrderChanges
@@ -512,8 +514,13 @@ class BetfairResponses:
 
 class BetfairStreaming:
     @staticmethod
-    def load(filename):
-        return orjson.dumps(orjson.loads((TEST_PATH / "streaming" / filename).read_bytes()))
+    def load(filename, kind: Literal["ocm", "mcm", None]):
+        raw = (TEST_PATH / "streaming" / filename).read_bytes()
+        if kind is None:
+            return raw
+        return msgspec.json.decode(
+            raw, type={"ocm": OrderChangeMessage, "mcm": MarketChangeMessage}[kind]
+        )
 
     @staticmethod
     def load_many(filename):
@@ -530,75 +537,75 @@ class BetfairStreaming:
 
     @staticmethod
     def ocm_FULL_IMAGE():
-        return BetfairStreaming.load("streaming_ocm_FULL_IMAGE.json")
+        return BetfairStreaming.load("streaming_ocm_FULL_IMAGE.json", kind="ocm")
 
     @staticmethod
     def ocm_FULL_IMAGE_STRATEGY():
-        return BetfairStreaming.load("streaming_ocm_FULL_IMAGE_STRATEGY.json")
+        return BetfairStreaming.load("streaming_ocm_FULL_IMAGE_STRATEGY.json", kind="ocm")
 
     @staticmethod
     def ocm_EMPTY_IMAGE():
-        return BetfairStreaming.load("streaming_ocm_EMPTY_IMAGE.json")
+        return BetfairStreaming.load("streaming_ocm_EMPTY_IMAGE.json", kind="ocm")
 
     @staticmethod
     def ocm_NEW_FULL_IMAGE():
-        return BetfairStreaming.load("streaming_ocm_NEW_FULL_IMAGE.json")
+        return BetfairStreaming.load("streaming_ocm_NEW_FULL_IMAGE.json", kind="ocm")
 
     @staticmethod
     def ocm_SUB_IMAGE():
-        return BetfairStreaming.load("streaming_ocm_SUB_IMAGE.json")
+        return BetfairStreaming.load("streaming_ocm_SUB_IMAGE.json", kind="ocm")
 
     @staticmethod
     def ocm_UPDATE():
-        return BetfairStreaming.load("streaming_ocm_UPDATE.json")
+        return BetfairStreaming.load("streaming_ocm_UPDATE.json", kind="ocm")
 
     @staticmethod
     def ocm_CANCEL():
-        return BetfairStreaming.load("streaming_ocm_CANCEL.json")
+        return BetfairStreaming.load("streaming_ocm_CANCEL.json", kind="ocm")
 
     @staticmethod
     def ocm_order_update():
-        return BetfairStreaming.load("streaming_ocm_order_update.json")
+        return BetfairStreaming.load("streaming_ocm_order_update.json", kind="ocm")
 
     @staticmethod
     def ocm_FILLED():
-        return BetfairStreaming.load("streaming_ocm_FILLED.json")
+        return BetfairStreaming.load("streaming_ocm_FILLED.json", kind="ocm")
 
     @staticmethod
     def ocm_filled_different_price():
-        return BetfairStreaming.load("streaming_ocm_filled_different_price.json")
+        return BetfairStreaming.load("streaming_ocm_filled_different_price.json", kind="ocm")
 
     @staticmethod
     def ocm_MIXED():
-        return BetfairStreaming.load("streaming_ocm_MIXED.json")
+        return BetfairStreaming.load("streaming_ocm_MIXED.json", kind="ocm")
 
     @staticmethod
     def ocm_multiple_fills():
-        return BetfairStreaming.load_many("streaming_ocm_multiple_fills.json")
+        return BetfairStreaming.load_many("streaming_ocm_multiple_fills.json", kind="ocm")
 
     @staticmethod
     def ocm_DUPLICATE_EXECUTION():
-        return BetfairStreaming.load_many("streaming_ocm_DUPLICATE_EXECUTION.json")
+        return BetfairStreaming.load_many("streaming_ocm_DUPLICATE_EXECUTION.json", kind="ocm")
 
     @staticmethod
     def ocm_error_fill():
-        return BetfairStreaming.load("streaming_ocm_error_fill.json")
+        return BetfairStreaming.load("streaming_ocm_error_fill.json", kind="ocm")
 
     @staticmethod
     def mcm_BSP():
-        return BetfairStreaming.load("streaming_mcm_BSP.json")
+        return BetfairStreaming.load("streaming_mcm_BSP.json", kind="mcm")
 
     @staticmethod
     def mcm_HEARTBEAT():
-        return BetfairStreaming.load("streaming_mcm_HEARTBEAT.json")
+        return BetfairStreaming.load("streaming_mcm_HEARTBEAT.json", kind="mcm")
 
     @staticmethod
     def mcm_latency():
-        return BetfairStreaming.load("streaming_mcm_latency.json")
+        return BetfairStreaming.load("streaming_mcm_latency.json", kind="mcm")
 
     @staticmethod
     def mcm_con_true():
-        return BetfairStreaming.load("streaming_mcm_con_true.json")
+        return BetfairStreaming.load("streaming_mcm_con_true.json", kind="mcm")
 
     @staticmethod
     def mcm_live_IMAGE():

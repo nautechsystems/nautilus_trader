@@ -410,12 +410,12 @@ class TestBetfairExecutionClient:
     @pytest.mark.asyncio
     async def test_order_stream_full_image(self):
         # Arrange
-        raw = BetfairStreaming.ocm_FULL_IMAGE()
+        order_change_message = BetfairStreaming.ocm_FULL_IMAGE()
         await self._setup_account()
-        self._setup_exec_client_and_cache(update=orjson.loads(raw))
+        self._setup_exec_client_and_cache(order_change_message=order_change_message)
 
         # Act
-        await self.client.handle_order_stream_update(raw=raw)
+        await self.client._handle_order_stream_update(order_change_message=order_change_message)
         await asyncio.sleep(0)
 
         # Assert
@@ -424,12 +424,12 @@ class TestBetfairExecutionClient:
     @pytest.mark.asyncio
     async def test_order_stream_empty_image(self):
         # Arrange
-        raw = BetfairStreaming.ocm_EMPTY_IMAGE()
+        order_change_message = BetfairStreaming.ocm_EMPTY_IMAGE()
         await self._setup_account()
-        self._setup_exec_client_and_cache(update=orjson.loads(raw))
+        self._setup_exec_client_and_cache(order_change_message=order_change_message)
 
         # Act
-        await self.client.handle_order_stream_update(raw=raw)
+        await self.client._handle_order_stream_update(order_change_message=order_change_message)
         await asyncio.sleep(0)
 
         # Assert
@@ -437,23 +437,23 @@ class TestBetfairExecutionClient:
 
     @pytest.mark.asyncio
     async def test_order_stream_new_full_image(self):
-        raw = BetfairStreaming.ocm_NEW_FULL_IMAGE()
+        order_change_message = BetfairStreaming.ocm_NEW_FULL_IMAGE()
         await self._setup_account()
-        self._setup_exec_client_and_cache(update=orjson.loads(raw))
+        self._setup_exec_client_and_cache(order_change_message=order_change_message)
 
-        await self.client.handle_order_stream_update(raw=raw)
+        await self.client._handle_order_stream_update(order_change_message=order_change_message)
         await asyncio.sleep(0)
         assert len(self.messages) == 4
 
     @pytest.mark.asyncio
     async def test_order_stream_sub_image(self):
         # Arrange
-        raw = BetfairStreaming.ocm_SUB_IMAGE()
+        order_change_message = BetfairStreaming.ocm_SUB_IMAGE()
         await self._setup_account()
-        self._setup_exec_client_and_cache(update=orjson.loads(raw))
+        self._setup_exec_client_and_cache(order_change_message=order_change_message)
 
         # Act
-        await self.client.handle_order_stream_update(raw=raw)
+        await self.client._handle_order_stream_update(order_change_message=order_change_message)
         await asyncio.sleep(0)
 
         # Assert
@@ -462,12 +462,12 @@ class TestBetfairExecutionClient:
     @pytest.mark.asyncio
     async def test_order_stream_update(self):
         # Arrange
-        raw = BetfairStreaming.ocm_UPDATE()
+        order_change_message = BetfairStreaming.ocm_UPDATE()
         await self._setup_account()
-        self._setup_exec_client_and_cache(update=orjson.loads(raw))
+        self._setup_exec_client_and_cache(order_change_message=order_change_message)
 
         # Act
-        await self.client.handle_order_stream_update(raw=raw)
+        await self.client._handle_order_stream_update(order_change_message=order_change_message)
         await asyncio.sleep(0)
 
         # Assert
@@ -476,12 +476,12 @@ class TestBetfairExecutionClient:
     @pytest.mark.asyncio
     async def test_order_stream_filled(self):
         # Arrange
-        raw = BetfairStreaming.ocm_FILLED()
-        self._setup_exec_client_and_cache(json.loads(raw))
+        order_change_message = BetfairStreaming.ocm_FILLED()
+        self._setup_exec_client_and_cache(order_change_message=order_change_message)
         await self._setup_account()
 
         # Act
-        await self.client.handle_order_stream_update(raw=raw)
+        await self.client._handle_order_stream_update(order_change_message=order_change_message)
         await asyncio.sleep(0)
 
         # Assert
@@ -518,8 +518,7 @@ class TestBetfairExecutionClient:
             avp=1.55,
         )
         self._setup_exec_client_and_cache(update2)
-        raw = orjson.dumps({"op": "ocm", "id": 1, "clk": "", "pt": 0, "oc": update2["oc"]})
-        await self.client.handle_order_stream_update(raw=raw)
+        await self.client._handle_order_stream_update(order_change_message=order_change_message)
         await asyncio.sleep(0)
 
         # Assert
@@ -582,10 +581,10 @@ class TestBetfairExecutionClient:
             self._setup_exec_client_and_cache(orjson.loads(update))
 
         # Act
-        for raw in BetfairStreaming.ocm_DUPLICATE_EXECUTION():
-            self._setup_exec_client_and_cache(update=orjson.loads(raw))
+        for order_change_message in BetfairStreaming.ocm_DUPLICATE_EXECUTION():
+            self._setup_exec_client_and_cache(order_change_message=order_change_message)
 
-            await self.client.handle_order_stream_update(raw=raw)
+            await self.client._handle_order_stream_update(order_change_message=order_change_message)
             await asyncio.sleep(0)
 
         # Assert
