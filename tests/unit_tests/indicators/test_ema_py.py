@@ -13,9 +13,9 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from examples.indicators.ema_py import PyExponentialMovingAverage
 from nautilus_trader.backtest.data.providers import TestInstrumentProvider
 from nautilus_trader.model.enums import PriceType
-from tests.test_kit.indicators import PyExponentialMovingAverage
 from tests.test_kit.stubs.data import TestDataStubs
 
 
