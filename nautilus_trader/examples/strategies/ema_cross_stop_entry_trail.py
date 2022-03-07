@@ -165,7 +165,6 @@ class EMACrossStopEntryTrail(TradingStrategy):
 
         """
         # self.log.info(f"Received {order_book}")  # For debugging (must add a subscription)
-        pass
 
     def on_quote_tick(self, tick: QuoteTick):
         """
@@ -332,6 +331,7 @@ class EMACrossStopEntryTrail(TradingStrategy):
             The data received.
 
         """
+        pass
 
     def on_event(self, event: Event):
         """

@@ -184,7 +184,6 @@ class EMACross(TradingStrategy):
 
         """
         # self.log.info(f"Received {repr(tick)}")  # For debugging (must add a subscription)
-        pass
 
     def on_trade_tick(self, tick: TradeTick):
         """

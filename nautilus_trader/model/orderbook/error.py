@@ -18,3 +18,5 @@ class BookIntegrityError(Exception):
     """
     Represents an error condition where the order books integrity has been lost.
     """
+
+    pass
