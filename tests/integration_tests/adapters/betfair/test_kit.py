@@ -514,8 +514,7 @@ class BetfairResponses:
 
 class BetfairStreaming:
     @staticmethod
-    def load(filename, kind: Literal["ocm", "mcm", None]):
-        raw = (TEST_PATH / "streaming" / filename).read_bytes()
+    def decode(raw: bytes, kind: Literal["ocm", "mcm", None]):
         if kind is None:
             return raw
         return msgspec.json.decode(
@@ -523,9 +522,14 @@ class BetfairStreaming:
         )
 
     @staticmethod
-    def load_many(filename):
+    def load(filename, kind: Literal["ocm", "mcm", None]):
+        raw = (TEST_PATH / "streaming" / filename).read_bytes()
+        return BetfairStreaming.decode(raw=raw, kind=kind)
+
+    @staticmethod
+    def load_many(filename, kind: Literal["ocm", "mcm", None]):
         lines = orjson.loads((TEST_PATH / "streaming" / filename).read_bytes())
-        return [orjson.dumps(line) for line in lines]
+        return [BetfairStreaming.decode(raw=orjson.dumps(line), kind=kind) for line in lines]
 
     @staticmethod
     def market_definition():
@@ -654,7 +658,7 @@ class BetfairStreaming:
         sc=0,
         avp=0,
         order_id: str = "248485109136",
-    ):
+    ) -> OrderChangeMessage:
 
         assert side in ("B", "L"), "`side` should be 'B' or 'L'"
         return OrderChangeMessage(
@@ -668,27 +672,29 @@ class BetfairStreaming:
                     orc=[
                         OrderChanges(
                             id=1,
-                            uo=UnmatchedOrder(
-                                id=order_id,
-                                p=price,
-                                s=size,
-                                side=side,
-                                status=status,
-                                pt="P",
-                                ot="L",
-                                pd=1635217893000,
-                                md=int(pd.Timestamp.utcnow().timestamp()),
-                                sm=sm,
-                                sr=sr,
-                                sl=0,
-                                sc=sc,
-                                sv=0,
-                                rac="",
-                                rc="REG_LGA",
-                                rfo="O-20211026-031132-000",
-                                rfs="TestStrategy-1.",
-                                avp=avp,
-                            ),
+                            uo=[
+                                UnmatchedOrder(
+                                    id=order_id,
+                                    p=price,
+                                    s=size,
+                                    side=side,
+                                    status=status,
+                                    pt="P",
+                                    ot="L",
+                                    pd=1635217893000,
+                                    md=int(pd.Timestamp.utcnow().timestamp()),
+                                    sm=sm,
+                                    sr=sr,
+                                    sl=0,
+                                    sc=sc,
+                                    sv=0,
+                                    rac="",
+                                    rc="REG_LGA",
+                                    rfo="O-20211026-031132-000",
+                                    rfs="TestStrategy-1.",
+                                    avp=avp,
+                                ),
+                            ],
                         )
                     ],
                 )
