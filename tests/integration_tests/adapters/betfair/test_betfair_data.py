@@ -229,7 +229,7 @@ class TestBetfairDataClient:
     @pytest.mark.asyncio
     async def test_market_sub_image_market_def(self):
         update = BetfairStreaming.mcm_SUB_IMAGE()
-        self.client._on_market_update(update)
+        self.client.on_market_update(update)
         result = [type(event).__name__ for event in self.messages]
         expected = ["InstrumentStatusUpdate"] * 7 + ["OrderBookSnapshot"] * 7
         assert result == expected

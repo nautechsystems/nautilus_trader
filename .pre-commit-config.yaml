@@ -28,7 +28,7 @@ repos:
       - id: codespell
         description: Checks for common misspellings.
         types_or: [python, cython, rst, markdown]
-        exclude: "nautilus_trader/adapters/betfair/parsing.py|nautilus_trader/adapters/betfair/execution.py|tests/integration_tests/adapters/betfair/test_kit.py"
+        exclude: "nautilus_trader/adapters/betfair/parsing.py|nautilus_trader/adapters/betfair/execution.py|tests/integration_tests/adapters/betfair/test_kit.py|nautilus_trader/adapters/betfair/client/definitions/streaming_exec.py"
 
   - repo: https://github.com/hadialqattan/pycln
     rev: v1.2.0
@@ -102,6 +102,7 @@ repos:
 #          - pep8-naming
         types: [python]
         args: [
+            --min-python-version=3.8.0,
             --max-complexity=10,
             --max-line-length=150,
             --statistics,

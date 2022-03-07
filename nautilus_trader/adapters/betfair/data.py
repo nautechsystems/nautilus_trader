@@ -16,9 +16,11 @@
 import asyncio
 from typing import Dict, Optional, Set
 
+import msgspec.json
 import orjson
 
 from nautilus_trader.adapters.betfair.client.core import BetfairClient
+from nautilus_trader.adapters.betfair.client.definitions.streaming_data import MarketChangeMessage
 from nautilus_trader.adapters.betfair.common import BETFAIR_VENUE
 from nautilus_trader.adapters.betfair.data_types import InstrumentSearch
 from nautilus_trader.adapters.betfair.data_types import SubscriptionStatus
@@ -318,10 +320,13 @@ class BetfairDataClient(LiveMarketDataClient):
 
     # -- STREAMS ---------------------------------------------------------------------------------------
     def on_market_update(self, raw: bytes):
-        update = orjson.loads(raw)
-        self._on_market_update(update=update)
+        if raw.startswith(b'{"op":"mcm"'):
+            update = msgspec.json.decode(raw, type=MarketChangeMessage)
+            self._on_market_update(update=update)
+        else:
+            raise RuntimeError
 
-    def _on_market_update(self, update):
+    def _on_market_update(self, update: MarketChangeMessage):
         if self._check_stream_unhealthy(update=update):
             pass
         updates = on_market_update(

@@ -28,6 +28,10 @@ import pandas as pd
 from aiohttp import ClientResponse
 
 from nautilus_trader.adapters.betfair.client.core import BetfairClient
+from nautilus_trader.adapters.betfair.client.definitions.streaming_exec import OrderAccountChange
+from nautilus_trader.adapters.betfair.client.definitions.streaming_exec import OrderChangeMessage
+from nautilus_trader.adapters.betfair.client.definitions.streaming_exec import OrderChanges
+from nautilus_trader.adapters.betfair.client.definitions.streaming_exec import UnmatchedOrder
 from nautilus_trader.adapters.betfair.common import BETFAIR_VENUE
 from nautilus_trader.adapters.betfair.data import BetfairDataClient
 from nautilus_trader.adapters.betfair.data import on_market_update
@@ -509,7 +513,12 @@ class BetfairResponses:
 class BetfairStreaming:
     @staticmethod
     def load(filename):
-        return orjson.loads((TEST_PATH / "streaming" / filename).read_bytes())
+        return orjson.dumps(orjson.loads((TEST_PATH / "streaming" / filename).read_bytes()))
+
+    @staticmethod
+    def load_many(filename):
+        lines = orjson.loads((TEST_PATH / "streaming" / filename).read_bytes())
+        return [orjson.dumps(line) for line in lines]
 
     @staticmethod
     def market_definition():
@@ -565,11 +574,11 @@ class BetfairStreaming:
 
     @staticmethod
     def ocm_multiple_fills():
-        return BetfairStreaming.load("streaming_ocm_multiple_fills.json")
+        return BetfairStreaming.load_many("streaming_ocm_multiple_fills.json")
 
     @staticmethod
     def ocm_DUPLICATE_EXECUTION():
-        return BetfairStreaming.load("streaming_ocm_DUPLICATE_EXECUTION.json")
+        return BetfairStreaming.load_many("streaming_ocm_DUPLICATE_EXECUTION.json")
 
     @staticmethod
     def ocm_error_fill():
@@ -628,7 +637,7 @@ class BetfairStreaming:
         return BetfairStreaming.load("streaming_market_updates.json")
 
     @staticmethod
-    def generate_order_update(
+    def generate_order_change_message(
         price=1.3,
         size=20,
         side="B",
@@ -639,12 +648,52 @@ class BetfairStreaming:
         avp=0,
         order_id: str = "248485109136",
     ):
+
         assert side in ("B", "L"), "`side` should be 'B' or 'L'"
+        return OrderChangeMessage(
+            op="",
+            id=1,
+            clk="1",
+            pt=0,
+            oc=[
+                OrderAccountChange(
+                    id="1",
+                    orc=[
+                        OrderChanges(
+                            id=1,
+                            uo=UnmatchedOrder(
+                                id=order_id,
+                                p=price,
+                                s=size,
+                                side=side,
+                                status=status,
+                                pt="P",
+                                ot="L",
+                                pd=1635217893000,
+                                md=int(pd.Timestamp.utcnow().timestamp()),
+                                sm=sm,
+                                sr=sr,
+                                sl=0,
+                                sc=sc,
+                                sv=0,
+                                rac="",
+                                rc="REG_LGA",
+                                rfo="O-20211026-031132-000",
+                                rfs="TestStrategy-1.",
+                                avp=avp,
+                            ),
+                        )
+                    ],
+                )
+            ],
+        )
         return {
             "oc": [
                 {
+                    "id": "1",
                     "orc": [
                         {
+                            "id": 1,
                             "uo": [
                                 {
                                     "id": order_id,
@@ -667,9 +716,9 @@ class BetfairStreaming:
                                     "rfs": "TestStrategy-1.",
                                     **({"avp": avp} if avp else {}),
                                 }
-                            ]
+                            ],
                         }
-                    ]
+                    ],
                 }
             ]
         }
