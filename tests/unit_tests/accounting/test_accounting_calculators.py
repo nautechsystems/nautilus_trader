@@ -29,7 +29,7 @@ from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.enums import PriceType
 from tests.test_kit import PACKAGE_ROOT
 from tests.test_kit.stubs import UNIX_EPOCH
-from tests.test_kit.stubs.identities import TestIdStubs
+from tests.test_kit.stubs.identifiers import TestIdStubs
 
 
 AUDUSD_SIM = TestIdStubs.audusd_id()

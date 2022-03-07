@@ -19,7 +19,7 @@ from nautilus_trader.model.orderbook.book import L2OrderBook
 from nautilus_trader.model.orderbook.book import L3OrderBook
 from nautilus_trader.model.orderbook.error import BookIntegrityError
 from tests.test_kit.stubs.data import TestDataStubs
-from tests.test_kit.stubs.identities import TestIdStubs
+from tests.test_kit.stubs.identifiers import TestIdStubs
 
 
 def test_l3_feed():

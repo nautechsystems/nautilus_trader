@@ -21,7 +21,7 @@ from nautilus_trader.model.currencies import ETH
 from nautilus_trader.model.currencies import GBP
 from nautilus_trader.model.currency import Currency
 from nautilus_trader.model.enums import CurrencyType
-from tests.test_kit.stubs.identities import TestIdStubs
+from tests.test_kit.stubs.identifiers import TestIdStubs
 
 
 AUDUSD_SIM = TestIdStubs.audusd_id()

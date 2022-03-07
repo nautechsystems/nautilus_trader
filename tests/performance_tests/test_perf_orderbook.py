@@ -15,7 +15,7 @@
 
 from nautilus_trader.model.orderbook.book import L3OrderBook
 from tests.test_kit.stubs.data import TestDataStubs
-from tests.test_kit.stubs.identities import TestIdStubs
+from tests.test_kit.stubs.identifiers import TestIdStubs
 
 
 def run_l3_test(book, feed):

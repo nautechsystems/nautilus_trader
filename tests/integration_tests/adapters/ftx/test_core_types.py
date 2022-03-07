@@ -16,7 +16,7 @@
 from nautilus_trader.adapters.ftx.core.types import FTXTicker
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
-from tests.test_kit.stubs.identities import TestIdStubs
+from tests.test_kit.stubs.identifiers import TestIdStubs
 
 
 class TestFTXDataTypes:

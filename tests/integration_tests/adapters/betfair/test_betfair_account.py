@@ -26,7 +26,7 @@ from nautilus_trader.msgbus.bus import MessageBus
 from tests.integration_tests.adapters.betfair.test_kit import BetfairTestStubs
 from tests.test_kit.stubs.component import TestComponentStubs
 from tests.test_kit.stubs.execution import TestExecStubs
-from tests.test_kit.stubs.identities import TestIdStubs
+from tests.test_kit.stubs.identifiers import TestIdStubs
 
 
 class TestBetfairAccount:

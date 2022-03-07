@@ -24,8 +24,8 @@ from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.logging import LiveLogger
 from nautilus_trader.common.logging import LogLevel
 from nautilus_trader.msgbus.bus import MessageBus
-from tests.test_kit.mocks import MockCacheDatabase
-from tests.test_kit.stubs.identities import TestIdStubs
+from tests.test_kit.mocks.cache_database import MockCacheDatabase
+from tests.test_kit.stubs.identifiers import TestIdStubs
 
 
 class TestFTXFactories:

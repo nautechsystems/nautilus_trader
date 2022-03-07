@@ -655,8 +655,16 @@ name = "msgpack"
 version = "1.0.3"
 description = "MessagePack (de)serializer."
 category = "main"
-optional = false
+optional = true
 python-versions = "*"
+
+[[package]]
+name = "msgspec"
+version = "0.4.2"
+description = "A fast and friendly JSON/MessagePack library, with optional schema validation"
+category = "main"
+optional = false
+python-versions = ">=3.8"
 
 [[package]]
 name = "multidict"
@@ -1647,7 +1655,7 @@ ib = ["ib_insync", "docker"]
 [metadata]
 lock-version = "1.1"
 python-versions = ">=3.8,<3.11"
-content-hash = "21797d10265b635788ef6560fea3162369771803082ac24dd83aac041379ac88"
+content-hash = "fb1f6cba4f65f49aa72df6b6e19b01e549b20d8c7e820c37ecb9d86f171e30d5"
 
 [metadata.files]
 aiodns = [
@@ -2370,6 +2378,21 @@ msgpack = [
     {file = "msgpack-1.0.3-cp39-cp39-win32.whl", hash = "sha256:494471d65b25a8751d19c83f1a482fd411d7ca7a3b9e17d25980a74075ba0e88"},
     {file = "msgpack-1.0.3-cp39-cp39-win_amd64.whl", hash = "sha256:f01b26c2290cbd74316990ba84a14ac3d599af9cebefc543d241a66e785cf17d"},
     {file = "msgpack-1.0.3.tar.gz", hash = "sha256:51fdc7fb93615286428ee7758cecc2f374d5ff363bdd884c7ea622a7a327a81e"},
+]
+msgspec = [
+    {file = "msgspec-0.4.2-cp310-cp310-macosx_10_9_x86_64.whl", hash = "sha256:f02a2f04c6886b29e071fd23ccd7044c8d4d346ee878985986d2400ddf5a4f80"},
+    {file = "msgspec-0.4.2-cp310-cp310-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:c84ec0895ac76fe18776c4e3017d390160a42cb1463da48b6fa27060060c5e7b"},
+    {file = "msgspec-0.4.2-cp310-cp310-musllinux_1_1_x86_64.whl", hash = "sha256:466c80e24234432b229a73ad1f6d48312bb6266d0081e4391c305ee076c064b5"},
+    {file = "msgspec-0.4.2-cp310-cp310-win_amd64.whl", hash = "sha256:353b2532743b5226c89e076eca4d8c2d1935fe45ae1a69a777fbde9b1239041c"},
+    {file = "msgspec-0.4.2-cp38-cp38-macosx_10_9_x86_64.whl", hash = "sha256:0bb149b05e63e8505629cbd5f408e604ae45e555535e35541a2dcdaacb99d490"},
+    {file = "msgspec-0.4.2-cp38-cp38-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:5343182f691e4a9f650d74229ffb20c98a481dad9cc2c2fbd0e3754d152abad2"},
+    {file = "msgspec-0.4.2-cp38-cp38-musllinux_1_1_x86_64.whl", hash = "sha256:2e16c07140697e99dd1ed73474a8f4a8b747188b75f7028ffe52df59f8622190"},
+    {file = "msgspec-0.4.2-cp38-cp38-win_amd64.whl", hash = "sha256:a5a43105134aa0d92c99d1ff30d91a92bb9534924936a26b8401bb0c5742fcd6"},
+    {file = "msgspec-0.4.2-cp39-cp39-macosx_10_9_x86_64.whl", hash = "sha256:a89cd109190aefdf0f1768bef159f11a60008a31164588ca2d74859d16f8f207"},
+    {file = "msgspec-0.4.2-cp39-cp39-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:3494c70e8000c7c2ed40bf24d84d56250fb0f3af1338593e6c8c80208ca4c878"},
+    {file = "msgspec-0.4.2-cp39-cp39-musllinux_1_1_x86_64.whl", hash = "sha256:cc8ccdcf0a14d1ca50c14ed31ff951d296ab64f4e4f35d4571ffe160c2e6cdc1"},
+    {file = "msgspec-0.4.2-cp39-cp39-win_amd64.whl", hash = "sha256:9fde59f89207fb1898627966e7dde5688fb2a0431451362319019cf0ee355f1e"},
+    {file = "msgspec-0.4.2.tar.gz", hash = "sha256:e9a46c0304fb0b5ac08e7cecb5281747b3ae4930b52b5ebf0f69400fb5fbcf45"},
 ]
 multidict = [
     {file = "multidict-6.0.2-cp310-cp310-macosx_10_9_universal2.whl", hash = "sha256:0b9e95a740109c6047602f4db4da9949e6c5945cefbad34a1299775ddc9a62e2"},
