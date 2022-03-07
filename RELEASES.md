@@ -17,14 +17,15 @@ Released on TBD (UTC).
 - Added `OrderType.MARKET_TO_LIMIT`.
 - Added `OrderType.MARKET_IF_TOUCHED`.
 - Added `OrderType.LIMIT_IF_TOUCHED`.
-- Added `MarketToLimit` order type.
-- Added `MarketIfTouched` order type.
-- Added `LimitIfTouched` order type.
+- Added `MarketToLimitOrder` order type.
+- Added `MarketIfTouchedOrder` order type.
+- Added `LimitIfTouchedOrder` order type.
 - Added `Order.has_price` property (convenience).
 - Added `Order.has_trigger_price` property (convenience).
 - Added `msg` param to `LoggerAdapter.exception()`.
 - Added WebSocket `log_send` and `log_recv` config options.
 - Added WebSocket `auto_ping_interval` (seconds) config option.
+- Replaced `msgpack` with `msgspec` (faster drop in replacement https://github.com/jcrist/msgspec).
 - Improved exception messages by providing helpful context.
 - Improved `BacktestDataConfig` API: now takes either a type of `Data` _or_ a fully qualified path string.
 
