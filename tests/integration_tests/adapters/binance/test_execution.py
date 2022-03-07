@@ -46,7 +46,8 @@ from nautilus_trader.msgbus.bus import MessageBus
 from nautilus_trader.portfolio.portfolio import Portfolio
 from nautilus_trader.risk.engine import RiskEngine
 from nautilus_trader.trading.strategy import TradingStrategy
-from tests.test_kit.stubs import TestStubs
+from tests.test_kit.stubs.component import TestComponentStubs
+from tests.test_kit.stubs.identities import TestIdStubs
 
 
 ETHUSDT_BINANCE = TestInstrumentProvider.ethusdt_binance()
@@ -62,7 +63,7 @@ class TestSpotBinanceExecutionClient:
         self.uuid_factory = UUIDFactory()
         self.logger = Logger(clock=self.clock)
 
-        self.trader_id = TestStubs.trader_id()
+        self.trader_id = TestIdStubs.trader_id()
         self.venue = BINANCE_VENUE
         self.account_id = AccountId(self.venue.value, "001")
 
@@ -72,7 +73,7 @@ class TestSpotBinanceExecutionClient:
             logger=self.logger,
         )
 
-        self.cache = TestStubs.cache()
+        self.cache = TestComponentStubs.cache()
 
         self.http_client = BinanceHttpClient(  # noqa: S106 (no hardcoded password)
             loop=asyncio.get_event_loop(),
@@ -411,7 +412,7 @@ class TestFuturesBinanceExecutionClient:
         self.uuid_factory = UUIDFactory()
         self.logger = Logger(clock=self.clock)
 
-        self.trader_id = TestStubs.trader_id()
+        self.trader_id = TestIdStubs.trader_id()
         self.venue = BINANCE_VENUE
         self.account_id = AccountId(self.venue.value, "001")
 
@@ -421,7 +422,7 @@ class TestFuturesBinanceExecutionClient:
             logger=self.logger,
         )
 
-        self.cache = TestStubs.cache()
+        self.cache = TestComponentStubs.cache()
 
         self.http_client = BinanceHttpClient(  # noqa: S106 (no hardcoded password)
             loop=asyncio.get_event_loop(),

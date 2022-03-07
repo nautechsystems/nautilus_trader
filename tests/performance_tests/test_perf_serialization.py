@@ -26,18 +26,18 @@ from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.serialization.msgpack.serializer import MsgPackSerializer
 from tests.test_kit.performance import PerformanceHarness
-from tests.test_kit.stubs import TestStubs
+from tests.test_kit.stubs.identities import TestIdStubs
 
 
-AUDUSD = TestStubs.audusd_id()
+AUDUSD = TestIdStubs.audusd_id()
 
 
 class TestSerializationPerformance(PerformanceHarness):
     def setup(self):
         # Fixture Setup
         self.venue = Venue("SIM")
-        self.trader_id = TestStubs.trader_id()
-        self.account_id = TestStubs.account_id()
+        self.trader_id = TestIdStubs.trader_id()
+        self.account_id = TestIdStubs.account_id()
 
         self.order_factory = OrderFactory(
             trader_id=self.trader_id,

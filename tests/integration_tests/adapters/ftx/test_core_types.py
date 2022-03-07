@@ -16,14 +16,14 @@
 from nautilus_trader.adapters.ftx.core.types import FTXTicker
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
-from tests.test_kit.stubs import TestStubs
+from tests.test_kit.stubs.identities import TestIdStubs
 
 
 class TestFTXDataTypes:
     def test_ftx_ticker_repr(self):
         # Arrange
         ticker = FTXTicker(
-            instrument_id=TestStubs.ethusd_ftx_id(),
+            instrument_id=TestIdStubs.ethusd_ftx_id(),
             bid=Price.from_str("3717.4"),
             ask=Price.from_str("3717.5"),
             bid_size=Quantity.from_str("23.052"),
@@ -42,7 +42,7 @@ class TestFTXDataTypes:
     def test_ftx_ticker_to_and_from_dict(self):
         # Arrange
         ticker = FTXTicker(
-            instrument_id=TestStubs.ethusd_ftx_id(),
+            instrument_id=TestIdStubs.ethusd_ftx_id(),
             bid=Price.from_str("3717.4"),
             ask=Price.from_str("3717.5"),
             bid_size=Quantity.from_str("23.052"),

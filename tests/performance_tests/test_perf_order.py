@@ -25,10 +25,10 @@ from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from tests.test_kit.performance import PerformanceHarness
-from tests.test_kit.stubs import TestStubs
+from tests.test_kit.stubs.identities import TestIdStubs
 
 
-AUDUSD_SIM = TestStubs.audusd_id()
+AUDUSD_SIM = TestIdStubs.audusd_id()
 
 
 class TestOrderPerformance(PerformanceHarness):

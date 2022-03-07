@@ -29,7 +29,8 @@ from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.orderbook.book import L2OrderBook
 from nautilus_trader.model.orderbook.data import OrderBookSnapshot
-from tests.test_kit.stubs import TestStubs
+from tests.test_kit.stubs.component import TestComponentStubs
+from tests.test_kit.stubs.data import TestDataStubs
 
 
 SIM = Venue("SIM")
@@ -41,7 +42,7 @@ ETHUSDT_BINANCE = TestInstrumentProvider.ethusdt_binance()
 class TestCache:
     def setup(self):
         # Fixture Setup
-        self.cache = TestStubs.cache()
+        self.cache = TestComponentStubs.cache()
 
     def test_reset_an_empty_cache(self):
         # Arrange, Act
@@ -51,7 +52,7 @@ class TestCache:
         assert self.cache.instruments() == []
         assert self.cache.quote_ticks(AUDUSD_SIM.id) == []
         assert self.cache.trade_ticks(AUDUSD_SIM.id) == []
-        assert self.cache.bars(TestStubs.bartype_gbpusd_1sec_mid()) == []
+        assert self.cache.bars(TestDataStubs.bartype_gbpusd_1sec_mid()) == []
 
     def test_instrument_ids_when_no_instruments_returns_empty_list(self):
         # Arrange, Act, Assert
@@ -75,7 +76,7 @@ class TestCache:
 
     def test_bars_for_unknown_bar_type_returns_empty_list(self):
         # Arrange, Act, Assert
-        assert self.cache.bars(TestStubs.bartype_gbpusd_1sec_mid()) == []
+        assert self.cache.bars(TestDataStubs.bartype_gbpusd_1sec_mid()) == []
 
     def test_instrument_when_no_instruments_returns_none(self):
         # Arrange, Act, Assert
@@ -99,7 +100,7 @@ class TestCache:
 
     def test_bar_when_no_bars_returns_none(self):
         # Arrange, Act, Assert
-        assert self.cache.bar(TestStubs.bartype_gbpusd_1sec_mid()) is None
+        assert self.cache.bar(TestDataStubs.bartype_gbpusd_1sec_mid()) is None
 
     def test_ticker_count_for_unknown_instrument_returns_zero(self):
         # Arrange, Act, Assert
@@ -131,7 +132,7 @@ class TestCache:
 
     def test_has_bars_for_unknown_bar_type_returns_false(self):
         # Arrange, Act, Assert
-        assert not self.cache.has_bars(TestStubs.bartype_gbpusd_1sec_mid())
+        assert not self.cache.has_bars(TestDataStubs.bartype_gbpusd_1sec_mid())
 
     def test_instrument_ids_when_one_instrument_returns_expected_list(self):
         # Arrange
@@ -207,7 +208,7 @@ class TestCache:
 
     def test_quote_ticks_when_one_tick_returns_expected_list(self):
         # Arrange
-        tick = TestStubs.quote_tick_5decimal()
+        tick = TestDataStubs.quote_tick_5decimal()
 
         self.cache.add_quote_ticks([tick])
 
@@ -219,7 +220,7 @@ class TestCache:
 
     def test_add_quote_ticks_when_already_ticks_does_not_add(self):
         # Arrange
-        tick = TestStubs.quote_tick_5decimal()
+        tick = TestDataStubs.quote_tick_5decimal()
 
         self.cache.add_quote_tick(tick)
 
@@ -232,7 +233,7 @@ class TestCache:
 
     def test_trade_ticks_when_one_tick_returns_expected_list(self):
         # Arrange
-        tick = TestStubs.trade_tick_5decimal()
+        tick = TestDataStubs.trade_tick_5decimal()
 
         self.cache.add_trade_ticks([tick])
 
@@ -244,7 +245,7 @@ class TestCache:
 
     def test_add_trade_ticks_when_already_ticks_does_not_add(self):
         # Arrange
-        tick = TestStubs.trade_tick_5decimal()
+        tick = TestDataStubs.trade_tick_5decimal()
 
         self.cache.add_trade_tick(tick)
 
@@ -257,7 +258,7 @@ class TestCache:
 
     def test_bars_when_one_bar_returns_expected_list(self):
         # Arrange
-        bar = TestStubs.bar_5decimal()
+        bar = TestDataStubs.bar_5decimal()
 
         self.cache.add_bars([bar])
 
@@ -269,7 +270,7 @@ class TestCache:
 
     def test_add_bars_when_already_bars_does_not_add(self):
         # Arrange
-        bar = TestStubs.bar_5decimal()
+        bar = TestDataStubs.bar_5decimal()
 
         self.cache.add_bar(bar)
 
@@ -332,7 +333,7 @@ class TestCache:
 
     def test_price_given_last_when_no_trade_ticks_returns_none(self):
         # Act
-        tick = TestStubs.quote_tick_5decimal()
+        tick = TestDataStubs.quote_tick_5decimal()
 
         self.cache.add_quote_tick(tick)
 
@@ -343,7 +344,7 @@ class TestCache:
 
     def test_price_given_quote_price_type_when_no_quote_ticks_returns_none(self):
         # Arrange
-        tick = TestStubs.trade_tick_5decimal()
+        tick = TestDataStubs.trade_tick_5decimal()
 
         self.cache.add_trade_tick(tick)
 
@@ -355,7 +356,7 @@ class TestCache:
 
     def test_price_given_last_when_trade_tick_returns_expected_price(self):
         # Arrange
-        tick = TestStubs.trade_tick_5decimal()
+        tick = TestDataStubs.trade_tick_5decimal()
 
         self.cache.add_trade_tick(tick)
 
@@ -377,7 +378,7 @@ class TestCache:
         self, price_type, expected
     ):
         # Arrange
-        tick = TestStubs.quote_tick_5decimal()
+        tick = TestDataStubs.quote_tick_5decimal()
 
         self.cache.add_quote_tick(tick)
 
@@ -389,7 +390,7 @@ class TestCache:
 
     def test_quote_tick_when_index_out_of_range_returns_none(self):
         # Arrange
-        tick = TestStubs.quote_tick_5decimal()
+        tick = TestDataStubs.quote_tick_5decimal()
 
         self.cache.add_quote_tick(tick)
 
@@ -402,8 +403,8 @@ class TestCache:
 
     def test_quote_tick_with_two_ticks_returns_expected_tick(self):
         # Arrange
-        tick1 = TestStubs.quote_tick_5decimal()
-        tick2 = TestStubs.quote_tick_5decimal()
+        tick1 = TestDataStubs.quote_tick_5decimal()
+        tick2 = TestDataStubs.quote_tick_5decimal()
 
         self.cache.add_quote_tick(tick1)
         self.cache.add_quote_tick(tick2)
@@ -417,7 +418,7 @@ class TestCache:
 
     def test_trade_tick_when_index_out_of_range_returns_none(self):
         # Arrange
-        tick = TestStubs.trade_tick_5decimal()
+        tick = TestDataStubs.trade_tick_5decimal()
 
         self.cache.add_trade_tick(tick)
 
@@ -430,8 +431,8 @@ class TestCache:
 
     def test_trade_tick_with_one_tick_returns_expected_tick(self):
         # Arrange
-        tick1 = TestStubs.trade_tick_5decimal()
-        tick2 = TestStubs.trade_tick_5decimal()
+        tick1 = TestDataStubs.trade_tick_5decimal()
+        tick2 = TestDataStubs.trade_tick_5decimal()
 
         self.cache.add_trade_tick(tick1)
         self.cache.add_trade_tick(tick2)
@@ -445,7 +446,7 @@ class TestCache:
 
     def test_bar_index_out_of_range_returns_expected_bar(self):
         # Arrange
-        bar = TestStubs.bar_5decimal()
+        bar = TestDataStubs.bar_5decimal()
 
         self.cache.add_bar(bar)
 
@@ -458,9 +459,9 @@ class TestCache:
 
     def test_bar_with_two_bars_returns_expected_bar(self):
         # Arrange
-        bar_type = TestStubs.bartype_audusd_1min_bid()
-        bar1 = TestStubs.bar_5decimal()
-        bar2 = TestStubs.bar_5decimal()
+        bar_type = TestDataStubs.bartype_audusd_1min_bid()
+        bar1 = TestDataStubs.bar_5decimal()
+        bar2 = TestDataStubs.bar_5decimal()
 
         self.cache.add_bar(bar1)
         self.cache.add_bar(bar2)

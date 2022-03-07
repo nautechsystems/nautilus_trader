@@ -1,6 +1,6 @@
 from nautilus_trader.backtest.data.providers import TestInstrumentProvider
 from nautilus_trader.indicators.linear_regression import LinearRegression
-from tests.test_kit.stubs import TestStubs
+from tests.test_kit.stubs.data import TestDataStubs
 
 
 AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy("AUD/USD")
@@ -23,7 +23,7 @@ class TestLinearRegression:
 
     def test_handle_bar_updates_indicator(self):
         for _ in range(self.period):
-            self.linear_regression.handle_bar(TestStubs.bar_5decimal())
+            self.linear_regression.handle_bar(TestDataStubs.bar_5decimal())
 
         assert self.linear_regression.has_inputs
         assert self.linear_regression.value == 1.500045

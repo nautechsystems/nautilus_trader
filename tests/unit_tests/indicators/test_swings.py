@@ -22,10 +22,10 @@ from nautilus_trader.model.enums import PriceType
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from tests.test_kit.stubs import UNIX_EPOCH
-from tests.test_kit.stubs import TestStubs
+from tests.test_kit.stubs.identities import TestIdStubs
 
 
-AUDUSD_SIM = TestStubs.audusd_id()
+AUDUSD_SIM = TestIdStubs.audusd_id()
 ONE_MIN_BID = BarSpecification(1, BarAggregation.MINUTE, PriceType.BID)
 AUDUSD_1_MIN_BID = BarType(AUDUSD_SIM, ONE_MIN_BID)
 

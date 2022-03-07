@@ -28,7 +28,8 @@ from nautilus_trader.model.identifiers import StrategyId
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
-from tests.test_kit.stubs import TestStubs
+from tests.test_kit.stubs.execution import TestExecStubs
+from tests.test_kit.stubs.identities import TestIdStubs
 
 
 AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy("AUD/USD")
@@ -40,7 +41,7 @@ BTCUSDT_BINANCE = TestInstrumentProvider.btcusdt_binance()
 class TestMarginAccount:
     def setup(self):
         # Fixture Setup
-        self.trader_id = TestStubs.trader_id()
+        self.trader_id = TestIdStubs.trader_id()
 
         self.order_factory = OrderFactory(
             trader_id=self.trader_id,
@@ -50,7 +51,7 @@ class TestMarginAccount:
 
     def test_instantiated_accounts_basic_properties(self):
         # Arrange, Act
-        account = TestStubs.margin_account()
+        account = TestExecStubs.margin_account()
 
         # Assert
         assert account.id == AccountId("SIM", "000")
@@ -63,7 +64,7 @@ class TestMarginAccount:
 
     def test_set_default_leverage(self):
         # Arrange
-        account = TestStubs.margin_account()
+        account = TestExecStubs.margin_account()
 
         # Act
         account.set_default_leverage(Decimal(100))
@@ -74,7 +75,7 @@ class TestMarginAccount:
 
     def test_set_leverage(self):
         # Arrange
-        account = TestStubs.margin_account()
+        account = TestExecStubs.margin_account()
 
         # Act
         account.set_leverage(AUDUSD_SIM.id, Decimal(100))
@@ -85,7 +86,7 @@ class TestMarginAccount:
 
     def test_update_margin_init(self):
         # Arrange
-        account = TestStubs.margin_account()
+        account = TestExecStubs.margin_account()
         margin = Money(1_000.00, USD)
 
         # Act
@@ -97,7 +98,7 @@ class TestMarginAccount:
 
     def test_update_margin_maint(self):
         # Arrange
-        account = TestStubs.margin_account()
+        account = TestExecStubs.margin_account()
         margin = Money(1_000.00, USD)
 
         # Act
@@ -109,7 +110,7 @@ class TestMarginAccount:
 
     def test_calculate_margin_init_with_leverage(self):
         # Arrange
-        account = TestStubs.margin_account()
+        account = TestExecStubs.margin_account()
         instrument = TestInstrumentProvider.default_fx_ccy("AUD/USD")
         account.set_leverage(instrument.id, Decimal(50))
 
@@ -124,7 +125,7 @@ class TestMarginAccount:
 
     def test_calculate_margin_init_with_default_leverage(self):
         # Arrange
-        account = TestStubs.margin_account()
+        account = TestExecStubs.margin_account()
         instrument = TestInstrumentProvider.default_fx_ccy("AUD/USD")
         account.set_default_leverage(Decimal(10))
 
@@ -146,7 +147,7 @@ class TestMarginAccount:
     )
     def test_calculate_margin_init_with_no_leverage_for_inverse(self, inverse_as_quote, expected):
         # Arrange
-        account = TestStubs.margin_account()
+        account = TestExecStubs.margin_account()
         instrument = TestInstrumentProvider.xbtusd_bitmex()
 
         result = account.calculate_margin_init(
@@ -161,7 +162,7 @@ class TestMarginAccount:
 
     def test_calculate_margin_maint_with_no_leverage(self):
         # Arrange
-        account = TestStubs.margin_account()
+        account = TestExecStubs.margin_account()
         instrument = TestInstrumentProvider.xbtusd_bitmex()
 
         # Act
@@ -177,7 +178,7 @@ class TestMarginAccount:
 
     def test_calculate_margin_maint_with_leverage_fx_instrument(self):
         # Arrange
-        account = TestStubs.margin_account()
+        account = TestExecStubs.margin_account()
         instrument = TestInstrumentProvider.default_fx_ccy("AUD/USD")
         account.set_default_leverage(Decimal(50))
 
@@ -194,7 +195,7 @@ class TestMarginAccount:
 
     def test_calculate_margin_maint_with_leverage_inverse_instrument(self):
         # Arrange
-        account = TestStubs.margin_account()
+        account = TestExecStubs.margin_account()
         instrument = TestInstrumentProvider.xbtusd_bitmex()
         account.set_default_leverage(Decimal(10))
 
