@@ -956,7 +956,7 @@ cdef class BacktestEngine:
         for exchange in self._exchanges.values():
             account = exchange.exec_client.get_account()
             self._log.info("\033[36m=================================================================")
-            self._log.info(f"\033[36mSimulatedVenue {exchange.id}")
+            self._log.info(f"\033[36m SimulatedVenue {exchange.id}")
             self._log.info("\033[36m=================================================================")
             self._log.info(f"{repr(account)}")
             self._log.info("\033[36m-----------------------------------------------------------------")
@@ -1002,7 +1002,7 @@ cdef class BacktestEngine:
         for exchange in self._exchanges.values():
             account = exchange.exec_client.get_account()
             self._log.info("\033[36m=================================================================")
-            self._log.info(f"\033[36mSimulatedVenue {exchange.id}")
+            self._log.info(f"\033[36m SimulatedVenue {exchange.id}")
             self._log.info("\033[36m=================================================================")
             self._log.info(f"{repr(account)}")
             self._log.info("\033[36m-----------------------------------------------------------------")
