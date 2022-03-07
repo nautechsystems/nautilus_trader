@@ -29,12 +29,12 @@ from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.enums import PriceType
 from tests.test_kit import PACKAGE_ROOT
 from tests.test_kit.stubs import UNIX_EPOCH
-from tests.test_kit.stubs import TestStubs
+from tests.test_kit.stubs.identities import TestIdStubs
 
 
-AUDUSD_SIM = TestStubs.audusd_id()
-GBPUSD_SIM = TestStubs.gbpusd_id()
-USDJPY_SIM = TestStubs.usdjpy_id()
+AUDUSD_SIM = TestIdStubs.audusd_id()
+GBPUSD_SIM = TestIdStubs.gbpusd_id()
+USDJPY_SIM = TestIdStubs.usdjpy_id()
 
 
 class TestExchangeRateCalculator:

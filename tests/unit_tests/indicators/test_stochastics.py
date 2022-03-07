@@ -14,7 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 from nautilus_trader.indicators.stochastics import Stochastics
-from tests.test_kit.stubs import TestStubs
+from tests.test_kit.stubs.data import TestDataStubs
 
 
 class TestStochastics:
@@ -67,7 +67,7 @@ class TestStochastics:
         # Arrange
         indicator = Stochastics(14, 3)
 
-        bar = TestStubs.bar_5decimal()
+        bar = TestDataStubs.bar_5decimal()
 
         # Act
         indicator.handle_bar(bar)

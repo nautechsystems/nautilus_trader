@@ -37,7 +37,9 @@ from tests.integration_tests.adapters.betfair.test_kit import BetfairRequests
 from tests.integration_tests.adapters.betfair.test_kit import BetfairResponses
 from tests.integration_tests.adapters.betfair.test_kit import BetfairTestStubs
 from tests.integration_tests.adapters.betfair.test_kit import mock_client_request
-from tests.test_kit.stubs import TestStubs
+from tests.test_kit.stubs.commands import TestCommandStubs
+from tests.test_kit.stubs.execution import TestExecStubs
+from tests.test_kit.stubs.identities import TestIdStubs
 
 
 class TestBetfairClient:
@@ -126,13 +128,13 @@ class TestBetfairClient:
     @pytest.mark.asyncio
     async def test_place_orders_handicap(self):
         instrument = BetfairTestStubs.betting_instrument_handicap()
-        limit_order = TestStubs.limit_order(
+        limit_order = TestExecStubs.limit_order(
             instrument_id=instrument.id,
-            side=OrderSide.BUY,
+            order_side=OrderSide.BUY,
             price=Price.from_str("0.50"),
             quantity=Quantity.from_int(10),
         )
-        command = BetfairTestStubs.submit_order_command(order=limit_order)
+        command = TestCommandStubs.submit_order_command(order=limit_order)
         place_orders = order_submit_to_betfair(command=command, instrument=instrument)
         place_orders["instructions"][0]["customerOrderRef"] = "O-20210811-112151-000"
         with mock_client_request(response=BetfairResponses.betting_place_order_success()) as req:
@@ -145,13 +147,13 @@ class TestBetfairClient:
     @pytest.mark.asyncio
     async def test_place_orders(self):
         instrument = BetfairTestStubs.betting_instrument()
-        limit_order = TestStubs.limit_order(
+        limit_order = TestExecStubs.limit_order(
             instrument_id=instrument.id,
-            side=OrderSide.BUY,
+            order_side=OrderSide.BUY,
             price=Price.from_str("0.50"),
             quantity=Quantity.from_int(10),
         )
-        command = BetfairTestStubs.submit_order_command(order=limit_order)
+        command = TestCommandStubs.submit_order_command(order=limit_order)
         place_orders = order_submit_to_betfair(command=command, instrument=instrument)
         place_orders["instructions"][0]["customerOrderRef"] = "O-20210811-112151-000"
         with mock_client_request(response=BetfairResponses.betting_place_order_success()) as req:
@@ -169,8 +171,8 @@ class TestBetfairClient:
             time_in_force=TimeInForce.AT_THE_CLOSE,
         )
         submit_order_command = SubmitOrder(
-            trader_id=TestStubs.trader_id(),
-            strategy_id=TestStubs.strategy_id(),
+            trader_id=TestIdStubs.trader_id(),
+            strategy_id=TestIdStubs.strategy_id(),
             position_id=PositionId("1"),
             order=market_on_close_order,
             command_id=UUID4("be7dffa0-46f2-fce5-d820-c7634d022ca1"),
@@ -232,7 +234,9 @@ class TestBetfairClient:
     @pytest.mark.asyncio
     async def test_cancel_orders(self):
         instrument = BetfairTestStubs.betting_instrument()
-        cancel_command = BetfairTestStubs.cancel_order_command()
+        cancel_command = TestCommandStubs.cancel_order_command(
+            venue_order_id=VenueOrderId("228302937743")
+        )
         cancel_order = order_cancel_to_betfair(command=cancel_command, instrument=instrument)
         with mock_client_request(response=BetfairResponses.betting_place_order_success()) as req:
             resp = await self.client.cancel_orders(**cancel_order)

@@ -28,7 +28,7 @@ from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.position import Position
-from tests.test_kit.stubs import TestStubs
+from tests.test_kit.stubs.events import TestEventStubs
 
 
 AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy("AUD/USD")
@@ -115,7 +115,7 @@ class TestPortfolioAnalyzer:
             Quantity.from_int(100000),
         )
 
-        fill1 = TestStubs.event_order_filled(
+        fill1 = TestEventStubs.order_filled(
             order1,
             instrument=AUDUSD_SIM,
             position_id=PositionId("P-1"),
@@ -123,7 +123,7 @@ class TestPortfolioAnalyzer:
             last_px=Price.from_str("1.00000"),
         )
 
-        fill2 = TestStubs.event_order_filled(
+        fill2 = TestEventStubs.order_filled(
             order2,
             instrument=AUDUSD_SIM,
             position_id=PositionId("P-1"),
@@ -131,7 +131,7 @@ class TestPortfolioAnalyzer:
             last_px=Price.from_str("1.00010"),
         )
 
-        fill3 = TestStubs.event_order_filled(
+        fill3 = TestEventStubs.order_filled(
             order3,
             instrument=AUDUSD_SIM,
             position_id=PositionId("P-2"),
@@ -139,7 +139,7 @@ class TestPortfolioAnalyzer:
             last_px=Price.from_str("1.00000"),
         )
 
-        fill4 = TestStubs.event_order_filled(
+        fill4 = TestEventStubs.order_filled(
             order4,
             instrument=AUDUSD_SIM,
             position_id=PositionId("P-2"),

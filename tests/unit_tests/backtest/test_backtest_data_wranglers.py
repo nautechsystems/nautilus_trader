@@ -28,10 +28,11 @@ from nautilus_trader.model.identifiers import TradeId
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from tests.test_kit import PACKAGE_ROOT
-from tests.test_kit.stubs import TestStubs
+from tests.test_kit.stubs.data import TestDataStubs
+from tests.test_kit.stubs.identities import TestIdStubs
 
 
-AUDUSD_SIM = TestStubs.audusd_id()
+AUDUSD_SIM = TestIdStubs.audusd_id()
 
 
 class TestQuoteTickDataWrangler:
@@ -205,7 +206,7 @@ class TestBarDataWrangler:
     def setup(self):
         # Fixture Setup
         instrument = TestInstrumentProvider.default_fx_ccy("GBP/USD")
-        bar_type = TestStubs.bartype_gbpusd_1min_bid()
+        bar_type = TestDataStubs.bartype_gbpusd_1min_bid()
         self.wrangler = BarDataWrangler(
             bar_type=bar_type,
             instrument=instrument,
@@ -250,7 +251,7 @@ class TestBarDataWranglerHeaderless:
     def setup(self):
         # Fixture Setup
         instrument = TestInstrumentProvider.adabtc_binance()
-        bar_type = TestStubs.bartype_adabtc_binance_1min_last()
+        bar_type = TestDataStubs.bartype_adabtc_binance_1min_last()
         self.wrangler = BarDataWrangler(
             bar_type=bar_type,
             instrument=instrument,

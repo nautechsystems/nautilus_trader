@@ -30,7 +30,7 @@ from nautilus_trader.common.logging import LiveLogger
 from nautilus_trader.common.logging import LogLevel
 from nautilus_trader.msgbus.bus import MessageBus
 from tests.test_kit.mocks import MockCacheDatabase
-from tests.test_kit.stubs import TestStubs
+from tests.test_kit.stubs.identities import TestIdStubs
 
 
 class TestBinanceFactories:
@@ -44,9 +44,9 @@ class TestBinanceFactories:
             level_stdout=LogLevel.DEBUG,
         )
 
-        self.trader_id = TestStubs.trader_id()
-        self.strategy_id = TestStubs.strategy_id()
-        self.account_id = TestStubs.account_id()
+        self.trader_id = TestIdStubs.trader_id()
+        self.strategy_id = TestIdStubs.strategy_id()
+        self.account_id = TestIdStubs.account_id()
 
         self.msgbus = MessageBus(
             trader_id=self.trader_id,

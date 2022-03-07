@@ -22,7 +22,8 @@ from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from tests.test_kit.performance import PerformanceHarness
-from tests.test_kit.stubs import TestStubs
+from tests.test_kit.stubs.data import TestDataStubs
+from tests.test_kit.stubs.identities import TestIdStubs
 
 
 class TestObjectPerformance(PerformanceHarness):
@@ -50,7 +51,7 @@ class TestObjectPerformance(PerformanceHarness):
     def test_instrument_id_to_str(self):
         self.benchmark.pedantic(
             target=str,
-            args=(TestStubs.audusd_id(),),
+            args=(TestIdStubs.audusd_id(),),
             iterations=100_000,
             rounds=1,
         )
@@ -61,7 +62,7 @@ class TestObjectPerformance(PerformanceHarness):
         self.benchmark.pedantic(
             target=Bar,
             args=(
-                TestStubs.bartype_audusd_1min_bid(),
+                TestDataStubs.bartype_audusd_1min_bid(),
                 Price.from_str("1.00001"),
                 Price.from_str("1.00004"),
                 Price.from_str("1.00002"),
@@ -79,7 +80,7 @@ class TestObjectPerformance(PerformanceHarness):
         self.benchmark.pedantic(
             target=Bar,
             args=(
-                TestStubs.bartype_audusd_1min_bid(),
+                TestDataStubs.bartype_audusd_1min_bid(),
                 Price.from_str("1.00001"),
                 Price.from_str("1.00004"),
                 Price.from_str("1.00002"),

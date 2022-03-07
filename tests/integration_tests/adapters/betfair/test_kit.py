@@ -13,7 +13,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import asyncio
 import bz2
 import contextlib
 import pathlib
@@ -41,44 +40,31 @@ from nautilus_trader.backtest.config import BacktestEngineConfig
 from nautilus_trader.backtest.config import BacktestRunConfig
 from nautilus_trader.backtest.config import BacktestVenueConfig
 from nautilus_trader.backtest.data.providers import TestDataProvider
-from nautilus_trader.common.clock import LiveClock
-from nautilus_trader.common.factories import OrderFactory
-from nautilus_trader.common.logging import LiveLogger
-from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.examples.strategies.orderbook_imbalance import OrderBookImbalanceConfig
 from nautilus_trader.execution.config import ExecEngineConfig
-from nautilus_trader.execution.messages import CancelOrder
-from nautilus_trader.execution.messages import ModifyOrder
-from nautilus_trader.execution.messages import SubmitOrder
-from nautilus_trader.live.config import LiveExecEngineConfig
-from nautilus_trader.live.data_engine import LiveDataEngine
 from nautilus_trader.model.data.tick import TradeTick
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import TimeInForce
-from nautilus_trader.model.events.order import OrderAccepted
-from nautilus_trader.model.events.order import OrderSubmitted
-from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import ClientOrderId
 from nautilus_trader.model.identifiers import InstrumentId
-from nautilus_trader.model.identifiers import PositionId
 from nautilus_trader.model.identifiers import VenueOrderId
 from nautilus_trader.model.instruments.betting import BettingInstrument
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.orderbook.data import OrderBookData
-from nautilus_trader.model.orders.limit import LimitOrder
+from nautilus_trader.model.orders.base import Order
 from nautilus_trader.model.orders.market import MarketOrder
 from nautilus_trader.persistence.config import PersistenceConfig
 from nautilus_trader.persistence.external.core import make_raw_files
 from nautilus_trader.persistence.external.readers import TextReader
-from nautilus_trader.portfolio.portfolio import Portfolio
 from nautilus_trader.risk.config import RiskEngineConfig
 from nautilus_trader.trading.config import ImportableStrategyConfig
 from tests import TESTS_PACKAGE_ROOT
 from tests.test_kit import PACKAGE_ROOT
-from tests.test_kit.mocks import MockLiveExecutionEngine
-from tests.test_kit.mocks import MockLiveRiskEngine
-from tests.test_kit.stubs import TestStubs
+from tests.test_kit.stubs.commands import TestCommandStubs
+from tests.test_kit.stubs.component import TestComponentStubs
+from tests.test_kit.stubs.execution import TestExecStubs
+from tests.test_kit.stubs.identities import TestIdStubs
 
 
 TEST_PATH = pathlib.Path(TESTS_PACKAGE_ROOT + "/integration_tests/adapters/betfair/resources/")
@@ -110,72 +96,7 @@ class BetfairTestStubs:
     def instrument_provider(betfair_client) -> BetfairInstrumentProvider:
         return BetfairInstrumentProvider(
             client=betfair_client,
-            logger=BetfairTestStubs.live_logger(BetfairTestStubs.clock()),
-            # market_filter={"event_type_name": "Tennis"},
-        )
-
-    @staticmethod
-    def clock():
-        return LiveClock()
-
-    @staticmethod
-    def live_logger(clock):
-        return LiveLogger(loop=asyncio.get_event_loop(), clock=clock)
-
-    @staticmethod
-    def portfolio(clock, live_logger):
-        return Portfolio(
-            clock=clock,
-            logger=live_logger,
-        )
-
-    @staticmethod
-    def position_id():
-        return PositionId("1")
-
-    @staticmethod
-    def instrument_id():
-        return BetfairTestStubs.betting_instrument().id
-
-    @staticmethod
-    def uuid():
-        return UUID4("038990c6-19d2-b5c8-37a6-fe91f9b7b9ed")
-
-    @staticmethod
-    def account_id() -> AccountId:
-        return AccountId(BETFAIR_VENUE.value, "000")
-
-    @staticmethod
-    def data_engine(event_loop, msgbus, clock, live_logger):
-        return LiveDataEngine(
-            loop=event_loop,
-            msgbus=msgbus,
-            clock=clock,
-            logger=live_logger,
-        )
-
-    @staticmethod
-    def exec_engine(event_loop, clock, live_logger):
-        config = LiveExecEngineConfig()
-        config.allow_cash_positions = True  # Retain original behaviour for now
-        return MockLiveExecutionEngine(
-            loop=event_loop,
-            msgbus=TestStubs.msgbus(),
-            cache=TestStubs.cache,
-            clock=clock,
-            logger=live_logger,
-            config=config,
-        )
-
-    @staticmethod
-    def risk_engine(event_loop, clock, live_logger):
-        return MockLiveRiskEngine(
-            loop=event_loop,
-            portfolio=TestStubs.portfolio(),
-            msgbus=TestStubs.msgbus(),
-            cache=TestStubs.cache(),
-            clock=clock,
-            logger=live_logger,
+            logger=TestComponentStubs.logger(),
         )
 
     @staticmethod
@@ -199,8 +120,8 @@ class BetfairTestStubs:
             selection_id="50214",
             selection_name="Kansas City Chiefs",
             currency="GBP",
-            ts_event=BetfairTestStubs.clock().timestamp_ns(),
-            ts_init=BetfairTestStubs.clock().timestamp_ns(),
+            ts_event=TestComponentStubs.clock().timestamp_ns(),
+            ts_init=TestComponentStubs.clock().timestamp_ns(),
         )
 
     @staticmethod
@@ -277,134 +198,37 @@ class BetfairTestStubs:
         return client
 
     @staticmethod
-    def order_factory():
-        return OrderFactory(
-            trader_id=TestStubs.trader_id(),
-            strategy_id=TestStubs.strategy_id(),
-            clock=BetfairTestStubs.clock(),
-        )
-
-    @staticmethod
-    def make_order(
-        factory=None,
-        instrument_id: Optional[InstrumentId] = None,
-        side: Optional[OrderSide] = None,
-        price: Optional[Price] = None,
-        quantity: Optional[Quantity] = None,
-        client_order_id: Optional[ClientOrderId] = None,
-    ) -> LimitOrder:
-        order_factory = factory or BetfairTestStubs.order_factory()
-
-        return LimitOrder(
-            trader_id=order_factory.trader_id,
-            strategy_id=order_factory.strategy_id,
-            instrument_id=instrument_id or BetfairTestStubs.instrument_id(),
-            client_order_id=client_order_id or ClientOrderId(str(order_factory.count)),
-            order_side=side or OrderSide.BUY,
-            quantity=quantity or Quantity.from_str("10"),
-            price=price or Price.from_str("0.5"),
-            time_in_force=TimeInForce.GTC,
-            expire_time=None,
-            init_id=BetfairTestStubs.uuid(),
-            ts_init=0,
-            post_only=False,
-            reduce_only=False,
-        )
-
-    @staticmethod
-    def make_submitted_order(
-        ts_event=0,
-        ts_init=0,
-        factory=None,
-        client_order_id: Optional[ClientOrderId] = None,
-        **order_kwargs,
-    ):
-        order = BetfairTestStubs.make_order(
-            factory=factory, client_order_id=client_order_id, **order_kwargs
-        )
-        submitted = OrderSubmitted(
-            trader_id=TestStubs.trader_id(),
-            strategy_id=TestStubs.strategy_id(),
-            account_id=BetfairTestStubs.account_id(),
-            instrument_id=BetfairTestStubs.instrument_id(),
-            client_order_id=order.client_order_id,
-            event_id=BetfairTestStubs.uuid(),
-            ts_event=ts_event,
-            ts_init=ts_init,
-        )
-        order.apply(submitted)
-        return order
-
-    @staticmethod
-    def make_accepted_order(
-        venue_order_id: Optional[VenueOrderId] = None,
-        ts_event=0,
-        ts_init=0,
-        factory=None,
-        client_order_id: Optional[ClientOrderId] = None,
-    ) -> LimitOrder:
-        order = BetfairTestStubs.make_submitted_order(
-            factory=factory, client_order_id=client_order_id
-        )
-        accepted = OrderAccepted(
-            trader_id=TestStubs.trader_id(),
-            strategy_id=TestStubs.strategy_id(),
-            account_id=BetfairTestStubs.account_id(),
-            instrument_id=BetfairTestStubs.instrument_id(),
-            client_order_id=order.client_order_id,
-            venue_order_id=venue_order_id or VenueOrderId("1"),
-            event_id=BetfairTestStubs.uuid(),
-            ts_event=ts_event,
-            ts_init=ts_init,
-        )
-        order.apply(accepted)
-        return order
-
-    @staticmethod
-    def limit_order(
-        time_in_force=TimeInForce.GTC, price=None, side=None, quantity=None
-    ) -> LimitOrder:
-        return LimitOrder(
-            trader_id=TestStubs.trader_id(),
-            strategy_id=TestStubs.strategy_id(),
-            instrument_id=BetfairTestStubs.instrument_id(),
-            client_order_id=ClientOrderId(
-                f"O-20210410-022422-001-001-{TestStubs.strategy_id().value}"
-            ),
-            order_side=side or OrderSide.BUY,
-            quantity=quantity or Quantity.from_int(10),
-            price=price or Price(0.33, precision=5),
-            time_in_force=time_in_force,
-            expire_time=None,
-            init_id=BetfairTestStubs.uuid(),
-            ts_init=BetfairTestStubs.clock().timestamp_ns(),
-        )
-
-    @staticmethod
     def market_order(side=None, time_in_force=None) -> MarketOrder:
-        return MarketOrder(
-            trader_id=TestStubs.trader_id(),
-            strategy_id=TestStubs.strategy_id(),
-            instrument_id=BetfairTestStubs.instrument_id(),
+        return TestExecStubs.market_order(
+            instrument_id=TestIdStubs.betting_instrument_id(),
             client_order_id=ClientOrderId(
-                f"O-20210410-022422-001-001-{TestStubs.strategy_id().value}"
+                f"O-20210410-022422-001-001-{TestIdStubs.strategy_id().value}"
             ),
             order_side=side or OrderSide.BUY,
             quantity=Quantity.from_int(10),
             time_in_force=time_in_force or TimeInForce.GTC,
-            init_id=BetfairTestStubs.uuid(),
-            ts_init=BetfairTestStubs.clock().timestamp_ns(),
+        )
+
+    @staticmethod
+    def limit_order(
+        quantity: Optional[Quantity] = None,
+        price: Optional[Price] = None,
+        time_in_force: Optional[TimeInForce] = None,
+        **kwargs,
+    ):
+        return TestExecStubs.limit_order(
+            instrument_id=TestIdStubs.betting_instrument_id(),
+            quantity=quantity or Quantity.from_int(10),
+            price=price or Price(0.33, precision=5),
+            time_in_force=time_in_force,
+            **kwargs,
         )
 
     @staticmethod
     def submit_order_command(time_in_force=TimeInForce.GTC, order=None):
-        return SubmitOrder(
-            trader_id=TestStubs.trader_id(),
-            strategy_id=TestStubs.strategy_id(),
-            position_id=BetfairTestStubs.position_id(),
-            order=order or BetfairTestStubs.limit_order(time_in_force=time_in_force),
-            command_id=BetfairTestStubs.uuid(),
-            ts_init=BetfairTestStubs.clock().timestamp_ns(),
+        order = order or BetfairTestStubs.limit_order()
+        return TestCommandStubs.submit_order_command(
+            order=order or TestExecStubs.limit_order(time_in_force=time_in_force),
         )
 
     @staticmethod
@@ -413,32 +237,26 @@ class BetfairTestStubs:
         client_order_id: Optional[ClientOrderId] = None,
         venue_order_id: Optional[VenueOrderId] = None,
     ):
-        if instrument_id is None:
-            instrument_id = BetfairTestStubs.instrument_id()
-        return ModifyOrder(
-            trader_id=TestStubs.trader_id(),
-            strategy_id=TestStubs.strategy_id(),
-            instrument_id=instrument_id,
+        return TestCommandStubs.modify_order_command(
+            instrument_id=instrument_id or TestIdStubs.betting_instrument_id(),
             client_order_id=client_order_id or ClientOrderId("O-20210410-022422-001-001-1"),
             venue_order_id=venue_order_id or VenueOrderId("001"),
             quantity=Quantity.from_int(50),
             price=Price(0.74347, precision=5),
-            trigger_price=None,
-            command_id=BetfairTestStubs.uuid(),
-            ts_init=BetfairTestStubs.clock().timestamp_ns(),
         )
 
     @staticmethod
     def cancel_order_command(instrument_id=None, client_order_id=None, venue_order_id=None):
-        return CancelOrder(
-            trader_id=TestStubs.trader_id(),
-            strategy_id=TestStubs.strategy_id(),
-            instrument_id=instrument_id or BetfairTestStubs.instrument_id(),
+        return TestCommandStubs.cancel_order_command(
+            instrument_id=instrument_id or TestIdStubs.betting_instrument_id(),
             client_order_id=client_order_id or ClientOrderId("O-20210410-022422-001-001-1"),
             venue_order_id=venue_order_id or VenueOrderId("228302937743"),
-            command_id=BetfairTestStubs.uuid(),
-            ts_init=BetfairTestStubs.clock().timestamp_ns(),
         )
+
+    @staticmethod
+    def make_submitted_order(order: Optional[Order] = None, **kwargs):
+        order = order or BetfairTestStubs.limit_order(**kwargs)
+        return TestExecStubs.make_submitted_order(order=order)
 
     @staticmethod
     def make_order_place_response(
@@ -965,60 +783,6 @@ class BetfairDataProvider:
             for message in on_market_update(instrument_provider=instrument_provider, update=raw):
                 updates.append(message)
         return updates
-
-    @staticmethod
-    def submit_order_command():
-        return SubmitOrder(
-            trader_id=TestStubs.trader_id(),
-            strategy_id=TestStubs.strategy_id(),
-            position_id=BetfairTestStubs.position_id(),
-            order=LimitOrder(
-                trader_id=TestStubs.trader_id(),
-                strategy_id=TestStubs.strategy_id(),
-                instrument_id=BetfairTestStubs.instrument_id(),
-                client_order_id=ClientOrderId(
-                    f"O-20210410-022422-001-001-{TestStubs.strategy_id().value}"
-                ),
-                order_side=OrderSide.BUY,
-                quantity=Quantity.from_int(10),
-                price=Price(0.33, precision=5),
-                time_in_force=TimeInForce.GTC,
-                expire_time=None,
-                init_id=BetfairTestStubs.uuid(),
-                ts_init=BetfairTestStubs.clock().timestamp_ns(),
-            ),
-            command_id=BetfairTestStubs.uuid(),
-            ts_init=BetfairTestStubs.clock().timestamp_ns(),
-        )
-
-    @staticmethod
-    def modify_order_command(instrument_id=None, client_order_id=None):
-        if instrument_id is None:
-            instrument_id = BetfairTestStubs.instrument_id()
-        return ModifyOrder(
-            trader_id=TestStubs.trader_id(),
-            strategy_id=TestStubs.strategy_id(),
-            instrument_id=instrument_id,
-            client_order_id=client_order_id or ClientOrderId("O-20210410-022422-001-001-1"),
-            venue_order_id=VenueOrderId("001"),
-            quantity=Quantity.from_int(50),
-            price=Price(0.74347, precision=5),
-            trigger_price=None,
-            command_id=BetfairTestStubs.uuid(),
-            ts_init=BetfairTestStubs.clock().timestamp_ns(),
-        )
-
-    @staticmethod
-    def cancel_order_command():
-        return CancelOrder(
-            trader_id=TestStubs.trader_id(),
-            strategy_id=TestStubs.strategy_id(),
-            instrument_id=BetfairTestStubs.instrument_id(),
-            client_order_id=ClientOrderId("O-20210410-022422-001-001-1"),
-            venue_order_id=VenueOrderId("229597791245"),
-            command_id=BetfairTestStubs.uuid(),
-            ts_init=BetfairTestStubs.clock().timestamp_ns(),
-        )
 
     @staticmethod
     def betfair_feed_parsed(market_id="1.166564490", folder="data"):

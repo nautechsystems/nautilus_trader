@@ -24,7 +24,9 @@ from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.msgbus.bus import MessageBus
 from tests.integration_tests.adapters.betfair.test_kit import BetfairTestStubs
-from tests.test_kit.stubs import TestStubs
+from tests.test_kit.stubs.component import TestComponentStubs
+from tests.test_kit.stubs.execution import TestExecStubs
+from tests.test_kit.stubs.identities import TestIdStubs
 
 
 class TestBetfairAccount:
@@ -35,19 +37,19 @@ class TestBetfairAccount:
 
         self.clock = LiveClock()
         self.venue = BETFAIR_VENUE
-        self.account = TestStubs.betting_account()
+        self.account = TestExecStubs.betting_account()
         self.instrument = BetfairTestStubs.betting_instrument()
 
         # Setup logging
         self.logger = LiveLogger(loop=self.loop, clock=self.clock, level_stdout=LogLevel.DEBUG)
 
         self.msgbus = MessageBus(
-            trader_id=TestStubs.trader_id(),
+            trader_id=TestIdStubs.trader_id(),
             clock=self.clock,
             logger=self.logger,
         )
 
-        self.cache = TestStubs.cache()
+        self.cache = TestComponentStubs.cache()
         self.cache.add_instrument(BetfairTestStubs.betting_instrument())
 
     def test_betting_instrument_notional_value(self):
