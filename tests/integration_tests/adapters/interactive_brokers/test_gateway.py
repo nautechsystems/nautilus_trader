@@ -12,6 +12,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+from unittest import mock
 from unittest.mock import MagicMock
 from unittest.mock import call
 
@@ -26,13 +27,13 @@ TEST_PATH = TESTS_PACKAGE_ROOT + "/integration_tests/adapters/ib/responses/"
 
 class TestIBGateway:
     def setup(self):
-        self.gateway = InteractiveBrokersGateway(username="test", password="test")  # noqa: S106
+        with mock.patch("docker.DockerClient.from_env"):
+            self.gateway = InteractiveBrokersGateway(username="test", password="test")  # noqa: S106
         self.gateway._docker = MagicMock()
 
     @pytest.mark.local()
     def test_gateway_start_no_container(self):
         # Arrange, Act
-        # with patch(DockerClient, "from_env"):
         self.gateway.start(wait=None)
 
         # Assert
@@ -46,18 +47,3 @@ class TestIBGateway:
         )
         result = self.gateway._docker.method_calls[-1]
         assert result == expected
-
-    # def test_gateway_start_no_login(self):
-    #     # Arrange
-    #
-    #
-    #     # Act
-    #     self.gateway.start(wait=None)
-    #
-    #     # Assert
-    #     expected = call.containers.run(
-    #         image='mgvazquez/ibgateway', name='nautilus-ib-gateway', detach=True, ports={'4001': '4001'},
-    #         environment={'TWSUSERID': 'user', 'TWSPASSWORD': 'test', 'TRADING_MODE': 'paper'}
-    #     )
-    #     result = self.gateway._docker.method_calls[-1]
-    #     assert result == expected
