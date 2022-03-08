@@ -49,7 +49,7 @@ For clarity, any optional parameters will be clearly marked with a comment which
 ```
 
 ### Market
-The vanilla market order is an instruction by the trader the immediately trade
+The vanilla market order is an instruction by the trader to immediately trade
 the given quantity at the best price available. You can also specify several
 time in force options, and indicate whether this order is only intended to reduce
 a position.
