@@ -95,12 +95,15 @@ class RunnerChange(msgspec.Struct):
     """
 
     # TODO - Can we type batb etc better?
-    batb: Optional[List[List]] = None  # Best Available To Back
-    batl: Optional[List[List]] = None  # Best Available To Lay
-    bdatb: Optional[List[List]] = None  # Best Display Available To Back  (virtual)
-    bdatl: Optional[List[List]] = None  # Best Display Available To Lay (virtual)
-    ltp: int
-    tv: int
+    atb: Optional[List[List]] = []  # Best Available To Back
+    atl: Optional[List[List]] = []  # Best Available To Lay
+    batb: Optional[List[List]] = []  # Best Available To Back
+    batl: Optional[List[List]] = []  # Best Available To Lay
+    bdatb: Optional[List[List]] = []  # Best Display Available To Back  (virtual)
+    bdatl: Optional[List[List]] = []  # Best Display Available To Lay (virtual)
+    trd: Optional[List[List]] = []
+    ltp: Optional[float] = None
+    tv: Optional[float] = None
     id: str
     hc: Optional[float] = None
 
@@ -111,10 +114,10 @@ class MarketChange(msgspec.Struct):
     """
 
     id: str
-    marketDefinition: MarketDefinition
+    marketDefinition: Optional[MarketDefinition] = None
     rc: List[RunnerChange]
-    img: bool
-    tv: float
+    img: bool = False
+    tv: Optional[float] = None
     con: Optional[bool] = None
 
 
@@ -131,7 +134,7 @@ class MarketChangeMessage(msgspec.Struct):
     conflateMs: Optional[int] = None
     heartbeatMs: Optional[int] = None
     pt: int
-    ct: str
+    ct: Optional[Literal["HEARTBEAT"]] = None
     mc: List[MarketChange] = []
 
     @property

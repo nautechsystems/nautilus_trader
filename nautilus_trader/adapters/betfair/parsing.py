@@ -26,6 +26,7 @@ import pandas as pd
 from nautilus_trader.adapters.betfair.client.schema.streaming import MarketChange
 from nautilus_trader.adapters.betfair.client.schema.streaming import MarketChangeMessage
 from nautilus_trader.adapters.betfair.client.schema.streaming import Runner
+from nautilus_trader.adapters.betfair.client.schema.streaming import RunnerChange
 from nautilus_trader.adapters.betfair.common import B2N_MARKET_STREAM_SIDE
 from nautilus_trader.adapters.betfair.common import B_ASK_KINDS
 from nautilus_trader.adapters.betfair.common import B_BID_KINDS
@@ -201,9 +202,9 @@ def order_submit_to_betfair(command: SubmitOrder, instrument: BettingInstrument)
         "instructions": [
             {
                 **order,
-                "runnerId": instrument.runner_id,
+                "runnerId": instrument.selection_id,
                 "side": N2B_SIDE[command.order.side],
-                "handicap": instrument.runner_handicap,
+                "handicap": instrument.selection_handicap,
                 # Remove the strategy name from customer_order_ref; it has a limited size and we don't control what
                 # length the strategy might be or what characters users might append
                 "customerOrderRef": make_custom_order_ref(
@@ -400,10 +401,10 @@ def _handle_bsp_updates(runner, instrument, ts_event, ts_init):
     return updates
 
 
-def _handle_book_updates(runner, instrument, ts_event, ts_init):
+def _handle_book_updates(runner: RunnerChange, instrument, ts_event, ts_init):
     deltas = []
     for side in B_SIDE_KINDS:
-        for upd in runner.get(side, []):
+        for upd in getattr(runner, side, []):
             # TODO(bm): Clean this up
             if len(upd) == 3:
                 _, price, volume = upd
@@ -505,12 +506,13 @@ def _handle_instrument_status(market: MarketChange, runner: Runner, instrument, 
 
 
 def _handle_market_runners_status(instrument_provider, market: MarketChange, ts_event, ts_init):
+    if market.marketDefinition is None:
+        return []
     updates = []
-
     for runner in market.marketDefinition.runners:
         kw = dict(
             market_id=market.id,
-            runner_id=str(runner.id),
+            selection_id=str(runner.id),
             handicap=parse_handicap(runner.hc),
         )
         instrument = instrument_provider.get_betting_instrument(**kw)
@@ -572,14 +574,14 @@ def build_market_snapshot_messages(
         # OrderBook snapshots
         if market.img is True:
             market_id = market.id
-            for (runner_id, handicap), runners in itertools.groupby(
+            for (selection_id, handicap), runners in itertools.groupby(
                 market.rc, lambda x: (x.id, x.hc)
             ):
                 runners: List[Runner]  # type: ignore
                 for runner in list(runners):
                     kw = dict(
                         market_id=market_id,
-                        runner_id=str(runner_id),
+                        selection_id=str(selection_id),
                         handicap=parse_handicap(handicap),
                     )
                     instrument = instrument_provider.get_betting_instrument(**kw)
@@ -617,13 +619,14 @@ def _merge_order_book_deltas(all_deltas: List[OrderBookDeltas]):
 
 
 def build_market_update_messages(
-    instrument_provider, raw
+    instrument_provider,
+    market_change_message: MarketChangeMessage,
 ) -> List[Union[OrderBookDelta, TradeTick, InstrumentStatusUpdate, InstrumentClosePrice]]:
     updates = []
     book_updates = []
-    ts_event = parse_betfair_timestamp(raw["pt"])
+    ts_event = parse_betfair_timestamp(market_change_message.pt)
 
-    for market in raw.get("mc", []):
+    for market in market_change_message.mc:
         updates.extend(
             _handle_market_runners_status(
                 instrument_provider=instrument_provider,
@@ -632,11 +635,11 @@ def build_market_update_messages(
                 ts_init=ts_event,
             )
         )
-        for runner in market.get("rc", []):
+        for runner in market.rc:
             kw = dict(
                 market_id=market.id,
-                runner_id=str(runner["id"]),
-                handicap=parse_handicap(runner.get("hc")),
+                selection_id=str(runner.id),
+                handicap=parse_handicap(runner.hc),
             )
             instrument = instrument_provider.get_betting_instrument(**kw)
             if instrument is None:

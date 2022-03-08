@@ -24,10 +24,10 @@ import orjson
 
 from nautilus_trader.accounting.factory import AccountFactory
 from nautilus_trader.adapters.betfair.client.core import BetfairClient
-from nautilus_trader.adapters.betfair.client.definitions.streaming_exec import OrderChangeMessage
-from nautilus_trader.adapters.betfair.client.definitions.streaming_exec import UnmatchedOrder
 from nautilus_trader.adapters.betfair.client.exceptions import BetfairAPIError
+from nautilus_trader.adapters.betfair.client.schema.streaming import OrderChangeMessage
 from nautilus_trader.adapters.betfair.client.schema.streaming import StatusMessage
+from nautilus_trader.adapters.betfair.client.schema.streaming import UnmatchedOrder
 from nautilus_trader.adapters.betfair.common import B2N_ORDER_STREAM_SIDE
 from nautilus_trader.adapters.betfair.common import BETFAIR_VENUE
 from nautilus_trader.adapters.betfair.common import price_to_probability

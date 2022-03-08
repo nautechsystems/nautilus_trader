@@ -19,7 +19,7 @@ from unittest.mock import patch
 
 import pytest
 
-from nautilus_trader.adapters.betfair.client.definitions.streaming_exec import OrderChangeMessage
+from nautilus_trader.adapters.betfair.client.schema.streaming import OrderChangeMessage
 from nautilus_trader.adapters.betfair.common import BETFAIR_VENUE
 from nautilus_trader.adapters.betfair.common import price_to_probability
 from nautilus_trader.adapters.betfair.execution import BetfairClient
