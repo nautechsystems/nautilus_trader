@@ -93,10 +93,10 @@ class MarketChangeMessage(msgspec.Struct):
 
     op: Literal["connection", "status", "mcm", "ocm"]
     id: int
-    initialClk: str
+    initialClk: Optional[str] = None
     clk: str
-    conflateMs: int
-    heartbeatMs: int
+    conflateMs: Optional[int] = None
+    heartbeatMs: Optional[int] = None
     pt: int
     ct: str
-    mc: List[MarketChange]
+    mc: List[MarketChange] = []

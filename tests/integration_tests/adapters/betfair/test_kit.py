@@ -613,39 +613,39 @@ class BetfairStreaming:
 
     @staticmethod
     def mcm_live_IMAGE():
-        return BetfairStreaming.load("streaming_mcm_live_IMAGE.json")
+        return BetfairStreaming.load("streaming_mcm_live_IMAGE.json", kind="mcm")
 
     @staticmethod
     def mcm_live_UPDATE():
-        return BetfairStreaming.load("streaming_mcm_live_UPDATE.json")
+        return BetfairStreaming.load("streaming_mcm_live_UPDATE.json", kind="mcm")
 
     @staticmethod
     def mcm_SUB_IMAGE():
-        return BetfairStreaming.load("streaming_mcm_SUB_IMAGE.json")
+        return BetfairStreaming.load("streaming_mcm_SUB_IMAGE.json", kind="mcm")
 
     @staticmethod
     def mcm_SUB_IMAGE_no_market_def():
-        return BetfairStreaming.load("streaming_mcm_SUB_IMAGE_no_market_def.json")
+        return BetfairStreaming.load("streaming_mcm_SUB_IMAGE_no_market_def.json", kind="mcm")
 
     @staticmethod
     def mcm_RESUB_DELTA():
-        return BetfairStreaming.load("streaming_mcm_RESUB_DELTA.json")
+        return BetfairStreaming.load("streaming_mcm_RESUB_DELTA.json", kind="mcm")
 
     @staticmethod
     def mcm_UPDATE():
-        return BetfairStreaming.load("streaming_mcm_UPDATE.json")
+        return BetfairStreaming.load("streaming_mcm_UPDATE.json", kind="mcm")
 
     @staticmethod
     def mcm_UPDATE_md():
-        return BetfairStreaming.load("streaming_mcm_UPDATE_md.json")
+        return BetfairStreaming.load("streaming_mcm_UPDATE_md.json", kind="mcm")
 
     @staticmethod
     def mcm_UPDATE_tv():
-        return BetfairStreaming.load("streaming_mcm_UPDATE_tv.json")
+        return BetfairStreaming.load("streaming_mcm_UPDATE_tv.json", kind="mcm")
 
     @staticmethod
     def market_updates():
-        return BetfairStreaming.load("streaming_market_updates.json")
+        return BetfairStreaming.load("streaming_market_updates.json", kind="mcm")
 
     @staticmethod
     def generate_order_change_message(
