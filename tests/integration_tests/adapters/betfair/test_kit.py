@@ -522,7 +522,7 @@ class BetfairStreaming:
         )
 
     @staticmethod
-    def load(filename, kind: Literal["ocm", "mcm", None]):
+    def load(filename, kind: Literal["ocm", "mcm", None] = None):
         raw = (TEST_PATH / "streaming" / filename).read_bytes()
         return BetfairStreaming.decode(raw=raw, kind=kind)
 
@@ -537,7 +537,7 @@ class BetfairStreaming:
 
     @staticmethod
     def market_definition_runner_removed():
-        return BetfairStreaming.load("streaming_market_definition_runner_removed.json")
+        return BetfairStreaming.load("streaming_market_definition_runner_removed.json", kind=None)
 
     @staticmethod
     def ocm_FULL_IMAGE():
