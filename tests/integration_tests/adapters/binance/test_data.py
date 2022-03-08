@@ -46,6 +46,7 @@ from tests.test_kit.stubs.identifiers import TestIdStubs
 ETHUSDT_BINANCE = TestInstrumentProvider.ethusdt_binance()
 
 
+@pytest.mark.skip(reason="WIP")
 class TestBinanceDataClient:
     def setup(self):
         # Fixture Setup

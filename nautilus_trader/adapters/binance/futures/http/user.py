@@ -15,6 +15,8 @@
 
 from typing import Any, Dict
 
+import orjson
+
 from nautilus_trader.adapters.binance.core.enums import BinanceAccountType
 from nautilus_trader.adapters.binance.http.client import BinanceHttpClient
 from nautilus_trader.core.correctness import PyCondition
@@ -67,10 +69,12 @@ class BinanceFuturesUserDataHttpAPI:
         https://binance-docs.github.io/apidocs/futures/en/#start-user-data-stream-user_stream
 
         """
-        return await self.client.send_request(
+        raw: bytes = await self.client.send_request(
             http_method="POST",
             url_path=self.BASE_ENDPOINT + "listenKey",
         )
+
+        return orjson.loads(raw)
 
     async def ping_listen_key(self, key: str) -> Dict[str, Any]:
         """
@@ -96,11 +100,13 @@ class BinanceFuturesUserDataHttpAPI:
         https://binance-docs.github.io/apidocs/futures/en/#keepalive-user-data-stream-user_stream
 
         """
-        return await self.client.send_request(
+        raw: bytes = await self.client.send_request(
             http_method="PUT",
             url_path=self.BASE_ENDPOINT + "listenKey",
             payload={"listenKey": key},
         )
+
+        return orjson.loads(raw)
 
     async def close_listen_key(self, key: str) -> Dict[str, Any]:
         """
@@ -120,8 +126,10 @@ class BinanceFuturesUserDataHttpAPI:
         https://binance-docs.github.io/apidocs/futures/en/#close-user-data-stream-user_stream
 
         """
-        return await self.client.send_request(
+        raw: bytes = await self.client.send_request(
             http_method="DELETE",
             url_path=self.BASE_ENDPOINT + "listenKey",
             payload={"listenKey": key},
         )
+
+        return orjson.loads(raw)

@@ -12,3 +12,13 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+
+import msgspec
+
+
+class BinanceSpotTradeFees(msgspec.Struct):
+    """Represents a `Binance` trade fees response."""
+
+    symbol: str
+    makerCommission: str
+    takerCommission: str

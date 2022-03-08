@@ -18,7 +18,11 @@ from decimal import Decimal
 from typing import Any, Dict, List
 
 from nautilus_trader.adapters.binance.core.constants import BINANCE_VENUE
+from nautilus_trader.adapters.binance.core.enums import BinanceSymbolFilterType
 from nautilus_trader.adapters.binance.core.types import BinanceBar
+from nautilus_trader.adapters.binance.spot.schemas.market import BinanceSymbolFilter
+from nautilus_trader.adapters.binance.spot.schemas.market import BinanceSymbolInfo
+from nautilus_trader.adapters.binance.spot.schemas.wallet import BinanceSpotTradeFees
 from nautilus_trader.core.datetime import millis_to_nanos
 from nautilus_trader.core.string import precision_from_str
 from nautilus_trader.model.currency import Currency
@@ -68,30 +72,28 @@ def parse_bar_http(bar_type: BarType, values: List, ts_init: int) -> BinanceBar:
 
 
 def parse_spot_instrument_http(
-    data: Dict[str, Any],
-    fees: Dict[str, Any],
+    symbol_info: BinanceSymbolInfo,
+    fees: BinanceSpotTradeFees,
     ts_event: int,
     ts_init: int,
 ) -> Instrument:
-    native_symbol = Symbol(data["symbol"])
+    native_symbol = Symbol(symbol_info.symbol)
 
     # Create base asset
-    base_asset: str = data["baseAsset"]
     base_currency = Currency(
-        code=base_asset,
-        precision=data["baseAssetPrecision"],
+        code=symbol_info.baseAsset,
+        precision=symbol_info.baseAssetPrecision,
         iso4217=0,  # Currently undetermined for crypto assets
-        name=base_asset,
+        name=symbol_info.baseAsset,
         currency_type=CurrencyType.CRYPTO,
     )
 
     # Create quote asset
-    quote_asset: str = data["quoteAsset"]
     quote_currency = Currency(
-        code=quote_asset,
-        precision=data["quoteAssetPrecision"],
+        code=symbol_info.quoteAsset,
+        precision=symbol_info.quoteAssetPrecision,
         iso4217=0,  # Currently undetermined for crypto assets
-        name=quote_asset,
+        name=symbol_info.quoteAsset,
         currency_type=CurrencyType.CRYPTO,
     )
 
@@ -99,34 +101,35 @@ def parse_spot_instrument_http(
     instrument_id = InstrumentId(symbol=native_symbol, venue=BINANCE_VENUE)
 
     # Parse instrument filters
-    symbol_filters = {f["filterType"]: f for f in data["filters"]}
-    price_filter = symbol_filters.get("PRICE_FILTER")
-    lot_size_filter = symbol_filters.get("LOT_SIZE")
-    min_notional_filter = symbol_filters.get("MIN_NOTIONAL")
+    filters: Dict[BinanceSymbolFilterType, BinanceSymbolFilter] = {
+        f.filterType: f for f in symbol_info.filters
+    }
+    price_filter: BinanceSymbolFilter = filters.get(BinanceSymbolFilterType.PRICE_FILTER)
+    lot_size_filter: BinanceSymbolFilter = filters.get(BinanceSymbolFilterType.LOT_SIZE)
+    min_notional_filter: BinanceSymbolFilter = filters.get(BinanceSymbolFilterType.MIN_NOTIONAL)
     # market_lot_size_filter = symbol_filters.get("MARKET_LOT_SIZE")
 
-    tick_size = price_filter["tickSize"].rstrip("0")
-    step_size = lot_size_filter["stepSize"].rstrip("0")
+    tick_size = price_filter.tickSize.rstrip("0")
+    step_size = lot_size_filter.stepSize.rstrip("0")
     price_precision = precision_from_str(tick_size)
     size_precision = precision_from_str(step_size)
     price_increment = Price.from_str(tick_size)
     size_increment = Quantity.from_str(step_size)
     lot_size = Quantity.from_str(step_size)
-    max_quantity = Quantity(float(lot_size_filter["maxQty"]), precision=size_precision)
-    min_quantity = Quantity(float(lot_size_filter["minQty"]), precision=size_precision)
+    max_quantity = Quantity(float(lot_size_filter.maxQty), precision=size_precision)
+    min_quantity = Quantity(float(lot_size_filter.minQty), precision=size_precision)
     min_notional = None
-    if min_notional_filter is not None:
-        min_notional = Money(min_notional_filter["minNotional"], currency=quote_currency)
-    max_price = Price(float(price_filter["maxPrice"]), precision=price_precision)
-    min_price = Price(float(price_filter["minPrice"]), precision=price_precision)
+    if filters.get(BinanceSymbolFilterType.MIN_NOTIONAL):
+        min_notional = Money(min_notional_filter.minNotional, currency=quote_currency)
+    max_price = Price(float(price_filter.maxPrice), precision=price_precision)
+    min_price = Price(float(price_filter.minPrice), precision=price_precision)
 
     # Parse fees
-    pair_fees = fees.get(native_symbol.value)
     maker_fee: Decimal = Decimal(0)
     taker_fee: Decimal = Decimal(0)
-    if pair_fees:
-        maker_fee = Decimal(pair_fees["makerCommission"])
-        taker_fee = Decimal(pair_fees["takerCommission"])
+    if fees:
+        maker_fee = Decimal(fees.makerCommission)
+        taker_fee = Decimal(fees.takerCommission)
 
     # Create instrument
     return CurrencyPair(
@@ -151,7 +154,7 @@ def parse_spot_instrument_http(
         taker_fee=taker_fee,
         ts_event=ts_event,
         ts_init=ts_init,
-        info=data,
+        info={f: getattr(symbol_info, f) for f in symbol_info.__struct_fields__},
     )
 
 

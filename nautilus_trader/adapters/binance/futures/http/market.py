@@ -15,6 +15,8 @@
 
 from typing import Any, Dict, List, Optional
 
+import orjson
+
 from nautilus_trader.adapters.binance.core.enums import BinanceAccountType
 from nautilus_trader.adapters.binance.core.functions import convert_symbols_list_to_json_array
 from nautilus_trader.adapters.binance.core.functions import format_symbol
@@ -64,7 +66,8 @@ class BinanceFuturesMarketHttpAPI:
         https://binance-docs.github.io/apidocs/spot/en/#test-connectivity
 
         """
-        return await self.client.query(url_path=self.BASE_ENDPOINT + "ping")
+        raw: bytes = await self.client.query(url_path=self.BASE_ENDPOINT + "ping")
+        return orjson.loads(raw)
 
     async def time(self) -> Dict[str, Any]:
         """
@@ -82,7 +85,8 @@ class BinanceFuturesMarketHttpAPI:
         https://binance-docs.github.io/apidocs/spot/en/#check-server-time
 
         """
-        return await self.client.query(url_path=self.BASE_ENDPOINT + "time")
+        raw: bytes = await self.client.query(url_path=self.BASE_ENDPOINT + "time")
+        return orjson.loads(raw)
 
     async def exchange_info(self, symbol: str = None, symbols: List[str] = None) -> Dict[str, Any]:
         """
@@ -117,10 +121,12 @@ class BinanceFuturesMarketHttpAPI:
         if symbols is not None:
             payload["symbols"] = convert_symbols_list_to_json_array(symbols)
 
-        return await self.client.query(
+        raw: bytes = await self.client.query(
             url_path=self.BASE_ENDPOINT + "exchangeInfo",
             payload=payload,
         )
+
+        return orjson.loads(raw)
 
     async def depth(self, symbol: str, limit: Optional[int] = None) -> Dict[str, Any]:
         """
@@ -149,10 +155,12 @@ class BinanceFuturesMarketHttpAPI:
         if limit is not None:
             payload["limit"] = str(limit)
 
-        return await self.client.query(
+        raw: bytes = await self.client.query(
             url_path=self.BASE_ENDPOINT + "depth",
             payload=payload,
         )
+
+        return orjson.loads(raw)
 
     async def trades(self, symbol: str, limit: Optional[int] = None) -> List[Dict[str, Any]]:
         """
@@ -181,10 +189,12 @@ class BinanceFuturesMarketHttpAPI:
         if limit is not None:
             payload["limit"] = str(limit)
 
-        return await self.client.query(
+        raw: bytes = await self.client.query(
             url_path=self.BASE_ENDPOINT + "trades",
             payload=payload,
         )
+
+        return orjson.loads(raw)
 
     async def historical_trades(
         self,
@@ -222,11 +232,13 @@ class BinanceFuturesMarketHttpAPI:
         if from_id is not None:
             payload["fromId"] = str(from_id)
 
-        return await self.client.limit_request(
+        raw: bytes = await self.client.limit_request(
             http_method="GET",
             url_path=self.BASE_ENDPOINT + "historicalTrades",
             payload=payload,
         )
+
+        return orjson.loads(raw)
 
     async def agg_trades(
         self,
@@ -274,10 +286,12 @@ class BinanceFuturesMarketHttpAPI:
         if limit is not None:
             payload["limit"] = str(limit)
 
-        return await self.client.query(
+        raw: bytes = await self.client.query(
             url_path=self.BASE_ENDPOINT + "aggTrades",
             payload=payload,
         )
+
+        return orjson.loads(raw)
 
     async def klines(
         self,
@@ -325,10 +339,12 @@ class BinanceFuturesMarketHttpAPI:
         if limit is not None:
             payload["limit"] = str(limit)
 
-        return await self.client.query(
+        raw: bytes = await self.client.query(
             url_path=self.BASE_ENDPOINT + "klines",
             payload=payload,
         )
+
+        return orjson.loads(raw)
 
     async def avg_price(self, symbol: str) -> Dict[str, Any]:
         """
@@ -352,10 +368,12 @@ class BinanceFuturesMarketHttpAPI:
         """
         payload: Dict[str, str] = {"symbol": format_symbol(symbol)}
 
-        return await self.client.query(
+        raw: bytes = await self.client.query(
             url_path=self.BASE_ENDPOINT + "avgPrice",
             payload=payload,
         )
+
+        return orjson.loads(raw)
 
     async def ticker_24hr(self, symbol: str = None) -> Dict[str, Any]:
         """
@@ -381,10 +399,12 @@ class BinanceFuturesMarketHttpAPI:
         if symbol is not None:
             payload["symbol"] = format_symbol(symbol)
 
-        return await self.client.query(
+        raw: bytes = await self.client.query(
             url_path=self.BASE_ENDPOINT + "ticker/24hr",
             payload=payload,
         )
+
+        return orjson.loads(raw)
 
     async def ticker_price(self, symbol: str = None) -> Dict[str, Any]:
         """
@@ -410,10 +430,12 @@ class BinanceFuturesMarketHttpAPI:
         if symbol is not None:
             payload["symbol"] = format_symbol(symbol)
 
-        return await self.client.query(
+        raw: bytes = await self.client.query(
             url_path=self.BASE_ENDPOINT + "ticker/price",
             payload=payload,
         )
+
+        return orjson.loads(raw)
 
     async def book_ticker(self, symbol: str = None) -> Dict[str, Any]:
         """
@@ -439,7 +461,9 @@ class BinanceFuturesMarketHttpAPI:
         if symbol is not None:
             payload["symbol"] = format_symbol(symbol).upper()
 
-        return await self.client.query(
+        raw: bytes = await self.client.query(
             url_path=self.BASE_ENDPOINT + "ticker/bookTicker",
             payload=payload,
         )
+
+        return orjson.loads(raw)

@@ -23,6 +23,7 @@ from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.logging import Logger
 
 
+@pytest.mark.skip(reason="WIP")
 class TestBinanceUserHttpAPI:
     def setup(self):
         # Fixture Setup

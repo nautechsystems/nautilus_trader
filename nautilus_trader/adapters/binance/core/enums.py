@@ -17,6 +17,70 @@ from enum import Enum
 from enum import unique
 
 
+"""
+Defines `Binance` specific enums.
+
+
+References
+----------
+https://binance-docs.github.io/apidocs/spot/en/#public-api-definitions
+"""
+
+
+@unique
+class BinanceRateLimitType(Enum):
+    """Represents a `Binance` rate limit type."""
+
+    REQUEST_WEIGHT = "REQUEST_WEIGHT"
+    ORDERS = "ORDERS"
+    RAW_REQUESTS = "RAW_REQUESTS"
+
+
+@unique
+class BinanceRateLimitInterval(Enum):
+    """Represents a `Binance` rate limit interval."""
+
+    SECOND = "SECOND"
+    MINUTE = "MINUTE"
+    DAY = "DAY"
+
+
+@unique
+class BinanceExchangeFilterType(Enum):
+    """Represents a `Binance` exchange filter type."""
+
+    EXCHANGE_MAX_NUM_ORDERS = "EXCHANGE_MAX_NUM_ORDERS"
+    EXCHANGE_MAX_NUM_ALGO_ORDERS = "EXCHANGE_MAX_NUM_ALGO_ORDERS"
+
+
+@unique
+class BinanceSymbolFilterType(Enum):
+    """Represents a `Binance` symbol filter type."""
+
+    PRICE_FILTER = "PRICE_FILTER"
+    PERCENT_PRICE = "PERCENT_PRICE"
+    PERCENT_PRICE_BY_SIDE = "PERCENT_PRICE_BY_SIDE"
+    LOT_SIZE = "LOT_SIZE"
+    MIN_NOTIONAL = "MIN_NOTIONAL"
+    ICEBERG_PARTS = "ICEBERG_PARTS"
+    MARKET_LOT_SIZE = "MARKET_LOT_SIZE"
+    MAX_NUM_ORDERS = "MAX_NUM_ORDERS"
+    MAX_NUM_ALGO_ORDERS = "MAX_NUM_ALGO_ORDERS"
+    MAX_NUM_ICEBERG_ORDERS = "MAX_NUM_ICEBERG_ORDERS"
+    MAX_POSITION = "MAX_POSITION"
+
+
+@unique
+class BinancePermissions(Enum):
+    """Represents `Binance` trading market permissions."""
+
+    SPOT = "SPOT"
+    MARGIN = "MARGIN"
+    LEVERAGED = "LEVERAGED"
+    TRD_GRP_002 = "TRD_GRP_002"
+    TRD_GRP_003 = "TRD_GRP_003"
+
+
 @unique
 class BinanceAccountType(Enum):
     """Represents a `Binance` account type."""
@@ -37,6 +101,19 @@ class BinanceAccountType(Enum):
     @property
     def is_futures(self) -> bool:
         return self in (BinanceAccountType.FUTURES_USDT, BinanceAccountType.FUTURES_COIN)
+
+
+@unique
+class BinanceSpotSymbolStatus(Enum):
+    """Represents a `Binance` spot symbol status."""
+
+    PRE_TRADING = "PRE_TRADING"
+    TRADING = "TRADING"
+    POST_TRADING = "POST_TRADING"
+    END_OF_DAY = "END_OF_DAY"
+    HALT = "HALT"
+    AUCTION_MATCH = "AUCTION_MATCH"
+    BREAK = "BREAK"
 
 
 @unique
@@ -77,7 +154,20 @@ class BinanceOrderStatus(Enum):
 
 
 @unique
-class BinanceOrderType(Enum):
+class BinanceSpotOrderType(Enum):
+    """Represents a `Binance` trigger price type."""
+
+    LIMIT = "LIMIT"
+    MARKET = "MARKET"
+    STOP_LOSS = "STOP_LOSS"
+    STOP_LOSS_LIMIT = "STOP_LOSS_LIMIT"
+    TAKE_PROFIT = "TAKE_PROFIT"
+    TAKE_PROFIT_LIMIT = "TAKE_PROFIT_LIMIT"
+    LIMIT_MAKER = "LIMIT_MAKER"
+
+
+@unique
+class BinanceFuturesOrderType(Enum):
     """Represents a `Binance` trigger price type."""
 
     LIMIT = "LIMIT"

@@ -15,7 +15,7 @@
 from decimal import Decimal
 from typing import Any, Dict, List
 
-from nautilus_trader.adapters.binance.messages.futures.order import BinanceFuturesOrderMsg
+from nautilus_trader.adapters.binance.futures.schemas.account import BinanceFuturesOrderMsg
 from nautilus_trader.adapters.binance.parsing.common import parse_balances_futures
 from nautilus_trader.adapters.binance.parsing.common import parse_balances_spot
 from nautilus_trader.adapters.binance.parsing.common import parse_margins

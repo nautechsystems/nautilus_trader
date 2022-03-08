@@ -480,8 +480,6 @@ class BinanceSpotExecutionClient(LiveExecutionClient):
         list[PositionStatusReport]
 
         """
-        self._log.info(f"Generating PositionStatusReports for {self.id}...")
-
         # Never cash positions
 
         return []

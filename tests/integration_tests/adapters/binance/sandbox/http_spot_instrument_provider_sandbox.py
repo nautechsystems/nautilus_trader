@@ -14,13 +14,11 @@
 # -------------------------------------------------------------------------------------------------
 
 import asyncio
-import json
 import os
 
 import pytest
 
 from nautilus_trader.adapters.binance.factories import get_cached_binance_http_client
-from nautilus_trader.adapters.binance.spot.http.market import BinanceSpotMarketHttpAPI
 from nautilus_trader.adapters.binance.spot.providers import BinanceSpotInstrumentProvider
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.logging import Logger
@@ -39,10 +37,6 @@ async def test_binance_spot_market_http_client():
         secret=os.getenv("BINANCE_API_SECRET"),
     )
     await client.connect()
-
-    market = BinanceSpotMarketHttpAPI(client=client)
-    response = await market.exchange_info(symbols=["BTCUSDT", "ETHUSDT"])
-    print(json.dumps(response, indent=4))
 
     provider = BinanceSpotInstrumentProvider(
         client=client,

@@ -173,7 +173,7 @@ class BinanceHttpClient(HttpClient):
                     limit_usage[key] = resp.headers[key]
 
         try:
-            return orjson.loads(resp.data)
+            return resp.data
         except orjson.JSONDecodeError:
             self._log.error(f"Could not decode data to JSON: {resp.data}.")
 
