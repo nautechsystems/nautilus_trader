@@ -28,6 +28,7 @@ from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import Venue
 
 
+@pytest.mark.skip(reason="WIP")
 class TestBinanceInstrumentProvider:
     @pytest.mark.asyncio
     async def test_load_all_async_for_spot_markets(

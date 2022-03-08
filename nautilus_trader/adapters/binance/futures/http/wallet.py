@@ -15,6 +15,8 @@
 
 from typing import Dict, List, Optional
 
+import orjson
+
 from nautilus_trader.adapters.binance.http.client import BinanceHttpClient
 
 
@@ -63,8 +65,10 @@ class BinanceFuturesWalletHttpAPI:
         if recv_window is not None:
             payload["recv_window"] = str(recv_window)
 
-        return await self.client.sign_request(
+        raw: bytes = await self.client.sign_request(
             http_method="GET",
             url_path="/fapi/v1/commissionRate",
             payload=payload,
         )
+
+        return orjson.loads(raw)

@@ -30,9 +30,9 @@ from nautilus_trader.adapters.binance.futures.http.account import BinanceFutures
 from nautilus_trader.adapters.binance.futures.http.market import BinanceFuturesMarketHttpAPI
 from nautilus_trader.adapters.binance.futures.http.user import BinanceFuturesUserDataHttpAPI
 from nautilus_trader.adapters.binance.futures.providers import BinanceFuturesInstrumentProvider
+from nautilus_trader.adapters.binance.futures.schemas.account import BinanceFuturesOrderMsg
 from nautilus_trader.adapters.binance.http.client import BinanceHttpClient
 from nautilus_trader.adapters.binance.http.error import BinanceError
-from nautilus_trader.adapters.binance.messages.futures.order import BinanceFuturesOrderMsg
 from nautilus_trader.adapters.binance.parsing.common import binance_order_type_futures
 from nautilus_trader.adapters.binance.parsing.common import parse_order_type_futures
 from nautilus_trader.adapters.binance.parsing.http_exec import parse_account_balances_futures_http

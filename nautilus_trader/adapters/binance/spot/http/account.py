@@ -15,6 +15,8 @@
 
 from typing import Any, Dict, List, Optional
 
+import orjson
+
 from nautilus_trader.adapters.binance.core.functions import format_symbol
 from nautilus_trader.adapters.binance.http.client import BinanceHttpClient
 from nautilus_trader.adapters.binance.http.enums import NewOrderRespType
@@ -122,11 +124,13 @@ class BinanceSpotAccountHttpAPI:
         if recv_window is not None:
             payload["recvWindow"] = str(recv_window)
 
-        return await self.client.sign_request(
+        raw: bytes = await self.client.sign_request(
             http_method="POST",
             url_path=self.BASE_ENDPOINT + "order/test",
             payload=payload,
         )
+
+        return orjson.loads(raw)
 
     async def new_order(
         self,
@@ -213,11 +217,13 @@ class BinanceSpotAccountHttpAPI:
         if recv_window is not None:
             payload["recvWindow"] = str(recv_window)
 
-        return await self.client.sign_request(
+        raw: bytes = await self.client.sign_request(
             http_method="POST",
             url_path=self.BASE_ENDPOINT + "order",
             payload=payload,
         )
+
+        return orjson.loads(raw)
 
     async def cancel_order(
         self,
@@ -265,11 +271,13 @@ class BinanceSpotAccountHttpAPI:
         if recv_window is not None:
             payload["recvWindow"] = str(recv_window)
 
-        return await self.client.sign_request(
+        raw: bytes = await self.client.sign_request(
             http_method="DELETE",
             url_path=self.BASE_ENDPOINT + "order",
             payload=payload,
         )
+
+        return orjson.loads(raw)
 
     async def cancel_open_orders(
         self,
@@ -302,11 +310,13 @@ class BinanceSpotAccountHttpAPI:
         if recv_window is not None:
             payload["recvWindow"] = str(recv_window)
 
-        return await self.client.sign_request(
+        raw: bytes = await self.client.sign_request(
             http_method="DELETE",
             url_path=self.BASE_ENDPOINT + "openOrders",
             payload=payload,
         )
+
+        return orjson.loads(raw)
 
     async def get_order(
         self,
@@ -349,11 +359,13 @@ class BinanceSpotAccountHttpAPI:
         if recv_window is not None:
             payload["recvWindow"] = str(recv_window)
 
-        return await self.client.sign_request(
+        raw: bytes = await self.client.sign_request(
             http_method="GET",
             url_path=self.BASE_ENDPOINT + "order",
             payload=payload,
         )
+
+        return orjson.loads(raw)
 
     async def get_open_orders(
         self,
@@ -388,11 +400,13 @@ class BinanceSpotAccountHttpAPI:
         if recv_window is not None:
             payload["recvWindow"] = str(recv_window)
 
-        return await self.client.sign_request(
+        raw: bytes = await self.client.sign_request(
             http_method="GET",
             url_path=self.BASE_ENDPOINT + "openOrders",
             payload=payload,
         )
+
+        return orjson.loads(raw)
 
     async def get_orders(
         self,
@@ -445,11 +459,13 @@ class BinanceSpotAccountHttpAPI:
         if recv_window is not None:
             payload["recvWindow"] = str(recv_window)
 
-        return await self.client.sign_request(
+        raw: bytes = await self.client.sign_request(
             http_method="GET",
             url_path=self.BASE_ENDPOINT + "allOrders",
             payload=payload,
         )
+
+        return orjson.loads(raw)
 
     async def new_oco_order(
         self,
@@ -541,11 +557,13 @@ class BinanceSpotAccountHttpAPI:
         if recv_window is not None:
             payload["recvWindow"] = str(recv_window)
 
-        return await self.client.sign_request(
+        raw: bytes = await self.client.sign_request(
             http_method="POST",
             url_path=self.BASE_ENDPOINT + "order/oco",
             payload=payload,
         )
+
+        return orjson.loads(raw)
 
     async def cancel_oco_order(
         self,
@@ -595,11 +613,13 @@ class BinanceSpotAccountHttpAPI:
         if recv_window is not None:
             payload["recvWindow"] = str(recv_window)
 
-        return await self.client.sign_request(
+        raw: bytes = await self.client.sign_request(
             http_method="DELETE",
             url_path=self.BASE_ENDPOINT + "orderList",
             payload=payload,
         )
+
+        return orjson.loads(raw)
 
     async def get_oco_order(
         self,
@@ -641,11 +661,13 @@ class BinanceSpotAccountHttpAPI:
         if recv_window is not None:
             payload["recvWindow"] = str(recv_window)
 
-        return await self.client.sign_request(
+        raw: bytes = await self.client.sign_request(
             http_method="GET",
             url_path=self.BASE_ENDPOINT + "orderList",
             payload=payload,
         )
+
+        return orjson.loads(raw)
 
     async def get_oco_orders(
         self,
@@ -698,11 +720,13 @@ class BinanceSpotAccountHttpAPI:
         if recv_window is not None:
             payload["recvWindow"] = str(recv_window)
 
-        return await self.client.sign_request(
+        raw: bytes = await self.client.sign_request(
             http_method="GET",
             url_path=self.BASE_ENDPOINT + "allOrderList",
             payload=payload,
         )
+
+        return orjson.loads(raw)
 
     async def get_oco_open_orders(self, recv_window: Optional[int] = None) -> Dict[str, Any]:
         """
@@ -729,11 +753,13 @@ class BinanceSpotAccountHttpAPI:
         if recv_window is not None:
             payload["recvWindow"] = str(recv_window)
 
-        return await self.client.sign_request(
+        raw: bytes = await self.client.sign_request(
             http_method="GET",
             url_path=self.BASE_ENDPOINT + "openOrderList",
             payload=payload,
         )
+
+        return orjson.loads(raw)
 
     async def account(self, recv_window: Optional[int] = None) -> Dict[str, Any]:
         """
@@ -760,11 +786,13 @@ class BinanceSpotAccountHttpAPI:
         if recv_window is not None:
             payload["recvWindow"] = str(recv_window)
 
-        return await self.client.sign_request(
+        raw: bytes = await self.client.sign_request(
             http_method="GET",
             url_path=self.BASE_ENDPOINT + "account",
             payload=payload,
         )
+
+        return orjson.loads(raw)
 
     async def get_account_trades(
         self,
@@ -821,11 +849,13 @@ class BinanceSpotAccountHttpAPI:
         if recv_window is not None:
             payload["recvWindow"] = str(recv_window)
 
-        return await self.client.sign_request(
+        raw: bytes = await self.client.sign_request(
             http_method="GET",
             url_path=self.BASE_ENDPOINT + "myTrades",
             payload=payload,
         )
+
+        return orjson.loads(raw)
 
     async def get_order_rate_limit(self, recv_window: Optional[int] = None) -> Dict[str, Any]:
         """
@@ -852,8 +882,10 @@ class BinanceSpotAccountHttpAPI:
         if recv_window is not None:
             payload["recvWindow"] = str(recv_window)
 
-        return await self.client.sign_request(
+        raw: bytes = await self.client.sign_request(
             http_method="GET",
             url_path=self.BASE_ENDPOINT + "rateLimit/order",
             payload=payload,
         )
+
+        return orjson.loads(raw)

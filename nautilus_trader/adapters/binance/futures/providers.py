@@ -25,7 +25,6 @@ from nautilus_trader.adapters.binance.http.client import BinanceHttpClient
 from nautilus_trader.adapters.binance.http.error import BinanceClientError
 from nautilus_trader.adapters.binance.parsing.http_data import parse_future_instrument_http
 from nautilus_trader.adapters.binance.parsing.http_data import parse_perpetual_instrument_http
-from nautilus_trader.adapters.binance.parsing.http_data import parse_spot_instrument_http
 from nautilus_trader.common.config import InstrumentProviderConfig
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.common.providers import InstrumentProvider
@@ -201,42 +200,34 @@ class BinanceFuturesInstrumentProvider(InstrumentProvider):
         ts_event: int,
     ) -> None:
         contract_type_str = data.get("contractType")
-        if contract_type_str is None:  # SPOT
-            instrument = parse_spot_instrument_http(
+
+        if contract_type_str == "" and data.get("status") == "PENDING_TRADING":
+            return  # Not yet defined
+
+        contract_type = BinanceContractType(contract_type_str)
+        if contract_type == BinanceContractType.PERPETUAL:
+            instrument = parse_perpetual_instrument_http(
                 data=data,
-                fees=fees,
                 ts_event=ts_event,
                 ts_init=time.time_ns(),
             )
             self.add_currency(currency=instrument.base_currency)
-        else:
-            if contract_type_str == "" and data.get("status") == "PENDING_TRADING":
-                return  # Not yet defined
-
-            contract_type = BinanceContractType(contract_type_str)
-            if contract_type == BinanceContractType.PERPETUAL:
-                instrument = parse_perpetual_instrument_http(
-                    data=data,
-                    ts_event=ts_event,
-                    ts_init=time.time_ns(),
-                )
-                self.add_currency(currency=instrument.base_currency)
-            elif contract_type in (
-                BinanceContractType.CURRENT_MONTH,
-                BinanceContractType.CURRENT_QUARTER,
-                BinanceContractType.NEXT_MONTH,
-                BinanceContractType.NEXT_QUARTER,
-            ):
-                instrument = parse_future_instrument_http(
-                    data=data,
-                    ts_event=ts_event,
-                    ts_init=time.time_ns(),
-                )
-                self.add_currency(currency=instrument.underlying)
-            else:  # pragma: no cover (design-time error)
-                raise RuntimeError(
-                    f"invalid BinanceContractType, was {contract_type}",
-                )
+        elif contract_type in (
+            BinanceContractType.CURRENT_MONTH,
+            BinanceContractType.CURRENT_QUARTER,
+            BinanceContractType.NEXT_MONTH,
+            BinanceContractType.NEXT_QUARTER,
+        ):
+            instrument = parse_future_instrument_http(
+                data=data,
+                ts_event=ts_event,
+                ts_init=time.time_ns(),
+            )
+            self.add_currency(currency=instrument.underlying)
+        else:  # pragma: no cover (design-time error)
+            raise RuntimeError(
+                f"invalid BinanceContractType, was {contract_type}",
+            )
 
         self.add_currency(currency=instrument.quote_currency)
         self.add(instrument=instrument)

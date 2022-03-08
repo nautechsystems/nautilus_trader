@@ -1,12 +1,5 @@
-[
-  {
-    "symbol": "BTCUSDT",
-    "makerCommission": "0.001",
-    "takerCommission": "0.001"
-  },
-  {
-    "symbol": "ETHUSDT",
-    "makerCommission": "0.001",
-    "takerCommission": "0.001"
-  }
-]
+{
+  "symbol": "BTCUSDT",
+  "makerCommission": "0.001",
+  "takerCommission": "0.001"
+}
