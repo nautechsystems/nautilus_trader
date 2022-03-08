@@ -23,7 +23,7 @@ import pytest
 from nautilus_trader.adapters.binance.core.constants import BINANCE_VENUE
 from nautilus_trader.adapters.binance.data import BinanceDataClient
 from nautilus_trader.adapters.binance.http.client import BinanceHttpClient
-from nautilus_trader.adapters.binance.providers import BinanceInstrumentProvider
+from nautilus_trader.adapters.binance.spot.providers import BinanceSpotInstrumentProvider
 from nautilus_trader.backtest.data.providers import TestInstrumentProvider
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.config import InstrumentProviderConfig
@@ -39,7 +39,8 @@ from nautilus_trader.model.identifiers import TradeId
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.msgbus.bus import MessageBus
-from tests.test_kit.stubs import TestStubs
+from tests.test_kit.stubs.component import TestComponentStubs
+from tests.test_kit.stubs.identifiers import TestIdStubs
 
 
 ETHUSDT_BINANCE = TestInstrumentProvider.ethusdt_binance()
@@ -55,7 +56,7 @@ class TestBinanceDataClient:
         self.uuid_factory = UUIDFactory()
         self.logger = Logger(clock=self.clock)
 
-        self.trader_id = TestStubs.trader_id()
+        self.trader_id = TestIdStubs.trader_id()
         self.venue = BINANCE_VENUE
         self.account_id = AccountId(self.venue.value, "001")
 
@@ -65,7 +66,7 @@ class TestBinanceDataClient:
             logger=self.logger,
         )
 
-        self.cache = TestStubs.cache()
+        self.cache = TestComponentStubs.cache()
 
         self.http_client = BinanceHttpClient(  # noqa: S106 (no hardcoded password)
             loop=asyncio.get_event_loop(),
@@ -75,7 +76,7 @@ class TestBinanceDataClient:
             secret="SOME_BINANCE_API_SECRET",
         )
 
-        self.provider = BinanceInstrumentProvider(
+        self.provider = BinanceSpotInstrumentProvider(
             client=self.http_client,
             logger=self.logger,
             config=InstrumentProviderConfig(load_all=True),

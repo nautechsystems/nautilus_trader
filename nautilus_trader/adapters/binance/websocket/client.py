@@ -11,9 +11,6 @@
 #  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
-#
-#  Heavily refactored from MIT licensed github.com/binance/binance-connector-python
-#  Original author: Jeremy https://github.com/2pd
 # -------------------------------------------------------------------------------------------------
 
 import asyncio
@@ -51,6 +48,10 @@ class BinanceWebSocketClient(WebSocketClient):
 
         self._clock = clock
         self._streams: List[str] = []
+
+    @property
+    def base_url(self) -> str:
+        return self._base_url
 
     @property
     def subscriptions(self):

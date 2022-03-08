@@ -23,7 +23,7 @@ which can be used together or separately depending on the users needs.
 - `BinanceLiveDataClientFactory` creation factory for Binance data clients (used by the trading node builder)
 - `BinanceLiveExecClientFactory` creation factory for Binance execution clients (used by the trading node builder)
 
-```{notes}
+```{note}
 Most users will simply define a configuration for a live trading node (as below), 
 and won't need to necessarily work with these lower level components individually.
 ```

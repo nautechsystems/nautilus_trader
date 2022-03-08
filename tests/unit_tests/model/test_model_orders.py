@@ -51,7 +51,8 @@ from nautilus_trader.model.orders.market_to_limit import MarketToLimitOrder
 from nautilus_trader.model.orders.stop_limit import StopLimitOrder
 from nautilus_trader.model.orders.stop_market import StopMarketOrder
 from tests.test_kit.stubs import UNIX_EPOCH
-from tests.test_kit.stubs import TestStubs
+from tests.test_kit.stubs.events import TestEventStubs
+from tests.test_kit.stubs.identifiers import TestIdStubs
 
 
 AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy("AUD/USD")
@@ -60,9 +61,9 @@ AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy("AUD/USD")
 class TestOrders:
     def setup(self):
         # Fixture Setup
-        self.trader_id = TestStubs.trader_id()
-        self.strategy_id = TestStubs.strategy_id()
-        self.account_id = TestStubs.account_id()
+        self.trader_id = TestIdStubs.trader_id()
+        self.strategy_id = TestIdStubs.strategy_id()
+        self.account_id = TestIdStubs.account_id()
 
         self.order_factory = OrderFactory(
             trader_id=self.trader_id,
@@ -186,7 +187,7 @@ class TestOrders:
                 ClientOrderId("O-123456"),
                 OrderSide.BUY,
                 Quantity.from_int(100000),
-                TimeInForce.ON_CLOSE,  # <-- invalid
+                TimeInForce.AT_THE_CLOSE,  # <-- invalid
                 None,
                 UUID4(),
                 0,
@@ -201,9 +202,9 @@ class TestOrders:
             Price.from_str("1.00000"),
         )
 
-        order.apply(TestStubs.event_order_submitted(order))
-        order.apply(TestStubs.event_order_accepted(order))
-        over_fill = TestStubs.event_order_filled(
+        order.apply(TestEventStubs.order_submitted(order))
+        order.apply(TestEventStubs.order_accepted(order))
+        over_fill = TestEventStubs.order_filled(
             order, instrument=AUDUSD_SIM, last_qty=Quantity.from_int(110000)  # <-- overfill
         )
 
@@ -1337,7 +1338,7 @@ class TestOrders:
             Quantity.from_int(100000),
         )
 
-        submitted = TestStubs.event_order_submitted(order)
+        submitted = TestEventStubs.order_submitted(order)
 
         # Act
         order.apply(submitted)
@@ -1360,10 +1361,10 @@ class TestOrders:
             Quantity.from_int(100000),
         )
 
-        order.apply(TestStubs.event_order_submitted(order))
+        order.apply(TestEventStubs.order_submitted(order))
 
         # Act
-        order.apply(TestStubs.event_order_accepted(order))
+        order.apply(TestEventStubs.order_accepted(order))
 
         # Assert
         assert order.status == OrderStatus.ACCEPTED
@@ -1387,10 +1388,10 @@ class TestOrders:
             Quantity.from_int(100000),
         )
 
-        order.apply(TestStubs.event_order_submitted(order))
+        order.apply(TestEventStubs.order_submitted(order))
 
         # Act
-        order.apply(TestStubs.event_order_rejected(order))
+        order.apply(TestEventStubs.order_rejected(order))
 
         # Assert
         assert order.status == OrderStatus.REJECTED
@@ -1409,11 +1410,11 @@ class TestOrders:
             expire_time=UNIX_EPOCH + timedelta(minutes=1),
         )
 
-        order.apply(TestStubs.event_order_submitted(order))
-        order.apply(TestStubs.event_order_accepted(order))
+        order.apply(TestEventStubs.order_submitted(order))
+        order.apply(TestEventStubs.order_accepted(order))
 
         # Act
-        order.apply(TestStubs.event_order_expired(order))
+        order.apply(TestEventStubs.order_expired(order))
 
         # Assert
         assert order.status == OrderStatus.EXPIRED
@@ -1433,11 +1434,11 @@ class TestOrders:
             expire_time=UNIX_EPOCH + timedelta(minutes=1),
         )
 
-        order.apply(TestStubs.event_order_submitted(order))
-        order.apply(TestStubs.event_order_accepted(order))
+        order.apply(TestEventStubs.order_submitted(order))
+        order.apply(TestEventStubs.order_accepted(order))
 
         # Act
-        order.apply(TestStubs.event_order_triggered(order))
+        order.apply(TestEventStubs.order_triggered(order))
 
         # Assert
         assert order.status == OrderStatus.TRIGGERED
@@ -1453,11 +1454,11 @@ class TestOrders:
             Quantity.from_int(100000),
         )
 
-        order.apply(TestStubs.event_order_submitted(order))
-        order.apply(TestStubs.event_order_accepted(order))
+        order.apply(TestEventStubs.order_submitted(order))
+        order.apply(TestEventStubs.order_accepted(order))
 
         # Act
-        order.apply(TestStubs.event_order_pending_cancel(order))
+        order.apply(TestEventStubs.order_pending_cancel(order))
 
         # Assert
         assert order.status == OrderStatus.PENDING_CANCEL
@@ -1476,12 +1477,12 @@ class TestOrders:
             Quantity.from_int(100000),
         )
 
-        order.apply(TestStubs.event_order_submitted(order))
-        order.apply(TestStubs.event_order_accepted(order))
-        order.apply(TestStubs.event_order_pending_cancel(order))
+        order.apply(TestEventStubs.order_submitted(order))
+        order.apply(TestEventStubs.order_accepted(order))
+        order.apply(TestEventStubs.order_pending_cancel(order))
 
         # Act
-        order.apply(TestStubs.event_order_canceled(order))
+        order.apply(TestEventStubs.order_canceled(order))
 
         # Assert
         assert order.status == OrderStatus.CANCELED
@@ -1500,11 +1501,11 @@ class TestOrders:
             Quantity.from_int(100000),
         )
 
-        order.apply(TestStubs.event_order_submitted(order))
-        order.apply(TestStubs.event_order_accepted(order))
+        order.apply(TestEventStubs.order_submitted(order))
+        order.apply(TestEventStubs.order_accepted(order))
 
         # Act
-        order.apply(TestStubs.event_order_pending_update(order))
+        order.apply(TestEventStubs.order_pending_update(order))
 
         # Assert
         assert order.status == OrderStatus.PENDING_UPDATE
@@ -1524,9 +1525,9 @@ class TestOrders:
             Price.from_str("1.00000"),
         )
 
-        order.apply(TestStubs.event_order_submitted(order))
-        order.apply(TestStubs.event_order_accepted(order))
-        order.apply(TestStubs.event_order_pending_update(order))
+        order.apply(TestEventStubs.order_submitted(order))
+        order.apply(TestEventStubs.order_accepted(order))
+        order.apply(TestEventStubs.order_pending_update(order))
 
         updated = OrderUpdated(
             order.trader_id,
@@ -1565,9 +1566,9 @@ class TestOrders:
             Price.from_str("1.00000"),
         )
 
-        order.apply(TestStubs.event_order_submitted(order))
-        order.apply(TestStubs.event_order_accepted(order))
-        order.apply(TestStubs.event_order_pending_update(order))
+        order.apply(TestEventStubs.order_submitted(order))
+        order.apply(TestEventStubs.order_accepted(order))
+        order.apply(TestEventStubs.order_pending_update(order))
 
         updated = OrderUpdated(
             order.trader_id,
@@ -1599,10 +1600,10 @@ class TestOrders:
             Quantity.from_int(100000),
         )
 
-        order.apply(TestStubs.event_order_submitted(order))
-        order.apply(TestStubs.event_order_accepted(order))
+        order.apply(TestEventStubs.order_submitted(order))
+        order.apply(TestEventStubs.order_accepted(order))
 
-        filled = TestStubs.event_order_filled(
+        filled = TestEventStubs.order_filled(
             order,
             instrument=AUDUSD_SIM,
             position_id=PositionId("P-123456"),
@@ -1632,10 +1633,10 @@ class TestOrders:
             Quantity.from_int(100000),
         )
 
-        order.apply(TestStubs.event_order_submitted(order))
-        order.apply(TestStubs.event_order_accepted(order))
+        order.apply(TestEventStubs.order_submitted(order))
+        order.apply(TestEventStubs.order_accepted(order))
 
-        filled = TestStubs.event_order_filled(
+        filled = TestEventStubs.order_filled(
             order,
             instrument=AUDUSD_SIM,
             position_id=PositionId("P-123456"),
@@ -1666,10 +1667,10 @@ class TestOrders:
             Quantity.from_int(100000),
         )
 
-        order.apply(TestStubs.event_order_submitted(order))
-        order.apply(TestStubs.event_order_accepted(order))
+        order.apply(TestEventStubs.order_submitted(order))
+        order.apply(TestEventStubs.order_accepted(order))
 
-        fill1 = TestStubs.event_order_filled(
+        fill1 = TestEventStubs.order_filled(
             order,
             instrument=AUDUSD_SIM,
             trade_id=TradeId("1"),
@@ -1679,7 +1680,7 @@ class TestOrders:
             last_qty=Quantity.from_int(20000),
         )
 
-        fill2 = TestStubs.event_order_filled(
+        fill2 = TestEventStubs.order_filled(
             order,
             instrument=AUDUSD_SIM,
             trade_id=TradeId("2"),
@@ -1712,10 +1713,10 @@ class TestOrders:
             Quantity.from_int(100000),
         )
 
-        order.apply(TestStubs.event_order_submitted(order))
-        order.apply(TestStubs.event_order_accepted(order))
+        order.apply(TestEventStubs.order_submitted(order))
+        order.apply(TestEventStubs.order_accepted(order))
 
-        fill1 = TestStubs.event_order_filled(
+        fill1 = TestEventStubs.order_filled(
             order,
             instrument=AUDUSD_SIM,
             trade_id=TradeId("1"),
@@ -1725,7 +1726,7 @@ class TestOrders:
             last_qty=Quantity.from_int(20000),
         )
 
-        fill2 = TestStubs.event_order_filled(
+        fill2 = TestEventStubs.order_filled(
             order,
             instrument=AUDUSD_SIM,
             trade_id=TradeId("2"),
@@ -1735,7 +1736,7 @@ class TestOrders:
             last_qty=Quantity.from_int(40000),
         )
 
-        fill3 = TestStubs.event_order_filled(
+        fill3 = TestEventStubs.order_filled(
             order,
             instrument=AUDUSD_SIM,
             trade_id=TradeId("3"),
@@ -1769,8 +1770,8 @@ class TestOrders:
             Price.from_str("1.00000"),
         )
 
-        order.apply(TestStubs.event_order_submitted(order))
-        order.apply(TestStubs.event_order_accepted(order))
+        order.apply(TestEventStubs.order_submitted(order))
+        order.apply(TestEventStubs.order_accepted(order))
 
         filled = OrderFilled(
             order.trader_id,
@@ -1816,8 +1817,8 @@ class TestOrders:
             Price.from_str("1.00000"),
         )
 
-        order.apply(TestStubs.event_order_submitted(order))
-        order.apply(TestStubs.event_order_accepted(order))
+        order.apply(TestEventStubs.order_submitted(order))
+        order.apply(TestEventStubs.order_accepted(order))
 
         partially = OrderFilled(
             order.trader_id,

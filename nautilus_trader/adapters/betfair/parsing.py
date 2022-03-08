@@ -127,7 +127,7 @@ def _make_limit_order(order: Union[LimitOrder, MarketOrder]):
     price = str(float(_probability_to_price(probability=order.price, side=order.side)))
     size = _order_quantity_to_stake(quantity=order.quantity)
 
-    if order.time_in_force == TimeInForce.ON_CLOSE:
+    if order.time_in_force == TimeInForce.AT_THE_CLOSE:
         return {
             "orderType": "LIMIT_ON_CLOSE",
             "limitOnCloseOrder": {"price": price, "liability": size},
@@ -146,7 +146,7 @@ def _make_limit_order(order: Union[LimitOrder, MarketOrder]):
 
 
 def _make_market_order(order: Union[LimitOrder, MarketOrder]):
-    if order.time_in_force == TimeInForce.ON_CLOSE:
+    if order.time_in_force == TimeInForce.AT_THE_CLOSE:
         return {
             "orderType": "MARKET_ON_CLOSE",
             "marketOnCloseOrder": {

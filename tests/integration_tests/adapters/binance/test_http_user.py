@@ -17,8 +17,8 @@ import asyncio
 
 import pytest
 
-from nautilus_trader.adapters.binance.http.api.user import BinanceUserDataHttpAPI
 from nautilus_trader.adapters.binance.http.client import BinanceHttpClient
+from nautilus_trader.adapters.binance.spot.http.user import BinanceSpotUserDataHttpAPI
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.logging import Logger
 
@@ -36,7 +36,7 @@ class TestBinanceUserHttpAPI:
             secret="SOME_BINANCE_API_SECRET",
         )
 
-        self.api = BinanceUserDataHttpAPI(self.client)
+        self.api = BinanceSpotUserDataHttpAPI(self.client)
 
     @pytest.mark.asyncio
     async def test_create_listen_key_spot(self, mocker):
@@ -79,7 +79,7 @@ class TestBinanceUserHttpAPI:
         mock_send_request = mocker.patch(target="aiohttp.client.ClientSession.request")
 
         # Act
-        await self.api.close_listen_key_spot(
+        await self.api.close_listen_key(
             key="JUdsZc8CSmMUxg1wJha23RogrT3EuC8eV5UTbAOVTkF3XWofMzWoXtWmDAhy"
         )
 

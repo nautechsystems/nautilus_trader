@@ -145,7 +145,7 @@ cdef class OrderFactory:
             The orders side.
         quantity : Quantity
             The orders quantity (> 0).
-        time_in_force : TimeInForce {``GTC``, ``IOC``, ``FOK``, ``DAY``, ``ON_OPEN``, ``ON_CLOSE``}, default ``GTC``
+        time_in_force : TimeInForce {``GTC``, ``IOC``, ``FOK``, ``DAY``, ``AT_THE_OPEN``, ``AT_THE_CLOSE``}, default ``GTC``
             The orders time in force. Often not applicable for market orders.
         reduce_only : bool, default False
             If the order carries the 'reduce-only' execution instruction.
@@ -209,7 +209,7 @@ cdef class OrderFactory:
             The orders quantity (> 0).
         price : Price
             The orders price.
-        time_in_force : TimeInForce {``GTC``, ``IOC``, ``FOK``, ``GTD``, ``DAY``, ``ON_OPEN``, ``ON_CLOSE``}, default ``GTC``
+        time_in_force : TimeInForce {``GTC``, ``IOC``, ``FOK``, ``GTD``, ``DAY``, ``AT_THE_OPEN``, ``AT_THE_CLOSE``}, default ``GTC``
             The orders time in force.
         expire_time : datetime, optional
             The order expiration (for ``GTD`` orders).
@@ -307,7 +307,7 @@ cdef class OrderFactory:
         ValueError
             If `trigger_type` is ``NONE``.
         ValueError
-            If `time_in_force` is ``ON_OPEN`` or ``ON_CLOSE``.
+            If `time_in_force` is ``AT_THE_OPEN`` or ``AT_THE_CLOSE``.
         ValueError
             If `time_in_force` is ``GTD`` and `expire_time` is ``None`` or <= UNIX epoch.
 
@@ -390,7 +390,7 @@ cdef class OrderFactory:
         ValueError
             If `trigger_type` is ``NONE``.
         ValueError
-            If `time_in_force` is ``ON_OPEN`` or ``ON_CLOSE``.
+            If `time_in_force` is ``AT_THE_OPEN`` or ``AT_THE_CLOSE``.
         ValueError
             If `time_in_force` is ``GTD`` and `expire_time` is ``None`` or <= UNIX epoch.
         ValueError
@@ -464,7 +464,7 @@ cdef class OrderFactory:
         ValueError
             If `quantity` is not positive (> 0).
         ValueError
-            If `time_in_force` is ``ON_OPEN`` or ``ON_CLOSE``.
+            If `time_in_force` is ``AT_THE_OPEN`` or ``AT_THE_CLOSE``.
 
         """
         return MarketToLimitOrder(
@@ -535,7 +535,7 @@ cdef class OrderFactory:
         ValueError
             If `trigger_type` is ``NONE``.
         ValueError
-            If `time_in_force` is ``ON_OPEN`` or ``ON_CLOSE``.
+            If `time_in_force` is ``AT_THE_OPEN`` or ``AT_THE_CLOSE``.
         ValueError
             If `time_in_force` is ``GTD`` and `expire_time` is ``None`` or <= UNIX epoch.
 
@@ -618,7 +618,7 @@ cdef class OrderFactory:
         ValueError
             If `trigger_type` is ``NONE``.
         ValueError
-            If `time_in_force` is ``ON_OPEN`` or ``ON_CLOSE``.
+            If `time_in_force` is ``AT_THE_OPEN`` or ``AT_THE_CLOSE``.
         ValueError
             If `time_in_force` is ``GTD`` and `expire_time` is ``None`` or <= UNIX epoch.
         ValueError
@@ -706,7 +706,7 @@ cdef class OrderFactory:
         ValueError
             If `offset_type` is ``NONE``.
         ValueError
-            If `time_in_force` is ``ON_OPEN`` or ``ON_CLOSE``.
+            If `time_in_force` is ``AT_THE_OPEN`` or ``AT_THE_CLOSE``.
         ValueError
             If `time_in_force` is ``GTD`` and `expire_time` is ``None`` or <= UNIX epoch.
 
@@ -804,7 +804,7 @@ cdef class OrderFactory:
         ValueError
             If `offset_type` is ``NONE``.
         ValueError
-            If `time_in_force` is ``ON_OPEN`` or ``ON_CLOSE``.
+            If `time_in_force` is ``AT_THE_OPEN`` or ``AT_THE_CLOSE``.
         ValueError
             If `time_in_force` is ``GTD`` and `expire_time` is ``None`` or <= UNIX epoch.
         ValueError

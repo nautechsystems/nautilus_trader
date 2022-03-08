@@ -46,10 +46,11 @@ from nautilus_trader.persistence.external.core import write_tables
 from nautilus_trader.persistence.external.readers import CSVReader
 from tests.integration_tests.adapters.betfair.test_kit import BetfairTestStubs
 from tests.test_kit import PACKAGE_ROOT
-from tests.test_kit.mocks import MockReader
-from tests.test_kit.mocks import NewsEventData
-from tests.test_kit.mocks import data_catalog_setup
-from tests.test_kit.stubs import TestStubs
+from tests.test_kit.mocks.data import MockReader
+from tests.test_kit.mocks.data import NewsEventData
+from tests.test_kit.mocks.data import data_catalog_setup
+from tests.test_kit.stubs.identifiers import TestIdStubs
+from tests.test_kit.stubs.persistence import TestPersistenceStubs
 from tests.unit_tests.backtest.test_backtest_config import TEST_DATA_DIR
 
 
@@ -271,7 +272,7 @@ class TestPersistenceCore:
     ):
         # Arrange
         quote = QuoteTick(
-            instrument_id=TestStubs.audusd_id(),
+            instrument_id=TestIdStubs.audusd_id(),
             bid=Price.from_str("0.80"),
             ask=Price.from_str("0.81"),
             bid_size=Quantity.from_int(1000),
@@ -481,10 +482,10 @@ class TestPersistenceCore:
 
     def test_split_and_serialize_generic_data_gets_correct_class(self):
         # Arrange
-        TestStubs.setup_news_event_persistence()
+        TestPersistenceStubs.setup_news_event_persistence()
         process_files(
             glob_path=f"{TEST_DATA_DIR}/news_events.csv",
-            reader=CSVReader(block_parser=TestStubs.news_event_parser),
+            reader=CSVReader(block_parser=TestPersistenceStubs.news_event_parser),
             catalog=self.catalog,
         )
         objs = self.catalog.generic_data(
@@ -501,10 +502,10 @@ class TestPersistenceCore:
 
     def test_catalog_generic_data_not_overwritten(self):
         # Arrange
-        TestStubs.setup_news_event_persistence()
+        TestPersistenceStubs.setup_news_event_persistence()
         process_files(
             glob_path=f"{TEST_DATA_DIR}/news_events.csv",
-            reader=CSVReader(block_parser=TestStubs.news_event_parser),
+            reader=CSVReader(block_parser=TestPersistenceStubs.news_event_parser),
             catalog=self.catalog,
         )
         objs = self.catalog.generic_data(

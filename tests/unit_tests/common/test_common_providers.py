@@ -17,11 +17,11 @@ from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.common.providers import InstrumentProvider
 from nautilus_trader.model.identifiers import Venue
-from tests.test_kit.stubs import TestStubs
+from tests.test_kit.stubs.identifiers import TestIdStubs
 
 
 BITMEX = Venue("BITMEX")
-AUDUSD = TestStubs.audusd_id()
+AUDUSD = TestIdStubs.audusd_id()
 
 
 class TestInstrumentProvider:

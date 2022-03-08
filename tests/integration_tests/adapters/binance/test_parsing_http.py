@@ -17,7 +17,7 @@ import pkgutil
 
 import orjson
 
-from nautilus_trader.adapters.binance.parsing.websocket import parse_book_snapshot_ws
+from nautilus_trader.adapters.binance.parsing.common import parse_book_snapshot
 from nautilus_trader.backtest.data.providers import TestInstrumentProvider
 
 
@@ -34,7 +34,7 @@ class TestBinanceHttpParsing:
         response = orjson.loads(data)
 
         # Act
-        result = parse_book_snapshot_ws(
+        result = parse_book_snapshot(
             instrument_id=ETHUSDT.id,
             msg=response,
             update_id=1,

@@ -994,8 +994,8 @@ class TestTimeInForce:
             [TimeInForce.FOK, "FOK"],
             [TimeInForce.GTD, "GTD"],
             [TimeInForce.DAY, "DAY"],
-            [TimeInForce.ON_OPEN, "ON_OPEN"],
-            [TimeInForce.ON_CLOSE, "ON_CLOSE"],
+            [TimeInForce.AT_THE_OPEN, "AT_THE_OPEN"],
+            [TimeInForce.AT_THE_CLOSE, "AT_THE_CLOSE"],
         ],
     )
     def test_time_in_force_to_str(self, enum, expected):
@@ -1013,8 +1013,8 @@ class TestTimeInForce:
             ["FOK", TimeInForce.FOK],
             ["GTD", TimeInForce.GTD],
             ["DAY", TimeInForce.DAY],
-            ["ON_OPEN", TimeInForce.ON_OPEN],
-            ["ON_CLOSE", TimeInForce.ON_CLOSE],
+            ["AT_THE_OPEN", TimeInForce.AT_THE_OPEN],
+            ["AT_THE_CLOSE", TimeInForce.AT_THE_CLOSE],
         ],
     )
     def test_time_in_force_from_str(self, string, expected):

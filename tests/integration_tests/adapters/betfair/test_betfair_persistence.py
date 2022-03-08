@@ -22,7 +22,7 @@ from nautilus_trader.persistence.external.core import RawFile
 from nautilus_trader.persistence.external.core import process_raw_file
 from tests.integration_tests.adapters.betfair.test_kit import BetfairTestStubs
 from tests.test_kit import PACKAGE_ROOT
-from tests.test_kit.mocks import data_catalog_setup
+from tests.test_kit.mocks.data import data_catalog_setup
 
 
 class TestBetfairPersistence:

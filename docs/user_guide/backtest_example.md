@@ -215,7 +215,7 @@ for params in PARAM_SET:
 print("\n\n".join(map(str, configs)))
 ```
 
-# Run the backtest
+## Run the backtest
 
 Finally, we can create a BacktestNode and run the backtest:
 

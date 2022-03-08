@@ -44,10 +44,13 @@ from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.msgbus.bus import MessageBus
 from nautilus_trader.trading.filters import NewsEvent
 from nautilus_trader.trading.filters import NewsImpact
-from tests.test_kit.mocks import KaboomActor
-from tests.test_kit.mocks import MockActor
+from tests.test_kit.mocks.actors import KaboomActor
+from tests.test_kit.mocks.actors import MockActor
 from tests.test_kit.stubs import UNIX_EPOCH
-from tests.test_kit.stubs import TestStubs
+from tests.test_kit.stubs.component import TestComponentStubs
+from tests.test_kit.stubs.data import TestDataStubs
+from tests.test_kit.stubs.events import TestEventStubs
+from tests.test_kit.stubs.identifiers import TestIdStubs
 
 
 AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy("AUD/USD")
@@ -65,8 +68,8 @@ class TestActor:
             level_stdout=LogLevel.DEBUG,
         )
 
-        self.trader_id = TestStubs.trader_id()
-        self.account_id = TestStubs.account_id()
+        self.trader_id = TestIdStubs.trader_id()
+        self.account_id = TestIdStubs.account_id()
         self.component_id = "MyComponent-001"
 
         self.msgbus = MessageBus(
@@ -75,7 +78,7 @@ class TestActor:
             logger=self.logger,
         )
 
-        self.cache = TestStubs.cache()
+        self.cache = TestComponentStubs.cache()
 
         self.data_engine = DataEngine(
             msgbus=self.msgbus,
@@ -186,7 +189,7 @@ class TestActor:
         # Arrange
         actor = Actor(config=ActorConfig(component_id=self.component_id))
 
-        event = TestStubs.event_cash_account_state()
+        event = TestEventStubs.cash_account_state()
 
         # Act
         actor.handle_event(event)
@@ -279,7 +282,7 @@ class TestActor:
         actor = Actor(config=ActorConfig(component_id=self.component_id))
 
         # Act
-        actor.on_order_book(TestStubs.order_book())
+        actor.on_order_book(TestDataStubs.order_book())
 
         # Assert
         assert True  # Exception not raised
@@ -289,7 +292,7 @@ class TestActor:
         actor = Actor(config=ActorConfig(component_id=self.component_id))
 
         # Act
-        actor.on_order_book_delta(TestStubs.order_book_snapshot())
+        actor.on_order_book_delta(TestDataStubs.order_book_snapshot())
 
         # Assert
         assert True  # Exception not raised
@@ -299,7 +302,7 @@ class TestActor:
         actor = Actor(config=ActorConfig(component_id=self.component_id))
 
         # Act
-        actor.on_ticker(TestStubs.ticker())
+        actor.on_ticker(TestDataStubs.ticker())
 
         # Assert
         assert True  # Exception not raised
@@ -309,7 +312,7 @@ class TestActor:
         actor = Actor(config=ActorConfig(component_id=self.component_id))
 
         # Act
-        actor.on_venue_status_update(TestStubs.venue_status_update())
+        actor.on_venue_status_update(TestDataStubs.venue_status_update())
 
         # Assert
         assert True  # Exception not raised
@@ -319,7 +322,7 @@ class TestActor:
         actor = Actor(config=ActorConfig(component_id=self.component_id))
 
         # Act
-        actor.on_instrument_status_update(TestStubs.instrument_status_update())
+        actor.on_instrument_status_update(TestDataStubs.instrument_status_update())
 
         # Assert
         assert True  # Exception not raised
@@ -329,7 +332,7 @@ class TestActor:
         actor = Actor(config=ActorConfig(component_id=self.component_id))
 
         # Act
-        actor.on_event(TestStubs.event_cash_account_state())
+        actor.on_event(TestEventStubs.cash_account_state())
 
         # Assert
         assert True  # Exception not raised
@@ -338,7 +341,7 @@ class TestActor:
         # Arrange
         actor = Actor(config=ActorConfig(component_id=self.component_id))
 
-        tick = TestStubs.quote_tick_5decimal()
+        tick = TestDataStubs.quote_tick_5decimal()
 
         # Act
         actor.on_quote_tick(tick)
@@ -350,7 +353,7 @@ class TestActor:
         # Arrange
         actor = Actor(config=ActorConfig(component_id=self.component_id))
 
-        tick = TestStubs.trade_tick_5decimal()
+        tick = TestDataStubs.trade_tick_5decimal()
 
         # Act
         actor.on_trade_tick(tick)
@@ -362,7 +365,7 @@ class TestActor:
         # Arrange
         actor = Actor(config=ActorConfig(component_id=self.component_id))
 
-        bar = TestStubs.bar_5decimal()
+        bar = TestDataStubs.bar_5decimal()
 
         # Act
         actor.on_bar(bar)
@@ -597,7 +600,7 @@ class TestActor:
         actor.set_explode_on_start(False)
         actor.start()
 
-        tick = TestStubs.quote_tick_5decimal(AUDUSD_SIM.id)
+        tick = TestDataStubs.quote_tick_5decimal(AUDUSD_SIM.id)
 
         # Act, Assert
         with pytest.raises(RuntimeError):
@@ -617,7 +620,7 @@ class TestActor:
         actor.set_explode_on_start(False)
         actor.start()
 
-        tick = TestStubs.trade_tick_5decimal(AUDUSD_SIM.id)
+        tick = TestDataStubs.trade_tick_5decimal(AUDUSD_SIM.id)
 
         # Act, Assert
         with pytest.raises(RuntimeError):
@@ -637,7 +640,7 @@ class TestActor:
         actor.set_explode_on_start(False)
         actor.start()
 
-        bar = TestStubs.bar_5decimal()
+        bar = TestDataStubs.bar_5decimal()
 
         # Act, Assert
         with pytest.raises(RuntimeError):
@@ -683,7 +686,7 @@ class TestActor:
         actor.set_explode_on_start(False)
         actor.start()
 
-        event = TestStubs.event_cash_account_state(account_id=AccountId("TEST", "000"))
+        event = TestEventStubs.cash_account_state(account_id=AccountId("TEST", "000"))
 
         # Act, Assert
         with pytest.raises(RuntimeError):
@@ -892,7 +895,7 @@ class TestActor:
             logger=self.logger,
         )
 
-        tick = TestStubs.quote_tick_5decimal(AUDUSD_SIM.id)
+        tick = TestDataStubs.quote_tick_5decimal(AUDUSD_SIM.id)
 
         # Act
         actor.handle_quote_tick(tick)
@@ -914,7 +917,7 @@ class TestActor:
 
         actor.start()
 
-        ticker = TestStubs.ticker()
+        ticker = TestDataStubs.ticker()
 
         # Act
         actor.handle_ticker(ticker)
@@ -934,7 +937,7 @@ class TestActor:
             logger=self.logger,
         )
 
-        ticker = TestStubs.ticker()
+        ticker = TestDataStubs.ticker()
 
         # Act
         actor.handle_ticker(ticker)
@@ -956,7 +959,7 @@ class TestActor:
 
         actor.start()
 
-        tick = TestStubs.quote_tick_5decimal(AUDUSD_SIM.id)
+        tick = TestDataStubs.quote_tick_5decimal(AUDUSD_SIM.id)
 
         # Act
         actor.handle_quote_tick(tick)
@@ -976,7 +979,7 @@ class TestActor:
             logger=self.logger,
         )
 
-        tick = TestStubs.trade_tick_5decimal(AUDUSD_SIM.id)
+        tick = TestDataStubs.trade_tick_5decimal(AUDUSD_SIM.id)
 
         # Act
         actor.handle_trade_tick(tick)
@@ -998,7 +1001,7 @@ class TestActor:
 
         actor.start()
 
-        tick = TestStubs.trade_tick_5decimal(AUDUSD_SIM.id)
+        tick = TestDataStubs.trade_tick_5decimal(AUDUSD_SIM.id)
 
         # Act
         actor.handle_trade_tick(tick)
@@ -1018,7 +1021,7 @@ class TestActor:
             logger=self.logger,
         )
 
-        bar = TestStubs.bar_5decimal()
+        bar = TestDataStubs.bar_5decimal()
 
         # Act
         actor.handle_bar(bar)
@@ -1040,7 +1043,7 @@ class TestActor:
 
         actor.start()
 
-        bar = TestStubs.bar_5decimal()
+        bar = TestDataStubs.bar_5decimal()
 
         # Act
         actor.handle_bar(bar)
@@ -1491,7 +1494,7 @@ class TestActor:
             logger=self.logger,
         )
 
-        bar_type = TestStubs.bartype_audusd_1min_bid()
+        bar_type = TestDataStubs.bartype_audusd_1min_bid()
 
         # Act
         actor.subscribe_bars(bar_type)
@@ -1511,7 +1514,7 @@ class TestActor:
             logger=self.logger,
         )
 
-        bar_type = TestStubs.bartype_audusd_1min_bid()
+        bar_type = TestDataStubs.bartype_audusd_1min_bid()
 
         actor.subscribe_bars(bar_type)
 
@@ -1602,7 +1605,7 @@ class TestActor:
             logger=self.logger,
         )
 
-        bar_type = TestStubs.bartype_audusd_1min_bid()
+        bar_type = TestDataStubs.bartype_audusd_1min_bid()
 
         # Act
         actor.request_bars(bar_type)
@@ -1628,7 +1631,7 @@ class TestActor:
             logger=self.logger,
         )
 
-        bar_type = TestStubs.bartype_audusd_1min_bid()
+        bar_type = TestDataStubs.bartype_audusd_1min_bid()
 
         # Act, Assert
         with pytest.raises(ValueError):

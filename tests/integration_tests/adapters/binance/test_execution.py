@@ -24,9 +24,11 @@ import pytest
 
 from nautilus_trader.adapters.binance.core.constants import BINANCE_VENUE
 from nautilus_trader.adapters.binance.core.enums import BinanceAccountType
-from nautilus_trader.adapters.binance.execution import BinanceExecutionClient
+from nautilus_trader.adapters.binance.futures.execution import BinanceFuturesExecutionClient
+from nautilus_trader.adapters.binance.futures.providers import BinanceFuturesInstrumentProvider
 from nautilus_trader.adapters.binance.http.client import BinanceHttpClient
-from nautilus_trader.adapters.binance.providers import BinanceInstrumentProvider
+from nautilus_trader.adapters.binance.spot.execution import BinanceSpotExecutionClient
+from nautilus_trader.adapters.binance.spot.providers import BinanceSpotInstrumentProvider
 from nautilus_trader.backtest.data.providers import TestInstrumentProvider
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.config import InstrumentProviderConfig
@@ -46,7 +48,8 @@ from nautilus_trader.msgbus.bus import MessageBus
 from nautilus_trader.portfolio.portfolio import Portfolio
 from nautilus_trader.risk.engine import RiskEngine
 from nautilus_trader.trading.strategy import TradingStrategy
-from tests.test_kit.stubs import TestStubs
+from tests.test_kit.stubs.component import TestComponentStubs
+from tests.test_kit.stubs.identifiers import TestIdStubs
 
 
 ETHUSDT_BINANCE = TestInstrumentProvider.ethusdt_binance()
@@ -62,7 +65,7 @@ class TestSpotBinanceExecutionClient:
         self.uuid_factory = UUIDFactory()
         self.logger = Logger(clock=self.clock)
 
-        self.trader_id = TestStubs.trader_id()
+        self.trader_id = TestIdStubs.trader_id()
         self.venue = BINANCE_VENUE
         self.account_id = AccountId(self.venue.value, "001")
 
@@ -72,7 +75,7 @@ class TestSpotBinanceExecutionClient:
             logger=self.logger,
         )
 
-        self.cache = TestStubs.cache()
+        self.cache = TestComponentStubs.cache()
 
         self.http_client = BinanceHttpClient(  # noqa: S106 (no hardcoded password)
             loop=asyncio.get_event_loop(),
@@ -82,7 +85,7 @@ class TestSpotBinanceExecutionClient:
             secret="SOME_BINANCE_API_SECRET",
         )
 
-        self.provider = BinanceInstrumentProvider(
+        self.provider = BinanceSpotInstrumentProvider(
             client=self.http_client,
             logger=self.logger,
             config=InstrumentProviderConfig(load_all=True),
@@ -117,7 +120,7 @@ class TestSpotBinanceExecutionClient:
             logger=self.logger,
         )
 
-        self.exec_client = BinanceExecutionClient(
+        self.exec_client = BinanceSpotExecutionClient(
             loop=self.loop,
             client=self.http_client,
             msgbus=self.msgbus,
@@ -411,7 +414,7 @@ class TestFuturesBinanceExecutionClient:
         self.uuid_factory = UUIDFactory()
         self.logger = Logger(clock=self.clock)
 
-        self.trader_id = TestStubs.trader_id()
+        self.trader_id = TestIdStubs.trader_id()
         self.venue = BINANCE_VENUE
         self.account_id = AccountId(self.venue.value, "001")
 
@@ -421,7 +424,7 @@ class TestFuturesBinanceExecutionClient:
             logger=self.logger,
         )
 
-        self.cache = TestStubs.cache()
+        self.cache = TestComponentStubs.cache()
 
         self.http_client = BinanceHttpClient(  # noqa: S106 (no hardcoded password)
             loop=asyncio.get_event_loop(),
@@ -431,7 +434,7 @@ class TestFuturesBinanceExecutionClient:
             secret="SOME_BINANCE_API_SECRET",
         )
 
-        self.provider = BinanceInstrumentProvider(
+        self.provider = BinanceFuturesInstrumentProvider(
             client=self.http_client,
             logger=self.logger,
             config=InstrumentProviderConfig(load_all=True),
@@ -466,7 +469,7 @@ class TestFuturesBinanceExecutionClient:
             logger=self.logger,
         )
 
-        self.exec_client = BinanceExecutionClient(
+        self.exec_client = BinanceFuturesExecutionClient(
             loop=self.loop,
             client=self.http_client,
             msgbus=self.msgbus,

@@ -21,7 +21,7 @@ import pytest
 
 from nautilus_trader.adapters.binance.core.enums import BinanceAccountType
 from nautilus_trader.adapters.binance.factories import get_cached_binance_http_client
-from nautilus_trader.adapters.binance.http.api.account import BinanceAccountHttpAPI
+from nautilus_trader.adapters.binance.futures.http.account import BinanceFuturesAccountHttpAPI
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.logging import Logger
 
@@ -41,9 +41,12 @@ async def test_binance_spot_account_http_client():
     )
     await client.connect()
 
-    account_type = BinanceAccountType.FUTURES_USDT
-    account = BinanceAccountHttpAPI(client=client, account_type=account_type)
-    response = await account.account(recv_window=5000)
+    account = BinanceFuturesAccountHttpAPI(
+        client=client,
+        account_type=BinanceAccountType.FUTURES_USDT,
+    )
+
+    response = await account.get_account_trades(symbol="ETHUSDT")
 
     # response = await account.new_order_futures(
     #     symbol="ETHUSDT",

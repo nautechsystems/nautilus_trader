@@ -56,7 +56,7 @@ cdef class CryptoPerpetual(Instrument):
         The trading size decimal precision.
     price_increment : Price
         The minimum price increment (tick size).
-    size_increment : Price
+    size_increment : Quantity
         The minimum size increment.
     max_quantity : Quantity, optional
         The maximum allowable order quantity.

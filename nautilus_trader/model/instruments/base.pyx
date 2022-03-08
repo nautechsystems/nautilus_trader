@@ -137,7 +137,7 @@ cdef class Instrument(Data):
         bint is_inverse,
         int price_precision,
         int size_precision,
-        Price price_increment,  # Can be None  # TODO(cs): review this
+        Price price_increment,  # Can be None (if using a tick scheme)
         Quantity size_increment not None,
         Quantity multiplier not None,
         Quantity lot_size,      # Can be None

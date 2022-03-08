@@ -20,10 +20,10 @@ from nautilus_trader.model.orderbook.data import Order
 from nautilus_trader.model.orderbook.data import OrderBookDelta
 from nautilus_trader.model.orderbook.data import OrderBookDeltas
 from nautilus_trader.model.orderbook.data import OrderBookSnapshot
-from tests.test_kit.stubs import TestStubs
+from tests.test_kit.stubs.identifiers import TestIdStubs
 
 
-AUDUSD = TestStubs.audusd_id()
+AUDUSD = TestIdStubs.audusd_id()
 
 
 class TestOrderBookSnapshot:

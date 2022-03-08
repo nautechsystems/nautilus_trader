@@ -14,7 +14,8 @@
 # -------------------------------------------------------------------------------------------------
 
 from nautilus_trader.model.orderbook.book import L3OrderBook
-from tests.test_kit.stubs import TestStubs
+from tests.test_kit.stubs.data import TestDataStubs
+from tests.test_kit.stubs.identifiers import TestIdStubs
 
 
 def run_l3_test(book, feed):
@@ -30,11 +31,11 @@ def test_orderbook_updates(benchmark):
     # We only care about the actual updates here, so instantiate orderbook and
     # load updates outside of benchmark
     book = L3OrderBook(
-        instrument_id=TestStubs.audusd_id(),
+        instrument_id=TestIdStubs.audusd_id(),
         price_precision=5,
         size_precision=0,
     )
-    feed = TestStubs.l3_feed()
+    feed = TestDataStubs.l3_feed()
     assert len(feed) == 100048  # 100k updates
 
     # benchmark something

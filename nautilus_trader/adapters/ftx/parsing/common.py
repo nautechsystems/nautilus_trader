@@ -40,14 +40,14 @@ from nautilus_trader.model.identifiers import TradeId
 from nautilus_trader.model.identifiers import VenueOrderId
 from nautilus_trader.model.instruments.base import Instrument
 from nautilus_trader.model.instruments.crypto_perpetual import CryptoPerpetual
-from nautilus_trader.model.instruments.currency import CurrencySpot
+from nautilus_trader.model.instruments.currency_pair import CurrencyPair
 from nautilus_trader.model.instruments.future import Future
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 
 
-def parse_status(result: Dict[str, Any]) -> OrderStatus:
+def parse_order_status(result: Dict[str, Any]) -> OrderStatus:
     status: Optional[str] = result.get("status")
     if status in ("new", "open"):
         if result["filledSize"] == 0:
@@ -87,7 +87,7 @@ def parse_order_type(data: Dict[str, Any], price_str: str = "orderPrice") -> Ord
         raise RuntimeError(f"Cannot parse order type, was {order_type}")
 
 
-def parse_order_fill(
+def parse_trade_report(
     account_id: AccountId,
     instrument: Instrument,
     data: Dict[str, Any],
@@ -110,7 +110,7 @@ def parse_order_fill(
     )
 
 
-def parse_position(
+def parse_position_report(
     account_id: AccountId,
     instrument: Instrument,
     data: Dict[str, Any],
@@ -191,7 +191,7 @@ def parse_instrument(
 
     if asset_type == "spot":
         # Create instrument
-        return CurrencySpot(
+        return CurrencyPair(
             instrument_id=instrument_id,
             native_symbol=native_symbol,
             base_currency=base_currency,

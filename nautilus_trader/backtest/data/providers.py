@@ -23,7 +23,6 @@ import pandas as pd
 from fsspec.implementations.github import GithubFileSystem
 from fsspec.implementations.local import LocalFileSystem
 
-from nautilus_trader.adapters.betfair.common import BETFAIR_VENUE
 from nautilus_trader.backtest.data.loaders import CSVBarDataLoader
 from nautilus_trader.backtest.data.loaders import CSVTickDataLoader
 from nautilus_trader.backtest.data.loaders import ParquetBarDataLoader
@@ -40,10 +39,9 @@ from nautilus_trader.model.enums import OptionKind
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import Venue
-from nautilus_trader.model.instruments.betting import BettingInstrument
 from nautilus_trader.model.instruments.crypto_future import CryptoFuture
 from nautilus_trader.model.instruments.crypto_perpetual import CryptoPerpetual
-from nautilus_trader.model.instruments.currency import CurrencySpot
+from nautilus_trader.model.instruments.currency_pair import CurrencyPair
 from nautilus_trader.model.instruments.equity import Equity
 from nautilus_trader.model.instruments.future import Future
 from nautilus_trader.model.instruments.option import Option
@@ -58,16 +56,16 @@ class TestInstrumentProvider:
     """
 
     @staticmethod
-    def adabtc_binance() -> CurrencySpot:
+    def adabtc_binance() -> CurrencyPair:
         """
         Return the Binance ADA/BTC instrument for backtesting.
 
         Returns
         -------
-        CurrencySpot
+        CurrencyPair
 
         """
-        return CurrencySpot(
+        return CurrencyPair(
             instrument_id=InstrumentId(
                 symbol=Symbol("ADABTC"),
                 venue=Venue("BINANCE"),
@@ -95,16 +93,16 @@ class TestInstrumentProvider:
         )
 
     @staticmethod
-    def btcusdt_binance() -> CurrencySpot:
+    def btcusdt_binance() -> CurrencyPair:
         """
         Return the Binance BTCUSDT instrument for backtesting.
 
         Returns
         -------
-        CurrencySpot
+        CurrencyPair
 
         """
-        return CurrencySpot(
+        return CurrencyPair(
             instrument_id=InstrumentId(
                 symbol=Symbol("BTCUSDT"),
                 venue=Venue("BINANCE"),
@@ -132,16 +130,16 @@ class TestInstrumentProvider:
         )
 
     @staticmethod
-    def ethusdt_binance() -> CurrencySpot:
+    def ethusdt_binance() -> CurrencyPair:
         """
         Return the Binance ETHUSDT instrument for backtesting.
 
         Returns
         -------
-        CurrencySpot
+        CurrencyPair
 
         """
-        return CurrencySpot(
+        return CurrencyPair(
             instrument_id=InstrumentId(
                 symbol=Symbol("ETHUSDT"),
                 venue=Venue("BINANCE"),
@@ -169,13 +167,13 @@ class TestInstrumentProvider:
         )
 
     @staticmethod
-    def ethusdt_perp_binance() -> CurrencySpot:
+    def ethusdt_perp_binance() -> CryptoPerpetual:
         """
         Return the Binance ETHUSDT-PERP instrument for backtesting.
 
         Returns
         -------
-        CurrencySpot
+        CryptoPerpetual
 
         """
         return CryptoPerpetual(
@@ -252,16 +250,16 @@ class TestInstrumentProvider:
         )
 
     @staticmethod
-    def ethusd_ftx() -> CurrencySpot:
+    def ethusd_ftx() -> CurrencyPair:
         """
         Return the FTX ETH/USD instrument for backtesting.
 
         Returns
         -------
-        CurrencySpot
+        CurrencyPair
 
         """
-        return CurrencySpot(
+        return CurrencyPair(
             instrument_id=InstrumentId(
                 symbol=Symbol("ETH/USD"),
                 venue=Venue("FTX"),
@@ -365,9 +363,9 @@ class TestInstrumentProvider:
         )
 
     @staticmethod
-    def default_fx_ccy(symbol: str, venue: Venue = None) -> CurrencySpot:
+    def default_fx_ccy(symbol: str, venue: Venue = None) -> CurrencyPair:
         """
-        Return a default FX currency pair instrument from the given instrument_id.
+        Return a default FX currency pair instrument from the given symbol and venue.
 
         Parameters
         ----------
@@ -378,7 +376,7 @@ class TestInstrumentProvider:
 
         Returns
         -------
-        CurrencySpot
+        CurrencyPair
 
         Raises
         ------
@@ -405,7 +403,7 @@ class TestInstrumentProvider:
         else:
             price_precision = 5
 
-        return CurrencySpot(
+        return CurrencyPair(
             instrument_id=instrument_id,
             native_symbol=Symbol(symbol),
             base_currency=Currency.from_str(base_currency),
@@ -427,32 +425,6 @@ class TestInstrumentProvider:
             taker_fee=Decimal("0.00002"),
             ts_event=0,
             ts_init=0,
-        )
-
-    @staticmethod
-    def betting_instrument():
-        return BettingInstrument(
-            venue_name=BETFAIR_VENUE.value,
-            betting_type="ODDS",
-            competition_id="12282733",
-            competition_name="NFL",
-            event_country_code="GB",
-            event_id="29678534",
-            event_name="NFL",
-            event_open_date=pd.Timestamp("2022-02-07 23:30:00+00:00"),
-            event_type_id="6423",
-            event_type_name="American Football",
-            market_id="1.179082386",
-            market_name="AFC Conference Winner",
-            market_start_time=pd.Timestamp("2022-02-07 23:30:00+00:00"),
-            market_type="SPECIAL",
-            selection_handicap="",
-            selection_id="50214",
-            selection_name="Kansas City Chiefs",
-            currency="GBP",
-            ts_event=0,
-            ts_init=0,
-            tick_scheme_name="BETFAIR",
         )
 
     @staticmethod

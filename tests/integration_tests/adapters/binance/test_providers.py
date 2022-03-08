@@ -20,8 +20,9 @@ import orjson
 import pytest
 
 from nautilus_trader.adapters.binance.core.enums import BinanceAccountType
+from nautilus_trader.adapters.binance.futures.providers import BinanceFuturesInstrumentProvider
 from nautilus_trader.adapters.binance.http.client import BinanceHttpClient
-from nautilus_trader.adapters.binance.providers import BinanceInstrumentProvider
+from nautilus_trader.adapters.binance.spot.providers import BinanceSpotInstrumentProvider
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import Venue
@@ -64,7 +65,7 @@ class TestBinanceInstrumentProvider:
             value=mock_send_request,
         )
 
-        self.provider = BinanceInstrumentProvider(
+        self.provider = BinanceSpotInstrumentProvider(
             client=binance_http_client,
             logger=live_logger,
             account_type=BinanceAccountType.SPOT,
@@ -97,7 +98,7 @@ class TestBinanceInstrumentProvider:
 
         response2 = pkgutil.get_data(
             package="tests.integration_tests.adapters.binance.resources.http_responses",
-            resource="http_futures_usdt_exchange_info.json",
+            resource="http_futures_market_exchange_info.json",
         )
 
         responses = [response2]
@@ -118,7 +119,7 @@ class TestBinanceInstrumentProvider:
             value=mock_send_request,
         )
 
-        self.provider = BinanceInstrumentProvider(
+        self.provider = BinanceFuturesInstrumentProvider(
             client=binance_http_client,
             logger=live_logger,
             account_type=BinanceAccountType.FUTURES_USDT,

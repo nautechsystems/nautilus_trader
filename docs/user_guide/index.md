@@ -5,7 +5,7 @@ Welcome to the user guide for NautilusTrader!
 Here you will find detailed documentation and examples explaining the different 
 use cases of NautilusTrader.
 
-You can choose different sections on the left, which are generally ordered from
+You can choose different subjects on the left, which are generally ordered from
 highest to lowest level (although they are self-contained and can be read in any order).
 
 Since this is a companion guide to the full [API Reference](../api_reference/index.md) 
@@ -28,4 +28,5 @@ in the near future to assist with this.
    strategies.md
    instruments.md
    orders.md
+   advanced/index.md
 ```
