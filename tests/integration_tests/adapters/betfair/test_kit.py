@@ -29,11 +29,11 @@ import pandas as pd
 from aiohttp import ClientResponse
 
 from nautilus_trader.adapters.betfair.client.core import BetfairClient
-from nautilus_trader.adapters.betfair.client.definitions.streaming_data import MarketChangeMessage
-from nautilus_trader.adapters.betfair.client.definitions.streaming_exec import OrderAccountChange
-from nautilus_trader.adapters.betfair.client.definitions.streaming_exec import OrderChangeMessage
-from nautilus_trader.adapters.betfair.client.definitions.streaming_exec import OrderChanges
-from nautilus_trader.adapters.betfair.client.definitions.streaming_exec import UnmatchedOrder
+from nautilus_trader.adapters.betfair.client.schema.streaming import MarketChangeMessage
+from nautilus_trader.adapters.betfair.client.schema.streaming import OrderAccountChange
+from nautilus_trader.adapters.betfair.client.schema.streaming import OrderChangeMessage
+from nautilus_trader.adapters.betfair.client.schema.streaming import OrderChanges
+from nautilus_trader.adapters.betfair.client.schema.streaming import UnmatchedOrder
 from nautilus_trader.adapters.betfair.common import BETFAIR_VENUE
 from nautilus_trader.adapters.betfair.data import BetfairDataClient
 from nautilus_trader.adapters.betfair.data import on_market_update
@@ -606,10 +606,6 @@ class BetfairStreaming:
     @staticmethod
     def mcm_latency():
         return BetfairStreaming.load("streaming_mcm_latency.json", kind="mcm")
-
-    @staticmethod
-    def mcm_con_true():
-        return BetfairStreaming.load("streaming_mcm_con_true.json", kind="mcm")
 
     @staticmethod
     def mcm_live_IMAGE():

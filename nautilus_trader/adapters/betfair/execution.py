@@ -27,6 +27,7 @@ from nautilus_trader.adapters.betfair.client.core import BetfairClient
 from nautilus_trader.adapters.betfair.client.definitions.streaming_exec import OrderChangeMessage
 from nautilus_trader.adapters.betfair.client.definitions.streaming_exec import UnmatchedOrder
 from nautilus_trader.adapters.betfair.client.exceptions import BetfairAPIError
+from nautilus_trader.adapters.betfair.client.schema.streaming import StatusMessage
 from nautilus_trader.adapters.betfair.common import B2N_ORDER_STREAM_SIDE
 from nautilus_trader.adapters.betfair.common import BETFAIR_VENUE
 from nautilus_trader.adapters.betfair.common import price_to_probability
@@ -732,8 +733,12 @@ class BetfairExecutionClient(LiveExecutionClient):
         if raw.startswith(b'{"op":"ocm"'):
             order_change_message = msgspec.json.decode(raw, type=OrderChangeMessage)
             await self._handle_order_stream_update(order_change_message=order_change_message)
+        elif raw.startswith(b'{"op":"connection"'):
+            pass
+        elif raw.startswith(b'{"op":"status"'):
+            update = msgspec.json.decode(raw, type=StatusMessage)
+            self._handle_status_message(update=update)
         else:
-            # TODO - Don't need this ?
             raise RuntimeError
 
     async def _handle_order_stream_update(self, order_change_message: OrderChangeMessage):
@@ -952,6 +957,12 @@ class BetfairExecutionClient(LiveExecutionClient):
             f"\nexisting: {self.venue_order_id_to_client_order_id})"
         )
         return None
+
+    def _handle_status_message(self, update: StatusMessage):
+        if update.statusCode == "FAILURE" and update.connectionClosed:
+            # TODO (bm) - self._loop.create_task(self._stream.reconnect())
+            self._log.error(str(update))
+            raise RuntimeError()
 
 
 def create_trade_id(uo: UnmatchedOrder) -> TradeId:

@@ -20,7 +20,8 @@ import msgspec.json
 import orjson
 
 from nautilus_trader.adapters.betfair.client.core import BetfairClient
-from nautilus_trader.adapters.betfair.client.definitions.streaming_data import MarketChangeMessage
+from nautilus_trader.adapters.betfair.client.schema.streaming import MarketChangeMessage
+from nautilus_trader.adapters.betfair.client.schema.streaming import StatusMessage
 from nautilus_trader.adapters.betfair.common import BETFAIR_VENUE
 from nautilus_trader.adapters.betfair.data_types import InstrumentSearch
 from nautilus_trader.adapters.betfair.data_types import SubscriptionStatus
@@ -323,6 +324,11 @@ class BetfairDataClient(LiveMarketDataClient):
         if raw.startswith(b'{"op":"mcm"'):
             update = msgspec.json.decode(raw, type=MarketChangeMessage)
             self._on_market_update(update=update)
+        elif raw.startswith(b'{"op":"connection"'):
+            pass
+        elif raw.startswith(b'{"op":"status"'):
+            update = msgspec.json.decode(raw, type=StatusMessage)
+            self._handle_status_message(update=update)
         else:
             raise RuntimeError
 
@@ -333,8 +339,6 @@ class BetfairDataClient(LiveMarketDataClient):
             instrument_provider=self._instrument_provider,
             update=update,
         )
-        if not updates:
-            self._handle_no_data(update=update)
         for data in updates:
             self._log.debug(f"{data}")
             if isinstance(data, Data):
@@ -352,28 +356,18 @@ class BetfairDataClient(LiveMarketDataClient):
                     f"Received event: {data}, DataEngine not yet setup to send events"
                 )
 
-    def _check_stream_unhealthy(self, update: Dict):
-        conflated = update.get("con", False)  # Consuming data slower than the rate of deliver
-        if conflated:
-            self._log.warning(
-                "Conflated stream - consuming data too slow (data received is delayed)"
-            )
-        if update.get("status") == 503:
+    def _check_stream_unhealthy(self, update: MarketChangeMessage):
+        if update.stream_unreliable:
             self._log.warning("Stream unhealthy, waiting for recover")
             self.degrade()
+        for mc in update.mc:
+            if mc.con:
+                self._log.warning(
+                    "Conflated stream - consuming data too slow (data received is delayed)"
+                )
 
-    def _handle_no_data(self, update):
-        if update.get("op") == "connection" or update.get("connectionsAvailable"):
-            return
-        if update.get("status") == 503:
-            # handled in `_check_stream_unhealthy`
-            return
-        if update.get("ct") == "HEARTBEAT":
-            if self.is_degraded:
-                self.resume()
-            return
-        self._log.warning(f"Received message but parsed no updates: {update}")
-        if update.get("statusCode") == "FAILURE" and update.get("connectionClosed"):
+    def _handle_status_message(self, update: StatusMessage):
+        if update.statusCode == "FAILURE" and update.connectionClosed:
             # TODO (bm) - self._loop.create_task(self._stream.reconnect())
             self._log.error(str(update))
             raise RuntimeError()

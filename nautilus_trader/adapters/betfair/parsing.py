@@ -23,6 +23,9 @@ from typing import Dict, List, Optional, Union
 import orjson
 import pandas as pd
 
+from nautilus_trader.adapters.betfair.client.schema.streaming import MarketChange
+from nautilus_trader.adapters.betfair.client.schema.streaming import MarketChangeMessage
+from nautilus_trader.adapters.betfair.client.schema.streaming import Runner
 from nautilus_trader.adapters.betfair.common import B2N_MARKET_STREAM_SIDE
 from nautilus_trader.adapters.betfair.common import B_ASK_KINDS
 from nautilus_trader.adapters.betfair.common import B_BID_KINDS
@@ -198,9 +201,9 @@ def order_submit_to_betfair(command: SubmitOrder, instrument: BettingInstrument)
         "instructions": [
             {
                 **order,
-                "selectionId": instrument.selection_id,
+                "runnerId": instrument.runner_id,
                 "side": N2B_SIDE[command.order.side],
-                "handicap": instrument.selection_handicap,
+                "handicap": instrument.runner_handicap,
                 # Remove the strategy name from customer_order_ref; it has a limited size and we don't control what
                 # length the strategy might be or what characters users might append
                 "customerOrderRef": make_custom_order_ref(
@@ -295,11 +298,11 @@ def betfair_trade_id(uo) -> TradeId:
     return TradeId(hsh)
 
 
-def _handle_market_snapshot(selection, instrument, ts_event, ts_init):
+def _handle_market_snapshot(runner: Runner, instrument, ts_event, ts_init):
     updates = []
     # Check we only have one of [best bets / depth bets / all bets]
-    bid_keys = [k for k in B_BID_KINDS if k in selection] or ["atb"]
-    ask_keys = [k for k in B_ASK_KINDS if k in selection] or ["atl"]
+    bid_keys = [k for k in B_BID_KINDS if k in runner] or ["atb"]
+    ask_keys = [k for k in B_ASK_KINDS if k in runner] or ["atl"]
     if set(bid_keys) == {"batb", "atb"}:
         bid_keys = ["atb"]
     if set(ask_keys) == {"batl", "atl"}:
@@ -311,13 +314,13 @@ def _handle_market_snapshot(selection, instrument, ts_event, ts_init):
     # OrderBook Snapshot
     # TODO(bm): Clean this up
     if bid_keys[0] == "atb":
-        bids = selection.get("atb", [])
+        bids = runner.get("atb", [])
     else:
-        bids = [(p, v) for _, p, v in selection.get(bid_keys[0], [])]
+        bids = [(p, v) for _, p, v in runner.get(bid_keys[0], [])]
     if ask_keys[0] == "atl":
-        asks = selection.get("atl", [])
+        asks = runner.get("atl", [])
     else:
-        asks = [(p, v) for _, p, v in selection.get(ask_keys[0], [])]
+        asks = [(p, v) for _, p, v in runner.get(ask_keys[0], [])]
     if bids or asks:
         snapshot = OrderBookSnapshot(
             book_type=BookType.L2_MBP,
@@ -328,19 +331,19 @@ def _handle_market_snapshot(selection, instrument, ts_event, ts_init):
             ts_init=ts_init,
         )
         updates.append(snapshot)
-    if "trd" in selection:
+    if "trd" in runner:
         updates.extend(
             _handle_market_trades(
-                runner=selection,
+                runner=runner,
                 instrument=instrument,
                 ts_event=ts_event,
                 ts_init=ts_init,
             )
         )
-    if "spb" in selection or "spl" in selection:
+    if "spb" in runner or "spl" in runner:
         updates.extend(
             _handle_bsp_updates(
-                runner=selection,
+                runner=runner,
                 instrument=instrument,
                 ts_event=ts_event,
                 ts_init=ts_init,
@@ -435,8 +438,8 @@ def _handle_book_updates(runner, instrument, ts_event, ts_init):
         return []
 
 
-def _handle_market_close(runner, instrument, ts_event, ts_init):
-    if runner["status"] in ("LOSER", "REMOVED"):
+def _handle_market_close(runner: Runner, instrument, ts_event, ts_init):
+    if runner.status in ("LOSER", "REMOVED"):
         close_price = InstrumentClosePrice(
             instrument_id=instrument.id,
             close_price=Price(0.0, precision=4),
@@ -444,7 +447,7 @@ def _handle_market_close(runner, instrument, ts_event, ts_init):
             ts_event=ts_event,
             ts_init=ts_init,
         )
-    elif runner["status"] in ("WINNER", "PLACED"):
+    elif runner.status in ("WINNER", "PLACED"):
         close_price = InstrumentClosePrice(
             instrument_id=instrument.id,
             close_price=Price(1.0, precision=4),
@@ -453,43 +456,43 @@ def _handle_market_close(runner, instrument, ts_event, ts_init):
             ts_init=ts_init,
         )
     else:
-        raise ValueError(f"Unknown runner close status: {runner['status']}")
+        raise ValueError(f"Unknown runner close status: {runner.status}")
     return [close_price]
 
 
-def _handle_instrument_status(market, runner, instrument, ts_event, ts_init):
-    market_def = market.get("marketDefinition", {})
-    if "status" not in market_def:
+def _handle_instrument_status(market: MarketChange, runner: Runner, instrument, ts_event, ts_init):
+    market_def = market.marketDefinition
+    if not market_def.status:
         return []
-    if runner.get("status") == "REMOVED":
+    if runner.status == "REMOVED":
         status = InstrumentStatusUpdate(
             instrument_id=instrument.id,
             status=InstrumentStatus.CLOSED,
             ts_event=ts_event,
             ts_init=ts_init,
         )
-    elif market_def["status"] == "OPEN" and not market_def["inPlay"]:
+    elif market_def.status == "OPEN" and not market_def.inPlay:
         status = InstrumentStatusUpdate(
             instrument_id=instrument.id,
             status=InstrumentStatus.PRE_OPEN,
             ts_event=ts_event,
             ts_init=ts_init,
         )
-    elif market_def["status"] == "OPEN" and market_def["inPlay"]:
+    elif market_def.status == "OPEN" and market_def.inPlay:
         status = InstrumentStatusUpdate(
             instrument_id=instrument.id,
             status=InstrumentStatus.OPEN,
             ts_event=ts_event,
             ts_init=ts_init,
         )
-    elif market_def["status"] == "SUSPENDED":
+    elif market_def.status == "SUSPENDED":
         status = InstrumentStatusUpdate(
             instrument_id=instrument.id,
             status=InstrumentStatus.PAUSE,
             ts_event=ts_event,
             ts_init=ts_init,
         )
-    elif market_def["status"] == "CLOSED":
+    elif market_def.status == "CLOSED":
         status = InstrumentStatusUpdate(
             instrument_id=instrument.id,
             status=InstrumentStatus.CLOSED,
@@ -501,14 +504,14 @@ def _handle_instrument_status(market, runner, instrument, ts_event, ts_init):
     return [status]
 
 
-def _handle_market_runners_status(instrument_provider, market, ts_event, ts_init):
+def _handle_market_runners_status(instrument_provider, market: MarketChange, ts_event, ts_init):
     updates = []
 
-    for runner in market.get("marketDefinition", {}).get("runners", []):
+    for runner in market.marketDefinition.runners:
         kw = dict(
-            market_id=market["id"],
-            selection_id=str(runner["id"]),
-            handicap=parse_handicap(runner.get("hc")),
+            market_id=market.id,
+            runner_id=str(runner.id),
+            handicap=parse_handicap(runner.hc),
         )
         instrument = instrument_provider.get_betting_instrument(**kw)
         if instrument is None:
@@ -522,7 +525,7 @@ def _handle_market_runners_status(instrument_provider, market, ts_event, ts_init
                 ts_init=ts_init,
             )
         )
-        if market["marketDefinition"].get("status") == "CLOSED":
+        if market.marketDefinition.status == "CLOSED":
             updates.extend(
                 _handle_market_close(
                     runner=runner,
@@ -550,12 +553,12 @@ def _handle_ticker(runner: dict, instrument: BettingInstrument, ts_event, ts_ini
 
 
 def build_market_snapshot_messages(
-    instrument_provider, raw
+    instrument_provider, market_change_message: MarketChangeMessage
 ) -> List[Union[OrderBookSnapshot, InstrumentStatusUpdate]]:
     updates = []
-    ts_event = parse_betfair_timestamp(raw["pt"])
+    ts_event = parse_betfair_timestamp(market_change_message.pt)
 
-    for market in raw.get("mc", []):
+    for market in market_change_message.mc:
         # Instrument Status
         updates.extend(
             _handle_market_runners_status(
@@ -567,15 +570,16 @@ def build_market_snapshot_messages(
         )
 
         # OrderBook snapshots
-        if market.get("img") is True:
-            market_id = market["id"]
-            for (selection_id, handicap), selections in itertools.groupby(
-                market.get("rc", []), lambda x: (x["id"], x.get("hc"))
+        if market.img is True:
+            market_id = market.id
+            for (runner_id, handicap), runners in itertools.groupby(
+                market.rc, lambda x: (x.id, x.hc)
             ):
-                for selection in list(selections):
+                runners: List[Runner]  # type: ignore
+                for runner in list(runners):
                     kw = dict(
                         market_id=market_id,
-                        selection_id=str(selection_id),
+                        runner_id=str(runner_id),
                         handicap=parse_handicap(handicap),
                     )
                     instrument = instrument_provider.get_betting_instrument(**kw)
@@ -583,7 +587,7 @@ def build_market_snapshot_messages(
                         continue
                     updates.extend(
                         _handle_market_snapshot(
-                            selection=selection,
+                            runner=runner,
                             instrument=instrument,
                             ts_event=ts_event,
                             ts_init=ts_event,
@@ -630,8 +634,8 @@ def build_market_update_messages(
         )
         for runner in market.get("rc", []):
             kw = dict(
-                market_id=market["id"],
-                selection_id=str(runner["id"]),
+                market_id=market.id,
+                runner_id=str(runner["id"]),
                 handicap=parse_handicap(runner.get("hc")),
             )
             instrument = instrument_provider.get_betting_instrument(**kw)
@@ -680,12 +684,12 @@ def build_market_update_messages(
     return updates
 
 
-def on_market_update(instrument_provider, update: dict):
-    if update.get("ct") == "HEARTBEAT":
+def on_market_update(instrument_provider, update: MarketChangeMessage):
+    if update.is_heartbeat:
         # TODO - Should we send out heartbeats
         return []
-    for mc in update.get("mc", []):
-        if mc.get("img"):
+    for mc in update.mc:
+        if mc.img:
             return build_market_snapshot_messages(instrument_provider, update)
         else:
             return build_market_update_messages(instrument_provider, update)
