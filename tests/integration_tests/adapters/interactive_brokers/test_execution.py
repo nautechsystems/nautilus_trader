@@ -11,7 +11,9 @@ from nautilus_trader.model.objects import Quantity
 from tests.integration_tests.adapters.interactive_brokers.base import InteractiveBrokersTestBase
 from tests.integration_tests.adapters.interactive_brokers.test_kit import IBExecTestStubs
 from tests.integration_tests.adapters.interactive_brokers.test_kit import IBTestStubs
-from tests.test_kit.stubs import TestStubs
+from tests.test_kit.stubs.commands import TestCommandStubs
+from tests.test_kit.stubs.execution import TestExecStubs
+from tests.test_kit.stubs.identifiers import TestIdStubs
 
 
 class TestInteractiveBrokersData(InteractiveBrokersTestBase):
@@ -43,10 +45,10 @@ class TestInteractiveBrokersData(InteractiveBrokersTestBase):
         instrument = IBTestStubs.instrument("AAPL")
         contract_details = IBTestStubs.contract_details("AAPL")
         self.instrument_setup(instrument=instrument, contract_details=contract_details)
-        order = TestStubs.limit_order(
+        order = TestExecStubs.limit_order(
             instrument_id=instrument.id,
         )
-        command = TestStubs.submit_order_command(order=order)
+        command = TestCommandStubs.submit_order_command(order=order)
 
         # Act
         with patch.object(self.exec_client._client, "placeOrder") as mock:
@@ -64,7 +66,7 @@ class TestInteractiveBrokersData(InteractiveBrokersTestBase):
                 localSymbol="AAPL",
                 tradingClass="NMS",
             ),
-            "order": LimitOrder(action="BUY", totalQuantity=10.0, lmtPrice=0.5),
+            "order": LimitOrder(action="BUY", totalQuantity=100.0, lmtPrice=55.0),
         }
         name, args, kwargs = mock.mock_calls[0]
         # Can't directly compare kwargs for some reason?
@@ -80,15 +82,15 @@ class TestInteractiveBrokersData(InteractiveBrokersTestBase):
         contract = contract_details.contract
         order = IBTestStubs.create_order()
         self.instrument_setup(instrument=instrument, contract_details=contract_details)
-        self.exec_client._ib_insync_orders[TestStubs.client_order_id()] = Trade(
+        self.exec_client._ib_insync_orders[TestIdStubs.client_order_id()] = Trade(
             contract=contract, order=order
         )
 
         # Act
-        command = TestStubs.modify_order_command(
+        command = TestCommandStubs.modify_order_command(
             instrument_id=instrument.id,
-            new_price=Price.from_int(10),
-            new_quantity=Quantity.from_str("100"),
+            price=Price.from_int(10),
+            quantity=Quantity.from_str("100"),
         )
         with patch.object(self.exec_client._client, "placeOrder") as mock:
             self.exec_client.modify_order(command=command)
@@ -121,12 +123,12 @@ class TestInteractiveBrokersData(InteractiveBrokersTestBase):
         contract = contract_details.contract
         order = IBTestStubs.create_order()
         self.instrument_setup(instrument=instrument, contract_details=contract_details)
-        self.exec_client._ib_insync_orders[TestStubs.client_order_id()] = Trade(
+        self.exec_client._ib_insync_orders[TestIdStubs.client_order_id()] = Trade(
             contract=contract, order=order
         )
 
         # Act
-        command = TestStubs.cancel_order_command(instrument_id=instrument.id)
+        command = TestCommandStubs.cancel_order_command(instrument_id=instrument.id)
         with patch.object(self.exec_client._client, "cancelOrder") as mock:
             self.exec_client.cancel_order(command=command)
 
@@ -154,9 +156,9 @@ class TestInteractiveBrokersData(InteractiveBrokersTestBase):
         # Arrange
         self.instrument_setup()
         self.exec_client._client_order_id_to_strategy_id[
-            TestStubs.client_order_id()
-        ] = TestStubs.strategy_id()
-        self.exec_client._venue_order_id_to_client_order_id[1] = TestStubs.client_order_id()
+            TestIdStubs.client_order_id()
+        ] = TestIdStubs.strategy_id()
+        self.exec_client._venue_order_id_to_client_order_id[1] = TestIdStubs.client_order_id()
         trade = IBExecTestStubs.trade_pre_submit()
 
         # Act
@@ -166,9 +168,9 @@ class TestInteractiveBrokersData(InteractiveBrokersTestBase):
         # Assert
         name, args, kwargs = mock.mock_calls[0]
         expected = {
-            "strategy_id": TestStubs.strategy_id(),
+            "strategy_id": TestIdStubs.strategy_id(),
             "instrument_id": self.instrument.id,
-            "client_order_id": TestStubs.client_order_id(),
+            "client_order_id": TestIdStubs.client_order_id(),
             "ts_event": 1646449586871811000,
         }
         assert kwargs == expected
@@ -177,9 +179,9 @@ class TestInteractiveBrokersData(InteractiveBrokersTestBase):
         # Arrange
         self.instrument_setup()
         self.exec_client._client_order_id_to_strategy_id[
-            TestStubs.client_order_id()
-        ] = TestStubs.strategy_id()
-        self.exec_client._venue_order_id_to_client_order_id[1] = TestStubs.client_order_id()
+            TestIdStubs.client_order_id()
+        ] = TestIdStubs.strategy_id()
+        self.exec_client._venue_order_id_to_client_order_id[1] = TestIdStubs.client_order_id()
         trade = IBExecTestStubs.trade_submitted()
 
         # Act
@@ -189,9 +191,9 @@ class TestInteractiveBrokersData(InteractiveBrokersTestBase):
         # Assert
         name, args, kwargs = mock.mock_calls[0]
         expected = {
-            "strategy_id": TestStubs.strategy_id(),
+            "strategy_id": TestIdStubs.strategy_id(),
             "instrument_id": self.instrument.id,
-            "client_order_id": TestStubs.client_order_id(),
+            "client_order_id": TestIdStubs.client_order_id(),
             "venue_order_id": VenueOrderId("189868420"),
             "ts_event": 1646449588378175000,
         }
@@ -201,10 +203,10 @@ class TestInteractiveBrokersData(InteractiveBrokersTestBase):
     async def test_on_order_modify(self):
         # Arrange
         self.instrument_setup()
-        nautilus_order = TestStubs.limit_order(venue_order_id=VenueOrderId("189868420"))
+        nautilus_order = TestExecStubs.limit_order()
         self.exec_client._client_order_id_to_strategy_id[
             nautilus_order.client_order_id
-        ] = TestStubs.strategy_id()
+        ] = TestIdStubs.strategy_id()
         self.exec_client._venue_order_id_to_client_order_id[1] = nautilus_order.client_order_id
         order = IBExecTestStubs.ib_order(permId=1)
         order.permId = 1
@@ -222,7 +224,7 @@ class TestInteractiveBrokersData(InteractiveBrokersTestBase):
             "instrument_id": self.instrument.id,
             "price": Price.from_str("0.01"),
             "quantity": Quantity.from_str("1"),
-            "strategy_id": TestStubs.strategy_id(),
+            "strategy_id": TestIdStubs.strategy_id(),
             "trigger_price": None,
             "ts_event": 1646449588378175000,
             "venue_order_id": VenueOrderId("189868420"),

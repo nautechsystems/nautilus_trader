@@ -32,6 +32,7 @@ class TestIBGateway:
     @pytest.mark.local()
     def test_gateway_start_no_container(self):
         # Arrange, Act
+        # with patch(DockerClient, "from_env"):
         self.gateway.start(wait=None)
 
         # Assert

@@ -6,7 +6,7 @@ from nautilus_trader.adapters.interactive_brokers.parsing.execution import (
 )
 from tests.integration_tests.adapters.interactive_brokers.base import InteractiveBrokersTestBase
 from tests.integration_tests.adapters.interactive_brokers.test_kit import IBTestStubs
-from tests.test_kit.stubs import TestStubs
+from tests.test_kit.stubs.execution import TestExecStubs
 
 
 class TestInteractiveBrokersData(InteractiveBrokersTestBase):
@@ -16,25 +16,25 @@ class TestInteractiveBrokersData(InteractiveBrokersTestBase):
 
     def test_nautilus_order_to_ib_market_order(self):
         # Arrange
-        nautilus_market_order = TestStubs.market_order(instrument_id=self.instrument.id)
+        nautilus_market_order = TestExecStubs.market_order(instrument_id=self.instrument.id)
 
         # Act
         result = nautilus_order_to_ib_order(nautilus_market_order)
 
         # Assert
-        expected = IBMarketOrder(action="BUY", totalQuantity=10.0)
+        expected = IBMarketOrder(action="BUY", totalQuantity=100.0)
         assert result.action == expected.action
         assert result.totalQuantity == expected.totalQuantity
 
     def test_nautilus_order_to_ib_limit_order(self):
         # Arrange
-        nautilus_market_order = TestStubs.limit_order(instrument_id=self.instrument.id)
+        nautilus_market_order = TestExecStubs.limit_order(instrument_id=self.instrument.id)
 
         # Act
         result = nautilus_order_to_ib_order(nautilus_market_order)
 
         # Assert
-        expected = IBLimitOrder(action="BUY", totalQuantity=10.0, lmtPrice=0.5)
+        expected = IBLimitOrder(action="BUY", totalQuantity=100.0, lmtPrice=55.0)
         assert result.action == expected.action
         assert result.totalQuantity == expected.totalQuantity
         assert result.lmtPrice == expected.lmtPrice

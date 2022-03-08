@@ -15,8 +15,8 @@ from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.enums import LogLevel
 from nautilus_trader.common.logging import LiveLogger
 from nautilus_trader.msgbus.bus import MessageBus
-from tests.test_kit.mocks import MockCacheDatabase
-from tests.test_kit.stubs import TestStubs
+from tests.test_kit.mocks.cache_database import MockCacheDatabase
+from tests.test_kit.stubs.identifiers import TestIdStubs
 
 
 class InteractiveBrokersTestBase:
@@ -36,9 +36,9 @@ class InteractiveBrokersTestBase:
             level_stdout=LogLevel.DEBUG,
         )
 
-        self.trader_id = TestStubs.trader_id()
-        self.strategy_id = TestStubs.strategy_id()
-        self.account_id = TestStubs.account_id()
+        self.trader_id = TestIdStubs.trader_id()
+        self.strategy_id = TestIdStubs.strategy_id()
+        self.account_id = TestIdStubs.account_id()
 
         self.msgbus = MessageBus(
             trader_id=self.trader_id,
