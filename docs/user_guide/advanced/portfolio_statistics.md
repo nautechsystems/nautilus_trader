@@ -54,11 +54,10 @@ The expectation is that you would then return ``None``, NaN or a reasonable defa
 ```
 
 ## Backtest Analysis
-Using a default configuration, following a backtest run a performance analysis will
-be carried out by passing PnLs, returns, positions and orders data to each registered
-statistic in turn, calculating their values. Any output is then displayed in the tear sheet 
+Following a backtest run a performance analysis will be carried out by passing realized PnLs, returns, positions and orders data to each registered
+statistic in turn, calculating their values (with a default configuration). Any output is then displayed in the tear sheet 
 under the `Portfolio Performance` heading, grouped as.
 
-- PnL statistics (per currency)
+- Realized PnL statistics (per currency)
 - Returns statistics (for the entire portfolio)
 - General statistics derived from position and order data (for the entire portfolio)
