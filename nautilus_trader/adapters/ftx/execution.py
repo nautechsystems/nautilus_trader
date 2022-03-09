@@ -86,7 +86,7 @@ from nautilus_trader.msgbus.bus import MessageBus
 
 class FTXExecutionClient(LiveExecutionClient):
     """
-    Provides an execution client for Binance SPOT markets.
+    Provides an execution client for FTX exchange.
 
     Parameters
     ----------
