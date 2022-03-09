@@ -12,7 +12,6 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
-from unittest import mock
 from unittest.mock import MagicMock
 from unittest.mock import call
 
@@ -26,13 +25,12 @@ TEST_PATH = TESTS_PACKAGE_ROOT + "/integration_tests/adapters/ib/responses/"
 
 
 class TestIBGateway:
-    def setup(self):
-        with mock.patch("docker.DockerClient.from_env"):
-            self.gateway = InteractiveBrokersGateway(username="test", password="test")  # noqa: S106
-        self.gateway._docker = MagicMock()
-
     @pytest.mark.local()
     def test_gateway_start_no_container(self):
+        # with mock.patch("docker.DockerClient.from_env"):
+        self.gateway = InteractiveBrokersGateway(username="test", password="test")  # noqa: S106
+        self.gateway._docker = MagicMock()
+
         # Arrange, Act
         self.gateway.start(wait=None)
 
