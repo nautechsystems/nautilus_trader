@@ -31,7 +31,7 @@ repos:
         exclude: "nautilus_trader/adapters/betfair/parsing.py|nautilus_trader/adapters/betfair/execution.py|tests/integration_tests/adapters/betfair/test_kit.py"
 
   - repo: https://github.com/hadialqattan/pycln
-    rev: v1.2.0
+    rev: v1.2.4
     hooks:
       - id: pycln
         name: pycln (Python unused imports)
