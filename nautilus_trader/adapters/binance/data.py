@@ -34,7 +34,7 @@ from nautilus_trader.adapters.binance.futures.http.market import BinanceFuturesM
 from nautilus_trader.adapters.binance.http.client import BinanceHttpClient
 from nautilus_trader.adapters.binance.http.error import BinanceError
 from nautilus_trader.adapters.binance.spot.http.market import BinanceSpotMarketHttpAPI
-from nautilus_trader.adapters.binance.spot.parsing.data import parse_ticker_24hr_spot_ws
+from nautilus_trader.adapters.binance.spot.parsing.data import parse_ticker_24hr_ws
 from nautilus_trader.adapters.binance.spot.types import BinanceSpotTicker
 from nautilus_trader.adapters.binance.websocket.client import BinanceWebSocketClient
 from nautilus_trader.cache.cache import Cache
@@ -676,7 +676,7 @@ class BinanceDataClient(LiveMarketDataClient):
         self._handle_data(book_deltas)
 
     def _handle_ticker_24hr(self, instrument_id: InstrumentId, data: Dict[str, Any]):
-        ticker: BinanceSpotTicker = parse_ticker_24hr_spot_ws(
+        ticker: BinanceSpotTicker = parse_ticker_24hr_ws(
             instrument_id=instrument_id,
             msg=data,
             ts_init=self._clock.timestamp_ns(),

@@ -35,7 +35,7 @@ from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 
 
-def parse_spot_instrument_http(
+def parse_instrument_http(
     symbol_info: BinanceSpotSymbolInfo,
     fees: BinanceSpotTradeFees,
     ts_event: int,
@@ -120,9 +120,7 @@ def parse_spot_instrument_http(
     )
 
 
-def parse_ticker_24hr_spot_ws(
-    instrument_id: InstrumentId, msg: Dict, ts_init: int
-) -> BinanceSpotTicker:
+def parse_ticker_24hr_ws(instrument_id: InstrumentId, msg: Dict, ts_init: int) -> BinanceSpotTicker:
     return BinanceSpotTicker(
         instrument_id=instrument_id,
         price_change=Decimal(msg["p"]),

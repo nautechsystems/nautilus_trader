@@ -94,6 +94,14 @@ class BinanceAccountType(Enum):
 
 
 @unique
+class BinanceOrderSide(Enum):
+    """Represents a `Binance` order side."""
+
+    BUY = "BUY"
+    SELL = "SELL"
+
+
+@unique
 class BinanceOrderStatus(Enum):
     """Represents a `Binance` order status."""
 

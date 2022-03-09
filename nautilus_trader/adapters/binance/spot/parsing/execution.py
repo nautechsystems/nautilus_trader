@@ -40,7 +40,7 @@ from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.orderbook.data import Order
 
 
-def parse_balances_spot(
+def parse_balances(
     raw_balances: List[Dict[str, str]],
     asset_key: str,
     free_key: str,
@@ -88,7 +88,7 @@ def parse_order_status(status: str) -> OrderStatus:
         raise RuntimeError(f"unrecognized order status, was {status}")
 
 
-def parse_order_type_spot(order_type: str) -> OrderType:
+def parse_order_type(order_type: str) -> OrderType:
     if order_type in ("STOP", "STOP_LOSS"):
         return OrderType.STOP_MARKET
     elif order_type == "STOP_LOSS_LIMIT":
@@ -105,7 +105,7 @@ def parse_order_type_spot(order_type: str) -> OrderType:
         return OrderTypeParser.from_str_py(order_type)
 
 
-def binance_order_type_spot(order: Order) -> str:
+def binance_order_type(order: Order) -> str:
     if order.type == OrderType.MARKET:
         return "MARKET"
     elif order.type == OrderType.LIMIT:
@@ -121,7 +121,7 @@ def binance_order_type_spot(order: Order) -> str:
         raise RuntimeError("invalid order type")
 
 
-def parse_order_report_spot_http(
+def parse_order_report_http(
     account_id: AccountId,
     instrument_id: InstrumentId,
     data: Dict[str, Any],
@@ -139,7 +139,7 @@ def parse_order_report_spot_http(
         client_order_id=ClientOrderId(client_id_str) if client_id_str is not None else None,
         venue_order_id=VenueOrderId(str(data["orderId"])),
         order_side=OrderSide[data["side"].upper()],
-        order_type=parse_order_type_spot(order_type),
+        order_type=parse_order_type(order_type),
         time_in_force=parse_time_in_force(data["timeInForce"].upper()),
         order_status=TimeInForce(data["status"].upper()),
         price=Price.from_str(price) if price is not None else None,
@@ -157,7 +157,7 @@ def parse_order_report_spot_http(
     )
 
 
-def parse_trade_report_spot_http(
+def parse_trade_report_http(
     account_id: AccountId,
     instrument_id: InstrumentId,
     data: Dict[str, Any],
