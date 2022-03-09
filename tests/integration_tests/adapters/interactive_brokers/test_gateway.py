@@ -25,7 +25,7 @@ TEST_PATH = TESTS_PACKAGE_ROOT + "/integration_tests/adapters/ib/responses/"
 
 
 class TestIBGateway:
-    @pytest.mark.local()
+    @pytest.mark.skip
     def test_gateway_start_no_container(self):
         # with mock.patch("docker.DockerClient.from_env"):
         self.gateway = InteractiveBrokersGateway(username="test", password="test")  # noqa: S106
