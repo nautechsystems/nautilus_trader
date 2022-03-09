@@ -19,7 +19,7 @@ import os
 
 import pytest
 
-from nautilus_trader.adapters.binance.core.enums import BinanceAccountType
+from nautilus_trader.adapters.binance.common.enums import BinanceAccountType
 from nautilus_trader.adapters.binance.factories import get_cached_binance_http_client
 from nautilus_trader.adapters.binance.futures.http.market import BinanceFuturesMarketHttpAPI
 from nautilus_trader.adapters.binance.futures.providers import BinanceFuturesInstrumentProvider

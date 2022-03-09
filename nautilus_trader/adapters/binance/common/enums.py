@@ -18,12 +18,13 @@ from enum import unique
 
 
 """
-Defines `Binance` specific enums.
+Defines `Binance` common enums.
 
 
 References
 ----------
 https://binance-docs.github.io/apidocs/spot/en/#public-api-definitions
+https://binance-docs.github.io/apidocs/futures/en/#public-endpoints-info
 """
 
 
@@ -71,17 +72,6 @@ class BinanceSymbolFilterType(Enum):
 
 
 @unique
-class BinancePermissions(Enum):
-    """Represents `Binance` trading market permissions."""
-
-    SPOT = "SPOT"
-    MARGIN = "MARGIN"
-    LEVERAGED = "LEVERAGED"
-    TRD_GRP_002 = "TRD_GRP_002"
-    TRD_GRP_003 = "TRD_GRP_003"
-
-
-@unique
 class BinanceAccountType(Enum):
     """Represents a `Binance` account type."""
 
@@ -104,44 +94,6 @@ class BinanceAccountType(Enum):
 
 
 @unique
-class BinanceSpotSymbolStatus(Enum):
-    """Represents a `Binance` spot symbol status."""
-
-    PRE_TRADING = "PRE_TRADING"
-    TRADING = "TRADING"
-    POST_TRADING = "POST_TRADING"
-    END_OF_DAY = "END_OF_DAY"
-    HALT = "HALT"
-    AUCTION_MATCH = "AUCTION_MATCH"
-    BREAK = "BREAK"
-
-
-@unique
-class BinanceContractType(Enum):
-    """Represents a `Binance` derivatives contract type."""
-
-    PERPETUAL = "PERPETUAL"
-    CURRENT_MONTH = "CURRENT_MONTH"
-    NEXT_MONTH = "NEXT_MONTH"
-    CURRENT_QUARTER = "CURRENT_QUARTER"
-    NEXT_QUARTER = "NEXT_QUARTER"
-
-
-@unique
-class BinanceContractStatus(Enum):
-    """Represents a `Binance` contract status."""
-
-    PENDING_TRADING = "PENDING_TRADING"
-    TRADING = "TRADING"
-    PRE_DELIVERING = "PRE_DELIVERING"
-    DELIVERING = "DELIVERING"
-    DELIVERED = "DELIVERED"
-    PRE_SETTLE = "PRE_SETTLE"
-    SETTLING = "SETTLING"
-    CLOSE = "CLOSE"
-
-
-@unique
 class BinanceOrderStatus(Enum):
     """Represents a `Binance` order status."""
 
@@ -151,56 +103,3 @@ class BinanceOrderStatus(Enum):
     CANCELED = "CANCELED"
     REJECTED = "REJECTED"
     EXPIRED = "EXPIRED"
-
-
-@unique
-class BinanceSpotOrderType(Enum):
-    """Represents a `Binance` trigger price type."""
-
-    LIMIT = "LIMIT"
-    MARKET = "MARKET"
-    STOP_LOSS = "STOP_LOSS"
-    STOP_LOSS_LIMIT = "STOP_LOSS_LIMIT"
-    TAKE_PROFIT = "TAKE_PROFIT"
-    TAKE_PROFIT_LIMIT = "TAKE_PROFIT_LIMIT"
-    LIMIT_MAKER = "LIMIT_MAKER"
-
-
-@unique
-class BinanceFuturesOrderType(Enum):
-    """Represents a `Binance` trigger price type."""
-
-    LIMIT = "LIMIT"
-    MARKET = "MARKET"
-    STOP = "STOP"
-    STOP_MARKET = "STOP_MARKET"
-    TAKE_PROFIT = "TAKE_PROFIT"
-    TAKE_PROFIT_MARKET = "TAKE_PROFIT_MARKET"
-    TRAILING_STOP_MARKET = "TRAILING_STOP_MARKET"
-
-
-@unique
-class BinancePositionSide(Enum):
-    """Represents a `Binance` position side."""
-
-    BOTH = "BOTH"
-    LONG = "LONG"
-    SHORT = "SHORT"
-
-
-@unique
-class BinanceTimeInForce(Enum):
-    """Represents a `Binance` order time in force."""
-
-    GTC = "GTC"
-    IOC = "IOC"
-    FOK = "FOK"
-    GTX = "GTX"  # Good Till Crossing (Post Only)
-
-
-@unique
-class BinanceWorkingType(Enum):
-    """Represents a `Binance` trigger price type."""
-
-    MARK_PRICE = "MARK_PRICE"
-    CONTRACT_PRICE = "CONTRACT_PRICE"

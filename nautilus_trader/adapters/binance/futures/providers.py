@@ -16,11 +16,14 @@
 import time
 from typing import Any, Dict, List, Optional
 
-from nautilus_trader.adapters.binance.core.constants import BINANCE_VENUE
-from nautilus_trader.adapters.binance.core.enums import BinanceAccountType
-from nautilus_trader.adapters.binance.core.enums import BinanceContractType
+from nautilus_trader.adapters.binance.common.constants import BINANCE_VENUE
+from nautilus_trader.adapters.binance.common.enums import BinanceAccountType
+from nautilus_trader.adapters.binance.futures.enums import BinanceFuturesContractStatus
+from nautilus_trader.adapters.binance.futures.enums import BinanceFuturesContractType
 from nautilus_trader.adapters.binance.futures.http.market import BinanceFuturesMarketHttpAPI
 from nautilus_trader.adapters.binance.futures.http.wallet import BinanceFuturesWalletHttpAPI
+from nautilus_trader.adapters.binance.futures.schemas.market import BinanceFuturesExchangeInfo
+from nautilus_trader.adapters.binance.futures.schemas.market import BinanceFuturesSymbolInfo
 from nautilus_trader.adapters.binance.http.client import BinanceHttpClient
 from nautilus_trader.adapters.binance.http.error import BinanceClientError
 from nautilus_trader.adapters.binance.parsing.http_data import parse_future_instrument_http
@@ -80,22 +83,24 @@ class BinanceFuturesInstrumentProvider(InstrumentProvider):
         filters_str = "..." if not filters else f" with filters {filters}..."
         self._log.info(f"Loading all instruments{filters_str}")
 
-        # Get current commission rates
-        try:
-            fees: Optional[Dict[str, Dict[str, str]]] = None
-        except BinanceClientError:
-            self._log.error(
-                "Cannot load instruments: API key authentication failed "
-                "(this is needed to fetch the applicable account fee tier).",
-            )
-            return
+        # # Get current commission rates
+        # try:
+        #     fees: Optional[Dict[str, Dict[str, str]]] = None
+        # except BinanceClientError:
+        #     self._log.error(
+        #         "Cannot load instruments: API key authentication failed "
+        #         "(this is needed to fetch the applicable account fee tier).",
+        #     )
+        #     return
 
         # Get exchange info for all assets
-        response: Dict[str, Any] = await self._market.exchange_info()
-        server_time_ns: int = millis_to_nanos(response["serverTime"])
-
-        for data in response["symbols"]:
-            self._parse_instrument(data, fees, server_time_ns)
+        exchange_info: BinanceFuturesExchangeInfo = await self._market.exchange_info()
+        for symbol_info in exchange_info.symbols:
+            self._parse_instrument(
+                symbol_info=symbol_info,
+                fees=None,
+                ts_event=millis_to_nanos(exchange_info.serverTime),
+            )
 
     async def load_ids_async(
         self,
@@ -130,25 +135,29 @@ class BinanceFuturesInstrumentProvider(InstrumentProvider):
         filters_str = "..." if not filters else f" with filters {filters}..."
         self._log.info(f"Loading instruments {instrument_ids}{filters_str}.")
 
-        # Get current commission rates
-        try:
-            fees: Optional[Dict[str, Dict[str, str]]] = None
-        except BinanceClientError:
-            self._log.error(
-                "Cannot load instruments: API key authentication failed "
-                "(this is needed to fetch the applicable account fee tier).",
-            )
-            return
+        # # Get current commission rates
+        # try:
+        #     fees: Optional[Dict[str, Dict[str, str]]] = None
+        # except BinanceClientError:
+        #     self._log.error(
+        #         "Cannot load instruments: API key authentication failed "
+        #         "(this is needed to fetch the applicable account fee tier).",
+        #     )
+        #     return
 
         # Extract all symbol strings
         symbols: List[str] = [instrument_id.symbol.value for instrument_id in instrument_ids]
 
         # Get exchange info for all assets
-        response: Dict[str, Any] = await self._market.exchange_info(symbols=symbols)
-        server_time_ns: int = millis_to_nanos(response["serverTime"])
-
-        for data in response["symbols"]:
-            self._parse_instrument(data, fees, server_time_ns)
+        exchange_info: BinanceFuturesExchangeInfo = await self._market.exchange_info(
+            symbols=symbols
+        )
+        for symbol_info in exchange_info.symbols:
+            self._parse_instrument(
+                symbol_info=symbol_info,
+                fees=None,
+                ts_event=millis_to_nanos(exchange_info.serverTime),
+            )
 
     async def load_async(self, instrument_id: InstrumentId, filters: Optional[Dict] = None):
         """
@@ -187,7 +196,7 @@ class BinanceFuturesInstrumentProvider(InstrumentProvider):
             return
 
         # Get exchange info for all assets
-        response: Dict[str, Any] = await self._market.exchange_info(symbol=symbol)
+        response: BinanceFuturesExchangeInfo = await self._market.exchange_info(symbol=symbol)
         server_time_ns: int = millis_to_nanos(response["serverTime"])
 
         for data in response["symbols"]:
@@ -195,38 +204,41 @@ class BinanceFuturesInstrumentProvider(InstrumentProvider):
 
     def _parse_instrument(
         self,
-        data: Dict[str, Any],
-        fees: Dict[str, Any],
+        symbol_info: BinanceFuturesSymbolInfo,
+        fees: Optional[Dict[str, Any]],
         ts_event: int,
     ) -> None:
-        contract_type_str = data.get("contractType")
+        contract_type_str = symbol_info.contractType
 
-        if contract_type_str == "" and data.get("status") == "PENDING_TRADING":
+        if (
+            contract_type_str == ""
+            or symbol_info.status == BinanceFuturesContractStatus.PENDING_TRADING
+        ):
             return  # Not yet defined
 
-        contract_type = BinanceContractType(contract_type_str)
-        if contract_type == BinanceContractType.PERPETUAL:
+        contract_type = BinanceFuturesContractType(contract_type_str)
+        if contract_type == BinanceFuturesContractType.PERPETUAL:
             instrument = parse_perpetual_instrument_http(
-                data=data,
+                symbol_info=symbol_info,
                 ts_event=ts_event,
                 ts_init=time.time_ns(),
             )
             self.add_currency(currency=instrument.base_currency)
         elif contract_type in (
-            BinanceContractType.CURRENT_MONTH,
-            BinanceContractType.CURRENT_QUARTER,
-            BinanceContractType.NEXT_MONTH,
-            BinanceContractType.NEXT_QUARTER,
+            BinanceFuturesContractType.CURRENT_MONTH,
+            BinanceFuturesContractType.CURRENT_QUARTER,
+            BinanceFuturesContractType.NEXT_MONTH,
+            BinanceFuturesContractType.NEXT_QUARTER,
         ):
             instrument = parse_future_instrument_http(
-                data=data,
+                symbol_info=symbol_info,
                 ts_event=ts_event,
                 ts_init=time.time_ns(),
             )
             self.add_currency(currency=instrument.underlying)
         else:  # pragma: no cover (design-time error)
             raise RuntimeError(
-                f"invalid BinanceContractType, was {contract_type}",
+                f"invalid BinanceFuturesContractType, was {contract_type}",
             )
 
         self.add_currency(currency=instrument.quote_currency)

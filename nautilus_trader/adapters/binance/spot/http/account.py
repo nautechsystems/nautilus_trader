@@ -17,7 +17,7 @@ from typing import Any, Dict, List, Optional
 
 import orjson
 
-from nautilus_trader.adapters.binance.core.functions import format_symbol
+from nautilus_trader.adapters.binance.common.functions import format_symbol
 from nautilus_trader.adapters.binance.http.client import BinanceHttpClient
 from nautilus_trader.adapters.binance.http.enums import NewOrderRespType
 

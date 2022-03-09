@@ -19,12 +19,10 @@ from typing import Any, Dict, List, Optional, Set
 
 import orjson
 
-from nautilus_trader.adapters.binance.core.constants import BINANCE_VENUE
-from nautilus_trader.adapters.binance.core.enums import BinanceAccountType
-from nautilus_trader.adapters.binance.core.functions import format_symbol
-from nautilus_trader.adapters.binance.core.functions import parse_symbol
-from nautilus_trader.adapters.binance.core.rules import VALID_ORDER_TYPES_SPOT
-from nautilus_trader.adapters.binance.core.rules import VALID_TIF
+from nautilus_trader.adapters.binance.common.constants import BINANCE_VENUE
+from nautilus_trader.adapters.binance.common.enums import BinanceAccountType
+from nautilus_trader.adapters.binance.common.functions import format_symbol
+from nautilus_trader.adapters.binance.common.functions import parse_symbol
 from nautilus_trader.adapters.binance.http.client import BinanceHttpClient
 from nautilus_trader.adapters.binance.http.error import BinanceError
 from nautilus_trader.adapters.binance.parsing.common import binance_order_type_spot
@@ -37,6 +35,8 @@ from nautilus_trader.adapters.binance.spot.http.account import BinanceSpotAccoun
 from nautilus_trader.adapters.binance.spot.http.market import BinanceSpotMarketHttpAPI
 from nautilus_trader.adapters.binance.spot.http.user import BinanceSpotUserDataHttpAPI
 from nautilus_trader.adapters.binance.spot.providers import BinanceSpotInstrumentProvider
+from nautilus_trader.adapters.binance.spot.rules import VALID_ORDER_TYPES_SPOT
+from nautilus_trader.adapters.binance.spot.rules import VALID_TIF_SPOT
 from nautilus_trader.adapters.binance.websocket.client import BinanceWebSocketClient
 from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.clock import LiveClock
@@ -499,11 +499,11 @@ class BinanceSpotExecutionClient(LiveExecutionClient):
             return
 
         # Check time in force valid
-        if order.time_in_force not in VALID_TIF:
+        if order.time_in_force not in VALID_TIF_SPOT:
             self._log.error(
                 f"Cannot submit order: "
                 f"{TimeInForceParser.to_str_py(order.time_in_force)} "
-                f"not supported by the exchange. Use any of {VALID_TIF}.",
+                f"not supported by the exchange. Use any of {VALID_TIF_SPOT}.",
             )
             return
 
