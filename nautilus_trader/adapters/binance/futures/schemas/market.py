@@ -27,7 +27,7 @@ from nautilus_trader.adapters.binance.futures.enums import BinanceFuturesTimeInF
 
 
 class BinanceExchangeFilter(msgspec.Struct):
-    """HTTP response 'inner struct' from `Binance` GET /fapi/v1/exchangeInfo."""
+    """HTTP response 'inner struct' from `Binance Futures` GET /fapi/v1/exchangeInfo."""
 
     filterType: BinanceExchangeFilterType
     maxNumOrders: Optional[int] = None
@@ -35,7 +35,7 @@ class BinanceExchangeFilter(msgspec.Struct):
 
 
 class BinanceSymbolFilter(msgspec.Struct):
-    """HTTP response 'inner struct' from `Binance` GET /fapi/v1/exchangeInfo."""
+    """HTTP response 'inner struct' from `Binance Futures` GET /fapi/v1/exchangeInfo."""
 
     filterType: BinanceSymbolFilterType
     minPrice: Optional[str] = None
@@ -61,7 +61,7 @@ class BinanceSymbolFilter(msgspec.Struct):
 
 
 class BinanceRateLimit(msgspec.Struct):
-    """HTTP response 'inner struct' from `Binance` GET /fapi/v1/exchangeInfo."""
+    """HTTP response 'inner struct' from `Binance Futures` GET /fapi/v1/exchangeInfo."""
 
     rateLimitType: BinanceRateLimitType
     interval: BinanceRateLimitInterval
@@ -70,7 +70,7 @@ class BinanceRateLimit(msgspec.Struct):
 
 
 class BinanceFuturesAsset(msgspec.Struct):
-    """HTTP response 'inner struct' from `Binance` Futures GET /fapi/v1/exchangeInfo."""
+    """HTTP response 'inner struct' from `Binance Futures` GET /fapi/v1/exchangeInfo."""
 
     asset: str
     marginAvailable: bool
@@ -78,7 +78,7 @@ class BinanceFuturesAsset(msgspec.Struct):
 
 
 class BinanceFuturesSymbolInfo(msgspec.Struct):
-    """HTTP response 'inner struct' from `Binance` Futures GET /fapi/v1/exchangeInfo."""
+    """HTTP response 'inner struct' from `Binance Futures` GET /fapi/v1/exchangeInfo."""
 
     symbol: str
     pair: str
@@ -107,7 +107,7 @@ class BinanceFuturesSymbolInfo(msgspec.Struct):
 
 
 class BinanceFuturesExchangeInfo(msgspec.Struct):
-    """HTTP response from `Binance` Futures GET /fapi/v1/exchangeInfo."""
+    """HTTP response from `Binance Futures` GET /fapi/v1/exchangeInfo."""
 
     timezone: str
     serverTime: int

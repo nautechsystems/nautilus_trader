@@ -27,7 +27,7 @@ from nautilus_trader.adapters.binance.futures.enums import BinanceFuturesWorking
 
 
 class MarginCallPositionMsg(msgspec.Struct):
-    """WebSocket message 'inner struct' position for Margin Call events."""
+    """WebSocket message 'inner struct' position for `Binance Futures` Margin Call events."""
 
     s: str  # Symbol
     ps: BinanceFuturesPositionSide  # Position Side
@@ -40,7 +40,7 @@ class MarginCallPositionMsg(msgspec.Struct):
 
 
 class BinanceFuturesMarginCallMsg(msgspec.Struct):
-    """WebSocket message for Margin Call events."""
+    """WebSocket message for `Binance Futures` Margin Call events."""
 
     e: str  # Event Type
     E: int  # Event Time
@@ -50,7 +50,7 @@ class BinanceFuturesMarginCallMsg(msgspec.Struct):
 
 class BinanceFuturesOrderMsg(msgspec.Struct):
     """
-    WebSocket message 'inner struct' for `BinanceFuturesOrderUpdateMsg`.
+    WebSocket message 'inner struct' for `Binance Futures` Order Update events.
 
     Client Order ID 'c':
      - starts with "autoclose-": liquidation order/
@@ -93,7 +93,7 @@ class BinanceFuturesOrderMsg(msgspec.Struct):
 
 
 class BinanceFuturesOrderUpdateMsg(msgspec.Struct):
-    """WebSocket message for Order Update events."""
+    """WebSocket message for `Binance Futures` Order Update events."""
 
     e: str  # Event Type
     E: int  # Event Time
