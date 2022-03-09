@@ -12,3 +12,31 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+
+from nautilus_trader.model.identifiers import Venue
+
+
+IB_VENUE = Venue("InteractiveBrokers")
+
+
+class ContractId(int):
+    """
+    ContractId type
+    """
+
+    pass
+
+
+# https://interactivebrokers.github.io/tws-api/tick_types.html
+TickTypeMapping = {
+    0: "Bid Size",
+    1: "Bid Price",
+    2: "Ask Price",
+    3: "Ask Size",
+    4: "Last Price",
+    5: "Last Size",
+    6: "High",
+    7: "Low",
+    8: "Volume",
+    9: "Close Price",
+}
