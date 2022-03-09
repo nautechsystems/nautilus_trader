@@ -22,12 +22,12 @@ from nautilus_trader.adapters.binance.futures.enums import BinanceFuturesContrac
 from nautilus_trader.adapters.binance.futures.enums import BinanceFuturesContractType
 from nautilus_trader.adapters.binance.futures.http.market import BinanceFuturesMarketHttpAPI
 from nautilus_trader.adapters.binance.futures.http.wallet import BinanceFuturesWalletHttpAPI
+from nautilus_trader.adapters.binance.futures.parsing.data import parse_future_instrument_http
+from nautilus_trader.adapters.binance.futures.parsing.data import parse_perpetual_instrument_http
 from nautilus_trader.adapters.binance.futures.schemas.market import BinanceFuturesExchangeInfo
 from nautilus_trader.adapters.binance.futures.schemas.market import BinanceFuturesSymbolInfo
 from nautilus_trader.adapters.binance.http.client import BinanceHttpClient
 from nautilus_trader.adapters.binance.http.error import BinanceClientError
-from nautilus_trader.adapters.binance.parsing.http_data import parse_future_instrument_http
-from nautilus_trader.adapters.binance.parsing.http_data import parse_perpetual_instrument_http
 from nautilus_trader.common.config import InstrumentProviderConfig
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.common.providers import InstrumentProvider

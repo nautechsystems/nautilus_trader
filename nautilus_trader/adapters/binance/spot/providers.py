@@ -20,9 +20,9 @@ from nautilus_trader.adapters.binance.common.constants import BINANCE_VENUE
 from nautilus_trader.adapters.binance.common.enums import BinanceAccountType
 from nautilus_trader.adapters.binance.http.client import BinanceHttpClient
 from nautilus_trader.adapters.binance.http.error import BinanceClientError
-from nautilus_trader.adapters.binance.parsing.http_data import parse_spot_instrument_http
 from nautilus_trader.adapters.binance.spot.http.market import BinanceSpotMarketHttpAPI
 from nautilus_trader.adapters.binance.spot.http.wallet import BinanceSpotWalletHttpAPI
+from nautilus_trader.adapters.binance.spot.parsing.data import parse_spot_instrument_http
 from nautilus_trader.adapters.binance.spot.schemas.market import BinanceSpotExchangeInfo
 from nautilus_trader.adapters.binance.spot.schemas.market import BinanceSpotSymbolInfo
 from nautilus_trader.adapters.binance.spot.schemas.wallet import BinanceSpotTradeFees

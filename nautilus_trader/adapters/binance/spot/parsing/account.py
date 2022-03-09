@@ -13,10 +13,10 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+
 from typing import Dict, List
 
-from nautilus_trader.adapters.binance.parsing.common import parse_balances_futures
-from nautilus_trader.adapters.binance.parsing.common import parse_balances_spot
+from nautilus_trader.adapters.binance.spot.parsing.execution import parse_balances_spot
 from nautilus_trader.model.objects import AccountBalance
 
 
@@ -24,5 +24,5 @@ def parse_account_balances_spot_ws(raw_balances: List[Dict[str, str]]) -> List[A
     return parse_balances_spot(raw_balances, "a", "f", "l")
 
 
-def parse_account_balances_futures_ws(raw_balances: List[Dict[str, str]]) -> List[AccountBalance]:
-    return parse_balances_futures(raw_balances, "a", "wb", "bc", "bc")  # TODO(cs): Implement
+def parse_account_balances_spot_http(raw_balances: List[Dict[str, str]]) -> List[AccountBalance]:
+    return parse_balances_spot(raw_balances, "asset", "free", "locked")
