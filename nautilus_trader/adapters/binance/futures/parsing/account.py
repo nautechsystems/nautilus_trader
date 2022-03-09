@@ -22,21 +22,19 @@ from nautilus_trader.model.objects import MarginBalance
 from nautilus_trader.model.objects import Money
 
 
-def parse_account_balances_futures_http(raw_balances: List[Dict[str, str]]) -> List[AccountBalance]:
-    return parse_balances_futures(
-        raw_balances, "asset", "availableBalance", "initialMargin", "maintMargin"
-    )
+def parse_account_balances_http(raw_balances: List[Dict[str, str]]) -> List[AccountBalance]:
+    return parse_balances(raw_balances, "asset", "availableBalance", "initialMargin", "maintMargin")
+
+
+def parse_account_balances_ws(raw_balances: List[Dict[str, str]]) -> List[AccountBalance]:
+    return parse_balances(raw_balances, "a", "wb", "bc", "bc")  # TODO(cs): Implement
 
 
 def parse_account_margins_http(raw_balances: List[Dict[str, str]]) -> List[MarginBalance]:
     return parse_margins(raw_balances, "asset", "initialMargin", "maintMargin")
 
 
-def parse_account_balances_futures_ws(raw_balances: List[Dict[str, str]]) -> List[AccountBalance]:
-    return parse_balances_futures(raw_balances, "a", "wb", "bc", "bc")  # TODO(cs): Implement
-
-
-def parse_balances_futures(
+def parse_balances(
     raw_balances: List[Dict[str, str]],
     asset_key: str,
     free_key: str,

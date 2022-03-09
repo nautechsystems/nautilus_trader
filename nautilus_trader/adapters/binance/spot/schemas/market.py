@@ -26,7 +26,7 @@ from nautilus_trader.adapters.binance.spot.enums import BinanceSpotPermissions
 
 
 class BinanceExchangeFilter(msgspec.Struct):
-    """Response 'inner struct' from `Binance` GET /fapi/v1/exchangeInfo."""
+    """HTTP response 'inner struct' from `Binance` GET /fapi/v1/exchangeInfo."""
 
     filterType: BinanceExchangeFilterType
     maxNumOrders: Optional[int] = None
@@ -34,7 +34,7 @@ class BinanceExchangeFilter(msgspec.Struct):
 
 
 class BinanceSymbolFilter(msgspec.Struct):
-    """Response 'inner struct' from `Binance` GET /fapi/v1/exchangeInfo."""
+    """HTTP response 'inner struct' from `Binance` GET /fapi/v1/exchangeInfo."""
 
     filterType: BinanceSymbolFilterType
     minPrice: Optional[str] = None
@@ -60,7 +60,7 @@ class BinanceSymbolFilter(msgspec.Struct):
 
 
 class BinanceRateLimit(msgspec.Struct):
-    """Response 'inner struct' from `Binance` GET /fapi/v1/exchangeInfo."""
+    """HTTP response 'inner struct' from `Binance` GET /fapi/v1/exchangeInfo."""
 
     rateLimitType: BinanceRateLimitType
     interval: BinanceRateLimitInterval
@@ -69,7 +69,7 @@ class BinanceRateLimit(msgspec.Struct):
 
 
 class BinanceSpotSymbolInfo(msgspec.Struct):
-    """Response 'inner struct' from `Binance` Spot GET /fapi/v1/exchangeInfo."""
+    """HTTP response 'inner struct' from `Binance` Spot GET /fapi/v1/exchangeInfo."""
 
     symbol: str
     status: str
@@ -90,7 +90,7 @@ class BinanceSpotSymbolInfo(msgspec.Struct):
 
 
 class BinanceSpotExchangeInfo(msgspec.Struct):
-    """Response from `Binance` Spot GET /fapi/v1/exchangeInfo."""
+    """HTTP response from `Binance` Spot GET /fapi/v1/exchangeInfo."""
 
     timezone: str
     serverTime: int
@@ -100,7 +100,7 @@ class BinanceSpotExchangeInfo(msgspec.Struct):
 
 
 class BinanceSpotTrade(msgspec.Struct):
-    """Response from `Binance` Spot GET /fapi/v1/historicalTrades."""
+    """HTTP response from `Binance` Spot GET /fapi/v1/historicalTrades."""
 
     id: int
     price: str

@@ -28,7 +28,7 @@ https://binance-docs.github.io/apidocs/spot/en/#public-api-definitions
 
 @unique
 class BinanceSpotPermissions(Enum):
-    """Represents `Binance` trading market permissions."""
+    """Represents `Binance Spot/Margin` trading permissions."""
 
     SPOT = "SPOT"
     MARGIN = "MARGIN"
@@ -39,7 +39,7 @@ class BinanceSpotPermissions(Enum):
 
 @unique
 class BinanceSpotSymbolStatus(Enum):
-    """Represents a `Binance` Spot/Margin symbol status."""
+    """Represents a `Binance Spot/Margin` symbol status."""
 
     PRE_TRADING = "PRE_TRADING"
     TRADING = "TRADING"
@@ -52,7 +52,7 @@ class BinanceSpotSymbolStatus(Enum):
 
 @unique
 class BinanceSpotOrderType(Enum):
-    """Represents a `Binance` trigger price type."""
+    """Represents a `Binance Spot/Margin` order type."""
 
     LIMIT = "LIMIT"
     MARKET = "MARKET"

@@ -28,12 +28,12 @@ from nautilus_trader.adapters.binance.http.error import BinanceError
 from nautilus_trader.adapters.binance.spot.http.account import BinanceSpotAccountHttpAPI
 from nautilus_trader.adapters.binance.spot.http.market import BinanceSpotMarketHttpAPI
 from nautilus_trader.adapters.binance.spot.http.user import BinanceSpotUserDataHttpAPI
-from nautilus_trader.adapters.binance.spot.parsing.account import parse_account_balances_spot_http
-from nautilus_trader.adapters.binance.spot.parsing.account import parse_account_balances_spot_ws
-from nautilus_trader.adapters.binance.spot.parsing.execution import binance_order_type_spot
-from nautilus_trader.adapters.binance.spot.parsing.execution import parse_order_report_spot_http
-from nautilus_trader.adapters.binance.spot.parsing.execution import parse_order_type_spot
-from nautilus_trader.adapters.binance.spot.parsing.execution import parse_trade_report_spot_http
+from nautilus_trader.adapters.binance.spot.parsing.account import parse_account_balances_http
+from nautilus_trader.adapters.binance.spot.parsing.account import parse_account_balances_ws
+from nautilus_trader.adapters.binance.spot.parsing.execution import binance_order_type
+from nautilus_trader.adapters.binance.spot.parsing.execution import parse_order_report_http
+from nautilus_trader.adapters.binance.spot.parsing.execution import parse_order_type
+from nautilus_trader.adapters.binance.spot.parsing.execution import parse_trade_report_http
 from nautilus_trader.adapters.binance.spot.providers import BinanceSpotInstrumentProvider
 from nautilus_trader.adapters.binance.spot.rules import VALID_ORDER_TYPES_SPOT
 from nautilus_trader.adapters.binance.spot.rules import VALID_TIF_SPOT
@@ -213,7 +213,7 @@ class BinanceSpotExecutionClient(LiveExecutionClient):
 
     def _update_account_state(self, response: Dict[str, Any]) -> None:
         self.generate_account_state(
-            balances=parse_account_balances_spot_http(raw_balances=response["balances"]),
+            balances=parse_account_balances_http(raw_balances=response["balances"]),
             margins=[],
             reported=True,
             ts_event=response["updateTime"],
@@ -285,7 +285,7 @@ class BinanceSpotExecutionClient(LiveExecutionClient):
             )
             return None
 
-        return parse_order_report_spot_http(
+        return parse_order_report_http(
             account_id=self.account_id,
             instrument_id=self._get_cached_instrument_id(response["symbol"]),
             data=response,
@@ -359,7 +359,7 @@ class BinanceSpotExecutionClient(LiveExecutionClient):
             #     if end is not None and timestamp > end:
             #         continue
 
-            report: OrderStatusReport = parse_order_report_spot_http(
+            report: OrderStatusReport = parse_order_report_http(
                 account_id=self.account_id,
                 instrument_id=self._get_cached_instrument_id(msg["symbol"]),
                 data=msg,
@@ -435,7 +435,7 @@ class BinanceSpotExecutionClient(LiveExecutionClient):
             # if end is not None and timestamp > end:
             #     continue
 
-            report: TradeReport = parse_trade_report_spot_http(
+            report: TradeReport = parse_trade_report_http(
                 account_id=self.account_id,
                 instrument_id=self._get_cached_instrument_id(data["symbol"]),
                 data=data,
@@ -578,7 +578,7 @@ class BinanceSpotExecutionClient(LiveExecutionClient):
         await self._http_account.new_order(
             symbol=format_symbol(order.instrument_id.symbol.value),
             side=OrderSideParser.to_str_py(order.side),
-            type=binance_order_type_spot(order),
+            type=binance_order_type(order),
             time_in_force=time_in_force,
             quantity=str(order.quantity),
             price=str(order.price),
@@ -591,7 +591,7 @@ class BinanceSpotExecutionClient(LiveExecutionClient):
         await self._http_account.new_order(
             symbol=format_symbol(order.instrument_id.symbol.value),
             side=OrderSideParser.to_str_py(order.side),
-            type=binance_order_type_spot(order),
+            type=binance_order_type(order),
             time_in_force=TimeInForceParser.to_str_py(order.time_in_force),
             quantity=str(order.quantity),
             price=str(order.price),
@@ -702,7 +702,7 @@ class BinanceSpotExecutionClient(LiveExecutionClient):
 
     def _handle_account_update(self, data: Dict[str, Any]):
         self.generate_account_state(
-            balances=parse_account_balances_spot_ws(raw_balances=data["B"]),
+            balances=parse_account_balances_ws(raw_balances=data["B"]),
             margins=[],
             reported=True,
             ts_event=millis_to_nanos(data["u"]),
@@ -759,7 +759,7 @@ class BinanceSpotExecutionClient(LiveExecutionClient):
                 venue_position_id=None,  # NETTING accounts
                 trade_id=TradeId(str(data["t"])),  # Trade ID
                 order_side=OrderSideParser.from_str_py(data["S"]),
-                order_type=parse_order_type_spot(data["o"]),
+                order_type=parse_order_type(data["o"]),
                 last_qty=Quantity.from_str(data["l"]),
                 last_px=Price.from_str(data["L"]),
                 quote_currency=instrument.quote_currency,

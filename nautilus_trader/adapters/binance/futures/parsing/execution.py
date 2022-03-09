@@ -41,7 +41,7 @@ from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.orderbook.data import Order
 
 
-def binance_order_type_futures(order: Order) -> str:
+def binance_order_type(order: Order) -> str:
     if order.type == OrderType.MARKET:
         return "MARKET"
     elif order.type == OrderType.LIMIT:
@@ -60,7 +60,7 @@ def binance_order_type_futures(order: Order) -> str:
         raise RuntimeError("invalid order type")
 
 
-def parse_order_type_futures(order_type: str) -> OrderType:
+def parse_order_type(order_type: str) -> OrderType:
     if order_type == "STOP":
         return OrderType.STOP_LIMIT
     elif order_type == "STOP_LOSS_LIMIT":
@@ -106,7 +106,7 @@ def parse_trigger_type(working_type: str) -> TriggerType:
         return TriggerType.NONE
 
 
-def parse_order_report_futures_http(
+def parse_order_report_http(
     account_id: AccountId,
     instrument_id: InstrumentId,
     msg: BinanceFuturesOrder,
@@ -122,7 +122,7 @@ def parse_order_report_futures_http(
         client_order_id=ClientOrderId(msg.clientOrderId) if msg.clientOrderId != "" else None,
         venue_order_id=VenueOrderId(str(msg.orderId)),
         order_side=OrderSide[msg.side.upper()],
-        order_type=parse_order_type_futures(msg.type.upper()),
+        order_type=parse_order_type(msg.type.upper()),
         time_in_force=parse_time_in_force(msg.timeInForce.upper()),
         order_status=parse_order_status(msg.status.upper()),
         price=Price.from_str(msg.price) if price is not None else None,
@@ -140,7 +140,7 @@ def parse_order_report_futures_http(
     )
 
 
-def parse_trade_report_futures_http(
+def parse_trade_report_http(
     account_id: AccountId,
     instrument_id: InstrumentId,
     data: Dict[str, Any],
@@ -163,7 +163,7 @@ def parse_trade_report_futures_http(
     )
 
 
-def parse_position_report_futures_http(
+def parse_position_report_http(
     account_id: AccountId,
     instrument_id: InstrumentId,
     data: Dict[str, Any],

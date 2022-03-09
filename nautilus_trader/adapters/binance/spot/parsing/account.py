@@ -16,13 +16,13 @@
 
 from typing import Dict, List
 
-from nautilus_trader.adapters.binance.spot.parsing.execution import parse_balances_spot
+from nautilus_trader.adapters.binance.spot.parsing.execution import parse_balances
 from nautilus_trader.model.objects import AccountBalance
 
 
-def parse_account_balances_spot_ws(raw_balances: List[Dict[str, str]]) -> List[AccountBalance]:
-    return parse_balances_spot(raw_balances, "a", "f", "l")
+def parse_account_balances_ws(raw_balances: List[Dict[str, str]]) -> List[AccountBalance]:
+    return parse_balances(raw_balances, "a", "f", "l")
 
 
-def parse_account_balances_spot_http(raw_balances: List[Dict[str, str]]) -> List[AccountBalance]:
-    return parse_balances_spot(raw_balances, "asset", "free", "locked")
+def parse_account_balances_http(raw_balances: List[Dict[str, str]]) -> List[AccountBalance]:
+    return parse_balances(raw_balances, "asset", "free", "locked")

@@ -20,7 +20,7 @@ import msgspec
 
 class BinanceFuturesOrder(msgspec.Struct):
     """
-    Response from `Binance` Futures GET /fapi/v1/order (HMAC SHA256).
+    HTTP response from `Binance` Futures GET /fapi/v1/order (HMAC SHA256).
     """
 
     avgPrice: str

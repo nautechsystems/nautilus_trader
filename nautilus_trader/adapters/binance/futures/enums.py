@@ -28,7 +28,7 @@ https://binance-docs.github.io/apidocs/futures/en/#public-endpoints-info
 
 @unique
 class BinanceFuturesContractType(Enum):
-    """Represents a `Binance` Futures derivatives contract type."""
+    """Represents a `Binance Futures` derivatives contract type."""
 
     PERPETUAL = "PERPETUAL"
     CURRENT_MONTH = "CURRENT_MONTH"
@@ -39,7 +39,7 @@ class BinanceFuturesContractType(Enum):
 
 @unique
 class BinanceFuturesContractStatus(Enum):
-    """Represents a `Binance` Futures contract status."""
+    """Represents a `Binance Futures` contract status."""
 
     PENDING_TRADING = "PENDING_TRADING"
     TRADING = "TRADING"
@@ -53,7 +53,7 @@ class BinanceFuturesContractStatus(Enum):
 
 @unique
 class BinanceFuturesOrderType(Enum):
-    """Represents a `Binance` trigger price type."""
+    """Represents a `Binance Futures` price type."""
 
     LIMIT = "LIMIT"
     MARKET = "MARKET"
@@ -65,8 +65,21 @@ class BinanceFuturesOrderType(Enum):
 
 
 @unique
+class BinanceFuturesExecutionType(Enum):
+    """Represents a `Binance Futures` execution type."""
+
+    NEW = "NEW"
+    PARTIALLY_FILLED = "PARTIALLY_FILLED"
+    FILLED = "FILLED"
+    CANCELED = "CANCELED"
+    EXPIRED = "EXPIRED"
+    NEW_INSURANCE = "NEW_INSURANCE"  # Liquidation with Insurance Fund
+    NEW_ADL = "NEW_ADL"  # Counterparty Liquidation
+
+
+@unique
 class BinanceFuturesPositionSide(Enum):
-    """Represents a `Binance` position side."""
+    """Represents a `Binance Futures` position side."""
 
     BOTH = "BOTH"
     LONG = "LONG"
@@ -75,7 +88,7 @@ class BinanceFuturesPositionSide(Enum):
 
 @unique
 class BinanceFuturesTimeInForce(Enum):
-    """Represents a `Binance` order time in force."""
+    """Represents a `Binance Futures` order time in force."""
 
     GTC = "GTC"
     IOC = "IOC"
@@ -85,7 +98,7 @@ class BinanceFuturesTimeInForce(Enum):
 
 @unique
 class BinanceFuturesWorkingType(Enum):
-    """Represents a `Binance` trigger price type."""
+    """Represents a `Binance Futures` working type."""
 
     MARK_PRICE = "MARK_PRICE"
     CONTRACT_PRICE = "CONTRACT_PRICE"
