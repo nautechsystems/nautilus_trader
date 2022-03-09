@@ -69,6 +69,17 @@ class BinanceFuturesExecutionType(Enum):
     """Represents a `Binance Futures` execution type."""
 
     NEW = "NEW"
+    CANCELED = "CANCELED"
+    CALCULATED = "CALCULATED"  # Liquidation Execution
+    EXPIRED = "EXPIRED"
+    TRADE = "TRADE"
+
+
+@unique
+class BinanceFuturesOrderStatus(Enum):
+    """Represents a `BinanceFutures` order status."""
+
+    NEW = "NEW"
     PARTIALLY_FILLED = "PARTIALLY_FILLED"
     FILLED = "FILLED"
     CANCELED = "CANCELED"
@@ -102,3 +113,32 @@ class BinanceFuturesWorkingType(Enum):
 
     MARK_PRICE = "MARK_PRICE"
     CONTRACT_PRICE = "CONTRACT_PRICE"
+
+
+@unique
+class BinanceFuturesMarginType(Enum):
+    """Represents a `Binance Futures` margin type."""
+
+    ISOLATED = "isolated"
+    CROSS = "cross"
+
+
+@unique
+class BinanceFuturesPositionUpdateReason(Enum):
+    """Represents a `Binance Futures` position and balance update reason."""
+
+    DEPOSIT = "DEPOSIT"
+    WITHDRAW = "WITHDRAW"
+    ORDER = "ORDER"
+    FUNDING_FEE = "FUNDING_FEE"
+    WITHDRAW_REJECT = "WITHDRAW_REJECT"
+    ADJUSTMENT = "ADJUSTMENT"
+    INSURANCE_CLEAR = "INSURANCE_CLEAR"
+    ADMIN_DEPOSIT = "ADMIN_DEPOSIT"
+    ADMIN_WITHDRAW = "ADMIN_WITHDRAW"
+    MARGIN_TRANSFER = "MARGIN_TRANSFER"
+    MARGIN_TYPE_CHANGE = "MARGIN_TYPE_CHANGE"
+    ASSET_TRANSFER = "ASSET_TRANSFER"
+    OPTIONS_PREMIUM_FEE = "OPTIONS_PREMIUM_FEE"
+    OPTIONS_SETTLE_PROFIT = "OPTIONS_SETTLE_PROFIT"
+    AUTO_EXCHANGE = "AUTO_EXCHANGE"
