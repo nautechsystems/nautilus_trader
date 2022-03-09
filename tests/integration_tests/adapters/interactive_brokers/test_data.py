@@ -3,8 +3,7 @@ from unittest.mock import patch
 
 import pytest
 from ib_insync import Contract
-from ib_insync import TickAttribBidAsk
-from ib_insync import TickByTickBidAsk
+from ib_insync import Ticker
 
 from nautilus_trader.model.enums import BookType
 from tests.integration_tests.adapters.interactive_brokers.base import InteractiveBrokersTestBase
@@ -118,14 +117,13 @@ class TestInteractiveBrokersData(InteractiveBrokersTestBase):
             IBTestStubs.instrument(symbol="EURUSD"), IBTestStubs.contract_details("EURUSD")
         )
         contract = IBTestStubs.contract_details("EURUSD").contract
-        quote_tick = TickByTickBidAsk(
+        ticker = Ticker(
             time=datetime.datetime(2022, 3, 4, 6, 8, 36, 992576, tzinfo=datetime.timezone.utc),
-            bidPrice=99.45,
-            askPrice=99.5,
+            bid=99.45,
+            ask=99.5,
             bidSize=44600.0,
             askSize=29500.0,
-            tickAttribBidAsk=TickAttribBidAsk(bidPastLow=False, askPastHigh=False),
         )
 
         # Act
-        self.data_client._on_quote_tick_update(tick=quote_tick, contract=contract)
+        self.data_client._on_quote_tick_update(tick=ticker, contract=contract)
