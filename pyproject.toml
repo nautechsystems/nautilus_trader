@@ -60,6 +60,7 @@ psutil = "^5.9.0"
 pyarrow = "^6.0.1"
 pydantic = "^1.9.0"
 pytz = "^2021.3"
+pywin32 = {version = "^303", platform = "win32"}
 quantstats = "^0.0.50"
 redis = "^4.1.4"
 tabulate = "^0.8.9"
