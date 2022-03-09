@@ -16,6 +16,7 @@
 from decimal import Decimal
 from typing import Dict, List, Tuple
 
+from nautilus_trader.adapters.binance.futures.schemas.user import BinanceFuturesBalance
 from nautilus_trader.model.currency import Currency
 from nautilus_trader.model.objects import AccountBalance
 from nautilus_trader.model.objects import MarginBalance
@@ -26,8 +27,22 @@ def parse_account_balances_http(raw_balances: List[Dict[str, str]]) -> List[Acco
     return parse_balances(raw_balances, "asset", "availableBalance", "initialMargin", "maintMargin")
 
 
-def parse_account_balances_ws(raw_balances: List[Dict[str, str]]) -> List[AccountBalance]:
-    return parse_balances(raw_balances, "a", "wb", "bc", "bc")  # TODO(cs): Implement
+def parse_account_balances_ws(raw_balances: List[BinanceFuturesBalance]) -> List[AccountBalance]:
+    balances: List[AccountBalance] = []
+    for b in raw_balances:
+        currency = Currency.from_str(b.a)
+        free = Decimal(b.wb)
+        locked = Decimal(b.bc) + Decimal(b.bc)
+        total: Decimal = free + locked
+
+        balance = AccountBalance(
+            total=Money(total, currency),
+            locked=Money(locked, currency),
+            free=Money(free, currency),
+        )
+        balances.append(balance)
+
+    return balances
 
 
 def parse_account_margins_http(raw_balances: List[Dict[str, str]]) -> List[MarginBalance]:

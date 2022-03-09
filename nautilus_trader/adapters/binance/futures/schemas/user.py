@@ -18,16 +18,17 @@ from typing import List, Optional
 import msgspec
 
 from nautilus_trader.adapters.binance.common.enums import BinanceOrderSide
-from nautilus_trader.adapters.binance.common.enums import BinanceOrderStatus
 from nautilus_trader.adapters.binance.futures.enums import BinanceFuturesExecutionType
+from nautilus_trader.adapters.binance.futures.enums import BinanceFuturesOrderStatus
 from nautilus_trader.adapters.binance.futures.enums import BinanceFuturesOrderType
 from nautilus_trader.adapters.binance.futures.enums import BinanceFuturesPositionSide
+from nautilus_trader.adapters.binance.futures.enums import BinanceFuturesPositionUpdateReason
 from nautilus_trader.adapters.binance.futures.enums import BinanceFuturesTimeInForce
 from nautilus_trader.adapters.binance.futures.enums import BinanceFuturesWorkingType
 
 
-class MarginCallPositionMsg(msgspec.Struct):
-    """WebSocket message 'inner struct' position for `Binance Futures` Margin Call events."""
+class MarginCallPosition(msgspec.Struct):
+    """Inner struct position for `Binance Futures` Margin Call events."""
 
     s: str  # Symbol
     ps: BinanceFuturesPositionSide  # Position Side
@@ -45,10 +46,56 @@ class BinanceFuturesMarginCallMsg(msgspec.Struct):
     e: str  # Event Type
     E: int  # Event Time
     cw: float  # Cross Wallet Balance. Only pushed with crossed position margin call
-    p: List[MarginCallPositionMsg]
+    p: List[MarginCallPosition]
 
 
-class BinanceFuturesOrderMsg(msgspec.Struct):
+class BinanceFuturesBalance(msgspec.Struct):
+    """Inner struct balance for `Binance Futures` Balance and Position update event."""
+
+    a: str  # Asset
+    wb: str  # Wallet Balance
+    cw: str  # Cross Wallet Balance
+    bc: str  # Balance Change except PnL and Commission
+
+
+class BinanceFuturesPosition(msgspec.Struct):
+    """Inner struct position for `Binance Futures` Balance and Position update event."""
+
+    s: str  # Symbol
+    pa: str  # Position amount
+    ep: str  # Entry price
+    cr: str  # (Pre-free) Accumulated Realized
+    up: str  # Unrealized PnL
+    mt: str  # Margin type
+    iw: str  # Isolated wallet
+    ps: BinanceFuturesPositionSide
+
+
+class BinanceFuturesAccountUpdateData(msgspec.Struct):
+    """WebSocket message for `Binance Futures` Balance and Position Update events."""
+
+    m: BinanceFuturesPositionUpdateReason
+    B: List[BinanceFuturesBalance]
+    P: List[BinanceFuturesPosition]
+
+
+class BinanceFuturesAccountUpdateMsg(msgspec.Struct):
+    """WebSocket message for `Binance Futures` Balance and Position Update events."""
+
+    e: str  # Event Type
+    E: int  # Event Time
+    T: int  # Transaction Time
+    a: BinanceFuturesAccountUpdateData
+
+
+class BinanceFuturesAccountUpdateWrapper(msgspec.Struct):
+    """WebSocket message wrapper for `Binance Futures` Balance and Position Update events."""
+
+    stream: str
+    data: BinanceFuturesAccountUpdateMsg
+
+
+class BinanceFuturesOrderData(msgspec.Struct):
     """
     WebSocket message 'inner struct' for `Binance Futures` Order Update events.
 
@@ -65,15 +112,15 @@ class BinanceFuturesOrderMsg(msgspec.Struct):
     q: str  # Original Quantity
     p: str  # Original Price
     ap: str  # Average Price
-    sp: Optional[str]  # Stop Price. Please ignore with TRAILING_STOP_MARKET order
+    sp: Optional[str] = None  # Stop Price. Please ignore with TRAILING_STOP_MARKET order
     x: BinanceFuturesExecutionType
-    X: BinanceOrderStatus
+    X: BinanceFuturesOrderStatus
     i: int  # Order ID
     l: str  # Order Last Filled Quantity
     z: str  # Order Filled Accumulated Quantity
     L: str  # Last Filled Price
-    N: Optional[str]  # Commission Asset, will not push if no commission
-    n: Optional[str]  # Commission, will not push if no commission
+    N: Optional[str] = None  # Commission Asset, will not push if no commission
+    n: Optional[str] = None  # Commission, will not push if no commission
     T: int  # Order Trade Time
     t: int  # Trade ID
     b: str  # Bids Notional
@@ -83,9 +130,9 @@ class BinanceFuturesOrderMsg(msgspec.Struct):
     wt: BinanceFuturesWorkingType
     ot: BinanceFuturesOrderType
     ps: BinanceFuturesPositionSide
-    cp: Optional[bool]  # If Close-All, pushed with conditional order
-    AP: Optional[str]  # Activation Price, only pushed with TRAILING_STOP_MARKET order
-    cr: Optional[str]  # Callback Rate, only pushed with TRAILING_STOP_MARKET order
+    cp: Optional[bool] = None  # If Close-All, pushed with conditional order
+    AP: Optional[str] = None  # Activation Price, only pushed with TRAILING_STOP_MARKET order
+    cr: Optional[str] = None  # Callback Rate, only pushed with TRAILING_STOP_MARKET order
     pP: bool  # ignore
     si: int  # ignore
     ss: int  # ignore
@@ -98,4 +145,11 @@ class BinanceFuturesOrderUpdateMsg(msgspec.Struct):
     e: str  # Event Type
     E: int  # Event Time
     T: int  # Transaction Time
-    o: List[BinanceFuturesOrderMsg]
+    o: BinanceFuturesOrderData
+
+
+class BinanceFuturesOrderUpdateWrapper(msgspec.Struct):
+    """WebSocket message wrapper for `Binance Futures` Order Update events."""
+
+    stream: str
+    data: BinanceFuturesOrderUpdateMsg

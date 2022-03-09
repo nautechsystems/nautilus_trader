@@ -16,6 +16,9 @@
 from decimal import Decimal
 from typing import Any, Dict
 
+from nautilus_trader.adapters.binance.futures.enums import BinanceFuturesOrderStatus
+from nautilus_trader.adapters.binance.futures.enums import BinanceFuturesOrderType
+from nautilus_trader.adapters.binance.futures.enums import BinanceFuturesTimeInForce
 from nautilus_trader.adapters.binance.futures.schemas.account import BinanceFuturesOrder
 from nautilus_trader.core.datetime import millis_to_nanos
 from nautilus_trader.core.uuid import UUID4
@@ -60,41 +63,43 @@ def binance_order_type(order: Order) -> str:
         raise RuntimeError("invalid order type")
 
 
-def parse_order_type(order_type: str) -> OrderType:
-    if order_type == "STOP":
+def parse_order_type(order_type: BinanceFuturesOrderType) -> OrderType:
+    if order_type == BinanceFuturesOrderType.STOP:
         return OrderType.STOP_LIMIT
-    elif order_type == "STOP_LOSS_LIMIT":
-        return OrderType.STOP_LIMIT
-    elif order_type == "TAKE_PROFIT":
+    elif order_type == BinanceFuturesOrderType.STOP_MARKET:
+        return OrderType.STOP_MARKET
+    elif order_type == BinanceFuturesOrderType.TAKE_PROFIT:
         return OrderType.LIMIT_IF_TOUCHED
-    elif order_type == "TAKE_PROFIT_LIMIT":
-        return OrderType.STOP_LIMIT
-    elif order_type == "TAKE_PROFIT_MARKET":
+    elif order_type == BinanceFuturesOrderType.TAKE_PROFIT_MARKET:
         return OrderType.MARKET_IF_TOUCHED
     else:
-        return OrderType[order_type]
+        return OrderType[order_type.value]
 
 
-def parse_order_status(status: str) -> OrderStatus:
-    if status == "NEW":
+def parse_order_status(status: BinanceFuturesOrderStatus) -> OrderStatus:
+    if status == BinanceFuturesOrderStatus.NEW:
         return OrderStatus.ACCEPTED
-    elif status == "CANCELED":
+    elif status == BinanceFuturesOrderStatus.CANCELED:
         return OrderStatus.CANCELED
-    elif status == "PARTIALLY_FILLED":
+    elif status == BinanceFuturesOrderStatus.PARTIALLY_FILLED:
         return OrderStatus.PARTIALLY_FILLED
-    elif status == "FILLED":
+    elif status == BinanceFuturesOrderStatus.FILLED:
         return OrderStatus.FILLED
-    elif status == "EXPIRED":
+    elif status == BinanceFuturesOrderStatus.NEW_ADL:
+        return OrderStatus.FILLED
+    elif status == BinanceFuturesOrderStatus.NEW_INSURANCE:
+        return OrderStatus.FILLED
+    elif status == BinanceFuturesOrderStatus.EXPIRED:
         return OrderStatus.EXPIRED
     else:  # pragma: no cover (design-time error)
         raise RuntimeError(f"unrecognized order status, was {status}")
 
 
-def parse_time_in_force(time_in_force: str) -> TimeInForce:
-    if time_in_force == "GTX":
+def parse_time_in_force(time_in_force: BinanceFuturesTimeInForce) -> TimeInForce:
+    if time_in_force == BinanceFuturesTimeInForce.GTX:
         return TimeInForce.GTC
     else:
-        return TimeInForce[time_in_force]
+        return TimeInForce[time_in_force.value]
 
 
 def parse_trigger_type(working_type: str) -> TriggerType:
@@ -116,20 +121,21 @@ def parse_order_report_http(
     price = Decimal(msg.price)
     trigger_price = Decimal(msg.stopPrice)
     avg_px = Decimal(msg.avgPrice)
+    time_in_force = BinanceFuturesTimeInForce(msg.timeInForce.upper())
     return OrderStatusReport(
         account_id=account_id,
         instrument_id=instrument_id,
         client_order_id=ClientOrderId(msg.clientOrderId) if msg.clientOrderId != "" else None,
         venue_order_id=VenueOrderId(str(msg.orderId)),
         order_side=OrderSide[msg.side.upper()],
-        order_type=parse_order_type(msg.type.upper()),
-        time_in_force=parse_time_in_force(msg.timeInForce.upper()),
-        order_status=parse_order_status(msg.status.upper()),
+        order_type=parse_order_type(msg.type),
+        time_in_force=parse_time_in_force(time_in_force),
+        order_status=parse_order_status(msg.status),
         price=Price.from_str(msg.price) if price is not None else None,
         quantity=Quantity.from_str(msg.origQty),
         filled_qty=Quantity.from_str(msg.executedQty),
         avg_px=avg_px if avg_px > 0 else None,
-        post_only=msg.timeInForce == "GTX",
+        post_only=time_in_force == BinanceFuturesTimeInForce.GTX,
         reduce_only=msg.reduceOnly,
         report_id=report_id,
         ts_accepted=millis_to_nanos(msg.time),

@@ -61,3 +61,15 @@ class BinanceSpotOrderType(Enum):
     TAKE_PROFIT = "TAKE_PROFIT"
     TAKE_PROFIT_LIMIT = "TAKE_PROFIT_LIMIT"
     LIMIT_MAKER = "LIMIT_MAKER"
+
+
+@unique
+class BinanceSpotOrderStatus(Enum):
+    """Represents a `Binance` order status."""
+
+    NEW = "NEW"
+    PARTIALLY_FILLED = "PARTIALLY_FILLED"
+    FILLED = "FILLED"
+    CANCELED = "CANCELED"
+    REJECTED = "REJECTED"
+    EXPIRED = "EXPIRED"

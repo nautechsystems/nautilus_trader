@@ -99,15 +99,3 @@ class BinanceOrderSide(Enum):
 
     BUY = "BUY"
     SELL = "SELL"
-
-
-@unique
-class BinanceOrderStatus(Enum):
-    """Represents a `Binance` order status."""
-
-    NEW = "NEW"
-    PARTIALLY_FILLED = "PARTIALLY_FILLED"
-    FILLED = "FILLED"
-    CANCELED = "CANCELED"
-    REJECTED = "REJECTED"
-    EXPIRED = "EXPIRED"
