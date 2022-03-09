@@ -27,20 +27,30 @@ from nautilus_trader.adapters.binance.common.functions import parse_symbol
 from nautilus_trader.adapters.binance.futures.http.account import BinanceFuturesAccountHttpAPI
 from nautilus_trader.adapters.binance.futures.http.market import BinanceFuturesMarketHttpAPI
 from nautilus_trader.adapters.binance.futures.http.user import BinanceFuturesUserDataHttpAPI
+from nautilus_trader.adapters.binance.futures.parsing.account import (
+    parse_account_balances_futures_http,
+)
+from nautilus_trader.adapters.binance.futures.parsing.account import (
+    parse_account_balances_futures_ws,
+)
+from nautilus_trader.adapters.binance.futures.parsing.account import parse_account_margins_http
+from nautilus_trader.adapters.binance.futures.parsing.execution import binance_order_type_futures
+from nautilus_trader.adapters.binance.futures.parsing.execution import (
+    parse_order_report_futures_http,
+)
+from nautilus_trader.adapters.binance.futures.parsing.execution import parse_order_type_futures
+from nautilus_trader.adapters.binance.futures.parsing.execution import (
+    parse_position_report_futures_http,
+)
+from nautilus_trader.adapters.binance.futures.parsing.execution import (
+    parse_trade_report_futures_http,
+)
 from nautilus_trader.adapters.binance.futures.providers import BinanceFuturesInstrumentProvider
 from nautilus_trader.adapters.binance.futures.rules import VALID_ORDER_TYPES_FUTURES
 from nautilus_trader.adapters.binance.futures.rules import VALID_TIF_FUTURES
 from nautilus_trader.adapters.binance.futures.schemas.account import BinanceFuturesOrder
 from nautilus_trader.adapters.binance.http.client import BinanceHttpClient
 from nautilus_trader.adapters.binance.http.error import BinanceError
-from nautilus_trader.adapters.binance.parsing.common import binance_order_type_futures
-from nautilus_trader.adapters.binance.parsing.common import parse_order_type_futures
-from nautilus_trader.adapters.binance.parsing.http_exec import parse_account_balances_futures_http
-from nautilus_trader.adapters.binance.parsing.http_exec import parse_account_margins_http
-from nautilus_trader.adapters.binance.parsing.http_exec import parse_order_report_futures_http
-from nautilus_trader.adapters.binance.parsing.http_exec import parse_position_report_futures_http
-from nautilus_trader.adapters.binance.parsing.http_exec import parse_trade_report_futures_http
-from nautilus_trader.adapters.binance.parsing.ws_exec import parse_account_balances_futures_ws
 from nautilus_trader.adapters.binance.websocket.client import BinanceWebSocketClient
 from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.clock import LiveClock

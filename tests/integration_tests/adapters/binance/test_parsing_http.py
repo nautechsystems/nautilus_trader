@@ -17,7 +17,7 @@ import pkgutil
 
 import orjson
 
-from nautilus_trader.adapters.binance.parsing.common import parse_book_snapshot
+from nautilus_trader.adapters.binance.common.parsing.data import parse_book_snapshot
 from nautilus_trader.backtest.data.providers import TestInstrumentProvider
 
 

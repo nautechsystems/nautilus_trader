@@ -15,7 +15,7 @@
 
 import pytest
 
-from nautilus_trader.adapters.binance.parsing.common import parse_order_type_spot
+from nautilus_trader.adapters.binance.spot.parsing.execution import parse_order_type_spot
 from nautilus_trader.model.enums import OrderType
 
 
