@@ -59,15 +59,15 @@ class BinanceFuturesOrderMsg(msgspec.Struct):
 
     s: str  # Symbol
     c: str  # Client Order ID
-    S: BinanceOrderSide  # Side
-    o: BinanceFuturesOrderType  # Order Type
-    f: BinanceFuturesTimeInForce  # Time in Force
+    S: BinanceOrderSide
+    o: BinanceFuturesOrderType
+    f: BinanceFuturesTimeInForce
     q: str  # Original Quantity
     p: str  # Original Price
     ap: str  # Average Price
     sp: str  # Stop Price. Please ignore with TRAILING_STOP_MARKET order
-    x: BinanceFuturesExecutionType  # Execution Type
-    X: BinanceOrderStatus  # Order Status
+    x: BinanceFuturesExecutionType
+    X: BinanceOrderStatus
     i: int  # Order ID
     l: str  # Order Last Filled Quantity
     z: str  # Order Filled Accumulated Quantity
@@ -78,14 +78,14 @@ class BinanceFuturesOrderMsg(msgspec.Struct):
     t: int  # Trade ID
     b: str  # Bids Notional
     a: str  # Ask Notional
-    m: bool  # Is this trade the maker side?
-    R: bool  # Is this reduce only
-    wt: BinanceFuturesWorkingType  # Stop Price Working Type
-    ot: BinanceFuturesOrderType  # Original Order Type
-    ps: BinanceFuturesPositionSide  # Position Side
-    cp: bool  # If Close-All, pushed with conditional order
-    AP: str  # Activation Price, only pushed with TRAILING_STOP_MARKET order
-    cr: str  # Callback Rate, only pushed with TRAILING_STOP_MARKET order
+    m: bool  # Is trade the maker side
+    R: bool  # Is reduce only
+    wt: BinanceFuturesWorkingType
+    ot: BinanceFuturesOrderType
+    ps: BinanceFuturesPositionSide
+    cp: Optional[bool]  # If Close-All, pushed with conditional order
+    AP: Optional[str]  # Activation Price, only pushed with TRAILING_STOP_MARKET order
+    cr: Optional[str]  # Callback Rate, only pushed with TRAILING_STOP_MARKET order
     pP: bool  # ignore
     si: int  # ignore
     ss: int  # ignore
