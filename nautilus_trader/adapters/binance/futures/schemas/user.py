@@ -65,7 +65,7 @@ class BinanceFuturesOrderMsg(msgspec.Struct):
     q: str  # Original Quantity
     p: str  # Original Price
     ap: str  # Average Price
-    sp: str  # Stop Price. Please ignore with TRAILING_STOP_MARKET order
+    sp: Optional[str]  # Stop Price. Please ignore with TRAILING_STOP_MARKET order
     x: BinanceFuturesExecutionType
     X: BinanceOrderStatus
     i: int  # Order ID
