@@ -13,12 +13,16 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 import logging
+import warnings
 from enum import IntEnum
 from time import sleep
 from typing import Optional
 
-from docker import DockerClient
-from docker.models.containers import Container
+
+try:
+    from docker import DockerClient
+except ImportError:
+    warnings.warn("Docker required for Gateway, please install manually via `pip install docker`")
 from ib_insync import IB
 
 
@@ -85,7 +89,7 @@ class InteractiveBrokersGateway:
             return ContainerStatus.UNKNOWN
 
     @property
-    def container(self) -> Container:
+    def container(self):
         if self._container is None:
             all_containers = {c.name: c for c in self._docker.containers.list(all=True)}
             self._container = all_containers.get(self.CONTAINER_NAME)

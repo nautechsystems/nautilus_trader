@@ -60,7 +60,6 @@ psutil = "^5.9.0"
 pyarrow = "^6.0.1"
 pydantic = "^1.9.0"
 pytz = "^2021.3"
-pywin32 = {version = "^303", platform = "win32"}
 quantstats = "^0.0.50"
 redis = "^4.1.4"
 tabulate = "^0.8.9"
@@ -70,7 +69,8 @@ uvloop = { version = "^0.16.0", markers = "sys_platform != 'win32'" }
 bokeh = { version = "^2.4.2", optional = true }
 distributed = { version = "^2022.1.0", optional = true }
 ib_insync = { version = "^0.9.70", optional = true }
-docker = {version = "^5.0.3", optional = true }
+# TODO - Removed due to 3.10 windows build issue - https://github.com/docker/docker-py/issues/2902
+#docker = {version = "^5.0.3", optional = true }
 
 [tool.poetry.dev-dependencies]
 # coverage 5.x is currently broken for Cython
@@ -95,7 +95,7 @@ sphinx_togglebutton = "^0.3.0"
 
 [tool.poetry.extras]
 distributed = ["distributed", "bokeh"]
-ib = ["ib_insync", "docker"]
+ib = ["ib_insync"] #, "docker"]
 
 ##########################################################
 # Test configs                                           #
