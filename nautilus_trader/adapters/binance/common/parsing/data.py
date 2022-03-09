@@ -13,13 +13,9 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from decimal import Decimal
 from typing import Dict, List, Tuple
 
-from nautilus_trader.adapters.binance.core.types import BinanceBar
-from nautilus_trader.adapters.binance.core.types import BinanceSpotTicker
-from nautilus_trader.adapters.binance.parsing.common import parse_balances_futures
-from nautilus_trader.adapters.binance.parsing.common import parse_balances_spot
+from nautilus_trader.adapters.binance.common.types import BinanceBar
 from nautilus_trader.core.datetime import millis_to_nanos
 from nautilus_trader.model.data.bar import BarSpecification
 from nautilus_trader.model.data.bar import BarType
@@ -34,12 +30,57 @@ from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import PriceType
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import TradeId
-from nautilus_trader.model.objects import AccountBalance
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.orderbook.data import Order
 from nautilus_trader.model.orderbook.data import OrderBookDelta
 from nautilus_trader.model.orderbook.data import OrderBookDeltas
+from nautilus_trader.model.orderbook.data import OrderBookSnapshot
+
+
+def parse_trade_tick_http(instrument_id: InstrumentId, msg: Dict, ts_init: int) -> TradeTick:
+    return TradeTick(
+        instrument_id=instrument_id,
+        price=Price.from_str(msg["price"]),
+        size=Quantity.from_str(msg["qty"]),
+        aggressor_side=AggressorSide.SELL if msg["isBuyerMaker"] else AggressorSide.BUY,
+        trade_id=TradeId(str(msg["id"])),
+        ts_event=millis_to_nanos(msg["time"]),
+        ts_init=ts_init,
+    )
+
+
+def parse_bar_http(bar_type: BarType, values: List, ts_init: int) -> BinanceBar:
+    return BinanceBar(
+        bar_type=bar_type,
+        open=Price.from_str(values[1]),
+        high=Price.from_str(values[2]),
+        low=Price.from_str(values[3]),
+        close=Price.from_str(values[4]),
+        volume=Quantity.from_str(values[5]),
+        quote_volume=Quantity.from_str(values[7]),
+        count=values[8],
+        taker_buy_base_volume=Quantity.from_str(values[9]),
+        taker_buy_quote_volume=Quantity.from_str(values[10]),
+        ts_event=millis_to_nanos(values[0]),
+        ts_init=ts_init,
+    )
+
+
+def parse_book_snapshot(
+    instrument_id: InstrumentId, msg: Dict, update_id: int, ts_init: int
+) -> OrderBookSnapshot:
+    ts_event: int = ts_init
+
+    return OrderBookSnapshot(
+        instrument_id=instrument_id,
+        book_type=BookType.L2_MBP,
+        bids=[[float(o[0]), float(o[1])] for o in msg.get("bids")],
+        asks=[[float(o[0]), float(o[1])] for o in msg.get("asks")],
+        ts_event=ts_event,
+        ts_init=ts_init,
+        update_id=update_id,
+    )
 
 
 def parse_diff_depth_stream_ws(
@@ -92,34 +133,6 @@ def parse_book_delta_ws(
         ts_event=ts_event,
         ts_init=ts_init,
         update_id=update_id,
-    )
-
-
-def parse_ticker_24hr_spot_ws(
-    instrument_id: InstrumentId, msg: Dict, ts_init: int
-) -> BinanceSpotTicker:
-    return BinanceSpotTicker(
-        instrument_id=instrument_id,
-        price_change=Decimal(msg["p"]),
-        price_change_percent=Decimal(msg["P"]),
-        weighted_avg_price=Decimal(msg["w"]),
-        prev_close_price=Decimal(msg["x"]),
-        last_price=Decimal(msg["c"]),
-        last_qty=Decimal(msg["Q"]),
-        bid_price=Decimal(msg["b"]),
-        ask_price=Decimal(msg["a"]),
-        open_price=Decimal(msg["o"]),
-        high_price=Decimal(msg["h"]),
-        low_price=Decimal(msg["l"]),
-        volume=Decimal(msg["v"]),
-        quote_volume=Decimal(msg["q"]),
-        open_time_ms=msg["O"],
-        close_time_ms=msg["C"],
-        first_id=msg["F"],
-        last_id=msg["L"],
-        count=msg["n"],
-        ts_event=millis_to_nanos(msg["E"]),
-        ts_init=ts_init,
     )
 
 
@@ -190,11 +203,3 @@ def parse_bar_ws(
         ts_event=ts_event,
         ts_init=ts_init,
     )
-
-
-def parse_account_balances_spot_ws(raw_balances: List[Dict[str, str]]) -> List[AccountBalance]:
-    return parse_balances_spot(raw_balances, "a", "f", "l")
-
-
-def parse_account_balances_futures_ws(raw_balances: List[Dict[str, str]]) -> List[AccountBalance]:
-    return parse_balances_futures(raw_balances, "a", "wb", "bc", "bc")  # TODO(cs): Implement

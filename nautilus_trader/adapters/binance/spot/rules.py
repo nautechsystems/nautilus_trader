@@ -13,10 +13,19 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-# Required to register tick schemes
-from nautilus_trader.model.tick_scheme.implementations.fixed import (  # noqa: F401
-    FOREX_3DECIMAL_TICK_SCHEME,
+from nautilus_trader.model.enums import OrderType
+from nautilus_trader.model.enums import TimeInForce
+
+
+VALID_TIF_SPOT = (
+    TimeInForce.GTC,
+    TimeInForce.FOK,
+    TimeInForce.IOC,
 )
-from nautilus_trader.model.tick_scheme.implementations.fixed import (  # noqa: F401
-    FOREX_5DECIMAL_TICK_SCHEME,
+
+VALID_ORDER_TYPES_SPOT = (
+    OrderType.MARKET,
+    OrderType.LIMIT,
+    OrderType.STOP_LIMIT,
+    OrderType.LIMIT_IF_TOUCHED,
 )

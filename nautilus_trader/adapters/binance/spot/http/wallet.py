@@ -23,7 +23,7 @@ from nautilus_trader.adapters.binance.spot.schemas.wallet import BinanceSpotTrad
 
 class BinanceSpotWalletHttpAPI:
     """
-    Provides access to the `Binance SPOT Wallet` HTTP REST API.
+    Provides access to the `Binance Spot/Margin` Wallet HTTP REST API.
 
     Parameters
     ----------
@@ -33,6 +33,9 @@ class BinanceSpotWalletHttpAPI:
 
     def __init__(self, client: BinanceHttpClient):
         self.client = client
+
+        self._decoder_trade_fees = msgspec.json.Decoder(BinanceSpotTradeFees)
+        self._decoder_trade_fees_array = msgspec.json.Decoder(List[BinanceSpotTradeFees])
 
     async def trade_fee(
         self,
@@ -72,7 +75,7 @@ class BinanceSpotWalletHttpAPI:
             payload=payload,
         )
 
-        return msgspec.json.decode(raw, type=BinanceSpotTradeFees)
+        return self._decoder_trade_fees.decode(raw)
 
     async def trade_fees(self, recv_window: Optional[int] = None) -> List[BinanceSpotTradeFees]:
         """
@@ -104,4 +107,4 @@ class BinanceSpotWalletHttpAPI:
             payload=payload,
         )
 
-        return msgspec.json.decode(raw, type=List[BinanceSpotTradeFees])
+        return self._decoder_trade_fees_array.decode(raw)

@@ -16,7 +16,7 @@
 import json
 from typing import List
 
-from nautilus_trader.adapters.binance.core.enums import BinanceAccountType
+from nautilus_trader.adapters.binance.common.enums import BinanceAccountType
 
 
 def parse_symbol(symbol: str, account_type: BinanceAccountType):

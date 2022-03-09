@@ -38,7 +38,7 @@ class BinanceHttpClient(HttpClient):
     Provides a `Binance` asynchronous HTTP client.
     """
 
-    BASE_URL = "https://api.binance.com"  # Default SPOT
+    BASE_URL = "https://api.binance.com"  # Default Spot/Margin
 
     def __init__(
         self,

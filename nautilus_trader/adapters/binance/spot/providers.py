@@ -16,15 +16,15 @@
 import time
 from typing import Dict, List, Optional
 
-from nautilus_trader.adapters.binance.core.constants import BINANCE_VENUE
-from nautilus_trader.adapters.binance.core.enums import BinanceAccountType
+from nautilus_trader.adapters.binance.common.constants import BINANCE_VENUE
+from nautilus_trader.adapters.binance.common.enums import BinanceAccountType
 from nautilus_trader.adapters.binance.http.client import BinanceHttpClient
 from nautilus_trader.adapters.binance.http.error import BinanceClientError
-from nautilus_trader.adapters.binance.parsing.http_data import parse_spot_instrument_http
 from nautilus_trader.adapters.binance.spot.http.market import BinanceSpotMarketHttpAPI
 from nautilus_trader.adapters.binance.spot.http.wallet import BinanceSpotWalletHttpAPI
-from nautilus_trader.adapters.binance.spot.schemas.market import BinanceExchangeInfo
-from nautilus_trader.adapters.binance.spot.schemas.market import BinanceSymbolInfo
+from nautilus_trader.adapters.binance.spot.parsing.data import parse_instrument_http
+from nautilus_trader.adapters.binance.spot.schemas.market import BinanceSpotExchangeInfo
+from nautilus_trader.adapters.binance.spot.schemas.market import BinanceSpotSymbolInfo
 from nautilus_trader.adapters.binance.spot.schemas.wallet import BinanceSpotTradeFees
 from nautilus_trader.common.config import InstrumentProviderConfig
 from nautilus_trader.common.logging import Logger
@@ -93,7 +93,7 @@ class BinanceSpotInstrumentProvider(InstrumentProvider):
             return
 
         # Get exchange info for all assets
-        exchange_info: BinanceExchangeInfo = await self._market.exchange_info()
+        exchange_info: BinanceSpotExchangeInfo = await self._market.exchange_info()
         for symbol_info in exchange_info.symbols:
             self._parse_instrument(
                 symbol_info=symbol_info,
@@ -149,7 +149,7 @@ class BinanceSpotInstrumentProvider(InstrumentProvider):
         symbols: List[str] = [instrument_id.symbol.value for instrument_id in instrument_ids]
 
         # Get exchange info for all assets
-        exchange_info: BinanceExchangeInfo = await self._market.exchange_info(symbols=symbols)
+        exchange_info: BinanceSpotExchangeInfo = await self._market.exchange_info(symbols=symbols)
         for symbol_info in exchange_info.symbols:
             self._parse_instrument(
                 symbol_info=symbol_info,
@@ -196,7 +196,7 @@ class BinanceSpotInstrumentProvider(InstrumentProvider):
             return
 
         # Get exchange info for asset
-        exchange_info: BinanceExchangeInfo = await self._market.exchange_info(symbol=symbol)
+        exchange_info: BinanceSpotExchangeInfo = await self._market.exchange_info(symbol=symbol)
         for symbol_info in exchange_info.symbols:
             self._parse_instrument(
                 symbol_info=symbol_info,
@@ -206,11 +206,11 @@ class BinanceSpotInstrumentProvider(InstrumentProvider):
 
     def _parse_instrument(
         self,
-        symbol_info: BinanceSymbolInfo,
+        symbol_info: BinanceSpotSymbolInfo,
         fees: BinanceSpotTradeFees,
         ts_event: int,
     ) -> None:
-        instrument = parse_spot_instrument_http(
+        instrument = parse_instrument_http(
             symbol_info=symbol_info,
             fees=fees,
             ts_event=ts_event,

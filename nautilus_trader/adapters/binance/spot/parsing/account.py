@@ -13,29 +13,16 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from nautilus_trader.model.enums import OrderType
-from nautilus_trader.model.enums import TimeInForce
+
+from typing import Dict, List
+
+from nautilus_trader.adapters.binance.spot.parsing.execution import parse_balances
+from nautilus_trader.model.objects import AccountBalance
 
 
-VALID_ORDER_TYPES_SPOT = (
-    OrderType.MARKET,
-    OrderType.LIMIT,
-    OrderType.STOP_LIMIT,
-    OrderType.LIMIT_IF_TOUCHED,
-)
+def parse_account_balances_ws(raw_balances: List[Dict[str, str]]) -> List[AccountBalance]:
+    return parse_balances(raw_balances, "a", "f", "l")
 
-VALID_ORDER_TYPES_FUTURES = (
-    OrderType.MARKET,
-    OrderType.LIMIT,
-    OrderType.STOP_MARKET,
-    OrderType.STOP_LIMIT,
-    OrderType.MARKET_IF_TOUCHED,
-    OrderType.LIMIT_IF_TOUCHED,
-    OrderType.TRAILING_STOP_MARKET,
-)
 
-VALID_TIF = (
-    TimeInForce.GTC,
-    TimeInForce.FOK,
-    TimeInForce.IOC,
-)
+def parse_account_balances_http(raw_balances: List[Dict[str, str]]) -> List[AccountBalance]:
+    return parse_balances(raw_balances, "asset", "free", "locked")

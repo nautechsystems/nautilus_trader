@@ -20,27 +20,27 @@ from typing import Any, Dict, List, Optional, Set
 
 import orjson
 
-from nautilus_trader.adapters.binance.core.constants import BINANCE_VENUE
-from nautilus_trader.adapters.binance.core.enums import BinanceAccountType
-from nautilus_trader.adapters.binance.core.functions import format_symbol
-from nautilus_trader.adapters.binance.core.functions import parse_symbol
-from nautilus_trader.adapters.binance.core.rules import VALID_ORDER_TYPES_FUTURES
-from nautilus_trader.adapters.binance.core.rules import VALID_TIF
+from nautilus_trader.adapters.binance.common.constants import BINANCE_VENUE
+from nautilus_trader.adapters.binance.common.enums import BinanceAccountType
+from nautilus_trader.adapters.binance.common.functions import format_symbol
+from nautilus_trader.adapters.binance.common.functions import parse_symbol
 from nautilus_trader.adapters.binance.futures.http.account import BinanceFuturesAccountHttpAPI
 from nautilus_trader.adapters.binance.futures.http.market import BinanceFuturesMarketHttpAPI
 from nautilus_trader.adapters.binance.futures.http.user import BinanceFuturesUserDataHttpAPI
+from nautilus_trader.adapters.binance.futures.parsing.account import parse_account_balances_http
+from nautilus_trader.adapters.binance.futures.parsing.account import parse_account_balances_ws
+from nautilus_trader.adapters.binance.futures.parsing.account import parse_account_margins_http
+from nautilus_trader.adapters.binance.futures.parsing.execution import binance_order_type
+from nautilus_trader.adapters.binance.futures.parsing.execution import parse_order_report_http
+from nautilus_trader.adapters.binance.futures.parsing.execution import parse_order_type
+from nautilus_trader.adapters.binance.futures.parsing.execution import parse_position_report_http
+from nautilus_trader.adapters.binance.futures.parsing.execution import parse_trade_report_http
 from nautilus_trader.adapters.binance.futures.providers import BinanceFuturesInstrumentProvider
-from nautilus_trader.adapters.binance.futures.schemas.account import BinanceFuturesOrderMsg
+from nautilus_trader.adapters.binance.futures.rules import VALID_ORDER_TYPES_FUTURES
+from nautilus_trader.adapters.binance.futures.rules import VALID_TIF_FUTURES
+from nautilus_trader.adapters.binance.futures.schemas.account import BinanceFuturesOrder
 from nautilus_trader.adapters.binance.http.client import BinanceHttpClient
 from nautilus_trader.adapters.binance.http.error import BinanceError
-from nautilus_trader.adapters.binance.parsing.common import binance_order_type_futures
-from nautilus_trader.adapters.binance.parsing.common import parse_order_type_futures
-from nautilus_trader.adapters.binance.parsing.http_exec import parse_account_balances_futures_http
-from nautilus_trader.adapters.binance.parsing.http_exec import parse_account_margins_http
-from nautilus_trader.adapters.binance.parsing.http_exec import parse_order_report_futures_http
-from nautilus_trader.adapters.binance.parsing.http_exec import parse_position_report_futures_http
-from nautilus_trader.adapters.binance.parsing.http_exec import parse_trade_report_futures_http
-from nautilus_trader.adapters.binance.parsing.ws_exec import parse_account_balances_futures_ws
 from nautilus_trader.adapters.binance.websocket.client import BinanceWebSocketClient
 from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.clock import LiveClock
@@ -89,7 +89,7 @@ from nautilus_trader.msgbus.bus import MessageBus
 
 class BinanceFuturesExecutionClient(LiveExecutionClient):
     """
-    Provides an execution client for the `Binance FUTURES` exchange.
+    Provides an execution client for the `Binance Futures` exchange.
 
     Parameters
     ----------
@@ -221,7 +221,7 @@ class BinanceFuturesExecutionClient(LiveExecutionClient):
             self._log.error("Binance API key does not have trading permissions.")
 
     def _update_account_state(self, response: Dict[str, Any]) -> None:
-        balances = parse_account_balances_futures_http(raw_balances=response["assets"])
+        balances = parse_account_balances_http(raw_balances=response["assets"])
         margins = parse_account_margins_http(raw_balances=response["assets"])
 
         self.generate_account_state(
@@ -286,7 +286,7 @@ class BinanceFuturesExecutionClient(LiveExecutionClient):
         self._log.warning("Cannot generate OrderStatusReport: not yet implemented.")
 
         try:
-            msg: Optional[BinanceFuturesOrderMsg] = await self._http_account.get_order(
+            msg: Optional[BinanceFuturesOrder] = await self._http_account.get_order(
                 symbol=instrument_id.symbol.value,
                 order_id=venue_order_id.value,
             )
@@ -300,7 +300,7 @@ class BinanceFuturesExecutionClient(LiveExecutionClient):
         if not msg:
             return None
 
-        return parse_order_report_futures_http(
+        return parse_order_report_http(
             account_id=self.account_id,
             instrument_id=self._get_cached_instrument_id(msg.symbol),
             msg=msg,
@@ -343,13 +343,11 @@ class BinanceFuturesExecutionClient(LiveExecutionClient):
             format_symbol(o.instrument_id.symbol.value) for o in open_orders
         }
 
-        order_msgs: List[BinanceFuturesOrderMsg] = []
+        order_msgs: List[BinanceFuturesOrder] = []
         reports: Dict[VenueOrderId, OrderStatusReport] = {}
 
         try:
-            open_order_msgs: List[
-                BinanceFuturesOrderMsg
-            ] = await self._http_account.get_open_orders(
+            open_order_msgs: List[BinanceFuturesOrder] = await self._http_account.get_open_orders(
                 symbol=instrument_id.symbol.value if instrument_id is not None else None,
             )
             if open_order_msgs:
@@ -382,7 +380,7 @@ class BinanceFuturesExecutionClient(LiveExecutionClient):
             #     if end is not None and timestamp > end:
             #         continue
 
-            report = parse_order_report_futures_http(
+            report = parse_order_report_http(
                 account_id=self.account_id,
                 instrument_id=self._get_cached_instrument_id(msg.symbol),
                 msg=msg,
@@ -464,7 +462,7 @@ class BinanceFuturesExecutionClient(LiveExecutionClient):
             # if end is not None and timestamp > end:
             #     continue
 
-            report = parse_trade_report_futures_http(
+            report = parse_trade_report_http(
                 account_id=self.account_id,
                 instrument_id=self._get_cached_instrument_id(data["symbol"]),
                 data=data,
@@ -523,7 +521,7 @@ class BinanceFuturesExecutionClient(LiveExecutionClient):
             if Decimal(data["positionAmt"]) == 0:
                 continue  # Flat position
 
-            report: PositionStatusReport = parse_position_report_futures_http(
+            report: PositionStatusReport = parse_position_report_http(
                 account_id=self.account_id,
                 instrument_id=self._get_cached_instrument_id(data["symbol"]),
                 data=data,
@@ -555,11 +553,11 @@ class BinanceFuturesExecutionClient(LiveExecutionClient):
             return
 
         # Check time in force valid
-        if order.time_in_force not in VALID_TIF:
+        if order.time_in_force not in VALID_TIF_FUTURES:
             self._log.error(
                 f"Cannot submit order: "
                 f"{TimeInForceParser.to_str_py(order.time_in_force)} "
-                f"not supported by the exchange. Use any of {VALID_TIF}.",
+                f"not supported by the exchange. Use any of {VALID_TIF_FUTURES}.",
             )
             return
 
@@ -636,7 +634,7 @@ class BinanceFuturesExecutionClient(LiveExecutionClient):
         await self._http_account.new_order(
             symbol=format_symbol(order.instrument_id.symbol.value),
             side=OrderSideParser.to_str_py(order.side),
-            type=binance_order_type_futures(order),
+            type=binance_order_type(order),
             time_in_force=time_in_force,
             quantity=str(order.quantity),
             price=str(order.price),
@@ -660,7 +658,7 @@ class BinanceFuturesExecutionClient(LiveExecutionClient):
         await self._http_account.new_order(
             symbol=format_symbol(order.instrument_id.symbol.value),
             side=OrderSideParser.to_str_py(order.side),
-            type=binance_order_type_futures(order),
+            type=binance_order_type(order),
             time_in_force=TimeInForceParser.to_str_py(order.time_in_force),
             quantity=str(order.quantity),
             stop_price=str(order.trigger_price),
@@ -685,7 +683,7 @@ class BinanceFuturesExecutionClient(LiveExecutionClient):
         await self._http_account.new_order(
             symbol=format_symbol(order.instrument_id.symbol.value),
             side=OrderSideParser.to_str_py(order.side),
-            type=binance_order_type_futures(order),
+            type=binance_order_type(order),
             time_in_force=TimeInForceParser.to_str_py(order.time_in_force),
             quantity=str(order.quantity),
             price=str(order.price),
@@ -719,7 +717,7 @@ class BinanceFuturesExecutionClient(LiveExecutionClient):
         await self._http_account.new_order(
             symbol=format_symbol(order.instrument_id.symbol.value),
             side=OrderSideParser.to_str_py(order.side),
-            type=binance_order_type_futures(order),
+            type=binance_order_type(order),
             time_in_force=TimeInForceParser.to_str_py(order.time_in_force),
             quantity=str(order.quantity),
             activation_price=str(order.trigger_price),
@@ -832,7 +830,7 @@ class BinanceFuturesExecutionClient(LiveExecutionClient):
 
     def _handle_account_update(self, data: Dict[str, Any]):
         self.generate_account_state(
-            balances=parse_account_balances_futures_ws(raw_balances=data["a"]["B"]),
+            balances=parse_account_balances_ws(raw_balances=data["a"]["B"]),
             margins=[],
             reported=True,
             ts_event=millis_to_nanos(data["T"]),
@@ -888,7 +886,7 @@ class BinanceFuturesExecutionClient(LiveExecutionClient):
                 venue_position_id=None,  # NETTING accounts
                 trade_id=TradeId(str(data["t"])),  # Trade ID
                 order_side=OrderSideParser.from_str_py(data["S"]),
-                order_type=parse_order_type_futures(data["o"]),
+                order_type=parse_order_type(data["o"]),
                 last_qty=Quantity.from_str(data["l"]),
                 last_px=Price.from_str(data["L"]),
                 quote_currency=instrument.quote_currency,

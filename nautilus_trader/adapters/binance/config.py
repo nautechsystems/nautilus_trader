@@ -15,7 +15,7 @@
 
 from typing import Optional
 
-from nautilus_trader.adapters.binance.core.enums import BinanceAccountType
+from nautilus_trader.adapters.binance.common.enums import BinanceAccountType
 from nautilus_trader.live.config import LiveDataClientConfig
 from nautilus_trader.live.config import LiveExecClientConfig
 

@@ -12,21 +12,20 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
-
 from typing import Any, Dict, List, Optional
 
 import msgspec
 import orjson
 
-from nautilus_trader.adapters.binance.core.functions import convert_symbols_list_to_json_array
-from nautilus_trader.adapters.binance.core.functions import format_symbol
+from nautilus_trader.adapters.binance.common.functions import convert_symbols_list_to_json_array
+from nautilus_trader.adapters.binance.common.functions import format_symbol
 from nautilus_trader.adapters.binance.http.client import BinanceHttpClient
-from nautilus_trader.adapters.binance.spot.schemas.market import BinanceExchangeInfo
+from nautilus_trader.adapters.binance.spot.schemas.market import BinanceSpotExchangeInfo
 
 
 class BinanceSpotMarketHttpAPI:
     """
-    Provides access to the `Binance FUTURES Market` HTTP REST API.
+    Provides access to the `Binance Futures` Market HTTP REST API.
 
     Parameters
     ----------
@@ -38,6 +37,8 @@ class BinanceSpotMarketHttpAPI:
 
     def __init__(self, client: BinanceHttpClient):
         self.client = client
+
+        self._decoder_exchange_info = msgspec.json.Decoder(BinanceSpotExchangeInfo)
 
     async def ping(self) -> Dict[str, Any]:
         """
@@ -78,7 +79,7 @@ class BinanceSpotMarketHttpAPI:
         self,
         symbol: str = None,
         symbols: List[str] = None,
-    ) -> BinanceExchangeInfo:
+    ) -> BinanceSpotExchangeInfo:
         """
         Get current exchange trading rules and symbol information.
         Only either `symbol` or `symbols` should be passed.
@@ -95,7 +96,7 @@ class BinanceSpotMarketHttpAPI:
 
         Returns
         -------
-        BinanceExchangeInfo
+        BinanceSpotExchangeInfo
 
         References
         ----------
@@ -116,7 +117,7 @@ class BinanceSpotMarketHttpAPI:
             payload=payload,
         )
 
-        return msgspec.json.decode(raw, type=BinanceExchangeInfo)
+        return self._decoder_exchange_info.decode(raw)
 
     async def depth(self, symbol: str, limit: Optional[int] = None) -> Dict[str, Any]:
         """

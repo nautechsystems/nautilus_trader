@@ -17,16 +17,16 @@ from typing import List, Optional
 
 import msgspec
 
-from nautilus_trader.adapters.binance.core.enums import BinanceExchangeFilterType
-from nautilus_trader.adapters.binance.core.enums import BinancePermissions
-from nautilus_trader.adapters.binance.core.enums import BinanceRateLimitInterval
-from nautilus_trader.adapters.binance.core.enums import BinanceRateLimitType
-from nautilus_trader.adapters.binance.core.enums import BinanceSpotOrderType
-from nautilus_trader.adapters.binance.core.enums import BinanceSymbolFilterType
+from nautilus_trader.adapters.binance.common.enums import BinanceExchangeFilterType
+from nautilus_trader.adapters.binance.common.enums import BinanceRateLimitInterval
+from nautilus_trader.adapters.binance.common.enums import BinanceRateLimitType
+from nautilus_trader.adapters.binance.common.enums import BinanceSymbolFilterType
+from nautilus_trader.adapters.binance.spot.enums import BinanceSpotOrderType
+from nautilus_trader.adapters.binance.spot.enums import BinanceSpotPermissions
 
 
 class BinanceExchangeFilter(msgspec.Struct):
-    """Represents a `Binance` exchange filter."""
+    """HTTP response 'inner struct' from `Binance Spot/Margin` GET /fapi/v1/exchangeInfo."""
 
     filterType: BinanceExchangeFilterType
     maxNumOrders: Optional[int] = None
@@ -34,7 +34,7 @@ class BinanceExchangeFilter(msgspec.Struct):
 
 
 class BinanceSymbolFilter(msgspec.Struct):
-    """Represents a `Binance` symbol filter."""
+    """HTTP response 'inner struct' from `Binance Spot/Margin` GET /fapi/v1/exchangeInfo."""
 
     filterType: BinanceSymbolFilterType
     minPrice: Optional[str] = None
@@ -60,7 +60,7 @@ class BinanceSymbolFilter(msgspec.Struct):
 
 
 class BinanceRateLimit(msgspec.Struct):
-    """Represents a `Binance` rate limit spec."""
+    """HTTP response 'inner struct' from `Binance Spot/Margin` GET /fapi/v1/exchangeInfo."""
 
     rateLimitType: BinanceRateLimitType
     interval: BinanceRateLimitInterval
@@ -68,8 +68,8 @@ class BinanceRateLimit(msgspec.Struct):
     limit: int
 
 
-class BinanceSymbolInfo(msgspec.Struct):
-    """Represents a `Binance` symbol definition."""
+class BinanceSpotSymbolInfo(msgspec.Struct):
+    """HTTP response 'inner struct' from `Binance Spot/Margin` GET /fapi/v1/exchangeInfo."""
 
     symbol: str
     status: str
@@ -86,21 +86,21 @@ class BinanceSymbolInfo(msgspec.Struct):
     isSpotTradingAllowed: bool
     isMarginTradingAllowed: bool
     filters: List[BinanceSymbolFilter]
-    permissions: List[BinancePermissions]
+    permissions: List[BinanceSpotPermissions]
 
 
-class BinanceExchangeInfo(msgspec.Struct):
-    """Represents a `Binance` exchange markets information."""
+class BinanceSpotExchangeInfo(msgspec.Struct):
+    """HTTP response from `Binance Spot/Margin` GET /fapi/v1/exchangeInfo."""
 
     timezone: str
     serverTime: int
     rateLimits: List[BinanceRateLimit]
     exchangeFilters: List[BinanceExchangeFilter]
-    symbols: List[BinanceSymbolInfo]
+    symbols: List[BinanceSpotSymbolInfo]
 
 
-class BinanceTrade(msgspec.Struct):
-    """Represents a `Binance` trade."""
+class BinanceSpotTrade(msgspec.Struct):
+    """HTTP response from `Binance Spot/Margin` GET /fapi/v1/historicalTrades."""
 
     id: int
     price: str
