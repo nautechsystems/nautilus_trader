@@ -24,7 +24,7 @@ from nautilus_trader.adapters.binance.http.enums import NewOrderRespType
 
 class BinanceSpotAccountHttpAPI:
     """
-    Provides access to the `Binance SPOT Account/Trade` HTTP REST API.
+    Provides access to the `Binance Spot/Margin` Account/Trade HTTP REST API.
 
     Parameters
     ----------
@@ -805,7 +805,7 @@ class BinanceSpotAccountHttpAPI:
         recv_window: Optional[int] = None,
     ) -> List[Dict[str, Any]]:
         """
-        Get trades for a specific account and symbol (SPOT and FUTURES).
+        Get trades for a specific account and symbol.
 
         Account Trade List (USER_DATA)
 

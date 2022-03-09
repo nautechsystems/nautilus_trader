@@ -27,7 +27,7 @@ from nautilus_trader.adapters.binance.http.enums import NewOrderRespType
 
 class BinanceFuturesAccountHttpAPI:
     """
-    Provides access to the `Binance FUTURES Account/Trade` HTTP REST API.
+    Provides access to the `Binance Futures` Account/Trade HTTP REST API.
 
     Parameters
     ----------
@@ -49,7 +49,7 @@ class BinanceFuturesAccountHttpAPI:
         elif account_type == BinanceAccountType.FUTURES_COIN:
             self.BASE_ENDPOINT = "/dapi/v1/"
         else:  # pragma: no cover (design-time error)
-            raise RuntimeError(f"invalid Binance FUTURES account type, was {account_type}")
+            raise RuntimeError(f"invalid Binance Futures account type, was {account_type}")
 
         # Decoders
         self.decoder_futures_order = msgspec.json.Decoder(List[BinanceFuturesOrder])
@@ -529,7 +529,7 @@ class BinanceFuturesAccountHttpAPI:
         recv_window: Optional[int] = None,
     ) -> List[Dict[str, Any]]:
         """
-        Get trades for a specific account and symbol (SPOT and FUTURES).
+        Get trades for a specific account and symbol.
 
         Account Trade List (USER_DATA)
 

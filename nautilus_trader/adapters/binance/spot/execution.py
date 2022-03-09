@@ -493,7 +493,7 @@ class BinanceSpotExecutionClient(LiveExecutionClient):
         if order.type not in VALID_ORDER_TYPES_SPOT:
             self._log.error(
                 f"Cannot submit order: {OrderTypeParser.to_str_py(order.type)} "
-                f"orders not supported by the Binance exchange for SPOT accounts. "
+                f"orders not supported by the Binance Spot/Margin exchange. "
                 f"Use any of {[OrderTypeParser.to_str_py(t) for t in VALID_ORDER_TYPES_SPOT]}",
             )
             return
@@ -503,14 +503,16 @@ class BinanceSpotExecutionClient(LiveExecutionClient):
             self._log.error(
                 f"Cannot submit order: "
                 f"{TimeInForceParser.to_str_py(order.time_in_force)} "
-                f"not supported by the exchange. Use any of {VALID_TIF_SPOT}.",
+                f"not supported by the Binance Spot/Margin exchange. "
+                f"Use any of {VALID_TIF_SPOT}.",
             )
             return
 
         # Check post-only
         if order.type == OrderType.STOP_LIMIT and order.is_post_only:
             self._log.error(
-                "Cannot submit order: STOP_LIMIT `post_only` orders not supported by the Binance exchange for SPOT accounts. "
+                "Cannot submit order: "
+                "STOP_LIMIT `post_only` orders not supported by the Binance Spot/Margin exchange. "
                 "This order may become a liquidity TAKER."
             )
             return
