@@ -12,7 +12,7 @@ from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.instruments.base import Instrument
-from nautilus_trader.model.instruments.currency import CurrencySpot
+from nautilus_trader.model.instruments.currency_pair import CurrencyPair
 from nautilus_trader.model.instruments.equity import Equity
 from nautilus_trader.model.instruments.future import Future
 from nautilus_trader.model.instruments.option import Option
@@ -157,7 +157,7 @@ def parse_forex_contract(
         symbol=Symbol(f"{details.contract.symbol}/{details.contract.currency}"),
         venue=Venue(details.contract.primaryExchange or details.contract.exchange),
     )
-    currency = CurrencySpot(
+    currency = CurrencyPair(
         instrument_id=instrument_id,
         native_symbol=Symbol(details.contract.localSymbol),
         base_currency=Currency.from_str(details.contract.currency),
