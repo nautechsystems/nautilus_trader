@@ -16,10 +16,10 @@
 from decimal import Decimal
 from typing import Dict, List, Tuple
 
-from nautilus_trader.adapters.binance.core.types import BinanceBar
-from nautilus_trader.adapters.binance.core.types import BinanceSpotTicker
+from nautilus_trader.adapters.binance.common.types import BinanceBar
 from nautilus_trader.adapters.binance.parsing.common import parse_balances_futures
 from nautilus_trader.adapters.binance.parsing.common import parse_balances_spot
+from nautilus_trader.adapters.binance.spot.types import BinanceSpotTicker
 from nautilus_trader.core.datetime import millis_to_nanos
 from nautilus_trader.model.data.bar import BarSpecification
 from nautilus_trader.model.data.bar import BarType

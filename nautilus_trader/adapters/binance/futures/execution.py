@@ -20,17 +20,17 @@ from typing import Any, Dict, List, Optional, Set
 
 import orjson
 
-from nautilus_trader.adapters.binance.core.constants import BINANCE_VENUE
-from nautilus_trader.adapters.binance.core.enums import BinanceAccountType
-from nautilus_trader.adapters.binance.core.functions import format_symbol
-from nautilus_trader.adapters.binance.core.functions import parse_symbol
-from nautilus_trader.adapters.binance.core.rules import VALID_ORDER_TYPES_FUTURES
-from nautilus_trader.adapters.binance.core.rules import VALID_TIF
+from nautilus_trader.adapters.binance.common.constants import BINANCE_VENUE
+from nautilus_trader.adapters.binance.common.enums import BinanceAccountType
+from nautilus_trader.adapters.binance.common.functions import format_symbol
+from nautilus_trader.adapters.binance.common.functions import parse_symbol
 from nautilus_trader.adapters.binance.futures.http.account import BinanceFuturesAccountHttpAPI
 from nautilus_trader.adapters.binance.futures.http.market import BinanceFuturesMarketHttpAPI
 from nautilus_trader.adapters.binance.futures.http.user import BinanceFuturesUserDataHttpAPI
 from nautilus_trader.adapters.binance.futures.providers import BinanceFuturesInstrumentProvider
-from nautilus_trader.adapters.binance.futures.schemas.account import BinanceFuturesOrderMsg
+from nautilus_trader.adapters.binance.futures.rules import VALID_ORDER_TYPES_FUTURES
+from nautilus_trader.adapters.binance.futures.rules import VALID_TIF_FUTURES
+from nautilus_trader.adapters.binance.futures.schemas.account import BinanceFuturesOrder
 from nautilus_trader.adapters.binance.http.client import BinanceHttpClient
 from nautilus_trader.adapters.binance.http.error import BinanceError
 from nautilus_trader.adapters.binance.parsing.common import binance_order_type_futures
@@ -286,7 +286,7 @@ class BinanceFuturesExecutionClient(LiveExecutionClient):
         self._log.warning("Cannot generate OrderStatusReport: not yet implemented.")
 
         try:
-            msg: Optional[BinanceFuturesOrderMsg] = await self._http_account.get_order(
+            msg: Optional[BinanceFuturesOrder] = await self._http_account.get_order(
                 symbol=instrument_id.symbol.value,
                 order_id=venue_order_id.value,
             )
@@ -343,13 +343,11 @@ class BinanceFuturesExecutionClient(LiveExecutionClient):
             format_symbol(o.instrument_id.symbol.value) for o in open_orders
         }
 
-        order_msgs: List[BinanceFuturesOrderMsg] = []
+        order_msgs: List[BinanceFuturesOrder] = []
         reports: Dict[VenueOrderId, OrderStatusReport] = {}
 
         try:
-            open_order_msgs: List[
-                BinanceFuturesOrderMsg
-            ] = await self._http_account.get_open_orders(
+            open_order_msgs: List[BinanceFuturesOrder] = await self._http_account.get_open_orders(
                 symbol=instrument_id.symbol.value if instrument_id is not None else None,
             )
             if open_order_msgs:
@@ -555,11 +553,11 @@ class BinanceFuturesExecutionClient(LiveExecutionClient):
             return
 
         # Check time in force valid
-        if order.time_in_force not in VALID_TIF:
+        if order.time_in_force not in VALID_TIF_FUTURES:
             self._log.error(
                 f"Cannot submit order: "
                 f"{TimeInForceParser.to_str_py(order.time_in_force)} "
-                f"not supported by the exchange. Use any of {VALID_TIF}.",
+                f"not supported by the exchange. Use any of {VALID_TIF_FUTURES}.",
             )
             return
 

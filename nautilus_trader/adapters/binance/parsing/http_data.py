@@ -13,15 +13,16 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from datetime import datetime
+from datetime import datetime as dt
 from decimal import Decimal
-from typing import Any, Dict, List
+from typing import Dict, List
 
-from nautilus_trader.adapters.binance.core.constants import BINANCE_VENUE
-from nautilus_trader.adapters.binance.core.enums import BinanceSymbolFilterType
-from nautilus_trader.adapters.binance.core.types import BinanceBar
+from nautilus_trader.adapters.binance.common.constants import BINANCE_VENUE
+from nautilus_trader.adapters.binance.common.enums import BinanceSymbolFilterType
+from nautilus_trader.adapters.binance.common.types import BinanceBar
+from nautilus_trader.adapters.binance.futures.schemas.market import BinanceFuturesSymbolInfo
+from nautilus_trader.adapters.binance.spot.schemas.market import BinanceSpotSymbolInfo
 from nautilus_trader.adapters.binance.spot.schemas.market import BinanceSymbolFilter
-from nautilus_trader.adapters.binance.spot.schemas.market import BinanceSymbolInfo
 from nautilus_trader.adapters.binance.spot.schemas.wallet import BinanceSpotTradeFees
 from nautilus_trader.core.datetime import millis_to_nanos
 from nautilus_trader.core.string import precision_from_str
@@ -72,13 +73,11 @@ def parse_bar_http(bar_type: BarType, values: List, ts_init: int) -> BinanceBar:
 
 
 def parse_spot_instrument_http(
-    symbol_info: BinanceSymbolInfo,
+    symbol_info: BinanceSpotSymbolInfo,
     fees: BinanceSpotTradeFees,
     ts_event: int,
     ts_init: int,
 ) -> Instrument:
-    native_symbol = Symbol(symbol_info.symbol)
-
     # Create base asset
     base_currency = Currency(
         code=symbol_info.baseAsset,
@@ -97,7 +96,7 @@ def parse_spot_instrument_http(
         currency_type=CurrencyType.CRYPTO,
     )
 
-    # symbol = Symbol(base_currency.code + "/" + quote_currency.code)
+    native_symbol = Symbol(symbol_info.symbol)
     instrument_id = InstrumentId(symbol=native_symbol, venue=BINANCE_VENUE)
 
     # Parse instrument filters
@@ -159,66 +158,63 @@ def parse_spot_instrument_http(
 
 
 def parse_perpetual_instrument_http(
-    data: Dict[str, Any],
+    symbol_info: BinanceFuturesSymbolInfo,
     ts_event: int,
     ts_init: int,
 ) -> CryptoPerpetual:
-    native_symbol = Symbol(data["symbol"])
-
     # Create base asset
-    base_asset: str = data["baseAsset"]
     base_currency = Currency(
-        code=base_asset,
-        precision=data["baseAssetPrecision"],
+        code=symbol_info.baseAsset,
+        precision=symbol_info.baseAssetPrecision,
         iso4217=0,  # Currently undetermined for crypto assets
-        name=base_asset,
+        name=symbol_info.baseAsset,
         currency_type=CurrencyType.CRYPTO,
     )
 
     # Create quote asset
-    quote_asset: str = data["quoteAsset"]
     quote_currency = Currency(
-        code=quote_asset,
-        precision=data["quotePrecision"],
+        code=symbol_info.quoteAsset,
+        precision=symbol_info.quotePrecision,
         iso4217=0,  # Currently undetermined for crypto assets
-        name=quote_asset,
+        name=symbol_info.quoteAsset,
         currency_type=CurrencyType.CRYPTO,
     )
 
-    symbol = Symbol(data["symbol"] + "-PERP")
+    symbol = Symbol(symbol_info.symbol + "-PERP")
     instrument_id = InstrumentId(symbol=symbol, venue=BINANCE_VENUE)
 
     # Parse instrument filters
-    symbol_filters = {f["filterType"]: f for f in data["filters"]}
-    price_filter = symbol_filters.get("PRICE_FILTER")
-    lot_size_filter = symbol_filters.get("LOT_SIZE")
-    min_notional_filter = symbol_filters.get("MIN_NOTIONAL")
-    # market_lot_size_filter = symbol_filters.get("MARKET_LOT_SIZE")
+    filters: Dict[BinanceSymbolFilterType, BinanceSymbolFilter] = {
+        f.filterType: f for f in symbol_info.filters
+    }
+    price_filter: BinanceSymbolFilter = filters.get(BinanceSymbolFilterType.PRICE_FILTER)
+    lot_size_filter: BinanceSymbolFilter = filters.get(BinanceSymbolFilterType.LOT_SIZE)
+    min_notional_filter: BinanceSymbolFilter = filters.get(BinanceSymbolFilterType.MIN_NOTIONAL)
 
-    tick_size = price_filter["tickSize"].rstrip("0")
-    step_size = lot_size_filter["stepSize"].rstrip("0")
+    tick_size = price_filter.tickSize.rstrip("0")
+    step_size = lot_size_filter.stepSize.rstrip("0")
     price_precision = precision_from_str(tick_size)
     size_precision = precision_from_str(step_size)
     price_increment = Price.from_str(tick_size)
     size_increment = Quantity.from_str(step_size)
-    max_quantity = Quantity(float(lot_size_filter["maxQty"]), precision=size_precision)
-    min_quantity = Quantity(float(lot_size_filter["minQty"]), precision=size_precision)
+    max_quantity = Quantity(float(lot_size_filter.maxQty), precision=size_precision)
+    min_quantity = Quantity(float(lot_size_filter.minQty), precision=size_precision)
     min_notional = None
-    if min_notional_filter is not None:
-        min_notional = Money(min_notional_filter["notional"], currency=quote_currency)
-    max_price = Price(float(price_filter["maxPrice"]), precision=price_precision)
-    min_price = Price(float(price_filter["minPrice"]), precision=price_precision)
+    if filters.get(BinanceSymbolFilterType.MIN_NOTIONAL):
+        min_notional = Money(min_notional_filter.minNotional, currency=quote_currency)
+    max_price = Price(float(price_filter.maxPrice), precision=price_precision)
+    min_price = Price(float(price_filter.minPrice), precision=price_precision)
 
     # Futures commissions
     maker_fee = Decimal("0.0002")  # TODO
     taker_fee = Decimal("0.0004")  # TODO
 
-    assert data["marginAsset"] == quote_asset
+    assert symbol_info.marginAsset == symbol_info.quoteAsset
 
     # Create instrument
     return CryptoPerpetual(
         instrument_id=instrument_id,
-        native_symbol=native_symbol,
+        native_symbol=Symbol(symbol_info.symbol),
         base_currency=base_currency,
         quote_currency=quote_currency,
         settlement_currency=quote_currency,
@@ -239,65 +235,63 @@ def parse_perpetual_instrument_http(
         taker_fee=taker_fee,
         ts_event=ts_event,
         ts_init=ts_init,
-        info=data,
+        info={f: getattr(symbol_info, f) for f in symbol_info.__struct_fields__},
     )
 
 
 def parse_future_instrument_http(
-    data: Dict[str, Any],
+    symbol_info: BinanceFuturesSymbolInfo,
     ts_event: int,
     ts_init: int,
 ) -> CryptoFuture:
-    native_symbol = Symbol(data["symbol"])
-
     # Create base asset
-    base_asset: str = data["baseAsset"]
     base_currency = Currency(
-        code=base_asset,
-        precision=data["baseAssetPrecision"],
+        code=symbol_info.baseAsset,
+        precision=symbol_info.baseAssetPrecision,
         iso4217=0,  # Currently undetermined for crypto assets
-        name=base_asset,
+        name=symbol_info.baseAsset,
         currency_type=CurrencyType.CRYPTO,
     )
 
     # Create quote asset
-    quote_asset: str = data["quoteAsset"]
     quote_currency = Currency(
-        code=quote_asset,
-        precision=data["quotePrecision"],
+        code=symbol_info.quoteAsset,
+        precision=symbol_info.quotePrecision,
         iso4217=0,  # Currently undetermined for crypto assets
-        name=quote_asset,
+        name=symbol_info.quoteAsset,
         currency_type=CurrencyType.CRYPTO,
     )
 
+    native_symbol = Symbol(symbol_info.symbol)
     instrument_id = InstrumentId(symbol=native_symbol, venue=BINANCE_VENUE)
 
     # Parse instrument filters
-    symbol_filters = {f["filterType"]: f for f in data["filters"]}
-    price_filter = symbol_filters.get("PRICE_FILTER")
-    lot_size_filter = symbol_filters.get("LOT_SIZE")
-    min_notional_filter = symbol_filters.get("MIN_NOTIONAL")
-    # market_lot_size_filter = symbol_filters.get("MARKET_LOT_SIZE")
+    filters: Dict[BinanceSymbolFilterType, BinanceSymbolFilter] = {
+        f.filterType: f for f in symbol_info.filters
+    }
+    price_filter: BinanceSymbolFilter = filters.get(BinanceSymbolFilterType.PRICE_FILTER)
+    lot_size_filter: BinanceSymbolFilter = filters.get(BinanceSymbolFilterType.LOT_SIZE)
+    min_notional_filter: BinanceSymbolFilter = filters.get(BinanceSymbolFilterType.MIN_NOTIONAL)
 
-    tick_size = price_filter["tickSize"].rstrip("0")
-    step_size = lot_size_filter["stepSize"].rstrip("0")
-    price_precision = data["pricePrecision"]
-    size_precision = data["quantityPrecision"]
+    tick_size = price_filter.tickSize.rstrip("0")
+    step_size = lot_size_filter.stepSize.rstrip("0")
+    price_precision = precision_from_str(tick_size)
+    size_precision = precision_from_str(step_size)
     price_increment = Price.from_str(tick_size)
     size_increment = Quantity.from_str(step_size)
-    max_quantity = Quantity(float(lot_size_filter["maxQty"]), precision=size_precision)
-    min_quantity = Quantity(float(lot_size_filter["minQty"]), precision=size_precision)
+    max_quantity = Quantity(float(lot_size_filter.maxQty), precision=size_precision)
+    min_quantity = Quantity(float(lot_size_filter.minQty), precision=size_precision)
     min_notional = None
-    if min_notional_filter is not None:
-        min_notional = Money(min_notional_filter["notional"], currency=quote_currency)
-    max_price = Price(float(price_filter["maxPrice"]), precision=price_precision)
-    min_price = Price(float(price_filter["minPrice"]), precision=price_precision)
+    if filters.get(BinanceSymbolFilterType.MIN_NOTIONAL):
+        min_notional = Money(min_notional_filter.minNotional, currency=quote_currency)
+    max_price = Price(float(price_filter.maxPrice), precision=price_precision)
+    min_price = Price(float(price_filter.minPrice), precision=price_precision)
 
     # Futures commissions
     maker_fee = Decimal("0.0002")  # TODO
     taker_fee = Decimal("0.0004")  # TODO
 
-    assert data["marginAsset"] == quote_asset
+    assert symbol_info.marginAsset == symbol_info.quoteAsset
 
     # Create instrument
     return CryptoFuture(
@@ -306,7 +300,7 @@ def parse_future_instrument_http(
         underlying=base_currency,
         quote_currency=quote_currency,
         settlement_currency=quote_currency,
-        expiry_date=datetime.strptime(data["symbol"].partition("_")[2], "%y%m%d").date(),
+        expiry_date=dt.strptime(symbol_info.symbol.partition("_")[2], "%y%m%d").date(),
         price_precision=price_precision,
         size_precision=size_precision,
         price_increment=price_increment,
@@ -323,5 +317,5 @@ def parse_future_instrument_http(
         taker_fee=taker_fee,
         ts_event=ts_event,
         ts_init=ts_init,
-        info=data,
+        info={f: getattr(symbol_info, f) for f in symbol_info.__struct_fields__},
     )

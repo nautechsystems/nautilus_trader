@@ -13,63 +13,19 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from typing import List, Optional
+from typing import List
 
 import msgspec
 
-from nautilus_trader.adapters.binance.core.enums import BinanceExchangeFilterType
-from nautilus_trader.adapters.binance.core.enums import BinancePermissions
-from nautilus_trader.adapters.binance.core.enums import BinanceRateLimitInterval
-from nautilus_trader.adapters.binance.core.enums import BinanceRateLimitType
-from nautilus_trader.adapters.binance.core.enums import BinanceSpotOrderType
-from nautilus_trader.adapters.binance.core.enums import BinanceSymbolFilterType
+from nautilus_trader.adapters.binance.common.schemas.market import BinanceExchangeFilter
+from nautilus_trader.adapters.binance.common.schemas.market import BinanceRateLimit
+from nautilus_trader.adapters.binance.common.schemas.market import BinanceSymbolFilter
+from nautilus_trader.adapters.binance.spot.enums import BinanceSpotOrderType
+from nautilus_trader.adapters.binance.spot.enums import BinanceSpotPermissions
 
 
-class BinanceExchangeFilter(msgspec.Struct):
-    """Represents a `Binance` exchange filter."""
-
-    filterType: BinanceExchangeFilterType
-    maxNumOrders: Optional[int] = None
-    maxNumAlgoOrders: Optional[int] = None
-
-
-class BinanceSymbolFilter(msgspec.Struct):
-    """Represents a `Binance` symbol filter."""
-
-    filterType: BinanceSymbolFilterType
-    minPrice: Optional[str] = None
-    maxPrice: Optional[str] = None
-    tickSize: Optional[str] = None
-    multiplierUp: Optional[str] = None
-    multiplierDown: Optional[str] = None
-    avgPriceMins: Optional[int] = None
-    bidMultiplierUp: Optional[str] = None
-    bidMultiplierDown: Optional[str] = None
-    askMultiplierUp: Optional[str] = None
-    askMultiplierDown: Optional[str] = None
-    minQty: Optional[str] = None
-    maxQty: Optional[str] = None
-    stepSize: Optional[str] = None
-    minNotional: Optional[str] = None
-    applyToMarket: Optional[bool] = None
-    limit: Optional[int] = None
-    maxNumOrders: Optional[int] = None
-    maxNumAlgoOrders: Optional[int] = None
-    maxNumIcebergOrders: Optional[int] = None
-    maxPosition: Optional[str] = None
-
-
-class BinanceRateLimit(msgspec.Struct):
-    """Represents a `Binance` rate limit spec."""
-
-    rateLimitType: BinanceRateLimitType
-    interval: BinanceRateLimitInterval
-    intervalNum: int
-    limit: int
-
-
-class BinanceSymbolInfo(msgspec.Struct):
-    """Represents a `Binance` symbol definition."""
+class BinanceSpotSymbolInfo(msgspec.Struct):
+    """Response 'inner struct' from `Binance` Spot GET /fapi/v1/exchangeInfo."""
 
     symbol: str
     status: str
@@ -86,21 +42,21 @@ class BinanceSymbolInfo(msgspec.Struct):
     isSpotTradingAllowed: bool
     isMarginTradingAllowed: bool
     filters: List[BinanceSymbolFilter]
-    permissions: List[BinancePermissions]
+    permissions: List[BinanceSpotPermissions]
 
 
-class BinanceExchangeInfo(msgspec.Struct):
-    """Represents a `Binance` exchange markets information."""
+class BinanceSpotExchangeInfo(msgspec.Struct):
+    """Response from `Binance` Spot GET /fapi/v1/exchangeInfo."""
 
     timezone: str
     serverTime: int
     rateLimits: List[BinanceRateLimit]
     exchangeFilters: List[BinanceExchangeFilter]
-    symbols: List[BinanceSymbolInfo]
+    symbols: List[BinanceSpotSymbolInfo]
 
 
-class BinanceTrade(msgspec.Struct):
-    """Represents a `Binance` trade."""
+class BinanceSpotTrade(msgspec.Struct):
+    """Response from `Binance` Spot GET /fapi/v1/historicalTrades."""
 
     id: int
     price: str

@@ -19,11 +19,10 @@ from typing import Any, Dict, List, Optional
 import orjson
 import pandas as pd
 
-from nautilus_trader.adapters.binance.core.constants import BINANCE_VENUE
-from nautilus_trader.adapters.binance.core.enums import BinanceAccountType
-from nautilus_trader.adapters.binance.core.functions import parse_symbol
-from nautilus_trader.adapters.binance.core.types import BinanceBar
-from nautilus_trader.adapters.binance.core.types import BinanceSpotTicker
+from nautilus_trader.adapters.binance.common.constants import BINANCE_VENUE
+from nautilus_trader.adapters.binance.common.enums import BinanceAccountType
+from nautilus_trader.adapters.binance.common.functions import parse_symbol
+from nautilus_trader.adapters.binance.common.types import BinanceBar
 from nautilus_trader.adapters.binance.futures.http.market import BinanceFuturesMarketHttpAPI
 from nautilus_trader.adapters.binance.http.client import BinanceHttpClient
 from nautilus_trader.adapters.binance.http.error import BinanceError
@@ -36,6 +35,7 @@ from nautilus_trader.adapters.binance.parsing.ws_data import parse_quote_tick_ws
 from nautilus_trader.adapters.binance.parsing.ws_data import parse_ticker_24hr_spot_ws
 from nautilus_trader.adapters.binance.parsing.ws_data import parse_trade_tick_ws
 from nautilus_trader.adapters.binance.spot.http.market import BinanceSpotMarketHttpAPI
+from nautilus_trader.adapters.binance.spot.types import BinanceSpotTicker
 from nautilus_trader.adapters.binance.websocket.client import BinanceWebSocketClient
 from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.clock import LiveClock
@@ -685,7 +685,7 @@ class BinanceDataClient(LiveMarketDataClient):
 
     def _handle_trade(self, instrument_id: InstrumentId, data: Dict[str, Any]):
         # raw = orjson.dumps(data)
-        # msg = msgspec.json.decode(raw, type=BinanceTradeMsg)
+        # msg = msgspec.json.decode(raw, type=BinanceSpotTradeMsg)
         trade_tick: TradeTick = parse_trade_tick_ws(
             instrument_id=instrument_id,
             msg=data,

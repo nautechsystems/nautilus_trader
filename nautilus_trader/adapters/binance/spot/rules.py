@@ -13,12 +13,19 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import msgspec
+from nautilus_trader.model.enums import OrderType
+from nautilus_trader.model.enums import TimeInForce
 
 
-class BinanceSpotTradeFees(msgspec.Struct):
-    """Response from `Binance` GET /sapi/v1/asset/tradeFee (HMAC SHA256)."""
+VALID_TIF_SPOT = (
+    TimeInForce.GTC,
+    TimeInForce.FOK,
+    TimeInForce.IOC,
+)
 
-    symbol: str
-    makerCommission: str
-    takerCommission: str
+VALID_ORDER_TYPES_SPOT = (
+    OrderType.MARKET,
+    OrderType.LIMIT,
+    OrderType.STOP_LIMIT,
+    OrderType.LIMIT_IF_TOUCHED,
+)

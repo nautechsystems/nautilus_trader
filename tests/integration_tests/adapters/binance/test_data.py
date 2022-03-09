@@ -20,7 +20,7 @@ from typing import Dict
 import orjson
 import pytest
 
-from nautilus_trader.adapters.binance.core.constants import BINANCE_VENUE
+from nautilus_trader.adapters.binance.common.constants import BINANCE_VENUE
 from nautilus_trader.adapters.binance.data import BinanceDataClient
 from nautilus_trader.adapters.binance.http.client import BinanceHttpClient
 from nautilus_trader.adapters.binance.spot.providers import BinanceSpotInstrumentProvider

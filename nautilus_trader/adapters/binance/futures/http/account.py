@@ -18,9 +18,9 @@ from typing import Any, Dict, List, Optional
 import msgspec
 import orjson
 
-from nautilus_trader.adapters.binance.core.enums import BinanceAccountType
-from nautilus_trader.adapters.binance.core.functions import format_symbol
-from nautilus_trader.adapters.binance.futures.schemas.account import BinanceFuturesOrderMsg
+from nautilus_trader.adapters.binance.common.enums import BinanceAccountType
+from nautilus_trader.adapters.binance.common.functions import format_symbol
+from nautilus_trader.adapters.binance.futures.schemas.account import BinanceFuturesOrder
 from nautilus_trader.adapters.binance.http.client import BinanceHttpClient
 from nautilus_trader.adapters.binance.http.enums import NewOrderRespType
 
@@ -52,7 +52,7 @@ class BinanceFuturesAccountHttpAPI:
             raise RuntimeError(f"invalid Binance FUTURES account type, was {account_type}")
 
         # Decoders
-        self.decoder_futures_order = msgspec.json.Decoder(List[BinanceFuturesOrderMsg])
+        self.decoder_futures_order = msgspec.json.Decoder(List[BinanceFuturesOrder])
 
     async def change_position_mode(
         self,
@@ -342,7 +342,7 @@ class BinanceFuturesAccountHttpAPI:
         order_id: Optional[str] = None,
         orig_client_order_id: Optional[str] = None,
         recv_window: Optional[int] = None,
-    ) -> Optional[BinanceFuturesOrderMsg]:
+    ) -> Optional[BinanceFuturesOrder]:
         """
         Check an order's status.
 
@@ -385,13 +385,13 @@ class BinanceFuturesAccountHttpAPI:
         if raw is None:
             return None
 
-        return msgspec.json.decode(raw, type=BinanceFuturesOrderMsg)
+        return msgspec.json.decode(raw, type=BinanceFuturesOrder)
 
     async def get_open_orders(
         self,
         symbol: Optional[str] = None,
         recv_window: Optional[int] = None,
-    ) -> List[BinanceFuturesOrderMsg]:
+    ) -> List[BinanceFuturesOrder]:
         """
         Get all open orders for a symbol.
 
@@ -435,7 +435,7 @@ class BinanceFuturesAccountHttpAPI:
         end_time: Optional[int] = None,
         limit: Optional[int] = None,
         recv_window: Optional[int] = None,
-    ) -> List[BinanceFuturesOrderMsg]:
+    ) -> List[BinanceFuturesOrder]:
         """
         Get all account orders (open, or closed).
 
