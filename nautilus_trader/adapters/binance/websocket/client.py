@@ -27,7 +27,7 @@ class BinanceWebSocketClient(WebSocketClient):
     Provides a `Binance` streaming WebSocket client.
     """
 
-    BASE_URL = "wss://stream.binance.com:9443"  # Default SPOT
+    BASE_URL = "wss://stream.binance.com:9443"  # Default Spot/Margin
 
     def __init__(
         self,

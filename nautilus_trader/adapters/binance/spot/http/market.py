@@ -25,7 +25,7 @@ from nautilus_trader.adapters.binance.spot.schemas.market import BinanceSpotExch
 
 class BinanceSpotMarketHttpAPI:
     """
-    Provides access to the `Binance FUTURES Market` HTTP REST API.
+    Provides access to the `Binance Futures` Market HTTP REST API.
 
     Parameters
     ----------

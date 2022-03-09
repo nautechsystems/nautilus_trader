@@ -23,7 +23,7 @@ from nautilus_trader.adapters.binance.spot.schemas.wallet import BinanceSpotTrad
 
 class BinanceSpotWalletHttpAPI:
     """
-    Provides access to the `Binance SPOT Wallet` HTTP REST API.
+    Provides access to the `Binance Spot/Margin` Wallet HTTP REST API.
 
     Parameters
     ----------

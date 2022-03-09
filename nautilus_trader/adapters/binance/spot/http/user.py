@@ -24,7 +24,7 @@ from nautilus_trader.adapters.binance.http.client import BinanceHttpClient
 
 class BinanceSpotUserDataHttpAPI:
     """
-    Provides access to the `Binance SPOT User Data` HTTP REST API.
+    Provides access to the `Binance Spot/Margin` User Data HTTP REST API.
 
     Parameters
     ----------
@@ -45,11 +45,11 @@ class BinanceSpotUserDataHttpAPI:
         elif account_type == BinanceAccountType.MARGIN:
             self.BASE_ENDPOINT = "sapi/v1/"
         else:  # pragma: no cover (design-time error)
-            raise RuntimeError(f"invalid Binance SPOT account type, was {account_type}")
+            raise RuntimeError(f"invalid Binance Spot/Margin account type, was {account_type}")
 
     async def create_listen_key(self) -> Dict[str, Any]:
         """
-        Create a new listen key for the Binance SPOT or MARGIN API.
+        Create a new listen key for the Binance Spot/Margin.
 
         Start a new user data stream. The stream will close after 60 minutes
         unless a keepalive is sent. If the account has an active listenKey,
@@ -76,7 +76,7 @@ class BinanceSpotUserDataHttpAPI:
 
     async def ping_listen_key(self, key: str) -> Dict[str, Any]:
         """
-        Ping/Keep-alive a listen key for the Binance SPOT or MARGIN API.
+        Ping/Keep-alive a listen key for the Binance Spot/Margin API.
 
         Keep-alive a user data stream to prevent a time-out. User data streams
         will close after 60 minutes. It's recommended to send a ping about every
@@ -108,7 +108,7 @@ class BinanceSpotUserDataHttpAPI:
 
     async def close_listen_key(self, key: str) -> Dict[str, Any]:
         """
-        Close a listen key for the Binance SPOT or MARGIN API.
+        Close a listen key for the Binance Spot/Margin API.
 
         Close a ListenKey (USER_STREAM).
 

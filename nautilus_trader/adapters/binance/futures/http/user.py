@@ -24,7 +24,7 @@ from nautilus_trader.core.correctness import PyCondition
 
 class BinanceFuturesUserDataHttpAPI:
     """
-    Provides access to the `Binance FUTURES User Data` HTTP REST API.
+    Provides access to the `Binance Futures` User Data HTTP REST API.
 
     Parameters
     ----------

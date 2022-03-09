@@ -22,7 +22,7 @@ from nautilus_trader.model.identifiers import InstrumentId
 
 class BinanceSpotTicker(Ticker):
     """
-    Represents a `Binance SPOT` 24hr statistics ticker.
+    Represents a `Binance Spot/Margin` 24hr statistics ticker.
 
     This data type includes the raw data provided by `Binance`.
 
@@ -156,7 +156,7 @@ class BinanceSpotTicker(Ticker):
     @staticmethod
     def from_dict(values: Dict[str, Any]) -> "BinanceSpotTicker":
         """
-        Return a `Binance SPOT` ticker parsed from the given values.
+        Return a `Binance Spot/Margin` ticker parsed from the given values.
 
         Parameters
         ----------

@@ -99,7 +99,7 @@ from nautilus_trader.msgbus.bus import MessageBus
 
 class BinanceFuturesExecutionClient(LiveExecutionClient):
     """
-    Provides an execution client for the `Binance FUTURES` exchange.
+    Provides an execution client for the `Binance Futures` exchange.
 
     Parameters
     ----------
