@@ -53,6 +53,7 @@ from nautilus_trader.model.events.order cimport OrderRejected
 from nautilus_trader.model.events.order cimport OrderTriggered
 from nautilus_trader.model.events.order cimport OrderUpdated
 from nautilus_trader.model.identifiers cimport ClientOrderId
+from nautilus_trader.model.identifiers cimport PositionId
 from nautilus_trader.model.identifiers cimport StrategyId
 from nautilus_trader.model.identifiers cimport TradeId
 from nautilus_trader.model.identifiers cimport VenueOrderId
@@ -621,8 +622,8 @@ cdef class LiveExecutionEngine(ExecutionEngine):
             instrument_id=report.instrument_id,
             client_order_id=order.client_order_id,
             venue_order_id=report.venue_order_id,
+            position_id=PositionId(f"{instrument.id}-EXTERNAL"),
             trade_id=TradeId(str({self._uuid_factory.generate().value})),
-            position_id=None,
             order_side=order.side,
             order_type=order.type,
             last_qty=last_qty,
