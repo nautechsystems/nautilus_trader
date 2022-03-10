@@ -16,6 +16,9 @@
 from decimal import Decimal
 from typing import Dict
 
+import msgspec
+import orjson
+
 from nautilus_trader.adapters.binance.common.constants import BINANCE_VENUE
 from nautilus_trader.adapters.binance.common.enums import BinanceSymbolFilterType
 from nautilus_trader.adapters.binance.spot.schemas.market import BinanceSpotSymbolInfo
@@ -116,7 +119,7 @@ def parse_instrument_http(
         taker_fee=taker_fee,
         ts_event=ts_event,
         ts_init=ts_init,
-        # info={f: getattr(symbol_info, f) for f in symbol_info.__struct_fields__},
+        info=orjson.loads(msgspec.json.encode(symbol_info)),
     )
 
 
