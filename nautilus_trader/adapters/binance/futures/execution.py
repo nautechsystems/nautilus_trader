@@ -18,7 +18,7 @@ from datetime import datetime
 from decimal import Decimal
 from typing import Any, Dict, List, Optional, Set
 
-import msgspec.json
+import msgspec
 
 from nautilus_trader.adapters.binance.common.constants import BINANCE_VENUE
 from nautilus_trader.adapters.binance.common.enums import BinanceAccountType
@@ -82,6 +82,7 @@ from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import ClientOrderId
 from nautilus_trader.model.identifiers import InstrumentId
+from nautilus_trader.model.identifiers import PositionId
 from nautilus_trader.model.identifiers import StrategyId
 from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import TradeId
@@ -140,7 +141,7 @@ class BinanceFuturesExecutionClient(LiveExecutionClient):
             loop=loop,
             client_id=ClientId(BINANCE_VENUE.value),
             venue=BINANCE_VENUE,
-            oms_type=OMSType.NETTING,
+            oms_type=OMSType.HEDGING,
             instrument_provider=instrument_provider,
             account_type=AccountType.MARGIN,
             base_currency=None,
@@ -153,7 +154,7 @@ class BinanceFuturesExecutionClient(LiveExecutionClient):
         self._binance_account_type = account_type
         self._log.info(f"Account type: {self._binance_account_type.value}.", LogColor.BLUE)
 
-        self._set_account_id(AccountId(BINANCE_VENUE.value, "master"))
+        self._set_account_id(AccountId(BINANCE_VENUE.value, "futures-master"))
 
         # HTTP API
         self._http_client = client
@@ -887,8 +888,8 @@ class BinanceFuturesExecutionClient(LiveExecutionClient):
                 instrument_id=instrument_id,
                 client_order_id=client_order_id,
                 venue_order_id=venue_order_id,
-                venue_position_id=None,  # NETTING accounts
-                trade_id=TradeId(str(data.t)),  # Trade ID
+                venue_position_id=PositionId(f"{instrument_id}-{data.ps.value}"),
+                trade_id=TradeId(str(data.t)),
                 order_side=OrderSide.BUY if data.S == BinanceOrderSide.BUY else OrderSide.SELL,
                 order_type=parse_order_type(data.o),
                 last_qty=Quantity.from_str(data.l),

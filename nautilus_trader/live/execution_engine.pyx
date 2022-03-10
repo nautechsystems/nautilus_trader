@@ -53,6 +53,7 @@ from nautilus_trader.model.events.order cimport OrderRejected
 from nautilus_trader.model.events.order cimport OrderTriggered
 from nautilus_trader.model.events.order cimport OrderUpdated
 from nautilus_trader.model.identifiers cimport ClientOrderId
+from nautilus_trader.model.identifiers cimport PositionId
 from nautilus_trader.model.identifiers cimport StrategyId
 from nautilus_trader.model.identifiers cimport TradeId
 from nautilus_trader.model.identifiers cimport VenueOrderId
@@ -116,8 +117,10 @@ cdef class LiveExecutionEngine(ExecutionEngine):
         self._queue = Queue(maxsize=config.qsize)
 
         # Settings
-        self.recon_auto = config.recon_auto if config else True
-        self.recon_lookback_mins = config.recon_lookback_mins if config and config.recon_lookback_mins is not None else 0  # TODO: WIP!
+        self.reconciliation_auto = config.reconciliation_auto if config else True
+        self.reconciliation_lookback_mins = 0
+        if config and config.reconciliation_lookback_mins is not None:
+            self.reconciliation_lookback_mins = config.reconciliation_lookback_mins
 
         self._run_queue_task = None
         self.is_running = False
@@ -302,9 +305,9 @@ cdef class LiveExecutionEngine(ExecutionEngine):
         Condition.positive(timeout_secs, "timeout_secs")
 
         # Request execution mass status report from clients
-        recon_lookback_mins = self.recon_lookback_mins if self.recon_lookback_mins > 0 else None
+        reconciliation_lookback_mins = self.reconciliation_lookback_mins if self.reconciliation_lookback_mins > 0 else None
         mass_status_coros = [
-            c.generate_mass_status(recon_lookback_mins) for c in self._clients.values()
+            c.generate_mass_status(reconciliation_lookback_mins) for c in self._clients.values()
         ]
         mass_status_all = await asyncio.gather(*mass_status_coros)
 
@@ -621,8 +624,8 @@ cdef class LiveExecutionEngine(ExecutionEngine):
             instrument_id=report.instrument_id,
             client_order_id=order.client_order_id,
             venue_order_id=report.venue_order_id,
+            position_id=PositionId(f"{instrument.id}-EXTERNAL"),
             trade_id=TradeId(str({self._uuid_factory.generate().value})),
-            position_id=None,
             order_side=order.side,
             order_type=order.type,
             last_qty=last_qty,

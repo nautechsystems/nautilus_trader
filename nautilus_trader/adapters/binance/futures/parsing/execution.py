@@ -36,6 +36,7 @@ from nautilus_trader.model.enums import TriggerType
 from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import ClientOrderId
 from nautilus_trader.model.identifiers import InstrumentId
+from nautilus_trader.model.identifiers import PositionId
 from nautilus_trader.model.identifiers import TradeId
 from nautilus_trader.model.identifiers import VenueOrderId
 from nautilus_trader.model.objects import Money
@@ -157,6 +158,7 @@ def parse_trade_report_http(
         account_id=account_id,
         instrument_id=instrument_id,
         venue_order_id=VenueOrderId(str(data["orderId"])),
+        venue_position_id=PositionId(f"{instrument_id}-{data['positionSide']}"),
         trade_id=TradeId(str(data["id"])),
         order_side=OrderSide[data["side"].upper()],
         last_qty=Quantity.from_str(data["qty"]),

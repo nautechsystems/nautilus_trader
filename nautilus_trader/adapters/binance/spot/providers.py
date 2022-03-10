@@ -217,6 +217,7 @@ class BinanceSpotInstrumentProvider(InstrumentProvider):
             ts_init=time.time_ns(),
         )
         self.add_currency(currency=instrument.base_currency)
-
         self.add_currency(currency=instrument.quote_currency)
         self.add(instrument=instrument)
+
+        self._log.debug(f"Added instrument {instrument.id}.")

@@ -241,7 +241,7 @@ cdef class TraderId(ComponentId):
         str
 
         """
-        return self.value.partition("-")[2]
+        return self.value.rsplit("-", maxsplit=1)[-1]
 
 
 # External strategy ID constant
@@ -289,7 +289,7 @@ cdef class StrategyId(ComponentId):
         str
 
         """
-        return self.value.partition("-")[2]
+        return self.value.rsplit("-", maxsplit=1)[-1]
 
     cpdef bint is_external(self):
         """
