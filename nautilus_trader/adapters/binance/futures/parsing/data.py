@@ -17,6 +17,9 @@ from datetime import datetime as dt
 from decimal import Decimal
 from typing import Dict
 
+import msgspec
+import orjson
+
 from nautilus_trader.adapters.binance.common.constants import BINANCE_VENUE
 from nautilus_trader.adapters.binance.common.enums import BinanceSymbolFilterType
 from nautilus_trader.adapters.binance.futures.schemas.market import BinanceFuturesSymbolInfo
@@ -111,11 +114,11 @@ def parse_perpetual_instrument_http(
         taker_fee=taker_fee,
         ts_event=ts_event,
         ts_init=ts_init,
-        # info={f: getattr(symbol_info, f) for f in symbol_info.__struct_fields__},
+        info=orjson.loads(msgspec.json.encode(symbol_info)),
     )
 
 
-def parse_future_instrument_http(
+def parse_futures_instrument_http(
     symbol_info: BinanceFuturesSymbolInfo,
     ts_event: int,
     ts_init: int,
@@ -193,5 +196,5 @@ def parse_future_instrument_http(
         taker_fee=taker_fee,
         ts_event=ts_event,
         ts_init=ts_init,
-        # info={f: getattr(symbol_info, f) for f in symbol_info.__struct_fields__},
+        info=orjson.loads(msgspec.json.encode(symbol_info)),
     )

@@ -22,7 +22,7 @@ from nautilus_trader.adapters.binance.futures.enums import BinanceFuturesContrac
 from nautilus_trader.adapters.binance.futures.enums import BinanceFuturesContractType
 from nautilus_trader.adapters.binance.futures.http.market import BinanceFuturesMarketHttpAPI
 from nautilus_trader.adapters.binance.futures.http.wallet import BinanceFuturesWalletHttpAPI
-from nautilus_trader.adapters.binance.futures.parsing.data import parse_future_instrument_http
+from nautilus_trader.adapters.binance.futures.parsing.data import parse_futures_instrument_http
 from nautilus_trader.adapters.binance.futures.parsing.data import parse_perpetual_instrument_http
 from nautilus_trader.adapters.binance.futures.schemas.market import BinanceFuturesExchangeInfo
 from nautilus_trader.adapters.binance.futures.schemas.market import BinanceFuturesSymbolInfo
@@ -231,7 +231,7 @@ class BinanceFuturesInstrumentProvider(InstrumentProvider):
             BinanceFuturesContractType.NEXT_MONTH,
             BinanceFuturesContractType.NEXT_QUARTER,
         ):
-            instrument = parse_future_instrument_http(
+            instrument = parse_futures_instrument_http(
                 symbol_info=symbol_info,
                 ts_event=ts_event,
                 ts_init=time.time_ns(),
