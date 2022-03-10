@@ -117,8 +117,10 @@ cdef class LiveExecutionEngine(ExecutionEngine):
         self._queue = Queue(maxsize=config.qsize)
 
         # Settings
-        self.recon_auto = config.recon_auto if config else True
-        self.recon_lookback_mins = config.recon_lookback_mins if config and config.recon_lookback_mins is not None else 0  # TODO: WIP!
+        self.reconciliation_auto = config.reconciliation_auto if config else True
+        self.reconciliation_lookback_mins = 0
+        if config and config.reconciliation_lookback_mins is not None:
+            self.reconciliation_lookback_mins = config.reconciliation_lookback_mins
 
         self._run_queue_task = None
         self.is_running = False
@@ -303,9 +305,9 @@ cdef class LiveExecutionEngine(ExecutionEngine):
         Condition.positive(timeout_secs, "timeout_secs")
 
         # Request execution mass status report from clients
-        recon_lookback_mins = self.recon_lookback_mins if self.recon_lookback_mins > 0 else None
+        reconciliation_lookback_mins = self.reconciliation_lookback_mins if self.reconciliation_lookback_mins > 0 else None
         mass_status_coros = [
-            c.generate_mass_status(recon_lookback_mins) for c in self._clients.values()
+            c.generate_mass_status(reconciliation_lookback_mins) for c in self._clients.values()
         ]
         mass_status_all = await asyncio.gather(*mass_status_coros)
 
