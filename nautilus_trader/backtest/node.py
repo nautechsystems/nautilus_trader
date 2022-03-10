@@ -15,8 +15,8 @@
 
 import itertools
 import pickle
-from typing import Dict, List, Optional
 from decimal import Decimal
+from typing import Dict, List, Optional
 
 import cloudpickle
 import dask
@@ -24,6 +24,11 @@ import pandas as pd
 from dask.base import normalize_token
 from dask.delayed import Delayed
 from dask.utils import parse_timedelta
+from hyperopt import STATUS_FAIL
+from hyperopt import STATUS_OK
+from hyperopt import Trials
+from hyperopt import fmin
+from hyperopt import tpe
 
 from nautilus_trader.backtest.config import BacktestDataConfig
 from nautilus_trader.backtest.config import BacktestRunConfig
@@ -32,8 +37,12 @@ from nautilus_trader.backtest.engine import BacktestEngine
 from nautilus_trader.backtest.engine import BacktestEngineConfig
 from nautilus_trader.backtest.results import BacktestResult
 from nautilus_trader.common.actor import Actor
+from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.config import ActorFactory
 from nautilus_trader.common.config import ImportableActorConfig
+from nautilus_trader.common.logging import Logger
+from nautilus_trader.common.logging import LoggerAdapter
+from nautilus_trader.common.logging import LogLevel
 from nautilus_trader.core.inspect import is_nautilus_class
 from nautilus_trader.model.currency import Currency
 from nautilus_trader.model.data.bar import Bar
@@ -58,12 +67,7 @@ from nautilus_trader.persistence.streaming import FeatherWriter
 from nautilus_trader.trading.config import ImportableStrategyConfig
 from nautilus_trader.trading.config import StrategyFactory
 from nautilus_trader.trading.strategy import TradingStrategy
-from nautilus_trader.common.logging import Logger
-from nautilus_trader.common.logging import LoggerAdapter
-from nautilus_trader.common.clock import LiveClock
-from nautilus_trader.common.logging import LogLevel
 
-from hyperopt import fmin, tpe, STATUS_OK, STATUS_FAIL, Trials
 
 class BacktestNode:
     """
@@ -105,13 +109,14 @@ class BacktestNode:
 
         return self._gather_delayed(results)
 
-    def set_strategy_config(self,
-                            path: str,
-                            strategy,
-                            instrument_id: str,
-                            bar_type: str,
-                            trade_size: Decimal,
-                            ):
+    def set_strategy_config(
+        self,
+        path: str,
+        strategy,
+        instrument_id: str,
+        bar_type: str,
+        trade_size: Decimal,
+    ):
         """
         Set strategy parameters which can be passed to the hyperopt objective.
 
@@ -135,12 +140,7 @@ class BacktestNode:
         self.bar_type = bar_type
         self.trade_size = trade_size
 
-    def hyperopt_search(
-        self,
-        config,
-        params,
-        max_evals=50
-    ):
+    def hyperopt_search(self, config, params, max_evals=50):
         """
         Run hyperopt to optimize strategy parameters.
 
@@ -159,8 +159,7 @@ class BacktestNode:
 
         """
         logger = Logger(clock=LiveClock(), level_stdout=LogLevel.INFO)
-        logger_adapter = LoggerAdapter(component_name="HYPEROPT_LOGGER",
-                                       logger=logger)
+        logger_adapter = LoggerAdapter(component_name="HYPEROPT_LOGGER", logger=logger)
         self.config = config
 
         def objective(args):
@@ -169,15 +168,15 @@ class BacktestNode:
 
             strategies = [
                 ImportableStrategyConfig(
-                        path=self.path,
-                        config=self.strategy(
-                            instrument_id=self.instrument_id,
-                            bar_type=self.bar_type,
-                            trade_size=self.trade_size,
-                            **args,
-                        ),
+                    path=self.path,
+                    config=self.strategy(
+                        instrument_id=self.instrument_id,
+                        bar_type=self.bar_type,
+                        trade_size=self.trade_size,
+                        **args,
                     ),
-                ]
+                ),
+            ]
 
             local_config = self.config
             local_config = local_config.replace(strategies=strategies)
@@ -199,33 +198,29 @@ class BacktestNode:
 
                 base_currency = self.config.venues[0].base_currency
                 # logger_adapter.info(f"{result.stats_pnls[base_currency]}")
-                pnl_pct = result.stats_pnls[base_currency]['PnL%']
+                pnl_pct = result.stats_pnls[base_currency]["PnL%"]
                 logger_adapter.info(f"OBJECTIVE: {1/pnl_pct}")
 
-                if (1/pnl_pct) == 0 or pnl_pct <= 0:
-                    ret = {
-                            'status': STATUS_FAIL
-                        }
+                if (1 / pnl_pct) == 0 or pnl_pct <= 0:
+                    ret = {"status": STATUS_FAIL}
                 else:
-                    ret = {
-                        'status': STATUS_OK,
-                        'loss':   (1/pnl_pct)
-                }
+                    ret = {"status": STATUS_OK, "loss": (1 / pnl_pct)}
 
             except Exception as e:
-                ret = {
-                    'status': STATUS_FAIL
-                }
+                ret = {"status": STATUS_FAIL}
                 logger_adapter.error(f"Bankruptcy : {e} ")
             return ret
+
         trials = Trials()
 
-        self.best_params = fmin(objective, params, algo=tpe.suggest, trials=trials, max_evals=max_evals)
+        self.best_params = fmin(
+            objective, params, algo=tpe.suggest, trials=trials, max_evals=max_evals
+        )
 
         return self
 
     def return_best_params(self) -> dict:
-        "Return the best parameters found after optimization with hyperopt."
+        """Return the best parameters from hyperopt optimization."""
         return self.best_params
 
     def run_sync(self, run_configs: List[BacktestRunConfig], **kwargs) -> List[BacktestResult]:
