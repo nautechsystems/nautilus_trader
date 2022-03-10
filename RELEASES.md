@@ -12,7 +12,8 @@ Released on 9th March 2022 (UTC).
 - Renamed `BinanceSpotExecutionClient` to `BinanceExecutionClient`.
 
 ### Enhancements
-- Added initial implementation of Binance Futures.
+- Added initial **(beta)** Binance Futures adapter implementation.
+- Added initial **(beta)** Interactive Brokers adapter implementation.
 - Added custom portfolio statistics.
 - Added `CryptoFuture` instrument.
 - Added `OrderType.MARKET_TO_LIMIT`.
