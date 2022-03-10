@@ -226,7 +226,6 @@ class BacktestNode:
 
     def return_best_params(self) -> dict:
         "Return the best parameters found after optimization with hyperopt."
-
         return self.best_params
 
     def run_sync(self, run_configs: List[BacktestRunConfig], **kwargs) -> List[BacktestResult]:
