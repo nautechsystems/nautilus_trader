@@ -17,10 +17,13 @@ from typing import Optional
 
 import msgspec
 
+from nautilus_trader.adapters.binance.futures.enums import BinanceFuturesOrderStatus
+from nautilus_trader.adapters.binance.futures.enums import BinanceFuturesOrderType
 
-class BinanceFuturesOrderMsg(msgspec.Struct):
+
+class BinanceFuturesOrder(msgspec.Struct):
     """
-    Response from GET /fapi/v1/order (HMAC SHA256).
+    HTTP response from `Binance Futures` GET /fapi/v1/order (HMAC SHA256).
     """
 
     avgPrice: str
@@ -34,13 +37,13 @@ class BinanceFuturesOrderMsg(msgspec.Struct):
     reduceOnly: bool
     side: str
     positionSide: str
-    status: str
+    status: BinanceFuturesOrderStatus
     stopPrice: str
     closePosition: bool
     symbol: str
     time: int
     timeInForce: str
-    type: str
+    type: BinanceFuturesOrderType
     activatePrice: Optional[str] = None
     priceRate: Optional[str] = None
     updateTime: int

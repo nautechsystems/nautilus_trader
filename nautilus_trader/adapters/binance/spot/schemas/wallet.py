@@ -17,7 +17,7 @@ import msgspec
 
 
 class BinanceSpotTradeFees(msgspec.Struct):
-    """Represents a `Binance` trade fees response."""
+    """HTTP response from `Binance Spot/Margin` GET /sapi/v1/asset/tradeFee (HMAC SHA256)."""
 
     symbol: str
     makerCommission: str

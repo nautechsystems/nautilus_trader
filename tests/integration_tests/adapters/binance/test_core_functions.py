@@ -15,9 +15,9 @@
 
 import pytest
 
-from nautilus_trader.adapters.binance.core.enums import BinanceAccountType
-from nautilus_trader.adapters.binance.core.functions import convert_symbols_list_to_json_array
-from nautilus_trader.adapters.binance.core.functions import format_symbol
+from nautilus_trader.adapters.binance.common.enums import BinanceAccountType
+from nautilus_trader.adapters.binance.common.functions import convert_symbols_list_to_json_array
+from nautilus_trader.adapters.binance.common.functions import format_symbol
 
 
 class TestBinanceCoreFunctions:

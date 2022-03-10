@@ -17,14 +17,14 @@ from typing import Any, Dict
 
 import orjson
 
-from nautilus_trader.adapters.binance.core.enums import BinanceAccountType
+from nautilus_trader.adapters.binance.common.enums import BinanceAccountType
 from nautilus_trader.adapters.binance.http.client import BinanceHttpClient
 from nautilus_trader.core.correctness import PyCondition
 
 
 class BinanceFuturesUserDataHttpAPI:
     """
-    Provides access to the `Binance FUTURES User Data` HTTP REST API.
+    Provides access to the `Binance Futures` User Data HTTP REST API.
 
     Parameters
     ----------

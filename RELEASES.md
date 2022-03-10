@@ -2,7 +2,7 @@
 
 ## Release Notes
 
-Released on TBD (UTC).
+Released on 9th March 2022 (UTC).
 
 ### Breaking Changes
 - Renamed `CurrencySpot` to `CurrencyPair`.
@@ -12,7 +12,9 @@ Released on TBD (UTC).
 - Renamed `BinanceSpotExecutionClient` to `BinanceExecutionClient`.
 
 ### Enhancements
-- Added initial implementation of Binance Futures.
+- Added initial **(beta)** Binance Futures adapter implementation.
+- Added initial **(beta)** Interactive Brokers adapter implementation.
+- Added custom portfolio statistics.
 - Added `CryptoFuture` instrument.
 - Added `OrderType.MARKET_TO_LIMIT`.
 - Added `OrderType.MARKET_IF_TOUCHED`.

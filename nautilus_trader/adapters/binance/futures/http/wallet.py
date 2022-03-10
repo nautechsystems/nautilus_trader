@@ -22,7 +22,7 @@ from nautilus_trader.adapters.binance.http.client import BinanceHttpClient
 
 class BinanceFuturesWalletHttpAPI:
     """
-    Provides access to the `Binance FUTURES Wallet` HTTP REST API.
+    Provides access to the `Binance Futures` Wallet HTTP REST API.
 
     Parameters
     ----------

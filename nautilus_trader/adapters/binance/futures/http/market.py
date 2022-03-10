@@ -15,11 +15,13 @@
 
 from typing import Any, Dict, List, Optional
 
+import msgspec
 import orjson
 
-from nautilus_trader.adapters.binance.core.enums import BinanceAccountType
-from nautilus_trader.adapters.binance.core.functions import convert_symbols_list_to_json_array
-from nautilus_trader.adapters.binance.core.functions import format_symbol
+from nautilus_trader.adapters.binance.common.enums import BinanceAccountType
+from nautilus_trader.adapters.binance.common.functions import convert_symbols_list_to_json_array
+from nautilus_trader.adapters.binance.common.functions import format_symbol
+from nautilus_trader.adapters.binance.futures.schemas.market import BinanceFuturesExchangeInfo
 from nautilus_trader.adapters.binance.http.client import BinanceHttpClient
 from nautilus_trader.core.correctness import PyCondition
 
@@ -49,7 +51,9 @@ class BinanceFuturesMarketHttpAPI:
         elif self.account_type == BinanceAccountType.FUTURES_COIN:
             self.BASE_ENDPOINT = "/dapi/v1/"
         else:  # pragma: no cover (design-time error)
-            raise RuntimeError(f"invalid Binance FUTURES account type, was {account_type}")
+            raise RuntimeError(f"invalid Binance Futures account type, was {account_type}")
+
+        self._decoder_exchange_info = msgspec.json.Decoder(BinanceFuturesExchangeInfo)
 
     async def ping(self) -> Dict[str, Any]:
         """
@@ -88,7 +92,11 @@ class BinanceFuturesMarketHttpAPI:
         raw: bytes = await self.client.query(url_path=self.BASE_ENDPOINT + "time")
         return orjson.loads(raw)
 
-    async def exchange_info(self, symbol: str = None, symbols: List[str] = None) -> Dict[str, Any]:
+    async def exchange_info(
+        self,
+        symbol: str = None,
+        symbols: List[str] = None,
+    ) -> BinanceFuturesExchangeInfo:
         """
         Get current exchange trading rules and symbol information.
         Only either `symbol` or `symbols` should be passed.
@@ -105,7 +113,7 @@ class BinanceFuturesMarketHttpAPI:
 
         Returns
         -------
-        dict[str, Any]
+        BinanceFuturesExchangeInfo
 
         References
         ----------
@@ -126,7 +134,7 @@ class BinanceFuturesMarketHttpAPI:
             payload=payload,
         )
 
-        return orjson.loads(raw)
+        return self._decoder_exchange_info.decode(raw)
 
     async def depth(self, symbol: str, limit: Optional[int] = None) -> Dict[str, Any]:
         """
