@@ -27,7 +27,6 @@ from nautilus_trader.adapters.binance.futures.parsing.data import parse_perpetua
 from nautilus_trader.adapters.binance.futures.schemas.market import BinanceFuturesExchangeInfo
 from nautilus_trader.adapters.binance.futures.schemas.market import BinanceFuturesSymbolInfo
 from nautilus_trader.adapters.binance.http.client import BinanceHttpClient
-from nautilus_trader.adapters.binance.http.error import BinanceClientError
 from nautilus_trader.common.config import InstrumentProviderConfig
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.common.providers import InstrumentProvider
@@ -186,21 +185,23 @@ class BinanceFuturesInstrumentProvider(InstrumentProvider):
         symbol = instrument_id.symbol.value
 
         # Get current commission rates
-        try:
-            fees: Optional[Dict[str, str]] = None
-        except BinanceClientError:
-            self._log.error(
-                "Cannot load instruments: API key authentication failed "
-                "(this is needed to fetch the applicable account fee tier).",
-            )
-            return
+        # try:
+        #     fees: Optional[Dict[str, str]] = None
+        # except BinanceClientError:
+        #     self._log.error(
+        #         "Cannot load instruments: API key authentication failed "
+        #         "(this is needed to fetch the applicable account fee tier).",
+        #     )
+        #     return
 
         # Get exchange info for all assets
-        response: BinanceFuturesExchangeInfo = await self._market.exchange_info(symbol=symbol)
-        server_time_ns: int = millis_to_nanos(response["serverTime"])
-
-        for data in response["symbols"]:
-            self._parse_instrument(data, fees, server_time_ns)
+        exchange_info: BinanceFuturesExchangeInfo = await self._market.exchange_info(symbol=symbol)
+        for symbol_info in exchange_info.symbols:
+            self._parse_instrument(
+                symbol_info=symbol_info,
+                fees=None,
+                ts_event=millis_to_nanos(exchange_info.serverTime),
+            )
 
     def _parse_instrument(
         self,
@@ -243,3 +244,5 @@ class BinanceFuturesInstrumentProvider(InstrumentProvider):
 
         self.add_currency(currency=instrument.quote_currency)
         self.add(instrument=instrument)
+
+        self._log.debug(f"Added instrument {instrument.id}.")

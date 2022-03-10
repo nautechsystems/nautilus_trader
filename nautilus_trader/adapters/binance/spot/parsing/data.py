@@ -116,7 +116,7 @@ def parse_instrument_http(
         taker_fee=taker_fee,
         ts_event=ts_event,
         ts_init=ts_init,
-        info={f: getattr(symbol_info, f) for f in symbol_info.__struct_fields__},
+        # info={f: getattr(symbol_info, f) for f in symbol_info.__struct_fields__},
     )
 
 
