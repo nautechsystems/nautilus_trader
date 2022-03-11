@@ -33,6 +33,7 @@ from decimal import Decimal
 from typing import Optional
 
 from nautilus_trader.execution.config import ExecEngineConfig
+from nautilus_trader.execution.messages import TradingCommand
 
 from libc.stdint cimport int64_t
 
@@ -50,14 +51,14 @@ from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.fsm cimport InvalidStateTrigger
 from nautilus_trader.core.time cimport unix_timestamp_ms
 from nautilus_trader.execution.client cimport ExecutionClient
+from nautilus_trader.execution.messages cimport CancelAllOrders
+from nautilus_trader.execution.messages cimport CancelOrder
+from nautilus_trader.execution.messages cimport ModifyOrder
+from nautilus_trader.execution.messages cimport SubmitOrder
+from nautilus_trader.execution.messages cimport SubmitOrderList
 from nautilus_trader.model.c_enums.oms_type cimport OMSType
 from nautilus_trader.model.c_enums.oms_type cimport OMSTypeParser
 from nautilus_trader.model.c_enums.position_side cimport PositionSide
-from nautilus_trader.model.commands.trading cimport CancelAllOrders
-from nautilus_trader.model.commands.trading cimport CancelOrder
-from nautilus_trader.model.commands.trading cimport ModifyOrder
-from nautilus_trader.model.commands.trading cimport SubmitOrder
-from nautilus_trader.model.commands.trading cimport SubmitOrderList
 from nautilus_trader.model.events.order cimport OrderEvent
 from nautilus_trader.model.events.order cimport OrderFilled
 from nautilus_trader.model.events.position cimport PositionChanged
@@ -71,7 +72,7 @@ from nautilus_trader.model.identifiers cimport PositionId
 from nautilus_trader.model.identifiers cimport StrategyId
 from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.model.instruments.base cimport Instrument
-from nautilus_trader.model.instruments.currency cimport CurrencySpot
+from nautilus_trader.model.instruments.currency_pair cimport CurrencyPair
 from nautilus_trader.model.objects cimport Money
 from nautilus_trader.model.objects cimport Quantity
 from nautilus_trader.model.orders.base cimport Order
@@ -126,8 +127,8 @@ cdef class ExecutionEngine(Component):
 
         self._clients = {}           # type: dict[ClientId, ExecutionClient]
         self._routing_map = {}       # type: dict[Venue, ExecutionClient]
-        self._oms_overrides = {}     # type: dict[StrategyId, OMSType]
         self._default_client = None  # type: Optional[ExecutionClient]
+        self._oms_overrides = {}     # type: dict[StrategyId, OMSType]
 
         self._pos_id_generator = PositionIdGenerator(
             trader_id=msgbus.trader_id,
@@ -264,7 +265,7 @@ cdef class ExecutionEngine(Component):
 
         """
         Condition.not_none(client, "client")
-        Condition.not_in(client.id, self._clients, "client.id", "self._clients")
+        Condition.not_in(client.id, self._clients, "client.id", "_clients")
 
         self._clients[client.id] = client
 
@@ -295,7 +296,7 @@ cdef class ExecutionEngine(Component):
 
         self._default_client = client
 
-        self._log.info(f"Registered ExecutionClient-{client} for default routing.")
+        self._log.info(f"Registered {client} for default routing.")
 
     cpdef void register_venue_routing(self, ExecutionClient client, Venue venue) except *:
         """
@@ -497,16 +498,18 @@ cdef class ExecutionEngine(Component):
         self._log.debug(f"{RECV}{CMD} {command}.")
         self.command_count += 1
 
-        cdef ExecutionClient client = self._routing_map.get(
-            command.instrument_id.venue,
-            self._default_client,
-        )
+        cdef ExecutionClient client = self._clients.get(command.client_id)
         if client is None:
-            self._log.error(
-                f"Cannot execute command: "
-                f"No execution client configured for {command.instrument_id}, {command}."
+            client = self._routing_map.get(
+                command.instrument_id.venue,
+                self._default_client,
             )
-            return  # No client to handle command
+            if client is None:
+                self._log.error(
+                    f"Cannot execute command: "
+                    f"No execution client configured for {command.instrument_id}, {command}."
+                )
+                return  # No client to handle command
 
         if isinstance(command, SubmitOrder):
             self._handle_submit_order(client, command)
@@ -603,13 +606,10 @@ cdef class ExecutionEngine(Component):
         except InvalidStateTrigger as ex:
             self._log.warning(f"InvalidStateTrigger: {ex}, did not apply {event}")
             return
-        except ValueError as ex:
-            # Protection against invalid IDs
-            self._log.error(str(ex))
-            return
-        except KeyError as ex:
-            # Protection against duplicate fills
-            self._log.error(str(ex))
+        except (ValueError, KeyError) as ex:
+            # ValueError: Protection against invalid IDs
+            # KeyError: Protection against duplicate fills
+            self._log.exception(f"Error on applying {repr(event)} to {repr(order)}", ex)
             return
 
         self._cache.update_order(order)
@@ -678,7 +678,7 @@ cdef class ExecutionEngine(Component):
         if self.allow_cash_positions:
             pass
         elif (
-            isinstance(instrument, CurrencySpot)
+            isinstance(instrument, CurrencyPair)
             and account.is_cash_account
             or (account.is_margin_account and account.leverage(instrument.id) == 1)
         ):
@@ -720,7 +720,7 @@ cdef class ExecutionEngine(Component):
             # Protected against duplicate OrderFilled
             position.apply(fill)
         except KeyError as ex:
-            self._log.exception(ex)
+            self._log.exception(f"Error on applying {repr(fill)} to {repr(position)}", ex)
             return  # Not re-raising to avoid crashing engine
 
         self._cache.update_position(position)

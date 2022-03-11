@@ -21,12 +21,14 @@ cdef class TrailingOffsetTypeParser:
         if value == 0:
             return "NONE"
         elif value == 1:
-            return "PRICE"
+            return "DEFAULT"
         elif value == 2:
-            return "BASIS_POINTS"
+            return "PRICE"
         elif value == 3:
-            return "TICKS"
+            return "BASIS_POINTS"
         elif value == 4:
+            return "TICKS"
+        elif value == 5:
             return "PRICE_TIER"
         else:
             raise ValueError(f"value was invalid, was {value}")
@@ -35,6 +37,8 @@ cdef class TrailingOffsetTypeParser:
     cdef TrailingOffsetType from_str(str value) except *:
         if value == "NONE":
             return TrailingOffsetType.NONE
+        elif value == "DEFAULT":
+            return TrailingOffsetType.DEFAULT
         elif value == "PRICE":
             return TrailingOffsetType.PRICE
         elif value == "BASIS_POINTS":

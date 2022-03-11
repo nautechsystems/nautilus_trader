@@ -15,9 +15,11 @@
 
 import importlib
 import importlib.util
-from typing import Optional, Union
+from typing import Any, Dict, FrozenSet, Optional, Union
 
 import pydantic
+from frozendict import frozendict
+from pydantic import validator
 
 from nautilus_trader.core.correctness import PyCondition
 
@@ -44,7 +46,7 @@ class ImportableActorConfig(pydantic.BaseModel):
     Parameters
     ----------
     path : str, optional
-        The fully-qualified name of the module.
+        The fully qualified name of the module.
     config : Union[ActorConfig, str]
 
     """
@@ -97,3 +99,41 @@ class ActorFactory:
         cls = getattr(mod, config.cls)
         assert isinstance(config.config, ActorConfig)
         return cls(config=config.config)
+
+
+class InstrumentProviderConfig(pydantic.BaseModel):
+    """
+    Configuration for ``InstrumentProvider`` instances.
+
+    Parameters
+    ----------
+    load_all : bool, default False
+        If all venue instruments should be loaded on start.
+    load_ids : FrozenSet[str], optional
+        The list of instrument IDs to be loaded on start (if `load_all_instruments` is False).
+    filters : frozendict, optional
+        The venue specific instrument loading filters to apply.
+    """
+
+    class Config:
+        """The base model config"""
+
+        arbitrary_types_allowed = True
+
+    @validator("filters")
+    def validate_filters(cls, value):
+        return frozendict(value) if value is not None else None
+
+    def __eq__(self, other):
+        return (
+            self.load_all == other.load_all
+            and self.load_ids == other.load_ids
+            and self.filters == other.filters
+        )
+
+    def __hash__(self):
+        return hash((self.load_all, self.load_ids, self.filters))
+
+    load_all: bool = False
+    load_ids: Optional[FrozenSet[str]] = None
+    filters: Optional[Dict[str, Any]] = None

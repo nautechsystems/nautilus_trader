@@ -13,13 +13,14 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from typing import Any, Dict, Optional
+from typing import Dict, FrozenSet, Optional
 
 import pydantic
 from pydantic import PositiveFloat
 from pydantic import PositiveInt
 
 from nautilus_trader.cache.config import CacheConfig
+from nautilus_trader.common.config import InstrumentProviderConfig
 from nautilus_trader.data.config import DataEngineConfig
 from nautilus_trader.execution.config import ExecEngineConfig
 from nautilus_trader.infrastructure.config import CacheDatabaseConfig
@@ -49,18 +50,68 @@ class LiveExecEngineConfig(ExecEngineConfig):
 
     Parameters
     ----------
-    recon_auto : bool
+    reconciliation_auto : bool
         If reconciliation should automatically generate events to align state.
-    recon_lookback_mins : int, optional
+    reconciliation_lookback_mins : int, optional
         The maximum lookback minutes to reconcile state for. If None then will
         use the maximum lookback available from the venues.
     qsize : PositiveInt
         The queue size for the engines internal queue buffers.
     """
 
-    recon_auto: bool = True
-    recon_lookback_mins: Optional[PositiveInt] = None
+    reconciliation_auto: bool = True
+    reconciliation_lookback_mins: Optional[PositiveInt] = None
     qsize: PositiveInt = 10000
+
+
+class RoutingConfig(pydantic.BaseModel):
+    """
+    Configuration for live client message routing.
+
+    default : bool
+        If the client should be registered as the default routing client
+        (when a specific venue routing cannot be found).
+    venues : List[str], optional
+        The venues to register for routing.
+    """
+
+    default: bool = False
+    venues: Optional[FrozenSet[str]] = None
+
+    def __hash__(self):  # make hashable BaseModel subclass
+        return hash((type(self),) + tuple(self.__dict__.values()))
+
+
+class LiveDataClientConfig(pydantic.BaseModel):
+    """
+    Configuration for ``LiveDataClient`` instances.
+
+    Parameters
+    ----------
+    instrument_provider : InstrumentProviderConfig
+        The clients instrument provider configuration.
+    routing : RoutingConfig
+        The clients message routing config.
+    """
+
+    instrument_provider: InstrumentProviderConfig = InstrumentProviderConfig()
+    routing: RoutingConfig = RoutingConfig()
+
+
+class LiveExecClientConfig(pydantic.BaseModel):
+    """
+    Configuration for ``LiveExecutionClient`` instances.
+
+    Parameters
+    ----------
+    instrument_provider : InstrumentProviderConfig
+        The clients instrument provider configuration.
+    routing : RoutingConfig
+        The clients message routing config.
+    """
+
+    instrument_provider: InstrumentProviderConfig = InstrumentProviderConfig()
+    routing: RoutingConfig = RoutingConfig()
 
 
 class TradingNodeConfig(pydantic.BaseModel):
@@ -99,9 +150,9 @@ class TradingNodeConfig(pydantic.BaseModel):
         The timeout for all engine clients to disconnect.
     check_residuals_delay : PositiveFloat (seconds)
         The delay after stopping the node to check residual state before final shutdown.
-    data_clients : dict[str, dict[str, Any]], optional
+    data_clients : dict[str, LiveDataClientConfig], optional
         The data client configurations.
-    exec_clients : dict[str, dict[str, Any]], optional
+    exec_clients : dict[str, LiveExecClientConfig], optional
         The execution client configurations.
     persistence : LivePersistenceConfig, optional
         The config for enabling persistence via feather files
@@ -122,6 +173,6 @@ class TradingNodeConfig(pydantic.BaseModel):
     timeout_portfolio: PositiveFloat = 10.0
     timeout_disconnection: PositiveFloat = 10.0
     check_residuals_delay: PositiveFloat = 10.0
-    data_clients: Dict[str, Dict[str, Any]] = {}
-    exec_clients: Dict[str, Dict[str, Any]] = {}
+    data_clients: Dict[str, LiveDataClientConfig] = {}
+    exec_clients: Dict[str, LiveExecClientConfig] = {}
     persistence: Optional[PersistenceConfig] = None

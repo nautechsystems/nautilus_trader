@@ -67,7 +67,7 @@ cdef class Identifier:
 
 cdef class Symbol(Identifier):
     """
-    Represents a valid ticker symbol ID for a tradeable financial market
+    Represents a valid ticker symbol ID for a tradable financial market
     instrument.
 
     The ID value must be unique for a trading venue.
@@ -148,7 +148,7 @@ cdef class InstrumentId(Identifier):
         Must be correctly formatted including characters either side of a single
         period.
 
-        Examples: "AUD/USD.IDEALPRO", "BTC/USDT.BINANCE"
+        Examples: "AUD/USD.IDEALPRO", "BTCUSDT.BINANCE"
 
         Parameters
         ----------
@@ -241,7 +241,7 @@ cdef class TraderId(ComponentId):
         str
 
         """
-        return self.value.partition("-")[2]
+        return self.value.rsplit("-", maxsplit=1)[-1]
 
 
 # External strategy ID constant
@@ -289,7 +289,7 @@ cdef class StrategyId(ComponentId):
         str
 
         """
-        return self.value.partition("-")[2]
+        return self.value.rsplit("-", maxsplit=1)[-1]
 
     cpdef bint is_external(self):
         """

@@ -32,7 +32,8 @@ from nautilus_trader.model.orderbook.data import OrderBookDelta
 from nautilus_trader.model.orderbook.data import OrderBookDeltas
 from nautilus_trader.model.orderbook.data import OrderBookSnapshot
 from nautilus_trader.model.orderbook.ladder import Ladder
-from tests.test_kit.stubs import TestStubs
+from tests.test_kit.stubs.data import TestDataStubs
+from tests.test_kit.stubs.identifiers import TestIdStubs
 
 
 AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy("AUD/USD")
@@ -41,7 +42,7 @@ AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy("AUD/USD")
 @pytest.fixture(scope="function")
 def empty_l2_book():
     return L2OrderBook(
-        instrument_id=TestStubs.audusd_id(),
+        instrument_id=TestIdStubs.audusd_id(),
         price_precision=5,
         size_precision=0,
     )
@@ -50,7 +51,7 @@ def empty_l2_book():
 @pytest.fixture(scope="function")
 def sample_book():
     ob = L3OrderBook(
-        instrument_id=TestStubs.audusd_id(),
+        instrument_id=TestIdStubs.audusd_id(),
         price_precision=5,
         size_precision=0,
     )
@@ -218,7 +219,7 @@ def test_repr():
 
 def test_pprint_when_no_orders():
     ob = L2OrderBook(
-        instrument_id=TestStubs.audusd_id(),
+        instrument_id=TestIdStubs.audusd_id(),
         price_precision=5,
         size_precision=0,
     )
@@ -250,7 +251,7 @@ def test_delete_l1():
         instrument=AUDUSD_SIM,
         book_type=BookType.L1_TBBO,
     )
-    order = TestStubs.order(price=10.0, side=OrderSide.BUY)
+    order = TestDataStubs.order(price=10.0, side=OrderSide.BUY)
     book.update(order)
     book.delete(order)
 
@@ -306,7 +307,7 @@ def test_orderbook_snapshot(empty_l2_book):
 
 def test_orderbook_operation_update(empty_l2_book, clock):
     delta = OrderBookDelta(
-        instrument_id=TestStubs.audusd_id(),
+        instrument_id=TestIdStubs.audusd_id(),
         book_type=BookType.L2_MBP,
         action=BookAction.UPDATE,
         order=Order(
@@ -324,7 +325,7 @@ def test_orderbook_operation_update(empty_l2_book, clock):
 
 def test_orderbook_operation_add(empty_l2_book, clock):
     delta = OrderBookDelta(
-        instrument_id=TestStubs.audusd_id(),
+        instrument_id=TestIdStubs.audusd_id(),
         book_type=BookType.L2_MBP,
         action=BookAction.ADD,
         order=Order(
@@ -342,7 +343,7 @@ def test_orderbook_operation_add(empty_l2_book, clock):
 
 def test_orderbook_operations(empty_l2_book):
     delta = OrderBookDelta(
-        instrument_id=TestStubs.audusd_id(),
+        instrument_id=TestIdStubs.audusd_id(),
         book_type=BookType.L2_MBP,
         action=BookAction.UPDATE,
         order=Order(
@@ -355,7 +356,7 @@ def test_orderbook_operations(empty_l2_book):
         ts_init=pd.Timestamp.utcnow().timestamp() * 1e9,
     )
     deltas = OrderBookDeltas(
-        instrument_id=TestStubs.audusd_id(),
+        instrument_id=TestIdStubs.audusd_id(),
         book_type=BookType.L2_MBP,
         deltas=[delta],
         ts_event=pd.Timestamp.utcnow().timestamp() * 1e9,
@@ -377,7 +378,7 @@ def test_apply(empty_l2_book, clock):
     empty_l2_book.apply_snapshot(snapshot)
     assert empty_l2_book.best_ask_price() == 160
     delta = OrderBookDelta(
-        instrument_id=TestStubs.audusd_id(),
+        instrument_id=TestIdStubs.audusd_id(),
         book_type=BookType.L2_MBP,
         action=BookAction.ADD,
         order=Order(
@@ -403,7 +404,7 @@ def test_orderbook_midpoint_empty(empty_l2_book):
 
 def test_timestamp_ns(empty_l2_book, clock):
     delta = OrderBookDelta(
-        instrument_id=TestStubs.audusd_id(),
+        instrument_id=TestIdStubs.audusd_id(),
         book_type=BookType.L2_MBP,
         action=BookAction.ADD,
         order=Order(
@@ -423,19 +424,19 @@ def test_trade_side(sample_book):
     # Sample book is 0.83 @ 0.8860
 
     # Trade above the ask
-    trade = TestStubs.trade_tick_5decimal(
+    trade = TestDataStubs.trade_tick_5decimal(
         instrument_id=sample_book.instrument_id, price=Price.from_str("0.88700")
     )
     assert sample_book.trade_side(trade=trade) == OrderSide.SELL
 
     # Trade below the bid
-    trade = TestStubs.trade_tick_5decimal(
+    trade = TestDataStubs.trade_tick_5decimal(
         instrument_id=sample_book.instrument_id, price=Price.from_str("0.80000")
     )
     assert sample_book.trade_side(trade=trade) == OrderSide.BUY
 
     # Trade inside the spread
-    trade = TestStubs.trade_tick_5decimal(
+    trade = TestDataStubs.trade_tick_5decimal(
         instrument_id=sample_book.instrument_id, price=Price.from_str("0.85000")
     )
     assert sample_book.trade_side(trade=trade) == 0

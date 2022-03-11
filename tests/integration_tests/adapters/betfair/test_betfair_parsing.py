@@ -42,10 +42,14 @@ from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import VenueOrderId
 from nautilus_trader.model.objects import AccountBalance
 from nautilus_trader.model.objects import Money
+from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.orderbook.data import OrderBookDeltas
 from tests.integration_tests.adapters.betfair.test_kit import BetfairResponses
 from tests.integration_tests.adapters.betfair.test_kit import BetfairTestStubs
+from tests.test_kit.stubs.commands import TestCommandStubs
+from tests.test_kit.stubs.execution import TestExecStubs
+from tests.test_kit.stubs.identifiers import TestIdStubs
 
 
 @pytest.mark.skipif(sys.platform == "win32", reason="failing on windows")
@@ -76,18 +80,23 @@ class TestBetfairParsing:
         assert result == betfair_quantity
 
     def test_order_submit_to_betfair(self):
-        command = BetfairTestStubs.submit_order_command()
+        command = TestCommandStubs.submit_order_command(
+            order=TestExecStubs.limit_order(
+                price=Price.from_str("0.4"),
+                quantity=Quantity.from_str("10"),
+            )
+        )
         result = order_submit_to_betfair(command=command, instrument=self.instrument)
         expected = {
             "customer_ref": command.id.value.replace("-", ""),
             "customer_strategy_ref": "S-001",
             "instructions": [
                 {
-                    "customerOrderRef": "O-20210410-022422-001-001-S",
+                    "customerOrderRef": "O-20210410-022422-001",
                     "handicap": "0.0",
                     "limitOrder": {
                         "persistenceType": "PERSIST",
-                        "price": "3.05",
+                        "price": "2.5",
                         "size": "10.0",
                     },
                     "orderType": "LIMIT",
@@ -100,8 +109,9 @@ class TestBetfairParsing:
         assert result == expected
 
     def test_order_update_to_betfair(self):
+        modify = TestCommandStubs.modify_order_command(price=Price(0.74347, precision=5))
         result = order_update_to_betfair(
-            command=BetfairTestStubs.modify_order_command(),
+            command=modify,
             side=OrderSide.BUY,
             venue_order_id=VenueOrderId("1"),
             instrument=self.instrument,
@@ -116,7 +126,10 @@ class TestBetfairParsing:
 
     def test_order_cancel_to_betfair(self):
         result = order_cancel_to_betfair(
-            command=BetfairTestStubs.cancel_order_command(), instrument=self.instrument
+            command=TestCommandStubs.cancel_order_command(
+                venue_order_id=VenueOrderId("228302937743")
+            ),
+            instrument=self.instrument,
         )
         expected = {
             "market_id": "1.179082386",
@@ -195,7 +208,9 @@ class TestBetfairParsing:
         assert len(deltas.deltas) == 2
 
     def test_make_order_limit(self):
-        order = BetfairTestStubs.limit_order()
+        order = TestExecStubs.limit_order(
+            price=Price.from_str("0.33"), quantity=Quantity.from_str("10")
+        )
         result = make_order(order)
         expected = {
             "limitOrder": {"persistenceType": "PERSIST", "price": "3.05", "size": "10.0"},
@@ -204,7 +219,12 @@ class TestBetfairParsing:
         assert result == expected
 
     def test_make_order_limit_on_close(self):
-        order = BetfairTestStubs.limit_order(time_in_force=TimeInForce.AT_THE_CLOSE)
+        order = TestExecStubs.limit_order(
+            price=Price(0.33, precision=5),
+            quantity=Quantity.from_int(10),
+            instrument_id=TestIdStubs.betting_instrument_id(),
+            time_in_force=TimeInForce.AT_THE_CLOSE,
+        )
         result = make_order(order)
         expected = {
             "limitOnCloseOrder": {"price": "3.05", "liability": "10.0"},

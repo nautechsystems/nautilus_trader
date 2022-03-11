@@ -46,7 +46,7 @@ node = TradingNode(config=config)
 
 # Register the client factories with the node
 node.add_data_client_factory("BETFAIR", BetfairLiveDataClientFactory)
-node.add_exec_client_factory("BETFAIR", BetfairLiveExecutionClientFactory)
+node.add_exec_client_factory("BETFAIR", BetfairLiveExecClientFactory)
 
 # Finally build the node
 node.build()

@@ -44,6 +44,36 @@
    :member-order: bysource
 ```
 
+## Market-To-Limit
+
+```{eval-rst}
+.. automodule:: nautilus_trader.model.orders.market_to_limit
+   :show-inheritance:
+   :inherited-members:
+   :members:
+   :member-order: bysource
+```
+
+## Market-If-Touched
+
+```{eval-rst}
+.. automodule:: nautilus_trader.model.orders.market_if_touched
+   :show-inheritance:
+   :inherited-members:
+   :members:
+   :member-order: bysource
+```
+
+## Limit-If-Touched
+
+```{eval-rst}
+.. automodule:: nautilus_trader.model.orders.limit_if_touched
+   :show-inheritance:
+   :inherited-members:
+   :members:
+   :member-order: bysource
+```
+
 ## Trailing Stop-Market
 
 ```{eval-rst}

@@ -36,12 +36,12 @@ class TestFTXInstrumentProvider:
     ):
         # Arrange: prepare data for monkey patch
         response1 = pkgutil.get_data(
-            package="tests.integration_tests.adapters.ftx.resources.responses",
+            package="tests.integration_tests.adapters.ftx.resources.http_responses",
             resource="account_info.json",
         )
 
         response2 = pkgutil.get_data(
-            package="tests.integration_tests.adapters.ftx.resources.responses",
+            package="tests.integration_tests.adapters.ftx.resources.http_responses",
             resource="markets.json",
         )
 

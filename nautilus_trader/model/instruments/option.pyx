@@ -34,7 +34,7 @@ from nautilus_trader.model.objects cimport Quantity
 
 cdef class Option(Instrument):
     """
-    Represents an options instrument.
+    Represents a generic Options Contract instrument.
 
     Parameters
     ----------

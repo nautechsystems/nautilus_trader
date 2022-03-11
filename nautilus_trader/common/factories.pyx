@@ -31,7 +31,10 @@ from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
 from nautilus_trader.model.orders.base cimport Order
 from nautilus_trader.model.orders.limit cimport LimitOrder
+from nautilus_trader.model.orders.limit_if_touched cimport LimitIfTouchedOrder
 from nautilus_trader.model.orders.list cimport OrderList
+from nautilus_trader.model.orders.market_if_touched cimport MarketIfTouchedOrder
+from nautilus_trader.model.orders.market_to_limit cimport MarketToLimitOrder
 from nautilus_trader.model.orders.stop_market cimport StopMarketOrder
 from nautilus_trader.model.orders.trailing_stop_limit cimport TrailingStopLimitOrder
 from nautilus_trader.model.orders.trailing_stop_market cimport TrailingStopMarketOrder
@@ -100,13 +103,16 @@ cdef class OrderFactory:
 
     cpdef void set_count(self, int count) except *:
         """
-        System Method: Set the internal order ID generator count to the
-        given count.
+        Set the internal order ID generator count to the given count.
 
         Parameters
         ----------
         count : int
             The count to set.
+
+        Warnings
+        --------
+        System method (not intended to be called by user code).
 
         """
         self._id_generator.set_count(count)
@@ -129,7 +135,7 @@ cdef class OrderFactory:
         str tags=None,
     ):
         """
-        Create a new market order.
+        Create a new `Market` order.
 
         Parameters
         ----------
@@ -139,8 +145,8 @@ cdef class OrderFactory:
             The orders side.
         quantity : Quantity
             The orders quantity (> 0).
-        time_in_force : TimeInForce, default ``GTC``
-            The orders time-in-force. Often not applicable for market orders.
+        time_in_force : TimeInForce {``GTC``, ``IOC``, ``FOK``, ``DAY``, ``AT_THE_OPEN``, ``AT_THE_CLOSE``}, default ``GTC``
+            The orders time in force. Often not applicable for market orders.
         reduce_only : bool, default False
             If the order carries the 'reduce-only' execution instruction.
         tags : str, optional
@@ -156,7 +162,7 @@ cdef class OrderFactory:
         ValueError
             If `quantity` is not positive (> 0).
         ValueError
-            If `time_in_force` is other than ``GTC``, ``IOC``, ``FOK``, ``AT_THE_OPEN`` or ``AT_THE_CLOSE``.
+            If `time_in_force` is ``GTD``.
 
         """
         return MarketOrder(
@@ -191,9 +197,7 @@ cdef class OrderFactory:
         str tags=None,
     ):
         """
-        Create a new limit order.
-
-        If the time-in-force is ``GTD`` then a valid expire time must be given.
+        Create a new `Limit` order.
 
         Parameters
         ----------
@@ -205,8 +209,8 @@ cdef class OrderFactory:
             The orders quantity (> 0).
         price : Price
             The orders price.
-        time_in_force : TimeInForce, default ``GTC``
-            The orders time-in-force.
+        time_in_force : TimeInForce {``GTC``, ``IOC``, ``FOK``, ``GTD``, ``DAY``, ``AT_THE_OPEN``, ``AT_THE_CLOSE``}, default ``GTC``
+            The orders time in force.
         expire_time : datetime, optional
             The order expiration (for ``GTD`` orders).
         post_only : bool, default False
@@ -268,9 +272,7 @@ cdef class OrderFactory:
         str tags=None,
     ):
         """
-        Create a new stop-market trigger order.
-
-        If the time-in-force is ``GTD`` then a valid expire time must be given.
+        Create a new `Stop-Market` conditional order.
 
         Parameters
         ----------
@@ -284,8 +286,8 @@ cdef class OrderFactory:
             The orders trigger price (STOP).
         trigger_type : TriggerType, default ``DEFAULT``
             The order trigger type.
-        time_in_force : TimeInForce, default ``GTC``
-            The orders time-in-force.
+        time_in_force : TimeInForce  {``GTC``, ``IOC``, ``FOK``, ``GTD``, ``DAY``}, default ``GTC``
+            The orders time in force.
         expire_time : datetime, optional
             The order expiration (for ``GTD`` orders).
         reduce_only : bool, default False
@@ -302,6 +304,10 @@ cdef class OrderFactory:
         ------
         ValueError
             If `quantity` is not positive (> 0).
+        ValueError
+            If `trigger_type` is ``NONE``.
+        ValueError
+            If `time_in_force` is ``AT_THE_OPEN`` or ``AT_THE_CLOSE``.
         ValueError
             If `time_in_force` is ``GTD`` and `expire_time` is ``None`` or <= UNIX epoch.
 
@@ -343,9 +349,7 @@ cdef class OrderFactory:
         str tags=None,
     ):
         """
-        Create a new stop-limit trigger order.
-
-        If the time-in-force is ``GTD`` then a valid expire time must be given.
+        Create a new `Stop-Limit` conditional order.
 
         Parameters
         ----------
@@ -361,8 +365,8 @@ cdef class OrderFactory:
             The orders trigger stop price.
         trigger_type : TriggerType, default ``DEFAULT``
             The order trigger type.
-        time_in_force : TimeInForce, default ``GTC``
-            The orders time-in-force.
+        time_in_force : TimeInForce {``GTC``, ``IOC``, ``FOK``, ``GTD``, ``DAY``}, default ``GTC``
+            The orders time in force.
         expire_time : datetime, optional
             The order expiration (for ``GTD`` orders).
         post_only : bool, default False
@@ -384,12 +388,244 @@ cdef class OrderFactory:
         ValueError
             If `quantity` is not positive (> 0).
         ValueError
+            If `trigger_type` is ``NONE``.
+        ValueError
+            If `time_in_force` is ``AT_THE_OPEN`` or ``AT_THE_CLOSE``.
+        ValueError
             If `time_in_force` is ``GTD`` and `expire_time` is ``None`` or <= UNIX epoch.
         ValueError
             If `display_qty` is negative (< 0) or greater than `quantity`.
 
         """
         return StopLimitOrder(
+            trader_id=self.trader_id,
+            strategy_id=self.strategy_id,
+            instrument_id=instrument_id,
+            client_order_id=self._id_generator.generate(),
+            order_side=order_side,
+            quantity=quantity,
+            price=price,
+            trigger_price=trigger_price,
+            trigger_type=trigger_type,
+            time_in_force=time_in_force,
+            expire_time=expire_time,
+            init_id=self._uuid_factory.generate(),
+            ts_init=self._clock.timestamp_ns(),
+            post_only=post_only,
+            reduce_only=reduce_only,
+            display_qty=display_qty,
+            order_list_id=None,
+            contingency_type=ContingencyType.NONE,
+            linked_order_ids=None,
+            parent_order_id=None,
+            tags=tags,
+        )
+
+    cpdef MarketToLimitOrder market_to_limit(
+        self,
+        InstrumentId instrument_id,
+        OrderSide order_side,
+        Quantity quantity,
+        TimeInForce time_in_force=TimeInForce.GTC,
+        datetime expire_time=None,
+        bint reduce_only=False,
+        Quantity display_qty=None,
+        str tags=None,
+    ):
+        """
+        Create a new `Market` order.
+
+        Parameters
+        ----------
+        instrument_id : InstrumentId
+            The orders instrument ID.
+        order_side : OrderSide {``BUY``, ``SELL``}
+            The orders side.
+        quantity : Quantity
+            The orders quantity (> 0).
+        time_in_force : TimeInForce {``GTC``, ``GTD``, ``IOC``, ``FOK``}, default ``GTC``
+            The orders time in force.
+        expire_time : datetime, optional
+            The order expiration (for ``GTD`` orders).
+        reduce_only : bool, default False
+            If the order carries the 'reduce-only' execution instruction.
+        display_qty : Quantity, optional
+            The quantity of the limit order to display on the public book (iceberg).
+        tags : str, optional
+            The custom user tags for the order. These are optional and can
+            contain any arbitrary delimiter if required.
+
+        Returns
+        -------
+        MarketToLimitOrder
+
+        Raises
+        ------
+        ValueError
+            If `quantity` is not positive (> 0).
+        ValueError
+            If `time_in_force` is ``AT_THE_OPEN`` or ``AT_THE_CLOSE``.
+
+        """
+        return MarketToLimitOrder(
+            trader_id=self.trader_id,
+            strategy_id=self.strategy_id,
+            instrument_id=instrument_id,
+            client_order_id=self._id_generator.generate(),
+            order_side=order_side,
+            quantity=quantity,
+            time_in_force=time_in_force,
+            expire_time=expire_time,
+            reduce_only=reduce_only,
+            display_qty=display_qty,
+            init_id=self._uuid_factory.generate(),
+            ts_init=self._clock.timestamp_ns(),
+            order_list_id=None,
+            contingency_type=ContingencyType.NONE,
+            linked_order_ids=None,
+            parent_order_id=None,
+            tags=tags,
+        )
+
+    cpdef MarketIfTouchedOrder market_if_touched(
+        self,
+        InstrumentId instrument_id,
+        OrderSide order_side,
+        Quantity quantity,
+        Price trigger_price,
+        TriggerType trigger_type=TriggerType.DEFAULT,
+        TimeInForce time_in_force=TimeInForce.GTC,
+        datetime expire_time=None,
+        bint reduce_only=False,
+        str tags=None,
+    ):
+        """
+        Create a new `Market-If-Touched` (MIT) conditional order.
+
+        Parameters
+        ----------
+        instrument_id : InstrumentId
+            The orders instrument ID.
+        order_side : OrderSide {``BUY``, ``SELL``}
+            The orders side.
+        quantity : Quantity
+            The orders quantity (> 0).
+        trigger_price : Price
+            The orders trigger price (STOP).
+        trigger_type : TriggerType, default ``DEFAULT``
+            The order trigger type.
+        time_in_force : TimeInForce {``GTC``, ``IOC``, ``FOK``, ``GTD``, ``DAY``}, default ``GTC``
+            The orders time in force.
+        expire_time : datetime, optional
+            The order expiration (for ``GTD`` orders).
+        reduce_only : bool, default False
+            If the order carries the 'reduce-only' execution instruction.
+        tags : str, optional
+            The custom user tags for the order. These are optional and can
+            contain any arbitrary delimiter if required.
+
+        Returns
+        -------
+        MarketIfTouchedOrder
+
+        Raises
+        ------
+        ValueError
+            If `quantity` is not positive (> 0).
+        ValueError
+            If `trigger_type` is ``NONE``.
+        ValueError
+            If `time_in_force` is ``AT_THE_OPEN`` or ``AT_THE_CLOSE``.
+        ValueError
+            If `time_in_force` is ``GTD`` and `expire_time` is ``None`` or <= UNIX epoch.
+
+        """
+        return MarketIfTouchedOrder(
+            trader_id=self.trader_id,
+            strategy_id=self.strategy_id,
+            instrument_id=instrument_id,
+            client_order_id=self._id_generator.generate(),
+            order_side=order_side,
+            quantity=quantity,
+            trigger_price=trigger_price,
+            trigger_type=trigger_type,
+            time_in_force=time_in_force,
+            expire_time=expire_time,
+            init_id=self._uuid_factory.generate(),
+            ts_init=self._clock.timestamp_ns(),
+            reduce_only=reduce_only,
+            order_list_id=None,
+            contingency_type=ContingencyType.NONE,
+            linked_order_ids=None,
+            parent_order_id=None,
+            tags=tags,
+        )
+
+    cpdef LimitIfTouchedOrder limit_if_touched(
+        self,
+        InstrumentId instrument_id,
+        OrderSide order_side,
+        Quantity quantity,
+        Price price,
+        Price trigger_price,
+        TriggerType trigger_type=TriggerType.DEFAULT,
+        TimeInForce time_in_force=TimeInForce.GTC,
+        datetime expire_time=None,
+        bint post_only=False,
+        bint reduce_only=False,
+        Quantity display_qty=None,
+        str tags=None,
+    ):
+        """
+        Create a new `Limit-If-Touched` (LIT) conditional order.
+
+        Parameters
+        ----------
+        instrument_id : InstrumentId
+            The orders instrument ID.
+        order_side : OrderSide {``BUY``, ``SELL``}
+            The orders side.
+        quantity : Quantity
+            The orders quantity (> 0).
+        price : Price
+            The orders limit price.
+        trigger_price : Price
+            The orders trigger stop price.
+        trigger_type : TriggerType, default ``DEFAULT``
+            The order trigger type.
+        time_in_force : TimeInForce {``GTC``, ``IOC``, ``FOK``, ``GTD``, ``DAY``}, default ``GTC``
+            The orders time in force.
+        expire_time : datetime, optional
+            The order expiration (for ``GTD`` orders).
+        post_only : bool, default False
+            If the order will only provide liquidity (make a market).
+        reduce_only : bool, default False
+            If the order carries the 'reduce-only' execution instruction.
+        display_qty : Quantity, optional
+            The quantity of the order to display on the public book (iceberg).
+        tags : str, optional
+            The custom user tags for the order. These are optional and can
+            contain any arbitrary delimiter if required.
+
+        Returns
+        -------
+        LimitIfTouchedOrder
+
+        Raises
+        ------
+        ValueError
+            If `quantity` is not positive (> 0).
+        ValueError
+            If `trigger_type` is ``NONE``.
+        ValueError
+            If `time_in_force` is ``AT_THE_OPEN`` or ``AT_THE_CLOSE``.
+        ValueError
+            If `time_in_force` is ``GTD`` and `expire_time` is ``None`` or <= UNIX epoch.
+        ValueError
+            If `display_qty` is negative (< 0) or greater than `quantity`.
+
+        """
+        return LimitIfTouchedOrder(
             trader_id=self.trader_id,
             strategy_id=self.strategy_id,
             instrument_id=instrument_id,
@@ -428,9 +664,7 @@ cdef class OrderFactory:
         str tags=None,
     ):
         """
-        Create a new trailing stop-market trigger order.
-
-        If the time-in-force is ``GTD`` then a valid expire time must be given.
+        Create a new `Trailing-Stop-Market` conditional order.
 
         Parameters
         ----------
@@ -449,8 +683,8 @@ cdef class OrderFactory:
             The order trigger type.
         offset_type : TrailingOffsetType, default ``PRICE``
             The order trailing offset type.
-        time_in_force : TimeInForce, default ``GTC``
-            The orders time-in-force.
+        time_in_force : TimeInForce {``GTC``, ``IOC``, ``FOK``, ``GTD``, ``DAY``}, default ``GTC``
+            The orders time in force.
         expire_time : datetime, optional
             The order expiration (for ``GTD`` orders).
         reduce_only : bool, default False
@@ -467,6 +701,12 @@ cdef class OrderFactory:
         ------
         ValueError
             If `quantity` is not positive (> 0).
+        ValueError
+            If `trigger_type` is ``NONE``.
+        ValueError
+            If `offset_type` is ``NONE``.
+        ValueError
+            If `time_in_force` is ``AT_THE_OPEN`` or ``AT_THE_CLOSE``.
         ValueError
             If `time_in_force` is ``GTD`` and `expire_time` is ``None`` or <= UNIX epoch.
 
@@ -513,9 +753,7 @@ cdef class OrderFactory:
         str tags=None,
     ):
         """
-        Create a new trailing stop-limit trigger order.
-
-        If the time-in-force is ``GTD`` then a valid expire time must be given.
+        Create a new `Trailing-Stop-Limit` conditional order.
 
         Parameters
         ----------
@@ -539,8 +777,8 @@ cdef class OrderFactory:
             The order trigger type.
         offset_type : TrailingOffsetType, default ``PRICE``
             The order trailing offset type.
-        time_in_force : TimeInForce, default ``GTC``
-            The orders time-in-force.
+        time_in_force : TimeInForce {``GTC``, ``IOC``, ``FOK``, ``GTD``, ``DAY``}, default ``GTC``
+            The orders time in force.
         expire_time : datetime, optional
             The order expiration (for ``GTD`` orders).
         post_only : bool, default False
@@ -561,6 +799,12 @@ cdef class OrderFactory:
         ------
         ValueError
             If `quantity` is not positive (> 0).
+        ValueError
+            If `trigger_type` is ``NONE``.
+        ValueError
+            If `offset_type` is ``NONE``.
+        ValueError
+            If `time_in_force` is ``AT_THE_OPEN`` or ``AT_THE_CLOSE``.
         ValueError
             If `time_in_force` is ``GTD`` and `expire_time` is ``None`` or <= UNIX epoch.
         ValueError
@@ -619,7 +863,7 @@ cdef class OrderFactory:
         take_profit : Price
             The take-profit child order price (LIMIT).
         tif_bracket : TimeInForce {``DAY``, ``GTC``}, optional
-            The bracket orders time-in-force .
+            The bracket orders time in force.
 
         Returns
         -------
@@ -748,11 +992,11 @@ cdef class OrderFactory:
         take_profit : Price
             The take-profit child order price (LIMIT).
         tif : TimeInForce {``DAY``, ``GTC``}, optional
-            The entry orders time-in-force .
+            The entry orders time in force.
         expire_time : datetime, optional
             The order expiration (for ``GTD`` orders).
         tif_bracket : TimeInForce {``DAY``, ``GTC``}, optional
-            The bracket orders time-in-force.
+            The bracket orders time in force.
         post_only : bool, default False
             If the entry order will only provide liquidity (make a market).
 

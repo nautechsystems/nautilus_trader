@@ -28,9 +28,9 @@ from nautilus_trader.persistence.external.core import process_files
 from nautilus_trader.persistence.external.readers import CSVReader
 from tests.integration_tests.adapters.betfair.test_kit import BetfairTestStubs
 from tests.test_kit import PACKAGE_ROOT
-from tests.test_kit.mocks import NewsEventData
-from tests.test_kit.mocks import data_catalog_setup
-from tests.test_kit.stubs import TestStubs
+from tests.test_kit.mocks.data import NewsEventData
+from tests.test_kit.mocks.data import data_catalog_setup
+from tests.test_kit.stubs.persistence import TestPersistenceStubs
 
 
 @pytest.mark.skipif(sys.platform == "win32", reason="test path broken on windows")
@@ -98,23 +98,23 @@ class TestPersistenceStreaming:
 
     def test_feather_writer_generic_data(self):
         # Arrange
-        TestStubs.setup_news_event_persistence()
+        TestPersistenceStubs.setup_news_event_persistence()
         process_files(
             glob_path=f"{PACKAGE_ROOT}/data/news_events.csv",
-            reader=CSVReader(block_parser=TestStubs.news_event_parser),
+            reader=CSVReader(block_parser=TestPersistenceStubs.news_event_parser),
             catalog=self.catalog,
         )
         data_config = BacktestDataConfig(
             catalog_path="/root/",
             catalog_fs_protocol="memory",
-            data_cls_path=f"{NewsEventData.__module__}.NewsEventData",
+            data_cls=NewsEventData,
             client_id="NewsClient",
         )
         # Add some arbitrary instrument data to appease BacktestEngine
         instrument_data_config = BacktestDataConfig(
             catalog_path="/root/",
             catalog_fs_protocol="memory",
-            data_cls_path=f"{InstrumentStatusUpdate.__module__}.InstrumentStatusUpdate",
+            data_cls=InstrumentStatusUpdate,
         )
         run_config = BacktestRunConfig(
             data=[data_config, instrument_data_config],

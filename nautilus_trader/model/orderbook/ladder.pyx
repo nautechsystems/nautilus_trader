@@ -28,7 +28,9 @@ from nautilus_trader.model.orderbook.level cimport Level
 
 cdef class Ladder:
     """
-    Represents a ladder of orders in a book.
+    Represents a ladder of price levels in a book.
+
+    A ladder is on one side of the book, either bid or ask/offer.
 
     Parameters
     ----------

@@ -26,8 +26,8 @@ from nautilus_trader.adapters.betfair.parsing import parse_handicap
 from nautilus_trader.adapters.betfair.util import chunk
 from nautilus_trader.adapters.betfair.util import flatten_tree
 from nautilus_trader.common.clock import LiveClock
+from nautilus_trader.common.config import InstrumentProviderConfig
 from nautilus_trader.common.logging import Logger
-from nautilus_trader.common.logging import LoggerAdapter
 from nautilus_trader.common.providers import InstrumentProvider
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.instruments.betting import BettingInstrument
@@ -43,22 +43,30 @@ class BetfairInstrumentProvider(InstrumentProvider):
         The client for the provider.
     logger : Logger
         The logger for the provider.
-    market_filter : dict, optional
-        The market filter for the provider.
+    config : InstrumentProviderConfig, optional
+        The configuration for the provider.
     """
 
     def __init__(
         self,
         client: BetfairClient,
         logger: Logger,
-        market_filter: Optional[Dict] = None,
+        filters: Optional[Dict] = None,
+        config: Optional[InstrumentProviderConfig] = None,
     ):
-        super().__init__()
+        if config is None:
+            config = InstrumentProviderConfig(
+                load_all_on_start=True,
+                load_ids_on_start=None,
+                filters=filters,
+            )
+        super().__init__(
+            venue=BETFAIR_VENUE,
+            logger=logger,
+            config=config,
+        )
 
-        self.market_filter = market_filter or {}
-        self.venue = BETFAIR_VENUE
         self._client = client
-        self._log = LoggerAdapter("BetfairInstrumentProvider", logger)
         self._cache: Dict[InstrumentId, BettingInstrument] = {}
         self._account_currency = None
         self._missing_instruments: Set[BettingInstrument] = set()
@@ -75,7 +83,7 @@ class BetfairInstrumentProvider(InstrumentProvider):
         Load all instruments for the venue.
         """
         currency = await self.get_account_currency()
-        market_filter = market_filter or self.market_filter
+        market_filter = market_filter or self._filters
 
         self._log.info(f"Loading markets with market_filter={market_filter}")
         markets = await load_markets(self._client, market_filter=market_filter)

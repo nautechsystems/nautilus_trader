@@ -7,11 +7,13 @@
 ```{eval-rst}
 .. toctree::
    :maxdepth: 2
+   :glob:
+   :titlesonly:
    :hidden:
    
-   commands.md
    currency.md
    data.md
+   enums.md
    events.md
    identifiers.md
    instruments.md

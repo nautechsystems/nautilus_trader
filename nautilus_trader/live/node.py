@@ -363,7 +363,7 @@ class TradingNode:
                 self._loop.run_until_complete(self._run())
                 return None
         except RuntimeError as ex:
-            self._log.exception(ex)
+            self._log.exception("Error on run", ex)
             return None
 
     def stop(self) -> None:
@@ -381,7 +381,7 @@ class TradingNode:
             else:
                 self._loop.run_until_complete(self._stop())
         except RuntimeError as ex:
-            self._log.exception(ex)
+            self._log.exception("Error on stop", ex)
 
     def dispose(self) -> None:
         """
@@ -426,7 +426,7 @@ class TradingNode:
             self._cancel_all_tasks()
             self._loop.stop()
         except RuntimeError as ex:
-            self._log.exception(ex)
+            self._log.exception("Error on dispose", ex)
         finally:
             if self._loop.is_running():
                 self._log.warning("Cannot close a running event loop.")

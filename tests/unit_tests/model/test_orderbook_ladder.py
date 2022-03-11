@@ -20,17 +20,17 @@ from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.orderbook.data import Order
 from nautilus_trader.model.orderbook.ladder import Ladder
-from tests.test_kit.stubs import TestStubs
+from tests.test_kit.stubs.data import TestDataStubs
 
 
 @pytest.fixture()
 def asks():
-    return TestStubs.order_book(bid_price=10.0, ask_price=15.0).asks
+    return TestDataStubs.order_book(bid_price=10.0, ask_price=15.0).asks
 
 
 @pytest.fixture()
 def bids():
-    return TestStubs.order_book(bid_price=10.0, ask_price=15.0).bids
+    return TestDataStubs.order_book(bid_price=10.0, ask_price=15.0).bids
 
 
 def test_init():
@@ -69,21 +69,21 @@ def test_delete_individual_order(asks):
         Order(price=100.0, size=10.0, side=OrderSide.BUY, id="1"),
         Order(price=100.0, size=5.0, side=OrderSide.BUY, id="2"),
     ]
-    ladder = TestStubs.ladder(reverse=True, orders=orders)
+    ladder = TestDataStubs.ladder(reverse=True, orders=orders)
     ladder.delete(orders[0])
     assert ladder.volumes() == [5.0]
 
 
 def test_delete_level():
     orders = [Order(price=100.0, size=10.0, side=OrderSide.BUY)]
-    ladder = TestStubs.ladder(reverse=True, orders=orders)
+    ladder = TestDataStubs.ladder(reverse=True, orders=orders)
     ladder.delete(orders[0])
     assert ladder.levels == []
 
 
 def test_update_level():
     order = Order(price=100.0, size=10.0, side=OrderSide.BUY, id="1")
-    ladder = TestStubs.ladder(reverse=True, orders=[order])
+    ladder = TestDataStubs.ladder(reverse=True, orders=[order])
     order.update_size(size=20.0)
     ladder.update(order)
     assert ladder.levels[0].volume() == 20
@@ -107,7 +107,7 @@ def test_exposure():
         Order(price=101.0, size=10.0, side=OrderSide.SELL),
         Order(price=105.0, size=5.0, side=OrderSide.SELL),
     ]
-    ladder = TestStubs.ladder(reverse=True, orders=orders)
+    ladder = TestDataStubs.ladder(reverse=True, orders=orders)
     assert tuple(ladder.exposures()) == (525.0, 1000.0, 1010.0)
 
 

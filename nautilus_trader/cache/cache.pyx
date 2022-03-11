@@ -17,6 +17,8 @@ from collections import deque
 from decimal import Decimal
 from typing import Optional
 
+from nautilus_trader.cache.config import CacheConfig
+
 from libc.stdint cimport int64_t
 
 from nautilus_trader.accounting.accounts.base cimport Account
@@ -43,11 +45,11 @@ from nautilus_trader.model.identifiers cimport StrategyId
 from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.model.identifiers cimport VenueOrderId
 from nautilus_trader.model.instruments.base cimport Instrument
+from nautilus_trader.model.instruments.crypto_perpetual cimport CryptoPerpetual
+from nautilus_trader.model.instruments.currency_pair cimport CurrencyPair
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.orders.base cimport Order
 from nautilus_trader.trading.strategy cimport TradingStrategy
-
-from nautilus_trader.cache.config import CacheConfig
 
 
 cdef class Cache(CacheFacade):
@@ -1059,7 +1061,7 @@ cdef class Cache(CacheFacade):
         """
         self._instruments[instrument.id] = instrument
 
-        if instrument.get_base_currency() is not None:
+        if isinstance(instrument, (CurrencyPair, CryptoPerpetual)):
             self._xrate_symbols[instrument.id] = (
                 f"{instrument.base_currency}/{instrument.quote_currency}"
             )
@@ -1117,10 +1119,10 @@ cdef class Cache(CacheFacade):
 
         """
         Condition.not_none(order, "order")
-        Condition.not_in(order.client_order_id, self._orders, "order.client_order_id", "cached_orders")
-        Condition.not_in(order.client_order_id, self._index_orders, "order.client_order_id", "index_orders")
-        Condition.not_in(order.client_order_id, self._index_order_position, "order.client_order_id", "index_order_position")
-        Condition.not_in(order.client_order_id, self._index_order_strategy, "order.client_order_id", "index_order_strategy")
+        Condition.not_in(order.client_order_id, self._orders, "order.client_order_id", "_cached_orders")
+        Condition.not_in(order.client_order_id, self._index_orders, "order.client_order_id", "_index_orders")
+        Condition.not_in(order.client_order_id, self._index_order_position, "order.client_order_id", "_index_order_position")
+        Condition.not_in(order.client_order_id, self._index_order_strategy, "order.client_order_id", "_index_order_strategy")
 
         self._orders[order.client_order_id] = order
         self._index_orders.add(order.client_order_id)
@@ -1234,9 +1236,9 @@ cdef class Cache(CacheFacade):
         """
         Condition.not_none(position, "position")
         if oms_type == OMSType.HEDGING:
-            Condition.not_in(position.id, self._positions, "position.id", "cached_positions")
-            Condition.not_in(position.id, self._index_positions, "position.id", "index_positions")
-            Condition.not_in(position.id, self._index_positions_open, "position.id", "index_positions_open")
+            Condition.not_in(position.id, self._positions, "position.id", "_positions")
+            Condition.not_in(position.id, self._index_positions, "position.id", "_index_positions")
+            Condition.not_in(position.id, self._index_positions_open, "position.id", "_index_positions_open")
 
         self._positions[position.id] = position
         self._index_positions.add(position.id)

@@ -3,8 +3,7 @@
 Welcome to the API reference for the Python/Cython implementation of NautilusTrader!
 
 The API reference is automatically generated from the latest NautilusTrader source 
-code from the repositories `develop` branch, using a combination of [sphinx](https://www.sphinx-doc.org/en/master/)
-and [jupyter-book](https://jupyterbook.org/intro.html).
+code from the repositories `develop` branch, using [sphinx](https://www.sphinx-doc.org/en/master/).
 
 ```{note}
 Given the platforms development is still within an extended **beta** phase, at
@@ -66,7 +65,9 @@ library, or from third party library dependencies.
 
 ```{eval-rst}
 .. toctree::
-   :maxdepth: 2
+   :maxdepth: 1
+   :glob:
+   :titlesonly:
    :hidden:
    
    accounting.md

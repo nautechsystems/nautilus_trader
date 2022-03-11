@@ -1,18 +1,3 @@
----
-jupyter:
-  jupytext:
-    formats: ipynb,md
-    text_representation:
-      extension: .md
-      format_name: markdown
-      format_version: '1.3'
-      jupytext_version: 1.13.5
-  kernelspec:
-    display_name: Python (nautilus_trader)
-    language: python
-    name: nautilus_trader
----
-
 # Complete Backtest Example
 
 This notebook runs through a complete backtest example using raw data (external to nautilus) to a parameterised run 
@@ -174,7 +159,7 @@ instrument = catalog.instruments(as_nautilus=True)[0]
 data_config=[
     BacktestDataConfig(
         catalog_path=CATALOG_PATH,
-        data_type=QuoteTick,
+        data_type=QuoteTick.fully_qualified_name(),
         instrument_id=instrument.id.value,
         start_time=1580398089820000000,
         end_time=1580504394501000000,
@@ -230,7 +215,7 @@ for params in PARAM_SET:
 print("\n\n".join(map(str, configs)))
 ```
 
-# Run the backtest
+## Run the backtest
 
 Finally, we can create a BacktestNode and run the backtest:
 

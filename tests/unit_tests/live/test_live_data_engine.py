@@ -35,7 +35,9 @@ from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.msgbus.bus import MessageBus
 from nautilus_trader.portfolio.portfolio import Portfolio
-from tests.test_kit.stubs import TestStubs
+from tests.test_kit.stubs.component import TestComponentStubs
+from tests.test_kit.stubs.data import TestDataStubs
+from tests.test_kit.stubs.identifiers import TestIdStubs
 
 
 BITMEX = Venue("BITMEX")
@@ -55,7 +57,7 @@ class TestLiveDataEngine:
         self.uuid_factory = UUIDFactory()
         self.logger = Logger(self.clock)
 
-        self.trader_id = TestStubs.trader_id()
+        self.trader_id = TestIdStubs.trader_id()
 
         self.msgbus = MessageBus(
             trader_id=self.trader_id,
@@ -63,7 +65,7 @@ class TestLiveDataEngine:
             logger=self.logger,
         )
 
-        self.cache = TestStubs.cache()
+        self.cache = TestComponentStubs.cache()
 
         self.portfolio = Portfolio(
             msgbus=self.msgbus,
@@ -110,7 +112,8 @@ class TestLiveDataEngine:
         )
 
         subscribe = Subscribe(
-            client_id=ClientId(BINANCE.value),
+            client_id=None,
+            venue=BINANCE,
             data_type=DataType(QuoteTick),
             command_id=self.uuid_factory.generate(),
             ts_init=self.clock.timestamp_ns(),
@@ -145,6 +148,7 @@ class TestLiveDataEngine:
         handler = []
         request = DataRequest(
             client_id=ClientId("RANDOM"),
+            venue=None,
             data_type=DataType(
                 QuoteTick,
                 metadata={
@@ -187,6 +191,7 @@ class TestLiveDataEngine:
 
         response = DataResponse(
             client_id=ClientId("BINANCE"),
+            venue=BINANCE,
             data_type=DataType(QuoteTick),
             data=[],
             correlation_id=self.uuid_factory.generate(),
@@ -274,7 +279,8 @@ class TestLiveDataEngine:
         self.engine.start()
 
         subscribe = Subscribe(
-            client_id=ClientId(BINANCE.value),
+            client_id=None,
+            venue=BINANCE,
             data_type=DataType(QuoteTick),
             command_id=self.uuid_factory.generate(),
             ts_init=self.clock.timestamp_ns(),
@@ -299,6 +305,7 @@ class TestLiveDataEngine:
         handler = []
         request = DataRequest(
             client_id=ClientId("RANDOM"),
+            venue=None,
             data_type=DataType(
                 QuoteTick,
                 metadata={
@@ -331,6 +338,7 @@ class TestLiveDataEngine:
 
         response = DataResponse(
             client_id=ClientId("BINANCE"),
+            venue=BINANCE,
             data_type=DataType(QuoteTick),
             data=[],
             correlation_id=self.uuid_factory.generate(),
@@ -355,7 +363,7 @@ class TestLiveDataEngine:
         self.engine.start()
 
         # Act
-        tick = TestStubs.trade_tick_5decimal()
+        tick = TestDataStubs.trade_tick_5decimal()
 
         # Act
         self.engine.process(tick)

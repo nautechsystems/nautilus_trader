@@ -78,7 +78,7 @@ cdef class Order:
     cdef readonly OrderType type
     """The order type.\n\n:returns: `OrderType`"""
     cdef readonly TimeInForce time_in_force
-    """The order time-in-force.\n\n:returns: `TimeInForce`"""
+    """The order time in force.\n\n:returns: `TimeInForce`"""
     cdef readonly LiquiditySide liquidity_side
     """The order liquidity side.\n\n:returns: `LiquiditySide`"""
     cdef readonly bint is_post_only
@@ -124,6 +124,8 @@ cdef class Order:
     cdef str type_string_c(self)
     cdef str side_string_c(self)
     cdef str tif_string_c(self)
+    cdef bint has_price_c(self) except *
+    cdef bint has_trigger_price_c(self) except *
     cdef bint is_buy_c(self) except *
     cdef bint is_sell_c(self) except *
     cdef bint is_passive_c(self) except *

@@ -92,10 +92,6 @@ cdef class TickScheme:
 
 
 cdef inline double _round_base(double value, double base) except *:
-    """
-    >>> _round_base(0.72775, 0.0001)
-    0.7277
-    """
     return int(value / base) * base
 
 

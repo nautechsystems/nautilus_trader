@@ -40,11 +40,11 @@ from nautilus_trader.adapters.betfair.data_types import BSPOrderBookDelta
 from nautilus_trader.adapters.betfair.util import hash_json
 from nautilus_trader.adapters.betfair.util import one
 from nautilus_trader.common.uuid import UUIDFactory
+from nautilus_trader.execution.messages import CancelOrder
+from nautilus_trader.execution.messages import ModifyOrder
+from nautilus_trader.execution.messages import SubmitOrder
 from nautilus_trader.execution.reports import OrderStatusReport
 from nautilus_trader.execution.reports import TradeReport
-from nautilus_trader.model.commands.trading import CancelOrder
-from nautilus_trader.model.commands.trading import ModifyOrder
-from nautilus_trader.model.commands.trading import SubmitOrder
 from nautilus_trader.model.currency import Currency
 from nautilus_trader.model.data.tick import TradeTick
 from nautilus_trader.model.data.venue import InstrumentClosePrice
@@ -138,9 +138,7 @@ def _make_limit_order(order: Union[LimitOrder, MarketOrder]):
             "limitOrder": {"price": price, "size": size, "persistenceType": "PERSIST"},
         }
         if order.time_in_force in N2B_TIME_IN_FORCE:
-            parsed["limitOrder"]["timeInForce"] = N2B_TIME_IN_FORCE[  # type: ignore
-                order.time_in_force
-            ]
+            parsed["limitOrder"]["timeInForce"] = N2B_TIME_IN_FORCE[order.time_in_force]  # type: ignore
             parsed["limitOrder"]["persistenceType"] = "LAPSE"  # type: ignore
         return parsed
 

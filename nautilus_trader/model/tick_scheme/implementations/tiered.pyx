@@ -16,7 +16,7 @@
 import numpy as np
 
 from nautilus_trader.core.correctness cimport Condition
-from nautilus_trader.core.text cimport precision_from_str
+from nautilus_trader.core.string cimport precision_from_str
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.tick_scheme.base cimport TickScheme
 from nautilus_trader.model.tick_scheme.base cimport register_tick_scheme

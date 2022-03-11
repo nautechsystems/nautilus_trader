@@ -26,11 +26,12 @@ from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
-from tests.test_kit.stubs import TestStubs
+from tests.test_kit.stubs.data import TestDataStubs
+from tests.test_kit.stubs.identifiers import TestIdStubs
 
 
-AUDUSD_SIM = TestStubs.audusd_id()
-GBPUSD_SIM = TestStubs.gbpusd_id()
+AUDUSD_SIM = TestIdStubs.audusd_id()
+GBPUSD_SIM = TestIdStubs.gbpusd_id()
 ONE_MIN_BID = BarSpecification(1, BarAggregation.MINUTE, PriceType.BID)
 AUDUSD_1_MIN_BID = BarType(AUDUSD_SIM, ONE_MIN_BID)
 GBPUSD_1_MIN_BID = BarType(GBPUSD_SIM, ONE_MIN_BID)
@@ -233,9 +234,9 @@ class TestBarType:
                 ),
             ],
             [
-                "BTC/USDT.BINANCE-100-TICK-LAST-INTERNAL",
+                "BTCUSDT.BINANCE-100-TICK-LAST-INTERNAL",
                 BarType(
-                    InstrumentId(Symbol("BTC/USDT"), Venue("BINANCE")),
+                    InstrumentId(Symbol("BTCUSDT"), Venue("BINANCE")),
                     BarSpecification(100, BarAggregation.TICK, PriceType.LAST),
                     AggregationSource.INTERNAL,
                 ),
@@ -261,6 +262,10 @@ class TestBarType:
 
 
 class TestBar:
+    def test_fully_qualified_name(self):
+        # Arrange, Act, Assert
+        assert Bar.fully_qualified_name() == "nautilus_trader.model.data.bar.Bar"
+
     def test_check_when_high_below_low_raises_value_error(self):
         # Arrange, Act, Assert
         with pytest.raises(ValueError):
@@ -388,7 +393,7 @@ class TestBar:
 
     def test_from_dict_returns_expected_bar(self):
         # Arrange
-        bar = TestStubs.bar_5decimal()
+        bar = TestDataStubs.bar_5decimal()
 
         # Act
         result = Bar.from_dict(Bar.to_dict(bar))

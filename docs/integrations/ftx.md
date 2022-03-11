@@ -9,10 +9,9 @@ unstable beta phase and exercise caution.
 ```
 
 ## Overview
-The following documentation assumes a trader is setting up for both live market
-data feeds, and trade execution. The FTX integration consists of several
-main components, which can be used together or separately depending on the users
-needs.
+The following documentation assumes a trader is setting up for both live market 
+data feeds, and trade execution. The full FTX integration consists of an assortment of components, 
+which can be used together or separately depending on the users needs.
 
 - `FTXHttpClient` provides low-level HTTP API connectivity
 - `FTXWebSocketClient` provides low-level WebSocket API connectivity
@@ -20,7 +19,12 @@ needs.
 - `FTXDataClient` provides a market data feed manager
 - `FTXExecutionClient` provides an account management and trade execution gateway
 - `FTXLiveDataClientFactory` creation factory for FTX data clients (used by the trading node builder)
-- `FTXLiveExecutionClientFactory` creation factory for FTX execution clients (used by the trading node builder)
+- `FTXLiveExecClientFactory` creation factory for FTX execution clients (used by the trading node builder)
+
+```{note}
+Most users will simply define a configuration for a live trading node (as below), 
+and won't need to necessarily work with these lower level components individually.
+```
 
 ## FTX data types
 To provide complete API functionality to traders, the integration includes several
@@ -65,7 +69,7 @@ node = TradingNode(config=config)
 
 # Register the client factories with the node
 node.add_data_client_factory("FTX", FTXLiveDataClientFactory)
-node.add_exec_client_factory("FTX", FTXLiveExecutionClientFactory)
+node.add_exec_client_factory("FTX", FTXLiveExecClientFactory)
 
 # Finally build the node
 node.build()

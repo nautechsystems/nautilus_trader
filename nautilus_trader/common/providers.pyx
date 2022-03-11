@@ -13,9 +13,17 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+import asyncio
+from typing import Dict, List, Optional
+
+from nautilus_trader.common.config import InstrumentProviderConfig
+
+from nautilus_trader.common.logging cimport Logger
+from nautilus_trader.common.logging cimport LoggerAdapter
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.model.currency cimport Currency
 from nautilus_trader.model.identifiers cimport InstrumentId
+from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.model.instruments.base cimport Instrument
 
 
@@ -23,14 +31,42 @@ cdef class InstrumentProvider:
     """
     The abstract base class for all instrument providers.
 
+    Parameters
+    ----------
+    venue : Venue
+        The venue for the provider.
+    logger : Logger
+        The logger for the provider.
+    config :InstrumentProviderConfig, optional
+        The instrument provider config.
+
     Warnings
     --------
     This class should not be used directly, but through a concrete subclass.
     """
 
-    def __init__(self):
+    def __init__(
+        self,
+        Venue venue not None,
+        Logger logger not None,
+        config: Optional[InstrumentProviderConfig]=None,
+    ):
+        if config is None:
+            config = InstrumentProviderConfig()
+        self._log = LoggerAdapter(type(self).__name__, logger)
+
+        self.venue = venue
         self._instruments = {}  # type: dict[InstrumentId, Instrument]
         self._currencies = {}   # type: dict[str, Currency]
+
+        # Settings
+        self._load_all_on_start = config.load_all
+        self._load_ids_on_start = set(config.load_ids) if config.load_ids is not None else None
+        self._filters = config.filters
+
+        # Async loading flags
+        self._loaded = False
+        self._loading = False
 
     @property
     def count(self) -> int:
@@ -44,17 +80,95 @@ cdef class InstrumentProvider:
         """
         return len(self._instruments)
 
-    async def load_all_async(self) -> None:
+    async def load_all_async(self, filters: Optional[Dict] = None) -> None:
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
-    def load_all(self) -> None:
+    async def load_ids_async(
+        self,
+        instrument_ids: List[InstrumentId],
+        filters: Optional[Dict]=None,
+    ) -> None:
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
-    def load(self, InstrumentId instrument_id, dict details) -> None:
+    async def load_async(self, instrument_id: InstrumentId, filters: Optional[Dict] = None):
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
+
+    async def initialize(self) -> None:
+        """
+        Initialize the instrument provider.
+
+        If `initialize()` then will immediately return.
+        """
+        if self._loaded:
+            return  # Already loaded
+
+        if not self._loading:
+            # Set async loading flag
+            self._loading = True
+            if self._load_all_on_start:
+                await self.load_all_async(self._filters)
+            elif self._load_ids_on_start:
+                instrument_ids = [InstrumentId.from_str_c(i) for i in self._load_ids_on_start]
+                await self.load_ids_async(instrument_ids, self._filters)
+            self._log.info(f"Loaded {self.count} instruments.")
+        else:
+            self._log.debug("Awaiting loading...")
+            while self._loading:
+                # Wait 100ms
+                await asyncio.sleep(0.1)
+
+        # Set async loading flags
+        self._loading = False
+        self._loaded = True
+
+    def load_all(self, filters: Optional[Dict] = None) -> None:
+        """
+        Load the latest instruments into the provider, optionally applying the
+        given filters.
+
+        Parameters
+        ----------
+        filters : Dict, optional
+            The venue specific instrument loading filters to apply.
+
+        """
+        loop = asyncio.get_event_loop()
+        loop.run_until_complete(self.load_all_async(filters))
+
+    def load_ids(self, instrument_ids: List[InstrumentId], filters: Optional[Dict] = None) -> None:
+        """
+        Load the instruments for the given IDs into the provider, optionally
+        applying the given filters.
+
+        Parameters
+        ----------
+        instrument_ids: List[InstrumentId]
+            The instrument IDs to load.
+        filters : Dict, optional
+            The venue specific instrument loading filters to apply.
+
+        """
+        loop = asyncio.get_event_loop()
+        loop.run_until_complete(self.load_ids_async(instrument_ids, filters))
+
+    def load(self, instrument_id: InstrumentId, filters: Optional[Dict] = None) -> None:
+        """
+        Load the instrument for the given ID into the provider, optionally
+        applying the given filters.
+
+        Parameters
+        ----------
+        instrument_id: InstrumentId
+            The instrument ID to load.
+        filters : Dict, optional
+            The venue specific instrument loading filters to apply.
+
+        """
+        loop = asyncio.get_event_loop()
+        loop.run_until_complete(self.load_async(instrument_id, filters))
 
     cpdef void add_currency(self, Currency currency) except *:
         """
