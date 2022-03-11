@@ -29,6 +29,10 @@ AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy("AUD/USD")
 
 
 class TestQuoteTick:
+    def test_fully_qualified_name(self):
+        # Arrange, Act, Assert
+        assert QuoteTick.fully_qualified_name() == "nautilus_trader.model.data.tick.QuoteTick"
+
     def test_tick_hash_str_and_repr(self):
         # Arrange
         tick = QuoteTick(
@@ -169,6 +173,10 @@ class TestQuoteTick:
 
 
 class TestTradeTick:
+    def test_fully_qualified_name(self):
+        # Arrange, Act, Assert
+        assert TradeTick.fully_qualified_name() == "nautilus_trader.model.data.tick.TradeTick"
+
     def test_hash_str_and_repr(self):
         # Arrange
         tick = TradeTick(

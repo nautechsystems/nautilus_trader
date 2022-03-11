@@ -36,6 +36,7 @@ from nautilus_trader.model.c_enums.oms_type cimport OMSType
 from nautilus_trader.model.currency cimport Currency
 from nautilus_trader.model.identifiers cimport ClientId
 from nautilus_trader.model.identifiers cimport InstrumentId
+from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.model.identifiers cimport VenueOrderId
 from nautilus_trader.msgbus.bus cimport MessageBus
 
@@ -50,6 +51,8 @@ cdef class LiveExecutionClient(ExecutionClient):
         The event loop for the client.
     client_id : ClientId
         The client ID.
+    venue : Venue, optional
+        The client venue. If multi-venue then can be ``None``.
     instrument_provider : InstrumentProvider
         The instrument provider for the client.
     account_type : AccountType
@@ -81,6 +84,7 @@ cdef class LiveExecutionClient(ExecutionClient):
         self,
         loop not None: asyncio.AbstractEventLoop,
         ClientId client_id not None,
+        Venue venue,  # Can be None
         OMSType oms_type,
         AccountType account_type,
         Currency base_currency,  # Can be None
@@ -93,6 +97,7 @@ cdef class LiveExecutionClient(ExecutionClient):
     ):
         super().__init__(
             client_id=client_id,
+            venue=venue,
             oms_type=oms_type,
             account_type=account_type,
             base_currency=base_currency,
@@ -131,7 +136,11 @@ cdef class LiveExecutionClient(ExecutionClient):
         await asyncio.sleep(delay)
         return await coro
 
-    async def generate_order_status_report(self, VenueOrderId venue_order_id=None):
+    async def generate_order_status_report(
+        self,
+        instrument_id: InstrumentId,
+        venue_order_id: VenueOrderId,
+    ):
         """
         Generate an order status report for the given order identifier parameter(s).
 
@@ -139,8 +148,10 @@ cdef class LiveExecutionClient(ExecutionClient):
 
         Parameters
         ----------
-        venue_order_id : VenueOrderId, optional
-            The venue order ID (assigned by the venue) query filter.
+        instrument_id : InstrumentId
+            The instrument ID for the report.
+        venue_order_id : VenueOrderId
+            The venue order ID for the report.
 
         Returns
         -------
@@ -266,15 +277,18 @@ cdef class LiveExecutionClient(ExecutionClient):
         if lookback_mins is not None:
             since = self._clock.utc_now() - timedelta(minutes=lookback_mins)
 
-        reports = await asyncio.gather(
-            self.generate_order_status_reports(start=since),
-            self.generate_trade_reports(start=since),
-            self.generate_position_status_reports(start=since),
-        )
+        try:
+            reports = await asyncio.gather(
+                self.generate_order_status_reports(start=since),
+                self.generate_trade_reports(start=since),
+                self.generate_position_status_reports(start=since),
+            )
 
-        mass_status.add_order_reports(reports=reports[0])
-        mass_status.add_trade_reports(reports=reports[1])
-        mass_status.add_position_reports(reports=reports[2])
+            mass_status.add_order_reports(reports=reports[0])
+            mass_status.add_trade_reports(reports=reports[1])
+            mass_status.add_position_reports(reports=reports[2])
+        except Exception as ex:
+            self._log.exception("Cannot reconcile execution state", ex)
 
         self.reconciliation_active = False
 

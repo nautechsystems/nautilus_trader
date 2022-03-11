@@ -29,6 +29,7 @@ from nautilus_trader.common.providers cimport InstrumentProvider
 from nautilus_trader.data.client cimport DataClient
 from nautilus_trader.data.client cimport MarketDataClient
 from nautilus_trader.model.identifiers cimport ClientId
+from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.msgbus.bus cimport MessageBus
 
 
@@ -42,6 +43,8 @@ cdef class LiveDataClient(DataClient):
         The event loop for the client.
     client_id : ClientId
         The client ID.
+    venue : Venue, optional
+        The client venue. If multi-venue then can be ``None``.
     msgbus : MessageBus
         The message bus for the client.
     cache : Cache
@@ -62,6 +65,7 @@ cdef class LiveDataClient(DataClient):
         self,
         loop not None: asyncio.AbstractEventLoop,
         ClientId client_id not None,
+        Venue venue,  # Can be None
         MessageBus msgbus not None,
         Cache cache not None,
         LiveClock clock not None,
@@ -70,6 +74,7 @@ cdef class LiveDataClient(DataClient):
     ):
         super().__init__(
             client_id=client_id,
+            venue=venue,
             msgbus=msgbus,
             cache=cache,
             clock=clock,
@@ -113,6 +118,8 @@ cdef class LiveMarketDataClient(MarketDataClient):
         The event loop for the client.
     client_id : ClientId
         The client ID.
+    venue : Venue, optional
+        The client venue. If multi-venue then can be ``None``.
     instrument_provider : InstrumentProvider
         The instrument provider for the client.
     msgbus : MessageBus
@@ -135,6 +142,7 @@ cdef class LiveMarketDataClient(MarketDataClient):
         self,
         loop not None: asyncio.AbstractEventLoop,
         ClientId client_id not None,
+        Venue venue,  # Can be None
         InstrumentProvider instrument_provider not None,
         MessageBus msgbus not None,
         Cache cache not None,
@@ -144,6 +152,7 @@ cdef class LiveMarketDataClient(MarketDataClient):
     ):
         super().__init__(
             client_id=client_id,
+            venue=venue,
             msgbus=msgbus,
             cache=cache,
             clock=clock,

@@ -25,6 +25,10 @@ from typing import Any, Callable
 
 import pandas as pd
 
+from nautilus_trader.analysis import statistics
+from nautilus_trader.analysis.analyzer import PortfolioAnalyzer
+from nautilus_trader.analysis.reporter import ReportProvider
+
 from nautilus_trader.accounting.accounts.base cimport Account
 from nautilus_trader.common.actor cimport Actor
 from nautilus_trader.common.clock cimport Clock
@@ -38,9 +42,6 @@ from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.msgbus.bus cimport MessageBus
 from nautilus_trader.risk.engine cimport RiskEngine
 from nautilus_trader.trading.strategy cimport TradingStrategy
-
-from nautilus_trader.analysis.performance import PerformanceAnalyzer
-from nautilus_trader.analysis.reports import ReportProvider
 
 
 cdef class Trader(Component):
@@ -114,7 +115,26 @@ cdef class Trader(Component):
         self._actors = []
         self._strategies = []
 
-        self.analyzer = PerformanceAnalyzer()
+        self.analyzer = PortfolioAnalyzer()
+
+        # Register default statistics
+        self.analyzer.register_statistic(statistics.winner_max.MaxWinner())
+        self.analyzer.register_statistic(statistics.winner_avg.AvgWinner())
+        self.analyzer.register_statistic(statistics.winner_min.MinWinner())
+        self.analyzer.register_statistic(statistics.loser_min.MinLoser())
+        self.analyzer.register_statistic(statistics.loser_avg.AvgLoser())
+        self.analyzer.register_statistic(statistics.loser_max.MaxLoser())
+        self.analyzer.register_statistic(statistics.expectancy.Expectancy())
+        self.analyzer.register_statistic(statistics.win_rate.WinRate())
+        self.analyzer.register_statistic(statistics.returns_annual_vol.ReturnsAnnualVolatility())
+        self.analyzer.register_statistic(statistics.returns_avg.ReturnsAverage())
+        self.analyzer.register_statistic(statistics.returns_avg_loss.ReturnsAverageLoss())
+        self.analyzer.register_statistic(statistics.returns_avg_win.ReturnsAverageWin())
+        self.analyzer.register_statistic(statistics.sharpe_ratio.SharpeRatio())
+        self.analyzer.register_statistic(statistics.sortino_ratio.SortinoRatio())
+        self.analyzer.register_statistic(statistics.profit_factor.ProfitFactor())
+        self.analyzer.register_statistic(statistics.risk_return_ratio.RiskReturnRatio())
+        self.analyzer.register_statistic(statistics.long_ratio.LongRatio())
 
     cdef list actors_c(self):
         return self._actors
@@ -239,7 +259,7 @@ cdef class Trader(Component):
 
         """
         Condition.not_none(strategy, "strategy")
-        Condition.not_in(strategy, self._strategies, "strategy", "strategies")
+        Condition.not_in(strategy, self._strategies, "strategy", "_strategies")
         Condition.true(not strategy.is_running_c(), "strategy.state was RUNNING")
         Condition.true(not strategy.is_disposed_c(), "strategy.state was DISPOSED")
 
@@ -300,7 +320,7 @@ cdef class Trader(Component):
             If `component.state` is ``RUNNING`` or ``DISPOSED``.
 
         """
-        Condition.not_in(actor, self._actors, "actor", "actors")
+        Condition.not_in(actor, self._actors, "actor", "_actors")
         Condition.true(not actor.is_running_c(), "actor.state was RUNNING")
         Condition.true(not actor.is_disposed_c(), "actor.state was DISPOSED")
 

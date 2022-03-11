@@ -35,18 +35,12 @@ from nautilus_trader.model.objects cimport Quantity
 from nautilus_trader.model.orders.base cimport Order
 
 
-cdef set _MARKET_ORDER_VALID_TIF = {
-    TimeInForce.GTC,
-    TimeInForce.IOC,
-    TimeInForce.FOK,
-    TimeInForce.AT_THE_OPEN,
-    TimeInForce.AT_THE_CLOSE,
-}
-
-
 cdef class MarketOrder(Order):
     """
-    Represents a market order.
+    Represents a `Market` order.
+
+    - A `Market-On-Open (MOO)` order can be represented using a time in force of ``AT_THE_OPEN``.
+    - A `Market-On-Close (MOC)` order can be represented using a time in force of ``AT_THE_CLOSE``.
 
     Parameters
     ----------
@@ -62,6 +56,8 @@ cdef class MarketOrder(Order):
         The order side.
     quantity : Quantity
         The order quantity (> 0).
+    time_in_force : TimeInForce {``GTC``, ``IOC``, ``FOK``, ``DAY``, ``AT_THE_OPEN``, ``AT_THE_CLOSE``}
+        The order time in force.
     init_id : UUID4
         The order initialization event ID.
     ts_init : int64
@@ -85,7 +81,7 @@ cdef class MarketOrder(Order):
     ValueError
         If `quantity` is not positive (> 0).
     ValueError
-        If `time_in_force` is other than ``GTC``, ``IOC``, ``FOK``, ``AT_THE_OPEN`` or ``AT_THE_CLOSE``.
+        If `time_in_force` is ``GTD``.
     """
 
     def __init__(
@@ -106,10 +102,7 @@ cdef class MarketOrder(Order):
         ClientOrderId parent_order_id=None,
         str tags=None,
     ):
-        Condition.true(
-            time_in_force in _MARKET_ORDER_VALID_TIF,
-            fail_msg="time_in_force was != GTC, IOC, FOK, AT_THE_OPEN, AT_THE_CLOSE",
-        )
+        Condition.not_equal(time_in_force, TimeInForce.GTD, "time_in_force", "GTD")
 
         # Create initialization event
         cdef OrderInitialized init = OrderInitialized(
@@ -133,6 +126,27 @@ cdef class MarketOrder(Order):
             ts_init=ts_init,
         )
         super().__init__(init=init)
+
+    cdef bint has_price_c(self) except *:
+        return False
+
+    cdef bint has_trigger_price_c(self) except *:
+        return False
+
+    cpdef str info(self):
+        """
+        Return a summary description of the order.
+
+        Returns
+        -------
+        str
+
+        """
+        return (
+            f"{OrderSideParser.to_str(self.side)} {self.quantity.to_str()} {self.instrument_id} "
+            f"{OrderTypeParser.to_str(self.type)} "
+            f"{TimeInForceParser.to_str(self.time_in_force)}"
+        )
 
     cpdef dict to_dict(self):
         """
@@ -173,7 +187,7 @@ cdef class MarketOrder(Order):
     @staticmethod
     cdef MarketOrder create(OrderInitialized init):
         """
-        Return an order from the given initialized event.
+        Return a `market` order from the given initialized event.
 
         Parameters
         ----------
@@ -209,19 +223,4 @@ cdef class MarketOrder(Order):
             linked_order_ids=init.linked_order_ids,
             parent_order_id=init.parent_order_id,
             tags=init.tags,
-        )
-
-    cpdef str info(self):
-        """
-        Return a summary description of the order.
-
-        Returns
-        -------
-        str
-
-        """
-        return (
-            f"{OrderSideParser.to_str(self.side)} {self.quantity.to_str()} {self.instrument_id} "
-            f"{OrderTypeParser.to_str(self.type)} "
-            f"{TimeInForceParser.to_str(self.time_in_force)}"
         )

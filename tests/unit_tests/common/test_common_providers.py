@@ -13,19 +13,25 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from nautilus_trader.common.clock import TestClock
+from nautilus_trader.common.logging import Logger
 from nautilus_trader.common.providers import InstrumentProvider
 from nautilus_trader.model.identifiers import Venue
-from tests.test_kit.stubs import TestStubs
+from tests.test_kit.stubs.identifiers import TestIdStubs
 
 
 BITMEX = Venue("BITMEX")
-AUDUSD = TestStubs.audusd_id()
+AUDUSD = TestIdStubs.audusd_id()
 
 
 class TestInstrumentProvider:
     def setup(self):
         # Fixture Setup
-        self.provider = InstrumentProvider()
+        clock = TestClock()
+        self.provider = InstrumentProvider(
+            venue=BITMEX,
+            logger=Logger(clock),
+        )
 
     def test_get_all_when_no_instruments_returns_empty_dict(self):
         # Arrange, Act

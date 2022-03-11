@@ -13,8 +13,8 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import datetime
 import pathlib
+from datetime import date
 from decimal import Decimal
 from typing import Optional
 
@@ -23,7 +23,6 @@ import pandas as pd
 from fsspec.implementations.github import GithubFileSystem
 from fsspec.implementations.local import LocalFileSystem
 
-from nautilus_trader.adapters.betfair.common import BETFAIR_VENUE
 from nautilus_trader.backtest.data.loaders import CSVBarDataLoader
 from nautilus_trader.backtest.data.loaders import CSVTickDataLoader
 from nautilus_trader.backtest.data.loaders import ParquetBarDataLoader
@@ -40,9 +39,9 @@ from nautilus_trader.model.enums import OptionKind
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import Venue
-from nautilus_trader.model.instruments.betting import BettingInstrument
-from nautilus_trader.model.instruments.crypto_perp import CryptoPerpetual
-from nautilus_trader.model.instruments.currency import CurrencySpot
+from nautilus_trader.model.instruments.crypto_future import CryptoFuture
+from nautilus_trader.model.instruments.crypto_perpetual import CryptoPerpetual
+from nautilus_trader.model.instruments.currency_pair import CurrencyPair
 from nautilus_trader.model.instruments.equity import Equity
 from nautilus_trader.model.instruments.future import Future
 from nautilus_trader.model.instruments.option import Option
@@ -57,18 +56,18 @@ class TestInstrumentProvider:
     """
 
     @staticmethod
-    def adabtc_binance() -> CurrencySpot:
+    def adabtc_binance() -> CurrencyPair:
         """
         Return the Binance ADA/BTC instrument for backtesting.
 
         Returns
         -------
-        CurrencySpot
+        CurrencyPair
 
         """
-        return CurrencySpot(
+        return CurrencyPair(
             instrument_id=InstrumentId(
-                symbol=Symbol("ADA/BTC"),
+                symbol=Symbol("ADABTC"),
                 venue=Venue("BINANCE"),
             ),
             native_symbol=Symbol("ADABTC"),
@@ -94,18 +93,18 @@ class TestInstrumentProvider:
         )
 
     @staticmethod
-    def btcusdt_binance() -> CurrencySpot:
+    def btcusdt_binance() -> CurrencyPair:
         """
-        Return the Binance BTC/USDT instrument for backtesting.
+        Return the Binance BTCUSDT instrument for backtesting.
 
         Returns
         -------
-        CurrencySpot
+        CurrencyPair
 
         """
-        return CurrencySpot(
+        return CurrencyPair(
             instrument_id=InstrumentId(
-                symbol=Symbol("BTC/USDT"),
+                symbol=Symbol("BTCUSDT"),
                 venue=Venue("BINANCE"),
             ),
             native_symbol=Symbol("BTCUSDT"),
@@ -131,18 +130,18 @@ class TestInstrumentProvider:
         )
 
     @staticmethod
-    def ethusdt_binance() -> CurrencySpot:
+    def ethusdt_binance() -> CurrencyPair:
         """
-        Return the Binance ETH/USDT instrument for backtesting.
+        Return the Binance ETHUSDT instrument for backtesting.
 
         Returns
         -------
-        CurrencySpot
+        CurrencyPair
 
         """
-        return CurrencySpot(
+        return CurrencyPair(
             instrument_id=InstrumentId(
-                symbol=Symbol("ETH/USDT"),
+                symbol=Symbol("ETHUSDT"),
                 venue=Venue("BINANCE"),
             ),
             native_symbol=Symbol("ETHUSDT"),
@@ -168,16 +167,99 @@ class TestInstrumentProvider:
         )
 
     @staticmethod
-    def ethusd_ftx() -> CurrencySpot:
+    def ethusdt_perp_binance() -> CryptoPerpetual:
+        """
+        Return the Binance ETHUSDT-PERP instrument for backtesting.
+
+        Returns
+        -------
+        CryptoPerpetual
+
+        """
+        return CryptoPerpetual(
+            instrument_id=InstrumentId(
+                symbol=Symbol("ETHUSDT-PERP"),
+                venue=Venue("BINANCE"),
+            ),
+            native_symbol=Symbol("ETHUSDT"),
+            base_currency=ETH,
+            quote_currency=USDT,
+            settlement_currency=USDT,
+            is_inverse=False,
+            price_precision=2,
+            size_precision=3,
+            price_increment=Price.from_str("0.01"),
+            size_increment=Quantity.from_str("0.001"),
+            max_quantity=Quantity.from_str("10000.000"),
+            min_quantity=Quantity.from_str("0.001"),
+            max_notional=None,
+            min_notional=Money(10.00, USDT),
+            max_price=Price.from_str("152588.43"),
+            min_price=Price.from_str("29.91"),
+            margin_init=Decimal("1.00"),
+            margin_maint=Decimal("0.35"),
+            maker_fee=Decimal("0.0002"),
+            taker_fee=Decimal("0.0004"),
+            ts_event=1646199312128000000,
+            ts_init=1646199342953849862,
+        )
+
+    @staticmethod
+    def btcusdt_future_binance(expiry: date = None) -> CryptoFuture:
+        """
+        Return the Binance BTCUSDT instrument for backtesting.
+
+        Parameters
+        ----------
+        expiry : date, optional
+            The expiry date for the contract.
+
+        Returns
+        -------
+        CryptoFuture
+
+        """
+        if expiry is None:
+            expiry = date(2022, 3, 25)
+        return CryptoFuture(
+            instrument_id=InstrumentId(
+                symbol=Symbol(f"BTCUSDT_{expiry.strftime('%y%m%d')}"),
+                venue=Venue("BINANCE"),
+            ),
+            native_symbol=Symbol("BTCUSDT"),
+            underlying=BTC,
+            quote_currency=USDT,
+            settlement_currency=USDT,
+            expiry_date=expiry,
+            price_precision=2,
+            size_precision=6,
+            price_increment=Price(1e-02, precision=2),
+            size_increment=Quantity(1e-06, precision=6),
+            max_quantity=Quantity(9000, precision=6),
+            min_quantity=Quantity(1e-06, precision=6),
+            max_notional=None,
+            min_notional=Money(10.00000000, USDT),
+            max_price=Price(1000000, precision=2),
+            min_price=Price(0.01, precision=2),
+            margin_init=Decimal(0),
+            margin_maint=Decimal(0),
+            maker_fee=Decimal("0.001"),
+            taker_fee=Decimal("0.001"),
+            ts_event=0,
+            ts_init=0,
+        )
+
+    @staticmethod
+    def ethusd_ftx() -> CurrencyPair:
         """
         Return the FTX ETH/USD instrument for backtesting.
 
         Returns
         -------
-        CurrencySpot
+        CurrencyPair
 
         """
-        return CurrencySpot(
+        return CurrencyPair(
             instrument_id=InstrumentId(
                 symbol=Symbol("ETH/USD"),
                 venue=Venue("FTX"),
@@ -281,9 +363,9 @@ class TestInstrumentProvider:
         )
 
     @staticmethod
-    def default_fx_ccy(symbol: str, venue: Venue = None) -> CurrencySpot:
+    def default_fx_ccy(symbol: str, venue: Venue = None) -> CurrencyPair:
         """
-        Return a default FX currency pair instrument from the given instrument_id.
+        Return a default FX currency pair instrument from the given symbol and venue.
 
         Parameters
         ----------
@@ -294,7 +376,7 @@ class TestInstrumentProvider:
 
         Returns
         -------
-        CurrencySpot
+        CurrencyPair
 
         Raises
         ------
@@ -321,14 +403,14 @@ class TestInstrumentProvider:
         else:
             price_precision = 5
 
-        return CurrencySpot(
+        return CurrencyPair(
             instrument_id=instrument_id,
             native_symbol=Symbol(symbol),
             base_currency=Currency.from_str(base_currency),
             quote_currency=Currency.from_str(quote_currency),
             price_precision=price_precision,
             size_precision=0,
-            price_increment=Price(1 / 10 ** price_precision, price_precision),
+            price_increment=Price(1 / 10**price_precision, price_precision),
             size_increment=Quantity.from_int(1),
             lot_size=Quantity.from_str("1000"),
             max_quantity=Quantity.from_str("1e7"),
@@ -343,32 +425,6 @@ class TestInstrumentProvider:
             taker_fee=Decimal("0.00002"),
             ts_event=0,
             ts_init=0,
-        )
-
-    @staticmethod
-    def betting_instrument():
-        return BettingInstrument(
-            venue_name=BETFAIR_VENUE.value,
-            betting_type="ODDS",
-            competition_id="12282733",
-            competition_name="NFL",
-            event_country_code="GB",
-            event_id="29678534",
-            event_name="NFL",
-            event_open_date=pd.Timestamp("2022-02-07 23:30:00+00:00"),
-            event_type_id="6423",
-            event_type_name="American Football",
-            market_id="1.179082386",
-            market_name="AFC Conference Winner",
-            market_start_time=pd.Timestamp("2022-02-07 23:30:00+00:00"),
-            market_type="SPECIAL",
-            selection_handicap="",
-            selection_id="50214",
-            selection_name="Kansas City Chiefs",
-            currency="GBP",
-            ts_event=0,
-            ts_init=0,
-            tick_scheme_name="BETFAIR",
         )
 
     @staticmethod
@@ -398,7 +454,7 @@ class TestInstrumentProvider:
             multiplier=Quantity.from_int(1),
             lot_size=Quantity.from_int(1),
             underlying="ES",
-            expiry_date=datetime.date(2021, 12, 17),
+            expiry_date=date(2021, 12, 17),
             ts_event=0,
             ts_init=0,
         )
@@ -416,7 +472,7 @@ class TestInstrumentProvider:
             lot_size=Quantity.from_int(1),
             underlying="AAPL",
             kind=OptionKind.CALL,
-            expiry_date=datetime.date(2021, 12, 17),
+            expiry_date=date(2021, 12, 17),
             strike_price=Price.from_str("149.00"),
             ts_event=0,
             ts_init=0,

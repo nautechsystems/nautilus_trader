@@ -55,8 +55,10 @@ from nautilus_trader.model.orderbook.data import OrderBookDeltas
 from nautilus_trader.model.orderbook.data import OrderBookSnapshot
 from nautilus_trader.msgbus.bus import MessageBus
 from nautilus_trader.portfolio.portfolio import Portfolio
-from tests.test_kit.mocks import ObjectStorer
-from tests.test_kit.stubs import TestStubs
+from tests.test_kit.mocks.object_storer import ObjectStorer
+from tests.test_kit.stubs.component import TestComponentStubs
+from tests.test_kit.stubs.data import TestDataStubs
+from tests.test_kit.stubs.identifiers import TestIdStubs
 
 
 BITMEX = Venue("BITMEX")
@@ -76,7 +78,7 @@ class TestDataEngine:
             level_stdout=LogLevel.DEBUG,
         )
 
-        self.trader_id = TestStubs.trader_id()
+        self.trader_id = TestIdStubs.trader_id()
 
         self.msgbus = MessageBus(
             trader_id=self.trader_id,
@@ -84,7 +86,7 @@ class TestDataEngine:
             logger=self.logger,
         )
 
-        self.cache = TestStubs.cache()
+        self.cache = TestComponentStubs.cache()
 
         self.portfolio = Portfolio(
             msgbus=self.msgbus,
@@ -130,7 +132,7 @@ class TestDataEngine:
 
     def test_registered_venues(self):
         # Arrange, Act, Assert
-        assert self.data_engine.registered_clients() == []
+        assert self.data_engine.registered_clients == []
 
     def test_subscribed_instruments_when_nothing_subscribed_returns_empty_list(self):
         # Arrange, Act, Assert
@@ -153,7 +155,7 @@ class TestDataEngine:
         self.data_engine.register_client(self.binance_client)
 
         # Assert
-        assert ClientId(BINANCE.value) in self.data_engine.registered_clients()
+        assert ClientId(BINANCE.value) in self.data_engine.registered_clients
 
     def test_deregister_client_successfully_removes_client(self):
         # Arrange
@@ -163,7 +165,7 @@ class TestDataEngine:
         self.data_engine.deregister_client(self.binance_client)
 
         # Assert
-        assert BINANCE.value not in self.data_engine.registered_clients()
+        assert BINANCE.value not in self.data_engine.registered_clients
 
     def test_reset(self):
         # Arrange, Act
@@ -281,7 +283,8 @@ class TestDataEngine:
 
         # Bogus message
         command = DataCommand(
-            client_id=ClientId(BINANCE.value),
+            client_id=None,
+            venue=BINANCE,
             data_type=DataType(str),
             command_id=self.uuid_factory.generate(),
             ts_init=self.clock.timestamp_ns(),
@@ -298,6 +301,7 @@ class TestDataEngine:
         handler = []
         request = DataRequest(
             client_id=ClientId("RANDOM"),
+            venue=None,
             data_type=DataType(
                 QuoteTick,
                 metadata={
@@ -324,7 +328,8 @@ class TestDataEngine:
 
         handler = []
         request = DataRequest(
-            client_id=ClientId(BINANCE.value),
+            client_id=None,
+            venue=BINANCE,
             data_type=DataType(
                 str,
                 metadata={  # str data type is invalid
@@ -354,7 +359,8 @@ class TestDataEngine:
         uuid = self.uuid_factory.generate()  # We'll use this as a duplicate
 
         request1 = DataRequest(
-            client_id=ClientId(BINANCE.value),
+            client_id=None,
+            venue=BINANCE,
             data_type=DataType(
                 QuoteTick,
                 metadata={  # str data type is invalid
@@ -370,7 +376,8 @@ class TestDataEngine:
         )
 
         request2 = DataRequest(
-            client_id=ClientId(BINANCE.value),
+            client_id=None,
+            venue=BINANCE,
             data_type=DataType(
                 QuoteTick,
                 metadata={  # str data type is invalid
@@ -397,7 +404,8 @@ class TestDataEngine:
         self.data_engine.register_client(self.binance_client)
 
         subscribe = Subscribe(
-            client_id=ClientId(BINANCE.value),
+            client_id=None,
+            venue=BINANCE,
             data_type=DataType(str),  # str data type is invalid
             command_id=self.uuid_factory.generate(),
             ts_init=self.clock.timestamp_ns(),
@@ -417,6 +425,7 @@ class TestDataEngine:
 
         subscribe = Subscribe(
             client_id=ClientId("QUANDL"),
+            venue=None,
             data_type=DataType(str, metadata={"Type": "news"}),
             command_id=self.uuid_factory.generate(),
             ts_init=self.clock.timestamp_ns(),
@@ -441,6 +450,7 @@ class TestDataEngine:
         self.msgbus.subscribe(topic=f"data.{data_type.topic}", handler=handler.append)
         subscribe = Subscribe(
             client_id=ClientId("QUANDL"),
+            venue=None,
             data_type=DataType(str, metadata={"Type": "news"}),
             command_id=self.uuid_factory.generate(),
             ts_init=self.clock.timestamp_ns(),
@@ -451,6 +461,7 @@ class TestDataEngine:
         self.msgbus.unsubscribe(topic=f"data.{data_type.topic}", handler=handler.append)
         unsubscribe = Unsubscribe(
             client_id=ClientId("QUANDL"),
+            venue=None,
             data_type=DataType(str, metadata={"Type": "news"}),
             command_id=self.uuid_factory.generate(),
             ts_init=self.clock.timestamp_ns(),
@@ -471,6 +482,7 @@ class TestDataEngine:
 
         unsubscribe = Unsubscribe(
             client_id=ClientId(BINANCE.value),
+            venue=BINANCE,
             data_type=DataType(str),  # str data type is invalid
             command_id=self.uuid_factory.generate(),
             ts_init=self.clock.timestamp_ns(),
@@ -489,6 +501,7 @@ class TestDataEngine:
 
         unsubscribe = Unsubscribe(
             client_id=ClientId(BINANCE.value),
+            venue=BINANCE,
             data_type=DataType(QuoteTick, metadata={"instrument_id": ETHUSDT_BINANCE.id}),
             command_id=self.uuid_factory.generate(),
             ts_init=self.clock.timestamp_ns(),
@@ -504,6 +517,7 @@ class TestDataEngine:
         # Arrange
         response = DataResponse(
             client_id=ClientId(BINANCE.value),
+            venue=BINANCE,
             data_type=DataType(QuoteTick),
             data=[],
             correlation_id=self.uuid_factory.generate(),
@@ -529,7 +543,7 @@ class TestDataEngine:
 
     def test_process_data_places_data_on_queue(self):
         # Arrange
-        tick = TestStubs.trade_tick_5decimal()
+        tick = TestDataStubs.trade_tick_5decimal()
 
         # Act
         self.data_engine.process(tick)
@@ -544,6 +558,7 @@ class TestDataEngine:
 
         subscribe = Subscribe(
             client_id=ClientId(BINANCE.value),
+            venue=BINANCE,
             data_type=DataType(Instrument),
             command_id=self.uuid_factory.generate(),
             ts_init=self.clock.timestamp_ns(),
@@ -562,6 +577,7 @@ class TestDataEngine:
 
         subscribe = Subscribe(
             client_id=ClientId(BINANCE.value),
+            venue=BINANCE,
             data_type=DataType(Instrument),
             command_id=self.uuid_factory.generate(),
             ts_init=self.clock.timestamp_ns(),
@@ -571,6 +587,7 @@ class TestDataEngine:
 
         unsubscribe = Unsubscribe(
             client_id=ClientId(BINANCE.value),
+            venue=BINANCE,
             data_type=DataType(Instrument),
             command_id=self.uuid_factory.generate(),
             ts_init=self.clock.timestamp_ns(),
@@ -589,6 +606,7 @@ class TestDataEngine:
 
         subscribe = Subscribe(
             client_id=ClientId(BINANCE.value),
+            venue=BINANCE,
             data_type=DataType(Instrument, metadata={"instrument_id": ETHUSDT_BINANCE.id}),
             command_id=self.uuid_factory.generate(),
             ts_init=self.clock.timestamp_ns(),
@@ -608,6 +626,7 @@ class TestDataEngine:
 
         subscribe = Subscribe(
             client_id=ClientId(BINANCE.value),
+            venue=BINANCE,
             data_type=DataType(Instrument, metadata={"instrument_id": ETHUSDT_BINANCE.id}),
             command_id=self.uuid_factory.generate(),
             ts_init=self.clock.timestamp_ns(),
@@ -617,6 +636,7 @@ class TestDataEngine:
 
         unsubscribe = Unsubscribe(
             client_id=ClientId(BINANCE.value),
+            venue=BINANCE,
             data_type=DataType(Instrument, metadata={"instrument_id": ETHUSDT_BINANCE.id}),
             command_id=self.uuid_factory.generate(),
             ts_init=self.clock.timestamp_ns(),
@@ -634,10 +654,11 @@ class TestDataEngine:
         self.binance_client.start()
 
         handler = []
-        self.msgbus.subscribe(topic="data.instrument.BINANCE.ETH/USDT", handler=handler.append)
+        self.msgbus.subscribe(topic="data.instrument.BINANCE.ETHUSDT", handler=handler.append)
 
         subscribe = Subscribe(
             client_id=ClientId(BINANCE.value),
+            venue=BINANCE,
             data_type=DataType(Instrument, metadata={"instrument_id": ETHUSDT_BINANCE.id}),
             command_id=self.uuid_factory.generate(),
             ts_init=self.clock.timestamp_ns(),
@@ -660,11 +681,12 @@ class TestDataEngine:
 
         handler1 = []
         handler2 = []
-        self.msgbus.subscribe(topic="data.instrument.BINANCE.ETH/USDT", handler=handler1.append)
-        self.msgbus.subscribe(topic="data.instrument.BINANCE.ETH/USDT", handler=handler2.append)
+        self.msgbus.subscribe(topic="data.instrument.BINANCE.ETHUSDT", handler=handler1.append)
+        self.msgbus.subscribe(topic="data.instrument.BINANCE.ETHUSDT", handler=handler2.append)
 
         subscribe1 = Subscribe(
             client_id=ClientId(BINANCE.value),
+            venue=BINANCE,
             data_type=DataType(Instrument, metadata={"instrument_id": ETHUSDT_BINANCE.id}),
             command_id=self.uuid_factory.generate(),
             ts_init=self.clock.timestamp_ns(),
@@ -672,6 +694,7 @@ class TestDataEngine:
 
         subscribe2 = Subscribe(
             client_id=ClientId(BINANCE.value),
+            venue=BINANCE,
             data_type=DataType(Instrument, metadata={"instrument_id": ETHUSDT_BINANCE.id}),
             command_id=self.uuid_factory.generate(),
             ts_init=self.clock.timestamp_ns(),
@@ -694,6 +717,7 @@ class TestDataEngine:
 
         subscribe = Subscribe(
             client_id=ClientId(BINANCE.value),
+            venue=BINANCE,
             data_type=DataType(
                 OrderBook,
                 metadata={
@@ -720,6 +744,7 @@ class TestDataEngine:
 
         subscribe = Subscribe(
             client_id=ClientId(BINANCE.value),
+            venue=BINANCE,
             data_type=DataType(
                 OrderBookData,
                 metadata={
@@ -746,6 +771,7 @@ class TestDataEngine:
 
         subscribe = Subscribe(
             client_id=ClientId(BINANCE.value),
+            venue=BINANCE,
             data_type=DataType(
                 OrderBook,
                 metadata={
@@ -772,6 +798,7 @@ class TestDataEngine:
 
         subscribe = Subscribe(
             client_id=ClientId(BINANCE.value),
+            venue=BINANCE,
             data_type=DataType(
                 OrderBook,
                 metadata={
@@ -789,6 +816,7 @@ class TestDataEngine:
 
         unsubscribe = Unsubscribe(
             client_id=ClientId(BINANCE.value),
+            venue=BINANCE,
             data_type=DataType(
                 OrderBook,
                 metadata={
@@ -813,6 +841,7 @@ class TestDataEngine:
 
         subscribe = Subscribe(
             client_id=ClientId(BINANCE.value),
+            venue=BINANCE,
             data_type=DataType(
                 OrderBookData,
                 metadata={
@@ -830,6 +859,7 @@ class TestDataEngine:
 
         unsubscribe = Unsubscribe(
             client_id=ClientId(BINANCE.value),
+            venue=BINANCE,
             data_type=DataType(
                 OrderBookData,
                 metadata={
@@ -854,6 +884,7 @@ class TestDataEngine:
 
         subscribe = Subscribe(
             client_id=ClientId(BINANCE.value),
+            venue=BINANCE,
             data_type=DataType(
                 OrderBook,
                 metadata={
@@ -871,6 +902,7 @@ class TestDataEngine:
 
         unsubscribe = Unsubscribe(
             client_id=ClientId(BINANCE.value),
+            venue=BINANCE,
             data_type=DataType(
                 OrderBook,
                 metadata={
@@ -897,11 +929,12 @@ class TestDataEngine:
 
         handler = []
         self.msgbus.subscribe(
-            topic="data.book.snapshots.BINANCE.ETH/USDT.1000", handler=handler.append
+            topic="data.book.snapshots.BINANCE.ETHUSDT.1000", handler=handler.append
         )
 
         subscribe = Subscribe(
             client_id=ClientId(BINANCE.value),
+            venue=BINANCE,
             data_type=DataType(
                 OrderBook,
                 {
@@ -935,11 +968,12 @@ class TestDataEngine:
 
         handler = []
         self.msgbus.subscribe(
-            topic="data.book.snapshots.BINANCE.ETH/USDT.1000", handler=handler.append
+            topic="data.book.snapshots.BINANCE.ETHUSDT.1000", handler=handler.append
         )
 
         subscribe = Subscribe(
             client_id=ClientId(BINANCE.value),
+            venue=BINANCE,
             data_type=DataType(
                 OrderBook,
                 {
@@ -981,10 +1015,11 @@ class TestDataEngine:
         self.data_engine.process(ETHUSDT_BINANCE)  # <-- add necessary instrument for test
 
         handler = []
-        self.msgbus.subscribe(topic="data.book.deltas.BINANCE.ETH/USDT", handler=handler.append)
+        self.msgbus.subscribe(topic="data.book.deltas.BINANCE.ETHUSDT", handler=handler.append)
 
         subscribe = Subscribe(
             client_id=ClientId(BINANCE.value),
+            venue=BINANCE,
             data_type=DataType(
                 OrderBookData,
                 {
@@ -1026,14 +1061,15 @@ class TestDataEngine:
         handler1 = []
         handler2 = []
         self.msgbus.subscribe(
-            topic="data.book.snapshots.BINANCE.ETH/USDT.1000", handler=handler1.append
+            topic="data.book.snapshots.BINANCE.ETHUSDT.1000", handler=handler1.append
         )
         self.msgbus.subscribe(
-            topic="data.book.snapshots.BINANCE.ETH/USDT.1000", handler=handler2.append
+            topic="data.book.snapshots.BINANCE.ETHUSDT.1000", handler=handler2.append
         )
 
         subscribe1 = Subscribe(
             client_id=ClientId(BINANCE.value),
+            venue=BINANCE,
             data_type=DataType(
                 OrderBook,
                 {
@@ -1049,6 +1085,7 @@ class TestDataEngine:
 
         subscribe2 = Subscribe(
             client_id=ClientId(BINANCE.value),
+            venue=BINANCE,
             data_type=DataType(
                 OrderBook,
                 {
@@ -1098,6 +1135,7 @@ class TestDataEngine:
 
         subscribe = Subscribe(
             client_id=ClientId(BINANCE.value),
+            venue=BINANCE,
             data_type=DataType(Ticker, metadata={"instrument_id": ETHUSDT_BINANCE.id}),
             command_id=self.uuid_factory.generate(),
             ts_init=self.clock.timestamp_ns(),
@@ -1118,6 +1156,7 @@ class TestDataEngine:
 
         subscribe = Subscribe(
             client_id=ClientId(BINANCE.value),
+            venue=BINANCE,
             data_type=DataType(Ticker, metadata={"instrument_id": ETHUSDT_BINANCE.id}),
             command_id=self.uuid_factory.generate(),
             ts_init=self.clock.timestamp_ns(),
@@ -1127,6 +1166,7 @@ class TestDataEngine:
 
         unsubscribe = Unsubscribe(
             client_id=ClientId(BINANCE.value),
+            venue=BINANCE,
             data_type=DataType(Ticker, metadata={"instrument_id": ETHUSDT_BINANCE.id}),
             command_id=self.uuid_factory.generate(),
             ts_init=self.clock.timestamp_ns(),
@@ -1148,6 +1188,7 @@ class TestDataEngine:
 
         subscribe = Subscribe(
             client_id=ClientId(BINANCE.value),
+            venue=BINANCE,
             data_type=DataType(QuoteTick, metadata={"instrument_id": ETHUSDT_BINANCE.id}),
             command_id=self.uuid_factory.generate(),
             ts_init=self.clock.timestamp_ns(),
@@ -1169,6 +1210,7 @@ class TestDataEngine:
 
         subscribe = Subscribe(
             client_id=ClientId(BINANCE.value),
+            venue=BINANCE,
             data_type=DataType(QuoteTick, metadata={"instrument_id": ETHUSDT_BINANCE.id}),
             command_id=self.uuid_factory.generate(),
             ts_init=self.clock.timestamp_ns(),
@@ -1178,6 +1220,7 @@ class TestDataEngine:
 
         unsubscribe = Unsubscribe(
             client_id=ClientId(BINANCE.value),
+            venue=BINANCE,
             data_type=DataType(QuoteTick, metadata={"instrument_id": ETHUSDT_BINANCE.id}),
             command_id=self.uuid_factory.generate(),
             ts_init=self.clock.timestamp_ns(),
@@ -1195,10 +1238,11 @@ class TestDataEngine:
         self.binance_client.start()
 
         handler = []
-        self.msgbus.subscribe(topic="data.quotes.BINANCE.ETH/USDT", handler=handler.append)
+        self.msgbus.subscribe(topic="data.quotes.BINANCE.ETHUSDT", handler=handler.append)
 
         subscribe = Subscribe(
             client_id=ClientId(BINANCE.value),
+            venue=BINANCE,
             data_type=DataType(QuoteTick, metadata={"instrument_id": ETHUSDT_BINANCE.id}),
             command_id=self.uuid_factory.generate(),
             ts_init=self.clock.timestamp_ns(),
@@ -1232,11 +1276,12 @@ class TestDataEngine:
         handler1 = []
         handler2 = []
 
-        self.msgbus.subscribe(topic="data.quotes.BINANCE.ETH/USDT", handler=handler1.append)
-        self.msgbus.subscribe(topic="data.quotes.BINANCE.ETH/USDT", handler=handler2.append)
+        self.msgbus.subscribe(topic="data.quotes.BINANCE.ETHUSDT", handler=handler1.append)
+        self.msgbus.subscribe(topic="data.quotes.BINANCE.ETHUSDT", handler=handler2.append)
 
         subscribe1 = Subscribe(
             client_id=ClientId(BINANCE.value),
+            venue=BINANCE,
             data_type=DataType(QuoteTick, metadata={"instrument_id": ETHUSDT_BINANCE.id}),
             command_id=self.uuid_factory.generate(),
             ts_init=self.clock.timestamp_ns(),
@@ -1244,6 +1289,7 @@ class TestDataEngine:
 
         subscribe2 = Subscribe(
             client_id=ClientId(BINANCE.value),
+            venue=BINANCE,
             data_type=DataType(QuoteTick, metadata={"instrument_id": ETHUSDT_BINANCE.id}),
             command_id=self.uuid_factory.generate(),
             ts_init=self.clock.timestamp_ns(),
@@ -1276,6 +1322,7 @@ class TestDataEngine:
 
         subscribe = Subscribe(
             client_id=ClientId(BINANCE.value),
+            venue=BINANCE,
             data_type=DataType(TradeTick, metadata={"instrument_id": ETHUSDT_BINANCE.id}),
             command_id=self.uuid_factory.generate(),
             ts_init=self.clock.timestamp_ns(),
@@ -1297,6 +1344,7 @@ class TestDataEngine:
 
         subscribe = Subscribe(
             client_id=ClientId(BINANCE.value),
+            venue=BINANCE,
             data_type=DataType(TradeTick, metadata={"instrument_id": ETHUSDT_BINANCE.id}),
             command_id=self.uuid_factory.generate(),
             ts_init=self.clock.timestamp_ns(),
@@ -1306,6 +1354,7 @@ class TestDataEngine:
 
         unsubscribe = Unsubscribe(
             client_id=ClientId(BINANCE.value),
+            venue=BINANCE,
             data_type=DataType(TradeTick, metadata={"instrument_id": ETHUSDT_BINANCE.id}),
             command_id=self.uuid_factory.generate(),
             ts_init=self.clock.timestamp_ns(),
@@ -1323,10 +1372,11 @@ class TestDataEngine:
         self.binance_client.start()
 
         handler = []
-        self.msgbus.subscribe(topic="data.trades.BINANCE.ETH/USDT", handler=handler.append)
+        self.msgbus.subscribe(topic="data.trades.BINANCE.ETHUSDT", handler=handler.append)
 
         subscribe = Subscribe(
             client_id=ClientId(BINANCE.value),
+            venue=BINANCE,
             data_type=DataType(TradeTick, metadata={"instrument_id": ETHUSDT_BINANCE.id}),
             command_id=self.uuid_factory.generate(),
             ts_init=self.clock.timestamp_ns(),
@@ -1359,11 +1409,12 @@ class TestDataEngine:
 
         handler1 = []
         handler2 = []
-        self.msgbus.subscribe(topic="data.trades.BINANCE.ETH/USDT", handler=handler1.append)
-        self.msgbus.subscribe(topic="data.trades.BINANCE.ETH/USDT", handler=handler2.append)
+        self.msgbus.subscribe(topic="data.trades.BINANCE.ETHUSDT", handler=handler1.append)
+        self.msgbus.subscribe(topic="data.trades.BINANCE.ETHUSDT", handler=handler2.append)
 
         subscribe1 = Subscribe(
             client_id=ClientId(BINANCE.value),
+            venue=BINANCE,
             data_type=DataType(TradeTick, metadata={"instrument_id": ETHUSDT_BINANCE.id}),
             command_id=self.uuid_factory.generate(),
             ts_init=self.clock.timestamp_ns(),
@@ -1371,6 +1422,7 @@ class TestDataEngine:
 
         subscribe2 = Subscribe(
             client_id=ClientId(BINANCE.value),
+            venue=BINANCE,
             data_type=DataType(TradeTick, metadata={"instrument_id": ETHUSDT_BINANCE.id}),
             command_id=self.uuid_factory.generate(),
             ts_init=self.clock.timestamp_ns(),
@@ -1409,6 +1461,7 @@ class TestDataEngine:
 
         subscribe = Subscribe(
             client_id=ClientId(BINANCE.value),
+            venue=BINANCE,
             data_type=DataType(Bar, metadata={"bar_type": bar_type}),
             command_id=self.uuid_factory.generate(),
             ts_init=self.clock.timestamp_ns(),
@@ -1434,6 +1487,7 @@ class TestDataEngine:
 
         subscribe = Subscribe(
             client_id=ClientId(BINANCE.value),
+            venue=BINANCE,
             data_type=DataType(Bar, metadata={"bar_type": bar_type}),
             command_id=self.uuid_factory.generate(),
             ts_init=self.clock.timestamp_ns(),
@@ -1444,6 +1498,7 @@ class TestDataEngine:
         self.msgbus.unsubscribe(topic=f"data.bars.{bar_type}", handler=handler.store_2)
         unsubscribe = Unsubscribe(
             client_id=ClientId(BINANCE.value),
+            venue=BINANCE,
             data_type=DataType(Bar, metadata={"bar_type": bar_type}),
             command_id=self.uuid_factory.generate(),
             ts_init=self.clock.timestamp_ns(),
@@ -1469,6 +1524,7 @@ class TestDataEngine:
 
         subscribe = Subscribe(
             client_id=ClientId(BINANCE.value),
+            venue=BINANCE,
             data_type=DataType(Bar, metadata={"bar_type": bar_type}),
             command_id=self.uuid_factory.generate(),
             ts_init=self.clock.timestamp_ns(),
@@ -1508,6 +1564,7 @@ class TestDataEngine:
 
         subscribe1 = Subscribe(
             client_id=ClientId(BINANCE.value),
+            venue=BINANCE,
             data_type=DataType(Bar, metadata={"bar_type": bar_type}),
             command_id=self.uuid_factory.generate(),
             ts_init=self.clock.timestamp_ns(),
@@ -1515,6 +1572,7 @@ class TestDataEngine:
 
         subscribe2 = Subscribe(
             client_id=ClientId(BINANCE.value),
+            venue=BINANCE,
             data_type=DataType(Bar, metadata={"bar_type": bar_type}),
             command_id=self.uuid_factory.generate(),
             ts_init=self.clock.timestamp_ns(),

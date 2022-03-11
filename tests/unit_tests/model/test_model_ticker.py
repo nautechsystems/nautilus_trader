@@ -21,6 +21,10 @@ ETHUSDT_BINANCE = TestInstrumentProvider.ethusdt_binance()
 
 
 class TestTicker:
+    def test_fully_qualified_name(self):
+        # Arrange, Act, Assert
+        assert Ticker.fully_qualified_name() == "nautilus_trader.model.data.ticker.Ticker"
+
     def test_ticker_hash_str_and_repr(self):
         # Arrange
         ticker = Ticker(
@@ -31,8 +35,8 @@ class TestTicker:
 
         # Act, Assert
         assert isinstance(hash(ticker), int)
-        assert str(ticker) == "Ticker(instrument_id=ETH/USDT.BINANCE, ts_event=0)"  # noqa
-        assert repr(ticker) == "Ticker(instrument_id=ETH/USDT.BINANCE, ts_event=0)"  # noqa
+        assert str(ticker) == "Ticker(instrument_id=ETHUSDT.BINANCE, ts_event=0)"  # noqa
+        assert repr(ticker) == "Ticker(instrument_id=ETHUSDT.BINANCE, ts_event=0)"  # noqa
 
     def test_to_dict_returns_expected_dict(self):
         # Arrange
@@ -48,7 +52,7 @@ class TestTicker:
         # Assert
         assert result == {
             "type": "Ticker",
-            "instrument_id": "ETH/USDT.BINANCE",
+            "instrument_id": "ETHUSDT.BINANCE",
             "ts_event": 0,
             "ts_init": 0,
         }

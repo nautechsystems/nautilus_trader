@@ -1,3 +1,42 @@
+# NautilusTrader 1.139.0 Beta
+
+## Release Notes
+
+Released on 11th March 2022 (UTC).
+
+### Breaking Changes
+- Renamed `CurrencySpot` to `CurrencyPair`.
+- Renamed `PerformanceAnalyzer` to `PortfolioAnalyzer`.
+- Renamed `BacktestDataConfig.data_cls_path` to `data_cls`.
+- Renamed `BinanceTicker` to `BinanceSpotTicker`.
+- Renamed `BinanceSpotExecutionClient` to `BinanceExecutionClient`.
+
+### Enhancements
+- Added initial **(beta)** Binance Futures adapter implementation.
+- Added initial **(beta)** Interactive Brokers adapter implementation.
+- Added custom portfolio statistics.
+- Added `CryptoFuture` instrument.
+- Added `OrderType.MARKET_TO_LIMIT`.
+- Added `OrderType.MARKET_IF_TOUCHED`.
+- Added `OrderType.LIMIT_IF_TOUCHED`.
+- Added `MarketToLimitOrder` order type.
+- Added `MarketIfTouchedOrder` order type.
+- Added `LimitIfTouchedOrder` order type.
+- Added `Order.has_price` property (convenience).
+- Added `Order.has_trigger_price` property (convenience).
+- Added `msg` param to `LoggerAdapter.exception()`.
+- Added WebSocket `log_send` and `log_recv` config options.
+- Added WebSocket `auto_ping_interval` (seconds) config option.
+- Replaced `msgpack` with `msgspec` (faster drop in replacement https://github.com/jcrist/msgspec).
+- Improved exception messages by providing helpful context.
+- Improved `BacktestDataConfig` API: now takes either a type of `Data` _or_ a fully qualified path string.
+
+### Fixes
+- Fixed FTX execution WebSocket 'ping strategy'.
+- Fixed non-deterministic config dask tokenization.
+
+---
+
 # NautilusTrader 1.138.0 Beta
 
 ## Release Notes
@@ -80,7 +119,7 @@ Released on 12th January 2022 (UTC).
 
 ### Fixes
 - Fixed parsing of `BarType` with symbols including hyphens `-`.
-- Fixed `BinanceTicker` `__repr__` (was missing whitespace after a comma).
+- Fixed `BinanceSpotTicker` `__repr__` (was missing whitespace after a comma).
 - Fixed `DataEngine` requests for historical `TradeTick`.
 - Fixed `DataEngine` `_handle_data_response` typing of `data` to `object`.
 
@@ -784,7 +823,7 @@ for `OrderFill` events, as well as additional order states and events.
 - Removed redundant `OrderFilled.leaves_qty`.
 - `BacktestEngine` constructor simplified.
 - `BacktestMarketDataClient` no longer needs instruments.
-- Rename `PerformanceAnalyzer.get_realized_pnls` to `.realized_pnls`.
+- Rename `PortfolioAnalyzer.get_realized_pnls` to `.realized_pnls`.
 
 ### Enhancements
 - Re-engineered `BacktestEngine` to take data directly.

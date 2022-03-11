@@ -27,8 +27,14 @@ cdef class OrderTypeParser:
         elif value == 4:
             return "STOP_LIMIT"
         elif value == 5:
-            return "TRAILING_STOP_MARKET"
+            return "MARKET_TO_LIMIT"
         elif value == 6:
+            return "MARKET_IF_TOUCHED"
+        elif value == 7:
+            return "LIMIT_IF_TOUCHED"
+        elif value == 8:
+            return "TRAILING_STOP_MARKET"
+        elif value == 9:
             return "TRAILING_STOP_LIMIT"
         else:
             raise ValueError(f"value was invalid, was {value}")
@@ -43,6 +49,12 @@ cdef class OrderTypeParser:
             return OrderType.STOP_MARKET
         elif value == "STOP_LIMIT":
             return OrderType.STOP_LIMIT
+        elif value == "MARKET_TO_LIMIT":
+            return OrderType.MARKET_TO_LIMIT
+        elif value == "MARKET_IF_TOUCHED":
+            return OrderType.MARKET_IF_TOUCHED
+        elif value == "LIMIT_IF_TOUCHED":
+            return OrderType.LIMIT_IF_TOUCHED
         elif value == "TRAILING_STOP_MARKET":
             return OrderType.TRAILING_STOP_MARKET
         elif value == "TRAILING_STOP_LIMIT":

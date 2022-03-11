@@ -25,11 +25,11 @@ from nautilus_trader.common.uuid import UUIDFactory
 from nautilus_trader.core.message import Event
 from nautilus_trader.execution.config import ExecEngineConfig
 from nautilus_trader.execution.engine import ExecutionEngine
-from nautilus_trader.model.commands.trading import CancelOrder
-from nautilus_trader.model.commands.trading import ModifyOrder
-from nautilus_trader.model.commands.trading import SubmitOrder
-from nautilus_trader.model.commands.trading import SubmitOrderList
-from nautilus_trader.model.commands.trading import TradingCommand
+from nautilus_trader.execution.messages import CancelOrder
+from nautilus_trader.execution.messages import ModifyOrder
+from nautilus_trader.execution.messages import SubmitOrder
+from nautilus_trader.execution.messages import SubmitOrderList
+from nautilus_trader.execution.messages import TradingCommand
 from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import OrderSide
@@ -49,8 +49,11 @@ from nautilus_trader.portfolio.portfolio import Portfolio
 from nautilus_trader.risk.config import RiskEngineConfig
 from nautilus_trader.risk.engine import RiskEngine
 from nautilus_trader.trading.strategy import TradingStrategy
-from tests.test_kit.mocks import MockExecutionClient
-from tests.test_kit.stubs import TestStubs
+from tests.test_kit.mocks.exec_clients import MockExecutionClient
+from tests.test_kit.stubs.component import TestComponentStubs
+from tests.test_kit.stubs.data import TestDataStubs
+from tests.test_kit.stubs.events import TestEventStubs
+from tests.test_kit.stubs.identifiers import TestIdStubs
 
 
 AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy("AUD/USD")
@@ -67,8 +70,8 @@ class TestRiskEngine:
             level_stdout=LogLevel.DEBUG,
         )
 
-        self.trader_id = TestStubs.trader_id()
-        self.account_id = TestStubs.account_id()
+        self.trader_id = TestIdStubs.trader_id()
+        self.account_id = TestIdStubs.account_id()
         self.venue = Venue("SIM")
 
         self.msgbus = MessageBus(
@@ -77,7 +80,7 @@ class TestRiskEngine:
             logger=self.logger,
         )
 
-        self.cache = TestStubs.cache()
+        self.cache = TestComponentStubs.cache()
 
         self.portfolio = Portfolio(
             msgbus=self.msgbus,
@@ -106,6 +109,7 @@ class TestRiskEngine:
 
         self.exec_client = MockExecutionClient(
             client_id=ClientId(self.venue.value),
+            venue=self.venue,
             account_type=AccountType.MARGIN,
             base_currency=USD,
             msgbus=self.msgbus,
@@ -113,7 +117,7 @@ class TestRiskEngine:
             clock=self.clock,
             logger=self.logger,
         )
-        self.portfolio.update_account(TestStubs.event_margin_account_state())
+        self.portfolio.update_account(TestEventStubs.margin_account_state())
         self.exec_engine.register_client(self.exec_client)
 
         # Prepare data
@@ -224,6 +228,7 @@ class TestRiskEngine:
     def test_given_random_command_then_logs_and_continues(self):
         # Arrange
         random = TradingCommand(
+            client_id=None,
             trader_id=self.trader_id,
             strategy_id=StrategyId("SCALPER-001"),
             instrument_id=AUDUSD_SIM.id,
@@ -397,9 +402,9 @@ class TestRiskEngine:
         )
 
         self.risk_engine.execute(submit_order1)
-        self.exec_engine.process(TestStubs.event_order_submitted(order1))
-        self.exec_engine.process(TestStubs.event_order_accepted(order1))
-        self.exec_engine.process(TestStubs.event_order_filled(order1, AUDUSD_SIM))
+        self.exec_engine.process(TestEventStubs.order_submitted(order1))
+        self.exec_engine.process(TestEventStubs.order_accepted(order1))
+        self.exec_engine.process(TestEventStubs.order_filled(order1, AUDUSD_SIM))
 
         submit_order2 = SubmitOrder(
             trader_id=self.trader_id,
@@ -411,9 +416,9 @@ class TestRiskEngine:
         )
 
         self.risk_engine.execute(submit_order2)
-        self.exec_engine.process(TestStubs.event_order_submitted(order2))
-        self.exec_engine.process(TestStubs.event_order_accepted(order2))
-        self.exec_engine.process(TestStubs.event_order_filled(order2, AUDUSD_SIM))
+        self.exec_engine.process(TestEventStubs.order_submitted(order2))
+        self.exec_engine.process(TestEventStubs.order_accepted(order2))
+        self.exec_engine.process(TestEventStubs.order_filled(order2, AUDUSD_SIM))
 
         submit_order3 = SubmitOrder(
             trader_id=self.trader_id,
@@ -760,7 +765,7 @@ class TestRiskEngine:
         self.risk_engine.set_max_notional_per_order(AUDUSD_SIM.id, 1_000_000)
 
         # Initialize market
-        quote = TestStubs.quote_tick_5decimal(AUDUSD_SIM.id)
+        quote = TestDataStubs.quote_tick_5decimal(AUDUSD_SIM.id)
         self.cache.add_quote_tick(quote)
 
         self.exec_engine.start()
@@ -801,7 +806,7 @@ class TestRiskEngine:
         self.risk_engine.set_max_notional_per_order(AUDUSD_SIM.id, 1_000_000)
 
         # Initialize market
-        quote = TestStubs.quote_tick_5decimal(AUDUSD_SIM.id)
+        quote = TestDataStubs.quote_tick_5decimal(AUDUSD_SIM.id)
         self.cache.add_quote_tick(quote)
 
         self.exec_engine.start()
@@ -849,9 +854,9 @@ class TestRiskEngine:
             self.clock.timestamp_ns(),
         )
 
-        self.exec_engine.process(TestStubs.event_order_submitted(order1))
-        self.exec_engine.process(TestStubs.event_order_accepted(order1))
-        self.exec_engine.process(TestStubs.event_order_filled(order1, AUDUSD_SIM))
+        self.exec_engine.process(TestEventStubs.order_submitted(order1))
+        self.exec_engine.process(TestEventStubs.order_accepted(order1))
+        self.exec_engine.process(TestEventStubs.order_filled(order1, AUDUSD_SIM))
 
         # Act
         self.risk_engine.execute(submit_order2)
@@ -865,7 +870,7 @@ class TestRiskEngine:
         self.risk_engine.set_max_notional_per_order(AUDUSD_SIM.id, 1_000_000)
 
         # Initialize market
-        quote = TestStubs.quote_tick_5decimal(AUDUSD_SIM.id)
+        quote = TestDataStubs.quote_tick_5decimal(AUDUSD_SIM.id)
         self.cache.add_quote_tick(quote)
 
         self.exec_engine.start()
@@ -913,9 +918,9 @@ class TestRiskEngine:
             self.clock.timestamp_ns(),
         )
 
-        self.exec_engine.process(TestStubs.event_order_submitted(order1))
-        self.exec_engine.process(TestStubs.event_order_accepted(order1))
-        self.exec_engine.process(TestStubs.event_order_filled(order1, AUDUSD_SIM))
+        self.exec_engine.process(TestEventStubs.order_submitted(order1))
+        self.exec_engine.process(TestEventStubs.order_accepted(order1))
+        self.exec_engine.process(TestEventStubs.order_filled(order1, AUDUSD_SIM))
 
         # Act
         self.risk_engine.execute(submit_order2)
@@ -1362,9 +1367,9 @@ class TestRiskEngine:
 
         self.risk_engine.execute(submit)
 
-        self.exec_engine.process(TestStubs.event_order_submitted(order))
-        self.exec_engine.process(TestStubs.event_order_accepted(order))
-        self.exec_engine.process(TestStubs.event_order_filled(order, AUDUSD_SIM))
+        self.exec_engine.process(TestEventStubs.order_submitted(order))
+        self.exec_engine.process(TestEventStubs.order_accepted(order))
+        self.exec_engine.process(TestEventStubs.order_filled(order, AUDUSD_SIM))
 
         modify = ModifyOrder(
             self.trader_id,
@@ -1419,7 +1424,7 @@ class TestRiskEngine:
 
         self.risk_engine.execute(submit)
 
-        self.exec_engine.process(TestStubs.event_order_submitted(order))
+        self.exec_engine.process(TestEventStubs.order_submitted(order))
 
         modify = ModifyOrder(
             self.trader_id,
@@ -1559,8 +1564,8 @@ class TestRiskEngine:
         )
 
         self.risk_engine.execute(submit)
-        self.exec_engine.process(TestStubs.event_order_submitted(order))
-        self.exec_engine.process(TestStubs.event_order_rejected(order))
+        self.exec_engine.process(TestEventStubs.order_submitted(order))
+        self.exec_engine.process(TestEventStubs.order_rejected(order))
 
         cancel = CancelOrder(
             self.trader_id,
@@ -1620,11 +1625,11 @@ class TestRiskEngine:
         )
 
         self.risk_engine.execute(submit)
-        self.exec_engine.process(TestStubs.event_order_submitted(order))
-        self.exec_engine.process(TestStubs.event_order_accepted(order))
+        self.exec_engine.process(TestEventStubs.order_submitted(order))
+        self.exec_engine.process(TestEventStubs.order_accepted(order))
 
         self.risk_engine.execute(cancel)
-        self.exec_engine.process(TestStubs.event_order_pending_cancel(order))
+        self.exec_engine.process(TestEventStubs.order_pending_cancel(order))
 
         # Act
         self.risk_engine.execute(cancel)

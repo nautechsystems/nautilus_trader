@@ -17,17 +17,27 @@
 ## Crypto Perpetual
 
 ```{eval-rst}
-.. automodule:: nautilus_trader.model.instruments.crypto_perp
+.. automodule:: nautilus_trader.model.instruments.crypto_perpetual
    :show-inheritance:
    :inherited-members:
    :members:
    :member-order: bysource
 ```
 
-## Currency
+## Crypto Future
 
 ```{eval-rst}
-.. automodule:: nautilus_trader.model.instruments.currency
+.. automodule:: nautilus_trader.model.instruments.crypto_future
+   :show-inheritance:
+   :inherited-members:
+   :members:
+   :member-order: bysource
+```
+
+## Currency Pair
+
+```{eval-rst}
+.. automodule:: nautilus_trader.model.instruments.currency_pair
    :show-inheritance:
    :inherited-members:
    :members:

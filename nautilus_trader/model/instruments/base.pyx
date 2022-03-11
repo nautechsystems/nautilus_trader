@@ -35,7 +35,8 @@ cdef class Instrument(Data):
     """
     The base class for all instruments.
 
-    Represents a tradeable financial market instrument or trading pair.
+    Represents a tradable financial market instrument. This class can be used to
+    define an instrument, or act as a parent class for more specific instruments.
 
     Parameters
     ----------
@@ -136,7 +137,7 @@ cdef class Instrument(Data):
         bint is_inverse,
         int price_precision,
         int size_precision,
-        Price price_increment,  # Can be None  # TODO(cs): review this
+        Price price_increment,  # Can be None (if using a tick scheme)
         Quantity size_increment not None,
         Quantity multiplier not None,
         Quantity lot_size,      # Can be None

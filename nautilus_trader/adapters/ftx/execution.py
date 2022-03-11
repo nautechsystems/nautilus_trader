@@ -24,37 +24,37 @@ import pandas as pd
 
 from nautilus_trader.accounting.accounts.margin import MarginAccount
 from nautilus_trader.accounting.factory import AccountFactory
-from nautilus_trader.adapters.ftx.common import FTX_VENUE
+from nautilus_trader.adapters.ftx.core.constants import FTX_VENUE
 from nautilus_trader.adapters.ftx.http.client import FTXHttpClient
 from nautilus_trader.adapters.ftx.http.error import FTXError
-from nautilus_trader.adapters.ftx.parsing import parse_order_fill
-from nautilus_trader.adapters.ftx.parsing import parse_order_status
-from nautilus_trader.adapters.ftx.parsing import parse_order_type
-from nautilus_trader.adapters.ftx.parsing import parse_position
-from nautilus_trader.adapters.ftx.parsing import parse_trigger_order_status
+from nautilus_trader.adapters.ftx.parsing.common import parse_order_type
+from nautilus_trader.adapters.ftx.parsing.common import parse_position_report
+from nautilus_trader.adapters.ftx.parsing.common import parse_trade_report
+from nautilus_trader.adapters.ftx.parsing.http import parse_order_status_http
+from nautilus_trader.adapters.ftx.parsing.http import parse_trigger_order_status_http
 from nautilus_trader.adapters.ftx.providers import FTXInstrumentProvider
 from nautilus_trader.adapters.ftx.websocket.client import FTXWebSocketClient
 from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.logging import LogColor
 from nautilus_trader.common.logging import Logger
+from nautilus_trader.execution.messages import CancelAllOrders
+from nautilus_trader.execution.messages import CancelOrder
+from nautilus_trader.execution.messages import ModifyOrder
+from nautilus_trader.execution.messages import SubmitOrder
+from nautilus_trader.execution.messages import SubmitOrderList
 from nautilus_trader.execution.reports import ExecutionMassStatus
 from nautilus_trader.execution.reports import OrderStatusReport
 from nautilus_trader.execution.reports import PositionStatusReport
 from nautilus_trader.execution.reports import TradeReport
 from nautilus_trader.live.execution_client import LiveExecutionClient
-from nautilus_trader.model.c_enums.account_type import AccountType
-from nautilus_trader.model.c_enums.order_side import OrderSideParser
-from nautilus_trader.model.commands.trading import CancelAllOrders
-from nautilus_trader.model.commands.trading import CancelOrder
-from nautilus_trader.model.commands.trading import ModifyOrder
-from nautilus_trader.model.commands.trading import SubmitOrder
-from nautilus_trader.model.commands.trading import SubmitOrderList
 from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.currency import Currency
+from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import LiquiditySide
 from nautilus_trader.model.enums import OMSType
 from nautilus_trader.model.enums import OrderSide
+from nautilus_trader.model.enums import OrderSideParser
 from nautilus_trader.model.enums import OrderStatus
 from nautilus_trader.model.enums import OrderType
 from nautilus_trader.model.enums import TimeInForce
@@ -67,7 +67,7 @@ from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import TradeId
 from nautilus_trader.model.identifiers import VenueOrderId
 from nautilus_trader.model.instruments.base import Instrument
-from nautilus_trader.model.instruments.currency import CurrencySpot
+from nautilus_trader.model.instruments.currency_pair import CurrencyPair
 from nautilus_trader.model.objects import AccountBalance
 from nautilus_trader.model.objects import MarginBalance
 from nautilus_trader.model.objects import Money
@@ -86,7 +86,7 @@ from nautilus_trader.msgbus.bus import MessageBus
 
 class FTXExecutionClient(LiveExecutionClient):
     """
-    Provides an execution client for Binance SPOT markets.
+    Provides an execution client for FTX exchange.
 
     Parameters
     ----------
@@ -128,6 +128,7 @@ class FTXExecutionClient(LiveExecutionClient):
         super().__init__(
             loop=loop,
             client_id=ClientId(FTX_VENUE.value),
+            venue=FTX_VENUE,
             oms_type=OMSType.NETTING,
             instrument_provider=instrument_provider,
             account_type=AccountType.MARGIN,
@@ -148,7 +149,9 @@ class FTXExecutionClient(LiveExecutionClient):
             key=client.api_key,
             secret=client.api_secret,
             us=us,
-            log_recv=True,  # For debugging
+            auto_ping_interval=15.0,  # Recommended by FTX
+            # log_send=True,  # Uncomment for development and debugging
+            # log_recv=True,  # Uncomment for development and debugging
         )
         self._ws_buffer: List[bytes] = []
 
@@ -156,11 +159,12 @@ class FTXExecutionClient(LiveExecutionClient):
         self._task_poll_account: Optional[asyncio.Task] = None
         self._task_buffer_ws_msgs: Optional[asyncio.Task] = None
 
-        # Hot caches
+        # Hot Caches
         self._instrument_ids: Dict[str, InstrumentId] = {}
         self._order_ids: Dict[VenueOrderId, ClientOrderId] = {}
         self._order_types: Dict[VenueOrderId, OrderType] = {}
         self._triggers: Dict[int, VenueOrderId] = {}
+        self._open_triggers: Dict[int, ClientOrderId] = {}
 
         # Settings
         self._account_polling_interval = account_polling_interval
@@ -198,9 +202,9 @@ class FTXExecutionClient(LiveExecutionClient):
         if not self._http_client.connected:
             await self._http_client.connect()
         try:
-            await self._instrument_provider.load_all_or_wait_async()
+            await self._instrument_provider.initialize()
         except FTXError as ex:
-            self._log.exception(ex)
+            self._log.exception("Error on connect", ex)
             return
 
         self._log.info("FTX API key authenticated.", LogColor.GREEN)
@@ -238,7 +242,8 @@ class FTXExecutionClient(LiveExecutionClient):
 
     async def generate_order_status_report(
         self,
-        venue_order_id: VenueOrderId = None,
+        instrument_id: InstrumentId,
+        venue_order_id: VenueOrderId,
     ) -> Optional[OrderStatusReport]:
         """
         Generate an order status report for the given order identifier parameter(s).
@@ -248,6 +253,8 @@ class FTXExecutionClient(LiveExecutionClient):
 
         Parameters
         ----------
+        instrument_id : InstrumentId, optional
+            The instrument ID query filter.
         venue_order_id : VenueOrderId, optional
             The venue order ID (assigned by the venue) query filter.
 
@@ -259,11 +266,14 @@ class FTXExecutionClient(LiveExecutionClient):
         try:
             response = await self._http_client.get_order_status(venue_order_id.value)
         except FTXError as ex:
-            self._log.error(ex.message)  # type: ignore  # TODO(cs): Improve errors
+            order_id_str = venue_order_id.value if venue_order_id is not None else "ALL orders"
+            self._log.error(
+                f"Cannot get order status for {order_id_str}: {ex.message}",
+            )
             return None
 
         # Get instrument
-        instrument_id: InstrumentId = self._get_cached_instrument_id(response)
+        instrument_id = self._get_cached_instrument_id(response["market"])
         instrument = self._instrument_provider.find(instrument_id)
         if instrument is None:
             self._log.error(
@@ -272,7 +282,7 @@ class FTXExecutionClient(LiveExecutionClient):
             )
             return None
 
-        return parse_order_status(
+        return parse_order_status_http(
             account_id=self.account_id,
             instrument=instrument,
             data=response,
@@ -350,20 +360,20 @@ class FTXExecutionClient(LiveExecutionClient):
                     market=instrument_id.symbol.value if instrument_id is not None else None,
                 )
         except FTXError as ex:
-            self._log.error(ex.message)  # type: ignore  # TODO(cs): Improve errors
+            self._log.exception("Cannot generate order status report: ", ex)
             return []
 
         if response:
             for data in response:
                 # Apply filter (FTX filters not working)
-                created_at = pd.to_datetime(data["createdAt"])
+                created_at = pd.to_datetime(data["createdAt"], utc=True)
                 if start is not None and created_at < start:
                     continue
                 if end is not None and created_at > end:
                     continue
 
                 # Get instrument
-                instrument_id = instrument_id or self._get_cached_instrument_id(data)
+                instrument_id = self._get_cached_instrument_id(data["market"])
                 instrument = self._instrument_provider.find(instrument_id)
                 if instrument is None:
                     self._log.error(
@@ -372,7 +382,7 @@ class FTXExecutionClient(LiveExecutionClient):
                     )
                     continue
 
-                report: OrderStatusReport = parse_order_status(
+                report: OrderStatusReport = parse_order_status_http(
                     account_id=self.account_id,
                     instrument=instrument,
                     data=data,
@@ -420,20 +430,20 @@ class FTXExecutionClient(LiveExecutionClient):
             # TODO(cs): Uncomment for development
             # self._log.info(str(self._triggers), LogColor.GREEN)
         except FTXError as ex:
-            self._log.error(ex.message)  # type: ignore  # TODO(cs): Improve errors
+            self._log.exception("Cannot generate trade report: ", ex)
             return []
 
         if response:
             for data in response:
                 # Apply filter (FTX filters not working)
-                created_at = pd.to_datetime(data["createdAt"])
+                created_at = pd.to_datetime(data["createdAt"], utc=True)
                 if start is not None and created_at < start:
                     continue
                 if end is not None and created_at > end:
                     continue
 
                 # Get instrument
-                instrument_id = instrument_id or self._get_cached_instrument_id(data)
+                instrument_id = self._get_cached_instrument_id(data["market"])
                 instrument = self._instrument_provider.find(instrument_id)
                 if instrument is None:
                     self._log.error(
@@ -442,7 +452,7 @@ class FTXExecutionClient(LiveExecutionClient):
                     )
                     continue
 
-                report: OrderStatusReport = parse_trigger_order_status(
+                report: OrderStatusReport = parse_trigger_order_status_http(
                     account_id=self.account_id,
                     instrument=instrument,
                     triggers=self._triggers,
@@ -495,29 +505,29 @@ class FTXExecutionClient(LiveExecutionClient):
                 end_time=int(end.timestamp()) if end is not None else None,
             )
         except FTXError as ex:
-            self._log.error(ex.message)  # type: ignore  # TODO(cs): Improve errors
+            self._log.exception("Cannot generate trade report: ", ex)
             return []
 
         if response:
             for data in response:
                 # Apply filter (FTX filters not working)
-                created_at = pd.to_datetime(data["time"])
+                created_at = pd.to_datetime(data["time"], utc=True)
                 if start is not None and created_at < start:
                     continue
                 if end is not None and created_at > end:
                     continue
 
                 # Get instrument
-                instrument_id = instrument_id or self._get_cached_instrument_id(data)
+                instrument_id = self._get_cached_instrument_id(data["market"])
                 instrument = self._instrument_provider.find(instrument_id)
                 if instrument is None:
                     self._log.error(
-                        f"Cannot generate order status report: "
+                        f"Cannot generate trade report: "
                         f"no instrument found for {instrument_id}.",
                     )
                     continue
 
-                report: TradeReport = parse_order_fill(
+                report: TradeReport = parse_trade_report(
                     account_id=self.account_id,
                     instrument=instrument,
                     data=data,
@@ -569,22 +579,22 @@ class FTXExecutionClient(LiveExecutionClient):
         try:
             response: List[Dict[str, Any]] = await self._http_client.get_positions()
         except FTXError as ex:
-            self._log.error(ex.message)  # type: ignore  # TODO(cs): Improve errors
+            self._log.exception("Cannot generate position status report: ", ex)
             return []
 
         if response:
             for data in response:
                 # Get instrument
-                instrument_id = instrument_id or self._get_cached_instrument_id(data, "future")
+                instrument_id = self._get_cached_instrument_id(data["future"])
                 instrument = self._instrument_provider.find(instrument_id)
                 if instrument is None:
                     self._log.error(
-                        f"Cannot generate order status report: "
+                        f"Cannot generate position status report: "
                         f"no instrument found for {instrument_id}.",
                     )
                     continue
 
-                report: PositionStatusReport = parse_position(
+                report: PositionStatusReport = parse_position_report(
                     account_id=self.account_id,
                     instrument=instrument,
                     data=data,
@@ -677,8 +687,14 @@ class FTXExecutionClient(LiveExecutionClient):
                 strategy_id=order.strategy_id,
                 instrument_id=order.instrument_id,
                 client_order_id=order.client_order_id,
-                reason=ex.message,  # type: ignore  # TODO(cs): Improve errors
+                reason=ex.message,
                 ts_event=self._clock.timestamp_ns(),  # TODO(cs): Parse from response
+            )
+        except Exception as ex:  # Catch all exceptions for now
+            self._log.exception(
+                f"Error on submit {repr(order)}"
+                f"{f'for {position}' if position is not None else ''}",
+                ex,
             )
 
     async def _submit_market_order(self, order: MarketOrder) -> None:
@@ -716,7 +732,7 @@ class FTXExecutionClient(LiveExecutionClient):
                 order_type = "take_profit"
             elif order.is_sell and order.trigger_price > position.avg_px_open:
                 order_type = "take_profit"
-        await self._http_client.place_trigger_order(
+        response = await self._http_client.place_trigger_order(
             market=order.instrument_id.symbol.value,
             side=OrderSideParser.to_str_py(order.side).lower(),
             size=str(order.quantity),
@@ -725,6 +741,16 @@ class FTXExecutionClient(LiveExecutionClient):
             trigger_price=str(order.trigger_price),
             reduce_only=order.is_reduce_only,
         )
+        # Cache open trigger ID
+        trigger_id: int = response["id"]
+        self.generate_order_accepted(
+            strategy_id=order.strategy_id,
+            instrument_id=order.instrument_id,
+            client_order_id=order.client_order_id,
+            venue_order_id=VenueOrderId(str(trigger_id)),
+            ts_event=self._clock.timestamp_ns(),
+        )
+        self._open_triggers[trigger_id] = order.client_order_id
 
     async def _submit_stop_limit_order(
         self,
@@ -737,7 +763,7 @@ class FTXExecutionClient(LiveExecutionClient):
                 order_type = "take_profit"
             elif order.is_sell and order.trigger_price > position.avg_px_open:
                 order_type = "take_profit"
-        await self._http_client.place_trigger_order(
+        response = await self._http_client.place_trigger_order(
             market=order.instrument_id.symbol.value,
             side=OrderSideParser.to_str_py(order.side).lower(),
             size=str(order.quantity),
@@ -747,9 +773,16 @@ class FTXExecutionClient(LiveExecutionClient):
             trigger_price=str(order.trigger_price),
             reduce_only=order.is_reduce_only,
         )
+        self.generate_order_accepted(
+            strategy_id=order.strategy_id,
+            instrument_id=order.instrument_id,
+            client_order_id=order.client_order_id,
+            venue_order_id=VenueOrderId(str(response["id"])),
+            ts_event=self._clock.timestamp_ns(),
+        )
 
     async def _submit_trailing_stop_market(self, order: TrailingStopMarketOrder) -> None:
-        await self._http_client.place_trigger_order(
+        response = await self._http_client.place_trigger_order(
             market=order.instrument_id.symbol.value,
             side=OrderSideParser.to_str_py(order.side).lower(),
             size=str(order.quantity),
@@ -759,9 +792,16 @@ class FTXExecutionClient(LiveExecutionClient):
             trail_value=str(order.trailing_offset) if order.is_buy else str(-order.trailing_offset),
             reduce_only=order.is_reduce_only,
         )
+        self.generate_order_accepted(
+            strategy_id=order.strategy_id,
+            instrument_id=order.instrument_id,
+            client_order_id=order.client_order_id,
+            venue_order_id=VenueOrderId(str(response["id"])),
+            ts_event=self._clock.timestamp_ns(),
+        )
 
     async def _submit_trailing_stop_limit(self, order: TrailingStopLimitOrder) -> None:
-        await self._http_client.place_trigger_order(
+        response = await self._http_client.place_trigger_order(
             market=order.instrument_id.symbol.value,
             side=OrderSideParser.to_str_py(order.side).lower(),
             size=str(order.quantity),
@@ -771,6 +811,13 @@ class FTXExecutionClient(LiveExecutionClient):
             trigger_price=str(order.trigger_price),
             trail_value=str(order.trailing_offset) if order.is_buy else str(-order.trailing_offset),
             reduce_only=order.is_reduce_only,
+        )
+        self.generate_order_accepted(
+            strategy_id=order.strategy_id,
+            instrument_id=order.instrument_id,
+            client_order_id=order.client_order_id,
+            venue_order_id=VenueOrderId(str(response["id"])),
+            ts_event=self._clock.timestamp_ns(),
         )
 
     async def _modify_order(self, command: ModifyOrder) -> None:
@@ -790,7 +837,7 @@ class FTXExecutionClient(LiveExecutionClient):
                 size=str(command.quantity) if command.quantity else None,
             )
         except FTXError as ex:
-            self._log.error(ex.message)  # type: ignore  # TODO(cs): Improve errors
+            self._log.error(f"Cannot modify order {command.venue_order_id}: {ex.message}")
 
     async def _cancel_order(self, command: CancelOrder) -> None:
         self._log.debug(f"Canceling order {command.client_order_id.value}.")
@@ -808,7 +855,12 @@ class FTXExecutionClient(LiveExecutionClient):
             else:
                 await self._http_client.cancel_order_by_client_id(command.client_order_id.value)
         except FTXError as ex:
-            self._log.error(ex.message)  # type: ignore  # TODO(cs): Improve errors
+            self._log.exception(
+                f"Cannot cancel order "
+                f"ClientOrderId({command.client_order_id}), "
+                f"VenueOrderId{command.venue_order_id}: ",
+                ex,
+            )
 
     async def _cancel_all_orders(self, command: CancelAllOrders) -> None:
         self._log.debug(f"Canceling all orders for {command.instrument_id.value}.")
@@ -843,7 +895,7 @@ class FTXExecutionClient(LiveExecutionClient):
         try:
             await self._http_client.cancel_all_orders(command.instrument_id.symbol.value)
         except FTXError as ex:
-            self._log.error(ex.message)  # type: ignore  # TODO(cs): Improve errors
+            self._log.error(f"Cannot cancel all orders: {ex.message}")
 
     def _handle_ws_reconnect(self):
         self._loop.create_task(self._ws_reconnect_async())
@@ -900,7 +952,7 @@ class FTXExecutionClient(LiveExecutionClient):
             )
             instruments: List[Instrument] = self._instrument_provider.list_all()
             for instrument in instruments:
-                if isinstance(instrument, CurrencySpot):
+                if isinstance(instrument, CurrencyPair):
                     self._log.debug(
                         f"Setting {self.account_id} leverage for {instrument.id} to 1X.",
                     )
@@ -951,13 +1003,8 @@ class FTXExecutionClient(LiveExecutionClient):
             LogColor.BLUE,
         )
 
-    def _get_cached_instrument_id(
-        self,
-        data: Dict[str, Any],
-        symbol_str: str = "market",
-    ) -> InstrumentId:
+    def _get_cached_instrument_id(self, symbol: str) -> InstrumentId:
         # Parse instrument ID
-        symbol: str = data[symbol_str]
         instrument_id: Optional[InstrumentId] = self._instrument_ids.get(symbol)
         if not instrument_id:
             instrument_id = InstrumentId(Symbol(symbol), FTX_VENUE)
@@ -985,10 +1032,10 @@ class FTXExecutionClient(LiveExecutionClient):
             return
 
         # TODO(cs): Uncomment for development
-        # self._log.info(str(json.dumps(msg, indent=4)), color=LogColor.GREEN)
+        # self._log.info(str(json.dumps(msg, indent=2)), color=LogColor.GREEN)
 
         # Get instrument
-        instrument_id: InstrumentId = self._get_cached_instrument_id(data)
+        instrument_id: InstrumentId = self._get_cached_instrument_id(data["market"])
         instrument = self._instrument_provider.find(instrument_id)
         if instrument is None:
             self._log.error(
@@ -1014,6 +1061,15 @@ class FTXExecutionClient(LiveExecutionClient):
         client_order_id = self._order_ids.get(venue_order_id)
         if client_order_id is None:
             client_order_id = ClientOrderId(str(uuid.uuid4()))
+            # TODO(cs): WIP
+            # triggers = await self._http_client.get_trigger_order_triggers(venue_order_id.value)
+            #
+            # for trigger in triggers:
+            #     client_order_id = self._open_triggers.get(trigger)
+            #     if client_order_id is not None:
+            #         break
+            # if client_order_id is None:
+            #     client_order_id = ClientOrderId(str(uuid.uuid4()))
 
         # Fetch strategy ID
         strategy_id: StrategyId = self._cache.strategy_id_for_order(client_order_id)
@@ -1085,7 +1141,7 @@ class FTXExecutionClient(LiveExecutionClient):
     def _generate_external_order_status(self, instrument: Instrument, data: Dict[str, Any]) -> None:
         client_id_str = data.get("clientId")
         price = data.get("price")
-        created_at = int(pd.to_datetime(data["createdAt"]).to_datetime64())
+        created_at = int(pd.to_datetime(data["createdAt"], utc=True).to_datetime64())
         report = OrderStatusReport(
             account_id=self.account_id,
             instrument_id=InstrumentId(Symbol(data["market"]), FTX_VENUE),
@@ -1110,7 +1166,7 @@ class FTXExecutionClient(LiveExecutionClient):
         self._send_order_status_report(report)
 
     def _generate_external_trade_report(self, instrument: Instrument, data: Dict[str, Any]) -> None:
-        report = parse_order_fill(
+        report = parse_trade_report(
             account_id=self.account_id,
             instrument=instrument,
             data=data,

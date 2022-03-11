@@ -19,7 +19,7 @@ This section explains how to get up and running with NautilusTrader by running s
 FX data. The Nautilus maintainers have pre-loaded some existing data into the Nautilus storage 
 format (parquet) for this guide.
 
-For more details on how to load other data into Nautilus, see [Backtest Example](../user_guide/backtest_example.md)
+For more details on how to load other data into Nautilus, see [Backtest Example](../user_guide/backtest_example.md).
 
 
 ## Getting the sample data
@@ -205,7 +205,7 @@ from nautilus_trader.backtest.config import BacktestDataConfig
 data = [
     BacktestDataConfig(
         catalog_path=str(catalog.path),
-        data_cls_path=f"{QuoteTick.__module__}.{QuoteTick.__name__}",
+        data_cls=QuoteTick,
         instrument_id=str(instruments[0].id),
         end_time="2020-01-05",
     )

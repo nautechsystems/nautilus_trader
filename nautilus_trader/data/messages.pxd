@@ -18,11 +18,14 @@ from nautilus_trader.core.message cimport Request
 from nautilus_trader.core.message cimport Response
 from nautilus_trader.model.data.base cimport DataType
 from nautilus_trader.model.identifiers cimport ClientId
+from nautilus_trader.model.identifiers cimport Venue
 
 
 cdef class DataCommand(Command):
     cdef readonly ClientId client_id
-    """The data client ID for the command.\n\n:returns: `ClientId`"""
+    """The data client ID for the command.\n\n:returns: `ClientId` or ``None``"""
+    cdef readonly Venue venue
+    """The venue for the command.\n\n:returns: `Venue` or ``None``"""
     cdef readonly DataType data_type
     """The command data type.\n\n:returns: `type`"""
 
@@ -37,14 +40,18 @@ cdef class Unsubscribe(DataCommand):
 
 cdef class DataRequest(Request):
     cdef readonly ClientId client_id
-    """The data client ID for the request.\n\n:returns: `ClientId`"""
+    """The data client ID for the request.\n\n:returns: `ClientId` or ``None``"""
+    cdef readonly Venue venue
+    """The venue for the request.\n\n:returns: `Venue` or ``None``"""
     cdef readonly DataType data_type
     """The request data type.\n\n:returns: `type`"""
 
 
 cdef class DataResponse(Response):
     cdef readonly ClientId client_id
-    """The data client ID for the response.\n\n:returns: `ClientId`"""
+    """The data client ID for the response.\n\n:returns: `ClientId` or ``None``"""
+    cdef readonly Venue venue
+    """The venue for the response.\n\n:returns: `Venue` or ``None``"""
     cdef readonly DataType data_type
     """The response data type.\n\n:returns: `type`"""
     cdef readonly object data

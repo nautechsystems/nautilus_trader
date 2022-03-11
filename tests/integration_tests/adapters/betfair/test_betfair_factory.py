@@ -23,14 +23,15 @@ from nautilus_trader.adapters.betfair.common import BETFAIR_VENUE
 from nautilus_trader.adapters.betfair.data import BetfairDataClient
 from nautilus_trader.adapters.betfair.execution import BetfairExecutionClient
 from nautilus_trader.adapters.betfair.factories import BetfairLiveDataClientFactory
-from nautilus_trader.adapters.betfair.factories import BetfairLiveExecutionClientFactory
+from nautilus_trader.adapters.betfair.factories import BetfairLiveExecClientFactory
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.logging import LiveLogger
 from nautilus_trader.common.logging import LoggerAdapter
 from nautilus_trader.common.logging import LogLevel
 from nautilus_trader.common.uuid import UUIDFactory
 from nautilus_trader.msgbus.bus import MessageBus
-from tests.test_kit.stubs import TestStubs
+from tests.test_kit.stubs.component import TestComponentStubs
+from tests.test_kit.stubs.identifiers import TestIdStubs
 
 
 class TestBetfairFactory:
@@ -42,7 +43,7 @@ class TestBetfairFactory:
         self.clock = LiveClock()
         self.uuid_factory = UUIDFactory()
 
-        self.trader_id = TestStubs.trader_id()
+        self.trader_id = TestIdStubs.trader_id()
         self.venue = BETFAIR_VENUE
 
         # Setup logging
@@ -54,7 +55,7 @@ class TestBetfairFactory:
             clock=self.clock,
             logger=self.logger,
         )
-        self.cache = TestStubs.cache()
+        self.cache = TestComponentStubs.cache()
 
     @pytest.mark.asyncio()
     def test_create(self):
@@ -82,7 +83,7 @@ class TestBetfairFactory:
                 clock=self.clock,
                 logger=self.logger,
             )
-            exec_client = BetfairLiveExecutionClientFactory.create(
+            exec_client = BetfairLiveExecClientFactory.create(
                 loop=asyncio.get_event_loop(),
                 name=BETFAIR_VENUE.value,
                 config=exec_config,

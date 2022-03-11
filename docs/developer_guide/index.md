@@ -39,6 +39,7 @@ types and how these map to their corresponding `PyObject` types.
    environment_setup.md
    coding_standards.md
    cython.md
+   rust.md
    testing.md
    packaged_data.md
 ```

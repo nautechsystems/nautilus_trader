@@ -1,0 +1,71 @@
+# -------------------------------------------------------------------------------------------------
+#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
+#  https://nautechsystems.io
+#
+#  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
+#  You may not use this file except in compliance with the License.
+#  You may obtain a copy of the License at https://www.gnu.org/licenses/lgpl-3.0.en.html
+#
+#  Unless required by applicable law or agreed to in writing, software
+#  distributed under the License is distributed on an "AS IS" BASIS,
+#  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+#  See the License for the specific language governing permissions and
+#  limitations under the License.
+# -------------------------------------------------------------------------------------------------
+
+import pkgutil
+
+import orjson
+
+from nautilus_trader.adapters.binance.common.parsing.data import parse_book_snapshot
+from nautilus_trader.backtest.data.providers import TestInstrumentProvider
+
+
+ETHUSDT = TestInstrumentProvider.ethusdt_binance()
+
+
+class TestBinanceHttpParsing:
+    def test_parse_book_snapshot(self):
+        # Arrange
+        data = pkgutil.get_data(
+            package="tests.integration_tests.adapters.binance.resources.http_responses",
+            resource="http_spot_market_depth.json",
+        )
+        response = orjson.loads(data)
+
+        # Act
+        result = parse_book_snapshot(
+            instrument_id=ETHUSDT.id,
+            msg=response,
+            update_id=1,
+            ts_init=2,
+        )
+
+        # Assert
+        assert result.instrument_id == ETHUSDT.id
+        assert result.asks == [
+            [60650.01, 0.61982],
+            [60653.68, 0.00696],
+            [60653.69, 0.00026],
+            [60656.89, 0.01],
+            [60657.87, 0.02],
+            [60657.99, 0.04993],
+            [60658.0, 0.02],
+            [60659.0, 0.12244],
+            [60659.71, 0.35691],
+            [60659.94, 0.9617],
+        ]
+        assert result.bids == [
+            [60650.0, 0.00213],
+            [60648.08, 0.06346],
+            [60648.01, 0.0643],
+            [60648.0, 0.09332],
+            [60647.53, 0.19622],
+            [60647.52, 0.03],
+            [60646.55, 0.06431],
+            [60643.57, 0.08904],
+            [60643.56, 0.00203],
+            [60639.93, 0.07282],
+        ]
+        assert result.update_id == 1
+        assert result.ts_init == 2

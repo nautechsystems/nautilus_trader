@@ -48,7 +48,11 @@ from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.position import Position
 from nautilus_trader.msgbus.bus import MessageBus
 from nautilus_trader.portfolio.portfolio import Portfolio
-from tests.test_kit.stubs import TestStubs
+from tests.integration_tests.adapters.betfair.test_kit import BetfairTestStubs
+from tests.test_kit.stubs.component import TestComponentStubs
+from tests.test_kit.stubs.data import TestDataStubs
+from tests.test_kit.stubs.events import TestEventStubs
+from tests.test_kit.stubs.identifiers import TestIdStubs
 
 
 SIM = Venue("SIM")
@@ -62,7 +66,7 @@ USDJPY_SIM = TestInstrumentProvider.default_fx_ccy("USD/JPY")
 BTCUSDT_BINANCE = TestInstrumentProvider.btcusdt_binance()
 BTCUSD_BITMEX = TestInstrumentProvider.xbtusd_bitmex()
 ETHUSD_BITMEX = TestInstrumentProvider.ethusd_bitmex()
-BETTING_INSTRUMENT = TestInstrumentProvider.betting_instrument()
+BETTING_INSTRUMENT = BetfairTestStubs.betting_instrument()
 
 
 class TestPortfolio:
@@ -71,7 +75,7 @@ class TestPortfolio:
         self.clock = TestClock()
         self.logger = Logger(self.clock)
 
-        self.trader_id = TestStubs.trader_id()
+        self.trader_id = TestIdStubs.trader_id()
 
         self.order_factory = OrderFactory(
             trader_id=self.trader_id,
@@ -85,7 +89,7 @@ class TestPortfolio:
             logger=self.logger,
         )
 
-        self.cache = TestStubs.cache()
+        self.cache = TestComponentStubs.cache()
 
         self.portfolio = Portfolio(
             msgbus=self.msgbus,
@@ -192,7 +196,7 @@ class TestPortfolio:
 
     def test_update_tick(self):
         # Arrange
-        tick = TestStubs.quote_tick_5decimal(GBPUSD_SIM.id)
+        tick = TestDataStubs.quote_tick_5decimal(GBPUSD_SIM.id)
 
         # Act
         self.portfolio.update_tick(tick)
@@ -235,11 +239,11 @@ class TestPortfolio:
 
         self.cache.add_order(order, position_id=None)
 
-        self.exec_engine.process(TestStubs.event_order_submitted(order, account_id=account_id))
+        self.exec_engine.process(TestEventStubs.order_submitted(order, account_id=account_id))
 
         # Act, Assert: push account to negative balance (wouldn't normally be allowed by risk engine)
         with pytest.raises(AccountBalanceNegative):
-            fill = TestStubs.event_order_filled(
+            fill = TestEventStubs.order_filled(
                 order,
                 instrument=AUDUSD_SIM,
                 account_id=account_id,
@@ -286,11 +290,11 @@ class TestPortfolio:
 
         self.cache.add_order(order, position_id=None)
 
-        self.exec_engine.process(TestStubs.event_order_submitted(order, account_id=account_id))
+        self.exec_engine.process(TestEventStubs.order_submitted(order, account_id=account_id))
 
         # Act, Assert: push account to negative balance (wouldn't normally be allowed by risk engine)
         with pytest.raises(AccountBalanceNegative):
-            fill = TestStubs.event_order_filled(
+            fill = TestEventStubs.order_filled(
                 order,
                 instrument=BTCUSDT_BINANCE,
                 account_id=account_id,
@@ -340,8 +344,8 @@ class TestPortfolio:
         self.cache.add_order(order, position_id=None)
 
         # Act: push order state to ACCEPTED
-        self.exec_engine.process(TestStubs.event_order_submitted(order, account_id=account_id))
-        self.exec_engine.process(TestStubs.event_order_accepted(order, account_id=account_id))
+        self.exec_engine.process(TestEventStubs.order_submitted(order, account_id=account_id))
+        self.exec_engine.process(TestEventStubs.order_accepted(order, account_id=account_id))
 
         # Assert
         assert self.portfolio.balances_locked(BINANCE)[USDT].as_decimal() == 50100
@@ -402,12 +406,12 @@ class TestPortfolio:
         self.cache.add_order(order2, position_id=None)
 
         # Push states to ACCEPTED
-        order1.apply(TestStubs.event_order_submitted(order1))
+        order1.apply(TestEventStubs.order_submitted(order1))
         self.cache.update_order(order1)
-        order1.apply(TestStubs.event_order_accepted(order1))
+        order1.apply(TestEventStubs.order_accepted(order1))
         self.cache.update_order(order1)
 
-        filled1 = TestStubs.event_order_filled(
+        filled1 = TestEventStubs.order_filled(
             order1,
             instrument=BTCUSDT_BINANCE,
             strategy_id=StrategyId("S-1"),
@@ -473,9 +477,9 @@ class TestPortfolio:
         self.cache.add_order(order1, position_id=None)
 
         # Push states to ACCEPTED
-        order1.apply(TestStubs.event_order_submitted(order1))
+        order1.apply(TestEventStubs.order_submitted(order1))
         self.cache.update_order(order1)
-        order1.apply(TestStubs.event_order_accepted(order1, venue_order_id=VenueOrderId("1")))
+        order1.apply(TestEventStubs.order_accepted(order1, venue_order_id=VenueOrderId("1")))
         self.cache.update_order(order1)
 
         # Act
@@ -532,12 +536,12 @@ class TestPortfolio:
         self.cache.add_order(order2, position_id=None)
 
         # Push states to ACCEPTED
-        order1.apply(TestStubs.event_order_submitted(order1))
+        order1.apply(TestEventStubs.order_submitted(order1))
         self.cache.update_order(order1)
-        order1.apply(TestStubs.event_order_accepted(order1))
+        order1.apply(TestEventStubs.order_accepted(order1))
         self.cache.update_order(order1)
 
-        fill1 = TestStubs.event_order_filled(
+        fill1 = TestEventStubs.order_filled(
             order1,
             instrument=BTCUSDT_BINANCE,
             strategy_id=StrategyId("S-1"),
@@ -546,7 +550,7 @@ class TestPortfolio:
             last_px=Price.from_str("25000.00"),
         )
 
-        fill2 = TestStubs.event_order_filled(
+        fill2 = TestEventStubs.order_filled(
             order2,
             instrument=BTCUSDT_BINANCE,
             strategy_id=StrategyId("S-1"),
@@ -564,7 +568,7 @@ class TestPortfolio:
             Quantity.from_str("10.00000000"),
         )
 
-        fill3 = TestStubs.event_order_filled(
+        fill3 = TestEventStubs.order_filled(
             order3,
             instrument=BTCUSDT_BINANCE,
             strategy_id=StrategyId("S-1"),
@@ -637,7 +641,7 @@ class TestPortfolio:
             Quantity.from_str("10.000000"),
         )
 
-        fill = TestStubs.event_order_filled(
+        fill = TestEventStubs.order_filled(
             order=order,
             instrument=BTCUSDT_BINANCE,
             strategy_id=StrategyId("S-001"),
@@ -663,7 +667,7 @@ class TestPortfolio:
 
         # Act
         self.cache.add_position(position, OMSType.HEDGING)
-        self.portfolio.update_position(TestStubs.event_position_opened(position))
+        self.portfolio.update_position(TestEventStubs.position_opened(position))
 
         # Assert
         assert self.portfolio.net_exposures(BINANCE) == {USDT: Money(105100.00000000, USDT)}
@@ -721,7 +725,7 @@ class TestPortfolio:
             Quantity.from_str("0.515"),
         )
 
-        fill = TestStubs.event_order_filled(
+        fill = TestEventStubs.order_filled(
             order=order,
             instrument=BTCUSDT_BINANCE,
             strategy_id=StrategyId("S-001"),
@@ -747,7 +751,7 @@ class TestPortfolio:
 
         # Act
         self.cache.add_position(position, OMSType.HEDGING)
-        self.portfolio.update_position(TestStubs.event_position_opened(position))
+        self.portfolio.update_position(TestEventStubs.position_opened(position))
 
         # Assert
         assert self.portfolio.net_exposures(BINANCE) == {USDT: Money(7987.77875000, USDT)}
@@ -825,7 +829,7 @@ class TestPortfolio:
             Quantity.from_int(10000),
         )
 
-        fill = TestStubs.event_order_filled(
+        fill = TestEventStubs.order_filled(
             order=order,
             instrument=ETHUSD_BITMEX,
             strategy_id=StrategyId("S-001"),
@@ -838,7 +842,7 @@ class TestPortfolio:
 
         # Act
         self.cache.add_position(position, OMSType.HEDGING)
-        self.portfolio.update_position(TestStubs.event_position_opened(position))
+        self.portfolio.update_position(TestEventStubs.position_opened(position))
 
         # Assert
         assert self.portfolio.net_exposures(BITMEX) == {ETH: Money(26.59220848, ETH)}
@@ -883,10 +887,10 @@ class TestPortfolio:
         )
 
         self.cache.add_order(order, position_id=None)
-        self.exec_engine.process(TestStubs.event_order_submitted(order))
-        self.exec_engine.process(TestStubs.event_order_accepted(order))
+        self.exec_engine.process(TestEventStubs.order_submitted(order))
+        self.exec_engine.process(TestEventStubs.order_accepted(order))
 
-        fill = TestStubs.event_order_filled(
+        fill = TestEventStubs.order_filled(
             order=order,
             instrument=ETHUSD_BITMEX,
             strategy_id=StrategyId("S-1"),
@@ -898,7 +902,7 @@ class TestPortfolio:
 
         position = Position(instrument=ETHUSD_BITMEX, fill=fill)
 
-        self.portfolio.update_position(TestStubs.event_position_opened(position))
+        self.portfolio.update_position(TestEventStubs.position_opened(position))
 
         # Act
         result = self.portfolio.unrealized_pnls(BITMEX)
@@ -938,7 +942,7 @@ class TestPortfolio:
             Quantity.from_int(100),
         )
 
-        fill = TestStubs.event_order_filled(
+        fill = TestEventStubs.order_filled(
             order=order,
             instrument=ETHUSD_BITMEX,
             strategy_id=StrategyId("S-1"),
@@ -969,7 +973,7 @@ class TestPortfolio:
 
         position = Position(instrument=ETHUSD_BITMEX, fill=fill)
 
-        self.portfolio.update_position(TestStubs.event_position_opened(position))
+        self.portfolio.update_position(TestEventStubs.position_opened(position))
         self.cache.add_position(position, OMSType.HEDGING)
         self.cache.add_quote_tick(last_ethusd)
         self.cache.add_quote_tick(last_xbtusd)
@@ -1048,7 +1052,7 @@ class TestPortfolio:
         self.cache.add_order(order1, position_id=None)
         self.cache.add_order(order2, position_id=None)
 
-        fill1 = TestStubs.event_order_filled(
+        fill1 = TestEventStubs.order_filled(
             order1,
             instrument=AUDUSD_SIM,
             strategy_id=StrategyId("S-1"),
@@ -1057,7 +1061,7 @@ class TestPortfolio:
             last_px=Price.from_str("1.00000"),
         )
 
-        fill2 = TestStubs.event_order_filled(
+        fill2 = TestEventStubs.order_filled(
             order2,
             instrument=GBPUSD_SIM,
             strategy_id=StrategyId("S-1"),
@@ -1071,8 +1075,8 @@ class TestPortfolio:
 
         position1 = Position(instrument=AUDUSD_SIM, fill=fill1)
         position2 = Position(instrument=GBPUSD_SIM, fill=fill2)
-        position_opened1 = TestStubs.event_position_opened(position1)
-        position_opened2 = TestStubs.event_position_opened(position2)
+        position_opened1 = TestEventStubs.position_opened(position1)
+        position_opened2 = TestEventStubs.position_opened(position2)
 
         # Act
         self.cache.add_position(position1, OMSType.HEDGING)
@@ -1143,7 +1147,7 @@ class TestPortfolio:
             Quantity.from_int(100000),
         )
 
-        fill1 = TestStubs.event_order_filled(
+        fill1 = TestEventStubs.order_filled(
             order1,
             instrument=AUDUSD_SIM,
             strategy_id=StrategyId("S-1"),
@@ -1154,7 +1158,7 @@ class TestPortfolio:
 
         position = Position(instrument=AUDUSD_SIM, fill=fill1)
         self.cache.add_position(position, OMSType.HEDGING)
-        self.portfolio.update_position(TestStubs.event_position_opened(position))
+        self.portfolio.update_position(TestEventStubs.position_opened(position))
 
         order2 = self.order_factory.market(
             AUDUSD_SIM.id,
@@ -1162,7 +1166,7 @@ class TestPortfolio:
             Quantity.from_int(50000),
         )
 
-        order2_filled = TestStubs.event_order_filled(
+        order2_filled = TestEventStubs.order_filled(
             order2,
             instrument=AUDUSD_SIM,
             strategy_id=StrategyId("S-1"),
@@ -1174,7 +1178,7 @@ class TestPortfolio:
         position.apply(order2_filled)
 
         # Act
-        self.portfolio.update_position(TestStubs.event_position_changed(position))
+        self.portfolio.update_position(TestEventStubs.position_changed(position))
 
         # Assert
         assert self.portfolio.net_exposures(SIM) == {USD: Money(40250.50, USD)}
@@ -1222,7 +1226,7 @@ class TestPortfolio:
             Quantity.from_int(100000),
         )
 
-        fill1 = TestStubs.event_order_filled(
+        fill1 = TestEventStubs.order_filled(
             order1,
             instrument=AUDUSD_SIM,
             strategy_id=StrategyId("S-1"),
@@ -1233,7 +1237,7 @@ class TestPortfolio:
 
         position = Position(instrument=AUDUSD_SIM, fill=fill1)
         self.cache.add_position(position, OMSType.HEDGING)
-        self.portfolio.update_position(TestStubs.event_position_opened(position))
+        self.portfolio.update_position(TestEventStubs.position_opened(position))
 
         order2 = self.order_factory.market(
             AUDUSD_SIM.id,
@@ -1241,7 +1245,7 @@ class TestPortfolio:
             Quantity.from_int(100000),
         )
 
-        order2_filled = TestStubs.event_order_filled(
+        order2_filled = TestEventStubs.order_filled(
             order2,
             instrument=AUDUSD_SIM,
             strategy_id=StrategyId("S-1"),
@@ -1254,7 +1258,7 @@ class TestPortfolio:
         self.cache.update_position(position)
 
         # Act
-        self.portfolio.update_position(TestStubs.event_position_closed(position))
+        self.portfolio.update_position(TestEventStubs.position_closed(position))
 
         # Assert
         assert self.portfolio.net_exposures(SIM) == {}
@@ -1316,7 +1320,7 @@ class TestPortfolio:
             Quantity.from_int(100000),
         )
 
-        fill1 = TestStubs.event_order_filled(
+        fill1 = TestEventStubs.order_filled(
             order1,
             instrument=AUDUSD_SIM,
             strategy_id=StrategyId("S-1"),
@@ -1325,7 +1329,7 @@ class TestPortfolio:
             last_px=Price.from_str("1.00000"),
         )
 
-        fill2 = TestStubs.event_order_filled(
+        fill2 = TestEventStubs.order_filled(
             order2,
             instrument=AUDUSD_SIM,
             strategy_id=StrategyId("S-1"),
@@ -1334,7 +1338,7 @@ class TestPortfolio:
             last_px=Price.from_str("1.00000"),
         )
 
-        fill3 = TestStubs.event_order_filled(
+        fill3 = TestEventStubs.order_filled(
             order3,
             instrument=GBPUSD_SIM,
             strategy_id=StrategyId("S-1"),
@@ -1343,7 +1347,7 @@ class TestPortfolio:
             last_px=Price.from_str("1.00000"),
         )
 
-        fill4 = TestStubs.event_order_filled(
+        fill4 = TestEventStubs.order_filled(
             order4,
             instrument=GBPUSD_SIM,
             strategy_id=StrategyId("S-1"),
@@ -1386,13 +1390,13 @@ class TestPortfolio:
         self.cache.add_position(position3, OMSType.HEDGING)
 
         # Act
-        self.portfolio.update_position(TestStubs.event_position_opened(position1))
-        self.portfolio.update_position(TestStubs.event_position_opened(position2))
-        self.portfolio.update_position(TestStubs.event_position_opened(position3))
+        self.portfolio.update_position(TestEventStubs.position_opened(position1))
+        self.portfolio.update_position(TestEventStubs.position_opened(position2))
+        self.portfolio.update_position(TestEventStubs.position_opened(position3))
 
         position3.apply(fill4)
         self.cache.update_position(position3)
-        self.portfolio.update_position(TestStubs.event_position_closed(position3))
+        self.portfolio.update_position(TestEventStubs.position_closed(position3))
 
         # Assert
         assert {USD: Money(-38998.00, USD)} == self.portfolio.unrealized_pnls(SIM)

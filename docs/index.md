@@ -21,16 +21,16 @@ including FX, Equities, Futures, Options, CFDs, Crypto and Betting - across mult
 
 ## Features
 
-- **Fast:** C-level speed through Cython. Asynchronous networking with `uvloop`.
+- **Fast:** C-level speed through Cython. Asynchronous networking with [uvloop](https://github.com/MagicStack/uvloop).
 - **Reliable:** Type safety through Cython. Redis backed performant state persistence.
 - **Flexible:** OS independent, runs on Linux, macOS, Windows. Deploy using Docker.
 - **Integrated:** Modular adapters mean any REST, WebSocket, or FIX API can be integrated.
-- **Advanced:** Time-in-force options `GTD`, `IOC`, `FOK` etc, advanced order types and triggers, `post-only`, `reduce-only`, and icebergs. Contingency order lists including `OCO`, `OTO` etc.
+- **Advanced:** Time in force `IOC`, `FOK`, `GTD`, `AT_THE_OPEN`, `AT_THE_CLOSE`, advanced order types and conditional triggers. Execution instructions `post-only`, `reduce-only`, and icebergs. Contingency order lists including `OCO`, `OTO`.
 - **Backtesting:** Run with multiple venues, instruments and strategies simultaneously using historical quote tick, trade tick, bar, order book and custom data with nanosecond resolution.
 - **Live:** Use identical strategy implementations between backtesting and live deployments.
 - **Multi-venue:** Multiple venue capabilities facilitate market making and statistical arbitrage strategies.
 - **AI Agent Training:** Backtest engine fast enough to be used to train AI trading agents (RL/ES).
-- **Distributed:** Run backtests synchronously or as a graph distributed across a `dask` cluster.
+- **Distributed:** Run backtests synchronously or as a graph distributed across a [dask](https://dask.org/) cluster.
 
 ![Nautilus](https://github.com/nautechsystems/nautilus_trader/blob/develop/docs/_images/nautilus-art.png?raw=true "nautilus")
 > *nautilus - from ancient Greek 'sailor' and naus 'ship'.*
@@ -86,9 +86,11 @@ written in Cython, however the libraries can be accessed from both pure Python a
 
 ```{eval-rst}
 .. toctree::
-   :maxdepth: 2
+   :maxdepth: 1
+   :glob:
+   :titlesonly:
    :hidden:
-   
+
    getting_started/index.md
    user_guide/index.md
    api_reference/index.md

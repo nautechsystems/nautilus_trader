@@ -16,18 +16,21 @@
 import asyncio
 import os
 from functools import lru_cache
-from typing import Any, Dict, Optional
+from typing import Dict, Optional
 
+from nautilus_trader.adapters.ftx.config import FTXDataClientConfig
+from nautilus_trader.adapters.ftx.config import FTXExecClientConfig
 from nautilus_trader.adapters.ftx.data import FTXDataClient
 from nautilus_trader.adapters.ftx.execution import FTXExecutionClient
 from nautilus_trader.adapters.ftx.http.client import FTXHttpClient
 from nautilus_trader.adapters.ftx.providers import FTXInstrumentProvider
 from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.clock import LiveClock
+from nautilus_trader.common.config import InstrumentProviderConfig
 from nautilus_trader.common.logging import LiveLogger
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.live.factories import LiveDataClientFactory
-from nautilus_trader.live.factories import LiveExecutionClientFactory
+from nautilus_trader.live.factories import LiveExecClientFactory
 from nautilus_trader.msgbus.bus import MessageBus
 
 
@@ -99,11 +102,12 @@ def get_cached_ftx_http_client(
 def get_cached_ftx_instrument_provider(
     client: FTXHttpClient,
     logger: Logger,
+    config: InstrumentProviderConfig,
 ) -> FTXInstrumentProvider:
     """
     Cache and return an FTXInstrumentProvider.
 
-    If a cached provider already exists, then that cached provider will be returned.
+    If a cached provider already exists, then that provider will be returned.
 
     Parameters
     ----------
@@ -111,6 +115,8 @@ def get_cached_ftx_instrument_provider(
         The client for the instrument provider.
     logger : Logger
         The logger for the instrument provider.
+    config : InstrumentProviderConfig
+        The configuration for the instrument provider.
 
     Returns
     -------
@@ -120,6 +126,7 @@ def get_cached_ftx_instrument_provider(
     return FTXInstrumentProvider(
         client=client,
         logger=logger,
+        config=config,
     )
 
 
@@ -132,7 +139,7 @@ class FTXLiveDataClientFactory(LiveDataClientFactory):
     def create(
         loop: asyncio.AbstractEventLoop,
         name: str,
-        config: Dict[str, Any],
+        config: FTXDataClientConfig,
         msgbus: MessageBus,
         cache: Cache,
         clock: LiveClock,
@@ -147,8 +154,8 @@ class FTXLiveDataClientFactory(LiveDataClientFactory):
             The event loop for the client.
         name : str
             The client name.
-        config : dict
-            The configuration dictionary.
+        config : FTXDataClientConfig
+            The client configuration.
         msgbus : MessageBus
             The message bus for the client.
         cache : Cache
@@ -167,14 +174,18 @@ class FTXLiveDataClientFactory(LiveDataClientFactory):
             loop=loop,
             clock=clock,
             logger=logger,
-            key=config.get("api_key"),
-            secret=config.get("api_secret"),
-            subaccount=config.get("subaccount"),
-            us=config.get("us", False),
+            key=config.api_key,
+            secret=config.api_secret,
+            subaccount=config.subaccount,
+            us=config.us,
         )
 
         # Get instrument provider singleton
-        provider = get_cached_ftx_instrument_provider(client=client, logger=logger)
+        provider = get_cached_ftx_instrument_provider(
+            client=client,
+            logger=logger,
+            config=config.instrument_provider,
+        )
 
         # Create client
         data_client = FTXDataClient(
@@ -185,12 +196,12 @@ class FTXLiveDataClientFactory(LiveDataClientFactory):
             clock=clock,
             logger=logger,
             instrument_provider=provider,
-            us=config.get("us", False),
+            us=config.us,
         )
         return data_client
 
 
-class FTXLiveExecutionClientFactory(LiveExecutionClientFactory):
+class FTXLiveExecClientFactory(LiveExecClientFactory):
     """
     Provides an `FTX` live execution client factory.
     """
@@ -199,7 +210,7 @@ class FTXLiveExecutionClientFactory(LiveExecutionClientFactory):
     def create(
         loop: asyncio.AbstractEventLoop,
         name: str,
-        config: Dict[str, Any],
+        config: FTXExecClientConfig,
         msgbus: MessageBus,
         cache: Cache,
         clock: LiveClock,
@@ -214,8 +225,8 @@ class FTXLiveExecutionClientFactory(LiveExecutionClientFactory):
             The event loop for the client.
         name : str
             The client name.
-        config : dict[str, object]
-            The configuration for the client.
+        config : FTXExecClientConfig
+            The client configuration.
         msgbus : MessageBus
             The message bus for the client.
         cache : Cache
@@ -234,14 +245,18 @@ class FTXLiveExecutionClientFactory(LiveExecutionClientFactory):
             loop=loop,
             clock=clock,
             logger=logger,
-            key=config.get("api_key"),
-            secret=config.get("api_secret"),
-            subaccount=config.get("subaccount"),
-            us=config.get("us", False),
+            key=config.api_key,
+            secret=config.api_secret,
+            subaccount=config.subaccount,
+            us=config.us,
         )
 
         # Get instrument provider singleton
-        provider = get_cached_ftx_instrument_provider(client=client, logger=logger)
+        provider = get_cached_ftx_instrument_provider(
+            client=client,
+            logger=logger,
+            config=config.instrument_provider,
+        )
 
         # Create client
         exec_client = FTXExecutionClient(
@@ -252,8 +267,8 @@ class FTXLiveExecutionClientFactory(LiveExecutionClientFactory):
             clock=clock,
             logger=logger,
             instrument_provider=provider,
-            us=config.get("us", False),
-            account_polling_interval=config.get("account_polling_interval", 60),
-            calculated_account=config.get("calculated_account", False),
+            us=config.us,
+            account_polling_interval=config.account_polling_interval,
+            calculated_account=config.calculated_account,
         )
         return exec_client

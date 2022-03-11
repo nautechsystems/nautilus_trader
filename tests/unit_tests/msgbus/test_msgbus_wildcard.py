@@ -28,8 +28,8 @@ from nautilus_trader.msgbus.wildcard import is_matching
         ["data.quotes.BINANCE", "data.*", True],
         ["data.quotes.BINANCE", "data.quotes*", True],
         ["data.quotes.BINANCE", "data.*.BINANCE", True],
-        ["data.trades.BINANCE.ETH/USDT", "data.*.BINANCE.*", True],
-        ["data.trades.BINANCE.ETH/USDT", "data.*.BINANCE.ETH*", True],
+        ["data.trades.BINANCE.ETHUSDT", "data.*.BINANCE.*", True],
+        ["data.trades.BINANCE.ETHUSDT", "data.*.BINANCE.ETH*", True],
     ],
 )
 def test_is_matching_given_various_topic_pattern_combos(topic, pattern, expected):

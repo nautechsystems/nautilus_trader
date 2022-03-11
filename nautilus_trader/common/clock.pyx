@@ -246,8 +246,8 @@ cdef class Clock:
         Condition.not_none(alert_time, "alert_time")
         if callback is None:
             callback = self._default_handler
-        Condition.not_in(name, self._timers, "name", "timers")
-        Condition.not_in(name, self._handlers, "name", "timers")
+        Condition.not_in(name, self._timers, "name", "_timers")
+        Condition.not_in(name, self._handlers, "name", "_handlers")
         Condition.true(alert_time >= self.utc_now(), "alert_time was < self.utc_now()")
         Condition.callable(callback, "callback")
 
@@ -363,8 +363,8 @@ cdef class Clock:
         Condition.not_none(interval, "interval")
         if callback is None:
             callback = self._default_handler
-        Condition.not_in(name, self._timers, "name", "timers")
-        Condition.not_in(name, self._handlers, "name", "timers")
+        Condition.not_in(name, self._timers, "name", "_timers")
+        Condition.not_in(name, self._handlers, "name", "_handlers")
         Condition.true(interval.total_seconds() > 0, f"interval was {interval.total_seconds()}")
         Condition.callable(callback, "callback")
 

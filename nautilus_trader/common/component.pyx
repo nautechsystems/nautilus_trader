@@ -180,10 +180,21 @@ cdef class Component:
     def __repr__(self) -> str:
         return f"{type(self).__name__}({self.id})"
 
-    def fullname(self) -> str:
-        klass = self.__class__
-        module = klass.__module__
-        return module + '.' + klass.__qualname__
+    @classmethod
+    def fully_qualified_name(cls) -> str:
+        """
+        Return the fully qualified name for the component object.
+
+        Returns
+        -------
+        str
+
+        References
+        ----------
+        https://www.python.org/dev/peps/pep-3155/
+
+        """
+        return cls.__module__ + '.' + cls.__qualname__
 
     cdef ComponentState state_c(self) except *:
         return <ComponentState>self._fsm.state
@@ -210,7 +221,7 @@ cdef class Component:
         return self._fsm.state == ComponentState.FAULTED
 
     @property
-    def state(self):
+    def state(self) -> ComponentState:
         """
         The components current state.
 
@@ -222,7 +233,7 @@ cdef class Component:
         return self.state_c()
 
     @property
-    def is_initialized(self):
+    def is_initialized(self) -> bool:
         """
         If the component has been initialized (component.state >= ``INITIALIZED``).
 
@@ -234,7 +245,7 @@ cdef class Component:
         return self.is_initialized_c()
 
     @property
-    def is_running(self):
+    def is_running(self) -> bool:
         """
         If the current component state is ``RUNNING``.
 
@@ -246,7 +257,7 @@ cdef class Component:
         return self.is_running_c()
 
     @property
-    def is_stopped(self):
+    def is_stopped(self) -> bool:
         """
         If the current component state is ``STOPPED``.
 
@@ -258,7 +269,7 @@ cdef class Component:
         return self.is_stopped_c()
 
     @property
-    def is_disposed(self):
+    def is_disposed(self) -> bool:
         """
         If the current component state is ``DISPOSED``.
 
@@ -270,7 +281,7 @@ cdef class Component:
         return self.is_disposed_c()
 
     @property
-    def is_degraded(self):
+    def is_degraded(self) -> bool:
         """
         If the current component state is ``DEGRADED``.
 
@@ -282,7 +293,7 @@ cdef class Component:
         return self.is_degraded_c()
 
     @property
-    def is_faulted(self):
+    def is_faulted(self) -> bool:
         """
         If the current component state is ``FAULTED``.
 
@@ -355,7 +366,7 @@ cdef class Component:
                 action=None,
             )
         except Exception as ex:
-            self._log.exception(ex)
+            self._log.exception(f"{repr(self)}: Error on initialize", ex)
             raise
 
     cpdef void start(self) except *:
@@ -381,7 +392,7 @@ cdef class Component:
                 action=self._start,
             )
         except Exception as ex:
-            self._log.exception(ex)
+            self._log.exception(f"{repr(self)}: Error on start", ex)
             raise
         finally:
             self._trigger_fsm(
@@ -413,7 +424,7 @@ cdef class Component:
                 action=self._stop,
             )
         except Exception as ex:
-            self._log.exception(ex)
+            self._log.exception(f"{repr(self)}: Error on stop", ex)
             raise
         finally:
             self._trigger_fsm(
@@ -445,7 +456,7 @@ cdef class Component:
                 action=self._resume,
             )
         except Exception as ex:
-            self._log.exception(ex)
+            self._log.exception(f"{repr(self)}: Error on resume", ex)
             raise
         finally:
             self._trigger_fsm(
@@ -479,7 +490,7 @@ cdef class Component:
                 action=self._reset,
             )
         except Exception as ex:
-            self._log.exception(ex)
+            self._log.exception(f"{repr(self)}: Error on reset", ex)
             raise
         finally:
             self._trigger_fsm(
@@ -514,7 +525,7 @@ cdef class Component:
                 action=self._dispose,
             )
         except Exception as ex:
-            self._log.exception(ex)
+            self._log.exception(f"{repr(self)}: Error on dispose", ex)
             raise
         finally:
             self._trigger_fsm(
@@ -546,7 +557,7 @@ cdef class Component:
                 action=self._degrade,
             )
         except Exception as ex:
-            self._log.exception(ex)
+            self._log.exception(f"{repr(self)}: Error on degrade", ex)
             raise
         finally:
             self._trigger_fsm(
@@ -581,7 +592,7 @@ cdef class Component:
                 action=self._fault,
             )
         except Exception as ex:
-            self._log.exception(ex)
+            self._log.exception(f"{repr(self)}: Error on fault", ex)
             raise
         finally:
             self._trigger_fsm(
@@ -601,7 +612,7 @@ cdef class Component:
         try:
             self._fsm.trigger(trigger)
         except InvalidStateTrigger as ex:
-            self._log.exception(ex)
+            self._log.exception(f"{repr(self)} Error on state trigger", ex)
             raise  # Guards against component being put in an invalid state
 
         self._log.info(f"{self._fsm.state_string_c()}.{'..' if is_transitory else ''}")

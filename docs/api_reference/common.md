@@ -34,6 +34,16 @@
    :member-order: bysource
 ```
 
+## Enums
+
+```{eval-rst}
+.. automodule:: nautilus_trader.common.enums
+   :show-inheritance:
+   :inherited-members:
+   :members:
+   :member-order: bysource
+```
+
 ## Factories
 
 ```{eval-rst}
