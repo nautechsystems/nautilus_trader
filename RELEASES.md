@@ -2,7 +2,7 @@
 
 ## Release Notes
 
-Released on 9th March 2022 (UTC).
+Released on 11th March 2022 (UTC).
 
 ### Breaking Changes
 - Renamed `CurrencySpot` to `CurrencyPair`.
