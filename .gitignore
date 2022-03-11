@@ -47,9 +47,12 @@ examples/backtest/notebooks/catalog
 nautilus_trader/**/.gitignore
 docs/**/*.ipynb
 !nautilus_trader/core/pytime.h
+<<<<<<< HEAD
 
 examples/backtest/hyperopt_kline.py
 nautilus_trader/examples/strategies/ema_cross_bracket_mod.py
 binance-public-data
 tests/test_kit/data/btcusdt_15m_um_data.csv
 examples/backtest/crypto_ema_cross_bracket_btcusdt_bars.py
+=======
+>>>>>>> 5d94bfc957f8d9693da391bc9eb5df7e562110c0

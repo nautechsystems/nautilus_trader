@@ -116,7 +116,11 @@ class BacktestNode:
         instrument_id: str,
         bar_type: str,
         trade_size: Decimal,
+<<<<<<< HEAD
     ):
+=======
+    ) -> None:
+>>>>>>> 5d94bfc957f8d9693da391bc9eb5df7e562110c0
         """
         Set strategy parameters which can be passed to the hyperopt objective.
 
@@ -127,7 +131,11 @@ class BacktestNode:
         strategy:
             The strategy config object.
         instrument_id:
+<<<<<<< HEAD
             The instrument id.
+=======
+            The instrument ID.
+>>>>>>> 5d94bfc957f8d9693da391bc9eb5df7e562110c0
         bar_type:
             The type of bar type used.
         trade_size:
@@ -140,7 +148,11 @@ class BacktestNode:
         self.bar_type = bar_type
         self.trade_size = trade_size
 
+<<<<<<< HEAD
     def hyperopt_search(self, config, params, max_evals=50):
+=======
+    def hyperopt_search(self, config, params, max_evals=50) -> Dict:
+>>>>>>> 5d94bfc957f8d9693da391bc9eb5df7e562110c0
         """
         Run hyperopt to optimize strategy parameters.
 
@@ -155,7 +167,12 @@ class BacktestNode:
 
         Returns
         -------
+<<<<<<< HEAD
         BacktestNode class
+=======
+        Dict
+            The optimized startegy parameters.
+>>>>>>> 5d94bfc957f8d9693da391bc9eb5df7e562110c0
 
         """
         logger = Logger(clock=LiveClock(), level_stdout=LogLevel.INFO)
@@ -213,6 +230,7 @@ class BacktestNode:
 
         trials = Trials()
 
+<<<<<<< HEAD
         self.best_params = fmin(
             objective, params, algo=tpe.suggest, trials=trials, max_evals=max_evals
         )
@@ -222,6 +240,9 @@ class BacktestNode:
     def return_best_params(self) -> dict:
         """Return the best parameters from hyperopt optimization."""
         return self.best_params
+=======
+        return fmin(objective, params, algo=tpe.suggest, trials=trials, max_evals=max_evals)
+>>>>>>> 5d94bfc957f8d9693da391bc9eb5df7e562110c0
 
     def run_sync(self, run_configs: List[BacktestRunConfig], **kwargs) -> List[BacktestResult]:
         """
@@ -363,7 +384,7 @@ class BacktestNode:
         config: BacktestEngineConfig,
         venue_configs: List[BacktestVenueConfig],
         data_configs: List[BacktestDataConfig],
-    ):
+    ) -> BacktestEngine:
         # Build the backtest engine
         engine = BacktestEngine(config=config)
 
@@ -390,7 +411,7 @@ class BacktestNode:
         return engine
 
 
-def _load_engine_data(engine: BacktestEngine, data):
+def _load_engine_data(engine: BacktestEngine, data) -> None:
     if data["type"] in (QuoteTick, TradeTick):
         engine.add_ticks(data=data["data"])
     elif data["type"] == Bar:
@@ -441,7 +462,8 @@ def backtest_runner(
         _load_engine_data(engine=engine, data=d)
         t2 = pd.Timestamp.now()
         engine._log.info(f"Engine load took {parse_timedelta(t2-t1)}s")
-    return engine.run(run_config_id=run_config_id)
+
+    engine.run(run_config_id=run_config_id)
 
 
 def _groupby_key(x):
