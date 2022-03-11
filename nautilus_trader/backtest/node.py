@@ -116,7 +116,7 @@ class BacktestNode:
         instrument_id: str,
         bar_type: str,
         trade_size: Decimal,
-    ):
+    ) -> None:
         """
         Set strategy parameters which can be passed to the hyperopt objective.
 
@@ -127,7 +127,7 @@ class BacktestNode:
         strategy:
             The strategy config object.
         instrument_id:
-            The instrument id.
+            The instrument ID.
         bar_type:
             The type of bar type used.
         trade_size:
@@ -140,7 +140,7 @@ class BacktestNode:
         self.bar_type = bar_type
         self.trade_size = trade_size
 
-    def hyperopt_search(self, config, params, max_evals=50):
+    def hyperopt_search(self, config, params, max_evals=50) -> Dict:
         """
         Run hyperopt to optimize strategy parameters.
 
@@ -155,7 +155,8 @@ class BacktestNode:
 
         Returns
         -------
-        BacktestNode class
+        Dict
+            The optimized startegy parameters.
 
         """
         logger = Logger(clock=LiveClock(), level_stdout=LogLevel.INFO)
@@ -213,15 +214,7 @@ class BacktestNode:
 
         trials = Trials()
 
-        self.best_params = fmin(
-            objective, params, algo=tpe.suggest, trials=trials, max_evals=max_evals
-        )
-
-        return self
-
-    def return_best_params(self) -> dict:
-        """Return the best parameters from hyperopt optimization."""
-        return self.best_params
+        return fmin(objective, params, algo=tpe.suggest, trials=trials, max_evals=max_evals)
 
     def run_sync(self, run_configs: List[BacktestRunConfig], **kwargs) -> List[BacktestResult]:
         """
