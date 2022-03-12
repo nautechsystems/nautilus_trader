@@ -22,7 +22,7 @@ from nautilus_trader.adapters.binance.http.client import BinanceHttpClient
 from nautilus_trader.adapters.binance.http.error import BinanceClientError
 from nautilus_trader.adapters.binance.spot.http.market import BinanceSpotMarketHttpAPI
 from nautilus_trader.adapters.binance.spot.http.wallet import BinanceSpotWalletHttpAPI
-from nautilus_trader.adapters.binance.spot.parsing.data import parse_instrument_http
+from nautilus_trader.adapters.binance.spot.parsing.data import parse_spot_instrument_http
 from nautilus_trader.adapters.binance.spot.schemas.market import BinanceSpotExchangeInfo
 from nautilus_trader.adapters.binance.spot.schemas.market import BinanceSpotSymbolInfo
 from nautilus_trader.adapters.binance.spot.schemas.wallet import BinanceSpotTradeFees
@@ -210,7 +210,7 @@ class BinanceSpotInstrumentProvider(InstrumentProvider):
         fees: BinanceSpotTradeFees,
         ts_event: int,
     ) -> None:
-        instrument = parse_instrument_http(
+        instrument = parse_spot_instrument_http(
             symbol_info=symbol_info,
             fees=fees,
             ts_event=ts_event,

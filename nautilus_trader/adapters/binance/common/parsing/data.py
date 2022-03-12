@@ -13,9 +13,16 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from decimal import Decimal
 from typing import Dict, List, Tuple
 
+from nautilus_trader.adapters.binance.common.market import BinanceCandlestick
+from nautilus_trader.adapters.binance.common.market import BinanceOrderBookData
+from nautilus_trader.adapters.binance.common.market import BinanceQuoteData
+from nautilus_trader.adapters.binance.common.market import BinanceTickerData
+from nautilus_trader.adapters.binance.common.market import BinanceTradeData
 from nautilus_trader.adapters.binance.common.types import BinanceBar
+from nautilus_trader.adapters.binance.common.types import BinanceTicker
 from nautilus_trader.core.datetime import millis_to_nanos
 from nautilus_trader.model.data.bar import BarSpecification
 from nautilus_trader.model.data.bar import BarType
@@ -35,7 +42,6 @@ from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.orderbook.data import Order
 from nautilus_trader.model.orderbook.data import OrderBookDelta
 from nautilus_trader.model.orderbook.data import OrderBookDeltas
-from nautilus_trader.model.orderbook.data import OrderBookSnapshot
 
 
 def parse_trade_tick_http(instrument_id: InstrumentId, msg: Dict, ts_init: int) -> TradeTick:
@@ -67,35 +73,20 @@ def parse_bar_http(bar_type: BarType, values: List, ts_init: int) -> BinanceBar:
     )
 
 
-def parse_book_snapshot(
-    instrument_id: InstrumentId, msg: Dict, update_id: int, ts_init: int
-) -> OrderBookSnapshot:
-    ts_event: int = ts_init
-
-    return OrderBookSnapshot(
-        instrument_id=instrument_id,
-        book_type=BookType.L2_MBP,
-        bids=[[float(o[0]), float(o[1])] for o in msg.get("bids")],
-        asks=[[float(o[0]), float(o[1])] for o in msg.get("asks")],
-        ts_event=ts_event,
-        ts_init=ts_init,
-        update_id=update_id,
-    )
-
-
 def parse_diff_depth_stream_ws(
-    instrument_id: InstrumentId, msg: Dict, ts_init: int
+    instrument_id: InstrumentId,
+    data: BinanceOrderBookData,
+    ts_init: int,
 ) -> OrderBookDeltas:
-    ts_event: int = millis_to_nanos(msg["E"])
-    update_id: int = msg["U"]
+    ts_event: int = millis_to_nanos(data.T) if data.T is not None else millis_to_nanos(data.E)
 
     bid_deltas: List[OrderBookDelta] = [
-        parse_book_delta_ws(instrument_id, OrderSide.BUY, d, ts_event, ts_init, update_id)
-        for d in msg["b"]
+        parse_book_delta_ws(instrument_id, OrderSide.BUY, d, ts_event, ts_init, data.u)
+        for d in data.b
     ]
     ask_deltas: List[OrderBookDelta] = [
-        parse_book_delta_ws(instrument_id, OrderSide.SELL, d, ts_event, ts_init, update_id)
-        for d in msg["a"]
+        parse_book_delta_ws(instrument_id, OrderSide.SELL, d, ts_event, ts_init, data.u)
+        for d in data.a
     ]
 
     return OrderBookDeltas(
@@ -104,7 +95,7 @@ def parse_diff_depth_stream_ws(
         deltas=bid_deltas + ask_deltas,
         ts_event=ts_event,
         ts_init=ts_init,
-        update_id=update_id,
+        update_id=data.u,
     )
 
 
@@ -136,38 +127,76 @@ def parse_book_delta_ws(
     )
 
 
-def parse_quote_tick_ws(instrument_id: InstrumentId, msg: Dict, ts_init: int) -> QuoteTick:
+def parse_quote_tick_ws(
+    instrument_id: InstrumentId,
+    data: BinanceQuoteData,
+    ts_init: int,
+) -> QuoteTick:
     return QuoteTick(
         instrument_id=instrument_id,
-        bid=Price.from_str(msg["b"]),
-        ask=Price.from_str(msg["a"]),
-        bid_size=Quantity.from_str(msg["B"]),
-        ask_size=Quantity.from_str(msg["A"]),
-        ts_event=ts_init,  # TODO: Investigate
+        bid=Price.from_str(data.b),
+        ask=Price.from_str(data.a),
+        bid_size=Quantity.from_str(data.B),
+        ask_size=Quantity.from_str(data.A),
+        ts_event=ts_init,
         ts_init=ts_init,
     )
 
 
-def parse_trade_tick_ws(instrument_id: InstrumentId, msg: Dict, ts_init: int) -> TradeTick:
+def parse_trade_tick_ws(
+    instrument_id: InstrumentId,
+    data: BinanceTradeData,
+    ts_init: int,
+) -> TradeTick:
     return TradeTick(
         instrument_id=instrument_id,
-        price=Price.from_str(msg["p"]),
-        size=Quantity.from_str(msg["q"]),
-        aggressor_side=AggressorSide.SELL if msg["m"] else AggressorSide.BUY,
-        trade_id=TradeId(str(msg["t"])),
-        ts_event=millis_to_nanos(msg["T"]),
+        price=Price.from_str(data.p),
+        size=Quantity.from_str(data.q),
+        aggressor_side=AggressorSide.SELL if data.m else AggressorSide.BUY,
+        trade_id=TradeId(str(data.t)),
+        ts_event=millis_to_nanos(data.T),
+        ts_init=ts_init,
+    )
+
+
+def parse_ticker_24hr_ws(
+    instrument_id: InstrumentId,
+    data: BinanceTickerData,
+    ts_init: int,
+) -> BinanceTicker:
+    return BinanceTicker(
+        instrument_id=instrument_id,
+        price_change=Decimal(data.p),
+        price_change_percent=Decimal(data.P),
+        weighted_avg_price=Decimal(data.w),
+        prev_close_price=Decimal(data.x) if data.x is not None else None,
+        last_price=Decimal(data.c),
+        last_qty=Decimal(data.Q),
+        bid_price=Decimal(data.b),
+        bid_qty=Decimal(data.B),
+        ask_price=Decimal(data.a),
+        ask_qty=Decimal(data.A),
+        open_price=Decimal(data.o),
+        high_price=Decimal(data.h),
+        low_price=Decimal(data.l),
+        volume=Decimal(data.v),
+        quote_volume=Decimal(data.q),
+        open_time_ms=data.O,
+        close_time_ms=data.C,
+        first_id=data.F,
+        last_id=data.L,
+        count=data.n,
+        ts_event=millis_to_nanos(data.E),
         ts_init=ts_init,
     )
 
 
 def parse_bar_ws(
     instrument_id: InstrumentId,
-    kline: Dict,
-    ts_event: int,
+    data: BinanceCandlestick,
     ts_init: int,
 ) -> BinanceBar:
-    interval = kline["i"]
-    resolution = interval[1]
+    resolution = data.i[1]
     if resolution == "m":
         aggregation = BarAggregation.MINUTE
     elif resolution == "h":
@@ -178,7 +207,7 @@ def parse_bar_ws(
         raise RuntimeError(f"unsupported time aggregation resolution, was {resolution}")
 
     bar_spec = BarSpecification(
-        step=int(interval[0]),
+        step=int(data.i[0]),
         aggregation=aggregation,
         price_type=PriceType.LAST,
     )
@@ -191,15 +220,15 @@ def parse_bar_ws(
 
     return BinanceBar(
         bar_type=bar_type,
-        open=Price.from_str(kline["o"]),
-        high=Price.from_str(kline["h"]),
-        low=Price.from_str(kline["l"]),
-        close=Price.from_str(kline["c"]),
-        volume=Quantity.from_str(kline["v"]),
-        quote_volume=Quantity.from_str(kline["q"]),
-        count=kline["n"],
-        taker_buy_base_volume=Quantity.from_str(kline["V"]),
-        taker_buy_quote_volume=Quantity.from_str(kline["Q"]),
-        ts_event=ts_event,
+        open=Price.from_str(data.o),
+        high=Price.from_str(data.h),
+        low=Price.from_str(data.l),
+        close=Price.from_str(data.c),
+        volume=Quantity.from_str(data.v),
+        quote_volume=Quantity.from_str(data.q),
+        count=data.n,
+        taker_buy_base_volume=Quantity.from_str(data.V),
+        taker_buy_quote_volume=Quantity.from_str(data.Q),
+        ts_event=millis_to_nanos(data.T),
         ts_init=ts_init,
     )

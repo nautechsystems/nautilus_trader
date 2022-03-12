@@ -825,7 +825,7 @@ class BinanceFuturesExecutionClient(LiveExecutionClient):
 
     def _handle_user_ws_message(self, raw: bytes):
         # TODO(cs): Uncomment for development
-        # self._log.info(str(json.dumps(orjson.loads(raw), indent=4)), color=LogColor.GREEN)
+        # self._log.info(str(json.dumps(orjson.loads(raw), indent=4)), color=LogColor.MAGENTA)
 
         try:
             if raw.__contains__(b"ACCOUNT_UPDATE"):

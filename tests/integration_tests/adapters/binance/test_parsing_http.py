@@ -15,9 +15,10 @@
 
 import pkgutil
 
-import orjson
+import msgspec.json
 
-from nautilus_trader.adapters.binance.common.parsing.data import parse_book_snapshot
+from nautilus_trader.adapters.binance.spot.parsing.data import parse_spot_book_snapshot
+from nautilus_trader.adapters.binance.spot.schemas.market import BinanceSpotOrderBookDepthData
 from nautilus_trader.backtest.data.providers import TestInstrumentProvider
 
 
@@ -27,17 +28,15 @@ ETHUSDT = TestInstrumentProvider.ethusdt_binance()
 class TestBinanceHttpParsing:
     def test_parse_book_snapshot(self):
         # Arrange
-        data = pkgutil.get_data(
+        raw = pkgutil.get_data(
             package="tests.integration_tests.adapters.binance.resources.http_responses",
             resource="http_spot_market_depth.json",
         )
-        response = orjson.loads(data)
 
         # Act
-        result = parse_book_snapshot(
+        result = parse_spot_book_snapshot(
             instrument_id=ETHUSDT.id,
-            msg=response,
-            update_id=1,
+            data=msgspec.json.decode(raw, type=BinanceSpotOrderBookDepthData),
             ts_init=2,
         )
 
@@ -67,5 +66,5 @@ class TestBinanceHttpParsing:
             [60643.56, 0.00203],
             [60639.93, 0.07282],
         ]
-        assert result.update_id == 1
+        assert result.update_id == 14527958487
         assert result.ts_init == 2

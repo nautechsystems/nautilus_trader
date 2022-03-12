@@ -14,10 +14,12 @@
 # -------------------------------------------------------------------------------------------------
 
 from decimal import Decimal
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
 from nautilus_trader.model.data.bar import Bar
 from nautilus_trader.model.data.bar import BarType
+from nautilus_trader.model.data.ticker import Ticker
+from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 
@@ -58,6 +60,7 @@ class BinanceBar(Bar):
     References
     ----------
     https://binance-docs.github.io/apidocs/spot/en/#kline-candlestick-data
+    https://binance-docs.github.io/apidocs/futures/en/#kline-candlestick-data
     """
 
     def __init__(
@@ -166,6 +169,236 @@ class BinanceBar(Bar):
             "count": obj.count,
             "taker_buy_base_volume": str(obj.taker_buy_base_volume),
             "taker_buy_quote_volume": str(obj.taker_buy_quote_volume),
+            "ts_event": obj.ts_event,
+            "ts_init": obj.ts_init,
+        }
+
+
+class BinanceTicker(Ticker):
+    """
+    Represents a `Binance` 24hr statistics ticker.
+
+    This data type includes the raw data provided by `Binance`.
+
+    Parameters
+    ----------
+    instrument_id : InstrumentId
+        The instrument ID.
+    price_change : Decimal
+        The price change.
+    price_change_percent : Decimal
+        The price change percent.
+    weighted_avg_price : Decimal
+        The weighted average price.
+    prev_close_price : Decimal, optional
+        The previous close price.
+    last_price : Decimal
+        The last price.
+    last_qty : Decimal
+        The last quantity.
+    bid_price : Decimal, optional
+        The bid price.
+    bid_qty : Decimal, optional
+        The bid quantity.
+    ask_price : Decimal, optional
+        The ask price.
+    ask_qty : Decimal, optional
+        The ask quantity.
+    open_price : Decimal
+        The open price.
+    high_price : Decimal
+        The high price.
+    low_price : Decimal
+        The low price.
+    volume : Decimal
+        The volume.
+    quote_volume : Decimal
+        The quote volume.
+    open_time_ms : int
+        The UNIX timestamp (milliseconds) when the ticker opened.
+    close_time_ms : int
+        The UNIX timestamp (milliseconds) when the ticker closed.
+    close_time_ms : int
+        The UNIX timestamp (milliseconds) when the ticker closed.
+    first_id : int
+        The first trade match ID (assigned by the venue) for the ticker.
+    last_id : int
+        The last trade match ID (assigned by the venue) for the ticker.
+    count : int
+        The count of trades over the tickers time range.
+    ts_event : int64
+        The UNIX timestamp (nanoseconds) when the ticker event occurred.
+    ts_init : int64
+        The UNIX timestamp (nanoseconds) when the object was initialized.
+
+    References
+    ----------
+    https://binance-docs.github.io/apidocs/spot/en/#24hr-ticker-price-change-statistics
+    https://binance-docs.github.io/apidocs/futures/en/#24hr-ticker-price-change-statistics
+    """
+
+    def __init__(
+        self,
+        instrument_id: InstrumentId,
+        price_change: Decimal,
+        price_change_percent: Decimal,
+        weighted_avg_price: Decimal,
+        prev_close_price: Optional[Decimal],
+        last_price: Decimal,
+        last_qty: Decimal,
+        bid_price: Optional[Decimal],
+        bid_qty: Optional[Decimal],
+        ask_price: Optional[Decimal],
+        ask_qty: Optional[Decimal],
+        open_price: Decimal,
+        high_price: Decimal,
+        low_price: Decimal,
+        volume: Decimal,
+        quote_volume: Decimal,
+        open_time_ms: int,
+        close_time_ms: int,
+        first_id: int,
+        last_id: int,
+        count: int,
+        ts_event: int,
+        ts_init: int,
+    ):
+        super().__init__(
+            instrument_id=instrument_id,
+            ts_event=ts_event,
+            ts_init=ts_init,
+        )
+
+        self.price_change = price_change
+        self.price_change_percent = price_change_percent
+        self.weighted_avg_price = weighted_avg_price
+        self.prev_close_price = prev_close_price
+        self.last_price = last_price
+        self.last_qty = last_qty
+        self.bid_price = bid_price
+        self.bid_qty = bid_qty
+        self.ask_price = ask_price
+        self.ask_qty = ask_qty
+        self.open_price = open_price
+        self.high_price = high_price
+        self.low_price = low_price
+        self.volume = volume
+        self.quote_volume = quote_volume
+        self.open_time_ms = open_time_ms
+        self.close_time_ms = close_time_ms
+        self.first_id = first_id
+        self.last_id = last_id
+        self.count = count
+
+    def __repr__(self) -> str:
+        return (
+            f"{type(self).__name__}("
+            f"instrument_id={self.instrument_id.value}, "
+            f"price_change={self.price_change}, "
+            f"price_change_percent={self.price_change_percent}, "
+            f"weighted_avg_price={self.weighted_avg_price}, "
+            f"prev_close_price={self.prev_close_price}, "
+            f"last_price={self.last_price}, "
+            f"last_qty={self.last_qty}, "
+            f"bid_price={self.bid_price}, "
+            f"bid_qty={self.bid_qty}, "
+            f"ask_price={self.ask_price}, "
+            f"ask_qty={self.ask_qty}, "
+            f"open_price={self.open_price}, "
+            f"high_price={self.high_price}, "
+            f"low_price={self.low_price}, "
+            f"volume={self.volume}, "
+            f"quote_volume={self.quote_volume}, "
+            f"open_time_ms={self.open_time_ms}, "
+            f"close_time_ms={self.close_time_ms}, "
+            f"first_id={self.first_id}, "
+            f"last_id={self.last_id}, "
+            f"count={self.count}, "
+            f"ts_event={self.ts_event}, "
+            f"ts_init={self.ts_init})"
+        )
+
+    @staticmethod
+    def from_dict(values: Dict[str, Any]) -> "BinanceTicker":
+        """
+        Return a `Binance Spot/Margin` ticker parsed from the given values.
+
+        Parameters
+        ----------
+        values : dict[str, Any]
+            The values for initialization.
+
+        Returns
+        -------
+        BinanceTicker
+
+        """
+        prev_close_str: Optional[str] = values.get("prev_close")
+        bid_price_str: Optional[str] = values.get("bid_price")
+        bid_qty_str: Optional[str] = values.get("bid_qty")
+        ask_price_str: Optional[str] = values.get("ask_price")
+        ask_qty_str: Optional[str] = values.get("ask_qty")
+        return BinanceTicker(
+            instrument_id=InstrumentId.from_str(values["instrument_id"]),
+            price_change=Decimal(values["price_change"]),
+            price_change_percent=Decimal(values["price_change_percent"]),
+            weighted_avg_price=Decimal(values["weighted_avg_price"]),
+            prev_close_price=Decimal(prev_close_str) if prev_close_str is not None else None,
+            last_price=Decimal(values["last_price"]),
+            last_qty=Decimal(values["last_qty"]),
+            bid_price=Decimal(bid_price_str) if bid_price_str is not None else None,
+            bid_qty=Decimal(bid_qty_str) if bid_qty_str is not None else None,
+            ask_price=Decimal(ask_price_str) if ask_price_str is not None else None,
+            ask_qty=Decimal(ask_qty_str) if ask_qty_str is not None else None,
+            open_price=Decimal(values["open_price"]),
+            high_price=Decimal(values["high_price"]),
+            low_price=Decimal(values["low_price"]),
+            volume=Decimal(values["volume"]),
+            quote_volume=Decimal(values["quote_volume"]),
+            open_time_ms=values["open_time_ms"],
+            close_time_ms=values["close_time_ms"],
+            first_id=values["first_id"],
+            last_id=values["last_id"],
+            count=values["count"],
+            ts_event=values["ts_event"],
+            ts_init=values["ts_init"],
+        )
+
+    @staticmethod
+    def to_dict(obj: "BinanceTicker") -> Dict[str, Any]:
+        """
+        Return a dictionary representation of this object.
+
+        Returns
+        -------
+        dict[str, Any]
+
+        """
+        return {
+            "type": type(obj).__name__,
+            "instrument_id": obj.instrument_id.value,
+            "price_change": str(obj.price_change),
+            "price_change_percent": str(obj.price_change_percent),
+            "weighted_avg_price": str(obj.weighted_avg_price),
+            "prev_close_price": str(obj.prev_close_price)
+            if obj.prev_close_price is not None
+            else None,
+            "last_price": str(obj.last_price),
+            "last_qty": str(obj.last_qty),
+            "bid_price": str(obj.bid_price),
+            "bid_qty": str(obj.bid_qty) if obj.bid_qty is not None else None,
+            "ask_price": str(obj.ask_price),
+            "ask_qty": str(obj.ask_qty) if obj.ask_qty is not None else None,
+            "open_price": str(obj.open_price),
+            "high_price": str(obj.high_price),
+            "low_price": str(obj.low_price),
+            "volume": str(obj.volume),
+            "quote_volume": str(obj.quote_volume),
+            "open_time_ms": obj.open_time_ms,
+            "close_time_ms": obj.close_time_ms,
+            "first_id": obj.first_id,
+            "last_id": obj.last_id,
+            "count": obj.count,
             "ts_event": obj.ts_event,
             "ts_init": obj.ts_init,
         }
