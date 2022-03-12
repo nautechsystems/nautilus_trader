@@ -22,10 +22,13 @@ import orjson
 
 from nautilus_trader.adapters.binance.common.constants import BINANCE_VENUE
 from nautilus_trader.adapters.binance.common.enums import BinanceSymbolFilterType
+from nautilus_trader.adapters.binance.common.market import BinanceOrderBookData
 from nautilus_trader.adapters.binance.futures.schemas.market import BinanceFuturesSymbolInfo
 from nautilus_trader.adapters.binance.spot.schemas.market import BinanceSymbolFilter
+from nautilus_trader.core.datetime import millis_to_nanos
 from nautilus_trader.core.string import precision_from_str
 from nautilus_trader.model.currency import Currency
+from nautilus_trader.model.enums import BookType
 from nautilus_trader.model.enums import CurrencyType
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import Symbol
@@ -34,6 +37,7 @@ from nautilus_trader.model.instruments.crypto_perpetual import CryptoPerpetual
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
+from nautilus_trader.model.orderbook.data import OrderBookSnapshot
 
 
 def parse_perpetual_instrument_http(
@@ -197,4 +201,20 @@ def parse_futures_instrument_http(
         ts_event=ts_event,
         ts_init=ts_init,
         info=orjson.loads(msgspec.json.encode(symbol_info)),
+    )
+
+
+def parse_book_snapshot(
+    instrument_id: InstrumentId,
+    data: BinanceOrderBookData,
+    ts_init: int,
+) -> OrderBookSnapshot:
+    return OrderBookSnapshot(
+        instrument_id=instrument_id,
+        book_type=BookType.L2_MBP,
+        bids=[[float(o[0]), float(o[1])] for o in data.bids],
+        asks=[[float(o[0]), float(o[1])] for o in data.asks],
+        ts_event=millis_to_nanos(data.T),
+        ts_init=ts_init,
+        update_id=data.u,
     )

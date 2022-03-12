@@ -21,13 +21,13 @@ import orjson
 
 from nautilus_trader.adapters.binance.common.constants import BINANCE_VENUE
 from nautilus_trader.adapters.binance.common.enums import BinanceSymbolFilterType
+from nautilus_trader.adapters.binance.spot.schemas.market import BinanceSpotOrderBookDepthData
 from nautilus_trader.adapters.binance.spot.schemas.market import BinanceSpotSymbolInfo
 from nautilus_trader.adapters.binance.spot.schemas.market import BinanceSymbolFilter
 from nautilus_trader.adapters.binance.spot.schemas.wallet import BinanceSpotTradeFees
-from nautilus_trader.adapters.binance.spot.types import BinanceSpotTicker
-from nautilus_trader.core.datetime import millis_to_nanos
 from nautilus_trader.core.string import precision_from_str
 from nautilus_trader.model.currency import Currency
+from nautilus_trader.model.enums import BookType
 from nautilus_trader.model.enums import CurrencyType
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import Symbol
@@ -36,9 +36,10 @@ from nautilus_trader.model.instruments.currency_pair import CurrencyPair
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
+from nautilus_trader.model.orderbook.data import OrderBookSnapshot
 
 
-def parse_instrument_http(
+def parse_spot_instrument_http(
     symbol_info: BinanceSpotSymbolInfo,
     fees: BinanceSpotTradeFees,
     ts_event: int,
@@ -123,27 +124,17 @@ def parse_instrument_http(
     )
 
 
-def parse_ticker_24hr_ws(instrument_id: InstrumentId, msg: Dict, ts_init: int) -> BinanceSpotTicker:
-    return BinanceSpotTicker(
+def parse_spot_book_snapshot(
+    instrument_id: InstrumentId,
+    data: BinanceSpotOrderBookDepthData,
+    ts_init: int,
+) -> OrderBookSnapshot:
+    return OrderBookSnapshot(
         instrument_id=instrument_id,
-        price_change=Decimal(msg["p"]),
-        price_change_percent=Decimal(msg["P"]),
-        weighted_avg_price=Decimal(msg["w"]),
-        prev_close_price=Decimal(msg["x"]),
-        last_price=Decimal(msg["c"]),
-        last_qty=Decimal(msg["Q"]),
-        bid_price=Decimal(msg["b"]),
-        ask_price=Decimal(msg["a"]),
-        open_price=Decimal(msg["o"]),
-        high_price=Decimal(msg["h"]),
-        low_price=Decimal(msg["l"]),
-        volume=Decimal(msg["v"]),
-        quote_volume=Decimal(msg["q"]),
-        open_time_ms=msg["O"],
-        close_time_ms=msg["C"],
-        first_id=msg["F"],
-        last_id=msg["L"],
-        count=msg["n"],
-        ts_event=millis_to_nanos(msg["E"]),
+        book_type=BookType.L2_MBP,
+        bids=[[float(o[0]), float(o[1])] for o in data.bids],
+        asks=[[float(o[0]), float(o[1])] for o in data.asks],
+        ts_event=ts_init,
         ts_init=ts_init,
+        update_id=data.lastUpdateId,
     )

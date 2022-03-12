@@ -13,7 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from typing import List, Optional
+from typing import List, Optional, Tuple
 
 import msgspec
 
@@ -99,13 +99,16 @@ class BinanceSpotExchangeInfo(msgspec.Struct):
     symbols: List[BinanceSpotSymbolInfo]
 
 
-class BinanceSpotTrade(msgspec.Struct):
-    """HTTP response from `Binance Spot/Margin` GET /fapi/v1/historicalTrades."""
+class BinanceSpotOrderBookDepthData(msgspec.Struct):
+    """HTTP response from `Binance` GET /fapi/v1/depth."""
 
-    id: int
-    price: str
-    qty: str
-    quoteQty: str
-    time: int
-    isBuyerMaker: bool
-    isBestMatch: bool
+    lastUpdateId: int
+    bids: List[Tuple[str, str]]
+    asks: List[Tuple[str, str]]
+
+
+class BinanceSpotOrderBookMsg(msgspec.Struct):
+    """WebSocket message."""
+
+    stream: str
+    data: BinanceSpotOrderBookDepthData
