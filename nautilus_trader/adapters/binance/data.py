@@ -133,11 +133,6 @@ class BinanceDataClient(LiveMarketDataClient):
                 client=self._http_client, account_type=account_type
             )
 
-        # Listen keys
-        self._ping_listen_keys_interval: int = 60 * 5  # Once every 5 mins (hardcode)
-        self._ping_listen_keys_task: Optional[asyncio.Task] = None
-        self._listen_key: Optional[str] = None
-
         # WebSocket API
         self._ws_client = BinanceWebSocketClient(
             loop=loop,

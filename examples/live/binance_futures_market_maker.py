@@ -14,6 +14,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+import os
 from decimal import Decimal
 
 from nautilus_trader.adapters.binance.common.enums import BinanceAccountType
@@ -44,25 +45,17 @@ config_node = TradingNodeConfig(
     # cache_database=CacheDatabaseConfig(),
     data_clients={
         "BINANCE": BinanceDataClientConfig(
-            api_key=None,  # "YOUR_BINANCE_TESTNET_API_KEY"
-            api_secret=None,  # "YOUR_BINANCE_TESTNET_API_SECRET"
+            api_key=os.getenv("BINANCE_FUTURES_API_KEY"),
+            api_secret=os.getenv("BINANCE_FUTURES_API_SECRET"),
             account_type=BinanceAccountType.FUTURES_USDT,
-            base_url_http=None,  # Override with custom endpoint
-            base_url_ws=None,  # Override with custom endpoint
-            us=False,  # If client is for Binance US
-            testnet=True,  # If client uses the testnet
             instrument_provider=InstrumentProviderConfig(load_all=True),
         ),
     },
     exec_clients={
         "BINANCE": BinanceExecClientConfig(
-            api_key=None,  # "YOUR_BINANCE_TESTNET_API_KEY"
-            api_secret=None,  # "YOUR_BINANCE_TESTNET_API_SECRET"
+            api_key=os.getenv("BINANCE_FUTURES_API_KEY"),
+            api_secret=os.getenv("BINANCE_FUTURES_API_SECRET"),
             account_type=BinanceAccountType.FUTURES_USDT,
-            base_url_http=None,  # Override with custom endpoint
-            base_url_ws=None,  # Override with custom endpoint
-            us=False,  # If client is for Binance US
-            testnet=True,  # If client uses the testnet
             instrument_provider=InstrumentProviderConfig(load_all=True),
         ),
     },
