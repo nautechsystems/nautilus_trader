@@ -14,13 +14,12 @@
 # -------------------------------------------------------------------------------------------------
 
 import asyncio
-import json
-import os
 
 import pytest
 
+from nautilus_trader.adapters.binance.common.enums import BinanceAccountType
 from nautilus_trader.adapters.binance.factories import get_cached_binance_http_client
-from nautilus_trader.adapters.binance.spot.http.account import BinanceSpotAccountHttpAPI
+from nautilus_trader.adapters.binance.futures.http.account import BinanceFuturesAccountHttpAPI
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.logging import Logger
 
@@ -34,33 +33,52 @@ async def test_binance_spot_account_http_client():
         loop=loop,
         clock=clock,
         logger=Logger(clock=clock),
-        key=os.getenv("BINANCE_API_KEY"),
-        secret=os.getenv("BINANCE_API_SECRET"),
+        account_type=BinanceAccountType.FUTURES_USDT,
+        base_url="https://fapi.binance.com",
     )
     await client.connect()
 
-    account = BinanceSpotAccountHttpAPI(client=client)
-    response = await account.account(recv_window=5000)
-    print(json.dumps(response, indent=4))
+    http_account = BinanceFuturesAccountHttpAPI(
+        client=client,
+        account_type=BinanceAccountType.FUTURES_USDT,
+    )
 
-    # response = await account.new_order(
+    ############################################################################
+    # ACCOUNT STATUS
+    ############################################################################
+    # response = await http_account.account(recv_window=5000)
+    # print(json.dumps(response, indent=4))
+
+    ############################################################################
+    # NEW ORDER
+    ############################################################################
+    # response = await http_account.new_order(
     #     symbol="ETHUSDT",
     #     side="BUY",
     #     type="LIMIT",
     #     quantity="0.01",
     #     time_in_force="GTC",
-    #     price="4300",
-    #     iceberg_qty="0.005",
+    #     price="2000",
     #     # stop_price="4200",
     #     # new_client_order_id="O-20211120-021300-001-001-1",
-    #     recv_window=5000,
+    #     # recv_window=5000,
     # )
-    # response = await account.cancel_order(
+
+    ############################################################################
+    # CANCEL ORDER
+    ############################################################################
+    # response = await http_account.cancel_order(
     #     symbol="ETHUSDT",
-    #     orig_client_order_id="MNgQDTcfNkz2wUEtExGGj8",
+    #     orig_client_order_id="fxSU6k85PZlwQEDFODh4Ad",
     #     #new_client_order_id=str(uuid.uuid4()),
-    #     recv_window=5000,
+    #     #recv_window=5000,
     # )
     # print(json.dumps(response, indent=4))
+
+    ############################################################################
+    # OPEN ORDERS
+    ############################################################################
+    orders = await http_account.get_open_orders(symbol="ETHUSDT")
+    print(orders)
 
     await client.disconnect()
