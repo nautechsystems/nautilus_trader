@@ -23,6 +23,12 @@ import msgspec
 ################################################################################
 
 
+class BinanceListenKey(msgspec.Struct):
+    """HTTP response from creating a new `Binance` user listen key."""
+
+    listenKey: str
+
+
 class BinanceSpotOrderBook(msgspec.Struct):
     """HTTP response from `Binance` GET /fapi/v1/depth."""
 
@@ -82,6 +88,14 @@ class BinanceTicker(msgspec.Struct):
 ################################################################################
 # WebSocket messages
 ################################################################################
+
+
+class BinanceDataMsgWrapper(msgspec.Struct):
+    """
+    Provides a wrapper for data WebSocket messages from `Binance`.
+    """
+
+    stream: str
 
 
 class BinanceOrderBookData(msgspec.Struct):

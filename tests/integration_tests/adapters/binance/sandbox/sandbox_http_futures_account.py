@@ -58,7 +58,7 @@ async def test_binance_spot_account_http_client():
     #     type="LIMIT",
     #     quantity="0.01",
     #     time_in_force="GTC",
-    #     price="2000",
+    #     price="1000",
     #     # stop_price="4200",
     #     # new_client_order_id="O-20211120-021300-001-001-1",
     #     # recv_window=5000,
@@ -73,6 +73,12 @@ async def test_binance_spot_account_http_client():
     #     #new_client_order_id=str(uuid.uuid4()),
     #     #recv_window=5000,
     # )
+    # print(json.dumps(response, indent=4))
+
+    ############################################################################
+    # CANCEL ALL ORDERs
+    ############################################################################
+    # response = await http_account.cancel_open_orders(symbol="ETHUSDT")
     # print(json.dumps(response, indent=4))
 
     ############################################################################

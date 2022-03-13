@@ -142,3 +142,14 @@ class BinanceFuturesPositionUpdateReason(Enum):
     OPTIONS_PREMIUM_FEE = "OPTIONS_PREMIUM_FEE"
     OPTIONS_SETTLE_PROFIT = "OPTIONS_SETTLE_PROFIT"
     AUTO_EXCHANGE = "AUTO_EXCHANGE"
+
+
+@unique
+class BinanceFuturesEventType(Enum):
+    """Represents a `Binance Futures` event type."""
+
+    LISTEN_KEY_EXPIRED = "listenKeyExpired"
+    MARGIN_CALL = "MARGIN_CALL"
+    ACCOUNT_UPDATE = "ACCOUNT_UPDATE"
+    ORDER_TRADE_UPDATE = "ORDER_TRADE_UPDATE"
+    ACCOUNT_CONFIG_UPDATE = "ACCOUNT_CONFIG_UPDATE"

@@ -26,6 +26,11 @@ from nautilus_trader.adapters.binance.futures.enums import BinanceFuturesOrderTy
 from nautilus_trader.adapters.binance.futures.enums import BinanceFuturesTimeInForce
 
 
+################################################################################
+# HTTP responses
+################################################################################
+
+
 class BinanceExchangeFilter(msgspec.Struct):
     """HTTP response 'inner struct' from `Binance Futures` GET /fapi/v1/exchangeInfo."""
 

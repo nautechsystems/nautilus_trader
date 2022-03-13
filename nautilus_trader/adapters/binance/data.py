@@ -23,11 +23,6 @@ import pandas as pd
 from nautilus_trader.adapters.binance.common.constants import BINANCE_VENUE
 from nautilus_trader.adapters.binance.common.enums import BinanceAccountType
 from nautilus_trader.adapters.binance.common.functions import parse_symbol
-from nautilus_trader.adapters.binance.common.market import BinanceCandlestickMsg
-from nautilus_trader.adapters.binance.common.market import BinanceOrderBookMsg
-from nautilus_trader.adapters.binance.common.market import BinanceQuoteMsg
-from nautilus_trader.adapters.binance.common.market import BinanceTickerMsg
-from nautilus_trader.adapters.binance.common.market import BinanceTradeMsg
 from nautilus_trader.adapters.binance.common.parsing.data import parse_bar_http
 from nautilus_trader.adapters.binance.common.parsing.data import parse_bar_ws
 from nautilus_trader.adapters.binance.common.parsing.data import parse_diff_depth_stream_ws
@@ -35,6 +30,12 @@ from nautilus_trader.adapters.binance.common.parsing.data import parse_quote_tic
 from nautilus_trader.adapters.binance.common.parsing.data import parse_ticker_24hr_ws
 from nautilus_trader.adapters.binance.common.parsing.data import parse_trade_tick_http
 from nautilus_trader.adapters.binance.common.parsing.data import parse_trade_tick_ws
+from nautilus_trader.adapters.binance.common.schemas import BinanceCandlestickMsg
+from nautilus_trader.adapters.binance.common.schemas import BinanceDataMsgWrapper
+from nautilus_trader.adapters.binance.common.schemas import BinanceOrderBookMsg
+from nautilus_trader.adapters.binance.common.schemas import BinanceQuoteMsg
+from nautilus_trader.adapters.binance.common.schemas import BinanceTickerMsg
+from nautilus_trader.adapters.binance.common.schemas import BinanceTradeMsg
 from nautilus_trader.adapters.binance.common.types import BinanceBar
 from nautilus_trader.adapters.binance.common.types import BinanceTicker
 from nautilus_trader.adapters.binance.futures.http.market import BinanceFuturesMarketHttpAPI
@@ -605,17 +606,19 @@ class BinanceDataClient(LiveMarketDataClient):
         # TODO(cs): Uncomment for development
         # self._log.info(str(raw), LogColor.CYAN)
 
-        if raw.__contains__(b"@depth@100ms"):
+        wrapper = msgspec.json.decode(raw, type=BinanceDataMsgWrapper)
+
+        if "@depth@" in wrapper.stream:
             self._handle_book_diff_update(raw)
-        elif raw.__contains__(b"@depth"):
+        elif "@depth" in wrapper.stream:
             self._handle_book_update(raw)
-        elif raw.__contains__(b"@bookTicker"):
+        elif "@bookTicker" in wrapper.stream:
             self._handle_book_ticker(raw)
-        elif raw.__contains__(b"@trade"):
+        elif "@trade" in wrapper.stream:
             self._handle_trade(raw)
-        elif raw.__contains__(b"@ticker"):
+        elif "@ticker" in wrapper.stream:
             self._handle_ticker(raw)
-        elif raw.__contains__(b"@kline"):
+        elif "@kline" in wrapper.stream:
             self._handle_kline(raw)
         else:
             self._log.error(f"Unrecognized websocket message type {orjson.loads(raw)['stream']}")

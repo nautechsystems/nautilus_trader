@@ -16,11 +16,11 @@
 from decimal import Decimal
 from typing import Dict, List, Tuple
 
-from nautilus_trader.adapters.binance.common.market import BinanceCandlestick
-from nautilus_trader.adapters.binance.common.market import BinanceOrderBookData
-from nautilus_trader.adapters.binance.common.market import BinanceQuoteData
-from nautilus_trader.adapters.binance.common.market import BinanceTickerData
-from nautilus_trader.adapters.binance.common.market import BinanceTradeData
+from nautilus_trader.adapters.binance.common.schemas import BinanceCandlestick
+from nautilus_trader.adapters.binance.common.schemas import BinanceOrderBookData
+from nautilus_trader.adapters.binance.common.schemas import BinanceQuoteData
+from nautilus_trader.adapters.binance.common.schemas import BinanceTickerData
+from nautilus_trader.adapters.binance.common.schemas import BinanceTradeData
 from nautilus_trader.adapters.binance.common.types import BinanceBar
 from nautilus_trader.adapters.binance.common.types import BinanceTicker
 from nautilus_trader.core.datetime import millis_to_nanos
