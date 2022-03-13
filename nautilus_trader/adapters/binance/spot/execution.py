@@ -35,8 +35,8 @@ from nautilus_trader.adapters.binance.spot.parsing.execution import parse_order_
 from nautilus_trader.adapters.binance.spot.parsing.execution import parse_order_type
 from nautilus_trader.adapters.binance.spot.parsing.execution import parse_trade_report_http
 from nautilus_trader.adapters.binance.spot.providers import BinanceSpotInstrumentProvider
-from nautilus_trader.adapters.binance.spot.rules import VALID_ORDER_TYPES_SPOT
-from nautilus_trader.adapters.binance.spot.rules import VALID_TIF_SPOT
+from nautilus_trader.adapters.binance.spot.rules import BINANCE_SPOT_VALID_ORDER_TYPES
+from nautilus_trader.adapters.binance.spot.rules import BINANCE_SPOT_VALID_TIF
 from nautilus_trader.adapters.binance.websocket.client import BinanceWebSocketClient
 from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.clock import LiveClock
@@ -122,7 +122,7 @@ class BinanceSpotExecutionClient(LiveExecutionClient):
             venue=BINANCE_VENUE,
             oms_type=OMSType.NETTING,
             instrument_provider=instrument_provider,
-            account_type=AccountType.CASH,  # TODO(cs): MARGIN
+            account_type=AccountType.CASH,
             base_currency=None,
             msgbus=msgbus,
             cache=cache,
@@ -324,7 +324,7 @@ class BinanceSpotExecutionClient(LiveExecutionClient):
         self._log.info(f"Generating OrderStatusReports for {self.id}...")
 
         open_orders = self._cache.orders_open(venue=self.venue)
-        active_symbols: Set[Order] = {
+        active_symbols: Set[str] = {
             format_symbol(o.instrument_id.symbol.value) for o in open_orders
         }
 
@@ -337,6 +337,9 @@ class BinanceSpotExecutionClient(LiveExecutionClient):
             )
             if open_order_msgs:
                 order_msgs.extend(open_order_msgs)
+                # Add to active symbols
+                for o in open_order_msgs:
+                    active_symbols.add(o["symbol"])
 
             for symbol in active_symbols:
                 response = await self._http_account.get_orders(
@@ -407,7 +410,7 @@ class BinanceSpotExecutionClient(LiveExecutionClient):
         self._log.info(f"Generating TradeReports for {self.id}...")
 
         open_orders = self._cache.orders_open(venue=self.venue)
-        active_symbols: Set[Order] = {
+        active_symbols: Set[str] = {
             format_symbol(o.instrument_id.symbol.value) for o in open_orders
         }
 
@@ -490,21 +493,21 @@ class BinanceSpotExecutionClient(LiveExecutionClient):
         order: Order = command.order
 
         # Check order type valid
-        if order.type not in VALID_ORDER_TYPES_SPOT:
+        if order.type not in BINANCE_SPOT_VALID_ORDER_TYPES:
             self._log.error(
                 f"Cannot submit order: {OrderTypeParser.to_str_py(order.type)} "
                 f"orders not supported by the Binance Spot/Margin exchange. "
-                f"Use any of {[OrderTypeParser.to_str_py(t) for t in VALID_ORDER_TYPES_SPOT]}",
+                f"Use any of {[OrderTypeParser.to_str_py(t) for t in BINANCE_SPOT_VALID_ORDER_TYPES]}",
             )
             return
 
         # Check time in force valid
-        if order.time_in_force not in VALID_TIF_SPOT:
+        if order.time_in_force not in BINANCE_SPOT_VALID_TIF:
             self._log.error(
                 f"Cannot submit order: "
                 f"{TimeInForceParser.to_str_py(order.time_in_force)} "
                 f"not supported by the Binance Spot/Margin exchange. "
-                f"Use any of {VALID_TIF_SPOT}.",
+                f"Use any of {BINANCE_SPOT_VALID_TIF}.",
             )
             return
 
@@ -673,7 +676,7 @@ class BinanceSpotExecutionClient(LiveExecutionClient):
                 symbol=format_symbol(command.instrument_id.symbol.value),
             )
         except BinanceError as ex:
-            self._log.error(ex.message)  # type: ignore  # TODO(cs): Improve errors
+            self._log.exception("Cannot cancel open orders: ", ex)
 
     def _get_cached_instrument_id(self, symbol: str) -> InstrumentId:
         # Parse instrument ID

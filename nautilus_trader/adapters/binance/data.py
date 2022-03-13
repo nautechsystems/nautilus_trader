@@ -16,6 +16,7 @@
 import asyncio
 from typing import Any, Dict, List, Optional
 
+import msgspec.json
 import orjson
 import pandas as pd
 
@@ -24,18 +25,26 @@ from nautilus_trader.adapters.binance.common.enums import BinanceAccountType
 from nautilus_trader.adapters.binance.common.functions import parse_symbol
 from nautilus_trader.adapters.binance.common.parsing.data import parse_bar_http
 from nautilus_trader.adapters.binance.common.parsing.data import parse_bar_ws
-from nautilus_trader.adapters.binance.common.parsing.data import parse_book_snapshot
 from nautilus_trader.adapters.binance.common.parsing.data import parse_diff_depth_stream_ws
 from nautilus_trader.adapters.binance.common.parsing.data import parse_quote_tick_ws
+from nautilus_trader.adapters.binance.common.parsing.data import parse_ticker_24hr_ws
 from nautilus_trader.adapters.binance.common.parsing.data import parse_trade_tick_http
 from nautilus_trader.adapters.binance.common.parsing.data import parse_trade_tick_ws
+from nautilus_trader.adapters.binance.common.schemas import BinanceCandlestickMsg
+from nautilus_trader.adapters.binance.common.schemas import BinanceDataMsgWrapper
+from nautilus_trader.adapters.binance.common.schemas import BinanceOrderBookMsg
+from nautilus_trader.adapters.binance.common.schemas import BinanceQuoteMsg
+from nautilus_trader.adapters.binance.common.schemas import BinanceTickerMsg
+from nautilus_trader.adapters.binance.common.schemas import BinanceTradeMsg
 from nautilus_trader.adapters.binance.common.types import BinanceBar
+from nautilus_trader.adapters.binance.common.types import BinanceTicker
 from nautilus_trader.adapters.binance.futures.http.market import BinanceFuturesMarketHttpAPI
+from nautilus_trader.adapters.binance.futures.parsing.data import parse_book_snapshot
 from nautilus_trader.adapters.binance.http.client import BinanceHttpClient
 from nautilus_trader.adapters.binance.http.error import BinanceError
 from nautilus_trader.adapters.binance.spot.http.market import BinanceSpotMarketHttpAPI
-from nautilus_trader.adapters.binance.spot.parsing.data import parse_ticker_24hr_ws
-from nautilus_trader.adapters.binance.spot.types import BinanceSpotTicker
+from nautilus_trader.adapters.binance.spot.parsing.data import parse_spot_book_snapshot
+from nautilus_trader.adapters.binance.spot.schemas.market import BinanceSpotOrderBookMsg
 from nautilus_trader.adapters.binance.websocket.client import BinanceWebSocketClient
 from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.clock import LiveClock
@@ -43,7 +52,6 @@ from nautilus_trader.common.logging import LogColor
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.common.providers import InstrumentProvider
 from nautilus_trader.core.correctness import PyCondition
-from nautilus_trader.core.datetime import millis_to_nanos
 from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.live.data_client import LiveMarketDataClient
 from nautilus_trader.model.c_enums.bar_aggregation import BarAggregationParser
@@ -473,7 +481,8 @@ class BinanceDataClient(LiveMarketDataClient):
         correlation_id: UUID4,
     ) -> None:
         response: List[Dict[str, Any]] = await self._http_market.trades(
-            instrument_id.symbol.value, limit
+            instrument_id.symbol.value,
+            limit,
         )
 
         ticks: List[TradeTick] = [
@@ -594,113 +603,119 @@ class BinanceDataClient(LiveMarketDataClient):
         return instrument_id
 
     def _handle_ws_message(self, raw: bytes):
-        msg: Dict[str, Any] = orjson.loads(raw)
-        data: Dict[str, Any] = msg.get("data")
-
         # TODO(cs): Uncomment for development
-        # self._log.info(str(msg), LogColor.GREEN)
+        # self._log.info(str(raw), LogColor.CYAN)
 
-        msg_type: str = data.get("e")
-        if msg_type is None:
-            self._handle_market_update(msg, data)
-            return
+        wrapper = msgspec.json.decode(raw, type=BinanceDataMsgWrapper)
 
-        instrument_id: InstrumentId = self._get_cached_instrument_id(data["s"])
-
-        if msg_type == "depthUpdate":
-            self._handle_depth_update(instrument_id, data)
-        elif msg_type == "bookTicker":
-            self._handle_quote_tick(instrument_id, data)
-        elif msg_type == "24hrTicker":
-            self._handle_ticker_24hr(instrument_id, data)
-        elif msg_type == "trade":
-            self._handle_trade(instrument_id, data)
-        elif msg_type == "kline":
-            self._handle_kline(instrument_id, data)
+        if "@depth@" in wrapper.stream:
+            self._handle_book_diff_update(raw)
+        elif "@depth" in wrapper.stream:
+            self._handle_book_update(raw)
+        elif "@bookTicker" in wrapper.stream:
+            self._handle_book_ticker(raw)
+        elif "@trade" in wrapper.stream:
+            self._handle_trade(raw)
+        elif "@ticker" in wrapper.stream:
+            self._handle_ticker(raw)
+        elif "@kline" in wrapper.stream:
+            self._handle_kline(raw)
         else:
-            self._log.error(f"Unrecognized websocket message type, was {msg_type}")
+            self._log.error(f"Unrecognized websocket message type {orjson.loads(raw)['stream']}")
             return
 
-    def _handle_market_update(self, msg: Dict[str, Any], data: Dict[str, Any]):
-        last_update_id: int = data.get("lastUpdateId")
-        if last_update_id is not None:
-            self._handle_book_snapshot(
-                data=data,
-                last_update_id=last_update_id,
-                symbol=msg["stream"].partition("@")[0].upper(),
-            )
-        else:
-            instrument_id: InstrumentId = self._get_cached_instrument_id(data["s"])
-            self._handle_quote_tick(instrument_id, data)
-
-    def _handle_book_snapshot(
-        self,
-        data: Dict[str, Any],
-        symbol: str,
-        last_update_id: int,
-    ):
-        instrument_id = InstrumentId(
-            symbol=Symbol(parse_symbol(symbol, account_type=self._binance_account_type)),
-            venue=BINANCE_VENUE,
-        )
-        book_snapshot: OrderBookSnapshot = parse_book_snapshot(
-            instrument_id=instrument_id,
-            msg=data,
-            update_id=last_update_id,
-            ts_init=self._clock.timestamp_ns(),
-        )
-        book_buffer: List[OrderBookData] = self._book_buffer.get(instrument_id)
-        if book_buffer is not None:
-            book_buffer.append(book_snapshot)
-            return
-        self._handle_data(book_snapshot)
-
-    def _handle_quote_tick(self, instrument_id: InstrumentId, data: Dict[str, Any]):
-        quote_tick: QuoteTick = parse_quote_tick_ws(
-            instrument_id=instrument_id,
-            msg=data,
-            ts_init=self._clock.timestamp_ns(),
-        )
-        self._handle_data(quote_tick)
-
-    def _handle_depth_update(self, instrument_id: InstrumentId, data: Dict[str, Any]):
+    def _handle_book_diff_update(self, raw: bytes):
+        msg: BinanceOrderBookMsg = msgspec.json.decode(raw, type=BinanceOrderBookMsg)
+        instrument_id: InstrumentId = self._get_cached_instrument_id(msg.data.s)
         book_deltas: OrderBookDeltas = parse_diff_depth_stream_ws(
             instrument_id=instrument_id,
-            msg=data,
+            data=msg.data,
             ts_init=self._clock.timestamp_ns(),
         )
         book_buffer: List[OrderBookData] = self._book_buffer.get(instrument_id)
         if book_buffer is not None:
             book_buffer.append(book_deltas)
-            return
-        self._handle_data(book_deltas)
+        else:
+            self._handle_data(book_deltas)
 
-    def _handle_ticker_24hr(self, instrument_id: InstrumentId, data: Dict[str, Any]):
-        ticker: BinanceSpotTicker = parse_ticker_24hr_ws(
+    def _handle_book_update(self, raw: bytes):
+        if self._binance_account_type.is_futures:
+            self._handle_book_update(raw)
+        else:  # Spot/Margin
+            self._handle_book_update_spot(raw)
+
+    def _handle_book_update_futures(self, raw: bytes):
+        msg: BinanceOrderBookMsg = msgspec.json.decode(raw, type=BinanceOrderBookMsg)
+        instrument_id: InstrumentId = self._get_cached_instrument_id(msg.data.s)
+        book_snapshot: OrderBookSnapshot = parse_book_snapshot(
             instrument_id=instrument_id,
-            msg=data,
+            data=msg.data,
             ts_init=self._clock.timestamp_ns(),
         )
-        self._handle_data(ticker)
 
-    def _handle_trade(self, instrument_id: InstrumentId, data: Dict[str, Any]):
-        # raw = orjson.dumps(data)
-        # msg = msgspec.json.decode(raw, type=BinanceSpotTradeMsg)
+        # Check if book buffer active
+        book_buffer: List[OrderBookData] = self._book_buffer.get(instrument_id)
+        if book_buffer is not None:
+            book_buffer.append(book_snapshot)
+        else:
+            self._handle_data(book_snapshot)
+
+    def _handle_book_update_spot(self, raw: bytes):
+        msg: BinanceSpotOrderBookMsg = msgspec.json.decode(raw, type=BinanceSpotOrderBookMsg)
+        instrument_id: InstrumentId = self._get_cached_instrument_id(
+            msg.stream.partition("@")[0].upper()
+        )
+        book_snapshot: OrderBookSnapshot = parse_spot_book_snapshot(
+            instrument_id=instrument_id,
+            data=msg.data,
+            ts_init=self._clock.timestamp_ns(),
+        )
+        # Check if book buffer active
+        book_buffer: List[OrderBookData] = self._book_buffer.get(instrument_id)
+        if book_buffer is not None:
+            book_buffer.append(book_snapshot)
+        else:
+            self._handle_data(book_snapshot)
+
+    def _handle_book_ticker(self, raw: bytes):
+        msg: BinanceQuoteMsg = msgspec.json.decode(raw, type=BinanceQuoteMsg)
+        instrument_id: InstrumentId = self._get_cached_instrument_id(msg.data.s)
+        quote_tick: QuoteTick = parse_quote_tick_ws(
+            instrument_id=instrument_id,
+            data=msg.data,
+            ts_init=self._clock.timestamp_ns(),
+        )
+        self._handle_data(quote_tick)
+
+    def _handle_trade(self, raw: bytes):
+        msg: BinanceTradeMsg = msgspec.json.decode(raw, type=BinanceTradeMsg)
+        instrument_id: InstrumentId = self._get_cached_instrument_id(msg.data.s)
         trade_tick: TradeTick = parse_trade_tick_ws(
             instrument_id=instrument_id,
-            msg=data,
+            data=msg.data,
             ts_init=self._clock.timestamp_ns(),
         )
         self._handle_data(trade_tick)
 
-    def _handle_kline(self, instrument_id: InstrumentId, data: Dict[str, Any]):
-        kline = data["k"]
-        if data["E"] < kline["T"]:
-            return  # Bar has not closed yet
+    def _handle_ticker(self, raw: bytes):
+        msg: BinanceTickerMsg = msgspec.json.decode(raw, type=BinanceTickerMsg)
+        instrument_id: InstrumentId = self._get_cached_instrument_id(msg.data.s)
+        ticker: BinanceTicker = parse_ticker_24hr_ws(
+            instrument_id=instrument_id,
+            data=msg.data,
+            ts_init=self._clock.timestamp_ns(),
+        )
+        self._handle_data(ticker)
+
+    def _handle_kline(self, raw: bytes):
+        msg: BinanceCandlestickMsg = msgspec.json.decode(raw, type=BinanceCandlestickMsg)
+        if not msg.data.k.x:
+            return  # Not closed yet
+
+        instrument_id: InstrumentId = self._get_cached_instrument_id(msg.data.s)
         bar: BinanceBar = parse_bar_ws(
             instrument_id=instrument_id,
-            kline=kline,
-            ts_event=millis_to_nanos(data["E"]),
+            data=msg.data.k,
             ts_init=self._clock.timestamp_ns(),
         )
         self._handle_data(bar)

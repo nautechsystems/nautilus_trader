@@ -479,6 +479,9 @@ cdef class PositionId(Identifier):
     def __init__(self, str value):
         super().__init__(value)
 
+    cdef bint is_virtual_c(self) except *:
+        return self.value.startswith("P-")
+
 
 cdef class TradeId(Identifier):
     """

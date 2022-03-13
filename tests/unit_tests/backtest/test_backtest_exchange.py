@@ -1681,12 +1681,13 @@ class TestSimulatedExchange:
         self.exchange.process(0)
 
         # Assert
+        # TODO(cs): Current behaviour erases previous position from cache
         position_open = self.cache.positions_open()[0]
         position_closed = self.cache.positions_closed()[0]
         assert position_open.side == PositionSide.SHORT
         assert position_open.quantity == Quantity.from_int(50000)
-        assert position_closed.realized_pnl == Money(999620, JPY)
-        assert position_closed.commissions() == [Money(380, JPY)]
+        assert position_closed.realized_pnl == Money(-100, JPY)
+        assert position_closed.commissions() == [Money(100, JPY)]
         assert self.exchange.get_account().balance_total(USD) == Money(1016655.63, USD)
 
     def test_reduce_only_market_order_does_not_open_position_on_flip_scenario(self):

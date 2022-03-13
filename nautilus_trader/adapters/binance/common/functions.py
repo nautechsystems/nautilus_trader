@@ -21,7 +21,7 @@ from nautilus_trader.adapters.binance.common.enums import BinanceAccountType
 
 def parse_symbol(symbol: str, account_type: BinanceAccountType):
     symbol = symbol.upper()
-    if account_type in (account_type.SPOT, account_type.MARGIN):
+    if account_type.is_spot or account_type.is_margin:
         return symbol
 
     # Parse Futures symbol

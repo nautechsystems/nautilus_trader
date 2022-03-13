@@ -20,7 +20,10 @@ import orjson
 
 from nautilus_trader.adapters.binance.common.enums import BinanceAccountType
 from nautilus_trader.adapters.binance.common.functions import format_symbol
+from nautilus_trader.adapters.binance.futures.schemas.account import BinanceFuturesAccountInfo
+from nautilus_trader.adapters.binance.futures.schemas.account import BinanceFuturesAccountTrade
 from nautilus_trader.adapters.binance.futures.schemas.account import BinanceFuturesOrder
+from nautilus_trader.adapters.binance.futures.schemas.account import BinanceFuturesPositionRisk
 from nautilus_trader.adapters.binance.http.client import BinanceHttpClient
 from nautilus_trader.adapters.binance.http.enums import NewOrderRespType
 
@@ -52,7 +55,10 @@ class BinanceFuturesAccountHttpAPI:
             raise RuntimeError(f"invalid Binance Futures account type, was {account_type}")
 
         # Decoders
-        self.decoder_futures_order = msgspec.json.Decoder(List[BinanceFuturesOrder])
+        self._decoder_account = msgspec.json.Decoder(BinanceFuturesAccountInfo)
+        self._decoder_order = msgspec.json.Decoder(List[BinanceFuturesOrder])
+        self._decoder_trade = msgspec.json.Decoder(List[BinanceFuturesAccountTrade])
+        self._decoder_position = msgspec.json.Decoder(List[BinanceFuturesPositionRisk])
 
     async def change_position_mode(
         self,
@@ -425,7 +431,7 @@ class BinanceFuturesAccountHttpAPI:
             payload=payload,
         )
 
-        return self.decoder_futures_order.decode(raw)
+        return self._decoder_order.decode(raw)
 
     async def get_orders(
         self,
@@ -483,9 +489,9 @@ class BinanceFuturesAccountHttpAPI:
             payload=payload,
         )
 
-        return self.decoder_futures_order.decode(raw)
+        return self._decoder_order.decode(raw)
 
-    async def account(self, recv_window: Optional[int] = None) -> Dict[str, Any]:
+    async def account(self, recv_window: Optional[int] = None) -> BinanceFuturesAccountInfo:
         """
         Get current account information.
 
@@ -499,7 +505,7 @@ class BinanceFuturesAccountHttpAPI:
 
         Returns
         -------
-        dict[str, Any]
+        BinanceFuturesAccountInfo
 
         References
         ----------
@@ -516,7 +522,7 @@ class BinanceFuturesAccountHttpAPI:
             payload=payload,
         )
 
-        return orjson.loads(raw)
+        return self._decoder_account.decode(raw)
 
     async def get_account_trades(
         self,
@@ -527,7 +533,7 @@ class BinanceFuturesAccountHttpAPI:
         end_time: Optional[int] = None,
         limit: Optional[int] = None,
         recv_window: Optional[int] = None,
-    ) -> List[Dict[str, Any]]:
+    ) -> List[BinanceFuturesAccountTrade]:
         """
         Get trades for a specific account and symbol.
 
@@ -552,7 +558,7 @@ class BinanceFuturesAccountHttpAPI:
 
         Returns
         -------
-        list[dict[str, Any]]
+        List[BinanceFuturesAccountTrade]
 
         References
         ----------
@@ -579,19 +585,19 @@ class BinanceFuturesAccountHttpAPI:
             payload=payload,
         )
 
-        return orjson.loads(raw)
+        return self._decoder_trade.decode(raw)
 
     async def get_position_risk(
         self,
         symbol: Optional[str] = None,
         recv_window: Optional[int] = None,
-    ):
+    ) -> List[BinanceFuturesPositionRisk]:
         """
         Get current position information.
 
         Position Information V2 (USER_DATA)**
 
-        ``GET /fapi/v2/positionRisk``
+        `GET /fapi/v2/positionRisk`
 
         Parameters
         ----------
@@ -599,6 +605,10 @@ class BinanceFuturesAccountHttpAPI:
             The trading pair. If None then queries for all symbols.
         recv_window : int, optional
             The acceptable receive window for the response.
+
+        Returns
+        -------
+        List[BinanceFuturesPositionRisk]
 
         References
         ----------
@@ -617,7 +627,7 @@ class BinanceFuturesAccountHttpAPI:
             payload=payload,
         )
 
-        return orjson.loads(raw)
+        return self._decoder_position.decode(raw)
 
     async def get_order_rate_limit(self, recv_window: Optional[int] = None) -> Dict[str, Any]:
         """

@@ -1,3 +1,20 @@
+# NautilusTrader 1.139.1 Beta
+
+## Release Notes
+
+Released on 13th March 2022 (UTC).
+
+This is a patch release which fixes a moderate severity security vulnerability in
+pillow < 9.0.1:
+
+    If the path to the temporary directory on Linux or macOS contained a space, 
+    this would break removal of the temporary image file after im.show() (and related actions), 
+    and potentially remove an unrelated file. This been present since PIL.
+
+This release upgrades to pillow 9.0.1.
+
+---
+
 # NautilusTrader 1.139.0 Beta
 
 ## Release Notes

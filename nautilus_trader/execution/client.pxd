@@ -49,7 +49,6 @@ from nautilus_trader.model.objects cimport Quantity
 
 cdef class ExecutionClient(Component):
     cdef readonly Cache _cache
-    cdef readonly Account _account
 
     cdef readonly OMSType oms_type
     """The venues order management system type.\n\n:returns: `OMSType`"""

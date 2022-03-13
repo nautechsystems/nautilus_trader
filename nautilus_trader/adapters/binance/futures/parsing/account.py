@@ -14,8 +14,9 @@
 # -------------------------------------------------------------------------------------------------
 
 from decimal import Decimal
-from typing import Dict, List, Tuple
+from typing import List
 
+from nautilus_trader.adapters.binance.futures.schemas.account import BinanceFuturesAssetInfo
 from nautilus_trader.adapters.binance.futures.schemas.user import BinanceFuturesBalance
 from nautilus_trader.model.currency import Currency
 from nautilus_trader.model.objects import AccountBalance
@@ -23,8 +24,22 @@ from nautilus_trader.model.objects import MarginBalance
 from nautilus_trader.model.objects import Money
 
 
-def parse_account_balances_http(raw_balances: List[Dict[str, str]]) -> List[AccountBalance]:
-    return parse_balances(raw_balances, "asset", "availableBalance", "initialMargin", "maintMargin")
+def parse_account_balances_http(assets: List[BinanceFuturesAssetInfo]) -> List[AccountBalance]:
+    balances: List[AccountBalance] = []
+    for a in assets:
+        currency = Currency.from_str(a.asset)
+        total = Decimal(a.walletBalance)
+        locked = Decimal(a.initialMargin) + Decimal(a.maintMargin)
+        free = total - locked
+
+        balance = AccountBalance(
+            total=Money(total, currency),
+            locked=Money(locked, currency),
+            free=Money(free, currency),
+        )
+        balances.append(balance)
+
+    return balances
 
 
 def parse_account_balances_ws(raw_balances: List[BinanceFuturesBalance]) -> List[AccountBalance]:
@@ -45,56 +60,14 @@ def parse_account_balances_ws(raw_balances: List[BinanceFuturesBalance]) -> List
     return balances
 
 
-def parse_account_margins_http(raw_balances: List[Dict[str, str]]) -> List[MarginBalance]:
-    return parse_margins(raw_balances, "asset", "initialMargin", "maintMargin")
-
-
-def parse_balances(
-    raw_balances: List[Dict[str, str]],
-    asset_key: str,
-    free_key: str,
-    margin_init_key: str,
-    margin_maint_key: str,
-) -> List[AccountBalance]:
-    parsed_balances: Dict[Currency, Tuple[Decimal, Decimal, Decimal]] = {}
-    for b in raw_balances:
-        currency = Currency.from_str(b[asset_key])
-        free = Decimal(b[free_key])
-        locked = Decimal(b[margin_init_key]) + Decimal(b[margin_maint_key])
-        total: Decimal = free + locked
-        parsed_balances[currency] = (total, locked, free)
-
-    balances: List[AccountBalance] = [
-        AccountBalance(
-            total=Money(values[0], currency),
-            locked=Money(values[1], currency),
-            free=Money(values[2], currency),
+def parse_account_margins_http(assets: List[BinanceFuturesAssetInfo]) -> List[MarginBalance]:
+    margins: List[MarginBalance] = []
+    for a in assets:
+        currency: Currency = Currency.from_str(a.asset)
+        margin = MarginBalance(
+            initial=Money(Decimal(a.initialMargin), currency),
+            maintenance=Money(Decimal(a.maintMargin), currency),
         )
-        for currency, values in parsed_balances.items()
-    ]
-
-    return balances
-
-
-def parse_margins(
-    raw_balances: List[Dict[str, str]],
-    asset_key: str,
-    margin_init_key: str,
-    margin_maint_key: str,
-) -> List[MarginBalance]:
-    parsed_margins: Dict[Currency, Tuple[Decimal, Decimal]] = {}
-    for b in raw_balances:
-        currency = Currency.from_str(b[asset_key])
-        initial = Decimal(b[margin_init_key])
-        maintenance = Decimal(b[margin_maint_key])
-        parsed_margins[currency] = (initial, maintenance)
-
-    margins: List[MarginBalance] = [
-        MarginBalance(
-            initial=Money(values[0], currency),
-            maintenance=Money(values[1], currency),
-        )
-        for currency, values in parsed_margins.items()
-    ]
+        margins.append(margin)
 
     return margins
