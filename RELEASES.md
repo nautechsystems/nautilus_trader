@@ -1,4 +1,4 @@
-# NautilusTrader 1.139.1 Beta
+# NautilusTrader 1.140.0 Beta
 
 ## Release Notes
 
@@ -12,6 +12,8 @@ pillow < 9.0.1:
     and potentially remove an unrelated file. This been present since PIL.
 
 This release upgrades to pillow 9.0.1.
+
+Note the minor version was incremented in error.
 
 ---
 
