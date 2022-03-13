@@ -14,13 +14,11 @@
 # -------------------------------------------------------------------------------------------------
 
 import asyncio
-import json
 from datetime import datetime
 from decimal import Decimal
 from typing import Dict, List, Optional, Set
 
 import msgspec
-import orjson
 
 from nautilus_trader.accounting.accounts.margin import MarginAccount
 from nautilus_trader.adapters.binance.common.constants import BINANCE_VENUE
@@ -861,7 +859,7 @@ class BinanceFuturesExecutionClient(LiveExecutionClient):
 
     def _handle_user_ws_message(self, raw: bytes):
         # TODO(cs): Uncomment for development
-        self._log.info(str(json.dumps(orjson.loads(raw), indent=4)), color=LogColor.MAGENTA)
+        # self._log.info(str(json.dumps(orjson.loads(raw), indent=4)), color=LogColor.MAGENTA)
 
         wrapper = msgspec.json.decode(raw, type=BinanceFuturesUserMsgWrapper)
 
