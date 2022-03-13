@@ -239,7 +239,7 @@ class TestBinanceFactories:
                     us=False,
                     testnet=True,
                 ),
-                "wss://testnet.binance.vision/ws",
+                "wss://testnet.binance.vision",
             ],
             [
                 BinanceExecClientConfig(
@@ -247,7 +247,7 @@ class TestBinanceFactories:
                     us=False,
                     testnet=True,
                 ),
-                "wss://testnet.binance.vision/ws",
+                "wss://testnet.binance.vision",
             ],
             [
                 BinanceExecClientConfig(

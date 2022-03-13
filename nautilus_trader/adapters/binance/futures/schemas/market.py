@@ -26,6 +26,11 @@ from nautilus_trader.adapters.binance.futures.enums import BinanceFuturesOrderTy
 from nautilus_trader.adapters.binance.futures.enums import BinanceFuturesTimeInForce
 
 
+################################################################################
+# HTTP responses
+################################################################################
+
+
 class BinanceExchangeFilter(msgspec.Struct):
     """HTTP response 'inner struct' from `Binance Futures` GET /fapi/v1/exchangeInfo."""
 
@@ -115,3 +120,24 @@ class BinanceFuturesExchangeInfo(msgspec.Struct):
     exchangeFilters: List[BinanceExchangeFilter]
     assets: List[BinanceFuturesAsset]
     symbols: List[BinanceFuturesSymbolInfo]
+
+
+class BinanceFuturesMarkFunding(msgspec.Struct):
+    """HTTP response from `Binance Future` GET /fapi/v1/premiumIndex."""
+
+    symbol: str
+    markPrice: str  # Mark price
+    indexPrice: str  # Index price
+    estimatedSettlePrice: str  # Estimated Settle Price (only useful in the last hour before the settlement starts)
+    lastFundingRate: str  # This is the lasted funding rate
+    nextFundingTime: int
+    interestRate: str
+    time: int
+
+
+class BinanceFuturesFundRate(msgspec.Struct):
+    """HTTP response from `Binance Future` GET /fapi/v1/fundingRate."""
+
+    symbol: str
+    fundingRate: str
+    fundingTime: str

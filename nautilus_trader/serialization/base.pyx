@@ -15,6 +15,8 @@
 
 from typing import Any, Callable, Dict
 
+from nautilus_trader.adapters.binance.common.types import BinanceBar
+from nautilus_trader.adapters.binance.common.types import BinanceTicker
 from nautilus_trader.adapters.ftx.core.types import FTXTicker
 
 from nautilus_trader.common.events.risk cimport TradingStateChanged
@@ -101,6 +103,8 @@ _OBJECT_TO_DICT_MAP: Dict[str, Callable[[None], Dict]] = {
     VenueStatusUpdate.__name__: VenueStatusUpdate.to_dict_c,
     InstrumentClosePrice.__name__: InstrumentClosePrice.to_dict_c,
     FTXTicker.__name__: FTXTicker.to_dict,
+    BinanceBar.__name__: BinanceBar.to_dict,
+    BinanceTicker.__name__: BinanceTicker.to_dict,
 }
 
 
@@ -146,6 +150,8 @@ _OBJECT_FROM_DICT_MAP: Dict[str, Callable[[Dict], Any]] = {
     VenueStatusUpdate.__name__: VenueStatusUpdate.from_dict_c,
     InstrumentClosePrice.__name__: InstrumentClosePrice.from_dict_c,
     FTXTicker.__name__: FTXTicker.from_dict,
+    BinanceBar.__name__: BinanceBar.from_dict,
+    BinanceTicker.__name__: BinanceTicker.from_dict,
 }
 
 

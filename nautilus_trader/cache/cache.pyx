@@ -1231,11 +1231,11 @@ cdef class Cache(CacheFacade):
         Raises
         ------
         ValueError
-            If `oms_type` is ``HEDGING`` and `position.id` is already contained in the cache.
+            If `oms_type` is ``HEDGING`` and a virtual `position.id` is already contained in the cache.
 
         """
         Condition.not_none(position, "position")
-        if oms_type == OMSType.HEDGING:
+        if oms_type == OMSType.HEDGING and position.id.is_virtual_c():
             Condition.not_in(position.id, self._positions, "position.id", "_positions")
             Condition.not_in(position.id, self._index_positions, "position.id", "_index_positions")
             Condition.not_in(position.id, self._index_positions_open, "position.id", "_index_positions_open")
