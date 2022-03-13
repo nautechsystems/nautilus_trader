@@ -272,8 +272,8 @@ jobs:
           asset_content_type: application/wheel
 
       # Publish
-      - name: Publish to production PyPI
-        env:
-          POETRY_HTTP_BASIC_PYPI_USERNAME: ${{ secrets.PYPI_USERNAME }}
-          POETRY_HTTP_BASIC_PYPI_PASSWORD: ${{ secrets.PYPI_TOKEN }}
-        run: poetry publish
+#      - name: Publish to production PyPI
+#        env:
+#          POETRY_HTTP_BASIC_PYPI_USERNAME: ${{ secrets.PYPI_USERNAME }}
+#          POETRY_HTTP_BASIC_PYPI_PASSWORD: ${{ secrets.PYPI_TOKEN }}
+#        run: poetry publish
