@@ -16,6 +16,7 @@
 import orjson
 import pyarrow as pa
 
+from nautilus_trader.adapters.binance.common.types import BinanceBar
 from nautilus_trader.adapters.ftx.core.types import FTXTicker
 from nautilus_trader.common.events.risk import TradingStateChanged
 from nautilus_trader.common.events.system import ComponentStateChanged
@@ -675,6 +676,23 @@ NAUTILUS_PARQUET_SCHEMA = {
             "bid_size": pa.string(),
             "ask_size": pa.string(),
             "last": pa.string(),
+            "ts_event": pa.int64(),
+            "ts_init": pa.int64(),
+        }
+    ),
+    BinanceBar: pa.schema(
+        {
+            "bar_type": pa.dictionary(pa.int8(), pa.string()),
+            "instrument_id": pa.dictionary(pa.int64(), pa.string()),
+            "open": pa.string(),
+            "high": pa.string(),
+            "low": pa.string(),
+            "close": pa.string(),
+            "volume": pa.string(),
+            "quote_volume": pa.string(),
+            "count": pa.int32(),
+            "taker_buy_base_volume": pa.string(),
+            "taker_buy_quote_volume": pa.string(),
             "ts_event": pa.int64(),
             "ts_init": pa.int64(),
         }
