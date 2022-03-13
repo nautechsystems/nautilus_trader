@@ -209,7 +209,7 @@ class BacktestNode:
 
             except Exception as e:
                 ret = {"status": STATUS_FAIL}
-                logger_adapter.error(f"Bankruptcy : {e} ")
+                logger_adapter.error(f"Error : {e} ")
             return ret
 
         trials = Trials()
