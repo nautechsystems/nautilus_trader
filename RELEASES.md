@@ -1,14 +1,21 @@
-# NautilusTrader 1.139.2 Beta
+# NautilusTrader 1.141.0 Beta
 
-## Release Notes
+Released on TBD (UTC).
+TODO(cs): Update version badge
+TODO(cs): Ensure versions are correct
 
-Released on 13th March 2022 (UTC).
+### Breaking Changes
+None
 
-This is a patch release which fixes the versioning of the previous release.
+### Enhancements
+None
+
+### Fixes
+None
 
 ---
 
-# NautilusTrader 1.139.1 Beta
+# NautilusTrader 1.140.0 Beta
 
 ## Release Notes
 
@@ -22,6 +29,8 @@ pillow < 9.0.1:
     and potentially remove an unrelated file. This been present since PIL.
 
 This release upgrades to pillow 9.0.1.
+
+Note the minor version was incremented in error.
 
 ---
 
