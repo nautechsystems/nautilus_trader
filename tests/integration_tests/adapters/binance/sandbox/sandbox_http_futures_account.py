@@ -54,7 +54,7 @@ async def test_binance_spot_account_http_client():
     ############################################################################
     # response = await http_account.new_order(
     #     symbol="ETHUSDT",
-    #     side="SELL",
+    #     side="BUY",
     #     type="MARKET",
     #     quantity="0.02",
     #     # stop_price="4200",

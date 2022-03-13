@@ -667,7 +667,7 @@ cdef class ExecutionEngine(Component):
             )
             return
 
-        cdef Account account = self._cache.account_for_venue(fill.instrument_id.venue)
+        cdef Account account = self._cache.account(fill.account_id)
         if account is None:
             self._log.error(
                 f"Cannot handle order fill: "
@@ -688,7 +688,7 @@ cdef class ExecutionEngine(Component):
         if position is None:
             self._open_position(instrument, fill, oms_type)
         else:
-            self._update_position(position, fill, oms_type)
+            self._update_position(instrument, position, fill, oms_type)
 
     cdef void _open_position(self, Instrument instrument, OrderFilled fill, OMSType oms_type) except *:
         cdef Position position = Position(instrument, fill)
@@ -706,14 +706,14 @@ cdef class ExecutionEngine(Component):
             msg=event,
         )
 
-    cdef void _update_position(self, Position position, OrderFilled fill, OMSType oms_type) except *:
+    cdef void _update_position(self, Instrument instrument, Position position, OrderFilled fill, OMSType oms_type) except *:
         # Check for flip (last_qty guaranteed to be positive)
         if (
             oms_type == OMSType.HEDGING
             and position.is_opposite_side(fill.order_side)
             and fill.last_qty > position.quantity
         ):
-            self._flip_position(position, fill, oms_type)
+            self._flip_position(instrument, position, fill, oms_type)
             return  # Handled in flip
 
         try:
@@ -746,7 +746,7 @@ cdef class ExecutionEngine(Component):
             msg=event,
         )
 
-    cdef void _flip_position(self, Position position, OrderFilled fill, OMSType oms_type) except *:
+    cdef void _flip_position(self, Instrument instrument, Position position, OrderFilled fill, OMSType oms_type) except *:
         cdef Quantity difference = None
         if position.side == PositionSide.LONG:
             difference = Quantity(fill.last_qty - position.quantity, position.size_precision)
@@ -785,11 +785,11 @@ cdef class ExecutionEngine(Component):
             )
 
             # Close original position
-            self._update_position(position, fill_split1, oms_type)
+            self._update_position(instrument, position, fill_split1, oms_type)
 
         cdef PositionId position_id_flip = fill.position_id
-        if oms_type == OMSType.HEDGING:
-            # Generate new position ID for flipped position
+        if oms_type == OMSType.HEDGING and fill.position_id.is_virtual_c():
+            # Generate new position ID for flipped virtual position
             position_id_flip = self._pos_id_generator.generate(
                 strategy_id=fill.strategy_id,
                 flipped=True,
@@ -817,5 +817,9 @@ cdef class ExecutionEngine(Component):
             ts_init=fill.ts_init,
         )
 
+        if oms_type == OMSType.HEDGING and fill.position_id.is_virtual_c():
+            self._log.warning(f"Closing position {fill_split1}.")
+            self._log.warning(f"Flipping position {fill_split2}.")
+
         # Open flipped position
-        self._handle_order_fill(fill_split2, oms_type)
+        self._open_position(instrument, fill_split2, oms_type)
