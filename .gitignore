@@ -57,3 +57,4 @@ nautilus_trader/examples/strategies/generic_strat.py
 examples/backtest/hyperopt_kline.py
 tests/test_kit/data/btcusdt_15m_um_data.csv
 nautilus_trader/examples/strategies/ema_cross_bracket_mod.py
+binance-public-data
