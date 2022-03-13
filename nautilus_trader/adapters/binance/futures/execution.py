@@ -44,6 +44,7 @@ from nautilus_trader.adapters.binance.futures.parsing.execution import parse_ord
 from nautilus_trader.adapters.binance.futures.parsing.execution import parse_position_report_http
 from nautilus_trader.adapters.binance.futures.parsing.execution import parse_time_in_force
 from nautilus_trader.adapters.binance.futures.parsing.execution import parse_trade_report_http
+from nautilus_trader.adapters.binance.futures.parsing.execution import parse_trigger_type
 from nautilus_trader.adapters.binance.futures.providers import BinanceFuturesInstrumentProvider
 from nautilus_trader.adapters.binance.futures.rules import BINANCE_FUTURES_VALID_ORDER_TYPES
 from nautilus_trader.adapters.binance.futures.rules import BINANCE_FUTURES_VALID_TIF
@@ -768,7 +769,7 @@ class BinanceFuturesExecutionClient(LiveExecutionClient):
             time_in_force=TimeInForceParser.to_str_py(order.time_in_force),
             quantity=str(order.quantity),
             activation_price=str(order.trigger_price),
-            callback_rate=str(order.trailing_offset),
+            callback_rate=str(order.trailing_offset / 100),
             working_type=working_type,
             reduce_only=order.is_reduce_only,  # Cannot be sent with Hedge-Mode or closePosition
             new_client_order_id=order.client_order_id.value,
@@ -971,6 +972,10 @@ class BinanceFuturesExecutionClient(LiveExecutionClient):
             time_in_force=parse_time_in_force(data.f),
             order_status=OrderStatus.ACCEPTED,
             price=Price.from_str(data.p) if data.p is not None else None,
+            trigger_price=Price.from_str(data.sp) if data.sp is not None else None,
+            trigger_type=parse_trigger_type(data.wt),
+            trailing_offset=Decimal(data.cr) * 100 if data.cr is not None else None,
+            offset_type=TrailingOffsetType.BASIS_POINTS,
             quantity=Quantity.from_str(data.q),
             filled_qty=Quantity.from_str(data.z),
             avg_px=None,

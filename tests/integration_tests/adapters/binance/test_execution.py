@@ -802,7 +802,7 @@ class TestFuturesBinanceExecutionClient:
             instrument_id=ETHUSDT_PERP_BINANCE.id,
             order_side=OrderSide.SELL,
             quantity=Quantity.from_int(10),
-            trailing_offset=Decimal("0.1"),
+            trailing_offset=Decimal(100),
             offset_type=TrailingOffsetType.BASIS_POINTS,
             trigger_price=Price.from_str("10000.00"),
             trigger_type=TriggerType.MARK,
@@ -835,7 +835,7 @@ class TestFuturesBinanceExecutionClient:
         assert request[2]["reduceOnly"] == "true"
         assert request[2]["newClientOrderId"] is not None
         assert request[2]["activationPrice"] == "10000.00"
-        assert request[2]["callbackRate"] == "0.1"
+        assert request[2]["callbackRate"] == "1"
         assert request[2]["workingType"] == "MARK_PRICE"
         assert request[2]["recvWindow"] == "5000"
         assert request[2]["signature"] is not None

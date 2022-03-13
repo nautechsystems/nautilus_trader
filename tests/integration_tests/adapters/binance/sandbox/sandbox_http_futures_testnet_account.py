@@ -14,7 +14,6 @@
 # -------------------------------------------------------------------------------------------------
 
 import asyncio
-import json
 import os
 
 import pytest
@@ -48,7 +47,7 @@ async def test_binance_spot_account_http_client():
 
     info = await http_account.account()
     print(info)
-    response = await http_account.get_account_trades(symbol="ETHUSDT")
+    trades = await http_account.get_account_trades(symbol="ETHUSDT")
 
     ############################################################################
     # NEW ORDER
@@ -94,6 +93,6 @@ async def test_binance_spot_account_http_client():
     #     recv_window=5000,
     # )
 
-    print(json.dumps(response, indent=4))
+    print(trades)
 
     await client.disconnect()
