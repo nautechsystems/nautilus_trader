@@ -689,7 +689,7 @@ class TradingNode:
     def _cancel_all_tasks(self) -> None:
         to_cancel = asyncio.tasks.all_tasks(self._loop)
         if not to_cancel:
-            self._log.info("All tasks finished.")
+            self._log.info("All tasks canceled.")
             return
 
         for task in to_cancel:
