@@ -133,7 +133,7 @@ cdef class Cache(CacheFacade):
         Clear the current currencies cache and load currencies from the execution
         database.
         """
-        self._log.debug(f"Loading accounts from database...")
+        self._log.debug(f"Loading currencies from database...")
 
         if self._database is not None:
             self._currencies = self._database.load_currencies()
