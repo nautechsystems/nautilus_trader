@@ -12,13 +12,19 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+
 import asyncio
 import datetime
 from unittest.mock import MagicMock
 
 import pytest
-from ib_insync import Contract
+from ib_insync import CFD
+from ib_insync import Bond
+from ib_insync import Crypto
 from ib_insync import Forex
+from ib_insync import Future
+from ib_insync import Option
+from ib_insync import Stock
 
 from nautilus_trader.adapters.interactive_brokers.providers import (
     InteractiveBrokersInstrumentProvider,
@@ -60,16 +66,62 @@ class TestIBInstrumentProvider:
     @pytest.mark.parametrize(
         "filters, expected",
         [
-            ({"secType": "CASH", "pair": "EURUSD", "exchange": "IDEALPRO"}, Forex("EURUSD")),
             (
-                {"secType": "STK", "symbol": "AAPL", "exchange": "SMART", "currency": "USD"},
-                Contract("STK", symbol="AAPL", exchange="SMART", currency="USD"),
+                {"secType": "STK", "symbol": "AMD", "exchange": "SMART", "currency": "USD"},
+                Stock("AMD", "SMART", "USD"),
+            ),
+            (
+                {
+                    "secType": "STK",
+                    "symbol": "INTC",
+                    "exchange": "SMART",
+                    "primaryExchange": "NASDAQ",
+                    "currency": "USD",
+                },
+                Stock("INTC", "SMART", "USD", primaryExchange="NASDAQ"),
+            ),
+            (
+                {"secType": "CASH", "symbol": "EUR", "currency": "USD", "exchange": "IDEALPRO"},
+                Forex(symbol="EUR", currency="USD"),
+            ),  # EUR/USD,
+            ({"secType": "CFD", "symbol": "IBUS30"}, CFD("IBUS30")),
+            (
+                {
+                    "secType": "FUT",
+                    "symbol": "ES",
+                    "exchange": "GLOBEX",
+                    "lastTradeDateOrContractMonth": "20180921",
+                },
+                Future("ES", "20180921", "GLOBEX"),
+            ),
+            (
+                {
+                    "secType": "OPT",
+                    "symbol": "SPY",
+                    "exchange": "SMART",
+                    "lastTradeDateOrContractMonth": "20170721",
+                    "strike": 240,
+                    "right": "C",
+                },
+                Option("SPY", "20170721", 240, "C", "SMART"),
+            ),
+            (
+                {"secType": "BOND", "secIdType": "ISIN", "secId": "US03076KAA60"},
+                Bond(secIdType="ISIN", secId="US03076KAA60"),
+            ),
+            (
+                {"secType": "CRYPTO", "symbol": "BTC", "exchange": "PAXOS", "currency": "USD"},
+                Crypto("BTC", "PAXOS", "USD"),
             ),
         ],
     )
     def test_parse_contract(self, filters, expected):
         result = self.provider._parse_contract(**filters)
-        assert result == expected
+        fields = [
+            f.name for f in expected.__dataclass_fields__.values() if getattr(expected, f.name)
+        ]
+        for f in fields:
+            assert getattr(result, f) == getattr(expected, f)
 
     @pytest.mark.asyncio
     async def test_load_equity_contract_instrument(self, mocker):

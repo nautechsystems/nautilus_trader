@@ -1,3 +1,18 @@
+# -------------------------------------------------------------------------------------------------
+#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
+#  https://nautechsystems.io
+#
+#  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
+#  You may not use this file except in compliance with the License.
+#  You may obtain a copy of the License at https://www.gnu.org/licenses/lgpl-3.0.en.html
+#
+#  Unless required by applicable law or agreed to in writing, software
+#  distributed under the License is distributed on an "AS IS" BASIS,
+#  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+#  See the License for the specific language governing permissions and
+#  limitations under the License.
+# -------------------------------------------------------------------------------------------------
+
 import datetime
 import time
 from decimal import Decimal
@@ -64,7 +79,7 @@ def parse_equity_contract(details: ContractDetails) -> Equity:
     instrument_id = InstrumentId(
         symbol=Symbol(details.contract.localSymbol), venue=Venue(details.contract.primaryExchange)
     )
-    equity = Equity(
+    return Equity(
         instrument_id=instrument_id,
         native_symbol=Symbol(details.contract.localSymbol),
         currency=Currency.from_str(details.contract.currency),
@@ -78,7 +93,6 @@ def parse_equity_contract(details: ContractDetails) -> Equity:
         ts_event=timestamp,
         ts_init=timestamp,
     )
-    return equity
 
 
 def parse_future_contract(
@@ -90,7 +104,7 @@ def parse_future_contract(
         symbol=Symbol(details.contract.localSymbol),
         venue=Venue(details.contract.primaryExchange or details.contract.exchange),
     )
-    future = Future(
+    return Future(
         instrument_id=instrument_id,
         native_symbol=Symbol(details.contract.localSymbol),
         asset_class=sec_type_to_asset_class(details.underSecType),
@@ -106,8 +120,6 @@ def parse_future_contract(
         ts_event=timestamp,
         ts_init=timestamp,
     )
-
-    return future
 
 
 def parse_option_contract(
@@ -126,7 +138,7 @@ def parse_option_contract(
         "C": OptionKind.CALL,
         "P": OptionKind.PUT,
     }[details.contract.right]
-    option = Option(
+    return Option(
         instrument_id=instrument_id,
         native_symbol=Symbol(details.contract.localSymbol),
         asset_class=asset_class,
@@ -145,19 +157,17 @@ def parse_option_contract(
         ts_init=timestamp,
     )
 
-    return option
-
 
 def parse_forex_contract(
     details: ContractDetails,
-) -> Option:
+) -> CurrencyPair:
     price_precision: int = _tick_size_to_precision(details.minTick)
     timestamp = time.time_ns()
     instrument_id = InstrumentId(
         symbol=Symbol(f"{details.contract.symbol}/{details.contract.currency}"),
         venue=Venue(details.contract.primaryExchange or details.contract.exchange),
     )
-    currency = CurrencyPair(
+    return CurrencyPair(
         instrument_id=instrument_id,
         native_symbol=Symbol(details.contract.localSymbol),
         base_currency=Currency.from_str(details.contract.currency),
@@ -180,4 +190,3 @@ def parse_forex_contract(
         ts_event=timestamp,
         ts_init=timestamp,
     )
-    return currency

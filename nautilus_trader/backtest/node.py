@@ -356,7 +356,7 @@ class BacktestNode:
         config: BacktestEngineConfig,
         venue_configs: List[BacktestVenueConfig],
         data_configs: List[BacktestDataConfig],
-    ):
+    ) -> BacktestEngine:
         # Build the backtest engine
         engine = BacktestEngine(config=config)
 
@@ -383,7 +383,7 @@ class BacktestNode:
         return engine
 
 
-def _load_engine_data(engine: BacktestEngine, data):
+def _load_engine_data(engine: BacktestEngine, data) -> None:
     if data["type"] in (QuoteTick, TradeTick):
         engine.add_ticks(data=data["data"])
     elif data["type"] == Bar:
@@ -434,7 +434,8 @@ def backtest_runner(
         _load_engine_data(engine=engine, data=d)
         t2 = pd.Timestamp.now()
         engine._log.info(f"Engine load took {parse_timedelta(t2-t1)}s")
-    return engine.run(run_config_id=run_config_id)
+
+    engine.run(run_config_id=run_config_id)
 
 
 def _groupby_key(x):

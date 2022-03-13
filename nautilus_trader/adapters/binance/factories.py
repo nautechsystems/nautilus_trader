@@ -47,6 +47,7 @@ def get_cached_binance_http_client(
     logger: Logger,
     key: Optional[str] = None,
     secret: Optional[str] = None,
+    account_type: BinanceAccountType = BinanceAccountType.SPOT,
     base_url: Optional[str] = None,
     is_testnet: bool = False,
 ) -> BinanceHttpClient:
@@ -66,10 +67,10 @@ def get_cached_binance_http_client(
         The logger for the client.
     key : str, optional
         The API key for the client.
-        If None then will source from the `BINANCE_API_KEY` env var.
     secret : str, optional
         The API secret for the client.
-        If None then will source from the `BINANCE_API_SECRET` env var.
+    account_type : BinanceAccountType, default BinanceAccountType.SPOT
+        The account type for the client.
     base_url : str, optional
         The base URL for the API endpoints.
     is_testnet : bool, default False
@@ -82,12 +83,8 @@ def get_cached_binance_http_client(
     """
     global HTTP_CLIENTS
 
-    if is_testnet:
-        key = key or os.environ["BINANCE_TESTNET_API_KEY"]
-        secret = secret or os.environ["BINANCE_TESTNET_API_SECRET"]
-    else:
-        key = key or os.environ["BINANCE_API_KEY"]
-        secret = secret or os.environ["BINANCE_API_SECRET"]
+    key = key or _get_api_key(account_type, is_testnet)
+    secret = secret or _get_api_secret(account_type, is_testnet)
 
     client_key: str = "|".join((key, secret))
     if client_key not in HTTP_CLIENTS:
@@ -229,6 +226,7 @@ class BinanceLiveDataClientFactory(LiveDataClientFactory):
             logger=logger,
             key=config.api_key,
             secret=config.api_secret,
+            account_type=config.account_type,
             base_url=config.base_url_http or base_url_http_default,
             is_testnet=config.testnet,
         )
@@ -318,6 +316,7 @@ class BinanceLiveExecClientFactory(LiveExecClientFactory):
             logger=logger,
             key=config.api_key,
             secret=config.api_secret,
+            account_type=config.account_type,
             base_url=config.base_url_http or base_url_http_default,
             is_testnet=config.testnet,
         )
@@ -370,6 +369,32 @@ class BinanceLiveExecClientFactory(LiveExecClientFactory):
             raise RuntimeError()  # TODO: WIP
 
 
+def _get_api_key(account_type: BinanceAccountType, is_testnet: bool) -> str:
+    if is_testnet:
+        if account_type.is_spot or account_type.is_margin:
+            return os.environ["BINANCE_TESTNET_API_KEY"]
+        else:
+            return os.environ["BINANCE_FUTURES_TESTNET_API_KEY"]
+
+    if account_type.is_spot or account_type.is_margin:
+        return os.environ["BINANCE_API_KEY"]
+    else:
+        return os.environ["BINANCE_FUTURES_API_KEY"]
+
+
+def _get_api_secret(account_type: BinanceAccountType, is_testnet: bool) -> str:
+    if is_testnet:
+        if account_type.is_spot or account_type.is_margin:
+            return os.environ["BINANCE_TESTNET_API_SECRET"]
+        else:
+            return os.environ["BINANCE_FUTURES_TESTNET_API_SECRET"]
+
+    if account_type.is_spot or account_type.is_margin:
+        return os.environ["BINANCE_API_SECRET"]
+    else:
+        return os.environ["BINANCE_FUTURES_API_SECRET"]
+
+
 def _get_http_base_url(config: Union[BinanceDataClientConfig, BinanceExecClientConfig]) -> str:
     # Testnet base URLs
     if config.testnet:
@@ -400,7 +425,7 @@ def _get_ws_base_url(config: Union[BinanceDataClientConfig, BinanceExecClientCon
     # Testnet base URLs
     if config.testnet:
         if config.account_type in (BinanceAccountType.SPOT, BinanceAccountType.MARGIN):
-            return "wss://testnet.binance.vision/ws"
+            return "wss://testnet.binance.vision"
         elif config.account_type == BinanceAccountType.FUTURES_USDT:
             return "wss://stream.binancefuture.com"
         elif config.account_type == BinanceAccountType.FUTURES_COIN:

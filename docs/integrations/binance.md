@@ -94,14 +94,24 @@ node.build()
 
 ### API credentials
 There are two options for supplying your credentials to the Binance clients.
-Either pass the corresponding `api_key` and `api_secret` values to the config dictionaries, or
-set the following environment variables for live clients: 
+Either pass the corresponding `api_key` and `api_secret` values to the configuration objects, or
+set the following environment variables: 
+
+For Binance Spot/Margin live clients, you can set: 
 - `BINANCE_API_KEY`
 - `BINANCE_API_SECRET`
 
-Or for clients connecting to testnets, you can set:
+For Binance Spot/Margin testnet clients, you can set:
 - `BINANCE_TESTNET_API_KEY`
 - `BINANCE_TESTNET_API_SECRET`
+
+For Binance Futures live clients, you can set:
+- `BINANCE_FUTURES_API_KEY`
+- `BINANCE_FUTURES_API_SECRET`
+
+For Binance Futures testnet clients, you can set:
+- `BINANCE_FUTURES_TESTNET_API_KEY`
+- `BINANCE_FUTURES_TESTNET_API_SECRET`
 
 When starting the trading node, you'll receive immediate confirmation of whether your
 credentials are valid and have trading permissions.

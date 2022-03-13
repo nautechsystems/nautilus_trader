@@ -527,8 +527,7 @@ cdef class RedisCacheDatabase(CacheDatabase):
         # Check data integrity of reply
         if len(reply) > 1:  # Reply = The length of the list after the push operation
             self._log.error(
-                f"The {repr(account.id)} already existed "
-                f"in the accounts and was appended to.",
+                f"The {repr(account.id)} already existed and was appended to.",
             )
 
         self._log.debug(f"Added {account}).")
@@ -550,9 +549,8 @@ cdef class RedisCacheDatabase(CacheDatabase):
 
         # Check data integrity of reply
         if reply > 1:  # Reply = The length of the list after the push operation
-            self._log.error(
-                f"The {repr(order.client_order_id)} already existed "
-                f"in the orders and was appended to.",
+            self._log.warning(
+                f"The {repr(order.client_order_id)} already existed and was appended to.",
             )
 
         self._log.debug(f"Added Order(id={order.client_order_id.value}).")
@@ -574,9 +572,8 @@ cdef class RedisCacheDatabase(CacheDatabase):
 
         # Check data integrity of reply
         if reply > 1:  # Reply = The length of the list after the push operation
-            self._log.error(
-                f"The {repr(position.id)} already existed "
-                f"in the positions and was overwritten.",
+            self._log.warning(
+                f"The {repr(position.id)} already existed and was appended to.",
             )
 
         self._log.debug(f"Added Position(id={position.id.value}).")

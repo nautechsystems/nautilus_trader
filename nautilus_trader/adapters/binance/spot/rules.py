@@ -17,13 +17,13 @@ from nautilus_trader.model.enums import OrderType
 from nautilus_trader.model.enums import TimeInForce
 
 
-VALID_TIF_SPOT = (
+BINANCE_SPOT_VALID_TIF = (
     TimeInForce.GTC,
     TimeInForce.FOK,
     TimeInForce.IOC,
 )
 
-VALID_ORDER_TYPES_SPOT = (
+BINANCE_SPOT_VALID_ORDER_TYPES = (
     OrderType.MARKET,
     OrderType.LIMIT,
     OrderType.STOP_LIMIT,

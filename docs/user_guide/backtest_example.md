@@ -159,7 +159,7 @@ instrument = catalog.instruments(as_nautilus=True)[0]
 data_config=[
     BacktestDataConfig(
         catalog_path=CATALOG_PATH,
-        data_type=QuoteTick.fully_qualified_name(),
+        data_cls=QuoteTick.fully_qualified_name(),
         instrument_id=instrument.id.value,
         start_time=1580398089820000000,
         end_time=1580504394501000000,

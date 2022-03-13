@@ -12,6 +12,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+
 import asyncio
 import json
 from typing import Dict, List, Optional
@@ -21,7 +22,6 @@ import numpy as np
 import pandas as pd
 from ib_insync import Contract
 from ib_insync import ContractDetails
-from ib_insync import Forex
 
 from nautilus_trader.adapters.betfair.util import one
 from nautilus_trader.adapters.interactive_brokers.common import IB_VENUE
@@ -90,8 +90,6 @@ class InteractiveBrokersInstrumentProvider(InstrumentProvider):
     @staticmethod
     def _parse_contract(**kwargs) -> Contract:
         sec_type = kwargs.pop("secType", None)
-        if sec_type == "CASH":
-            return Forex(**kwargs)
         return Contract(secType=sec_type, **kwargs)
 
     async def load_ids_async(

@@ -18,6 +18,7 @@ from typing import List, Optional
 import msgspec
 
 from nautilus_trader.adapters.binance.common.enums import BinanceOrderSide
+from nautilus_trader.adapters.binance.futures.enums import BinanceFuturesEventType
 from nautilus_trader.adapters.binance.futures.enums import BinanceFuturesExecutionType
 from nautilus_trader.adapters.binance.futures.enums import BinanceFuturesOrderStatus
 from nautilus_trader.adapters.binance.futures.enums import BinanceFuturesOrderType
@@ -25,6 +26,28 @@ from nautilus_trader.adapters.binance.futures.enums import BinanceFuturesPositio
 from nautilus_trader.adapters.binance.futures.enums import BinanceFuturesPositionUpdateReason
 from nautilus_trader.adapters.binance.futures.enums import BinanceFuturesTimeInForce
 from nautilus_trader.adapters.binance.futures.enums import BinanceFuturesWorkingType
+
+
+################################################################################
+# WebSocket messages
+################################################################################
+
+
+class BinanceFuturesUserMsgData(msgspec.Struct):
+    """
+    Inner struct for execution WebSocket messages from `Binance`
+    """
+
+    e: BinanceFuturesEventType
+
+
+class BinanceFuturesUserMsgWrapper(msgspec.Struct):
+    """
+    Provides a wrapper for execution WebSocket messages from `Binance`.
+    """
+
+    stream: str
+    data: BinanceFuturesUserMsgData
 
 
 class MarginCallPosition(msgspec.Struct):
