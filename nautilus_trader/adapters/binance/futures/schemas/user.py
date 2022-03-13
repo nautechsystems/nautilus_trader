@@ -38,7 +38,7 @@ class BinanceFuturesUserMsgData(msgspec.Struct):
     Inner struct for execution WebSocket messages from `Binance`
     """
 
-    e: BinanceFuturesEventType  # Event type
+    e: BinanceFuturesEventType
 
 
 class BinanceFuturesUserMsgWrapper(msgspec.Struct):

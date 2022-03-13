@@ -46,11 +46,24 @@ async def test_binance_spot_account_http_client():
     ############################################################################
     # ACCOUNT STATUS
     ############################################################################
-    # response = await http_account.account(recv_window=5000)
-    # print(json.dumps(response, indent=4))
+    response = await http_account.account(recv_window=5000)
+    print(response)
 
     ############################################################################
-    # NEW ORDER
+    # NEW ORDER (MARKET)
+    ############################################################################
+    # response = await http_account.new_order(
+    #     symbol="ETHUSDT",
+    #     side="SELL",
+    #     type="MARKET",
+    #     quantity="0.02",
+    #     # stop_price="4200",
+    #     # new_client_order_id="O-20211120-021300-001-001-1",
+    #     # recv_window=5000,
+    # )
+
+    ############################################################################
+    # NEW ORDER (LIMIT)
     ############################################################################
     # response = await http_account.new_order(
     #     symbol="ETHUSDT",
@@ -76,7 +89,7 @@ async def test_binance_spot_account_http_client():
     # print(json.dumps(response, indent=4))
 
     ############################################################################
-    # CANCEL ALL ORDERs
+    # CANCEL ALL ORDERS
     ############################################################################
     # response = await http_account.cancel_open_orders(symbol="ETHUSDT")
     # print(json.dumps(response, indent=4))
@@ -84,7 +97,13 @@ async def test_binance_spot_account_http_client():
     ############################################################################
     # OPEN ORDERS
     ############################################################################
-    orders = await http_account.get_open_orders(symbol="ETHUSDT")
-    print(orders)
+    # orders = await http_account.get_open_orders(symbol="ETHUSDT")
+    # print(orders)
+
+    ############################################################################
+    # POSITIONS
+    ############################################################################
+    positions = await http_account.get_position_risk(symbol="ETHUSDT")
+    print(positions)
 
     await client.disconnect()
