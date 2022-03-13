@@ -117,6 +117,8 @@ class BacktestNode:
         bar_type: str,
         trade_size: Decimal,
     ) -> None:
+
+
         """
         Set strategy parameters which can be passed to the hyperopt objective.
 
@@ -128,6 +130,7 @@ class BacktestNode:
             The strategy config object.
         instrument_id:
             The instrument ID.
+
         bar_type:
             The type of bar type used.
         trade_size:
@@ -141,6 +144,7 @@ class BacktestNode:
         self.trade_size = trade_size
 
     def hyperopt_search(self, config, params, max_evals=50) -> Dict:
+
         """
         Run hyperopt to optimize strategy parameters.
 
