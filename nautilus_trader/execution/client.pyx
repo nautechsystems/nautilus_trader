@@ -123,7 +123,6 @@ cdef class ExecutionClient(Component):
         )
 
         self._cache = cache
-        self._account = None  # Initialized on connection
 
         self.trader_id = msgbus.trader_id
         self.venue = venue
@@ -156,18 +155,7 @@ cdef class ExecutionClient(Component):
         Account or ``None``
 
         """
-        # Check account
-        if self._account is None:
-            account = self._cache.account_for_venue(self.venue)
-            if account is None:
-                self._log.error(
-                    "Cannot generate OrderFilled: "
-                    f"no account found for venue {self.venue}."
-                )
-                return
-            self._account = account
-
-        return self._account
+        return self._cache.account(self.account_id)
 
 # -- COMMAND HANDLERS ------------------------------------------------------------------------------
 
