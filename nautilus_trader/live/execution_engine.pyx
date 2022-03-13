@@ -655,6 +655,7 @@ cdef class LiveExecutionEngine(ExecutionEngine):
             options["offset_type"] =  TrailingOffsetTypeParser.to_str(report.offset_type)
         if report.trailing_offset is not None:
             options["trailing_offset"] = str(report.trailing_offset)
+            options["offset_type"] = TrailingOffsetTypeParser.to_str(report.offset_type)
         if report.display_qty is not None:
             options["display_qty"] = str(report.display_qty)
         if report.expire_time is not None:

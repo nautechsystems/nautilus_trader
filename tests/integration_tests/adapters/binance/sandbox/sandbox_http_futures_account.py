@@ -97,8 +97,8 @@ async def test_binance_spot_account_http_client():
     ############################################################################
     # OPEN ORDERS
     ############################################################################
-    # orders = await http_account.get_open_orders(symbol="ETHUSDT")
-    # print(orders)
+    orders = await http_account.get_open_orders(symbol="ETHUSDT")
+    print(orders)
 
     ############################################################################
     # POSITIONS

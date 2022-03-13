@@ -21,6 +21,7 @@ from nautilus_trader.adapters.binance.common.enums import BinanceOrderSide
 from nautilus_trader.adapters.binance.futures.enums import BinanceFuturesOrderStatus
 from nautilus_trader.adapters.binance.futures.enums import BinanceFuturesOrderType
 from nautilus_trader.adapters.binance.futures.enums import BinanceFuturesPositionSide
+from nautilus_trader.adapters.binance.futures.enums import BinanceFuturesWorkingType
 
 
 ################################################################################
@@ -99,7 +100,7 @@ class BinanceFuturesOrder(msgspec.Struct):
     activatePrice: Optional[str] = None
     priceRate: Optional[str] = None
     updateTime: int
-    workingType: str
+    workingType: BinanceFuturesWorkingType
     priceProtect: bool
 
 

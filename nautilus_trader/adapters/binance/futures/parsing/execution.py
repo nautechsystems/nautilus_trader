@@ -18,6 +18,7 @@ from decimal import Decimal
 from nautilus_trader.adapters.binance.futures.enums import BinanceFuturesOrderStatus
 from nautilus_trader.adapters.binance.futures.enums import BinanceFuturesOrderType
 from nautilus_trader.adapters.binance.futures.enums import BinanceFuturesTimeInForce
+from nautilus_trader.adapters.binance.futures.enums import BinanceFuturesWorkingType
 from nautilus_trader.adapters.binance.futures.schemas.account import BinanceFuturesAccountTrade
 from nautilus_trader.adapters.binance.futures.schemas.account import BinanceFuturesOrder
 from nautilus_trader.adapters.binance.futures.schemas.account import BinanceFuturesPositionRisk
@@ -33,6 +34,7 @@ from nautilus_trader.model.enums import OrderStatus
 from nautilus_trader.model.enums import OrderType
 from nautilus_trader.model.enums import PositionSide
 from nautilus_trader.model.enums import TimeInForce
+from nautilus_trader.model.enums import TrailingOffsetType
 from nautilus_trader.model.enums import TriggerType
 from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import ClientOrderId
@@ -104,10 +106,10 @@ def parse_time_in_force(time_in_force: BinanceFuturesTimeInForce) -> TimeInForce
         return TimeInForce[time_in_force.value]
 
 
-def parse_trigger_type(working_type: str) -> TriggerType:
-    if working_type == "CONTRACT_PRICE":
+def parse_trigger_type(working_type: BinanceFuturesWorkingType) -> TriggerType:
+    if working_type == BinanceFuturesWorkingType.CONTRACT_PRICE:
         return TriggerType.LAST
-    elif working_type == "MARK_PRICE":
+    elif working_type == BinanceFuturesWorkingType.MARK_PRICE:
         return TriggerType.MARK
     else:  # pragma: no cover (design-time error)
         return TriggerType.NONE
@@ -145,6 +147,10 @@ def parse_order_report_http(
         ts_init=ts_init,
         trigger_price=Price.from_str(str(trigger_price)) if trigger_price > 0 else None,
         trigger_type=parse_trigger_type(data.workingType),
+        trailing_offset=Decimal(data.priceRate) * 100 if data.priceRate is not None else None,
+        offset_type=TrailingOffsetType.BASIS_POINTS
+        if data.priceRate is not None
+        else TrailingOffsetType.NONE,
     )
 
 
