@@ -48,3 +48,12 @@ nautilus_trader/**/.gitignore
 docs/**/*.ipynb
 !nautilus_trader/core/pytime.h
 
+examples/backtest/account_report.csv
+examples/backtest/crypto_ema_cross_bracket_btcusdt_bars copy.py
+examples/backtest/crypto_ema_cross_bracket_macd_btcusdt_bars.py
+examples/backtest/order_fills_report.csv
+examples/backtest/positions_report.csv
+nautilus_trader/examples/strategies/generic_strat.py
+examples/backtest/hyperopt_kline.py
+tests/test_kit/data/btcusdt_15m_um_data.csv
+nautilus_trader/examples/strategies/ema_cross_bracket_mod.py
