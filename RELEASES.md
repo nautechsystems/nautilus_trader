@@ -1,3 +1,13 @@
+# NautilusTrader 1.139.2 Beta
+
+## Release Notes
+
+Released on 13th March 2022 (UTC).
+
+This is a patch release which fixes the versioning of the previous release.
+
+---
+
 # NautilusTrader 1.139.1 Beta
 
 ## Release Notes
