@@ -25,6 +25,11 @@ from nautilus_trader.adapters.binance.spot.enums import BinanceSpotOrderType
 from nautilus_trader.adapters.binance.spot.enums import BinanceSpotPermissions
 
 
+################################################################################
+# HTTP responses
+################################################################################
+
+
 class BinanceExchangeFilter(msgspec.Struct):
     """HTTP response 'inner struct' from `Binance Spot/Margin` GET /fapi/v1/exchangeInfo."""
 
@@ -105,6 +110,11 @@ class BinanceSpotOrderBookDepthData(msgspec.Struct):
     lastUpdateId: int
     bids: List[Tuple[str, str]]
     asks: List[Tuple[str, str]]
+
+
+################################################################################
+# WebSocket messages
+################################################################################
 
 
 class BinanceSpotOrderBookMsg(msgspec.Struct):

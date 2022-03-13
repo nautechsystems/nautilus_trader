@@ -17,8 +17,8 @@ import pkgutil
 
 import msgspec.json
 
-from nautilus_trader.adapters.binance.common.market import BinanceTickerData
 from nautilus_trader.adapters.binance.common.parsing.data import parse_ticker_24hr_ws
+from nautilus_trader.adapters.binance.common.schemas import BinanceTickerData
 from nautilus_trader.backtest.data.providers import TestInstrumentProvider
 
 

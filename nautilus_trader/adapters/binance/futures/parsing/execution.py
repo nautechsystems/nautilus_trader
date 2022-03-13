@@ -14,12 +14,13 @@
 # -------------------------------------------------------------------------------------------------
 
 from decimal import Decimal
-from typing import Any, Dict
 
 from nautilus_trader.adapters.binance.futures.enums import BinanceFuturesOrderStatus
 from nautilus_trader.adapters.binance.futures.enums import BinanceFuturesOrderType
 from nautilus_trader.adapters.binance.futures.enums import BinanceFuturesTimeInForce
+from nautilus_trader.adapters.binance.futures.schemas.account import BinanceFuturesAccountTrade
 from nautilus_trader.adapters.binance.futures.schemas.account import BinanceFuturesOrder
+from nautilus_trader.adapters.binance.futures.schemas.account import BinanceFuturesPositionRisk
 from nautilus_trader.core.datetime import millis_to_nanos
 from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.execution.reports import OrderStatusReport
@@ -115,58 +116,58 @@ def parse_trigger_type(working_type: str) -> TriggerType:
 def parse_order_report_http(
     account_id: AccountId,
     instrument_id: InstrumentId,
-    msg: BinanceFuturesOrder,
+    data: BinanceFuturesOrder,
     report_id: UUID4,
     ts_init: int,
 ) -> OrderStatusReport:
-    price = Decimal(msg.price)
-    trigger_price = Decimal(msg.stopPrice)
-    avg_px = Decimal(msg.avgPrice)
-    time_in_force = BinanceFuturesTimeInForce(msg.timeInForce.upper())
+    price = Decimal(data.price)
+    trigger_price = Decimal(data.stopPrice)
+    avg_px = Decimal(data.avgPrice)
+    time_in_force = BinanceFuturesTimeInForce(data.timeInForce.upper())
     return OrderStatusReport(
         account_id=account_id,
         instrument_id=instrument_id,
-        client_order_id=ClientOrderId(msg.clientOrderId) if msg.clientOrderId != "" else None,
-        venue_order_id=VenueOrderId(str(msg.orderId)),
-        order_side=OrderSide[msg.side.upper()],
-        order_type=parse_order_type(msg.type),
+        client_order_id=ClientOrderId(data.clientOrderId) if data.clientOrderId != "" else None,
+        venue_order_id=VenueOrderId(str(data.orderId)),
+        order_side=OrderSide[data.side.upper()],
+        order_type=parse_order_type(data.type),
         time_in_force=parse_time_in_force(time_in_force),
-        order_status=parse_order_status(msg.status),
-        price=Price.from_str(msg.price) if price is not None else None,
-        quantity=Quantity.from_str(msg.origQty),
-        filled_qty=Quantity.from_str(msg.executedQty),
+        order_status=parse_order_status(data.status),
+        price=Price.from_str(data.price) if price is not None else None,
+        quantity=Quantity.from_str(data.origQty),
+        filled_qty=Quantity.from_str(data.executedQty),
         avg_px=avg_px if avg_px > 0 else None,
         post_only=time_in_force == BinanceFuturesTimeInForce.GTX,
-        reduce_only=msg.reduceOnly,
+        reduce_only=data.reduceOnly,
         report_id=report_id,
-        ts_accepted=millis_to_nanos(msg.time),
-        ts_last=millis_to_nanos(msg.updateTime),
+        ts_accepted=millis_to_nanos(data.time),
+        ts_last=millis_to_nanos(data.updateTime),
         ts_init=ts_init,
         trigger_price=Price.from_str(str(trigger_price)) if trigger_price > 0 else None,
-        trigger_type=parse_trigger_type(msg.workingType),
+        trigger_type=parse_trigger_type(data.workingType),
     )
 
 
 def parse_trade_report_http(
     account_id: AccountId,
     instrument_id: InstrumentId,
-    data: Dict[str, Any],
+    data: BinanceFuturesAccountTrade,
     report_id: UUID4,
     ts_init: int,
 ) -> TradeReport:
     return TradeReport(
         account_id=account_id,
         instrument_id=instrument_id,
-        venue_order_id=VenueOrderId(str(data["orderId"])),
-        venue_position_id=PositionId(f"{instrument_id}-{data['positionSide']}"),
-        trade_id=TradeId(str(data["id"])),
-        order_side=OrderSide[data["side"].upper()],
-        last_qty=Quantity.from_str(data["qty"]),
-        last_px=Price.from_str(data["price"]),
-        commission=Money(data["commission"], Currency.from_str(data["commissionAsset"])),
-        liquidity_side=LiquiditySide.MAKER if data["maker"] else LiquiditySide.TAKER,
+        venue_order_id=VenueOrderId(str(data.orderId)),
+        venue_position_id=PositionId(f"{instrument_id}-{data.positionSide.value}"),
+        trade_id=TradeId(str(data.id)),
+        order_side=OrderSide[data.side.value],
+        last_qty=Quantity.from_str(data.qty),
+        last_px=Price.from_str(data.price),
+        commission=Money(data.commission, Currency.from_str(data.commissionAsset)),
+        liquidity_side=LiquiditySide.MAKER if data.maker else LiquiditySide.TAKER,
         report_id=report_id,
-        ts_event=millis_to_nanos(data["time"]),
+        ts_event=millis_to_nanos(data.time),
         ts_init=ts_init,
     )
 
@@ -174,15 +175,23 @@ def parse_trade_report_http(
 def parse_position_report_http(
     account_id: AccountId,
     instrument_id: InstrumentId,
-    data: Dict[str, Any],
+    data: BinanceFuturesPositionRisk,
     report_id: UUID4,
     ts_init: int,
 ) -> PositionStatusReport:
-    net_size = Decimal(data["positionAmt"])
+    net_size = Decimal(data.positionAmt)
+
+    if net_size > 0:
+        position_side = PositionSide.LONG
+    elif net_size < 0:
+        position_side = PositionSide.SHORT
+    else:
+        position_side = PositionSide.FLAT
+
     return PositionStatusReport(
         account_id=account_id,
         instrument_id=instrument_id,
-        position_side=PositionSide.LONG if net_size > 0 else PositionSide.SHORT,
+        position_side=position_side,
         quantity=Quantity.from_str(str(abs(net_size))),
         report_id=report_id,
         ts_last=ts_init,
