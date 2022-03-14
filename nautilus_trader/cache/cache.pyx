@@ -675,7 +675,7 @@ cdef class Cache(CacheFacade):
         cdef PositionId position_id
         cdef Position position
         for position_id, position in self._positions.items():
-            # 1: Build _index_venue_orders -> {Venue, {ClientOrderId}}
+            # 1: Build _index_venue_positions -> {Venue, {PositionId}}
             if position.instrument_id.venue not in self._index_venue_positions:
                 self._index_venue_positions[position.instrument_id.venue] = set()
             self._index_venue_positions[position.instrument_id.venue].add(position_id)
