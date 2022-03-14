@@ -269,7 +269,6 @@ cdef class Cache(CacheFacade):
         # Check object caches
         # -------------------
         for account_id in self._accounts:
-            # TODO(cs): Assumption that venue == issuer
             if Venue(account_id.issuer) not in self._index_venue_account:
                 self._log.error(
                     f"{failure} in _cached_accounts: "
@@ -619,7 +618,6 @@ cdef class Cache(CacheFacade):
             self._cache_venue_account_id(account_id)
 
     cdef void _cache_venue_account_id(self, AccountId account_id) except *:
-        # TODO(cs): Assumption that venue = account_id.issuer
         self._index_venue_account[Venue(account_id.issuer)] = account_id
 
     cdef void _build_indexes_from_orders(self) except *:
