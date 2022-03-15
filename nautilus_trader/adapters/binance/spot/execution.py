@@ -700,6 +700,10 @@ class BinanceSpotExecutionClient(LiveExecutionClient):
                 self._handle_account_update(data)
             elif msg_type == "executionReport":  # SPOT
                 self._handle_execution_report(data)
+            else:
+                self._log.error(
+                    f"Cannot handle websocket msg: unrecognized type {msg_type}",
+                )
         except Exception as ex:
             self._log.exception(f"Error on handling {repr(msg)}", ex)
 
