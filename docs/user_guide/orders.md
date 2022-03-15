@@ -37,7 +37,7 @@ a clear explanatory message.
 ## Execution Instructions
 
 Certain exchanges allow a trader to specify conditions and restrictions on
-how an order will be processed and executed at the exchange. The following is a brief
+how an order will be processed and executed. The following is a brief
 summary of the different execution instructions available.
 
 ### Time In Force
@@ -47,7 +47,7 @@ or active before being filled or the remaining quantity canceled.
 - `GTC` (Good 'til Canceled): The order remains in force until canceled by the trader or the exchange.
 - `IOC` (Immediate or Cancel / Fill **and** Kill): The order will execute immediately with any portion of the order quantity which cannot be executed being canceled.
 - `FOK` (Fill **or** Kill): The order will execute immediately, and in full, or not at all.
-- `GTD` (Good 'til Date): The order remains in force until reaching the specified expire date and time.
+- `GTD` (Good 'til Date): The order remains in force until reaching the specified expiration date and time.
 - `DAY` (Good for session/day): The order remains in force until the end of the current trading session.
 - `AT_THE_OPEN` (OPG): The order is only in force at the trading session open.
 - `AT_THE_CLOSE`: The order is only in force at the trading session close.
@@ -66,8 +66,8 @@ An order which is marked as `reduce_only` will only ever reduce an existing posi
 never open a new position if already flat. The exact behaviour of this instruction can vary between
 exchanges, however the behaviour as per the Nautilus `SimulatedExchange` is typical of a live exchange.
 
-- Order will be cancelled if the position is closed / becomes flat.
-- Order quantity will be reduced as a positions size for the corresponding instrument reduces.
+- Order will be cancelled if the associated position is closed / becomes flat.
+- Order quantity will be reduced as the associated positions size reduces.
 
 ### Display Quantity
 The `display_qty` specifies the portion of the _Limit_ order which is displayed on the public limit order book.
@@ -79,29 +79,29 @@ this will be the inferred instruction for those exchanges where the display quan
 Also known as [trigger method](https://guides.interactivebrokers.com/tws/usersguidebook/configuretws/modify_the_stop_trigger_method.htm) 
 which is applicable to conditional trigger orders, specifying the method of triggering the STOP price.
 
-- `DEFAULT`: The default trigger type for the exchange (typically `LAST` price). 
+- `DEFAULT`: The default trigger type for the exchange (typically `LAST` or `BID_ASK`). 
 - `LAST`: The trigger price will be based on the last traded price.
 - `BID_ASK`: The trigger price will be based on the `BID` for buy orders and `ASK` for sell orders.
 - `DOUBLE_LAST`: The trigger price will be based on the last two consecutive `LAST` prices.
-- `DOUBLE_BID_ASK`: The trigger price will be based on the last two `BID` or `ASK` prices as applicable.
+- `DOUBLE_BID_ASK`: The trigger price will be based on the last two consecutive `BID` or `ASK` prices as applicable.
 - `LAST_OR_BID_ASK`: The trigger price will be based on the `LAST` or `BID`/`ASK`.
 - `MID_POINT`: The trigger price will be based on the mid-point between the `BID` and `ASK`.
-- `MARK`: The trigger price will be based on the exchange mark price for the instrument.
-- `INDEX`: The trigger price will be based on the exchange index price for the instrument.
+- `MARK`: The trigger price will be based on the instruments mark price for the exchange.
+- `INDEX`: The trigger price will be based on the instruments index price for the exchange.
 
-### Offset Type
+### Trigger Offset Type
 Applicable to conditional trailing STOP trigger orders, specifies the method of triggering modification
-of the STOP price based on the offset.
+of the STOP price based on the offset from the 'market' (bid, ask or last price and applicable).
 
 - `DEFAULT`: The default offset type for the exchange (typically `PRICE`).
 - `PRICE`: The offset is based on a price difference.
 - `BASIS_POINTS`: The offset is based on a price percentage difference expressed in basis points (100 = 1%).
-- `TICKS`: The offset from the current market is based on the number of ticks.
+- `TICKS`: The offset is based on a number of ticks.
 - `PRICE_TIER`: The offset is based on an exchange specific price tier.
 
 ### Contingency Orders
-More advanced relationships can be specified between orders such as assigning child order which will only
-trigger when the parent order is filled, and linking orders together which will cancel or reduce in quantity
+More advanced relationships can be specified between orders such as assigning child order(s) which will only
+trigger when the parent order is activated or filled, or linking orders together which will cancel or reduce in quantity
 contingent on each other. More documentation for these options can be found in the [advanced order guide](advanced/advanced_orders.md).
 
 ## Order Factory
@@ -113,6 +113,8 @@ apply to the order type being created, or are only needed to specify more advanc
 
 This leaves the factory with simpler order creation methods to work with, all the
 examples will leverage an `OrderFactory` from within a `TradingStrategy` context.
+
+[API Reference](https://docs.nautilustrader.io/api_reference/common.html#module-nautilus_trader.common.factories)
 
 ```{note}
 For clarity, any optional parameters will be clearly marked with a comment which includes the default value.
@@ -126,7 +128,7 @@ the given quantity at the best price available. You can also specify several
 time in force options, and indicate whether this order is only intended to reduce
 a position.
 
-In the following example we create a _Market_ order to BUY 100,000 `AUD` using `USD` on the
+In the following example we create a _Market_ order to BUY 100,000 AUD using USD on the
 Interactive Brokers [IdealPro](https://ibkr.info/node/1708) Forex ECN:
 
 ```python
@@ -139,14 +141,14 @@ order: MarketOrder = self.order_factory.market(
         tags="ENTRY",  # <-- optional (default None)
 )
 ```
-[API Reference](../api_reference/model/orders.md#market)
+[API Reference](https://docs.nautilustrader.io/api_reference/model/orders.html#module-nautilus_trader.model.orders.market)
 
 ### Limit
 A _Limit_ order is placed on the public order book at a specific price, and will only
 execute at that price (or better).
 
-In the following example we create a _Limit_ order to SELL 20 `ETH-PERP` Perpetual Futures
-contracts at 5000 `USD` on the FTX exchange, as a market maker.
+In the following example we create a _Limit_ order to SELL 20 ETH-PERP Perpetual Futures
+contracts at 5000 USD on the FTX exchange, as a market maker.
 ```python
 order: LimitOrder = self.order_factory.limit(
         instrument_id=InstrumentId(Symbol("ETH-PERP"), Venue("FTX")),
@@ -161,14 +163,14 @@ order: LimitOrder = self.order_factory.limit(
         tags=None,  # <-- optional (default None)
 )
 ```
-[API Reference](../api_reference/model/orders.md#limit)
+[API Reference](https://docs.nautilustrader.io/api_reference/model/orders.html#module-nautilus_trader.model.orders.limit)
 
 ### Stop-Market
 A _Stop-Market_ order is a conditional order which once triggered will immediately
 place a _Market_ order. This order type is often used as a stop-loss to limit losses, either
 as a SELL order against LONG positions, or as a BUY order against SHORT positions.
 
-In the following example we create a _Stop-Market_ order to SELL 1 `BTC` at 100,000 `USDT` on the
+In the following example we create a _Stop-Market_ order to SELL 1 BTC at 100,000 USDT on the
 Binance Spot/Margin exchange, active until further notice:
 
 ```python
@@ -184,14 +186,14 @@ order: StopMarketOrder = self.order_factory.stop_market(
         tags=None,  # <-- optional (default None)
 )
 ```
-[API Reference](../api_reference/model/orders.md#stop-market)
+[API Reference](https://docs.nautilustrader.io/api_reference/model/orders.html#module-nautilus_trader.model.orders.stop_market)
 
 ### Stop-Limit
 A _Stop-Limit_ order is a conditional order which once triggered will immediately place
 a _Limit_ order. 
 
-In the following example we create a _Stop-Limit_ order to BUY 50,000 `GBP` at a LIMIT price of 1.3000 `USD`
-once the market hits the trigger price of 1.30010 `USD` on the
+In the following example we create a _Stop-Limit_ order to BUY 50,000 GBP at a limit price of 1.3000 USD
+once the market hits the trigger price of 1.30010 USD on the
 Currenex FX ECN, active until midday 6th June, 2022 (UTC):
 
 ```python
@@ -209,7 +211,7 @@ order: StopLimitOrder = self.order_factory.stop_limit(
         tags=None,  # <-- optional (default None)
 )
 ```
-[API Reference](../api_reference/model/orders.md#stop-limit)
+[API Reference](https://docs.nautilustrader.io/api_reference/model/orders.html#module-nautilus_trader.model.orders.stop_limit)
 
 ### Market-To-Limit
 
