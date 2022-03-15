@@ -870,13 +870,17 @@ class BinanceFuturesExecutionClient(LiveExecutionClient):
             elif wrapper.data.e == BinanceFuturesEventType.ORDER_TRADE_UPDATE:
                 msg = msgspec.json.decode(raw, type=BinanceFuturesOrderUpdateWrapper)
                 self._handle_order_trade_update(msg.data)
+            else:
+                self._log.error(
+                    f"Cannot handle websocket msg: unrecognized type {wrapper.data.e}",
+                )
         except Exception as ex:
             self._log.exception(f"Error on handling {repr(raw)}", ex)
 
     def _handle_account_update(self, msg: BinanceFuturesAccountUpdateMsg):
         self.generate_account_state(
             balances=parse_account_balances_ws(raw_balances=msg.a.B),
-            margins=[],
+            margins=[],  # TODO(cs): Implement or remove
             reported=True,
             ts_event=millis_to_nanos(msg.T),
         )
