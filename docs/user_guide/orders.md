@@ -1,7 +1,7 @@
 # Orders
 
 This guide provides more details on the available order types for the platform, along with
-the optional execution instructions available for each.
+the execution instructions available for each.
 
 Orders are one of the fundamental building blocks of any algorithmic trading strategy.
 NautilusTrader has unified a large set of order types and execution instructions
@@ -9,14 +9,14 @@ from standard to more advanced, to offer as much of an exchanges available funct
 as possible. This allows traders to define certain conditions and instructions for
 order execution and management, which allows essentially any type of trading strategy to be created.
 
-## Types
-The two main types of orders are _market_ orders and _limit_ orders. All the other order
+## Overview
+The two main types of orders are _Market_ orders and _Limit_ orders. All the other order
 types are built from these two fundamental types, in terms of liquidity provision they
 are exact opposites. Market orders demand liquidity and require immediate trading at the best
 price available. Conversely, limit orders provide liquidity, they act as standing orders in a limit order book 
 at a specified price limit.
 
-The order types available for the platform are (using the enum values):
+The core order types available for the platform are (using the enum values):
 - `MARKET`
 - `LIMIT`
 - `STOP_MARKET`
@@ -34,6 +34,76 @@ is not available, then the system will not submit the order and an error will be
 a clear explanatory message.
 ```
 
+## Execution Instructions
+
+Certain exchanges allow a trader to specify conditions and restrictions on
+how an order will be processed and executed at the exchange. The following is a brief
+summary of the different execution instructions available.
+
+### Time In Force
+The orders time in force is an instruction to indicate how long the order will remain open
+or active before being filled or the remaining quantity canceled.
+
+- `GTC` (Good 'til Canceled): The order remains in force until canceled by the trader or the exchange.
+- `IOC` (Immediate or Cancel / Fill **and** Kill): The order will execute immediately with any portion of the order quantity which cannot be executed being canceled.
+- `FOK` (Fill **or** Kill): The order will execute immediately, and in full, or not at all.
+- `GTD` (Good 'til Date): The order remains in force until reaching the specified expire date and time.
+- `DAY` (Good for session/day): The order remains in force until the end of the current trading session.
+- `AT_THE_OPEN` (OPG): The order is only in force at the trading session open.
+- `AT_THE_CLOSE`: The order is only in force at the trading session close.
+
+### Expire Time
+This instruction is to be used in conjunction with the `GTD` time in force to specify the time
+at which the order will expire and be removed from the exchanges order book or order management system.
+
+### Post Only
+An order which is marked as `post_only` will only ever participate in providing liquidity to the central
+limit order book, and never initiating a trade which takes liquidity as an aggressor. This option is
+important for market makers or traders seeking to restrict the order to a liquidity _maker_ fee tier.
+
+### Reduce Only
+An order which is marked as `reduce_only` will only ever reduce an existing position on an instrument, and
+never open a new position if already flat. The exact behaviour of this instruction can vary between
+exchanges, however the behaviour as per the Nautilus `SimulatedExchange` is typical of a live exchange.
+
+- Order will be cancelled if the position is closed / becomes flat.
+- Order quantity will be reduced as a positions size for the corresponding instrument reduces.
+
+### Display Quantity
+The `display_qty` specifies the portion of the _Limit_ order which is displayed on the public limit order book.
+These are also known as iceberg orders as there is a visible portion to be displayed, with more quantity which is hidden. 
+Specifying a display quantity of zero is also equivalent to marking an order as `hidden`, and
+this will be the inferred instruction for those exchanges where the display quantity is a binary all, or none (hidden).
+
+### Trigger Type
+Also known as [trigger method](https://guides.interactivebrokers.com/tws/usersguidebook/configuretws/modify_the_stop_trigger_method.htm) 
+which is applicable to conditional trigger orders, specifying the method of triggering the STOP price.
+
+- `DEFAULT`: The default trigger type for the exchange (typically `LAST` price). 
+- `LAST`: The trigger price will be based on the last traded price.
+- `BID_ASK`: The trigger price will be based on the `BID` for buy orders and `ASK` for sell orders.
+- `DOUBLE_LAST`: The trigger price will be based on the last two consecutive `LAST` prices.
+- `DOUBLE_BID_ASK`: The trigger price will be based on the last two `BID` or `ASK` prices as applicable.
+- `LAST_OR_BID_ASK`: The trigger price will be based on the `LAST` or `BID`/`ASK`.
+- `MID_POINT`: The trigger price will be based on the mid-point between the `BID` and `ASK`.
+- `MARK`: The trigger price will be based on the exchange mark price for the instrument.
+- `INDEX`: The trigger price will be based on the exchange index price for the instrument.
+
+### Offset Type
+Applicable to conditional trailing STOP trigger orders, specifies the method of triggering modification
+of the STOP price based on the offset.
+
+- `DEFAULT`: The default offset type for the exchange (typically `PRICE`).
+- `PRICE`: The offset is based on a price difference.
+- `BASIS_POINTS`: The offset is based on a price percentage difference expressed in basis points (100 = 1%).
+- `TICKS`: The offset from the current market is based on the number of ticks.
+- `PRICE_TIER`: The offset is based on an exchange specific price tier.
+
+### Contingency Orders
+More advanced relationships can be specified between orders such as assigning child order which will only
+trigger when the parent order is filled, and linking orders together which will cancel or reduce in quantity
+contingent on each other. More documentation for these options can be found in the [advanced order guide](advanced/advanced_orders.md).
+
 ## Order Factory
 The easiest way to create new orders is by using the built-in `OrderFactory`, which is
 automatically attached to every `TradingStrategy` class. This factory will take care
@@ -48,13 +118,15 @@ examples will leverage an `OrderFactory` from within a `TradingStrategy` context
 For clarity, any optional parameters will be clearly marked with a comment which includes the default value.
 ```
 
+## Order Types
+
 ### Market
-The vanilla market order is an instruction by the trader to immediately trade
+A _Market_ order is an instruction by the trader to immediately trade
 the given quantity at the best price available. You can also specify several
 time in force options, and indicate whether this order is only intended to reduce
 a position.
 
-In the following example we create a market order to buy 100,000 AUD on the
+In the following example we create a _Market_ order to BUY 100,000 `AUD` using `USD` on the
 Interactive Brokers [IdealPro](https://ibkr.info/node/1708) Forex ECN:
 
 ```python
@@ -70,15 +142,73 @@ order: MarketOrder = self.order_factory.market(
 [API Reference](../api_reference/model/orders.md#market)
 
 ### Limit
+A _Limit_ order is placed on the public order book at a specific price, and will only
+execute at that price (or better).
 
+In the following example we create a _Limit_ order to SELL 20 `ETH-PERP` Perpetual Futures
+contracts at 5000 `USD` on the FTX exchange, as a market maker.
+```python
+order: LimitOrder = self.order_factory.limit(
+        instrument_id=InstrumentId(Symbol("ETH-PERP"), Venue("FTX")),
+        order_side=OrderSide.SELL,
+        quantity=Quantity.from_int(20),
+        price=Price.from_str("5000.00"),
+        time_in_force=TimeInForce.GTC,  # <-- optional (default GTC)
+        expire_time=None,  # <-- optional (default None)
+        post_only=True,  # <-- optional (default False)
+        reduce_only=False,  # <-- optional (default False)
+        display_qty=None,  # <-- optional (default None which indicates nothing hidden)
+        tags=None,  # <-- optional (default None)
+)
+```
 [API Reference](../api_reference/model/orders.md#limit)
 
 ### Stop-Market
+A _Stop-Market_ order is a conditional order which once triggered will immediately
+place a _Market_ order. This order type is often used as a stop-loss to limit losses, either
+as a SELL order against LONG positions, or as a BUY order against SHORT positions.
 
+In the following example we create a _Stop-Market_ order to SELL 1 `BTC` at 100,000 `USDT` on the
+Binance Spot/Margin exchange, active until further notice:
+
+```python
+order: StopMarketOrder = self.order_factory.stop_market(
+        instrument_id=InstrumentId(Symbol("BTCUSDT"), Venue("BINANCE")),
+        order_side=OrderSide.SELL,
+        quantity=Quantity.from_int(1),
+        trigger_price=Price.from_int(100_000),
+        trigger_type=TriggerType.LAST,  # <-- optional (default DEFAULT)
+        time_in_force=TimeInForce.GTC,  # <-- optional (default GTC)
+        expire_time=None,  # <-- optional (default None)
+        reduce_only=False,  # <-- optional (default False)
+        tags=None,  # <-- optional (default None)
+)
+```
 [API Reference](../api_reference/model/orders.md#stop-market)
 
 ### Stop-Limit
+A _Stop-Limit_ order is a conditional order which once triggered will immediately place
+a _Limit_ order. 
 
+In the following example we create a _Stop-Limit_ order to BUY 50,000 `GBP` at a LIMIT price of 1.3000 `USD`
+once the market hits the trigger price of 1.30010 `USD` on the
+Currenex FX ECN, active until midday 6th June, 2022 (UTC):
+
+```python
+order: StopLimitOrder = self.order_factory.stop_limit(
+        instrument_id=InstrumentId(Symbol("GBP/USD"), Venue("CURRENEX")),
+        order_side=OrderSide.BUY,
+        quantity=Quantity.from_int(50_000),
+        price=Price.from_str("1.30000"),
+        trigger_price=Price.from_str("1.30010"),
+        trigger_type=TriggerType.BID,  # <-- optional (default DEFAULT)
+        time_in_force=TimeInForce.GTD,  # <-- optional (default GTC)
+        expire_time=pd.Timestamp("2022-06-01T12:00"),
+        post_only=True,  # <-- optional (default False)
+        reduce_only=False,  # <-- optional (default False)
+        tags=None,  # <-- optional (default None)
+)
+```
 [API Reference](../api_reference/model/orders.md#stop-limit)
 
 ### Market-To-Limit
