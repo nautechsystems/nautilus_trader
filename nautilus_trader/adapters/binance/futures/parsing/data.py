@@ -89,8 +89,8 @@ def parse_perpetual_instrument_http(
     min_price = Price(float(price_filter.minPrice), precision=price_precision)
 
     # Futures commissions
-    maker_fee = Decimal("0.0002")  # TODO
-    taker_fee = Decimal("0.0004")  # TODO
+    maker_fee = Decimal("0.000200")  # TODO
+    taker_fee = Decimal("0.000400")  # TODO
 
     assert symbol_info.marginAsset == symbol_info.quoteAsset
 
@@ -171,8 +171,8 @@ def parse_futures_instrument_http(
     min_price = Price(float(price_filter.minPrice), precision=price_precision)
 
     # Futures commissions
-    maker_fee = Decimal("0.0002")  # TODO
-    taker_fee = Decimal("0.0004")  # TODO
+    maker_fee = Decimal("0.000200")  # TODO
+    taker_fee = Decimal("0.000400")  # TODO
 
     assert symbol_info.marginAsset == symbol_info.quoteAsset
 
