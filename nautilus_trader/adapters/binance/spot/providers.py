@@ -64,8 +64,8 @@ class BinanceSpotInstrumentProvider(InstrumentProvider):
         self._client = client
         self._account_type = account_type
 
-        self._wallet = BinanceSpotWalletHttpAPI(self._client)
-        self._market = BinanceSpotMarketHttpAPI(self._client)
+        self._http_wallet = BinanceSpotWalletHttpAPI(self._client)
+        self._http_market = BinanceSpotMarketHttpAPI(self._client)
 
     async def load_all_async(self, filters: Optional[Dict] = None) -> None:
         """
@@ -83,7 +83,7 @@ class BinanceSpotInstrumentProvider(InstrumentProvider):
 
         # Get current commission rates
         try:
-            fee_res: List[BinanceSpotTradeFees] = await self._wallet.trade_fees()
+            fee_res: List[BinanceSpotTradeFees] = await self._http_wallet.trade_fees()
             fees: Dict[str, BinanceSpotTradeFees] = {s.symbol: s for s in fee_res}
         except BinanceClientError:
             self._log.error(
@@ -93,7 +93,7 @@ class BinanceSpotInstrumentProvider(InstrumentProvider):
             return
 
         # Get exchange info for all assets
-        exchange_info: BinanceSpotExchangeInfo = await self._market.exchange_info()
+        exchange_info: BinanceSpotExchangeInfo = await self._http_market.exchange_info()
         for symbol_info in exchange_info.symbols:
             self._parse_instrument(
                 symbol_info=symbol_info,
@@ -136,7 +136,7 @@ class BinanceSpotInstrumentProvider(InstrumentProvider):
 
         # Get current commission rates
         try:
-            fee_res: List[BinanceSpotTradeFees] = await self._wallet.trade_fees()
+            fee_res: List[BinanceSpotTradeFees] = await self._http_wallet.trade_fees()
             fees: Dict[str, BinanceSpotTradeFees] = {s.symbol: s for s in fee_res}
         except BinanceClientError:
             self._log.error(
@@ -149,7 +149,9 @@ class BinanceSpotInstrumentProvider(InstrumentProvider):
         symbols: List[str] = [instrument_id.symbol.value for instrument_id in instrument_ids]
 
         # Get exchange info for all assets
-        exchange_info: BinanceSpotExchangeInfo = await self._market.exchange_info(symbols=symbols)
+        exchange_info: BinanceSpotExchangeInfo = await self._http_market.exchange_info(
+            symbols=symbols
+        )
         for symbol_info in exchange_info.symbols:
             self._parse_instrument(
                 symbol_info=symbol_info,
@@ -185,7 +187,7 @@ class BinanceSpotInstrumentProvider(InstrumentProvider):
 
         # Get current commission rates
         try:
-            fees: BinanceSpotTradeFees = await self._wallet.trade_fee(
+            fees: BinanceSpotTradeFees = await self._http_wallet.trade_fee(
                 symbol=instrument_id.symbol.value
             )
         except BinanceClientError:
@@ -196,7 +198,9 @@ class BinanceSpotInstrumentProvider(InstrumentProvider):
             return
 
         # Get exchange info for asset
-        exchange_info: BinanceSpotExchangeInfo = await self._market.exchange_info(symbol=symbol)
+        exchange_info: BinanceSpotExchangeInfo = await self._http_market.exchange_info(
+            symbol=symbol
+        )
         for symbol_info in exchange_info.symbols:
             self._parse_instrument(
                 symbol_info=symbol_info,

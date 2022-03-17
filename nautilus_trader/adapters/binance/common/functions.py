@@ -27,7 +27,11 @@ def parse_symbol(symbol: str, account_type: BinanceAccountType):
     # Parse Futures symbol
     if symbol[-1].isdigit():
         return symbol  # Deliverable
-    return symbol + "-PERP"
+    if symbol.endswith("_PERP"):
+        symbol = symbol.replace("_", "-")
+        return symbol
+    else:
+        return symbol + "-PERP"
 
 
 def format_symbol(symbol: str):

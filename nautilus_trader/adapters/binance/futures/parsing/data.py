@@ -21,7 +21,9 @@ import msgspec
 import orjson
 
 from nautilus_trader.adapters.binance.common.constants import BINANCE_VENUE
+from nautilus_trader.adapters.binance.common.enums import BinanceAccountType
 from nautilus_trader.adapters.binance.common.enums import BinanceSymbolFilterType
+from nautilus_trader.adapters.binance.common.functions import parse_symbol
 from nautilus_trader.adapters.binance.common.schemas import BinanceOrderBookData
 from nautilus_trader.adapters.binance.futures.schemas.market import BinanceFuturesSymbolInfo
 from nautilus_trader.adapters.binance.spot.schemas.market import BinanceSymbolFilter
@@ -63,8 +65,9 @@ def parse_perpetual_instrument_http(
         currency_type=CurrencyType.CRYPTO,
     )
 
-    symbol = Symbol(symbol_info.symbol + "-PERP")
-    instrument_id = InstrumentId(symbol=symbol, venue=BINANCE_VENUE)
+    native_symbol = Symbol(symbol_info.symbol)
+    symbol = parse_symbol(symbol_info.symbol, BinanceAccountType.FUTURES_USDT)
+    instrument_id = InstrumentId(symbol=Symbol(symbol), venue=BINANCE_VENUE)
 
     # Parse instrument filters
     filters: Dict[BinanceSymbolFilterType, BinanceSymbolFilter] = {
@@ -92,15 +95,20 @@ def parse_perpetual_instrument_http(
     maker_fee = Decimal("0.000200")  # TODO
     taker_fee = Decimal("0.000400")  # TODO
 
-    assert symbol_info.marginAsset == symbol_info.quoteAsset
+    if symbol_info.marginAsset == symbol_info.baseAsset:
+        settlement_currency = base_currency
+    elif symbol_info.marginAsset == symbol_info.quoteAsset:
+        settlement_currency = quote_currency
+    else:
+        raise ValueError(f"Unrecognized margin asset {symbol_info.marginAsset}")
 
     # Create instrument
     return CryptoPerpetual(
         instrument_id=instrument_id,
-        native_symbol=Symbol(symbol_info.symbol),
+        native_symbol=native_symbol,
         base_currency=base_currency,
         quote_currency=quote_currency,
-        settlement_currency=quote_currency,
+        settlement_currency=settlement_currency,
         is_inverse=False,  # No inverse instruments trade on Binance
         price_precision=price_precision,
         size_precision=size_precision,
@@ -112,8 +120,8 @@ def parse_perpetual_instrument_http(
         min_notional=min_notional,
         max_price=max_price,
         min_price=min_price,
-        margin_init=Decimal(0),
-        margin_maint=Decimal(0),
+        margin_init=Decimal(float(symbol_info.requiredMarginPercent) / 100),
+        margin_maint=Decimal(float(symbol_info.maintMarginPercent) / 100),
         maker_fee=maker_fee,
         taker_fee=taker_fee,
         ts_event=ts_event,
@@ -146,7 +154,8 @@ def parse_futures_instrument_http(
     )
 
     native_symbol = Symbol(symbol_info.symbol)
-    instrument_id = InstrumentId(symbol=native_symbol, venue=BINANCE_VENUE)
+    symbol = parse_symbol(symbol_info.symbol, BinanceAccountType.FUTURES_USDT)
+    instrument_id = InstrumentId(symbol=Symbol(symbol), venue=BINANCE_VENUE)
 
     # Parse instrument filters
     filters: Dict[BinanceSymbolFilterType, BinanceSymbolFilter] = {
@@ -174,7 +183,12 @@ def parse_futures_instrument_http(
     maker_fee = Decimal("0.000200")  # TODO
     taker_fee = Decimal("0.000400")  # TODO
 
-    assert symbol_info.marginAsset == symbol_info.quoteAsset
+    if symbol_info.marginAsset == symbol_info.baseAsset:
+        settlement_currency = base_currency
+    elif symbol_info.marginAsset == symbol_info.quoteAsset:
+        settlement_currency = quote_currency
+    else:
+        raise ValueError(f"Unrecognized margin asset {symbol_info.marginAsset}")
 
     # Create instrument
     return CryptoFuture(
@@ -182,7 +196,7 @@ def parse_futures_instrument_http(
         native_symbol=native_symbol,
         underlying=base_currency,
         quote_currency=quote_currency,
-        settlement_currency=quote_currency,
+        settlement_currency=settlement_currency,
         expiry_date=dt.strptime(symbol_info.symbol.partition("_")[2], "%y%m%d").date(),
         price_precision=price_precision,
         size_precision=size_precision,
@@ -194,8 +208,8 @@ def parse_futures_instrument_http(
         min_notional=min_notional,
         max_price=max_price,
         min_price=min_price,
-        margin_init=Decimal(0),
-        margin_maint=Decimal(0),
+        margin_init=Decimal(float(symbol_info.requiredMarginPercent) / 100),
+        margin_maint=Decimal(float(symbol_info.maintMarginPercent) / 100),
         maker_fee=maker_fee,
         taker_fee=taker_fee,
         ts_event=ts_event,
