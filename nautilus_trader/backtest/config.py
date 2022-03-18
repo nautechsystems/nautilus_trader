@@ -293,7 +293,7 @@ def parse_filters_expr(s: str):
     """
     from pyarrow.dataset import field
 
-    assert field  # required for eval.
+    assert field  # Required for eval
 
     if not s:
         return

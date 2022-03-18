@@ -32,15 +32,12 @@ def parse_account_balances_http(assets: List[BinanceFuturesAssetInfo]) -> List[A
         locked = Decimal(a.initialMargin) + Decimal(a.maintMargin)
         free = total - locked
 
-        try:
-            balance = AccountBalance(
-                total=Money(total, currency),
-                locked=Money(locked, currency),
-                free=Money(free, currency),
-            )
-            balances.append(balance)
-        except TypeError:  # TODO(cs): Currency not found
-            continue
+        balance = AccountBalance(
+            total=Money(total, currency),
+            locked=Money(locked, currency),
+            free=Money(free, currency),
+        )
+        balances.append(balance)
 
     return balances
 
@@ -66,14 +63,11 @@ def parse_account_balances_ws(raw_balances: List[BinanceFuturesBalance]) -> List
 def parse_account_margins_http(assets: List[BinanceFuturesAssetInfo]) -> List[MarginBalance]:
     margins: List[MarginBalance] = []
     for a in assets:
-        try:
-            currency: Currency = Currency.from_str(a.asset)
-            margin = MarginBalance(
-                initial=Money(Decimal(a.initialMargin), currency),
-                maintenance=Money(Decimal(a.maintMargin), currency),
-            )
-            margins.append(margin)
-        except TypeError:
-            continue
+        currency: Currency = Currency.from_str(a.asset)
+        margin = MarginBalance(
+            initial=Money(Decimal(a.initialMargin), currency),
+            maintenance=Money(Decimal(a.maintMargin), currency),
+        )
+        margins.append(margin)
 
     return margins
