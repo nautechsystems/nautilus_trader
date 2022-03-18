@@ -77,7 +77,7 @@ this will be the inferred instruction for those exchanges where the display quan
 
 ### Trigger Type
 Also known as [trigger method](https://guides.interactivebrokers.com/tws/usersguidebook/configuretws/modify_the_stop_trigger_method.htm) 
-which is applicable to conditional trigger orders, specifying the method of triggering the STOP price.
+which is applicable to conditional trigger orders, specifying the method of triggering the stop price.
 
 - `DEFAULT`: The default trigger type for the exchange (typically `LAST` or `BID_ASK`). 
 - `LAST`: The trigger price will be based on the last traded price.
@@ -91,7 +91,7 @@ which is applicable to conditional trigger orders, specifying the method of trig
 
 ### Trigger Offset Type
 Applicable to conditional trailing STOP trigger orders, specifies the method of triggering modification
-of the STOP price based on the offset from the 'market' (bid, ask or last price and applicable).
+of the stop price based on the offset from the 'market' (bid, ask or last price and applicable).
 
 - `DEFAULT`: The default offset type for the exchange (typically `PRICE`).
 - `PRICE`: The offset is based on a price difference.
@@ -190,7 +190,7 @@ order: StopMarketOrder = self.order_factory.stop_market(
 
 ### Stop-Limit
 A _Stop-Limit_ order is a conditional order which once triggered will immediately place
-a _Limit_ order. 
+a _Limit_ order at the specified price. 
 
 In the following example we create a _Stop-Limit_ order to BUY 50,000 GBP at a limit price of 1.3000 USD
 once the market hits the trigger price of 1.30010 USD on the
@@ -214,16 +214,133 @@ order: StopLimitOrder = self.order_factory.stop_limit(
 [API Reference](https://docs.nautilustrader.io/api_reference/model/orders.html#module-nautilus_trader.model.orders.stop_limit)
 
 ### Market-To-Limit
+A _Market-To-Limit_ order is submitted as a market order to execute at the current best market price. 
+If the order is only partially filled, the remainder of the order is canceled and re-submitted as a _Limit_ order with 
+the limit price equal to the price at which the filled portion of the order executed.
 
-[API Reference](../api_reference/model/orders.md#market-to-limit)
+In the following example we create a _Market-To-Limit_ order to BUY 200,000 USD using JPY
+on the Interactive Brokers [IdealPro](https://ibkr.info/node/1708) Forex ECN:
+
+```python
+order: MarketToLimitOrder = self.order_factory.market_to_limit(
+        instrument_id=InstrumentId(Symbol("USD/JPY"), Venue("IDEALPRO")),
+        order_side=OrderSide.BUY,
+        quantity=Quantity.from_int(200_000),
+        price=Price.from_str("1.30000"),
+        time_in_force=TimeInForce.GTC,  # <-- optional (default GTC)
+        reduce_only=False,  # <-- optional (default False)
+        display_qty=None,  # <-- optional (default None which indicates nothing hidden)
+        tags=None,  # <-- optional (default None)
+)
+```
+
+[API Reference](https://docs.nautilustrader.io/api_reference/model/orders.html#module-nautilus_trader.model.orders.market_to_limit)
 
 ### Market-If-Touched
+A _Market-If-Touched_ order is a conditional order which once triggered will immediately
+place a _Market_ order. This order type is often used to enter a new position on a stop price in the market orders direction,
+or to take profits from an existing position, either as a SELL order against LONG positions, 
+or as a BUY order against SHORT positions.
 
-[API Reference](../api_reference/model/orders.md#market-if-touched)
+In the following example we create a _Market-If-Touched_ order to SELL 10 ETHUSDT-PERP Perpetual Futures contracts at 10,000 USDT on the
+Binance Futures exchange, active until further notice:
+
+```python
+order: MarketIfTouchedOrder = self.order_factory.market_if_touched(
+        instrument_id=InstrumentId(Symbol("ETHUSDT-PERP"), Venue("BINANCE")),
+        order_side=OrderSide.SELL,
+        quantity=Quantity.from_int(10),
+        trigger_price=Price.from_int("10000.00"),
+        trigger_type=TriggerType.LAST,  # <-- optional (default DEFAULT)
+        time_in_force=TimeInForce.GTC,  # <-- optional (default GTC)
+        expire_time=None,  # <-- optional (default None)
+        reduce_only=False,  # <-- optional (default False)
+        tags="ENTRY",  # <-- optional (default None)
+)
+```
+
+[API Reference](https://docs.nautilustrader.io/api_reference/model/orders.html#module-nautilus_trader.model.orders.market_if_touched)
 
 ### Limit-If-Touched
+A _Limit-If_Touched_ order is a conditional order which once triggered will immediately place
+a _Limit_ order at the specified price. 
 
-[API Reference](../api_reference/model/orders.md#limit-if-touched)
+In the following example we create a _Stop-Limit_ order to BUY 5 BTCUSDT-PERP Perpetual Futures contracts at a limit price of 30_100 USDT
+once the market hits the trigger price of 30_150 USDT on the
+Binance Futures exchange, active until midday 6th June, 2022 (UTC):
+
+```python
+order: StopLimitOrder = self.order_factory.limit_if_touched(
+        instrument_id=InstrumentId(Symbol("BTCUSDT-PERP"), Venue("BINANCE")),
+        order_side=OrderSide.BUY,
+        quantity=Quantity.from_int(5),
+        price=Price.from_str("30100"),
+        trigger_price=Price.from_str("30150"),
+        trigger_type=TriggerType.LAST,  # <-- optional (default DEFAULT)
+        time_in_force=TimeInForce.GTD,  # <-- optional (default GTC)
+        expire_time=pd.Timestamp("2022-06-01T12:00"),
+        post_only=True,  # <-- optional (default False)
+        reduce_only=False,  # <-- optional (default False)
+        tags="TAKE_PROFIT",  # <-- optional (default None)
+)
+```
+
+[API Reference](https://docs.nautilustrader.io/api_reference/model/orders.html#module-nautilus_trader.model.orders.limit_if_touched)
+
+### Trailing-Stop-Market
+A _Trailing-Stop-Market_ order is a conditional order which trails a stop trigger price
+a fixed offset away from the defined market price. Once triggered a _Market_ order will
+immediately be placed.
+
+In the following example we create a _Trailing-Stop-Market_ order to SELL 10 ETHUSD-PERP COIN_M margined
+Perpetual Futures Contracts activating at 5000 USD then trailing at an offset of 1% (in basis points) away from the current last traded price, on the Binance Futures exchange:
+
+```python
+order: TrailingStopMarketOrder = self.order_factory.trailing_stop_market(
+        instrument_id=InstrumentId(Symbol("ETHUSD-PERP"), Venue("BINANCE")),
+        order_side=OrderSide.SELL,
+        quantity=Quantity.from_int(10),
+        trigger_price=Price.from_str("5000"),
+        trigger_type=TriggerType.LAST,  # <-- optional (default DEFAULT)
+        trailing_offset=Decimal(100),
+        offset_type=TrailingOffsetType.BASIS_POINTS,
+        time_in_force=TimeInForce.GTC,  # <-- optional (default GTC)
+        expire_time=None,  # <-- optional (default None)
+        reduce_only=True,  # <-- optional (default False)
+        tags="TRAILING_STOP-1",  # <-- optional (default None)
+)
+```
+
+[API Reference](https://docs.nautilustrader.io/api_reference/model/orders.html#module-nautilus_trader.model.orders.trailing_stop_market)
+
+### Trailing-Stop-Limit
+A _Trailing-Stop-Limit_ order is a conditional order which trails a stop trigger price
+a fixed offset away from the defined market price. Once triggered a _Limit_ order will
+immediately be placed at the defined price (which is also updated as the market moves until triggered).
+
+In the following example we create a _Trailing-Stop-Limit_ order to BUY 1,250,000 AUD using USD 
+at a limit price of 0.72000 USD activating at 0.71000 USD then trailing at a stop offset of 0.00100 USD 
+away from the current ask price on the Currenex FX ECN, active until further notice:
+
+```python
+order: TrailingStopLimitOrder = self.order_factory.trailing_stop_limit(
+        instrument_id=InstrumentId(Symbol("AUD/USD"), Venue("CURRENEX")),
+        order_side=OrderSide.BUY,
+        quantity=Quantity.from_int(1_250_000),
+        price=Price.from_str("0.71000"),
+        trigger_price=Price.from_str("0.72000"),
+        trigger_type=TriggerType.BID_ASK,  # <-- optional (default DEFAULT)
+        limit_offset=Decimal("0.00050"),
+        trailing_offset=Decimal("0.00100"),
+        offset_type=TrailingOffsetType.PRICE,
+        time_in_force=TimeInForce.GTC,  # <-- optional (default GTC)
+        expire_time=None,  # <-- optional (default None)
+        reduce_only=True,  # <-- optional (default False)
+        tags="TRAILING_STOP",  # <-- optional (default None)
+)
+```
+
+[API Reference](https://docs.nautilustrader.io/api_reference/model/orders.html#module-nautilus_trader.model.orders.trailing_stop_limit)
 
 ### Order Lists
 
