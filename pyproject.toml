@@ -47,7 +47,7 @@ python = ">=3.8,<3.11"
 cython = "3.0.0a9"  # Pinned at 3.0.0a9 due coverage
 aiodns = "^3.0.0"
 aiohttp = "^3.8.1"
-dask = "^2022.2.1"
+dask = "^2022.3.0"
 frozendict = "^2.3.0"
 fsspec = "^2022.2.0"
 hiredis = "^2.0.0"
@@ -79,7 +79,7 @@ coverage = "4.5.4"  # Pinned at 4.5.4 due Cython
 nox = "^2022.1.7"
 numpydoc = "^1.2.0"
 pre-commit = "^2.17.0"
-pytest = "^7.1.0"
+pytest = "^7.1.1"
 pytest-asyncio = "^0.18.2"
 pytest-benchmark = "^3.4.1"
 pytest-cov = "2.10.1"  # Pinned at 2.10.1 due coverage 4.5.4
