@@ -72,8 +72,7 @@ exchanges, however the behaviour as per the Nautilus `SimulatedExchange` is typi
 ### Display Quantity
 The `display_qty` specifies the portion of a _Limit_ order which is displayed on the public limit order book.
 These are also known as iceberg orders as there is a visible portion to be displayed, with more quantity which is hidden. 
-Specifying a display quantity of zero is also equivalent to marking an order as `hidden`, and
-this will be the inferred instruction for those exchanges where the display quantity is a binary all, or none (hidden).
+Specifying a display quantity of zero is also equivalent to marking an order as `hidden`.
 
 ### Trigger Type
 Also known as [trigger method](https://guides.interactivebrokers.com/tws/usersguidebook/configuretws/modify_the_stop_trigger_method.htm) 
@@ -133,7 +132,7 @@ to BUY 100,000 AUD using USD:
 
 ```python
 order: MarketOrder = self.order_factory.market(
-        instrument_id=InstrumentId(Symbol("AUD/USD"), Venue("IDEALPRO")),
+        instrument_id=InstrumentId.from_str("AUD/USD.IDEALPRO"),
         order_side=OrderSide.BUY,
         quantity=Quantity.from_int(100000),
         time_in_force=TimeInForce.IOC,  # <-- optional (default GTC)
@@ -151,7 +150,7 @@ In the following example we create a _Limit_ order on the FTX Crypto exchange to
 contracts at a limit price of 5000 USD, as a market maker.
 ```python
 order: LimitOrder = self.order_factory.limit(
-        instrument_id=InstrumentId(Symbol("ETH-PERP"), Venue("FTX")),
+        instrument_id=InstrumentId.from_str("ETH-PERP.FTX"),
         order_side=OrderSide.SELL,
         quantity=Quantity.from_int(20),
         price=Price.from_str("5000.00"),
@@ -175,7 +174,7 @@ to SELL 1 BTC at a trigger price of 100,000 USDT, active until further notice:
 
 ```python
 order: StopMarketOrder = self.order_factory.stop_market(
-        instrument_id=InstrumentId(Symbol("BTCUSDT"), Venue("BINANCE")),
+        instrument_id=InstrumentId.from_str("BTCUSDT.BINANCE"),
         order_side=OrderSide.SELL,
         quantity=Quantity.from_int(1),
         trigger_price=Price.from_int(100_000),
@@ -197,7 +196,7 @@ once the market hits the trigger price of 1.30010 USD, active until midday 6th J
 
 ```python
 order: StopLimitOrder = self.order_factory.stop_limit(
-        instrument_id=InstrumentId(Symbol("GBP/USD"), Venue("CURRENEX")),
+        instrument_id=InstrumentId.from_str("GBP/USD.CURRENEX"),
         order_side=OrderSide.BUY,
         quantity=Quantity.from_int(50_000),
         price=Price.from_str("1.30000"),
@@ -222,7 +221,7 @@ to BUY 200,000 USD using JPY:
 
 ```python
 order: MarketToLimitOrder = self.order_factory.market_to_limit(
-        instrument_id=InstrumentId(Symbol("USD/JPY"), Venue("IDEALPRO")),
+        instrument_id=InstrumentId.from_str("USD/JPY.IDEALPRO"),
         order_side=OrderSide.BUY,
         quantity=Quantity.from_int(200_000),
         price=Price.from_str("1.30000"),
@@ -246,7 +245,7 @@ to SELL 10 ETHUSDT-PERP Perpetual Futures contracts at a trigger price of 10,000
 
 ```python
 order: MarketIfTouchedOrder = self.order_factory.market_if_touched(
-        instrument_id=InstrumentId(Symbol("ETHUSDT-PERP"), Venue("BINANCE")),
+        instrument_id=InstrumentId.from_str("ETHUSDT-PERP.BINANCE"),
         order_side=OrderSide.SELL,
         quantity=Quantity.from_int(10),
         trigger_price=Price.from_int("10000.00"),
@@ -261,7 +260,7 @@ order: MarketIfTouchedOrder = self.order_factory.market_if_touched(
 [API Reference](https://docs.nautilustrader.io/api_reference/model/orders.html#module-nautilus_trader.model.orders.market_if_touched)
 
 ### Limit-If-Touched
-A _Limit-If_Touched_ order is a conditional order which once triggered will immediately place
+A _Limit-If-Touched_ order is a conditional order which once triggered will immediately place
 a _Limit_ order at the specified price. 
 
 In the following example we create a _Stop-Limit_ order to BUY 5 BTCUSDT-PERP Perpetual Futures contracts on the
@@ -270,7 +269,7 @@ active until midday 6th June, 2022 (UTC):
 
 ```python
 order: StopLimitOrder = self.order_factory.limit_if_touched(
-        instrument_id=InstrumentId(Symbol("BTCUSDT-PERP"), Venue("BINANCE")),
+        instrument_id=InstrumentId.from_str("BTCUSDT-PERP.BINANCE"),
         order_side=OrderSide.BUY,
         quantity=Quantity.from_int(5),
         price=Price.from_str("30100"),
@@ -296,7 +295,7 @@ Perpetual Futures Contracts activating at a trigger price of 5000 USD, then trai
 
 ```python
 order: TrailingStopMarketOrder = self.order_factory.trailing_stop_market(
-        instrument_id=InstrumentId(Symbol("ETHUSD-PERP"), Venue("BINANCE")),
+        instrument_id=InstrumentId.from_str("ETHUSD-PERP.BINANCE"),
         order_side=OrderSide.SELL,
         quantity=Quantity.from_int(10),
         trigger_price=Price.from_str("5000"),
@@ -323,7 +322,7 @@ away from the current ask price, active until further notice:
 
 ```python
 order: TrailingStopLimitOrder = self.order_factory.trailing_stop_limit(
-        instrument_id=InstrumentId(Symbol("AUD/USD"), Venue("CURRENEX")),
+        instrument_id=InstrumentId.from_str("AUD/USD.CURRENEX"),
         order_side=OrderSide.BUY,
         quantity=Quantity.from_int(1_250_000),
         price=Price.from_str("0.71000"),
