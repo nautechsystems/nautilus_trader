@@ -138,7 +138,7 @@ cdef class Currency:
         strict : bool, default False
             If strict mode is enabled. If not strict mode then it's very likely
             the currency is a crypto, so for robustness will then return a new
-            crypto currency using the code and a default precision of 8.
+            cryptocurrency using the code and a default precision of 8.
 
         Returns
         -------
