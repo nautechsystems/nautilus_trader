@@ -1,6 +1,6 @@
 # Orders
 
-This guide provides more details on the available order types for the platform, along with
+This guide provides more details about the available order types for the platform, along with
 the execution instructions available for each.
 
 Orders are one of the fundamental building blocks of any algorithmic trading strategy.
@@ -12,9 +12,9 @@ order execution and management, which allows essentially any type of trading str
 ## Overview
 The two main types of orders are _Market_ orders and _Limit_ orders. All the other order
 types are built from these two fundamental types, in terms of liquidity provision they
-are exact opposites. Market orders demand liquidity and require immediate trading at the best
-price available. Conversely, limit orders provide liquidity, they act as standing orders in a limit order book 
-at a specified price limit.
+are exact opposites. _Market_ orders demand liquidity and require immediate trading at the best
+price available. Conversely, _Limit_ orders provide liquidity, they act as standing orders in a limit order book 
+at a specified limit price.
 
 The core order types available for the platform are (using the enum values):
 - `MARKET`
@@ -70,7 +70,7 @@ exchanges, however the behaviour as per the Nautilus `SimulatedExchange` is typi
 - Order quantity will be reduced as the associated positions size reduces.
 
 ### Display Quantity
-The `display_qty` specifies the portion of the _Limit_ order which is displayed on the public limit order book.
+The `display_qty` specifies the portion of a _Limit_ order which is displayed on the public limit order book.
 These are also known as iceberg orders as there is a visible portion to be displayed, with more quantity which is hidden. 
 Specifying a display quantity of zero is also equivalent to marking an order as `hidden`, and
 this will be the inferred instruction for those exchanges where the display quantity is a binary all, or none (hidden).
@@ -90,12 +90,12 @@ which is applicable to conditional trigger orders, specifying the method of trig
 - `INDEX`: The trigger price will be based on the instruments index price for the exchange.
 
 ### Trigger Offset Type
-Applicable to conditional trailing STOP trigger orders, specifies the method of triggering modification
-of the stop price based on the offset from the 'market' (bid, ask or last price and applicable).
+Applicable to conditional trailing-stop trigger orders, specifies the method of triggering modification
+of the stop price based on the offset from the 'market' (bid, ask or last price as applicable).
 
 - `DEFAULT`: The default offset type for the exchange (typically `PRICE`).
 - `PRICE`: The offset is based on a price difference.
-- `BASIS_POINTS`: The offset is based on a price percentage difference expressed in basis points (100 = 1%).
+- `BASIS_POINTS`: The offset is based on a price percentage difference expressed in basis points (100bp = 1%).
 - `TICKS`: The offset is based on a number of ticks.
 - `PRICE_TIER`: The offset is based on an exchange specific price tier.
 
@@ -107,7 +107,7 @@ contingent on each other. More documentation for these options can be found in t
 ## Order Factory
 The easiest way to create new orders is by using the built-in `OrderFactory`, which is
 automatically attached to every `TradingStrategy` class. This factory will take care
-of lower level details - such as ensuring the correct trader ID and strategy ID is assigned, generation
+of lower level details - such as ensuring the correct trader ID and strategy ID are assigned, generation
 of a necessary initialization ID and timestamp, and abstracts away parameters which don't necessarily
 apply to the order type being created, or are only needed to specify more advanced execution instructions. 
 
@@ -128,8 +128,8 @@ the given quantity at the best price available. You can also specify several
 time in force options, and indicate whether this order is only intended to reduce
 a position.
 
-In the following example we create a _Market_ order to BUY 100,000 AUD using USD on the
-Interactive Brokers [IdealPro](https://ibkr.info/node/1708) Forex ECN:
+In the following example we create a _Market_ order on the Interactive Brokers [IdealPro](https://ibkr.info/node/1708) Forex ECN
+to BUY 100,000 AUD using USD:
 
 ```python
 order: MarketOrder = self.order_factory.market(
@@ -147,8 +147,8 @@ order: MarketOrder = self.order_factory.market(
 A _Limit_ order is placed on the public order book at a specific price, and will only
 execute at that price (or better).
 
-In the following example we create a _Limit_ order to SELL 20 ETH-PERP Perpetual Futures
-contracts at 5000 USD on the FTX exchange, as a market maker.
+In the following example we create a _Limit_ order on the FTX Crypto exchange to SELL 20 ETH-PERP Perpetual Futures
+contracts at a limit price of 5000 USD, as a market maker.
 ```python
 order: LimitOrder = self.order_factory.limit(
         instrument_id=InstrumentId(Symbol("ETH-PERP"), Venue("FTX")),
@@ -170,8 +170,8 @@ A _Stop-Market_ order is a conditional order which once triggered will immediate
 place a _Market_ order. This order type is often used as a stop-loss to limit losses, either
 as a SELL order against LONG positions, or as a BUY order against SHORT positions.
 
-In the following example we create a _Stop-Market_ order to SELL 1 BTC at 100,000 USDT on the
-Binance Spot/Margin exchange, active until further notice:
+In the following example we create a _Stop-Market_ order on the Binance Spot/Margin exchange 
+to SELL 1 BTC at a trigger price of 100,000 USDT, active until further notice:
 
 ```python
 order: StopMarketOrder = self.order_factory.stop_market(
@@ -192,9 +192,8 @@ order: StopMarketOrder = self.order_factory.stop_market(
 A _Stop-Limit_ order is a conditional order which once triggered will immediately place
 a _Limit_ order at the specified price. 
 
-In the following example we create a _Stop-Limit_ order to BUY 50,000 GBP at a limit price of 1.3000 USD
-once the market hits the trigger price of 1.30010 USD on the
-Currenex FX ECN, active until midday 6th June, 2022 (UTC):
+In the following example we create a _Stop-Limit_ order on the Currenex FX ECN to BUY 50,000 GBP at a limit price of 1.3000 USD
+once the market hits the trigger price of 1.30010 USD, active until midday 6th June, 2022 (UTC):
 
 ```python
 order: StopLimitOrder = self.order_factory.stop_limit(
@@ -205,7 +204,7 @@ order: StopLimitOrder = self.order_factory.stop_limit(
         trigger_price=Price.from_str("1.30010"),
         trigger_type=TriggerType.BID,  # <-- optional (default DEFAULT)
         time_in_force=TimeInForce.GTD,  # <-- optional (default GTC)
-        expire_time=pd.Timestamp("2022-06-01T12:00"),
+        expire_time=pd.Timestamp("2022-06-06T12:00"),
         post_only=True,  # <-- optional (default False)
         reduce_only=False,  # <-- optional (default False)
         tags=None,  # <-- optional (default None)
@@ -218,8 +217,8 @@ A _Market-To-Limit_ order is submitted as a market order to execute at the curre
 If the order is only partially filled, the remainder of the order is canceled and re-submitted as a _Limit_ order with 
 the limit price equal to the price at which the filled portion of the order executed.
 
-In the following example we create a _Market-To-Limit_ order to BUY 200,000 USD using JPY
-on the Interactive Brokers [IdealPro](https://ibkr.info/node/1708) Forex ECN:
+In the following example we create a _Market-To-Limit_ order on the Interactive Brokers [IdealPro](https://ibkr.info/node/1708) Forex ECN
+to BUY 200,000 USD using JPY:
 
 ```python
 order: MarketToLimitOrder = self.order_factory.market_to_limit(
@@ -242,8 +241,8 @@ place a _Market_ order. This order type is often used to enter a new position on
 or to take profits from an existing position, either as a SELL order against LONG positions, 
 or as a BUY order against SHORT positions.
 
-In the following example we create a _Market-If-Touched_ order to SELL 10 ETHUSDT-PERP Perpetual Futures contracts at 10,000 USDT on the
-Binance Futures exchange, active until further notice:
+In the following example we create a _Market-If-Touched_ order on the Binance Futures exchange
+to SELL 10 ETHUSDT-PERP Perpetual Futures contracts at a trigger price of 10,000 USDT, active until further notice:
 
 ```python
 order: MarketIfTouchedOrder = self.order_factory.market_if_touched(
@@ -265,9 +264,9 @@ order: MarketIfTouchedOrder = self.order_factory.market_if_touched(
 A _Limit-If_Touched_ order is a conditional order which once triggered will immediately place
 a _Limit_ order at the specified price. 
 
-In the following example we create a _Stop-Limit_ order to BUY 5 BTCUSDT-PERP Perpetual Futures contracts at a limit price of 30_100 USDT
-once the market hits the trigger price of 30_150 USDT on the
-Binance Futures exchange, active until midday 6th June, 2022 (UTC):
+In the following example we create a _Stop-Limit_ order to BUY 5 BTCUSDT-PERP Perpetual Futures contracts on the
+Binance Futures exchange at a limit price of 30_100 USDT (once the market hits the trigger price of 30_150 USDT), 
+active until midday 6th June, 2022 (UTC):
 
 ```python
 order: StopLimitOrder = self.order_factory.limit_if_touched(
@@ -278,7 +277,7 @@ order: StopLimitOrder = self.order_factory.limit_if_touched(
         trigger_price=Price.from_str("30150"),
         trigger_type=TriggerType.LAST,  # <-- optional (default DEFAULT)
         time_in_force=TimeInForce.GTD,  # <-- optional (default GTC)
-        expire_time=pd.Timestamp("2022-06-01T12:00"),
+        expire_time=pd.Timestamp("2022-06-06T12:00"),
         post_only=True,  # <-- optional (default False)
         reduce_only=False,  # <-- optional (default False)
         tags="TAKE_PROFIT",  # <-- optional (default None)
@@ -292,8 +291,8 @@ A _Trailing-Stop-Market_ order is a conditional order which trails a stop trigge
 a fixed offset away from the defined market price. Once triggered a _Market_ order will
 immediately be placed.
 
-In the following example we create a _Trailing-Stop-Market_ order to SELL 10 ETHUSD-PERP COIN_M margined
-Perpetual Futures Contracts activating at 5000 USD then trailing at an offset of 1% (in basis points) away from the current last traded price, on the Binance Futures exchange:
+In the following example we create a _Trailing-Stop-Market_ order on the Binance Futures exchange to SELL 10 ETHUSD-PERP COIN_M margined
+Perpetual Futures Contracts activating at a trigger price of 5000 USD, then trailing at an offset of 1% (in basis points) away from the current last traded price:
 
 ```python
 order: TrailingStopMarketOrder = self.order_factory.trailing_stop_market(
@@ -318,9 +317,9 @@ A _Trailing-Stop-Limit_ order is a conditional order which trails a stop trigger
 a fixed offset away from the defined market price. Once triggered a _Limit_ order will
 immediately be placed at the defined price (which is also updated as the market moves until triggered).
 
-In the following example we create a _Trailing-Stop-Limit_ order to BUY 1,250,000 AUD using USD 
-at a limit price of 0.72000 USD activating at 0.71000 USD then trailing at a stop offset of 0.00100 USD 
-away from the current ask price on the Currenex FX ECN, active until further notice:
+In the following example we create a _Trailing-Stop-Limit_ order on the Currenex FX ECN to BUY 1,250,000 AUD using USD 
+at a limit price of 0.72000 USD, activating at 0.71000 USD then trailing at a stop offset of 0.00100 USD 
+away from the current ask price, active until further notice:
 
 ```python
 order: TrailingStopLimitOrder = self.order_factory.trailing_stop_limit(
