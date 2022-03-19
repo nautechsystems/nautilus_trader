@@ -120,9 +120,7 @@ examples will leverage an `OrderFactory` from within a `TradingStrategy` context
 For clarity, any optional parameters will be clearly marked with a comment which includes the default value.
 ```
 
-## Order Types
-
-### Market
+## Market Orders
 A _Market_ order is an instruction by the trader to immediately trade
 the given quantity at the best price available. You can also specify several
 time in force options, and indicate whether this order is only intended to reduce
@@ -143,7 +141,7 @@ order: MarketOrder = self.order_factory.market(
 ```
 [API Reference](https://docs.nautilustrader.io/api_reference/model/orders.html#module-nautilus_trader.model.orders.market)
 
-### Limit
+## Limit Orders
 A _Limit_ order is placed on the public order book at a specific price, and will only
 execute at that price (or better).
 
@@ -165,7 +163,7 @@ order: LimitOrder = self.order_factory.limit(
 ```
 [API Reference](https://docs.nautilustrader.io/api_reference/model/orders.html#module-nautilus_trader.model.orders.limit)
 
-### Stop-Market
+## Stop-Market Orders
 A _Stop-Market_ order is a conditional order which once triggered will immediately
 place a _Market_ order. This order type is often used as a stop-loss to limit losses, either
 as a SELL order against LONG positions, or as a BUY order against SHORT positions.
@@ -188,7 +186,7 @@ order: StopMarketOrder = self.order_factory.stop_market(
 ```
 [API Reference](https://docs.nautilustrader.io/api_reference/model/orders.html#module-nautilus_trader.model.orders.stop_market)
 
-### Stop-Limit
+## Stop-Limit Orders
 A _Stop-Limit_ order is a conditional order which once triggered will immediately place
 a _Limit_ order at the specified price. 
 
@@ -212,7 +210,7 @@ order: StopLimitOrder = self.order_factory.stop_limit(
 ```
 [API Reference](https://docs.nautilustrader.io/api_reference/model/orders.html#module-nautilus_trader.model.orders.stop_limit)
 
-### Market-To-Limit
+## Market-To-Limit Orders
 A _Market-To-Limit_ order is submitted as a market order to execute at the current best market price. 
 If the order is only partially filled, the remainder of the order is canceled and re-submitted as a _Limit_ order with 
 the limit price equal to the price at which the filled portion of the order executed.
@@ -235,7 +233,7 @@ order: MarketToLimitOrder = self.order_factory.market_to_limit(
 
 [API Reference](https://docs.nautilustrader.io/api_reference/model/orders.html#module-nautilus_trader.model.orders.market_to_limit)
 
-### Market-If-Touched
+## Market-If-Touched Orders
 A _Market-If-Touched_ order is a conditional order which once triggered will immediately
 place a _Market_ order. This order type is often used to enter a new position on a stop price in the market orders direction,
 or to take profits from an existing position, either as a SELL order against LONG positions, 
@@ -260,7 +258,7 @@ order: MarketIfTouchedOrder = self.order_factory.market_if_touched(
 
 [API Reference](https://docs.nautilustrader.io/api_reference/model/orders.html#module-nautilus_trader.model.orders.market_if_touched)
 
-### Limit-If-Touched
+## Limit-If-Touched Orders
 A _Limit-If_Touched_ order is a conditional order which once triggered will immediately place
 a _Limit_ order at the specified price. 
 
@@ -286,7 +284,7 @@ order: StopLimitOrder = self.order_factory.limit_if_touched(
 
 [API Reference](https://docs.nautilustrader.io/api_reference/model/orders.html#module-nautilus_trader.model.orders.limit_if_touched)
 
-### Trailing-Stop-Market
+## Trailing-Stop-Market Orders
 A _Trailing-Stop-Market_ order is a conditional order which trails a stop trigger price
 a fixed offset away from the defined market price. Once triggered a _Market_ order will
 immediately be placed.
@@ -312,7 +310,7 @@ order: TrailingStopMarketOrder = self.order_factory.trailing_stop_market(
 
 [API Reference](https://docs.nautilustrader.io/api_reference/model/orders.html#module-nautilus_trader.model.orders.trailing_stop_market)
 
-### Trailing-Stop-Limit
+## Trailing-Stop-Limit Orders
 A _Trailing-Stop-Limit_ order is a conditional order which trails a stop trigger price
 a fixed offset away from the defined market price. Once triggered a _Limit_ order will
 immediately be placed at the defined price (which is also updated as the market moves until triggered).
@@ -340,11 +338,3 @@ order: TrailingStopLimitOrder = self.order_factory.trailing_stop_limit(
 ```
 
 [API Reference](https://docs.nautilustrader.io/api_reference/model/orders.html#module-nautilus_trader.model.orders.trailing_stop_limit)
-
-### Order Lists
-
-[API Reference](../api_reference/model/orders.md#order-list)
-
-### Bracket Orders
-
-[API Reference](../api_reference/common.md#factories)
