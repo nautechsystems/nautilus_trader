@@ -9,7 +9,7 @@ Before we start the notebook - as a once off we need to download some sample dat
 
 For this notebook we will use FX data from `histdata.com`, simply go to https://www.histdata.com/download-free-forex-historical-data/?/ascii/tick-data-quotes/ and select an FX pair, and one or more months of data to download.
 
-Once you have downloaded the data, set the variable `DATA_DIR` below to the directory containing the data. By default it will use the users `Downloads` directory.
+Once you have downloaded the data, set the variable `DATA_DIR` below to the directory containing the data. By default, it will use the users `Downloads` directory.
 <!-- #endregion -->
 
 ```python
@@ -158,7 +158,7 @@ instrument = catalog.instruments(as_nautilus=True)[0]
 
 data_config=[
     BacktestDataConfig(
-        catalog_path=CATALOG_PATH,
+        catalog_path=str(DataCatalog.from_env().path),
         data_cls=QuoteTick.fully_qualified_name(),
         instrument_id=instrument.id.value,
         start_time=1580398089820000000,

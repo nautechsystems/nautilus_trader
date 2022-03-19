@@ -96,14 +96,14 @@ class TestPersistenceBatching:
             catalog=self.catalog,
         )
         data_config = BacktestDataConfig(
-            catalog_path="/root/",
+            catalog_path="/.nautilus/catalog/",
             catalog_fs_protocol="memory",
             data_cls=NewsEventData,
             client_id="NewsClient",
         )
         # Add some arbitrary instrument data to appease BacktestEngine
         instrument_data_config = BacktestDataConfig(
-            catalog_path="/root/",
+            catalog_path="/.nautilus/catalog/",
             catalog_fs_protocol="memory",
             instrument_id=self.catalog.instruments(as_nautilus=True)[0].id.value,
             data_cls=InstrumentStatusUpdate,
