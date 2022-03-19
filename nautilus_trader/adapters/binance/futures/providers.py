@@ -65,8 +65,8 @@ class BinanceFuturesInstrumentProvider(InstrumentProvider):
         self._client = client
         self._account_type = account_type
 
-        self._wallet = BinanceFuturesWalletHttpAPI(self._client)
-        self._market = BinanceFuturesMarketHttpAPI(self._client, account_type=account_type)
+        self._http_wallet = BinanceFuturesWalletHttpAPI(self._client)
+        self._http_market = BinanceFuturesMarketHttpAPI(self._client, account_type=account_type)
 
     async def load_all_async(self, filters: Optional[Dict] = None) -> None:
         """
@@ -82,18 +82,8 @@ class BinanceFuturesInstrumentProvider(InstrumentProvider):
         filters_str = "..." if not filters else f" with filters {filters}..."
         self._log.info(f"Loading all instruments{filters_str}")
 
-        # # Get current commission rates
-        # try:
-        #     fees: Optional[Dict[str, Dict[str, str]]] = None
-        # except BinanceClientError:
-        #     self._log.error(
-        #         "Cannot load instruments: API key authentication failed "
-        #         "(this is needed to fetch the applicable account fee tier).",
-        #     )
-        #     return
-
         # Get exchange info for all assets
-        exchange_info: BinanceFuturesExchangeInfo = await self._market.exchange_info()
+        exchange_info: BinanceFuturesExchangeInfo = await self._http_market.exchange_info()
         for symbol_info in exchange_info.symbols:
             self._parse_instrument(
                 symbol_info=symbol_info,
@@ -134,21 +124,11 @@ class BinanceFuturesInstrumentProvider(InstrumentProvider):
         filters_str = "..." if not filters else f" with filters {filters}..."
         self._log.info(f"Loading instruments {instrument_ids}{filters_str}.")
 
-        # # Get current commission rates
-        # try:
-        #     fees: Optional[Dict[str, Dict[str, str]]] = None
-        # except BinanceClientError:
-        #     self._log.error(
-        #         "Cannot load instruments: API key authentication failed "
-        #         "(this is needed to fetch the applicable account fee tier).",
-        #     )
-        #     return
-
         # Extract all symbol strings
         symbols: List[str] = [instrument_id.symbol.value for instrument_id in instrument_ids]
 
         # Get exchange info for all assets
-        exchange_info: BinanceFuturesExchangeInfo = await self._market.exchange_info(
+        exchange_info: BinanceFuturesExchangeInfo = await self._http_market.exchange_info(
             symbols=symbols
         )
         for symbol_info in exchange_info.symbols:
@@ -184,18 +164,10 @@ class BinanceFuturesInstrumentProvider(InstrumentProvider):
 
         symbol = instrument_id.symbol.value
 
-        # Get current commission rates
-        # try:
-        #     fees: Optional[Dict[str, str]] = None
-        # except BinanceClientError:
-        #     self._log.error(
-        #         "Cannot load instruments: API key authentication failed "
-        #         "(this is needed to fetch the applicable account fee tier).",
-        #     )
-        #     return
-
         # Get exchange info for all assets
-        exchange_info: BinanceFuturesExchangeInfo = await self._market.exchange_info(symbol=symbol)
+        exchange_info: BinanceFuturesExchangeInfo = await self._http_market.exchange_info(
+            symbol=symbol
+        )
         for symbol_info in exchange_info.symbols:
             self._parse_instrument(
                 symbol_info=symbol_info,

@@ -54,7 +54,7 @@ async def test_binance_spot_account_http_client():
     ############################################################################
     # response = await http_account.new_order(
     #     symbol="ETHUSDT",
-    #     side="BUY",
+    #     side="SELL",
     #     type="MARKET",
     #     quantity="0.02",
     #     # stop_price="4200",
@@ -97,13 +97,13 @@ async def test_binance_spot_account_http_client():
     ############################################################################
     # OPEN ORDERS
     ############################################################################
-    orders = await http_account.get_open_orders(symbol="ETHUSDT")
+    orders = await http_account.get_open_orders()
     print(orders)
 
     ############################################################################
     # POSITIONS
     ############################################################################
-    positions = await http_account.get_position_risk(symbol="ETHUSDT")
+    positions = await http_account.get_position_risk()
     print(positions)
 
     await client.disconnect()

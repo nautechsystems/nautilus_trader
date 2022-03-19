@@ -52,7 +52,7 @@ class TestBacktestNode:
             # fill_model=fill_model,  # TODO(cs): Implement next iteration
         )
         self.data_config = BacktestDataConfig(
-            catalog_path="/root",
+            catalog_path="/.nautilus/catalog",
             catalog_fs_protocol="memory",
             data_cls=QuoteTick,
             instrument_id="AUD/USD.SIM",

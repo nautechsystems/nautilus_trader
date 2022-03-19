@@ -134,7 +134,7 @@ class BacktestDataConfig(Partialable):
     """
 
     catalog_path: str
-    data_cls: Optional[Union[type, str]] = None
+    data_cls: Optional[str] = None
     catalog_fs_protocol: Optional[str] = None
     catalog_fs_storage_options: Optional[Dict] = None
     instrument_id: Optional[str] = None
@@ -293,7 +293,7 @@ def parse_filters_expr(s: str):
     """
     from pyarrow.dataset import field
 
-    assert field  # required for eval.
+    assert field  # Required for eval
 
     if not s:
         return

@@ -90,7 +90,7 @@ class BinanceFuturesSymbolInfo(msgspec.Struct):
     contractType: str  # Can be '' empty string
     deliveryDate: int
     onboardDate: int
-    status: BinanceFuturesContractStatus
+    status: Optional[BinanceFuturesContractStatus] = None
     maintMarginPercent: str
     requiredMarginPercent: str
     baseAsset: str
@@ -102,7 +102,7 @@ class BinanceFuturesSymbolInfo(msgspec.Struct):
     quotePrecision: int
     underlyingType: str
     underlyingSubType: List[str]
-    settlePlan: int
+    settlePlan: Optional[int] = None
     triggerProtect: str
     liquidationFee: str
     marketTakeBound: str
@@ -118,7 +118,7 @@ class BinanceFuturesExchangeInfo(msgspec.Struct):
     serverTime: int
     rateLimits: List[BinanceRateLimit]
     exchangeFilters: List[BinanceExchangeFilter]
-    assets: List[BinanceFuturesAsset]
+    assets: Optional[List[BinanceFuturesAsset]] = None
     symbols: List[BinanceFuturesSymbolInfo]
 
 

@@ -5,7 +5,8 @@ TODO(cs): Update version badge
 TODO(cs): Ensure versions are correct
 
 ### Breaking Changes
-None
+- `NAUTILUS_CATALOG` env var changed to `NAUTILUS_PATH`.
+- `DataCatalog` root path now located under `$OLD_PATH/catalog/` from the Nautilus path.
 
 ### Enhancements
 None

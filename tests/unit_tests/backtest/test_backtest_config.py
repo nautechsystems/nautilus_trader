@@ -79,7 +79,7 @@ class TestBacktestConfig:
             ],
             data=[
                 BacktestDataConfig(
-                    catalog_path="/root",
+                    catalog_path="/.nautilus/catalog",
                     catalog_fs_protocol="memory",
                     data_cls=QuoteTick,
                     instrument_id="AUD/USD.SIM",
@@ -178,7 +178,7 @@ class TestBacktestConfig:
     def test_backtest_data_config_load(self):
         instrument = TestInstrumentProvider.default_fx_ccy("AUD/USD")
         c = BacktestDataConfig(
-            catalog_path="/root/",
+            catalog_path="/.nautilus/catalog",
             catalog_fs_protocol="memory",
             data_cls=QuoteTick,
             instrument_id=instrument.id.value,
@@ -236,7 +236,7 @@ class TestBacktestConfig:
             catalog=self.catalog,
         )
         c = BacktestDataConfig(
-            catalog_path="/root/",
+            catalog_path="/.nautilus/catalog",
             catalog_fs_protocol="memory",
             data_cls=NewsEventData,
             client_id="NewsClient",
@@ -255,7 +255,7 @@ class TestBacktestConfig:
             catalog=self.catalog,
         )
         c = BacktestDataConfig(
-            catalog_path="/root/",
+            catalog_path="/.nautilus/catalog",
             catalog_fs_protocol="memory",
             data_cls=NewsEventData,
             filter_expr="field('currency') == 'CHF'",
@@ -271,7 +271,7 @@ class TestBacktestConfig:
             catalog=self.catalog,
         )
         c = BacktestDataConfig(
-            catalog_path="/root/",
+            catalog_path="/.nautilus/catalog",
             catalog_fs_protocol="memory",
             data_cls=InstrumentStatusUpdate,
         )

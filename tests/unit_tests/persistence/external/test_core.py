@@ -264,8 +264,8 @@ class TestPersistenceCore:
 
         # Assert
         assert result.equals(df[["value"]])  # instrument_id is a partition now
-        assert dataset.files[0].startswith("/root/sample.parquet/instrument_id=a/")
-        assert dataset.files[1].startswith("/root/sample.parquet/instrument_id=b/")
+        assert dataset.files[0].startswith("/.nautilus/catalog/sample.parquet/instrument_id=a/")
+        assert dataset.files[1].startswith("/.nautilus/catalog/sample.parquet/instrument_id=b/")
 
     def test_write_parquet_determine_partitions_writes_instrument_id(
         self,
@@ -287,8 +287,8 @@ class TestPersistenceCore:
         write_tables(catalog=self.catalog, tables=tables)
 
         # Assert
-        files = self.fs.ls("/root/data/quote_tick.parquet")
-        expected = "/root/data/quote_tick.parquet/instrument_id=AUD-USD.SIM"
+        files = self.fs.ls(f"{self.catalog.path}/data/quote_tick.parquet")
+        expected = f"{self.catalog.path}/data/quote_tick.parquet/instrument_id=AUD-USD.SIM"
         assert expected in files
 
     def test_load_text_betfair(self):
@@ -444,12 +444,12 @@ class TestPersistenceCore:
         # Assert
         assert len(original_partitions) == 6
         expected = [
-            "/root/sample.parquet/instrument_id=a/20200101.parquet",
-            "/root/sample.parquet/instrument_id=a/20200104.parquet",
-            "/root/sample.parquet/instrument_id=a/20200108.parquet",
-            "/root/sample.parquet/instrument_id=b/20200101.parquet",
-            "/root/sample.parquet/instrument_id=b/20200104.parquet",
-            "/root/sample.parquet/instrument_id=b/20200108.parquet",
+            "/.nautilus/catalog/sample.parquet/instrument_id=a/20200101.parquet",
+            "/.nautilus/catalog/sample.parquet/instrument_id=a/20200104.parquet",
+            "/.nautilus/catalog/sample.parquet/instrument_id=a/20200108.parquet",
+            "/.nautilus/catalog/sample.parquet/instrument_id=b/20200101.parquet",
+            "/.nautilus/catalog/sample.parquet/instrument_id=b/20200104.parquet",
+            "/.nautilus/catalog/sample.parquet/instrument_id=b/20200108.parquet",
         ]
         assert new_partitions == expected
 
@@ -468,15 +468,15 @@ class TestPersistenceCore:
 
         today_str = pd.Timestamp.utcnow().strftime("%Y%m%d")
         expected = [
-            f"/root/data/betfair_ticker.parquet/instrument_id={ins1}/20191220.parquet",
-            f"/root/data/betfair_ticker.parquet/instrument_id={ins2}/20191220.parquet",
-            f"/root/data/betting_instrument.parquet/{today_str}.parquet",
-            f"/root/data/instrument_status_update.parquet/instrument_id={ins1}/20191220.parquet",
-            f"/root/data/instrument_status_update.parquet/instrument_id={ins2}/20191220.parquet",
-            f"/root/data/order_book_data.parquet/instrument_id={ins1}/20191220.parquet",
-            f"/root/data/order_book_data.parquet/instrument_id={ins2}/20191220.parquet",
-            f"/root/data/trade_tick.parquet/instrument_id={ins1}/20191220.parquet",
-            f"/root/data/trade_tick.parquet/instrument_id={ins2}/20191220.parquet",
+            f"/.nautilus/catalog/data/betfair_ticker.parquet/instrument_id={ins1}/20191220.parquet",
+            f"/.nautilus/catalog/data/betfair_ticker.parquet/instrument_id={ins2}/20191220.parquet",
+            f"/.nautilus/catalog/data/betting_instrument.parquet/{today_str}.parquet",
+            f"/.nautilus/catalog/data/instrument_status_update.parquet/instrument_id={ins1}/20191220.parquet",
+            f"/.nautilus/catalog/data/instrument_status_update.parquet/instrument_id={ins2}/20191220.parquet",
+            f"/.nautilus/catalog/data/order_book_data.parquet/instrument_id={ins1}/20191220.parquet",
+            f"/.nautilus/catalog/data/order_book_data.parquet/instrument_id={ins2}/20191220.parquet",
+            f"/.nautilus/catalog/data/trade_tick.parquet/instrument_id={ins1}/20191220.parquet",
+            f"/.nautilus/catalog/data/trade_tick.parquet/instrument_id={ins2}/20191220.parquet",
         ]
         assert new_partitions == expected
 
