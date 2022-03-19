@@ -105,14 +105,14 @@ class TestPersistenceStreaming:
             catalog=self.catalog,
         )
         data_config = BacktestDataConfig(
-            catalog_path="/root/",
+            catalog_path="/.nautilus/catalog",
             catalog_fs_protocol="memory",
             data_cls=NewsEventData,
             client_id="NewsClient",
         )
         # Add some arbitrary instrument data to appease BacktestEngine
         instrument_data_config = BacktestDataConfig(
-            catalog_path="/root/",
+            catalog_path="/.nautilus/catalog",
             catalog_fs_protocol="memory",
             data_cls=InstrumentStatusUpdate,
         )
