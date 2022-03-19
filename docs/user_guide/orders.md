@@ -85,8 +85,8 @@ which is applicable to conditional trigger orders, specifying the method of trig
 - `DOUBLE_BID_ASK`: The trigger price will be based on the last two consecutive `BID` or `ASK` prices as applicable.
 - `LAST_OR_BID_ASK`: The trigger price will be based on the `LAST` or `BID`/`ASK`.
 - `MID_POINT`: The trigger price will be based on the mid-point between the `BID` and `ASK`.
-- `MARK`: The trigger price will be based on the instruments mark price for the exchange.
-- `INDEX`: The trigger price will be based on the instruments index price for the exchange.
+- `MARK`: The trigger price will be based on the exchanges mark price for the instrument.
+- `INDEX`: The trigger price will be based on the exchanges index price for the instrument.
 
 ### Trigger Offset Type
 Applicable to conditional trailing-stop trigger orders, specifies the method of triggering modification
