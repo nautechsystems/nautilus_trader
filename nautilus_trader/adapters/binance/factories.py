@@ -403,7 +403,7 @@ def _get_http_base_url(config: Union[BinanceDataClientConfig, BinanceExecClientC
         elif config.account_type == BinanceAccountType.FUTURES_USDT:
             return "https://testnet.binancefuture.com"
         elif config.account_type == BinanceAccountType.FUTURES_COIN:
-            raise ValueError("no testnet for COIN-M futures")
+            return "https://testnet.binancefuture.com"
         else:  # pragma: no cover (design-time error)
             raise RuntimeError(f"invalid Binance account type, was {config.account_type}")
 

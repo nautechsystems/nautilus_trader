@@ -216,7 +216,8 @@ class BinanceWebSocketClient(WebSocketClient):
         Update Speed: 3000ms or 1000ms
 
         """
+        assert speed in (1000, 3000), "`speed` options are 1000ms or 3000ms only"
         if symbol is None:
             self._add_stream("!markPrice@arr")
         else:
-            self._add_stream(f"{format_symbol(symbol).lower()}@markPrice@{speed / 1000}s")
+            self._add_stream(f"{format_symbol(symbol).lower()}@markPrice@{int(speed / 1000)}s")
