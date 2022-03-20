@@ -66,6 +66,7 @@ from nautilus_trader.persistence.config import PersistenceConfig
 from nautilus_trader.persistence.streaming import FeatherWriter
 from nautilus_trader.trading.config import ImportableStrategyConfig
 from nautilus_trader.trading.config import StrategyFactory
+from nautilus_trader.trading.config import TradingStrategyConfig
 from nautilus_trader.trading.strategy import TradingStrategy
 
 
@@ -112,7 +113,7 @@ class BacktestNode:
     def set_strategy_config(
         self,
         path: str,
-        strategy,
+        strategy: TradingStrategyConfig,
         instrument_id: str,
         bar_type: str,
         trade_size: Decimal,
@@ -124,13 +125,13 @@ class BacktestNode:
         ----------
         path : str
             The path to the strategy.
-        strategy:
+        strategy : TradingStrategyConfig
             The strategy config object.
-        instrument_id:
+        instrument_id : InstrumentId
             The instrument ID.
-        bar_type:
+        bar_type : BarType
             The type of bar type used.
-        trade_size:
+        trade_size : Decimal
             The trade size to be used.
 
         """
@@ -146,11 +147,11 @@ class BacktestNode:
 
         Parameters
         ----------
-        config:
-            BacktestRunConfig object used to setup the test.
-        params:
+        config : BacktestRunConfig
+            The configuration for the backtest test.
+        params : Dict[str, Any]
             The set of strategy parameters to optimize.
-        max_evals:
+        max_evals : int
             The maximum number of evaluations for the optimization problem.
 
         Returns
