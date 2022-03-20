@@ -30,7 +30,7 @@ class MyDataPoint(Data):
 As you can see, this requires you to call the `Data` base classes `__init__` method, 
 and passing in the UNIX **nanosecond** timestamps for the event, and object initialization.
 
-```note{note}
+```{note}
 Passing these timestamps is what allows Nautilus to correctly order data streams
 by monotonically increasing `ts_init` timestamps for backtests.
 ```
