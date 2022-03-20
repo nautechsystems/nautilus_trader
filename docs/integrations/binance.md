@@ -31,8 +31,9 @@ and won't need to necessarily work with these lower level components individuall
 ## Binance data types
 To provide complete API functionality to traders, the integration includes several
 custom data types:
-- `BinanceSpotTicker` returned when subscribing to Binance SPOT 24hr tickers (contains many prices and stats).
+- `BinanceTicker` returned when subscribing to Binance 24hr tickers (contains many prices and stats).
 - `BinanceBar` returned when requesting historical, or subscribing to, Binance bars (contains extra volume information).
+- `BinanceFuturesMarkPriceUpdate` returned when subscribing to Binance Futures mark price updates.
 
 See the Binance [API Reference](../api_reference/adapters/binance.md) for full definitions.
 
@@ -124,10 +125,6 @@ using the `BinanceAccountType` enum. The account type options are:
 - `FUTURES_USDT` (USDT or BUSD stablecoins as collateral)
 - `FUTURES_COIN` (other cryptocurrency as collateral)
 
-```{note}
-Binance does not currently offer a testnet for COIN-M futures.
-```
-
 ### Base URL overrides
 It's possible to override the default base URLs for both HTTP Rest and
 WebSocket APIs. This is useful for configuring API clusters for performance reasons, 
@@ -162,4 +159,35 @@ config = TradingNodeConfig(
         },
     },
 )
+```
+
+## Binance Specific Data
+It's possible to subscribe to Binance specific data streams as they become available to the
+adapter over time.
+
+```{note}
+Tickers and bars are not considered 'Binance specific' and can be subscribed to in the normal way.
+However, as more adapters are built out which need for example mark price and funding rate updates, then these
+methods may eventually become first-class (not requiring custom generic subscriptions as below).
+```
+
+### BinanceFuturesMarkPriceUpdate
+You can subscribe to `BinanceFuturesMarkPriceUpdate` (included funding rating info) 
+data streams by subscribing in the following way from your actor or strategy:
+
+```python
+# In your `on_start` method
+self.subscribe_data(
+    data_type=DataType(BinanceFuturesMarkPriceUpdate, metadata={"instrument_id": self.instrument.id}),
+    client_id=ClientId("BINANCE"),
+)
+```
+
+This will then pass received `BinanceFuturesMarkPriceUpdate` to your `on_data` method:
+
+```python
+def on_data(self, data: Data):
+    # First check the type of data
+    if isinstance(data, BinanceFuturesMarkPriceUpdate):
+        # Do something with the data
 ```

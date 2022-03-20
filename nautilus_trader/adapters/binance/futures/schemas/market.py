@@ -141,3 +141,28 @@ class BinanceFuturesFundRate(msgspec.Struct):
     symbol: str
     fundingRate: str
     fundingTime: str
+
+
+################################################################################
+# WebSocket messages
+################################################################################
+
+
+class BinanceFuturesMarkPriceData(msgspec.Struct):
+    """WebSocket message 'inner struct' for `Binance Futures` Mark Price Update events."""
+
+    e: str  # Event type
+    E: int  # Event time
+    s: str  # Symbol
+    p: str  # Mark price
+    i: str  # Index price
+    P: str  # Estimated Settle Price, only useful in the last hour before the settlement starts
+    r: str  # Funding rate
+    T: int  # Next funding time
+
+
+class BinanceFuturesMarkPriceMsg(msgspec.Struct):
+    """WebSocket message from `Binance Futures` Mark Price Update events."""
+
+    stream: str
+    data: BinanceFuturesMarkPriceData
