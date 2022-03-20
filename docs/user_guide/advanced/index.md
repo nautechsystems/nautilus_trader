@@ -15,6 +15,7 @@ highest to lowest level (although they are self-contained and can be read in any
    :titlesonly:
    :hidden:
    
+   data.md
    advanced_orders.md
    portfolio_statistics.md
 ```
