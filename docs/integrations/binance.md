@@ -168,7 +168,7 @@ adapter over time.
 ```{note}
 Tickers and bars are not considered 'Binance specific' and can be subscribed to in the normal way.
 However, as more adapters are built out which need for example mark price and funding rate updates, then these
-methods may eventually become first-class (not requiring custom generic subscriptions as below).
+methods may eventually become first-class (not requiring custom/generic subscriptions as below).
 ```
 
 ### BinanceFuturesMarkPriceUpdate
