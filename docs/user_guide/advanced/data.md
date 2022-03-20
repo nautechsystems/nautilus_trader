@@ -3,7 +3,7 @@ Due to the modular nature of the Nautilus design, it is possible to set up syste
 with very flexible data streams, including custom user defined data types. This
 guide covers some possible use cases for this functionality.
 
-## Generic/Custom Data
+## Custom/Generic Data
 It's possible to create custom data types within the Nautilus system. First you
 will need to define your data by subclassing from `Data`.
 
