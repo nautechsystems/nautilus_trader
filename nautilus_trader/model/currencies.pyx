@@ -56,6 +56,7 @@ BNB = Currency("BNB", precision=8, iso4217=0, name="Binance Coin", currency_type
 BRZ = Currency("BRZ", precision=8, iso4217=0, name="Brazilian Digital Token", currency_type=CurrencyType.CRYPTO)
 BSV = Currency("BSV", precision=8, iso4217=0, name="Bitcoin SV", currency_type=CurrencyType.CRYPTO)
 BTC = Currency("BTC", precision=8, iso4217=0, name="Bitcoin", currency_type=CurrencyType.CRYPTO)
+BUSD = Currency("BUSD", precision=8, iso4217=0, name="Binance USD", currency_type=CurrencyType.CRYPTO)
 XBT = Currency("XBT", precision=8, iso4217=0, name="Bitcoin", currency_type=CurrencyType.CRYPTO)
 DASH = Currency("DASH", precision=8, iso4217=0, name="Dash", currency_type=CurrencyType.CRYPTO)
 DOGE = Currency("DOGE", precision=8, iso4217=0, name="DOGE", currency_type=CurrencyType.CRYPTO)
@@ -71,6 +72,7 @@ XLM = Currency("XLM", precision=8, iso4217=0, name="Stellar Lumen", currency_typ
 XMR = Currency("XMR", precision=12, iso4217=0, name="Monero", currency_type=CurrencyType.CRYPTO)
 XRP = Currency("XRP", precision=6, iso4217=0, name="Ripple", currency_type=CurrencyType.CRYPTO)
 XTZ = Currency("XTZ", precision=6, iso4217=0, name="Tezos", currency_type=CurrencyType.CRYPTO)
+USDC = Currency("USDC", precision=8, iso4217=0, name="USD Coin", currency_type=CurrencyType.CRYPTO)
 USDT = Currency("USDT", precision=8, iso4217=0, name="Tether", currency_type=CurrencyType.CRYPTO)
 ZEC = Currency("ZEC", precision=8, iso4217=0, name="Zcash", currency_type=CurrencyType.CRYPTO)
 
@@ -114,6 +116,7 @@ _CURRENCY_MAP = {
     "BRZ": BRZ,
     "BSV": BSV,
     "BTC": BTC,
+    "BUSD": BUSD,
     "XBT": XBT,
     "DASH": DASH,
     "DOGE": DOGE,
@@ -129,6 +132,7 @@ _CURRENCY_MAP = {
     "XMR": XMR,
     "XRP": XRP,
     "XTZ": XTZ,
+    "USDC": USDC,
     "USDT": USDT,
     "ZEC": ZEC,
 }
