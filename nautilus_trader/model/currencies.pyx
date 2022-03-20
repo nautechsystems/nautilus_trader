@@ -50,6 +50,9 @@ XAU = Currency("XAU", precision=0, iso4217=959, name="Gold (one troy ounce)", cu
 ZAR = Currency("ZAR", precision=2, iso4217=710, name="South African rand", currency_type=CurrencyType.FIAT)
 
 # Crypto currencies
+ONEINCH = Currency("1INCH", precision=8, iso4217=0, name="1inch Network", currency_type=CurrencyType.CRYPTO)
+AAVE = Currency("AAVE", precision=8, iso4217=0, name="Aave", currency_type=CurrencyType.CRYPTO)
+ACA = Currency("ACA", precision=8, iso4217=0, name="Acala Token", currency_type=CurrencyType.CRYPTO)
 ADA = Currency("ADA", precision=6, iso4217=0, name="Cardano", currency_type=CurrencyType.CRYPTO)
 BCH = Currency("BCH", precision=8, iso4217=0, name="Bitcoin Cash", currency_type=CurrencyType.CRYPTO)
 BNB = Currency("BNB", precision=8, iso4217=0, name="Binance Coin", currency_type=CurrencyType.CRYPTO)
@@ -64,6 +67,7 @@ DOT = Currency("DOT", precision=8, iso4217=0, name="Polkadot", currency_type=Cur
 EOS = Currency("EOS", precision=8, iso4217=0, name="EOS", currency_type=CurrencyType.CRYPTO)
 ETH = Currency("ETH", precision=8, iso4217=0, name="Ether", currency_type=CurrencyType.CRYPTO)  # Precision 18
 FTT = Currency("FTT", precision=8, iso4217=0, name="FTT", currency_type=CurrencyType.CRYPTO)
+JOE = Currency("JOE", precision=8, iso4217=0, name="JOE", currency_type=CurrencyType.CRYPTO)
 LINK = Currency("LINK", precision=8, iso4217=0, name="Chainlink", currency_type=CurrencyType.CRYPTO)
 LTC = Currency("LTC", precision=8, iso4217=0, name="Litecoin", currency_type=CurrencyType.CRYPTO)
 TRYB = Currency("TRYB", precision=8, iso4217=0, name="BiLira", currency_type=CurrencyType.CRYPTO)
@@ -110,6 +114,8 @@ _CURRENCY_MAP = {
     "XAU": XAU,
     "ZAR": ZAR,
     # Crypto currencies
+    "1INCH": ONEINCH,
+    "AAVE": AAVE,
     "ADA": ADA,
     "BCH": BCH,
     "BNB": BNB,
@@ -124,6 +130,7 @@ _CURRENCY_MAP = {
     "EOS": EOS,
     "ETH": ETH,
     "FTT": FTT,
+    "JOE": JOE,
     "LINK": LINK,
     "LTC": LTC,
     "TRYB": TRYB,
