@@ -183,7 +183,9 @@ self.subscribe_data(
 )
 ```
 
-This will then pass received `BinanceFuturesMarkPriceUpdate` to your `on_data` method:
+This will result in your actor/strategy passing these received `BinanceFuturesMarkPriceUpdate` 
+objects to your `on_data` method. You will need to check the type, as this 
+method acts as a flexible handler for all custom/generic data.
 
 ```python
 def on_data(self, data: Data):
