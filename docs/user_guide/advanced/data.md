@@ -8,6 +8,9 @@ It's possible to create custom data types within the Nautilus system. First you
 will need to define your data by subclassing from `Data`.
 
 ```python
+from nautilus_trader.core.data import Data
+
+
 class MyDataPoint(Data):
 
     def __init__(
@@ -16,8 +19,8 @@ class MyDataPoint(Data):
         x: int,
         y: int,
         z: int,
-        int64_t ts_event,
-        int64_t ts_init,
+        ts_event: int,
+        ts_init: int,
     ):
         super().__init__(ts_event, ts_init)
 
