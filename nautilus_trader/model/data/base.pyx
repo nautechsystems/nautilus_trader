@@ -23,12 +23,14 @@ cdef class DataType:
     Parameters
     ----------
     type : type
-        The ``Data`` type of the data.
+        The `Data` type of the data.
     metadata : dict
         The data types metadata.
 
     Raises
     ------
+    ValueError
+        If `type` is not a subclass of `Data`.
     TypeError
         If `metadata` contains a key or value which is not hashable.
 
@@ -39,6 +41,9 @@ cdef class DataType:
     """
 
     def __init__(self, type type not None, dict metadata=None):  # noqa (shadows built-in type)
+        if not issubclass(type, Data):
+            raise TypeError("`type` was not a subclass of `Data`")
+
         self.type = type
         self.metadata = metadata or {}
         self.topic = self.type.__name__ + '.' + '.'.join([
@@ -93,3 +98,6 @@ cdef class GenericData(Data):
         super().__init__(data.ts_event, data.ts_init)
         self.data_type = data_type
         self.data = data
+
+    def __repr__(self) -> str:
+        return f"{type(self).__name__}(data_type={self.data_type}, data={self.data})"

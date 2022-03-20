@@ -351,6 +351,7 @@ Please make all pull requests to the `develop` branch.
 
 ## Community
 Chat with contributors and active users of NautilusTrader on our [Discord](https://discord.gg/AUWVs3XaCS) server!
+This is also the best place to monitor announcements, and learn about the latest features as they become available.
 
 ## License
 

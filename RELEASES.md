@@ -5,11 +5,14 @@ TODO(cs): Update version badge
 TODO(cs): Ensure versions are correct
 
 ### Breaking Changes
+- Tighten requirement for `DataType` types to be subclasses of `Data`.
 - `NAUTILUS_CATALOG` env var changed to `NAUTILUS_PATH`.
 - `DataCatalog` root path now located under `$OLD_PATH/catalog/` from the Nautilus path.
 
 ### Enhancements
-None
+- Added `BinanceFuturesMarkPriceUpdate` type and data stream.
+- Added generic `subscribe` and `unsubscribe` to template.
+- Added Binance Futures COIN_M testnet.
 
 ### Fixes
 None

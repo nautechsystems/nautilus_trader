@@ -25,7 +25,9 @@ from nautilus_trader.adapters.binance.common.enums import BinanceAccountType
 from nautilus_trader.adapters.binance.common.enums import BinanceSymbolFilterType
 from nautilus_trader.adapters.binance.common.functions import parse_symbol
 from nautilus_trader.adapters.binance.common.schemas import BinanceOrderBookData
+from nautilus_trader.adapters.binance.futures.schemas.market import BinanceFuturesMarkPriceData
 from nautilus_trader.adapters.binance.futures.schemas.market import BinanceFuturesSymbolInfo
+from nautilus_trader.adapters.binance.futures.types import BinanceFuturesMarkPriceUpdate
 from nautilus_trader.adapters.binance.spot.schemas.market import BinanceSymbolFilter
 from nautilus_trader.core.datetime import millis_to_nanos
 from nautilus_trader.core.string import precision_from_str
@@ -231,4 +233,21 @@ def parse_book_snapshot(
         ts_event=millis_to_nanos(data.T),
         ts_init=ts_init,
         update_id=data.u,
+    )
+
+
+def parse_mark_price_ws(
+    instrument_id: InstrumentId,
+    data: BinanceFuturesMarkPriceData,
+    ts_init: int,
+) -> BinanceFuturesMarkPriceUpdate:
+    return BinanceFuturesMarkPriceUpdate(
+        instrument_id=instrument_id,
+        mark=Price.from_str(data.p),
+        index=Price.from_str(data.i),
+        estimated_settle=Price.from_str(data.P),
+        funding_rate=Decimal(data.r),
+        ts_next_funding=millis_to_nanos(data.T),
+        ts_event=millis_to_nanos(data.E),
+        ts_init=ts_init,
     )

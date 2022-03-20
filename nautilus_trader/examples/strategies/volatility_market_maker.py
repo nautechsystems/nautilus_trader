@@ -122,6 +122,25 @@ class VolatilityMarketMaker(TradingStrategy):
         # self.subscribe_ticker(self.instrument_id)  # For debugging
         # self.subscribe_order_book_deltas(self.instrument_id, depth=20)  # For debugging
         # self.subscribe_order_book_snapshots(self.instrument_id, depth=20)  # For debugging
+        # self.subscribe_data(
+        #     data_type=DataType(
+        #         BinanceFuturesMarkPriceUpdate, metadata={"instrument_id": self.instrument.id}
+        #     ),
+        #     client_id=ClientId("BINANCE"),
+        # )
+
+    def on_data(self, data: Data):
+        """
+        Actions to be performed when the strategy is running and receives generic
+        data.
+
+        Parameters
+        ----------
+        data : Data
+            The data received.
+
+        """
+        pass
 
     def on_instrument(self, instrument: Instrument):
         """
@@ -258,18 +277,6 @@ class VolatilityMarketMaker(TradingStrategy):
 
         self.sell_order = order
         self.submit_order(order)
-
-    def on_data(self, data: Data):
-        """
-        Actions to be performed when the strategy is running and receives generic data.
-
-        Parameters
-        ----------
-        data : Data
-            The data received.
-
-        """
-        pass
 
     def on_event(self, event: Event):
         """

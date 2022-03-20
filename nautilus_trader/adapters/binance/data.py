@@ -40,6 +40,9 @@ from nautilus_trader.adapters.binance.common.types import BinanceBar
 from nautilus_trader.adapters.binance.common.types import BinanceTicker
 from nautilus_trader.adapters.binance.futures.http.market import BinanceFuturesMarketHttpAPI
 from nautilus_trader.adapters.binance.futures.parsing.data import parse_book_snapshot
+from nautilus_trader.adapters.binance.futures.parsing.data import parse_mark_price_ws
+from nautilus_trader.adapters.binance.futures.schemas.market import BinanceFuturesMarkPriceMsg
+from nautilus_trader.adapters.binance.futures.types import BinanceFuturesMarkPriceUpdate
 from nautilus_trader.adapters.binance.http.client import BinanceHttpClient
 from nautilus_trader.adapters.binance.http.error import BinanceError
 from nautilus_trader.adapters.binance.spot.http.market import BinanceSpotMarketHttpAPI
@@ -56,6 +59,8 @@ from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.live.data_client import LiveMarketDataClient
 from nautilus_trader.model.c_enums.bar_aggregation import BarAggregationParser
 from nautilus_trader.model.data.bar import BarType
+from nautilus_trader.model.data.base import DataType
+from nautilus_trader.model.data.base import GenericData
 from nautilus_trader.model.data.tick import QuoteTick
 from nautilus_trader.model.data.tick import TradeTick
 from nautilus_trader.model.enums import BarAggregation
@@ -217,6 +222,37 @@ class BinanceDataClient(LiveMarketDataClient):
         self._log.info("Disconnected.")
 
     # -- SUBSCRIPTIONS -----------------------------------------------------------------------------
+
+    def subscribe(self, data_type: DataType) -> None:
+        """
+        Subscribe to `Binance` specific data streams.
+
+        Parameters
+        ----------
+        data_type : DataType
+            The data type of the data.
+
+        """
+        if data_type.type == BinanceFuturesMarkPriceUpdate:
+            if not self._binance_account_type.is_futures:
+                self._log.error(
+                    f"Cannot subscribe to `BinanceFuturesMarkPriceUpdate` "
+                    f"for {self._binance_account_type.value} account types.",
+                )
+                return
+            instrument_id: Optional[InstrumentId] = data_type.metadata.get("instrument_id")
+            if instrument_id is None:
+                self._log.error(
+                    "Cannot subscribe to `BinanceFuturesMarkPriceUpdate` "
+                    "no instrument ID in `data_type` metadata.",
+                )
+                return
+            self._ws_client.subscribe_mark_price(instrument_id.symbol.value, speed=1000)
+            self._add_subscription(data_type)
+        else:
+            self._log.error(
+                f"Cannot subscribe to {data_type.type} (not implemented).",
+            )
 
     def subscribe_instruments(self):
         """
@@ -396,6 +432,35 @@ class BinanceDataClient(LiveMarketDataClient):
             "Cannot subscribe to instrument status updates: "
             "Not currently supported for the Binance integration.",
         )
+
+    def unsubscribe(self, data_type: DataType) -> None:
+        """
+        Subscribe to `Binance` specific data streams.
+
+        Parameters
+        ----------
+        data_type : DataType
+            The data type of the data.
+
+        """
+        if data_type.type == BinanceFuturesMarkPriceUpdate:
+            if not self._binance_account_type.is_futures:
+                self._log.error(
+                    "Cannot unsubscribe from `BinanceFuturesMarkPriceUpdate` "
+                    f"for {self._binance_account_type.value} account types.",
+                )
+                return
+            instrument_id: Optional[InstrumentId] = data_type.metadata.get("instrument_id")
+            if instrument_id is None:
+                self._log.error(
+                    "Cannot subscribe to `BinanceFuturesMarkPriceUpdate` no instrument ID in `data_type` metadata.",
+                )
+                return
+            self._remove_subscription(data_type)
+        else:
+            self._log.error(
+                f"Cannot unsubscribe from {data_type.type} (not implemented).",
+            )
 
     def unsubscribe_instruments(self):
         """
@@ -620,6 +685,8 @@ class BinanceDataClient(LiveMarketDataClient):
             self._handle_ticker(raw)
         elif "@kline" in wrapper.stream:
             self._handle_kline(raw)
+        elif "@markPrice" in wrapper.stream:
+            self._handle_mark_price(raw)
         else:
             self._log.error(f"Unrecognized websocket message type {orjson.loads(raw)['stream']}")
             return
@@ -719,3 +786,18 @@ class BinanceDataClient(LiveMarketDataClient):
             ts_init=self._clock.timestamp_ns(),
         )
         self._handle_data(bar)
+
+    def _handle_mark_price(self, raw: bytes):
+        msg: BinanceFuturesMarkPriceMsg = msgspec.json.decode(raw, type=BinanceFuturesMarkPriceMsg)
+        instrument_id: InstrumentId = self._get_cached_instrument_id(msg.data.s)
+        data: BinanceFuturesMarkPriceUpdate = parse_mark_price_ws(
+            instrument_id=instrument_id,
+            data=msg.data,
+            ts_init=self._clock.timestamp_ns(),
+        )
+        data_type = DataType(
+            BinanceFuturesMarkPriceUpdate,
+            metadata={"instrument_id": instrument_id},
+        )
+        generic = GenericData(data_type=data_type, data=data)
+        self._handle_data(generic)
