@@ -19,6 +19,16 @@ from nautilus_trader.analysis.statistics.winner_min import MinWinner
 
 
 class TestMinWinnerPortfolioStatistic:
+    def test_name_returns_expected_returns_expected(self):
+        # Arrange
+        stat = MinWinner()
+
+        # Act
+        result = stat.name
+
+        # Assert
+        assert result == "Min Winner"
+
     def test_calculate_given_empty_series_returns_zero(self):
         # Arrange
         stat = MinWinner()

@@ -31,7 +31,7 @@ class TestOrderBookSnapshot:
         # Arrange, Act, Assert
         assert (
             OrderBookSnapshot.fully_qualified_name()
-            == "nautilus_trader.model.orderbook.data.OrderBookSnapshot"
+            == "nautilus_trader.model.orderbook.data:OrderBookSnapshot"
         )
 
     def test_hash_str_and_repr(self):
@@ -107,7 +107,7 @@ class TestOrderBookDelta:
         # Arrange, Act, Assert
         assert (
             OrderBookDelta.fully_qualified_name()
-            == "nautilus_trader.model.orderbook.data.OrderBookDelta"
+            == "nautilus_trader.model.orderbook.data:OrderBookDelta"
         )
 
     def test_hash_str_and_repr(self):
@@ -205,7 +205,7 @@ class TestOrderBookDeltas:
         # Arrange, Act, Assert
         assert (
             OrderBookDeltas.fully_qualified_name()
-            == "nautilus_trader.model.orderbook.data.OrderBookDeltas"
+            == "nautilus_trader.model.orderbook.data:OrderBookDeltas"
         )
 
     def test_hash_str_and_repr(self):

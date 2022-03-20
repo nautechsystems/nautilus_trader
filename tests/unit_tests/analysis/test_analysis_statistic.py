@@ -13,40 +13,23 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import pandas as pd
-
-from nautilus_trader.analysis.statistics.loser_min import MinLoser
+from nautilus_trader.analysis.statistic import PortfolioStatistic
 
 
-class TestMinLoserPortfolioStatistic:
+class TestPortfolioStatistic:
+    def test_fully_qualified_name_returns_expected(self):
+        # Arrange, Act
+        result = PortfolioStatistic.fully_qualified_name()
+
+        # Assert
+        assert result == "nautilus_trader.analysis.statistic:PortfolioStatistic"
+
     def test_name_returns_expected_returns_expected(self):
         # Arrange
-        stat = MinLoser()
+        stat = PortfolioStatistic()
 
         # Act
         result = stat.name
 
         # Assert
-        assert result == "Min Loser"
-
-    def test_calculate_given_empty_series_returns_zero(self):
-        # Arrange
-        stat = MinLoser()
-        data = pd.Series()
-
-        # Act
-        result = stat.calculate_from_realized_pnls(data)
-
-        # Assert
-        assert result == 0.0
-
-    def test_calculate_given_mix_of_pnls_returns_expected(self):
-        # Arrange
-        stat = MinLoser()
-        data = pd.Series([2.0, 1.0, -1.0, -2.0])
-
-        # Act
-        result = stat.calculate_from_realized_pnls(data)
-
-        # Assert
-        assert result == -1.0
+        assert result == "Portfolio Statistic"

@@ -19,6 +19,16 @@ from nautilus_trader.analysis.statistics.sortino_ratio import SortinoRatio
 
 
 class TestSortinoRatioPortfolioStatistic:
+    def test_name_returns_expected_returns_expected(self):
+        # Arrange
+        stat = SortinoRatio()
+
+        # Act
+        result = stat.name
+
+        # Assert
+        assert result == "Sortino Ratio"
+
     def test_calculate_given_empty_series_returns_nan(self):
         # Arrange
         stat = SortinoRatio()
