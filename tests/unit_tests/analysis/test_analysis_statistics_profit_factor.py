@@ -19,6 +19,16 @@ from nautilus_trader.analysis.statistics.profit_factor import ProfitFactor
 
 
 class TestProfitFactorPortfolioStatistic:
+    def test_name_returns_expected_returns_expected(self):
+        # Arrange
+        stat = ProfitFactor()
+
+        # Act
+        result = stat.name
+
+        # Assert
+        assert result == "Profit Factor"
+
     def test_calculate_given_empty_series_returns_nan(self):
         # Arrange
         stat = ProfitFactor()

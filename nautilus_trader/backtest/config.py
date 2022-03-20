@@ -153,7 +153,7 @@ class BacktestDataConfig(Partialable):
 
     @property
     def data_type(self):
-        mod_path, cls_name = self.data_cls.rsplit(".", maxsplit=1)
+        mod_path, cls_name = self.data_cls.rsplit(":", maxsplit=1)
         mod = importlib.import_module(mod_path)
         return getattr(mod, cls_name)
 
