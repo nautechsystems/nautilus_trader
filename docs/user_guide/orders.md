@@ -158,7 +158,7 @@ order: LimitOrder = self.order_factory.limit(
         expire_time=None,  # <-- optional (default None)
         post_only=True,  # <-- optional (default False)
         reduce_only=False,  # <-- optional (default False)
-        display_qty=None,  # <-- optional (default None which indicates nothing hidden)
+        display_qty=None,  # <-- optional (default None which indicates full display)
         tags=None,  # <-- optional (default None)
 )
 ```
@@ -227,7 +227,7 @@ order: MarketToLimitOrder = self.order_factory.market_to_limit(
         price=Price.from_str("1.30000"),
         time_in_force=TimeInForce.GTC,  # <-- optional (default GTC)
         reduce_only=False,  # <-- optional (default False)
-        display_qty=None,  # <-- optional (default None which indicates nothing hidden)
+        display_qty=None,  # <-- optional (default None which indicates full display)
         tags=None,  # <-- optional (default None)
 )
 ```
