@@ -19,6 +19,16 @@ from nautilus_trader.analysis.statistics.sharpe_ratio import SharpeRatio
 
 
 class TestSharpeRatioPortfolioStatistic:
+    def test_name_returns_expected_returns_expected(self):
+        # Arrange
+        stat = SharpeRatio()
+
+        # Act
+        result = stat.name
+
+        # Assert
+        assert result == "Sharpe Ratio"
+
     def test_calculate_given_empty_series_returns_nan(self):
         # Arrange
         stat = SharpeRatio()

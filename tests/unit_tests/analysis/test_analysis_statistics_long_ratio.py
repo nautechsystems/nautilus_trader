@@ -39,6 +39,16 @@ class TestLongRatioPortfolioStatistics:
             clock=TestClock(),
         )
 
+    def test_name_returns_expected_returns_expected(self):
+        # Arrange
+        stat = LongRatio()
+
+        # Act
+        result = stat.name
+
+        # Assert
+        assert result == "Long Ratio"
+
     def test_calculate_given_empty_list_returns_none(self):
         # Arrange
         stat = LongRatio()

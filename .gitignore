@@ -59,4 +59,8 @@ tests/test_kit/data/btcusdt_15m_um_data.csv
 nautilus_trader/examples/strategies/ema_cross_bracket_mod.py
 binance-public-data
 examples/backtest/hyperopt_kline_multi.py
-
+examples/backtest/hyperopt_kline_multi_eos.py
+examples/backtest/crypto_ema_cross_bracket_macd_btcusdt_bars_external.py
+examples/backtest/crypto_ema_cross_bracket_macd_btcusdt_bars_internal.py
+examples/backtest/crypto_ema_cross_bracket_macd_multi_bars_external.py
+nautilus_trader/examples/strategies/smacci.py

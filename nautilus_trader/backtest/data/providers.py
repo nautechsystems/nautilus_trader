@@ -116,7 +116,7 @@ class TestInstrumentProvider:
             size_increment=Quantity(1e-06, precision=6),
             lot_size=None,
             max_quantity=Quantity(9000, precision=6),
-            min_quantity=Quantity(1e-06, precision=6),
+            min_quantity=Quantity(1e-02, precision=2),
             max_notional=None,
             min_notional=Money(10.00000000, USDT),
             max_price=Price(1000000, precision=2),

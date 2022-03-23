@@ -117,7 +117,7 @@ class TestActor:
 
     def test_actor_fully_qualified_name(self):
         # Arrange, Act, Assert
-        assert Actor.fully_qualified_name() == "nautilus_trader.common.actor.Actor"
+        assert Actor.fully_qualified_name() == "nautilus_trader.common.actor:Actor"
 
     def test_id(self):
         # Arrange, Act

@@ -283,7 +283,7 @@ class TestBacktestConfig:
     def test_resolve_cls(self):
         config = BacktestDataConfig(
             "/",
-            "nautilus_trader.model.data.tick.QuoteTick",
+            "nautilus_trader.model.data.tick:QuoteTick",
             "memory",
             {},
             "AUD/USD.IDEALPRO",
