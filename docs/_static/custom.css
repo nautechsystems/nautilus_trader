@@ -34,6 +34,11 @@ h1, h2, h3 {
     display: block;
     width: 230px;
     height: auto;
+    image-rendering: -moz-crisp-edges;         /* Firefox */
+    image-rendering:   -o-crisp-edges;         /* Opera */
+    image-rendering: -webkit-optimize-contrast;/* Webkit (non-standard naming) */
+    image-rendering: crisp-edges;
+    -ms-interpolation-mode: nearest-neighbor;  /* IE (non-standard property) */
 }
 .md-header, .md-hero {
     background-color: rgb(40, 47, 56) !important;
@@ -172,7 +177,7 @@ dl.py.class {
     font-size: 10px;
     transition: 0.25s ease;
     position: absolute;
-    right: 4px;
+    right: 8px;
     top: 0;
     border-radius: 100%;
     height: 0.9rem;
@@ -249,6 +254,23 @@ dl.function.py .pre {
 em.sig-param .pre {
     color: #fff!important;
 }
+
+::-webkit-scrollbar-track {
+    -webkit-box-shadow: inset 0 0 6px rgba(0,0,0,0.3);
+    border-radius: 10px;
+    background-color: #F5F5F5;
+}
+::-webkit-scrollbar {
+    width: 6px;
+    height: 8px;
+    background-color: #F5F5F5;
+}
+::-webkit-scrollbar-thumb {
+    border-radius: 10px;
+    -webkit-box-shadow: inset 0 0 6px rgba(0,0,0,.3);
+    background-color: #00bdd6;
+}
+
 @media only screen and (min-width: 60em) {
     .md-search__inner {
         padding: 0.34rem 0;
@@ -256,7 +278,15 @@ em.sig-param .pre {
 }
 @media only screen and (max-width: 76.1875em) {
     .md-nav__button img {
-        width: auto;
+        width: 100%;
+        image-rendering: -moz-crisp-edges;         /* Firefox */
+        image-rendering:   -o-crisp-edges;         /* Opera */
+        image-rendering: -webkit-optimize-contrast;/* Webkit (non-standard naming) */
+        image-rendering: crisp-edges;
+        -ms-interpolation-mode: nearest-neighbor;  /* IE (non-standard property) */
+    }
+    #menu {
+        margin-top: 20px;
     }
     .md-nav,
     html .md-nav--primary .md-nav__title--site  {
@@ -293,16 +323,17 @@ em.sig-param .pre {
         padding-left: 0 !important;
     }
     html .md-nav--primary .md-nav__title--site .md-nav__button {
-        top: -10px;
+        top: 40%;
+        left: 50%;
+        transform: translate(-50%, -50%);
     }
     .md-nav--primary {
         overflow-y: auto;
     }
     .md-nav--primary .md-nav__link {
-        padding: 0.2rem 0.8rem;
+        padding: 0.2rem 0.8rem 0.3rem 0.3rem;
     }
 }
-
 
 @media only screen and (min-width: 76.25em) {
     .md-tabs {
