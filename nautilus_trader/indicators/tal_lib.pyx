@@ -21,6 +21,7 @@ from nautilus_trader.indicators.base.indicator cimport Indicator
 from nautilus_trader.model.data.bar cimport Bar
 
 from talib import abstract
+from numpy import ndarray
 
 cdef class ta_lib(Indicator):
     """
@@ -68,7 +69,7 @@ cdef class ta_lib(Indicator):
 
         self.update_raw(bar.high.as_double(), bar.low.as_double(), bar.close.as_double())
 
-    cpdef list _unpack_params(self, double high, double low, double close):
+    cdef list _unpack_params(self, double high, double low, double close):
         values = self.indicator_params.values()
         price_types = []
         if 'high' in values:
