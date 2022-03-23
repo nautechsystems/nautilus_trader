@@ -332,7 +332,7 @@ cdef class AccountsManager:
         cdef Money margin_init_money = Money(total_margin_init, currency)
         account.update_margin_init(instrument.id, margin_init_money)
 
-        self._log.info(f"{instrument.id} margin_init={margin_init_money.to_str()}")
+        # self._log.info(f"{instrument.id} margin_init={margin_init_money.to_str()}")
 
         return self._generate_account_state(
             account=account,
@@ -424,7 +424,7 @@ cdef class AccountsManager:
         cdef Money margin_maint_money = Money(total_margin_maint, currency)
         account.update_margin_maint(instrument.id, margin_maint_money)
 
-        self._log.info(f"{instrument.id} margin_maint={margin_maint_money.to_str()}")
+        # self._log.info(f"{instrument.id} margin_maint={margin_maint_money.to_str()}")
 
         return self._generate_account_state(
             account=account,

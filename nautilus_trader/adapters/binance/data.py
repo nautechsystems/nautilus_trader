@@ -328,7 +328,7 @@ class BinanceDataClient(LiveMarketDataClient):
         # Add delta stream buffer
         self._book_buffer[instrument_id] = []
 
-        if depth <= 20:
+        if 0 < depth <= 20:
             if depth not in (5, 10, 20):
                 self._log.error(
                     "Cannot subscribe to order book snapshots: "
@@ -669,7 +669,7 @@ class BinanceDataClient(LiveMarketDataClient):
 
     def _handle_ws_message(self, raw: bytes):
         # TODO(cs): Uncomment for development
-        # self._log.info(str(raw), LogColor.CYAN)
+        self._log.info(str(raw), LogColor.CYAN)
 
         wrapper = msgspec.json.decode(raw, type=BinanceDataMsgWrapper)
 
@@ -707,7 +707,7 @@ class BinanceDataClient(LiveMarketDataClient):
 
     def _handle_book_update(self, raw: bytes):
         if self._binance_account_type.is_futures:
-            self._handle_book_update(raw)
+            self._handle_book_update_futures(raw)
         else:  # Spot/Margin
             self._handle_book_update_spot(raw)
 
