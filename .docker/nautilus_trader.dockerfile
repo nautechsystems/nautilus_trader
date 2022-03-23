@@ -1,4 +1,4 @@
-FROM python:3.9-slim as base
+FROM python:3.10-slim as base
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
     PIP_NO_CACHE_DIR=off \
@@ -29,8 +29,9 @@ COPY nautilus_trader ./nautilus_trader
 COPY README.md ./
 RUN poetry install --no-dev
 RUN poetry build -f wheel
+RUN python -m pip install ./dist/*whl --force
+RUN find /usr/local/lib/python3.10/site-packages -name "*.pyc" -exec rm -f {} \;
 
 FROM base as application
-COPY --from=builder $PYSETUP_PATH/dist/ dist/
-RUN python -m pip install ./dist/*whl --force
+COPY --from=builder /usr/local/lib/python3.10/site-packages /usr/local/lib/python3.10/site-packages
 COPY examples ./examples

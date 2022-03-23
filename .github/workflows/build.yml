@@ -101,3 +101,7 @@ jobs:
       - name: Run performance tests (Linux)
         if: runner.os == 'Linux'
         run: nox -rs performance_tests
+
+      # Build dockerfile
+      - name: Build dockerfile
+        run: make docker-build
