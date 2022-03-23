@@ -110,4 +110,4 @@ jobs:
       # Build jupyterlab dockerfile
       - name: Build jupyterlab dockerfile
         if: runner.os == 'Linux'
-        run: make docker-build-jupyterlab
+        run: make docker-build-jupyter
