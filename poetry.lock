@@ -356,7 +356,7 @@ testing = ["covdefaults (>=1.2.0)", "coverage (>=4)", "pytest (>=4)", "pytest-co
 
 [[package]]
 name = "fonttools"
-version = "4.31.1"
+version = "4.31.2"
 description = "Tools to manipulate font files"
 category = "main"
 optional = false
@@ -1986,8 +1986,8 @@ filelock = [
     {file = "filelock-3.6.0.tar.gz", hash = "sha256:9cd540a9352e432c7246a48fe4e8712b10acb1df2ad1f30e8c070b82ae1fed85"},
 ]
 fonttools = [
-    {file = "fonttools-4.31.1-py3-none-any.whl", hash = "sha256:2b288eae806800668cb5cdf52a37b5ac701c5adda2dd5c88b685581ce3385285"},
-    {file = "fonttools-4.31.1.zip", hash = "sha256:f8b35ed9ba189710994cec2c86b8eb5f0c49336698575e439a0d5671d3ca1ace"},
+    {file = "fonttools-4.31.2-py3-none-any.whl", hash = "sha256:2df636a3f402ef14593c6811dac0609563b8c374bd7850e76919eb51ea205426"},
+    {file = "fonttools-4.31.2.zip", hash = "sha256:236b29aee6b113e8f7bee28779c1230a86ad2aac9a74a31b0aedf57e7dfb62a4"},
 ]
 frozendict = [
     {file = "frozendict-2.3.0-cp310-cp310-macosx_10_9_x86_64.whl", hash = "sha256:e18e2abd144a9433b0a8334582843b2aa0d3b9ac8b209aaa912ad365115fe2e1"},
