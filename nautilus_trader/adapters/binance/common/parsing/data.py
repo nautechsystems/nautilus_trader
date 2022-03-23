@@ -143,6 +143,10 @@ def parse_quote_tick_ws(
     )
 
 
+# b'{"stream":"ethusdt@trade","data":{"e":"trade","E":1648020300201,"s":"ETHUSDT","t":787601456,"p":"2950.81000000","q":"0.01900000","b":8356412226,"a":8356412819,"T":1648020300200,"m":true,"M":true}}'
+# b'{"stream":"ethusdt@trade","data":{"e":"trade","E":1648020381267,"T":1648020381262,"s":"ETHUSDT","t":1524194018,"p":"2950.84","q":"0.046","X":"MARKET","m":false}}'
+
+
 def parse_trade_tick_ws(
     instrument_id: InstrumentId,
     data: BinanceTradeData,

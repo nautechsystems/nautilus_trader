@@ -228,8 +228,8 @@ def parse_book_snapshot(
     return OrderBookSnapshot(
         instrument_id=instrument_id,
         book_type=BookType.L2_MBP,
-        bids=[[float(o[0]), float(o[1])] for o in data.bids],
-        asks=[[float(o[0]), float(o[1])] for o in data.asks],
+        bids=[[float(o[0]), float(o[1])] for o in data.b],
+        asks=[[float(o[0]), float(o[1])] for o in data.a],
         ts_event=millis_to_nanos(data.T),
         ts_init=ts_init,
         update_id=data.u,
