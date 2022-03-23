@@ -45,5 +45,11 @@ docker-build: clean
 docker-build-force:
 	docker build --no-cache -f .docker/nautilus_trader.dockerfile -t ${IMAGE_FULL} .
 
+docker-push:
+	docker push ${IMAGE_FULL}
+
 docker-build-jupyter:
 	docker build --build-arg GIT_TAG=${GIT_TAG} -f .docker/jupyterlab.dockerfile --platform linux/x86_64 -t ${IMAGE}:jupyter .
+
+docker-push-jupyter:
+	docker push ${IMAGE}:jupyter

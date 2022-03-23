@@ -107,7 +107,17 @@ jobs:
         if: runner.os == 'Linux'
         run: make docker-build
 
+      # push dockerfile
+      - name: Push dockerfile
+        if: runner.os == 'Linux'
+        run: make docker-push
+
       # Build jupyterlab dockerfile
       - name: Build jupyterlab dockerfile
         if: runner.os == 'Linux'
         run: make docker-build-jupyter
+
+      # push jupyterlab dockerfile
+      - name: Push dockerfile
+        if: runner.os == 'Linux'
+        run: make docker-push-jupyter
