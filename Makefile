@@ -39,7 +39,7 @@ pre-commit:
 	pre-commit run --all-files
 
 docker-build: clean
-	docker pull ${IMAGE_FULL} || docker pull ${TRADER_IMAGE}:develop ||  true
+	docker pull ${IMAGE_FULL} || docker pull ${IMAGE}:develop ||  true
 	docker build -f .docker/nautilus_trader.dockerfile --platform linux/x86_64 -t ${IMAGE_FULL} .
 
 docker-build-force:
