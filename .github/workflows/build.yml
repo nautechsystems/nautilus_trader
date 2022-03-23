@@ -105,3 +105,7 @@ jobs:
       # Build dockerfile
       - name: Build dockerfile
         run: make docker-build
+
+      # Build jupyterlab dockerfile
+      - name: Build dockerfile
+        run: make docker-build-jupyterlab

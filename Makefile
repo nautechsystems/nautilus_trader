@@ -1,10 +1,10 @@
-PROJECT?= 		nautechsystems/nautilus_trader
-REGISTRY?= 		ghcr.io/
-IMAGE?= 		${REGISTRY}${PROJECT}
-GIT_TAG:= 		$(shell git rev-parse --abbrev-ref HEAD)
-IMAGE_FULL?=	${IMAGE}:${GIT_TAG}
-EXTRAS?=		"distributed ib"
-.PHONY: 		build clean docs
+PROJECT?=nautechsystems/nautilus_trader
+REGISTRY?=ghcr.io/
+IMAGE?=${REGISTRY}${PROJECT}
+GIT_TAG:=$(shell git rev-parse --abbrev-ref HEAD)
+IMAGE_FULL?=${IMAGE}:${GIT_TAG}
+EXTRAS?="distributed ib"
+.PHONY: build clean docs
 
 install:
 	poetry install --extras ${EXTRAS}

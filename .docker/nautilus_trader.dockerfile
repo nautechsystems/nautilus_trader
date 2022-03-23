@@ -32,6 +32,7 @@ RUN poetry build -f wheel
 RUN python -m pip install ./dist/*whl --force
 RUN find /usr/local/lib/python3.10/site-packages -name "*.pyc" -exec rm -f {} \;
 
+# Final application image
 FROM base as application
 COPY --from=builder /usr/local/lib/python3.10/site-packages /usr/local/lib/python3.10/site-packages
 COPY examples ./examples
