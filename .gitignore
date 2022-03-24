@@ -67,4 +67,4 @@ nautilus_trader/examples/strategies/smacci.py
 nautilus_trader/indicators/ta_lib.pyx
 examples/backtest/kaw_kaw.py
 nautilus_trader/indicators/ta_lib.pxd
-nautilus_trader/indicators/tal_lib.pyx
+
