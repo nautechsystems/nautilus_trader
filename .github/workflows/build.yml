@@ -30,8 +30,7 @@ jobs:
       # Install build dependencies
       - name: Install build dependencies
         run: |
-          curl -sSL https://install.python-poetry.org | python3 -
-          python -m pip install --upgrade pip setuptools wheel pre-commit nox
+          python -m pip install --upgrade pip setuptools wheel poetry pre-commit nox
 
       # Setup cached pre-commit
       - name: Setup cached pre-commit
