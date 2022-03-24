@@ -62,6 +62,7 @@ jobs:
           tags: ghcr.io/${{ github.repository_owner }}/jupyterlab:${{ steps.branch-name.outputs.current_branch }}
           cache-from: type=gha
           cache-to: type=gha
+          build-args: GIT_TAG:${{ steps.branch-name.outputs.current_branch }}
 
       - name: Digest jupyterlab image
         run: echo ${{ steps.docker_build_jupyterlab.outputs.digest }}

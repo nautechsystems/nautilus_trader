@@ -19,6 +19,10 @@
 | macOS (x86_64)   | `1.59.0+` | `3.8+` |
 | Windows (x86_64) | `1.59.0+` | `3.8+` |
 
+| Docker status |
+|:-------|
+| [![docker](https://github.com/nautechsystems/nautilus_trader/actions/workflows/docker.yml/badge.svg)](https://github.com/nautechsystems/nautilus_trader/actions/workflows/docker.yml)
+
 - **Website:** https://nautilustrader.io
 - **Docs:** https://docs.nautilustrader.io
 - **Support:** [support@nautilustrader.io](mailto:support@nautilustrader.io)
