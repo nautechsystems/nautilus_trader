@@ -16,7 +16,7 @@ jobs:
       - name: Set up Python environment
         uses: actions/setup-python@v2
         with:
-          python-version: "3.9"
+          python-version: "3.10"
 
       # Install build dependencies
       - name: Install build dependencies
