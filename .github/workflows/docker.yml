@@ -12,14 +12,8 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Get branch names
-        id: branch-name
-        uses: tj-actions/branch-names@v5.2
-
       - name: Checkout repository
         uses: actions/checkout@v2
-        with:
-          ref: ${{ steps.branch-name.outputs.head_ref_branch }}
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v1
@@ -33,6 +27,10 @@ jobs:
           registry: ghcr.io
           username: ${{ github.repository_owner }}
           password: ${{ secrets.PACKAGES_TOKEN }}
+
+      - name: Get branch name
+        id: branch-name
+        uses: tj-actions/branch-names@v5.2
 
       # Build nautilus_trader docker image
       - name: Image name for trader
@@ -52,20 +50,20 @@ jobs:
         run: echo ${{ steps.docker_build_trader.outputs.digest }}
 
       # Build jupyterlab docker image
-      - name: Image name for jupyterlab
-        run: echo ghcr.io/${{ github.repository_owner }}/jupyterlab:${{ steps.branch-name.outputs.current_branch }}
-
-      - name: Build jupyterlab image
-        id: docker_build_jupyterlab
-        uses: docker/build-push-action@v2
-        with:
-          file: ".docker/jupyterlab.dockerfile"
-          push: true
-          tags: ghcr.io/${{ github.repository_owner }}/jupyterlab:${{ steps.branch-name.outputs.current_branch }}
-          cache-from: type=gha
-          cache-to: type=gha
-          build-args: | 
-            GIT_TAG:${{ steps.branch-name.outputs.current_branch }}
-
-      - name: Digest jupyterlab image
-        run: echo ${{ steps.docker_build_jupyterlab.outputs.digest }}
+#      - name: Image name for jupyterlab
+#        run: echo ghcr.io/${{ github.repository_owner }}/jupyterlab:${{ steps.branch-name.outputs.current_branch }}
+#
+#      - name: Build jupyterlab image
+#        id: docker_build_jupyterlab
+#        uses: docker/build-push-action@v2
+#        with:
+#          file: ".docker/jupyterlab.dockerfile"
+#          push: true
+#          tags: ghcr.io/${{ github.repository_owner }}/jupyterlab:${{ steps.branch-name.outputs.current_branch }}
+#          cache-from: type=gha
+#          cache-to: type=gha
+#          build-args: |
+#            GIT_TAG:${{ steps.branch-name.outputs.current_branch }}
+#
+#      - name: Digest jupyterlab image
+#        run: echo ${{ steps.docker_build_jupyterlab.outputs.digest }}
