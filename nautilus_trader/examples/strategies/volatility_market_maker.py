@@ -117,11 +117,8 @@ class VolatilityMarketMaker(TradingStrategy):
         # Subscribe to live data
         self.subscribe_bars(self.bar_type)
         self.subscribe_quote_ticks(self.instrument_id)
-        # self.subscribe_trade_ticks(self.instrument_id)
-        # self.subscribe_order_book_deltas(self.instrument_id)
-        # self.subscribe_ticker(self.instrument_id)  # For debugging
-        # self.subscribe_order_book_deltas(self.instrument_id, depth=20)  # For debugging
-        # self.subscribe_order_book_snapshots(self.instrument_id, depth=20)  # For debugging
+        # self.subscribe_order_book_deltas(self.instrument_id, depth=100)  # For debugging
+        # self.subscribe_order_book_snapshots(self.instrument_id, depth=20, interval_ms=1000)  # For debugging
         # self.subscribe_data(
         #     data_type=DataType(
         #         BinanceFuturesMarkPriceUpdate, metadata={"instrument_id": self.instrument.id}
@@ -140,6 +137,8 @@ class VolatilityMarketMaker(TradingStrategy):
             The data received.
 
         """
+        # For debugging (must add a subscription)
+        # self.log.info(str(data), LogColor.CYAN)
         pass
 
     def on_instrument(self, instrument: Instrument):
@@ -165,7 +164,8 @@ class VolatilityMarketMaker(TradingStrategy):
             The order book received.
 
         """
-        # self.log.info(str(order_book))  # For debugging (must add a subscription)
+        # For debugging (must add a subscription)
+        self.log.info(str(order_book), LogColor.CYAN)
         pass
 
     def on_order_book_delta(self, delta: OrderBookDelta):
@@ -178,7 +178,8 @@ class VolatilityMarketMaker(TradingStrategy):
             The order book delta received.
 
         """
-        # self.log.info(str(delta), LogColor.GREEN)  # For debugging (must add a subscription)
+        # For debugging (must add a subscription)
+        self.log.info(str(delta), LogColor.CYAN)
         pass
 
     def on_quote_tick(self, tick: QuoteTick):
@@ -191,7 +192,8 @@ class VolatilityMarketMaker(TradingStrategy):
             The quote tick received.
 
         """
-        # self.log.info(f"Received {repr(tick)}")  # For debugging (must add a subscription)
+        # For debugging (must add a subscription)
+        # self.log.info(f"Received {repr(tick)}", LogColor.CYAN)
         pass
 
     def on_trade_tick(self, tick: TradeTick):
@@ -204,7 +206,8 @@ class VolatilityMarketMaker(TradingStrategy):
             The tick received.
 
         """
-        # self.log.info(f"Received {repr(tick)}")  # For debugging (must add a subscription)
+        # For debugging (must add a subscription)
+        self.log.info(f"Received {repr(tick)}", LogColor.CYAN)
         pass
 
     def on_bar(self, bar: Bar):
