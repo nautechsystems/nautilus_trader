@@ -478,13 +478,14 @@ def streaming_backtest_runner(
 
     data_client_ids = _extract_generic_data_client_id(data_configs=data_configs)
 
-    for data in batch_files(
+    for batch in batch_files(
         catalog=catalog,
         data_configs=data_configs,
         target_batch_size_bytes=batch_size_bytes,
     ):
         engine.clear_data()
-        for data in groupby_datatype(data):
+        grouped = groupby_datatype(batch)
+        for data in grouped:
             if data["type"] in data_client_ids:
                 # Generic data - manually re-add client_id as it gets lost in the streaming join
                 data.update({"client_id": ClientId(data_client_ids[data["type"]])})

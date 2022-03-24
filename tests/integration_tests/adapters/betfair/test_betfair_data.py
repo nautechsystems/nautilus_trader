@@ -315,8 +315,8 @@ class TestBetfairDataClient:
             instruments = make_instruments(market_definition=market_def, currency="GBP")
             provider.add_bulk(instruments)
 
-        for update in update:
-            self.client._on_market_update(update)
+        for u in update:
+            self.client._on_market_update(u)
         result = Counter([type(event).__name__ for event in self.messages])
         expected = {
             "TradeTick": 95,
