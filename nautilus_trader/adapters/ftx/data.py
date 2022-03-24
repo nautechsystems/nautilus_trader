@@ -565,7 +565,8 @@ class FTXDataClient(LiveMarketDataClient):
             )
             return
 
-        for _, data in data["data"].items():
+        data_values = data["data"].values()
+        for data in data_values:
             instrument: Instrument = parse_instrument(
                 account_info=account_info,
                 data=data,

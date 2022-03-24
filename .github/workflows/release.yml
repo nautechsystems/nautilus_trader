@@ -20,6 +20,7 @@ jobs:
         python-version: [ "3.8", "3.9", "3.10" ]
     name: test-pip-install - Python ${{ matrix.python-version }} (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
+
     steps:
       - uses: actions/checkout@v2
 
@@ -41,7 +42,7 @@ jobs:
 
   tag-release:
     needs: [ test-pip-install ]
-    name: tag-release - Python 3.9 (ubuntu-latest)
+    name: tag-release - Python 3.10 (ubuntu-latest)
     runs-on: ubuntu-latest
     outputs:
       upload_url: ${{ steps.create-release.outputs.upload_url }}
@@ -55,7 +56,7 @@ jobs:
       - name: Set up Python environment
         uses: actions/setup-python@v2
         with:
-          python-version: "3.9"
+          python-version: "3.10"
 
       # Install build dependencies
       - name: Install build dependencies
@@ -112,7 +113,7 @@ jobs:
 
   publish-sdist:
     needs: [ tag-release ]
-    name: publish-sdist - Python 3.9 (ubuntu-latest)
+    name: publish-sdist - Python 3.10 (ubuntu-latest)
     runs-on: ubuntu-latest
     env:
       # Skip build copy to avoid *.so files being copied into the source
@@ -125,7 +126,7 @@ jobs:
       - name: Set up Python environment
         uses: actions/setup-python@v2
         with:
-          python-version: "3.9"
+          python-version: "3.10"
 
       # Install build dependencies
       - name: Install build dependencies
@@ -189,7 +190,7 @@ jobs:
       matrix:
         os: [ ubuntu-latest, macos-latest, windows-latest ]
         python-version: [ "3.8", "3.9", "3.10" ]
-    name: publish_wheels - Python ${{ matrix.python-version }} (${{ matrix.os }})
+    name: publish-wheels - Python ${{ matrix.python-version }} (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
 
     steps:
