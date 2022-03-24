@@ -102,22 +102,41 @@ jobs:
         if: runner.os == 'Linux'
         run: nox -rs performance_tests
 
-      # Build dockerfile
-      - name: Build dockerfile
-        if: runner.os == 'Linux'
+
+  build-docker-images:
+    needs: [ build ]
+    name: build-docker-images - Python 3.10 (ubuntu-latest)
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v2
+        with:
+          fetch-depth: 2
+
+      # Python setup
+      - name: Set up Python environment
+        uses: actions/setup-python@v2
+        with:
+          python-version: "3.10"
+
+      # Install build dependencies
+      - name: Install build dependencies
+        run: |
+          python -m pip install --upgrade pip setuptools wheel poetry pre-commit nox
+          poetry config experimental.new-installer false
+
+      # Build trader dockerfile
+      - name: Build trader dockerfile
         run: make docker-build
 
-      # push dockerfile
-      - name: Push dockerfile
-        if: runner.os == 'Linux'
+      # Push trader dockerfile
+      - name: Push trader dockerfile
         run: make docker-push
 
       # Build jupyterlab dockerfile
       - name: Build jupyterlab dockerfile
-        if: runner.os == 'Linux'
         run: make docker-build-jupyter
 
-      # push jupyterlab dockerfile
+      # Push jupyterlab dockerfile
       - name: Push dockerfile
-        if: runner.os == 'Linux'
         run: make docker-push-jupyter
