@@ -19,7 +19,7 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v2
         with:
-          ref: ${{ steps.branch-names.outputs.head_ref_branch }}
+          ref: ${{ steps.branch-name.outputs.head_ref_branch }}
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v1
