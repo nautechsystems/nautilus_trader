@@ -71,6 +71,7 @@ ib_insync = { version = "^0.9.70", optional = true }
 # TODO - Removed due to 3.10 windows build issue - https://github.com/docker/docker-py/issues/2902
 #docker = {version = "^5.0.3", optional = true }
 hyperopt = "^0.2.7"
+TA-Lib = "^0.4.24"
 
 [tool.poetry.dev-dependencies]
 # coverage 5.x is currently broken for Cython

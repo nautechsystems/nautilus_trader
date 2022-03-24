@@ -64,3 +64,7 @@ examples/backtest/crypto_ema_cross_bracket_macd_btcusdt_bars_external.py
 examples/backtest/crypto_ema_cross_bracket_macd_btcusdt_bars_internal.py
 examples/backtest/crypto_ema_cross_bracket_macd_multi_bars_external.py
 nautilus_trader/examples/strategies/smacci.py
+nautilus_trader/indicators/ta_lib.pyx
+examples/backtest/kaw_kaw.py
+nautilus_trader/indicators/ta_lib.pxd
+nautilus_trader/indicators/tal_lib.pyx

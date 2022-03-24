@@ -12,20 +12,22 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
-from numpy import ndarray
+cimport numpy
+import talib
 from nautilus_trader.indicators.average.moving_average cimport MovingAverage
 from nautilus_trader.indicators.base.indicator cimport Indicator
-from talib import abstract
 
-cdef class ta_lib(Indicator):
-    cdef abstract indicator_type
+
+cdef class TaLib(Indicator):
+    cdef str indicator_type
     cdef list price_types
-    cdef dict params
+    cdef dict indicator_params
+    cdef talib._ta_lib.Function indicator_function
 
 
-    cdef ndarray value
+    cdef object value
     """The current value.\n\n:returns: `double`"""
 
     cpdef void update_raw(self, double high, double low, double close)
     cdef void _check_initialized(self) except *
-     cdef list _unpack_params(self, double high, double low, double close)
+    cdef dict _unpack_params(self, double high, double low, double close)
