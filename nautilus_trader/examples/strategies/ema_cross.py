@@ -145,7 +145,8 @@ class EMACross(TradingStrategy):
             The order book data received.
 
         """
-        self.log.info(f"Received {repr(data)}")  # For debugging (must add a subscription)
+        # For debugging (must add a subscription)
+        self.log.info(f"Received {repr(data)}", LogColor.CYAN)
 
     def on_order_book(self, order_book: OrderBook):
         """
@@ -157,9 +158,8 @@ class EMACross(TradingStrategy):
             The order book received.
 
         """
-        self.log.info(f"Received {repr(order_book)}")  # For debugging (must add a subscription)
-        self.log.info(f"Bid count = {len(order_book.bids.levels)}")
-        self.log.info(f"Ask count = {len(order_book.asks.levels)}")
+        # For debugging (must add a subscription)
+        self.log.info(f"Received {repr(order_book)}", LogColor.CYAN)
 
     def on_ticker(self, ticker: Ticker):
         """
@@ -171,7 +171,8 @@ class EMACross(TradingStrategy):
             The ticker received.
 
         """
-        self.log.info(f"Received {repr(ticker)}")  # For debugging (must add a subscription)
+        # For debugging (must add a subscription)
+        self.log.info(f"Received {repr(ticker)}", LogColor.CYAN)
 
     def on_quote_tick(self, tick: QuoteTick):
         """
@@ -183,7 +184,8 @@ class EMACross(TradingStrategy):
             The quote tick received.
 
         """
-        # self.log.info(f"Received {repr(tick)}")  # For debugging (must add a subscription)
+        # For debugging (must add a subscription)
+        self.log.info(f"Received {repr(tick)}", LogColor.CYAN)
 
     def on_trade_tick(self, tick: TradeTick):
         """
@@ -195,7 +197,8 @@ class EMACross(TradingStrategy):
             The tick received.
 
         """
-        self.log.info(f"Received {repr(tick)}")  # For debugging (must add a subscription)
+        # For debugging (must add a subscription)
+        self.log.info(f"Received {repr(tick)}", LogColor.CYAN)
 
     def on_bar(self, bar: Bar):
         """
@@ -207,7 +210,7 @@ class EMACross(TradingStrategy):
             The bar received.
 
         """
-        self.log.info(f"Received {repr(bar)}")
+        self.log.info(f"Received {repr(bar)}", LogColor.CYAN)
 
         # Check if indicators ready
         if not self.indicators_initialized():
