@@ -80,7 +80,7 @@ from nautilus_trader.msgbus.bus import MessageBus
 
 class BinanceSpotExecutionClient(LiveExecutionClient):
     """
-    Provides an execution client for the `Binance` exchange.
+    Provides an execution client for the `Binance Spot/Margin` exchange.
 
     Parameters
     ----------
