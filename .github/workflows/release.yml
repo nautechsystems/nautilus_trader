@@ -22,7 +22,8 @@ jobs:
     runs-on: ${{ matrix.os }}
 
     steps:
-      - uses: actions/checkout@v2
+      - name: Checkout repository
+        uses: actions/checkout@v2
 
       # Python setup
       - name: Set up Python environment
@@ -47,7 +48,8 @@ jobs:
       upload_url: ${{ steps.create-release.outputs.upload_url }}
 
     steps:
-      - uses: actions/checkout@v2
+      - name: Checkout repository
+        uses: actions/checkout@v2
         with:
           fetch-depth: 2
 
@@ -118,7 +120,8 @@ jobs:
       SKIP_BUILD_COPY: true
 
     steps:
-      - uses: actions/checkout@v2
+      - name: Checkout repository
+        uses: actions/checkout@v2
 
       # Python setup
       - name: Set up Python environment
@@ -191,7 +194,8 @@ jobs:
     runs-on: ${{ matrix.os }}
 
     steps:
-      - uses: actions/checkout@v2
+      - name: Checkout repository
+        uses: actions/checkout@v2
 
       # Python setup
       - name: Set up Python environment
