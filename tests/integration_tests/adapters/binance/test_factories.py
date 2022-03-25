@@ -20,12 +20,13 @@ import pytest
 from nautilus_trader.adapters.binance.common.enums import BinanceAccountType
 from nautilus_trader.adapters.binance.config import BinanceDataClientConfig
 from nautilus_trader.adapters.binance.config import BinanceExecClientConfig
-from nautilus_trader.adapters.binance.data import BinanceDataClient
 from nautilus_trader.adapters.binance.factories import BinanceLiveDataClientFactory
 from nautilus_trader.adapters.binance.factories import BinanceLiveExecClientFactory
 from nautilus_trader.adapters.binance.factories import _get_http_base_url
 from nautilus_trader.adapters.binance.factories import _get_ws_base_url
+from nautilus_trader.adapters.binance.futures.data import BinanceFuturesDataClient
 from nautilus_trader.adapters.binance.futures.execution import BinanceFuturesExecutionClient
+from nautilus_trader.adapters.binance.spot.data import BinanceSpotDataClient
 from nautilus_trader.adapters.binance.spot.execution import BinanceSpotExecutionClient
 from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.clock import LiveClock
@@ -191,7 +192,7 @@ class TestBinanceFactories:
                     us=False,
                     testnet=False,
                 ),
-                "wss://fstream.binance.com",
+                "wss://fstream-auth.binance.com",
             ],
             [
                 BinanceExecClientConfig(
@@ -223,7 +224,7 @@ class TestBinanceFactories:
                     us=True,
                     testnet=False,
                 ),
-                "wss://fstream.binance.us",
+                "wss://fstream-auth.binance.us",
             ],
             [
                 BinanceExecClientConfig(
@@ -266,14 +267,12 @@ class TestBinanceFactories:
         # Assert
         assert base_url == expected
 
-    def test_create_binance_live_data_client(self, binance_http_client):
+    def test_create_binance_live_spot_data_client(self, binance_http_client):
         # Arrange, Act
         data_client = BinanceLiveDataClientFactory.create(
             loop=self.loop,
             name="BINANCE",
             config=BinanceDataClientConfig(  # noqa (S106 Possible hardcoded password)
-                api_key="SOME_BINANCE_API_KEY",
-                api_secret="SOME_BINANCE_API_SECRET",
                 account_type=BinanceAccountType.SPOT,
             ),
             msgbus=self.msgbus,
@@ -282,7 +281,23 @@ class TestBinanceFactories:
             logger=self.logger,
         )
 
-        assert isinstance(data_client, BinanceDataClient)
+        assert isinstance(data_client, BinanceSpotDataClient)
+
+    def test_create_binance_live_futures_data_client(self, binance_http_client):
+        # Arrange, Act
+        data_client = BinanceLiveDataClientFactory.create(
+            loop=self.loop,
+            name="BINANCE",
+            config=BinanceDataClientConfig(  # noqa (S106 Possible hardcoded password)
+                account_type=BinanceAccountType.FUTURES_USDT,
+            ),
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            logger=self.logger,
+        )
+
+        assert isinstance(data_client, BinanceFuturesDataClient)
 
     def test_create_binance_spot_exec_client(self, binance_http_client):
         # Arrange, Act
@@ -290,8 +305,6 @@ class TestBinanceFactories:
             loop=self.loop,
             name="BINANCE",
             config=BinanceExecClientConfig(  # noqa (S106 Possible hardcoded password)
-                api_key="SOME_BINANCE_API_KEY",
-                api_secret="SOME_BINANCE_API_SECRET",
                 account_type=BinanceAccountType.SPOT,
             ),
             msgbus=self.msgbus,
@@ -308,8 +321,6 @@ class TestBinanceFactories:
             loop=self.loop,
             name="BINANCE",
             config=BinanceExecClientConfig(  # noqa (S106 Possible hardcoded password)
-                api_key="SOME_BINANCE_API_KEY",
-                api_secret="SOME_BINANCE_API_SECRET",
                 account_type=BinanceAccountType.FUTURES_USDT,
             ),
             msgbus=self.msgbus,

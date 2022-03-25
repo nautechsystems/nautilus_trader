@@ -233,7 +233,7 @@ class BinanceFuturesExecutionClient(LiveExecutionClient):
 
         # Connect WebSocket client
         self._ws_client.subscribe(key=self._listen_key)
-        await self._ws_client.connect()
+        await self._ws_client.connect(key=self._listen_key)
 
         self._set_connected(True)
         self._log.info("Connected.")

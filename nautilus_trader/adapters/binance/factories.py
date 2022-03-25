@@ -21,10 +21,11 @@ from typing import Dict, Optional, Union
 from nautilus_trader.adapters.binance.common.enums import BinanceAccountType
 from nautilus_trader.adapters.binance.config import BinanceDataClientConfig
 from nautilus_trader.adapters.binance.config import BinanceExecClientConfig
-from nautilus_trader.adapters.binance.data import BinanceDataClient
+from nautilus_trader.adapters.binance.futures.data import BinanceFuturesDataClient
 from nautilus_trader.adapters.binance.futures.execution import BinanceFuturesExecutionClient
 from nautilus_trader.adapters.binance.futures.providers import BinanceFuturesInstrumentProvider
 from nautilus_trader.adapters.binance.http.client import BinanceHttpClient
+from nautilus_trader.adapters.binance.spot.data import BinanceSpotDataClient
 from nautilus_trader.adapters.binance.spot.execution import BinanceSpotExecutionClient
 from nautilus_trader.adapters.binance.spot.providers import BinanceSpotInstrumentProvider
 from nautilus_trader.cache.cache import Cache
@@ -186,7 +187,7 @@ class BinanceLiveDataClientFactory(LiveDataClientFactory):
         cache: Cache,
         clock: LiveClock,
         logger: LiveLogger,
-    ) -> BinanceDataClient:
+    ) -> Union[BinanceSpotDataClient, BinanceFuturesDataClient]:
         """
         Create a new Binance data client.
 
@@ -209,7 +210,7 @@ class BinanceLiveDataClientFactory(LiveDataClientFactory):
 
         Returns
         -------
-        BinanceDataClient
+        BinanceSpotDataClient or BinanceFuturesDataClient
 
         Raises
         ------
@@ -231,15 +232,29 @@ class BinanceLiveDataClientFactory(LiveDataClientFactory):
             is_testnet=config.testnet,
         )
 
-        # Get instrument provider singleton
         if config.account_type.is_spot or config.account_type.is_margin:
+            # Get instrument provider singleton
             provider = get_cached_binance_spot_instrument_provider(
                 client=client,
                 logger=logger,
                 account_type=config.account_type,
                 config=config.instrument_provider,
             )
+
+            # Create client
+            return BinanceSpotDataClient(
+                loop=loop,
+                client=client,
+                msgbus=msgbus,
+                cache=cache,
+                clock=clock,
+                logger=logger,
+                instrument_provider=provider,
+                account_type=config.account_type,
+                base_url_ws=config.base_url_ws or base_url_ws_default,
+            )
         else:
+            # Get instrument provider singleton
             provider = get_cached_binance_futures_instrument_provider(
                 client=client,
                 logger=logger,
@@ -247,19 +262,18 @@ class BinanceLiveDataClientFactory(LiveDataClientFactory):
                 config=config.instrument_provider,
             )
 
-        # Create client
-        data_client = BinanceDataClient(
-            loop=loop,
-            client=client,
-            msgbus=msgbus,
-            cache=cache,
-            clock=clock,
-            logger=logger,
-            instrument_provider=provider,
-            account_type=config.account_type,
-            base_url_ws=config.base_url_ws or base_url_ws_default,
-        )
-        return data_client
+            # Create client
+            return BinanceFuturesDataClient(
+                loop=loop,
+                client=client,
+                msgbus=msgbus,
+                cache=cache,
+                clock=clock,
+                logger=logger,
+                instrument_provider=provider,
+                account_type=config.account_type,
+                base_url_ws=config.base_url_ws or base_url_ws_default,
+            )
 
 
 class BinanceLiveExecClientFactory(LiveExecClientFactory):
@@ -321,8 +335,7 @@ class BinanceLiveExecClientFactory(LiveExecClientFactory):
             is_testnet=config.testnet,
         )
 
-        # Create client
-        if config.account_type in (BinanceAccountType.SPOT, BinanceAccountType.MARGIN):
+        if config.account_type.is_spot or config.account_type.is_margin:
             # Get instrument provider singleton
             provider = get_cached_binance_spot_instrument_provider(
                 client=client,
@@ -331,6 +344,7 @@ class BinanceLiveExecClientFactory(LiveExecClientFactory):
                 config=config.instrument_provider,
             )
 
+            # Create client
             return BinanceSpotExecutionClient(
                 loop=loop,
                 client=client,
@@ -342,10 +356,7 @@ class BinanceLiveExecClientFactory(LiveExecClientFactory):
                 account_type=config.account_type,
                 base_url_ws=config.base_url_ws or base_url_ws_default,
             )
-        elif config.account_type in (
-            BinanceAccountType.FUTURES_USDT,
-            BinanceAccountType.FUTURES_COIN,
-        ):
+        else:
             # Get instrument provider singleton
             provider = get_cached_binance_futures_instrument_provider(
                 client=client,
@@ -354,6 +365,7 @@ class BinanceLiveExecClientFactory(LiveExecClientFactory):
                 config=config.instrument_provider,
             )
 
+            # Create client
             return BinanceFuturesExecutionClient(
                 loop=loop,
                 client=client,
@@ -365,8 +377,6 @@ class BinanceLiveExecClientFactory(LiveExecClientFactory):
                 account_type=config.account_type,
                 base_url_ws=config.base_url_ws or base_url_ws_default,
             )
-        else:
-            raise RuntimeError()  # TODO: WIP
 
 
 def _get_api_key(account_type: BinanceAccountType, is_testnet: bool) -> str:
@@ -438,7 +448,7 @@ def _get_ws_base_url(config: Union[BinanceDataClientConfig, BinanceExecClientCon
     if config.account_type in (BinanceAccountType.SPOT, BinanceAccountType.MARGIN):
         return f"wss://stream.binance.{top_level_domain}:9443"
     elif config.account_type == BinanceAccountType.FUTURES_USDT:
-        return f"wss://fstream.binance.{top_level_domain}"
+        return f"wss://fstream-auth.binance.{top_level_domain}"
     elif config.account_type == BinanceAccountType.FUTURES_COIN:
         return f"wss://dstream.binance.{top_level_domain}"
     else:  # pragma: no cover (design-time error)

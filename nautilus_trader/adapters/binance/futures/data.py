@@ -32,6 +32,7 @@ from nautilus_trader.adapters.binance.common.parsing.data import parse_trade_tic
 from nautilus_trader.adapters.binance.common.parsing.data import parse_trade_tick_ws
 from nautilus_trader.adapters.binance.common.schemas import BinanceCandlestickMsg
 from nautilus_trader.adapters.binance.common.schemas import BinanceDataMsgWrapper
+from nautilus_trader.adapters.binance.common.schemas import BinanceListenKey
 from nautilus_trader.adapters.binance.common.schemas import BinanceOrderBookMsg
 from nautilus_trader.adapters.binance.common.schemas import BinanceQuoteMsg
 from nautilus_trader.adapters.binance.common.schemas import BinanceTickerMsg
@@ -39,15 +40,13 @@ from nautilus_trader.adapters.binance.common.schemas import BinanceTradeMsg
 from nautilus_trader.adapters.binance.common.types import BinanceBar
 from nautilus_trader.adapters.binance.common.types import BinanceTicker
 from nautilus_trader.adapters.binance.futures.http.market import BinanceFuturesMarketHttpAPI
+from nautilus_trader.adapters.binance.futures.http.user import BinanceFuturesUserDataHttpAPI
 from nautilus_trader.adapters.binance.futures.parsing.data import parse_book_snapshot
 from nautilus_trader.adapters.binance.futures.parsing.data import parse_mark_price_ws
 from nautilus_trader.adapters.binance.futures.schemas.market import BinanceFuturesMarkPriceMsg
 from nautilus_trader.adapters.binance.futures.types import BinanceFuturesMarkPriceUpdate
 from nautilus_trader.adapters.binance.http.client import BinanceHttpClient
 from nautilus_trader.adapters.binance.http.error import BinanceError
-from nautilus_trader.adapters.binance.spot.http.market import BinanceSpotMarketHttpAPI
-from nautilus_trader.adapters.binance.spot.parsing.data import parse_spot_book_snapshot
-from nautilus_trader.adapters.binance.spot.schemas.market import BinanceSpotOrderBookMsg
 from nautilus_trader.adapters.binance.websocket.client import BinanceWebSocketClient
 from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.clock import LiveClock
@@ -75,9 +74,9 @@ from nautilus_trader.model.orderbook.data import OrderBookSnapshot
 from nautilus_trader.msgbus.bus import MessageBus
 
 
-class BinanceDataClient(LiveMarketDataClient):
+class BinanceFuturesDataClient(LiveMarketDataClient):
     """
-    Provides a data client for the `Binance` exchange.
+    Provides a data client for the `Binance Futures` exchange.
 
     Parameters
     ----------
@@ -110,7 +109,7 @@ class BinanceDataClient(LiveMarketDataClient):
         clock: LiveClock,
         logger: Logger,
         instrument_provider: InstrumentProvider,
-        account_type: BinanceAccountType = BinanceAccountType.SPOT,
+        account_type: BinanceAccountType = BinanceAccountType.FUTURES_USDT,
         base_url_ws: Optional[str] = None,
     ):
         super().__init__(
@@ -124,6 +123,7 @@ class BinanceDataClient(LiveMarketDataClient):
             logger=logger,
         )
 
+        assert account_type.is_futures, "account type is not for futures"
         self._binance_account_type = account_type
         self._log.info(f"Account type: {self._binance_account_type.value}.", LogColor.BLUE)
 
@@ -132,12 +132,13 @@ class BinanceDataClient(LiveMarketDataClient):
 
         # HTTP API
         self._http_client = client
-        if account_type.is_spot:
-            self._http_market = BinanceSpotMarketHttpAPI(client=self._http_client)  # type: ignore
-        elif account_type.is_futures:
-            self._http_market = BinanceFuturesMarketHttpAPI(  # type: ignore
-                client=self._http_client, account_type=account_type
-            )
+        self._http_market = BinanceFuturesMarketHttpAPI(client=client, account_type=account_type)
+        self._http_user = BinanceFuturesUserDataHttpAPI(client=client, account_type=account_type)
+
+        # Listen keys
+        self._ping_listen_keys_interval: int = 60 * 5  # Once every 5 mins (hardcode)
+        self._ping_listen_keys_task: Optional[asyncio.Task] = None
+        self._listen_key: Optional[str] = None
 
         # WebSocket API
         self._ws_client = BinanceWebSocketClient(
@@ -182,6 +183,12 @@ class BinanceDataClient(LiveMarketDataClient):
         self._send_all_instruments_to_data_engine()
         self._update_instruments_task = self._loop.create_task(self._update_instruments())
 
+        # Get listen keys
+        msg: BinanceListenKey = await self._http_user.create_listen_key()
+
+        self._listen_key = msg.listenKey
+        self._ping_listen_keys_task = self._loop.create_task(self._ping_listen_keys())
+
         # Connect WebSocket clients
         self._loop.create_task(self._connect_websockets())
 
@@ -192,7 +199,7 @@ class BinanceDataClient(LiveMarketDataClient):
         self._log.info("Awaiting subscriptions...")
         await asyncio.sleep(2)
         if self._ws_client.has_subscriptions:
-            await self._ws_client.connect()
+            await self._ws_client.connect(key=self._listen_key)
 
     async def _update_instruments(self) -> None:
         while True:
@@ -204,11 +211,25 @@ class BinanceDataClient(LiveMarketDataClient):
             await self._instrument_provider.load_all_async()
             self._send_all_instruments_to_data_engine()
 
+    async def _ping_listen_keys(self) -> None:
+        while True:
+            self._log.debug(
+                f"Scheduled `ping_listen_keys` to run in " f"{self._ping_listen_keys_interval}s."
+            )
+            await asyncio.sleep(self._ping_listen_keys_interval)
+            if self._listen_key:
+                self._log.debug(f"Pinging WebSocket listen key {self._listen_key}...")
+                await self._http_user.ping_listen_key(self._listen_key)
+
     async def _disconnect(self) -> None:
         # Cancel tasks
         if self._update_instruments_task:
             self._log.debug("Canceling `update_instruments` task...")
             self._update_instruments_task.cancel()
+
+        if self._ping_listen_keys_task:
+            self._log.debug("Canceling `ping_listen_keys` task...")
+            self._ping_listen_keys_task.cancel()
 
         # Disconnect WebSocket client
         if self._ws_client.is_connected:
@@ -669,7 +690,7 @@ class BinanceDataClient(LiveMarketDataClient):
 
     def _handle_ws_message(self, raw: bytes):
         # TODO(cs): Uncomment for development
-        self._log.info(str(raw), LogColor.CYAN)
+        # self._log.info(str(raw), LogColor.CYAN)
 
         wrapper = msgspec.json.decode(raw, type=BinanceDataMsgWrapper)
 
@@ -706,12 +727,6 @@ class BinanceDataClient(LiveMarketDataClient):
             self._handle_data(book_deltas)
 
     def _handle_book_update(self, raw: bytes):
-        if self._binance_account_type.is_futures:
-            self._handle_book_update_futures(raw)
-        else:  # Spot/Margin
-            self._handle_book_update_spot(raw)
-
-    def _handle_book_update_futures(self, raw: bytes):
         msg: BinanceOrderBookMsg = msgspec.json.decode(raw, type=BinanceOrderBookMsg)
         instrument_id: InstrumentId = self._get_cached_instrument_id(msg.data.s)
         book_snapshot: OrderBookSnapshot = parse_book_snapshot(
@@ -720,23 +735,6 @@ class BinanceDataClient(LiveMarketDataClient):
             ts_init=self._clock.timestamp_ns(),
         )
 
-        # Check if book buffer active
-        book_buffer: List[OrderBookData] = self._book_buffer.get(instrument_id)
-        if book_buffer is not None:
-            book_buffer.append(book_snapshot)
-        else:
-            self._handle_data(book_snapshot)
-
-    def _handle_book_update_spot(self, raw: bytes):
-        msg: BinanceSpotOrderBookMsg = msgspec.json.decode(raw, type=BinanceSpotOrderBookMsg)
-        instrument_id: InstrumentId = self._get_cached_instrument_id(
-            msg.stream.partition("@")[0].upper()
-        )
-        book_snapshot: OrderBookSnapshot = parse_spot_book_snapshot(
-            instrument_id=instrument_id,
-            data=msg.data,
-            ts_init=self._clock.timestamp_ns(),
-        )
         # Check if book buffer active
         book_buffer: List[OrderBookData] = self._book_buffer.get(instrument_id)
         if book_buffer is not None:
