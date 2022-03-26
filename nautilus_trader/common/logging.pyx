@@ -553,6 +553,7 @@ cpdef void nautilus_header(LoggerAdapter logger) except *:
     logger.info(f"python {python_version()}")
     logger.info(f"numpy {np.__version__}")
     logger.info(f"pandas {pd.__version__}")
+    logger.info(f"psutil {psutil.__version__}")
 
 
 cpdef void log_memory(LoggerAdapter logger) except *:
