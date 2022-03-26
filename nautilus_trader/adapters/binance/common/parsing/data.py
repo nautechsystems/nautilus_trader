@@ -20,7 +20,6 @@ from nautilus_trader.adapters.binance.common.schemas import BinanceCandlestick
 from nautilus_trader.adapters.binance.common.schemas import BinanceOrderBookData
 from nautilus_trader.adapters.binance.common.schemas import BinanceQuoteData
 from nautilus_trader.adapters.binance.common.schemas import BinanceTickerData
-from nautilus_trader.adapters.binance.common.schemas import BinanceTradeData
 from nautilus_trader.adapters.binance.common.types import BinanceBar
 from nautilus_trader.adapters.binance.common.types import BinanceTicker
 from nautilus_trader.core.datetime import millis_to_nanos
@@ -143,26 +142,6 @@ def parse_quote_tick_ws(
     )
 
 
-# b'{"stream":"ethusdt@trade","data":{"e":"trade","E":1648020300201,"s":"ETHUSDT","t":787601456,"p":"2950.81000000","q":"0.01900000","b":8356412226,"a":8356412819,"T":1648020300200,"m":true,"M":true}}'
-# b'{"stream":"ethusdt@trade","data":{"e":"trade","E":1648020381267,"T":1648020381262,"s":"ETHUSDT","t":1524194018,"p":"2950.84","q":"0.046","X":"MARKET","m":false}}'
-
-
-def parse_trade_tick_ws(
-    instrument_id: InstrumentId,
-    data: BinanceTradeData,
-    ts_init: int,
-) -> TradeTick:
-    return TradeTick(
-        instrument_id=instrument_id,
-        price=Price.from_str(data.p),
-        size=Quantity.from_str(data.q),
-        aggressor_side=AggressorSide.SELL if data.m else AggressorSide.BUY,
-        trade_id=TradeId(str(data.t)),
-        ts_event=millis_to_nanos(data.T),
-        ts_init=ts_init,
-    )
-
-
 def parse_ticker_24hr_ws(
     instrument_id: InstrumentId,
     data: BinanceTickerData,
@@ -176,10 +155,10 @@ def parse_ticker_24hr_ws(
         prev_close_price=Decimal(data.x) if data.x is not None else None,
         last_price=Decimal(data.c),
         last_qty=Decimal(data.Q),
-        bid_price=Decimal(data.b),
-        bid_qty=Decimal(data.B),
-        ask_price=Decimal(data.a),
-        ask_qty=Decimal(data.A),
+        bid_price=Decimal(data.b) if data.b is not None else None,
+        bid_qty=Decimal(data.B) if data.B is not None else None,
+        ask_price=Decimal(data.a) if data.a is not None else None,
+        ask_qty=Decimal(data.A) if data.A is not None else None,
         open_price=Decimal(data.o),
         high_price=Decimal(data.h),
         low_price=Decimal(data.l),

@@ -956,6 +956,10 @@ class BinanceFuturesExecutionClient(LiveExecutionClient):
                 venue_order_id=venue_order_id,
                 ts_event=ts_event,
             )
+        else:
+            self._log.error(
+                f"Cannot handle ORDER_TRADE_UPDATE: unrecognized type {data.x.value}",
+            )
 
     def _generate_external_order_status(
         self,

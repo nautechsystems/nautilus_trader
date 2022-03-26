@@ -148,6 +148,42 @@ class BinanceFuturesFundRate(msgspec.Struct):
 ################################################################################
 
 
+class BinanceFuturesTradeData(msgspec.Struct):
+    """
+    WebSocket message 'inner struct' for `Binance Futures` Trade Streams.
+
+    Fields
+    ------
+    - e: Event type
+    - E: Event time
+    - s: Symbol
+    - t: Trade ID
+    - p: Price
+    - q: Quantity
+    - b: Buyer order ID
+    - a: Seller order ID
+    - T: Trade time
+    - m: Is the buyer the market maker?
+    """
+
+    e: str  # Event type
+    E: int  # Event time
+    T: int  # Trade time
+    s: str  # Symbol
+    t: int  # Trade ID
+    p: str  # Price
+    q: str  # Quantity
+    X: BinanceFuturesOrderType  # Buyer order type
+    m: bool  # Is the buyer the market maker?
+
+
+class BinanceFuturesTradeMsg(msgspec.Struct):
+    """WebSocket message from `Binance Futures` Trade Streams."""
+
+    stream: str
+    data: BinanceFuturesTradeData
+
+
 class BinanceFuturesMarkPriceData(msgspec.Struct):
     """WebSocket message 'inner struct' for `Binance Futures` Mark Price Update events."""
 

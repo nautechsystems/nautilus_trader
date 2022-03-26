@@ -23,14 +23,19 @@ from nautilus_trader.adapters.binance.common.constants import BINANCE_VENUE
 from nautilus_trader.adapters.binance.common.enums import BinanceSymbolFilterType
 from nautilus_trader.adapters.binance.spot.schemas.market import BinanceSpotOrderBookDepthData
 from nautilus_trader.adapters.binance.spot.schemas.market import BinanceSpotSymbolInfo
+from nautilus_trader.adapters.binance.spot.schemas.market import BinanceSpotTradeData
 from nautilus_trader.adapters.binance.spot.schemas.market import BinanceSymbolFilter
 from nautilus_trader.adapters.binance.spot.schemas.wallet import BinanceSpotTradeFees
+from nautilus_trader.core.datetime import millis_to_nanos
 from nautilus_trader.core.string import precision_from_str
 from nautilus_trader.model.currency import Currency
+from nautilus_trader.model.data.tick import TradeTick
+from nautilus_trader.model.enums import AggressorSide
 from nautilus_trader.model.enums import BookType
 from nautilus_trader.model.enums import CurrencyType
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import Symbol
+from nautilus_trader.model.identifiers import TradeId
 from nautilus_trader.model.instruments.base import Instrument
 from nautilus_trader.model.instruments.currency_pair import CurrencyPair
 from nautilus_trader.model.objects import Money
@@ -137,4 +142,20 @@ def parse_spot_book_snapshot(
         ts_event=ts_init,
         ts_init=ts_init,
         update_id=data.lastUpdateId,
+    )
+
+
+def parse_spot_trade_tick_ws(
+    instrument_id: InstrumentId,
+    data: BinanceSpotTradeData,
+    ts_init: int,
+) -> TradeTick:
+    return TradeTick(
+        instrument_id=instrument_id,
+        price=Price.from_str(data.p),
+        size=Quantity.from_str(data.q),
+        aggressor_side=AggressorSide.SELL if data.m else AggressorSide.BUY,
+        trade_id=TradeId(str(data.t)),
+        ts_event=millis_to_nanos(data.T),
+        ts_init=ts_init,
     )
