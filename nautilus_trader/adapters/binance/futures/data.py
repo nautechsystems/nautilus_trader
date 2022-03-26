@@ -188,6 +188,7 @@ class BinanceFuturesDataClient(LiveMarketDataClient):
 
         self._listen_key = msg.listenKey
         self._ping_listen_keys_task = self._loop.create_task(self._ping_listen_keys())
+        self._log.info(f"Listen key {self._listen_key}")
 
         # Connect WebSocket clients
         self._loop.create_task(self._connect_websockets())
@@ -197,9 +198,9 @@ class BinanceFuturesDataClient(LiveMarketDataClient):
 
     async def _connect_websockets(self) -> None:
         self._log.info("Awaiting subscriptions...")
-        await asyncio.sleep(2)
+        await asyncio.sleep(5)
         if self._ws_client.has_subscriptions:
-            await self._ws_client.connect(key=self._listen_key)
+            await self._ws_client.connect()
 
     async def _update_instruments(self) -> None:
         while True:

@@ -138,7 +138,7 @@ class VolatilityMarketMaker(TradingStrategy):
 
         """
         # For debugging (must add a subscription)
-        # self.log.info(str(data), LogColor.CYAN)
+        # self.log.info(repr(data), LogColor.CYAN)
         pass
 
     def on_instrument(self, instrument: Instrument):
@@ -152,6 +152,8 @@ class VolatilityMarketMaker(TradingStrategy):
             The instrument received.
 
         """
+        # For debugging (must add a subscription)
+        # self.log.info(repr(instrument), LogColor.CYAN)
         pass
 
     def on_order_book(self, order_book: OrderBook):
@@ -165,7 +167,7 @@ class VolatilityMarketMaker(TradingStrategy):
 
         """
         # For debugging (must add a subscription)
-        self.log.info(str(order_book), LogColor.CYAN)
+        # self.log.info(repr(order_book), LogColor.CYAN)
         pass
 
     def on_order_book_delta(self, delta: OrderBookDelta):
@@ -179,7 +181,7 @@ class VolatilityMarketMaker(TradingStrategy):
 
         """
         # For debugging (must add a subscription)
-        self.log.info(str(delta), LogColor.CYAN)
+        # self.log.info(repr(delta), LogColor.CYAN)
         pass
 
     def on_quote_tick(self, tick: QuoteTick):
@@ -193,7 +195,7 @@ class VolatilityMarketMaker(TradingStrategy):
 
         """
         # For debugging (must add a subscription)
-        # self.log.info(f"Received {repr(tick)}", LogColor.CYAN)
+        # self.log.info(repr(tick), LogColor.CYAN)
         pass
 
     def on_trade_tick(self, tick: TradeTick):
@@ -207,7 +209,7 @@ class VolatilityMarketMaker(TradingStrategy):
 
         """
         # For debugging (must add a subscription)
-        self.log.info(f"Received {repr(tick)}", LogColor.CYAN)
+        # self.log.info(repr(tick), LogColor.CYAN)
         pass
 
     def on_bar(self, bar: Bar):
@@ -220,7 +222,7 @@ class VolatilityMarketMaker(TradingStrategy):
             The bar received.
 
         """
-        self.log.info(f"Received {repr(bar)}")
+        self.log.info(repr(bar), LogColor.CYAN)
 
         # Check if indicators ready
         if not self.indicators_initialized():

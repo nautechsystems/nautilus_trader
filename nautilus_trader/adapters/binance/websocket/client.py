@@ -27,8 +27,6 @@ class BinanceWebSocketClient(WebSocketClient):
     Provides a `Binance` streaming WebSocket client.
     """
 
-    BASE_URL = "wss://stream.binance.com:9443"  # Default Spot/Margin
-
     def __init__(
         self,
         loop: asyncio.AbstractEventLoop,
@@ -44,7 +42,7 @@ class BinanceWebSocketClient(WebSocketClient):
             max_retry_connection=6,
         )
 
-        self._base_url = base_url or self.BASE_URL
+        self._base_url = base_url
 
         self._clock = clock
         self._streams: List[str] = []
@@ -76,7 +74,9 @@ class BinanceWebSocketClient(WebSocketClient):
         # Always connecting combined streams for consistency
         ws_url = self._base_url + "/stream?streams=" + "/".join(self._streams)
         if key is not None:
-            ws_url += "&listenKey=" + key
+            ws_url += f"&listenKey={key}"
+
+        self._log.info(f"Connecting to {ws_url}")
         await super().connect(ws_url=ws_url, start=start, **ws_kwargs)
 
     def _add_stream(self, stream: str):

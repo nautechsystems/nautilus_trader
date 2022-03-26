@@ -180,7 +180,7 @@ class BinanceSpotDataClient(LiveMarketDataClient):
 
     async def _connect_websockets(self) -> None:
         self._log.info("Awaiting subscriptions...")
-        await asyncio.sleep(2)
+        await asyncio.sleep(5)
         if self._ws_client.has_subscriptions:
             await self._ws_client.connect()
 

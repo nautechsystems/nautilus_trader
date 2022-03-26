@@ -192,7 +192,7 @@ class TestBinanceFactories:
                     us=False,
                     testnet=False,
                 ),
-                "wss://fstream-auth.binance.com",
+                "wss://fstream.binance.com",
             ],
             [
                 BinanceExecClientConfig(
@@ -224,7 +224,7 @@ class TestBinanceFactories:
                     us=True,
                     testnet=False,
                 ),
-                "wss://fstream-auth.binance.us",
+                "wss://fstream.binance.us",
             ],
             [
                 BinanceExecClientConfig(
@@ -273,6 +273,8 @@ class TestBinanceFactories:
             loop=self.loop,
             name="BINANCE",
             config=BinanceDataClientConfig(  # noqa (S106 Possible hardcoded password)
+                api_key="SOME_BINANCE_API_KEY",  # Do not remove or will fail in CI
+                api_secret="SOME_BINANCE_API_SECRET",  # Do not remove or will fail in CI
                 account_type=BinanceAccountType.SPOT,
             ),
             msgbus=self.msgbus,
@@ -289,6 +291,8 @@ class TestBinanceFactories:
             loop=self.loop,
             name="BINANCE",
             config=BinanceDataClientConfig(  # noqa (S106 Possible hardcoded password)
+                api_key="SOME_BINANCE_API_KEY",  # Do not remove or will fail in CI
+                api_secret="SOME_BINANCE_API_SECRET",  # Do not remove or will fail in CI
                 account_type=BinanceAccountType.FUTURES_USDT,
             ),
             msgbus=self.msgbus,
@@ -305,6 +309,8 @@ class TestBinanceFactories:
             loop=self.loop,
             name="BINANCE",
             config=BinanceExecClientConfig(  # noqa (S106 Possible hardcoded password)
+                api_key="SOME_BINANCE_API_KEY",  # Do not remove or will fail in CI
+                api_secret="SOME_BINANCE_API_SECRET",  # Do not remove or will fail in CI
                 account_type=BinanceAccountType.SPOT,
             ),
             msgbus=self.msgbus,
@@ -321,6 +327,8 @@ class TestBinanceFactories:
             loop=self.loop,
             name="BINANCE",
             config=BinanceExecClientConfig(  # noqa (S106 Possible hardcoded password)
+                api_key="SOME_BINANCE_API_KEY",
+                api_secret="SOME_BINANCE_API_SECRET",
                 account_type=BinanceAccountType.FUTURES_USDT,
             ),
             msgbus=self.msgbus,
