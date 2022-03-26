@@ -12,8 +12,12 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+
+from typing import Optional
+
 cimport numpy
 import talib
+
 from nautilus_trader.indicators.average.moving_average cimport MovingAverage
 from nautilus_trader.indicators.base.indicator cimport Indicator
 
@@ -22,10 +26,17 @@ cdef class TaLib(Indicator):
     cdef str indicator_type
     cdef list price_types
     cdef dict indicator_params
-    cdef talib._ta_lib.Function indicator_function
+    cdef object indicator_function  # talib._ta_lib.Function
+    cdef int lookback
+    cdef dict params
 
+    cdef object _high
+    cdef object _low
+    cdef object _close
+    cdef object _open
+    cdef object _volume
 
-    cdef object value
+    cdef readonly object value
     """The current value.\n\n:returns: `double`"""
 
     cpdef void update_raw(self, double high, double low, double close)

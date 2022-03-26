@@ -202,8 +202,6 @@ class BacktestNode:
                 )
 
                 base_currency = self.config.venues[0].base_currency
-                # logger_adapter.info(f"{result.total_positions}")
-                # pnl_pct = result.stats_pnls[base_currency]["PnL%"]
                 profit_factor = result.stats_returns['Profit Factor']
                 logger_adapter.info(f"OBJECTIVE: {1/profit_factor}")
 
