@@ -83,7 +83,7 @@ cdef class TaLib(Indicator):
         self.update_raw(bar.high.as_double(), bar.low.as_double(), bar.close.as_double(),
                         bar.open.as_double(), bar.volume.as_double())
 
-    cdef dict _unpack_params(self, double high, double low, double close, double _open, double volume):
+    cdef void _unpack_params(self, double high, double low, double close, double _open, double volume):
         values = self.price_types
 
         if 'high' in values:
@@ -103,7 +103,7 @@ cdef class TaLib(Indicator):
         double high,
         double low,
         double close,
-        double, _open,
+        double _open,
         double volume,
     ):
         """

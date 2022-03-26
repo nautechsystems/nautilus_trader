@@ -39,6 +39,6 @@ cdef class TaLib(Indicator):
     cdef readonly object value
     """The current value.\n\n:returns: `double`"""
 
-    cpdef void update_raw(self, double high, double low, double close)
+    cpdef void update_raw(self, double high, double low, double close, double _open, double volume)
     cdef void _check_initialized(self) except *
-    cdef dict _unpack_params(self, double high, double low, double close)
+    cdef void _unpack_params(self, double high, double low, double close, double _open, double volume)
