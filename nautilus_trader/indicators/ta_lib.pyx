@@ -121,7 +121,7 @@ cdef class TaLib(Indicator):
         """
         # Calculate the indicator values
         self._unpack_params(high, low, close, _open, volume)
-        prices = {'high': array(self._high), 'low': array(self._low), 'close': array(self._close), 'open': array(self._open), 'volume': array(self.volume)}
+        prices = {'high': array(self._high), 'low': array(self._low), 'close': array(self._close), 'open': array(self._open), 'volume': array(self._volume)}
         self.value = self.indicator_function(prices, **self.indicator_params)
 
         self._check_initialized()
