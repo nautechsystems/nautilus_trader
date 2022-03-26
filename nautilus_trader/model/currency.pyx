@@ -117,6 +117,9 @@ cdef class Currency:
     def __del__(self) -> None:
         currency_free(self._currency)  # `self._currency` moved to Rust (then dropped)
 
+    cdef uint8_t get_precision(self):
+        return self._currency.precision
+
     @property
     def precision(self) -> int:
         """The currency decimal precision."""

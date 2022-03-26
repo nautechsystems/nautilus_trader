@@ -156,8 +156,8 @@ mod tests {
     use crate::orderbook::ladder::BookPrice;
     use crate::orderbook::level::Level;
     use crate::orderbook::order::Order;
-    use crate::primitives::price::Price;
-    use crate::primitives::quantity::Quantity;
+    use crate::types::price::Price;
+    use crate::types::quantity::Quantity;
 
     #[test]
     fn test_level_comparisons_bid_side() {

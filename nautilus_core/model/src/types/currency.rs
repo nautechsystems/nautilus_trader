@@ -42,3 +42,22 @@ impl Currency {
         }
     }
 }
+
+#[allow(unused_imports)] // warning: unused import: `std::fmt::Write as FmtWrite`
+#[cfg(test)]
+mod tests {
+    use crate::enums::CurrencyType;
+    use crate::types::currency::Currency;
+
+    #[test]
+    fn test_price_new() {
+        let currency = Currency::new("AUD", 8, 036, "Australian dollar", CurrencyType::FIAT);
+
+        assert_eq!(currency, currency);
+        assert_eq!(currency.code.as_str(), "AUD");
+        assert_eq!(currency.precision, 8);
+        assert_eq!(currency.iso4217, 036);
+        assert_eq!(currency.name.as_str(), "Australian dollar");
+        assert_eq!(currency.currency_type, CurrencyType::FIAT);
+    }
+}

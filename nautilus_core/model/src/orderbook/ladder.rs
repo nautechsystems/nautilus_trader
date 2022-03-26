@@ -16,7 +16,7 @@
 use crate::enums::OrderSide;
 use crate::orderbook::level::Level;
 use crate::orderbook::order::Order;
-use crate::primitives::price::Price;
+use crate::types::price::Price;
 use std::cmp::Ordering;
 use std::collections::{BTreeMap, HashMap};
 
@@ -156,8 +156,8 @@ mod tests {
     use crate::enums::OrderSide;
     use crate::orderbook::ladder::{BookPrice, Ladder};
     use crate::orderbook::order::Order;
-    use crate::primitives::price::Price;
-    use crate::primitives::quantity::Quantity;
+    use crate::types::price::Price;
+    use crate::types::quantity::Quantity;
 
     #[test]
     fn test_book_price_bid_sorting() {

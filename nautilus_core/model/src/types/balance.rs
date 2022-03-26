@@ -13,8 +13,8 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use crate::primitives::currency::Currency;
-use crate::primitives::money::Money;
+use crate::types::currency::Currency;
+use crate::types::money::Money;
 use std::fmt;
 
 pub struct AccountBalance {

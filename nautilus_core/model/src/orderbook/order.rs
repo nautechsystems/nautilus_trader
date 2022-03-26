@@ -15,8 +15,8 @@
 
 use crate::enums::OrderSide;
 use crate::orderbook::ladder::BookPrice;
-use crate::primitives::price::Price;
-use crate::primitives::quantity::Quantity;
+use crate::types::price::Price;
+use crate::types::quantity::Quantity;
 
 #[repr(C)]
 #[derive(Debug)]
@@ -58,8 +58,8 @@ impl Order {
 mod tests {
     use crate::enums::OrderSide;
     use crate::orderbook::order::Order;
-    use crate::primitives::price::Price;
-    use crate::primitives::quantity::Quantity;
+    use crate::types::price::Price;
+    use crate::types::quantity::Quantity;
 
     #[test]
     fn test_order_from_str_vec() {

@@ -768,7 +768,7 @@ cdef class Money:
         return self._money.fixed
 
     cdef double as_f64_c(self):
-        return money_as_f64(&self._money)
+        return round(money_as_f64(&self._money), self.currency.get_precision())
 
     @staticmethod
     cdef object _extract_decimal(object obj):

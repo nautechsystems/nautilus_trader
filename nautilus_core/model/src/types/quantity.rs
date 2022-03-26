@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use crate::primitives::fixed::{f64_to_fixed_u64, fixed_u64_to_f64};
+use crate::types::fixed::{f64_to_fixed_u64, fixed_u64_to_f64};
 use nautilus_core::string::precision_from_str;
 use std::cmp::Ordering;
 use std::fmt::{Debug, Display, Formatter, Result};
@@ -169,10 +169,10 @@ impl Display for Quantity {
 #[allow(unused_imports)] // warning: unused import: `std::fmt::Write as FmtWrite`
 #[cfg(test)]
 mod tests {
-    use crate::primitives::quantity::Quantity;
+    use crate::types::quantity::Quantity;
 
     #[test]
-    fn qty_new() {
+    fn test_qty_new() {
         let qty = Quantity::new(0.00812, 8);
 
         assert_eq!(qty, qty);
@@ -183,14 +183,27 @@ mod tests {
     }
 
     #[test]
-    fn qty_minimum() {
+    fn test_qty_minimum() {
         let qty = Quantity::new(0.000000001, 9);
 
         assert_eq!(qty.fixed, 1);
         assert_eq!(qty.to_string(), "0.000000001");
     }
+
     #[test]
-    fn qty_precision() {
+    fn test_qty_is_zero() {
+        let qty = Quantity::new(0.0, 8);
+
+        assert_eq!(qty, qty);
+        assert_eq!(qty.fixed, 0);
+        assert_eq!(qty.precision, 8);
+        assert_eq!(qty.as_f64(), 0.0);
+        assert_eq!(qty.to_string(), "0.00000000");
+        assert!(qty.is_zero());
+    }
+
+    #[test]
+    fn test_qty_precision() {
         let qty = Quantity::new(1.001, 2);
 
         assert_eq!(qty.fixed, 1000000000);
@@ -198,7 +211,7 @@ mod tests {
     }
 
     #[test]
-    fn qty_new_from_str() {
+    fn test_qty_new_from_str() {
         let qty = Quantity::new_from_str("0.00812000");
 
         assert_eq!(qty, qty);
@@ -209,7 +222,7 @@ mod tests {
     }
 
     #[test]
-    fn qty_equality() {
+    fn test_qty_equality() {
         assert_eq!(Quantity::new(1.0, 1), Quantity::new(1.0, 1));
         assert_eq!(Quantity::new(1.0, 1), Quantity::new(1.0, 2));
         assert_ne!(Quantity::new(1.1, 1), Quantity::new(1.0, 1));
@@ -224,7 +237,7 @@ mod tests {
     }
 
     #[test]
-    fn qty_display() {
+    fn test_qty_display() {
         use std::fmt::Write as FmtWrite;
         let input_string = "44.12";
         let qty = Quantity::new_from_str(&input_string);

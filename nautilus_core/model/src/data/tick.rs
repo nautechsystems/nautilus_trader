@@ -16,8 +16,8 @@
 use crate::enums::OrderSide;
 use crate::identifiers::instrument_id::InstrumentId;
 use crate::identifiers::trade_id::TradeId;
-use crate::primitives::price::Price;
-use crate::primitives::quantity::Quantity;
+use crate::types::price::Price;
+use crate::types::quantity::Quantity;
 use nautilus_core::time::Timestamp;
 
 /// Represents a single quote tick in a financial market.

@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use crate::primitives::fixed::{f64_to_fixed_i64, fixed_i64_to_f64};
+use crate::types::fixed::{f64_to_fixed_i64, fixed_i64_to_f64};
 use nautilus_core::string::precision_from_str;
 use std::cmp::Ordering;
 use std::fmt::{Debug, Display, Formatter, Result};
@@ -187,7 +187,7 @@ impl Display for Price {
 #[allow(unused_imports)] // warning: unused import: `std::fmt::Write as FmtWrite`
 #[cfg(test)]
 mod tests {
-    use crate::primitives::price::Price;
+    use crate::types::price::Price;
 
     #[test]
     fn test_price_new() {
@@ -206,6 +206,18 @@ mod tests {
 
         assert_eq!(price.fixed, 1);
         assert_eq!(price.to_string(), "0.000000001");
+    }
+
+    #[test]
+    fn test_price_is_zero() {
+        let price = Price::new(0.0, 8);
+
+        assert_eq!(price, price);
+        assert_eq!(price.fixed, 0);
+        assert_eq!(price.precision, 8);
+        assert_eq!(price.as_f64(), 0.0);
+        assert_eq!(price.to_string(), "0.00000000");
+        assert!(price.is_zero());
     }
 
     #[test]
@@ -257,6 +269,14 @@ mod tests {
         price += Price::new(1.011, 3);
 
         assert_eq!(price.fixed, 2011000000)
+    }
+
+    #[test]
+    fn test_sub_assign() {
+        let mut price = Price::new(1.000, 3);
+        price -= Price::new(0.011, 3);
+
+        assert_eq!(price.fixed, 989000000)
     }
 
     #[test]

@@ -18,4 +18,4 @@ pub mod data;
 pub mod enums;
 pub mod identifiers;
 pub mod orderbook;
-pub mod primitives;
+pub mod types;

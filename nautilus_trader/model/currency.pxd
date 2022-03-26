@@ -13,6 +13,8 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from libc.stdint cimport uint8_t
+
 from nautilus_trader.core.rust.model cimport Currency_t
 
 
@@ -23,6 +25,8 @@ cdef class Currency:
     """The currency ID code.\n\n:returns: `str`"""
     cdef readonly str name
     """The currency name.\n\n:returns: `str`"""
+
+    cdef uint8_t get_precision(self)
 
     @staticmethod
     cdef void register_c(Currency currency, bint overwrite=*) except *

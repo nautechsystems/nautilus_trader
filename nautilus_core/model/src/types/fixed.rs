@@ -16,7 +16,6 @@
 pub const FIXED_PRECISION: u8 = 9;
 pub const FIXED_SCALAR: f64 = 0.000000001; // 10.0**-FIXED_PRECISION
 
-
 #[no_mangle]
 pub fn f64_to_fixed_i64(value: f64, precision: u8) -> i64 {
     assert!(precision <= 9);
@@ -45,7 +44,7 @@ pub fn fixed_u64_to_f64(value: u64) -> f64 {
 
 #[cfg(test)]
 mod tests {
-    use crate::primitives::fixed::{
+    use crate::types::fixed::{
         f64_to_fixed_i64, f64_to_fixed_u64, fixed_i64_to_f64, fixed_u64_to_f64,
     };
     use rstest::*;

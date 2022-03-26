@@ -13,8 +13,8 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use crate::primitives::currency::Currency;
-use crate::primitives::fixed::{f64_to_fixed_i64, fixed_i64_to_f64};
+use crate::types::currency::Currency;
+use crate::types::fixed::{f64_to_fixed_i64, fixed_i64_to_f64};
 use std::cmp::Ordering;
 use std::fmt::{Display, Formatter, Result};
 use std::hash::{Hash, Hasher};
