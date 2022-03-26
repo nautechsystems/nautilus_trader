@@ -93,7 +93,7 @@ written in Cython, however the libraries can be accessed from both pure Python a
 
    getting_started/index.md
    user_guide/index.md
-   api_reference/index.md
    integrations/index.md
+   api_reference/index.md
    developer_guide/index.md
 ```
