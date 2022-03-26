@@ -29,21 +29,20 @@ from nautilus_trader.adapters.binance.common.parsing.data import parse_diff_dept
 from nautilus_trader.adapters.binance.common.parsing.data import parse_quote_tick_ws
 from nautilus_trader.adapters.binance.common.parsing.data import parse_ticker_24hr_ws
 from nautilus_trader.adapters.binance.common.parsing.data import parse_trade_tick_http
-from nautilus_trader.adapters.binance.common.parsing.data import parse_trade_tick_ws
 from nautilus_trader.adapters.binance.common.schemas import BinanceCandlestickMsg
 from nautilus_trader.adapters.binance.common.schemas import BinanceDataMsgWrapper
-from nautilus_trader.adapters.binance.common.schemas import BinanceListenKey
 from nautilus_trader.adapters.binance.common.schemas import BinanceOrderBookMsg
 from nautilus_trader.adapters.binance.common.schemas import BinanceQuoteMsg
 from nautilus_trader.adapters.binance.common.schemas import BinanceTickerMsg
-from nautilus_trader.adapters.binance.common.schemas import BinanceTradeMsg
 from nautilus_trader.adapters.binance.common.types import BinanceBar
 from nautilus_trader.adapters.binance.common.types import BinanceTicker
 from nautilus_trader.adapters.binance.futures.http.market import BinanceFuturesMarketHttpAPI
 from nautilus_trader.adapters.binance.futures.http.user import BinanceFuturesUserDataHttpAPI
-from nautilus_trader.adapters.binance.futures.parsing.data import parse_book_snapshot
-from nautilus_trader.adapters.binance.futures.parsing.data import parse_mark_price_ws
+from nautilus_trader.adapters.binance.futures.parsing.data import parse_futures_book_snapshot
+from nautilus_trader.adapters.binance.futures.parsing.data import parse_futures_mark_price_ws
+from nautilus_trader.adapters.binance.futures.parsing.data import parse_futures_trade_tick_ws
 from nautilus_trader.adapters.binance.futures.schemas.market import BinanceFuturesMarkPriceMsg
+from nautilus_trader.adapters.binance.futures.schemas.market import BinanceFuturesTradeMsg
 from nautilus_trader.adapters.binance.futures.types import BinanceFuturesMarkPriceUpdate
 from nautilus_trader.adapters.binance.http.client import BinanceHttpClient
 from nautilus_trader.adapters.binance.http.error import BinanceError
@@ -183,13 +182,6 @@ class BinanceFuturesDataClient(LiveMarketDataClient):
         self._send_all_instruments_to_data_engine()
         self._update_instruments_task = self._loop.create_task(self._update_instruments())
 
-        # Get listen keys
-        msg: BinanceListenKey = await self._http_user.create_listen_key()
-
-        self._listen_key = msg.listenKey
-        self._ping_listen_keys_task = self._loop.create_task(self._ping_listen_keys())
-        self._log.info(f"Listen key {self._listen_key}")
-
         # Connect WebSocket clients
         self._loop.create_task(self._connect_websockets())
 
@@ -198,7 +190,7 @@ class BinanceFuturesDataClient(LiveMarketDataClient):
 
     async def _connect_websockets(self) -> None:
         self._log.info("Awaiting subscriptions...")
-        await asyncio.sleep(5)
+        await asyncio.sleep(4)
         if self._ws_client.has_subscriptions:
             await self._ws_client.connect()
 
@@ -211,16 +203,6 @@ class BinanceFuturesDataClient(LiveMarketDataClient):
             await asyncio.sleep(self._update_instruments_interval)
             await self._instrument_provider.load_all_async()
             self._send_all_instruments_to_data_engine()
-
-    async def _ping_listen_keys(self) -> None:
-        while True:
-            self._log.debug(
-                f"Scheduled `ping_listen_keys` to run in " f"{self._ping_listen_keys_interval}s."
-            )
-            await asyncio.sleep(self._ping_listen_keys_interval)
-            if self._listen_key:
-                self._log.debug(f"Pinging WebSocket listen key {self._listen_key}...")
-                await self._http_user.ping_listen_key(self._listen_key)
 
     async def _disconnect(self) -> None:
         # Cancel tasks
@@ -730,7 +712,7 @@ class BinanceFuturesDataClient(LiveMarketDataClient):
     def _handle_book_update(self, raw: bytes):
         msg: BinanceOrderBookMsg = msgspec.json.decode(raw, type=BinanceOrderBookMsg)
         instrument_id: InstrumentId = self._get_cached_instrument_id(msg.data.s)
-        book_snapshot: OrderBookSnapshot = parse_book_snapshot(
+        book_snapshot: OrderBookSnapshot = parse_futures_book_snapshot(
             instrument_id=instrument_id,
             data=msg.data,
             ts_init=self._clock.timestamp_ns(),
@@ -754,9 +736,9 @@ class BinanceFuturesDataClient(LiveMarketDataClient):
         self._handle_data(quote_tick)
 
     def _handle_trade(self, raw: bytes):
-        msg: BinanceTradeMsg = msgspec.json.decode(raw, type=BinanceTradeMsg)
+        msg: BinanceFuturesTradeMsg = msgspec.json.decode(raw, type=BinanceFuturesTradeMsg)
         instrument_id: InstrumentId = self._get_cached_instrument_id(msg.data.s)
-        trade_tick: TradeTick = parse_trade_tick_ws(
+        trade_tick: TradeTick = parse_futures_trade_tick_ws(
             instrument_id=instrument_id,
             data=msg.data,
             ts_init=self._clock.timestamp_ns(),
@@ -789,7 +771,7 @@ class BinanceFuturesDataClient(LiveMarketDataClient):
     def _handle_mark_price(self, raw: bytes):
         msg: BinanceFuturesMarkPriceMsg = msgspec.json.decode(raw, type=BinanceFuturesMarkPriceMsg)
         instrument_id: InstrumentId = self._get_cached_instrument_id(msg.data.s)
-        data: BinanceFuturesMarkPriceUpdate = parse_mark_price_ws(
+        data: BinanceFuturesMarkPriceUpdate = parse_futures_mark_price_ws(
             instrument_id=instrument_id,
             data=msg.data,
             ts_init=self._clock.timestamp_ns(),

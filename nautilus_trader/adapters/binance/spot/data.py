@@ -29,20 +29,20 @@ from nautilus_trader.adapters.binance.common.parsing.data import parse_diff_dept
 from nautilus_trader.adapters.binance.common.parsing.data import parse_quote_tick_ws
 from nautilus_trader.adapters.binance.common.parsing.data import parse_ticker_24hr_ws
 from nautilus_trader.adapters.binance.common.parsing.data import parse_trade_tick_http
-from nautilus_trader.adapters.binance.common.parsing.data import parse_trade_tick_ws
 from nautilus_trader.adapters.binance.common.schemas import BinanceCandlestickMsg
 from nautilus_trader.adapters.binance.common.schemas import BinanceDataMsgWrapper
 from nautilus_trader.adapters.binance.common.schemas import BinanceOrderBookMsg
 from nautilus_trader.adapters.binance.common.schemas import BinanceQuoteMsg
 from nautilus_trader.adapters.binance.common.schemas import BinanceTickerMsg
-from nautilus_trader.adapters.binance.common.schemas import BinanceTradeMsg
 from nautilus_trader.adapters.binance.common.types import BinanceBar
 from nautilus_trader.adapters.binance.common.types import BinanceTicker
 from nautilus_trader.adapters.binance.http.client import BinanceHttpClient
 from nautilus_trader.adapters.binance.http.error import BinanceError
 from nautilus_trader.adapters.binance.spot.http.market import BinanceSpotMarketHttpAPI
 from nautilus_trader.adapters.binance.spot.parsing.data import parse_spot_book_snapshot
+from nautilus_trader.adapters.binance.spot.parsing.data import parse_spot_trade_tick_ws
 from nautilus_trader.adapters.binance.spot.schemas.market import BinanceSpotOrderBookMsg
+from nautilus_trader.adapters.binance.spot.schemas.market import BinanceSpotTradeMsg
 from nautilus_trader.adapters.binance.websocket.client import BinanceWebSocketClient
 from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.clock import LiveClock
@@ -180,7 +180,7 @@ class BinanceSpotDataClient(LiveMarketDataClient):
 
     async def _connect_websockets(self) -> None:
         self._log.info("Awaiting subscriptions...")
-        await asyncio.sleep(5)
+        await asyncio.sleep(4)
         if self._ws_client.has_subscriptions:
             await self._ws_client.connect()
 
@@ -685,9 +685,9 @@ class BinanceSpotDataClient(LiveMarketDataClient):
         self._handle_data(quote_tick)
 
     def _handle_trade(self, raw: bytes):
-        msg: BinanceTradeMsg = msgspec.json.decode(raw, type=BinanceTradeMsg)
+        msg: BinanceSpotTradeMsg = msgspec.json.decode(raw, type=BinanceSpotTradeMsg)
         instrument_id: InstrumentId = self._get_cached_instrument_id(msg.data.s)
-        trade_tick: TradeTick = parse_trade_tick_ws(
+        trade_tick: TradeTick = parse_spot_trade_tick_ws(
             instrument_id=instrument_id,
             data=msg.data,
             ts_init=self._clock.timestamp_ns(),
