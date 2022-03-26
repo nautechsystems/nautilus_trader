@@ -448,7 +448,7 @@ def _get_ws_base_url(config: Union[BinanceDataClientConfig, BinanceExecClientCon
     if config.account_type in (BinanceAccountType.SPOT, BinanceAccountType.MARGIN):
         return f"wss://stream.binance.{top_level_domain}:9443"
     elif config.account_type == BinanceAccountType.FUTURES_USDT:
-        return f"wss://fstream-auth.binance.{top_level_domain}"
+        return f"wss://fstream.binance.{top_level_domain}"
     elif config.account_type == BinanceAccountType.FUTURES_COIN:
         return f"wss://dstream.binance.{top_level_domain}"
     else:  # pragma: no cover (design-time error)

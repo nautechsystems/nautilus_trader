@@ -230,10 +230,11 @@ class BinanceFuturesExecutionClient(LiveExecutionClient):
 
         self._listen_key = msg.listenKey
         self._ping_listen_keys_task = self._loop.create_task(self._ping_listen_keys())
+        self._log.info(f"Listen key {self._listen_key}")
 
         # Connect WebSocket client
         self._ws_client.subscribe(key=self._listen_key)
-        await self._ws_client.connect(key=self._listen_key)
+        await self._ws_client.connect()
 
         self._set_connected(True)
         self._log.info("Connected.")
