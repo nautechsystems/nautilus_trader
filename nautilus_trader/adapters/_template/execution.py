@@ -84,7 +84,8 @@ class TemplateLiveExecutionClient(LiveExecutionClient):
 
     async def generate_order_status_report(
         self,
-        venue_order_id: VenueOrderId = None,
+        instrument_id: InstrumentId,
+        venue_order_id: VenueOrderId,
     ) -> Optional[OrderStatusReport]:
         """
         Generate an order status report for the given venue order ID.
@@ -94,8 +95,10 @@ class TemplateLiveExecutionClient(LiveExecutionClient):
 
         Parameters
         ----------
-        venue_order_id : VenueOrderId, optional
-            The venue order ID (assigned by the venue) query filter.
+        instrument_id : InstrumentId
+            The instrument ID for the report.
+        venue_order_id : VenueOrderId
+            The venue order ID for the report.
 
         Returns
         -------

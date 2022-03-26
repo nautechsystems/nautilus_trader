@@ -11,9 +11,6 @@
 #  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
-#
-#  Heavily refactored from MIT licensed github.com/binance/binance-connector-python
-#  Original author: Jeremy https://github.com/2pd
 # -------------------------------------------------------------------------------------------------
 
 import asyncio
@@ -41,7 +38,7 @@ class BinanceHttpClient(HttpClient):
     Provides a `Binance` asynchronous HTTP client.
     """
 
-    BASE_URL = "https://api.binance.com"  # Default SPOT
+    BASE_URL = "https://api.binance.com"  # Default Spot/Margin
 
     def __init__(
         self,
@@ -74,6 +71,10 @@ class BinanceHttpClient(HttpClient):
             self._headers["timeout"] = timeout
 
         # TODO(cs): Implement limit usage
+
+    @property
+    def base_url(self) -> str:
+        return self._base_url
 
     @property
     def api_key(self) -> str:
@@ -172,7 +173,7 @@ class BinanceHttpClient(HttpClient):
                     limit_usage[key] = resp.headers[key]
 
         try:
-            return orjson.loads(resp.data)
+            return resp.data
         except orjson.JSONDecodeError:
             self._log.error(f"Could not decode data to JSON: {resp.data}.")
 

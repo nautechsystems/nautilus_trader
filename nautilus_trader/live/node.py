@@ -25,8 +25,12 @@ from datetime import timedelta
 from functools import partial
 from typing import Any, Callable, Dict, List, Optional
 
-import msgpack
+import aiohttp
+import msgspec
 import orjson
+import pyarrow
+import pydantic
+import pytz
 import redis
 
 from nautilus_trader.cache.cache import Cache
@@ -450,8 +454,13 @@ class TradingNode:
 
     def _log_header(self) -> None:
         nautilus_header(self._log)
+        self._log.info(f"aiohttp {aiohttp.__version__}")
+        self._log.info(f"msgspec {msgspec.__version__}")
+        self._log.info(f"orjson {orjson.__version__}")
+        self._log.info(f"pyarrow {pyarrow.__version__}")
+        self._log.info(f"pydantic {pydantic.__version__}")
+        self._log.info(f"pytz {pytz.__version__}")  # type: ignore
         self._log.info(f"redis {redis.__version__}")  # type: ignore
-        self._log.info(f"msgpack {msgpack.version[0]}.{msgpack.version[1]}.{msgpack.version[2]}")
         if uvloop_version:
             self._log.info(f"uvloop {uvloop_version}")
         self._log.info("\033[36m=================================================================")
@@ -689,7 +698,7 @@ class TradingNode:
     def _cancel_all_tasks(self) -> None:
         to_cancel = asyncio.tasks.all_tasks(self._loop)
         if not to_cancel:
-            self._log.info("All tasks finished.")
+            self._log.info("All tasks canceled.")
             return
 
         for task in to_cancel:

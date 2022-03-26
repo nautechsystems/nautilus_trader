@@ -16,16 +16,15 @@
 
 from decimal import Decimal
 
+from nautilus_trader.adapters.binance.common.enums import BinanceAccountType
 from nautilus_trader.adapters.binance.config import BinanceDataClientConfig
 from nautilus_trader.adapters.binance.config import BinanceExecClientConfig
-from nautilus_trader.adapters.binance.core.enums import BinanceAccountType
 from nautilus_trader.adapters.binance.factories import BinanceLiveDataClientFactory
 from nautilus_trader.adapters.binance.factories import BinanceLiveExecClientFactory
 from nautilus_trader.examples.strategies.ema_cross_stop_entry_trail import EMACrossStopEntryTrail
 from nautilus_trader.examples.strategies.ema_cross_stop_entry_trail import (
     EMACrossStopEntryTrailConfig,
 )
-from nautilus_trader.infrastructure.config import CacheDatabaseConfig
 from nautilus_trader.live.config import InstrumentProviderConfig
 from nautilus_trader.live.config import TradingNodeConfig
 from nautilus_trader.live.node import TradingNode
@@ -41,7 +40,10 @@ from nautilus_trader.live.node import TradingNode
 config_node = TradingNodeConfig(
     trader_id="TESTER-001",
     log_level="INFO",
-    cache_database=CacheDatabaseConfig(),
+    exec_engine={
+        "reconciliation_lookback_mins": 1440,
+    },
+    # cache_database=CacheDatabaseConfig(),
     data_clients={
         "BINANCE": BinanceDataClientConfig(
             api_key=None,  # "YOUR_BINANCE_TESTNET_API_KEY"

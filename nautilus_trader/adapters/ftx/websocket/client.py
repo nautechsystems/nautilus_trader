@@ -11,9 +11,6 @@
 #  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
-#
-#  Heavily refactored from MIT licensed github.com/binance/binance-connector-python
-#  Original author: Jeremy https://github.com/2pd
 # -------------------------------------------------------------------------------------------------
 
 import asyncio
@@ -70,6 +67,10 @@ class FTXWebSocketClient(WebSocketClient):
         # Tasks
         self._auto_ping_interval = auto_ping_interval
         self._task_auto_ping: Optional[asyncio.Task] = None
+
+    @property
+    def base_url(self) -> str:
+        return self._base_url
 
     @property
     def subscriptions(self):

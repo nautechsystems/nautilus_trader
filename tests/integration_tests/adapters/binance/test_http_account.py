@@ -17,12 +17,13 @@ import asyncio
 
 import pytest
 
-from nautilus_trader.adapters.binance.http.api.account import BinanceAccountHttpAPI
 from nautilus_trader.adapters.binance.http.client import BinanceHttpClient
+from nautilus_trader.adapters.binance.spot.http.account import BinanceSpotAccountHttpAPI
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.logging import Logger
 
 
+@pytest.mark.skip(reason="WIP")
 class TestBinanceSpotAccountHttpAPI:
     def setup(self):
         # Fixture Setup
@@ -36,7 +37,7 @@ class TestBinanceSpotAccountHttpAPI:
             secret="SOME_BINANCE_API_SECRET",
         )
 
-        self.api = BinanceAccountHttpAPI(self.client)
+        self.api = BinanceSpotAccountHttpAPI(self.client)
 
     @pytest.mark.asyncio
     async def test_new_order_test_sends_expected_request(self, mocker):
@@ -45,7 +46,7 @@ class TestBinanceSpotAccountHttpAPI:
         mock_send_request = mocker.patch(target="aiohttp.client.ClientSession.request")
 
         # Act
-        await self.api.new_order_test_spot(
+        await self.api.new_order_test(
             symbol="ETHUSDT",
             side="SELL",
             type="LIMIT",
@@ -70,7 +71,7 @@ class TestBinanceSpotAccountHttpAPI:
         mock_send_request = mocker.patch(target="aiohttp.client.ClientSession.request")
 
         # Act
-        await self.api.new_order_spot(
+        await self.api.new_order(
             symbol="ETHUSDT",
             side="SELL",
             type="LIMIT",
@@ -114,7 +115,7 @@ class TestBinanceSpotAccountHttpAPI:
         mock_send_request = mocker.patch(target="aiohttp.client.ClientSession.request")
 
         # Act
-        await self.api.cancel_open_orders_spot(
+        await self.api.cancel_open_orders(
             symbol="ETHUSDT",
             recv_window=5000,
         )
@@ -315,7 +316,7 @@ class TestBinanceSpotAccountHttpAPI:
         mock_send_request = mocker.patch(target="aiohttp.client.ClientSession.request")
 
         # Act
-        await self.api.my_trades(
+        await self.api.get_account_trades(
             symbol="ETHUSDT",
             from_id="1",
             order_id="1",

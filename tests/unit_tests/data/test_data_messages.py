@@ -17,6 +17,7 @@ import pytest
 
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.uuid import UUIDFactory
+from nautilus_trader.core.data import Data
 from nautilus_trader.data.messages import DataRequest
 from nautilus_trader.data.messages import DataResponse
 from nautilus_trader.data.messages import Subscribe
@@ -46,7 +47,7 @@ class TestDataMessage:
             Subscribe(
                 client_id=None,
                 venue=None,
-                data_type=DataType(str, {"type": "newswire"}),
+                data_type=DataType(Data, {"type": "newswire"}),
                 command_id=self.uuid_factory.generate(),
                 ts_init=self.clock.timestamp_ns(),
             )
@@ -57,7 +58,7 @@ class TestDataMessage:
             Unsubscribe(
                 client_id=None,
                 venue=None,
-                data_type=DataType(str, {"type": "newswire"}),
+                data_type=DataType(Data, {"type": "newswire"}),
                 command_id=self.uuid_factory.generate(),
                 ts_init=self.clock.timestamp_ns(),
             )
@@ -97,18 +98,18 @@ class TestDataMessage:
         command = Subscribe(
             client_id=None,
             venue=BINANCE,
-            data_type=DataType(str, {"type": "newswire"}),
+            data_type=DataType(Data, {"type": "newswire"}),
             command_id=command_id,
             ts_init=self.clock.timestamp_ns(),
         )
 
         # Assert
-        assert str(command) == "Subscribe(str{'type': 'newswire'})"
+        assert str(command) == "Subscribe(Data{'type': 'newswire'})"
         assert repr(command) == (
             f"Subscribe("
             f"client_id=None, "
             f"venue=BINANCE, "
-            f"data_type=str{{'type': 'newswire'}}, "
+            f"data_type=Data{{'type': 'newswire'}}, "
             f"id={command_id})"
         )
 
@@ -143,7 +144,7 @@ class TestDataMessage:
             client_id=None,
             venue=BINANCE,
             data_type=DataType(
-                str,
+                Data,
                 metadata={  # str data type is invalid
                     "instrument_id": InstrumentId(Symbol("SOMETHING"), Venue("RANDOM")),
                     "from_datetime": None,
@@ -159,13 +160,13 @@ class TestDataMessage:
         # Assert
         assert (
             str(request)
-            == "DataRequest(str{'instrument_id': InstrumentId('SOMETHING.RANDOM'), 'from_datetime': None, 'to_datetime': None, 'limit': 1000})"
+            == "DataRequest(Data{'instrument_id': InstrumentId('SOMETHING.RANDOM'), 'from_datetime': None, 'to_datetime': None, 'limit': 1000})"
         )
         assert repr(request) == (
             f"DataRequest("
             f"client_id=None, "
             f"venue=BINANCE, "
-            f"data_type=str{{'instrument_id': InstrumentId('SOMETHING.RANDOM'), 'from_datetime': None, 'to_datetime': None, 'limit': 1000}}, "
+            f"data_type=Data{{'instrument_id': InstrumentId('SOMETHING.RANDOM'), 'from_datetime': None, 'to_datetime': None, 'limit': 1000}}, "
             f"callback={repr(handler)}, "
             f"id={request_id})"
         )

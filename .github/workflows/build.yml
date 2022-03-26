@@ -19,7 +19,8 @@ jobs:
     runs-on: ${{ matrix.os }}
 
     steps:
-      - uses: actions/checkout@v2
+      - name: Checkout repository
+        uses: actions/checkout@v2
 
       # Rust setup
       - name: Set up Rust environment
@@ -37,7 +38,6 @@ jobs:
       - name: Install build dependencies
         run: |
           python -m pip install --upgrade pip setuptools wheel poetry pre-commit nox
-          poetry config experimental.new-installer false
 
       # Setup cached pre-commit
       - name: Setup cached pre-commit

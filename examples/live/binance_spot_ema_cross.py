@@ -16,9 +16,9 @@
 
 from decimal import Decimal
 
+from nautilus_trader.adapters.binance.common.enums import BinanceAccountType
 from nautilus_trader.adapters.binance.config import BinanceDataClientConfig
 from nautilus_trader.adapters.binance.config import BinanceExecClientConfig
-from nautilus_trader.adapters.binance.core.enums import BinanceAccountType
 from nautilus_trader.adapters.binance.factories import BinanceLiveDataClientFactory
 from nautilus_trader.adapters.binance.factories import BinanceLiveExecClientFactory
 from nautilus_trader.examples.strategies.ema_cross import EMACross
@@ -38,6 +38,9 @@ from nautilus_trader.live.node import TradingNode
 config_node = TradingNodeConfig(
     trader_id="TESTER-001",
     log_level="INFO",
+    exec_engine={
+        "reconciliation_lookback_mins": 1440,
+    },
     # cache_database=CacheDatabaseConfig(),
     data_clients={
         "BINANCE": BinanceDataClientConfig(

@@ -20,7 +20,7 @@ from nautilus_trader.indicators.average.ma_factory import MovingAverageFactory
 from nautilus_trader.indicators.average.moving_average import MovingAverageType
 from nautilus_trader.indicators.average.wma import WeightedMovingAverage
 from nautilus_trader.model.enums import PriceType
-from tests.test_kit.stubs import TestStubs
+from tests.test_kit.stubs.data import TestDataStubs
 
 
 AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy("AUD/USD")
@@ -63,7 +63,7 @@ class TestWeightedMovingAverage:
         # Arrange
         indicator = WeightedMovingAverage(10, self.w, PriceType.MID)
 
-        tick = TestStubs.quote_tick_5decimal(AUDUSD_SIM.id)
+        tick = TestDataStubs.quote_tick_5decimal(AUDUSD_SIM.id)
 
         # Act
         indicator.handle_quote_tick(tick)
@@ -76,7 +76,7 @@ class TestWeightedMovingAverage:
         # Arrange
         indicator = WeightedMovingAverage(10, self.w)
 
-        tick = TestStubs.trade_tick_5decimal(AUDUSD_SIM.id)
+        tick = TestDataStubs.trade_tick_5decimal(AUDUSD_SIM.id)
 
         # Act
         indicator.handle_trade_tick(tick)
@@ -89,7 +89,7 @@ class TestWeightedMovingAverage:
         # Arrange
         indicator = WeightedMovingAverage(10, self.w)
 
-        bar = TestStubs.bar_5decimal()
+        bar = TestDataStubs.bar_5decimal()
 
         # Act
         indicator.handle_bar(bar)

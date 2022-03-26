@@ -11,15 +11,12 @@
 #  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
-#
-#  Heavily refactored from MIT licensed github.com/binance/binance-connector-python
-#  Original author: Jeremy https://github.com/2pd
 # -------------------------------------------------------------------------------------------------
 
 import asyncio
 from typing import Callable, List, Optional
 
-from nautilus_trader.adapters.binance.core.functions import format_symbol
+from nautilus_trader.adapters.binance.common.functions import format_symbol
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.network.websocket import WebSocketClient
@@ -29,8 +26,6 @@ class BinanceWebSocketClient(WebSocketClient):
     """
     Provides a `Binance` streaming WebSocket client.
     """
-
-    BASE_URL = "wss://stream.binance.com:9443"  # Default SPOT
 
     def __init__(
         self,
@@ -47,10 +42,14 @@ class BinanceWebSocketClient(WebSocketClient):
             max_retry_connection=6,
         )
 
-        self._base_url = base_url or self.BASE_URL
+        self._base_url = base_url
 
         self._clock = clock
         self._streams: List[str] = []
+
+    @property
+    def base_url(self) -> str:
+        return self._base_url
 
     @property
     def subscriptions(self):
@@ -63,12 +62,21 @@ class BinanceWebSocketClient(WebSocketClient):
         else:
             return False
 
-    async def connect(self, start: bool = True, **ws_kwargs) -> None:
+    async def connect(
+        self,
+        key: Optional[str] = None,
+        start: bool = True,
+        **ws_kwargs,
+    ) -> None:
         if not self._streams:
             raise RuntimeError("No subscriptions for connection.")
 
         # Always connecting combined streams for consistency
         ws_url = self._base_url + "/stream?streams=" + "/".join(self._streams)
+        if key is not None:
+            ws_url += f"&listenKey={key}"
+
+        self._log.info(f"Connecting to {ws_url}")
         await super().connect(ws_url=ws_url, start=start, **ws_kwargs)
 
     def _add_stream(self, stream: str):
@@ -215,7 +223,8 @@ class BinanceWebSocketClient(WebSocketClient):
         Update Speed: 3000ms or 1000ms
 
         """
+        assert speed in (1000, 3000), "`speed` options are 1000ms or 3000ms only"
         if symbol is None:
             self._add_stream("!markPrice@arr")
         else:
-            self._add_stream(f"{format_symbol(symbol).lower()}@markPrice@{speed / 1000}s")
+            self._add_stream(f"{format_symbol(symbol).lower()}@markPrice@{int(speed / 1000)}s")

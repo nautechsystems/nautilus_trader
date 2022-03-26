@@ -34,8 +34,8 @@ from nautilus_trader.model.objects cimport Quantity
 
 cdef class CryptoFuture(Instrument):
     """
-    Represents a `Deliverable Futures Contract` instrument, with Crypto assets as
-    underlying, and for price quotes and settlement.
+    Represents a `Deliverable Futures Contract` instrument, with crypto assets
+    as underlying and for settlement.
 
     Parameters
     ----------
@@ -55,7 +55,7 @@ cdef class CryptoFuture(Instrument):
         The trading size decimal precision.
     price_increment : Price
         The minimum price increment (tick size).
-    size_increment : Price
+    size_increment : Quantity
         The minimum size increment.
     max_quantity : Quantity, optional
         The maximum allowable order quantity.

@@ -575,7 +575,7 @@ cdef class TradingStrategy(Actor):
         if price is not None:
             Condition.true(
                 order.type == OrderType.LIMIT or order.type == OrderType.STOP_LIMIT,
-                fail_msg=f"{order.type_string_c()} orders do not have a LIMIT price"
+                fail_msg=f"{order.type_string_c()} orders do not have a limit price"
             )
             if price != order.price:
                 updating = True
@@ -583,7 +583,7 @@ cdef class TradingStrategy(Actor):
         if trigger_price is not None:
             Condition.true(
                 order.type == OrderType.STOP_MARKET or order.type == OrderType.STOP_LIMIT,
-                fail_msg=f"{order.type_string_c()} orders do not have a STOP trigger price"
+                fail_msg=f"{order.type_string_c()} orders do not have a stop trigger price"
             )
             if order.type == OrderType.STOP_LIMIT and order.is_triggered_c():
                 self.log.warning(

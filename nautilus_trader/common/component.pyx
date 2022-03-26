@@ -194,7 +194,7 @@ cdef class Component:
         https://www.python.org/dev/peps/pep-3155/
 
         """
-        return cls.__module__ + '.' + cls.__qualname__
+        return cls.__module__ + ':' + cls.__qualname__
 
     cdef ComponentState state_c(self) except *:
         return <ComponentState>self._fsm.state

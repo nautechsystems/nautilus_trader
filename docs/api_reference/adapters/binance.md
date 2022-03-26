@@ -53,7 +53,7 @@
 ### Types
 
 ```{eval-rst}
-.. automodule:: nautilus_trader.adapters.binance.core.types
+.. automodule:: nautilus_trader.adapters.binance.common.types
    :show-inheritance:
    :inherited-members:
    :members:
@@ -63,7 +63,7 @@
 ### Enums
 
 ```{eval-rst}
-.. automodule:: nautilus_trader.adapters.binance.core.enums
+.. automodule:: nautilus_trader.adapters.binance.common.enums
    :show-inheritance:
    :inherited-members:
    :members:

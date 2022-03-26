@@ -34,7 +34,8 @@ from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.position import Position
 from tests.test_kit.stubs import UNIX_EPOCH
-from tests.test_kit.stubs import TestStubs
+from tests.test_kit.stubs.events import TestEventStubs
+from tests.test_kit.stubs.identifiers import TestIdStubs
 
 
 SIM = Venue("SIM")
@@ -45,7 +46,7 @@ GBPUSD_SIM = TestInstrumentProvider.default_fx_ccy("GBP/USD")
 class TestReportProvider:
     def setup(self):
         # Fixture Setup
-        self.account_id = TestStubs.account_id()
+        self.account_id = TestIdStubs.account_id()
         self.order_factory = OrderFactory(
             trader_id=TraderId("TESTER-000"),
             strategy_id=StrategyId("S-001"),
@@ -111,8 +112,8 @@ class TestReportProvider:
             Price.from_str("0.80010"),
         )
 
-        order1.apply(TestStubs.event_order_submitted(order1))
-        order1.apply(TestStubs.event_order_accepted(order1))
+        order1.apply(TestEventStubs.order_submitted(order1))
+        order1.apply(TestEventStubs.order_accepted(order1))
 
         order2 = self.order_factory.limit(
             AUDUSD_SIM.id,
@@ -121,10 +122,10 @@ class TestReportProvider:
             Price.from_str("0.80000"),
         )
 
-        order2.apply(TestStubs.event_order_submitted(order2))
-        order2.apply(TestStubs.event_order_accepted(order2))
+        order2.apply(TestEventStubs.order_submitted(order2))
+        order2.apply(TestEventStubs.order_accepted(order2))
 
-        event = TestStubs.event_order_filled(
+        event = TestEventStubs.order_filled(
             order1,
             instrument=AUDUSD_SIM,
             position_id=PositionId("P-1"),
@@ -159,8 +160,8 @@ class TestReportProvider:
             Price.from_str("0.80010"),
         )
 
-        order1.apply(TestStubs.event_order_submitted(order1))
-        order1.apply(TestStubs.event_order_accepted(order1))
+        order1.apply(TestEventStubs.order_submitted(order1))
+        order1.apply(TestEventStubs.order_accepted(order1))
 
         order2 = self.order_factory.limit(
             AUDUSD_SIM.id,
@@ -169,10 +170,10 @@ class TestReportProvider:
             Price.from_str("0.80000"),
         )
 
-        order2.apply(TestStubs.event_order_submitted(order2))
-        order2.apply(TestStubs.event_order_accepted(order2))
+        order2.apply(TestEventStubs.order_submitted(order2))
+        order2.apply(TestEventStubs.order_accepted(order2))
 
-        filled = TestStubs.event_order_filled(
+        filled = TestEventStubs.order_filled(
             order1,
             instrument=AUDUSD_SIM,
             position_id=PositionId("P-1"),
@@ -212,7 +213,7 @@ class TestReportProvider:
             Quantity.from_int(100000),
         )
 
-        fill1 = TestStubs.event_order_filled(
+        fill1 = TestEventStubs.order_filled(
             order1,
             instrument=AUDUSD_SIM,
             position_id=PositionId("P-123456"),
@@ -220,7 +221,7 @@ class TestReportProvider:
             last_px=Price.from_str("1.00010"),
         )
 
-        fill2 = TestStubs.event_order_filled(
+        fill2 = TestEventStubs.order_filled(
             order2,
             instrument=AUDUSD_SIM,
             position_id=PositionId("P-123457"),

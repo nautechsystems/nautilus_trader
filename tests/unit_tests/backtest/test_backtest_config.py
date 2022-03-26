@@ -41,10 +41,10 @@ from nautilus_trader.persistence.external.core import process_files
 from nautilus_trader.persistence.external.readers import CSVReader
 from tests.integration_tests.adapters.betfair.test_kit import BetfairTestStubs
 from tests.test_kit import PACKAGE_ROOT
-from tests.test_kit.mocks import NewsEventData
-from tests.test_kit.mocks import aud_usd_data_loader
-from tests.test_kit.mocks import data_catalog_setup
-from tests.test_kit.stubs import TestStubs
+from tests.test_kit.mocks.data import NewsEventData
+from tests.test_kit.mocks.data import aud_usd_data_loader
+from tests.test_kit.mocks.data import data_catalog_setup
+from tests.test_kit.stubs.persistence import TestPersistenceStubs
 
 
 TEST_DATA_DIR = str(pathlib.Path(PACKAGE_ROOT).joinpath("data"))
@@ -79,7 +79,7 @@ class TestBacktestConfig:
             ],
             data=[
                 BacktestDataConfig(
-                    catalog_path="/root",
+                    catalog_path="/.nautilus/catalog",
                     catalog_fs_protocol="memory",
                     data_cls=QuoteTick,
                     instrument_id="AUD/USD.SIM",
@@ -178,7 +178,7 @@ class TestBacktestConfig:
     def test_backtest_data_config_load(self):
         instrument = TestInstrumentProvider.default_fx_ccy("AUD/USD")
         c = BacktestDataConfig(
-            catalog_path="/root/",
+            catalog_path="/.nautilus/catalog",
             catalog_fs_protocol="memory",
             data_cls=QuoteTick,
             instrument_id=instrument.id.value,
@@ -229,14 +229,14 @@ class TestBacktestConfig:
 
     def test_backtest_data_config_generic_data(self):
         # Arrange
-        TestStubs.setup_news_event_persistence()
+        TestPersistenceStubs.setup_news_event_persistence()
         process_files(
             glob_path=f"{TEST_DATA_DIR}/news_events.csv",
-            reader=CSVReader(block_parser=TestStubs.news_event_parser),
+            reader=CSVReader(block_parser=TestPersistenceStubs.news_event_parser),
             catalog=self.catalog,
         )
         c = BacktestDataConfig(
-            catalog_path="/root/",
+            catalog_path="/.nautilus/catalog",
             catalog_fs_protocol="memory",
             data_cls=NewsEventData,
             client_id="NewsClient",
@@ -248,14 +248,14 @@ class TestBacktestConfig:
 
     def test_backtest_data_config_filters(self):
         # Arrange
-        TestStubs.setup_news_event_persistence()
+        TestPersistenceStubs.setup_news_event_persistence()
         process_files(
             glob_path=f"{TEST_DATA_DIR}/news_events.csv",
-            reader=CSVReader(block_parser=TestStubs.news_event_parser),
+            reader=CSVReader(block_parser=TestPersistenceStubs.news_event_parser),
             catalog=self.catalog,
         )
         c = BacktestDataConfig(
-            catalog_path="/root/",
+            catalog_path="/.nautilus/catalog",
             catalog_fs_protocol="memory",
             data_cls=NewsEventData,
             filter_expr="field('currency') == 'CHF'",
@@ -271,7 +271,7 @@ class TestBacktestConfig:
             catalog=self.catalog,
         )
         c = BacktestDataConfig(
-            catalog_path="/root/",
+            catalog_path="/.nautilus/catalog",
             catalog_fs_protocol="memory",
             data_cls=InstrumentStatusUpdate,
         )
@@ -283,7 +283,7 @@ class TestBacktestConfig:
     def test_resolve_cls(self):
         config = BacktestDataConfig(
             "/",
-            "nautilus_trader.model.data.tick.QuoteTick",
+            "nautilus_trader.model.data.tick:QuoteTick",
             "memory",
             {},
             "AUD/USD.IDEALPRO",

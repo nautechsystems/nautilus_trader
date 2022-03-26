@@ -83,7 +83,7 @@ cdef class OrderListId(Identifier):
 
 
 cdef class PositionId(Identifier):
-    pass
+    cdef bint is_virtual_c(self) except *
 
 
 cdef class TradeId(Identifier):

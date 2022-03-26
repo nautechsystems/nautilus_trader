@@ -50,17 +50,17 @@ class LiveExecEngineConfig(ExecEngineConfig):
 
     Parameters
     ----------
-    recon_auto : bool
+    reconciliation_auto : bool
         If reconciliation should automatically generate events to align state.
-    recon_lookback_mins : int, optional
+    reconciliation_lookback_mins : int, optional
         The maximum lookback minutes to reconcile state for. If None then will
         use the maximum lookback available from the venues.
     qsize : PositiveInt
         The queue size for the engines internal queue buffers.
     """
 
-    recon_auto: bool = True
-    recon_lookback_mins: Optional[PositiveInt] = None
+    reconciliation_auto: bool = True
+    reconciliation_lookback_mins: Optional[PositiveInt] = None
     qsize: PositiveInt = 10000
 
 

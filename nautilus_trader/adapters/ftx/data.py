@@ -518,9 +518,8 @@ class FTXDataClient(LiveMarketDataClient):
         for currency in self._instrument_provider.currencies().values():
             self._cache.add_currency(currency)
 
-    def _get_cached_instrument_id(self, msg: Dict[str, Any]) -> InstrumentId:
+    def _get_cached_instrument_id(self, symbol: str) -> InstrumentId:
         # Parse instrument ID
-        symbol: str = msg["market"]
         instrument_id: Optional[InstrumentId] = self._instrument_ids.get(symbol)
         if not instrument_id:
             instrument_id = InstrumentId(Symbol(symbol), FTX_VENUE)
@@ -566,7 +565,8 @@ class FTXDataClient(LiveMarketDataClient):
             )
             return
 
-        for _, data in data["data"].items():
+        data_values = data["data"].values()
+        for data in data_values:
             instrument: Instrument = parse_instrument(
                 account_info=account_info,
                 data=data,
@@ -581,7 +581,7 @@ class FTXDataClient(LiveMarketDataClient):
             return
 
         # Get instrument ID
-        instrument_id: InstrumentId = self._get_cached_instrument_id(msg)
+        instrument_id: InstrumentId = self._get_cached_instrument_id(msg["market"])
 
         msg_type = msg["type"]
         if msg_type == "partial":
@@ -606,7 +606,7 @@ class FTXDataClient(LiveMarketDataClient):
             return
 
         # Get instrument
-        instrument_id: InstrumentId = self._get_cached_instrument_id(msg)
+        instrument_id: InstrumentId = self._get_cached_instrument_id(msg["market"])
         instrument: Instrument = self._instrument_provider.find(instrument_id)
         if instrument is None:
             self._log.error(
@@ -636,7 +636,7 @@ class FTXDataClient(LiveMarketDataClient):
             return
 
         # Get instrument
-        instrument_id: InstrumentId = self._get_cached_instrument_id(msg)
+        instrument_id: InstrumentId = self._get_cached_instrument_id(msg["market"])
         instrument: Instrument = self._instrument_provider.find(instrument_id)
         if instrument is None:
             self._log.error(

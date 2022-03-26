@@ -31,8 +31,8 @@ from nautilus_trader.examples.strategies.ema_cross import EMACrossConfig
 from nautilus_trader.model.data.tick import QuoteTick
 from nautilus_trader.persistence.catalog import DataCatalog
 from nautilus_trader.trading.config import ImportableStrategyConfig
-from tests.test_kit.mocks import aud_usd_data_loader
-from tests.test_kit.mocks import data_catalog_setup
+from tests.test_kit.mocks.data import aud_usd_data_loader
+from tests.test_kit.mocks.data import data_catalog_setup
 
 
 pytestmark = pytest.mark.skipif(sys.platform == "win32", reason="test path broken on windows")
@@ -52,7 +52,7 @@ class TestBacktestNode:
             # fill_model=fill_model,  # TODO(cs): Implement next iteration
         )
         self.data_config = BacktestDataConfig(
-            catalog_path="/root",
+            catalog_path="/.nautilus/catalog",
             catalog_fs_protocol="memory",
             data_cls=QuoteTick,
             instrument_id="AUD/USD.SIM",

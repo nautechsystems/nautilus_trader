@@ -49,14 +49,16 @@ from nautilus_trader.model.instruments.base import Instrument
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.orderbook.book import L2OrderBook
-from nautilus_trader.model.orderbook.book import OrderBook
 from nautilus_trader.model.orderbook.data import OrderBookData
 from nautilus_trader.model.orderbook.data import OrderBookDeltas
 from nautilus_trader.model.orderbook.data import OrderBookSnapshot
 from nautilus_trader.msgbus.bus import MessageBus
 from nautilus_trader.portfolio.portfolio import Portfolio
-from tests.test_kit.mocks import ObjectStorer
-from tests.test_kit.stubs import TestStubs
+from nautilus_trader.trading.filters import NewsEvent
+from tests.test_kit.mocks.object_storer import ObjectStorer
+from tests.test_kit.stubs.component import TestComponentStubs
+from tests.test_kit.stubs.data import TestDataStubs
+from tests.test_kit.stubs.identifiers import TestIdStubs
 
 
 BITMEX = Venue("BITMEX")
@@ -76,7 +78,7 @@ class TestDataEngine:
             level_stdout=LogLevel.DEBUG,
         )
 
-        self.trader_id = TestStubs.trader_id()
+        self.trader_id = TestIdStubs.trader_id()
 
         self.msgbus = MessageBus(
             trader_id=self.trader_id,
@@ -84,7 +86,7 @@ class TestDataEngine:
             logger=self.logger,
         )
 
-        self.cache = TestStubs.cache()
+        self.cache = TestComponentStubs.cache()
 
         self.portfolio = Portfolio(
             msgbus=self.msgbus,
@@ -283,7 +285,7 @@ class TestDataEngine:
         command = DataCommand(
             client_id=None,
             venue=BINANCE,
-            data_type=DataType(str),
+            data_type=DataType(Data),
             command_id=self.uuid_factory.generate(),
             ts_init=self.clock.timestamp_ns(),
         )
@@ -329,7 +331,7 @@ class TestDataEngine:
             client_id=None,
             venue=BINANCE,
             data_type=DataType(
-                str,
+                Data,
                 metadata={  # str data type is invalid
                     "instrument_id": InstrumentId(Symbol("SOMETHING"), Venue("RANDOM")),
                     "from_datetime": None,
@@ -397,14 +399,14 @@ class TestDataEngine:
         # Assert
         assert self.data_engine.request_count == 2
 
-    def test_execute_subscribe_when_data_type_unrecognized_logs_and_does_nothing(self):
+    def test_execute_subscribe_when_data_type_not_implemented_logs_and_does_nothing(self):
         # Arrange
         self.data_engine.register_client(self.binance_client)
 
         subscribe = Subscribe(
             client_id=None,
             venue=BINANCE,
-            data_type=DataType(str),  # str data type is invalid
+            data_type=DataType(NewsEvent),  # NewsEvent data not recognized
             command_id=self.uuid_factory.generate(),
             ts_init=self.clock.timestamp_ns(),
         )
@@ -424,7 +426,7 @@ class TestDataEngine:
         subscribe = Subscribe(
             client_id=ClientId("QUANDL"),
             venue=None,
-            data_type=DataType(str, metadata={"Type": "news"}),
+            data_type=DataType(Data, metadata={"Type": "news"}),
             command_id=self.uuid_factory.generate(),
             ts_init=self.clock.timestamp_ns(),
         )
@@ -442,14 +444,14 @@ class TestDataEngine:
         self.data_engine.register_client(self.quandl)
         self.binance_client.start()
 
-        data_type = DataType(str, metadata={"Type": "news"})
+        data_type = DataType(Data, metadata={"Type": "news"})
         handler = []
 
         self.msgbus.subscribe(topic=f"data.{data_type.topic}", handler=handler.append)
         subscribe = Subscribe(
             client_id=ClientId("QUANDL"),
             venue=None,
-            data_type=DataType(str, metadata={"Type": "news"}),
+            data_type=DataType(Data, metadata={"Type": "news"}),
             command_id=self.uuid_factory.generate(),
             ts_init=self.clock.timestamp_ns(),
         )
@@ -460,7 +462,7 @@ class TestDataEngine:
         unsubscribe = Unsubscribe(
             client_id=ClientId("QUANDL"),
             venue=None,
-            data_type=DataType(str, metadata={"Type": "news"}),
+            data_type=DataType(Data, metadata={"Type": "news"}),
             command_id=self.uuid_factory.generate(),
             ts_init=self.clock.timestamp_ns(),
         )
@@ -481,7 +483,7 @@ class TestDataEngine:
         unsubscribe = Unsubscribe(
             client_id=ClientId(BINANCE.value),
             venue=BINANCE,
-            data_type=DataType(str),  # str data type is invalid
+            data_type=DataType(Data),  # str data type is invalid
             command_id=self.uuid_factory.generate(),
             ts_init=self.clock.timestamp_ns(),
         )
@@ -541,7 +543,7 @@ class TestDataEngine:
 
     def test_process_data_places_data_on_queue(self):
         # Arrange
-        tick = TestStubs.trade_tick_5decimal()
+        tick = TestDataStubs.trade_tick_5decimal()
 
         # Act
         self.data_engine.process(tick)
@@ -717,7 +719,7 @@ class TestDataEngine:
             client_id=ClientId(BINANCE.value),
             venue=BINANCE,
             data_type=DataType(
-                OrderBook,
+                OrderBookSnapshot,
                 metadata={
                     "instrument_id": ETHUSDT_BINANCE.id,
                     "book_type": 2,
@@ -771,7 +773,7 @@ class TestDataEngine:
             client_id=ClientId(BINANCE.value),
             venue=BINANCE,
             data_type=DataType(
-                OrderBook,
+                OrderBookSnapshot,
                 metadata={
                     "instrument_id": ETHUSDT_BINANCE.id,
                     "book_type": 2,
@@ -798,7 +800,7 @@ class TestDataEngine:
             client_id=ClientId(BINANCE.value),
             venue=BINANCE,
             data_type=DataType(
-                OrderBook,
+                OrderBookSnapshot,
                 metadata={
                     "instrument_id": ETHUSDT_BINANCE.id,
                     "book_type": 2,
@@ -816,7 +818,7 @@ class TestDataEngine:
             client_id=ClientId(BINANCE.value),
             venue=BINANCE,
             data_type=DataType(
-                OrderBook,
+                OrderBookSnapshot,
                 metadata={
                     "instrument_id": ETHUSDT_BINANCE.id,
                     "interval_ms": 1000,
@@ -884,7 +886,7 @@ class TestDataEngine:
             client_id=ClientId(BINANCE.value),
             venue=BINANCE,
             data_type=DataType(
-                OrderBook,
+                OrderBookSnapshot,
                 metadata={
                     "instrument_id": ETHUSDT_BINANCE.id,
                     "book_type": 2,
@@ -902,7 +904,7 @@ class TestDataEngine:
             client_id=ClientId(BINANCE.value),
             venue=BINANCE,
             data_type=DataType(
-                OrderBook,
+                OrderBookSnapshot,
                 metadata={
                     "instrument_id": ETHUSDT_BINANCE.id,
                     "interval_ms": 1000,
@@ -934,7 +936,7 @@ class TestDataEngine:
             client_id=ClientId(BINANCE.value),
             venue=BINANCE,
             data_type=DataType(
-                OrderBook,
+                OrderBookSnapshot,
                 {
                     "instrument_id": ETHUSDT_BINANCE.id,
                     "book_type": BookType.L2_MBP,
@@ -973,7 +975,7 @@ class TestDataEngine:
             client_id=ClientId(BINANCE.value),
             venue=BINANCE,
             data_type=DataType(
-                OrderBook,
+                OrderBookSnapshot,
                 {
                     "instrument_id": ETHUSDT_BINANCE.id,
                     "book_type": BookType.L2_MBP,
@@ -1069,7 +1071,7 @@ class TestDataEngine:
             client_id=ClientId(BINANCE.value),
             venue=BINANCE,
             data_type=DataType(
-                OrderBook,
+                OrderBookSnapshot,
                 {
                     "instrument_id": ETHUSDT_BINANCE.id,
                     "book_type": BookType.L2_MBP,
@@ -1085,7 +1087,7 @@ class TestDataEngine:
             client_id=ClientId(BINANCE.value),
             venue=BINANCE,
             data_type=DataType(
-                OrderBook,
+                OrderBookSnapshot,
                 {
                     "instrument_id": ETHUSDT_BINANCE.id,
                     "book_type": BookType.L2_MBP,

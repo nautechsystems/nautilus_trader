@@ -38,9 +38,9 @@ from nautilus_trader.persistence.external.readers import TextReader
 from tests.integration_tests.adapters.betfair.test_kit import BetfairDataProvider
 from tests.integration_tests.adapters.betfair.test_kit import BetfairTestStubs
 from tests.test_kit import PACKAGE_ROOT
-from tests.test_kit.mocks import MockReader
-from tests.test_kit.mocks import data_catalog_setup
-from tests.test_kit.stubs import TestStubs
+from tests.test_kit.mocks.data import MockReader
+from tests.test_kit.mocks.data import data_catalog_setup
+from tests.test_kit.stubs.data import TestDataStubs
 
 
 TEST_DATA_DIR = str(pathlib.Path(PACKAGE_ROOT).joinpath("data"))
@@ -62,7 +62,7 @@ class TestPersistenceParsers:
         assert data == {"ts_init": 1624946651943000000}
 
     def test_line_preprocessor_post_process(self):
-        obj = TestStubs.trade_tick_5decimal()
+        obj = TestDataStubs.trade_tick_5decimal()
         data = {
             "ts_init": int(pd.Timestamp("2021-06-29T06:04:11.943000", tz="UTC").to_datetime64())
         }
@@ -163,7 +163,7 @@ class TestPersistenceParsers:
         assert result == 100000
 
     def test_csv_reader_headerless_dataframe(self):
-        bar_type = TestStubs.bartype_adabtc_binance_1min_last()
+        bar_type = TestDataStubs.bartype_adabtc_binance_1min_last()
         instrument = TestInstrumentProvider.adabtc_binance()
         wrangler = BarDataWrangler(bar_type, instrument)
 
@@ -195,7 +195,7 @@ class TestPersistenceParsers:
         assert sum(in_.values()) == 21
 
     def test_csv_reader_dataframe_separator(self):
-        bar_type = TestStubs.bartype_adabtc_binance_1min_last()
+        bar_type = TestDataStubs.bartype_adabtc_binance_1min_last()
         instrument = TestInstrumentProvider.adabtc_binance()
         wrangler = BarDataWrangler(bar_type, instrument)
 

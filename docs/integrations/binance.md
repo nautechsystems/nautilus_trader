@@ -23,7 +23,7 @@ which can be used together or separately depending on the users needs.
 - `BinanceLiveDataClientFactory` creation factory for Binance data clients (used by the trading node builder)
 - `BinanceLiveExecClientFactory` creation factory for Binance execution clients (used by the trading node builder)
 
-```{notes}
+```{note}
 Most users will simply define a configuration for a live trading node (as below), 
 and won't need to necessarily work with these lower level components individually.
 ```
@@ -31,8 +31,9 @@ and won't need to necessarily work with these lower level components individuall
 ## Binance data types
 To provide complete API functionality to traders, the integration includes several
 custom data types:
-- `BinanceSpotTicker` returned when subscribing to Binance SPOT 24hr tickers (contains many prices and stats).
+- `BinanceTicker` returned when subscribing to Binance 24hr tickers (contains many prices and stats).
 - `BinanceBar` returned when requesting historical, or subscribing to, Binance bars (contains extra volume information).
+- `BinanceFuturesMarkPriceUpdate` returned when subscribing to Binance Futures mark price updates.
 
 See the Binance [API Reference](../api_reference/adapters/binance.md) for full definitions.
 
@@ -94,14 +95,24 @@ node.build()
 
 ### API credentials
 There are two options for supplying your credentials to the Binance clients.
-Either pass the corresponding `api_key` and `api_secret` values to the config dictionaries, or
-set the following environment variables for live clients: 
+Either pass the corresponding `api_key` and `api_secret` values to the configuration objects, or
+set the following environment variables: 
+
+For Binance Spot/Margin live clients, you can set: 
 - `BINANCE_API_KEY`
 - `BINANCE_API_SECRET`
 
-Or for clients connecting to testnets, you can set:
+For Binance Spot/Margin testnet clients, you can set:
 - `BINANCE_TESTNET_API_KEY`
 - `BINANCE_TESTNET_API_SECRET`
+
+For Binance Futures live clients, you can set:
+- `BINANCE_FUTURES_API_KEY`
+- `BINANCE_FUTURES_API_SECRET`
+
+For Binance Futures testnet clients, you can set:
+- `BINANCE_FUTURES_TESTNET_API_KEY`
+- `BINANCE_FUTURES_TESTNET_API_SECRET`
 
 When starting the trading node, you'll receive immediate confirmation of whether your
 credentials are valid and have trading permissions.
@@ -113,10 +124,6 @@ using the `BinanceAccountType` enum. The account type options are:
 - `MARGIN`
 - `FUTURES_USDT` (USDT or BUSD stablecoins as collateral)
 - `FUTURES_COIN` (other cryptocurrency as collateral)
-
-```{note}
-Binance does not currently offer a testnet for COIN-M futures.
-```
 
 ### Base URL overrides
 It's possible to override the default base URLs for both HTTP Rest and
@@ -152,4 +159,37 @@ config = TradingNodeConfig(
         },
     },
 )
+```
+
+## Binance Specific Data
+It's possible to subscribe to Binance specific data streams as they become available to the
+adapter over time.
+
+```{note}
+Tickers and bars are not considered 'Binance specific' and can be subscribed to in the normal way.
+However, as more adapters are built out which need for example mark price and funding rate updates, then these
+methods may eventually become first-class (not requiring custom/generic subscriptions as below).
+```
+
+### BinanceFuturesMarkPriceUpdate
+You can subscribe to `BinanceFuturesMarkPriceUpdate` (included funding rating info) 
+data streams by subscribing in the following way from your actor or strategy:
+
+```python
+# In your `on_start` method
+self.subscribe_data(
+    data_type=DataType(BinanceFuturesMarkPriceUpdate, metadata={"instrument_id": self.instrument.id}),
+    client_id=ClientId("BINANCE"),
+)
+```
+
+This will result in your actor/strategy passing these received `BinanceFuturesMarkPriceUpdate` 
+objects to your `on_data` method. You will need to check the type, as this 
+method acts as a flexible handler for all custom/generic data.
+
+```python
+def on_data(self, data: Data):
+    # First check the type of data
+    if isinstance(data, BinanceFuturesMarkPriceUpdate):
+        # Do something with the data
 ```

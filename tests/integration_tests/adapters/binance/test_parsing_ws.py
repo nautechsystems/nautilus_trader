@@ -15,9 +15,10 @@
 
 import pkgutil
 
-import orjson
+import msgspec.json
 
-from nautilus_trader.adapters.binance.parsing.websocket import parse_ticker_24hr_spot_ws
+from nautilus_trader.adapters.binance.common.parsing.data import parse_ticker_24hr_ws
+from nautilus_trader.adapters.binance.common.schemas import BinanceTickerData
 from nautilus_trader.backtest.data.providers import TestInstrumentProvider
 
 
@@ -25,18 +26,17 @@ ETHUSDT = TestInstrumentProvider.ethusdt_binance()
 
 
 class TestBinanceWebSocketParsing:
-    def test_parse_spot_ticker(self):
+    def test_parse_ticker(self):
         # Arrange
-        data = pkgutil.get_data(
+        raw = pkgutil.get_data(
             package="tests.integration_tests.adapters.binance.resources.ws_messages",
             resource="ws_spot_ticker_24hr.json",
         )
-        msg = orjson.loads(data)
 
         # Act
-        result = parse_ticker_24hr_spot_ws(
+        result = parse_ticker_24hr_ws(
             instrument_id=ETHUSDT.id,
-            msg=msg,
+            data=msgspec.json.decode(raw, type=BinanceTickerData),
             ts_init=9999999999999991,
         )
 

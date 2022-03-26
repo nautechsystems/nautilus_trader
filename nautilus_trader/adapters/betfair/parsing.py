@@ -138,9 +138,7 @@ def _make_limit_order(order: Union[LimitOrder, MarketOrder]):
             "limitOrder": {"price": price, "size": size, "persistenceType": "PERSIST"},
         }
         if order.time_in_force in N2B_TIME_IN_FORCE:
-            parsed["limitOrder"]["timeInForce"] = N2B_TIME_IN_FORCE[  # type: ignore
-                order.time_in_force
-            ]
+            parsed["limitOrder"]["timeInForce"] = N2B_TIME_IN_FORCE[order.time_in_force]  # type: ignore
             parsed["limitOrder"]["persistenceType"] = "LAPSE"  # type: ignore
         return parsed
 

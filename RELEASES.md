@@ -1,8 +1,48 @@
+# NautilusTrader 1.141.0 Beta
+
+Released on TBD (UTC).
+TODO(cs): Update version badge
+TODO(cs): Ensure versions are correct
+
+### Breaking Changes
+- Tighten requirement for `DataType` types to be subclasses of `Data`.
+- `NAUTILUS_CATALOG` env var changed to `NAUTILUS_PATH`.
+- `DataCatalog` root path now located under `$OLD_PATH/catalog/` from the Nautilus path.
+
+### Enhancements
+- Added `BinanceFuturesMarkPriceUpdate` type and data stream.
+- Added generic `subscribe` and `unsubscribe` to template.
+- Added Binance Futures COIN_M testnet.
+
+### Fixes
+None
+
+---
+
+# NautilusTrader 1.140.0 Beta
+
+## Release Notes
+
+Released on 13th March 2022 (UTC).
+
+This is a patch release which fixes a moderate severity security vulnerability in
+pillow < 9.0.1:
+
+    If the path to the temporary directory on Linux or macOS contained a space, 
+    this would break removal of the temporary image file after im.show() (and related actions), 
+    and potentially remove an unrelated file. This been present since PIL.
+
+This release upgrades to pillow 9.0.1.
+
+Note the minor version was incremented in error.
+
+---
+
 # NautilusTrader 1.139.0 Beta
 
 ## Release Notes
 
-Released on TBD (UTC).
+Released on 11th March 2022 (UTC).
 
 ### Breaking Changes
 - Renamed `CurrencySpot` to `CurrencyPair`.
@@ -12,19 +52,22 @@ Released on TBD (UTC).
 - Renamed `BinanceSpotExecutionClient` to `BinanceExecutionClient`.
 
 ### Enhancements
-- Added initial implementation of Binance Futures.
+- Added initial **(beta)** Binance Futures adapter implementation.
+- Added initial **(beta)** Interactive Brokers adapter implementation.
+- Added custom portfolio statistics.
 - Added `CryptoFuture` instrument.
 - Added `OrderType.MARKET_TO_LIMIT`.
 - Added `OrderType.MARKET_IF_TOUCHED`.
 - Added `OrderType.LIMIT_IF_TOUCHED`.
-- Added `MarketToLimit` order type.
-- Added `MarketIfTouched` order type.
-- Added `LimitIfTouched` order type.
+- Added `MarketToLimitOrder` order type.
+- Added `MarketIfTouchedOrder` order type.
+- Added `LimitIfTouchedOrder` order type.
 - Added `Order.has_price` property (convenience).
 - Added `Order.has_trigger_price` property (convenience).
 - Added `msg` param to `LoggerAdapter.exception()`.
 - Added WebSocket `log_send` and `log_recv` config options.
 - Added WebSocket `auto_ping_interval` (seconds) config option.
+- Replaced `msgpack` with `msgspec` (faster drop in replacement https://github.com/jcrist/msgspec).
 - Improved exception messages by providing helpful context.
 - Improved `BacktestDataConfig` API: now takes either a type of `Data` _or_ a fully qualified path string.
 

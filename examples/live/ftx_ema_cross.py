@@ -38,7 +38,7 @@ config_node = TradingNodeConfig(
     trader_id="TESTER-001",
     log_level="INFO",
     exec_engine={
-        "recon_lookback_mins": 1440,
+        "reconciliation_lookback_mins": 1440,
     },
     # cache_database=CacheDatabaseConfig(),
     data_clients={

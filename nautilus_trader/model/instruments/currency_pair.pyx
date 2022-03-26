@@ -36,7 +36,7 @@ cdef class CurrencyPair(Instrument):
     """
     Represents a generic currency pair instrument in a spot/cash market.
 
-    Can represent both Fiat FX and Crypto currency pairs.
+    Can represent both Fiat FX and Cryptocurrency pairs.
 
     Parameters
     ----------
@@ -54,7 +54,7 @@ cdef class CurrencyPair(Instrument):
         The trading size decimal precision.
     price_increment : Price
         The minimum price increment (tick size).
-    size_increment : Price
+    size_increment : Quantity
         The minimum size increment.
     lot_size : Quantity, optional
         The rounded lot unit size.

@@ -13,6 +13,10 @@
 | `master`  | ![version](https://img.shields.io/endpoint?url=https%3A%2F%2Fraw.githubusercontent.com%2Fnautechsystems%2Fnautilus_trader%2Fmaster%2Fversion.json) | [![build](https://github.com/nautechsystems/nautilus_trader/actions/workflows/build.yml/badge.svg?branch=master)](https://github.com/nautechsystems/nautilus_trader/actions/workflows/build.yml) |
 | `develop` | ![version](https://img.shields.io/endpoint?url=https%3A%2F%2Fraw.githubusercontent.com%2Fnautechsystems%2Fnautilus_trader%2Fdevelop%2Fversion.json) | [![build](https://github.com/nautechsystems/nautilus_trader/actions/workflows/build.yml/badge.svg?branch=develop)](https://github.com/nautechsystems/nautilus_trader/actions/workflows/build.yml) |
 
+| Docker | Status |
+|:-------|:-------|
+| `nautilus_trader` | [![docker](https://github.com/nautechsystems/nautilus_trader/actions/workflows/docker.yml/badge.svg)](https://github.com/nautechsystems/nautilus_trader/actions/workflows/docker.yml)
+
 | Platform         | Rust      | Python |
 |:-----------------|:----------|:-------|
 | Linux (x86_64)   | `1.59.0+` | `3.8+` |
@@ -138,10 +142,10 @@ into a unified interface. The following integrations are currently supported:
 [Betfair](https://betfair.com)                            | BETFAIR | Sports Betting Exchange | ![status](https://img.shields.io/badge/beta-yellow)     | [Guide](https://docs.nautilustrader.io/integrations/betfair.html) |
 [Binance](https://binance.com)                            | BINANCE | Crypto Exchange (CEX)   | ![status](https://img.shields.io/badge/beta-yellow)     | [Guide](https://docs.nautilustrader.io/integrations/binance.html) |
 [Binance US](https://binance.us)                          | BINANCE | Crypto Exchange (CEX)   | ![status](https://img.shields.io/badge/beta-yellow)     | [Guide](https://docs.nautilustrader.io/integrations/binance.html) |
-[Binance Futures](https://www.binance.com/en/futures)     | BINANCE | Crypto Exchange (CEX)   | ![status](https://img.shields.io/badge/building-orange) | [Guide](https://docs.nautilustrader.io/integrations/binance.html) |
+[Binance Futures](https://www.binance.com/en/futures)     | BINANCE | Crypto Exchange (CEX)   | ![status](https://img.shields.io/badge/beta-yellow)     | [Guide](https://docs.nautilustrader.io/integrations/binance.html) |
 [FTX](https://ftx.com)                                    | FTX     | Crypto Exchange (CEX)   | ![status](https://img.shields.io/badge/beta-yellow)     | [Guide](https://docs.nautilustrader.io/integrations/ftx.html)     |
 [FTX US](https://ftx.us)                                  | FTX     | Crypto Exchange (CEX)   | ![status](https://img.shields.io/badge/beta-yellow)     | [Guide](https://docs.nautilustrader.io/integrations/ftx.html)     |
-[Interactive Brokers](https://www.interactivebrokers.com) | IB      | Brokerage (multi-venue) | ![status](https://img.shields.io/badge/building-orange) | [Guide](https://docs.nautilustrader.io/integrations/ib.html)      |
+[Interactive Brokers](https://www.interactivebrokers.com) | IB      | Brokerage (multi-venue) | ![status](https://img.shields.io/badge/beta-yellow)     | [Guide](https://docs.nautilustrader.io/integrations/ib.html)      |
 
 Refer to the [Integrations](https://docs.nautilustrader.io/integrations/index.html) documentation for further details.
 
@@ -159,8 +163,10 @@ To install `numpy` and `scipy` on ARM architectures such as MacBook Pro M1 / App
 is useful.
 
 ### From Source
-Installation from source requires the latest stable `rustc` and `cargo` to compile the Rust libraries.
-For the Python part, it's possible to install from source using `pip` if you first install the build dependencies
+Installation from source requires the `Python.h` header file, which is included in development releases such as `python-dev`.
+You'll also need the latest stable `rustc` and `cargo` to compile the Rust libraries.
+
+It's possible to install from source using `pip` if you first install the build dependencies
 as specified in the `pyproject.toml`. However, we highly recommend installing using [poetry](https://python-poetry.org/) as below.
 
 1. Install [rustup](https://rustup.rs/) (the Rust toolchain installer):
@@ -182,7 +188,7 @@ as specified in the `pyproject.toml`. However, we highly recommend installing us
 
 3. Install poetry (or follow the installation guide on their site):
 
-       curl -sSL https://raw.githubusercontent.com/python-poetry/poetry/master/get-poetry.py | python -
+       curl -sSL https://install.python-poetry.org | python3 -
 
 4. Clone the source with `git`, and install from the projects root directory:
 
@@ -351,6 +357,7 @@ Please make all pull requests to the `develop` branch.
 
 ## Community
 Chat with contributors and active users of NautilusTrader on our [Discord](https://discord.gg/AUWVs3XaCS) server!
+This is also the best place to monitor announcements, and learn about the latest features as they become available.
 
 ## License
 

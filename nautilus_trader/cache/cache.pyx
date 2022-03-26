@@ -133,7 +133,7 @@ cdef class Cache(CacheFacade):
         Clear the current currencies cache and load currencies from the execution
         database.
         """
-        self._log.debug(f"Loading accounts from database...")
+        self._log.debug(f"Loading currencies from database...")
 
         if self._database is not None:
             self._currencies = self._database.load_currencies()
@@ -269,7 +269,6 @@ cdef class Cache(CacheFacade):
         # Check object caches
         # -------------------
         for account_id in self._accounts:
-            # TODO(cs): Assumption that venue == issuer
             if Venue(account_id.issuer) not in self._index_venue_account:
                 self._log.error(
                     f"{failure} in _cached_accounts: "
@@ -619,7 +618,6 @@ cdef class Cache(CacheFacade):
             self._cache_venue_account_id(account_id)
 
     cdef void _cache_venue_account_id(self, AccountId account_id) except *:
-        # TODO(cs): Assumption that venue = account_id.issuer
         self._index_venue_account[Venue(account_id.issuer)] = account_id
 
     cdef void _build_indexes_from_orders(self) except *:
@@ -675,7 +673,7 @@ cdef class Cache(CacheFacade):
         cdef PositionId position_id
         cdef Position position
         for position_id, position in self._positions.items():
-            # 1: Build _index_venue_orders -> {Venue, {ClientOrderId}}
+            # 1: Build _index_venue_positions -> {Venue, {PositionId}}
             if position.instrument_id.venue not in self._index_venue_positions:
                 self._index_venue_positions[position.instrument_id.venue] = set()
             self._index_venue_positions[position.instrument_id.venue].add(position_id)
@@ -1231,11 +1229,11 @@ cdef class Cache(CacheFacade):
         Raises
         ------
         ValueError
-            If `oms_type` is ``HEDGING`` and `position.id` is already contained in the cache.
+            If `oms_type` is ``HEDGING`` and a virtual `position.id` is already contained in the cache.
 
         """
         Condition.not_none(position, "position")
-        if oms_type == OMSType.HEDGING:
+        if oms_type == OMSType.HEDGING and position.id.is_virtual_c():
             Condition.not_in(position.id, self._positions, "position.id", "_positions")
             Condition.not_in(position.id, self._index_positions, "position.id", "_index_positions")
             Condition.not_in(position.id, self._index_positions_open, "position.id", "_index_positions_open")

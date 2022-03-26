@@ -51,8 +51,10 @@ from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.msgbus.bus import MessageBus
 from nautilus_trader.portfolio.portfolio import Portfolio
-from tests.test_kit.mocks import MockLiveExecutionClient
-from tests.test_kit.stubs import TestStubs
+from tests.test_kit.mocks.exec_clients import MockLiveExecutionClient
+from tests.test_kit.stubs.component import TestComponentStubs
+from tests.test_kit.stubs.events import TestEventStubs
+from tests.test_kit.stubs.identifiers import TestIdStubs
 
 
 SIM = Venue("SIM")
@@ -70,8 +72,8 @@ class TestLiveExecutionReconciliation:
         self.uuid_factory = UUIDFactory()
         self.logger = LiveLogger(self.loop, self.clock)
 
-        self.account_id = TestStubs.account_id()
-        self.trader_id = TestStubs.trader_id()
+        self.account_id = TestIdStubs.account_id()
+        self.trader_id = TestIdStubs.trader_id()
 
         self.order_factory = OrderFactory(
             trader_id=self.trader_id,
@@ -85,7 +87,7 @@ class TestLiveExecutionReconciliation:
             logger=self.logger,
         )
 
-        self.cache = TestStubs.cache()
+        self.cache = TestComponentStubs.cache()
 
         self.portfolio = Portfolio(
             msgbus=self.msgbus,
@@ -134,7 +136,7 @@ class TestLiveExecutionReconciliation:
             clock=self.clock,
             logger=self.logger,
         )
-        self.portfolio.update_account(TestStubs.event_cash_account_state())
+        self.portfolio.update_account(TestEventStubs.cash_account_state())
         self.exec_engine.register_client(self.client)
 
         # Prepare components

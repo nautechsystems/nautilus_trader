@@ -16,7 +16,7 @@
 from nautilus_trader.backtest.data.providers import TestInstrumentProvider
 from nautilus_trader.indicators.average.moving_average import MovingAverageType
 from nautilus_trader.indicators.pressure import Pressure
-from tests.test_kit.stubs import TestStubs
+from tests.test_kit.stubs.data import TestDataStubs
 
 
 AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy("AUD/USD")
@@ -56,7 +56,7 @@ class TestPressure:
         # Arrange
         indicator = Pressure(10, MovingAverageType.EXPONENTIAL)
 
-        bar = TestStubs.bar_5decimal()
+        bar = TestDataStubs.bar_5decimal()
 
         # Act
         indicator.handle_bar(bar)

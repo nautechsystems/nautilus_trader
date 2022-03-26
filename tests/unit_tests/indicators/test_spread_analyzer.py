@@ -20,7 +20,7 @@ from nautilus_trader.indicators.spread_analyzer import SpreadAnalyzer
 from nautilus_trader.model.data.tick import QuoteTick
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
-from tests.test_kit.stubs import TestStubs
+from tests.test_kit.stubs.data import TestDataStubs
 
 
 USDJPY_SIM = TestInstrumentProvider.default_fx_ccy("USD/JPY")
@@ -41,7 +41,7 @@ class TestSpreadAnalyzer:
     def test_handle_ticks_initializes_indicator(self):
         # Arrange
         analyzer = SpreadAnalyzer(AUDUSD_SIM.id, 1)  # Only one tick
-        tick = TestStubs.quote_tick_5decimal()
+        tick = TestDataStubs.quote_tick_5decimal()
 
         # Act
         analyzer.handle_quote_tick(tick)

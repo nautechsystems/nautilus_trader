@@ -27,7 +27,6 @@ from nautilus_trader.common.logging cimport LoggerAdapter
 from nautilus_trader.common.uuid cimport UUIDFactory
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
-from nautilus_trader.model.c_enums.order_type cimport OrderType
 from nautilus_trader.model.c_enums.price_type cimport PriceType
 from nautilus_trader.model.currency cimport Currency
 from nautilus_trader.model.identifiers cimport PositionId
@@ -301,7 +300,7 @@ cdef class AccountsManager:
             margin_init: Decimal = account.calculate_margin_init(
                 instrument,
                 order.quantity,
-                order.price if order.type != OrderType.STOP_MARKET else order.trigger_price,  # TODO(cs): Temporary will refactor!
+                order.price if order.has_price_c() else order.trigger_price,
             ).as_decimal()
 
             if account.base_currency is not None:
@@ -333,7 +332,7 @@ cdef class AccountsManager:
         cdef Money margin_init_money = Money(total_margin_init, currency)
         account.update_margin_init(instrument.id, margin_init_money)
 
-        self._log.info(f"{instrument.id} margin_init={margin_init_money.to_str()}")
+        # self._log.info(f"{instrument.id} margin_init={margin_init_money.to_str()}")
 
         return self._generate_account_state(
             account=account,
@@ -425,7 +424,7 @@ cdef class AccountsManager:
         cdef Money margin_maint_money = Money(total_margin_maint, currency)
         account.update_margin_maint(instrument.id, margin_maint_money)
 
-        self._log.info(f"{instrument.id} margin_maint={margin_maint_money.to_str()}")
+        # self._log.info(f"{instrument.id} margin_maint={margin_maint_money.to_str()}")
 
         return self._generate_account_state(
             account=account,

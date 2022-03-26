@@ -60,4 +60,4 @@ cdef class Data:
         https://www.python.org/dev/peps/pep-3155/
 
         """
-        return cls.__module__ + '.' + cls.__qualname__
+        return cls.__module__ + ':' + cls.__qualname__

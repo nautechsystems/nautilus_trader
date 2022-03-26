@@ -28,7 +28,7 @@ cdef class Currency:
     cdef void register_c(Currency currency, bint overwrite=*) except *
 
     @staticmethod
-    cdef Currency from_str_c(str code)
+    cdef Currency from_str_c(str code, bint strict=*)
 
     @staticmethod
     cdef bint is_fiat_c(str code)
