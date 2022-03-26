@@ -325,8 +325,8 @@ cdef class BacktestEngine:
         cdef OrderBookData first = data[0]
         Condition.true(
             first.instrument_id in self._cache.instrument_ids(),
-            "Instrument for given data not found in the cache. "
-            "Please call `add_instrument()` before adding related data.",
+            f"Instrument {first.instrument_id} for the given data not found in the cache. "
+            "Please add the instrument through `add_instrument()` prior to adding related data.",
         )
 
         # Check client has been registered
@@ -360,8 +360,8 @@ cdef class BacktestEngine:
         cdef Tick first = data[0]
         Condition.true(
             first.instrument_id in self._cache.instrument_ids(),
-            "Instrument for given data not found in the cache. "
-            "Please call `add_instrument()` before adding related data.",
+            f"Instrument {first.instrument_id} for the given data not found in the cache. "
+            "Please add the instrument through `add_instrument()` prior to adding related data.",
         )
 
         # Check client has been registered
@@ -377,12 +377,12 @@ cdef class BacktestEngine:
 
     def add_data(self, list data) -> None:
         """
-        Add the tick data to the backtest engine.
+        Add the data to the backtest engine.
 
         Parameters
         ----------
-        data : list[Tick]
-            The tick data to add.
+        data : list[Data]
+            The data to add.
 
         Raises
         ------
@@ -395,8 +395,8 @@ cdef class BacktestEngine:
         assert hasattr(first, 'instrument_id'), "added data must have an instrument_id property"
         Condition.true(
             first.instrument_id in self._cache.instrument_ids(),
-            "Instrument for given data not found in the cache. "
-            "Please call `add_instrument()` before adding related data.",
+            f"Instrument {first.instrument_id} for the given data not found in the cache. "
+            "Please add the instrument through `add_instrument()` prior to adding related data.",
         )
 
         # Check client has been registered
@@ -436,8 +436,8 @@ cdef class BacktestEngine:
         cdef Bar first = data[0]
         Condition.true(
             first.type.instrument_id in self._cache.instrument_ids(),
-            "Instrument for given data not found in the cache. "
-            "Please call `add_instrument()` before adding related data.",
+            f"Instrument {first.type.instrument_id} for the given data not found in the cache. "
+            "Please add the instrument through `add_instrument()` prior to adding related data.",
         )
         Condition.equal(
             first.type.aggregation_source,
