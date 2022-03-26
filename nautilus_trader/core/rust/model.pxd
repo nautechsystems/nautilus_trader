@@ -4,9 +4,9 @@ from libc.stdint cimport uint8_t, uint16_t, uint64_t, int8_t, int64_t
 
 cdef extern from "../includes/model.h":
 
-    const double FIXED_POWER # = 1000000000.0
+    const uint8_t FIXED_PRECISION # = 9
 
-    const double FIXED_UNIT # = 0.000000001
+    const double FIXED_SCALAR # = 0.000000001
 
     cdef enum BookLevel:
         L1_TBBO # = 1,

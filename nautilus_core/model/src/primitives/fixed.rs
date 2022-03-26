@@ -13,29 +13,34 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use math::round;
+pub const FIXED_PRECISION: u8 = 9;
+pub const FIXED_SCALAR: f64 = 0.000000001; // 10.0**-FIXED_PRECISION
 
-pub const FIXED_POWER: f64 = 1000000000.0;  // fixed power 10.0**9
-pub const FIXED_UNIT: f64 = 0.000000001; // fixed unit 10.0**-9
 
-pub fn f64_to_fixed_i64(value: f64, precision: i8) -> i64 {
+#[no_mangle]
+pub fn f64_to_fixed_i64(value: f64, precision: u8) -> i64 {
     assert!(precision <= 9);
-    let rounded = round::half_to_even(value, precision);
-    (rounded * FIXED_POWER) as i64
+    let pow1 = 10_i64.pow(precision as u32);
+    let pow2 = 10_i64.pow((FIXED_PRECISION - precision) as u32);
+    let rounded = (value * pow1 as f64).round() as i64;
+    rounded * pow2
 }
 
-pub fn f64_to_fixed_u64(value: f64, precision: i8) -> u64 {
+#[no_mangle]
+pub fn f64_to_fixed_u64(value: f64, precision: u8) -> u64 {
     assert!(precision <= 9);
-    let rounded = round::half_to_even(value, precision);
-    (rounded * FIXED_POWER) as u64
+    let pow1 = 10_u64.pow(precision as u32);
+    let pow2 = 10_u64.pow((FIXED_PRECISION - precision) as u32);
+    let rounded = (value * pow1 as f64).round() as u64;
+    rounded * pow2
 }
 
 pub fn fixed_i64_to_f64(value: i64) -> f64 {
-    (value as f64) * FIXED_UNIT
+    (value as f64) * FIXED_SCALAR
 }
 
 pub fn fixed_u64_to_f64(value: u64) -> f64 {
-    (value as f64) * FIXED_UNIT
+    (value as f64) * FIXED_SCALAR
 }
 
 #[cfg(test)]
@@ -54,7 +59,7 @@ mod tests {
     #[case(-1.0, 1)]
     #[case(-1.1, 1)]
     #[case(-0.000000001, 9)]
-    fn test_f64_to_fixed_i64_to_fixed(#[case] value: f64, #[case] precision: i8) {
+    fn test_f64_to_fixed_i64_to_fixed(#[case] value: f64, #[case] precision: u8) {
         let fixed = f64_to_fixed_i64(value, precision);
         let result = fixed_i64_to_f64(fixed);
         assert_eq!(result, value);
@@ -65,7 +70,7 @@ mod tests {
     #[case(1.0, 1)]
     #[case(1.1, 1)]
     #[case(0.000000001, 9)]
-    fn test_f64_to_fixed_u64_to_fixed(#[case] value: f64, #[case] precision: i8) {
+    fn test_f64_to_fixed_u64_to_fixed(#[case] value: f64, #[case] precision: u8) {
         let fixed = f64_to_fixed_u64(value, precision);
         let result = fixed_u64_to_f64(fixed);
         assert_eq!(result, value);

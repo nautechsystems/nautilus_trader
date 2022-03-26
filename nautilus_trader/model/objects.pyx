@@ -192,7 +192,9 @@ cdef class Quantity:
         return self._qty.fixed
 
     cdef double as_f64_c(self):
-        return quantity_as_f64(&self._qty)
+        # Currently re-rounding Python side to handle a strange rounding issue
+        # around the ~16 digit which results in slightly different outputs in tests
+        return round(quantity_as_f64(&self._qty), self.precision)
 
     @staticmethod
     cdef object _extract_decimal(object obj):
@@ -498,7 +500,9 @@ cdef class Price:
         return self._price.fixed
 
     cdef double as_f64_c(self):
-        return price_as_f64(&self._price)
+        # Currently re-rounding Python side to handle a strange rounding issue
+        # around the ~16 digit which results in slightly different outputs in tests
+        return round(price_as_f64(&self._price), self.precision)
 
     @staticmethod
     cdef object _extract_decimal(object obj):

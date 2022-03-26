@@ -410,8 +410,8 @@ class TestDataStubs:
                     yield dict(
                         op="delete",
                         order=Order(
-                            price=Price(data["price"], precision=10),
-                            size=Quantity(abs(data["size"]), precision=10),
+                            price=Price(data["price"], precision=9),
+                            size=Quantity(abs(data["size"]), precision=9),
                             side=side,
                             id=str(data["order_id"]),
                         ),
@@ -420,8 +420,8 @@ class TestDataStubs:
                     yield dict(
                         op="update",
                         order=Order(
-                            price=Price(data["price"], precision=10),
-                            size=Quantity(abs(data["size"]), precision=10),
+                            price=Price(data["price"], precision=9),
+                            size=Quantity(abs(data["size"]), precision=9),
                             side=side,
                             id=str(data["order_id"]),
                         ),

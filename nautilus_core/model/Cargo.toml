@@ -10,9 +10,6 @@ crate-type = ["rlib", "staticlib"]
 
 [dependencies]
 cbindgen = "^0.20.0"
-chrono = "^0.4.19"
-libmath = "^0.2.1"
-
 nautilus_core = { path = "../core" }
 
 [dev-dependencies]
