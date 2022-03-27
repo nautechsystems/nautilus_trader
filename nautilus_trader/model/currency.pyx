@@ -84,16 +84,16 @@ cdef class Currency:
             <CurrencyType>self._currency.currency_type,
         )
 
-    def __setstate__(self, values):
+    def __setstate__(self, state):
         self._currency = currency_new(
-            pystr_to_cstring(values[0]),
-            values[1],
-            values[2],
-            pystr_to_cstring(values[3]),
-            values[4],
+            pystr_to_cstring(state[0]),
+            state[1],
+            state[2],
+            pystr_to_cstring(state[3]),
+            state[4],
         )
-        self.code = values[0]
-        self.name = values[3]
+        self.code = state[0]
+        self.name = state[3]
 
     def __eq__(self, Currency other) -> bool:
         return self.code == other.code and self._currency.precision == other._currency.precision

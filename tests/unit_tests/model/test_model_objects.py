@@ -12,7 +12,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
-
+import pickle
 from decimal import Decimal
 
 import pytest
@@ -590,13 +590,22 @@ from nautilus_trader.model.objects import Quantity
 
 
 class TestPrice:
-    def test_make_price_with_new(self):
+    def test_calling_new_returns_an_expected_zero_price(self):
         # Arrange, Act
-        x = Price.__new__(Price, 100000000000000, 8)
-        y = Price(100000, 8)
+        new_price = Price.__new__(Price, 1, 1)
 
         # Assert
-        assert x == y
+        assert new_price == 0
+
+    def test_from_fixed_returns_expected_price(self):
+        # Arrange, Act
+        price1 = Price.from_fixed(1000000000000, 3)
+        price2 = Price(1000, 3)
+
+        # Assert
+        assert price1 == price2
+        assert str(price1) == "1000.000"
+        assert price1.precision == 3
 
     def test_equality(self):
         # Arrange, Act
@@ -641,15 +650,34 @@ class TestPrice:
         assert "1.00000" == str(price)
         assert "Price('1.00000')" == repr(price)
 
+    def test_pickle_dumps_and_loads(self):
+        # Arrange
+        price = Price(1.2000, 2)
 
-class TestQuantity:
-    def test_make_quantity_with_new(self):
-        # Arrange, Act
-        x = Quantity.__new__(Quantity, 1000000000000, 3)
-        y = Quantity(1000, 3)
+        # Act
+        pickled = pickle.dumps(price)
 
         # Assert
-        assert x == y
+        assert pickle.loads(pickled) == price  # noqa (testing pickle)
+
+
+class TestQuantity:
+    def test_calling_new_returns_an_expected_zero_quantity(self):
+        # Arrange, Act
+        new_qty = Quantity.__new__(Quantity, 1, 1)
+
+        # Assert
+        assert new_qty == 0
+
+    def test_from_fixed_returns_expected_quantity(self):
+        # Arrange, Act
+        qty1 = Quantity.from_fixed(1000000000000, 3)
+        qty2 = Quantity(1000, 3)
+
+        # Assert
+        assert qty1 == qty2
+        assert str(qty1) == "1000.000"
+        assert qty1.precision == 3
 
     def test_zero_returns_zero_quantity(self):
         # Arrange, Act
@@ -678,9 +706,9 @@ class TestQuantity:
         assert str(qty) == "0.511"
         assert qty.precision == 3
 
-    def test_instantiate_with_negative_value_raises_overflow_error(self):
+    def test_instantiate_with_negative_value_raises_value_error(self):
         # Arrange, Act, Assert
-        with pytest.raises(OverflowError):
+        with pytest.raises(ValueError):
             Quantity(-1, 0)
 
     @pytest.mark.parametrize(
@@ -710,6 +738,16 @@ class TestQuantity:
         # Act, Assert
         assert "2100.166667" == str(quantity)
         assert "Quantity('2100.166667')" == repr(quantity)
+
+    def test_pickle_dumps_and_loads(self):
+        # Arrange
+        quantity = Quantity(1.2000, 2)
+
+        # Act
+        pickled = pickle.dumps(quantity)
+
+        # Assert
+        assert pickle.loads(pickled) == quantity  # noqa (testing pickle)
 
 
 class TestMoney:

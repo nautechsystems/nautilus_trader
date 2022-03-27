@@ -39,6 +39,9 @@ cdef class Quantity:
     cdef bint _compare(a, b, int op) except *
 
     @staticmethod
+    cdef Quantity from_fixed_c(uint64_t fixed, uint8_t precision)
+
+    @staticmethod
     cdef Quantity zero_c(uint8_t precision)
 
     @staticmethod
@@ -64,6 +67,9 @@ cdef class Price:
 
     @staticmethod
     cdef bint _compare(a, b, int op) except *
+
+    @staticmethod
+    cdef Price from_fixed_c(int64_t fixed, uint8_t precision)
 
     @staticmethod
     cdef Price from_str_c(str value)

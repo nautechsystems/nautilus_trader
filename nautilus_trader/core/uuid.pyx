@@ -63,8 +63,8 @@ cdef class UUID4:
     def __getstate__(self):
         return self.value
 
-    def __setstate__(self, value):
-        self._uuid4 = self._uuid4_from_pystring(value)
+    def __setstate__(self, state):
+        self._uuid4 = self._uuid4_from_pystring(state)
 
     def __eq__(self, UUID4 other) -> bool:
         return self.value == other.value
