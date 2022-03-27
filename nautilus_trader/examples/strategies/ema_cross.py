@@ -186,7 +186,7 @@ class EMACross(TradingStrategy):
 
         """
         # For debugging (must add a subscription)
-        self.log.info(repr(tick), LogColor.CYAN)
+        # self.log.info(repr(tick), LogColor.CYAN)
 
     def on_trade_tick(self, tick: TradeTick):
         """

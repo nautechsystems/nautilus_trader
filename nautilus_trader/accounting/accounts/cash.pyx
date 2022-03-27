@@ -134,7 +134,7 @@ cdef class CashAccount(Account):
         self,
         Instrument instrument,
         Quantity last_qty,
-        last_px: Decimal,
+        Price last_px,
         LiquiditySide liquidity_side,
         bint inverse_as_quote=False,
     ):
@@ -151,7 +151,7 @@ cdef class CashAccount(Account):
             The instrument for the calculation.
         last_qty : Quantity
             The transaction quantity.
-        last_px : Decimal or Price
+        last_px : Price
             The transaction price.
         liquidity_side : LiquiditySide {``MAKER``, ``TAKER``}
             The liquidity side for the transaction.
@@ -170,14 +170,13 @@ cdef class CashAccount(Account):
         """
         Condition.not_none(instrument, "instrument")
         Condition.not_none(last_qty, "last_qty")
-        Condition.type(last_px, (Decimal, Price), "last_px")
         Condition.not_equal(liquidity_side, LiquiditySide.NONE, "liquidity_side", "NONE")
 
-        notional: Decimal = instrument.notional_value(
+        cdef Money notional = instrument.notional_value(
             quantity=last_qty,
             price=last_px,
             inverse_as_quote=inverse_as_quote,
-        ).as_decimal()
+        )
 
         if liquidity_side == LiquiditySide.MAKER:
             commission: Decimal = notional * instrument.maker_fee
@@ -236,7 +235,7 @@ cdef class CashAccount(Account):
         if side == OrderSide.BUY:
             notional: Decimal = instrument.notional_value(
                 quantity=quantity,
-                price=price.as_decimal(),
+                price=price.as_f64_c(),
                 inverse_as_quote=inverse_as_quote,
             ).as_decimal()
         elif side == OrderSide.SELL:

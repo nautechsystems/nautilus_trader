@@ -264,7 +264,7 @@ class TestExecutionEngine:
         order = self.order_factory.market(
             BTCUSDT_BINANCE.id,
             OrderSide.BUY,
-            Quantity.from_str("1.00000000"),
+            Quantity.from_str("1.000"),
         )
 
         order.apply(TestEventStubs.order_submitted(order))

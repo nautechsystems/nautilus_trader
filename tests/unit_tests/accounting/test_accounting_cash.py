@@ -13,8 +13,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from decimal import Decimal
-
 import pytest
 
 from nautilus_trader.accounting.accounts.cash import CashAccount
@@ -381,7 +379,7 @@ class TestCashAccount:
         order1 = self.order_factory.market(
             BTCUSDT_BINANCE.id,
             OrderSide.SELL,
-            Quantity.from_str("0.50000000"),
+            Quantity.from_str("0.500000"),
         )
 
         fill1 = TestEventStubs.order_filled(
@@ -404,7 +402,7 @@ class TestCashAccount:
         order2 = self.order_factory.market(
             BTCUSDT_BINANCE.id,
             OrderSide.BUY,
-            Quantity.from_str("0.50000000"),
+            Quantity.from_str("0.500000"),
         )
 
         fill2 = TestEventStubs.order_filled(
@@ -493,7 +491,7 @@ class TestCashAccount:
             account.calculate_commission(
                 instrument=instrument,
                 last_qty=Quantity.from_int(100000),
-                last_px=Decimal("11450.50"),
+                last_px=Price.from_str("11450.50"),
                 liquidity_side=LiquiditySide.NONE,
             )
 
@@ -513,7 +511,7 @@ class TestCashAccount:
         result = account.calculate_commission(
             instrument=instrument,
             last_qty=Quantity.from_int(100000),
-            last_px=Decimal("11450.50"),
+            last_px=Price.from_str("11450.50"),
             liquidity_side=LiquiditySide.MAKER,
             inverse_as_quote=inverse_as_quote,
         )
@@ -530,7 +528,7 @@ class TestCashAccount:
         result = account.calculate_commission(
             instrument=instrument,
             last_qty=Quantity.from_int(1500000),
-            last_px=Decimal("0.80050"),
+            last_px=Price.from_str("0.80050"),
             liquidity_side=LiquiditySide.TAKER,
         )
 
@@ -546,7 +544,7 @@ class TestCashAccount:
         result = account.calculate_commission(
             instrument=instrument,
             last_qty=Quantity.from_int(100000),
-            last_px=Decimal("11450.50"),
+            last_px=Price.from_str("11450.50"),
             liquidity_side=LiquiditySide.TAKER,
         )
 
@@ -562,7 +560,7 @@ class TestCashAccount:
         result = account.calculate_commission(
             instrument=instrument,
             last_qty=Quantity.from_int(2200000),
-            last_px=Decimal("120.310"),
+            last_px=Price.from_str("120.310"),
             liquidity_side=LiquiditySide.TAKER,
         )
 

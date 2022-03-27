@@ -436,7 +436,7 @@ cdef class MarginAccount(Account):
         self,
         Instrument instrument,
         Quantity last_qty,
-        last_px: Decimal,
+        Price last_px,
         LiquiditySide liquidity_side,
         bint inverse_as_quote=False,
     ):
@@ -453,7 +453,7 @@ cdef class MarginAccount(Account):
             The instrument for the calculation.
         last_qty : Quantity
             The transaction quantity.
-        last_px : Decimal or Price
+        last_px : Price
             The transaction price.
         liquidity_side : LiquiditySide {``MAKER``, ``TAKER``}
             The liquidity side for the transaction.
@@ -530,7 +530,7 @@ cdef class MarginAccount(Account):
 
         notional: Decimal = instrument.notional_value(
             quantity=quantity,
-            price=price.as_decimal(),
+            price=price.as_f64_c(),
             inverse_as_quote=inverse_as_quote,
         ).as_decimal()
 
@@ -554,7 +554,7 @@ cdef class MarginAccount(Account):
         Instrument instrument,
         PositionSide side,
         Quantity quantity,
-        avg_open_px: Decimal,
+        double avg_open_px,
         bint inverse_as_quote=False,
     ):
         """
@@ -571,7 +571,7 @@ cdef class MarginAccount(Account):
             The currency position side.
         quantity : Quantity
             The currency position quantity.
-        avg_open_px : Decimal or Price
+        avg_open_px : double
             The positions average open price.
         inverse_as_quote : bool
             If inverse instrument calculations use quote currency (instead of base).
@@ -583,7 +583,6 @@ cdef class MarginAccount(Account):
         """
         Condition.not_none(instrument, "instrument")
         Condition.not_none(quantity, "quantity")
-        Condition.not_none(avg_open_px, "avg_open_px")
 
         notional: Decimal = instrument.notional_value(
             quantity=quantity,
@@ -641,7 +640,7 @@ cdef class MarginAccount(Account):
             # Calculate and add PnL
             pnl = position.calculate_pnl(
                 avg_px_open=position.avg_px_open,
-                avg_px_close=fill.last_px,
+                avg_px_close=fill.last_px.as_f64_c(),
                 quantity=fill.last_qty,
             )
             pnls[pnl.currency] = pnl

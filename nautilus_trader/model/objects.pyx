@@ -345,14 +345,14 @@ cdef class Quantity:
             other._qty.precision <= self._qty.precision,
             "other precision was greater than assigning quantity precision",
         )
-        self._qty.value += other.fixed_uint64_c()
+        self._qty.fixed += other.fixed_uint64_c()
 
     cpdef void sub_assign(self, Quantity other) except *:
         Condition.true(
             other._qty.precision <= self._qty.precision,
             "other precision was greater than assigning quantity precision",
         )
-        self._qty.value -= other.fixed_uint64_c()
+        self._qty.fixed -= other.fixed_uint64_c()
 
     cpdef object as_decimal(self):
         """
@@ -651,14 +651,14 @@ cdef class Price:
 
     cpdef void add_assign(self, Price other) except *:
         Condition.true(
-            other._qty.precision <= self._qty.precision,
+            other._price.precision <= self._price.precision,
             "other precision was greater than assigning price precision",
         )
         self._price.fixed += other.fixed_int64_c()
 
     cpdef void sub_assign(self, Price other) except *:
         Condition.true(
-            other._qty.precision <= self._qty.precision,
+            other._price.precision <= self._price.precision,
             "other precision was greater than assigning price precision",
         )
         self._price.fixed -= other.fixed_int64_c()

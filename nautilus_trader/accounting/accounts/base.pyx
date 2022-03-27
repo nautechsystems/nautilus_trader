@@ -453,7 +453,7 @@ cdef class Account:
         self,
         Instrument instrument,
         Quantity last_qty,
-        last_px: Decimal,
+        Price last_px,
         LiquiditySide liquidity_side,
         bint inverse_as_quote=False,
     ):

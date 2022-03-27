@@ -248,9 +248,8 @@ class TestReportProvider:
         assert report.iloc[0]["entry"] == "BUY"
         assert report.iloc[0]["side"] == "FLAT"
         assert report.iloc[0]["peak_qty"] == "100000"
-        assert report.iloc[0]["avg_px_open"] == "1.00010"
-        assert report.iloc[0]["avg_px_close"] == "1.00010"
+        assert report.iloc[0]["avg_px_open"] == "1.0001"
+        assert report.iloc[0]["avg_px_close"] == "1.0001"
         assert report.iloc[0]["ts_opened"] == UNIX_EPOCH
         assert report.iloc[0]["ts_closed"] == UNIX_EPOCH
-        assert report.iloc[0]["realized_points"] == "0.00000"
-        assert report.iloc[0]["realized_return"] == "0.00000"
+        assert report.iloc[0]["realized_return"] == "0.0"

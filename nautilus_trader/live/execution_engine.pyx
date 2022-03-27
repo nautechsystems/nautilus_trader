@@ -619,7 +619,7 @@ cdef class LiveExecutionEngine(ExecutionEngine):
             filled_cost: Decimal = order.avg_px * order.filled_qty
             last_px = instrument.make_price((report_cost - filled_cost) / last_qty.as_decimal())
 
-        cdef Money notional_value = instrument.notional_value(last_qty, last_px)
+        cdef Money notional_value = instrument.notional_value(last_qty, last_px.as_f64_c())
         cdef Money commission = Money(notional_value * instrument.taker_fee, instrument.quote_currency)
 
         cdef OrderFilled filled = OrderFilled(

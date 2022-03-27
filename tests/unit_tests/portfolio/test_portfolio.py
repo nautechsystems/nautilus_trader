@@ -523,13 +523,13 @@ class TestPortfolio:
         order1 = self.order_factory.market(
             BTCUSDT_BINANCE.id,
             OrderSide.BUY,
-            Quantity.from_str("10.50000000"),
+            Quantity.from_str("10.500000"),
         )
 
         order2 = self.order_factory.market(
             BTCUSDT_BINANCE.id,
             OrderSide.SELL,
-            Quantity.from_str("10.50000000"),
+            Quantity.from_str("10.500000"),
         )
 
         self.cache.add_order(order1, position_id=None)
@@ -565,7 +565,7 @@ class TestPortfolio:
         order3 = self.order_factory.market(
             BTCUSDT_BINANCE.id,
             OrderSide.BUY,
-            Quantity.from_str("10.00000000"),
+            Quantity.from_str("10.000000"),
         )
 
         fill3 = TestEventStubs.order_filled(
