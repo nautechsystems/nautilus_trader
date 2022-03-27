@@ -13,9 +13,10 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from typing import Dict, FrozenSet, Optional
+from typing import Dict, FrozenSet, List, Optional
 
 import pydantic
+from pydantic import Field
 from pydantic import PositiveFloat
 from pydantic import PositiveInt
 
@@ -26,6 +27,7 @@ from nautilus_trader.execution.config import ExecEngineConfig
 from nautilus_trader.infrastructure.config import CacheDatabaseConfig
 from nautilus_trader.persistence.config import PersistenceConfig
 from nautilus_trader.risk.config import RiskEngineConfig
+from nautilus_trader.trading.config import ImportableStrategyConfig
 
 
 class LiveDataEngineConfig(DataEngineConfig):
@@ -165,6 +167,7 @@ class TradingNodeConfig(pydantic.BaseModel):
     data_engine: Optional[LiveDataEngineConfig] = None
     risk_engine: Optional[LiveRiskEngineConfig] = None
     exec_engine: Optional[LiveExecEngineConfig] = None
+    strategies: List[ImportableStrategyConfig] = Field(default_factory=list)
     loop_debug: bool = False
     load_strategy_state: bool = True
     save_strategy_state: bool = True

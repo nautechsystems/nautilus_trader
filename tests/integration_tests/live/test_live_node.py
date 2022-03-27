@@ -14,7 +14,9 @@
 # -------------------------------------------------------------------------------------------------
 
 import asyncio
+from decimal import Decimal
 
+import orjson
 import pytest
 
 from nautilus_trader.adapters.betfair.factories import BetfairLiveDataClientFactory
@@ -41,6 +43,93 @@ class TestTradingNodeConfiguration:
 
         # Assert
         assert node is not None
+
+    def test_node_config_from_file(self):
+        from nautilus_trader.adapters.binance.common.enums import BinanceAccountType
+        from nautilus_trader.adapters.binance.config import BinanceDataClientConfig
+        from nautilus_trader.adapters.binance.config import BinanceExecClientConfig
+        from nautilus_trader.examples.strategies.volatility_market_maker import (
+            VolatilityMarketMaker,
+        )
+        from nautilus_trader.examples.strategies.volatility_market_maker import (
+            VolatilityMarketMakerConfig,
+        )
+        from nautilus_trader.live.config import InstrumentProviderConfig
+        from nautilus_trader.live.config import TradingNodeConfig
+        from nautilus_trader.live.node import TradingNode
+
+        # Arrange
+        config_node = TradingNodeConfig(
+            trader_id="Test-111",
+            log_level="INFO",
+            exec_engine={
+                "reconciliation_lookback_mins": 1440,
+            },
+            # cache_database=CacheDatabaseConfig(),
+            data_clients={
+                "BINANCE": BinanceDataClientConfig(
+                    # api_key=os.getenv("BINANCE_FUTURES_API_KEY"),
+                    # api_secret=os.getenv("BINANCE_FUTURES_API_SECRET"),
+                    account_type=BinanceAccountType.FUTURES_USDT,
+                    instrument_provider=InstrumentProviderConfig(load_all=True),
+                ),
+            },
+            exec_clients={
+                "BINANCE": BinanceExecClientConfig(
+                    # api_key=os.getenv("BINANCE_FUTURES_API_KEY"),
+                    # api_secret=os.getenv("BINANCE_FUTURES_API_SECRET"),
+                    account_type=BinanceAccountType.FUTURES_USDT,
+                    instrument_provider=InstrumentProviderConfig(load_all=True),
+                ),
+            },
+            timeout_connection=5.0,
+            timeout_reconciliation=5.0,
+            timeout_portfolio=5.0,
+            timeout_disconnection=5.0,
+            check_residuals_delay=2.0,
+        )
+        # Instantiate the node with a configuration
+        node = TradingNode(config=config_node)
+
+        # Configure your strategy
+        strat_config = VolatilityMarketMakerConfig(
+            instrument_id="ETHUSDT-PERP.BINANCE",
+            bar_type="ETHUSDT-PERP.BINANCE-1-MINUTE-LAST-EXTERNAL",
+            atr_period=20,
+            atr_multiple=6.0,
+            trade_size=Decimal("0.01"),
+        )
+        # Instantiate your strategy
+        strategy = VolatilityMarketMaker(config=strat_config)
+
+        # Add your strategies and modules
+        node.trader.add_strategy(strategy)
+
+        # Act
+        raw = orjson.dumps(
+            {
+                "trader_id": "Test-111",
+                "strategies": [
+                    {
+                        "strategy_path": "nautilus_trader.examples.strategies.volatility_market_maker:VolatilityMarketMaker",
+                        "config_path": "nautilus_trader.examples.strategies.volatility_market_maker:VolatilityMarketMakerConfig",
+                        "config": {
+                            "instrument_id": "ETHUSDT-PERP.BINANCE",
+                            "bar_type": "ETHUSDT-PERP.BINANCE-1-MINUTE-LAST-EXTERNAL",
+                            "atr_period": "20",
+                            "atr_multiple": "6.0",
+                            "trade_size": "0.01",
+                        },
+                    }
+                ],
+            }
+        )
+        config = TradingNodeConfig.parse_raw(raw)
+        result = TradingNode(config)
+
+        # Assert
+        assert node.trader.id == result.trader.id
+        assert node.trader.strategy_ids() == result.trader.strategy_ids()
 
 
 class TestTradingNodeOperation:

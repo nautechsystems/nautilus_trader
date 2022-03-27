@@ -15,6 +15,7 @@
 
 import pkgutil
 
+import orjson
 import pytest
 
 from nautilus_trader.examples.strategies.ema_cross import EMACross
@@ -74,3 +75,24 @@ class TestStrategyFactory:
             "instrument_id='AUD/USD.SIM', bar_type='AUD/USD.SIM-15-MINUTE-BID-EXTERNAL', "
             "fast_ema_period=10, slow_ema_period=20, trade_size=Decimal('1000000'))"  # noqa
         )
+
+    def test_create_from_raw(self):
+        # Arrange
+        raw = orjson.dumps(
+            {
+                "path": "nautilus_trader.examples.strategies.volatility_market_maker:VolatilityMarketMakerConfig",
+                "config": {
+                    "instrument_id": "ETHUSDT-PERP.BINANCE",
+                    "bar_type": "ETHUSDT-PERP.BINANCE-1-MINUTE-LAST-EXTERNAL",
+                    "atr_period": "20",
+                    "atr_multiple": "6.0",
+                    "trade_size": "0.01",
+                },
+            }
+        )
+
+        # Act
+        config = ImportableStrategyConfig.parse_raw(raw)
+
+        # Assert
+        assert config.config

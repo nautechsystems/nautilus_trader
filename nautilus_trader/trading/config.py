@@ -52,7 +52,9 @@ class ImportableStrategyConfig(ImportableActorConfig):
 
     Parameters
     ----------
-    path : str, optional
+    strategy_path : str, optional
+        The fully qualified name of the module.
+    config_path : str, optional
         The fully qualified name of the module.
     source : bytes, optional
         The strategy source code.
