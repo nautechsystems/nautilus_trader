@@ -134,7 +134,8 @@ class EMACross(TradingStrategy):
 
         """
         # For debugging (must add a subscription)
-        self.log.info(repr(instrument), LogColor.CYAN)
+        # self.log.info(repr(instrument), LogColor.CYAN)
+        pass
 
     def on_order_book_delta(self, data: OrderBookData):
         """
@@ -147,7 +148,8 @@ class EMACross(TradingStrategy):
 
         """
         # For debugging (must add a subscription)
-        self.log.info(repr(data), LogColor.CYAN)
+        # self.log.info(repr(data), LogColor.CYAN)
+        pass
 
     def on_order_book(self, order_book: OrderBook):
         """
@@ -160,7 +162,8 @@ class EMACross(TradingStrategy):
 
         """
         # For debugging (must add a subscription)
-        self.log.info(repr(order_book), LogColor.CYAN)
+        # self.log.info(repr(order_book), LogColor.CYAN)
+        pass
 
     def on_ticker(self, ticker: Ticker):
         """
@@ -173,7 +176,8 @@ class EMACross(TradingStrategy):
 
         """
         # For debugging (must add a subscription)
-        self.log.info(repr(ticker), LogColor.CYAN)
+        # self.log.info(repr(ticker), LogColor.CYAN)
+        pass
 
     def on_quote_tick(self, tick: QuoteTick):
         """
@@ -186,7 +190,8 @@ class EMACross(TradingStrategy):
 
         """
         # For debugging (must add a subscription)
-        self.log.info(repr(tick), LogColor.CYAN)
+        # self.log.info(repr(tick), LogColor.CYAN)
+        pass
 
     def on_trade_tick(self, tick: TradeTick):
         """
@@ -199,7 +204,8 @@ class EMACross(TradingStrategy):
 
         """
         # For debugging (must add a subscription)
-        self.log.info(repr(tick), LogColor.CYAN)
+        # self.log.info(repr(tick), LogColor.CYAN)
+        pass
 
     def on_bar(self, bar: Bar):
         """
