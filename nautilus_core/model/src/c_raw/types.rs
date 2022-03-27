@@ -31,6 +31,11 @@ pub extern "C" fn price_new(value: f64, precision: u8) -> Price {
 }
 
 #[no_mangle]
+pub extern "C" fn price_from_fixed(fixed: i64, precision: u8) -> Price {
+    Price::from_fixed(fixed, precision)
+}
+
+#[no_mangle]
 pub extern "C" fn price_free(price: Price) {
     drop(price); // Memory freed here
 }
@@ -56,6 +61,11 @@ pub extern "C" fn price_sub_assign(mut a: Price, b: Price) {
 #[no_mangle]
 pub extern "C" fn quantity_new(value: f64, precision: u8) -> Quantity {
     Quantity::new(value, precision)
+}
+
+#[no_mangle]
+pub extern "C" fn quantity_from_fixed(fixed: u64, precision: u8) -> Quantity {
+    Quantity::from_fixed(fixed, precision)
 }
 
 #[no_mangle]

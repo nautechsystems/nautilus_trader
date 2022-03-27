@@ -15,4 +15,4 @@
 
 mod identifiers;
 mod orderbook;
-mod primitives;
+mod types;

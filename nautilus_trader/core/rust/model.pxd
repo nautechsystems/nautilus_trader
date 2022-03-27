@@ -106,6 +106,8 @@ cdef extern from "../includes/model.h":
 
     Price_t price_new(double value, uint8_t precision);
 
+    Price_t price_from_fixed(int64_t fixed, uint8_t precision);
+
     void price_free(Price_t price);
 
     double price_as_f64(const Price_t *price);
@@ -115,6 +117,8 @@ cdef extern from "../includes/model.h":
     void price_sub_assign(Price_t a, Price_t b);
 
     Quantity_t quantity_new(double value, uint8_t precision);
+
+    Quantity_t quantity_from_fixed(uint64_t fixed, uint8_t precision);
 
     void quantity_free(Quantity_t qty);
 

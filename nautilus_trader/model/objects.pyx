@@ -18,8 +18,6 @@
 import decimal
 from typing import Union
 
-import cython
-
 from cpython.object cimport Py_EQ
 from cpython.object cimport Py_GE
 from cpython.object cimport Py_GT
@@ -37,16 +35,17 @@ from nautilus_trader.core.rust.model cimport money_free
 from nautilus_trader.core.rust.model cimport money_new
 from nautilus_trader.core.rust.model cimport price_as_f64
 from nautilus_trader.core.rust.model cimport price_free
+from nautilus_trader.core.rust.model cimport price_from_fixed
 from nautilus_trader.core.rust.model cimport price_new
 from nautilus_trader.core.rust.model cimport quantity_as_f64
 from nautilus_trader.core.rust.model cimport quantity_free
+from nautilus_trader.core.rust.model cimport quantity_from_fixed
 from nautilus_trader.core.rust.model cimport quantity_new
 from nautilus_trader.core.string cimport precision_from_str
 from nautilus_trader.model.currency cimport Currency
 from nautilus_trader.model.identifiers cimport InstrumentId
 
 
-@cython.auto_pickle(True)
 cdef class Quantity:
     """
     Represents a quantity with a non-negative value.
@@ -78,10 +77,24 @@ cdef class Quantity:
     https://www.onixs.biz/fix-dictionary/5.0.SP2/index.html#Qty
     """
 
+    def __cinit__(self, uint64_t fixed, uint8_t precision):
+        # The C init is a fast path to object instantiation when we already have
+        # a value scaled up to a fixed precision integer, the precision value is
+        # also required so that we can store the original precision along with the
+        # fixed value for display purposes.
+        # https://cython.readthedocs.io/en/latest/src/userguide/special_methods.html#initialisation-methods-cinit-and-init
+        self._qty = quantity_from_fixed(fixed, precision)
+
     def __init__(self, double value, uint8_t precision):
         Condition.true(value >= 0.0, f"quantity negative, was {value}")
 
         self._qty = quantity_new(value, precision)
+
+    def __getstate__(self):
+        return self._qty.fixed, self._qty.precision
+
+    def __setstate__(self, values):
+        self._qty = quantity_from_fixed(values[0], values[1])
 
     def __eq__(self, other) -> bool:
         return Quantity._compare(self, other, Py_EQ)
@@ -186,6 +199,7 @@ cdef class Quantity:
         return f"{type(self).__name__}('{self}')"
 
     def __del__(self) -> None:
+        # https://cython.readthedocs.io/en/latest/src/userguide/special_methods.html#finalization-methods-dealloc-and-del
         quantity_free(self._qty)  # `self._qty` moved to Rust (then dropped)
 
     cdef uint64_t fixed_uint64_c(self):
@@ -358,7 +372,6 @@ cdef class Quantity:
         return self.as_f64_c()
 
 
-@cython.auto_pickle(True)
 cdef class Price:
     """
     Represents a price in a financial market.
@@ -387,9 +400,23 @@ cdef class Price:
     https://www.onixs.biz/fix-dictionary/5.0.SP2/index.html#Price
     """
 
+    def __cinit__(self, int64_t fixed, uint8_t precision):
+        # The C init is a fast path to object instantiation when we already have
+        # a value scaled up to a fixed precision integer, the precision value is
+        # also required so that we can store the original precision along with the
+        # fixed value for display purposes.
+        # https://cython.readthedocs.io/en/latest/src/userguide/special_methods.html#initialisation-methods-cinit-and-init
+        self._price = price_from_fixed(fixed, precision)
+
     def __init__(self, double value, uint8_t precision):
         Condition.true(precision <= 9, "invalid precision, was > 9")
         self._price = price_new(value, precision)
+
+    def __getstate__(self):
+        return self._price.fixed, self._price.precision
+
+    def __setstate__(self, values):
+        self._price = price_from_fixed(values[0], values[1])
 
     def __eq__(self, other) -> bool:
         return Price._compare(self, other, Py_EQ)
@@ -494,14 +521,15 @@ cdef class Price:
         return f"{type(self).__name__}('{self}')"
 
     def __del__(self) -> None:
+        # https://cython.readthedocs.io/en/latest/src/userguide/special_methods.html#finalization-methods-dealloc-and-del
         price_free(self._price)  # `self._price` moved to Rust (then dropped)
 
     cdef int64_t fixed_int64_c(self):
         return self._price.fixed
 
     cdef double as_f64_c(self):
-        # Currently re-rounding Python side to handle a strange rounding issue
-        # around the ~16 digit which results in slightly different outputs in tests
+        # Currently re-rounding Python side to handle a rounding issue at the
+        # ~16 digit which results in slightly different outputs in tests.
         return round(price_as_f64(&self._price), self.precision)
 
     @staticmethod
@@ -762,6 +790,7 @@ cdef class Money:
         return f"{type(self).__name__}('{str(self)}', {self.currency.code})"
 
     def __del__(self) -> None:
+        # https://cython.readthedocs.io/en/latest/src/userguide/special_methods.html#finalization-methods-dealloc-and-del
         money_free(self._money)  # `self._money` moved to Rust (then dropped)
 
     cdef int64_t fixed_int64_c(self):
