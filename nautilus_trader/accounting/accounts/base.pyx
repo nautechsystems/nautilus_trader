@@ -403,13 +403,12 @@ cdef class Account:
 
         cdef AccountBalance balance
         for balance in balances:
-            total: Decimal = balance.total.as_decimal()
-            if total <= 0:
-                if total < 0:
+            if balance.total.fixed_int64_c() <= 0:
+                if balance.total.fixed_int64_c() < 0:
                     raise RuntimeError(
                         f"account blow up (balance was {balance.total}).",
                     )
-                if total == 0 and not allow_zero:
+                if balance.total.fixed_int64_c() == 0 and not allow_zero:
                     raise RuntimeError(
                         f"account blow up (balance was {balance.total}).",
                     )
@@ -437,12 +436,12 @@ cdef class Account:
         Condition.not_none(commission, "commission")
 
         # Increment total commissions
-        if commission.as_decimal() == 0:
+        if commission.fixed_int64_c() == 0:
             return  # Nothing to update
 
         cdef Currency currency = commission.currency
-        total_commissions: Decimal = self._commissions.get(currency, Decimal(0))
-        self._commissions[currency] = Money(total_commissions + commission, currency)
+        cdef double total_commissions = self._commissions.get(currency, 0.0)
+        self._commissions[currency] = Money(total_commissions + commission.as_f64_c(), currency)
 
 # -- CALCULATIONS ----------------------------------------------------------------------------------
 

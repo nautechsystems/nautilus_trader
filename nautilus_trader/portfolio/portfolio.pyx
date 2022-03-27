@@ -656,21 +656,22 @@ cdef class Portfolio(PortfolioFacade):
 
         cdef set instrument_ids = {p.instrument_id for p in positions_open}
 
-        cdef dict unrealized_pnls = {}  # type: dict[Currency, Decimal]
+        cdef dict unrealized_pnls = {}  # type: dict[Currency, 0.0]
 
-        cdef InstrumentId instrument_id
-        cdef Money pnl
+        cdef:
+            InstrumentId instrument_id
+            Money pnl
         for instrument_id in instrument_ids:
             pnl = self._unrealized_pnls.get(instrument_id)
             if pnl is not None:
                 # PnL already calculated
-                unrealized_pnls[pnl.currency] = unrealized_pnls.get(pnl.currency, Decimal(0)) + pnl
+                unrealized_pnls[pnl.currency] = unrealized_pnls.get(pnl.currency, 0.0) + pnl.as_f64_c()
                 continue  # To next instrument_id
             # Calculate PnL
             pnl = self._calculate_unrealized_pnl(instrument_id)
             if pnl is None:
                 continue  # Error logged in `_calculate_unrealized_pnl`
-            unrealized_pnls[pnl.currency] = unrealized_pnls.get(pnl.currency, Decimal(0)) + pnl
+            unrealized_pnls[pnl.currency] = unrealized_pnls.get(pnl.currency, 0.0) + pnl.as_f64_c()
 
         return {k: Money(v, k) for k, v in unrealized_pnls.items()}
 
@@ -702,11 +703,13 @@ cdef class Portfolio(PortfolioFacade):
         if not positions_open:
             return {}  # Nothing to calculate
 
-        cdef dict net_exposures = {}  # type: dict[Currency, Decimal]
+        cdef dict net_exposures = {}  # type: dict[Currency, 0.0]
 
-        cdef Position position
-        cdef Instrument instrument
-        cdef Price last
+        cdef:
+            Position position
+            Instrument instrument
+            Price last
+            double xrate
         for position in positions_open:
             instrument = self._cache.instrument(position.instrument_id)
             if instrument is None:
@@ -724,24 +727,24 @@ cdef class Portfolio(PortfolioFacade):
                 )
                 continue  # Cannot calculate
 
-            xrate: Decimal = self._calculate_xrate_to_base(
+            xrate = self._calculate_xrate_to_base(
                 instrument=instrument,
                 account=account,
                 side=position.entry,
             )
 
-            if xrate == 0:
+            if xrate == 0.0:
                 self._log.error(
                     f"Cannot calculate net exposures: "
                     f"insufficient data for {instrument.get_cost_currency()}/{account.base_currency}."
                 )
                 return None  # Cannot calculate
 
-            net_exposure: Decimal = net_exposures.get(instrument.get_cost_currency(), Decimal(0))
+            net_exposure = net_exposures.get(instrument.get_cost_currency(), 0.0)
             net_exposure += instrument.notional_value(
                 position.quantity,
                 last,
-            ) * xrate
+            ).as_f64_c() * xrate
 
             if account.base_currency is not None:
                 net_exposures[account.base_currency] = net_exposure
@@ -814,10 +817,13 @@ cdef class Portfolio(PortfolioFacade):
         if not positions_open:
             return Money(0, instrument.get_cost_currency())
 
-        net_exposure = Decimal(0)
+        cdef double net_exposure = 0.0
 
-        cdef Position position
-        cdef Price last
+        cdef:
+            Position position
+            Price last
+            double xrate
+            Money notional_value
         for position in positions_open:
             last = self._get_last_price(position)
             if last is None:
@@ -827,23 +833,24 @@ cdef class Portfolio(PortfolioFacade):
                 )
                 continue  # Cannot calculate
 
-            xrate: Decimal = self._calculate_xrate_to_base(
+            xrate = self._calculate_xrate_to_base(
                 instrument=instrument,
                 account=account,
                 side=position.entry,
             )
 
-            if xrate == 0:
+            if xrate == 0.0:
                 self._log.error(
                     f"Cannot calculate net exposure: "
                     f"insufficient data for {instrument.get_cost_currency()}/{account.base_currency}."
                 )
                 return None  # Cannot calculate
 
-            net_exposure += instrument.notional_value(
+            notional_value = instrument.notional_value(
                 position.quantity,
                 last,
-            ) * xrate
+            )
+            net_exposure += notional_value.as_f64_c() * xrate
 
         if account.base_currency is not None:
             return Money(net_exposure, account.base_currency)
@@ -996,10 +1003,13 @@ cdef class Portfolio(PortfolioFacade):
             else:
                 return Money(0, instrument.get_cost_currency())
 
-        total_pnl: Decimal = Decimal(0)
+        cdef double total_pnl = 0.0
 
-        cdef Position position
-        cdef Price last
+        cdef:
+            Position position
+            Price last
+            double pnl
+            double xrate
         for position in positions_open:
             if position.instrument_id != instrument_id:
                 continue  # Nothing to calculate
@@ -1012,16 +1022,16 @@ cdef class Portfolio(PortfolioFacade):
                 self._pending_calcs.add(instrument.id)
                 return None  # Cannot calculate
 
-            pnl = position.unrealized_pnl(last)
+            pnl = position.unrealized_pnl(last).as_f64_c()
 
             if account.base_currency is not None:
-                xrate: Decimal = self._calculate_xrate_to_base(
+                xrate = self._calculate_xrate_to_base(
                     instrument=instrument,
                     account=account,
                     side=position.entry,
                 )
 
-                if xrate == 0:
+                if xrate == 0.0:
                     self._log.debug(
                         f"Cannot calculate unrealized PnL: "
                         f"insufficient data for {instrument.get_cost_currency()}/{account.base_currency}."
@@ -1034,17 +1044,6 @@ cdef class Portfolio(PortfolioFacade):
             total_pnl += pnl
 
         return Money(total_pnl, currency)
-
-    cdef object _calculate_xrate_to_base(self, Account account, Instrument instrument, OrderSide side):
-        if account.base_currency is not None:
-            return self._cache.get_xrate(
-                venue=instrument.id.venue,
-                from_currency=instrument.get_cost_currency(),
-                to_currency=account.base_currency,
-                price_type=PriceType.BID if side == OrderSide.BUY else PriceType.ASK,
-            )
-
-        return Decimal(1)  # No conversion needed
 
     cdef Price _get_last_price(self, Position position):
         cdef QuoteTick quote_tick = self._cache.quote_tick(position.instrument_id)
@@ -1060,3 +1059,14 @@ cdef class Portfolio(PortfolioFacade):
 
         cdef TradeTick trade_tick = self._cache.trade_tick(position.instrument_id)
         return trade_tick.price if trade_tick is not None else None
+
+    cdef double _calculate_xrate_to_base(self, Account account, Instrument instrument, OrderSide side):
+        if account.base_currency is not None:
+            return self._cache.get_xrate(
+                venue=instrument.id.venue,
+                from_currency=instrument.get_cost_currency(),
+                to_currency=account.base_currency,
+                price_type=PriceType.BID if side == OrderSide.BUY else PriceType.ASK,
+            )
+
+        return Decimal(1)  # No conversion needed

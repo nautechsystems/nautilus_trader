@@ -493,7 +493,7 @@ class TestCache:
         result = self.cache.get_xrate(SIM, JPY, USD)
 
         # Assert
-        assert result == Decimal("0.009025266685348968705339031887")
+        assert result == 0.009025266685348969
 
     def test_get_xrate_with_no_conversion_returns_one(self):
         # Arrange, Act
@@ -522,4 +522,4 @@ class TestCache:
         result = self.cache.get_xrate(SIM, AUD, USD)
 
         # Assert
-        assert result == Decimal("0.80005")
+        assert result == 0.80005

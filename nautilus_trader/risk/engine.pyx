@@ -677,7 +677,7 @@ cdef class RiskEngine(Component):
             # Check failed
             return f"price {price} invalid (precision {price.precision} > {instrument.price_precision})"
         if instrument.asset_type != AssetType.OPTION:
-            if price.as_decimal() <= 0:
+            if price.fixed_int64_c() <= 0:
                 # Check failed
                 return f"price {price} invalid (not positive)"
 
