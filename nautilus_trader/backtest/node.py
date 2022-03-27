@@ -24,11 +24,14 @@ import pandas as pd
 from dask.base import normalize_token
 from dask.delayed import Delayed
 from dask.utils import parse_timedelta
-from hyperopt import STATUS_FAIL
-from hyperopt import STATUS_OK
-from hyperopt import Trials
-from hyperopt import fmin
-from hyperopt import tpe
+
+
+try:
+    import hyperopt
+except ImportError:
+    # hyperopt is an optional extra,
+    # which is only required when running `hyperopt_search()`.
+    hyperopt = None
 
 from nautilus_trader.backtest.config import BacktestDataConfig
 from nautilus_trader.backtest.config import BacktestRunConfig
@@ -157,9 +160,20 @@ class BacktestNode:
         Returns
         -------
         Dict
-            The optimized startegy parameters.
+            The optimized strategy parameters.
+
+        Raises
+        ------
+        ImportError
+            If hyperopt is not available.
 
         """
+        if hyperopt is None:
+            raise ImportError(
+                "The hyperopt package is not installed. "
+                "Please install via pip or poetry install -E hyperopt",
+            )
+
         logger = Logger(clock=LiveClock(), level_stdout=LogLevel.INFO)
         logger_adapter = LoggerAdapter(component_name="HYPEROPT_LOGGER", logger=logger)
         self.config = config
@@ -204,18 +218,20 @@ class BacktestNode:
                 logger_adapter.info(f"OBJECTIVE: {1/pnl_pct}")
 
                 if (1 / pnl_pct) == 0 or pnl_pct <= 0:
-                    ret = {"status": STATUS_FAIL}
+                    ret = {"status": hyperopt.STATUS_FAIL}
                 else:
-                    ret = {"status": STATUS_OK, "loss": (1 / pnl_pct)}
+                    ret = {"status": hyperopt.STATUS_OK, "loss": (1 / pnl_pct)}
 
             except Exception as e:
-                ret = {"status": STATUS_FAIL}
+                ret = {"status": hyperopt.STATUS_FAIL}
                 logger_adapter.error(f"Bankruptcy : {e} ")
             return ret
 
-        trials = Trials()
+        trials = hyperopt.Trials()
 
-        return fmin(objective, params, algo=tpe.suggest, trials=trials, max_evals=max_evals)
+        return hyperopt.fmin(
+            objective, params, algo=hyperopt.tpe.suggest, trials=trials, max_evals=max_evals
+        )
 
     def run_sync(self, run_configs: List[BacktestRunConfig], **kwargs) -> List[BacktestResult]:
         """
