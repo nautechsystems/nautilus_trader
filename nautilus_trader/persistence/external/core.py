@@ -34,6 +34,7 @@ from tqdm import tqdm
 from nautilus_trader.model.data.base import GenericData
 from nautilus_trader.model.instruments.base import Instrument
 from nautilus_trader.persistence.catalog import DataCatalog
+from nautilus_trader.persistence.external.metadata import load_mappings
 from nautilus_trader.persistence.external.metadata import write_partition_column_mappings
 from nautilus_trader.persistence.external.readers import Reader
 from nautilus_trader.persistence.external.synchronization import named_lock
@@ -312,6 +313,9 @@ def write_parquet(
 
     # Write out any partition columns we had to modify due to filesystem requirements
     if mappings:
+        existing = load_mappings(fs=fs, path=path)
+        if existing:
+            mappings["instrument_id"].update(existing["instrument_id"])
         write_partition_column_mappings(fs=fs, path=path, mappings=mappings)
 
 

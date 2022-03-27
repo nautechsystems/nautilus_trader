@@ -182,6 +182,7 @@ class TextReader(ByteReader):
         line_preprocessor: LinePreprocessor = None,
         instrument_provider: Optional[InstrumentProvider] = None,
         instrument_provider_update: Optional[Callable] = None,
+        newline=b"\n",
     ):
         assert line_preprocessor is None or isinstance(line_preprocessor, LinePreprocessor)
         super().__init__(
@@ -190,11 +191,12 @@ class TextReader(ByteReader):
             instrument_provider=instrument_provider,
         )
         self.line_preprocessor = line_preprocessor or LinePreprocessor()
+        self.newline = newline
 
     def parse(self, block) -> Generator:  # noqa: C901
         self.buffer += block
         if b"\n" in block:
-            process, self.buffer = self.buffer.rsplit(b"\n", maxsplit=1)
+            process, self.buffer = self.buffer.rsplit(self.newline, maxsplit=1)
         else:
             process, self.buffer = block, b""
         if process:
@@ -245,6 +247,8 @@ class CSVReader(Reader):
         chunked=True,
         as_dataframe=True,
         separator=",",
+        newline=b"\n",
+        encoding="utf-8",
     ):
         super().__init__(
             instrument_provider=instrument_provider,
@@ -256,15 +260,17 @@ class CSVReader(Reader):
         self.chunked = chunked
         self.as_dataframe = as_dataframe
         self.separator = separator
+        self.newline = newline
+        self.encoding = encoding
 
     def parse(self, block: bytes) -> Generator:
         if self.header is None:
             header, block = block.split(b"\n", maxsplit=1)
-            self.header = header.decode().split(self.separator)
+            self.header = header.decode(self.encoding).split(self.separator)
 
         self.buffer += block
         if b"\n" in block:
-            process, self.buffer = self.buffer.rsplit(b"\n", maxsplit=1)
+            process, self.buffer = self.buffer.rsplit(self.newline, maxsplit=1)
         else:
             process, self.buffer = block, b""
 
