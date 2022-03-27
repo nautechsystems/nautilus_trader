@@ -12,8 +12,10 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+import sys
 
 import fsspec
+import pytest
 
 from nautilus_trader.backtest.data.providers import TestInstrumentProvider
 from nautilus_trader.model.identifiers import Venue
@@ -28,6 +30,7 @@ from tests.test_kit.stubs.data import TestDataStubs
 TEST_DATA_DIR = PACKAGE_ROOT + "/data"
 
 
+@pytest.mark.skipif(sys.platform == "win32", reason="test path broken on windows")
 class TestPersistenceBatching:
     def setup(self):
         data_catalog_setup()
