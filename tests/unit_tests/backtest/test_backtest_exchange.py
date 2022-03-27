@@ -353,7 +353,7 @@ class TestSimulatedExchange:
 
         # Assert
         assert order.status == OrderStatus.FILLED
-        assert order.avg_px == Decimal("90.005")  # No slippage
+        assert order.avg_px == 90.005  # No slippage
 
     def test_submit_market_order_then_immediately_cancel_submits_and_fills(self):
         # Arrange: Prepare market
@@ -509,7 +509,7 @@ class TestSimulatedExchange:
 
         # Assert
         assert order.status == OrderStatus.FILLED
-        assert order.avg_px == tick.ask
+        assert order.avg_px == 90.005
 
     def test_submit_limit_order_fills_at_most_book_volume(self):
         # Arrange: Prepare market
@@ -896,7 +896,7 @@ class TestSimulatedExchange:
         # Assert
         assert order.status == OrderStatus.FILLED
         assert len(self.exchange.get_open_orders()) == 0
-        assert order.avg_px == Price.from_str("90.005")
+        assert order.avg_px == 90.005
 
     def test_modify_stop_market_order_when_price_inside_market_then_rejects_modify(
         self,
@@ -1271,7 +1271,7 @@ class TestSimulatedExchange:
         # Assert
         assert len(self.exchange.get_open_orders()) == 0
         assert order.status == OrderStatus.FILLED
-        assert order.avg_px == Price.from_str("96.711")
+        assert order.avg_px == 96.711
         assert self.exchange.get_account().balance_total(USD) == Money(999995.72, USD)
 
     def test_process_quote_tick_triggers_buy_stop_limit_order(self):
@@ -1436,7 +1436,7 @@ class TestSimulatedExchange:
         # Assert
         assert order.status == OrderStatus.FILLED
         assert len(self.exchange.get_open_orders()) == 0
-        assert order.avg_px == Price.from_str("90.001")
+        assert order.avg_px == 90.001
         assert self.exchange.get_account().balance_total(USD) == Money(999996.00, USD)
 
     def test_process_quote_tick_fills_sell_stop_order(self):
@@ -1514,7 +1514,7 @@ class TestSimulatedExchange:
         # Assert
         assert order.status == OrderStatus.FILLED
         assert len(self.exchange.get_open_orders()) == 0
-        assert order.avg_px == Price.from_str("90.101")
+        assert order.avg_px == 90.101
         assert self.exchange.get_account().balance_total(USD) == Money(999996.00, USD)
 
     def test_realized_pnl_contains_commission(self):

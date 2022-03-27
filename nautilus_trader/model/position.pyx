@@ -82,7 +82,7 @@ cdef class Position:
         self.ts_last = fill.ts_event
         self.ts_closed = 0
         self.duration_ns = 0
-        self.avg_px_open = fill.last_px.as_decimal()
+        self.avg_px_open = fill.last_px.as_f64_c()
         self.avg_px_close = 0.0
         self.price_precision = instrument.price_precision
         self.size_precision = instrument.size_precision

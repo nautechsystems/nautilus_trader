@@ -240,7 +240,7 @@ cdef class TrailingStopMarketOrder(Order):
             "time_in_force": TimeInForceParser.to_str(self.time_in_force),
             "filled_qty": str(self.filled_qty),
             "liquidity_side": LiquiditySideParser.to_str(self.liquidity_side),
-            "avg_px": str(self.avg_px) if self.avg_px else None,
+            "avg_px": str(self.avg_px),
             "slippage": str(self.slippage),
             "status": self._fsm.state_string_c(),
             "is_reduce_only": self.is_reduce_only,
@@ -307,12 +307,12 @@ cdef class TrailingStopMarketOrder(Order):
             self.venue_order_id = event.venue_order_id
         if event.quantity is not None:
             self.quantity = event.quantity
-            self.leaves_qty = Quantity(self.quantity - self.filled_qty, self.quantity.precision)
+            self.leaves_qty.sub_assign(self.filled_qty)
         if event.trigger_price is not None:
             self.trigger_price = event.trigger_price
 
     cdef void _set_slippage(self) except *:
         if self.side == OrderSide.BUY:
-            self.slippage = self.avg_px - self.trigger_price
+            self.slippage = self.avg_px - self.trigger_price.as_f64_c()
         elif self.side == OrderSide.SELL:
-            self.slippage = self.trigger_price - self.avg_px
+            self.slippage = self.trigger_price.as_f64_c() - self.avg_px

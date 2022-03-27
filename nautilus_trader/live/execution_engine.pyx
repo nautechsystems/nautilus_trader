@@ -18,8 +18,6 @@ from decimal import Decimal
 from typing import Optional
 
 from nautilus_trader.live.config import LiveExecEngineConfig
-from cpython.datetime cimport datetime
-from cpython.datetime cimport timedelta
 
 from nautilus_trader.cache.cache cimport Cache
 from nautilus_trader.common.clock cimport LiveClock
@@ -611,13 +609,16 @@ cdef class LiveExecutionEngine(ExecutionEngine):
         cdef Quantity last_qty = instrument.make_qty(report.filled_qty - order.filled_qty)
 
         # Calculate last px
-        cdef Price last_px
+        cdef:
+            Price last_px
+            double report_cost
+            double filled_cost
         if order.avg_px is None:
             last_px = instrument.make_price(report.avg_px)
         else:
-            report_cost: Decimal = report.avg_px * report.filled_qty
-            filled_cost: Decimal = order.avg_px * order.filled_qty
-            last_px = instrument.make_price((report_cost - filled_cost) / last_qty.as_decimal())
+            report_cost = float(report.avg_px) * report.filled_qty.as_f64_c()
+            filled_cost = order.avg_px * order.filled_qty.as_f64_c()
+            last_px = instrument.make_price((report_cost - filled_cost) / last_qty.as_f64_c())
 
         cdef Money notional_value = instrument.notional_value(last_qty, last_px.as_f64_c())
         cdef Money commission = Money(notional_value * instrument.taker_fee, instrument.quote_currency)

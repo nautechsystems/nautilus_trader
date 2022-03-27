@@ -658,7 +658,7 @@ cdef class RiskEngine(Component):
             else:
                 last_px = order.price
 
-            notional: Decimal = instrument.notional_value(order.quantity, last_px).as_decimal()
+            notional: Decimal = instrument.notional_value(order.quantity, last_px.as_f64_c()).as_decimal()
             if max_notional and notional > max_notional:
                 self._deny_order(
                     order=order,

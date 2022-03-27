@@ -346,8 +346,8 @@ class TestOrders:
             "time_in_force": "GTC",
             "reduce_only": False,
             "filled_qty": "0",
-            "avg_px": None,
-            "slippage": "0",
+            "avg_px": "0.0",
+            "slippage": "0.0",
             "status": "INITIALIZED",
             "order_list_id": None,
             "contingency_type": "NONE",
@@ -418,8 +418,8 @@ class TestOrders:
             "time_in_force": "GTC",
             "filled_qty": "0",
             "liquidity_side": "NONE",
-            "avg_px": None,
-            "slippage": "0",
+            "avg_px": "0.0",
+            "slippage": "0.0",
             "status": "INITIALIZED",
             "is_post_only": False,
             "is_reduce_only": False,
@@ -523,8 +523,8 @@ class TestOrders:
             "time_in_force": "GTC",
             "filled_qty": "0",
             "liquidity_side": "NONE",
-            "avg_px": None,
-            "slippage": "0",
+            "avg_px": "0.0",
+            "slippage": "0.0",
             "status": "INITIALIZED",
             "is_reduce_only": False,
             "order_list_id": None,
@@ -601,8 +601,8 @@ class TestOrders:
             "time_in_force": "GTC",
             "filled_qty": "0",
             "liquidity_side": "NONE",
-            "avg_px": None,
-            "slippage": "0",
+            "avg_px": "0.0",
+            "slippage": "0.0",
             "status": "INITIALIZED",
             "is_post_only": False,
             "is_reduce_only": False,
@@ -679,8 +679,8 @@ class TestOrders:
             "expire_time_ns": 3600000000000,
             "reduce_only": False,
             "filled_qty": "0",
-            "avg_px": None,
-            "slippage": "0",
+            "avg_px": "0.0",
+            "slippage": "0.0",
             "status": "INITIALIZED",
             "order_list_id": None,
             "contingency_type": "NONE",
@@ -753,8 +753,8 @@ class TestOrders:
             "time_in_force": "GTC",
             "filled_qty": "0",
             "liquidity_side": "NONE",
-            "avg_px": None,
-            "slippage": "0",
+            "avg_px": "0.0",
+            "slippage": "0.0",
             "status": "INITIALIZED",
             "is_reduce_only": False,
             "order_list_id": None,
@@ -831,8 +831,8 @@ class TestOrders:
             "time_in_force": "GTC",
             "filled_qty": "0",
             "liquidity_side": "NONE",
-            "avg_px": None,
-            "slippage": "0",
+            "avg_px": "0.0",
+            "slippage": "0.0",
             "status": "INITIALIZED",
             "is_post_only": False,
             "is_reduce_only": False,
@@ -939,8 +939,8 @@ class TestOrders:
             "time_in_force": "GTC",
             "filled_qty": "0",
             "liquidity_side": "NONE",
-            "avg_px": None,
-            "slippage": "0",
+            "avg_px": "0.0",
+            "slippage": "0.0",
             "status": "INITIALIZED",
             "is_reduce_only": False,
             "order_list_id": None,
@@ -985,8 +985,8 @@ class TestOrders:
             "time_in_force": "GTC",
             "filled_qty": "0",
             "liquidity_side": "NONE",
-            "avg_px": None,
-            "slippage": "0",
+            "avg_px": "0.0",
+            "slippage": "0.0",
             "status": "INITIALIZED",
             "is_reduce_only": False,
             "order_list_id": None,
@@ -1096,8 +1096,8 @@ class TestOrders:
             "time_in_force": "GTC",
             "filled_qty": "0",
             "liquidity_side": "NONE",
-            "avg_px": None,
-            "slippage": "0",
+            "avg_px": "0.0",
+            "slippage": "0.0",
             "status": "INITIALIZED",
             "is_post_only": False,
             "is_reduce_only": False,
@@ -1149,8 +1149,8 @@ class TestOrders:
             "time_in_force": "GTC",
             "filled_qty": "0",
             "liquidity_side": "NONE",
-            "avg_px": None,
-            "slippage": "0",
+            "avg_px": "0.0",
+            "slippage": "0.0",
             "status": "INITIALIZED",
             "is_post_only": False,
             "is_reduce_only": False,
@@ -1618,7 +1618,7 @@ class TestOrders:
         assert order.status == OrderStatus.FILLED
         assert order.filled_qty == Quantity.from_int(100000)
         assert order.leaves_qty == Quantity.zero()
-        assert order.avg_px == Decimal("1.00001")
+        assert order.avg_px == 1.00001
         assert len(order.trade_ids) == 1
         assert not order.is_inflight
         assert not order.is_open
@@ -1650,7 +1650,7 @@ class TestOrders:
         # Assert
         assert order.status == OrderStatus.FILLED
         assert order.filled_qty == Quantity.from_int(100000)
-        assert order.avg_px == Decimal("1.00001")
+        assert order.avg_px == 1.00001
         assert len(order.trade_ids) == 1
         assert not order.is_inflight
         assert not order.is_open
@@ -1698,7 +1698,7 @@ class TestOrders:
         assert order.status == OrderStatus.PARTIALLY_FILLED
         assert order.filled_qty == Quantity.from_int(60000)
         assert order.leaves_qty == Quantity.from_int(40000)
-        assert order.avg_px == Decimal("1.000014")
+        assert order.avg_px == 1.000014
         assert len(order.trade_ids) == 2
         assert not order.is_inflight
         assert order.is_open
@@ -1754,7 +1754,7 @@ class TestOrders:
         # Assert
         assert order.status == OrderStatus.FILLED
         assert order.filled_qty == Quantity.from_int(100000)
-        assert order.avg_px == Decimal("1.000018571428571428571428571")
+        assert order.avg_px == 1.0000185714285712
         assert len(order.trade_ids) == 3
         assert not order.is_inflight
         assert not order.is_open
@@ -1801,8 +1801,8 @@ class TestOrders:
         assert order.status == OrderStatus.FILLED
         assert order.filled_qty == Quantity.from_int(100000)
         assert order.price == Price.from_str("1.00000")
-        assert order.avg_px == Decimal("1.00001")
-        assert order.slippage == Decimal("0.00001")
+        assert order.avg_px == 1.00001
+        assert order.slippage == 1.0000000000065512e-05
         assert not order.is_inflight
         assert not order.is_open
         assert order.is_closed
@@ -1848,8 +1848,8 @@ class TestOrders:
         assert order.status == OrderStatus.PARTIALLY_FILLED
         assert order.filled_qty == Quantity.from_int(50000)
         assert order.price == Price.from_str("1.00000")
-        assert order.avg_px == Decimal("0.999999")
-        assert order.slippage == Decimal("-0.000001")
+        assert order.avg_px == 0.999999
+        assert order.slippage == -1.0000000000287557e-06
         assert not order.is_inflight
         assert order.is_open
         assert not order.is_closed

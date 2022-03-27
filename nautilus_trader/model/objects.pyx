@@ -341,18 +341,14 @@ cdef class Quantity:
         return f"{self.as_f64_c():,.{self._qty.precision}f}".replace(",", "_")
 
     cpdef void add_assign(self, Quantity other) except *:
-        Condition.true(
-            other._qty.precision <= self._qty.precision,
-            "other precision was greater than assigning quantity precision",
-        )
         self._qty.fixed += other.fixed_uint64_c()
+        if self._qty.precision == 0:
+            self._qty.precision = other.precision
 
     cpdef void sub_assign(self, Quantity other) except *:
-        Condition.true(
-            other._qty.precision <= self._qty.precision,
-            "other precision was greater than assigning quantity precision",
-        )
         self._qty.fixed -= other.fixed_uint64_c()
+        if self._qty.precision == 0:
+            self._qty.precision = other.precision
 
     cpdef object as_decimal(self):
         """
@@ -650,17 +646,9 @@ cdef class Price:
         return self.as_f64_c()
 
     cpdef void add_assign(self, Price other) except *:
-        Condition.true(
-            other._price.precision <= self._price.precision,
-            "other precision was greater than assigning price precision",
-        )
         self._price.fixed += other.fixed_int64_c()
 
     cpdef void sub_assign(self, Price other) except *:
-        Condition.true(
-            other._price.precision <= self._price.precision,
-            "other precision was greater than assigning price precision",
-        )
         self._price.fixed -= other.fixed_int64_c()
 
 
@@ -938,10 +926,10 @@ cdef class AccountBalance:
     ):
         Condition.equal(total.currency, locked.currency, "total.currency", "locked.currency")
         Condition.equal(total.currency, free.currency, "total.currency", "free.currency")
-        Condition.not_negative(total.as_decimal(), "total")
-        Condition.not_negative(locked.as_decimal(), "locked")
-        Condition.not_negative(free.as_decimal(), "free")
-        Condition.true(total.as_decimal() - locked.as_decimal() == free.as_decimal(), "total - locked != free")
+        Condition.true(total.fixed_int64_c() >= 0, "total was negative")
+        Condition.true(locked.fixed_int64_c() >= 0, "locked was negative")
+        Condition.true(free.fixed_int64_c() >= 0, "free was negative")
+        Condition.true(total.fixed_int64_c() - locked.fixed_int64_c() == free.fixed_int64_c(), "total - locked != free")
 
         self.total = total
         self.locked = locked
@@ -994,9 +982,9 @@ cdef class AccountBalance:
         """
         return {
             "type": type(self).__name__,
-            "total": str(self.total.as_decimal()),
-            "locked": str(self.locked.as_decimal()),
-            "free": str(self.free.as_decimal()),
+            "total": str(self.total),
+            "locked": str(self.locked),
+            "free": str(self.free),
             "currency": self.currency.code,
         }
 
@@ -1031,8 +1019,8 @@ cdef class MarginBalance:
         InstrumentId instrument_id=None,
     ):
         Condition.equal(initial.currency, maintenance.currency, "initial.currency", "maintenance.currency")
-        Condition.not_negative(initial.as_decimal(), "initial")
-        Condition.not_negative(maintenance.as_decimal(), "maintenance")
+        Condition.true(initial.fixed_int64_c() >= 0, "initial margin was negative")
+        Condition.true(maintenance.fixed_int64_c() >= 0, "maintenance margin was negative")
 
         self.initial = initial
         self.maintenance = maintenance
@@ -1086,8 +1074,8 @@ cdef class MarginBalance:
         """
         return {
             "type": type(self).__name__,
-            "initial": str(self.initial.as_decimal()),
-            "maintenance": str(self.maintenance.as_decimal()),
+            "initial": str(self.initial),
+            "maintenance": str(self.maintenance),
             "currency": self.currency.code,
             "instrument_id": self.instrument_id.value if self.instrument_id is not None else None,
         }

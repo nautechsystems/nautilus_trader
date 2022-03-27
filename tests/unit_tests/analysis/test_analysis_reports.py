@@ -148,8 +148,8 @@ class TestReportProvider:
         assert report.iloc[0]["type"] == "LIMIT"
         assert report.iloc[0]["quantity"] == "1500000"
         assert report.iloc[0]["avg_px"] == "0.80011"
-        assert report.iloc[0]["slippage"] == "0.00001"
-        assert report.iloc[1]["avg_px"] is None
+        assert report.iloc[0]["slippage"] == "9.99999999995449e-06"
+        assert report.iloc[1]["avg_px"] == "0.0"
 
     def test_generate_order_fills_report(self):
         # Arrange
@@ -197,7 +197,7 @@ class TestReportProvider:
         assert report.iloc[0]["type"] == "LIMIT"
         assert report.iloc[0]["quantity"] == "1500000"
         assert report.iloc[0]["avg_px"] == "0.80011"
-        assert report.iloc[0]["slippage"] == "0.00001"
+        assert report.iloc[0]["slippage"] == "9.99999999995449e-06"
 
     def test_generate_positions_report(self):
         # Arrange
