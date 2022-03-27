@@ -16,15 +16,14 @@
 from typing import Any, Optional
 
 import pandas as pd
-import quantstats
 
 from nautilus_trader.analysis.statistic import PortfolioStatistic
 
 
 class ProfitFactor(PortfolioStatistic):
     """
-    Calculates the profit factor or ratio (wins/loss).
+    Calculates the annualized profit factor or ratio (wins/loss).
     """
 
     def calculate_from_returns(self, returns: pd.Series) -> Optional[Any]:
-        return quantstats.stats.profit_factor(returns=returns)
+        return abs(returns[returns >= 0].sum() / returns[returns < 0].sum())
