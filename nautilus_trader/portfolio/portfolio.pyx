@@ -703,7 +703,7 @@ cdef class Portfolio(PortfolioFacade):
         if not positions_open:
             return {}  # Nothing to calculate
 
-        cdef dict net_exposures = {}  # type: dict[Currency, 0.0]
+        cdef dict net_exposures = {}  # type: dict[Currency, float]
 
         cdef:
             Position position

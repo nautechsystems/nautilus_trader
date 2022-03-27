@@ -35,6 +35,13 @@ impl Money {
         }
     }
 
+    pub fn from_fixed(fixed: i64, currency: Currency) -> Money {
+        Money {
+            fixed,
+            currency,
+        }
+    }
+
     pub fn is_zero(&self) -> bool {
         self.fixed == 0
     }

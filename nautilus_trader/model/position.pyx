@@ -629,9 +629,9 @@ cdef class Position:
         double avg_px,
         OrderFilled fill,
     ):
-        start_cost = avg_px * qty
-        event_cost = fill.last_px.as_f64_c() * fill.last_qty.as_f64_c()
-        cum_qty = qty + fill.last_qty.as_f64_c()
+        cdef double start_cost = avg_px * qty
+        cdef double event_cost = fill.last_px.as_f64_c() * fill.last_qty.as_f64_c()
+        cdef double cum_qty = qty + fill.last_qty.as_f64_c()
         return (start_cost + event_cost) / cum_qty
 
     cdef double _calculate_points(self, double avg_px_open, double avg_px_close):

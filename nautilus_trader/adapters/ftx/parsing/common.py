@@ -69,7 +69,7 @@ def parse_order_status(result: Dict[str, Any]) -> OrderStatus:
         else:
             return OrderStatus.PARTIALLY_FILLED
     else:  # pragma: no cover (design-time error)
-        raise RuntimeError(f"Cannot parse order status, was {status}")
+        raise RuntimeError(f"cannot parse order status, was {status}")
 
 
 def parse_order_type(data: Dict[str, Any], price_str: str = "orderPrice") -> OrderType:
@@ -84,7 +84,7 @@ def parse_order_type(data: Dict[str, Any], price_str: str = "orderPrice") -> Ord
         else:
             return OrderType.STOP_MARKET
     else:  # pragma: no cover (design-time error)
-        raise RuntimeError(f"Cannot parse order type, was {order_type}")
+        raise RuntimeError(f"cannot parse order type, was {order_type}")
 
 
 def parse_trade_report(

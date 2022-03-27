@@ -142,6 +142,11 @@ pub extern "C" fn money_new(amount: f64, currency: Currency) -> Money {
 }
 
 #[no_mangle]
+pub extern "C" fn money_from_fixed(fixed: i64, currency: Currency) -> Money {
+    Money::from_fixed(fixed, currency)
+}
+
+#[no_mangle]
 pub extern "C" fn money_free(money: Money) {
     drop(money); // Memory freed here
 }

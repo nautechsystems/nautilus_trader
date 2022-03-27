@@ -6,7 +6,7 @@ cdef extern from "../includes/model.h":
 
     const uint8_t FIXED_PRECISION # = 9
 
-    const double FIXED_SCALAR # = 0.000000001
+    const double FIXED_SCALAR # = 1000000000.0
 
     cdef enum BookLevel:
         L1_TBBO # = 1,
@@ -145,6 +145,8 @@ cdef extern from "../includes/model.h":
     const char *currency_name_to_cstring(const Currency_t *currency);
 
     Money_t money_new(double amount, Currency_t currency);
+
+    Money_t money_from_fixed(int64_t fixed, Currency_t currency);
 
     void money_free(Money_t money);
 

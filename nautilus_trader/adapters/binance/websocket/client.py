@@ -69,7 +69,7 @@ class BinanceWebSocketClient(WebSocketClient):
         **ws_kwargs,
     ) -> None:
         if not self._streams:
-            raise RuntimeError("No subscriptions for connection.")
+            raise RuntimeError("no subscriptions for connection.")
 
         # Always connecting combined streams for consistency
         ws_url = self._base_url + "/stream?streams=" + "/".join(self._streams)

@@ -629,7 +629,7 @@ cdef class SimulatedExchange:
             self._log.debug(f"Processed {bar}")
 
     cdef void _process_trade_ticks_from_bar(self, OrderBook book, Bar bar) except *:
-        cdef Quantity size = Quantity(bar.volume / 4, bar.volume.precision)
+        cdef Quantity size = Quantity(bar.volume.as_f64_c() / 4.0, bar.volume.precision)
         cdef Price last = self._last.get(book.instrument_id)
 
         # Create reusable tick
@@ -665,7 +665,7 @@ cdef class SimulatedExchange:
             last = bar.high
 
         # Low
-        if bar.low < last:
+        if bar.low.lt(last):
             tick.price = bar.low
             tick.aggressor_side = AggressorSide.SELL
             tick.trade_id = self._generate_trade_id()
@@ -700,8 +700,8 @@ cdef class SimulatedExchange:
         if last_bid_bar.ts_event != last_ask_bar.ts_event:
             return  # Wait for next bar
 
-        cdef Quantity bid_size = Quantity(last_bid_bar.volume / 4, last_bid_bar.volume.precision)
-        cdef Quantity ask_size = Quantity(last_ask_bar.volume / 4, last_ask_bar.volume.precision)
+        cdef Quantity bid_size = Quantity(last_bid_bar.volume.as_f64_c() / 4.0, last_bid_bar.volume.precision)
+        cdef Quantity ask_size = Quantity(last_ask_bar.volume.as_f64_c() / 4.0, last_ask_bar.volume.precision)
 
         # Create reusable tick
         cdef QuoteTick tick = QuoteTick(
@@ -1455,15 +1455,15 @@ cdef class SimulatedExchange:
             Quantity fill_qty
             Quantity updated_qty
         for fill_px, fill_qty in fills:
-            if order.is_reduce_only and order.leaves_qty.fixed_uint64_c() == 0:
+            if order.is_reduce_only and order.leaves_qty.is_zero():
                 return  # Done early
             if order.type == OrderType.STOP_MARKET:
                 fill_px = order.trigger_price  # TODO: Temporary strategy for market moving through price
             if self.book_type == BookType.L1_TBBO and self.fill_model.is_slipped():
                 if order.side == OrderSide.BUY:
-                    fill_px = Price(fill_px.as_f64_c() + instrument.price_increment.as_f64_c(), instrument.price_precision)
+                    fill_px = fill_px.add(instrument.price_increment)
                 elif order.side == OrderSide.SELL:
-                    fill_px = Price(fill_px.as_f64_c() - instrument.price_increment.as_f64_c(), instrument.price_precision)
+                    fill_px = fill_px.sub(instrument.price_increment)
                 else:  # pragma: no cover (design-time error)
                     raise ValueError(f"invalid OrderSide, was {order.side}")
             if order.is_reduce_only and fill_qty.gt(position.quantity):
@@ -1472,14 +1472,14 @@ cdef class SimulatedExchange:
                 adj_qty = fill_qty.as_f64_c() - (fill_qty.as_f64_c() - position.quantity.as_f64_c())
                 fill_qty = Quantity(adj_qty, fill_qty.precision)
                 updated_qty = Quantity(order.quantity.as_f64_c() - (org_qty - adj_qty), fill_qty.precision)
-                if updated_qty.fixed_uint64_c() > 0:
+                if updated_qty.is_positive():
                     self._generate_order_updated(
                         order=order,
                         qty=updated_qty,
                         price=None,
                         trigger_price=None,
                     )
-            if fill_qty.fixed_uint64_c() <= 0:
+            if not fill_qty.is_positive():
                 return  # Done
             self._fill_order(
                 instrument=instrument,
@@ -1499,9 +1499,9 @@ cdef class SimulatedExchange:
             # Exhausted simulated book volume (continue aggressive filling into next level)
             fill_px = fills[-1][0]
             if order.side == OrderSide.BUY:
-                fill_px = Price(fill_px.as_f64_c() + instrument.price_increment.as_f64_c(), instrument.price_precision)
+                fill_px = fill_px.add(instrument.price_increment)
             elif order.side == OrderSide.SELL:
-                fill_px = Price(fill_px.as_f64_c() - instrument.price_increment.as_f64_c(), instrument.price_precision)
+                fill_px = fill_px.sub(instrument.price_increment)
             else:  # pragma: no cover (design-time error)
                 raise ValueError(f"invalid OrderSide, was {order.side}")
 
@@ -1592,7 +1592,7 @@ cdef class SimulatedExchange:
                 and order.is_open_c()
                 and order.is_passive_c()
             ):
-                if position.quantity.fixed_uint64_c() == 0:
+                if position.quantity.is_zero():
                     self._cancel_order(order)
                 elif order.leaves_qty.ne(position.quantity):
                     self._update_order(

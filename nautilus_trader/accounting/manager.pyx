@@ -211,7 +211,7 @@ cdef class AccountsManager:
             ).as_f64_c()
 
             if account.base_currency is not None:
-                if base_xrate is not None:
+                if base_xrate != 0.0:
                     locked *= base_xrate
                     return
 
@@ -306,7 +306,7 @@ cdef class AccountsManager:
             ).as_f64_c()
 
             if account.base_currency is not None:
-                if base_xrate is not None:
+                if base_xrate != 0.0:
                     margin_init *= base_xrate
                     return
 
@@ -461,7 +461,7 @@ cdef class AccountsManager:
                 return  # Cannot calculate
 
             # Convert to account base currency
-            commission = Money(commission * xrate, account.base_currency)
+            commission = Money(commission.as_f64_c() * xrate, account.base_currency)
 
         if pnl.currency != account.base_currency:
             xrate = self._cache.get_xrate(
@@ -479,26 +479,19 @@ cdef class AccountsManager:
                 return  # Cannot calculate
 
             # Convert to account base currency
-            pnl = Money(pnl * xrate, account.base_currency)
+            pnl = Money(pnl.as_f64_c() * xrate, account.base_currency)
 
-        pnl = Money(pnl - commission, account.base_currency)
-        if pnl.fixed_int64_c() == 0:
+        pnl = pnl.sub(commission)
+        if pnl.is_zero():
             return  # Nothing to adjust
 
         cdef AccountBalance balance = account.balance()
 
-        # Calculate new balances
-        cdef double new_total = balance.total.as_f64_c() + pnl.as_f64_c()
-        cdef double new_free = balance.free.as_f64_c() + pnl.as_f64_c()
-
-        # Validate free balance
-        if new_free < 0.0:
-            raise AccountBalanceNegative(balance=new_free)
-
+        # Calculate new balance
         cdef AccountBalance new_balance = AccountBalance(
-            total=Money(new_total, account.base_currency),
+            total=balance.total.add(pnl),
             locked=balance.locked,
-            free=Money(new_free, account.base_currency),
+            free=balance.free.add(pnl),
         )
         balances.append(new_balance)
 
@@ -518,11 +511,9 @@ cdef class AccountsManager:
         cdef AccountBalance new_balance = None
         cdef:
             Money pnl
-            double new_total
-            double new_free
         for pnl in pnls:
             currency = pnl.currency
-            if commission.currency != currency and commission.fixed_int64_c() != 0:
+            if commission.currency != currency and not commission.is_zero():
                 balance = account.balance(commission.currency)
                 if balance is None:
                     self._log.error(
@@ -534,37 +525,30 @@ cdef class AccountsManager:
                 balance.free = Money(balance.free.as_f64_c()- commission.as_f64_c(), currency)
                 balances.append(balance)
             else:
-                pnl = Money(pnl.as_f64_c() - commission.as_f64_c(), currency)
+                pnl = pnl.sub(commission)
 
-            if not balances and pnl.fixed_int64_c() == 0:
+            if not balances and pnl.is_zero():
                 return  # No adjustment
 
             balance = account.balance(currency)
             if balance is None:
-                if pnl.fixed_int64_c() < 0:
+                if pnl.is_negative():
                     self._log.error(
                         "Cannot calculate account state: "
                         f"no cached balances for {currency}."
                     )
                     return
                 new_balance = AccountBalance(
-                    total=Money(pnl, currency),
+                    total=pnl,
                     locked=Money(0, currency),
-                    free=Money(pnl, currency),
+                    free=pnl,
                 )
             else:
-                # Calculate new balances
-                new_total = balance.total.as_f64_c() + pnl.as_f64_c()
-                new_free = balance.free.as_f64_c() + pnl.as_f64_c()
-
-                # Validate free balance
-                if new_free < 0.0:
-                    raise AccountBalanceNegative(balance=new_free)
-
+                # Calculate new balance
                 new_balance = AccountBalance(
-                    total=Money(new_total, currency),
+                    total=Money(balance.total.as_f64_c() + pnl.as_f64_c(), currency),
                     locked=balance.locked,
-                    free=Money(new_free, currency),
+                    free=Money(balance.free.as_f64_c() + pnl.as_f64_c(), currency),
                 )
 
             balances.append(new_balance)

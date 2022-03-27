@@ -34,6 +34,7 @@ from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.rust.model cimport FIXED_SCALAR
 from nautilus_trader.core.rust.model cimport Currency_t
 from nautilus_trader.core.rust.model cimport money_free
+from nautilus_trader.core.rust.model cimport money_from_fixed
 from nautilus_trader.core.rust.model cimport money_new
 from nautilus_trader.core.rust.model cimport price_free
 from nautilus_trader.core.rust.model cimport price_from_fixed
@@ -214,6 +215,15 @@ cdef class Quantity:
     cdef bint ge(self, Quantity other) except *:
         return self._qty.fixed >= other._qty.fixed
 
+    cdef bint is_zero(self) except *:
+        return self._qty.fixed == 0
+
+    cdef bint is_negative(self) except *:
+        return self._qty.fixed < 0
+
+    cdef bint is_positive(self) except *:
+        return self._qty.fixed > 0
+
     @staticmethod
     def from_fixed(uint64_t fixed, uint8_t precision):
         return Quantity.from_fixed_c(fixed, precision)
@@ -228,7 +238,7 @@ cdef class Quantity:
         return self._qty.fixed
 
     cdef double as_f64_c(self) except *:
-        return self._qty.fixed * FIXED_SCALAR
+        return self._qty.fixed / FIXED_SCALAR
 
     @staticmethod
     cdef object _extract_decimal(object obj):
@@ -355,12 +365,20 @@ cdef class Quantity:
         """
         return f"{self.as_f64_c():,.{self._qty.precision}f}".replace(",", "_")
 
-    cpdef void add_assign(self, Quantity other) except *:
+    cdef Quantity add(self, Quantity other):
+        cdef int64_t fixed = self._qty.fixed + other.fixed_int64_c()
+        return Quantity.from_fixed_c(fixed, self._qty.precision)
+
+    cdef Quantity sub(self, Quantity other):
+        cdef int64_t fixed = self._qty.fixed - other.fixed_int64_c()
+        return Quantity.from_fixed_c(fixed, self._qty.precision)
+
+    cdef void add_assign(self, Quantity other) except *:
         self._qty.fixed += other.fixed_uint64_c()
         if self._qty.precision == 0:
             self._qty.precision = other.precision
 
-    cpdef void sub_assign(self, Quantity other) except *:
+    cdef void sub_assign(self, Quantity other) except *:
         self._qty.fixed -= other.fixed_uint64_c()
         if self._qty.precision == 0:
             self._qty.precision = other.precision
@@ -552,6 +570,15 @@ cdef class Price:
     cdef bint ge(self, Price other) except *:
         return self._price.fixed >= other._price.fixed
 
+    cdef bint is_zero(self) except *:
+        return self._price.fixed == 0
+
+    cdef bint is_negative(self) except *:
+        return self._price.fixed < 0
+
+    cdef bint is_positive(self) except *:
+        return self._price.fixed > 0
+
     @staticmethod
     def from_fixed(int64_t fixed, uint8_t precision):
         return Price.from_fixed_c(fixed, precision)
@@ -566,7 +593,7 @@ cdef class Price:
         return self._price.fixed
 
     cdef double as_f64_c(self) except *:
-        return self._price.fixed * FIXED_SCALAR
+        return self._price.fixed / FIXED_SCALAR
 
     @staticmethod
     cdef object _extract_decimal(object obj):
@@ -676,10 +703,18 @@ cdef class Price:
         """
         return self.as_f64_c()
 
-    cpdef void add_assign(self, Price other) except *:
+    cdef Price add(self, Price other):
+        cdef int64_t fixed = self._price.fixed + other.fixed_int64_c()
+        return Price.from_fixed_c(fixed, self._price.precision)
+
+    cdef Price sub(self, Price other):
+        cdef int64_t fixed = self._price.fixed - other.fixed_int64_c()
+        return Price.from_fixed_c(fixed, self._price.precision)
+
+    cdef void add_assign(self, Price other) except *:
         self._price.fixed += other.fixed_int64_c()
 
-    cpdef void sub_assign(self, Price other) except *:
+    cdef void sub_assign(self, Price other) except *:
         self._price.fixed -= other.fixed_int64_c()
 
 
@@ -703,11 +738,11 @@ cdef class Money:
         self.currency = currency
 
     def __getstate__(self):
-        return (self.as_f64_c(), self.currency)
+        return self._money.fixed, self.currency
 
     def __setstate__(self, state):
         cdef Currency currency = state[1]
-        self._money = money_new(float(state[0]), <Currency_t>currency._currency)
+        self._money = money_from_fixed(state[0], <Currency_t>currency._currency)
         self.currency = currency
 
     def __eq__(self, Money other) -> bool:
@@ -821,11 +856,31 @@ cdef class Money:
         # https://cython.readthedocs.io/en/latest/src/userguide/special_methods.html#finalization-methods-dealloc-and-del
         money_free(self._money)  # `self._money` moved to Rust (then dropped)
 
+    cdef bint is_zero(self) except *:
+        return self._money.fixed == 0
+
+    cdef bint is_negative(self) except *:
+        return self._money.fixed < 0
+
+    cdef bint is_positive(self) except *:
+        return self._money.fixed > 0
+
     cdef int64_t fixed_int64_c(self):
         return self._money.fixed
 
     cdef double as_f64_c(self):
-        return self._money.fixed * FIXED_SCALAR
+        return self._money.fixed / FIXED_SCALAR
+
+    @staticmethod
+    def from_fixed(uint64_t fixed, uint8_t precision):
+        return Money.from_fixed_c(fixed, precision)
+
+    @staticmethod
+    cdef Money from_fixed_c(uint64_t fixed, Currency currency):
+        cdef Money money = Money.__new__(Money)
+        money._money = money_from_fixed(fixed, <Currency_t>currency._currency)
+        money.currency = currency
+        return money
 
     @staticmethod
     cdef object _extract_decimal(object obj):
@@ -844,18 +899,22 @@ cdef class Money:
 
         return Money(pieces[0], Currency.from_str_c(pieces[1]))
 
-    cpdef void add_assign(self, Money other) except *:
-        Condition.true(
-            self.currency == other.currency,
-            "other money currency was not equal",
-        )
+    cdef Money add(self, Money other):
+        assert self.currency == other.currency, "other money currency was not equal"  # design-time check
+        cdef int64_t fixed = self._money.fixed + other.fixed_int64_c()
+        return Money.from_fixed_c(fixed, self.currency)
+
+    cdef Money sub(self, Money other):
+        assert self.currency == other.currency, "other money currency was not equal"  # design-time check
+        cdef int64_t fixed = self._money.fixed - other.fixed_int64_c()
+        return Money.from_fixed_c(fixed, self.currency)
+
+    cdef void add_assign(self, Money other) except *:
+        assert self.currency == other.currency, "other money currency was not equal"  # design-time check
         self._money.fixed += other.fixed_int64_c()
 
-    cpdef void sub_assign(self, Money other) except *:
-        Condition.true(
-            self.currency == other.currency,
-            "other money currency was not equal",
-        )
+    cdef void sub_assign(self, Money other) except *:
+        assert self.currency == other.currency, "other money currency was not equal"  # design-time check
         self._money.fixed -= other.fixed_int64_c()
 
     cpdef object as_decimal(self):

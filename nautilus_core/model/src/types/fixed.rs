@@ -14,7 +14,7 @@
 // -------------------------------------------------------------------------------------------------
 
 pub const FIXED_PRECISION: u8 = 9;
-pub const FIXED_SCALAR: f64 = 0.000000001; // 10.0**-FIXED_PRECISION
+pub const FIXED_SCALAR: f64 = 1000000000.0; // 10.0**FIXED_PRECISION
 
 #[no_mangle]
 pub fn f64_to_fixed_i64(value: f64, precision: u8) -> i64 {
@@ -35,11 +35,11 @@ pub fn f64_to_fixed_u64(value: f64, precision: u8) -> u64 {
 }
 
 pub fn fixed_i64_to_f64(value: i64) -> f64 {
-    (value as f64) * FIXED_SCALAR
+    (value as f64) / FIXED_SCALAR
 }
 
 pub fn fixed_u64_to_f64(value: u64) -> f64 {
-    (value as f64) * FIXED_SCALAR
+    (value as f64) / FIXED_SCALAR
 }
 
 #[cfg(test)]

@@ -21,7 +21,7 @@ from setuptools import Extension
 
 
 # The Cargo rustc mode
-CARGO_MODE = os.getenv("CARGO_MODE", "debug")
+CARGO_MODE = os.getenv("CARGO_MODE", "release")  # Release mode by default until there's an issue
 # If DEBUG mode is enabled, include traces necessary for coverage, profiling and skip optimizations
 DEBUG_MODE = bool(os.getenv("DEBUG_MODE", ""))
 # If ANNOTATION mode is enabled, generate an annotated HTML version of the input source files
@@ -49,7 +49,9 @@ def _build_rust_libs() -> None:
     build_option = " --release" if CARGO_MODE == "release" else ""
     # Build the Rust libraries using Cargo
     print("Compiling Rust libraries...")
-    os.system(f"(cd nautilus_core && cargo build{build_option})")  # noqa
+    build_cmd = f"(cd nautilus_core && cargo build{build_option})"
+    print(build_cmd)
+    os.system(build_cmd)  # noqa
 
 
 ################################################################################
