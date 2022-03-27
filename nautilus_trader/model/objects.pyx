@@ -31,15 +31,13 @@ from libc.stdint cimport uint8_t
 from libc.stdint cimport uint64_t
 
 from nautilus_trader.core.correctness cimport Condition
+from nautilus_trader.core.rust.model cimport FIXED_SCALAR
 from nautilus_trader.core.rust.model cimport Currency_t
-from nautilus_trader.core.rust.model cimport money_as_f64
 from nautilus_trader.core.rust.model cimport money_free
 from nautilus_trader.core.rust.model cimport money_new
-from nautilus_trader.core.rust.model cimport price_as_f64
 from nautilus_trader.core.rust.model cimport price_free
 from nautilus_trader.core.rust.model cimport price_from_fixed
 from nautilus_trader.core.rust.model cimport price_new
-from nautilus_trader.core.rust.model cimport quantity_as_f64
 from nautilus_trader.core.rust.model cimport quantity_free
 from nautilus_trader.core.rust.model cimport quantity_from_fixed
 from nautilus_trader.core.rust.model cimport quantity_new
@@ -81,6 +79,7 @@ cdef class Quantity:
     """
 
     def __init__(self, double value, uint8_t precision):
+        Condition.true(precision <= 9, "invalid precision, was > 9")
         Condition.true(value >= 0.0, f"quantity negative, was {value}")
 
         self._qty = quantity_new(value, precision)
@@ -229,9 +228,7 @@ cdef class Quantity:
         return self._qty.fixed
 
     cdef double as_f64_c(self) except *:
-        # Currently re-rounding Python side to handle a strange rounding issue
-        # around the ~16 digit which results in slightly different outputs in tests
-        return round(quantity_as_f64(&self._qty), self.precision)
+        return self._qty.fixed * FIXED_SCALAR
 
     @staticmethod
     cdef object _extract_decimal(object obj):
@@ -569,9 +566,7 @@ cdef class Price:
         return self._price.fixed
 
     cdef double as_f64_c(self) except *:
-        # Currently re-rounding Python side to handle a rounding issue at the
-        # ~16 digit which results in slightly different outputs in tests.
-        return round(price_as_f64(&self._price), self.precision)
+        return self._price.fixed * FIXED_SCALAR
 
     @staticmethod
     cdef object _extract_decimal(object obj):
@@ -830,7 +825,7 @@ cdef class Money:
         return self._money.fixed
 
     cdef double as_f64_c(self):
-        return round(money_as_f64(&self._money), self.currency.get_precision())
+        return self._money.fixed * FIXED_SCALAR
 
     @staticmethod
     cdef object _extract_decimal(object obj):
