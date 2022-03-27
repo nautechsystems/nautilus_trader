@@ -4,7 +4,7 @@ import nox
 from nox.sessions import Session
 
 
-ALL_EXTRAS = "distributed ib"
+ALL_EXTRAS = "distributed hyperopt ib"
 
 
 # Ensure everything runs within Poetry venvs
