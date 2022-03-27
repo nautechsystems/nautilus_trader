@@ -197,6 +197,24 @@ cdef class Quantity:
         # https://cython.readthedocs.io/en/latest/src/userguide/special_methods.html#finalization-methods-dealloc-and-del
         quantity_free(self._qty)  # `self._qty` moved to Rust (then dropped)
 
+    cdef bint eq(self, Quantity other) except *:
+        return self._qty.fixed == other._qty.fixed
+
+    cdef bint ne(self, Quantity other) except *:
+        return self._qty.fixed != other._qty.fixed
+
+    cdef bint lt(self, Quantity other) except *:
+        return self._qty.fixed < other._qty.fixed
+
+    cdef bint le(self, Quantity other) except *:
+        return self._qty.fixed <= other._qty.fixed
+
+    cdef bint gt(self, Quantity other) except *:
+        return self._qty.fixed > other._qty.fixed
+
+    cdef bint ge(self, Quantity other) except *:
+        return self._qty.fixed >= other._qty.fixed
+
     @staticmethod
     def from_fixed(uint64_t fixed, uint8_t precision):
         return Quantity.from_fixed_c(fixed, precision)
@@ -207,10 +225,10 @@ cdef class Quantity:
         quantity._qty = quantity_from_fixed(fixed, precision)
         return quantity
 
-    cdef uint64_t fixed_uint64_c(self):
+    cdef uint64_t fixed_uint64_c(self) except *:
         return self._qty.fixed
 
-    cdef double as_f64_c(self):
+    cdef double as_f64_c(self) except *:
         # Currently re-rounding Python side to handle a strange rounding issue
         # around the ~16 digit which results in slightly different outputs in tests
         return round(quantity_as_f64(&self._qty), self.precision)
@@ -519,6 +537,24 @@ cdef class Price:
         # https://cython.readthedocs.io/en/latest/src/userguide/special_methods.html#finalization-methods-dealloc-and-del
         price_free(self._price)  # `self._price` moved to Rust (then dropped)
 
+    cdef bint eq(self, Price other) except *:
+        return self._price.fixed == other._price.fixed
+
+    cdef bint ne(self, Price other) except *:
+        return self._price.fixed != other._price.fixed
+
+    cdef bint lt(self, Price other) except *:
+        return self._price.fixed < other._price.fixed
+
+    cdef bint le(self, Price other) except *:
+        return self._price.fixed <= other._price.fixed
+
+    cdef bint gt(self, Price other) except *:
+        return self._price.fixed > other._price.fixed
+
+    cdef bint ge(self, Price other) except *:
+        return self._price.fixed >= other._price.fixed
+
     @staticmethod
     def from_fixed(int64_t fixed, uint8_t precision):
         return Price.from_fixed_c(fixed, precision)
@@ -529,10 +565,10 @@ cdef class Price:
         price._price = price_from_fixed(fixed, precision)
         return price
 
-    cdef int64_t fixed_int64_c(self):
+    cdef int64_t fixed_int64_c(self) except *:
         return self._price.fixed
 
-    cdef double as_f64_c(self):
+    cdef double as_f64_c(self) except *:
         # Currently re-rounding Python side to handle a rounding issue at the
         # ~16 digit which results in slightly different outputs in tests.
         return round(price_as_f64(&self._price), self.precision)

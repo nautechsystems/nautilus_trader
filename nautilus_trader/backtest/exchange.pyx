@@ -637,14 +637,14 @@ cdef class SimulatedExchange:
             bar.type.instrument_id,
             bar.open,
             size,
-            AggressorSide.BUY if last is None or bar.open > last else AggressorSide.SELL,
+            AggressorSide.BUY if last is None or bar.open.gt(last) else AggressorSide.SELL,
             self._generate_trade_id(),
             bar.ts_event,
             bar.ts_event,
         )
 
         # Open
-        if last is None or bar.open != last:
+        if last is None or bar.open.ne(last):
             book.update_tick(tick)
             self._iterate_matching_engine(
                 tick.instrument_id,
@@ -653,7 +653,7 @@ cdef class SimulatedExchange:
             last = bar.open
 
         # High
-        if bar.high > last:
+        if bar.high.gt(last):
             tick.price = bar.high
             tick.aggressor_side = AggressorSide.BUY
             tick.trade_id = self._generate_trade_id()
@@ -677,9 +677,9 @@ cdef class SimulatedExchange:
             last = bar.low
 
         # Close
-        if bar.close != last:
+        if bar.close.ne(last):
             tick.price = bar.close
-            tick.aggressor_side = AggressorSide.BUY if bar.close > last else AggressorSide.SELL
+            tick.aggressor_side = AggressorSide.BUY if bar.close.gt(last) else AggressorSide.SELL
             tick.trade_id = self._generate_trade_id()
             book.update_tick(tick)
             self._iterate_matching_engine(
@@ -1123,7 +1123,7 @@ cdef class SimulatedExchange:
         for client_order_id in order.linked_order_ids:
             oco_order = self.cache.order(client_order_id)
             assert oco_order is not None, "OCO order not found"
-            if oco_order.leaves_qty != order.leaves_qty:
+            if oco_order.leaves_qty.ne(order.leaves_qty):
                 self._update_order(
                     oco_order,
                     order.leaves_qty,
@@ -1279,12 +1279,12 @@ cdef class SimulatedExchange:
             ask = self.best_ask_price(instrument_id)
             if ask is None:
                 return False  # No market
-            return order_price >= ask  # Match with LIMIT sells
+            return order_price.ge(ask)  # Match with LIMIT sells
         elif side == OrderSide.SELL:
             bid = self.best_bid_price(instrument_id)
             if bid is None:  # No market
                 return False
-            return order_price <= bid  # Match with LIMIT buys
+            return order_price.le(bid)  # Match with LIMIT buys
         else:  # pragma: no cover (design-time error)
             raise ValueError(f"invalid OrderSide, was {side}")
 
@@ -1295,12 +1295,12 @@ cdef class SimulatedExchange:
             ask = self.best_ask_price(instrument_id)
             if ask is None:
                 return False  # No market
-            return price > ask or (ask == price and self.fill_model.is_limit_filled())
+            return price.gt(ask) or (ask.eq(price) and self.fill_model.is_limit_filled())
         elif side == OrderSide.SELL:
             bid = self.best_bid_price(instrument_id)
             if bid is None:
                 return False  # No market
-            return price < bid or (bid == price and self.fill_model.is_limit_filled())
+            return price.lt(bid) or (bid.eq(price) and self.fill_model.is_limit_filled())
         else:  # pragma: no cover (design-time error)
             raise ValueError(f"invalid OrderSide, was {side}")
 
@@ -1311,12 +1311,12 @@ cdef class SimulatedExchange:
             ask = self.best_ask_price(instrument_id)
             if ask is None:
                 return False  # No market
-            return ask >= price  # Match with LIMIT sells
+            return ask.ge(price)  # Match with LIMIT sells
         elif side == OrderSide.SELL:
             bid = self.best_bid_price(instrument_id)
             if bid is None:
                 return False  # No market
-            return bid <= price  # Match with LIMIT buys
+            return bid.le(price)  # Match with LIMIT buys
         else:  # pragma: no cover (design-time error)
             raise ValueError(f"invalid OrderSide, was {side}")
 
@@ -1327,12 +1327,12 @@ cdef class SimulatedExchange:
             ask = self.best_ask_price(instrument_id)
             if ask is None:
                 return False  # No market
-            return ask > price or (ask == price and self.fill_model.is_stop_filled())
+            return ask.gt(price) or (ask.eq(price) and self.fill_model.is_stop_filled())
         elif side == OrderSide.SELL:
             bid = self.best_bid_price(instrument_id)
             if bid is None:
                 return False  # No market
-            return bid < price or (bid == price and self.fill_model.is_stop_filled())
+            return bid.lt(price) or (bid.eq(price) and self.fill_model.is_stop_filled())
         else:  # pragma: no cover (design-time error)
             raise ValueError(f"invalid OrderSide, was {side}")
 
@@ -1448,34 +1448,38 @@ cdef class SimulatedExchange:
 
         cdef Instrument instrument = self.instruments[order.instrument_id]
 
-        cdef Price fill_px
-        cdef Quantity fill_qty
+        cdef:
+            double org_qty
+            double adj_qty
+            Price fill_px
+            Quantity fill_qty
+            Quantity updated_qty
         for fill_px, fill_qty in fills:
-            if order.is_reduce_only and order.leaves_qty == 0:
+            if order.is_reduce_only and order.leaves_qty.fixed_uint64_c() == 0:
                 return  # Done early
             if order.type == OrderType.STOP_MARKET:
                 fill_px = order.trigger_price  # TODO: Temporary strategy for market moving through price
             if self.book_type == BookType.L1_TBBO and self.fill_model.is_slipped():
                 if order.side == OrderSide.BUY:
-                    fill_px = Price(fill_px + instrument.price_increment, instrument.price_precision)
+                    fill_px = Price(fill_px.as_f64_c() + instrument.price_increment.as_f64_c(), instrument.price_precision)
                 elif order.side == OrderSide.SELL:
-                    fill_px = Price(fill_px - instrument.price_increment, instrument.price_precision)
+                    fill_px = Price(fill_px.as_f64_c() - instrument.price_increment.as_f64_c(), instrument.price_precision)
                 else:  # pragma: no cover (design-time error)
                     raise ValueError(f"invalid OrderSide, was {order.side}")
-            if order.is_reduce_only and fill_qty > position.quantity:
+            if order.is_reduce_only and fill_qty.gt(position.quantity):
                 # Adjust fill to honor reduce only execution
-                org_qty: Decimal = fill_qty.as_decimal()
-                adj_qty: Decimal = fill_qty - (fill_qty - position.quantity)
+                org_qty = fill_qty.as_f64_c()
+                adj_qty = fill_qty.as_f64_c() - (fill_qty.as_f64_c() - position.quantity.as_f64_c())
                 fill_qty = Quantity(adj_qty, fill_qty.precision)
-                updated_qty = order.quantity.as_decimal() - (org_qty - adj_qty)
-                if updated_qty > 0:
+                updated_qty = Quantity(order.quantity.as_f64_c() - (org_qty - adj_qty), fill_qty.precision)
+                if updated_qty.fixed_uint64_c() > 0:
                     self._generate_order_updated(
                         order=order,
-                        qty=Quantity(updated_qty, fill_qty.precision),
+                        qty=updated_qty,
                         price=None,
                         trigger_price=None,
                     )
-            if fill_qty <= 0:
+            if fill_qty.fixed_uint64_c() <= 0:
                 return  # Done
             self._fill_order(
                 instrument=instrument,
@@ -1495,9 +1499,9 @@ cdef class SimulatedExchange:
             # Exhausted simulated book volume (continue aggressive filling into next level)
             fill_px = fills[-1][0]
             if order.side == OrderSide.BUY:
-                fill_px = Price(fill_px + instrument.price_increment, instrument.price_precision)
+                fill_px = Price(fill_px.as_f64_c() + instrument.price_increment.as_f64_c(), instrument.price_precision)
             elif order.side == OrderSide.SELL:
-                fill_px = Price(fill_px - instrument.price_increment, instrument.price_precision)
+                fill_px = Price(fill_px.as_f64_c() - instrument.price_increment.as_f64_c(), instrument.price_precision)
             else:  # pragma: no cover (design-time error)
                 raise ValueError(f"invalid OrderSide, was {order.side}")
 
@@ -1569,7 +1573,7 @@ cdef class SimulatedExchange:
                 assert oco_order is not None, "OCO order not found"
                 if order.is_closed_c() and oco_order.is_open_c():
                     self._cancel_order(oco_order)
-                elif order.leaves_qty != oco_order.leaves_qty:
+                elif order.leaves_qty.ne(oco_order.leaves_qty):
                     self._update_order(
                         oco_order,
                         order.leaves_qty,
@@ -1588,9 +1592,9 @@ cdef class SimulatedExchange:
                 and order.is_open_c()
                 and order.is_passive_c()
             ):
-                if position.quantity == 0:
+                if position.quantity.fixed_uint64_c() == 0:
                     self._cancel_order(order)
-                elif order.leaves_qty != position.quantity:
+                elif order.leaves_qty.ne(position.quantity):
                     self._update_order(
                         order,
                         position.quantity,

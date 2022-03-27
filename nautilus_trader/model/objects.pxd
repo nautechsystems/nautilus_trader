@@ -27,8 +27,14 @@ from nautilus_trader.model.identifiers cimport InstrumentId
 cdef class Quantity:
     cdef Quantity_t _qty
 
-    cdef uint64_t fixed_uint64_c(self)
-    cdef double as_f64_c(self)
+    cdef bint eq(self, Quantity other) except *
+    cdef bint ne(self, Quantity other) except *
+    cdef bint lt(self, Quantity other) except *
+    cdef bint le(self, Quantity other) except *
+    cdef bint gt(self, Quantity other) except *
+    cdef bint ge(self, Quantity other) except *
+    cdef uint64_t fixed_uint64_c(self) except *
+    cdef double as_f64_c(self) except *
 
     cpdef str to_str(self)
 
@@ -59,8 +65,14 @@ cdef class Quantity:
 cdef class Price:
     cdef Price_t _price
 
-    cdef int64_t fixed_int64_c(self)
-    cdef double as_f64_c(self)
+    cdef bint eq(self, Price other) except *
+    cdef bint ne(self, Price other) except *
+    cdef bint lt(self, Price other) except *
+    cdef bint le(self, Price other) except *
+    cdef bint gt(self, Price other) except *
+    cdef bint ge(self, Price other) except *
+    cdef int64_t fixed_int64_c(self) except *
+    cdef double as_f64_c(self) except *
 
     @staticmethod
     cdef object _extract_decimal(object obj)
