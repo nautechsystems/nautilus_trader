@@ -902,13 +902,13 @@ cdef class BacktestEngine:
             if data.ts_init > end_ns:
                 break
             self._advance_time(data.ts_init)
-            self._data_engine.process(data)
             if isinstance(data, OrderBookData):
                 self._exchanges[data.instrument_id.venue].process_order_book(data)
             elif isinstance(data, Tick):
                 self._exchanges[data.instrument_id.venue].process_tick(data)
             elif isinstance(data, Bar):
                 self._exchanges[data.type.instrument_id.venue].process_bar(data)
+            self._data_engine.process(data)
             for exchange in self._exchanges.values():
                 exchange.process(data.ts_init)
             self.iteration += 1
