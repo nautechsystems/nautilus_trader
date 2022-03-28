@@ -28,6 +28,11 @@ from dask.utils import parse_timedelta
 
 try:
     import hyperopt
+    from hyperopt import STATUS_FAIL
+    from hyperopt import STATUS_OK
+    from hyperopt import Trials
+    from hyperopt import fmin
+    from hyperopt import tpe
 except ImportError:
     # hyperopt is an optional extra,
     # which is only required when running `hyperopt_search()`.
