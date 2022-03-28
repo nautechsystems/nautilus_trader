@@ -19,7 +19,7 @@ import numpy as np
 import pandas as pd
 
 from nautilus_trader.analysis.statistic import PortfolioStatistic
-
+import quantstats
 
 class SharpeRatio(PortfolioStatistic):
     """
