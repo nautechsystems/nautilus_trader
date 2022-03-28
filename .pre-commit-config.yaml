@@ -147,7 +147,6 @@ repos:
 #    hooks:
 #      - id: nbstripout
 
-
 # flake8 ignore justifications
 # ----------------------------
 # C101: Coding magic comment not found

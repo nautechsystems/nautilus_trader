@@ -15,15 +15,15 @@
 
 from typing import Any, Optional
 
+import numpy as np
 import pandas as pd
-import quantstats
 
 from nautilus_trader.analysis.statistic import PortfolioStatistic
 
 
 class SharpeRatio(PortfolioStatistic):
     """
-    Calculates the Sharpe Ratio from returns.
+    Calculates the annualized Sharpe Ratio from returns.
     """
 
     def calculate_from_returns(self, returns: pd.Series) -> Optional[Any]:

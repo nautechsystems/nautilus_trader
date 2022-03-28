@@ -230,6 +230,7 @@ class BinanceFuturesExecutionClient(LiveExecutionClient):
 
         self._listen_key = msg.listenKey
         self._ping_listen_keys_task = self._loop.create_task(self._ping_listen_keys())
+        self._log.info(f"Listen key {self._listen_key}")
 
         # Connect WebSocket client
         self._ws_client.subscribe(key=self._listen_key)
@@ -954,6 +955,10 @@ class BinanceFuturesExecutionClient(LiveExecutionClient):
                 client_order_id=client_order_id,
                 venue_order_id=venue_order_id,
                 ts_event=ts_event,
+            )
+        else:
+            self._log.error(
+                f"Cannot handle ORDER_TRADE_UPDATE: unrecognized type {data.x.value}",
             )
 
     def _generate_external_order_status(

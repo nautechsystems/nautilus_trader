@@ -15,15 +15,15 @@
 
 from typing import Any, Optional
 
+import numpy as np
 import pandas as pd
-import quantstats
 
 from nautilus_trader.analysis.statistic import PortfolioStatistic
 
 
 class ReturnsAnnualVolatility(PortfolioStatistic):
     """
-    Calculates the annual volatility of returns.
+    Calculates the annualized volatility of returns.
     """
 
     @property

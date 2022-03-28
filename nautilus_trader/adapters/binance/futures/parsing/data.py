@@ -27,15 +27,19 @@ from nautilus_trader.adapters.binance.common.functions import parse_symbol
 from nautilus_trader.adapters.binance.common.schemas import BinanceOrderBookData
 from nautilus_trader.adapters.binance.futures.schemas.market import BinanceFuturesMarkPriceData
 from nautilus_trader.adapters.binance.futures.schemas.market import BinanceFuturesSymbolInfo
+from nautilus_trader.adapters.binance.futures.schemas.market import BinanceFuturesTradeData
 from nautilus_trader.adapters.binance.futures.types import BinanceFuturesMarkPriceUpdate
 from nautilus_trader.adapters.binance.spot.schemas.market import BinanceSymbolFilter
 from nautilus_trader.core.datetime import millis_to_nanos
 from nautilus_trader.core.string import precision_from_str
 from nautilus_trader.model.currency import Currency
+from nautilus_trader.model.data.tick import TradeTick
+from nautilus_trader.model.enums import AggressorSide
 from nautilus_trader.model.enums import BookType
 from nautilus_trader.model.enums import CurrencyType
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import Symbol
+from nautilus_trader.model.identifiers import TradeId
 from nautilus_trader.model.instruments.crypto_future import CryptoFuture
 from nautilus_trader.model.instruments.crypto_perpetual import CryptoPerpetual
 from nautilus_trader.model.objects import Money
@@ -220,7 +224,7 @@ def parse_futures_instrument_http(
     )
 
 
-def parse_book_snapshot(
+def parse_futures_book_snapshot(
     instrument_id: InstrumentId,
     data: BinanceOrderBookData,
     ts_init: int,
@@ -228,15 +232,15 @@ def parse_book_snapshot(
     return OrderBookSnapshot(
         instrument_id=instrument_id,
         book_type=BookType.L2_MBP,
-        bids=[[float(o[0]), float(o[1])] for o in data.bids],
-        asks=[[float(o[0]), float(o[1])] for o in data.asks],
+        bids=[[float(o[0]), float(o[1])] for o in data.b],
+        asks=[[float(o[0]), float(o[1])] for o in data.a],
         ts_event=millis_to_nanos(data.T),
         ts_init=ts_init,
         update_id=data.u,
     )
 
 
-def parse_mark_price_ws(
+def parse_futures_mark_price_ws(
     instrument_id: InstrumentId,
     data: BinanceFuturesMarkPriceData,
     ts_init: int,
@@ -249,5 +253,21 @@ def parse_mark_price_ws(
         funding_rate=Decimal(data.r),
         ts_next_funding=millis_to_nanos(data.T),
         ts_event=millis_to_nanos(data.E),
+        ts_init=ts_init,
+    )
+
+
+def parse_futures_trade_tick_ws(
+    instrument_id: InstrumentId,
+    data: BinanceFuturesTradeData,
+    ts_init: int,
+) -> TradeTick:
+    return TradeTick(
+        instrument_id=instrument_id,
+        price=Price.from_str(data.p),
+        size=Quantity.from_str(data.q),
+        aggressor_side=AggressorSide.SELL if data.m else AggressorSide.BUY,
+        trade_id=TradeId(str(data.t)),
+        ts_event=millis_to_nanos(data.T),
         ts_init=ts_init,
     )

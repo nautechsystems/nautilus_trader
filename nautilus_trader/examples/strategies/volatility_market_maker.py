@@ -24,6 +24,7 @@ from nautilus_trader.model.data.bar import Bar
 from nautilus_trader.model.data.bar import BarType
 from nautilus_trader.model.data.tick import QuoteTick
 from nautilus_trader.model.data.tick import TradeTick
+from nautilus_trader.model.data.ticker import Ticker
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import TimeInForce
 from nautilus_trader.model.events.order import OrderFilled
@@ -118,10 +119,9 @@ class VolatilityMarketMaker(TradingStrategy):
         self.subscribe_bars(self.bar_type)
         self.subscribe_quote_ticks(self.instrument_id)
         # self.subscribe_trade_ticks(self.instrument_id)
-        # self.subscribe_order_book_deltas(self.instrument_id)
         # self.subscribe_ticker(self.instrument_id)  # For debugging
-        # self.subscribe_order_book_deltas(self.instrument_id, depth=20)  # For debugging
-        # self.subscribe_order_book_snapshots(self.instrument_id, depth=20)  # For debugging
+        # self.subscribe_order_book_deltas(self.instrument_id, depth=100)  # For debugging
+        # self.subscribe_order_book_snapshots(self.instrument_id, depth=20, interval_ms=1000)  # For debugging
         # self.subscribe_data(
         #     data_type=DataType(
         #         BinanceFuturesMarkPriceUpdate, metadata={"instrument_id": self.instrument.id}
@@ -140,6 +140,8 @@ class VolatilityMarketMaker(TradingStrategy):
             The data received.
 
         """
+        # For debugging (must add a subscription)
+        # self.log.info(repr(data), LogColor.CYAN)
         pass
 
     def on_instrument(self, instrument: Instrument):
@@ -153,6 +155,8 @@ class VolatilityMarketMaker(TradingStrategy):
             The instrument received.
 
         """
+        # For debugging (must add a subscription)
+        # self.log.info(repr(instrument), LogColor.CYAN)
         pass
 
     def on_order_book(self, order_book: OrderBook):
@@ -165,7 +169,8 @@ class VolatilityMarketMaker(TradingStrategy):
             The order book received.
 
         """
-        # self.log.info(str(order_book))  # For debugging (must add a subscription)
+        # For debugging (must add a subscription)
+        # self.log.info(repr(order_book), LogColor.CYAN)
         pass
 
     def on_order_book_delta(self, delta: OrderBookDelta):
@@ -178,7 +183,22 @@ class VolatilityMarketMaker(TradingStrategy):
             The order book delta received.
 
         """
-        # self.log.info(str(delta), LogColor.GREEN)  # For debugging (must add a subscription)
+        # For debugging (must add a subscription)
+        # self.log.info(repr(delta), LogColor.CYAN)
+        pass
+
+    def on_ticker(self, ticker: Ticker):
+        """
+        Actions to be performed when the strategy is running and receives a ticker.
+
+        Parameters
+        ----------
+        ticker : Ticker
+            The ticker received.
+
+        """
+        # For debugging (must add a subscription)
+        # self.log.info(repr(ticker), LogColor.CYAN)
         pass
 
     def on_quote_tick(self, tick: QuoteTick):
@@ -191,7 +211,8 @@ class VolatilityMarketMaker(TradingStrategy):
             The quote tick received.
 
         """
-        # self.log.info(f"Received {repr(tick)}")  # For debugging (must add a subscription)
+        # For debugging (must add a subscription)
+        # self.log.info(repr(tick), LogColor.CYAN)
         pass
 
     def on_trade_tick(self, tick: TradeTick):
@@ -204,7 +225,8 @@ class VolatilityMarketMaker(TradingStrategy):
             The tick received.
 
         """
-        # self.log.info(f"Received {repr(tick)}")  # For debugging (must add a subscription)
+        # For debugging (must add a subscription)
+        # self.log.info(repr(tick), LogColor.CYAN)
         pass
 
     def on_bar(self, bar: Bar):
@@ -217,7 +239,7 @@ class VolatilityMarketMaker(TradingStrategy):
             The bar received.
 
         """
-        self.log.info(f"Received {repr(bar)}")
+        self.log.info(repr(bar), LogColor.CYAN)
 
         # Check if indicators ready
         if not self.indicators_initialized():

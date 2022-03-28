@@ -29,25 +29,20 @@ from nautilus_trader.adapters.binance.common.parsing.data import parse_diff_dept
 from nautilus_trader.adapters.binance.common.parsing.data import parse_quote_tick_ws
 from nautilus_trader.adapters.binance.common.parsing.data import parse_ticker_24hr_ws
 from nautilus_trader.adapters.binance.common.parsing.data import parse_trade_tick_http
-from nautilus_trader.adapters.binance.common.parsing.data import parse_trade_tick_ws
 from nautilus_trader.adapters.binance.common.schemas import BinanceCandlestickMsg
 from nautilus_trader.adapters.binance.common.schemas import BinanceDataMsgWrapper
 from nautilus_trader.adapters.binance.common.schemas import BinanceOrderBookMsg
 from nautilus_trader.adapters.binance.common.schemas import BinanceQuoteMsg
 from nautilus_trader.adapters.binance.common.schemas import BinanceTickerMsg
-from nautilus_trader.adapters.binance.common.schemas import BinanceTradeMsg
 from nautilus_trader.adapters.binance.common.types import BinanceBar
 from nautilus_trader.adapters.binance.common.types import BinanceTicker
-from nautilus_trader.adapters.binance.futures.http.market import BinanceFuturesMarketHttpAPI
-from nautilus_trader.adapters.binance.futures.parsing.data import parse_book_snapshot
-from nautilus_trader.adapters.binance.futures.parsing.data import parse_mark_price_ws
-from nautilus_trader.adapters.binance.futures.schemas.market import BinanceFuturesMarkPriceMsg
-from nautilus_trader.adapters.binance.futures.types import BinanceFuturesMarkPriceUpdate
 from nautilus_trader.adapters.binance.http.client import BinanceHttpClient
 from nautilus_trader.adapters.binance.http.error import BinanceError
 from nautilus_trader.adapters.binance.spot.http.market import BinanceSpotMarketHttpAPI
 from nautilus_trader.adapters.binance.spot.parsing.data import parse_spot_book_snapshot
+from nautilus_trader.adapters.binance.spot.parsing.data import parse_spot_trade_tick_ws
 from nautilus_trader.adapters.binance.spot.schemas.market import BinanceSpotOrderBookMsg
+from nautilus_trader.adapters.binance.spot.schemas.market import BinanceSpotTradeMsg
 from nautilus_trader.adapters.binance.websocket.client import BinanceWebSocketClient
 from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.clock import LiveClock
@@ -60,7 +55,6 @@ from nautilus_trader.live.data_client import LiveMarketDataClient
 from nautilus_trader.model.c_enums.bar_aggregation import BarAggregationParser
 from nautilus_trader.model.data.bar import BarType
 from nautilus_trader.model.data.base import DataType
-from nautilus_trader.model.data.base import GenericData
 from nautilus_trader.model.data.tick import QuoteTick
 from nautilus_trader.model.data.tick import TradeTick
 from nautilus_trader.model.enums import BarAggregation
@@ -75,9 +69,9 @@ from nautilus_trader.model.orderbook.data import OrderBookSnapshot
 from nautilus_trader.msgbus.bus import MessageBus
 
 
-class BinanceDataClient(LiveMarketDataClient):
+class BinanceSpotDataClient(LiveMarketDataClient):
     """
-    Provides a data client for the `Binance` exchange.
+    Provides a data client for the `Binance Spot/Margin` exchange.
 
     Parameters
     ----------
@@ -124,6 +118,7 @@ class BinanceDataClient(LiveMarketDataClient):
             logger=logger,
         )
 
+        assert account_type.is_spot or account_type.is_margin, "account type is not for spot/margin"
         self._binance_account_type = account_type
         self._log.info(f"Account type: {self._binance_account_type.value}.", LogColor.BLUE)
 
@@ -132,12 +127,7 @@ class BinanceDataClient(LiveMarketDataClient):
 
         # HTTP API
         self._http_client = client
-        if account_type.is_spot:
-            self._http_market = BinanceSpotMarketHttpAPI(client=self._http_client)  # type: ignore
-        elif account_type.is_futures:
-            self._http_market = BinanceFuturesMarketHttpAPI(  # type: ignore
-                client=self._http_client, account_type=account_type
-            )
+        self._http_market = BinanceSpotMarketHttpAPI(client=self._http_client)  # type: ignore
 
         # WebSocket API
         self._ws_client = BinanceWebSocketClient(
@@ -190,7 +180,7 @@ class BinanceDataClient(LiveMarketDataClient):
 
     async def _connect_websockets(self) -> None:
         self._log.info("Awaiting subscriptions...")
-        await asyncio.sleep(2)
+        await asyncio.sleep(4)
         if self._ws_client.has_subscriptions:
             await self._ws_client.connect()
 
@@ -233,26 +223,7 @@ class BinanceDataClient(LiveMarketDataClient):
             The data type of the data.
 
         """
-        if data_type.type == BinanceFuturesMarkPriceUpdate:
-            if not self._binance_account_type.is_futures:
-                self._log.error(
-                    f"Cannot subscribe to `BinanceFuturesMarkPriceUpdate` "
-                    f"for {self._binance_account_type.value} account types.",
-                )
-                return
-            instrument_id: Optional[InstrumentId] = data_type.metadata.get("instrument_id")
-            if instrument_id is None:
-                self._log.error(
-                    "Cannot subscribe to `BinanceFuturesMarkPriceUpdate` "
-                    "no instrument ID in `data_type` metadata.",
-                )
-                return
-            self._ws_client.subscribe_mark_price(instrument_id.symbol.value, speed=1000)
-            self._add_subscription(data_type)
-        else:
-            self._log.error(
-                f"Cannot subscribe to {data_type.type} (not implemented).",
-            )
+        self._log.error(f"Cannot subscribe to {data_type.type} (not implemented).")
 
     def subscribe_instruments(self):
         """
@@ -328,7 +299,7 @@ class BinanceDataClient(LiveMarketDataClient):
         # Add delta stream buffer
         self._book_buffer[instrument_id] = []
 
-        if depth <= 20:
+        if 0 < depth <= 20:
             if depth not in (5, 10, 20):
                 self._log.error(
                     "Cannot subscribe to order book snapshots: "
@@ -443,24 +414,7 @@ class BinanceDataClient(LiveMarketDataClient):
             The data type of the data.
 
         """
-        if data_type.type == BinanceFuturesMarkPriceUpdate:
-            if not self._binance_account_type.is_futures:
-                self._log.error(
-                    "Cannot unsubscribe from `BinanceFuturesMarkPriceUpdate` "
-                    f"for {self._binance_account_type.value} account types.",
-                )
-                return
-            instrument_id: Optional[InstrumentId] = data_type.metadata.get("instrument_id")
-            if instrument_id is None:
-                self._log.error(
-                    "Cannot subscribe to `BinanceFuturesMarkPriceUpdate` no instrument ID in `data_type` metadata.",
-                )
-                return
-            self._remove_subscription(data_type)
-        else:
-            self._log.error(
-                f"Cannot unsubscribe from {data_type.type} (not implemented).",
-            )
+        self._log.error(f"Cannot unsubscribe from {data_type.type} (not implemented).")
 
     def unsubscribe_instruments(self):
         """
@@ -685,8 +639,6 @@ class BinanceDataClient(LiveMarketDataClient):
             self._handle_ticker(raw)
         elif "@kline" in wrapper.stream:
             self._handle_kline(raw)
-        elif "@markPrice" in wrapper.stream:
-            self._handle_mark_price(raw)
         else:
             self._log.error(f"Unrecognized websocket message type {orjson.loads(raw)['stream']}")
             return
@@ -706,28 +658,6 @@ class BinanceDataClient(LiveMarketDataClient):
             self._handle_data(book_deltas)
 
     def _handle_book_update(self, raw: bytes):
-        if self._binance_account_type.is_futures:
-            self._handle_book_update(raw)
-        else:  # Spot/Margin
-            self._handle_book_update_spot(raw)
-
-    def _handle_book_update_futures(self, raw: bytes):
-        msg: BinanceOrderBookMsg = msgspec.json.decode(raw, type=BinanceOrderBookMsg)
-        instrument_id: InstrumentId = self._get_cached_instrument_id(msg.data.s)
-        book_snapshot: OrderBookSnapshot = parse_book_snapshot(
-            instrument_id=instrument_id,
-            data=msg.data,
-            ts_init=self._clock.timestamp_ns(),
-        )
-
-        # Check if book buffer active
-        book_buffer: List[OrderBookData] = self._book_buffer.get(instrument_id)
-        if book_buffer is not None:
-            book_buffer.append(book_snapshot)
-        else:
-            self._handle_data(book_snapshot)
-
-    def _handle_book_update_spot(self, raw: bytes):
         msg: BinanceSpotOrderBookMsg = msgspec.json.decode(raw, type=BinanceSpotOrderBookMsg)
         instrument_id: InstrumentId = self._get_cached_instrument_id(
             msg.stream.partition("@")[0].upper()
@@ -755,9 +685,9 @@ class BinanceDataClient(LiveMarketDataClient):
         self._handle_data(quote_tick)
 
     def _handle_trade(self, raw: bytes):
-        msg: BinanceTradeMsg = msgspec.json.decode(raw, type=BinanceTradeMsg)
+        msg: BinanceSpotTradeMsg = msgspec.json.decode(raw, type=BinanceSpotTradeMsg)
         instrument_id: InstrumentId = self._get_cached_instrument_id(msg.data.s)
-        trade_tick: TradeTick = parse_trade_tick_ws(
+        trade_tick: TradeTick = parse_spot_trade_tick_ws(
             instrument_id=instrument_id,
             data=msg.data,
             ts_init=self._clock.timestamp_ns(),
@@ -786,18 +716,3 @@ class BinanceDataClient(LiveMarketDataClient):
             ts_init=self._clock.timestamp_ns(),
         )
         self._handle_data(bar)
-
-    def _handle_mark_price(self, raw: bytes):
-        msg: BinanceFuturesMarkPriceMsg = msgspec.json.decode(raw, type=BinanceFuturesMarkPriceMsg)
-        instrument_id: InstrumentId = self._get_cached_instrument_id(msg.data.s)
-        data: BinanceFuturesMarkPriceUpdate = parse_mark_price_ws(
-            instrument_id=instrument_id,
-            data=msg.data,
-            ts_init=self._clock.timestamp_ns(),
-        )
-        data_type = DataType(
-            BinanceFuturesMarkPriceUpdate,
-            metadata={"instrument_id": instrument_id},
-        )
-        generic = GenericData(data_type=data_type, data=data)
-        self._handle_data(generic)
