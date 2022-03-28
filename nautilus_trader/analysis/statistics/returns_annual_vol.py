@@ -31,4 +31,4 @@ class ReturnsAnnualVolatility(PortfolioStatistic):
         return "Annual Volatility (Returns)"
 
     def calculate_from_returns(self, returns: pd.Series) -> Optional[Any]:
-        return quantstats.stats.volatility(returns=returns)
+        return quantstats.stats.volatility(returns=returns,  periods=365)

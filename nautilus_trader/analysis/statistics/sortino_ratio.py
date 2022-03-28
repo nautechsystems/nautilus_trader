@@ -27,4 +27,4 @@ class SortinoRatio(PortfolioStatistic):
     """
 
     def calculate_from_returns(self, returns: pd.Series) -> Optional[Any]:
-        return quantstats.stats.sortino(returns=returns)
+        return quantstats.stats.sortino(returns=returns,  periods=365)

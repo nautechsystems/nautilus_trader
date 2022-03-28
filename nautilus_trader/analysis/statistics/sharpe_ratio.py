@@ -27,4 +27,4 @@ class SharpeRatio(PortfolioStatistic):
     """
 
     def calculate_from_returns(self, returns: pd.Series) -> Optional[Any]:
-        return quantstats.stats.sharpe(returns=returns)
+        return quantstats.stats.sharpe(returns=returns, periods=365)
