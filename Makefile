@@ -3,7 +3,7 @@ REGISTRY?=ghcr.io/
 IMAGE?=${REGISTRY}${PROJECT}
 GIT_TAG:=$(shell git rev-parse --abbrev-ref HEAD)
 IMAGE_FULL?=${IMAGE}:${GIT_TAG}
-EXTRAS?="distributed ib"
+EXTRAS?="distributed hyperopt ib"
 .PHONY: build clean docs
 
 install:
