@@ -20,6 +20,8 @@ from importlib.machinery import ModuleSpec
 from types import ModuleType
 from typing import Optional, Union
 
+from pydantic import parse_obj_as
+
 from nautilus_trader.common.config import ActorConfig
 from nautilus_trader.common.config import ImportableActorConfig
 from nautilus_trader.core.correctness import PyCondition
@@ -45,6 +47,10 @@ class TradingStrategyConfig(ActorConfig):
     order_id_tag: str = "000"
     oms_type: Optional[str] = None
 
+    @classmethod
+    def parse_raw(cls, *args, **kwargs):
+        super().parse_raw(*args, **kwargs)
+
 
 class ImportableStrategyConfig(ImportableActorConfig):
     """
@@ -52,9 +58,7 @@ class ImportableStrategyConfig(ImportableActorConfig):
 
     Parameters
     ----------
-    strategy_path : str, optional
-        The fully qualified name of the module.
-    config_path : str, optional
+    path : str, optional
         The fully qualified name of the module.
     source : bytes, optional
         The strategy source code.
@@ -65,6 +69,15 @@ class ImportableStrategyConfig(ImportableActorConfig):
     path: Optional[str]
     source: Optional[bytes]
     config: Union[TradingStrategyConfig, str]
+
+    @classmethod
+    def parse_obj(cls, *args, **kwargs):
+        """Overloaded so we can load the proper config class"""
+        result: ImportableStrategyConfig = super().parse_obj(*args, **kwargs)
+        mod = importlib.import_module(result.module)
+        actual_cls = getattr(mod, result.cls)
+        config = parse_obj_as(actual_cls, args[0]["config"])
+        return result.copy(update={"config": config})
 
 
 class StrategyFactory:

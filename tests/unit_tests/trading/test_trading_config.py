@@ -95,4 +95,6 @@ class TestStrategyFactory:
         config = ImportableStrategyConfig.parse_raw(raw)
 
         # Assert
-        assert config.config
+        assert config.cls == "VolatilityMarketMakerConfig"
+        assert config.config.instrument_id == "ETHUSDT-PERP.BINANCE"
+        assert config.config.atr_period == 20
