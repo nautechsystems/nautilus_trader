@@ -90,38 +90,50 @@ jobs:
         id: branch-name
         uses: tj-actions/branch-names@v5.2
 
-      # Build nautilus_trader docker image
-      - name: Image name for trader
-        run: echo ghcr.io/${{ github.repository_owner }}/nautilus_trader:${{ steps.branch-name.outputs.current_branch }}
+      # Set nautilus_trader docker image name
+      - name: Image name for nautilus_trader
+        id: trader_image_name
+        uses: haya14busa/action-cond@v1
+        with:
+          cond: ${{ steps.branch-name.outputs.current_branch == 'master' }}
+          if_true: echo "::set-output name=tag::$(ghcr.io/${{ github.repository_owner }}/nautilus_trader:latest)"
+          if_false: echo "::set-output name=tag::$(ghcr.io/${{ github.repository_owner }}/nautilus_trader:${{ steps.branch-name.outputs.current_branch }})"
 
-      - name: Build nautilus_trader image
+      # Build nautilus_trader docker image
+      - name: Build trader image
         id: docker_build_trader
         uses: docker/build-push-action@v2
         with:
           file: ".docker/nautilus_trader.dockerfile"
           push: true
-          tags: ghcr.io/${{ github.repository_owner }}/nautilus_trader:${{ steps.branch-name.outputs.current_branch }}
+          tags: ${{ steps.trader_image_name.outputs.tag }}
           cache-from: type=gha
           cache-to: type=gha
 
       - name: Digest nautilus_trader image
         run: echo ${{ steps.docker_build_trader.outputs.digest }}
 
-      # Build jupyterlab docker image
+      # Set jupyterlab docker image name
       - name: Image name for jupyterlab
-        run: echo ghcr.io/${{ github.repository_owner }}/jupyterlab:${{ steps.branch-name.outputs.current_branch }}
+        id: jupyterlab_image_name
+        uses: haya14busa/action-cond@v1
+        with:
+          cond: ${{ steps.branch-name.outputs.current_branch == 'master' }}
+          if_true: echo "::set-output name=tag::$(ghcr.io/${{ github.repository_owner }}/jupyterlab:latest)"
+          if_false: echo "::set-output name=tag::$(ghcr.io/${{ github.repository_owner }}/jupyterlab:${{ steps.branch-name.outputs.current_branch }})"
 
+      # Build jupyterlab docker image
       - name: Build jupyterlab image
         id: docker_build_jupyterlab
         uses: docker/build-push-action@v2
         with:
           file: ".docker/jupyterlab.dockerfile"
           push: true
-          tags: ghcr.io/${{ github.repository_owner }}/jupyterlab:${{ steps.branch-name.outputs.current_branch }}
+          tags: ${{ steps.jupyterlab_image_name.outputs.tag }}
           cache-from: type=gha
           cache-to: type=gha
           build-args: |
-            GIT_TAG=${{ steps.branch-name.outputs.current_branch }}
+            GIT_TAG=${{ steps.jupyterlab_image_name.outputs.tag }}
 
       - name: Digest jupyterlab image
         run: echo ${{ steps.docker_build_jupyterlab.outputs.digest }}
