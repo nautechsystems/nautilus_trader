@@ -49,7 +49,7 @@ def dataset_batches(
             df = batch.to_pandas()
             df = df[(df["ts_init"] >= file_meta.start) & (df["ts_init"] <= file_meta.end)]
             if df.empty:
-                return
+                continue
             if file_meta.instrument_id:
                 df.loc[:, "instrument_id"] = file_meta.instrument_id
             yield df
