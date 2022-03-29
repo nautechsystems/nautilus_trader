@@ -93,7 +93,8 @@ jobs:
       # Build nautilus_trader docker image (dev)
       - name: Build nautilus_trader image (dev)
         if: ${{ steps.branch-name.outputs.current_branch != 'master' }}
-        id: docker_build_trader
+        id: docker_build_trader_dev
+        uses: docker/build-push-action@v2
         with:
           file: ".docker/nautilus_trader.dockerfile"
           push: true
@@ -101,10 +102,11 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha
 
-      # Build nautilus_trader docker image (release)
-      - name: Build nautilus_trader image (release)
+      # Build nautilus_trader docker image (latest)
+      - name: Build nautilus_trader image (latest)
         if: ${{ steps.branch-name.outputs.current_branch == 'master' }}
-        id: docker_build_trader
+        id: docker_build_trader_latest
+        uses: docker/build-push-action@v2
         with:
           file: ".docker/nautilus_trader.dockerfile"
           push: true
@@ -119,7 +121,7 @@ jobs:
       # Build jupyterlab docker image (dev)
       - name: Build jupyterlab image (dev)
         if: ${{ steps.branch-name.outputs.current_branch != 'master' }}
-        id: docker_build_jupyterlab
+        id: docker_build_jupyterlab_dev
         uses: docker/build-push-action@v2
         with:
           file: ".docker/jupyterlab.dockerfile"
@@ -130,10 +132,10 @@ jobs:
           build-args: |
             GIT_TAG=${{ steps.branch-name.outputs.current_branch }}
 
-      # Build jupyterlab docker image (release)
-      - name: Build jupyterlab image (release)
+      # Build jupyterlab docker image (latest)
+      - name: Build jupyterlab image (latest)
         if: ${{ steps.branch-name.outputs.current_branch == 'master' }}
-        id: docker_build_jupyterlab
+        id: docker_build_jupyterlab_latest
         uses: docker/build-push-action@v2
         with:
           file: ".docker/jupyterlab.dockerfile"
