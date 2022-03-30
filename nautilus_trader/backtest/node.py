@@ -433,9 +433,7 @@ def backtest_runner(
     # Load data
     for config in data_configs:
         t0 = pd.Timestamp.now()
-        engine._log.info(
-            f"Reading {config.data_type} backtest data for instrument={config.instrument_id}"
-        )
+        engine._log.info(f"Reading {config.data_type} data for instrument={config.instrument_id}.")
         d = config.load()
         if config.instrument_id and d["instrument"] is None:
             print(f"Requested instrument_id={d['instrument']} from data_config not found catalog")
@@ -446,7 +444,7 @@ def backtest_runner(
 
         t1 = pd.Timestamp.now()
         engine._log.info(
-            f"Read {len(d['data']):,} events from parquet in {parse_timedelta(t1-t0)}s"
+            f"Read {len(d['data']):,} events from parquet in {parse_timedelta(t1-t0)}s."
         )
         _load_engine_data(engine=engine, data=d)
         t2 = pd.Timestamp.now()
@@ -470,8 +468,9 @@ def groupby_datatype(data):
 
 def _extract_generic_data_client_id(data_configs: List[BacktestDataConfig]) -> Dict:
     """
-    Extract a mapping of data_type : client_id from the list of `data_configs`. In the process of merging the streaming
-    data, we lose the client_id for generic data, we need to inject this back in so the backtest engine can be
+    Extract a mapping of data_type : client_id from the list of `data_configs`.
+    In the process of merging the streaming data, we lose the `client_id` for
+    generic data, we need to inject this back in so the backtest engine can be
     correctly loaded.
     """
     data_client_ids = [
