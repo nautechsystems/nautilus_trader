@@ -118,56 +118,6 @@ class LiveExecClientConfig(pydantic.BaseModel):
     routing: RoutingConfig = RoutingConfig()
 
 
-class ImportableLiveExecClientConfig(pydantic.BaseModel):
-    """
-    Represents an importable data client configuration.
-
-    Parameters
-    ----------
-    path : str
-        The fully qualified name of the module.
-    config : str
-        A JSON string representing the configuration options
-    """
-
-    path: str
-    config: str
-
-    # @classmethod
-    # def parse_obj(cls, *args, **kwargs):
-    #     """Overloaded so we can load the proper config class"""
-    #     result: ImportableStrategyConfig = super().parse_obj(*args, **kwargs)
-    #     mod = importlib.import_module(result.module)
-    #     actual_cls = getattr(mod, result.cls)
-    #     config = parse_obj_as(actual_cls, args[0]["config"])
-    #     return result.copy(update={"config": config})
-
-
-class ImportableLiveDataClientConfig(pydantic.BaseModel):
-    """
-    Represents an importable execution client configuration.
-
-    Parameters
-    ----------
-    path : str
-        The fully qualified name of the module.
-    config : str
-        A JSON string representing the configuration options
-    """
-
-    path: str
-    config: str
-
-    # @classmethod
-    # def parse_obj(cls, *args, **kwargs):
-    #     """Overloaded so we can load the proper config class"""
-    #     result: ImportableStrategyConfig = super().parse_obj(*args, **kwargs)
-    #     mod = importlib.import_module(result.module)
-    #     actual_cls = getattr(mod, result.cls)
-    #     config = parse_obj_as(actual_cls, args[0]["config"])
-    #     return result.copy(update={"config": config})
-
-
 class TradingNodeConfig(pydantic.BaseModel):
     """
     Configuration for ``TradingNode`` instances.
