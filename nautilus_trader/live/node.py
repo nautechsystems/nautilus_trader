@@ -231,10 +231,6 @@ class TradingNode:
             log=self._log,
         )
 
-        # Setup data/execution clients
-        # self.add_data_client_factory()
-        # self.add_exec_client_factory()
-
         for strategy_config in self._config.strategies:
             strategy = StrategyFactory.create(strategy_config)  # type: ignore
             self.trader.add_strategy(strategy)  # type: ignore

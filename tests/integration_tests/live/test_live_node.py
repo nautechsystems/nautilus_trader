@@ -23,6 +23,7 @@ from nautilus_trader.adapters.betfair.factories import BetfairLiveExecClientFact
 from nautilus_trader.infrastructure.config import CacheDatabaseConfig
 from nautilus_trader.live.config import TradingNodeConfig
 from nautilus_trader.live.node import TradingNode
+from nautilus_trader.model.identifiers import StrategyId
 
 
 class TestTradingNodeConfiguration:
@@ -54,16 +55,22 @@ class TestTradingNodeConfiguration:
                 },
                 "data_clients": {
                     "BINANCE": {
-                        "class": "BinanceDataClientConfig",
-                        "account_type": "FUTURES_USDT",
-                        "instrument_provider": {"load_all": True},
-                    },
+                        "factory_path": "nautilus_trader.adapters.binance.factories:BinanceLiveDataClientFactory",
+                        "config_path": "nautilus_trader.adapters.binance.config:BinanceDataClientConfig",
+                        "config": {
+                            "account_type": "FUTURES_USDT",
+                            "instrument_provider": {"load_all": True},
+                        },
+                    }
                 },
                 "exec_clients": {
                     "BINANCE": {
-                        "class": "BinanceExecClientConfig",
-                        "account_type": "FUTURES_USDT",
-                        "instrument_provider": {"load_all": True},
+                        "factory_path": "nautilus_trader.adapters.binance.factories:BinanceLiveExecClientFactory",
+                        "config_path": "nautilus_trader.adapters.binance.config:BinanceExecClientConfig",
+                        "config": {
+                            "account_type": "FUTURES_USDT",
+                            "instrument_provider": {"load_all": True},
+                        },
                     }
                 },
                 "timeout_connection": 5.0,
@@ -73,7 +80,8 @@ class TestTradingNodeConfiguration:
                 "check_residuals_delay": 2.0,
                 "strategies": [
                     {
-                        "path": "nautilus_trader.examples.strategies.volatility_market_maker:VolatilityMarketMaker",
+                        "factory_path": "nautilus_trader.examples.strategies.volatility_market_maker:VolatilityMarketMaker",
+                        "config_path": "nautilus_trader.examples.strategies.volatility_market_maker:VolatilityMarketMakerConfig",
                         "config": {
                             "instrument_id": "ETHUSDT-PERP.BINANCE",
                             "bar_type": "ETHUSDT-PERP.BINANCE-1-MINUTE-LAST-EXTERNAL",
@@ -90,7 +98,8 @@ class TestTradingNodeConfiguration:
         node = TradingNode(config)
 
         # Assert
-        assert node.trader.id == "Test-111"
+        assert node.trader.id.value == "Test-111"
+        assert node.trader.strategy_ids() == [StrategyId("VolatilityMarketMaker-000")]
 
 
 class TestTradingNodeOperation:

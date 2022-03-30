@@ -13,14 +13,11 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import importlib
-import importlib.util
-from typing import Optional, Union
-
-from pydantic import parse_obj_as
+from typing import Optional
 
 from nautilus_trader.common.config import ActorConfig
 from nautilus_trader.common.config import ImportableActorConfig
+from nautilus_trader.common.config import resolve_path
 from nautilus_trader.core.correctness import PyCondition
 
 
@@ -51,23 +48,14 @@ class ImportableStrategyConfig(ImportableActorConfig):
 
     Parameters
     ----------
-    path : str, optional
+    path : str
         The fully qualified name of the module.
-    config : Union[TradingStrategyConfig, str]
+    config : Dict
         The strategy configuration
     """
 
-    path: Optional[str]
-    config: Union[TradingStrategyConfig, str]
-
-    @classmethod
-    def parse_obj(cls, *args, **kwargs):
-        """Overloaded so we can load the proper config class"""
-        result: ImportableStrategyConfig = super().parse_obj(*args, **kwargs)
-        mod = importlib.import_module(result.module)
-        actual_cls = getattr(mod, result.cls)
-        config = parse_obj_as(actual_cls, args[0]["config"])
-        return result.copy(update={"config": config})
+    path: str
+    config: TradingStrategyConfig
 
 
 class StrategyFactory:
@@ -96,7 +84,6 @@ class StrategyFactory:
 
         """
         PyCondition.type(config, ImportableStrategyConfig, "config")
-        mod = importlib.import_module(config.module)
-        cls = getattr(mod, config.cls)
+        cls = resolve_path(config.path)
         assert isinstance(config.config, TradingStrategyConfig)
         return cls(config=config.config)

@@ -12,23 +12,24 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
-import importlib
 from typing import Dict, FrozenSet, List, Optional
 
 import pydantic
 from pydantic import Field
 from pydantic import PositiveFloat
 from pydantic import PositiveInt
+from pydantic import validator
 
 from nautilus_trader.cache.config import CacheConfig
+from nautilus_trader.common.config import ImportableConfig
 from nautilus_trader.common.config import InstrumentProviderConfig
-from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.data.config import DataEngineConfig
 from nautilus_trader.execution.config import ExecEngineConfig
 from nautilus_trader.infrastructure.config import CacheDatabaseConfig
 from nautilus_trader.persistence.config import PersistenceConfig
 from nautilus_trader.risk.config import RiskEngineConfig
 from nautilus_trader.trading.config import ImportableStrategyConfig
+from nautilus_trader.trading.config import TradingStrategyConfig
 
 
 class LiveDataEngineConfig(DataEngineConfig):
@@ -117,66 +118,54 @@ class LiveExecClientConfig(pydantic.BaseModel):
     routing: RoutingConfig = RoutingConfig()
 
 
-class ImportableBaseClientConfig(pydantic.BaseModel):
-    """Base class for importable client config"""
-
-    @staticmethod
-    def create(config: ImportableStrategyConfig):
-        """
-        Create a trading strategy from the given configuration.
-
-        Parameters
-        ----------
-        config : ImportableStrategyConfig
-            The configuration for the building step.
-
-        Returns
-        -------
-        TradingStrategy
-
-        Raises
-        ------
-        TypeError
-            If `config` is not of type `ImportableStrategyConfig`.
-
-        """
-        PyCondition.type(config, ImportableStrategyConfig, "config")
-        if config.path is not None:
-            mod = importlib.import_module(config.module)
-            cls = getattr(mod, config.cls)
-            return cls(config=config.config)
-
-
-class ImportableLiveExecClientConfig(ImportableBaseClientConfig):
+class ImportableLiveExecClientConfig(pydantic.BaseModel):
     """
-    Represents a data client configuration.
+    Represents an importable data client configuration.
 
     Parameters
     ----------
     path : str
         The fully qualified name of the module.
     config : str
-        JSON str
+        A JSON string representing the configuration options
     """
 
     path: str
     config: str
 
+    # @classmethod
+    # def parse_obj(cls, *args, **kwargs):
+    #     """Overloaded so we can load the proper config class"""
+    #     result: ImportableStrategyConfig = super().parse_obj(*args, **kwargs)
+    #     mod = importlib.import_module(result.module)
+    #     actual_cls = getattr(mod, result.cls)
+    #     config = parse_obj_as(actual_cls, args[0]["config"])
+    #     return result.copy(update={"config": config})
 
-class ImportableLiveDataClientConfig(ImportableBaseClientConfig):
+
+class ImportableLiveDataClientConfig(pydantic.BaseModel):
     """
-    Represents an execution client configuration.
+    Represents an importable execution client configuration.
 
     Parameters
     ----------
     path : str
         The fully qualified name of the module.
     config : str
-        JSON str
+        A JSON string representing the configuration options
     """
 
     path: str
     config: str
+
+    # @classmethod
+    # def parse_obj(cls, *args, **kwargs):
+    #     """Overloaded so we can load the proper config class"""
+    #     result: ImportableStrategyConfig = super().parse_obj(*args, **kwargs)
+    #     mod = importlib.import_module(result.module)
+    #     actual_cls = getattr(mod, result.cls)
+    #     config = parse_obj_as(actual_cls, args[0]["config"])
+    #     return result.copy(update={"config": config})
 
 
 class TradingNodeConfig(pydantic.BaseModel):
@@ -242,3 +231,40 @@ class TradingNodeConfig(pydantic.BaseModel):
     data_clients: Dict[str, LiveDataClientConfig] = {}
     exec_clients: Dict[str, LiveExecClientConfig] = {}
     persistence: Optional[PersistenceConfig] = None
+
+    @validator("strategies", pre=True)
+    def validate_strategies(cls, v):
+        """Resolve any TradingStrategyConfigs"""
+
+        def resolve(config):
+            if ImportableConfig.is_importable(config):
+                cfg = ImportableConfig.create(config, config_type=TradingStrategyConfig)
+                return ImportableStrategyConfig(path=config["factory_path"], config=cfg)
+            return config
+
+        strategies = [resolve(config) for config in v]
+        return strategies
+
+    @validator("data_clients", pre=True)
+    def validate_importable_data_clients(cls, v):
+        """Resolve any ImportableLiveExec/DataClientConfig into"""
+
+        def resolve(config):
+            if ImportableConfig.is_importable(config):
+                return ImportableConfig.create(config, config_type=LiveDataClientConfig)
+            return config
+
+        data_clients = {name: resolve(config) for name, config in v.items()}
+        return data_clients
+
+    @validator("exec_clients", pre=True)
+    def validate_importable_exec_clients(cls, v):
+        """Resolve any ImportableLiveExec/DataClientConfig into"""
+
+        def resolve(config):
+            if ImportableConfig.is_importable(config):
+                return ImportableConfig.create(config, config_type=LiveExecClientConfig)
+            return config
+
+        exec_clients = {name: resolve(config) for name, config in v.items()}
+        return exec_clients

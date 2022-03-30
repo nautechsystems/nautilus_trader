@@ -39,6 +39,36 @@ class ActorConfig(pydantic.BaseModel):
     component_id: Optional[str] = None
 
 
+def resolve_path(path: str):
+    module, cls = path.rsplit(":", maxsplit=1)
+    mod = importlib.import_module(module)
+    cls = getattr(mod, cls)
+    return cls
+
+
+class ImportableConfig(pydantic.BaseModel):
+    """
+    Base class for ImportableConfig.
+    """
+
+    @staticmethod
+    def is_importable(data: Dict):
+        return set(data) == {"factory_path", "config_path", "config"}
+
+    @staticmethod
+    def create(data: Dict, config_type: type):
+        assert (
+            ":" in data["factory_path"]
+        ), "`class_path` variable should be of the form `path.to.module:class`"
+        assert (
+            ":" in data["config_path"]
+        ), "`config_path` variable should be of the form `path.to.module:class`"
+        cls = resolve_path(data["config_path"])
+        config = cls(**data["config"])
+        assert isinstance(config, config_type)
+        return config
+
+
 class ImportableActorConfig(pydantic.BaseModel):
     """
     Represents an actor configuration for one specific backtest run.
@@ -53,20 +83,6 @@ class ImportableActorConfig(pydantic.BaseModel):
 
     path: Optional[str]
     config: Union[ActorConfig, str]
-
-    def _check_path(self):
-        assert self.path, "`path` not set, can't parse module"
-        assert ":" in self.path, "Path variable should be of the form: path.to.module:class"
-
-    @property
-    def module(self):
-        self._check_path()
-        return self.path.rsplit(":")[0]
-
-    @property
-    def cls(self):
-        self._check_path()
-        return self.path.rsplit(":")[1]
 
 
 class ActorFactory:
@@ -95,8 +111,7 @@ class ActorFactory:
 
         """
         PyCondition.type(config, ImportableActorConfig, "config")
-        mod = importlib.import_module(config.module)
-        cls = getattr(mod, config.cls)
+        cls = resolve_path(config.path)
         assert isinstance(config.config, ActorConfig)
         return cls(config=config.config)
 
