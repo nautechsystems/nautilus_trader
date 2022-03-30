@@ -15,9 +15,6 @@
 
 import importlib
 import importlib.util
-import sys
-from importlib.machinery import ModuleSpec
-from types import ModuleType
 from typing import Optional, Union
 
 from pydantic import parse_obj_as
@@ -47,10 +44,6 @@ class TradingStrategyConfig(ActorConfig):
     order_id_tag: str = "000"
     oms_type: Optional[str] = None
 
-    @classmethod
-    def parse_raw(cls, *args, **kwargs):
-        super().parse_raw(*args, **kwargs)
-
 
 class ImportableStrategyConfig(ImportableActorConfig):
     """
@@ -60,14 +53,11 @@ class ImportableStrategyConfig(ImportableActorConfig):
     ----------
     path : str, optional
         The fully qualified name of the module.
-    source : bytes, optional
-        The strategy source code.
     config : Union[TradingStrategyConfig, str]
         The strategy configuration
     """
 
     path: Optional[str]
-    source: Optional[bytes]
     config: Union[TradingStrategyConfig, str]
 
     @classmethod
@@ -106,19 +96,7 @@ class StrategyFactory:
 
         """
         PyCondition.type(config, ImportableStrategyConfig, "config")
-        if (config.path is None or config.path.isspace()) and (
-            config.source is None or config.source.isspace()
-        ):
-            raise ValueError("both `source` and `path` were None")
-
-        if config.path is not None:
-            mod = importlib.import_module(config.module)
-            cls = getattr(mod, config.cls)
-            assert isinstance(config.config, TradingStrategyConfig)
-            return cls(config=config.config)
-        else:
-            spec: ModuleSpec = importlib.util.spec_from_loader(config.module, loader=None)
-            module: ModuleType = importlib.util.module_from_spec(spec)
-
-            exec(config.source, module.__dict__)  # noqa
-            sys.modules[config.module] = module
+        mod = importlib.import_module(config.module)
+        cls = getattr(mod, config.cls)
+        assert isinstance(config.config, TradingStrategyConfig)
+        return cls(config=config.config)

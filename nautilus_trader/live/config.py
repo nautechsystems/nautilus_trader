@@ -12,7 +12,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
-
+import importlib
 from typing import Dict, FrozenSet, List, Optional
 
 import pydantic
@@ -22,6 +22,7 @@ from pydantic import PositiveInt
 
 from nautilus_trader.cache.config import CacheConfig
 from nautilus_trader.common.config import InstrumentProviderConfig
+from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.data.config import DataEngineConfig
 from nautilus_trader.execution.config import ExecEngineConfig
 from nautilus_trader.infrastructure.config import CacheDatabaseConfig
@@ -114,6 +115,68 @@ class LiveExecClientConfig(pydantic.BaseModel):
 
     instrument_provider: InstrumentProviderConfig = InstrumentProviderConfig()
     routing: RoutingConfig = RoutingConfig()
+
+
+class ImportableBaseClientConfig(pydantic.BaseModel):
+    """Base class for importable client config"""
+
+    @staticmethod
+    def create(config: ImportableStrategyConfig):
+        """
+        Create a trading strategy from the given configuration.
+
+        Parameters
+        ----------
+        config : ImportableStrategyConfig
+            The configuration for the building step.
+
+        Returns
+        -------
+        TradingStrategy
+
+        Raises
+        ------
+        TypeError
+            If `config` is not of type `ImportableStrategyConfig`.
+
+        """
+        PyCondition.type(config, ImportableStrategyConfig, "config")
+        if config.path is not None:
+            mod = importlib.import_module(config.module)
+            cls = getattr(mod, config.cls)
+            return cls(config=config.config)
+
+
+class ImportableLiveExecClientConfig(ImportableBaseClientConfig):
+    """
+    Represents a data client configuration.
+
+    Parameters
+    ----------
+    path : str
+        The fully qualified name of the module.
+    config : str
+        JSON str
+    """
+
+    path: str
+    config: str
+
+
+class ImportableLiveDataClientConfig(ImportableBaseClientConfig):
+    """
+    Represents an execution client configuration.
+
+    Parameters
+    ----------
+    path : str
+        The fully qualified name of the module.
+    config : str
+        JSON str
+    """
+
+    path: str
+    config: str
 
 
 class TradingNodeConfig(pydantic.BaseModel):

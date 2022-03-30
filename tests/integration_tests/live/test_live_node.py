@@ -54,7 +54,6 @@ class TestTradingNodeConfiguration:
                 },
                 "data_clients": {
                     "BINANCE": {
-                        # TODO - need to add "class" handling here to some sort of ImportableDataClient ?
                         "class": "BinanceDataClientConfig",
                         "account_type": "FUTURES_USDT",
                         "instrument_provider": {"load_all": True},
@@ -62,7 +61,6 @@ class TestTradingNodeConfiguration:
                 },
                 "exec_clients": {
                     "BINANCE": {
-                        # TODO - need to add "class" handling here to some sort of ImportableExecClient ?
                         "class": "BinanceExecClientConfig",
                         "account_type": "FUTURES_USDT",
                         "instrument_provider": {"load_all": True},

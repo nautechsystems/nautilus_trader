@@ -20,6 +20,7 @@ import pytest
 
 from nautilus_trader.examples.strategies.ema_cross import EMACross
 from nautilus_trader.examples.strategies.ema_cross import EMACrossConfig
+from nautilus_trader.examples.strategies.volatility_market_maker import VolatilityMarketMakerConfig
 from nautilus_trader.trading.config import ImportableStrategyConfig
 from nautilus_trader.trading.config import StrategyFactory
 
@@ -95,6 +96,7 @@ class TestStrategyFactory:
         config = ImportableStrategyConfig.parse_raw(raw)
 
         # Assert
+        assert isinstance(config.config, VolatilityMarketMakerConfig)
         assert config.cls == "VolatilityMarketMakerConfig"
         assert config.config.instrument_id == "ETHUSDT-PERP.BINANCE"
         assert config.config.atr_period == 20
