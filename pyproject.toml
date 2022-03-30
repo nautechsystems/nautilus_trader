@@ -77,7 +77,7 @@ ib_insync = { version = "^0.9.70", optional = true }
 # https://github.com/cython/cython/issues/3515
 coverage = "4.5.4"  # Pinned at 4.5.4 due Cython
 nox = "^2022.1.7"
-numpydoc = "^1.2.0"
+numpydoc = "^1.2.1"
 pre-commit = "^2.17.0"
 pytest = "^7.1.1"
 pytest-asyncio = "^0.18.3"

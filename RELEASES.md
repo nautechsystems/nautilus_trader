@@ -1,6 +1,6 @@
 # NautilusTrader 1.141.0 Beta
 
-Released on 29th March 2022 (UTC).
+Released on 30th March 2022 (UTC).
 
 This will be the final release without Rust compiled binaries.
 
