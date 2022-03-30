@@ -29,8 +29,7 @@ from dask.utils import parse_timedelta
 try:
     import hyperopt
 except ImportError:
-    # hyperopt is an optional extra,
-    # which is only required when running `hyperopt_search()`.
+    # hyperopt is an optional extra, which is only required when running `hyperopt_search()`.
     hyperopt = None
 
 from nautilus_trader.backtest.config import BacktestDataConfig
@@ -388,11 +387,12 @@ class BacktestNode:
 
         # Add venues
         for config in venue_configs:
+            base_currency: Optional[str] = config.base_currency
             engine.add_venue(
                 venue=Venue(config.name),
                 oms_type=OMSType[config.oms_type],
                 account_type=AccountType[config.account_type],
-                base_currency=Currency.from_str(config.base_currency),
+                base_currency=Currency.from_str(base_currency) if base_currency else None,
                 starting_balances=[Money.from_str(m) for m in config.starting_balances],
                 book_type=BookTypeParser.from_str_py(config.book_type),
                 routing=config.routing,
