@@ -14,8 +14,6 @@
 # -------------------------------------------------------------------------------------------------
 from typing import Optional
 
-from pydantic import parse_obj_as
-
 from nautilus_trader.common.config import ActorConfig
 from nautilus_trader.common.config import ImportableActorConfig
 from nautilus_trader.common.config import resolve_path
@@ -49,22 +47,17 @@ class ImportableStrategyConfig(ImportableActorConfig):
 
     Parameters
     ----------
-    path : str
-        The fully qualified name of the module.
+    strategy_path : str
+        The fully qualified name of the strategy class.
+    config_path : str
+        The fully qualified name of the config class.
     config : Dict
         The strategy configuration
     """
 
-    path: str
-    config: TradingStrategyConfig
-
-    @classmethod
-    def parse_obj(cls, *args, **kwargs):
-        """Overloaded so we can load the proper config class"""
-        result: ImportableStrategyConfig = super().parse_obj(*args, **kwargs)
-        sub_cls = resolve_path(path=result.path)
-        config = parse_obj_as(sub_cls, args[0]["config"])
-        return result.copy(update={"config": config})
+    strategy_path: str
+    config_path: str
+    config: dict
 
 
 class StrategyFactory:
@@ -93,6 +86,6 @@ class StrategyFactory:
 
         """
         PyCondition.type(config, ImportableStrategyConfig, "config")
-        cls = resolve_path(config.path)
-        assert isinstance(config.config, TradingStrategyConfig)
-        return cls(config=config.config)
+        strategy_cls = resolve_path(config.strategy_path)
+        config_cls = resolve_path(config.config_path)
+        return strategy_cls(config=config_cls(**config.config))

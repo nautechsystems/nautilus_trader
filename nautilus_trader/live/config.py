@@ -29,7 +29,6 @@ from nautilus_trader.infrastructure.config import CacheDatabaseConfig
 from nautilus_trader.persistence.config import PersistenceConfig
 from nautilus_trader.risk.config import RiskEngineConfig
 from nautilus_trader.trading.config import ImportableStrategyConfig
-from nautilus_trader.trading.config import TradingStrategyConfig
 
 
 class LiveDataEngineConfig(DataEngineConfig):
@@ -181,19 +180,6 @@ class TradingNodeConfig(pydantic.BaseModel):
     data_clients: Dict[str, LiveDataClientConfig] = {}
     exec_clients: Dict[str, LiveExecClientConfig] = {}
     persistence: Optional[PersistenceConfig] = None
-
-    @validator("strategies", pre=True)
-    def validate_strategies(cls, v):
-        """Resolve any TradingStrategyConfigs"""
-
-        def resolve(config):
-            if ImportableConfig.is_importable(config):
-                cfg = ImportableConfig.create(config, config_type=TradingStrategyConfig)
-                return ImportableStrategyConfig(path=config["factory_path"], config=cfg)
-            return config
-
-        strategies = [resolve(config) for config in v]
-        return strategies
 
     @validator("data_clients", pre=True)
     def validate_importable_data_clients(cls, v):

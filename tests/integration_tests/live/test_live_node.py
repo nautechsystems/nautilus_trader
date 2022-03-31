@@ -80,7 +80,7 @@ class TestTradingNodeConfiguration:
                 "check_residuals_delay": 2.0,
                 "strategies": [
                     {
-                        "factory_path": "nautilus_trader.examples.strategies.volatility_market_maker:VolatilityMarketMaker",
+                        "strategy_path": "nautilus_trader.examples.strategies.volatility_market_maker:VolatilityMarketMaker",
                         "config_path": "nautilus_trader.examples.strategies.volatility_market_maker:VolatilityMarketMakerConfig",
                         "config": {
                             "instrument_id": "ETHUSDT-PERP.BINANCE",

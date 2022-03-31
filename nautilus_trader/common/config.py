@@ -15,7 +15,7 @@
 
 import importlib
 import importlib.util
-from typing import Any, Dict, FrozenSet, Optional, Union
+from typing import Any, Dict, FrozenSet, Optional
 
 import pydantic
 from frozendict import frozendict
@@ -75,14 +75,17 @@ class ImportableActorConfig(pydantic.BaseModel):
 
     Parameters
     ----------
-    path : str, optional
-        The fully qualified name of the module.
-    config : Union[ActorConfig, str]
-
+    actor_path : str
+        The fully qualified name of the Actor class.
+    config_path : str
+        The fully qualified name of the Actor Config class.
+    config : Dict
+        The actor configuration
     """
 
-    path: Optional[str]
-    config: Union[ActorConfig, str]
+    actor_path: str
+    config_path: str
+    config: dict
 
 
 class ActorFactory:
@@ -111,9 +114,9 @@ class ActorFactory:
 
         """
         PyCondition.type(config, ImportableActorConfig, "config")
-        cls = resolve_path(config.path)
-        assert isinstance(config.config, ActorConfig)
-        return cls(config=config.config)
+        strategy_cls = resolve_path(config.actor_path)
+        config_cls = resolve_path(config.config_path)
+        return strategy_cls(config=config_cls(**config.config))
 
 
 class InstrumentProviderConfig(pydantic.BaseModel):

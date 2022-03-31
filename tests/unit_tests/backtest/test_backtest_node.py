@@ -27,7 +27,6 @@ from nautilus_trader.backtest.config import BacktestVenueConfig
 from nautilus_trader.backtest.engine import BacktestEngineConfig
 from nautilus_trader.backtest.node import BacktestNode
 from nautilus_trader.backtest.results import BacktestResult
-from nautilus_trader.examples.strategies.ema_cross import EMACrossConfig
 from nautilus_trader.model.data.tick import QuoteTick
 from nautilus_trader.persistence.catalog import DataCatalog
 from nautilus_trader.trading.config import ImportableStrategyConfig
@@ -68,8 +67,9 @@ class TestBacktestNode:
         ]
         self.strategies = [
             ImportableStrategyConfig(
-                path="nautilus_trader.examples.strategies.ema_cross:EMACross",
-                config=EMACrossConfig(
+                strategy_path="nautilus_trader.examples.strategies.ema_cross:EMACross",
+                config_path="nautilus_trader.examples.strategies.ema_cross:EMACrossConfig",
+                config=dict(
                     instrument_id="AUD/USD.SIM",
                     bar_type="AUD/USD.SIM-100-TICK-MID-INTERNAL",
                     fast_ema_period=10,
@@ -211,51 +211,45 @@ class TestBacktestNode:
                     "trader_id": "Test-111",
                     "log_level": "INFO",
                 },
+                "venues": [
+                    {
+                        "name": "SIM",
+                        "oms_type": "HEDGING",
+                        "account_type": "MARGIN",
+                        "base_currency": "USD",
+                        "starting_balances": ["1000000 USD"],
+                    }
+                ],
+                "data": [
+                    {
+                        "catalog_path": "/.nautilus/catalog",
+                        "catalog_fs_protocol": "memory",
+                        "data_cls": QuoteTick.fully_qualified_name(),
+                        "instrument_id": "AUD/USD.SIM",
+                        "start_time": 1580398089820000000,
+                        "end_time": 1580504394501000000,
+                    }
+                ],
+                "strategies": [
+                    {
+                        "strategy_path": "nautilus_trader.examples.strategies.ema_cross:EMACross",
+                        "config_path": "nautilus_trader.examples.strategies.ema_cross:EMACrossConfig",
+                        "config": {
+                            "instrument_id": "AUD/USD.SIM",
+                            "bar_type": "AUD/USD.SIM-100-TICK-MID-INTERNAL",
+                            "fast_ema_period": 10,
+                            "slow_ema_period": 20,
+                            "trade_size": 1_000_000,
+                            "order_id_tag": "001",
+                        },
+                    }
+                ],
             }
         )
-        #     """
-        #     self.venue_config = BacktestVenueConfig(
-        #     name="SIM",
-        #     oms_type="HEDGING",
-        #     account_type="MARGIN",
-        #     base_currency="USD",
-        #     starting_balances=["1000000 USD"],
-        #     # fill_model=fill_model,  # TODO(cs): Implement next iteration
-        # )
-        # self.data_config = BacktestDataConfig(
-        #     catalog_path="/.nautilus/catalog",
-        #     catalog_fs_protocol="memory",
-        #     data_cls=QuoteTick,
-        #     instrument_id="AUD/USD.SIM",
-        #     start_time=1580398089820000000,
-        #     end_time=1580504394501000000,
-        # )
-        # self.backtest_configs = [
-        #     BacktestRunConfig(
-        #         engine=BacktestEngineConfig(),
-        #         venues=[self.venue_config],
-        #         data=[self.data_config],
-        #     )
-        # ]
-        # self.strategies = [
-        #     ImportableStrategyConfig(
-        #         path="nautilus_trader.examples.strategies.ema_cross:EMACross",
-        #         config=EMACrossConfig(
-        #             instrument_id="AUD/USD.SIM",
-        #             bar_type="AUD/USD.SIM-100-TICK-MID-INTERNAL",
-        #             fast_ema_period=10,
-        #             slow_ema_period=20,
-        #             trade_size=Decimal(1_000_000),
-        #             order_id_tag="001",
-        #         ),
-        #     )
-        # ]
-        #
-        #     """
+
         # Act
         config = BacktestRunConfig.parse_raw(raw)
-        node = BacktestNode(config)
+        node = BacktestNode()
 
         # Assert
-        assert node.trader.id.value == "Test-111"
-        # assert node.trader.strategy_ids() == [StrategyId("VolatilityMarketMaker-000")]
+        node.run_sync(run_configs=[config])
