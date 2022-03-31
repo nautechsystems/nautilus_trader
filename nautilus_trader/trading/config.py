@@ -12,8 +12,9 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
-
 from typing import Optional
+
+from pydantic import parse_obj_as
 
 from nautilus_trader.common.config import ActorConfig
 from nautilus_trader.common.config import ImportableActorConfig
@@ -56,6 +57,14 @@ class ImportableStrategyConfig(ImportableActorConfig):
 
     path: str
     config: TradingStrategyConfig
+
+    @classmethod
+    def parse_obj(cls, *args, **kwargs):
+        """Overloaded so we can load the proper config class"""
+        result: ImportableStrategyConfig = super().parse_obj(*args, **kwargs)
+        sub_cls = resolve_path(path=result.path)
+        config = parse_obj_as(sub_cls, args[0]["config"])
+        return result.copy(update={"config": config})
 
 
 class StrategyFactory:

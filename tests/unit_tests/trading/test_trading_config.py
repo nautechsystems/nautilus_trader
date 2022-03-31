@@ -97,6 +97,5 @@ class TestStrategyFactory:
 
         # Assert
         assert isinstance(config.config, VolatilityMarketMakerConfig)
-        assert config.cls == "VolatilityMarketMakerConfig"
         assert config.config.instrument_id == "ETHUSDT-PERP.BINANCE"
         assert config.config.atr_period == 20
