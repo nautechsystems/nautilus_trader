@@ -15,7 +15,6 @@
 
 import asyncio
 import concurrent.futures
-import json
 import platform
 import signal
 import socket
@@ -27,7 +26,6 @@ from functools import partial
 from typing import Any, Callable, Dict, List, Optional
 
 import aiohttp
-import fsspec
 import msgspec
 import orjson
 import pyarrow
@@ -736,20 +734,3 @@ class TradingNode:
                         "task": task,
                     }
                 )
-
-
-def run_live_node(
-    config_path: str,
-    fs_protocol: str = "file",
-    fs_storage_options: Optional[str] = None,
-    start: bool = True,
-):
-    fs = fsspec.filesystem(
-        protocol=fs_protocol, **(json.loads(fs_storage_options or "{}"))  # noqa: P103
-    )
-    raw = fs.open(config_path).read()
-    config = TradingNodeConfig.parse_raw(raw)
-    node = TradingNode(config=config)
-    node.build()
-    if start:
-        node.start()
