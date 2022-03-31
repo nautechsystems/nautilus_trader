@@ -12,7 +12,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
-
+import json
 import sys
 from decimal import Decimal
 from typing import List
@@ -202,3 +202,60 @@ class TestBacktestNode:
         #     str(results[0])
         #     == "BacktestResult(backtest-2432fd8e1f2bb4b85ce7383712a66edf, SIM[USD]=996365.88)"
         # )
+
+    def test_node_config_from_raw(self):
+        # Arrange
+        raw = json.dumps(
+            {
+                "engine": {
+                    "trader_id": "Test-111",
+                    "log_level": "INFO",
+                },
+            }
+        )
+        #     """
+        #     self.venue_config = BacktestVenueConfig(
+        #     name="SIM",
+        #     oms_type="HEDGING",
+        #     account_type="MARGIN",
+        #     base_currency="USD",
+        #     starting_balances=["1000000 USD"],
+        #     # fill_model=fill_model,  # TODO(cs): Implement next iteration
+        # )
+        # self.data_config = BacktestDataConfig(
+        #     catalog_path="/.nautilus/catalog",
+        #     catalog_fs_protocol="memory",
+        #     data_cls=QuoteTick,
+        #     instrument_id="AUD/USD.SIM",
+        #     start_time=1580398089820000000,
+        #     end_time=1580504394501000000,
+        # )
+        # self.backtest_configs = [
+        #     BacktestRunConfig(
+        #         engine=BacktestEngineConfig(),
+        #         venues=[self.venue_config],
+        #         data=[self.data_config],
+        #     )
+        # ]
+        # self.strategies = [
+        #     ImportableStrategyConfig(
+        #         path="nautilus_trader.examples.strategies.ema_cross:EMACross",
+        #         config=EMACrossConfig(
+        #             instrument_id="AUD/USD.SIM",
+        #             bar_type="AUD/USD.SIM-100-TICK-MID-INTERNAL",
+        #             fast_ema_period=10,
+        #             slow_ema_period=20,
+        #             trade_size=Decimal(1_000_000),
+        #             order_id_tag="001",
+        #         ),
+        #     )
+        # ]
+        #
+        #     """
+        # Act
+        config = BacktestRunConfig.parse_raw(raw)
+        node = BacktestNode(config)
+
+        # Assert
+        assert node.trader.id.value == "Test-111"
+        # assert node.trader.strategy_ids() == [StrategyId("VolatilityMarketMaker-000")]

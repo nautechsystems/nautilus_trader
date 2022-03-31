@@ -16,7 +16,7 @@ def main(
     fsspec_url: Optional[str] = None,
     start: bool = True,
 ):
-    assert raw is not None or fsspec_url is not None
+    assert raw is not None or fsspec_url is not None, "Must pass one of `raw` or `fsspec_url`"
     if fsspec_url and raw is None:
         with fsspec.open(fsspec_url, "rb") as f:
             raw = f.read().decode()

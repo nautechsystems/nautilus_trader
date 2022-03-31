@@ -14,8 +14,8 @@
 # -------------------------------------------------------------------------------------------------
 
 import asyncio
+import json
 
-import orjson
 import pytest
 
 from nautilus_trader.adapters.betfair.factories import BetfairLiveDataClientFactory
@@ -46,7 +46,7 @@ class TestTradingNodeConfiguration:
 
     def test_node_config_from_raw(self):
         # Arrange
-        raw = orjson.dumps(
+        raw = json.dumps(
             {
                 "trader_id": "Test-111",
                 "log_level": "INFO",
