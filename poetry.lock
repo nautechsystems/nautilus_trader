@@ -505,11 +505,11 @@ python-versions = "*"
 
 [[package]]
 name = "jinja2"
-version = "3.1.1"
+version = "3.0.3"
 description = "A very fast and expressive template engine."
 category = "main"
 optional = false
-python-versions = ">=3.7"
+python-versions = ">=3.6"
 
 [package.dependencies]
 MarkupSafe = ">=2.0"
@@ -715,14 +715,14 @@ python-versions = ">=3.8"
 
 [[package]]
 name = "numpydoc"
-version = "1.2"
+version = "1.2.1"
 description = "Sphinx extension to support docstrings in Numpy format"
 category = "dev"
 optional = false
 python-versions = ">=3.7"
 
 [package.dependencies]
-Jinja2 = ">=2.10"
+Jinja2 = ">=2.10,<3.1"
 sphinx = ">=1.8"
 
 [package.extras]
@@ -1168,7 +1168,7 @@ python-versions = ">=3.6"
 
 [[package]]
 name = "sphinx"
-version = "4.4.0"
+version = "4.5.0"
 description = "Python documentation generator"
 category = "dev"
 optional = false
@@ -1549,7 +1549,7 @@ ib = ["ib_insync"]
 [metadata]
 lock-version = "1.1"
 python-versions = ">=3.8,<3.11"
-content-hash = "ea39ac6b255697f75ff31006efa62b40247319d9c37a3337d4be24ca5509d93b"
+content-hash = "7830859ce580d0433c205f1e99ae3f08a2a751c0db4dc65b243b6aad3daf2f6d"
 
 [metadata.files]
 aiodns = [
@@ -2021,8 +2021,8 @@ iniconfig = [
     {file = "iniconfig-1.1.1.tar.gz", hash = "sha256:bc3af051d7d14b2ee5ef9969666def0cd1a000e121eaea580d4a313df4b37f32"},
 ]
 jinja2 = [
-    {file = "Jinja2-3.1.1-py3-none-any.whl", hash = "sha256:539835f51a74a69f41b848a9645dbdc35b4f20a3b601e2d9a7e22947b15ff119"},
-    {file = "Jinja2-3.1.1.tar.gz", hash = "sha256:640bed4bb501cbd17194b3cace1dc2126f5b619cf068a726b98192a0fde74ae9"},
+    {file = "Jinja2-3.0.3-py3-none-any.whl", hash = "sha256:077ce6014f7b40d03b47d1f1ca4b0fc8328a692bd284016f806ed0eaca390ad8"},
+    {file = "Jinja2-3.0.3.tar.gz", hash = "sha256:611bb273cd68f3b993fabdc4064fc858c5b47a973cb5aa7999ec1ba405c87cd7"},
 ]
 linkify-it-py = [
     {file = "linkify-it-py-1.0.3.tar.gz", hash = "sha256:2b3f168d5ce75e3a425e34b341a6b73e116b5d9ed8dbbbf5dc7456843b7ce2ee"},
@@ -2303,8 +2303,8 @@ numpy = [
     {file = "numpy-1.22.3.zip", hash = "sha256:dbc7601a3b7472d559dc7b933b18b4b66f9aa7452c120e87dfb33d02008c8a18"},
 ]
 numpydoc = [
-    {file = "numpydoc-1.2-py3-none-any.whl", hash = "sha256:3ecbb9feae080031714b63128912988ebdfd4c582a085d25b8d9f7ac23c2d9ef"},
-    {file = "numpydoc-1.2.tar.gz", hash = "sha256:0cec233740c6b125913005d16e8a9996e060528afcb8b7cad3f2706629dfd6f7"},
+    {file = "numpydoc-1.2.1-py3-none-any.whl", hash = "sha256:2d317df5fd9404a5199bb993c1b6627436b2804582d2775bf9ccf3c5912ebe99"},
+    {file = "numpydoc-1.2.1.tar.gz", hash = "sha256:7ce826ed0d54c3fdc9097992a8d73a4d459dc468611351c68e444fec44a45af6"},
 ]
 orjson = [
     {file = "orjson-3.6.7-cp310-cp310-macosx_10_7_x86_64.whl", hash = "sha256:93188a9d6eb566419ad48befa202dfe7cd7a161756444b99c4ec77faea9352a4"},
@@ -2702,8 +2702,8 @@ soupsieve = [
     {file = "soupsieve-2.3.1.tar.gz", hash = "sha256:b8d49b1cd4f037c7082a9683dfa1801aa2597fb11c3a1155b7a5b94829b4f1f9"},
 ]
 sphinx = [
-    {file = "Sphinx-4.4.0-py3-none-any.whl", hash = "sha256:5da895959511473857b6d0200f56865ed62c31e8f82dd338063b84ec022701fe"},
-    {file = "Sphinx-4.4.0.tar.gz", hash = "sha256:6caad9786055cb1fa22b4a365c1775816b876f91966481765d7d50e9f0dd35cc"},
+    {file = "Sphinx-4.5.0-py3-none-any.whl", hash = "sha256:ebf612653238bcc8f4359627a9b7ce44ede6fdd75d9d30f68255c7383d3a6226"},
+    {file = "Sphinx-4.5.0.tar.gz", hash = "sha256:7bf8ca9637a4ee15af412d1a1d9689fec70523a68ca9bb9127c2f3eeb344e2e6"},
 ]
 sphinx-comments = [
     {file = "sphinx-comments-0.0.3.tar.gz", hash = "sha256:00170afff27019fad08e421da1ae49c681831fb2759786f07c826e89ac94cf21"},

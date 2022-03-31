@@ -29,8 +29,7 @@ from dask.utils import parse_timedelta
 try:
     import hyperopt
 except ImportError:
-    # hyperopt is an optional extra,
-    # which is only required when running `hyperopt_search()`.
+    # hyperopt is an optional extra, which is only required when running `hyperopt_search()`.
     hyperopt = None
 
 from nautilus_trader.backtest.config import BacktestDataConfig
@@ -388,11 +387,12 @@ class BacktestNode:
 
         # Add venues
         for config in venue_configs:
+            base_currency: Optional[str] = config.base_currency
             engine.add_venue(
                 venue=Venue(config.name),
                 oms_type=OMSType[config.oms_type],
                 account_type=AccountType[config.account_type],
-                base_currency=Currency.from_str(config.base_currency),
+                base_currency=Currency.from_str(base_currency) if base_currency else None,
                 starting_balances=[Money.from_str(m) for m in config.starting_balances],
                 book_type=BookTypeParser.from_str_py(config.book_type),
                 routing=config.routing,
@@ -433,9 +433,7 @@ def backtest_runner(
     # Load data
     for config in data_configs:
         t0 = pd.Timestamp.now()
-        engine._log.info(
-            f"Reading {config.data_type} backtest data for instrument={config.instrument_id}"
-        )
+        engine._log.info(f"Reading {config.data_type} data for instrument={config.instrument_id}.")
         d = config.load()
         if config.instrument_id and d["instrument"] is None:
             print(f"Requested instrument_id={d['instrument']} from data_config not found catalog")
@@ -446,7 +444,7 @@ def backtest_runner(
 
         t1 = pd.Timestamp.now()
         engine._log.info(
-            f"Read {len(d['data']):,} events from parquet in {parse_timedelta(t1-t0)}s"
+            f"Read {len(d['data']):,} events from parquet in {parse_timedelta(t1-t0)}s."
         )
         _load_engine_data(engine=engine, data=d)
         t2 = pd.Timestamp.now()
@@ -470,8 +468,9 @@ def groupby_datatype(data):
 
 def _extract_generic_data_client_id(data_configs: List[BacktestDataConfig]) -> Dict:
     """
-    Extract a mapping of data_type : client_id from the list of `data_configs`. In the process of merging the streaming
-    data, we lose the client_id for generic data, we need to inject this back in so the backtest engine can be
+    Extract a mapping of data_type : client_id from the list of `data_configs`.
+    In the process of merging the streaming data, we lose the `client_id` for
+    generic data, we need to inject this back in so the backtest engine can be
     correctly loaded.
     """
     data_client_ids = [

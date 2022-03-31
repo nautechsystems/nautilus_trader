@@ -48,16 +48,16 @@ including FX, Equities, Futures, Options, CFDs, Crypto and Betting - across mult
 
 ## Features
 
-- **Fast:** C-level speed through Cython. Asynchronous networking with [uvloop](https://github.com/MagicStack/uvloop).
-- **Reliable:** Type safety through Cython. Redis backed performant state persistence.
-- **Flexible:** OS independent, runs on Linux, macOS, Windows. Deploy using Docker.
-- **Integrated:** Modular adapters mean any REST, WebSocket, or FIX API can be integrated.
-- **Advanced:** Time in force `IOC`, `FOK`, `GTD`, `AT_THE_OPEN`, `AT_THE_CLOSE`, advanced order types and conditional triggers. Execution instructions `post-only`, `reduce-only`, and icebergs. Contingency order lists including `OCO`, `OTO`.
-- **Backtesting:** Run with multiple venues, instruments and strategies simultaneously using historical quote tick, trade tick, bar, order book and custom data with nanosecond resolution.
-- **Live:** Use identical strategy implementations between backtesting and live deployments.
-- **Multi-venue:** Multiple venue capabilities facilitate market making and statistical arbitrage strategies.
-- **AI Agent Training:** Backtest engine fast enough to be used to train AI trading agents (RL/ES).
-- **Distributed:** Run backtests synchronously or as a graph distributed across a [dask](https://dask.org/) cluster.
+- **Fast:** C-level speed through Cython. Asynchronous networking with [uvloop](https://github.com/MagicStack/uvloop)
+- **Reliable:** Type safety through Cython. Redis backed performant state persistence
+- **Flexible:** OS independent, runs on Linux, macOS, Windows. Deploy using Docker
+- **Integrated:** Modular adapters mean any REST, WebSocket, or FIX API can be integrated
+- **Advanced:** Time in force `IOC`, `FOK`, `GTD`, `AT_THE_OPEN`, `AT_THE_CLOSE`, advanced order types and conditional triggers. Execution instructions `post-only`, `reduce-only`, and icebergs. Contingency order lists including `OCO`, `OTO`
+- **Backtesting:** Run with multiple venues, instruments and strategies simultaneously using historical quote tick, trade tick, bar, order book and custom data with nanosecond resolution
+- **Live:** Use identical strategy implementations between backtesting and live deployments
+- **Multi-venue:** Multiple venue capabilities facilitate market making and statistical arbitrage strategies
+- **AI Agent Training:** Backtest engine fast enough to be used to train AI trading agents (RL/ES)
+- **Distributed:** Run backtests synchronously or as a graph distributed across a [dask](https://dask.org/) cluster
 
 ![Alt text](https://github.com/nautechsystems/nautilus_trader/blob/develop/docs/_images/nautilus-art.png?raw=true "nautilus")
 > *nautilus - from ancient Greek 'sailor' and naus 'ship'.*
@@ -113,10 +113,6 @@ The project increasingly utilizes Rust for core performance-critical components.
 Cython, with static libraries linked at compile-time before the wheel binaries are packaged, so a user
 does not need to have Rust installed to run NautilusTrader. In the future as more Rust code is introduced,
 [PyO3](https://pyo3.rs/v0.15.1/) will be leveraged for easier Python bindings.
-
-The `rust-experimental` branch is likely to run for at least another release cycle while the Python -> Rust bindings for core objects 
-are bedded down, and more automated testing is written. Present benchmarks show instantiation of core objects is between 2-3x faster
-even when wrapped in a Python class using Cython, with comparisons and arithmetic operations achieving an order of magnitude improvement.
 
 ## Architecture (data flow)
 
@@ -205,9 +201,9 @@ The API is becoming more stable, however breaking changes are still possible bet
 Documentation of these changes in the release notes are made on a best-effort basis.
 
 ### Branches
-- `master` branch will always reflect the source code for the latest released version.
+- `master` branch will always reflect the source code for the latest released version
 - `develop` branch is normally very active with frequent commits and may contain experimental features. We aim to maintain a stable 
-passing build on this branch.
+passing build on this branch
 
 The current roadmap has a goal of achieving a stable API for a `2.x` version. From this
 point we will follow a formal process for releases, with deprecation periods for any API changes.
@@ -215,29 +211,38 @@ point we will follow a formal process for releases, with deprecation periods for
 ## Makefile
 
 A `Makefile` is provided to automate most installation and build tasks. It provides the following targets:
-- `make install` -- Installs the package using poetry.
-- `make build` -- Runs the Cython build script.
-- `make clean` -- Cleans all none source artifacts from the repository.
-- `make docs` -- Builds the documentation HTML using Sphinx.
-- `make pre-commit` -- Runs the pre-commit checks over all files.
+- `make install` -- Installs the package using poetry
+- `make build` -- Runs the Cython build script
+- `make clean` -- Cleans all none source artifacts from the repository
+- `make docs` -- Builds the documentation HTML using Sphinx
+- `make pre-commit` -- Runs the pre-commit checks over all files
 
 ## Examples
 
 Indicators and strategies can be developed in both Python and Cython (although if performance and latency sensitivity is import we recommend Cython).
 The below are some examples of this:
-- [indicator](/examples/indicators/ema_py.py) example written in Python.
-- [indicator](/nautilus_trader/indicators/) examples written in Cython.
-- [strategy](/nautilus_trader/examples/strategies/) examples written in both Python and Cython.
-- [backtest](/examples/backtest/) examples using a `BacktestEngine` directly.
+- [indicator](/examples/indicators/ema_py.py) example written in Python
+- [indicator](/nautilus_trader/indicators/) examples written in Cython
+- [strategy](/nautilus_trader/examples/strategies/) examples written in both Python and Cython
+- [backtest](/examples/backtest/) examples using a `BacktestEngine` directly
 
-## Interactive Backtest Example
+## Docker
 
-[Binder](https://mybinder.org) can launch Jupyter Notebooks from source repositories.
-You can access a complete running backtest example through Binder here!
-*Please note that currently Binder needs to build the platform from scratch which
-can take a significant amount of time. We are working to optimize this.*
+Docker containers are built using a base `python:3.10-slim` with the following image variant tags:
+- `nautilus_trader:latest` has the latest release version installed
+- `nautilus_trader:develop` has the head of the `develop` branch installed
+- `jupyterlab:develop` has the head of the `develop` branch installed along with `jupyterlab` and an
+example backtest notebook with accompanying data
 
-[![Binder](https://mybinder.org/badge_logo.svg)](https://mybinder.org/v2/gh/nautechsystems/nautilus_trader/develop?filepath=docs/getting_started/quick_start.ipynb)
+The container images can be pulled as follows:
+
+    docker pull ghcr.io/nautechsystems/<image_variant_tag>
+
+You can launch the backtest example container by running:
+
+    docker run -p 8888:8888 ghcr.io/nautechsystems/jupyterlab:develop
+
+Then navigate to the `backtest_example.ipynb` and run it!
 
 ## Minimal Strategy
 
