@@ -34,6 +34,7 @@ h1, h2, h3 {
     display: block;
     width: 230px;
     height: auto;
+    image-rendering: optimizequality; /*Safari*/
     image-rendering: smooth;         /* Firefox */
     image-rendering: -o-crisp-edges;         /* Opera */
     image-rendering: -webkit-optimize-contrast;/* Webkit (non-standard naming) */
