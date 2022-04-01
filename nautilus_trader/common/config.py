@@ -15,13 +15,43 @@
 
 import importlib
 import importlib.util
-from typing import Any, Dict, FrozenSet, Optional, Union
+from typing import Any, Dict, FrozenSet, Optional
 
 import pydantic
 from frozendict import frozendict
 from pydantic import validator
 
 from nautilus_trader.core.correctness import PyCondition
+
+
+def resolve_path(path: str):
+    module, cls = path.rsplit(":", maxsplit=1)
+    mod = importlib.import_module(module)
+    cls = getattr(mod, cls)
+    return cls
+
+
+class ImportableConfig(pydantic.BaseModel):
+    """
+    Base class for ImportableConfig.
+    """
+
+    @staticmethod
+    def is_importable(data: Dict):
+        return set(data) == {"factory_path", "config_path", "config"}
+
+    @staticmethod
+    def create(data: Dict, config_type: type):
+        assert (
+            ":" in data["factory_path"]
+        ), "`class_path` variable should be of the form `path.to.module:class`"
+        assert (
+            ":" in data["config_path"]
+        ), "`config_path` variable should be of the form `path.to.module:class`"
+        cls = resolve_path(data["config_path"])
+        config = cls(**data["config"])
+        assert isinstance(config, config_type)
+        return config
 
 
 class ActorConfig(pydantic.BaseModel):
@@ -45,28 +75,17 @@ class ImportableActorConfig(pydantic.BaseModel):
 
     Parameters
     ----------
-    path : str, optional
-        The fully qualified name of the module.
-    config : Union[ActorConfig, str]
-
+    actor_path : str
+        The fully qualified name of the Actor class.
+    config_path : str
+        The fully qualified name of the Actor Config class.
+    config : Dict
+        The actor configuration
     """
 
-    path: Optional[str]
-    config: Union[ActorConfig, str]
-
-    def _check_path(self):
-        assert self.path, "`path` not set, can't parse module"
-        assert ":" in self.path, "Path variable should be of the form: path.to.module:class"
-
-    @property
-    def module(self):
-        self._check_path()
-        return self.path.rsplit(":")[0]
-
-    @property
-    def cls(self):
-        self._check_path()
-        return self.path.rsplit(":")[1]
+    actor_path: str
+    config_path: str
+    config: dict
 
 
 class ActorFactory:
@@ -95,10 +114,9 @@ class ActorFactory:
 
         """
         PyCondition.type(config, ImportableActorConfig, "config")
-        mod = importlib.import_module(config.module)
-        cls = getattr(mod, config.cls)
-        assert isinstance(config.config, ActorConfig)
-        return cls(config=config.config)
+        strategy_cls = resolve_path(config.actor_path)
+        config_cls = resolve_path(config.config_path)
+        return strategy_cls(config=config_cls(**config.config))
 
 
 class InstrumentProviderConfig(pydantic.BaseModel):
