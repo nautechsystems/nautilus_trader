@@ -24,21 +24,6 @@ from pydantic import validator
 from nautilus_trader.core.correctness import PyCondition
 
 
-class ActorConfig(pydantic.BaseModel):
-    """
-    The base model for all actor configurations.
-
-    Parameters
-    ----------
-    component_id : str, optional
-        The component ID. If ``None`` then the identifier will be taken from
-        `type(self).__name__`.
-
-    """
-
-    component_id: Optional[str] = None
-
-
 def resolve_path(path: str):
     module, cls = path.rsplit(":", maxsplit=1)
     mod = importlib.import_module(module)
@@ -67,6 +52,21 @@ class ImportableConfig(pydantic.BaseModel):
         config = cls(**data["config"])
         assert isinstance(config, config_type)
         return config
+
+
+class ActorConfig(pydantic.BaseModel):
+    """
+    The base model for all actor configurations.
+
+    Parameters
+    ----------
+    component_id : str, optional
+        The component ID. If ``None`` then the identifier will be taken from
+        `type(self).__name__`.
+
+    """
+
+    component_id: Optional[str] = None
 
 
 class ImportableActorConfig(pydantic.BaseModel):

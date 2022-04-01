@@ -12,22 +12,23 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+
 from typing import Optional
 
-from nautilus_trader.common.config import ActorConfig
-from nautilus_trader.common.config import ImportableActorConfig
+import pydantic
+
 from nautilus_trader.common.config import resolve_path
 from nautilus_trader.core.correctness import PyCondition
 
 
-class TradingStrategyConfig(ActorConfig):
+class TradingStrategyConfig(pydantic.BaseModel):
     """
     The base model for all trading strategy configurations.
 
     Parameters
     ----------
-    component_id : str, optional
-        The unique component ID for the strategy. Will become the strategy ID if not None.
+    strategy_id : str, optional
+        The unique ID for the strategy. Will become the strategy ID if not None.
     order_id_tag : str
         The unique order ID tag for the strategy. Must be unique
         amongst all running strategies for a particular trader ID.
@@ -37,11 +38,12 @@ class TradingStrategyConfig(ActorConfig):
 
     """
 
+    strategy_id: Optional[str] = None
     order_id_tag: str = "000"
     oms_type: Optional[str] = None
 
 
-class ImportableStrategyConfig(ImportableActorConfig):
+class ImportableStrategyConfig(pydantic.BaseModel):
     """
     Represents a trading strategy configuration for one specific backtest run.
 

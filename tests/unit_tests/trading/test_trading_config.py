@@ -20,7 +20,6 @@ import pytest
 
 from nautilus_trader.examples.strategies.ema_cross import EMACross
 from nautilus_trader.examples.strategies.ema_cross import EMACrossConfig
-from nautilus_trader.examples.strategies.volatility_market_maker import VolatilityMarketMakerConfig
 from nautilus_trader.trading.config import ImportableStrategyConfig
 from nautilus_trader.trading.config import StrategyFactory
 
@@ -62,7 +61,8 @@ class TestStrategyFactory:
             slow_ema_period=20,
         )
         importable = ImportableStrategyConfig(
-            path="nautilus_trader.examples.strategies.ema_cross:EMACross",
+            strategy_path="nautilus_trader.examples.strategies.ema_cross:EMACross",
+            config_path="nautilus_trader.examples.strategies.ema_cross:EMACrossConfig",
             config=config,
         )
 
@@ -72,7 +72,7 @@ class TestStrategyFactory:
         # Assert
         assert isinstance(strategy, EMACross)
         assert (
-            repr(config) == "EMACrossConfig(component_id=None, order_id_tag='000', oms_type=None, "
+            repr(config) == "EMACrossConfig(strategy_id=None, order_id_tag='000', oms_type=None, "
             "instrument_id='AUD/USD.SIM', bar_type='AUD/USD.SIM-15-MINUTE-BID-EXTERNAL', "
             "fast_ema_period=10, slow_ema_period=20, trade_size=Decimal('1000000'))"  # noqa
         )
@@ -81,7 +81,8 @@ class TestStrategyFactory:
         # Arrange
         raw = orjson.dumps(
             {
-                "path": "nautilus_trader.examples.strategies.volatility_market_maker:VolatilityMarketMakerConfig",
+                "strategy_path": "nautilus_trader.examples.strategies.volatility_market_maker:VolatilityMarketMaker",
+                "config_path": "nautilus_trader.examples.strategies.volatility_market_maker:VolatilityMarketMakerConfig",
                 "config": {
                     "instrument_id": "ETHUSDT-PERP.BINANCE",
                     "bar_type": "ETHUSDT-PERP.BINANCE-1-MINUTE-LAST-EXTERNAL",
@@ -96,6 +97,6 @@ class TestStrategyFactory:
         config = ImportableStrategyConfig.parse_raw(raw)
 
         # Assert
-        assert isinstance(config.config, VolatilityMarketMakerConfig)
-        assert config.config.instrument_id == "ETHUSDT-PERP.BINANCE"
-        assert config.config.atr_period == 20
+        assert isinstance(config, ImportableStrategyConfig)
+        assert config.config["instrument_id"] == "ETHUSDT-PERP.BINANCE"
+        assert config.config["atr_period"] == "20"

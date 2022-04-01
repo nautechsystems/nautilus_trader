@@ -106,9 +106,9 @@ cdef class TradingStrategy(Actor):
             config = TradingStrategyConfig()
         Condition.type(config, TradingStrategyConfig, "config")
 
-        super().__init__(config)
+        super().__init__()
         # Assign strategy ID after base class initialized
-        component_id = type(self).__name__ if config.component_id is None else config.component_id
+        component_id = type(self).__name__ if config.strategy_id is None else config.strategy_id
         self.id = StrategyId(f"{component_id}-{config.order_id_tag}")
 
         self.oms_type = OMSTypeParser.from_str(str(config.oms_type).upper())
