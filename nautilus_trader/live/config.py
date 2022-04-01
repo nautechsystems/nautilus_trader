@@ -12,6 +12,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+
 from typing import Dict, FrozenSet, List, Optional
 
 import pydantic
@@ -21,7 +22,7 @@ from pydantic import PositiveInt
 from pydantic import validator
 
 from nautilus_trader.cache.config import CacheConfig
-from nautilus_trader.common.config import ImportableConfig
+from nautilus_trader.common.config import ImportableClientConfig
 from nautilus_trader.common.config import InstrumentProviderConfig
 from nautilus_trader.data.config import DataEngineConfig
 from nautilus_trader.execution.config import ExecEngineConfig
@@ -182,24 +183,24 @@ class TradingNodeConfig(pydantic.BaseModel):
     persistence: Optional[PersistenceConfig] = None
 
     @validator("data_clients", pre=True)
-    def validate_importable_data_clients(cls, v):
-        """Resolve any ImportableLiveExec/DataClientConfig into"""
+    def validate_importable_data_clients(cls, v) -> Dict[str, LiveDataClientConfig]:
+        """Resolve any ImportableClientConfig into a LiveDataClientConfig."""
 
-        def resolve(config):
-            if ImportableConfig.is_importable(config):
-                return ImportableConfig.create(config, config_type=LiveDataClientConfig)
+        def resolve(config) -> LiveDataClientConfig:
+            if ImportableClientConfig.is_importable(config):
+                return ImportableClientConfig.create(config, config_type=LiveDataClientConfig)
             return config
 
         data_clients = {name: resolve(config) for name, config in v.items()}
         return data_clients
 
     @validator("exec_clients", pre=True)
-    def validate_importable_exec_clients(cls, v):
-        """Resolve any ImportableLiveExec/DataClientConfig into"""
+    def validate_importable_exec_clients(cls, v) -> Dict[str, LiveExecClientConfig]:
+        """Resolve any ImportableClientConfig into a LiveExecClientConfig."""
 
-        def resolve(config):
-            if ImportableConfig.is_importable(config):
-                return ImportableConfig.create(config, config_type=LiveExecClientConfig)
+        def resolve(config) -> LiveExecClientConfig:
+            if ImportableClientConfig.is_importable(config):
+                return ImportableClientConfig.create(config, config_type=LiveExecClientConfig)
             return config
 
         exec_clients = {name: resolve(config) for name, config in v.items()}

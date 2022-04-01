@@ -31,9 +31,9 @@ def resolve_path(path: str):
     return cls
 
 
-class ImportableConfig(pydantic.BaseModel):
+class ImportableClientConfig(pydantic.BaseModel):
     """
-    Base class for ImportableConfig.
+    Represents a live data or execution client configuration.
     """
 
     @staticmethod
