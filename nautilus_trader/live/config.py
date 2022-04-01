@@ -12,20 +12,23 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
-
-from typing import Dict, FrozenSet, Optional
+from typing import Dict, FrozenSet, List, Optional
 
 import pydantic
+from pydantic import Field
 from pydantic import PositiveFloat
 from pydantic import PositiveInt
+from pydantic import validator
 
 from nautilus_trader.cache.config import CacheConfig
+from nautilus_trader.common.config import ImportableConfig
 from nautilus_trader.common.config import InstrumentProviderConfig
 from nautilus_trader.data.config import DataEngineConfig
 from nautilus_trader.execution.config import ExecEngineConfig
 from nautilus_trader.infrastructure.config import CacheDatabaseConfig
 from nautilus_trader.persistence.config import PersistenceConfig
 from nautilus_trader.risk.config import RiskEngineConfig
+from nautilus_trader.trading.config import ImportableStrategyConfig
 
 
 class LiveDataEngineConfig(DataEngineConfig):
@@ -165,6 +168,7 @@ class TradingNodeConfig(pydantic.BaseModel):
     data_engine: Optional[LiveDataEngineConfig] = None
     risk_engine: Optional[LiveRiskEngineConfig] = None
     exec_engine: Optional[LiveExecEngineConfig] = None
+    strategies: List[ImportableStrategyConfig] = Field(default_factory=list)
     loop_debug: bool = False
     load_strategy_state: bool = True
     save_strategy_state: bool = True
@@ -176,3 +180,27 @@ class TradingNodeConfig(pydantic.BaseModel):
     data_clients: Dict[str, LiveDataClientConfig] = {}
     exec_clients: Dict[str, LiveExecClientConfig] = {}
     persistence: Optional[PersistenceConfig] = None
+
+    @validator("data_clients", pre=True)
+    def validate_importable_data_clients(cls, v):
+        """Resolve any ImportableLiveExec/DataClientConfig into"""
+
+        def resolve(config):
+            if ImportableConfig.is_importable(config):
+                return ImportableConfig.create(config, config_type=LiveDataClientConfig)
+            return config
+
+        data_clients = {name: resolve(config) for name, config in v.items()}
+        return data_clients
+
+    @validator("exec_clients", pre=True)
+    def validate_importable_exec_clients(cls, v):
+        """Resolve any ImportableLiveExec/DataClientConfig into"""
+
+        def resolve(config):
+            if ImportableConfig.is_importable(config):
+                return ImportableConfig.create(config, config_type=LiveExecClientConfig)
+            return config
+
+        exec_clients = {name: resolve(config) for name, config in v.items()}
+        return exec_clients

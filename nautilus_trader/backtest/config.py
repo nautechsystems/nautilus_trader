@@ -277,6 +277,12 @@ class BacktestRunConfig(Partialable):
     def id(self):
         return tokenize(self)
 
+    @classmethod
+    def parse_raw(cls, raw: Union[str, bytes]):
+        """Overloaded so that `Partialable` base class is explicitly set"""
+        res = cls.__pydantic_model__.parse_raw(raw)  # type: ignore
+        return cls(**{k: getattr(res, k) for k in cls.__dataclass_fields__})  # type: ignore
+
 
 def parse_filters_expr(s: str):
     # TODO (bm) - could we do this better, probably requires writing our own parser?
