@@ -54,6 +54,7 @@ from nautilus_trader.persistence.config import PersistenceConfig
 from nautilus_trader.persistence.streaming import FeatherWriter
 from nautilus_trader.portfolio.portfolio import Portfolio
 from nautilus_trader.serialization.msgpack.serializer import MsgPackSerializer
+from nautilus_trader.trading.config import StrategyFactory
 from nautilus_trader.trading.trader import Trader
 
 
@@ -227,6 +228,10 @@ class TradingNode:
             logger=self._logger,
             log=self._log,
         )
+
+        for strategy_config in self._config.strategies:
+            strategy = StrategyFactory.create(strategy_config)  # type: ignore
+            self.trader.add_strategy(strategy)  # type: ignore
 
         self._log.info("INITIALIZED.")
         self.time_to_initialize = self._clock.delta(self.created_time)

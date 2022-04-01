@@ -14,6 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 import asyncio
+import json
 
 import pytest
 
@@ -22,6 +23,7 @@ from nautilus_trader.adapters.betfair.factories import BetfairLiveExecClientFact
 from nautilus_trader.infrastructure.config import CacheDatabaseConfig
 from nautilus_trader.live.config import TradingNodeConfig
 from nautilus_trader.live.node import TradingNode
+from nautilus_trader.model.identifiers import StrategyId
 
 
 class TestTradingNodeConfiguration:
@@ -41,6 +43,63 @@ class TestTradingNodeConfiguration:
 
         # Assert
         assert node is not None
+
+    def test_node_config_from_raw(self):
+        # Arrange
+        raw = json.dumps(
+            {
+                "trader_id": "Test-111",
+                "log_level": "INFO",
+                "exec_engine": {
+                    "reconciliation_lookback_mins": 1440,
+                },
+                "data_clients": {
+                    "BINANCE": {
+                        "factory_path": "nautilus_trader.adapters.binance.factories:BinanceLiveDataClientFactory",
+                        "config_path": "nautilus_trader.adapters.binance.config:BinanceDataClientConfig",
+                        "config": {
+                            "account_type": "FUTURES_USDT",
+                            "instrument_provider": {"load_all": True},
+                        },
+                    }
+                },
+                "exec_clients": {
+                    "BINANCE": {
+                        "factory_path": "nautilus_trader.adapters.binance.factories:BinanceLiveExecClientFactory",
+                        "config_path": "nautilus_trader.adapters.binance.config:BinanceExecClientConfig",
+                        "config": {
+                            "account_type": "FUTURES_USDT",
+                            "instrument_provider": {"load_all": True},
+                        },
+                    }
+                },
+                "timeout_connection": 5.0,
+                "timeout_reconciliation": 5.0,
+                "timeout_portfolio": 5.0,
+                "timeout_disconnection": 5.0,
+                "check_residuals_delay": 2.0,
+                "strategies": [
+                    {
+                        "strategy_path": "nautilus_trader.examples.strategies.volatility_market_maker:VolatilityMarketMaker",
+                        "config_path": "nautilus_trader.examples.strategies.volatility_market_maker:VolatilityMarketMakerConfig",
+                        "config": {
+                            "instrument_id": "ETHUSDT-PERP.BINANCE",
+                            "bar_type": "ETHUSDT-PERP.BINANCE-1-MINUTE-LAST-EXTERNAL",
+                            "atr_period": "20",
+                            "atr_multiple": "6.0",
+                            "trade_size": "0.01",
+                        },
+                    }
+                ],
+            }
+        )
+        # Act
+        config = TradingNodeConfig.parse_raw(raw)
+        node = TradingNode(config)
+
+        # Assert
+        assert node.trader.id.value == "Test-111"
+        assert node.trader.strategy_ids() == [StrategyId("VolatilityMarketMaker-000")]
 
 
 class TestTradingNodeOperation:
