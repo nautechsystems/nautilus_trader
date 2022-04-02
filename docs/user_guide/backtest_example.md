@@ -222,38 +222,3 @@ Finally, we can create a `BacktestNode` and run the backtest:
 from nautilus_trader.backtest.node import BacktestNode
 node = BacktestNode()
 ```
-
-```python
-task = node.build_graph(run_configs=configs)
-task
-```
-
-```python
-# Visualising the graph requires graphviz - `%pip install graphviz` in a notebook cell to install it
-
-# task.visualize(rankdir='LR') 
-```
-
-Notice because our configs share the same data, that only one instance of `load` is required.
-
-
-### Start up a local Dask cluster to execute the graph
-
-```python
-# Create a local dask client - not a requirement, but allows parallelising the runs
-from distributed import Client
-client = Client(n_workers=2)
-client
-```
-
-### Run the backtests!
-
-```python tags=[]
-results = task.compute()
-```
-
-### Compare the results
-
-```python
-results.plot_balances()
-```

@@ -14,15 +14,9 @@
 # -------------------------------------------------------------------------------------------------
 
 import itertools
-import pickle
 from typing import Dict, List, Optional
 
-import cloudpickle
-import dask
 import pandas as pd
-from dask.base import normalize_token
-from dask.delayed import Delayed
-from dask.utils import parse_timedelta
 
 from nautilus_trader.backtest.config import BacktestDataConfig
 from nautilus_trader.backtest.config import BacktestRunConfig
@@ -46,7 +40,6 @@ from nautilus_trader.model.enums import BookTypeParser
 from nautilus_trader.model.enums import OMSType
 from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import Venue
-from nautilus_trader.model.instruments.base import Instrument
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.orderbook.data import OrderBookData
 from nautilus_trader.model.orderbook.data import OrderBookDelta
@@ -62,42 +55,7 @@ from nautilus_trader.trading.strategy import TradingStrategy
 class BacktestNode:
     """
     Provides a node for orchestrating groups of configurable backtest runs.
-
-    These can be run synchronously, or can be built into a lazily evaluated
-    graph for execution by a dask executor.
     """
-
-    def build_graph(self, run_configs: List[BacktestRunConfig]) -> Delayed:
-        """
-        Build a `Delayed` graph from `backtest_configs` which can be passed to a dask executor.
-
-        Parameters
-        ----------
-        run_configs : list[BacktestRunConfig]
-            The backtest run configurations.
-
-        Returns
-        -------
-        Delayed
-            The delayed graph, yet to be computed.
-
-        """
-        results: List[BacktestResult] = []
-        for config in run_configs:
-            config.check()  # check all values set
-            result = self._run_delayed(
-                run_config_id=config.id,
-                engine_config=config.engine,
-                venue_configs=config.venues,
-                data_configs=config.data,
-                actor_configs=config.actors,
-                strategy_configs=config.strategies,
-                persistence=config.persistence,
-                batch_size_bytes=config.batch_size_bytes,
-            )
-            results.append(result)
-
-        return self._gather_delayed(results)
 
     def run_sync(self, run_configs: List[BacktestRunConfig], **kwargs) -> List[BacktestResult]:
         """
@@ -130,33 +88,6 @@ class BacktestNode:
             )
             results.append(result)
 
-        return results
-
-    @dask.delayed
-    def _run_delayed(
-        self,
-        run_config_id: str,
-        engine_config: BacktestEngineConfig,
-        venue_configs: List[BacktestVenueConfig],
-        data_configs: List[BacktestDataConfig],
-        actor_configs: List[ImportableActorConfig],
-        strategy_configs: List[ImportableStrategyConfig],
-        persistence: Optional[PersistenceConfig] = None,
-        batch_size_bytes: Optional[int] = None,
-    ) -> BacktestResult:
-        return self._run(
-            run_config_id=run_config_id,
-            engine_config=engine_config,
-            venue_configs=venue_configs,
-            data_configs=data_configs,
-            actor_configs=actor_configs,
-            strategy_configs=strategy_configs,
-            persistence=persistence,
-            batch_size_bytes=batch_size_bytes,
-        )
-
-    @dask.delayed
-    def _gather_delayed(self, *results):
         return results
 
     def _run(
@@ -310,12 +241,10 @@ def backtest_runner(
             continue
 
         t1 = pd.Timestamp.now()
-        engine._log.info(
-            f"Read {len(d['data']):,} events from parquet in {parse_timedelta(t1-t0)}s."
-        )
+        engine._log.info(f"Read {len(d['data']):,} events from parquet in {pd.Timedelta(t1-t0)}s.")
         _load_engine_data(engine=engine, data=d)
         t2 = pd.Timestamp.now()
-        engine._log.info(f"Engine load took {parse_timedelta(t2-t1)}s")
+        engine._log.info(f"Engine load took {pd.Timedelta(t2-t1)}s")
 
     engine.run(run_config_id=run_config_id)
 
@@ -377,23 +306,3 @@ def streaming_backtest_runner(
             _load_engine_data(engine=engine, data=data)
         engine.run_streaming(run_config_id=run_config_id)
     engine.end_streaming()
-
-
-# Register tokenization methods with dask
-for cls in Instrument.__subclasses__():
-    normalize_token.register(cls, func=cls.to_dict)
-
-
-@normalize_token.register(object)
-def nautilus_tokenize(o: object):
-    return cloudpickle.dumps(o, protocol=pickle.DEFAULT_PROTOCOL)
-
-
-@normalize_token.register(ImportableStrategyConfig)
-def tokenize_strategy_config(config: ImportableStrategyConfig):
-    return config.dict()
-
-
-@normalize_token.register(BacktestRunConfig)
-def tokenize_backtest_run_config(config: BacktestRunConfig):
-    return config.__dict__
