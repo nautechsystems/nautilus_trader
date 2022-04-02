@@ -22,17 +22,17 @@ class CacheDatabaseConfig(pydantic.BaseModel):
 
     Parameters
     ----------
-    type : str
+    type : str, {'in-memory', 'redis'}, default 'in-memory'
         The database type.
-    host : str
-        The database host address.
-    port : int
-        The database port.
-    flush : bool
+    host : str, default 'localhost'
+        The database host address (default for Redis).
+    port : int, default 6379
+        The database port (default for Redis).
+    flush : bool, default False
         If database should be flushed before start.
     """
 
-    type: str = "redis"
+    type: str = "in-memory"
     host: str = "localhost"
     port: int = 6379
     flush: bool = False
