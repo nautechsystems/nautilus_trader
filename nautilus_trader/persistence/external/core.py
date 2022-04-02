@@ -12,7 +12,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
-
+import logging
 import pathlib
 import re
 from concurrent.futures import Executor
@@ -27,6 +27,7 @@ import pyarrow as pa
 import pyarrow.dataset as ds
 import pyarrow.parquet as pq
 from fsspec.core import OpenFile
+from pyarrow import ArrowInvalid
 from tqdm import tqdm
 
 from nautilus_trader.model.data.base import GenericData
@@ -300,7 +301,11 @@ def write_parquet(
     new_files = set(fs.glob(f"{path}/**/*.parquet")) - files
     del df
     for fn in new_files:
-        ndf = pd.read_parquet(fs.open(fn))
+        try:
+            ndf = pd.read_parquet(fs.open(fn))
+        except ArrowInvalid:
+            logging.error(f"Failed to read {fn}")
+            continue
         # assert ndf.shape[0] == shape
         if "ts_init" in ndf.columns:
             ndf = ndf.sort_values("ts_init").reset_index(drop=True)
