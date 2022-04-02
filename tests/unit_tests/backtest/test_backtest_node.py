@@ -18,9 +18,7 @@ import sys
 from decimal import Decimal
 from typing import List
 
-import dask
 import pytest
-from dask.utils import parse_bytes
 
 from nautilus_trader.backtest.config import BacktestDataConfig
 from nautilus_trader.backtest.config import BacktestRunConfig
@@ -30,6 +28,7 @@ from nautilus_trader.backtest.node import BacktestNode
 from nautilus_trader.backtest.results import BacktestResult
 from nautilus_trader.model.data.tick import QuoteTick
 from nautilus_trader.persistence.catalog import DataCatalog
+from nautilus_trader.persistence.util import parse_bytes
 from nautilus_trader.trading.config import ImportableStrategyConfig
 from tests.test_kit.mocks.data import aud_usd_data_loader
 from tests.test_kit.mocks.data import data_catalog_setup
@@ -41,7 +40,6 @@ pytestmark = pytest.mark.skipif(sys.platform == "win32", reason="test path broke
 @pytest.mark.skip(reason="unify system kernel")
 class TestBacktestNode:
     def setup(self):
-        dask.config.set(scheduler="single-threaded")
         data_catalog_setup()
         self.catalog = DataCatalog.from_env()
         self.venue_config = BacktestVenueConfig(
