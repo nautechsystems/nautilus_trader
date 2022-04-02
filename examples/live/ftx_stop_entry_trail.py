@@ -24,6 +24,7 @@ from nautilus_trader.examples.strategies.ema_cross_stop_entry_trail import EMACr
 from nautilus_trader.examples.strategies.ema_cross_stop_entry_trail import (
     EMACrossStopEntryTrailConfig,
 )
+from nautilus_trader.infrastructure.config import CacheDatabaseConfig
 from nautilus_trader.live.config import TradingNodeConfig
 from nautilus_trader.live.node import TradingNode
 
@@ -41,7 +42,7 @@ config_node = TradingNodeConfig(
     exec_engine={
         "reconciliation_lookback_mins": 1440,
     },
-    # cache_database=CacheDatabaseConfig(),
+    cache_database=CacheDatabaseConfig(type="in-memory"),
     data_clients={
         "FTX": FTXDataClientConfig(
             api_key=None,  # "YOUR_FTX_API_KEY"

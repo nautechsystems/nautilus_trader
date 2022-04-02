@@ -8,12 +8,15 @@ This will be the final release without Rust compiled binaries.
 - The `SimulatedExchange` will now 'receive' market data prior to the `DataEngine`
   (note that this did not affect any test)
 - Tightened requirement for `DataType` types to be subclasses of `Data`
+- `CacheDatabaseConfig.type` now defaults to `in-memory`
 - `NAUTILUS_CATALOG` env var changed to `NAUTILUS_PATH`
 - `DataCatalog` root path now located under `$OLD_PATH/catalog/` from the Nautilus path
 - `hyperopt` is now an optional extra
 
 ### Enhancements
 - Added Docker image builds and GH packages
+- Unify `NautilusKernel` system between backtest and live systems
+- Improved configuration objects and flows
 - Numerous improvements to the Binance Spot/Margin and Futures integration
 - Added `BinanceFuturesMarkPriceUpdate` type and data stream
 - Added generic `subscribe` and `unsubscribe` to template
@@ -22,6 +25,8 @@ This will be the final release without Rust compiled binaries.
 
 ### Fixes
 - Fixed slow subscribers to the Binance WebSocket streams
+- Fixed configuration of `base_currency` for backtests
+- Fixed importable strategy configs (previously not returning correct class)
 - Fixed `fully_qualified_name()` format
 - Fixed multiple instruments in `DataCatalog` (#554), (#560) by @limx0
 - Fixed timestamp ordering streaming from `DataCatalog` (#561) by @limx0

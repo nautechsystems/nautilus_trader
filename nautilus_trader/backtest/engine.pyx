@@ -140,7 +140,7 @@ cdef class BacktestEngine:
             uuid_factory=uuid_factory,
             logger=self._test_logger,
             cache_config=config.cache or CacheConfig(),
-            cache_database_config=CacheDatabaseConfig(type="in-memory"),  # TODO(cs): Hard code for now
+            cache_database_config=CacheDatabaseConfig(type="in-memory", flush=True),
             data_config=config.data_engine or DataEngineConfig(),
             risk_config=config.risk_engine or RiskEngineConfig(),
             exec_config=config.exec_engine or ExecEngineConfig(),
