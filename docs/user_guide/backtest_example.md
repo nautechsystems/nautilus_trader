@@ -193,7 +193,8 @@ configs = []
 for params in PARAM_SET:
     strategies = [
         ImportableStrategyConfig(
-            path="examples.strategies.ema_cross_simple:EMACross",
+            strategy_path="examples.strategies.ema_cross_simple:EMACross",
+            config_path="examples.strategies.ema_cross_simple:EMACrossConfig",
             config=EMACrossConfig(
                 instrument_id=instrument.id.value,
                 bar_type='AUD/USD.SIM-15-MINUTE-BID-INTERNAL',
