@@ -18,6 +18,7 @@ import re
 from concurrent.futures import Executor
 from concurrent.futures import ThreadPoolExecutor
 from concurrent.futures import as_completed
+from io import BytesIO
 from itertools import groupby
 from typing import Dict, List, Optional, Tuple, Union
 
@@ -302,7 +303,7 @@ def write_parquet(
     del df
     for fn in new_files:
         try:
-            ndf = pd.read_parquet(fs.open(fn))
+            ndf = pd.read_parquet(BytesIO(fs.open(fn).read()))
         except ArrowInvalid:
             logging.error(f"Failed to read {fn}")
             continue
