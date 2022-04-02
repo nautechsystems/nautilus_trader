@@ -59,7 +59,6 @@ class TestPersistenceStreaming:
         )
         return data
 
-    @pytest.mark.skip(reason="change AccountState schema")
     def test_feather_writer(self):
         # Arrange
         instrument = self.catalog.instruments(as_nautilus=True)[0]
@@ -80,19 +79,18 @@ class TestPersistenceStreaming:
         )
         result = dict(Counter([r.__class__.__name__ for r in result]))
         expected = {
-            "AccountState": 746,
-            "BettingInstrument": 1,
             "ComponentStateChanged": 5,
-            "OrderAccepted": 323,
-            "OrderBookDeltas": 1077,
             "OrderBookSnapshot": 1,
-            "OrderDenied": 223,
-            "OrderFilled": 423,
-            "OrderInitialized": 646,
-            "OrderSubmitted": 423,
-            "PositionClosed": 100,
-            "PositionOpened": 323,
             "TradeTick": 198,
+            "OrderBookDeltas": 1077,
+            "AccountState": 666,
+            "OrderAccepted": 322,
+            "OrderFilled": 344,
+            "OrderSubmitted": 323,
+            "PositionOpened": 1,
+            "PositionChanged": 343,
+            "OrderInitialized": 1,
+            "BettingInstrument": 1,
         }
         assert result == expected
 
