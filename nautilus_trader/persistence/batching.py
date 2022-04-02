@@ -22,11 +22,11 @@ import fsspec
 import pandas as pd
 import pyarrow.dataset as ds
 import pyarrow.parquet as pq
-from dask.utils import parse_bytes
 from pyarrow.lib import ArrowInvalid
 
 from nautilus_trader.backtest.config import BacktestDataConfig
 from nautilus_trader.persistence.catalog import DataCatalog
+from nautilus_trader.persistence.util import parse_bytes
 from nautilus_trader.serialization.arrow.serializer import ParquetSerializer
 from nautilus_trader.serialization.arrow.util import clean_key
 
