@@ -40,7 +40,6 @@ from nautilus_trader.backtest.config import BacktestEngineConfig
 from nautilus_trader.backtest.config import BacktestRunConfig
 from nautilus_trader.backtest.config import BacktestVenueConfig
 from nautilus_trader.backtest.data.providers import TestDataProvider
-from nautilus_trader.examples.strategies.orderbook_imbalance import OrderBookImbalanceConfig
 from nautilus_trader.execution.config import ExecEngineConfig
 from nautilus_trader.model.data.tick import TradeTick
 from nautilus_trader.model.enums import OrderSide
@@ -347,20 +346,20 @@ class BetfairTestStubs:
             exec_engine=ExecEngineConfig(allow_cash_positions=True),
             risk_engine=RiskEngineConfig(bypass=bypass_risk),
         )
-        base_data_config = BacktestDataConfig(  # type: ignore
-            catalog_path=catalog_path,
-            catalog_fs_protocol=catalog_fs_protocol,
-        )
         run_config = BacktestRunConfig(  # type: ignore
             engine=engine_config,
             venues=[BetfairTestStubs.betfair_venue_config()],
             data=[
-                base_data_config.replace(
-                    data_cls=TradeTick,
+                BacktestDataConfig(  # type: ignore
+                    data_cls=TradeTick.fully_qualified_name(),
+                    catalog_path=catalog_path,
+                    catalog_fs_protocol=catalog_fs_protocol,
                     instrument_id=instrument_id,
                 ),
-                base_data_config.replace(
-                    data_cls=OrderBookData,
+                BacktestDataConfig(  # type: ignore
+                    data_cls=OrderBookData.fully_qualified_name(),
+                    catalog_path=catalog_path,
+                    catalog_fs_protocol=catalog_fs_protocol,
                     instrument_id=instrument_id,
                 ),
             ],
@@ -369,8 +368,9 @@ class BetfairTestStubs:
             else None,
             strategies=[
                 ImportableStrategyConfig(
-                    path="nautilus_trader.examples.strategies.orderbook_imbalance:OrderBookImbalance",
-                    config=OrderBookImbalanceConfig(
+                    strategy_path="nautilus_trader.examples.strategies.orderbook_imbalance:OrderBookImbalance",
+                    config_path="nautilus_trader.examples.strategies.orderbook_imbalance:OrderBookImbalanceConfig",
+                    config=dict(
                         instrument_id=instrument_id,
                         max_trade_size=50,
                     ),

@@ -17,7 +17,6 @@ import os
 from decimal import Decimal
 
 import pandas as pd
-import pytest
 
 from nautilus_trader.backtest.data.providers import TestDataProvider
 from nautilus_trader.backtest.data.providers import TestInstrumentProvider
@@ -594,7 +593,6 @@ class TestBacktestAcceptanceTestsOrderBookImbalance:
         assert self.engine.iteration in (8199, 7812)
 
 
-@pytest.mark.skip(reason="bm to fix")
 class TestBacktestAcceptanceTestsMarketMaking:
     def setup(self):
         # Fixture Setup
