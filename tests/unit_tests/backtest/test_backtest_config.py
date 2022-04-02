@@ -23,7 +23,6 @@ from typing import Optional
 
 import dask
 import pytest
-from dask.base import tokenize
 from pydantic import BaseModel
 from pydantic.json import pydantic_encoder
 
@@ -132,48 +131,6 @@ class TestBacktestConfig:
 
     def test_backtest_config_pickle(self):
         pickle.loads(pickle.dumps(self))  # noqa: S301
-
-    def test_strategies_tokenization(self):
-        # Arrange, Act
-        result = tokenize(self.backtest_config.strategies)
-
-        # Assert
-        assert result == "8c9f081a88f539969f3dff99d6e05e36"
-
-    def test_venue_config_tokenization(self):
-        # Arrange, Act
-        venue = self.backtest_config.venues[0]
-        result = tokenize(venue)
-
-        # Assert  # TODO: Investigate partial non-determinism
-        assert result == "17a0d2e4c4d55f7382b05d79089bed40" or "1a803a06f1ab329b5e9dd1b52cc134a8"
-
-    def test_data_config_tokenization(self):
-        # Arrange, Act
-        data_config = self.backtest_config.data[0]
-
-        # Act
-        result = tokenize(data_config)
-
-        # Assert  # TODO: Investigate partial non-determinism
-        assert result == "d9e2deee8477039142b7d19ca988b752" or "9f9b6cdfb9f645c53e1ca4d85f8007e9"
-
-    def test_engine_config_tokenization(self):
-        # Arrange,
-        engine_config = self.backtest_config.engine
-
-        # Act
-        result = tokenize(engine_config)
-
-        # Assert  # TODO: Investigate partial non-determinism
-        assert result == "4e36e7d25fc8e8e98ea5a7127e9cff57" or "22d84218139004f8b662d2c6d3dccb4a"
-
-    def test_tokenization_config(self):
-        # Arrange, Act
-        result = tokenize(self.backtest_config)
-
-        # Assert  # TODO: Investigate partial non-determinism
-        assert result == "83aecc5500d48e6dbcce5f23a7fc56bf" or "881f07f1cbf7628a22eb444d49960be5"
 
     def test_backtest_data_config_load(self):
         instrument = TestInstrumentProvider.default_fx_ccy("AUD/USD")

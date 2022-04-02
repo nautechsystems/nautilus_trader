@@ -128,24 +128,24 @@ class TestPersistenceCore:
         assert result.block_size == expected.block_size
         assert result.open_file.compression == "bz2"
 
-    @pytest.mark.skip(reason="failing after upgrading fsspec")
-    def test_raw_file_distributed_serializable(self):
-        from distributed.protocol import deserialize
-        from distributed.protocol import serialize
-
-        # Arrange
-        fs = fsspec.filesystem("file")
-        path = TEST_DATA_DIR + "/betfair/1.166811431.bz2"
-        r = RawFile(open_file=fs.open(path=path, compression="bz2"))
-
-        # Act
-        result1: RawFile = deserialize(*serialize(r))
-
-        # Assert
-        assert result1.open_file.fs == r.open_file.fs
-        assert result1.open_file.path == r.open_file.path
-        assert result1.block_size == r.block_size
-        assert result1.open_file.compression == "bz2"
+    # @pytest.mark.skip(reason="failing after upgrading fsspec")
+    # def test_raw_file_distributed_serializable(self):
+    #     from distributed.protocol import deserialize
+    #     from distributed.protocol import serialize
+    #
+    #     # Arrange
+    #     fs = fsspec.filesystem("file")
+    #     path = TEST_DATA_DIR + "/betfair/1.166811431.bz2"
+    #     r = RawFile(open_file=fs.open(path=path, compression="bz2"))
+    #
+    #     # Act
+    #     result1: RawFile = deserialize(*serialize(r))
+    #
+    #     # Assert
+    #     assert result1.open_file.fs == r.open_file.fs
+    #     assert result1.open_file.path == r.open_file.path
+    #     assert result1.block_size == r.block_size
+    #     assert result1.open_file.compression == "bz2"
 
     @patch("nautilus_trader.persistence.external.core.tqdm", spec=True)
     @pytest.mark.skip("Awaiting fsspec callback feature")
@@ -385,26 +385,26 @@ class TestPersistenceCore:
         # Assert
         assert len(instruments) == 3
 
-    def test_load_dask_distributed_client(self):
-        # Arrange
-        from distributed import Client
-
-        instrument_provider = BetfairInstrumentProvider.from_instruments([])
-
-        with Client(processes=False, threads_per_worker=1) as c:
-            tasks = process_files(
-                glob_path=f"{TEST_DATA_DIR}/1.166564490*",
-                reader=make_betfair_reader(instrument_provider),
-                catalog=self.catalog,
-                instrument_provider=instrument_provider,
-            )
-
-            # Act
-            results = c.gather(c.compute(tasks))
-
-        # Assert
-        expected = {TEST_DATA + "/1.166564490.bz2": 2908}
-        assert results == expected
+    # def test_load_dask_distributed_client(self):
+    #     # Arrange
+    #     from distributed import Client
+    #
+    #     instrument_provider = BetfairInstrumentProvider.from_instruments([])
+    #
+    #     with Client(processes=False, threads_per_worker=1) as c:
+    #         tasks = process_files(
+    #             glob_path=f"{TEST_DATA_DIR}/1.166564490*",
+    #             reader=make_betfair_reader(instrument_provider),
+    #             catalog=self.catalog,
+    #             instrument_provider=instrument_provider,
+    #         )
+    #
+    #         # Act
+    #         results = c.gather(c.compute(tasks))
+    #
+    #     # Assert
+    #     expected = {TEST_DATA + "/1.166564490.bz2": 2908}
+    #     assert results == expected
 
     def test_repartition_dataset(self):
         # Arrange
