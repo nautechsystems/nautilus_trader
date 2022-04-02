@@ -21,7 +21,6 @@ from typing import Dict, List, Optional, Union
 
 import pandas as pd
 import pydantic
-from dask.base import tokenize
 
 from nautilus_trader.cache.config import CacheConfig
 from nautilus_trader.common.config import ImportableActorConfig
@@ -32,6 +31,7 @@ from nautilus_trader.execution.config import ExecEngineConfig
 from nautilus_trader.infrastructure.config import CacheDatabaseConfig
 from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.persistence.config import PersistenceConfig
+from nautilus_trader.persistence.util import tokenize
 from nautilus_trader.risk.config import RiskEngineConfig
 from nautilus_trader.trading.config import ImportableStrategyConfig
 
