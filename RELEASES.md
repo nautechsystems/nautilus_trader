@@ -8,6 +8,7 @@ This will be the final release without Rust compiled binaries.
 - Renamed `flatten_position()` to `close_position()`
 - Renamed `flatten_all_positions()` to `close_all_positions()`
 - Renamed `Order.flatten_side()` to `Order.closing_side()`
+- Renamed `TradingNodeConfig` `check_residuals_delay` to `timeout_post_stop`
 - The `SimulatedExchange` will now 'receive' market data prior to the `DataEngine`
   (note that this did not affect any test)
 - Tightened requirement for `DataType` types to be subclasses of `Data`

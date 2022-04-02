@@ -77,7 +77,7 @@ class TestTradingNodeConfiguration:
                 "timeout_reconciliation": 5.0,
                 "timeout_portfolio": 5.0,
                 "timeout_disconnection": 5.0,
-                "check_residuals_delay": 2.0,
+                "timeout_post_stop": 2.0,
                 "strategies": [
                     {
                         "strategy_path": "nautilus_trader.examples.strategies.volatility_market_maker:VolatilityMarketMaker",

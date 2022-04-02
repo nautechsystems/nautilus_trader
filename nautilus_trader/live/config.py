@@ -128,6 +128,8 @@ class TradingNodeConfig(pydantic.BaseModel):
         The trader ID for the node (must be a name and ID tag separated by a hyphen).
     log_level : str, default "INFO"
         The stdout log level for the node.
+    loop_debug : bool, default False
+        If the asyncio event loop should be in debug mode.
     cache : CacheConfig, optional
         The cache configuration.
     cache_database : CacheDatabaseConfig, optional
@@ -138,8 +140,14 @@ class TradingNodeConfig(pydantic.BaseModel):
         The live risk engine configuration.
     exec_engine : LiveExecEngineConfig, optional
         The live execution engine configuration.
-    loop_debug : bool, default False
-        If the asyncio event loop should be in debug mode.
+    data_clients : dict[str, LiveDataClientConfig], optional
+        The data client configurations.
+    exec_clients : dict[str, LiveExecClientConfig], optional
+        The execution client configurations.
+    persistence : LivePersistenceConfig, optional
+        The configuration for enabling persistence via feather files.
+    strategies : List[ImportableStrategyConfig]
+        The strategy configurations for the node.
     load_strategy_state : bool, default True
         If trading strategy state should be loaded from the database on start.
     save_strategy_state : bool, default True
@@ -152,35 +160,30 @@ class TradingNodeConfig(pydantic.BaseModel):
         The timeout for portfolio to initialize margins and unrealized PnLs.
     timeout_disconnection : PositiveFloat (seconds)
         The timeout for all engine clients to disconnect.
-    check_residuals_delay : PositiveFloat (seconds)
-        The delay after stopping the node to check residual state before final shutdown.
-    data_clients : dict[str, LiveDataClientConfig], optional
-        The data client configurations.
-    exec_clients : dict[str, LiveExecClientConfig], optional
-        The execution client configurations.
-    persistence : LivePersistenceConfig, optional
-        The config for enabling persistence via feather files
+    timeout_post_stop : PositiveFloat (seconds)
+        The timeout after stopping the node to await residual events before final shutdown.
+
     """
 
     trader_id: str = "TRADER-000"
     log_level: str = "INFO"
+    loop_debug: bool = False
     cache: Optional[CacheConfig] = None
     cache_database: Optional[CacheDatabaseConfig] = None
     data_engine: Optional[LiveDataEngineConfig] = None
     risk_engine: Optional[LiveRiskEngineConfig] = None
     exec_engine: Optional[LiveExecEngineConfig] = None
+    data_clients: Dict[str, LiveDataClientConfig] = {}
+    exec_clients: Dict[str, LiveExecClientConfig] = {}
+    persistence: Optional[PersistenceConfig] = None
     strategies: List[ImportableStrategyConfig] = Field(default_factory=list)
-    loop_debug: bool = False
     load_strategy_state: bool = True
     save_strategy_state: bool = True
     timeout_connection: PositiveFloat = 10.0
     timeout_reconciliation: PositiveFloat = 10.0
     timeout_portfolio: PositiveFloat = 10.0
     timeout_disconnection: PositiveFloat = 10.0
-    check_residuals_delay: PositiveFloat = 10.0
-    data_clients: Dict[str, LiveDataClientConfig] = {}
-    exec_clients: Dict[str, LiveExecClientConfig] = {}
-    persistence: Optional[PersistenceConfig] = None
+    timeout_post_stop: PositiveFloat = 10.0
 
     @validator("data_clients", pre=True)
     def validate_importable_data_clients(cls, v) -> Dict[str, LiveDataClientConfig]:

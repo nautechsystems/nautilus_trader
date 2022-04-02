@@ -497,7 +497,7 @@ class TradingNode:
 
             # Await engine connection and initialization
             self.kernel.log.info(
-                f"Waiting for engines to connect and initialize "
+                f"Awaiting engine connections and initializations "
                 f"({self._config.timeout_connection}s timeout)...",
                 color=LogColor.BLUE,
             )
@@ -514,7 +514,7 @@ class TradingNode:
 
             # Await execution state reconciliation
             self.kernel.log.info(
-                f"Waiting for execution state to reconcile "
+                f"Awaiting execution state reconciliation "
                 f"({self._config.timeout_reconciliation}s timeout)...",
                 color=LogColor.BLUE,
             )
@@ -531,7 +531,7 @@ class TradingNode:
 
             # Await portfolio initialization
             self.kernel.log.info(
-                "Waiting for portfolio to initialize "
+                "Awaiting portfolio initialization "
                 f"({self._config.timeout_portfolio}s timeout)...",
                 color=LogColor.BLUE,
             )
@@ -604,10 +604,10 @@ class TradingNode:
         if self.kernel.trader.is_running:
             self.kernel.trader.stop()
             self.kernel.log.info(
-                f"Awaiting residual state ({self._config.check_residuals_delay}s delay)...",
+                f"Awaiting post stop ({self._config.timeout_post_stop}s timeout)...",
                 color=LogColor.BLUE,
             )
-            await asyncio.sleep(self._config.check_residuals_delay)
+            await asyncio.sleep(self._config.timeout_post_stop)
             self.kernel.trader.check_residuals()
 
         if self._config.save_strategy_state:
@@ -625,7 +625,7 @@ class TradingNode:
             self.kernel.risk_engine.stop()
 
         self.kernel.log.info(
-            f"Waiting for engines to disconnect "
+            f"Awaiting engine disconnections "
             f"({self._config.timeout_disconnection}s timeout)...",
             color=LogColor.BLUE,
         )
