@@ -65,6 +65,33 @@ cdef class NautilusKernel:
     Provides the core Nautilus system kernel
 
     The kernel is common between backtest and live systems.
+
+    Parameters
+    ----------
+    name : str
+        The name for the kernel (will append all logs).
+    trader_id : TraderId
+        The trader ID for the kernel (must be a name and ID tag separated by a hyphen).
+    machine_id : str
+        The kernels underlying machine identifier.
+    clock : Clock
+        The clock for the kernel.
+    uuid_factory : UUIDFactory
+        The UUID factory for the kernel.
+    logger : Logger
+        The logger for the kernel.
+    cache_config : CacheConfig
+        The cache configuration for the kernel.
+    cache_database_config : CacheDatabaseConfig
+        The cache database configuration for the kernel.
+    data_config : Union[DataEngineConfig, LiveDataEngineConfig]
+        The live data engine configuration for the kernel.
+    risk_config : Union[RiskEngineConfig, LiveRiskEngineConfig]
+        The risk engine configuration for the kernel.
+    exec_config : Union[ExecEngineConfig, LiveExecEngineConfig]
+        The execution engine configuration for the kernel.
+    loop : AbstractEventLoop, optional
+        The event loop for the kernel.
     """
 
     def __init__(

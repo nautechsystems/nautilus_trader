@@ -31,15 +31,6 @@ from nautilus_trader.trading.trader cimport Trader
 
 
 cdef class NautilusKernel:
-    cdef readonly Clock clock
-    cdef readonly UUIDFactory uuid_factory
-    cdef readonly LoggerAdapter log
-    cdef readonly Logger logger
-    cdef readonly MessageBus msgbus
-    cdef readonly DataEngine data_engine
-    cdef readonly RiskEngine risk_engine
-    cdef readonly ExecutionEngine exec_engine
-
     cdef readonly str name
     """The kernels name.\n\n:returns: `str`"""
     cdef readonly TraderId trader_id
@@ -50,9 +41,25 @@ cdef class NautilusKernel:
     """The kernels instance ID.\n\n:returns: `UUID4`"""
     cdef readonly int64_t ts_created
     """The UNIX timestamp (nanoseconds) when the kernel was created.\n\n:returns: `int64`"""
-    cdef readonly Trader trader
-    """The kernels trader instance.\n\n:returns: `Trader`"""
+    cdef readonly Clock clock
+    """The kernels clock.\n\n:returns: `Clock`"""
+    cdef readonly UUIDFactory uuid_factory
+    """The kernels UUID factory.\n\n:returns: `UUIDFactory`"""
+    cdef readonly LoggerAdapter log
+    """The kernels logger adapter.\n\n:returns: `LoggerAdapter`"""
+    cdef readonly Logger logger
+    """The kernels logger.\n\n:returns: `Logger`"""
+    cdef readonly MessageBus msgbus
+    """The kernels message bus.\n\n:returns: `MessageBus`"""
     cdef readonly CacheFacade cache
     """The kernels read-only cache instance.\n\n:returns: `CacheFacade`"""
     cdef readonly PortfolioFacade portfolio
     """The kernels read-only portfolio instance.\n\n:returns: `PortfolioFacade`"""
+    cdef readonly DataEngine data_engine
+    """The kernels data engine.\n\n:returns: `DataEngine`"""
+    cdef readonly RiskEngine risk_engine
+    """The kernels risk engine.\n\n:returns: `RiskEngine`"""
+    cdef readonly ExecutionEngine exec_engine
+    """The kernels execution engine.\n\n:returns: `ExecutionEngine`"""
+    cdef readonly Trader trader
+    """The kernels trader instance.\n\n:returns: `Trader`"""

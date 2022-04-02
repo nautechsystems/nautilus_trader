@@ -125,7 +125,7 @@ class TradingNodeConfig(pydantic.BaseModel):
     Parameters
     ----------
     trader_id : str, default "TRADER-000"
-        The trader ID for the node (must be a name and ID tag separated by a hyphen)
+        The trader ID for the node (must be a name and ID tag separated by a hyphen).
     log_level : str, default "INFO"
         The stdout log level for the node.
     cache : CacheConfig, optional
