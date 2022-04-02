@@ -48,7 +48,6 @@ cython = "3.0.0a9"  # Pinned at 3.0.0a9 due coverage
 aiodns = "^3.0.0"
 aiohttp = "^3.8.1"
 click = "8.0.4"  # Pinned at 8.0.4 due botched 8.1.0 release
-dask = "^2022.4.0"
 frozendict = "^2.3.0"
 fsspec = "^2022.3.0"
 hiredis = "^2.0.0"
