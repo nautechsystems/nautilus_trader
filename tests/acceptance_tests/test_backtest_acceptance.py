@@ -17,7 +17,6 @@ import os
 from decimal import Decimal
 
 import pandas as pd
-import pytest
 
 from nautilus_trader.backtest.data.providers import TestDataProvider
 from nautilus_trader.backtest.data.providers import TestInstrumentProvider
@@ -594,7 +593,6 @@ class TestBacktestAcceptanceTestsOrderBookImbalance:
         assert self.engine.iteration in (8199, 7812)
 
 
-@pytest.mark.skip(reason="bm to fix")
 class TestBacktestAcceptanceTestsMarketMaking:
     def setup(self):
         # Fixture Setup
@@ -649,8 +647,7 @@ class TestBacktestAcceptanceTestsMarketMaking:
         self.engine.run()
 
         # Assert
-        # TODO - Unsure why this is not deterministic ?
-        assert self.engine.iteration in (7812, 8199, 9319)
+        assert self.engine.iteration == 8199
         assert self.engine.portfolio.account(self.venue).balance_total(GBP) == Money(
             "10000.00", GBP
         )
