@@ -13,10 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import pkgutil
-
 import orjson
-import pytest
 
 from nautilus_trader.examples.strategies.ema_cross import EMACross
 from nautilus_trader.examples.strategies.ema_cross import EMACrossConfig
@@ -25,32 +22,6 @@ from nautilus_trader.trading.config import StrategyFactory
 
 
 class TestStrategyFactory:
-    @pytest.mark.skip(reason="WIP")
-    def test_create_from_source(self):
-        # Arrange
-        config = EMACrossConfig(
-            instrument_id="AUD/USD.SIM",
-            bar_type="AUD/USD.SIM-1000-TICK-MID-INTERNAL",
-            trade_size=1_000_000,
-        )
-
-        source = pkgutil.get_data("nautilus_trader.examples.strategies", "ema_cross.py")
-        importable = ImportableStrategyConfig(
-            module="my_ema_cross",
-            source=source,
-            config=config,
-        )
-
-        # Act
-        strategy = StrategyFactory.create(importable)
-
-        # Assert
-        assert isinstance(strategy, EMACross)
-        assert (
-            repr(config)
-            == "EMACrossConfig(order_id_tag='000', oms_type='HEDGING', instrument_id='AUD/USD.SIM', bar_type='AUD/USD.SIM-1000-TICK-MID-INTERNAL', fast_ema_period=10, slow_ema_period=20, trade_size=Decimal('1000000'))"  # noqa
-        )
-
     def test_create_from_path(self):
         # Arrange
         config = EMACrossConfig(
