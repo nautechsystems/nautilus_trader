@@ -75,7 +75,7 @@ class VolatilityMarketMaker(TradingStrategy):
     A very dumb market maker which brackets the current market based on
     volatility measured by an ATR indicator.
 
-    Cancels all orders and flattens all positions on stop.
+    Cancels all orders and closes all positions on stop.
 
     Parameters
     ----------
@@ -329,7 +329,7 @@ class VolatilityMarketMaker(TradingStrategy):
         Actions to be performed when the strategy is stopped.
         """
         self.cancel_all_orders(self.instrument_id)
-        self.flatten_all_positions(self.instrument_id)
+        self.close_all_positions(self.instrument_id)
 
         # Unsubscribe from data
         self.unsubscribe_bars(self.bar_type)

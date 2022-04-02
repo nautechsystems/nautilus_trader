@@ -5,6 +5,9 @@ Released on 30th March 2022 (UTC).
 This will be the final release without Rust compiled binaries.
 
 ### Breaking Changes
+- Renamed `flatten_position()` to `close_position()`
+- Renamed `flatten_all_positions()` to `close_all_positions()`
+- Renamed `Order.flatten_side()` to `Order.closing_side()`
 - The `SimulatedExchange` will now 'receive' market data prior to the `DataEngine`
   (note that this did not affect any test)
 - Tightened requirement for `DataType` types to be subclasses of `Data`
