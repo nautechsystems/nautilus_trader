@@ -23,6 +23,7 @@ from nautilus_trader.adapters.binance.factories import BinanceLiveDataClientFact
 from nautilus_trader.adapters.binance.factories import BinanceLiveExecClientFactory
 from nautilus_trader.examples.strategies.volatility_market_maker import VolatilityMarketMaker
 from nautilus_trader.examples.strategies.volatility_market_maker import VolatilityMarketMakerConfig
+from nautilus_trader.infrastructure.config import CacheDatabaseConfig
 from nautilus_trader.live.config import InstrumentProviderConfig
 from nautilus_trader.live.config import TradingNodeConfig
 from nautilus_trader.live.node import TradingNode
@@ -41,7 +42,7 @@ config_node = TradingNodeConfig(
     exec_engine={
         "reconciliation_lookback_mins": 1440,
     },
-    # cache_database=CacheDatabaseConfig(),
+    cache_database=CacheDatabaseConfig(type="in-memory"),
     data_clients={
         "BINANCE": BinanceDataClientConfig(
             api_key=None,  # "YOUR_BINANCE_TESTNET_API_KEY"
