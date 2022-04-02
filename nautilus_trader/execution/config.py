@@ -22,8 +22,11 @@ class ExecEngineConfig(pydantic.BaseModel):
 
     Parameters
     ----------
+    load_cache : bool, default True
+        If the cache should be loaded on initialization.
     allow_cash_positions : bool, default False
         If unleveraged spot cash assets should track positions.
     """
 
+    load_cache: bool = True
     allow_cash_positions: bool = False
