@@ -17,7 +17,6 @@ import os
 from decimal import Decimal
 
 import pandas as pd
-import pytest
 
 from nautilus_trader.backtest.data.providers import TestDataProvider
 from nautilus_trader.backtest.data.providers import TestInstrumentProvider
@@ -157,7 +156,7 @@ class TestBacktestAcceptanceTestsUSDJPY:
         strategy2 = EMACross(config=config2)
 
         # Note since these strategies are operating on the same instrument_id as per
-        # the EMACross BUY/SELL logic they will be flattening each others positions.
+        # the EMACross BUY/SELL logic they will be closing each others positions.
         # The purpose of the test is just to ensure multiple strategies can run together.
         self.engine.add_strategies(strategies=[strategy1, strategy2])
 
@@ -594,7 +593,6 @@ class TestBacktestAcceptanceTestsOrderBookImbalance:
         assert self.engine.iteration in (8199, 7812)
 
 
-@pytest.mark.skip(reason="bm to fix")
 class TestBacktestAcceptanceTestsMarketMaking:
     def setup(self):
         # Fixture Setup

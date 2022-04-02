@@ -193,7 +193,8 @@ configs = []
 for params in PARAM_SET:
     strategies = [
         ImportableStrategyConfig(
-            path="examples.strategies.ema_cross_simple:EMACross",
+            strategy_path="examples.strategies.ema_cross_simple:EMACross",
+            config_path="examples.strategies.ema_cross_simple:EMACrossConfig",
             config=EMACrossConfig(
                 instrument_id=instrument.id.value,
                 bar_type='AUD/USD.SIM-15-MINUTE-BID-INTERNAL',
@@ -221,39 +222,7 @@ Finally, we can create a `BacktestNode` and run the backtest:
 ```python
 from nautilus_trader.backtest.node import BacktestNode
 node = BacktestNode()
-```
 
-```python
-task = node.build_graph(run_configs=configs)
-task
-```
-
-```python
-# Visualising the graph requires graphviz - `%pip install graphviz` in a notebook cell to install it
-
-# task.visualize(rankdir='LR') 
-```
-
-Notice because our configs share the same data, that only one instance of `load` is required.
-
-
-### Start up a local Dask cluster to execute the graph
-
-```python
-# Create a local dask client - not a requirement, but allows parallelising the runs
-from distributed import Client
-client = Client(n_workers=2)
-client
-```
-
-### Run the backtests!
-
-```python tags=[]
-results = task.compute()
-```
-
-### Compare the results
-
-```python
-results.plot_balances()
+results = node.run_sync(run_configs=configs)
+pd.DataFrame([r.stats_pnls for r in results])['USD'].apply(pd.Series)
 ```

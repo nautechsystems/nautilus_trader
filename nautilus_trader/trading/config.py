@@ -13,26 +13,22 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import importlib
-import importlib.util
-import sys
-from importlib.machinery import ModuleSpec
-from types import ModuleType
-from typing import Optional, Union
+from typing import Optional
 
-from nautilus_trader.common.config import ActorConfig
-from nautilus_trader.common.config import ImportableActorConfig
+import pydantic
+
+from nautilus_trader.common.config import resolve_path
 from nautilus_trader.core.correctness import PyCondition
 
 
-class TradingStrategyConfig(ActorConfig):
+class TradingStrategyConfig(pydantic.BaseModel):
     """
     The base model for all trading strategy configurations.
 
     Parameters
     ----------
-    component_id : str, optional
-        The unique component ID for the strategy. Will become the strategy ID if not None.
+    strategy_id : str, optional
+        The unique ID for the strategy. Will become the strategy ID if not None.
     order_id_tag : str
         The unique order ID tag for the strategy. Must be unique
         amongst all running strategies for a particular trader ID.
@@ -42,27 +38,28 @@ class TradingStrategyConfig(ActorConfig):
 
     """
 
+    strategy_id: Optional[str] = None
     order_id_tag: str = "000"
     oms_type: Optional[str] = None
 
 
-class ImportableStrategyConfig(ImportableActorConfig):
+class ImportableStrategyConfig(pydantic.BaseModel):
     """
     Represents a trading strategy configuration for one specific backtest run.
 
     Parameters
     ----------
-    path : str, optional
-        The fully qualified name of the module.
-    source : bytes, optional
-        The strategy source code.
-    config : Union[TradingStrategyConfig, str]
+    strategy_path : str
+        The fully qualified name of the strategy class.
+    config_path : str
+        The fully qualified name of the config class.
+    config : Dict
         The strategy configuration
     """
 
-    path: Optional[str]
-    source: Optional[bytes]
-    config: Union[TradingStrategyConfig, str]
+    strategy_path: str
+    config_path: str
+    config: dict
 
 
 class StrategyFactory:
@@ -91,19 +88,6 @@ class StrategyFactory:
 
         """
         PyCondition.type(config, ImportableStrategyConfig, "config")
-        if (config.path is None or config.path.isspace()) and (
-            config.source is None or config.source.isspace()
-        ):
-            raise ValueError("both `source` and `path` were None")
-
-        if config.path is not None:
-            mod = importlib.import_module(config.module)
-            cls = getattr(mod, config.cls)
-            assert isinstance(config.config, TradingStrategyConfig)
-            return cls(config=config.config)
-        else:
-            spec: ModuleSpec = importlib.util.spec_from_loader(config.module, loader=None)
-            module: ModuleType = importlib.util.module_from_spec(spec)
-
-            exec(config.source, module.__dict__)  # noqa
-            sys.modules[config.module] = module
+        strategy_cls = resolve_path(config.strategy_path)
+        config_cls = resolve_path(config.config_path)
+        return strategy_cls(config=config_cls(**config.config))

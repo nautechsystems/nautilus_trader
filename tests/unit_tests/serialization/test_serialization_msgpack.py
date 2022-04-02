@@ -17,7 +17,7 @@ from base64 import b64encode
 from datetime import timedelta
 from decimal import Decimal
 
-import msgpack
+import msgspec
 import pytest
 
 from nautilus_trader.backtest.data.providers import TestInstrumentProvider
@@ -119,7 +119,7 @@ class TestMsgPackSerializer:
     def test_deserialize_unknown_object_raises_runtime_error(self):
         # Arrange, Act
         with pytest.raises(RuntimeError):
-            self.serializer.deserialize(msgpack.packb({"type": "UNKNOWN"}))
+            self.serializer.deserialize(msgspec.msgpack.encode({"type": "UNKNOWN"}))
 
     def test_serialize_and_deserialize_fx_instrument(self):
         # Arrange, Act

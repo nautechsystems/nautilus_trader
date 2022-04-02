@@ -75,7 +75,7 @@ class EMACross(TradingStrategy):
     When the fast EMA crosses the slow EMA then enter a position at the market
     in that direction.
 
-    Cancels all orders and flattens all positions on stop.
+    Cancels all orders and closes all positions on stop.
 
     Parameters
     ----------
@@ -134,7 +134,8 @@ class EMACross(TradingStrategy):
 
         """
         # For debugging (must add a subscription)
-        self.log.info(repr(instrument), LogColor.CYAN)
+        # self.log.info(repr(instrument), LogColor.CYAN)
+        pass
 
     def on_order_book_delta(self, data: OrderBookData):
         """
@@ -147,7 +148,8 @@ class EMACross(TradingStrategy):
 
         """
         # For debugging (must add a subscription)
-        self.log.info(repr(data), LogColor.CYAN)
+        # self.log.info(repr(data), LogColor.CYAN)
+        pass
 
     def on_order_book(self, order_book: OrderBook):
         """
@@ -160,7 +162,8 @@ class EMACross(TradingStrategy):
 
         """
         # For debugging (must add a subscription)
-        self.log.info(repr(order_book), LogColor.CYAN)
+        # self.log.info(repr(order_book), LogColor.CYAN)
+        pass
 
     def on_ticker(self, ticker: Ticker):
         """
@@ -173,7 +176,8 @@ class EMACross(TradingStrategy):
 
         """
         # For debugging (must add a subscription)
-        self.log.info(repr(ticker), LogColor.CYAN)
+        # self.log.info(repr(ticker), LogColor.CYAN)
+        pass
 
     def on_quote_tick(self, tick: QuoteTick):
         """
@@ -187,6 +191,7 @@ class EMACross(TradingStrategy):
         """
         # For debugging (must add a subscription)
         # self.log.info(repr(tick), LogColor.CYAN)
+        pass
 
     def on_trade_tick(self, tick: TradeTick):
         """
@@ -199,7 +204,8 @@ class EMACross(TradingStrategy):
 
         """
         # For debugging (must add a subscription)
-        self.log.info(repr(tick), LogColor.CYAN)
+        # self.log.info(repr(tick), LogColor.CYAN)
+        pass
 
     def on_bar(self, bar: Bar):
         """
@@ -226,14 +232,14 @@ class EMACross(TradingStrategy):
             if self.portfolio.is_flat(self.instrument_id):
                 self.buy()
             elif self.portfolio.is_net_short(self.instrument_id):
-                self.flatten_all_positions(self.instrument_id)
+                self.close_all_positions(self.instrument_id)
                 self.buy()
         # SELL LOGIC
         elif self.fast_ema.value < self.slow_ema.value:
             if self.portfolio.is_flat(self.instrument_id):
                 self.sell()
             elif self.portfolio.is_net_long(self.instrument_id):
-                self.flatten_all_positions(self.instrument_id)
+                self.close_all_positions(self.instrument_id)
                 self.sell()
 
     def buy(self):
@@ -291,7 +297,7 @@ class EMACross(TradingStrategy):
         Actions to be performed when the strategy is stopped.
         """
         self.cancel_all_orders(self.instrument_id)
-        self.flatten_all_positions(self.instrument_id)
+        self.close_all_positions(self.instrument_id)
 
         # Unsubscribe from data
         self.unsubscribe_bars(self.bar_type)

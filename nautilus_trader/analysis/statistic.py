@@ -34,7 +34,7 @@ class PortfolioStatistic:
     @classmethod
     def fully_qualified_name(cls) -> str:
         """
-        Return the fully qualified name for the statistic object.
+        Return the fully qualified name for the `PortfolioStatistic` class.
 
         Returns
         -------

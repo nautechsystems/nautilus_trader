@@ -49,7 +49,7 @@ cdef class Data:
     @classmethod
     def fully_qualified_name(cls) -> str:
         """
-        Return the fully qualified name for the data object.
+        Return the fully qualified name for the `Data` class.
 
         Returns
         -------

@@ -3,7 +3,7 @@ REGISTRY?=ghcr.io/
 IMAGE?=${REGISTRY}${PROJECT}
 GIT_TAG:=$(shell git rev-parse --abbrev-ref HEAD)
 IMAGE_FULL?=${IMAGE}:${GIT_TAG}
-EXTRAS?="distributed hyperopt ib"
+EXTRAS?="hyperopt ib"
 .PHONY: build clean docs
 
 install:
@@ -21,7 +21,6 @@ clean:
 	rm -rf dist
 	rm -rf docs/build
 	find . -name target -type d -exec rm -rf {} +
-	find . -name dask-worker-space -type d -exec rm -rf {} +
 	find . -name .benchmarks -type d -exec rm -rf {} +
 	find . -name '*.dll' -exec rm {} +
 	find . -name '*.prof' -exec rm {} +

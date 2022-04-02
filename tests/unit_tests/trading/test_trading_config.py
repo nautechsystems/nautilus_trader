@@ -13,9 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import pkgutil
-
-import pytest
+import orjson
 
 from nautilus_trader.examples.strategies.ema_cross import EMACross
 from nautilus_trader.examples.strategies.ema_cross import EMACrossConfig
@@ -24,32 +22,6 @@ from nautilus_trader.trading.config import StrategyFactory
 
 
 class TestStrategyFactory:
-    @pytest.mark.skip(reason="WIP")
-    def test_create_from_source(self):
-        # Arrange
-        config = EMACrossConfig(
-            instrument_id="AUD/USD.SIM",
-            bar_type="AUD/USD.SIM-1000-TICK-MID-INTERNAL",
-            trade_size=1_000_000,
-        )
-
-        source = pkgutil.get_data("nautilus_trader.examples.strategies", "ema_cross.py")
-        importable = ImportableStrategyConfig(
-            module="my_ema_cross",
-            source=source,
-            config=config,
-        )
-
-        # Act
-        strategy = StrategyFactory.create(importable)
-
-        # Assert
-        assert isinstance(strategy, EMACross)
-        assert (
-            repr(config)
-            == "EMACrossConfig(order_id_tag='000', oms_type='HEDGING', instrument_id='AUD/USD.SIM', bar_type='AUD/USD.SIM-1000-TICK-MID-INTERNAL', fast_ema_period=10, slow_ema_period=20, trade_size=Decimal('1000000'))"  # noqa
-        )
-
     def test_create_from_path(self):
         # Arrange
         config = EMACrossConfig(
@@ -60,7 +32,8 @@ class TestStrategyFactory:
             slow_ema_period=20,
         )
         importable = ImportableStrategyConfig(
-            path="nautilus_trader.examples.strategies.ema_cross:EMACross",
+            strategy_path="nautilus_trader.examples.strategies.ema_cross:EMACross",
+            config_path="nautilus_trader.examples.strategies.ema_cross:EMACrossConfig",
             config=config,
         )
 
@@ -70,7 +43,31 @@ class TestStrategyFactory:
         # Assert
         assert isinstance(strategy, EMACross)
         assert (
-            repr(config) == "EMACrossConfig(component_id=None, order_id_tag='000', oms_type=None, "
+            repr(config) == "EMACrossConfig(strategy_id=None, order_id_tag='000', oms_type=None, "
             "instrument_id='AUD/USD.SIM', bar_type='AUD/USD.SIM-15-MINUTE-BID-EXTERNAL', "
             "fast_ema_period=10, slow_ema_period=20, trade_size=Decimal('1000000'))"  # noqa
         )
+
+    def test_create_from_raw(self):
+        # Arrange
+        raw = orjson.dumps(
+            {
+                "strategy_path": "nautilus_trader.examples.strategies.volatility_market_maker:VolatilityMarketMaker",
+                "config_path": "nautilus_trader.examples.strategies.volatility_market_maker:VolatilityMarketMakerConfig",
+                "config": {
+                    "instrument_id": "ETHUSDT-PERP.BINANCE",
+                    "bar_type": "ETHUSDT-PERP.BINANCE-1-MINUTE-LAST-EXTERNAL",
+                    "atr_period": "20",
+                    "atr_multiple": "6.0",
+                    "trade_size": "0.01",
+                },
+            }
+        )
+
+        # Act
+        config = ImportableStrategyConfig.parse_raw(raw)
+
+        # Assert
+        assert isinstance(config, ImportableStrategyConfig)
+        assert config.config["instrument_id"] == "ETHUSDT-PERP.BINANCE"
+        assert config.config["atr_period"] == "20"

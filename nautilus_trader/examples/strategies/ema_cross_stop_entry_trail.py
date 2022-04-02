@@ -89,7 +89,7 @@ class EMACrossStopEntryTrail(TradingStrategy):
     If the entry order is filled then a `TRAILING_STOP_MARKET` at a specified
     ATR distance is submitted and managed.
 
-    Cancels all orders and flattens all positions on stop.
+    Cancels all orders and closes all positions on stop.
 
     Parameters
     ----------
@@ -360,7 +360,7 @@ class EMACrossStopEntryTrail(TradingStrategy):
         Actions to be performed when the strategy is stopped.
         """
         self.cancel_all_orders(self.instrument_id)
-        self.flatten_all_positions(self.instrument_id)
+        self.close_all_positions(self.instrument_id)
 
         # Unsubscribe from data
         self.unsubscribe_bars(self.bar_type)

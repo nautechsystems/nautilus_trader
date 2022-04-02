@@ -246,7 +246,7 @@ full configuration for our backtest, we are ready to run some backtests!
 
 The `BacktestNode` class _actually_ runs the backtest. The reason for this separation between 
 configuration and execution is the `BacktestNode` allows running multiple configurations (different 
-parameters or batches of data), as well as parallelisation via the excellent [dask](https://dask.org/) library.
+parameters or batches of data).
 
 ```python pycharm={"name": "#%%\n"} tags=[]
 from nautilus_trader.backtest.node import BacktestNode
