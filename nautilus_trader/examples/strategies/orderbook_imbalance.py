@@ -64,7 +64,7 @@ class OrderBookImbalance(TradingStrategy):
     A simple strategy that sends FOK limit orders when there is a bid/ask
     imbalance in the order book.
 
-    Cancels all orders and flattens all positions on stop.
+    Cancels all orders and closes all positions on stop.
 
     Parameters
     ----------
@@ -149,4 +149,4 @@ class OrderBookImbalance(TradingStrategy):
         if self.instrument is None:
             return
         self.cancel_all_orders(self.instrument.id)
-        self.flatten_all_positions(self.instrument.id)
+        self.close_all_positions(self.instrument.id)
