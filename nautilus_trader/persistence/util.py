@@ -64,6 +64,7 @@ def tokenize(obj: object) -> str:
     return hashlib.sha256(value).hexdigest()
 
 
+# Taken from https://github.com/dask/dask/blob/261bf174931580230717abca93fe172e166cc1e8/dask/utils.py
 byte_sizes = {
     "kB": 10**3,
     "MB": 10**6,
