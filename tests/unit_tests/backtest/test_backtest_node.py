@@ -16,7 +16,6 @@
 import json
 import sys
 from decimal import Decimal
-from typing import List
 
 import pytest
 
@@ -25,7 +24,6 @@ from nautilus_trader.backtest.config import BacktestRunConfig
 from nautilus_trader.backtest.config import BacktestVenueConfig
 from nautilus_trader.backtest.engine import BacktestEngineConfig
 from nautilus_trader.backtest.node import BacktestNode
-from nautilus_trader.backtest.results import BacktestResult
 from nautilus_trader.model.data.tick import QuoteTick
 from nautilus_trader.persistence.catalog import DataCatalog
 from nautilus_trader.persistence.util import parse_bytes
@@ -37,7 +35,6 @@ from tests.test_kit.mocks.data import data_catalog_setup
 pytestmark = pytest.mark.skipif(sys.platform == "win32", reason="test path broken on windows")
 
 
-@pytest.mark.skip(reason="unify system kernel")
 class TestBacktestNode:
     def setup(self):
         data_catalog_setup()
@@ -88,59 +85,6 @@ class TestBacktestNode:
         node = BacktestNode()
         assert node
 
-    def test_build_graph_shared_nodes(self):
-        # Arrange
-        node = BacktestNode()
-        graph = node.build_graph(self.backtest_configs)
-        dsk = graph.dask.to_dict()
-
-        # Act - The strategies share the same input data,
-        result = sorted([k.split("-")[0] for k in dsk.keys()])
-
-        # Assert
-        assert result == [
-            "_gather_delayed",
-            "_run_delayed",
-        ]
-
-    @pytest.mark.parametrize("batch_size_bytes", [None, parse_bytes("1mib")])
-    def test_backtest_against_example_run(self, batch_size_bytes):
-        """Replicate examples/fx_ema_cross_audusd_ticks.py backtest result."""
-        # Arrange
-        config = BacktestRunConfig(
-            engine=BacktestEngineConfig(),
-            venues=[self.venue_config],
-            data=[self.data_config],
-            strategies=self.strategies,
-            batch_size_bytes=batch_size_bytes,
-        )
-
-        node = BacktestNode()
-
-        # Act
-        tasks = node.build_graph([config])
-        results: List[BacktestResult] = tasks.compute()
-
-        # Assert
-        assert len(results) == 1  # TODO(cs): More asserts obviously
-        # assert len(result.account_balances) == 193
-        # assert len(result.positions) == 48
-        # assert len(result.fill_report) == 96
-        # account_result = result.account_balances.iloc[-2].to_dict()
-        # expected = {
-        #     "account_id": "SIM-001",
-        #     "account_type": "MARGIN",
-        #     "base_currency": "USD",
-        #     "currency": "USD",
-        #     "free": "994356.25",
-        #     "info": b"{}",  # noqa: P103
-        #     "locked": "2009.63",
-        #     "reported": False,
-        #     "total": "996365.88",
-        #     "venue": Venue("SIM"),
-        # }
-        # assert account_result == expected
-
     def test_backtest_run_sync(self):
         # Arrange
         node = BacktestNode()
@@ -162,31 +106,6 @@ class TestBacktestNode:
 
         # Assert
         assert len(results) == 1
-
-    def test_backtest_build_graph(self):
-        # Arrange
-        node = BacktestNode()
-        tasks = node.build_graph(self.backtest_configs_strategies)
-
-        # Act
-        result: List[BacktestResult] = tasks.compute()
-
-        # Assert
-        assert len(result) == 1
-
-    # def test_backtest_run_distributed(self):
-    #     from distributed import Client
-    #
-    #     # Arrange
-    #     node = BacktestNode()
-    #     with Client(processes=False):
-    #         tasks = node.build_graph(self.backtest_configs_strategies)
-    #
-    #         # Act
-    #         result = tasks.compute()
-    #
-    #         # Assert
-    #         assert result
 
     def test_backtest_run_results(self):
         # Arrange

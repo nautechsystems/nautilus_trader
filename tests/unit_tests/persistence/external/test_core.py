@@ -340,27 +340,6 @@ class TestPersistenceCore:
         # Assert
         assert len(instruments) == 3
 
-    # def test_load_dask_distributed_client(self):
-    #     # Arrange
-    #     from distributed import Client
-    #
-    #     instrument_provider = BetfairInstrumentProvider.from_instruments([])
-    #
-    #     with Client(processes=False, threads_per_worker=1) as c:
-    #         tasks = process_files(
-    #             glob_path=f"{TEST_DATA_DIR}/1.166564490*",
-    #             reader=make_betfair_reader(instrument_provider),
-    #             catalog=self.catalog,
-    #             instrument_provider=instrument_provider,
-    #         )
-    #
-    #         # Act
-    #         results = c.gather(c.compute(tasks))
-    #
-    #     # Assert
-    #     expected = {TEST_DATA + "/1.166564490.bz2": 2908}
-    #     assert results == expected
-
     def test_repartition_dataset(self):
         # Arrange
         catalog = DataCatalog.from_env()
