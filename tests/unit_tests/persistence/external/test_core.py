@@ -15,7 +15,6 @@
 
 import pickle
 import sys
-from unittest.mock import patch
 
 import fsspec
 import numpy as np
@@ -127,50 +126,6 @@ class TestPersistenceCore:
         assert result.open_file.path == expected.open_file.path
         assert result.block_size == expected.block_size
         assert result.open_file.compression == "bz2"
-
-    # @pytest.mark.skip(reason="failing after upgrading fsspec")
-    # def test_raw_file_distributed_serializable(self):
-    #     from distributed.protocol import deserialize
-    #     from distributed.protocol import serialize
-    #
-    #     # Arrange
-    #     fs = fsspec.filesystem("file")
-    #     path = TEST_DATA_DIR + "/betfair/1.166811431.bz2"
-    #     r = RawFile(open_file=fs.open(path=path, compression="bz2"))
-    #
-    #     # Act
-    #     result1: RawFile = deserialize(*serialize(r))
-    #
-    #     # Assert
-    #     assert result1.open_file.fs == r.open_file.fs
-    #     assert result1.open_file.path == r.open_file.path
-    #     assert result1.block_size == r.block_size
-    #     assert result1.open_file.compression == "bz2"
-
-    @patch("nautilus_trader.persistence.external.core.tqdm", spec=True)
-    @pytest.mark.skip("Awaiting fsspec callback feature")
-    def test_raw_file_progress(self, mock_progress):
-        # Arrange
-        raw_file = RawFile(
-            open_file=fsspec.open(f"{TEST_DATA}/1.166564490.bz2"),
-            block_size=5000,
-        )
-
-        # Act
-        data = b"".join(raw_file.iter())
-
-        # Assert
-        assert len(data) == 17338
-        result = [call.kwargs for call in mock_progress.mock_calls[:5]]
-        # Progress bar should update with compressed block size
-        expected = [
-            {"total": 17338},
-            {"n": 5000},
-            {"n": 5000},
-            {"n": 5000},
-            {"n": 2338},
-        ]
-        assert result == expected
 
     @pytest.mark.parametrize(
         "glob, num_files",

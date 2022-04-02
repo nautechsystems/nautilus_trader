@@ -21,7 +21,6 @@ import pickle
 import sys
 from typing import Optional
 
-import dask
 import pytest
 from pydantic import BaseModel
 from pydantic.json import pydantic_encoder
@@ -61,7 +60,6 @@ class ExamplePartialable(Partialable):
 class TestBacktestConfig:
     def setup(self):
         data_catalog_setup()
-        dask.config.set(scheduler="single-threaded")
         aud_usd_data_loader()
         self.catalog = DataCatalog.from_env()
         self.backtest_config = BacktestRunConfig(
