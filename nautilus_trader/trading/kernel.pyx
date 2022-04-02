@@ -74,6 +74,8 @@ cdef class NautilusKernel:
         The trader ID for the kernel (must be a name and ID tag separated by a hyphen).
     machine_id : str
         The kernels underlying machine identifier.
+    instance_id : UUID4
+        The kernels instance identifier.
     clock : Clock
         The clock for the kernel.
     uuid_factory : UUIDFactory
@@ -92,6 +94,16 @@ cdef class NautilusKernel:
         The execution engine configuration for the kernel.
     loop : AbstractEventLoop, optional
         The event loop for the kernel.
+
+    Raises
+    ------
+    ValueError
+        If `name` is not a valid string.
+    ValueError
+        If `machine_id` is not a valid string.
+    TypeError
+        If any configuration object is not of the expected type.
+
     """
 
     def __init__(
@@ -110,11 +122,13 @@ cdef class NautilusKernel:
         exec_config not None: Union[ExecEngineConfig, LiveExecEngineConfig],
         loop: Optional[AbstractEventLoop] = None,
     ):
+        Condition.valid_string(name, "name")
+        Condition.valid_string(machine_id, "machine_id")
         Condition.type(cache_config, CacheConfig, "cache_config")
         Condition.type(cache_database_config, CacheDatabaseConfig, "cache_database_config")
-        Condition.true(isinstance(data_config, (DataEngineConfig, LiveDataEngineConfig)), "data_config was unrecognized type")
-        Condition.true(isinstance(risk_config, (RiskEngineConfig, LiveRiskEngineConfig)), "risk_config was unrecognized type")
-        Condition.true(isinstance(exec_config, (ExecEngineConfig, LiveExecEngineConfig)), "exec_config was unrecognized type")
+        Condition.true(isinstance(data_config, (DataEngineConfig, LiveDataEngineConfig)), "data_config was unrecognized type", ex_type=TypeError)
+        Condition.true(isinstance(risk_config, (RiskEngineConfig, LiveRiskEngineConfig)), "risk_config was unrecognized type", ex_type=TypeError)
+        Condition.true(isinstance(exec_config, (ExecEngineConfig, LiveExecEngineConfig)), "exec_config was unrecognized type", ex_type=TypeError)
 
         # Components
         self.clock = clock
