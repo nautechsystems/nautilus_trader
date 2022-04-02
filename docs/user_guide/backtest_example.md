@@ -221,4 +221,7 @@ Finally, we can create a `BacktestNode` and run the backtest:
 ```python
 from nautilus_trader.backtest.node import BacktestNode
 node = BacktestNode()
+
+results = node.run_sync(run_configs=configs)
+pd.DataFrame([r.stats_pnls for r in results])['USD'].apply(pd.Series)
 ```
