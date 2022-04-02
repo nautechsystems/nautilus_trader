@@ -17,7 +17,6 @@ import pathlib
 import re
 from concurrent.futures import Executor
 from concurrent.futures import ThreadPoolExecutor
-from concurrent.futures import as_completed
 from io import BytesIO
 from itertools import groupby
 from typing import Dict, List, Optional, Tuple, Union
@@ -129,13 +128,11 @@ def process_files(
     )
     futures = {}
     for rf in raw_files:
-        futures[rf.open_file.path] = executor.submit(
-            process_raw_file, catalog=catalog, raw_file=rf, reader=reader
-        )
-    results = []
-    for f in tqdm(as_completed(futures.values())):
-        results.append(f.result())
-    return dict((rf.open_file.path, value) for rf, value in zip(raw_files, results))
+        futures[rf] = executor.submit(process_raw_file, catalog=catalog, raw_file=rf, reader=reader)
+    # Show progress
+    for _ in tqdm(list(futures.values())):
+        pass
+    return {rf.open_file.path: f.result() for rf, f in futures.items()}
 
 
 def make_raw_files(glob_path, block_size="128mb", compression="infer", **kw) -> List[RawFile]:

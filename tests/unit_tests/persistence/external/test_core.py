@@ -261,8 +261,8 @@ class TestPersistenceCore:
         # Assert
         assert files == {
             TEST_DATA_DIR + "/1.166564490.bz2": 2908,
-            TEST_DATA_DIR + "/betfair/1.180305278.bz2": 22692,
-            TEST_DATA_DIR + "/betfair/1.166811431.bz2": 17085,
+            TEST_DATA_DIR + "/betfair/1.180305278.bz2": 17085,
+            TEST_DATA_DIR + "/betfair/1.166811431.bz2": 22692,
         }
 
     def test_data_catalog_instruments_no_partition(self):
