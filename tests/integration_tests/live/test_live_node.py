@@ -142,12 +142,17 @@ class TestTradingNodeOperation:
 
         # TODO(cs): Assert existence of client
 
-    def test_build_with_multiple_clients(self):
+    @pytest.mark.asyncio
+    async def test_build_with_multiple_clients(self):
         # Arrange, # Act
         self.node.add_data_client_factory("BETFAIR", BetfairLiveDataClientFactory)
         self.node.add_exec_client_factory("BETFAIR", BetfairLiveExecClientFactory)
         self.node.build()
 
+        self.node.start()
+        await asyncio.sleep(1)
+
+        # assert self.node.kernel.data_engine.registered_clients
         # TODO(cs): Assert existence of client
 
     @pytest.mark.asyncio
@@ -156,7 +161,7 @@ class TestTradingNodeOperation:
         sink = []
 
         # Act
-        self.node.add_log_sink(sink.append)
+        self.node.kernel.add_log_sink(sink.append)
         self.node.build()
 
         self.node.start()
