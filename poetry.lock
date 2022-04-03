@@ -186,7 +186,7 @@ name = "cloudpickle"
 version = "2.0.0"
 description = "Extended pickling support for Python objects"
 category = "main"
-optional = true
+optional = false
 python-versions = ">=3.6"
 
 [[package]]
@@ -1431,7 +1431,7 @@ ib = ["ib_insync"]
 [metadata]
 lock-version = "1.1"
 python-versions = ">=3.8,<3.11"
-content-hash = "9affaf70c5b077d474dec37d508a52359332a1e33cecf1b9ce34686ab6cbb492"
+content-hash = "c614c1e5670d4c5682a8809d9bd4761b1b0034b157479f949dd7b6afc186033f"
 
 [metadata.files]
 aiodns = [
