@@ -16,7 +16,8 @@ This will be the final release without Rust compiled binaries.
 - `CacheDatabaseConfig.type` now defaults to `in-memory`
 - `NAUTILUS_CATALOG` env var changed to `NAUTILUS_PATH`
 - `DataCatalog` root path now located under `$OLD_PATH/catalog/` from the Nautilus path
-- `hyperopt` is now an optional extra
+- `hiredis` and `redis` are now optional extras as 'redis'
+- `hyperopt` is now an optional extra as 'hyperopt'
 
 ### Enhancements
 - Unify `NautilusKernel` across backtest and live systems
