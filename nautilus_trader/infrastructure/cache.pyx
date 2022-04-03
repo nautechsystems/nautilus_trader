@@ -13,7 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import redis
+import warnings
 
 from nautilus_trader.config.components import CacheDatabaseConfig
 
@@ -38,6 +38,13 @@ from nautilus_trader.model.orders.unpacker cimport OrderUnpacker
 from nautilus_trader.model.position cimport Position
 from nautilus_trader.serialization.base cimport Serializer
 from nautilus_trader.trading.strategy cimport TradingStrategy
+
+
+try:
+    import redis
+except ImportError:  # pragma: no cover
+    redis = None
+    warnings.warn("redis is not available.")
 
 
 cdef str _UTF8 = 'utf-8'
