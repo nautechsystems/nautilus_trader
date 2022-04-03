@@ -21,7 +21,10 @@ from pydantic import validator
 from nautilus_trader.config.kernel import NautilusKernelConfig
 from nautilus_trader.config.live import ImportableClientConfig
 from nautilus_trader.config.live import LiveDataClientConfig
+from nautilus_trader.config.live import LiveDataEngineConfig
 from nautilus_trader.config.live import LiveExecClientConfig
+from nautilus_trader.config.live import LiveExecEngineConfig
+from nautilus_trader.config.live import LiveRiskEngineConfig
 
 
 class TradingNodeConfig(NautilusKernelConfig):
@@ -73,6 +76,9 @@ class TradingNodeConfig(NautilusKernelConfig):
 
     environment: str = "live"
     trader_id: str = "TRADER-001"
+    data_engine: LiveDataEngineConfig = LiveDataEngineConfig()
+    risk_engine: LiveRiskEngineConfig = LiveRiskEngineConfig()
+    exec_engine: LiveExecEngineConfig = LiveExecEngineConfig()
     data_clients: Dict[str, LiveDataClientConfig] = {}
     exec_clients: Dict[str, LiveExecClientConfig] = {}
     timeout_connection: PositiveFloat = 10.0

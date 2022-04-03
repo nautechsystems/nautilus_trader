@@ -77,9 +77,9 @@ class NautilusKernelConfig(pydantic.BaseModel):
     trader_id: str
     cache: Optional[CacheConfig] = None
     cache_database: Optional[CacheDatabaseConfig] = None
-    data_engine: Union[DataEngineConfig, LiveDataEngineConfig] = None
-    risk_engine: Union[RiskEngineConfig, LiveRiskEngineConfig] = None
-    exec_engine: Union[ExecEngineConfig, LiveExecEngineConfig] = None
+    data_engine: Union[DataEngineConfig, LiveDataEngineConfig]
+    risk_engine: Union[RiskEngineConfig, LiveRiskEngineConfig]
+    exec_engine: Union[ExecEngineConfig, LiveExecEngineConfig]
     persistence: Optional[PersistenceConfig] = None
     actors: List[ImportableActorConfig] = Field(default_factory=list)
     strategies: List[ImportableStrategyConfig] = Field(default_factory=list)

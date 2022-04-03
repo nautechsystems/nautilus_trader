@@ -22,6 +22,9 @@ from typing import Dict, List, Optional, Union
 import pandas as pd
 import pydantic
 
+from nautilus_trader.config.engines import DataEngineConfig
+from nautilus_trader.config.engines import ExecEngineConfig
+from nautilus_trader.config.engines import RiskEngineConfig
 from nautilus_trader.config.kernel import NautilusKernelConfig
 from nautilus_trader.core.data import Data
 from nautilus_trader.core.datetime import maybe_dt_to_unix_nanos
@@ -217,11 +220,11 @@ class BacktestEngineConfig(NautilusKernelConfig):
         The cache configuration.
     cache_database : CacheDatabaseConfig, optional
         The cache database configuration.
-    data_engine : LiveDataEngineConfig, optional
+    data_engine : DataEngineConfig, optional
         The live data engine configuration.
-    risk_engine : LiveRiskEngineConfig, optional
+    risk_engine : RiskEngineConfig, optional
         The live risk engine configuration.
-    exec_engine : LiveExecEngineConfig, optional
+    exec_engine : ExecEngineConfig, optional
         The live execution engine configuration.
     persistence : LivePersistenceConfig, optional
         The configuration for enabling persistence via feather files.
@@ -244,6 +247,9 @@ class BacktestEngineConfig(NautilusKernelConfig):
 
     environment: str = "backtest"
     trader_id: str = "BACKTESTER-001"
+    data_engine: DataEngineConfig = DataEngineConfig()
+    risk_engine: RiskEngineConfig = RiskEngineConfig()
+    exec_engine: ExecEngineConfig = ExecEngineConfig()
     run_analysis: bool = True
 
     def __tokenize__(self):
