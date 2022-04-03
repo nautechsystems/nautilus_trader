@@ -108,7 +108,7 @@ cdef class LoggerAdapter:
     cpdef void exception(self, str msg, ex, dict annotations=*) except *
 
 
-cpdef void nautilus_header(LoggerAdapter logger, str uvloop_version=*) except *
+cpdef void nautilus_header(LoggerAdapter logger) except *
 cpdef void log_memory(LoggerAdapter logger) except *
 
 
