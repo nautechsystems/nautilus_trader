@@ -12,7 +12,6 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
-
 import pickle
 
 import fsspec
@@ -178,7 +177,7 @@ class TestPersistenceCore:
         # Act
         write_parquet(
             fs=fs,
-            path=f"{root}/sample.parquet",
+            path=root / "sample.parquet",
             df=df,
             schema=pa.schema({"value": pa.float64(), "instrument_id": pa.string()}),
             partition_cols=None,
@@ -206,7 +205,7 @@ class TestPersistenceCore:
         # Act
         write_parquet(
             fs=fs,
-            path=f"{root}/{path}",
+            path=root / path,
             df=df,
             schema=pa.schema({"value": pa.float64(), "instrument_id": pa.string()}),
             partition_cols=["instrument_id"],
@@ -358,7 +357,7 @@ class TestPersistenceCore:
             )
             write_parquet(
                 fs=fs,
-                path=f"{root}/{path}",
+                path=root / path,
                 df=df,
                 schema=pa.schema(
                     {"value": pa.float64(), "instrument_id": pa.string(), "ts_init": pa.int64()}

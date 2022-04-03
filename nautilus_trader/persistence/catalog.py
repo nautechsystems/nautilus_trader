@@ -15,6 +15,7 @@
 
 import os
 import pathlib
+import platform
 from typing import Dict, List, Optional, Union
 
 import fsspec
@@ -22,6 +23,7 @@ import pandas as pd
 import pyarrow as pa
 import pyarrow.dataset as ds
 import pyarrow.parquet as pq
+from fsspec.utils import infer_storage_options
 from pyarrow import ArrowInvalid
 
 from nautilus_trader.core.inspect import is_nautilus_class
@@ -66,7 +68,7 @@ class DataCatalog(metaclass=Singleton):
         fs_protocol: str = "file",
         fs_storage_options: Optional[Dict] = None,
     ):
-        self.path = pathlib.Path(path)
+        self.path: pathlib.Path = pathlib.Path(path)
         self.fs_protocol = fs_protocol
         self.fs_storage_options = fs_storage_options or {}
         self.fs: fsspec.AbstractFileSystem = fsspec.filesystem(
@@ -80,9 +82,13 @@ class DataCatalog(metaclass=Singleton):
     @classmethod
     def from_uri(cls, uri):
         if "://" not in uri:
+            # Assume a local path
             uri = "file://" + uri
-        protocol, path = uri.split("://")
-        return cls(path=path, fs_protocol=protocol)
+        parsed = infer_storage_options(uri)
+        path = parsed.pop("path")
+        protocol = parsed.pop("protocol")
+        storage_options = parsed.copy()
+        return cls(path=path, fs_protocol=protocol, fs_storage_options=storage_options)
 
     # ---- QUERIES ---------------------------------------------------------------------------------------- #
 
@@ -401,3 +407,19 @@ def combine_filters(*filters):
         for f in filters[1:]:
             expr = expr & f
         return expr
+
+
+def resolve_path(path: pathlib.Path, fs: fsspec.AbstractFileSystem):
+    from fsspec.implementations.local import LocalFileSystem
+
+    try:
+        from fsspec.implementations.smb import SMBFileSystem
+    except ImportError:
+        SMBFileSystem = LocalFileSystem
+
+    IS_WINDOWS = platform.system() == "Windows"
+    IS_WINDOWS_LOCAL_FS = isinstance(fs, (LocalFileSystem, SMBFileSystem))
+    if IS_WINDOWS and IS_WINDOWS_LOCAL_FS:
+        return path.absolute()
+    else:
+        return path.absolute().as_posix()
