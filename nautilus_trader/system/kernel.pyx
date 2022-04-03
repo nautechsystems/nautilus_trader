@@ -241,7 +241,6 @@ cdef class NautilusKernel:
         ########################################################################
         # Core components
         ########################################################################
-
         self.msgbus = MessageBus(
             trader_id=self.trader_id,
             clock=self.clock,
@@ -386,15 +385,11 @@ cdef class NautilusKernel:
     def _setup_persistence(self, config: PersistenceConfig) -> None:
         # Setup persistence
         catalog = config.as_catalog()
-        backtest_dir = f"{config.catalog_path.rstrip('/')}/backtest/"
-        if not catalog.fs.exists(backtest_dir):
-            catalog.fs.mkdir(backtest_dir)
+        persistence_dir = os.path.join(config.catalog_path, self.environment.value)
+        if not catalog.fs.exists(persistence_dir):
+            catalog.fs.mkdir(persistence_dir)
 
-        path = os.path.join(
-            config.catalog_path,
-            self.environment.value,
-            self.instance_id.value + ".feather",
-        )
+        path = os.path.join(persistence_dir, self.instance_id.value + ".feather")
         writer = FeatherWriter(
             path=path,
             fs_protocol=config.fs_protocol,
@@ -434,7 +429,7 @@ cdef class NautilusKernel:
         self.logger.register_sink(handler=handler)
 
     def cancel_all_tasks(self) -> None:
-        Condition.none(self.loop, "self.loop")
+        Condition.not_none(self.loop, "self.loop")
 
         to_cancel = asyncio.tasks.all_tasks(self.loop)
         if not to_cancel:
