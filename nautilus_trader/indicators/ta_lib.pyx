@@ -95,7 +95,7 @@ cdef class TaLib(Indicator):
         if 'open' in values:
             self._open.append(_open)
         if 'volume' in values:
-            self.volume.append(volume)
+            self._volume.append(volume)
 
 
     cpdef void update_raw(

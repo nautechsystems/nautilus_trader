@@ -74,3 +74,6 @@ positions_report.csv
 examples/backtest/hyperopt_kline_multi_smacci.py
 order_fills_report.csv
 nautilus_trader/examples/strategies/smacci classic.py
+nautilus_trader/examples/strategies/slowmo.py
+.gitignore
+examples/backtest/hyperopt_kline_multi_wma.py
