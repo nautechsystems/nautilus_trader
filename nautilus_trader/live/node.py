@@ -14,25 +14,16 @@
 # -------------------------------------------------------------------------------------------------
 
 import asyncio
-import concurrent.futures
-import platform
-import signal
-import socket
 import sys
 import time
 from datetime import timedelta
-from functools import partial
-from typing import Any, Callable, Dict, List, Optional
-
-import orjson
+from typing import Optional
 
 from nautilus_trader.cache.base import CacheFacade
 from nautilus_trader.cache.config import CacheConfig
-from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.logging import LiveLogger
 from nautilus_trader.common.logging import LogColor
 from nautilus_trader.common.logging import LogLevelParser
-from nautilus_trader.common.uuid import UUIDFactory
 from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.infrastructure.config import CacheDatabaseConfig
@@ -42,10 +33,9 @@ from nautilus_trader.live.config import LiveRiskEngineConfig
 from nautilus_trader.live.config import TradingNodeConfig
 from nautilus_trader.live.node_builder import TradingNodeBuilder
 from nautilus_trader.model.identifiers import TraderId
-from nautilus_trader.persistence.config import PersistenceConfig
-from nautilus_trader.persistence.streaming import FeatherWriter
 from nautilus_trader.portfolio.base import PortfolioFacade
 from nautilus_trader.trading.config import StrategyFactory
+from nautilus_trader.trading.kernel import Environment
 from nautilus_trader.trading.kernel import NautilusKernel
 from nautilus_trader.trading.trader import Trader
 
@@ -75,68 +65,32 @@ class TradingNode:
         self._config = config
 
         # Setup loop
-        self._loop = asyncio.get_event_loop()
-        self._executor = concurrent.futures.ThreadPoolExecutor()
-        self._loop.set_default_executor(self._executor)
-        self._loop.set_debug(config.loop_debug)
-        self._is_running = False
+        loop = asyncio.get_event_loop()
 
-        # Components
-        clock = LiveClock(loop=self._loop)
-        uuid_factory = UUIDFactory()
-
-        # Identifiers
-        trader_id = TraderId(config.trader_id)
-        machine_id = socket.gethostname()
-        instance_id = uuid_factory.generate()
-
-        # Setup logging
-        self._logger = LiveLogger(
-            loop=self._loop,
-            clock=clock,
-            trader_id=trader_id,
-            machine_id=machine_id,
-            instance_id=instance_id,
-            level_stdout=LogLevelParser.from_str_py(config.log_level.upper()),
-        )
-
+        # Build core system kernel
         self.kernel = NautilusKernel(
+            environment=Environment.LIVE,
             name=type(self).__name__,
-            trader_id=trader_id,
-            machine_id=machine_id,
-            instance_id=instance_id,
-            clock=clock,
-            uuid_factory=uuid_factory,
-            logger=self._logger,
+            trader_id=TraderId(config.trader_id),
             cache_config=config.cache or CacheConfig(),
             cache_database_config=config.cache_database or CacheDatabaseConfig(),
             data_config=config.data_engine or LiveDataEngineConfig(),
             risk_config=config.risk_engine or LiveRiskEngineConfig(),
             exec_config=config.exec_engine or LiveExecEngineConfig(),
-            loop=self._loop,
+            loop=loop,
+            loop_debug=config.loop_debug,
+            loop_sig_callback=self._loop_sig_handler,
+            log_level=LogLevelParser.from_str_py(config.log_level.upper()),
         )
 
-        if platform.system() != "Windows":
-            # Windows does not support signal handling
-            # https://stackoverflow.com/questions/45987985/asyncio-loops-add-signal-handler-in-windows
-            self._setup_loop()
-
-        if config.load_strategy_state:
-            self.kernel.trader.load()
-
-        # Setup persistence (requires trader)
-        self.persistence_writers: List[Any] = []
-        if config.persistence:
-            self._setup_persistence(config=config.persistence)
-
         self._builder = TradingNodeBuilder(
-            loop=self._loop,
+            loop=loop,
             data_engine=self.kernel.data_engine,
             exec_engine=self.kernel.exec_engine,
             msgbus=self.kernel.msgbus,
             cache=self.kernel.cache,
             clock=self.kernel.clock,
-            logger=self._logger,
+            logger=self.kernel.logger,
             log=self.kernel.log,
         )
 
@@ -144,7 +98,9 @@ class TradingNode:
             strategy = StrategyFactory.create(strategy_config)  # type: ignore
             self.trader.add_strategy(strategy)  # type: ignore
 
+        # Operation flags
         self._is_built = False
+        self._is_running = False
 
     @property
     def trader_id(self) -> TraderId:
@@ -251,7 +207,7 @@ class TradingNode:
         asyncio.AbstractEventLoop
 
         """
-        return self._loop
+        return self.kernel.loop
 
     def get_logger(self) -> LiveLogger:
         """
@@ -262,24 +218,7 @@ class TradingNode:
         LiveLogger
 
         """
-        return self._logger
-
-    def add_log_sink(self, handler: Callable[[Dict], None]):
-        """
-        Register the given sink handler with the nodes logger.
-
-        Parameters
-        ----------
-        handler : Callable[[Dict], None]
-            The sink handler to register.
-
-        Raises
-        ------
-        KeyError
-            If `handler` already registered.
-
-        """
-        self._logger.register_sink(handler=handler)
+        return self.kernel.logger
 
     def add_data_client_factory(self, name: str, factory):
         """
@@ -345,10 +284,10 @@ class TradingNode:
             )
 
         try:
-            if self._loop.is_running():
-                return self._loop.create_task(self._run())
+            if self.kernel.loop.is_running():
+                return self.kernel.loop.create_task(self._run())
             else:
-                self._loop.run_until_complete(self._run())
+                self.kernel.loop.run_until_complete(self._run())
                 return None
         except RuntimeError as ex:
             self.kernel.log.exception("Error on run", ex)
@@ -364,10 +303,10 @@ class TradingNode:
 
         """
         try:
-            if self._loop.is_running():
-                self._loop.create_task(self._stop())
+            if self.kernel.loop.is_running():
+                self.kernel.loop.create_task(self._stop())
             else:
-                self._loop.run_until_complete(self._stop())
+                self.kernel.loop.run_until_complete(self._stop())
         except RuntimeError as ex:
             self.kernel.log.exception("Error on stop", ex)
 
@@ -408,75 +347,37 @@ class TradingNode:
             self.kernel.log.info("Shutting down executor...")
             if sys.version_info >= (3, 9):
                 # cancel_futures added in Python 3.9
-                self._executor.shutdown(wait=True, cancel_futures=True)
+                self.kernel.executor.shutdown(wait=True, cancel_futures=True)
             else:
-                self._executor.shutdown(wait=True)
+                self.kernel.executor.shutdown(wait=True)
 
             self.kernel.log.info("Stopping event loop...")
-            self._cancel_all_tasks()
-            self._loop.stop()
+            self.kernel.cancel_all_tasks()
+            self.kernel.loop.stop()
         except RuntimeError as ex:
             self.kernel.log.exception("Error on dispose", ex)
         finally:
-            if self._loop.is_running():
+            if self.kernel.loop.is_running():
                 self.kernel.log.warning("Cannot close a running event loop.")
             else:
                 self.kernel.log.info("Closing event loop...")
-                self._loop.close()
+                self.kernel.loop.close()
 
             # Check and log if event loop is running
-            if self._loop.is_running():
-                self.kernel.log.warning(f"loop.is_running={self._loop.is_running()}")
+            if self.kernel.loop.is_running():
+                self.kernel.log.warning(f"loop.is_running={self.kernel.loop.is_running()}")
             else:
-                self.kernel.log.info(f"loop.is_running={self._loop.is_running()}")
+                self.kernel.log.info(f"loop.is_running={self.kernel.loop.is_running()}")
 
             # Check and log if event loop is closed
-            if not self._loop.is_closed():
-                self.kernel.log.warning(f"loop.is_closed={self._loop.is_closed()}")
+            if not self.kernel.loop.is_closed():
+                self.kernel.log.warning(f"loop.is_closed={self.kernel.loop.is_closed()}")
             else:
-                self.kernel.log.info(f"loop.is_closed={self._loop.is_closed()}")
+                self.kernel.log.info(f"loop.is_closed={self.kernel.loop.is_closed()}")
 
             self.kernel.log.info("DISPOSED.")
 
-    def _setup_loop(self) -> None:
-        if self._loop.is_closed():
-            self.kernel.log.error("Cannot setup signal handling (event loop was closed).")
-            return
-
-        signal.signal(signal.SIGINT, signal.SIG_DFL)
-        signals = (signal.SIGTERM, signal.SIGINT, signal.SIGABRT)
-        for sig in signals:
-            self._loop.add_signal_handler(sig, self._loop_sig_handler, sig)
-        self.kernel.log.debug(f"Event loop signal handling setup for {signals}.")
-
-    def _setup_persistence(self, config: PersistenceConfig) -> None:
-        # Setup persistence
-        path = f"{config.catalog_path}/live/{self.kernel.instance_id}.feather"
-        writer = FeatherWriter(
-            path=path,
-            fs_protocol=config.fs_protocol,
-            flush_interval=config.flush_interval,
-        )
-        self.persistence_writers.append(writer)
-        self.kernel.trader.subscribe("*", writer.write)
-        self.kernel.log.info(f"Persisting data & events to {path=}")
-
-        # Setup logging
-        if config.persist_logs:
-
-            def sink(record, f):
-                f.write(orjson.dumps(record) + b"\n")
-
-            path = f"{config.catalog_path}/logs/{self.kernel.instance_id}.log"
-            log_sink = open(path, "wb")
-            self.persistence_writers.append(log_sink)
-            self._logger.register_sink(partial(sink, f=log_sink))
-            self.kernel.log.info(f"Persisting logs to {path=}")
-
     def _loop_sig_handler(self, sig) -> None:
-        self._loop.remove_signal_handler(signal.SIGTERM)
-        self._loop.add_signal_handler(signal.SIGINT, lambda: None)
-
         self.kernel.log.warning(f"Received {sig!s}, shutting down...")
         self.stop()
 
@@ -486,7 +387,7 @@ class TradingNode:
             self._is_running = True
 
             # Start system
-            self._logger.start()
+            self.kernel.logger.start()
             self.kernel.data_engine.start()
             self.kernel.exec_engine.start()
             self.kernel.risk_engine.start()
@@ -548,7 +449,7 @@ class TradingNode:
             # Start trader and strategies
             self.kernel.trader.start()
 
-            if self._loop.is_running():
+            if self.kernel.loop.is_running():
                 self.kernel.log.info("RUNNING.")
             else:
                 self.kernel.log.warning("Event loop is not running.")
@@ -646,11 +547,11 @@ class TradingNode:
             self.kernel.log.info(f"Cancelled Timer(name={name}).")
 
         # Clean up persistence
-        for writer in self.persistence_writers:
+        for writer in self.kernel.persistence_writers:
             writer.close()
 
         self.kernel.log.info("STOPPED.")
-        self._logger.stop()
+        self.kernel.logger.stop()
         self._is_running = False
 
     async def _await_engines_disconnected(self) -> bool:
@@ -667,38 +568,3 @@ class TradingNode:
             break
 
         return True  # Engines disconnected
-
-    def _cancel_all_tasks(self) -> None:
-        to_cancel = asyncio.tasks.all_tasks(self._loop)
-        if not to_cancel:
-            self.kernel.log.info("All tasks canceled.")
-            return
-
-        for task in to_cancel:
-            self.kernel.log.warning(f"Canceling pending task {task}")
-            task.cancel()
-
-        if self._loop.is_running():
-            self.kernel.log.warning("Event loop still running during `cancel_all_tasks`.")
-            return
-
-        finish_all_tasks: asyncio.Future = asyncio.tasks.gather(  # type: ignore
-            *to_cancel,
-            loop=self._loop,
-            return_exceptions=True,
-        )
-        self._loop.run_until_complete(finish_all_tasks)
-
-        self.kernel.log.debug(f"{finish_all_tasks}")
-
-        for task in to_cancel:  # pragma: no cover
-            if task.cancelled():
-                continue
-            if task.exception() is not None:
-                self._loop.call_exception_handler(
-                    {
-                        "message": "unhandled exception during asyncio.run() shutdown",
-                        "exception": task.exception(),
-                        "task": task,
-                    }
-                )

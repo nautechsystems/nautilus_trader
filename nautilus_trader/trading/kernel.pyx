@@ -14,16 +14,28 @@
 # -------------------------------------------------------------------------------------------------
 
 import asyncio
+import concurrent.futures
+import os
+import platform
+import signal
+import socket
 import warnings
 from asyncio import AbstractEventLoop
-from typing import Optional, Union
+from enum import Enum
+from enum import unique
+from functools import partial
+from typing import Any, Callable, Dict, List, Optional, Union
+
+import orjson
 
 from nautilus_trader.cache.cache cimport Cache
-from nautilus_trader.common.clock cimport Clock
+from nautilus_trader.common.clock cimport LiveClock
+from nautilus_trader.common.clock cimport TestClock
+from nautilus_trader.common.logging cimport LiveLogger
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.common.logging cimport LoggerAdapter
+from nautilus_trader.common.logging cimport LogLevel
 from nautilus_trader.common.logging cimport nautilus_header
-from nautilus_trader.common.uuid cimport UUIDFactory
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.datetime cimport nanos_to_millis
 from nautilus_trader.core.time cimport unix_timestamp_ns
@@ -33,7 +45,6 @@ from nautilus_trader.infrastructure.cache cimport RedisCacheDatabase
 from nautilus_trader.live.data_engine cimport LiveDataEngine
 from nautilus_trader.live.execution_engine cimport LiveExecutionEngine
 from nautilus_trader.live.risk_engine cimport LiveRiskEngine
-from nautilus_trader.model.identifiers cimport TraderId
 from nautilus_trader.msgbus.bus cimport MessageBus
 from nautilus_trader.portfolio.portfolio cimport Portfolio
 from nautilus_trader.risk.engine cimport RiskEngine
@@ -47,6 +58,8 @@ from nautilus_trader.infrastructure.config import CacheDatabaseConfig
 from nautilus_trader.live.config import LiveDataEngineConfig
 from nautilus_trader.live.config import LiveExecEngineConfig
 from nautilus_trader.live.config import LiveRiskEngineConfig
+from nautilus_trader.persistence.config import PersistenceConfig
+from nautilus_trader.persistence.streaming import FeatherWriter
 from nautilus_trader.risk.config import RiskEngineConfig
 
 
@@ -59,6 +72,12 @@ except ImportError:  # pragma: no cover
     uvloop_version = None
     warnings.warn("uvloop is not available.")
 
+@unique
+class Environment(Enum):
+    BACKTEST = "backtest"
+    SANDBOX = "sandbox"
+    LIVE = "live"
+
 
 cdef class NautilusKernel:
     """
@@ -68,20 +87,12 @@ cdef class NautilusKernel:
 
     Parameters
     ----------
+    environment : Environment { ``BACKTEST``, ``SANDBOX``, ``LIVE`` }
+        The environment context for the kernel.
     name : str
-        The name for the kernel (will append all logs).
-    trader_id : TraderId
+        The name for the kernel (will prepend all log messages).
+    trader_id : str
         The trader ID for the kernel (must be a name and ID tag separated by a hyphen).
-    machine_id : str
-        The kernels underlying machine identifier.
-    instance_id : UUID4
-        The kernels instance identifier.
-    clock : Clock
-        The clock for the kernel.
-    uuid_factory : UUIDFactory
-        The UUID factory for the kernel.
-    logger : Logger
-        The logger for the kernel.
     cache_config : CacheConfig
         The cache configuration for the kernel.
     cache_database_config : CacheDatabaseConfig
@@ -94,13 +105,23 @@ cdef class NautilusKernel:
         The execution engine configuration for the kernel.
     loop : AbstractEventLoop, optional
         The event loop for the kernel.
+    loop_sig_callback : Callable, optional
+        The callback for the signal handler.
+    loop_debug : bool, default False
+        If the event loop should run in debug mode.
+    load_state : bool, default False
+        If strategy state should be loaded on start.
+    log_level : LogLevel, default LogLevel.INFO
+        The log level for the kernels logger.
+    bypass_logging : bool, default False
+        If logging to stdout should be bypassed.
 
     Raises
     ------
+    TypeError
+        If `environment` is not of type `Environment`.
     ValueError
         If `name` is not a valid string.
-    ValueError
-        If `machine_id` is not a valid string.
     TypeError
         If any configuration object is not of the expected type.
 
@@ -108,46 +129,83 @@ cdef class NautilusKernel:
 
     def __init__(
         self,
+        environment not None: Environment,
         str name not None,
         TraderId trader_id not None,
-        str machine_id not None,
-        UUID4 instance_id not None,
-        Clock clock not None,
-        UUIDFactory uuid_factory not None,
-        Logger logger not None,
         cache_config not None: CacheConfig,
         cache_database_config not None: CacheDatabaseConfig,
         data_config not None: Union[DataEngineConfig, LiveDataEngineConfig],
         risk_config not None: Union[RiskEngineConfig, LiveRiskEngineConfig],
         exec_config not None: Union[ExecEngineConfig, LiveExecEngineConfig],
+        persistence_config: Optional[PersistenceConfig] = None,
         loop: Optional[AbstractEventLoop] = None,
+        loop_sig_callback: Optional[Callable] = None,
+        loop_debug: bool = False,
+        load_state: bool = False,
+        LogLevel log_level = LogLevel.INFO,
+        bypass_logging: bool = False,
     ):
+        Condition.type(environment, Environment, "environment")
         Condition.valid_string(name, "name")
-        Condition.valid_string(machine_id, "machine_id")
         Condition.type(cache_config, CacheConfig, "cache_config")
         Condition.type(cache_database_config, CacheDatabaseConfig, "cache_database_config")
         Condition.true(isinstance(data_config, (DataEngineConfig, LiveDataEngineConfig)), "data_config was unrecognized type", ex_type=TypeError)
         Condition.true(isinstance(risk_config, (RiskEngineConfig, LiveRiskEngineConfig)), "risk_config was unrecognized type", ex_type=TypeError)
         Condition.true(isinstance(exec_config, (ExecEngineConfig, LiveExecEngineConfig)), "exec_config was unrecognized type", ex_type=TypeError)
 
-        # Components
-        self.clock = clock
-        self.uuid_factory = UUIDFactory()
-        self.logger = logger
-        self.log = LoggerAdapter(
-            component_name=name,
-            logger=logger,
-        )
+        self.environment = environment
 
         # Identifiers
         self.name = name
         self.trader_id = trader_id
-        self.machine_id = machine_id
-        self.instance_id = instance_id
+        self.machine_id = socket.gethostname()
+        self.instance_id = UUID4()
         self.ts_created = unix_timestamp_ns()
+
+        # Components
+        if self.environment == Environment.BACKTEST:
+            self.clock = TestClock()
+            self.logger = Logger(
+                clock=self.clock,
+                trader_id=self.trader_id,
+                machine_id=self.machine_id,
+                instance_id=self.instance_id,
+                level_stdout=log_level,
+                bypass=bypass_logging,
+            )
+        elif self.environment in (Environment.SANDBOX, Environment.LIVE):
+            self.clock = LiveClock(loop=loop)
+            self.logger = LiveLogger(
+                loop=loop,
+                clock=self.clock,
+                trader_id=self.trader_id,
+                machine_id=self.machine_id,
+                instance_id=self.instance_id,
+                level_stdout=log_level
+            )
+        else:  # pragma: no cover (design-time error)
+            raise NotImplementedError(f"environment {environment} not recognized")
+
+        # Setup logging
+        self.log = LoggerAdapter(
+            component_name=name,
+            logger=self.logger,
+        )
 
         nautilus_header(self.log, uvloop_version)
         self.log.info("Building system kernel...")
+
+        # Setup loop
+        self.loop = loop
+        if self.loop is not None:
+            self.executor = concurrent.futures.ThreadPoolExecutor()
+            self.loop.set_default_executor(self.executor)
+            self.loop.set_debug(loop_debug)
+            self.loop_sig_callback = loop_sig_callback
+            if platform.system() != "Windows":
+                # Windows does not support signal handling
+                # https://stackoverflow.com/questions/45987985/asyncio-loops-add-signal-handler-in-windows
+                self._setup_loop()
 
         if cache_database_config is None or cache_database_config.type == "in-memory":
             cache_db = None
@@ -164,6 +222,10 @@ cdef class NautilusKernel:
                 f"Please use one of {{\'in-memory\', \'redis\'}}.",
             )
 
+        ########################################################################
+        # Core components
+        ########################################################################
+
         self.msgbus = MessageBus(
             trader_id=self.trader_id,
             clock=self.clock,
@@ -172,7 +234,7 @@ cdef class NautilusKernel:
 
         self.cache = Cache(
             database=cache_db,
-            logger=logger,
+            logger=self.logger,
             config=cache_config,
         )
 
@@ -251,6 +313,9 @@ cdef class NautilusKernel:
         if exec_config.load_cache:
             self.exec_engine.load_cache()
 
+        ########################################################################
+        # Trader
+        ########################################################################
         self.trader = Trader(
             trader_id=self.trader_id,
             msgbus=self.msgbus,
@@ -263,5 +328,111 @@ cdef class NautilusKernel:
             logger=self.logger,
         )
 
+        if load_state:
+            self.trader.load()
+
+        # Setup persistence (requires trader)
+        self.persistence_writers: List[Any] = []
+
+        if persistence_config:
+            self._setup_persistence(config=persistence_config)
+
         cdef int64_t build_time_ms = nanos_to_millis(unix_timestamp_ns() - self.ts_created)
         self.log.info(f"Initialized in {build_time_ms}ms.")
+
+    def add_log_sink(self, handler: Callable[[Dict], None]):
+        """
+        Register the given sink handler with the nodes logger.
+
+        Parameters
+        ----------
+        handler : Callable[[Dict], None]
+            The sink handler to register.
+
+        Raises
+        ------
+        KeyError
+            If `handler` already registered.
+
+        """
+        self.logger.register_sink(handler=handler)
+
+    def _setup_loop(self) -> None:
+        if self.loop.is_closed():
+            self.log.error("Cannot setup signal handling (event loop was closed).")
+            return
+
+        signal.signal(signal.SIGINT, signal.SIG_DFL)
+        signals = (signal.SIGTERM, signal.SIGINT, signal.SIGABRT)
+        for sig in signals:
+            self.loop.add_signal_handler(sig, self._loop_sig_handler, sig)
+        self.log.debug(f"Event loop signal handling setup for {signals}.")
+
+    def _loop_sig_handler(self, sig) -> None:
+        self.loop.remove_signal_handler(signal.SIGTERM)
+        self.loop.add_signal_handler(signal.SIGINT, lambda: None)
+        if self.loop_sig_callback:
+            self.loop_sig_callback(sig)
+
+    def _setup_persistence(self, config: PersistenceConfig) -> None:
+        # Setup persistence
+        path = os.path.join(
+            config.catalog_path,
+            self.environment.value,
+            self.instance_id + ".feather",
+        )
+        writer = FeatherWriter(
+            path=path,
+            fs_protocol=config.fs_protocol,
+            flush_interval=config.flush_interval,
+        )
+        self.persistence_writers.append(writer)
+        self.trader.subscribe("*", writer.write)
+        self.log.info(f"Persisting data & events to {path=}")
+
+        # Setup logging
+        if config.persist_logs:
+
+            def sink(record, f):
+                f.write(orjson.dumps(record) + b"\n")
+
+            path = f"{config.catalog_path}/logs/{self.instance_id}.log"
+            log_sink = open(path, "wb")
+            self.persistence_writers.append(log_sink)
+            self.logger.register_sink(partial(sink, f=log_sink))
+            self.log.info(f"Persisting logs to {path=}")
+
+    def cancel_all_tasks(self) -> None:
+        to_cancel = asyncio.tasks.all_tasks(self.loop)
+        if not to_cancel:
+            self.log.info("All tasks canceled.")
+            return
+
+        for task in to_cancel:
+            self.log.warning(f"Canceling pending task {task}")
+            task.cancel()
+
+        if self.loop.is_running():
+            self.log.warning("Event loop still running during `cancel_all_tasks`.")
+            return
+
+        finish_all_tasks: asyncio.Future = asyncio.tasks.gather(  # type: ignore
+            *to_cancel,
+            loop=self.loop,
+            return_exceptions=True,
+        )
+        self.loop.run_until_complete(finish_all_tasks)
+
+        self.log.debug(f"{finish_all_tasks}")
+
+        for task in to_cancel:  # pragma: no cover
+            if task.cancelled():
+                continue
+            if task.exception() is not None:
+                self.loop.call_exception_handler(
+                    {
+                        "message": "unhandled exception during asyncio.run() shutdown",
+                        "exception": task.exception(),
+                        "task": task,
+                    }
+                )
