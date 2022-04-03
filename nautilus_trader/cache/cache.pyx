@@ -17,7 +17,7 @@ from collections import deque
 from decimal import Decimal
 from typing import Optional
 
-from nautilus_trader.cache.config import CacheConfig
+from nautilus_trader.config.components import CacheConfig
 
 from libc.stdint cimport int64_t
 

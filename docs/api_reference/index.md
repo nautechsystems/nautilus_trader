@@ -76,6 +76,7 @@ library, or from third party library dependencies.
    backtest.md
    cache.md
    common.md
+   config.md
    core.md
    data.md
    execution.md

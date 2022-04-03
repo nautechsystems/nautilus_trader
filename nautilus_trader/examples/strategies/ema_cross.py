@@ -17,6 +17,7 @@ from decimal import Decimal
 from typing import Dict, Optional
 
 from nautilus_trader.common.logging import LogColor
+from nautilus_trader.config.components import TradingStrategyConfig
 from nautilus_trader.core.data import Data
 from nautilus_trader.core.message import Event
 from nautilus_trader.indicators.average.ema import ExponentialMovingAverage
@@ -31,7 +32,6 @@ from nautilus_trader.model.instruments.base import Instrument
 from nautilus_trader.model.orderbook.book import OrderBook
 from nautilus_trader.model.orderbook.data import OrderBookData
 from nautilus_trader.model.orders.market import MarketOrder
-from nautilus_trader.trading.config import TradingStrategyConfig
 from nautilus_trader.trading.strategy import TradingStrategy
 
 

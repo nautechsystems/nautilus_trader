@@ -13,123 +13,39 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from typing import Dict, FrozenSet, List, Optional
+from typing import Dict, List, Optional, Union
 
 import pydantic
 from pydantic import Field
 from pydantic import PositiveFloat
-from pydantic import PositiveInt
 from pydantic import validator
 
-from nautilus_trader.cache.config import CacheConfig
-from nautilus_trader.common.config import ImportableClientConfig
-from nautilus_trader.common.config import InstrumentProviderConfig
-from nautilus_trader.data.config import DataEngineConfig
-from nautilus_trader.execution.config import ExecEngineConfig
-from nautilus_trader.infrastructure.config import CacheDatabaseConfig
-from nautilus_trader.persistence.config import PersistenceConfig
-from nautilus_trader.risk.config import RiskEngineConfig
-from nautilus_trader.trading.config import ImportableStrategyConfig
+from nautilus_trader.config.components import CacheConfig
+from nautilus_trader.config.components import CacheDatabaseConfig
+from nautilus_trader.config.components import ImportableActorConfig
+from nautilus_trader.config.components import ImportableStrategyConfig
+from nautilus_trader.config.engines import DataEngineConfig
+from nautilus_trader.config.engines import ExecEngineConfig
+from nautilus_trader.config.engines import RiskEngineConfig
+from nautilus_trader.config.live import ImportableClientConfig
+from nautilus_trader.config.live import LiveDataClientConfig
+from nautilus_trader.config.live import LiveDataEngineConfig
+from nautilus_trader.config.live import LiveExecClientConfig
+from nautilus_trader.config.live import LiveExecEngineConfig
+from nautilus_trader.config.live import LiveRiskEngineConfig
+from nautilus_trader.config.persistence import PersistenceConfig
 
 
-class LiveDataEngineConfig(DataEngineConfig):
+class NautilusKernelConfig(pydantic.BaseModel):
     """
-    Configuration for ``LiveDataEngine`` instances.
-    """
-
-    qsize: PositiveInt = 10000
-
-
-class LiveRiskEngineConfig(RiskEngineConfig):
-    """
-    Configuration for ``LiveRiskEngine`` instances.
-    """
-
-    qsize: PositiveInt = 10000
-
-
-class LiveExecEngineConfig(ExecEngineConfig):
-    """
-    Configuration for ``LiveExecEngine`` instances.
+    Configuration for core system ``NautilusKernel`` instances.
 
     Parameters
     ----------
-    reconciliation_auto : bool
-        If reconciliation should automatically generate events to align state.
-    reconciliation_lookback_mins : int, optional
-        The maximum lookback minutes to reconcile state for. If None then will
-        use the maximum lookback available from the venues.
-    qsize : PositiveInt
-        The queue size for the engines internal queue buffers.
-    """
-
-    reconciliation_auto: bool = True
-    reconciliation_lookback_mins: Optional[PositiveInt] = None
-    qsize: PositiveInt = 10000
-
-
-class RoutingConfig(pydantic.BaseModel):
-    """
-    Configuration for live client message routing.
-
-    default : bool
-        If the client should be registered as the default routing client
-        (when a specific venue routing cannot be found).
-    venues : List[str], optional
-        The venues to register for routing.
-    """
-
-    default: bool = False
-    venues: Optional[FrozenSet[str]] = None
-
-    def __hash__(self):  # make hashable BaseModel subclass
-        return hash((type(self),) + tuple(self.__dict__.values()))
-
-
-class LiveDataClientConfig(pydantic.BaseModel):
-    """
-    Configuration for ``LiveDataClient`` instances.
-
-    Parameters
-    ----------
-    instrument_provider : InstrumentProviderConfig
-        The clients instrument provider configuration.
-    routing : RoutingConfig
-        The clients message routing config.
-    """
-
-    instrument_provider: InstrumentProviderConfig = InstrumentProviderConfig()
-    routing: RoutingConfig = RoutingConfig()
-
-
-class LiveExecClientConfig(pydantic.BaseModel):
-    """
-    Configuration for ``LiveExecutionClient`` instances.
-
-    Parameters
-    ----------
-    instrument_provider : InstrumentProviderConfig
-        The clients instrument provider configuration.
-    routing : RoutingConfig
-        The clients message routing config.
-    """
-
-    instrument_provider: InstrumentProviderConfig = InstrumentProviderConfig()
-    routing: RoutingConfig = RoutingConfig()
-
-
-class TradingNodeConfig(pydantic.BaseModel):
-    """
-    Configuration for ``TradingNode`` instances.
-
-    Parameters
-    ----------
-    trader_id : str, default "TRADER-000"
+    environment : str
+        The kernel environment context.
+    trader_id : str
         The trader ID for the node (must be a name and ID tag separated by a hyphen).
-    log_level : str, default "INFO"
-        The stdout log level for the node.
-    loop_debug : bool, default False
-        If the asyncio event loop should be in debug mode.
     cache : CacheConfig, optional
         The cache configuration.
     cache_database : CacheDatabaseConfig, optional
@@ -140,18 +56,79 @@ class TradingNodeConfig(pydantic.BaseModel):
         The live risk engine configuration.
     exec_engine : LiveExecEngineConfig, optional
         The live execution engine configuration.
+    persistence : LivePersistenceConfig, optional
+        The configuration for enabling persistence via feather files.
     data_clients : dict[str, LiveDataClientConfig], optional
         The data client configurations.
     exec_clients : dict[str, LiveExecClientConfig], optional
         The execution client configurations.
+    actors : List[ImportableActorConfig]
+        The actor configurations for the kernel.
+    strategies : List[ImportableStrategyConfig]
+        The strategy configurations for the kernel.
+    load_state : bool, default True
+        If trading strategy state should be loaded from the database on start.
+    save_state : bool, default True
+        If trading strategy state should be saved to the database on stop.
+    loop_debug : bool, default False
+        If the asyncio event loop should be in debug mode.
+    log_level : str, default "INFO"
+        The stdout log level for the node.
+    bypass_logging : bool, default False
+        If logging to stdout should be bypassed.
+    """
+
+    environment: str
+    trader_id: str
+    cache: Optional[CacheConfig] = None
+    cache_database: Optional[CacheDatabaseConfig] = None
+    data_engine: Union[DataEngineConfig, LiveDataEngineConfig] = None
+    risk_engine: Union[RiskEngineConfig, LiveRiskEngineConfig] = None
+    exec_engine: Union[ExecEngineConfig, LiveExecEngineConfig] = None
+    persistence: Optional[PersistenceConfig] = None
+    actors: List[ImportableActorConfig] = Field(default_factory=list)
+    strategies: List[ImportableStrategyConfig] = Field(default_factory=list)
+    load_state: bool = False
+    save_state: bool = False
+    loop_debug: bool = False
+    log_level: str = "INFO"
+    bypass_logging: bool = False
+
+
+class TradingNodeConfig(NautilusKernelConfig):
+    """
+    Configuration for ``TradingNode`` instances.
+
+    Parameters
+    ----------
+    trader_id : str, default "TRADER-000"
+        The trader ID for the node (must be a name and ID tag separated by a hyphen).
+    cache : CacheConfig, optional
+        The cache configuration.
+    cache_database : CacheDatabaseConfig, optional
+        The cache database configuration.
+    data_engine : LiveDataEngineConfig, optional
+        The live data engine configuration.
+    risk_engine : LiveRiskEngineConfig, optional
+        The live risk engine configuration.
+    exec_engine : LiveExecEngineConfig, optional
+        The live execution engine configuration.
     persistence : LivePersistenceConfig, optional
         The configuration for enabling persistence via feather files.
+    data_clients : dict[str, LiveDataClientConfig], optional
+        The data client configurations.
+    exec_clients : dict[str, LiveExecClientConfig], optional
+        The execution client configurations.
     strategies : List[ImportableStrategyConfig]
         The strategy configurations for the node.
     load_strategy_state : bool, default True
         If trading strategy state should be loaded from the database on start.
     save_strategy_state : bool, default True
         If trading strategy state should be saved to the database on stop.
+    log_level : str, default "INFO"
+        The stdout log level for the node.
+    loop_debug : bool, default False
+        If the asyncio event loop should be in debug mode.
     timeout_connection : PositiveFloat (seconds)
         The timeout for all clients to connect and initialize.
     timeout_reconciliation : PositiveFloat (seconds)
@@ -165,20 +142,10 @@ class TradingNodeConfig(pydantic.BaseModel):
 
     """
 
-    trader_id: str = "TRADER-000"
-    log_level: str = "INFO"
-    loop_debug: bool = False
-    cache: Optional[CacheConfig] = None
-    cache_database: Optional[CacheDatabaseConfig] = None
-    data_engine: Optional[LiveDataEngineConfig] = None
-    risk_engine: Optional[LiveRiskEngineConfig] = None
-    exec_engine: Optional[LiveExecEngineConfig] = None
+    environment: str = "live"
+    trader_id: str = "TRADER-001"
     data_clients: Dict[str, LiveDataClientConfig] = {}
     exec_clients: Dict[str, LiveExecClientConfig] = {}
-    persistence: Optional[PersistenceConfig] = None
-    strategies: List[ImportableStrategyConfig] = Field(default_factory=list)
-    load_strategy_state: bool = True
-    save_strategy_state: bool = True
     timeout_connection: PositiveFloat = 10.0
     timeout_reconciliation: PositiveFloat = 10.0
     timeout_portfolio: PositiveFloat = 10.0

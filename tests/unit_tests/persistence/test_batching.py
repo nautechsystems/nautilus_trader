@@ -19,9 +19,10 @@ import fsspec
 import pytest
 
 from nautilus_trader.adapters.betfair.providers import BetfairInstrumentProvider
-from nautilus_trader.backtest.config import BacktestDataConfig
-from nautilus_trader.backtest.config import BacktestRunConfig
 from nautilus_trader.backtest.node import BacktestNode
+from nautilus_trader.config.backtest import BacktestDataConfig
+from nautilus_trader.config.backtest import BacktestEngineConfig
+from nautilus_trader.config.backtest import BacktestRunConfig
 from nautilus_trader.model.data.venue import InstrumentStatusUpdate
 from nautilus_trader.model.orderbook.data import OrderBookData
 from nautilus_trader.persistence.batching import batch_files
@@ -108,17 +109,18 @@ class TestPersistenceBatching:
             instrument_id=self.catalog.instruments(as_nautilus=True)[0].id.value,
             data_cls=InstrumentStatusUpdate,
         )
+        persistence = BetfairTestStubs.persistence_config(catalog_path=self.catalog.path)
+        engine = BacktestEngineConfig(persistence=persistence)
         run_config = BacktestRunConfig(
+            engine=engine,
             data=[data_config, instrument_data_config],
-            persistence=BetfairTestStubs.persistence_config(catalog_path=self.catalog.path),
             venues=[BetfairTestStubs.betfair_venue_config()],
-            strategies=[],
             batch_size_bytes=parse_bytes("1mib"),
         )
 
         # Act
         node = BacktestNode()
-        node.run_sync([run_config])
+        node.run([run_config])
 
         # Assert
         assert node

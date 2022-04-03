@@ -25,15 +25,15 @@ except ImportError:
     # hyperopt is an optional extra, which is only required when running `hyperopt_search()`.
     hyperopt = None
 
-from nautilus_trader.backtest.config import BacktestRunConfig
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.common.logging import LoggerAdapter
 from nautilus_trader.common.logging import LogLevel
+from nautilus_trader.config.backtest import BacktestRunConfig
+from nautilus_trader.config.components import ImportableStrategyConfig
+from nautilus_trader.config.components import TradingStrategyConfig
 from nautilus_trader.model.data.bar import BarType
 from nautilus_trader.model.identifiers import InstrumentId
-from nautilus_trader.trading.config import ImportableStrategyConfig
-from nautilus_trader.trading.config import TradingStrategyConfig
 
 
 class HyperoptBacktestNode(BacktestNode):

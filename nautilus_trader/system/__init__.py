@@ -12,13 +12,3 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
-
-import pydantic
-
-
-class DataEngineConfig(pydantic.BaseModel):
-    """
-    Configuration for ``DataEngine`` instances.
-    """
-
-    pass  # No configuration currently

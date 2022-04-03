@@ -16,13 +16,13 @@
 from decimal import Decimal
 from typing import Optional
 
+from nautilus_trader.config.components import TradingStrategyConfig
 from nautilus_trader.model.enums import BookType
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.instruments.base import Instrument
 from nautilus_trader.model.orderbook.book import OrderBook
 from nautilus_trader.model.orderbook.data import OrderBookData
-from nautilus_trader.trading.config import TradingStrategyConfig
 from nautilus_trader.trading.strategy import TradingStrategy
 
 

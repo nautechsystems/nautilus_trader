@@ -12,21 +12,3 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
-
-import pydantic
-
-
-class ExecEngineConfig(pydantic.BaseModel):
-    """
-    Configuration for ``ExecutionEngine`` instances.
-
-    Parameters
-    ----------
-    load_cache : bool, default True
-        If the cache should be loaded on initialization.
-    allow_cash_positions : bool, default False
-        If unleveraged spot cash assets should track positions.
-    """
-
-    load_cache: bool = True
-    allow_cash_positions: bool = False

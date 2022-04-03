@@ -31,7 +31,7 @@ just need to override the `execute`, `process`, `send` and `receive` methods.
 
 from typing import Callable, Optional
 
-from nautilus_trader.data.config import DataEngineConfig
+from nautilus_trader.config.engines import DataEngineConfig
 
 from cpython.datetime cimport timedelta
 

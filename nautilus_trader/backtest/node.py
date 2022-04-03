@@ -18,15 +18,12 @@ from typing import Dict, List, Optional
 
 import pandas as pd
 
-from nautilus_trader.backtest.config import BacktestDataConfig
-from nautilus_trader.backtest.config import BacktestRunConfig
-from nautilus_trader.backtest.config import BacktestVenueConfig
 from nautilus_trader.backtest.engine import BacktestEngine
 from nautilus_trader.backtest.engine import BacktestEngineConfig
 from nautilus_trader.backtest.results import BacktestResult
-from nautilus_trader.common.actor import Actor
-from nautilus_trader.common.config import ActorFactory
-from nautilus_trader.common.config import ImportableActorConfig
+from nautilus_trader.config.backtest import BacktestDataConfig
+from nautilus_trader.config.backtest import BacktestRunConfig
+from nautilus_trader.config.backtest import BacktestVenueConfig
 from nautilus_trader.core.inspect import is_nautilus_class
 from nautilus_trader.model.currency import Currency
 from nautilus_trader.model.data.bar import Bar
@@ -45,11 +42,6 @@ from nautilus_trader.model.orderbook.data import OrderBookData
 from nautilus_trader.model.orderbook.data import OrderBookDelta
 from nautilus_trader.persistence.batching import batch_files
 from nautilus_trader.persistence.catalog import DataCatalog
-from nautilus_trader.persistence.config import PersistenceConfig
-from nautilus_trader.persistence.streaming import FeatherWriter
-from nautilus_trader.trading.config import ImportableStrategyConfig
-from nautilus_trader.trading.config import StrategyFactory
-from nautilus_trader.trading.strategy import TradingStrategy
 
 
 class BacktestNode:
@@ -57,7 +49,7 @@ class BacktestNode:
     Provides a node for orchestrating groups of configurable backtest runs.
     """
 
-    def run_sync(self, run_configs: List[BacktestRunConfig], **kwargs) -> List[BacktestResult]:
+    def run(self, run_configs: List[BacktestRunConfig], **kwargs) -> List[BacktestResult]:
         """
         Run a list of backtest configs synchronously.
 
@@ -80,9 +72,6 @@ class BacktestNode:
                 engine_config=config.engine,
                 venue_configs=config.venues,
                 data_configs=config.data,
-                actor_configs=config.actors,
-                strategy_configs=config.strategies,
-                persistence=config.persistence,
                 batch_size_bytes=config.batch_size_bytes,
                 **kwargs,
             )
@@ -96,9 +85,6 @@ class BacktestNode:
         engine_config: BacktestEngineConfig,
         venue_configs: List[BacktestVenueConfig],
         data_configs: List[BacktestDataConfig],
-        actor_configs: List[ImportableActorConfig],
-        strategy_configs: List[ImportableStrategyConfig],
-        persistence: Optional[PersistenceConfig] = None,
         batch_size_bytes: Optional[int] = None,
         return_engine: bool = False,
     ) -> BacktestResult:
@@ -109,43 +95,16 @@ class BacktestNode:
         )
 
         # Setup persistence
-        writer = None
-        if persistence is not None:
-            catalog = persistence.as_catalog()
-            backtest_dir = f"{persistence.catalog_path.rstrip('/')}/backtest/"
-            if not catalog.fs.exists(backtest_dir):
-                catalog.fs.mkdir(backtest_dir)
-            writer = FeatherWriter(
-                path=f"{persistence.catalog_path}/backtest/{run_config_id}.feather",
-                fs_protocol=persistence.fs_protocol,
-                flush_interval=persistence.flush_interval,
-                replace=persistence.replace_existing,
-            )
-            engine.trader.subscribe("*", writer.write)
+        if engine_config is not None and engine_config.persistence is not None:
+            catalog = engine_config.persistence.as_catalog()
             # Manually write instruments
             instrument_ids = set(filter(None, (data.instrument_id for data in data_configs)))
-            for instrument in catalog.instruments(
-                instrument_ids=list(instrument_ids),
-                as_nautilus=True,
-            ):
-                writer.write(instrument)
-
-        # Create actors
-        if actor_configs:
-            actors: List[Actor] = [ActorFactory.create(config) for config in actor_configs]
-            if actors:
-                engine.add_actors(actors)
-
-        # Create strategies
-        if strategy_configs:
-            strategies: List[TradingStrategy] = [
-                StrategyFactory.create(config)
-                if isinstance(config, ImportableStrategyConfig)
-                else config
-                for config in strategy_configs
-            ]
-            if strategies:
-                engine.add_strategies(strategies)
+            for writer in engine.kernel.persistence_writers:
+                for instrument in catalog.instruments(
+                    instrument_ids=list(instrument_ids),
+                    as_nautilus=True,
+                ):
+                    writer.write(instrument)
 
         # Run backtest
         backtest_runner(
@@ -157,11 +116,11 @@ class BacktestNode:
 
         result = engine.get_result()
 
+        for writer in engine.kernel.persistence_writers:
+            writer.close()
+
         if return_engine:
             return engine
-
-        if writer is not None:
-            writer.close()
 
         return result
 
