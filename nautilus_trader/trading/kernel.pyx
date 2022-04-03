@@ -83,7 +83,7 @@ cdef class NautilusKernel:
     """
     Provides the core Nautilus system kernel
 
-    The kernel is common between backtest and live systems.
+    The kernel is common between backtest, sandbox and live system types.
 
     Parameters
     ----------
