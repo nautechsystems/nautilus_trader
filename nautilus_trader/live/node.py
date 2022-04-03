@@ -20,23 +20,22 @@ from datetime import timedelta
 from typing import Optional
 
 from nautilus_trader.cache.base import CacheFacade
-from nautilus_trader.cache.config import CacheConfig
 from nautilus_trader.common.logging import LiveLogger
 from nautilus_trader.common.logging import LogColor
 from nautilus_trader.common.logging import LogLevelParser
+from nautilus_trader.config.components import CacheConfig
+from nautilus_trader.config.components import CacheDatabaseConfig
+from nautilus_trader.config.live import LiveDataEngineConfig
+from nautilus_trader.config.live import LiveExecEngineConfig
+from nautilus_trader.config.live import LiveRiskEngineConfig
+from nautilus_trader.config.nodes import TradingNodeConfig
 from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.core.uuid import UUID4
-from nautilus_trader.infrastructure.config import CacheDatabaseConfig
-from nautilus_trader.live.config import LiveDataEngineConfig
-from nautilus_trader.live.config import LiveExecEngineConfig
-from nautilus_trader.live.config import LiveRiskEngineConfig
-from nautilus_trader.live.config import TradingNodeConfig
 from nautilus_trader.live.node_builder import TradingNodeBuilder
 from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.portfolio.base import PortfolioFacade
-from nautilus_trader.trading.config import StrategyFactory
-from nautilus_trader.trading.kernel import Environment
-from nautilus_trader.trading.kernel import NautilusKernel
+from nautilus_trader.system.kernel import Environment
+from nautilus_trader.system.kernel import NautilusKernel
 from nautilus_trader.trading.trader import Trader
 
 
@@ -77,6 +76,9 @@ class TradingNode:
             data_config=config.data_engine or LiveDataEngineConfig(),
             risk_config=config.risk_engine or LiveRiskEngineConfig(),
             exec_config=config.exec_engine or LiveExecEngineConfig(),
+            persistence_config=config.persistence,
+            actor_configs=config.actors,
+            strategy_configs=config.strategies,
             loop=loop,
             loop_debug=config.loop_debug,
             loop_sig_callback=self._loop_sig_handler,
@@ -93,10 +95,6 @@ class TradingNode:
             logger=self.kernel.logger,
             log=self.kernel.log,
         )
-
-        for strategy_config in self._config.strategies:
-            strategy = StrategyFactory.create(strategy_config)  # type: ignore
-            self.trader.add_strategy(strategy)  # type: ignore
 
         # Operation flags
         self._is_built = False
@@ -511,7 +509,7 @@ class TradingNode:
             await asyncio.sleep(self._config.timeout_post_stop)
             self.kernel.trader.check_residuals()
 
-        if self._config.save_strategy_state:
+        if self._config.save_state:
             self.kernel.trader.save()
 
         # Disconnect all clients

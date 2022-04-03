@@ -13,45 +13,53 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import importlib
-import importlib.util
 from typing import Any, Dict, FrozenSet, Optional
 
 import pydantic
 from frozendict import frozendict
+from pydantic import PositiveInt
 from pydantic import validator
 
+from nautilus_trader.config.common import resolve_path
 from nautilus_trader.core.correctness import PyCondition
 
 
-def resolve_path(path: str):
-    module, cls = path.rsplit(":", maxsplit=1)
-    mod = importlib.import_module(module)
-    cls = getattr(mod, cls)
-    return cls
-
-
-class ImportableClientConfig(pydantic.BaseModel):
+class CacheConfig(pydantic.BaseModel):
     """
-    Represents a live data or execution client configuration.
+    Configuration for ``Cache`` instances.
+
+    Parameters
+    ----------
+    tick_capacity : int
+        The maximum length for internal tick deques.
+    bar_capacity : int
+        The maximum length for internal bar deques.
     """
 
-    @staticmethod
-    def is_importable(data: Dict):
-        return set(data) == {"factory_path", "config_path", "config"}
+    tick_capacity: PositiveInt = 1000
+    bar_capacity: PositiveInt = 1000
 
-    @staticmethod
-    def create(data: Dict, config_type: type):
-        assert (
-            ":" in data["factory_path"]
-        ), "`class_path` variable should be of the form `path.to.module:class`"
-        assert (
-            ":" in data["config_path"]
-        ), "`config_path` variable should be of the form `path.to.module:class`"
-        cls = resolve_path(data["config_path"])
-        config = cls(**data["config"])
-        assert isinstance(config, config_type)
-        return config
+
+class CacheDatabaseConfig(pydantic.BaseModel):
+    """
+    Configuration for ``CacheDatabase`` instances.
+
+    Parameters
+    ----------
+    type : str, {'in-memory', 'redis'}, default 'in-memory'
+        The database type.
+    host : str, default 'localhost'
+        The database host address (default for Redis).
+    port : int, default 6379
+        The database port (default for Redis).
+    flush : bool, default False
+        If database should be flushed before start.
+    """
+
+    type: str = "in-memory"
+    host: str = "localhost"
+    port: int = 6379
+    flush: bool = False
 
 
 class ActorConfig(pydantic.BaseModel):
@@ -115,6 +123,78 @@ class ActorFactory:
         """
         PyCondition.type(config, ImportableActorConfig, "config")
         strategy_cls = resolve_path(config.actor_path)
+        config_cls = resolve_path(config.config_path)
+        return strategy_cls(config=config_cls(**config.config))
+
+
+class TradingStrategyConfig(pydantic.BaseModel):
+    """
+    The base model for all trading strategy configurations.
+
+    Parameters
+    ----------
+    strategy_id : str, optional
+        The unique ID for the strategy. Will become the strategy ID if not None.
+    order_id_tag : str
+        The unique order ID tag for the strategy. Must be unique
+        amongst all running strategies for a particular trader ID.
+    oms_type : OMSType, optional
+        The order management system type for the strategy. This will determine
+        how the `ExecutionEngine` handles position IDs (see docs).
+
+    """
+
+    strategy_id: Optional[str] = None
+    order_id_tag: str = "000"
+    oms_type: Optional[str] = None
+
+
+class ImportableStrategyConfig(pydantic.BaseModel):
+    """
+    Represents a trading strategy configuration for one specific backtest run.
+
+    Parameters
+    ----------
+    strategy_path : str
+        The fully qualified name of the strategy class.
+    config_path : str
+        The fully qualified name of the config class.
+    config : Dict[str, Any]
+        The strategy configuration
+    """
+
+    strategy_path: str
+    config_path: str
+    config: Dict[str, Any]
+
+
+class StrategyFactory:
+    """
+    Provides strategy creation from importable configurations.
+    """
+
+    @staticmethod
+    def create(config: ImportableStrategyConfig):
+        """
+        Create a trading strategy from the given configuration.
+
+        Parameters
+        ----------
+        config : ImportableStrategyConfig
+            The configuration for the building step.
+
+        Returns
+        -------
+        TradingStrategy
+
+        Raises
+        ------
+        TypeError
+            If `config` is not of type `ImportableStrategyConfig`.
+
+        """
+        PyCondition.type(config, ImportableStrategyConfig, "config")
+        strategy_cls = resolve_path(config.strategy_path)
         config_cls = resolve_path(config.config_path)
         return strategy_cls(config=config_cls(**config.config))
 

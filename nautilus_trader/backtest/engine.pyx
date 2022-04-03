@@ -19,6 +19,15 @@ from typing import Dict, List, Optional, Union
 
 import pandas as pd
 
+from nautilus_trader.backtest.results import BacktestResult
+from nautilus_trader.config.backtest import BacktestEngineConfig
+from nautilus_trader.config.components import CacheConfig
+from nautilus_trader.config.components import CacheDatabaseConfig
+from nautilus_trader.config.engines import DataEngineConfig
+from nautilus_trader.config.engines import ExecEngineConfig
+from nautilus_trader.config.engines import RiskEngineConfig
+from nautilus_trader.system.kernel import Environment
+
 from cpython.datetime cimport datetime
 from libc.stdint cimport int64_t
 
@@ -56,18 +65,9 @@ from nautilus_trader.model.instruments.base cimport Instrument
 from nautilus_trader.model.objects cimport Currency
 from nautilus_trader.model.orderbook.data cimport OrderBookData
 from nautilus_trader.portfolio.base cimport PortfolioFacade
-from nautilus_trader.trading.kernel cimport NautilusKernel
+from nautilus_trader.system.kernel cimport NautilusKernel
 from nautilus_trader.trading.strategy cimport TradingStrategy
 from nautilus_trader.trading.trader cimport Trader
-
-from nautilus_trader.backtest.config import BacktestEngineConfig
-from nautilus_trader.backtest.results import BacktestResult
-from nautilus_trader.cache.config import CacheConfig
-from nautilus_trader.data.config import DataEngineConfig
-from nautilus_trader.execution.config import ExecEngineConfig
-from nautilus_trader.infrastructure.config import CacheDatabaseConfig
-from nautilus_trader.risk.config import RiskEngineConfig
-from nautilus_trader.trading.kernel import Environment
 
 
 cdef class BacktestEngine:
@@ -124,8 +124,11 @@ cdef class BacktestEngine:
             data_config=config.data_engine or DataEngineConfig(),
             risk_config=config.risk_engine or RiskEngineConfig(),
             exec_config=config.exec_engine or ExecEngineConfig(),
+            persistence_config=config.persistence,
+            actor_configs=config.actors,
+            strategy_configs=config.strategies,
             log_level=LogLevelParser.from_str(config.log_level.upper()),
-            bypass_logging=config.bypass_logging
+            bypass_logging=config.bypass_logging,
         )
 
         # Setup engine logging

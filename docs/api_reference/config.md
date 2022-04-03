@@ -1,68 +1,75 @@
-# Persistence
+# Config
 
 ```{eval-rst}
-.. automodule:: nautilus_trader.persistence
+.. automodule:: nautilus_trader.config
 ```
 
-## External
-
-### Core
+## Backtest
 
 ```{eval-rst}
-.. automodule:: nautilus_trader.persistence.external.core
+.. automodule:: nautilus_trader.config.backtest
    :show-inheritance:
    :inherited-members:
    :members:
    :member-order: bysource
 ```
 
-### Readers
+## Components
 
 ```{eval-rst}
-.. automodule:: nautilus_trader.persistence.external.readers
+.. automodule:: nautilus_trader.config.components
    :show-inheritance:
    :inherited-members:
    :members:
    :member-order: bysource
 ```
 
-## Batching
+## Engines
 
 ```{eval-rst}
-.. automodule:: nautilus_trader.persistence.batching
+.. automodule:: nautilus_trader.config.engines
    :show-inheritance:
    :inherited-members:
    :members:
    :member-order: bysource
 ```
 
-## Catalog
+## Kernel
 
 ```{eval-rst}
-.. automodule:: nautilus_trader.persistence.catalog
+.. automodule:: nautilus_trader.config.engines
    :show-inheritance:
    :inherited-members:
    :members:
    :member-order: bysource
 ```
 
-## Streaming
+## Live
 
 ```{eval-rst}
-.. automodule:: nautilus_trader.persistence.streaming
+.. automodule:: nautilus_trader.config.live
    :show-inheritance:
    :inherited-members:
    :members:
    :member-order: bysource
 ```
 
-## Utility
+## Nodes
 
 ```{eval-rst}
-.. automodule:: nautilus_trader.persistence.util
+.. automodule:: nautilus_trader.config.nodes
    :show-inheritance:
    :inherited-members:
    :members:
    :member-order: bysource
 ```
 
+## Persistence
+
+```{eval-rst}
+.. automodule:: nautilus_trader.config.persistence
+   :show-inheritance:
+   :inherited-members:
+   :members:
+   :member-order: bysource
+```

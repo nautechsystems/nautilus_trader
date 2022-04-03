@@ -35,12 +35,15 @@ from nautilus_trader.adapters.betfair.providers import BetfairInstrumentProvider
 from nautilus_trader.adapters.betfair.providers import make_instruments
 from nautilus_trader.adapters.betfair.util import flatten_tree
 from nautilus_trader.adapters.betfair.util import historical_instrument_provider_loader
-from nautilus_trader.backtest.config import BacktestDataConfig
-from nautilus_trader.backtest.config import BacktestEngineConfig
-from nautilus_trader.backtest.config import BacktestRunConfig
-from nautilus_trader.backtest.config import BacktestVenueConfig
 from nautilus_trader.backtest.data.providers import TestDataProvider
-from nautilus_trader.execution.config import ExecEngineConfig
+from nautilus_trader.config.backtest import BacktestDataConfig
+from nautilus_trader.config.backtest import BacktestEngineConfig
+from nautilus_trader.config.backtest import BacktestRunConfig
+from nautilus_trader.config.backtest import BacktestVenueConfig
+from nautilus_trader.config.components import ImportableStrategyConfig
+from nautilus_trader.config.engines import ExecEngineConfig
+from nautilus_trader.config.engines import RiskEngineConfig
+from nautilus_trader.config.persistence import PersistenceConfig
 from nautilus_trader.model.data.tick import TradeTick
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import TimeInForce
@@ -53,11 +56,8 @@ from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.orderbook.data import OrderBookData
 from nautilus_trader.model.orders.base import Order
 from nautilus_trader.model.orders.market import MarketOrder
-from nautilus_trader.persistence.config import PersistenceConfig
 from nautilus_trader.persistence.external.core import make_raw_files
 from nautilus_trader.persistence.external.readers import TextReader
-from nautilus_trader.risk.config import RiskEngineConfig
-from nautilus_trader.trading.config import ImportableStrategyConfig
 from tests import TESTS_PACKAGE_ROOT
 from tests.test_kit import PACKAGE_ROOT
 from tests.test_kit.stubs.commands import TestCommandStubs
@@ -345,6 +345,21 @@ class BetfairTestStubs:
             log_level="INFO",
             exec_engine=ExecEngineConfig(allow_cash_positions=True),
             risk_engine=RiskEngineConfig(bypass=bypass_risk),
+            persistence=BetfairTestStubs.persistence_config(catalog_path=catalog_path)
+            if persist
+            else None,
+            strategies=[
+                ImportableStrategyConfig(
+                    strategy_path="nautilus_trader.examples.strategies.orderbook_imbalance:OrderBookImbalance",
+                    config_path="nautilus_trader.examples.strategies.orderbook_imbalance:OrderBookImbalanceConfig",
+                    config=dict(
+                        instrument_id=instrument_id,
+                        max_trade_size=50,
+                    ),
+                )
+            ]
+            if add_strategy
+            else None,
         )
         run_config = BacktestRunConfig(  # type: ignore
             engine=engine_config,
@@ -363,21 +378,6 @@ class BetfairTestStubs:
                     instrument_id=instrument_id,
                 ),
             ],
-            persistence=BetfairTestStubs.persistence_config(catalog_path=catalog_path)
-            if persist
-            else None,
-            strategies=[
-                ImportableStrategyConfig(
-                    strategy_path="nautilus_trader.examples.strategies.orderbook_imbalance:OrderBookImbalance",
-                    config_path="nautilus_trader.examples.strategies.orderbook_imbalance:OrderBookImbalanceConfig",
-                    config=dict(
-                        instrument_id=instrument_id,
-                        max_trade_size=50,
-                    ),
-                )
-            ]
-            if add_strategy
-            else None,
         )
         return run_config
 

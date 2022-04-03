@@ -15,10 +15,10 @@
 
 import orjson
 
+from nautilus_trader.config.components import ImportableStrategyConfig
+from nautilus_trader.config.components import StrategyFactory
 from nautilus_trader.examples.strategies.ema_cross import EMACross
 from nautilus_trader.examples.strategies.ema_cross import EMACrossConfig
-from nautilus_trader.trading.config import ImportableStrategyConfig
-from nautilus_trader.trading.config import StrategyFactory
 
 
 class TestStrategyFactory:

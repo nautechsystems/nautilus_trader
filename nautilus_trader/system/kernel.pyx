@@ -28,7 +28,23 @@ from typing import Any, Callable, Dict, List, Optional, Union
 
 import orjson
 
+from nautilus_trader.config.components import ActorFactory
+from nautilus_trader.config.components import CacheConfig
+from nautilus_trader.config.components import CacheDatabaseConfig
+from nautilus_trader.config.components import ImportableActorConfig
+from nautilus_trader.config.components import ImportableStrategyConfig
+from nautilus_trader.config.components import StrategyFactory
+from nautilus_trader.config.engines import DataEngineConfig
+from nautilus_trader.config.engines import ExecEngineConfig
+from nautilus_trader.config.engines import RiskEngineConfig
+from nautilus_trader.config.live import LiveDataEngineConfig
+from nautilus_trader.config.live import LiveExecEngineConfig
+from nautilus_trader.config.live import LiveRiskEngineConfig
+from nautilus_trader.config.persistence import PersistenceConfig
+from nautilus_trader.persistence.streaming import FeatherWriter
+
 from nautilus_trader.cache.cache cimport Cache
+from nautilus_trader.common.actor cimport Actor
 from nautilus_trader.common.clock cimport LiveClock
 from nautilus_trader.common.clock cimport TestClock
 from nautilus_trader.common.logging cimport LiveLogger
@@ -49,18 +65,8 @@ from nautilus_trader.msgbus.bus cimport MessageBus
 from nautilus_trader.portfolio.portfolio cimport Portfolio
 from nautilus_trader.risk.engine cimport RiskEngine
 from nautilus_trader.serialization.msgpack.serializer cimport MsgPackSerializer
+from nautilus_trader.trading.strategy cimport TradingStrategy
 from nautilus_trader.trading.trader cimport Trader
-
-from nautilus_trader.cache.config import CacheConfig
-from nautilus_trader.data.config import DataEngineConfig
-from nautilus_trader.execution.config import ExecEngineConfig
-from nautilus_trader.infrastructure.config import CacheDatabaseConfig
-from nautilus_trader.live.config import LiveDataEngineConfig
-from nautilus_trader.live.config import LiveExecEngineConfig
-from nautilus_trader.live.config import LiveRiskEngineConfig
-from nautilus_trader.persistence.config import PersistenceConfig
-from nautilus_trader.persistence.streaming import FeatherWriter
-from nautilus_trader.risk.config import RiskEngineConfig
 
 
 try:
@@ -111,6 +117,8 @@ cdef class NautilusKernel:
         If the event loop should run in debug mode.
     load_state : bool, default False
         If strategy state should be loaded on start.
+    save_state : bool, default False
+        If strategy state should be saved on stop.
     log_level : LogLevel, default LogLevel.INFO
         The log level for the kernels logger.
     bypass_logging : bool, default False
@@ -138,13 +146,20 @@ cdef class NautilusKernel:
         risk_config not None: Union[RiskEngineConfig, LiveRiskEngineConfig],
         exec_config not None: Union[ExecEngineConfig, LiveExecEngineConfig],
         persistence_config: Optional[PersistenceConfig] = None,
+        actor_configs: List[ImportableActorConfig] = None,
+        strategy_configs: List[ImportableStrategyConfig] = None,
         loop: Optional[AbstractEventLoop] = None,
         loop_sig_callback: Optional[Callable] = None,
         loop_debug: bool = False,
         load_state: bool = False,
+        save_state: bool = False,
         LogLevel log_level = LogLevel.INFO,
         bypass_logging: bool = False,
     ):
+        if actor_configs is None:
+            actor_configs = []
+        if strategy_configs is None:
+            strategy_configs = []
         Condition.type(environment, Environment, "environment")
         Condition.valid_string(name, "name")
         Condition.type(cache_config, CacheConfig, "cache_config")
@@ -152,6 +167,7 @@ cdef class NautilusKernel:
         Condition.true(isinstance(data_config, (DataEngineConfig, LiveDataEngineConfig)), "data_config was unrecognized type", ex_type=TypeError)
         Condition.true(isinstance(risk_config, (RiskEngineConfig, LiveRiskEngineConfig)), "risk_config was unrecognized type", ex_type=TypeError)
         Condition.true(isinstance(exec_config, (ExecEngineConfig, LiveExecEngineConfig)), "exec_config was unrecognized type", ex_type=TypeError)
+        Condition.type_or_none(persistence_config, PersistenceConfig, "persistence_config")
 
         self.environment = environment
 
@@ -337,25 +353,18 @@ cdef class NautilusKernel:
         if persistence_config:
             self._setup_persistence(config=persistence_config)
 
+        # Create importable actors
+        for config in actor_configs:
+            actor: Actor = ActorFactory.create(config)
+            self.trader.add_actor(actor)
+
+        # Create importable strategies
+        for config in strategy_configs:
+            strategy: TradingStrategy = StrategyFactory.create(config)
+            self.trader.add_strategy(strategy)
+
         cdef int64_t build_time_ms = nanos_to_millis(unix_timestamp_ns() - self.ts_created)
         self.log.info(f"Initialized in {build_time_ms}ms.")
-
-    def add_log_sink(self, handler: Callable[[Dict], None]):
-        """
-        Register the given sink handler with the nodes logger.
-
-        Parameters
-        ----------
-        handler : Callable[[Dict], None]
-            The sink handler to register.
-
-        Raises
-        ------
-        KeyError
-            If `handler` already registered.
-
-        """
-        self.logger.register_sink(handler=handler)
 
     def _setup_loop(self) -> None:
         if self.loop.is_closed():
@@ -376,10 +385,15 @@ cdef class NautilusKernel:
 
     def _setup_persistence(self, config: PersistenceConfig) -> None:
         # Setup persistence
+        catalog = config.as_catalog()
+        backtest_dir = f"{config.catalog_path.rstrip('/')}/backtest/"
+        if not catalog.fs.exists(backtest_dir):
+            catalog.fs.mkdir(backtest_dir)
+
         path = os.path.join(
             config.catalog_path,
             self.environment.value,
-            self.instance_id + ".feather",
+            self.instance_id.value + ".feather",
         )
         writer = FeatherWriter(
             path=path,
@@ -402,7 +416,26 @@ cdef class NautilusKernel:
             self.logger.register_sink(partial(sink, f=log_sink))
             self.log.info(f"Persisting logs to {path=}")
 
+    def add_log_sink(self, handler: Callable[[Dict], None]):
+        """
+        Register the given sink handler with the nodes logger.
+
+        Parameters
+        ----------
+        handler : Callable[[Dict], None]
+            The sink handler to register.
+
+        Raises
+        ------
+        KeyError
+            If `handler` already registered.
+
+        """
+        self.logger.register_sink(handler=handler)
+
     def cancel_all_tasks(self) -> None:
+        Condition.none(self.loop, "self.loop")
+
         to_cancel = asyncio.tasks.all_tasks(self.loop)
         if not to_cancel:
             self.log.info("All tasks canceled.")

@@ -22,7 +22,7 @@ from nautilus_trader.common.logging cimport LoggerAdapter
 from nautilus_trader.common.uuid cimport UUIDFactory
 from nautilus_trader.core.data cimport Data
 from nautilus_trader.core.uuid cimport UUID4
-from nautilus_trader.trading.kernel cimport NautilusKernel
+from nautilus_trader.system.kernel cimport NautilusKernel
 
 
 cdef class BacktestEngine:

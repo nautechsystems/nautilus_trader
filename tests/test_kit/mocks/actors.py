@@ -17,7 +17,7 @@ import inspect
 from typing import List
 
 from nautilus_trader.common.actor import Actor
-from nautilus_trader.common.config import ActorConfig
+from nautilus_trader.config.components import ActorConfig
 from tests.test_kit.mocks.object_storer import ObjectStorer
 
 
