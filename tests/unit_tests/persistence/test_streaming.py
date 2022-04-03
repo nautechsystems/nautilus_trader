@@ -13,10 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import sys
 from collections import Counter
-
-import pytest
 
 from nautilus_trader.adapters.betfair.providers import BetfairInstrumentProvider
 from nautilus_trader.backtest.node import BacktestNode
@@ -34,8 +31,6 @@ from tests.test_kit.mocks.data import data_catalog_setup
 from tests.test_kit.stubs.persistence import TestPersistenceStubs
 
 
-@pytest.mark.skip(reason="bm to fix persistence")
-@pytest.mark.skipif(sys.platform == "win32", reason="test path broken on windows")
 class TestPersistenceStreaming:
     def setup(self):
         data_catalog_setup()

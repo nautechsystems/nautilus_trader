@@ -14,11 +14,9 @@
 # -------------------------------------------------------------------------------------------------
 
 import datetime
-import sys
 
 import fsspec
 import pyarrow.dataset as ds
-import pytest
 
 from nautilus_trader.adapters.betfair.providers import BetfairInstrumentProvider
 from nautilus_trader.backtest.data.providers import TestInstrumentProvider
@@ -51,7 +49,6 @@ from tests.test_kit.stubs.persistence import TestPersistenceStubs
 TEST_DATA_DIR = PACKAGE_ROOT + "/data"
 
 
-@pytest.mark.skipif(sys.platform == "win32", reason="test path broken on windows")
 class TestPersistenceCatalog:
     def setup(self):
         data_catalog_setup()

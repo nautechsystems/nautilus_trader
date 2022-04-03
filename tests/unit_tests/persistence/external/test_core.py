@@ -14,7 +14,6 @@
 # -------------------------------------------------------------------------------------------------
 
 import pickle
-import sys
 
 import fsspec
 import numpy as np
@@ -56,11 +55,9 @@ from tests.unit_tests.backtest.test_backtest_config import TEST_DATA_DIR
 TEST_DATA = PACKAGE_ROOT + "/data"
 
 
-@pytest.mark.skipif(sys.platform == "win32", reason="test path broken on windows")
 class TestPersistenceCore:
     def setup(self):
-        data_catalog_setup()
-        self.catalog = DataCatalog.from_env()
+        self.catalog = data_catalog_setup()
         self.fs = self.catalog.fs
         self.reader = MockReader()
 

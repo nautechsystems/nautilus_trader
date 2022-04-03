@@ -14,6 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 import os
+import platform
 from functools import partial
 from typing import Generator
 
@@ -47,6 +48,10 @@ class NewsEventData(NewsEvent):
     pass
 
 
+def is_windows():
+    return platform.system() == "Windows"
+
+
 def data_catalog_setup():
     """
     Reset the filesystem and DataCatalog to a clean state
@@ -63,6 +68,7 @@ def data_catalog_setup():
     catalog.fs.mkdir("/.nautilus/catalog/data")
     assert catalog.fs.exists("/.nautilus/catalog/")
     assert not catalog.fs.ls("/.nautilus/catalog/data")
+    return catalog
 
 
 def aud_usd_data_loader():
