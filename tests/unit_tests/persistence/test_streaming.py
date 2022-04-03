@@ -34,7 +34,6 @@ from tests.test_kit.mocks.data import data_catalog_setup
 from tests.test_kit.stubs.persistence import TestPersistenceStubs
 
 
-@pytest.mark.skip(reason="bm to fix persistence")
 @pytest.mark.skipif(sys.platform == "win32", reason="test path broken on windows")
 class TestPersistenceStreaming:
     def setup(self):
@@ -73,28 +72,28 @@ class TestPersistenceStreaming:
         node = BacktestNode()
 
         # Act
-        node.run(run_configs=[run_config])
+        backtest_result = node.run(run_configs=[run_config])
 
         # Assert
         result = self.catalog.read_backtest(
-            backtest_run_id=run_config.id,
+            backtest_run_id=backtest_result[0].instance_id,
             raise_on_failed_deserialize=True,
         )
         result = dict(Counter([r.__class__.__name__ for r in result]))
 
         expected = {
-            "ComponentStateChanged": 5,
-            "OrderBookSnapshot": 1,
-            "TradeTick": 198,
-            "OrderBookDeltas": 1077,
             "AccountState": 666,
+            "BettingInstrument": 3,
+            "ComponentStateChanged": 11,
             "OrderAccepted": 322,
+            "OrderBookDeltas": 1077,
+            "OrderBookSnapshot": 1,
             "OrderFilled": 344,
-            "OrderSubmitted": 323,
-            "PositionOpened": 1,
-            "PositionChanged": 343,
             "OrderInitialized": 1,
-            "BettingInstrument": 1,
+            "OrderSubmitted": 323,
+            "PositionChanged": 343,
+            "PositionOpened": 1,
+            "TradeTick": 198,
         }
         assert result == expected
 
@@ -127,11 +126,11 @@ class TestPersistenceStreaming:
 
         # Act
         node = BacktestNode()
-        node.run([run_config])
+        r = node.run([run_config])
 
         # Assert
         result = self.catalog.read_backtest(
-            backtest_run_id=run_config.id,
+            backtest_run_id=r[0].instance_id,
             raise_on_failed_deserialize=True,
         )
         result = Counter([r.__class__.__name__ for r in result])

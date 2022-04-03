@@ -343,6 +343,7 @@ class BetfairTestStubs:
     ) -> BacktestRunConfig:
         engine_config = BacktestEngineConfig(
             log_level="INFO",
+            bypass_logging=True,
             exec_engine=ExecEngineConfig(allow_cash_positions=True),
             risk_engine=RiskEngineConfig(bypass=bypass_risk),
             persistence=BetfairTestStubs.persistence_config(catalog_path=catalog_path)
