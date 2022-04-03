@@ -13,86 +13,15 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from typing import Dict, List, Optional, Union
+from typing import Dict
 
-import pydantic
-from pydantic import Field
 from pydantic import PositiveFloat
 from pydantic import validator
 
-from nautilus_trader.config.components import CacheConfig
-from nautilus_trader.config.components import CacheDatabaseConfig
-from nautilus_trader.config.components import ImportableActorConfig
-from nautilus_trader.config.components import ImportableStrategyConfig
-from nautilus_trader.config.engines import DataEngineConfig
-from nautilus_trader.config.engines import ExecEngineConfig
-from nautilus_trader.config.engines import RiskEngineConfig
+from nautilus_trader.config.kernel import NautilusKernelConfig
 from nautilus_trader.config.live import ImportableClientConfig
 from nautilus_trader.config.live import LiveDataClientConfig
-from nautilus_trader.config.live import LiveDataEngineConfig
 from nautilus_trader.config.live import LiveExecClientConfig
-from nautilus_trader.config.live import LiveExecEngineConfig
-from nautilus_trader.config.live import LiveRiskEngineConfig
-from nautilus_trader.config.persistence import PersistenceConfig
-
-
-class NautilusKernelConfig(pydantic.BaseModel):
-    """
-    Configuration for core system ``NautilusKernel`` instances.
-
-    Parameters
-    ----------
-    environment : str
-        The kernel environment context.
-    trader_id : str
-        The trader ID for the node (must be a name and ID tag separated by a hyphen).
-    cache : CacheConfig, optional
-        The cache configuration.
-    cache_database : CacheDatabaseConfig, optional
-        The cache database configuration.
-    data_engine : LiveDataEngineConfig, optional
-        The live data engine configuration.
-    risk_engine : LiveRiskEngineConfig, optional
-        The live risk engine configuration.
-    exec_engine : LiveExecEngineConfig, optional
-        The live execution engine configuration.
-    persistence : LivePersistenceConfig, optional
-        The configuration for enabling persistence via feather files.
-    data_clients : dict[str, LiveDataClientConfig], optional
-        The data client configurations.
-    exec_clients : dict[str, LiveExecClientConfig], optional
-        The execution client configurations.
-    actors : List[ImportableActorConfig]
-        The actor configurations for the kernel.
-    strategies : List[ImportableStrategyConfig]
-        The strategy configurations for the kernel.
-    load_state : bool, default True
-        If trading strategy state should be loaded from the database on start.
-    save_state : bool, default True
-        If trading strategy state should be saved to the database on stop.
-    loop_debug : bool, default False
-        If the asyncio event loop should be in debug mode.
-    log_level : str, default "INFO"
-        The stdout log level for the node.
-    bypass_logging : bool, default False
-        If logging to stdout should be bypassed.
-    """
-
-    environment: str
-    trader_id: str
-    cache: Optional[CacheConfig] = None
-    cache_database: Optional[CacheDatabaseConfig] = None
-    data_engine: Union[DataEngineConfig, LiveDataEngineConfig] = None
-    risk_engine: Union[RiskEngineConfig, LiveRiskEngineConfig] = None
-    exec_engine: Union[ExecEngineConfig, LiveExecEngineConfig] = None
-    persistence: Optional[PersistenceConfig] = None
-    actors: List[ImportableActorConfig] = Field(default_factory=list)
-    strategies: List[ImportableStrategyConfig] = Field(default_factory=list)
-    load_state: bool = False
-    save_state: bool = False
-    loop_debug: bool = False
-    log_level: str = "INFO"
-    bypass_logging: bool = False
 
 
 class TradingNodeConfig(NautilusKernelConfig):
