@@ -29,6 +29,7 @@ from nautilus_trader.config.live import LiveDataEngineConfig
 from nautilus_trader.config.live import LiveExecEngineConfig
 from nautilus_trader.config.live import LiveRiskEngineConfig
 from nautilus_trader.config.persistence import PersistenceConfig
+from nautilus_trader.system.kernel import Environment
 
 
 class NautilusKernelConfig(pydantic.BaseModel):
@@ -73,7 +74,7 @@ class NautilusKernelConfig(pydantic.BaseModel):
         If logging to stdout should be bypassed.
     """
 
-    environment: str
+    environment: Environment
     trader_id: str
     cache: Optional[CacheConfig] = None
     cache_database: Optional[CacheDatabaseConfig] = None

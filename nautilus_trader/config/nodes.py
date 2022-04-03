@@ -25,6 +25,7 @@ from nautilus_trader.config.live import LiveDataEngineConfig
 from nautilus_trader.config.live import LiveExecClientConfig
 from nautilus_trader.config.live import LiveExecEngineConfig
 from nautilus_trader.config.live import LiveRiskEngineConfig
+from nautilus_trader.system.kernel import Environment
 
 
 class TradingNodeConfig(NautilusKernelConfig):
@@ -74,7 +75,7 @@ class TradingNodeConfig(NautilusKernelConfig):
 
     """
 
-    environment: str = "live"
+    environment: Environment = Environment.LIVE
     trader_id: str = "TRADER-001"
     data_engine: LiveDataEngineConfig = LiveDataEngineConfig()
     risk_engine: LiveRiskEngineConfig = LiveRiskEngineConfig()

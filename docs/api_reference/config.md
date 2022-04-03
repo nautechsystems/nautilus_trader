@@ -37,7 +37,7 @@
 ## Kernel
 
 ```{eval-rst}
-.. automodule:: nautilus_trader.config.engines
+.. automodule:: nautilus_trader.config.kernel
    :show-inheritance:
    :inherited-members:
    :members:

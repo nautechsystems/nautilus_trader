@@ -30,6 +30,7 @@ from nautilus_trader.core.data import Data
 from nautilus_trader.core.datetime import maybe_dt_to_unix_nanos
 from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.persistence.util import tokenize
+from nautilus_trader.system.kernel import Environment
 
 
 class Partialable:
@@ -245,7 +246,7 @@ class BacktestEngineConfig(NautilusKernelConfig):
 
     """
 
-    environment: str = "backtest"
+    environment: Environment = Environment.BACKTEST
     trader_id: str = "BACKTESTER-001"
     data_engine: DataEngineConfig = DataEngineConfig()
     risk_engine: RiskEngineConfig = RiskEngineConfig()
