@@ -71,11 +71,9 @@ from nautilus_trader.trading.trader cimport Trader
 
 try:
     import uvloop
-
     asyncio.set_event_loop_policy(uvloop.EventLoopPolicy())
-    uvloop_version = uvloop.__version__
 except ImportError:  # pragma: no cover
-    uvloop_version = None
+    uvloop = None
     warnings.warn("uvloop is not available.")
 
 @unique
@@ -208,7 +206,7 @@ cdef class NautilusKernel:
             logger=self.logger,
         )
 
-        nautilus_header(self.log, uvloop_version)
+        nautilus_header(self.log)
         self.log.info("Building system kernel...")
 
         # Setup loop
