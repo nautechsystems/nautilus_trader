@@ -20,6 +20,13 @@ from typing import Dict, Union
 import cloudpickle
 
 
+def is_nautilus_class(cls: type) -> bool:
+    """
+    Determine whether a class belongs to `nautilus_trader`.
+    """
+    return cls.__module__.startswith("nautilus_trader.")
+
+
 def freeze_dict(dict_like: Dict):
     return tuple(sorted(dict_like.items()))
 

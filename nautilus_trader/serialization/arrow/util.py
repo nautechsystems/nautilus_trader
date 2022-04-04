@@ -18,7 +18,7 @@ from typing import Dict, List, Optional
 
 import pandas as pd
 
-from nautilus_trader.core.inspect import is_nautilus_class
+from nautilus_trader.persistence.util import is_nautilus_class
 
 
 INVALID_WINDOWS_CHARS = r'<>:"/\|?* '
