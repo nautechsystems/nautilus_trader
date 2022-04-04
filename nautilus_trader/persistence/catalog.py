@@ -191,7 +191,9 @@ class DataCatalog(metaclass=Singleton):
         return data
 
     def _make_path(self, cls: type) -> str:
-        return f"{self.path}/data/{class_to_filename(cls=cls)}.parquet"
+        return resolve_pathlib(
+            path=self.path / "data" / f"{class_to_filename(cls=cls)}.parquet", fs=self.fs
+        )
 
     def query(
         self,
@@ -349,7 +351,8 @@ class DataCatalog(metaclass=Singleton):
         return data
 
     def list_data_types(self):
-        return [pathlib.Path(p).stem for p in self.fs.glob(f"{self.path}/data/*.parquet")]
+        glob_path = resolve_pathlib(path=self.path / "data" / "*.parquet", fs=self.fs)
+        return [pathlib.Path(p).stem for p in self.fs.glob(glob_path)]
 
     def list_generic_data_types(self):
         data_types = self.list_data_types()
@@ -362,7 +365,9 @@ class DataCatalog(metaclass=Singleton):
     def list_partitions(self, cls_type: type):
         assert isinstance(cls_type, type), "`cls_type` should be type, i.e. TradeTick"
         name = class_to_filename(cls_type)
-        dataset = pq.ParquetDataset(self.path / f"{name}.parquet", filesystem=self.fs)
+        dataset = pq.ParquetDataset(
+            resolve_pathlib(path=self.path / f"{name}.parquet", fs=self.fs), filesystem=self.fs
+        )
         partitions = {}
         for level in dataset.partitions.levels:
             partitions[level.name] = level.keys
@@ -371,7 +376,10 @@ class DataCatalog(metaclass=Singleton):
     def _read_feather(self, kind: str, run_id: str, raise_on_failed_deserialize: bool = False):
         class_mapping: Dict[str, type] = {class_to_filename(cls): cls for cls in list_schemas()}
         data = {}
-        for path in [p for p in self.fs.glob(f"{self.path}/{kind}/{run_id}.feather/*.feather")]:
+        glob_path = resolve_pathlib(
+            path=self.path / kind / f"{run_id}.feather" / "*.feather", fs=self.fs
+        )
+        for path in [p for p in self.fs.glob(glob_path)]:
             cls_name = camel_to_snake_case(pathlib.Path(path).stem).replace("__", "_")
             df = read_feather(path=path, fs=self.fs)
             if df is None:
@@ -409,7 +417,7 @@ def combine_filters(*filters):
         return expr
 
 
-def resolve_path(path: pathlib.Path, fs: fsspec.AbstractFileSystem):
+def resolve_pathlib(path: pathlib.Path, fs: fsspec.AbstractFileSystem):
     from fsspec.implementations.local import LocalFileSystem
 
     try:
