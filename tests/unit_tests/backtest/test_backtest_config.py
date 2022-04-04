@@ -21,18 +21,16 @@ import pickle
 import sys
 from typing import Optional
 
-import dask
 import pytest
-from dask.base import tokenize
 from pydantic import BaseModel
 from pydantic.json import pydantic_encoder
 
-from nautilus_trader.backtest.config import BacktestDataConfig
-from nautilus_trader.backtest.config import BacktestRunConfig
-from nautilus_trader.backtest.config import BacktestVenueConfig
-from nautilus_trader.backtest.config import Partialable
 from nautilus_trader.backtest.data.providers import TestInstrumentProvider
 from nautilus_trader.backtest.engine import BacktestEngineConfig
+from nautilus_trader.config.backtest import BacktestDataConfig
+from nautilus_trader.config.backtest import BacktestRunConfig
+from nautilus_trader.config.backtest import BacktestVenueConfig
+from nautilus_trader.config.backtest import Partialable
 from nautilus_trader.model.data.tick import QuoteTick
 from nautilus_trader.model.data.venue import InstrumentStatusUpdate
 from nautilus_trader.model.identifiers import ClientId
@@ -62,7 +60,6 @@ class ExamplePartialable(Partialable):
 class TestBacktestConfig:
     def setup(self):
         data_catalog_setup()
-        dask.config.set(scheduler="single-threaded")
         aud_usd_data_loader()
         self.catalog = DataCatalog.from_env()
         self.backtest_config = BacktestRunConfig(
@@ -79,7 +76,7 @@ class TestBacktestConfig:
             ],
             data=[
                 BacktestDataConfig(
-                    catalog_path="/root",
+                    catalog_path="/.nautilus/catalog",
                     catalog_fs_protocol="memory",
                     data_cls=QuoteTick,
                     instrument_id="AUD/USD.SIM",
@@ -133,52 +130,10 @@ class TestBacktestConfig:
     def test_backtest_config_pickle(self):
         pickle.loads(pickle.dumps(self))  # noqa: S301
 
-    def test_strategies_tokenization(self):
-        # Arrange, Act
-        result = tokenize(self.backtest_config.strategies)
-
-        # Assert
-        assert result == "8c9f081a88f539969f3dff99d6e05e36"
-
-    def test_venue_config_tokenization(self):
-        # Arrange, Act
-        venue = self.backtest_config.venues[0]
-        result = tokenize(venue)
-
-        # Assert  # TODO: Investigate partial non-determinism
-        assert result == "17a0d2e4c4d55f7382b05d79089bed40" or "1a803a06f1ab329b5e9dd1b52cc134a8"
-
-    def test_data_config_tokenization(self):
-        # Arrange, Act
-        data_config = self.backtest_config.data[0]
-
-        # Act
-        result = tokenize(data_config)
-
-        # Assert  # TODO: Investigate partial non-determinism
-        assert result == "d9e2deee8477039142b7d19ca988b752" or "9f9b6cdfb9f645c53e1ca4d85f8007e9"
-
-    def test_engine_config_tokenization(self):
-        # Arrange,
-        engine_config = self.backtest_config.engine
-
-        # Act
-        result = tokenize(engine_config)
-
-        # Assert  # TODO: Investigate partial non-determinism
-        assert result == "4e36e7d25fc8e8e98ea5a7127e9cff57" or "22d84218139004f8b662d2c6d3dccb4a"
-
-    def test_tokenization_config(self):
-        # Arrange, Act
-        result = tokenize(self.backtest_config)
-
-        # Assert  # TODO: Investigate partial non-determinism
-        assert result == "83aecc5500d48e6dbcce5f23a7fc56bf" or "881f07f1cbf7628a22eb444d49960be5"
-
     def test_backtest_data_config_load(self):
         instrument = TestInstrumentProvider.default_fx_ccy("AUD/USD")
         c = BacktestDataConfig(
-            catalog_path="/root/",
+            catalog_path="/.nautilus/catalog",
             catalog_fs_protocol="memory",
             data_cls=QuoteTick,
             instrument_id=instrument.id.value,
@@ -236,7 +191,7 @@ class TestBacktestConfig:
             catalog=self.catalog,
         )
         c = BacktestDataConfig(
-            catalog_path="/root/",
+            catalog_path="/.nautilus/catalog",
             catalog_fs_protocol="memory",
             data_cls=NewsEventData,
             client_id="NewsClient",
@@ -255,7 +210,7 @@ class TestBacktestConfig:
             catalog=self.catalog,
         )
         c = BacktestDataConfig(
-            catalog_path="/root/",
+            catalog_path="/.nautilus/catalog",
             catalog_fs_protocol="memory",
             data_cls=NewsEventData,
             filter_expr="field('currency') == 'CHF'",
@@ -271,7 +226,7 @@ class TestBacktestConfig:
             catalog=self.catalog,
         )
         c = BacktestDataConfig(
-            catalog_path="/root/",
+            catalog_path="/.nautilus/catalog",
             catalog_fs_protocol="memory",
             data_cls=InstrumentStatusUpdate,
         )
@@ -283,7 +238,7 @@ class TestBacktestConfig:
     def test_resolve_cls(self):
         config = BacktestDataConfig(
             "/",
-            "nautilus_trader.model.data.tick.QuoteTick",
+            "nautilus_trader.model.data.tick:QuoteTick",
             "memory",
             {},
             "AUD/USD.IDEALPRO",

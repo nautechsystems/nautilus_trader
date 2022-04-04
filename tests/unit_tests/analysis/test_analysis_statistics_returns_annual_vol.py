@@ -19,6 +19,16 @@ from nautilus_trader.analysis.statistics.returns_annual_vol import ReturnsAnnual
 
 
 class TestReturnsAnnualVolatilityPortfolioStatistic:
+    def test_name_returns_expected_returns_expected(self):
+        # Arrange
+        stat = ReturnsAnnualVolatility()
+
+        # Act
+        result = stat.name
+
+        # Assert
+        assert result == "Annual Volatility (Returns)"
+
     def test_calculate_given_empty_series_returns_nan(self):
         # Arrange
         stat = ReturnsAnnualVolatility()

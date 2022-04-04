@@ -19,6 +19,16 @@ from nautilus_trader.analysis.statistics.expectancy import Expectancy
 
 
 class TestExpectancyPortfolioStatistic:
+    def test_name_returns_expected_returns_expected(self):
+        # Arrange
+        stat = Expectancy()
+
+        # Act
+        result = stat.name
+
+        # Assert
+        assert result == "Expectancy"
+
     def test_calculate_given_empty_series_returns_zero(self):
         # Arrange
         stat = Expectancy()

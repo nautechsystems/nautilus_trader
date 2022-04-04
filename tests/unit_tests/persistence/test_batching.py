@@ -17,18 +17,19 @@ import sys
 
 import fsspec
 import pytest
-from dask.utils import parse_bytes
 
 from nautilus_trader.adapters.betfair.providers import BetfairInstrumentProvider
-from nautilus_trader.backtest.config import BacktestDataConfig
-from nautilus_trader.backtest.config import BacktestRunConfig
 from nautilus_trader.backtest.node import BacktestNode
+from nautilus_trader.config.backtest import BacktestDataConfig
+from nautilus_trader.config.backtest import BacktestEngineConfig
+from nautilus_trader.config.backtest import BacktestRunConfig
 from nautilus_trader.model.data.venue import InstrumentStatusUpdate
 from nautilus_trader.model.orderbook.data import OrderBookData
 from nautilus_trader.persistence.batching import batch_files
 from nautilus_trader.persistence.catalog import DataCatalog
 from nautilus_trader.persistence.external.core import process_files
 from nautilus_trader.persistence.external.readers import CSVReader
+from nautilus_trader.persistence.util import parse_bytes
 from tests.integration_tests.adapters.betfair.test_kit import BetfairTestStubs
 from tests.test_kit import PACKAGE_ROOT
 from tests.test_kit.mocks.data import NewsEventData
@@ -96,29 +97,30 @@ class TestPersistenceBatching:
             catalog=self.catalog,
         )
         data_config = BacktestDataConfig(
-            catalog_path="/root/",
+            catalog_path="/.nautilus/catalog/",
             catalog_fs_protocol="memory",
             data_cls=NewsEventData,
             client_id="NewsClient",
         )
         # Add some arbitrary instrument data to appease BacktestEngine
         instrument_data_config = BacktestDataConfig(
-            catalog_path="/root/",
+            catalog_path="/.nautilus/catalog/",
             catalog_fs_protocol="memory",
             instrument_id=self.catalog.instruments(as_nautilus=True)[0].id.value,
             data_cls=InstrumentStatusUpdate,
         )
+        persistence = BetfairTestStubs.persistence_config(catalog_path=self.catalog.path)
+        engine = BacktestEngineConfig(persistence=persistence)
         run_config = BacktestRunConfig(
+            engine=engine,
             data=[data_config, instrument_data_config],
-            persistence=BetfairTestStubs.persistence_config(catalog_path=self.catalog.path),
             venues=[BetfairTestStubs.betfair_venue_config()],
-            strategies=[],
             batch_size_bytes=parse_bytes("1mib"),
         )
 
         # Act
         node = BacktestNode()
-        node.run_sync([run_config])
+        node.run([run_config])
 
         # Assert
         assert node

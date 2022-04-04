@@ -17,6 +17,7 @@ import itertools
 from typing import Dict, List, Optional, Tuple
 
 import orjson
+import pandas as pd
 
 from nautilus_trader.model.currency import Currency
 from nautilus_trader.model.events.account import AccountState
@@ -90,7 +91,7 @@ def _deserialize(values):
     margins = []
     for v in values:
         initial = v.get("margin_initial")
-        if initial is None:
+        if pd.isnull(initial):
             continue
         margins.append(
             dict(

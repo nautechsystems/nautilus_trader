@@ -14,7 +14,6 @@
 # -------------------------------------------------------------------------------------------------
 
 from dataclasses import dataclass
-from datetime import datetime
 from typing import Dict, Optional
 
 
@@ -29,10 +28,10 @@ class BacktestResult:
     run_config_id: Optional[str]
     instance_id: str
     run_id: str
-    run_started: datetime
-    run_finished: datetime
-    backtest_start: datetime
-    backtest_end: datetime
+    run_started: Optional[int]
+    run_finished: Optional[int]
+    backtest_start: Optional[int]
+    backtest_end: Optional[int]
     elapsed_time: float
     iterations: int
     total_events: int
@@ -61,9 +60,9 @@ class BacktestResult:
 
 def ensure_plotting(func):
     """
-    Decorate a function that require a plotting library
+    Decorate a function that require a plotting library.
 
-    Ensures library is installed and providers a better error about how to install if not found
+    Ensures library is installed and providers a better error about how to install if not found.
     """
 
     def inner(*args, **kwargs):

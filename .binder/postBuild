@@ -1,6 +1,0 @@
-#!/bin/bash
-pip install $REPO_DIR
-pip install -U jupytext numpy
-jupytext --to notebook $REPO_DIR/docs/**/*.md
-# Ensure nautilus is working
-python -c "from nautilus_trader.model.tick_scheme.implementations.tiered import TieredTickScheme"

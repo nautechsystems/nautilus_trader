@@ -17,10 +17,10 @@ import pandas as pd
 import pytest
 
 from nautilus_trader.core.inspect import get_size_of
-from nautilus_trader.core.inspect import is_nautilus_class
 from nautilus_trader.model.data.tick import TradeTick
 from nautilus_trader.model.events.order import OrderAccepted
 from nautilus_trader.model.orderbook.data import OrderBookData
+from nautilus_trader.persistence.util import is_nautilus_class
 
 
 @pytest.mark.parametrize(
@@ -34,7 +34,7 @@ from nautilus_trader.model.orderbook.data import OrderBookData
 )
 def test_is_nautilus_class(cls, is_nautilus):
     # Arrange, Act, Assert
-    assert is_nautilus_class(cls) is is_nautilus
+    assert is_nautilus_class(cls=cls) is is_nautilus
 
 
 def test_get_size_of():

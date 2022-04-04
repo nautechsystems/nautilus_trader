@@ -16,7 +16,6 @@
 from typing import Any, Optional
 
 import pandas as pd
-import quantstats
 
 from nautilus_trader.analysis.statistic import PortfolioStatistic
 
@@ -31,4 +30,4 @@ class ReturnsAverage(PortfolioStatistic):
         return "Average (Return)"
 
     def calculate_from_returns(self, returns: pd.Series) -> Optional[Any]:
-        return quantstats.stats.avg_return(returns=returns)
+        return returns[returns != 0].dropna().mean()

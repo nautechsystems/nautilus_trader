@@ -21,14 +21,14 @@ import orjson
 import pytest
 
 from nautilus_trader.adapters.binance.common.constants import BINANCE_VENUE
-from nautilus_trader.adapters.binance.data import BinanceDataClient
 from nautilus_trader.adapters.binance.http.client import BinanceHttpClient
+from nautilus_trader.adapters.binance.spot.data import BinanceSpotDataClient
 from nautilus_trader.adapters.binance.spot.providers import BinanceSpotInstrumentProvider
 from nautilus_trader.backtest.data.providers import TestInstrumentProvider
 from nautilus_trader.common.clock import LiveClock
-from nautilus_trader.common.config import InstrumentProviderConfig
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.common.uuid import UUIDFactory
+from nautilus_trader.config.components import InstrumentProviderConfig
 from nautilus_trader.data.engine import DataEngine
 from nautilus_trader.model.data.tick import QuoteTick
 from nautilus_trader.model.data.tick import TradeTick
@@ -47,7 +47,7 @@ ETHUSDT_BINANCE = TestInstrumentProvider.ethusdt_binance()
 
 
 @pytest.mark.skip(reason="WIP")
-class TestBinanceDataClient:
+class TestBinanceSpotDataClient:
     def setup(self):
         # Fixture Setup
         self.loop = asyncio.get_event_loop()
@@ -90,7 +90,7 @@ class TestBinanceDataClient:
             logger=self.logger,
         )
 
-        self.data_client = BinanceDataClient(
+        self.data_client = BinanceSpotDataClient(
             loop=self.loop,
             client=self.http_client,
             msgbus=self.msgbus,

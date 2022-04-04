@@ -30,7 +30,6 @@ including FX, Equities, Futures, Options, CFDs, Crypto and Betting - across mult
 - **Live:** Use identical strategy implementations between backtesting and live deployments.
 - **Multi-venue:** Multiple venue capabilities facilitate market making and statistical arbitrage strategies.
 - **AI Agent Training:** Backtest engine fast enough to be used to train AI trading agents (RL/ES).
-- **Distributed:** Run backtests synchronously or as a graph distributed across a [dask](https://dask.org/) cluster.
 
 ![Nautilus](https://github.com/nautechsystems/nautilus_trader/blob/develop/docs/_images/nautilus-art.png?raw=true "nautilus")
 > *nautilus - from ancient Greek 'sailor' and naus 'ship'.*
@@ -93,7 +92,7 @@ written in Cython, however the libraries can be accessed from both pure Python a
 
    getting_started/index.md
    user_guide/index.md
-   api_reference/index.md
    integrations/index.md
+   api_reference/index.md
    developer_guide/index.md
 ```

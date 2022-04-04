@@ -19,6 +19,16 @@ from nautilus_trader.analysis.statistics.loser_avg import AvgLoser
 
 
 class TestAvgLoserPortfolioStatistic:
+    def test_name_returns_expected_returns_expected(self):
+        # Arrange
+        stat = AvgLoser()
+
+        # Act
+        result = stat.name
+
+        # Assert
+        assert result == "Avg Loser"
+
     def test_calculate_given_empty_series_returns_zero(self):
         # Arrange
         stat = AvgLoser()

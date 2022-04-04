@@ -34,8 +34,8 @@ from nautilus_trader.model.objects cimport Quantity
 
 cdef class CryptoFuture(Instrument):
     """
-    Represents a `Deliverable Futures Contract` instrument, with Crypto assets as
-    underlying, and for price quotes and settlement.
+    Represents a `Deliverable Futures Contract` instrument, with crypto assets
+    as underlying and for settlement.
 
     Parameters
     ----------

@@ -91,8 +91,21 @@ cdef class Currency:
         _CURRENCY_MAP[currency.code] = currency
 
     @staticmethod
-    cdef Currency from_str_c(str code):
-        return _CURRENCY_MAP.get(code)
+    cdef Currency from_str_c(str code, bint strict=False):
+        cdef Currency currency = _CURRENCY_MAP.get(code)
+        if strict or currency is not None:
+            return currency
+
+        # Strict mode false with no currency found (very likely a crypto)
+        currency = Currency(
+            code=code,
+            precision=8,
+            iso4217=0,
+            name=code,
+            currency_type=CurrencyType.CRYPTO,
+        )
+        print(f"Currency '{code}' not found, created {repr(currency)}")
+        return currency
 
     @staticmethod
     def register(Currency currency, bint overwrite=False):
@@ -114,7 +127,7 @@ cdef class Currency:
         return Currency.register_c(currency, overwrite)
 
     @staticmethod
-    def from_str(str code):
+    def from_str(str code, bint strict=False):
         """
         Parse a currency from the given string (if found).
 
@@ -122,13 +135,17 @@ cdef class Currency:
         ----------
         code : str
             The code of the currency to get.
+        strict : bool, default False
+            If strict mode is enabled. If not strict mode then it's very likely
+            the currency is a crypto, so for robustness will then return a new
+            cryptocurrency using the code and a default precision of 8.
 
         Returns
         -------
         Currency or ``None``
 
         """
-        return Currency.from_str_c(code)
+        return Currency.from_str_c(code, strict)
 
     @staticmethod
     cdef bint is_fiat_c(str code):

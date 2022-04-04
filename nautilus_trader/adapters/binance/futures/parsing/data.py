@@ -21,17 +21,25 @@ import msgspec
 import orjson
 
 from nautilus_trader.adapters.binance.common.constants import BINANCE_VENUE
+from nautilus_trader.adapters.binance.common.enums import BinanceAccountType
 from nautilus_trader.adapters.binance.common.enums import BinanceSymbolFilterType
+from nautilus_trader.adapters.binance.common.functions import parse_symbol
 from nautilus_trader.adapters.binance.common.schemas import BinanceOrderBookData
+from nautilus_trader.adapters.binance.futures.schemas.market import BinanceFuturesMarkPriceData
 from nautilus_trader.adapters.binance.futures.schemas.market import BinanceFuturesSymbolInfo
+from nautilus_trader.adapters.binance.futures.schemas.market import BinanceFuturesTradeData
+from nautilus_trader.adapters.binance.futures.types import BinanceFuturesMarkPriceUpdate
 from nautilus_trader.adapters.binance.spot.schemas.market import BinanceSymbolFilter
 from nautilus_trader.core.datetime import millis_to_nanos
 from nautilus_trader.core.string import precision_from_str
 from nautilus_trader.model.currency import Currency
+from nautilus_trader.model.data.tick import TradeTick
+from nautilus_trader.model.enums import AggressorSide
 from nautilus_trader.model.enums import BookType
 from nautilus_trader.model.enums import CurrencyType
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import Symbol
+from nautilus_trader.model.identifiers import TradeId
 from nautilus_trader.model.instruments.crypto_future import CryptoFuture
 from nautilus_trader.model.instruments.crypto_perpetual import CryptoPerpetual
 from nautilus_trader.model.objects import Money
@@ -63,8 +71,9 @@ def parse_perpetual_instrument_http(
         currency_type=CurrencyType.CRYPTO,
     )
 
-    symbol = Symbol(symbol_info.symbol + "-PERP")
-    instrument_id = InstrumentId(symbol=symbol, venue=BINANCE_VENUE)
+    native_symbol = Symbol(symbol_info.symbol)
+    symbol = parse_symbol(symbol_info.symbol, BinanceAccountType.FUTURES_USDT)
+    instrument_id = InstrumentId(symbol=Symbol(symbol), venue=BINANCE_VENUE)
 
     # Parse instrument filters
     filters: Dict[BinanceSymbolFilterType, BinanceSymbolFilter] = {
@@ -89,18 +98,23 @@ def parse_perpetual_instrument_http(
     min_price = Price(float(price_filter.minPrice), precision=price_precision)
 
     # Futures commissions
-    maker_fee = Decimal("0.0002")  # TODO
-    taker_fee = Decimal("0.0004")  # TODO
+    maker_fee = Decimal("0.000200")  # TODO
+    taker_fee = Decimal("0.000400")  # TODO
 
-    assert symbol_info.marginAsset == symbol_info.quoteAsset
+    if symbol_info.marginAsset == symbol_info.baseAsset:
+        settlement_currency = base_currency
+    elif symbol_info.marginAsset == symbol_info.quoteAsset:
+        settlement_currency = quote_currency
+    else:
+        raise ValueError(f"Unrecognized margin asset {symbol_info.marginAsset}")
 
     # Create instrument
     return CryptoPerpetual(
         instrument_id=instrument_id,
-        native_symbol=Symbol(symbol_info.symbol),
+        native_symbol=native_symbol,
         base_currency=base_currency,
         quote_currency=quote_currency,
-        settlement_currency=quote_currency,
+        settlement_currency=settlement_currency,
         is_inverse=False,  # No inverse instruments trade on Binance
         price_precision=price_precision,
         size_precision=size_precision,
@@ -112,8 +126,8 @@ def parse_perpetual_instrument_http(
         min_notional=min_notional,
         max_price=max_price,
         min_price=min_price,
-        margin_init=Decimal(0),
-        margin_maint=Decimal(0),
+        margin_init=Decimal(float(symbol_info.requiredMarginPercent) / 100),
+        margin_maint=Decimal(float(symbol_info.maintMarginPercent) / 100),
         maker_fee=maker_fee,
         taker_fee=taker_fee,
         ts_event=ts_event,
@@ -146,7 +160,8 @@ def parse_futures_instrument_http(
     )
 
     native_symbol = Symbol(symbol_info.symbol)
-    instrument_id = InstrumentId(symbol=native_symbol, venue=BINANCE_VENUE)
+    symbol = parse_symbol(symbol_info.symbol, BinanceAccountType.FUTURES_USDT)
+    instrument_id = InstrumentId(symbol=Symbol(symbol), venue=BINANCE_VENUE)
 
     # Parse instrument filters
     filters: Dict[BinanceSymbolFilterType, BinanceSymbolFilter] = {
@@ -171,10 +186,15 @@ def parse_futures_instrument_http(
     min_price = Price(float(price_filter.minPrice), precision=price_precision)
 
     # Futures commissions
-    maker_fee = Decimal("0.0002")  # TODO
-    taker_fee = Decimal("0.0004")  # TODO
+    maker_fee = Decimal("0.000200")  # TODO
+    taker_fee = Decimal("0.000400")  # TODO
 
-    assert symbol_info.marginAsset == symbol_info.quoteAsset
+    if symbol_info.marginAsset == symbol_info.baseAsset:
+        settlement_currency = base_currency
+    elif symbol_info.marginAsset == symbol_info.quoteAsset:
+        settlement_currency = quote_currency
+    else:
+        raise ValueError(f"Unrecognized margin asset {symbol_info.marginAsset}")
 
     # Create instrument
     return CryptoFuture(
@@ -182,7 +202,7 @@ def parse_futures_instrument_http(
         native_symbol=native_symbol,
         underlying=base_currency,
         quote_currency=quote_currency,
-        settlement_currency=quote_currency,
+        settlement_currency=settlement_currency,
         expiry_date=dt.strptime(symbol_info.symbol.partition("_")[2], "%y%m%d").date(),
         price_precision=price_precision,
         size_precision=size_precision,
@@ -194,8 +214,8 @@ def parse_futures_instrument_http(
         min_notional=min_notional,
         max_price=max_price,
         min_price=min_price,
-        margin_init=Decimal(0),
-        margin_maint=Decimal(0),
+        margin_init=Decimal(float(symbol_info.requiredMarginPercent) / 100),
+        margin_maint=Decimal(float(symbol_info.maintMarginPercent) / 100),
         maker_fee=maker_fee,
         taker_fee=taker_fee,
         ts_event=ts_event,
@@ -204,7 +224,7 @@ def parse_futures_instrument_http(
     )
 
 
-def parse_book_snapshot(
+def parse_futures_book_snapshot(
     instrument_id: InstrumentId,
     data: BinanceOrderBookData,
     ts_init: int,
@@ -212,9 +232,42 @@ def parse_book_snapshot(
     return OrderBookSnapshot(
         instrument_id=instrument_id,
         book_type=BookType.L2_MBP,
-        bids=[[float(o[0]), float(o[1])] for o in data.bids],
-        asks=[[float(o[0]), float(o[1])] for o in data.asks],
+        bids=[[float(o[0]), float(o[1])] for o in data.b],
+        asks=[[float(o[0]), float(o[1])] for o in data.a],
         ts_event=millis_to_nanos(data.T),
         ts_init=ts_init,
         update_id=data.u,
+    )
+
+
+def parse_futures_mark_price_ws(
+    instrument_id: InstrumentId,
+    data: BinanceFuturesMarkPriceData,
+    ts_init: int,
+) -> BinanceFuturesMarkPriceUpdate:
+    return BinanceFuturesMarkPriceUpdate(
+        instrument_id=instrument_id,
+        mark=Price.from_str(data.p),
+        index=Price.from_str(data.i),
+        estimated_settle=Price.from_str(data.P),
+        funding_rate=Decimal(data.r),
+        ts_next_funding=millis_to_nanos(data.T),
+        ts_event=millis_to_nanos(data.E),
+        ts_init=ts_init,
+    )
+
+
+def parse_futures_trade_tick_ws(
+    instrument_id: InstrumentId,
+    data: BinanceFuturesTradeData,
+    ts_init: int,
+) -> TradeTick:
+    return TradeTick(
+        instrument_id=instrument_id,
+        price=Price.from_str(data.p),
+        size=Quantity.from_str(data.q),
+        aggressor_side=AggressorSide.SELL if data.m else AggressorSide.BUY,
+        trade_id=TradeId(str(data.t)),
+        ts_event=millis_to_nanos(data.T),
+        ts_init=ts_init,
     )

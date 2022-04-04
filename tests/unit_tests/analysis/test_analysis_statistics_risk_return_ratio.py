@@ -19,6 +19,16 @@ from nautilus_trader.analysis.statistics.risk_return_ratio import RiskReturnRati
 
 
 class TestRiskReturnRatioPortfolioStatistic:
+    def test_name_returns_expected_returns_expected(self):
+        # Arrange
+        stat = RiskReturnRatio()
+
+        # Act
+        result = stat.name
+
+        # Assert
+        assert result == "Risk Return Ratio"
+
     def test_calculate_given_empty_series_returns_nan(self):
         # Arrange
         stat = RiskReturnRatio()

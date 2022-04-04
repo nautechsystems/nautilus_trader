@@ -13,21 +13,12 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import pydantic
-from pydantic import PositiveInt
+import importlib
+import importlib.util
 
 
-class CacheConfig(pydantic.BaseModel):
-    """
-    Configuration for ``Cache`` instances.
-
-    Parameters
-    ----------
-    tick_capacity : int
-        The maximum length for internal tick deques.
-    bar_capacity : int
-        The maximum length for internal bar deques.
-    """
-
-    tick_capacity: PositiveInt = 1000
-    bar_capacity: PositiveInt = 1000
+def resolve_path(path: str):
+    module, cls = path.rsplit(":", maxsplit=1)
+    mod = importlib.import_module(module)
+    cls = getattr(mod, cls)
+    return cls

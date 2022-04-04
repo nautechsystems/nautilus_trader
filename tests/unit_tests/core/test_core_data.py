@@ -13,17 +13,13 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import pydantic
+from nautilus_trader.core.data import Data
 
 
-class ExecEngineConfig(pydantic.BaseModel):
-    """
-    Configuration for ``ExecutionEngine`` instances.
+class TestCoreData:
+    def test_fully_qualified_name_returns_expected(self):
+        # Arrange, Act
+        result = Data.fully_qualified_name()
 
-    Parameters
-    ----------
-    allow_cash_positions : bool, default False
-        If unleveraged spot cash assets should track positions.
-    """
-
-    allow_cash_positions: bool = False
+        # Assert
+        assert result == "nautilus_trader.core.data:Data"

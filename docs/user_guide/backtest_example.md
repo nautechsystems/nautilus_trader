@@ -9,7 +9,7 @@ Before we start the notebook - as a once off we need to download some sample dat
 
 For this notebook we will use FX data from `histdata.com`, simply go to https://www.histdata.com/download-free-forex-historical-data/?/ascii/tick-data-quotes/ and select an FX pair, and one or more months of data to download.
 
-Once you have downloaded the data, set the variable `DATA_DIR` below to the directory containing the data. By default it will use the users `Downloads` directory.
+Once you have downloaded the data, set the variable `DATA_DIR` below to the directory containing the data. By default, it will use the users `Downloads` directory.
 <!-- #endregion -->
 
 ```python
@@ -39,11 +39,11 @@ We have chosen parquet as the storage format for the following reasons:
 
 ## Loading data into the catalog
 
-We can load data from various sources into the data catalog using helper methods in the `nautilus_trader.persistence.external.readers` module. The module contains methods for reading various data formats (csv, json, txt), minimising the amount of code required to get data loaded correctly into the data catalog.
+We can load data from various sources into the data catalog using helper methods in the `nautilus_trader.persistence.external.readers` module. The module contains methods for reading various data formats (CSV, JSON, text), minimising the amount of code required to get data loaded correctly into the data catalog.
 
-The FX data from `histdata` is stored in csv/text format, with fields `timestamp, bid_price, ask_price`. To load the data into the catalog, we simply write a function that converts each row into a Nautilus object (in this case, a `QuoteTick`). For this example, we will use the `TextReader` helper, which allows reading and applying a parsing function line by line.
+The FX data from `histdata` is stored in CSV/text format, with fields `timestamp, bid_price, ask_price`. To load the data into the catalog, we simply write a function that converts each row into a Nautilus object (in this case, a `QuoteTick`). For this example, we will use the `TextReader` helper, which allows reading and applying a parsing function line by line.
 
-Then, we simply instantiate a data catalog (passing in a directory where to store the data, by default we will just use the current directory) and pass our parsing function wrapping in the Reader class to `process_files`. We also need to know about which instrument this data is for; in this example, we will simply use one of the Nautilus test helpers to create a FX instrument.
+Then, we simply instantiate a `DataCatalog` (passing in a directory where to store the data, by default we will just use the current directory) and pass our parsing function wrapping in the Reader class to `process_files`. We also need to know about which instrument this data is for; in this example, we will simply use one of the Nautilus test helpers to create a FX instrument.
 
 It should only take a couple of minutes to load the data (depending on how many months).
 
@@ -101,13 +101,13 @@ process_files(
     catalog=catalog,
 )
 
-# Also manually write the AUDUSD instrument to the catalog
+# Also manually write the AUD/USD instrument to the catalog
 write_objects(catalog, [AUDUSD])
 ```
 
 ## Using the Data Catalog 
 
-Once data has been loaded into the catalog, the `catalog` instance can be used for loading data into the backtest engine, or simple for research purposes. It contains various methods to pull data from the catalog, like `quote_ticks` (show below))
+Once data has been loaded into the catalog, the `catalog` instance can be used for loading data for backtests, or simple for research purposes. It contains various methods to pull data from the catalog, like `quote_ticks` (show below).
 
 ```python
 catalog.instruments()
@@ -122,15 +122,14 @@ catalog.quote_ticks(start=start, end=end)
 
 ## Configuring backtests
 
-Nautilus has a top level object `BacktestRunConfig` that allows configuring a backtest in one place. It is a `Partialable` object (which means it can be configured in stages); the benefits of which are reduced boilerplate code when creating multiple backtest runs (for example when doing some sort of grid search over parameters).
+Nautilus has a top-level object `BacktestRunConfig` that allows configuring a backtest in one place. It is a `Partialable` object (which means it can be configured in stages); the benefits of which are reduced boilerplate code when creating multiple backtest runs (for example when doing some sort of grid search over parameters).
 
 ### Staring with a Venue
 
 We can start partially configuring the config with just a Venue:
 
 ```python
-from nautilus_trader.backtest.config import BacktestRunConfig, BacktestVenueConfig, BacktestDataConfig, BacktestEngineConfig
-from nautilus_trader.model.currencies import USD
+from nautilus_trader.config.backtest import BacktestRunConfig, BacktestVenueConfig, BacktestDataConfig, BacktestEngineConfig
 
 # Create a `base` config object to be shared with all backtests
 base = BacktestRunConfig(
@@ -158,8 +157,8 @@ instrument = catalog.instruments(as_nautilus=True)[0]
 
 data_config=[
     BacktestDataConfig(
-        catalog_path=CATALOG_PATH,
-        data_cls=QuoteTick.fully_qualified_name(),
+        catalog_path=str(DataCatalog.from_env().path),
+        data_cls=QuoteTick,
         instrument_id=instrument.id.value,
         start_time=1580398089820000000,
         end_time=1580504394501000000,
@@ -180,7 +179,7 @@ We can perform a grid-search of some parameters by using the `replace` method, w
 
 ```python
 from decimal import Decimal
-from nautilus_trader.trading.config import ImportableStrategyConfig
+from nautilus_trader.config.components import ImportableStrategyConfig
 from nautilus_trader.examples.strategies.ema_cross import EMACrossConfig
 
 
@@ -194,7 +193,8 @@ configs = []
 for params in PARAM_SET:
     strategies = [
         ImportableStrategyConfig(
-            path="examples.strategies.ema_cross_simple:EMACross",
+            strategy_path="examples.strategies.ema_cross_simple:EMACross",
+            config_path="examples.strategies.ema_cross_simple:EMACrossConfig",
             config=EMACrossConfig(
                 instrument_id=instrument.id.value,
                 bar_type='AUD/USD.SIM-15-MINUTE-BID-INTERNAL',
@@ -217,48 +217,12 @@ print("\n\n".join(map(str, configs)))
 
 ## Run the backtest
 
-Finally, we can create a BacktestNode and run the backtest:
+Finally, we can create a `BacktestNode` and run the backtest:
 
 ```python
 from nautilus_trader.backtest.node import BacktestNode
 node = BacktestNode()
-```
 
-```python
-task = node.build_graph(run_configs=configs)
-task
-```
-
-```python
-# Visualising the graph requires graphviz - `%pip install graphviz` in a notebook cell to install it
-
-# task.visualize(rankdir='LR') 
-```
-
-^ Notice because our configs share the same data, that only one instance of `load` is required.
-
-
-### Start up a local dask cluster to execute the graph
-
-```python
-# Create a local dask client - not a requirement, but allows parallelising the runs
-from distributed import Client
-client = Client(n_workers=2)
-client
-```
-
-### Run the backtests!
-
-```python tags=[]
-results = task.compute()
-```
-
-### Compare the results
-
-```python
-results.plot_balances()
-```
-
-```python
-
+results = node.run(run_configs=configs)
+pd.DataFrame([r.stats_pnls for r in results])['USD'].apply(pd.Series)
 ```

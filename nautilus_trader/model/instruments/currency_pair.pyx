@@ -36,7 +36,7 @@ cdef class CurrencyPair(Instrument):
     """
     Represents a generic currency pair instrument in a spot/cash market.
 
-    Can represent both Fiat FX and Crypto currency pairs.
+    Can represent both Fiat FX and Cryptocurrency pairs.
 
     Parameters
     ----------

@@ -55,15 +55,15 @@ ETHUSDT_BINANCE = TestInstrumentProvider.ethusdt_binance()
 
 def _reset():
     """Cleanup resources before each test run"""
-    os.environ["NAUTILUS_CATALOG"] = "memory:///root/"
+    os.environ["NAUTILUS_PATH"] = "memory:///.nautilus/"
     catalog = DataCatalog.from_env()
     assert isinstance(catalog.fs, MemoryFileSystem)
     try:
         catalog.fs.rm("/", recursive=True)
     except FileNotFoundError:
         pass
-    catalog.fs.mkdir("/root/data")
-    assert catalog.fs.exists("/root/")
+    catalog.fs.mkdir("/.nautilus/catalog")
+    assert catalog.fs.exists("/.nautilus/catalog/")
 
 
 @pytest.mark.skipif(sys.platform == "win32", reason="does not run on windows")

@@ -90,7 +90,7 @@ class BinanceFuturesSymbolInfo(msgspec.Struct):
     contractType: str  # Can be '' empty string
     deliveryDate: int
     onboardDate: int
-    status: BinanceFuturesContractStatus
+    status: Optional[BinanceFuturesContractStatus] = None
     maintMarginPercent: str
     requiredMarginPercent: str
     baseAsset: str
@@ -102,7 +102,7 @@ class BinanceFuturesSymbolInfo(msgspec.Struct):
     quotePrecision: int
     underlyingType: str
     underlyingSubType: List[str]
-    settlePlan: int
+    settlePlan: Optional[int] = None
     triggerProtect: str
     liquidationFee: str
     marketTakeBound: str
@@ -118,7 +118,7 @@ class BinanceFuturesExchangeInfo(msgspec.Struct):
     serverTime: int
     rateLimits: List[BinanceRateLimit]
     exchangeFilters: List[BinanceExchangeFilter]
-    assets: List[BinanceFuturesAsset]
+    assets: Optional[List[BinanceFuturesAsset]] = None
     symbols: List[BinanceFuturesSymbolInfo]
 
 
@@ -141,3 +141,64 @@ class BinanceFuturesFundRate(msgspec.Struct):
     symbol: str
     fundingRate: str
     fundingTime: str
+
+
+################################################################################
+# WebSocket messages
+################################################################################
+
+
+class BinanceFuturesTradeData(msgspec.Struct):
+    """
+    WebSocket message 'inner struct' for `Binance Futures` Trade Streams.
+
+    Fields
+    ------
+    - e: Event type
+    - E: Event time
+    - s: Symbol
+    - t: Trade ID
+    - p: Price
+    - q: Quantity
+    - b: Buyer order ID
+    - a: Seller order ID
+    - T: Trade time
+    - m: Is the buyer the market maker?
+    """
+
+    e: str  # Event type
+    E: int  # Event time
+    T: int  # Trade time
+    s: str  # Symbol
+    t: int  # Trade ID
+    p: str  # Price
+    q: str  # Quantity
+    X: BinanceFuturesOrderType  # Buyer order type
+    m: bool  # Is the buyer the market maker?
+
+
+class BinanceFuturesTradeMsg(msgspec.Struct):
+    """WebSocket message from `Binance Futures` Trade Streams."""
+
+    stream: str
+    data: BinanceFuturesTradeData
+
+
+class BinanceFuturesMarkPriceData(msgspec.Struct):
+    """WebSocket message 'inner struct' for `Binance Futures` Mark Price Update events."""
+
+    e: str  # Event type
+    E: int  # Event time
+    s: str  # Symbol
+    p: str  # Mark price
+    i: str  # Index price
+    P: str  # Estimated Settle Price, only useful in the last hour before the settlement starts
+    r: str  # Funding rate
+    T: int  # Next funding time
+
+
+class BinanceFuturesMarkPriceMsg(msgspec.Struct):
+    """WebSocket message from `Binance Futures` Mark Price Update events."""
+
+    stream: str
+    data: BinanceFuturesMarkPriceData

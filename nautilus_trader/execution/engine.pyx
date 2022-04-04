@@ -32,8 +32,7 @@ just need to override the `execute` and `process` methods.
 from decimal import Decimal
 from typing import Optional
 
-from nautilus_trader.execution.config import ExecEngineConfig
-from nautilus_trader.execution.messages import TradingCommand
+from nautilus_trader.config.engines import ExecEngineConfig
 
 from libc.stdint cimport int64_t
 
@@ -56,6 +55,7 @@ from nautilus_trader.execution.messages cimport CancelOrder
 from nautilus_trader.execution.messages cimport ModifyOrder
 from nautilus_trader.execution.messages cimport SubmitOrder
 from nautilus_trader.execution.messages cimport SubmitOrderList
+from nautilus_trader.execution.messages cimport TradingCommand
 from nautilus_trader.model.c_enums.oms_type cimport OMSType
 from nautilus_trader.model.c_enums.oms_type cimport OMSTypeParser
 from nautilus_trader.model.c_enums.position_side cimport PositionSide

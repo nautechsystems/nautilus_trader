@@ -22,11 +22,11 @@ import fsspec
 import pandas as pd
 import pyarrow.dataset as ds
 import pyarrow.parquet as pq
-from dask.utils import parse_bytes
 from pyarrow.lib import ArrowInvalid
 
-from nautilus_trader.backtest.config import BacktestDataConfig
+from nautilus_trader.config.backtest import BacktestDataConfig
 from nautilus_trader.persistence.catalog import DataCatalog
+from nautilus_trader.persistence.util import parse_bytes
 from nautilus_trader.serialization.arrow.serializer import ParquetSerializer
 from nautilus_trader.serialization.arrow.util import clean_key
 
@@ -49,7 +49,7 @@ def dataset_batches(
             df = batch.to_pandas()
             df = df[(df["ts_init"] >= file_meta.start) & (df["ts_init"] <= file_meta.end)]
             if df.empty:
-                return
+                continue
             if file_meta.instrument_id:
                 df.loc[:, "instrument_id"] = file_meta.instrument_id
             yield df
