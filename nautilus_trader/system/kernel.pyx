@@ -74,7 +74,6 @@ try:
     asyncio.set_event_loop_policy(uvloop.EventLoopPolicy())
 except ImportError:  # pragma: no cover
     uvloop = None
-    warnings.warn("uvloop is not available.")
 
 @unique
 class Environment(Enum):
@@ -154,6 +153,8 @@ cdef class NautilusKernel:
         LogLevel log_level = LogLevel.INFO,
         bypass_logging: bool = False,
     ):
+        if uvloop is None:
+            warnings.warn("uvloop is not available.")
         if actor_configs is None:
             actor_configs = []
         if strategy_configs is None:
