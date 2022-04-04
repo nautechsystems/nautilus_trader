@@ -521,23 +521,6 @@ class BinanceSpotExecutionClient(LiveExecutionClient):
             )
             return
 
-        self._loop.create_task(self._submit_order(order))
-
-    def submit_order_list(self, command: SubmitOrderList) -> None:
-        self._loop.create_task(self._submit_order_list(command))
-
-    def modify_order(self, command: ModifyOrder) -> None:
-        self._log.error(  # pragma: no cover
-            "Cannot modify order: Not supported by the exchange.",
-        )
-
-    def cancel_order(self, command: CancelOrder) -> None:
-        self._loop.create_task(self._cancel_order(command))
-
-    def cancel_all_orders(self, command: CancelAllOrders) -> None:
-        self._loop.create_task(self._cancel_all_orders(command))
-
-    async def _submit_order(self, order: Order) -> None:
         self._log.debug(f"Submitting {order}.")
 
         # Generate event here to ensure correct ordering of events
@@ -547,6 +530,44 @@ class BinanceSpotExecutionClient(LiveExecutionClient):
             client_order_id=order.client_order_id,
             ts_event=self._clock.timestamp_ns(),
         )
+
+        self._loop.create_task(self._submit_order(order))
+
+    def submit_order_list(self, command: SubmitOrderList) -> None:
+        self._log.debug("Submitting Order List.")
+
+        for order in command.list:
+            self.generate_order_submitted(
+                strategy_id=order.strategy_id,
+                instrument_id=order.instrument_id,
+                client_order_id=order.client_order_id,
+                ts_event=self._clock.timestamp_ns(),
+            )
+
+        self._loop.create_task(self._submit_order_list(command))
+
+    def modify_order(self, command: ModifyOrder) -> None:
+        self._log.error(  # pragma: no cover
+            "Cannot modify order: Not supported by the exchange.",
+        )
+
+    def cancel_order(self, command: CancelOrder) -> None:
+        self._log.debug(f"Canceling order {command.client_order_id.value}.")
+
+        self.generate_order_pending_cancel(
+            strategy_id=command.strategy_id,
+            instrument_id=command.instrument_id,
+            client_order_id=command.client_order_id,
+            venue_order_id=command.venue_order_id,
+            ts_event=self._clock.timestamp_ns(),
+        )
+
+        self._loop.create_task(self._cancel_order(command))
+
+    def cancel_all_orders(self, command: CancelAllOrders) -> None:
+        self._loop.create_task(self._cancel_all_orders(command))
+
+    async def _submit_order(self, order: Order) -> None:
 
         try:
             if order.type == OrderType.MARKET:
@@ -612,15 +633,6 @@ class BinanceSpotExecutionClient(LiveExecutionClient):
             await self._submit_order(order)
 
     async def _cancel_order(self, command: CancelOrder) -> None:
-        self._log.debug(f"Canceling order {command.client_order_id.value}.")
-
-        self.generate_order_pending_cancel(
-            strategy_id=command.strategy_id,
-            instrument_id=command.instrument_id,
-            client_order_id=command.client_order_id,
-            venue_order_id=command.venue_order_id,
-            ts_event=self._clock.timestamp_ns(),
-        )
 
         try:
             if command.venue_order_id is not None:
