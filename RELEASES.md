@@ -1,39 +1,58 @@
+# NautilusTrader 1.142.0 Beta
+
+Released on TBC.
+
+### Breaking Changes
+None
+
+### Enhancements
+None
+
+### Fixes
+None
+
+---
+
 # NautilusTrader 1.141.0 Beta
 
-Released on 30th March 2022 (UTC).
+Released on 4th April 2022 (UTC).
 
 This will be the final release without Rust compiled binaries.
 
 ### Breaking Changes
+- Renamed `BacktestNode.run_sync()` to `BacktestNode.run()`
 - Renamed `flatten_position()` to `close_position()`
 - Renamed `flatten_all_positions()` to `close_all_positions()`
 - Renamed `Order.flatten_side()` to `Order.closing_side()`
+- Renamed `TradingNodeConfig` `check_residuals_delay` to `timeout_post_stop`
 - The `SimulatedExchange` will now 'receive' market data prior to the `DataEngine`
   (note that this did not affect any test)
 - Tightened requirement for `DataType` types to be subclasses of `Data`
 - `CacheDatabaseConfig.type` now defaults to `in-memory`
 - `NAUTILUS_CATALOG` env var changed to `NAUTILUS_PATH`
 - `DataCatalog` root path now located under `$OLD_PATH/catalog/` from the Nautilus path
-- `hyperopt` is now an optional extra
+- `hiredis` and `redis` are now optional extras as 'redis'
+- `hyperopt` is now an optional extra as 'hyperopt'
 
 ### Enhancements
-- Added Docker image builds and GH packages
-- Unify `NautilusKernel` system between backtest and live systems
+- Unify `NautilusKernel` across backtest and live systems
+- Improved configuration by grouping into `config` subpackage
 - Improved configuration objects and flows
 - Numerous improvements to the Binance Spot/Margin and Futures integration
+- Added Docker image builds and GH packages
 - Added `BinanceFuturesMarkPriceUpdate` type and data stream
 - Added generic `subscribe` and `unsubscribe` to template
 - Added Binance Futures COIN_M testnet
 - The clarity of various error messages was improved
 
 ### Fixes
+- Fixed multiple instruments in `DataCatalog` (#554), (#560) by @limx0
+- Fixed timestamp ordering streaming from `DataCatalog` (#561) by @limx0
+- Fixed `CSVReader` (#563) by @limx0
 - Fixed slow subscribers to the Binance WebSocket streams
 - Fixed configuration of `base_currency` for backtests
 - Fixed importable strategy configs (previously not returning correct class)
 - Fixed `fully_qualified_name()` format
-- Fixed multiple instruments in `DataCatalog` (#554), (#560) by @limx0
-- Fixed timestamp ordering streaming from `DataCatalog` (#561) by @limx0
-- Fixed `CSVReader` (#563) by @limx0
 
 ---
 

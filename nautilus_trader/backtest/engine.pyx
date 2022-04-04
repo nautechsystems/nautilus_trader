@@ -14,14 +14,19 @@
 # -------------------------------------------------------------------------------------------------
 
 import pickle
-import socket
 from decimal import Decimal
 from typing import Dict, List, Optional, Union
 
 import pandas as pd
 
-from nautilus_trader.backtest.config import BacktestEngineConfig
 from nautilus_trader.backtest.results import BacktestResult
+from nautilus_trader.config.backtest import BacktestEngineConfig
+from nautilus_trader.config.components import CacheConfig
+from nautilus_trader.config.components import CacheDatabaseConfig
+from nautilus_trader.config.engines import DataEngineConfig
+from nautilus_trader.config.engines import ExecEngineConfig
+from nautilus_trader.config.engines import RiskEngineConfig
+from nautilus_trader.system.kernel import Environment
 
 from cpython.datetime cimport datetime
 from libc.stdint cimport int64_t
@@ -36,7 +41,6 @@ from nautilus_trader.backtest.modules cimport SimulationModule
 from nautilus_trader.cache.base cimport CacheFacade
 from nautilus_trader.common.actor cimport Actor
 from nautilus_trader.common.clock cimport LiveClock
-from nautilus_trader.common.clock cimport TestClock
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.common.logging cimport LoggerAdapter
 from nautilus_trader.common.logging cimport LogLevelParser
@@ -61,15 +65,9 @@ from nautilus_trader.model.instruments.base cimport Instrument
 from nautilus_trader.model.objects cimport Currency
 from nautilus_trader.model.orderbook.data cimport OrderBookData
 from nautilus_trader.portfolio.base cimport PortfolioFacade
-from nautilus_trader.trading.kernel cimport NautilusKernel
+from nautilus_trader.system.kernel cimport NautilusKernel
 from nautilus_trader.trading.strategy cimport TradingStrategy
 from nautilus_trader.trading.trader cimport Trader
-
-from nautilus_trader.cache.config import CacheConfig
-from nautilus_trader.data.config import DataEngineConfig
-from nautilus_trader.execution.config import ExecEngineConfig
-from nautilus_trader.infrastructure.config import CacheDatabaseConfig
-from nautilus_trader.risk.config import RiskEngineConfig
 
 
 cdef class BacktestEngine:
@@ -93,73 +91,58 @@ cdef class BacktestEngine:
             config = BacktestEngineConfig()
         Condition.type(config, BacktestEngineConfig, "config")
 
-        # Setup components
-        self._clock = LiveClock()
-        created_time = self._clock.utc_now()
-
         self._config = config
-        self._exchanges = {}
 
-        # Components
-        clock = TestClock()
-        uuid_factory = UUIDFactory()
-
-        # Identifiers
-        trader_id = TraderId(config.trader_id)
-        machine_id = socket.gethostname()
-        instance_id = uuid_factory.generate()
-
-        self._logger = Logger(
-            clock=LiveClock(),
-            trader_id=trader_id,
-            machine_id=machine_id,
-            instance_id=instance_id,
-        )
-
-        self._log = LoggerAdapter(
-            component_name=type(self).__name__,
-            logger=self._logger,
-        )
-
-        self._test_logger = Logger(
-            clock=self._clock,
-            trader_id=trader_id,
-            machine_id=machine_id,
-            instance_id=instance_id,
-            level_stdout=LogLevelParser.from_str(config.log_level.upper()),
-            bypass=config.bypass_logging,
-        )
-
-        self.kernel = NautilusKernel(
-            name=type(self).__name__,
-            trader_id=trader_id,
-            machine_id=machine_id,
-            instance_id=instance_id,
-            clock=clock,
-            uuid_factory=uuid_factory,
-            logger=self._test_logger,
-            cache_config=config.cache or CacheConfig(),
-            cache_database_config=CacheDatabaseConfig(type="in-memory", flush=True),
-            data_config=config.data_engine or DataEngineConfig(),
-            risk_config=config.risk_engine or RiskEngineConfig(),
-            exec_config=config.exec_engine or ExecEngineConfig(),
-        )
-
-        # Data
-        self._data = []
-        self._data_len = 0
-        self._index = 0
+        # Setup components
+        self._clock = LiveClock()  # Real-time for the engine
+        self._uuid_factory = UUIDFactory()
 
         # Run IDs
         self.run_config_id: Optional[str] = None
         self.run_id: Optional[UUID4] = None
         self.iteration = 0
 
+        # Exchanges and data
+        self._exchanges = {}
+        self._data = []
+        self._data_len = 0
+        self._index = 0
+
         # Timing
         self.run_started: Optional[datetime] = None
         self.run_finished: Optional[datetime] = None
         self.backtest_start: Optional[datetime] = None
         self.backtest_end: Optional[datetime] = None
+
+        # Build core system kernel
+        self.kernel = NautilusKernel(
+            environment=Environment.BACKTEST,
+            name=type(self).__name__,
+            trader_id=TraderId(config.trader_id),
+            cache_config=config.cache or CacheConfig(),
+            cache_database_config=CacheDatabaseConfig(type="in-memory", flush=True),
+            data_config=config.data_engine or DataEngineConfig(),
+            risk_config=config.risk_engine or RiskEngineConfig(),
+            exec_config=config.exec_engine or ExecEngineConfig(),
+            persistence_config=config.persistence,
+            actor_configs=config.actors,
+            strategy_configs=config.strategies,
+            log_level=LogLevelParser.from_str(config.log_level.upper()),
+            bypass_logging=config.bypass_logging,
+        )
+
+        # Setup engine logging
+        self._logger = Logger(
+            clock=LiveClock(),
+            trader_id=self.kernel.trader_id,
+            machine_id=self.kernel.machine_id,
+            instance_id=self.kernel.instance_id,
+        )
+
+        self._log = LoggerAdapter(
+            component_name=type(self).__name__,
+            logger=self._logger,
+        )
 
     @property
     def trader_id(self) -> TraderId:
@@ -644,7 +627,7 @@ cdef class BacktestEngine:
             self._end()
 
         # Change logger clock back to live clock for consistent time stamping
-        self._test_logger.change_clock_c(self._clock)
+        self.kernel.logger.change_clock_c(self._clock)
 
         # Reset DataEngine
         if self.kernel.data_engine.is_running_c():
@@ -865,7 +848,7 @@ cdef class BacktestEngine:
         if self.iteration == 0:
             # Initialize run
             self.run_config_id = run_config_id  # Can be None
-            self.run_id = self.kernel.uuid_factory.generate()
+            self.run_id = self._uuid_factory.generate()
             self.run_started = self._clock.utc_now()
             self.backtest_start = start
             for exchange in self._exchanges.values():
@@ -874,7 +857,7 @@ cdef class BacktestEngine:
             self.kernel.exec_engine.start()
             self.kernel.trader.start()
             # Change logger clock for the run
-            self._test_logger.change_clock_c(self.kernel.clock)
+            self.kernel.logger.change_clock_c(self.kernel.clock)
             self._log_pre_run()
 
         self._log_run(start, end)

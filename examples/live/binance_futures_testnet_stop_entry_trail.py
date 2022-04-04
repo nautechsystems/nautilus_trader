@@ -21,13 +21,13 @@ from nautilus_trader.adapters.binance.config import BinanceDataClientConfig
 from nautilus_trader.adapters.binance.config import BinanceExecClientConfig
 from nautilus_trader.adapters.binance.factories import BinanceLiveDataClientFactory
 from nautilus_trader.adapters.binance.factories import BinanceLiveExecClientFactory
+from nautilus_trader.config.components import CacheDatabaseConfig
+from nautilus_trader.config.live import InstrumentProviderConfig
+from nautilus_trader.config.nodes import TradingNodeConfig
 from nautilus_trader.examples.strategies.ema_cross_stop_entry_trail import EMACrossStopEntryTrail
 from nautilus_trader.examples.strategies.ema_cross_stop_entry_trail import (
     EMACrossStopEntryTrailConfig,
 )
-from nautilus_trader.infrastructure.config import CacheDatabaseConfig
-from nautilus_trader.live.config import InstrumentProviderConfig
-from nautilus_trader.live.config import TradingNodeConfig
 from nautilus_trader.live.node import TradingNode
 
 
@@ -73,7 +73,7 @@ config_node = TradingNodeConfig(
     timeout_reconciliation=5.0,
     timeout_portfolio=5.0,
     timeout_disconnection=5.0,
-    check_residuals_delay=2.0,
+    timeout_post_stop=2.0,
 )
 # Instantiate the node with a configuration
 node = TradingNode(config=config_node)

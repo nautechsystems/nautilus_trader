@@ -34,7 +34,7 @@ Here is an example configuration:
 
 ```python
 from decimal import Decimal
-from nautilus_trader.trading.config import TradingStrategyConfig
+from nautilus_trader.config.components import TradingStrategyConfig
 
 
 class MyStrategy(TradingStrategyConfig):

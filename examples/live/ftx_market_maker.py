@@ -20,11 +20,11 @@ from nautilus_trader.adapters.ftx.config import FTXDataClientConfig
 from nautilus_trader.adapters.ftx.config import FTXExecClientConfig
 from nautilus_trader.adapters.ftx.factories import FTXLiveDataClientFactory
 from nautilus_trader.adapters.ftx.factories import FTXLiveExecClientFactory
+from nautilus_trader.config.components import CacheDatabaseConfig
+from nautilus_trader.config.live import InstrumentProviderConfig
+from nautilus_trader.config.nodes import TradingNodeConfig
 from nautilus_trader.examples.strategies.volatility_market_maker import VolatilityMarketMaker
 from nautilus_trader.examples.strategies.volatility_market_maker import VolatilityMarketMakerConfig
-from nautilus_trader.infrastructure.config import CacheDatabaseConfig
-from nautilus_trader.live.config import InstrumentProviderConfig
-from nautilus_trader.live.config import TradingNodeConfig
 from nautilus_trader.live.node import TradingNode
 
 
@@ -64,7 +64,7 @@ config_node = TradingNodeConfig(
     timeout_reconciliation=5.0,
     timeout_portfolio=5.0,
     timeout_disconnection=5.0,
-    check_residuals_delay=2.0,
+    timeout_post_stop=2.0,
 )
 # Instantiate the node with a configuration
 node = TradingNode(config=config_node)

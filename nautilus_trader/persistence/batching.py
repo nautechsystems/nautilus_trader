@@ -24,7 +24,7 @@ import pyarrow.dataset as ds
 import pyarrow.parquet as pq
 from pyarrow.lib import ArrowInvalid
 
-from nautilus_trader.backtest.config import BacktestDataConfig
+from nautilus_trader.config.backtest import BacktestDataConfig
 from nautilus_trader.persistence.catalog import DataCatalog
 from nautilus_trader.persistence.util import parse_bytes
 from nautilus_trader.serialization.arrow.serializer import ParquetSerializer

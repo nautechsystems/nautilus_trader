@@ -129,7 +129,7 @@ Nautilus has a top-level object `BacktestRunConfig` that allows configuring a ba
 We can start partially configuring the config with just a Venue:
 
 ```python
-from nautilus_trader.backtest.config import BacktestRunConfig, BacktestVenueConfig, BacktestDataConfig, BacktestEngineConfig
+from nautilus_trader.config.backtest import BacktestRunConfig, BacktestVenueConfig, BacktestDataConfig, BacktestEngineConfig
 
 # Create a `base` config object to be shared with all backtests
 base = BacktestRunConfig(
@@ -179,7 +179,7 @@ We can perform a grid-search of some parameters by using the `replace` method, w
 
 ```python
 from decimal import Decimal
-from nautilus_trader.trading.config import ImportableStrategyConfig
+from nautilus_trader.config.components import ImportableStrategyConfig
 from nautilus_trader.examples.strategies.ema_cross import EMACrossConfig
 
 
@@ -223,6 +223,6 @@ Finally, we can create a `BacktestNode` and run the backtest:
 from nautilus_trader.backtest.node import BacktestNode
 node = BacktestNode()
 
-results = node.run_sync(run_configs=configs)
+results = node.run(run_configs=configs)
 pd.DataFrame([r.stats_pnls for r in results])['USD'].apply(pd.Series)
 ```

@@ -12,5 +12,3 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
-
-cpdef bint is_nautilus_class(cls)

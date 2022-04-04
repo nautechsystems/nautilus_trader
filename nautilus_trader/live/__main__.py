@@ -3,7 +3,7 @@ from typing import Optional
 import click
 import fsspec
 
-from nautilus_trader.live.config import TradingNodeConfig
+from nautilus_trader.config.nodes import TradingNodeConfig
 from nautilus_trader.live.node import TradingNode
 
 

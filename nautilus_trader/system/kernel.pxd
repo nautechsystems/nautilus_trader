@@ -19,7 +19,6 @@ from nautilus_trader.cache.base cimport CacheFacade
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.common.logging cimport LoggerAdapter
-from nautilus_trader.common.uuid cimport UUIDFactory
 from nautilus_trader.core.uuid cimport UUID4
 from nautilus_trader.data.engine cimport DataEngine
 from nautilus_trader.execution.engine cimport ExecutionEngine
@@ -31,6 +30,14 @@ from nautilus_trader.trading.trader cimport Trader
 
 
 cdef class NautilusKernel:
+    cdef readonly object environment
+    """The kernels environment context { ``BACKTEST``, ``SANDBOX``, ``LIVE`` }.\n\n:returns: `Environment`"""
+    cdef readonly object loop
+    """The kernels event loop.\n\n:returns: `AbstractEventLoop` or ``None``"""
+    cdef readonly object loop_sig_callback
+    """The kernels signal handling callback.\n\n:returns: `Callable` or ``None``"""
+    cdef readonly object executor
+    """The kernels default executor.\n\n:returns: `ThreadPoolExecutor` or ``None``"""
     cdef readonly str name
     """The kernels name.\n\n:returns: `str`"""
     cdef readonly TraderId trader_id
@@ -43,8 +50,6 @@ cdef class NautilusKernel:
     """The UNIX timestamp (nanoseconds) when the kernel was created.\n\n:returns: `int64`"""
     cdef readonly Clock clock
     """The kernels clock.\n\n:returns: `Clock`"""
-    cdef readonly UUIDFactory uuid_factory
-    """The kernels UUID factory.\n\n:returns: `UUIDFactory`"""
     cdef readonly LoggerAdapter log
     """The kernels logger adapter.\n\n:returns: `LoggerAdapter`"""
     cdef readonly Logger logger
@@ -63,3 +68,5 @@ cdef class NautilusKernel:
     """The kernels execution engine.\n\n:returns: `ExecutionEngine`"""
     cdef readonly Trader trader
     """The kernels trader instance.\n\n:returns: `Trader`"""
+    cdef readonly object persistence_writers
+    """The kernels persistence writers.\n\n:returns: `Any` or ``None``"""

@@ -12,11 +12,19 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+
 import hashlib
 import inspect
 from typing import Dict, Union
 
 import cloudpickle
+
+
+def is_nautilus_class(cls: type) -> bool:
+    """
+    Determine whether a class belongs to `nautilus_trader`.
+    """
+    return cls.__module__.startswith("nautilus_trader.")
 
 
 def freeze_dict(dict_like: Dict):

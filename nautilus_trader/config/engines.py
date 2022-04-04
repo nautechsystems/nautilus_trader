@@ -19,6 +19,14 @@ import pydantic
 from pydantic import ConstrainedStr
 
 
+class DataEngineConfig(pydantic.BaseModel):
+    """
+    Configuration for ``DataEngine`` instances.
+    """
+
+    pass  # No configuration currently
+
+
 class RiskEngineConfig(pydantic.BaseModel):
     """
     Configuration for ``RiskEngine`` instances.
@@ -37,3 +45,19 @@ class RiskEngineConfig(pydantic.BaseModel):
     bypass: bool = False
     max_order_rate: ConstrainedStr = ConstrainedStr("100/00:00:01")
     max_notional_per_order: Dict[str, str] = {}
+
+
+class ExecEngineConfig(pydantic.BaseModel):
+    """
+    Configuration for ``ExecutionEngine`` instances.
+
+    Parameters
+    ----------
+    load_cache : bool, default True
+        If the cache should be loaded on initialization.
+    allow_cash_positions : bool, default False
+        If unleveraged spot cash assets should track positions.
+    """
+
+    load_cache: bool = True
+    allow_cash_positions: bool = False

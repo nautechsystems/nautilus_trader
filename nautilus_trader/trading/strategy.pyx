@@ -27,6 +27,8 @@ attempts to operate without a managing `Trader` instance.
 
 from typing import Optional
 
+from nautilus_trader.config.components import TradingStrategyConfig
+
 from nautilus_trader.cache.base cimport CacheFacade
 from nautilus_trader.common.actor cimport Actor
 from nautilus_trader.common.clock cimport Clock
@@ -66,8 +68,6 @@ from nautilus_trader.model.orders.list cimport OrderList
 from nautilus_trader.model.orders.market cimport MarketOrder
 from nautilus_trader.model.position cimport Position
 from nautilus_trader.msgbus.bus cimport MessageBus
-
-from nautilus_trader.trading.config import TradingStrategyConfig
 
 
 cdef class TradingStrategy(Actor):

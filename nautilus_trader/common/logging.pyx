@@ -21,7 +21,6 @@ import orjson
 import pyarrow
 import pydantic
 import pytz
-import redis
 
 from cpython.datetime cimport timedelta
 
@@ -511,7 +510,7 @@ cdef class LoggerAdapter:
         self.error(f"{msg}\n{ex_string}\n{stack_trace_lines}", annotations=annotations)
 
 
-cpdef void nautilus_header(LoggerAdapter logger, str uvloop_version = None) except *:
+cpdef void nautilus_header(LoggerAdapter logger) except *:
     Condition.not_none(logger, "logger")
     print("")  # New line to begin
     logger.info("\033[36m=================================================================")
@@ -568,9 +567,22 @@ cpdef void nautilus_header(LoggerAdapter logger, str uvloop_version = None) exce
     logger.info(f"pyarrow {pyarrow.__version__}")
     logger.info(f"pydantic {pydantic.__version__}")
     logger.info(f"pytz {pytz.__version__}")  # type: ignore
-    logger.info(f"redis {redis.__version__}")  # type: ignore
-    if uvloop_version:
-        logger.info(f"uvloop {uvloop_version}")
+    try:
+        import redis
+        logger.info(f"redis {redis.__version__}")
+    except ImportError:  # pragma: no cover
+        redis = None
+    try:
+        import hiredis
+        logger.info(f"hiredis {hiredis.__version__}")
+    except ImportError:  # pragma: no cover
+        hiredis = None
+    try:
+        import uvloop
+        logger.info(f"uvloop {uvloop.__version__}")
+    except ImportError:  # pragma: no cover
+        uvloop = None
+
     logger.info("\033[36m=================================================================")
 
 cpdef void log_memory(LoggerAdapter logger) except *:

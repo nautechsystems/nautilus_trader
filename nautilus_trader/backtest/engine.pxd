@@ -19,18 +19,19 @@ from libc.stdint cimport int64_t
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.common.logging cimport LoggerAdapter
+from nautilus_trader.common.uuid cimport UUIDFactory
 from nautilus_trader.core.data cimport Data
 from nautilus_trader.core.uuid cimport UUID4
-from nautilus_trader.trading.kernel cimport NautilusKernel
+from nautilus_trader.system.kernel cimport NautilusKernel
 
 
 cdef class BacktestEngine:
     cdef object _config
     cdef Clock _clock
+    cdef UUIDFactory _uuid_factory
 
     cdef readonly LoggerAdapter _log
     cdef Logger _logger
-    cdef Logger _test_logger
 
     cdef dict _exchanges
     cdef list _data

@@ -20,8 +20,8 @@ import pytest
 
 from nautilus_trader.adapters.betfair.factories import BetfairLiveDataClientFactory
 from nautilus_trader.adapters.betfair.factories import BetfairLiveExecClientFactory
-from nautilus_trader.infrastructure.config import CacheDatabaseConfig
-from nautilus_trader.live.config import TradingNodeConfig
+from nautilus_trader.config.components import CacheDatabaseConfig
+from nautilus_trader.config.nodes import TradingNodeConfig
 from nautilus_trader.live.node import TradingNode
 from nautilus_trader.model.identifiers import StrategyId
 
@@ -48,6 +48,7 @@ class TestTradingNodeConfiguration:
         # Arrange
         raw = json.dumps(
             {
+                "environment": "live",
                 "trader_id": "Test-111",
                 "log_level": "INFO",
                 "exec_engine": {
@@ -77,7 +78,7 @@ class TestTradingNodeConfiguration:
                 "timeout_reconciliation": 5.0,
                 "timeout_portfolio": 5.0,
                 "timeout_disconnection": 5.0,
-                "check_residuals_delay": 2.0,
+                "timeout_post_stop": 2.0,
                 "strategies": [
                     {
                         "strategy_path": "nautilus_trader.examples.strategies.volatility_market_maker:VolatilityMarketMaker",
@@ -142,12 +143,17 @@ class TestTradingNodeOperation:
 
         # TODO(cs): Assert existence of client
 
-    def test_build_with_multiple_clients(self):
+    @pytest.mark.asyncio
+    async def test_build_with_multiple_clients(self):
         # Arrange, # Act
         self.node.add_data_client_factory("BETFAIR", BetfairLiveDataClientFactory)
         self.node.add_exec_client_factory("BETFAIR", BetfairLiveExecClientFactory)
         self.node.build()
 
+        self.node.start()
+        await asyncio.sleep(1)
+
+        # assert self.node.kernel.data_engine.registered_clients
         # TODO(cs): Assert existence of client
 
     @pytest.mark.asyncio
@@ -156,7 +162,7 @@ class TestTradingNodeOperation:
         sink = []
 
         # Act
-        self.node.add_log_sink(sink.append)
+        self.node.kernel.add_log_sink(sink.append)
         self.node.build()
 
         self.node.start()

@@ -19,15 +19,15 @@ from decimal import Decimal
 
 import pytest
 
-from nautilus_trader.backtest.config import BacktestDataConfig
-from nautilus_trader.backtest.config import BacktestRunConfig
-from nautilus_trader.backtest.config import BacktestVenueConfig
 from nautilus_trader.backtest.engine import BacktestEngineConfig
 from nautilus_trader.backtest.node import BacktestNode
+from nautilus_trader.config.backtest import BacktestDataConfig
+from nautilus_trader.config.backtest import BacktestRunConfig
+from nautilus_trader.config.backtest import BacktestVenueConfig
+from nautilus_trader.config.components import ImportableStrategyConfig
 from nautilus_trader.model.data.tick import QuoteTick
 from nautilus_trader.persistence.catalog import DataCatalog
 from nautilus_trader.persistence.util import parse_bytes
-from nautilus_trader.trading.config import ImportableStrategyConfig
 from tests.test_kit.mocks.data import aud_usd_data_loader
 from tests.test_kit.mocks.data import data_catalog_setup
 
@@ -55,13 +55,6 @@ class TestBacktestNode:
             start_time=1580398089820000000,
             end_time=1580504394501000000,
         )
-        self.backtest_configs = [
-            BacktestRunConfig(
-                engine=BacktestEngineConfig(),
-                venues=[self.venue_config],
-                data=[self.data_config],
-            )
-        ]
         self.strategies = [
             ImportableStrategyConfig(
                 strategy_path="nautilus_trader.examples.strategies.ema_cross:EMACross",
@@ -76,8 +69,12 @@ class TestBacktestNode:
                 ),
             )
         ]
-        self.backtest_configs_strategies = [
-            self.backtest_configs[0].replace(strategies=self.strategies)
+        self.backtest_configs = [
+            BacktestRunConfig(
+                engine=BacktestEngineConfig(strategies=self.strategies),
+                venues=[self.venue_config],
+                data=[self.data_config],
+            )
         ]
         aud_usd_data_loader()  # Load sample data
 
@@ -85,12 +82,12 @@ class TestBacktestNode:
         node = BacktestNode()
         assert node
 
-    def test_backtest_run_sync(self):
+    def test_run(self):
         # Arrange
         node = BacktestNode()
 
         # Act
-        results = node.run_sync(run_configs=self.backtest_configs_strategies)
+        results = node.run(run_configs=self.backtest_configs)
 
         # Assert
         assert len(results) == 1
@@ -98,11 +95,15 @@ class TestBacktestNode:
     def test_backtest_run_streaming_sync(self):
         # Arrange
         node = BacktestNode()
-        base = self.backtest_configs[0]
-        config = base.replace(strategies=self.strategies, batch_size_bytes=parse_bytes("10kib"))
+        config = BacktestRunConfig(
+            engine=BacktestEngineConfig(strategies=self.strategies),
+            venues=[self.venue_config],
+            data=[self.data_config],
+            batch_size_bytes=parse_bytes("10kib"),
+        )
 
         # Act
-        results = node.run_sync([config])
+        results = node.run([config])
 
         # Assert
         assert len(results) == 1
@@ -112,12 +113,12 @@ class TestBacktestNode:
         node = BacktestNode()
 
         # Act
-        results = node.run_sync(self.backtest_configs_strategies)
+        results = node.run(self.backtest_configs)
 
         # Assert
         assert isinstance(results, list)
         assert len(results) == 1
-        # assert (  # TODO(cs): string changed
+        # assert (
         #     str(results[0])
         #     == "BacktestResult(trader_id='BACKTESTER-000', machine_id='CJDS-X99-Ubuntu', run_config_id='e7647ae948f030bbd50e0b6cb58f67ae', instance_id='ecdf513e-9b07-47d5-9742-3b984a27bb52', run_id='d4d7a09c-fac7-4240-b80a-fd7a7d8f217c', run_started=1648796370520892000, run_finished=1648796371603767000, backtest_start=1580398089820000000, backtest_end=1580504394500999936, elapsed_time=106304.680999, iterations=100000, total_events=192, total_orders=96, total_positions=48, stats_pnls={'USD': {'PnL': -3634.12, 'PnL%': Decimal('-0.36341200'), 'Max Winner': 2673.19, 'Avg Winner': 530.0907692307693, 'Min Winner': 123.13, 'Min Loser': -16.86, 'Avg Loser': -263.9497142857143, 'Max Loser': -616.84, 'Expectancy': -48.89708333333337, 'Win Rate': 0.2708333333333333}}, stats_returns={'Annual Volatility (Returns)': 0.01191492048585753, 'Average (Return)': -3.3242292920660964e-05, 'Average Loss (Return)': -0.00036466955522398476, 'Average Win (Return)': 0.0007716524869588397, 'Sharpe Ratio': -0.7030729097982443, 'Sortino Ratio': -1.492072178035927, 'Profit Factor': 0.8713073377919724, 'Risk Return Ratio': -0.04428943030649289})"  # noqa
         # )
@@ -171,4 +172,4 @@ class TestBacktestNode:
         node = BacktestNode()
 
         # Assert
-        node.run_sync(run_configs=[config])
+        node.run(run_configs=[config])
