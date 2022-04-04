@@ -979,7 +979,7 @@ python-versions = ">=3.6"
 
 [[package]]
 name = "redis"
-version = "4.2.1"
+version = "4.2.2"
 description = "Python client for Redis database and key-value store"
 category = "main"
 optional = true
@@ -1396,7 +1396,7 @@ redis = ["hiredis", "redis"]
 [metadata]
 lock-version = "1.1"
 python-versions = ">=3.8,<3.11"
-content-hash = "a6435cec022d7d533c4763663fb9ce38ca9d62f54b0d52b9046d7897640f9c40"
+content-hash = "4c7c7e2e70973c6842510ae5198be4367b27ea1b77c7d5e5861acc9999da0054"
 
 [metadata.files]
 aiodns = [
@@ -2406,8 +2406,8 @@ pyyaml = [
     {file = "PyYAML-6.0.tar.gz", hash = "sha256:68fb519c14306fec9720a2a5b45bc9f0c8d1b9c72adf45c37baedfcd949c35a2"},
 ]
 redis = [
-    {file = "redis-4.2.1-py3-none-any.whl", hash = "sha256:69d05fac17bf3f43937afbb775c536eb516bd21355a4f17d59a966f4a531ce71"},
-    {file = "redis-4.2.1.tar.gz", hash = "sha256:fe45513881229dbee610620b9e0817b1f48c47ba635870320fd44a712204bbdd"},
+    {file = "redis-4.2.2-py3-none-any.whl", hash = "sha256:4e95f4ec5f49e636efcf20061a5a9110c20852f607cfca6865c07aaa8a739ee2"},
+    {file = "redis-4.2.2.tar.gz", hash = "sha256:0107dc8e98a4f1d1d4aa00100e044287f77121a1e6d2085545c4b7fa94a7a27f"},
 ]
 requests = [
     {file = "requests-2.27.1-py2.py3-none-any.whl", hash = "sha256:f22fa1e554c9ddfd16e6e41ac79759e17be9e492b3587efa038054674760e72d"},
