@@ -44,7 +44,6 @@ try:
     import redis
 except ImportError:  # pragma: no cover
     redis = None
-    warnings.warn("redis is not available.")
 
 
 cdef str _UTF8 = 'utf-8'
@@ -95,6 +94,9 @@ cdef class RedisCacheDatabase(CacheDatabase):
         Serializer serializer not None,
         config: CacheDatabaseConfig=None,
     ):
+        if redis is None:
+            warnings.warn("redis is not available.")
+
         if config is None:
             config = CacheDatabaseConfig()
         Condition.type(config, CacheDatabaseConfig, "config")
