@@ -24,7 +24,6 @@ import pyarrow.dataset as ds
 import pyarrow.parquet as pq
 from pyarrow import ArrowInvalid
 
-from nautilus_trader.core.inspect import is_nautilus_class
 from nautilus_trader.model.data.bar import Bar
 from nautilus_trader.model.data.base import DataType
 from nautilus_trader.model.data.base import GenericData
@@ -37,6 +36,7 @@ from nautilus_trader.model.orderbook.data import OrderBookData
 from nautilus_trader.persistence.external.metadata import load_mappings
 from nautilus_trader.persistence.streaming import read_feather
 from nautilus_trader.persistence.util import Singleton
+from nautilus_trader.persistence.util import is_nautilus_class
 from nautilus_trader.serialization.arrow.serializer import ParquetSerializer
 from nautilus_trader.serialization.arrow.serializer import list_schemas
 from nautilus_trader.serialization.arrow.util import GENERIC_DATA_PREFIX
