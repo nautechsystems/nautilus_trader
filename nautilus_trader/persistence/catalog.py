@@ -197,7 +197,7 @@ class DataCatalog(metaclass=Singleton):
         as_type: Optional[Dict] = None,
         **kwargs,
     ):
-        if not is_nautilus_class(cls=cls):
+        if not is_nautilus_class(cls):
             # Special handling for generic data
             return self.generic_data(
                 cls=cls,
