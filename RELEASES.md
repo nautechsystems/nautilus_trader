@@ -1,3 +1,18 @@
+# NautilusTrader 1.142.0 Beta
+
+Released on TBC.
+
+### Breaking Changes
+None
+
+### Enhancements
+None
+
+### Fixes
+None
+
+---
+
 # NautilusTrader 1.141.0 Beta
 
 Released on 4th April 2022 (UTC).
