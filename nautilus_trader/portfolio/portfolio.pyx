@@ -542,7 +542,6 @@ cdef class Portfolio(PortfolioFacade):
         Condition.not_none(self._cache, "self._cache")
 
         cdef Account account = self._cache.account_for_venue(venue)
-        # TODO(cs): Assumption that account.id.issuer = venue
         if account is None:
             self._log.error(
                 f"Cannot get account: "

@@ -17,13 +17,6 @@ import gc
 import sys
 
 
-cpdef bint is_nautilus_class(cls):
-    """
-    Determine whether a class belongs to `nautilus_trader`.
-    """
-    return cls.__module__.startswith("nautilus_trader.")
-
-
 def get_size_of(obj):
     """
     Return the bytes size in memory of the given object.

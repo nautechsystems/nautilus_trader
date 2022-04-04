@@ -141,7 +141,7 @@ def parse_order_report_http(
         order_side=OrderSide[data["side"].upper()],
         order_type=parse_order_type(order_type),
         time_in_force=parse_time_in_force(data["timeInForce"].upper()),
-        order_status=TimeInForce(data["status"].upper()),
+        order_status=parse_order_status(data["status"].upper()),
         price=Price.from_str(price) if price is not None else None,
         quantity=Quantity.from_str(data["origQty"]),
         filled_qty=Quantity.from_str(data["executedQty"]),

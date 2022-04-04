@@ -121,12 +121,23 @@ class TestCurrency:
 
         assert result != another_aud
 
-    def test_from_str_given_unknown_code_returns_none(self):
+    def test_from_str_in_strict_mode_given_unknown_code_returns_none(self):
         # Arrange, Act
-        result = Currency.from_str("SOME_CURRENCY")
+        result = Currency.from_str("SOME_CURRENCY", strict=True)
 
         # Assert
         assert result is None
+
+    def test_from_str_not_in_strict_mode_returns_crypto(self):
+        # Arrange, Act
+        result = Currency.from_str("ZXX_EXOTIC", strict=False)
+
+        # Assert
+        assert result.code == "ZXX_EXOTIC"
+        assert result.precision == 8
+        assert result.iso4217 == 0
+        assert result.name == "ZXX_EXOTIC"
+        assert result.currency_type == CurrencyType.CRYPTO
 
     @pytest.mark.parametrize(
         "string, expected",

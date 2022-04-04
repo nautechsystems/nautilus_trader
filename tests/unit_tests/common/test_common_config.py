@@ -17,9 +17,9 @@ import pkgutil
 
 import pytest
 
-from nautilus_trader.common.config import ActorConfig
-from nautilus_trader.common.config import ActorFactory
-from nautilus_trader.common.config import ImportableActorConfig
+from nautilus_trader.config.components import ActorConfig
+from nautilus_trader.config.components import ActorFactory
+from nautilus_trader.config.components import ImportableActorConfig
 from tests.test_kit.mocks.actors import MockActor
 
 
@@ -51,13 +51,14 @@ class TestActorFactory:
             component_id="MyActor",
         )
         importable = ImportableActorConfig(
-            path="tests.test_kit.mocks.actors:MockActor",
+            actor_path="tests.test_kit.mocks.actors:MockActor",
+            config_path="tests.test_kit.mocks.actors:MockActorConfig",
             config=config,
         )
 
         # Act
-        strategy = ActorFactory.create(importable)
+        actor = ActorFactory.create(importable)
 
         # Assert
-        assert isinstance(strategy, MockActor)
+        assert isinstance(actor, MockActor)
         assert repr(config) == "ActorConfig(component_id='MyActor')"

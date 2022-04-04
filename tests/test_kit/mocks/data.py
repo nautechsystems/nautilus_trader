@@ -53,16 +53,16 @@ def data_catalog_setup():
     """
     clear_singleton_instances(DataCatalog)
 
-    os.environ["NAUTILUS_CATALOG"] = "memory:///root/"
+    os.environ["NAUTILUS_PATH"] = "memory:///.nautilus/"
     catalog = DataCatalog.from_env()
     assert isinstance(catalog.fs, MemoryFileSystem)
     try:
         catalog.fs.rm("/", recursive=True)
     except FileNotFoundError:
         pass
-    catalog.fs.mkdir("/root/data")
-    assert catalog.fs.exists("/root/")
-    assert not catalog.fs.ls("/root/data")
+    catalog.fs.mkdir("/.nautilus/catalog/data")
+    assert catalog.fs.exists("/.nautilus/catalog/")
+    assert not catalog.fs.ls("/.nautilus/catalog/data")
 
 
 def aud_usd_data_loader():

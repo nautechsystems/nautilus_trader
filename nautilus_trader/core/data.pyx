@@ -48,7 +48,7 @@ cdef class Data:
     @classmethod
     def fully_qualified_name(cls) -> str:
         """
-        Return the fully qualified name for the data object.
+        Return the fully qualified name for the `Data` class.
 
         Returns
         -------
@@ -59,4 +59,4 @@ cdef class Data:
         https://www.python.org/dev/peps/pep-3155/
 
         """
-        return cls.__module__ + '.' + cls.__qualname__
+        return cls.__module__ + ':' + cls.__qualname__

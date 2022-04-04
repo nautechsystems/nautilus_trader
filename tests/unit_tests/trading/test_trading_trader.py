@@ -22,8 +22,9 @@ from nautilus_trader.backtest.execution_client import BacktestExecClient
 from nautilus_trader.backtest.models import FillModel
 from nautilus_trader.common.actor import Actor
 from nautilus_trader.common.clock import TestClock
-from nautilus_trader.common.config import ActorConfig
 from nautilus_trader.common.logging import Logger
+from nautilus_trader.config.components import ActorConfig
+from nautilus_trader.config.components import TradingStrategyConfig
 from nautilus_trader.data.engine import DataEngine
 from nautilus_trader.execution.engine import ExecutionEngine
 from nautilus_trader.model.currencies import USD
@@ -38,7 +39,6 @@ from nautilus_trader.model.objects import Money
 from nautilus_trader.msgbus.bus import MessageBus
 from nautilus_trader.portfolio.portfolio import Portfolio
 from nautilus_trader.risk.engine import RiskEngine
-from nautilus_trader.trading.config import TradingStrategyConfig
 from nautilus_trader.trading.strategy import TradingStrategy
 from nautilus_trader.trading.trader import Trader
 from tests.test_kit.stubs.component import TestComponentStubs

@@ -80,7 +80,7 @@ from nautilus_trader.msgbus.bus import MessageBus
 
 class BinanceSpotExecutionClient(LiveExecutionClient):
     """
-    Provides an execution client for the `Binance` exchange.
+    Provides an execution client for the `Binance Spot/Margin` exchange.
 
     Parameters
     ----------
@@ -196,6 +196,7 @@ class BinanceSpotExecutionClient(LiveExecutionClient):
 
         self._listen_key = response["listenKey"]
         self._ping_listen_keys_task = self._loop.create_task(self._ping_listen_keys())
+        self._log.info(f"Listen key {self._listen_key}")
 
         # Connect WebSocket client
         self._ws_client.subscribe(key=self._listen_key)
@@ -700,6 +701,10 @@ class BinanceSpotExecutionClient(LiveExecutionClient):
                 self._handle_account_update(data)
             elif msg_type == "executionReport":  # SPOT
                 self._handle_execution_report(data)
+            else:
+                self._log.error(
+                    f"Cannot handle websocket msg: unrecognized type {msg_type}",
+                )
         except Exception as ex:
             self._log.exception(f"Error on handling {repr(msg)}", ex)
 

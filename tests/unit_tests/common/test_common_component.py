@@ -13,12 +13,13 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import pydantic
+from nautilus_trader.common.component import Component
 
 
-class DataEngineConfig(pydantic.BaseModel):
-    """
-    Configuration for ``DataEngine`` instances.
-    """
+class TestCommonComponent:
+    def test_fully_qualified_name_returns_expected(self):
+        # Arrange, Act
+        result = Component.fully_qualified_name()
 
-    pass  # No configuration currently
+        # Assert
+        assert result == "nautilus_trader.common.component:Component"

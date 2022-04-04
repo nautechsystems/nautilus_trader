@@ -15,16 +15,19 @@
 
 from typing import Any, Optional
 
+import numpy as np
 import pandas as pd
-import quantstats
 
 from nautilus_trader.analysis.statistic import PortfolioStatistic
 
 
 class SortinoRatio(PortfolioStatistic):
     """
-    Calculates the Sortino Ratio from returns.
+    Calculates the annualized Sortino Ratio from returns.
     """
 
     def calculate_from_returns(self, returns: pd.Series) -> Optional[Any]:
-        return quantstats.stats.sortino(returns=returns)
+        downside = np.sqrt((returns[returns < 0] ** 2).sum() / len(returns))
+        res = returns.mean() / downside
+
+        return res * np.sqrt(252)

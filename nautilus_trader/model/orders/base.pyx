@@ -592,7 +592,7 @@ cdef class Order:
             raise ValueError(f"invalid OrderSide, was {side}")
 
     @staticmethod
-    cdef OrderSide flatten_side_c(PositionSide side) except *:
+    cdef OrderSide closing_side_c(PositionSide side) except *:
         if side == PositionSide.LONG:
             return OrderSide.SELL
         elif side == PositionSide.SHORT:
@@ -623,14 +623,14 @@ cdef class Order:
         return Order.opposite_side_c(side)
 
     @staticmethod
-    def flatten_side(PositionSide side) -> OrderSide:
+    def closing_side(PositionSide side) -> OrderSide:
         """
-        Return the order side needed to flatten a position from the given side.
+        Return the order side needed to close a position with the given side.
 
         Parameters
         ----------
         side : PositionSide {``LONG``, ``SHORT``}
-            The position side to flatten.
+            The side of the position to close.
 
         Returns
         -------
@@ -642,7 +642,7 @@ cdef class Order:
             If `side` is ``FLAT`` or invalid.
 
         """
-        return Order.flatten_side_c(side)
+        return Order.closing_side_c(side)
 
     cpdef void apply(self, OrderEvent event) except *:
         """

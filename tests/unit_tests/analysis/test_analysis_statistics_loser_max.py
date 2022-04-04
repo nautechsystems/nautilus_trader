@@ -19,6 +19,16 @@ from nautilus_trader.analysis.statistics.loser_max import MaxLoser
 
 
 class TestMaxLoserPortfolioStatistic:
+    def test_name_returns_expected_returns_expected(self):
+        # Arrange
+        stat = MaxLoser()
+
+        # Act
+        result = stat.name
+
+        # Assert
+        assert result == "Max Loser"
+
     def test_calculate_given_empty_series_returns_zero(self):
         # Arrange
         stat = MaxLoser()

@@ -29,7 +29,7 @@ from typing import Optional
 
 import cython
 
-from nautilus_trader.common.config import ActorConfig
+from nautilus_trader.config.components import ActorConfig
 
 from cpython.datetime cimport datetime
 
@@ -65,6 +65,7 @@ from nautilus_trader.model.identifiers cimport TraderId
 from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.model.instruments.base cimport Instrument
 from nautilus_trader.model.orderbook.data cimport OrderBookData
+from nautilus_trader.model.orderbook.data cimport OrderBookSnapshot
 from nautilus_trader.msgbus.bus cimport MessageBus
 
 
@@ -740,7 +741,7 @@ cdef class Actor(Component):
         cdef Subscribe command = Subscribe(
             client_id=client_id,
             venue=instrument_id.venue,
-            data_type=DataType(OrderBook, metadata={
+            data_type=DataType(OrderBookSnapshot, metadata={
                 "instrument_id": instrument_id,
                 "book_type": book_type,
                 "depth": depth,
@@ -1133,7 +1134,7 @@ cdef class Actor(Component):
         cdef Unsubscribe command = Unsubscribe(
             client_id=client_id,
             venue=instrument_id.venue,
-            data_type=DataType(OrderBook, metadata={
+            data_type=DataType(OrderBookSnapshot, metadata={
                 "instrument_id": instrument_id,
                 "interval_ms": interval_ms,
             }),

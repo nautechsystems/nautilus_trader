@@ -29,14 +29,6 @@ class BinanceListenKey(msgspec.Struct):
     listenKey: str
 
 
-class BinanceSpotOrderBook(msgspec.Struct):
-    """HTTP response from `Binance` GET /fapi/v1/depth."""
-
-    lastUpdateId: int
-    bids: List[Tuple[str, str]]
-    asks: List[Tuple[str, str]]
-
-
 class BinanceQuote(msgspec.Struct):
     """HTTP response from `Binance` GET /fapi/v1/ticker/bookTicker."""
 
@@ -157,43 +149,6 @@ class BinanceAggregatedTradeMsg(msgspec.Struct):
 
     stream: str
     data: BinanceAggregatedTradeData
-
-
-class BinanceTradeData(msgspec.Struct):
-    """
-    WebSocket message from `Binance` Aggregate Trade Streams.
-
-    Fields
-    ------
-    - e: Event type
-    - E: Event time
-    - s: Symbol
-    - t: Trade ID
-    - p: Price
-    - q: Quantity
-    - b: Buyer order ID
-    - a: Seller order ID
-    - T: Trade time
-    - m: Is the buyer the market maker?
-    """
-
-    e: str  # Event type
-    E: int  # Event time
-    s: str  # Symbol
-    t: int  # Trade ID
-    p: str  # Price
-    q: str  # Quantity
-    b: int  # Buyer order ID
-    a: int  # Seller order ID
-    T: int  # Trade time
-    m: bool  # Is the buyer the market maker?
-
-
-class BinanceTradeMsg(msgspec.Struct):
-    """WebSocket message."""
-
-    stream: str
-    data: BinanceTradeData
 
 
 class BinanceTickerData(msgspec.Struct):

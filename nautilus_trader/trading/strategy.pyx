@@ -27,6 +27,8 @@ attempts to operate without a managing `Trader` instance.
 
 from typing import Optional
 
+from nautilus_trader.config.components import TradingStrategyConfig
+
 from nautilus_trader.cache.base cimport CacheFacade
 from nautilus_trader.common.actor cimport Actor
 from nautilus_trader.common.clock cimport Clock
@@ -67,8 +69,6 @@ from nautilus_trader.model.orders.market cimport MarketOrder
 from nautilus_trader.model.position cimport Position
 from nautilus_trader.msgbus.bus cimport MessageBus
 
-from nautilus_trader.trading.config import TradingStrategyConfig
-
 
 cdef class TradingStrategy(Actor):
     """
@@ -106,9 +106,9 @@ cdef class TradingStrategy(Actor):
             config = TradingStrategyConfig()
         Condition.type(config, TradingStrategyConfig, "config")
 
-        super().__init__(config)
+        super().__init__()
         # Assign strategy ID after base class initialized
-        component_id = type(self).__name__ if config.component_id is None else config.component_id
+        component_id = type(self).__name__ if config.strategy_id is None else config.strategy_id
         self.id = StrategyId(f"{component_id}-{config.order_id_tag}")
 
         self.oms_type = OMSTypeParser.from_str(str(config.oms_type).upper())
@@ -575,7 +575,7 @@ cdef class TradingStrategy(Actor):
         if price is not None:
             Condition.true(
                 order.type == OrderType.LIMIT or order.type == OrderType.STOP_LIMIT,
-                fail_msg=f"{order.type_string_c()} orders do not have a LIMIT price"
+                fail_msg=f"{order.type_string_c()} orders do not have a limit price"
             )
             if price != order.price:
                 updating = True
@@ -583,7 +583,7 @@ cdef class TradingStrategy(Actor):
         if trigger_price is not None:
             Condition.true(
                 order.type == OrderType.STOP_MARKET or order.type == OrderType.STOP_LIMIT,
-                fail_msg=f"{order.type_string_c()} orders do not have a STOP trigger price"
+                fail_msg=f"{order.type_string_c()} orders do not have a stop trigger price"
             )
             if order.type == OrderType.STOP_LIMIT and order.is_triggered_c():
                 self.log.warning(
@@ -718,9 +718,9 @@ cdef class TradingStrategy(Actor):
 
         self._send_exec_cmd(command)
 
-    cpdef void flatten_position(self, Position position, ClientId client_id=None) except *:
+    cpdef void close_position(self, Position position, ClientId client_id=None) except *:
         """
-        Flatten the given position.
+        Close the given position.
 
         A closing `MarketOrder` for the position will be created, and then sent
         to the `ExecutionEngine` via a `SubmitOrder` command.
@@ -728,7 +728,7 @@ cdef class TradingStrategy(Actor):
         Parameters
         ----------
         position : Position
-            The position to flatten.
+            The position to close.
         client_id : ClientId, optional
             The specific client ID for the command.
             If ``None`` then will be inferred from the venue in the instrument ID.
@@ -741,15 +741,15 @@ cdef class TradingStrategy(Actor):
 
         if position.is_closed_c():
             self.log.warning(
-                f"Cannot flatten position "
+                f"Cannot close position "
                 f"(the position is already closed), {position}."
             )
             return  # Invalid command
 
-        # Create flattening order
+        # Create closing order
         cdef MarketOrder order = self.order_factory.market(
             position.instrument_id,
-            Order.flatten_side_c(position.side),
+            Order.closing_side_c(position.side),
             position.quantity,
         )
 
@@ -772,14 +772,14 @@ cdef class TradingStrategy(Actor):
 
         self._send_exec_cmd(command)
 
-    cpdef void flatten_all_positions(self, InstrumentId instrument_id, ClientId client_id=None) except *:
+    cpdef void close_all_positions(self, InstrumentId instrument_id, ClientId client_id=None) except *:
         """
-        Flatten all positions for the given instrument ID for this strategy.
+        Close all positions for the given instrument ID for this strategy.
 
         Parameters
         ----------
         instrument_id : InstrumentId
-            The instrument for the positions to flatten.
+            The instrument for the positions to close.
         client_id : ClientId, optional
             The specific client ID for the command.
             If ``None`` then will be inferred from the venue in the instrument ID.
@@ -795,15 +795,15 @@ cdef class TradingStrategy(Actor):
         )
 
         if not positions_open:
-            self.log.info("No open positions to flatten.")
+            self.log.info("No open positions to close.")
             return
 
         cdef int count = len(positions_open)
-        self.log.info(f"Flattening {count} open position{'' if count == 1 else 's'}...")
+        self.log.info(f"Closing {count} open position{'' if count == 1 else 's'}...")
 
         cdef Position position
         for position in positions_open:
-            self.flatten_position(position, client_id)
+            self.close_position(position, client_id)
 
 # -- HANDLERS --------------------------------------------------------------------------------------
 

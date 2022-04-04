@@ -218,8 +218,6 @@ class BinanceTicker(Ticker):
         The UNIX timestamp (milliseconds) when the ticker opened.
     close_time_ms : int
         The UNIX timestamp (milliseconds) when the ticker closed.
-    close_time_ms : int
-        The UNIX timestamp (milliseconds) when the ticker closed.
     first_id : int
         The first trade match ID (assigned by the venue) for the ticker.
     last_id : int

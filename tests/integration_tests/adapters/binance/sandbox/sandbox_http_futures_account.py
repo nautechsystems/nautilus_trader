@@ -25,7 +25,7 @@ from nautilus_trader.common.logging import Logger
 
 
 @pytest.mark.asyncio
-async def test_binance_spot_account_http_client():
+async def test_binance_futures_account_http_client():
     loop = asyncio.get_event_loop()
     clock = LiveClock()
 
@@ -56,11 +56,12 @@ async def test_binance_spot_account_http_client():
     #     symbol="ETHUSDT",
     #     side="BUY",
     #     type="MARKET",
-    #     quantity="0.02",
+    #     quantity="0.01",
     #     # stop_price="4200",
     #     # new_client_order_id="O-20211120-021300-001-001-1",
     #     # recv_window=5000,
     # )
+    # print(json.dumps(response, indent=4))
 
     ############################################################################
     # NEW ORDER (LIMIT)
@@ -76,6 +77,7 @@ async def test_binance_spot_account_http_client():
     #     # new_client_order_id="O-20211120-021300-001-001-1",
     #     # recv_window=5000,
     # )
+    # print(json.dumps(response, indent=4))
 
     ############################################################################
     # CANCEL ORDER
@@ -97,13 +99,13 @@ async def test_binance_spot_account_http_client():
     ############################################################################
     # OPEN ORDERS
     ############################################################################
-    orders = await http_account.get_open_orders(symbol="ETHUSDT")
+    orders = await http_account.get_open_orders()
     print(orders)
 
     ############################################################################
     # POSITIONS
     ############################################################################
-    positions = await http_account.get_position_risk(symbol="ETHUSDT")
+    positions = await http_account.get_position_risk()
     print(positions)
 
     await client.disconnect()
