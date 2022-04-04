@@ -38,10 +38,7 @@ impl Quantity {
     }
 
     pub fn from_fixed(fixed: u64, precision: u8) -> Self {
-        Quantity {
-            fixed,
-            precision,
-        }
+        Quantity { fixed, precision }
     }
 
     pub fn new_from_str(input: &str) -> Self {

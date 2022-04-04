@@ -36,10 +36,7 @@ impl Price {
     }
 
     pub fn from_fixed(fixed: i64, precision: u8) -> Self {
-        Price {
-            fixed,
-            precision,
-        }
+        Price { fixed, precision }
     }
 
     pub fn from_str(input: &str) -> Self {

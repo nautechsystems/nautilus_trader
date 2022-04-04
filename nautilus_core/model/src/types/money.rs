@@ -36,10 +36,7 @@ impl Money {
     }
 
     pub fn from_fixed(fixed: i64, currency: Currency) -> Money {
-        Money {
-            fixed,
-            currency,
-        }
+        Money { fixed, currency }
     }
 
     pub fn is_zero(&self) -> bool {
@@ -202,6 +199,8 @@ mod tests {
         let usd = Currency::new("USD", 2, 840, "United States dollar", CurrencyType::FIAT);
         let money = Money::new(1000.0, usd);
 
+        assert_eq!("USD", money.currency.code.as_str());
+        assert_eq!(2, money.currency.precision);
         assert_eq!("1000.00 USD", money.to_string());
     }
 
@@ -211,6 +210,8 @@ mod tests {
 
         let money = Money::new(10.3, btc);
 
+        assert_eq!("BTC", money.currency.code.as_str());
+        assert_eq!(8, money.currency.precision);
         assert_eq!("10.30000000 BTC", money.to_string());
     }
 

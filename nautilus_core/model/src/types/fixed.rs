@@ -35,11 +35,11 @@ pub fn f64_to_fixed_u64(value: f64, precision: u8) -> u64 {
 }
 
 pub fn fixed_i64_to_f64(value: i64) -> f64 {
-    (value as f64) / FIXED_SCALAR
+    (value as f64) * 0.000000001
 }
 
 pub fn fixed_u64_to_f64(value: u64) -> f64 {
-    (value as f64) / FIXED_SCALAR
+    (value as f64) * 0.000000001
 }
 
 #[cfg(test)]
