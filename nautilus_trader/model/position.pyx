@@ -430,7 +430,7 @@ cdef class Position:
 
         # Set quantities
         self.quantity = Quantity(abs(self.net_qty), self.size_precision)
-        if self.quantity.lt(self.peak_qty):
+        if self.quantity.gt(self.peak_qty):
             self.peak_qty = self.quantity
 
         # Set state
