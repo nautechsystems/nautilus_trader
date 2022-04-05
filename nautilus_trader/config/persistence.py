@@ -37,7 +37,6 @@ class PersistenceConfig(pydantic.BaseModel):
     """
 
     catalog_path: str
-    kind: str  # live or backtest
     fs_protocol: Optional[str] = None
     fs_storage_options: Optional[Dict] = None
     persist_logs: bool = False
