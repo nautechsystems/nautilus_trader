@@ -179,6 +179,11 @@ cdef class ExecutionClient(Component):
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
+    cpdef void sync_order_status(self, QueryOrder command) except *:
+        """Abstract method (implement in subclass)."""
+        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
+
+
 # -- EVENT HANDLERS --------------------------------------------------------------------------------
 
     cpdef void generate_account_state(

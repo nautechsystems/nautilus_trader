@@ -46,6 +46,7 @@ from nautilus_trader.core.datetime import millis_to_nanos
 from nautilus_trader.execution.messages import CancelAllOrders
 from nautilus_trader.execution.messages import CancelOrder
 from nautilus_trader.execution.messages import ModifyOrder
+from nautilus_trader.execution.messages import QueryOrder
 from nautilus_trader.execution.messages import SubmitOrder
 from nautilus_trader.execution.messages import SubmitOrderList
 from nautilus_trader.execution.reports import OrderStatusReport
@@ -272,8 +273,6 @@ class BinanceSpotExecutionClient(LiveExecutionClient):
         OrderStatusReport or ``None``
 
         """
-        self._log.warning("Cannot generate OrderStatusReport: not yet implemented.")
-
         try:
             response = await self._http_account.get_order(
                 symbol=instrument_id.symbol.value,
@@ -529,6 +528,12 @@ class BinanceSpotExecutionClient(LiveExecutionClient):
     def modify_order(self, command: ModifyOrder) -> None:
         self._log.error(  # pragma: no cover
             "Cannot modify order: Not supported by the exchange.",
+        )
+
+    def sync_order_status(self, command: QueryOrder) -> None:
+        self._log.debug(f"sync_order_status {command}")
+        self._loop.create_task(
+            self.generate_order_status_report(command.instrument_id, command.venue_order_id)
         )
 
     def cancel_order(self, command: CancelOrder) -> None:

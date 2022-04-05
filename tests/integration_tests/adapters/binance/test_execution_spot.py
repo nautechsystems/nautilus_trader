@@ -126,6 +126,8 @@ class TestBinanceSpotExecutionClient:
             account_type=BinanceAccountType.SPOT,
         )
 
+        self.exec_engine.register_client(self.exec_client)
+
         self.strategy = TradingStrategy()
         self.strategy.register(
             trader_id=self.trader_id,
@@ -394,3 +396,24 @@ class TestBinanceSpotExecutionClient:
         assert request[2]["stopPrice"] == "10099.00"
         assert request[2]["recvWindow"] == "5000"
         assert request[2]["signature"] is not None
+
+    @pytest.mark.asyncio
+    async def test_sync_order_status(self, mocker):
+        # Arrange
+        mock_sync_order_status = mocker.patch(
+            target="nautilus_trader.adapters.binance.spot.execution.BinanceSpotExecutionClient.sync_order_status"
+        )
+
+        order = self.strategy.order_factory.limit(
+            instrument_id=ETHUSDT_BINANCE.id,
+            order_side=OrderSide.BUY,
+            quantity=Quantity.from_int(10),
+            price=Price.from_str("10050.80"),
+        )
+
+        # Act
+        self.strategy.query_order(order)
+        await asyncio.sleep(0.3)
+
+        # Assert
+        assert mock_sync_order_status.called
