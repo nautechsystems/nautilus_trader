@@ -481,7 +481,7 @@ cdef class TradingStrategy(Actor):
             client_id,
         )
 
-        self._send_exec_cmd(command)
+        self._send_risk_cmd(command)
 
     cpdef void submit_order_list(self, OrderList order_list, ClientId client_id=None) except *:
         """
@@ -519,7 +519,7 @@ cdef class TradingStrategy(Actor):
             client_id,
         )
 
-        self._send_exec_cmd(command)
+        self._send_risk_cmd(command)
 
     cpdef void modify_order(
         self,
@@ -635,7 +635,7 @@ cdef class TradingStrategy(Actor):
             client_id,
         )
 
-        self._send_exec_cmd(command)
+        self._send_risk_cmd(command)
 
     cpdef void cancel_order(self, Order order, ClientId client_id=None) except *:
         """
@@ -675,7 +675,7 @@ cdef class TradingStrategy(Actor):
             client_id,
         )
 
-        self._send_exec_cmd(command)
+        self._send_risk_cmd(command)
 
     cpdef void cancel_all_orders(self, InstrumentId instrument_id, ClientId client_id=None) except *:
         """
@@ -717,7 +717,7 @@ cdef class TradingStrategy(Actor):
             client_id,
         )
 
-        self._send_exec_cmd(command)
+        self._send_risk_cmd(command)
 
     cpdef void close_position(self, Position position, ClientId client_id=None) except *:
         """
@@ -771,7 +771,7 @@ cdef class TradingStrategy(Actor):
             client_id,
         )
 
-        self._send_exec_cmd(command)
+        self._send_risk_cmd(command)
 
     cpdef void close_all_positions(self, InstrumentId instrument_id, ClientId client_id=None) except *:
         """
@@ -986,10 +986,12 @@ cdef class TradingStrategy(Actor):
 
 # -- EGRESS ----------------------------------------------------------------------------------------
 
+    cdef void _send_risk_cmd(self, TradingCommand command) except *:
+        if not self.log.is_bypassed:
+            self.log.info(f"{CMD}{SENT} {command}.")
+        self._msgbus.send(endpoint="RiskEngine.execute", msg=command)
+
     cdef void _send_exec_cmd(self, TradingCommand command) except *:
         if not self.log.is_bypassed:
             self.log.info(f"{CMD}{SENT} {command}.")
-        if isinstance(command, QueryOrder):
-            self._msgbus.send(endpoint="ExecEngine.execute", msg=command)
-        else:
-            self._msgbus.send(endpoint="RiskEngine.execute", msg=command)
+        self._msgbus.send(endpoint="ExecEngine.execute", msg=command)
