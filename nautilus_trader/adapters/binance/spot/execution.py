@@ -42,6 +42,7 @@ from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.logging import LogColor
 from nautilus_trader.common.logging import Logger
+from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.core.datetime import millis_to_nanos
 from nautilus_trader.execution.messages import CancelAllOrders
 from nautilus_trader.execution.messages import CancelOrder
@@ -273,6 +274,8 @@ class BinanceSpotExecutionClient(LiveExecutionClient):
         OrderStatusReport or ``None``
 
         """
+        PyCondition.not_none(venue_order_id, "venue_order_id")
+
         try:
             response = await self._http_account.get_order(
                 symbol=instrument_id.symbol.value,
@@ -553,7 +556,10 @@ class BinanceSpotExecutionClient(LiveExecutionClient):
     def sync_order_status(self, command: QueryOrder) -> None:
         self._log.debug(f"sync_order_status {command}")
         self._loop.create_task(
-            self.generate_order_status_report(command.instrument_id, command.venue_order_id)
+            self.generate_order_status_report(
+                instrument_id=command.instrument_id,
+                venue_order_id=command.venue_order_id,
+            )
         )
 
     def cancel_order(self, command: CancelOrder) -> None:
