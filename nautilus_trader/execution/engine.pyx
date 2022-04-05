@@ -521,6 +521,8 @@ cdef class ExecutionEngine(Component):
             self._handle_cancel_order(client, command)
         elif isinstance(command, CancelAllOrders):
             self._handle_cancel_all_orders(client, command)
+        elif isinstance(command, QueryOrder):
+            self._handle_query_order(client, command)
         else:  # pragma: no cover (design-time error)
             self._log.error(f"Cannot handle command: unrecognized {command}.")
 
@@ -548,6 +550,9 @@ cdef class ExecutionEngine(Component):
 
     cdef void _handle_cancel_all_orders(self, ExecutionClient client, CancelAllOrders command) except *:
         client.cancel_all_orders(command)
+
+    cdef void _handle_query_order(self, ExecutionClient client, QueryOrder command) except *:
+        client.sync_order_status(command)
 
 # -- EVENT HANDLERS --------------------------------------------------------------------------------
 

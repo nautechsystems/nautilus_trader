@@ -21,6 +21,7 @@ from nautilus_trader.common.component cimport Component
 from nautilus_trader.execution.messages cimport CancelAllOrders
 from nautilus_trader.execution.messages cimport CancelOrder
 from nautilus_trader.execution.messages cimport ModifyOrder
+from nautilus_trader.execution.messages cimport QueryOrder
 from nautilus_trader.execution.messages cimport SubmitOrder
 from nautilus_trader.execution.messages cimport SubmitOrderList
 from nautilus_trader.execution.reports cimport ExecutionMassStatus
@@ -75,6 +76,8 @@ cdef class ExecutionClient(Component):
     cpdef void modify_order(self, ModifyOrder command) except *
     cpdef void cancel_order(self, CancelOrder command) except *
     cpdef void cancel_all_orders(self, CancelAllOrders command) except *
+    cpdef void sync_order_status(self, QueryOrder command) except *
+
 
 # -- EVENT HANDLERS --------------------------------------------------------------------------------
 

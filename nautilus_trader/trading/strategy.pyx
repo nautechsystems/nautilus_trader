@@ -44,6 +44,7 @@ from nautilus_trader.core.message cimport Event
 from nautilus_trader.execution.messages cimport CancelAllOrders
 from nautilus_trader.execution.messages cimport CancelOrder
 from nautilus_trader.execution.messages cimport ModifyOrder
+from nautilus_trader.execution.messages cimport QueryOrder
 from nautilus_trader.execution.messages cimport SubmitOrder
 from nautilus_trader.execution.messages cimport SubmitOrderList
 from nautilus_trader.indicators.base.indicator cimport Indicator
@@ -480,7 +481,7 @@ cdef class TradingStrategy(Actor):
             client_id,
         )
 
-        self._send_exec_cmd(command)
+        self._send_risk_cmd(command)
 
     cpdef void submit_order_list(self, OrderList order_list, ClientId client_id=None) except *:
         """
@@ -518,7 +519,7 @@ cdef class TradingStrategy(Actor):
             client_id,
         )
 
-        self._send_exec_cmd(command)
+        self._send_risk_cmd(command)
 
     cpdef void modify_order(
         self,
@@ -634,7 +635,7 @@ cdef class TradingStrategy(Actor):
             client_id,
         )
 
-        self._send_exec_cmd(command)
+        self._send_risk_cmd(command)
 
     cpdef void cancel_order(self, Order order, ClientId client_id=None) except *:
         """
@@ -674,7 +675,7 @@ cdef class TradingStrategy(Actor):
             client_id,
         )
 
-        self._send_exec_cmd(command)
+        self._send_risk_cmd(command)
 
     cpdef void cancel_all_orders(self, InstrumentId instrument_id, ClientId client_id=None) except *:
         """
@@ -716,7 +717,7 @@ cdef class TradingStrategy(Actor):
             client_id,
         )
 
-        self._send_exec_cmd(command)
+        self._send_risk_cmd(command)
 
     cpdef void close_position(self, Position position, ClientId client_id=None) except *:
         """
@@ -770,7 +771,7 @@ cdef class TradingStrategy(Actor):
             client_id,
         )
 
-        self._send_exec_cmd(command)
+        self._send_risk_cmd(command)
 
     cpdef void close_all_positions(self, InstrumentId instrument_id, ClientId client_id=None) except *:
         """
@@ -804,6 +805,41 @@ cdef class TradingStrategy(Actor):
         cdef Position position
         for position in positions_open:
             self.close_position(position, client_id)
+
+    cpdef void query_order(self, Order order, ClientId client_id=None) except *:
+        """
+        query the given order with optional routing instructions.
+
+        A `QueryOrder` command will be created and then sent to the
+        `ExecutionEngine`.
+
+        Logs an error if no `VenueOrderId` has been assigned to the order.
+
+        Parameters
+        ----------
+        order : Order
+            The order to query.
+        client_id : ClientId, optional
+            The specific client ID for the command.
+            If ``None`` then will be inferred from the venue in the instrument ID.
+
+        """
+        Condition.not_none(order, "order")
+        Condition.true(self.trader_id is not None, "The strategy has not been registered")
+
+
+        cdef QueryOrder command = QueryOrder(
+            self.trader_id,
+            self.id,
+            order.instrument_id,
+            order.client_order_id,
+            order.venue_order_id,
+            self.uuid_factory.generate(),
+            self.clock.timestamp_ns(),
+            client_id,
+        )
+
+        self._send_exec_cmd(command)
 
 # -- HANDLERS --------------------------------------------------------------------------------------
 
@@ -950,7 +986,12 @@ cdef class TradingStrategy(Actor):
 
 # -- EGRESS ----------------------------------------------------------------------------------------
 
-    cdef void _send_exec_cmd(self, TradingCommand command) except *:
+    cdef void _send_risk_cmd(self, TradingCommand command) except *:
         if not self.log.is_bypassed:
             self.log.info(f"{CMD}{SENT} {command}.")
         self._msgbus.send(endpoint="RiskEngine.execute", msg=command)
+
+    cdef void _send_exec_cmd(self, TradingCommand command) except *:
+        if not self.log.is_bypassed:
+            self.log.info(f"{CMD}{SENT} {command}.")
+        self._msgbus.send(endpoint="ExecEngine.execute", msg=command)

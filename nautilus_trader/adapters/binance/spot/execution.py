@@ -42,10 +42,12 @@ from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.logging import LogColor
 from nautilus_trader.common.logging import Logger
+from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.core.datetime import millis_to_nanos
 from nautilus_trader.execution.messages import CancelAllOrders
 from nautilus_trader.execution.messages import CancelOrder
 from nautilus_trader.execution.messages import ModifyOrder
+from nautilus_trader.execution.messages import QueryOrder
 from nautilus_trader.execution.messages import SubmitOrder
 from nautilus_trader.execution.messages import SubmitOrderList
 from nautilus_trader.execution.reports import OrderStatusReport
@@ -272,7 +274,7 @@ class BinanceSpotExecutionClient(LiveExecutionClient):
         OrderStatusReport or ``None``
 
         """
-        self._log.warning("Cannot generate OrderStatusReport: not yet implemented.")
+        PyCondition.not_none(venue_order_id, "venue_order_id")
 
         try:
             response = await self._http_account.get_order(
@@ -521,23 +523,6 @@ class BinanceSpotExecutionClient(LiveExecutionClient):
             )
             return
 
-        self._loop.create_task(self._submit_order(order))
-
-    def submit_order_list(self, command: SubmitOrderList) -> None:
-        self._loop.create_task(self._submit_order_list(command))
-
-    def modify_order(self, command: ModifyOrder) -> None:
-        self._log.error(  # pragma: no cover
-            "Cannot modify order: Not supported by the exchange.",
-        )
-
-    def cancel_order(self, command: CancelOrder) -> None:
-        self._loop.create_task(self._cancel_order(command))
-
-    def cancel_all_orders(self, command: CancelAllOrders) -> None:
-        self._loop.create_task(self._cancel_all_orders(command))
-
-    async def _submit_order(self, order: Order) -> None:
         self._log.debug(f"Submitting {order}.")
 
         # Generate event here to ensure correct ordering of events
@@ -547,6 +532,53 @@ class BinanceSpotExecutionClient(LiveExecutionClient):
             client_order_id=order.client_order_id,
             ts_event=self._clock.timestamp_ns(),
         )
+
+        self._loop.create_task(self._submit_order(order))
+
+    def submit_order_list(self, command: SubmitOrderList) -> None:
+        self._log.debug("Submitting Order List.")
+
+        for order in command.list:
+            self.generate_order_submitted(
+                strategy_id=order.strategy_id,
+                instrument_id=order.instrument_id,
+                client_order_id=order.client_order_id,
+                ts_event=self._clock.timestamp_ns(),
+            )
+
+        self._loop.create_task(self._submit_order_list(command))
+
+    def modify_order(self, command: ModifyOrder) -> None:
+        self._log.error(  # pragma: no cover
+            "Cannot modify order: Not supported by the exchange.",
+        )
+
+    def sync_order_status(self, command: QueryOrder) -> None:
+        self._log.debug(f"sync_order_status {command}")
+        self._loop.create_task(
+            self.generate_order_status_report(
+                instrument_id=command.instrument_id,
+                venue_order_id=command.venue_order_id,
+            )
+        )
+
+    def cancel_order(self, command: CancelOrder) -> None:
+        self._log.debug(f"Canceling order {command.client_order_id.value}.")
+
+        self.generate_order_pending_cancel(
+            strategy_id=command.strategy_id,
+            instrument_id=command.instrument_id,
+            client_order_id=command.client_order_id,
+            venue_order_id=command.venue_order_id,
+            ts_event=self._clock.timestamp_ns(),
+        )
+
+        self._loop.create_task(self._cancel_order(command))
+
+    def cancel_all_orders(self, command: CancelAllOrders) -> None:
+        self._loop.create_task(self._cancel_all_orders(command))
+
+    async def _submit_order(self, order: Order) -> None:
 
         try:
             if order.type == OrderType.MARKET:
@@ -612,15 +644,6 @@ class BinanceSpotExecutionClient(LiveExecutionClient):
             await self._submit_order(order)
 
     async def _cancel_order(self, command: CancelOrder) -> None:
-        self._log.debug(f"Canceling order {command.client_order_id.value}.")
-
-        self.generate_order_pending_cancel(
-            strategy_id=command.strategy_id,
-            instrument_id=command.instrument_id,
-            client_order_id=command.client_order_id,
-            venue_order_id=command.venue_order_id,
-            ts_event=self._clock.timestamp_ns(),
-        )
 
         try:
             if command.venue_order_id is not None:
