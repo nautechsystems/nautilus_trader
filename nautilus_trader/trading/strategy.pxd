@@ -97,6 +97,7 @@ cdef class TradingStrategy(Actor):
     cpdef void cancel_all_orders(self, InstrumentId instrument_id, ClientId client_id=*) except *
     cpdef void close_position(self, Position position, ClientId client_id=*) except *
     cpdef void close_all_positions(self, InstrumentId instrument_id, ClientId client_id=*) except *
+    cpdef void query_order(self, Order order, ClientId client_id=*) except *
 
 # -- EGRESS ----------------------------------------------------------------------------------------
 

@@ -101,3 +101,15 @@ cdef class CancelAllOrders(TradingCommand):
 
     @staticmethod
     cdef dict to_dict_c(CancelAllOrders obj)
+
+cdef class QueryOrder(TradingCommand):
+    cdef readonly ClientOrderId client_order_id
+    """The client order ID associated with the command.\n\n:returns: `ClientOrderId`"""
+    cdef readonly VenueOrderId venue_order_id
+    """The venue order ID associated with the command.\n\n:returns: `VenueOrderId` or ``None``"""
+
+    @staticmethod
+    cdef QueryOrder from_dict_c(dict values)
+
+    @staticmethod
+    cdef dict to_dict_c(QueryOrder obj)
