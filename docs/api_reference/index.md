@@ -28,30 +28,31 @@ grouped into logical subpackages of cohesive concepts. You can navigate to the d
 for each of these subpackages from the left menu.
 
 ### Core / Low-Level
-- `core`: constants, functions and low-level components used throughout the framework.
-- `common`: common parts for assembling the frameworks various components.
-- `network`: low-level base components for networking clients.
-- `serialization`: serialization base components and serializer implementations.
-- `model`: defines a rich trading domain model.
+- `core`: constants, functions and low-level components used throughout the framework
+- `common`: common parts for assembling the frameworks various components
+- `network`: low-level base components for networking clients
+- `serialization`: serialization base components and serializer implementations
+- `model`: defines a rich trading domain model
 
 ### System Components
-- `accounting`: different account types and account management machinery.
-- `adapters`: integration adapters for the platform including brokers and exchanges.
-- `analysis`: components relating to trading performance statistics and analysis.
-- `cache`: provides common caching infrastructure.
-- `data`: the data stack and data tooling for the platform.
-- `execution`: the execution stack for the platform.
-- `indicators`: a set of efficient indicators and analyzers.
-- `infrastructure`: technology specific infrastructure implementations.
-- `msgbus`: a universal message bus for connecting system components.
-- `persistence`: data storage, cataloging and retrieval, mainly to support backtesting.
-- `portfolio`: portfolio management functionality.
-- `risk`: risk specific components and tooling.
-- `trading`: trading domain specific components and tooling.
+- `accounting`: different account types and account management machinery
+- `adapters`: integration adapters for the platform including brokers and exchanges
+- `analysis`: components relating to trading performance statistics and analysis
+- `cache`: provides common caching infrastructure
+- `data`: the data stack and data tooling for the platform
+- `execution`: the execution stack for the platform
+- `indicators`: a set of efficient indicators and analyzers
+- `infrastructure`: technology specific infrastructure implementations
+- `msgbus`: a universal message bus for connecting system components
+- `persistence`: data storage, cataloging and retrieval, mainly to support backtesting
+- `portfolio`: portfolio management functionality
+- `risk`: risk specific components and tooling
+- `trading`: trading domain specific components and tooling
 
 ### System Implementations
-- `backtest`: backtesting componentry as well as a backtest engine implementation.
-- `live`: live engine and client implementations as well as a node for live trading.
+- `backtest`: backtesting componentry as well as a backtest engine implementation
+- `live`: live engine and client implementations as well as a node for live trading
+- `system`: the core system kernel common between backtest, sandbox and live contexts
 
 ## Errors and Exceptions
 Every attempt has been made to accurately document the possible exceptions which
