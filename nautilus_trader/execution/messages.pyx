@@ -736,6 +736,7 @@ cdef class CancelAllOrders(TradingCommand):
         """
         return CancelAllOrders.to_dict_c(obj)
 
+
 cdef class QueryOrder(TradingCommand):
     """
     Represents a command to query an order.
@@ -840,7 +841,7 @@ cdef class QueryOrder(TradingCommand):
     @staticmethod
     def from_dict(dict values) -> QueryOrder:
         """
-        Return a cancel order command from the given dict values.
+        Return a query order command from the given dict values.
 
         Parameters
         ----------
