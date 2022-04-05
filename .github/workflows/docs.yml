@@ -18,6 +18,7 @@ jobs:
         uses: hecrj/setup-rust-action@v1
         with:
           rust-version: stable
+          components: clippy
 
       # Python setup
       - name: Set up Python environment
