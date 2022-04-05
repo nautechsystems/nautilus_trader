@@ -270,9 +270,15 @@ def write_parquet(
     table = pa.Table.from_pandas(df, schema=schema)
 
     if "basename_template" not in kwargs and "ts_init" in df.columns:
-        kwargs["basename_template"] = (
-            f"{df['ts_init'].min()}-{df['ts_init'].max()}" + "-{i}.parquet"
-        )
+        if "bar_type" in df.columns:
+            suffix = df.iloc[0]["bar_type"].split(".")[1]
+            kwargs["basename_template"] = (
+                f"{df['ts_init'].min()}-{df['ts_init'].max()}" + "-" + suffix + "-{i}.parquet"
+            )
+        else:
+            kwargs["basename_template"] = (
+                f"{df['ts_init'].min()}-{df['ts_init'].max()}" + "-{i}.parquet"
+            )
 
     # Write the actual file
     partitions = (
