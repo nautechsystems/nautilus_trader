@@ -20,6 +20,7 @@ from nautilus_trader.execution.client cimport ExecutionClient
 from nautilus_trader.execution.messages cimport CancelAllOrders
 from nautilus_trader.execution.messages cimport CancelOrder
 from nautilus_trader.execution.messages cimport ModifyOrder
+from nautilus_trader.execution.messages cimport QueryOrder
 from nautilus_trader.execution.messages cimport SubmitOrder
 from nautilus_trader.execution.messages cimport SubmitOrderList
 from nautilus_trader.execution.messages cimport TradingCommand
@@ -89,6 +90,7 @@ cdef class ExecutionEngine(Component):
     cdef void _handle_modify_order(self, ExecutionClient client, ModifyOrder command) except *
     cdef void _handle_cancel_order(self, ExecutionClient client, CancelOrder command) except *
     cdef void _handle_cancel_all_orders(self, ExecutionClient client, CancelAllOrders command) except *
+    cdef void _handle_query_order(self, ExecutionClient client, QueryOrder command) except *
 
 # -- EVENT HANDLERS --------------------------------------------------------------------------------
 
