@@ -35,6 +35,11 @@ SKIP_BUILD_COPY = bool(os.getenv("SKIP_BUILD_COPY", ""))
 ################################################################################
 #  RUST BUILD                                                                  #
 ################################################################################
+if platform.system() == "Windows":
+    # https://docs.microsoft.com/en-US/cpp/error-messages/tool-errors/linker-tools-error-lnk1181?view=msvc-170&viewFallbackFrom=vs-2019
+    target_dir = os.path.join(os.getcwd(), "nautilus_core", "target", "release")
+    os.environ["LIBPATH"] = os.environ["LIBPATH"] + f":{target_dir}"
+
 # Directories with headers to include
 RUST_INCLUDES = glob.glob("nautilus_trader/core/includes")
 RUST_LIB_DIR = "debug" if CARGO_MODE in ("", "debug") else "release"
