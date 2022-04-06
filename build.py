@@ -20,10 +20,6 @@ from setuptools import Distribution
 from setuptools import Extension
 
 
-# Use clang as the default compiler
-os.environ["CC"] = "clang"
-os.environ["LDSHARED"] = "clang -shared"
-
 # The Cargo rustc mode
 CARGO_MODE = os.getenv("CARGO_MODE", "release")  # Release mode by default until there's an issue
 # If DEBUG mode is enabled, include traces necessary for coverage, profiling and skip optimizations
@@ -208,10 +204,8 @@ if __name__ == "__main__":
     # “64-bitness” of the current interpreter, it is more reliable to query the
     # sys.maxsize attribute:
     bits = "64-bit" if sys.maxsize > 2**32 else "32-bit"
-    clang_version = subprocess.check_output(["clang", "--version"])  # noqa
     rustc_version = subprocess.check_output(["rustc", "--version"])  # noqa
     print(f"System: {platform.system()} {bits}")
-    print(f"Clang:  {clang_version.lstrip(b'clang version').decode().split(' ')[0]}")
     print(f"Rust:   {rustc_version.lstrip(b'rustc ').decode()[:-1]}")
     print(f"Python: {platform.python_version()}")
     print(f"Cython: {cython_compiler_version}")
