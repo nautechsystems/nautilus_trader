@@ -38,7 +38,7 @@ SKIP_BUILD_COPY = bool(os.getenv("SKIP_BUILD_COPY", ""))
 # Directories with headers to include
 RUST_INCLUDES = glob.glob("nautilus_trader/core/includes")
 RUST_LIB_DIR = "debug" if CARGO_MODE in ("", "debug") else "release"
-RUST_LIB_EXT = ".a" if platform.system() != "Windows" else ".lib"
+RUST_LIB_EXT = "a" if platform.system() != "Windows" else "lib"
 RUST_LIBS = [
     f"nautilus_core/target/{RUST_LIB_DIR}/libnautilus_core.{RUST_LIB_EXT}",
     f"nautilus_core/target/{RUST_LIB_DIR}/libnautilus_model.{RUST_LIB_EXT}",
