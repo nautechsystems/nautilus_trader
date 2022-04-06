@@ -37,10 +37,11 @@ SKIP_BUILD_COPY = bool(os.getenv("SKIP_BUILD_COPY", ""))
 ################################################################################
 # Directories with headers to include
 RUST_INCLUDES = glob.glob("nautilus_trader/core/includes")
-RUST_LIBS_DIR = "debug" if CARGO_MODE in ("", "debug") else "release"
+RUST_LIB_DIR = "debug" if CARGO_MODE in ("", "debug") else "release"
+RUST_LIB_EXT = ".a" if platform.system() != "Windows" else ".lib"
 RUST_LIBS = [
-    f"nautilus_core/target/{RUST_LIBS_DIR}/libnautilus_core.a",
-    f"nautilus_core/target/{RUST_LIBS_DIR}/libnautilus_model.a",
+    f"nautilus_core/target/{RUST_LIB_DIR}/libnautilus_core.{RUST_LIB_EXT}",
+    f"nautilus_core/target/{RUST_LIB_DIR}/libnautilus_model.{RUST_LIB_EXT}",
 ]
 # Later we can be more selective about which libs are included where - to optimize binary sizes
 
@@ -154,7 +155,7 @@ def _copy_build_dir_to_project(cmd: build_ext) -> None:
         mode |= (mode & 0o444) >> 2
         os.chmod(relative_extension, mode)
 
-    print("Copied all compiled '.so' dynamic library files into source")
+    print("Copied all compiled dynamic library files into source")
 
 
 def build() -> None:
