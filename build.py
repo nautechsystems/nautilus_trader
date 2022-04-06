@@ -20,6 +20,10 @@ from setuptools import Distribution
 from setuptools import Extension
 
 
+# Use clang as the default compiler
+os.environ["CC"] = "clang"
+os.environ["LDSHARED"] = "clang -shared"
+
 # The Cargo rustc mode
 CARGO_MODE = os.getenv("CARGO_MODE", "release")  # Release mode by default until there's an issue
 # If DEBUG mode is enabled, include traces necessary for coverage, profiling and skip optimizations
@@ -38,10 +42,11 @@ SKIP_BUILD_COPY = bool(os.getenv("SKIP_BUILD_COPY", ""))
 # Directories with headers to include
 RUST_INCLUDES = glob.glob("nautilus_trader/core/includes")
 RUST_LIB_DIR = "debug" if CARGO_MODE in ("", "debug") else "release"
+RUST_LIB_PFX = "lib" if platform.system() != "Windows" else ""
 RUST_LIB_EXT = "a" if platform.system() != "Windows" else "lib"
 RUST_LIBS = [
-    f"nautilus_core/target/{RUST_LIB_DIR}/libnautilus_core.{RUST_LIB_EXT}",
-    f"nautilus_core/target/{RUST_LIB_DIR}/libnautilus_model.{RUST_LIB_EXT}",
+    f"nautilus_core/target/{RUST_LIB_DIR}/{RUST_LIB_PFX}nautilus_core.{RUST_LIB_EXT}",
+    f"nautilus_core/target/{RUST_LIB_DIR}/{RUST_LIB_PFX}nautilus_model.{RUST_LIB_EXT}",
 ]
 # Later we can be more selective about which libs are included where - to optimize binary sizes
 
@@ -204,8 +209,10 @@ if __name__ == "__main__":
     # “64-bitness” of the current interpreter, it is more reliable to query the
     # sys.maxsize attribute:
     bits = "64-bit" if sys.maxsize > 2**32 else "32-bit"
+    clang_version = subprocess.check_output(["clang", "--version"])  # noqa
     rustc_version = subprocess.check_output(["rustc", "--version"])  # noqa
     print(f"System: {platform.system()} {bits}")
+    print(f"Clang:  {clang_version.lstrip(b'clang version').decode().split(' ')[0]}")
     print(f"Rust:   {rustc_version.lstrip(b'rustc ').decode()[:-1]}")
     print(f"Python: {platform.python_version()}")
     print(f"Cython: {cython_compiler_version}")
