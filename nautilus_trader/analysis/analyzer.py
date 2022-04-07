@@ -305,7 +305,7 @@ class PortfolioAnalyzer:
         starting = account_balance_starting
         difference = current - starting
 
-        return (difference / starting) * 100
+        return float((difference / starting) * 100)
 
     def get_performance_stats_pnls(self, currency: Currency = None) -> Dict[str, float]:
         """
