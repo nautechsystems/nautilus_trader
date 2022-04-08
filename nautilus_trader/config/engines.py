@@ -22,9 +22,14 @@ from pydantic import ConstrainedStr
 class DataEngineConfig(pydantic.BaseModel):
     """
     Configuration for ``DataEngine`` instances.
+
+    Parameters
+    ----------
+    debug : bool
+        If debug mode is active (will provide extra debug logging).
     """
 
-    pass  # No configuration currently
+    debug: bool = False
 
 
 class RiskEngineConfig(pydantic.BaseModel):
@@ -40,11 +45,14 @@ class RiskEngineConfig(pydantic.BaseModel):
     max_notional_per_order : Dict[str, str]
         The maximum notional value of an order per instrument ID.
         The value should be a valid decimal format.
+    debug : bool
+        If debug mode is active (will provide extra debug logging).
     """
 
     bypass: bool = False
     max_order_rate: ConstrainedStr = ConstrainedStr("100/00:00:01")
     max_notional_per_order: Dict[str, str] = {}
+    debug: bool = False
 
 
 class ExecEngineConfig(pydantic.BaseModel):
@@ -57,7 +65,10 @@ class ExecEngineConfig(pydantic.BaseModel):
         If the cache should be loaded on initialization.
     allow_cash_positions : bool, default False
         If unleveraged spot cash assets should track positions.
+    debug : bool
+        If debug mode is active (will provide extra debug logging).
     """
 
     load_cache: bool = True
     allow_cash_positions: bool = False
+    debug: bool = False

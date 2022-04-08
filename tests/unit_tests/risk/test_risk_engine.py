@@ -89,8 +89,11 @@ class TestRiskEngine:
             logger=self.logger,
         )
 
-        config = ExecEngineConfig()
-        config.allow_cash_positions = True  # Retain original behaviour for now
+        config = ExecEngineConfig(
+            allow_cash_positions=True,  # Retain original behaviour for tests
+            debug=True,
+        )
+
         self.exec_engine = ExecutionEngine(
             msgbus=self.msgbus,
             cache=self.cache,
