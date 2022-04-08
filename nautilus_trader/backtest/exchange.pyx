@@ -1446,6 +1446,14 @@ cdef class SimulatedExchange:
         if not fills:
             return  # No fills
 
+        if not self._log.is_bypassed:
+            self._log.debug(
+                f"Applying fills to {order}, "
+                f"position_id={position_id}, "
+                f"position={position}, "
+                f"fills={fills}.",
+            )
+
         cdef Instrument instrument = self.instruments[order.instrument_id]
 
         cdef Price fill_px
@@ -1531,7 +1539,7 @@ cdef class SimulatedExchange:
 
         self._generate_order_filled(
             order=order,
-            venue_position_id=venue_position_id,
+            venue_position_id=venue_position_id if self.oms_type != OMSType.NETTING else None,
             last_qty=last_qty,
             last_px=last_px,
             quote_currency=instrument.quote_currency,
