@@ -368,9 +368,11 @@ class BinanceSpotDataClient(LiveMarketDataClient):
             )
             return
 
-        if bar_type.spec.aggregation == BarAggregation.SECOND:
+        if bar_type.spec.aggregation in (BarAggregation.MILLISECOND, BarAggregation.SECOND):
             self._log.error(
-                f"Cannot subscribe to {bar_type}: second bars are not aggregated by Binance.",
+                f"Cannot subscribe to {bar_type}: "
+                f"{BarAggregationParser.to_str_py(bar_type.spec.aggregation)} "
+                f"bars are not aggregated by Binance.",
             )
             return
 
@@ -536,9 +538,11 @@ class BinanceSpotDataClient(LiveMarketDataClient):
             )
             return
 
-        if bar_type.spec.aggregation == BarAggregation.SECOND:
+        if bar_type.spec.aggregation in (BarAggregation.MILLISECOND, BarAggregation.SECOND):
             self._log.error(
-                f"Cannot request {bar_type}: second bars are not aggregated by Binance.",
+                f"Cannot request {bar_type}: "
+                f"{BarAggregationParser.to_str_py(bar_type.spec.aggregation)} "
+                f"bars are not aggregated by Binance.",
             )
             return
 

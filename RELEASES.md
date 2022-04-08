@@ -6,7 +6,8 @@ Released on TBC.
 None
 
 ### Enhancements
-None
+- Added support for millisecond bar aggregation
+- Added configurable `debug` mode for engines (with extra debug logging)
 
 ### Fixes
 None
