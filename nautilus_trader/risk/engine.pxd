@@ -46,6 +46,8 @@ cdef class RiskEngine(Component):
     """The current trading state for the engine.\n\n:returns: `TradingState`"""
     cdef readonly bint is_bypassed
     """If the risk engine is completely bypassed..\n\n:returns: `bool`"""
+    cdef readonly bint debug
+    """If debug mode is active (will provide extra debug logging).\n\n:returns: `bool`"""
     cdef readonly int command_count
     """The total count of commands received by the engine.\n\n:returns: `int`"""
     cdef readonly int event_count

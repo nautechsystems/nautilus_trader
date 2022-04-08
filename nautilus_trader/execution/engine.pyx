@@ -137,6 +137,7 @@ cdef class ExecutionEngine(Component):
 
         # Settings
         self.allow_cash_positions = config.allow_cash_positions
+        self.debug = config.debug
 
         # Counters
         self.command_count = 0
@@ -495,7 +496,8 @@ cdef class ExecutionEngine(Component):
 # -- COMMAND HANDLERS ------------------------------------------------------------------------------
 
     cdef void _execute_command(self, TradingCommand command) except *:
-        self._log.debug(f"{RECV}{CMD} {command}.")
+        if self.debug:
+            self._log.debug(f"{RECV}{CMD} {command}.", LogColor.MAGENTA)
         self.command_count += 1
 
         cdef ExecutionClient client = self._clients.get(command.client_id)
@@ -557,7 +559,8 @@ cdef class ExecutionEngine(Component):
 # -- EVENT HANDLERS --------------------------------------------------------------------------------
 
     cdef void _handle_event(self, OrderEvent event) except *:
-        self._log.debug(f"{RECV}{EVT} {event}.")
+        if self.debug:
+            self._log.debug(f"{RECV}{EVT} {event}.", LogColor.MAGENTA)
         self.event_count += 1
 
         # Fetch Order from cache
@@ -640,6 +643,11 @@ cdef class ExecutionEngine(Component):
     cdef void _determine_position_id(self, OrderFilled fill, OMSType oms_type) except *:
         # Fetch ID from cache
         cdef PositionId position_id = self._cache.position_id(fill.client_order_id)
+        if self.debug:
+            self._log.debug(
+                f"Determining position ID for {repr(fill.client_order_id)} = {repr(position_id)}.",
+                LogColor.MAGENTA,
+            )
         if position_id is not None:
             if fill.position_id is not None and fill.position_id != position_id:
                 self._log.error(
