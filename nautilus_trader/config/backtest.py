@@ -22,6 +22,7 @@ from typing import Dict, List, Optional, Union
 import pandas as pd
 import pydantic
 
+from nautilus_trader.config.components import ImportableStrategyConfig
 from nautilus_trader.config.engines import DataEngineConfig
 from nautilus_trader.config.engines import ExecEngineConfig
 from nautilus_trader.config.engines import RiskEngineConfig
@@ -272,6 +273,7 @@ class BacktestRunConfig(Partialable):
     engine: Optional[BacktestEngineConfig] = None
     venues: Optional[List[BacktestVenueConfig]] = None
     data: Optional[List[BacktestDataConfig]] = None
+    strategies: Optional[List[ImportableStrategyConfig]] = None
     batch_size_bytes: Optional[int] = None
 
     @property
@@ -282,7 +284,8 @@ class BacktestRunConfig(Partialable):
     def parse_raw(cls, raw: Union[str, bytes]):
         """Overloaded so that `Partialable` base class is explicitly set"""
         res = cls.__pydantic_model__.parse_raw(raw)  # type: ignore
-        return cls(**{k: getattr(res, k) for k in cls.__dataclass_fields__})  # type: ignore
+        # type: ignore
+        return cls(**{k: getattr(res, k) for k in cls.__dataclass_fields__})
 
 
 def parse_filters_expr(s: str):
