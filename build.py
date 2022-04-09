@@ -38,15 +38,20 @@ SKIP_BUILD_COPY = bool(os.getenv("SKIP_BUILD_COPY", ""))
 if platform.system() == "Windows":
     # https://docs.microsoft.com/en-US/cpp/error-messages/tool-errors/linker-tools-error-lnk1181?view=msvc-170&viewFallbackFrom=vs-2019
     target_dir = os.path.join(os.getcwd(), "nautilus_core", "target", "release")
-    os.environ["LIBPATH"] = os.environ.get("LIBPATH", "") + f":{target_dir}"
+    os.environ["LIBPATH"] = os.environ.get("LIBPATH") + f":{target_dir}"
+    RUST_LIB_PFX = ""
+    RUST_LIB_EXT = "lib"
+else:
+    RUST_LIB_PFX = "lib"
+    RUST_LIB_EXT = "a"
 
 # Directories with headers to include
 RUST_INCLUDES = glob.glob("nautilus_trader/core/includes")
 RUST_LIB_DIR = "debug" if CARGO_MODE in ("", "debug") else "release"
-RUST_LIB_EXT = "a" if platform.system() != "Windows" else "lib"
+
 RUST_LIBS = [
-    f"nautilus_core/target/{RUST_LIB_DIR}/libnautilus_core.{RUST_LIB_EXT}",
-    f"nautilus_core/target/{RUST_LIB_DIR}/libnautilus_model.{RUST_LIB_EXT}",
+    f"nautilus_core/target/{RUST_LIB_DIR}/{RUST_LIB_PFX}nautilus_core.{RUST_LIB_EXT}",
+    f"nautilus_core/target/{RUST_LIB_DIR}/{RUST_LIB_PFX}nautilus_model.{RUST_LIB_EXT}",
 ]
 # Later we can be more selective about which libs are included where - to optimize binary sizes
 
