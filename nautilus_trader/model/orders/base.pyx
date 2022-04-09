@@ -222,6 +222,9 @@ cdef class Order:
     cdef str side_string_c(self):
         return OrderSideParser.to_str(self.side)
 
+    def side_string(self):
+        return self.side_string_c()
+
     cdef str tif_string_c(self):
         return TimeInForceParser.to_str(self.time_in_force)
 
