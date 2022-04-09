@@ -26,6 +26,6 @@ BINANCE_SPOT_VALID_TIF = (
 BINANCE_SPOT_VALID_ORDER_TYPES = (
     OrderType.MARKET,
     OrderType.LIMIT,
-    OrderType.STOP_LIMIT,
     OrderType.LIMIT_IF_TOUCHED,
+    OrderType.STOP_LIMIT,
 )
