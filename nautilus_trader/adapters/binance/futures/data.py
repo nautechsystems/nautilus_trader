@@ -34,6 +34,7 @@ from nautilus_trader.adapters.binance.common.schemas import BinanceDataMsgWrappe
 from nautilus_trader.adapters.binance.common.schemas import BinanceOrderBookMsg
 from nautilus_trader.adapters.binance.common.schemas import BinanceQuoteMsg
 from nautilus_trader.adapters.binance.common.schemas import BinanceTickerMsg
+from nautilus_trader.adapters.binance.common.schemas import BinanceTrade
 from nautilus_trader.adapters.binance.common.types import BinanceBar
 from nautilus_trader.adapters.binance.common.types import BinanceTicker
 from nautilus_trader.adapters.binance.futures.http.market import BinanceFuturesMarketHttpAPI
@@ -551,18 +552,18 @@ class BinanceFuturesDataClient(LiveMarketDataClient):
         limit: int,
         correlation_id: UUID4,
     ) -> None:
-        response: List[Dict[str, Any]] = await self._http_market.trades(
+        response: List[BinanceTrade] = await self._http_market.trades(
             instrument_id.symbol.value,
             limit,
         )
 
         ticks: List[TradeTick] = [
             parse_trade_tick_http(
-                msg=t,
+                trade=trade,
                 instrument_id=instrument_id,
                 ts_init=self._clock.timestamp_ns(),
             )
-            for t in response
+            for trade in response
         ]
 
         self._handle_trade_ticks(instrument_id, ticks, correlation_id)
