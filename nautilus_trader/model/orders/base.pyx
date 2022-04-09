@@ -222,9 +222,6 @@ cdef class Order:
     cdef str side_string_c(self):
         return OrderSideParser.to_str(self.side)
 
-    def side_string(self):
-        return self.side_string_c()
-
     cdef str tif_string_c(self):
         return TimeInForceParser.to_str(self.time_in_force)
 
@@ -309,6 +306,18 @@ cdef class Order:
 
         """
         return self.instrument_id.venue
+
+    @property
+    def side_string(self) -> str:
+        """
+        The orders side as a string.
+
+        Returns
+        -------
+        str
+
+        """
+        return self.side_string_c()
 
     @property
     def status(self):

@@ -93,7 +93,16 @@ cdef class FiniteStateMachine:
     cdef str state_string_c(self):
         return self._state_parser(self.state)
 
-    def state_string(self):
+    @property
+    def state_string(self) -> str:
+        """
+        The current state as a string.
+
+        Returns
+        -------
+        str
+
+        """
         return self.state_string_c()
 
     cpdef void trigger(self, int trigger) except *:
