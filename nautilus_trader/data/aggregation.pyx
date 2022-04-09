@@ -27,6 +27,7 @@ from nautilus_trader.common.logging cimport LoggerAdapter
 from nautilus_trader.common.timer cimport TestTimer
 from nautilus_trader.common.timer cimport TimeEvent
 from nautilus_trader.core.correctness cimport Condition
+from nautilus_trader.core.datetime cimport millis_to_nanos
 from nautilus_trader.core.datetime cimport secs_to_nanos
 from nautilus_trader.model.c_enums.bar_aggregation cimport BarAggregation
 from nautilus_trader.model.c_enums.bar_aggregation cimport BarAggregationParser
@@ -568,7 +569,11 @@ cdef class TimeBarAggregator(BarAggregator):
         cdef int step = self.bar_type.spec.step
 
         cdef datetime start_time
-        if self.bar_type.spec.aggregation == BarAggregation.SECOND:
+        if self.bar_type.spec.aggregation == BarAggregation.MILLISECOND:
+            start_time = now - timedelta(
+                microseconds=(now.microsecond * 1000) % step,
+            )
+        elif self.bar_type.spec.aggregation == BarAggregation.SECOND:
             start_time = now - timedelta(
                 seconds=now.second % step,
                 microseconds=now.microsecond,
@@ -626,7 +631,9 @@ cdef class TimeBarAggregator(BarAggregator):
         cdef BarAggregation aggregation = self.bar_type.spec.aggregation
         cdef int step = self.bar_type.spec.step
 
-        if aggregation == BarAggregation.SECOND:
+        if aggregation == BarAggregation.MILLISECOND:
+            return timedelta(milliseconds=(1 * step))
+        elif aggregation == BarAggregation.SECOND:
             return timedelta(seconds=(1 * step))
         elif aggregation == BarAggregation.MINUTE:
             return timedelta(minutes=(1 * step))
@@ -643,7 +650,9 @@ cdef class TimeBarAggregator(BarAggregator):
         cdef BarAggregation aggregation = self.bar_type.spec.aggregation
         cdef int step = self.bar_type.spec.step
 
-        if aggregation == BarAggregation.SECOND:
+        if aggregation == BarAggregation.MILLISECOND:
+            return millis_to_nanos(step)
+        elif aggregation == BarAggregation.SECOND:
             return secs_to_nanos(step)
         elif aggregation == BarAggregation.MINUTE:
             return secs_to_nanos(step) * 60

@@ -532,7 +532,7 @@ python-versions = ">=3.6"
 
 [[package]]
 name = "msgspec"
-version = "0.5.0"
+version = "0.6.0"
 description = "A fast and friendly JSON/MessagePack library, with optional schema validation"
 category = "main"
 optional = false
@@ -1041,7 +1041,7 @@ python-versions = "*"
 
 [[package]]
 name = "soupsieve"
-version = "2.3.1"
+version = "2.3.2"
 description = "A modern CSS selector implementation for Beautiful Soup."
 category = "dev"
 optional = false
@@ -1396,7 +1396,7 @@ redis = ["hiredis", "redis"]
 [metadata]
 lock-version = "1.1"
 python-versions = ">=3.8,<3.11"
-content-hash = "4c7c7e2e70973c6842510ae5198be4367b27ea1b77c7d5e5861acc9999da0054"
+content-hash = "1dab332a8ac9145b2b7373c59745c1f82184a418127d5931c960df70844dbf76"
 
 [metadata.files]
 aiodns = [
@@ -1977,19 +1977,19 @@ mdurl = [
     {file = "mdurl-0.1.0.tar.gz", hash = "sha256:94873a969008ee48880fb21bad7de0349fef529f3be178969af5817239e9b990"},
 ]
 msgspec = [
-    {file = "msgspec-0.5.0-cp310-cp310-macosx_10_9_x86_64.whl", hash = "sha256:1f0cb6ded70071dee349435362497f463fab90065efc46c3420d96584d85b233"},
-    {file = "msgspec-0.5.0-cp310-cp310-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:8c9fa65ddcc1b18437b00e3bd4941d67271798023e5128e0e2b75a023a723379"},
-    {file = "msgspec-0.5.0-cp310-cp310-musllinux_1_1_x86_64.whl", hash = "sha256:fa35f58bafc2d3f2b606d78058c8eb948e1dbc6f0e60eb52bae57ae5a981a80c"},
-    {file = "msgspec-0.5.0-cp310-cp310-win_amd64.whl", hash = "sha256:6149813a96a1f30b13d79b3cbc13cb86c3afee0bdbe6562ee56ed38783d14243"},
-    {file = "msgspec-0.5.0-cp38-cp38-macosx_10_9_x86_64.whl", hash = "sha256:e36edf09256e54477e74378b39c4ba01ab2dea9753e7539ddfb8befb49d53dae"},
-    {file = "msgspec-0.5.0-cp38-cp38-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:c3b671b32b15c401b2f6684e12677956c4617491a5f12ab49acd25456d82c0a6"},
-    {file = "msgspec-0.5.0-cp38-cp38-musllinux_1_1_x86_64.whl", hash = "sha256:6bda286fb9f4fbaeed7a46a1f6280a50e47b80efe67adaa68d6fde67aa588524"},
-    {file = "msgspec-0.5.0-cp38-cp38-win_amd64.whl", hash = "sha256:9a0f483c7bdabe880d758ecaa816d24fecbd763aaef951156ed22f9b35998a47"},
-    {file = "msgspec-0.5.0-cp39-cp39-macosx_10_9_x86_64.whl", hash = "sha256:3fca19f575b67f035c6a3c264d47fcea12799313b4fae479008dc1723b1327b5"},
-    {file = "msgspec-0.5.0-cp39-cp39-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:78c60ba92fa1bf426c1cde099e6222750406a0caaf5c9d127a396b5802b6a79b"},
-    {file = "msgspec-0.5.0-cp39-cp39-musllinux_1_1_x86_64.whl", hash = "sha256:2bb3b44fd81d7ea792a91f55d48122acd4fd451003ab39e261a19521861ea1ab"},
-    {file = "msgspec-0.5.0-cp39-cp39-win_amd64.whl", hash = "sha256:1549c478e7bf40fe9664a24fd06517b8f323752bf7cd67d2f65f19870caf208d"},
-    {file = "msgspec-0.5.0.tar.gz", hash = "sha256:f6ca133b6ff16927d627de2f8782649c81c5b4570c1d40a49eb19ee02a7d2016"},
+    {file = "msgspec-0.6.0-cp310-cp310-macosx_10_9_x86_64.whl", hash = "sha256:b12e831cc54b26d19b8f22935c85b475bc8d1fc03f7333da54c9f9ced950b6d8"},
+    {file = "msgspec-0.6.0-cp310-cp310-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:388cd4036b79cd718a635999f9482f8a95b7ec8481ece848079b55f84aa61395"},
+    {file = "msgspec-0.6.0-cp310-cp310-musllinux_1_1_x86_64.whl", hash = "sha256:d86573b780e43c0d05f65bcffd683ee1c43b79cace3d0528f73f7c808800fabb"},
+    {file = "msgspec-0.6.0-cp310-cp310-win_amd64.whl", hash = "sha256:141240ba69556eba7adc085dd653178c5679af80979695434174b9b7df46ad10"},
+    {file = "msgspec-0.6.0-cp38-cp38-macosx_10_9_x86_64.whl", hash = "sha256:411e594c1388cc978d6bba5f636d0f7f6c18b8813f0c9199c95bd17db3b4d63c"},
+    {file = "msgspec-0.6.0-cp38-cp38-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:a3d8dcbc3ad69f741637fb6c69b09d7c4b44a95ca388da91220446525988c5da"},
+    {file = "msgspec-0.6.0-cp38-cp38-musllinux_1_1_x86_64.whl", hash = "sha256:25e8359c7725826deb8fad3340fc206f017fd041245d0633fb257fd47fc99199"},
+    {file = "msgspec-0.6.0-cp38-cp38-win_amd64.whl", hash = "sha256:7b2fbbb71ae7420dd3b81c217434fe89065bdcb14e8c885b3e1d2bf401b0b7a0"},
+    {file = "msgspec-0.6.0-cp39-cp39-macosx_10_9_x86_64.whl", hash = "sha256:559f749bbbf691c708bed998be472eea994cad1e846bbc9a68f19af8d7179041"},
+    {file = "msgspec-0.6.0-cp39-cp39-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:5ef7ef54494183ddef8ac4e21eb3fc6d7fbcdc7b56d6a19414e51a672bdaa3e6"},
+    {file = "msgspec-0.6.0-cp39-cp39-musllinux_1_1_x86_64.whl", hash = "sha256:3b8ff0237bb81b48ed680749043a969fa56ff06c13120944d2f4432fb3af4888"},
+    {file = "msgspec-0.6.0-cp39-cp39-win_amd64.whl", hash = "sha256:ea0f848255520cc3695ba9c174645c64233a6e0195240f00399d4c0ea5888b34"},
+    {file = "msgspec-0.6.0.tar.gz", hash = "sha256:27c9615be6a32898d95ba0c7b17251ee4c2d9f5fe51b61b4e1086cf6e017bec1"},
 ]
 multidict = [
     {file = "multidict-6.0.2-cp310-cp310-macosx_10_9_universal2.whl", hash = "sha256:0b9e95a740109c6047602f4db4da9949e6c5945cefbad34a1299775ddc9a62e2"},
@@ -2447,8 +2447,8 @@ snowballstemmer = [
     {file = "snowballstemmer-2.2.0.tar.gz", hash = "sha256:09b16deb8547d3412ad7b590689584cd0fe25ec8db3be37788be3810cbf19cb1"},
 ]
 soupsieve = [
-    {file = "soupsieve-2.3.1-py3-none-any.whl", hash = "sha256:1a3cca2617c6b38c0343ed661b1fa5de5637f257d4fe22bd9f1338010a1efefb"},
-    {file = "soupsieve-2.3.1.tar.gz", hash = "sha256:b8d49b1cd4f037c7082a9683dfa1801aa2597fb11c3a1155b7a5b94829b4f1f9"},
+    {file = "soupsieve-2.3.2-py3-none-any.whl", hash = "sha256:a714129d3021ec17ce5be346b1007300558b378332c289a1a20e7d4de6ff18a5"},
+    {file = "soupsieve-2.3.2.tar.gz", hash = "sha256:0bcc6d7432153063e3df09c3ac9442af3eba488715bfcad6a4c38ccb2a523124"},
 ]
 sphinx = [
     {file = "Sphinx-4.5.0-py3-none-any.whl", hash = "sha256:ebf612653238bcc8f4359627a9b7ce44ede6fdd75d9d30f68255c7383d3a6226"},

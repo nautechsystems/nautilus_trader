@@ -306,6 +306,18 @@ cdef class Order:
         return self.instrument_id.venue
 
     @property
+    def side_string(self) -> str:
+        """
+        The orders side as a string.
+
+        Returns
+        -------
+        str
+
+        """
+        return self.side_string_c()
+
+    @property
     def status(self):
         """
         The orders current status.

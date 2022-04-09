@@ -115,7 +115,7 @@ class TestExecutionEngine:
             logger=self.logger,
         )
 
-        config = ExecEngineConfig()
+        config = ExecEngineConfig(debug=True)
         config.allow_cash_positions = True  # Retain original behaviour for now
         self.exec_engine = ExecutionEngine(
             msgbus=self.msgbus,

@@ -12,29 +12,3 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
-
-
-cpdef enum BarAggregation:
-    TICK = 1
-    TICK_IMBALANCE = 2
-    TICK_RUNS = 3
-    VOLUME = 4
-    VOLUME_IMBALANCE = 5
-    VOLUME_RUNS = 6
-    VALUE = 7
-    VALUE_IMBALANCE = 8
-    VALUE_RUNS = 9
-    MILLISECOND = 10
-    SECOND = 11
-    MINUTE = 12
-    HOUR = 13
-    DAY = 14
-
-
-cdef class BarAggregationParser:
-
-    @staticmethod
-    cdef str to_str(int value)
-
-    @staticmethod
-    cdef BarAggregation from_str(str value) except *

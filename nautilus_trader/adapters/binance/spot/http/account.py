@@ -15,11 +15,13 @@
 
 from typing import Any, Dict, List, Optional
 
+import msgspec
 import orjson
 
 from nautilus_trader.adapters.binance.common.functions import format_symbol
 from nautilus_trader.adapters.binance.http.client import BinanceHttpClient
 from nautilus_trader.adapters.binance.http.enums import NewOrderRespType
+from nautilus_trader.adapters.binance.spot.schemas.account import BinanceSpotAccountInfo
 
 
 class BinanceSpotAccountHttpAPI:
@@ -36,6 +38,9 @@ class BinanceSpotAccountHttpAPI:
 
     def __init__(self, client: BinanceHttpClient):
         self.client = client
+
+        # Decoders
+        self._decoder_account_info = msgspec.json.Decoder(BinanceSpotAccountInfo)
 
     async def new_order_test(
         self,
@@ -761,7 +766,7 @@ class BinanceSpotAccountHttpAPI:
 
         return orjson.loads(raw)
 
-    async def account(self, recv_window: Optional[int] = None) -> Dict[str, Any]:
+    async def account(self, recv_window: Optional[int] = None) -> BinanceSpotAccountInfo:
         """
         Get current account information.
 
@@ -775,7 +780,7 @@ class BinanceSpotAccountHttpAPI:
 
         Returns
         -------
-        dict[str, Any]
+        BinanceSpotAccountInfo
 
         References
         ----------
@@ -792,7 +797,7 @@ class BinanceSpotAccountHttpAPI:
             payload=payload,
         )
 
-        return orjson.loads(raw)
+        return self._decoder_account_info.decode(raw)
 
     async def get_account_trades(
         self,

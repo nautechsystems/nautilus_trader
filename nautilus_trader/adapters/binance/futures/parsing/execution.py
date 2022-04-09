@@ -15,7 +15,7 @@
 
 from decimal import Decimal
 
-from nautilus_trader.adapters.binance.futures.enums import BinanceFuturesOrderStatus
+from nautilus_trader.adapters.binance.common.enums import BinanceOrderStatus
 from nautilus_trader.adapters.binance.futures.enums import BinanceFuturesOrderType
 from nautilus_trader.adapters.binance.futures.enums import BinanceFuturesTimeInForce
 from nautilus_trader.adapters.binance.futures.enums import BinanceFuturesWorkingType
@@ -48,21 +48,21 @@ from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.orderbook.data import Order
 
 
-def binance_order_type(order: Order) -> str:
+def binance_order_type(order: Order) -> BinanceFuturesOrderType:
     if order.type == OrderType.MARKET:
-        return "MARKET"
+        return BinanceFuturesOrderType.MARKET
     elif order.type == OrderType.LIMIT:
-        return "LIMIT"
+        return BinanceFuturesOrderType.LIMIT
     elif order.type == OrderType.STOP_MARKET:
-        return "STOP_MARKET"
+        return BinanceFuturesOrderType.STOP_MARKET
     elif order.type == OrderType.STOP_LIMIT:
-        return "STOP"
+        return BinanceFuturesOrderType.STOP
     elif order.type == OrderType.MARKET_IF_TOUCHED:
-        return "TAKE_PROFIT_MARKET"
+        return BinanceFuturesOrderType.TAKE_PROFIT_MARKET
     elif order.type == OrderType.LIMIT_IF_TOUCHED:
-        return "TAKE_PROFIT"
+        return BinanceFuturesOrderType.TAKE_PROFIT
     elif order.type == OrderType.TRAILING_STOP_MARKET:
-        return "TRAILING_STOP_MARKET"
+        return BinanceFuturesOrderType.TRAILING_STOP_MARKET
     else:  # pragma: no cover (design-time error)
         raise RuntimeError("invalid order type")
 
@@ -80,20 +80,20 @@ def parse_order_type(order_type: BinanceFuturesOrderType) -> OrderType:
         return OrderType[order_type.value]
 
 
-def parse_order_status(status: BinanceFuturesOrderStatus) -> OrderStatus:
-    if status == BinanceFuturesOrderStatus.NEW:
+def parse_order_status(status: BinanceOrderStatus) -> OrderStatus:
+    if status == BinanceOrderStatus.NEW:
         return OrderStatus.ACCEPTED
-    elif status == BinanceFuturesOrderStatus.CANCELED:
+    elif status == BinanceOrderStatus.CANCELED:
         return OrderStatus.CANCELED
-    elif status == BinanceFuturesOrderStatus.PARTIALLY_FILLED:
+    elif status == BinanceOrderStatus.PARTIALLY_FILLED:
         return OrderStatus.PARTIALLY_FILLED
-    elif status == BinanceFuturesOrderStatus.FILLED:
+    elif status == BinanceOrderStatus.FILLED:
         return OrderStatus.FILLED
-    elif status == BinanceFuturesOrderStatus.NEW_ADL:
+    elif status == BinanceOrderStatus.NEW_ADL:
         return OrderStatus.FILLED
-    elif status == BinanceFuturesOrderStatus.NEW_INSURANCE:
+    elif status == BinanceOrderStatus.NEW_INSURANCE:
         return OrderStatus.FILLED
-    elif status == BinanceFuturesOrderStatus.EXPIRED:
+    elif status == BinanceOrderStatus.EXPIRED:
         return OrderStatus.EXPIRED
     else:  # pragma: no cover (design-time error)
         raise RuntimeError(f"unrecognized order status, was {status}")

@@ -18,7 +18,7 @@ from typing import List, Optional
 import msgspec
 
 from nautilus_trader.adapters.binance.common.enums import BinanceOrderSide
-from nautilus_trader.adapters.binance.futures.enums import BinanceFuturesOrderStatus
+from nautilus_trader.adapters.binance.common.enums import BinanceOrderStatus
 from nautilus_trader.adapters.binance.futures.enums import BinanceFuturesOrderType
 from nautilus_trader.adapters.binance.futures.enums import BinanceFuturesPositionSide
 from nautilus_trader.adapters.binance.futures.enums import BinanceFuturesWorkingType
@@ -96,7 +96,7 @@ class BinanceFuturesOrder(msgspec.Struct):
     reduceOnly: bool
     side: str
     positionSide: str
-    status: BinanceFuturesOrderStatus
+    status: BinanceOrderStatus
     stopPrice: str
     closePosition: bool
     symbol: str
