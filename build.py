@@ -33,7 +33,7 @@ SKIP_BUILD_COPY = bool(os.getenv("SKIP_BUILD_COPY", ""))
 
 
 ################################################################################
-#  RUST BUILD                                                                  #
+#  RUST BUILD
 ################################################################################
 if platform.system() == "Windows":
     # https://docs.microsoft.com/en-US/cpp/error-messages/tool-errors/linker-tools-error-lnk1181?view=msvc-170&viewFallbackFrom=vs-2019
@@ -41,32 +41,38 @@ if platform.system() == "Windows":
     os.environ["LIBPATH"] = os.environ.get("LIBPATH", "") + f":{target_dir}"
     RUST_LIB_PFX = ""
     RUST_LIB_EXT = "lib"
+    TARGET_DIR = "x86_64-pc-windows-msvc/"
 else:
     RUST_LIB_PFX = "lib"
     RUST_LIB_EXT = "a"
+    TARGET_DIR = ""
 
 # Directories with headers to include
 RUST_INCLUDES = glob.glob("nautilus_trader/core/includes")
 RUST_LIB_DIR = "debug" if CARGO_MODE in ("", "debug") else "release"
 
 RUST_LIBS = [
-    f"nautilus_core/target/{RUST_LIB_DIR}/{RUST_LIB_PFX}nautilus_core.{RUST_LIB_EXT}",
-    f"nautilus_core/target/{RUST_LIB_DIR}/{RUST_LIB_PFX}nautilus_model.{RUST_LIB_EXT}",
+    f"nautilus_core/target/{TARGET_DIR}{RUST_LIB_DIR}/{RUST_LIB_PFX}nautilus_core.{RUST_LIB_EXT}",
+    f"nautilus_core/target/{TARGET_DIR}{RUST_LIB_DIR}/{RUST_LIB_PFX}nautilus_model.{RUST_LIB_EXT}",
 ]
 # Later we can be more selective about which libs are included where - to optimize binary sizes
 
 
 def _build_rust_libs() -> None:
+    extra_flags = ""
+    if platform.system() == "Windows":
+        extra_flags = " --target x86_64-pc-windows-msvc"
+
     build_option = " --release" if CARGO_MODE == "release" else ""
     # Build the Rust libraries using Cargo
     print("Compiling Rust libraries...")
-    build_cmd = f"(cd nautilus_core && cargo build{build_option})"
+    build_cmd = f"(cd nautilus_core && cargo build{build_option}{extra_flags})"
     print(build_cmd)
     os.system(build_cmd)  # noqa
 
 
 ################################################################################
-#  CYTHON BUILD                                                                #
+#  CYTHON BUILD
 ################################################################################
 # https://cython.readthedocs.io/en/latest/src/userguide/source_files_and_compilation.html
 
