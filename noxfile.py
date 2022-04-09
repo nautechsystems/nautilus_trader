@@ -89,7 +89,7 @@ def _setup_poetry(session: Session, *args, **kwargs) -> None:
     # Install poetry, then install the project (with its dependencies)
     session.install("poetry")
     session.run("poetry", "install", *args, **kwargs)
-    print(os.listdir(os.path.join("nautilus_core", "target")))
+    print(os.listdir(os.path.join("nautilus_core", "target", "release")))
 
 
 def _run_pytest(session: Session, *args, parallel: bool = False) -> None:
