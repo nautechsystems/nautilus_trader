@@ -17,10 +17,10 @@ from typing import List, Optional
 
 import msgspec
 
+from nautilus_trader.adapters.binance.common.enums import BinanceExecutionType
 from nautilus_trader.adapters.binance.common.enums import BinanceOrderSide
+from nautilus_trader.adapters.binance.common.enums import BinanceOrderStatus
 from nautilus_trader.adapters.binance.futures.enums import BinanceFuturesEventType
-from nautilus_trader.adapters.binance.futures.enums import BinanceFuturesExecutionType
-from nautilus_trader.adapters.binance.futures.enums import BinanceFuturesOrderStatus
 from nautilus_trader.adapters.binance.futures.enums import BinanceFuturesOrderType
 from nautilus_trader.adapters.binance.futures.enums import BinanceFuturesPositionSide
 from nautilus_trader.adapters.binance.futures.enums import BinanceFuturesPositionUpdateReason
@@ -136,8 +136,8 @@ class BinanceFuturesOrderData(msgspec.Struct):
     p: str  # Original Price
     ap: str  # Average Price
     sp: Optional[str] = None  # Stop Price. Please ignore with TRAILING_STOP_MARKET order
-    x: BinanceFuturesExecutionType
-    X: BinanceFuturesOrderStatus
+    x: BinanceExecutionType
+    X: BinanceOrderStatus
     i: int  # Order ID
     l: str  # Order Last Filled Quantity
     z: str  # Order Filled Accumulated Quantity

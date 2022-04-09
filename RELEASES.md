@@ -6,6 +6,7 @@ Released on TBC.
 None
 
 ### Enhancements
+- Added Binance Spot/Margin external order handling
 - Added support for millisecond bar aggregation
 - Added configurable `debug` mode for engines (with extra debug logging)
 

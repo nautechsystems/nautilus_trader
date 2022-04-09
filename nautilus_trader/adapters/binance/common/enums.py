@@ -100,3 +100,30 @@ class BinanceOrderSide(Enum):
 
     BUY = "BUY"
     SELL = "SELL"
+
+
+@unique
+class BinanceExecutionType(Enum):
+    """Represents a `Binance` execution type."""
+
+    NEW = "NEW"
+    CANCELED = "CANCELED"
+    CALCULATED = "CALCULATED"  # Liquidation Execution
+    REJECTED = "REJECTED"
+    TRADE = "TRADE"
+    EXPIRED = "EXPIRED"
+
+
+@unique
+class BinanceOrderStatus(Enum):
+    """Represents a `Binance` order status."""
+
+    NEW = "NEW"
+    PARTIALLY_FILLED = "PARTIALLY_FILLED"
+    FILLED = "FILLED"
+    CANCELED = "CANCELED"
+    PENDING_CANCEL = "PENDING_CANCEL"
+    REJECTED = "REJECTED"
+    EXPIRED = "EXPIRED"
+    NEW_INSURANCE = "NEW_INSURANCE"  # Liquidation with Insurance Fund
+    NEW_ADL = "NEW_ADL"  # Counterparty Liquidation
