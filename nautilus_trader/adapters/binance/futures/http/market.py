@@ -21,6 +21,7 @@ import orjson
 from nautilus_trader.adapters.binance.common.enums import BinanceAccountType
 from nautilus_trader.adapters.binance.common.functions import convert_symbols_list_to_json_array
 from nautilus_trader.adapters.binance.common.functions import format_symbol
+from nautilus_trader.adapters.binance.common.schemas import BinanceTrade
 from nautilus_trader.adapters.binance.futures.schemas.market import BinanceFuturesExchangeInfo
 from nautilus_trader.adapters.binance.http.client import BinanceHttpClient
 from nautilus_trader.core.correctness import PyCondition
@@ -54,6 +55,7 @@ class BinanceFuturesMarketHttpAPI:
             raise RuntimeError(f"invalid Binance Futures account type, was {account_type}")
 
         self._decoder_exchange_info = msgspec.json.Decoder(BinanceFuturesExchangeInfo)
+        self._decoder_trades = msgspec.json.Decoder(List[BinanceTrade])
 
     async def ping(self) -> Dict[str, Any]:
         """
@@ -170,7 +172,7 @@ class BinanceFuturesMarketHttpAPI:
 
         return orjson.loads(raw)
 
-    async def trades(self, symbol: str, limit: Optional[int] = None) -> List[Dict[str, Any]]:
+    async def trades(self, symbol: str, limit: Optional[int] = None) -> List[BinanceTrade]:
         """
         Get recent market trades.
 
@@ -186,7 +188,7 @@ class BinanceFuturesMarketHttpAPI:
 
         Returns
         -------
-        list[dict[str, Any]]
+        List[BinanceTrade]
 
         References
         ----------
@@ -202,7 +204,7 @@ class BinanceFuturesMarketHttpAPI:
             payload=payload,
         )
 
-        return orjson.loads(raw)
+        return self._decoder_trades.decode(raw)
 
     async def historical_trades(
         self,

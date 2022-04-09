@@ -49,6 +49,7 @@ class BinanceTrade(msgspec.Struct):
     quoteQty: str
     time: int
     isBuyerMaker: bool
+    isBestMatch: Optional[bool] = True
 
 
 class BinanceTicker(msgspec.Struct):
