@@ -42,7 +42,7 @@ config_node = TradingNodeConfig(
     exec_engine={
         "reconciliation_lookback_mins": 1440,
     },
-    cache_database=CacheDatabaseConfig(type="redis"),
+    cache_database=CacheDatabaseConfig(type="in-memory"),
     data_clients={
         "BINANCE": BinanceDataClientConfig(
             api_key=None,  # "YOUR_BINANCE_TESTNET_API_KEY"
