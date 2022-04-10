@@ -22,6 +22,7 @@ import numpy as np
 import pandas as pd
 from ib_insync import Contract
 from ib_insync import ContractDetails
+from ib_insync import Future
 
 from nautilus_trader.adapters.betfair.util import one
 from nautilus_trader.adapters.interactive_brokers.common import IB_VENUE
@@ -107,9 +108,9 @@ class InteractiveBrokersInstrumentProvider(InstrumentProvider):
     async def get_contract_details(
         self,
         contract: Contract,
+        build_futures_chain=False,
         build_options_chain=False,
         option_kwargs: Optional[str] = None,
-        build_futures_chain=False,
     ) -> List[ContractDetails]:
         if build_futures_chain:
             return []
@@ -121,12 +122,22 @@ class InteractiveBrokersInstrumentProvider(InstrumentProvider):
             # Regular contract
             return await self._client.reqContractDetailsAsync(contract=contract)
 
-    # TODO - Add futures
-
-    # async def get_future_chain_details(self, underlying: Contract) -> List[ContractDetails]:
-    #     chains = self._client.reqSecDefOptParams(
-    #         underlying.symbol, "", underlying.secType, underlying.conId
-    #     )
+    async def get_future_chain_details(
+        self,
+        symbol: str,
+        exchange: Optional[str] = None,
+        currency: Optional[str] = None,
+        **kwargs,
+    ) -> List[ContractDetails]:
+        futures = self._client.reqContractDetails(
+            Future(
+                symbol=symbol,
+                exchange=exchange,
+                currency=currency,
+                **kwargs,
+            )
+        )
+        return futures
 
     async def get_option_chain_details(
         self,
