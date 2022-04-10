@@ -40,10 +40,13 @@ logger = logging.getLogger(__name__)
 
 
 def make_filename(
-    instrument_id: InstrumentId, kind: Literal["BID_ASK", "TRADES"], date: datetime.date
+    catalog: DataCatalog,
+    instrument_id: InstrumentId,
+    kind: Literal["BID_ASK", "TRADES"],
+    date: datetime.date,
 ):
     fn_kind = {"BID_ASK": "quote_tick", "TRADES": "trade_tick"}[kind]
-    return f"{fn_kind}.parquet/instrument_id={instrument_id.value}/{date}-0.parquet"
+    return f"{catalog.path}/data/{fn_kind}.parquet/instrument_id={instrument_id.value}/{date:%Y%m%d}-0.parquet"
 
 
 def back_fill_catalog(
@@ -80,17 +83,20 @@ def back_fill_catalog(
         instrument = parse_instrument(contract_details=details)
         for date in pd.bdate_range(start_date, end_date, tz=tz_name):
             for kind in kinds:
-                fn = make_filename(instrument_id=instrument.id, kind=kind, date=date)
+                fn = make_filename(catalog, instrument_id=instrument.id, kind=kind, date=date)
                 if catalog.fs.exists(fn):
-                    logger.info(f"{fn} exists, skipping")
+                    logger.info(
+                        f"file for {instrument.id.value} {kind} {date:%Y-%m-%d} exists, skipping"
+                    )
                     continue
+                logger.info(f"Fetching {instrument.id.value} {kind} for {date:%Y-%m-%d}")
                 raw = fetch_market_data(
                     contract=contract, date=date.to_pydatetime(), kind=kind, tz_name=tz_name, ib=ib
                 )
-                logger.info(f"Got {len(raw)} raw ticks")
                 if not raw:
-                    logging.info("No ticks, skipping")
+                    logging.info("No ticks for {, skipping")
                     continue
+                logger.info(f"Fetched {len(raw)} raw ticks")
                 if kind == "TRADES":
                     ticks = parse_historic_trade_ticks(
                         historic_ticks=raw, instrument_id=instrument.id
@@ -117,7 +123,7 @@ def fetch_market_data(
         start_time = _determine_next_timestamp(
             date=date, timestamps=[d.time for d in data], tz_name=tz_name
         )
-        logger.info(f"Using start_time: {start_time}")
+        logger.debug(f"Using start_time: {start_time}")
 
         ticks = _request_historical_ticks(
             ib=ib,
