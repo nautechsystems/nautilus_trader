@@ -51,6 +51,7 @@ def get_cached_ib_client(
     connect=True,
     timeout=180,
     client_id: int = 1,
+    start_gateway: bool = True,
 ) -> ib_insync.IB:
     """
     Cache and return a InteractiveBrokers HTTP client with the given key and secret.
@@ -74,17 +75,19 @@ def get_cached_ib_client(
         The timeout for trying to establish a connection
     client_id: int, optional
         The client_id to connect with
+    start_gateway: bool
+        Start the IB Gateway docker container
     Returns
     -------
     ib_insync.IB
 
     """
     global IB_INSYNC_CLIENTS, GATEWAY
-
-    # Start gateway
-    if GATEWAY is None:
-        GATEWAY = InteractiveBrokersGateway(username=username, password=password)
-        GATEWAY.safe_start()
+    if start_gateway:
+        # Start gateway
+        if GATEWAY is None:
+            GATEWAY = InteractiveBrokersGateway(username=username, password=password)
+            GATEWAY.safe_start()
 
     client_key: tuple = (host, port)
 

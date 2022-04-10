@@ -23,7 +23,6 @@ from ib_insync import Contract
 from ib_insync import HistoricalTickBidAsk
 from ib_insync import HistoricalTickLast
 
-from nautilus_trader.adapters.interactive_brokers.factories import get_cached_ib_client
 from nautilus_trader.adapters.interactive_brokers.parsing.data import generate_trade_id
 from nautilus_trader.adapters.interactive_brokers.parsing.instruments import parse_instrument
 from nautilus_trader.core.datetime import dt_to_unix_nanos
