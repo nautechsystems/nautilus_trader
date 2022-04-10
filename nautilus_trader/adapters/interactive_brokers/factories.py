@@ -49,7 +49,8 @@ def get_cached_ib_client(
     host: str = "127.0.0.1",
     port: int = 4001,
     connect=True,
-    timeout=90,
+    timeout=180,
+    client_id: int = 1,
 ) -> ib_insync.IB:
     """
     Cache and return a InteractiveBrokers HTTP client with the given key and secret.
@@ -71,7 +72,8 @@ def get_cached_ib_client(
         Whether to connect to IB.
     timeout: int, optional
         The timeout for trying to establish a connection
-
+    client_id: int, optional
+        The client_id to connect with
     Returns
     -------
     ib_insync.IB
@@ -90,7 +92,7 @@ def get_cached_ib_client(
         client = ib_insync.IB()
         if connect:
             try:
-                client.connect(host=host, port=port, timeout=timeout)
+                client.connect(host=host, port=port, timeout=timeout, clientId=client_id)
             except TimeoutError:
                 raise TimeoutError(f"Failed to connect to gateway in {timeout}s")
 

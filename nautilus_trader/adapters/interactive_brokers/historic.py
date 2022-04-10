@@ -15,7 +15,7 @@
 
 import datetime
 import logging
-from typing import List
+from typing import List, Literal
 
 import pandas as pd
 from ib_insync import IB
@@ -23,6 +23,7 @@ from ib_insync import Contract
 from ib_insync import HistoricalTickBidAsk
 from ib_insync import HistoricalTickLast
 
+from nautilus_trader.adapters.interactive_brokers.factories import get_cached_ib_client
 from nautilus_trader.adapters.interactive_brokers.parsing.data import generate_trade_id
 from nautilus_trader.adapters.interactive_brokers.parsing.instruments import parse_instrument
 from nautilus_trader.core.datetime import dt_to_unix_nanos
@@ -39,13 +40,20 @@ from nautilus_trader.persistence.external.core import write_objects
 logger = logging.getLogger(__name__)
 
 
+def make_filename(
+    instrument_id: InstrumentId, kind: Literal["BID_ASK", "TRADES"], date: datetime.date
+):
+    fn_kind = {"BID_ASK": "quote_tick", "TRADES": "trade_tick"}[kind]
+    return f"{fn_kind}.parquet/instrument_id={instrument_id.value}/{date}-0.parquet"
+
+
 def back_fill_catalog(
     ib: IB,
     catalog: DataCatalog,
     contracts: List[Contract],
     start_date: datetime.date,
     end_date: datetime.date,
-    tz_name="Asia/Hong_Kong",
+    tz_name: str,
     kinds=("BID_ASK", "TRADES"),
 ):
     """
@@ -68,14 +76,22 @@ def back_fill_catalog(
     kinds : tuple[str] (default: ('BID_ASK', 'TRADES')
         The kinds to query data for
     """
-    for date in pd.bdate_range(start_date, end_date):
-        for kind in kinds:
-            for contract in contracts:
-                [details] = ib.reqContractDetails(contract=contract)
-                instrument = parse_instrument(contract_details=details)
+    for contract in contracts:
+        [details] = ib.reqContractDetails(contract=contract)
+        instrument = parse_instrument(contract_details=details)
+        for date in pd.bdate_range(start_date, end_date, tz=tz_name):
+            for kind in kinds:
+                fn = make_filename(instrument_id=instrument.id, kind=kind, date=date)
+                if catalog.fs.exists(fn):
+                    logger.info(f"{fn} exists, skipping")
+                    continue
                 raw = fetch_market_data(
                     contract=contract, date=date.to_pydatetime(), kind=kind, tz_name=tz_name, ib=ib
                 )
+                logger.info(f"Got {len(raw)} raw ticks")
+                if not raw:
+                    logging.info("No ticks, skipping")
+                    continue
                 if kind == "TRADES":
                     ticks = parse_historic_trade_ticks(
                         historic_ticks=raw, instrument_id=instrument.id
@@ -86,7 +102,8 @@ def back_fill_catalog(
                     )
                 else:
                     raise RuntimeError()
-                write_objects(catalog=catalog, chunk=ticks)
+                template = f"{date:%Y%m%d}" + "-{i}.parquet"
+                write_objects(catalog=catalog, chunk=ticks, basename_template=template)
 
 
 def fetch_market_data(
@@ -112,7 +129,7 @@ def fetch_market_data(
 
         ticks = [t for t in ticks if t not in data]
 
-        if not ticks or ticks[0].time < start_time:
+        if not ticks or ticks[-1].time < start_time:
             break
 
         logger.debug(f"Received {len(ticks)} ticks between {ticks[0].time} and {ticks[-1].time}")
