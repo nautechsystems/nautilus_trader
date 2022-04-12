@@ -222,9 +222,9 @@ class BacktestNode:
 
                 base_currency = self.config.venues[0].base_currency
                 profit_factor = result.stats_returns['Profit Factor']
+                # logger_adapter.info(f"RESULT: {result}")
                 logger_adapter.info(f"OBJECTIVE: {1/profit_factor}")
 
-                if (1 / profit_factor) == 0 or profit_factor <= 0 or result.total_positions < minimum_positions:
                     ret = {"status": STATUS_FAIL}
                 else:
                     ret = {"status": STATUS_OK, "loss": (1 / profit_factor)}
