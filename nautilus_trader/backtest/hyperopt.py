@@ -157,14 +157,15 @@ class HyperoptBacktestNode(BacktestNode):
                 base_currency = self.config.venues[0].base_currency
                 # logger_adapter.info(f"{result.stats_pnls[base_currency]}")
                 pnl_pct = result.stats_pnls[base_currency]["PnL%"]
-                logger_adapter.info(f"OBJECTIVE: {1/pnl_pct}")
+                profit_factor = result.stats_returns["Profit Factor"]
+                logger_adapter.info(f"OBJECTIVE: {1/profit_factor}")
                 # win_rate = result.stats_pnls['USDT']['Win Rate']
 
-                if (1 / pnl_pct) == 0 or pnl_pct <= 0 \
+                if (1 / profit_factor) == 0 or profit_factor <= 0 \
                     or result.total_positions < minimum_positions:
                     ret = {"status": hyperopt.STATUS_FAIL}
                 else:
-                    ret = {"status": hyperopt.STATUS_OK, "loss": (1 / pnl_pct)}
+                    ret = {"status": hyperopt.STATUS_OK, "loss": (1 / profit_factor)}
 
             except Exception as e:
                 ret = {"status": hyperopt.STATUS_FAIL}
