@@ -72,9 +72,9 @@ from nautilus_trader.persistence.batching import batch_files
 from nautilus_trader.persistence.catalog import DataCatalog
 from nautilus_trader.persistence.config import PersistenceConfig
 from nautilus_trader.persistence.streaming import FeatherWriter
-from nautilus_trader.trading.config import ImportableStrategyConfig
-from nautilus_trader.trading.config import StrategyFactory
-from nautilus_trader.trading.config import TradingStrategyConfig
+from nautilus_trader.config.components import ImportableStrategyConfig
+from nautilus_trader.config.components import StrategyFactory
+from nautilus_trader.config.components import TradingStrategyConfig
 from nautilus_trader.trading.strategy import TradingStrategy
 
 
