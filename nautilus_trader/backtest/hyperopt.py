@@ -140,7 +140,7 @@ class HyperoptBacktestNode(BacktestNode):
             ]
 
             local_config = self.config
-            local_config = local_config.replace(strategies=strategies)
+            local_config.engine.strategies = strategies
 
             local_config.check()
 
@@ -150,9 +150,6 @@ class HyperoptBacktestNode(BacktestNode):
                     run_config_id=local_config.id,
                     venue_configs=local_config.venues,
                     data_configs=local_config.data,
-                    actor_configs=local_config.actors,
-                    strategy_configs=local_config.strategies,
-                    persistence=local_config.persistence,
                     batch_size_bytes=local_config.batch_size_bytes,
                     # return_engine=True
                 )
