@@ -53,8 +53,9 @@ class HyperoptBacktestNode(BacktestNode):
 
     def set_strategy_config(
         self,
-        path: str,
-        strategy: TradingStrategyConfig,
+        strategy_path: str,
+        config_path: str,
+        strategy_config: TradingStrategyConfig,
         instrument_id: InstrumentId,
         bar_type: BarType,
         trade_size: Decimal,
@@ -64,9 +65,11 @@ class HyperoptBacktestNode(BacktestNode):
 
         Parameters
         ----------
-        path : str
+        strategy_path : str
             The path to the strategy.
-        strategy : TradingStrategyConfig
+        config_path : str
+            The path to the strategy config.
+        strategy_config : TradingStrategyConfig
             The strategy config object.
         instrument_id : InstrumentId
             The instrument ID.
@@ -76,8 +79,9 @@ class HyperoptBacktestNode(BacktestNode):
             The trade size to be used.
 
         """
-        self.path = path
-        self.strategy = strategy
+        self.strategy_path = strategy_path
+        self.config_path = config_path
+        self.strategy_config = strategy_config
         self.instrument_id = instrument_id
         self.bar_type = bar_type
         self.trade_size = trade_size
@@ -92,6 +96,8 @@ class HyperoptBacktestNode(BacktestNode):
             The configuration for the backtest test.
         params : Dict[str, Any]
             The set of strategy parameters to optimize.
+        minimum_positions: int
+            The minimum number of positions to accept a gradient.
         max_evals : int
             The maximum number of evaluations for the optimization problem.
 
@@ -122,8 +128,9 @@ class HyperoptBacktestNode(BacktestNode):
 
             strategies = [
                 ImportableStrategyConfig(
-                    path=self.path,
-                    config=self.strategy(
+                    strategy_path=self.strategy_path,
+                    config_path=self.config_path,
+                    config=self.strategy_config(
                         instrument_id=self.instrument_id,
                         bar_type=self.bar_type,
                         trade_size=self.trade_size,
