@@ -24,10 +24,22 @@ from nautilus_trader.analysis.statistic import PortfolioStatistic
 class SharpeRatio(PortfolioStatistic):
     """
     Calculates the annualized Sharpe Ratio from returns.
+
+    Parameters
+    ----------
+    period : int, default 252
+        The trading period in days.
     """
+
+    def __init__(self, period: int = 252):
+        self.period = period
+
+    @property
+    def name(self) -> str:
+        return f"Sharpe Ratio ({self.period} days)"
 
     def calculate_from_returns(self, returns: pd.Series) -> Optional[Any]:
         divisor = returns.std(ddof=1)
         res = returns.mean() / divisor
 
-        return res * np.sqrt(252)
+        return res * np.sqrt(self.period)

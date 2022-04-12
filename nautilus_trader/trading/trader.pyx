@@ -126,7 +126,7 @@ cdef class Trader(Component):
         self.analyzer.register_statistic(statistics.loser_max.MaxLoser())
         self.analyzer.register_statistic(statistics.expectancy.Expectancy())
         self.analyzer.register_statistic(statistics.win_rate.WinRate())
-        self.analyzer.register_statistic(statistics.returns_annual_vol.ReturnsAnnualVolatility())
+        self.analyzer.register_statistic(statistics.returns_volatility.ReturnsVolatility())
         self.analyzer.register_statistic(statistics.returns_avg.ReturnsAverage())
         self.analyzer.register_statistic(statistics.returns_avg_loss.ReturnsAverageLoss())
         self.analyzer.register_statistic(statistics.returns_avg_win.ReturnsAverageWin())

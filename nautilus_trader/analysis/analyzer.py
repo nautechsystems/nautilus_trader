@@ -54,13 +54,8 @@ class PortfolioAnalyzer:
         statistic : PortfolioStatistic
             The statistic to register.
 
-        Raises
-        ------
-        KeyError if `statistic` has already been registered.
-
         """
         PyCondition.not_none(statistic, "statistic")
-        PyCondition.not_in(statistic.name, self._statistics, "statistic.name", "_statistics")
 
         self._statistics[statistic.name] = statistic
 
