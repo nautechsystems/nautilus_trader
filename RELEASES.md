@@ -3,12 +3,13 @@
 Released on TBC.
 
 ### Breaking Changes
-None
+- Removed redundant `realized_points` concept from `Position`
 
 ### Enhancements
 - Added Binance Spot/Margin external order handling
 - Added support for millisecond bar aggregation
 - Added configurable `debug` mode for engines (with extra debug logging)
+- Improved annualized portfolio statistics with configurable period
 
 ### Fixes
 None
