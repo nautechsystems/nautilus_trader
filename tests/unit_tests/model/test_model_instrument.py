@@ -337,7 +337,7 @@ class TestInstrument:
     @pytest.mark.skip("Not implemented")
     def test_next_ask_price(self, instrument, tick_scheme_name, value, n, expected):
         instrument.tick_scheme_name = tick_scheme_name
-        result = instrument.next_ask_price(value, n=n)
+        result = instrument.next_ask_price(value, num_ticks=n)
         expected = Price.from_str(expected)
         assert result == expected
 
@@ -351,7 +351,7 @@ class TestInstrument:
     @pytest.mark.skip("Not implemented")
     def test_next_bid_price(self, instrument, tick_scheme_name, value, n, expected):
         instrument.tick_scheme_name = tick_scheme_name
-        result = instrument.next_bid_price(value, n=n)
+        result = instrument.next_bid_price(value, num_ticks=n)
         expected = Price.from_str(expected)
         assert result == expected
 

@@ -17,6 +17,7 @@ from decimal import Decimal
 from typing import Dict, Optional, Union
 
 from nautilus_trader.common.logging import LogColor
+from nautilus_trader.config.components import TradingStrategyConfig
 from nautilus_trader.core.data import Data
 from nautilus_trader.core.message import Event
 from nautilus_trader.indicators.atr import AverageTrueRange
@@ -33,7 +34,6 @@ from nautilus_trader.model.instruments.base import Instrument
 from nautilus_trader.model.orderbook.book import OrderBook
 from nautilus_trader.model.orderbook.data import OrderBookDelta
 from nautilus_trader.model.orders.limit import LimitOrder
-from nautilus_trader.trading.config import TradingStrategyConfig
 from nautilus_trader.trading.strategy import TradingStrategy
 
 
@@ -75,7 +75,7 @@ class VolatilityMarketMaker(TradingStrategy):
     A very dumb market maker which brackets the current market based on
     volatility measured by an ATR indicator.
 
-    Cancels all orders and flattens all positions on stop.
+    Cancels all orders and closes all positions on stop.
 
     Parameters
     ----------
@@ -329,7 +329,7 @@ class VolatilityMarketMaker(TradingStrategy):
         Actions to be performed when the strategy is stopped.
         """
         self.cancel_all_orders(self.instrument_id)
-        self.flatten_all_positions(self.instrument_id)
+        self.close_all_positions(self.instrument_id)
 
         # Unsubscribe from data
         self.unsubscribe_bars(self.bar_type)

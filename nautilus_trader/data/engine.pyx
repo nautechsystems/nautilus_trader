@@ -31,7 +31,8 @@ just need to override the `execute`, `process`, `send` and `receive` methods.
 
 from typing import Callable, Optional
 
-from nautilus_trader.data.config import DataEngineConfig
+from nautilus_trader.common.logging import LogColor
+from nautilus_trader.config.engines import DataEngineConfig
 
 from cpython.datetime cimport timedelta
 
@@ -121,6 +122,9 @@ cdef class DataEngine(Component):
         self._default_client = None      # type: Optional[DataClient]
         self._order_book_intervals = {}  # type: dict[(InstrumentId, int), list[Callable[[Bar], None]]]
         self._bar_aggregators = {}       # type: dict[BarType, BarAggregator]
+
+        # Settings
+        self.debug = config.debug
 
         # Counters
         self.command_count = 0
@@ -544,7 +548,8 @@ cdef class DataEngine(Component):
 # -- COMMAND HANDLERS ------------------------------------------------------------------------------
 
     cdef void _execute_command(self, DataCommand command) except *:
-        self._log.debug(f"{RECV}{CMD} {command}.")
+        if self.debug:
+            self._log.debug(f"{RECV}{CMD} {command}.")
         self.command_count += 1
 
         cdef DataClient client = self._clients.get(command.client_id)
@@ -984,7 +989,8 @@ cdef class DataEngine(Component):
 # -- REQUEST HANDLERS ------------------------------------------------------------------------------
 
     cdef void _handle_request(self, DataRequest request) except *:
-        self._log.debug(f"{RECV}{REQ} {request}.")
+        if self.debug:
+            self._log.debug(f"{RECV}{REQ} {request}.", LogColor.MAGENTA)
         self.request_count += 1
 
         cdef DataClient client = self._clients.get(request.client_id)
@@ -1119,7 +1125,8 @@ cdef class DataEngine(Component):
 # -- RESPONSE HANDLERS -----------------------------------------------------------------------------
 
     cdef void _handle_response(self, DataResponse response) except *:
-        self._log.debug(f"{RECV}{RES} {response}.")
+        if self.debug:
+            self._log.debug(f"{RECV}{RES} {response}.", LogColor.MAGENTA)
         self.response_count += 1
 
         if response.data_type.type == Instrument:

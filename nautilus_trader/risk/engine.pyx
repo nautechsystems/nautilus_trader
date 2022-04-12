@@ -18,7 +18,7 @@ from typing import Dict, Optional
 
 import pandas as pd
 
-from nautilus_trader.risk.config import RiskEngineConfig
+from nautilus_trader.config.engines import RiskEngineConfig
 
 from libc.stdint cimport int64_t
 
@@ -120,8 +120,10 @@ cdef class RiskEngine(Component):
         self._portfolio = portfolio
         self._cache = cache
 
+        # Settings
         self.trading_state = TradingState.ACTIVE  # Start active by default
         self.is_bypassed = config.bypass
+        self.debug = config.debug
         self._log_state()
 
         # Counters
@@ -349,7 +351,8 @@ cdef class RiskEngine(Component):
 # -- COMMAND HANDLERS ------------------------------------------------------------------------------
 
     cdef void _execute_command(self, Command command) except *:
-        self._log.debug(f"{RECV}{CMD} {command}.")
+        if self.debug:
+            self._log.debug(f"{RECV}{CMD} {command}.", LogColor.MAGENTA)
         self.command_count += 1
 
         if isinstance(command, SubmitOrder):
@@ -785,5 +788,6 @@ cdef class RiskEngine(Component):
 # -- EVENT HANDLERS --------------------------------------------------------------------------------
 
     cpdef void _handle_event(self, Event event) except *:
-        self._log.debug(f"{RECV}{EVT} {event}.")
+        if self.debug:
+            self._log.debug(f"{RECV}{EVT} {event}.", LogColor.MAGENTA)
         self.event_count += 1

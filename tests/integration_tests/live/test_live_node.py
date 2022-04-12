@@ -14,14 +14,16 @@
 # -------------------------------------------------------------------------------------------------
 
 import asyncio
+import json
 
 import pytest
 
 from nautilus_trader.adapters.betfair.factories import BetfairLiveDataClientFactory
 from nautilus_trader.adapters.betfair.factories import BetfairLiveExecClientFactory
-from nautilus_trader.infrastructure.config import CacheDatabaseConfig
-from nautilus_trader.live.config import TradingNodeConfig
+from nautilus_trader.config.components import CacheDatabaseConfig
+from nautilus_trader.config.nodes import TradingNodeConfig
 from nautilus_trader.live.node import TradingNode
+from nautilus_trader.model.identifiers import StrategyId
 
 
 class TestTradingNodeConfiguration:
@@ -41,6 +43,64 @@ class TestTradingNodeConfiguration:
 
         # Assert
         assert node is not None
+
+    def test_node_config_from_raw(self):
+        # Arrange
+        raw = json.dumps(
+            {
+                "environment": "live",
+                "trader_id": "Test-111",
+                "log_level": "INFO",
+                "exec_engine": {
+                    "reconciliation_lookback_mins": 1440,
+                },
+                "data_clients": {
+                    "BINANCE": {
+                        "factory_path": "nautilus_trader.adapters.binance.factories:BinanceLiveDataClientFactory",
+                        "config_path": "nautilus_trader.adapters.binance.config:BinanceDataClientConfig",
+                        "config": {
+                            "account_type": "FUTURES_USDT",
+                            "instrument_provider": {"load_all": True},
+                        },
+                    }
+                },
+                "exec_clients": {
+                    "BINANCE": {
+                        "factory_path": "nautilus_trader.adapters.binance.factories:BinanceLiveExecClientFactory",
+                        "config_path": "nautilus_trader.adapters.binance.config:BinanceExecClientConfig",
+                        "config": {
+                            "account_type": "FUTURES_USDT",
+                            "instrument_provider": {"load_all": True},
+                        },
+                    }
+                },
+                "timeout_connection": 5.0,
+                "timeout_reconciliation": 5.0,
+                "timeout_portfolio": 5.0,
+                "timeout_disconnection": 5.0,
+                "timeout_post_stop": 2.0,
+                "strategies": [
+                    {
+                        "strategy_path": "nautilus_trader.examples.strategies.volatility_market_maker:VolatilityMarketMaker",
+                        "config_path": "nautilus_trader.examples.strategies.volatility_market_maker:VolatilityMarketMakerConfig",
+                        "config": {
+                            "instrument_id": "ETHUSDT-PERP.BINANCE",
+                            "bar_type": "ETHUSDT-PERP.BINANCE-1-MINUTE-LAST-EXTERNAL",
+                            "atr_period": "20",
+                            "atr_multiple": "6.0",
+                            "trade_size": "0.01",
+                        },
+                    }
+                ],
+            }
+        )
+        # Act
+        config = TradingNodeConfig.parse_raw(raw)
+        node = TradingNode(config)
+
+        # Assert
+        assert node.trader.id.value == "Test-111"
+        assert node.trader.strategy_ids() == [StrategyId("VolatilityMarketMaker-000")]
 
 
 class TestTradingNodeOperation:
@@ -83,12 +143,17 @@ class TestTradingNodeOperation:
 
         # TODO(cs): Assert existence of client
 
-    def test_build_with_multiple_clients(self):
+    @pytest.mark.asyncio
+    async def test_build_with_multiple_clients(self):
         # Arrange, # Act
         self.node.add_data_client_factory("BETFAIR", BetfairLiveDataClientFactory)
         self.node.add_exec_client_factory("BETFAIR", BetfairLiveExecClientFactory)
         self.node.build()
 
+        self.node.start()
+        await asyncio.sleep(1)
+
+        # assert self.node.kernel.data_engine.registered_clients
         # TODO(cs): Assert existence of client
 
     @pytest.mark.asyncio
@@ -97,7 +162,7 @@ class TestTradingNodeOperation:
         sink = []
 
         # Act
-        self.node.add_log_sink(sink.append)
+        self.node.kernel.add_log_sink(sink.append)
         self.node.build()
 
         self.node.start()

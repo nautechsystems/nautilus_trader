@@ -13,4 +13,30 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-cpdef bint is_nautilus_class(cls)
+from typing import Any, Optional
+
+import numpy as np
+import pandas as pd
+
+from nautilus_trader.analysis.statistic import PortfolioStatistic
+import quantstats
+
+class ReturnsVolatility(PortfolioStatistic):
+    """
+    Calculates the annualized volatility of returns.
+
+    Parameters
+    ----------
+    period : int, default 252
+        The trading period in days.
+    """
+
+    def __init__(self, period: int = 365):
+        self.period = period
+
+    @property
+    def name(self) -> str:
+        return f"Returns Volatility ({self.period} days)"
+
+    def calculate_from_returns(self, returns: pd.Series) -> Optional[Any]:
+        return returns.std() * np.sqrt(self.period)

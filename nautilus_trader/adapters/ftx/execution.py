@@ -1113,7 +1113,7 @@ class FTXExecutionClient(LiveExecutionClient):
         # Fetch strategy ID
         strategy_id: StrategyId = self._cache.strategy_id_for_order(client_order_id)
         if strategy_id is None:
-            self._generate_external_order_status(instrument, data)
+            self._generate_external_order_report(instrument, data)
             return
 
         ts_event: int = int(pd.to_datetime(data["createdAt"], utc=True).to_datetime64())
@@ -1138,7 +1138,7 @@ class FTXExecutionClient(LiveExecutionClient):
                     ts_event=ts_event,
                 )
 
-    def _generate_external_order_status(self, instrument: Instrument, data: Dict[str, Any]) -> None:
+    def _generate_external_order_report(self, instrument: Instrument, data: Dict[str, Any]) -> None:
         client_id_str = data.get("clientId")
         price = data.get("price")
         created_at = int(pd.to_datetime(data["createdAt"], utc=True).to_datetime64())

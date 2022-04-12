@@ -65,30 +65,6 @@ class BinanceFuturesOrderType(Enum):
 
 
 @unique
-class BinanceFuturesExecutionType(Enum):
-    """Represents a `Binance Futures` execution type."""
-
-    NEW = "NEW"
-    CANCELED = "CANCELED"
-    CALCULATED = "CALCULATED"  # Liquidation Execution
-    EXPIRED = "EXPIRED"
-    TRADE = "TRADE"
-
-
-@unique
-class BinanceFuturesOrderStatus(Enum):
-    """Represents a `BinanceFutures` order status."""
-
-    NEW = "NEW"
-    PARTIALLY_FILLED = "PARTIALLY_FILLED"
-    FILLED = "FILLED"
-    CANCELED = "CANCELED"
-    EXPIRED = "EXPIRED"
-    NEW_INSURANCE = "NEW_INSURANCE"  # Liquidation with Insurance Fund
-    NEW_ADL = "NEW_ADL"  # Counterparty Liquidation
-
-
-@unique
 class BinanceFuturesPositionSide(Enum):
     """Represents a `Binance Futures` position side."""
 

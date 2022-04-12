@@ -14,57 +14,29 @@
 # -------------------------------------------------------------------------------------------------
 
 import asyncio
-import concurrent.futures
-import platform
-import signal
-import socket
 import sys
 import time
-import warnings
 from datetime import timedelta
-from functools import partial
-from typing import Any, Callable, Dict, List, Optional
+from typing import Optional
 
-import aiohttp
-import msgspec
-import orjson
-import pyarrow
-import pydantic
-import pytz
-import redis
-
-from nautilus_trader.cache.cache import Cache
-from nautilus_trader.common.clock import LiveClock
+from nautilus_trader.cache.base import CacheFacade
 from nautilus_trader.common.logging import LiveLogger
 from nautilus_trader.common.logging import LogColor
-from nautilus_trader.common.logging import LoggerAdapter
 from nautilus_trader.common.logging import LogLevelParser
-from nautilus_trader.common.logging import nautilus_header
-from nautilus_trader.common.uuid import UUIDFactory
+from nautilus_trader.config.components import CacheConfig
+from nautilus_trader.config.components import CacheDatabaseConfig
+from nautilus_trader.config.live import LiveDataEngineConfig
+from nautilus_trader.config.live import LiveExecEngineConfig
+from nautilus_trader.config.live import LiveRiskEngineConfig
+from nautilus_trader.config.nodes import TradingNodeConfig
 from nautilus_trader.core.correctness import PyCondition
-from nautilus_trader.infrastructure.cache import RedisCacheDatabase
-from nautilus_trader.live.config import TradingNodeConfig
-from nautilus_trader.live.data_engine import LiveDataEngine
-from nautilus_trader.live.execution_engine import LiveExecutionEngine
+from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.live.node_builder import TradingNodeBuilder
-from nautilus_trader.live.risk_engine import LiveRiskEngine
 from nautilus_trader.model.identifiers import TraderId
-from nautilus_trader.msgbus.bus import MessageBus
-from nautilus_trader.persistence.config import PersistenceConfig
-from nautilus_trader.persistence.streaming import FeatherWriter
-from nautilus_trader.portfolio.portfolio import Portfolio
-from nautilus_trader.serialization.msgpack.serializer import MsgPackSerializer
+from nautilus_trader.portfolio.base import PortfolioFacade
+from nautilus_trader.system.kernel import Environment
+from nautilus_trader.system.kernel import NautilusKernel
 from nautilus_trader.trading.trader import Trader
-
-
-try:
-    import uvloop
-
-    asyncio.set_event_loop_policy(uvloop.EventLoopPolicy())
-    uvloop_version = uvloop.__version__
-except ImportError:  # pragma: no cover
-    uvloop_version = None
-    warnings.warn("uvloop is not available.")
 
 
 class TradingNode:
@@ -92,147 +64,113 @@ class TradingNode:
         self._config = config
 
         # Setup loop
-        self._loop = asyncio.get_event_loop()
-        self._executor = concurrent.futures.ThreadPoolExecutor()
-        self._loop.set_default_executor(self._executor)
-        self._loop.set_debug(config.loop_debug)
+        loop = asyncio.get_event_loop()
 
-        # Components
-        self._clock = LiveClock(loop=self._loop)
-        self._uuid_factory = UUIDFactory()
-        self.created_time = self._clock.utc_now()
-        self._is_running = False
-
-        # Identifiers
-        self.trader_id = TraderId(config.trader_id)
-        self.machine_id = socket.gethostname()
-        self.instance_id = self._uuid_factory.generate()
-
-        # Setup logging
-        self._logger = LiveLogger(
-            loop=self._loop,
-            clock=self._clock,
-            trader_id=self.trader_id,
-            machine_id=self.machine_id,
-            instance_id=self.instance_id,
-            level_stdout=LogLevelParser.from_str_py(config.log_level.upper()),
+        # Build core system kernel
+        self.kernel = NautilusKernel(
+            environment=Environment.LIVE,
+            name=type(self).__name__,
+            trader_id=TraderId(config.trader_id),
+            cache_config=config.cache or CacheConfig(),
+            cache_database_config=config.cache_database or CacheDatabaseConfig(),
+            data_config=config.data_engine or LiveDataEngineConfig(),
+            risk_config=config.risk_engine or LiveRiskEngineConfig(),
+            exec_config=config.exec_engine or LiveExecEngineConfig(),
+            persistence_config=config.persistence,
+            actor_configs=config.actors,
+            strategy_configs=config.strategies,
+            loop=loop,
+            loop_debug=config.loop_debug,
+            loop_sig_callback=self._loop_sig_handler,
+            log_level=LogLevelParser.from_str_py(config.log_level.upper()),
         )
-
-        self._log = LoggerAdapter(
-            component_name=type(self).__name__,
-            logger=self._logger,
-        )
-
-        self._log_header()
-        self._log.info("Building...")
-
-        if platform.system() != "Windows":
-            # Windows does not support signal handling
-            # https://stackoverflow.com/questions/45987985/asyncio-loops-add-signal-handler-in-windows
-            self._setup_loop()
-
-        ########################################################################
-        # Build platform
-        ########################################################################
-        if config.cache_database is None or config.cache_database.type == "in-memory":
-            cache_db = None
-        elif config.cache_database.type == "redis":
-            cache_db = RedisCacheDatabase(
-                trader_id=self.trader_id,
-                logger=self._logger,
-                serializer=MsgPackSerializer(timestamps_as_str=True),
-                config=config.cache_database,
-            )
-        else:  # pragma: no cover (design-time error)
-            raise ValueError(
-                "The cache_db_type in the configuration is unrecognized, "
-                "can one of {{'in-memory', 'redis'}}.",
-            )
-
-        self._msgbus = MessageBus(
-            trader_id=self.trader_id,
-            clock=self._clock,
-            logger=self._logger,
-        )
-
-        self._cache = Cache(
-            database=cache_db,
-            logger=self._logger,
-            config=config.cache,
-        )
-
-        self.portfolio = Portfolio(
-            msgbus=self._msgbus,
-            cache=self._cache,
-            clock=self._clock,
-            logger=self._logger,
-        )
-
-        self._data_engine = LiveDataEngine(
-            loop=self._loop,
-            msgbus=self._msgbus,
-            cache=self._cache,
-            clock=self._clock,
-            logger=self._logger,
-            config=config.data_engine,
-        )
-
-        self._exec_engine = LiveExecutionEngine(
-            loop=self._loop,
-            msgbus=self._msgbus,
-            cache=self._cache,
-            clock=self._clock,
-            logger=self._logger,
-            config=config.exec_engine,
-        )
-        self._exec_engine.load_cache()
-
-        self._risk_engine = LiveRiskEngine(
-            loop=self._loop,
-            portfolio=self.portfolio,
-            msgbus=self._msgbus,
-            cache=self._cache,
-            clock=self._clock,
-            logger=self._logger,
-            config=config.risk_engine,
-        )
-
-        self.trader = Trader(
-            trader_id=self.trader_id,
-            msgbus=self._msgbus,
-            cache=self._cache,
-            portfolio=self.portfolio,
-            data_engine=self._data_engine,
-            risk_engine=self._risk_engine,
-            exec_engine=self._exec_engine,
-            clock=self._clock,
-            logger=self._logger,
-        )
-
-        if config.load_strategy_state:
-            self.trader.load()
-
-        # Setup persistence (requires trader)
-        self.persistence_writers: List[Any] = []
-        if config.persistence:
-            self._setup_persistence(config=config.persistence)
 
         self._builder = TradingNodeBuilder(
-            loop=self._loop,
-            data_engine=self._data_engine,
-            exec_engine=self._exec_engine,
-            msgbus=self._msgbus,
-            cache=self._cache,
-            clock=self._clock,
-            logger=self._logger,
-            log=self._log,
+            loop=loop,
+            data_engine=self.kernel.data_engine,
+            exec_engine=self.kernel.exec_engine,
+            msgbus=self.kernel.msgbus,
+            cache=self.kernel.cache,
+            clock=self.kernel.clock,
+            logger=self.kernel.logger,
+            log=self.kernel.log,
         )
 
-        self._log.info("INITIALIZED.")
-        self.time_to_initialize = self._clock.delta(self.created_time)
-        self._log.info(f"Initialized in {int(self.time_to_initialize.total_seconds() * 1000)}ms.")
-
+        # Operation flags
         self._is_built = False
+        self._is_running = False
+
+    @property
+    def trader_id(self) -> TraderId:
+        """
+        Return the nodes trader ID.
+
+        Returns
+        -------
+        TraderId
+
+        """
+        return self.kernel.trader_id
+
+    @property
+    def machine_id(self) -> str:
+        """
+        Return the nodes machine ID.
+
+        Returns
+        -------
+        str
+
+        """
+        return self.kernel.machine_id
+
+    @property
+    def instance_id(self) -> UUID4:
+        """
+        Return the nodes instance ID.
+
+        Returns
+        -------
+        UUID4
+
+        """
+        return self.kernel.instance_id
+
+    @property
+    def trader(self) -> Trader:
+        """
+        Return the nodes internal trader.
+
+        Returns
+        -------
+        Trader
+
+        """
+        return self.kernel.trader
+
+    @property
+    def cache(self) -> CacheFacade:
+        """
+        Return the nodes internal read-only cache.
+
+        Returns
+        -------
+        CacheFacade
+
+        """
+        return self.kernel.cache
+
+    @property
+    def portfolio(self) -> PortfolioFacade:
+        """
+        Return the nodes internal read-only portfolio.
+
+        Returns
+        -------
+        PortfolioFacade
+
+        """
+        return self.kernel.portfolio
 
     @property
     def is_running(self) -> bool:
@@ -267,7 +205,7 @@ class TradingNode:
         asyncio.AbstractEventLoop
 
         """
-        return self._loop
+        return self.kernel.loop
 
     def get_logger(self) -> LiveLogger:
         """
@@ -278,24 +216,7 @@ class TradingNode:
         LiveLogger
 
         """
-        return self._logger
-
-    def add_log_sink(self, handler: Callable[[Dict], None]):
-        """
-        Register the given sink handler with the nodes logger.
-
-        Parameters
-        ----------
-        handler : Callable[[Dict], None]
-            The sink handler to register.
-
-        Raises
-        ------
-        KeyError
-            If `handler` already registered.
-
-        """
-        self._logger.register_sink(handler=handler)
+        return self.kernel.logger
 
     def add_data_client_factory(self, name: str, factory):
         """
@@ -361,13 +282,13 @@ class TradingNode:
             )
 
         try:
-            if self._loop.is_running():
-                return self._loop.create_task(self._run())
+            if self.kernel.loop.is_running():
+                return self.kernel.loop.create_task(self._run())
             else:
-                self._loop.run_until_complete(self._run())
+                self.kernel.loop.run_until_complete(self._run())
                 return None
         except RuntimeError as ex:
-            self._log.exception("Error on run", ex)
+            self.kernel.log.exception("Error on run", ex)
             return None
 
     def stop(self) -> None:
@@ -380,12 +301,12 @@ class TradingNode:
 
         """
         try:
-            if self._loop.is_running():
-                self._loop.create_task(self._stop())
+            if self.kernel.loop.is_running():
+                self.kernel.loop.create_task(self._stop())
             else:
-                self._loop.run_until_complete(self._stop())
+                self.kernel.loop.run_until_complete(self._stop())
         except RuntimeError as ex:
-            self._log.exception("Error on stop", ex)
+            self.kernel.log.exception("Error on stop", ex)
 
     def dispose(self) -> None:
         """
@@ -395,197 +316,148 @@ class TradingNode:
 
         """
         try:
-            timeout = self._clock.utc_now() + timedelta(seconds=self._config.timeout_disconnection)
+            timeout = self.kernel.clock.utc_now() + timedelta(
+                seconds=self._config.timeout_disconnection
+            )
             while self._is_running:
                 time.sleep(0.1)
-                if self._clock.utc_now() >= timeout:
-                    self._log.warning(
+                if self.kernel.clock.utc_now() >= timeout:
+                    self.kernel.log.warning(
                         f"Timed out ({self._config.timeout_disconnection}s) waiting for node to stop."
                         f"\nStatus"
                         f"\n------"
-                        f"\nDataEngine.check_disconnected() == {self._data_engine.check_disconnected()}"
-                        f"\nExecEngine.check_disconnected() == {self._exec_engine.check_disconnected()}"
+                        f"\nDataEngine.check_disconnected() == {self.kernel.data_engine.check_disconnected()}"
+                        f"\nExecEngine.check_disconnected() == {self.kernel.exec_engine.check_disconnected()}"
                     )
                     break
 
-            self._log.info("DISPOSING...")
+            self.kernel.log.info("DISPOSING...")
 
-            self._log.debug(f"{self._data_engine.get_run_queue_task()}")
-            self._log.debug(f"{self._exec_engine.get_run_queue_task()}")
-            self._log.debug(f"{self._risk_engine.get_run_queue_task()}")
+            self.kernel.log.debug(f"{self.kernel.data_engine.get_run_queue_task()}")
+            self.kernel.log.debug(f"{self.kernel.exec_engine.get_run_queue_task()}")
+            self.kernel.log.debug(f"{self.kernel.risk_engine.get_run_queue_task()}")
 
-            self.trader.dispose()
-            self._data_engine.dispose()
-            self._exec_engine.dispose()
-            self._risk_engine.dispose()
+            self.kernel.trader.dispose()
+            self.kernel.data_engine.dispose()
+            self.kernel.exec_engine.dispose()
+            self.kernel.risk_engine.dispose()
 
-            self._log.info("Shutting down executor...")
+            self.kernel.log.info("Shutting down executor...")
             if sys.version_info >= (3, 9):
                 # cancel_futures added in Python 3.9
-                self._executor.shutdown(wait=True, cancel_futures=True)
+                self.kernel.executor.shutdown(wait=True, cancel_futures=True)
             else:
-                self._executor.shutdown(wait=True)
+                self.kernel.executor.shutdown(wait=True)
 
-            self._log.info("Stopping event loop...")
-            self._cancel_all_tasks()
-            self._loop.stop()
+            self.kernel.log.info("Stopping event loop...")
+            self.kernel.cancel_all_tasks()
+            self.kernel.loop.stop()
         except RuntimeError as ex:
-            self._log.exception("Error on dispose", ex)
+            self.kernel.log.exception("Error on dispose", ex)
         finally:
-            if self._loop.is_running():
-                self._log.warning("Cannot close a running event loop.")
+            if self.kernel.loop.is_running():
+                self.kernel.log.warning("Cannot close a running event loop.")
             else:
-                self._log.info("Closing event loop...")
-                self._loop.close()
+                self.kernel.log.info("Closing event loop...")
+                self.kernel.loop.close()
 
             # Check and log if event loop is running
-            if self._loop.is_running():
-                self._log.warning(f"loop.is_running={self._loop.is_running()}")
+            if self.kernel.loop.is_running():
+                self.kernel.log.warning(f"loop.is_running={self.kernel.loop.is_running()}")
             else:
-                self._log.info(f"loop.is_running={self._loop.is_running()}")
+                self.kernel.log.info(f"loop.is_running={self.kernel.loop.is_running()}")
 
             # Check and log if event loop is closed
-            if not self._loop.is_closed():
-                self._log.warning(f"loop.is_closed={self._loop.is_closed()}")
+            if not self.kernel.loop.is_closed():
+                self.kernel.log.warning(f"loop.is_closed={self.kernel.loop.is_closed()}")
             else:
-                self._log.info(f"loop.is_closed={self._loop.is_closed()}")
+                self.kernel.log.info(f"loop.is_closed={self.kernel.loop.is_closed()}")
 
-            self._log.info("DISPOSED.")
-
-    def _log_header(self) -> None:
-        nautilus_header(self._log)
-        self._log.info(f"aiohttp {aiohttp.__version__}")
-        self._log.info(f"msgspec {msgspec.__version__}")
-        self._log.info(f"orjson {orjson.__version__}")
-        self._log.info(f"pyarrow {pyarrow.__version__}")
-        self._log.info(f"pydantic {pydantic.__version__}")
-        self._log.info(f"pytz {pytz.__version__}")  # type: ignore
-        self._log.info(f"redis {redis.__version__}")  # type: ignore
-        if uvloop_version:
-            self._log.info(f"uvloop {uvloop_version}")
-        self._log.info("\033[36m=================================================================")
-
-    def _setup_loop(self) -> None:
-        if self._loop.is_closed():
-            self._log.error("Cannot setup signal handling (event loop was closed).")
-            return
-
-        signal.signal(signal.SIGINT, signal.SIG_DFL)
-        signals = (signal.SIGTERM, signal.SIGINT, signal.SIGABRT)
-        for sig in signals:
-            self._loop.add_signal_handler(sig, self._loop_sig_handler, sig)
-        self._log.debug(f"Event loop signal handling setup for {signals}.")
-
-    def _setup_persistence(self, config: PersistenceConfig) -> None:
-        # Setup persistence
-        path = f"{config.catalog_path}/live/{self.instance_id}.feather"
-        writer = FeatherWriter(
-            path=path,
-            fs_protocol=config.fs_protocol,
-            flush_interval=config.flush_interval,
-        )
-        self.persistence_writers.append(writer)
-        self.trader.subscribe("*", writer.write)
-        self._log.info(f"Persisting data & events to {path=}")
-
-        # Setup logging
-        if config.persist_logs:
-
-            def sink(record, f):
-                f.write(orjson.dumps(record) + b"\n")
-
-            path = f"{config.catalog_path}/logs/{self.instance_id}.log"
-            log_sink = open(path, "wb")
-            self.persistence_writers.append(log_sink)
-            self._logger.register_sink(partial(sink, f=log_sink))
-            self._log.info(f"Persisting logs to {path=}")
+            self.kernel.log.info("DISPOSED.")
 
     def _loop_sig_handler(self, sig) -> None:
-        self._loop.remove_signal_handler(signal.SIGTERM)
-        self._loop.add_signal_handler(signal.SIGINT, lambda: None)
-
-        self._log.warning(f"Received {sig!s}, shutting down...")
+        self.kernel.log.warning(f"Received {sig!s}, shutting down...")
         self.stop()
 
     async def _run(self) -> None:
         try:
-            self._log.info("STARTING...")
+            self.kernel.log.info("STARTING...")
             self._is_running = True
 
             # Start system
-            self._logger.start()
-            self._data_engine.start()
-            self._exec_engine.start()
-            self._risk_engine.start()
+            self.kernel.logger.start()
+            self.kernel.data_engine.start()
+            self.kernel.exec_engine.start()
+            self.kernel.risk_engine.start()
 
             # Connect all clients
-            self._data_engine.connect()
-            self._exec_engine.connect()
+            self.kernel.data_engine.connect()
+            self.kernel.exec_engine.connect()
 
             # Await engine connection and initialization
-            self._log.info(
-                f"Waiting for engines to connect and initialize "
+            self.kernel.log.info(
+                f"Awaiting engine connections and initializations "
                 f"({self._config.timeout_connection}s timeout)...",
                 color=LogColor.BLUE,
             )
             if not await self._await_engines_connected():
-                self._log.warning(
+                self.kernel.log.warning(
                     f"Timed out ({self._config.timeout_connection}s) waiting for engines to connect and initialize."
                     f"\nStatus"
                     f"\n------"
-                    f"\nDataEngine.check_connected() == {self._data_engine.check_connected()}"
-                    f"\nExecEngine.check_connected() == {self._exec_engine.check_connected()}"
+                    f"\nDataEngine.check_connected() == {self.kernel.data_engine.check_connected()}"
+                    f"\nExecEngine.check_connected() == {self.kernel.exec_engine.check_connected()}"
                 )
                 return
-            self._log.info("Engines connected.", color=LogColor.GREEN)
+            self.kernel.log.info("Engines connected.", color=LogColor.GREEN)
 
             # Await execution state reconciliation
-            self._log.info(
-                f"Waiting for execution state to reconcile "
+            self.kernel.log.info(
+                f"Awaiting execution state reconciliation "
                 f"({self._config.timeout_reconciliation}s timeout)...",
                 color=LogColor.BLUE,
             )
-            if not await self._exec_engine.reconcile_state(
+            if not await self.kernel.exec_engine.reconcile_state(
                 timeout_secs=self._config.timeout_reconciliation,
             ):
-                self._log.error("Execution state could not be reconciled.")
+                self.kernel.log.error("Execution state could not be reconciled.")
                 return
-            self._log.info("State reconciled.", color=LogColor.GREEN)
+            self.kernel.log.info("State reconciled.", color=LogColor.GREEN)
 
             # Initialize portfolio
-            self.portfolio.initialize_orders()
-            self.portfolio.initialize_positions()
+            self.kernel.portfolio.initialize_orders()
+            self.kernel.portfolio.initialize_positions()
 
             # Await portfolio initialization
-            self._log.info(
-                "Waiting for portfolio to initialize "
+            self.kernel.log.info(
+                "Awaiting portfolio initialization "
                 f"({self._config.timeout_portfolio}s timeout)...",
                 color=LogColor.BLUE,
             )
             if not await self._await_portfolio_initialized():
-                self._log.warning(
+                self.kernel.log.warning(
                     f"Timed out ({self._config.timeout_portfolio}s) waiting for portfolio to initialize."
                     f"\nStatus"
                     f"\n------"
-                    f"\nPortfolio.initialized == {self.portfolio.initialized}"
+                    f"\nPortfolio.initialized == {self.kernel.portfolio.initialized}"
                 )
                 return
-            self._log.info("Portfolio initialized.", color=LogColor.GREEN)
+            self.kernel.log.info("Portfolio initialized.", color=LogColor.GREEN)
 
             # Start trader and strategies
-            self.trader.start()
+            self.kernel.trader.start()
 
-            if self._loop.is_running():
-                self._log.info("RUNNING.")
+            if self.kernel.loop.is_running():
+                self.kernel.log.info("RUNNING.")
             else:
-                self._log.warning("Event loop is not running.")
+                self.kernel.log.warning("Event loop is not running.")
 
             # Continue to run while engines are running...
-            await self._data_engine.get_run_queue_task()
-            await self._exec_engine.get_run_queue_task()
-            await self._risk_engine.get_run_queue_task()
+            await self.kernel.data_engine.get_run_queue_task()
+            await self.kernel.exec_engine.get_run_queue_task()
+            await self.kernel.risk_engine.get_run_queue_task()
         except asyncio.CancelledError as ex:
-            self._log.error(str(ex))
+            self.kernel.log.error(str(ex))
 
     async def _await_engines_connected(self) -> bool:
         # - The data engine clients will be set connected when all
@@ -595,14 +467,14 @@ class TradingNode:
         # reconciled.
         # Thus any delay here will be due to blocking network I/O.
         seconds = self._config.timeout_connection
-        timeout: timedelta = self._clock.utc_now() + timedelta(seconds=seconds)
+        timeout: timedelta = self.kernel.clock.utc_now() + timedelta(seconds=seconds)
         while True:
             await asyncio.sleep(0)
-            if self._clock.utc_now() >= timeout:
+            if self.kernel.clock.utc_now() >= timeout:
                 return False
-            if not self._data_engine.check_connected():
+            if not self.kernel.data_engine.check_connected():
                 continue
-            if not self._exec_engine.check_connected():
+            if not self.kernel.exec_engine.check_connected():
                 continue
             break
 
@@ -613,12 +485,12 @@ class TradingNode:
         # PnL calculations are completed (maybe waiting on first quotes).
         # Thus any delay here will be due to blocking network I/O.
         seconds = self._config.timeout_portfolio
-        timeout: timedelta = self._clock.utc_now() + timedelta(seconds=seconds)
+        timeout: timedelta = self.kernel.clock.utc_now() + timedelta(seconds=seconds)
         while True:
             await asyncio.sleep(0)
-            if self._clock.utc_now() >= timeout:
+            if self.kernel.clock.utc_now() >= timeout:
                 return False
-            if not self.portfolio.initialized:
+            if not self.kernel.portfolio.initialized:
                 continue
             break
 
@@ -626,106 +498,71 @@ class TradingNode:
 
     async def _stop(self) -> None:
         self._is_stopping = True
-        self._log.info("STOPPING...")
+        self.kernel.log.info("STOPPING...")
 
-        if self.trader.is_running:
-            self.trader.stop()
-            self._log.info(
-                f"Awaiting residual state ({self._config.check_residuals_delay}s delay)...",
+        if self.kernel.trader.is_running:
+            self.kernel.trader.stop()
+            self.kernel.log.info(
+                f"Awaiting post stop ({self._config.timeout_post_stop}s timeout)...",
                 color=LogColor.BLUE,
             )
-            await asyncio.sleep(self._config.check_residuals_delay)
-            self.trader.check_residuals()
+            await asyncio.sleep(self._config.timeout_post_stop)
+            self.kernel.trader.check_residuals()
 
-        if self._config.save_strategy_state:
-            self.trader.save()
+        if self._config.save_state:
+            self.kernel.trader.save()
 
         # Disconnect all clients
-        self._data_engine.disconnect()
-        self._exec_engine.disconnect()
+        self.kernel.data_engine.disconnect()
+        self.kernel.exec_engine.disconnect()
 
-        if self._data_engine.is_running:
-            self._data_engine.stop()
-        if self._exec_engine.is_running:
-            self._exec_engine.stop()
-        if self._risk_engine.is_running:
-            self._risk_engine.stop()
+        if self.kernel.data_engine.is_running:
+            self.kernel.data_engine.stop()
+        if self.kernel.exec_engine.is_running:
+            self.kernel.exec_engine.stop()
+        if self.kernel.risk_engine.is_running:
+            self.kernel.risk_engine.stop()
 
-        self._log.info(
-            f"Waiting for engines to disconnect "
+        self.kernel.log.info(
+            f"Awaiting engine disconnections "
             f"({self._config.timeout_disconnection}s timeout)...",
             color=LogColor.BLUE,
         )
         if not await self._await_engines_disconnected():
-            self._log.error(
+            self.kernel.log.error(
                 f"Timed out ({self._config.timeout_disconnection}s) waiting for engines to disconnect."
                 f"\nStatus"
                 f"\n------"
-                f"\nDataEngine.check_disconnected() == {self._data_engine.check_disconnected()}"
-                f"\nExecEngine.check_disconnected() == {self._exec_engine.check_disconnected()}"
+                f"\nDataEngine.check_disconnected() == {self.kernel.data_engine.check_disconnected()}"
+                f"\nExecEngine.check_disconnected() == {self.kernel.exec_engine.check_disconnected()}"
             )
 
         # Clean up remaining timers
-        timer_names = self._clock.timer_names()
-        self._clock.cancel_timers()
+        timer_names = self.kernel.clock.timer_names()
+        self.kernel.clock.cancel_timers()
 
         for name in timer_names:
-            self._log.info(f"Cancelled Timer(name={name}).")
+            self.kernel.log.info(f"Cancelled Timer(name={name}).")
 
         # Clean up persistence
-        for writer in self.persistence_writers:
+        for writer in self.kernel.persistence_writers:
             writer.close()
 
-        self._log.info("STOPPED.")
-        self._logger.stop()
+        self.kernel.log.info("STOPPED.")
+        self.kernel.logger.stop()
         self._is_running = False
 
     async def _await_engines_disconnected(self) -> bool:
         seconds = self._config.timeout_disconnection
-        timeout: timedelta = self._clock.utc_now() + timedelta(seconds=seconds)
+        timeout: timedelta = self.kernel.clock.utc_now() + timedelta(seconds=seconds)
         while True:
             await asyncio.sleep(0)
-            if self._clock.utc_now() >= timeout:
+            if self.kernel.clock.utc_now() >= timeout:
                 return False
-            if not self._data_engine.check_disconnected():
+            if not self.kernel.data_engine.check_disconnected():
                 continue
-            if not self._exec_engine.check_disconnected():
+            if not self.kernel.exec_engine.check_disconnected():
                 continue
             break
 
         return True  # Engines disconnected
-
-    def _cancel_all_tasks(self) -> None:
-        to_cancel = asyncio.tasks.all_tasks(self._loop)
-        if not to_cancel:
-            self._log.info("All tasks canceled.")
-            return
-
-        for task in to_cancel:
-            self._log.warning(f"Canceling pending task {task}")
-            task.cancel()
-
-        if self._loop.is_running():
-            self._log.warning("Event loop still running during `cancel_all_tasks`.")
-            return
-
-        finish_all_tasks: asyncio.Future = asyncio.tasks.gather(  # type: ignore
-            *to_cancel,
-            loop=self._loop,
-            return_exceptions=True,
-        )
-        self._loop.run_until_complete(finish_all_tasks)
-
-        self._log.debug(f"{finish_all_tasks}")
-
-        for task in to_cancel:  # pragma: no cover
-            if task.cancelled():
-                continue
-            if task.exception() is not None:
-                self._loop.call_exception_handler(
-                    {
-                        "message": "unhandled exception during asyncio.run() shutdown",
-                        "exception": task.exception(),
-                        "task": task,
-                    }
-                )

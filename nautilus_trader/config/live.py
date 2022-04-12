@@ -16,16 +16,36 @@
 from typing import Dict, FrozenSet, Optional
 
 import pydantic
-from pydantic import PositiveFloat
 from pydantic import PositiveInt
 
-from nautilus_trader.cache.config import CacheConfig
-from nautilus_trader.common.config import InstrumentProviderConfig
-from nautilus_trader.data.config import DataEngineConfig
-from nautilus_trader.execution.config import ExecEngineConfig
-from nautilus_trader.infrastructure.config import CacheDatabaseConfig
-from nautilus_trader.persistence.config import PersistenceConfig
-from nautilus_trader.risk.config import RiskEngineConfig
+from nautilus_trader.config.common import resolve_path
+from nautilus_trader.config.components import InstrumentProviderConfig
+from nautilus_trader.config.engines import DataEngineConfig
+from nautilus_trader.config.engines import ExecEngineConfig
+from nautilus_trader.config.engines import RiskEngineConfig
+
+
+class ImportableClientConfig(pydantic.BaseModel):
+    """
+    Represents a live data or execution client configuration.
+    """
+
+    @staticmethod
+    def is_importable(data: Dict):
+        return set(data) == {"factory_path", "config_path", "config"}
+
+    @staticmethod
+    def create(data: Dict, config_type: type):
+        assert (
+            ":" in data["factory_path"]
+        ), "`class_path` variable should be of the form `path.to.module:class`"
+        assert (
+            ":" in data["config_path"]
+        ), "`config_path` variable should be of the form `path.to.module:class`"
+        cls = resolve_path(data["config_path"])
+        config = cls(**data["config"])
+        assert isinstance(config, config_type)
+        return config
 
 
 class LiveDataEngineConfig(DataEngineConfig):
@@ -112,67 +132,3 @@ class LiveExecClientConfig(pydantic.BaseModel):
 
     instrument_provider: InstrumentProviderConfig = InstrumentProviderConfig()
     routing: RoutingConfig = RoutingConfig()
-
-
-class TradingNodeConfig(pydantic.BaseModel):
-    """
-    Configuration for ``TradingNode`` instances.
-
-    Parameters
-    ----------
-    trader_id : str, default "TRADER-000"
-        The trader ID for the node (must be a name and ID tag separated by a hyphen)
-    log_level : str, default "INFO"
-        The stdout log level for the node.
-    cache : CacheConfig, optional
-        The cache configuration.
-    cache_database : CacheDatabaseConfig, optional
-        The cache database configuration.
-    data_engine : LiveDataEngineConfig, optional
-        The live data engine configuration.
-    risk_engine : LiveRiskEngineConfig, optional
-        The live risk engine configuration.
-    exec_engine : LiveExecEngineConfig, optional
-        The live execution engine configuration.
-    loop_debug : bool, default False
-        If the asyncio event loop should be in debug mode.
-    load_strategy_state : bool, default True
-        If trading strategy state should be loaded from the database on start.
-    save_strategy_state : bool, default True
-        If trading strategy state should be saved to the database on stop.
-    timeout_connection : PositiveFloat (seconds)
-        The timeout for all clients to connect and initialize.
-    timeout_reconciliation : PositiveFloat (seconds)
-        The timeout for execution state to reconcile.
-    timeout_portfolio : PositiveFloat (seconds)
-        The timeout for portfolio to initialize margins and unrealized PnLs.
-    timeout_disconnection : PositiveFloat (seconds)
-        The timeout for all engine clients to disconnect.
-    check_residuals_delay : PositiveFloat (seconds)
-        The delay after stopping the node to check residual state before final shutdown.
-    data_clients : dict[str, LiveDataClientConfig], optional
-        The data client configurations.
-    exec_clients : dict[str, LiveExecClientConfig], optional
-        The execution client configurations.
-    persistence : LivePersistenceConfig, optional
-        The config for enabling persistence via feather files
-    """
-
-    trader_id: str = "TRADER-000"
-    log_level: str = "INFO"
-    cache: Optional[CacheConfig] = None
-    cache_database: Optional[CacheDatabaseConfig] = None
-    data_engine: Optional[LiveDataEngineConfig] = None
-    risk_engine: Optional[LiveRiskEngineConfig] = None
-    exec_engine: Optional[LiveExecEngineConfig] = None
-    loop_debug: bool = False
-    load_strategy_state: bool = True
-    save_strategy_state: bool = True
-    timeout_connection: PositiveFloat = 10.0
-    timeout_reconciliation: PositiveFloat = 10.0
-    timeout_portfolio: PositiveFloat = 10.0
-    timeout_disconnection: PositiveFloat = 10.0
-    check_residuals_delay: PositiveFloat = 10.0
-    data_clients: Dict[str, LiveDataClientConfig] = {}
-    exec_clients: Dict[str, LiveExecClientConfig] = {}
-    persistence: Optional[PersistenceConfig] = None

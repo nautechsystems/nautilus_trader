@@ -12,27 +12,3 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
-
-import pydantic
-
-
-class CacheDatabaseConfig(pydantic.BaseModel):
-    """
-    Configuration for ``CacheDatabase`` instances.
-
-    Parameters
-    ----------
-    type : str
-        The database type.
-    host : str
-        The database host address.
-    port : int
-        The database port.
-    flush : bool
-        If database should be flushed before start.
-    """
-
-    type: str = "redis"
-    host: str = "localhost"
-    port: int = 6379
-    flush: bool = False

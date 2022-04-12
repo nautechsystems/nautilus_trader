@@ -20,6 +20,7 @@ from nautilus_trader.execution.client cimport ExecutionClient
 from nautilus_trader.execution.messages cimport CancelAllOrders
 from nautilus_trader.execution.messages cimport CancelOrder
 from nautilus_trader.execution.messages cimport ModifyOrder
+from nautilus_trader.execution.messages cimport QueryOrder
 from nautilus_trader.execution.messages cimport SubmitOrder
 from nautilus_trader.execution.messages cimport SubmitOrderList
 from nautilus_trader.execution.messages cimport TradingCommand
@@ -44,6 +45,8 @@ cdef class ExecutionEngine(Component):
 
     cdef readonly bint allow_cash_positions
     """If unleveraged spot cash assets should track positions.\n\n:returns: `bool`"""
+    cdef readonly bint debug
+    """If debug mode is active (will provide extra debug logging).\n\n:returns: `bool`"""
     cdef readonly int command_count
     """The total count of commands received by the engine.\n\n:returns: `int`"""
     cdef readonly int event_count
@@ -89,6 +92,7 @@ cdef class ExecutionEngine(Component):
     cdef void _handle_modify_order(self, ExecutionClient client, ModifyOrder command) except *
     cdef void _handle_cancel_order(self, ExecutionClient client, CancelOrder command) except *
     cdef void _handle_cancel_all_orders(self, ExecutionClient client, CancelAllOrders command) except *
+    cdef void _handle_query_order(self, ExecutionClient client, QueryOrder command) except *
 
 # -- EVENT HANDLERS --------------------------------------------------------------------------------
 
@@ -98,5 +102,5 @@ cdef class ExecutionEngine(Component):
     cdef void _determine_position_id(self, OrderFilled fill, OMSType oms_type) except *
     cdef void _handle_order_fill(self, OrderFilled fill, OMSType oms_type) except *
     cdef void _open_position(self,  Instrument instrument, OrderFilled fill, OMSType oms_type) except *
-    cdef void _update_position(self, Instrument instrument, Position position, OrderFilled fill, OMSType oms_type) except *
+    cdef void _update_position(self, Instrument instrument, OrderFilled fill, OMSType oms_type, Position position) except *
     cdef void _flip_position(self, Instrument instrument, Position position, OrderFilled fill, OMSType oms_type) except *

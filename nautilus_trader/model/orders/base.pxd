@@ -143,7 +143,7 @@ cdef class Order:
     cdef OrderSide opposite_side_c(OrderSide side) except *
 
     @staticmethod
-    cdef OrderSide flatten_side_c(PositionSide side) except *
+    cdef OrderSide closing_side_c(PositionSide side) except *
 
     cpdef void apply(self, OrderEvent event) except *
 

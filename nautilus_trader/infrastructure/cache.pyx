@@ -13,7 +13,9 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import redis
+import warnings
+
+from nautilus_trader.config.components import CacheDatabaseConfig
 
 from nautilus_trader.accounting.accounts.base cimport Account
 from nautilus_trader.accounting.factory cimport AccountFactory
@@ -37,7 +39,11 @@ from nautilus_trader.model.position cimport Position
 from nautilus_trader.serialization.base cimport Serializer
 from nautilus_trader.trading.strategy cimport TradingStrategy
 
-from nautilus_trader.infrastructure.config import CacheDatabaseConfig
+
+try:
+    import redis
+except ImportError:  # pragma: no cover
+    redis = None
 
 
 cdef str _UTF8 = 'utf-8'
@@ -88,6 +94,9 @@ cdef class RedisCacheDatabase(CacheDatabase):
         Serializer serializer not None,
         config: CacheDatabaseConfig=None,
     ):
+        if redis is None:
+            warnings.warn("redis is not available.")
+
         if config is None:
             config = CacheDatabaseConfig()
         Condition.type(config, CacheDatabaseConfig, "config")

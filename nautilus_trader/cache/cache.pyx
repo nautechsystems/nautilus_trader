@@ -13,11 +13,14 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+import copy
+import pickle
+import uuid
 from collections import deque
 from decimal import Decimal
 from typing import Optional
 
-from nautilus_trader.cache.config import CacheConfig
+from nautilus_trader.config.components import CacheConfig
 
 from libc.stdint cimport int64_t
 
@@ -101,6 +104,7 @@ cdef class Cache(CacheFacade):
         self._accounts = {}                    # type: dict[AccountId, Account]
         self._orders = {}                      # type: dict[ClientOrderId, Order]
         self._positions = {}                   # type: dict[PositionId, Position]
+        self._positions_archive = {}           # type: dict[PositionId, list[bytes]]
 
         # Cache index
         self._index_venue_account = {}         # type: dict[Venue, AccountId]
@@ -548,6 +552,7 @@ cdef class Cache(CacheFacade):
         self._accounts.clear()
         self._orders.clear()
         self._positions.clear()
+        self._positions_archive.clear()
 
         self._log.debug(f"Cleared cache.")
 
@@ -1270,6 +1275,31 @@ cdef class Cache(CacheFacade):
         # Update database
         if self._database is not None:
             self._database.add_position(position)
+
+    cpdef void archive_position(self, Position position) except *:
+        """
+        Archive a snapshot of the given position in its current state.
+
+        The position ID will be appended with a UUID4 string.
+
+        Parameters
+        ----------
+        position : Position
+            The position to archive.
+
+        """
+        cdef PositionId position_id = position.id
+        cdef list positions_archive = self._positions_archive.get(position_id)
+
+        # Reassign position ID
+        cdef Position copied_position = copy.copy(position)
+        copied_position.id = PositionId(position.id.value + f"-{uuid.uuid4()}")
+        cdef bytes position_pickled = pickle.dumps(copied_position)
+
+        if positions_archive is not None:
+            positions_archive.append(position_pickled)
+        else:
+            self._positions_archive[position_id] = [position_pickled]
 
     cpdef void update_account(self, Account account) except *:
         """
@@ -2513,6 +2543,32 @@ cdef class Cache(CacheFacade):
         Condition.not_none(client_order_id, "client_order_id")
 
         return self._index_order_position.get(client_order_id)
+
+    cpdef list positions_archived(self, PositionId position_id=None):
+        """
+        Return all archived positions with the given optional identifier filter.
+
+        Parameters
+        ----------
+        position_id : PositionId, optional
+            The position ID query filter.
+
+        Returns
+        -------
+        list[Position]
+
+        """
+        cdef list archive_list
+        cdef list positions_archive
+        if position_id is not None:
+            positions_archive = self._positions_archive.get(position_id, [])
+        else:
+            positions_archive = []
+            for archive_list in self._positions_archive.values():
+                positions_archive += archive_list
+
+        cdef bytes p
+        return [pickle.loads(p) for p in positions_archive]
 
     cpdef list positions(
         self,

@@ -19,9 +19,10 @@ from collections import Counter
 import pytest
 
 from nautilus_trader.adapters.betfair.providers import BetfairInstrumentProvider
-from nautilus_trader.backtest.config import BacktestDataConfig
-from nautilus_trader.backtest.config import BacktestRunConfig
 from nautilus_trader.backtest.node import BacktestNode
+from nautilus_trader.config.backtest import BacktestDataConfig
+from nautilus_trader.config.backtest import BacktestEngineConfig
+from nautilus_trader.config.backtest import BacktestRunConfig
 from nautilus_trader.model.data.venue import InstrumentStatusUpdate
 from nautilus_trader.persistence.catalog import DataCatalog
 from nautilus_trader.persistence.external.core import process_files
@@ -59,7 +60,6 @@ class TestPersistenceStreaming:
         )
         return data
 
-    @pytest.mark.skip(reason="change AccountState schema")
     def test_feather_writer(self):
         # Arrange
         instrument = self.catalog.instruments(as_nautilus=True)[0]
@@ -68,30 +68,31 @@ class TestPersistenceStreaming:
             catalog_fs_protocol=self.catalog.fs.protocol,
             instrument_id=instrument.id.value,
         )
-        run_config.persistence.flush_interval = 5000
+        run_config.engine.persistence.flush_interval = 5000
         node = BacktestNode()
 
         # Act
-        node.run_sync(run_configs=[run_config])
+        backtest_result = node.run(run_configs=[run_config])
 
         # Assert
         result = self.catalog.read_backtest(
-            backtest_run_id=run_config.id, raise_on_failed_deserialize=True
+            backtest_run_id=backtest_result[0].instance_id,
+            raise_on_failed_deserialize=True,
         )
         result = dict(Counter([r.__class__.__name__ for r in result]))
+
         expected = {
-            "AccountState": 746,
-            "BettingInstrument": 1,
-            "ComponentStateChanged": 5,
-            "OrderAccepted": 323,
+            "AccountState": 666,
+            "BettingInstrument": 3,
+            "ComponentStateChanged": 11,
+            "OrderAccepted": 322,
             "OrderBookDeltas": 1077,
             "OrderBookSnapshot": 1,
-            "OrderDenied": 223,
-            "OrderFilled": 423,
-            "OrderInitialized": 646,
-            "OrderSubmitted": 423,
-            "PositionClosed": 100,
-            "PositionOpened": 323,
+            "OrderFilled": 344,
+            "OrderInitialized": 1,
+            "OrderSubmitted": 323,
+            "PositionChanged": 343,
+            "PositionOpened": 1,
             "TradeTick": 198,
         }
         assert result == expected
@@ -116,20 +117,21 @@ class TestPersistenceStreaming:
             catalog_fs_protocol="memory",
             data_cls=InstrumentStatusUpdate,
         )
+        persistence = BetfairTestStubs.persistence_config(catalog_path=self.catalog.path)
         run_config = BacktestRunConfig(
+            engine=BacktestEngineConfig(persistence=persistence),
             data=[data_config, instrument_data_config],
-            persistence=BetfairTestStubs.persistence_config(catalog_path=self.catalog.path),
             venues=[BetfairTestStubs.betfair_venue_config()],
-            strategies=[],
         )
 
         # Act
         node = BacktestNode()
-        node.run_sync([run_config])
+        r = node.run([run_config])
 
         # Assert
         result = self.catalog.read_backtest(
-            backtest_run_id=run_config.id, raise_on_failed_deserialize=True
+            backtest_run_id=r[0].instance_id,
+            raise_on_failed_deserialize=True,
         )
         result = Counter([r.__class__.__name__ for r in result])
         assert result["NewsEventData"] == 86985

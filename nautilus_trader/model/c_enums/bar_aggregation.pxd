@@ -24,10 +24,11 @@ cpdef enum BarAggregation:
     VALUE = 7
     VALUE_IMBALANCE = 8
     VALUE_RUNS = 9
-    SECOND = 10
-    MINUTE = 11
-    HOUR = 12
-    DAY = 13
+    MILLISECOND = 10
+    SECOND = 11
+    MINUTE = 12
+    HOUR = 13
+    DAY = 14
 
 
 cdef class BarAggregationParser:

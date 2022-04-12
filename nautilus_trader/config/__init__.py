@@ -13,17 +13,8 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import pydantic
+"""
+The `config` subpackage groups all configuration classes and factories.
 
-
-class ExecEngineConfig(pydantic.BaseModel):
-    """
-    Configuration for ``ExecutionEngine`` instances.
-
-    Parameters
-    ----------
-    allow_cash_positions : bool, default False
-        If unleveraged spot cash assets should track positions.
-    """
-
-    allow_cash_positions: bool = False
+All configurations inherit from :class:`pydantic.pydantic.BaseModel`.
+"""

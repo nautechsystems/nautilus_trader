@@ -166,7 +166,7 @@ the account type (cash vs margin), an optional base currency, and starting balan
 <!-- #endregion -->
 
 ```python jupyter={"outputs_hidden": false} pycharm={"name": "#%%\n"}
-from nautilus_trader.backtest.config import BacktestVenueConfig
+from nautilus_trader.config.backtest import BacktestVenueConfig
 
 venue = BacktestVenueConfig(
     name="SIM",
@@ -200,7 +200,7 @@ adding the `QuoteTick`(s) for our EUR/USD instrument:
 
 ```python jupyter={"outputs_hidden": false} pycharm={"name": "#%%\n"}
 from nautilus_trader.model.data.tick import QuoteTick
-from nautilus_trader.backtest.config import BacktestDataConfig
+from nautilus_trader.config.backtest import BacktestDataConfig
 
 data = [
     BacktestDataConfig(
@@ -220,7 +220,7 @@ however is fine to leave with its defaults:
 <!-- #endregion -->
 
 ```python jupyter={"outputs_hidden": false} pycharm={"name": "#%%\n"}
-from nautilus_trader.backtest.config import BacktestEngineConfig
+from nautilus_trader.config.backtest import BacktestEngineConfig
 
 engine = BacktestEngineConfig(log_level="ERROR") # Lower to `INFO` to see more logging about orders, events, etc.
 ```
@@ -246,12 +246,12 @@ full configuration for our backtest, we are ready to run some backtests!
 
 The `BacktestNode` class _actually_ runs the backtest. The reason for this separation between 
 configuration and execution is the `BacktestNode` allows running multiple configurations (different 
-parameters or batches of data), as well as parallelisation via the excellent [dask](https://dask.org/) library.
+parameters or batches of data).
 
 ```python pycharm={"name": "#%%\n"} tags=[]
 from nautilus_trader.backtest.node import BacktestNode
-from nautilus_trader.backtest.config import BacktestRunConfig
-from nautilus_trader.trading.config import ImportableStrategyConfig
+from nautilus_trader.config.backtest import BacktestRunConfig
+from nautilus_trader.config.components import ImportableStrategyConfig
 
 config = BacktestRunConfig(
     venues=[venue],
@@ -262,8 +262,8 @@ config = BacktestRunConfig(
 
 node = BacktestNode()
 
- # run_sync runs one or many configs synchronously
-[result] = node.run_sync(
+ # `run` runs one or many configs synchronously
+[result] = node.run(
     run_configs=[config], 
     return_engine=True # Return the full BacktestEngine (which contains much more detailed information) rather than the standard `BacktestResult`
 )

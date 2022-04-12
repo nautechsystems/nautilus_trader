@@ -12,23 +12,3 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
-
-from typing import Any, Optional
-
-import numpy as np
-import pandas as pd
-
-from nautilus_trader.analysis.statistic import PortfolioStatistic
-import quantstats
-
-class ReturnsAnnualVolatility(PortfolioStatistic):
-    """
-    Calculates the annualized volatility of returns.
-    """
-
-    @property
-    def name(self) -> str:
-        return "Annual Volatility (Returns)"
-
-    def calculate_from_returns(self, returns: pd.Series) -> Optional[Any]:
-        return quantstats.stats.volatility(returns=returns,  periods=365)

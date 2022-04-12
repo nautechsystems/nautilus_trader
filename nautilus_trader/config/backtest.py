@@ -21,19 +21,16 @@ from typing import Dict, List, Optional, Union
 
 import pandas as pd
 import pydantic
-from dask.base import tokenize
 
-from nautilus_trader.cache.config import CacheConfig
-from nautilus_trader.common.config import ImportableActorConfig
+from nautilus_trader.config.engines import DataEngineConfig
+from nautilus_trader.config.engines import ExecEngineConfig
+from nautilus_trader.config.engines import RiskEngineConfig
+from nautilus_trader.config.kernel import NautilusKernelConfig
 from nautilus_trader.core.data import Data
 from nautilus_trader.core.datetime import maybe_dt_to_unix_nanos
-from nautilus_trader.data.config import DataEngineConfig
-from nautilus_trader.execution.config import ExecEngineConfig
-from nautilus_trader.infrastructure.config import CacheDatabaseConfig
 from nautilus_trader.model.identifiers import ClientId
-from nautilus_trader.persistence.config import PersistenceConfig
-from nautilus_trader.risk.config import RiskEngineConfig
-from nautilus_trader.trading.config import ImportableStrategyConfig
+from nautilus_trader.persistence.util import tokenize
+from nautilus_trader.system.kernel import Environment
 
 
 class Partialable:
@@ -82,10 +79,6 @@ class Partialable:
         """Return a new instance with some attributes replaced."""
         return self.__class__(**{**{k: getattr(self, k) for k in self.fields()}, **kwargs})
 
-    def __dask_tokenize__(self):
-        self.__post_init__()  # Ensures token determinism
-        return tuple(self.fields())
-
     def __repr__(self):  # Adding -> causes error: Module has no attribute "_repr_fn"
         dataclass_repr_func = dataclasses._repr_fn(
             fields=list(self.fields().values()), globals=self.__dict__
@@ -112,7 +105,7 @@ class BacktestVenueConfig(Partialable):
     # fill_model: Optional[FillModel] = None  # TODO(cs): Implement next iteration
     # modules: Optional[List[SimulationModule]] = None  # TODO(cs): Implement next iteration
 
-    def __dask_tokenize__(self):
+    def __tokenize__(self):
         self.__post_init__()  # Ensures token determinism
         values = [
             self.name,
@@ -212,26 +205,40 @@ class BacktestDataConfig(Partialable):
         }
 
 
-class BacktestEngineConfig(pydantic.BaseModel):
+class BacktestEngineConfig(NautilusKernelConfig):
     """
     Configuration for ``BacktestEngine`` instances.
 
     Parameters
     ----------
-    trader_id : str, default "BACKTESTER-000"
-        The trader ID.
+    trader_id : str
+        The trader ID for the node (must be a name and ID tag separated by a hyphen).
     log_level : str, default "INFO"
-        The minimum log level for logging messages to stdout.
+        The stdout log level for the node.
+    loop_debug : bool, default False
+        If the asyncio event loop should be in debug mode.
     cache : CacheConfig, optional
-        The configuration for the cache.
+        The cache configuration.
     cache_database : CacheDatabaseConfig, optional
-        The configuration for the cache database.
+        The cache database configuration.
     data_engine : DataEngineConfig, optional
-        The configuration for the data engine.
+        The live data engine configuration.
     risk_engine : RiskEngineConfig, optional
-        The configuration for the risk engine.
+        The live risk engine configuration.
     exec_engine : ExecEngineConfig, optional
-        The configuration for the execution engine.
+        The live execution engine configuration.
+    persistence : LivePersistenceConfig, optional
+        The configuration for enabling persistence via feather files.
+    data_clients : dict[str, LiveDataClientConfig], optional
+        The data client configurations.
+    exec_clients : dict[str, LiveExecClientConfig], optional
+        The execution client configurations.
+    strategies : List[ImportableStrategyConfig]
+        The strategy configurations for the node.
+    load_strategy_state : bool, default True
+        If trading strategy state should be loaded from the database on start.
+    save_strategy_state : bool, default True
+        If trading strategy state should be saved to the database on stop.
     bypass_logging : bool, default False
         If logging should be bypassed.
     run_analysis : bool, default True
@@ -239,17 +246,14 @@ class BacktestEngineConfig(pydantic.BaseModel):
 
     """
 
-    trader_id: str = "BACKTESTER-000"
-    log_level: str = "INFO"
-    cache: Optional[CacheConfig] = None
-    cache_database: Optional[CacheDatabaseConfig] = None
-    data_engine: Optional[DataEngineConfig] = None
-    risk_engine: Optional[RiskEngineConfig] = None
-    exec_engine: Optional[ExecEngineConfig] = None
-    bypass_logging: bool = False
+    environment: Environment = Environment.BACKTEST
+    trader_id: str = "BACKTESTER-001"
+    data_engine: DataEngineConfig = DataEngineConfig()
+    risk_engine: RiskEngineConfig = RiskEngineConfig()
+    exec_engine: ExecEngineConfig = ExecEngineConfig()
     run_analysis: bool = True
 
-    def __dask_tokenize__(self):
+    def __tokenize__(self):
         return tuple(self.dict().items())
 
 
@@ -268,14 +272,17 @@ class BacktestRunConfig(Partialable):
     engine: Optional[BacktestEngineConfig] = None
     venues: Optional[List[BacktestVenueConfig]] = None
     data: Optional[List[BacktestDataConfig]] = None
-    actors: Optional[List[ImportableActorConfig]] = None
-    strategies: Optional[List[ImportableStrategyConfig]] = None
-    persistence: Optional[PersistenceConfig] = None
     batch_size_bytes: Optional[int] = None
 
     @property
     def id(self):
         return tokenize(self)
+
+    @classmethod
+    def parse_raw(cls, raw: Union[str, bytes]):
+        """Overloaded so that `Partialable` base class is explicitly set"""
+        res = cls.__pydantic_model__.parse_raw(raw)  # type: ignore
+        return cls(**{k: getattr(res, k) for k in cls.__dataclass_fields__})  # type: ignore
 
 
 def parse_filters_expr(s: str):

@@ -24,6 +24,7 @@ from nautilus_trader.common.uuid import UUIDFactory
 from nautilus_trader.core.data import Data
 from nautilus_trader.core.fsm import InvalidStateTrigger
 from nautilus_trader.data.engine import DataEngine
+from nautilus_trader.data.engine import DataEngineConfig
 from nautilus_trader.data.messages import DataCommand
 from nautilus_trader.data.messages import DataRequest
 from nautilus_trader.data.messages import DataResponse
@@ -95,11 +96,13 @@ class TestDataEngine:
             logger=self.logger,
         )
 
+        config = DataEngineConfig(debug=True)
         self.data_engine = DataEngine(
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
             logger=self.logger,
+            config=config,
         )
 
         self.binance_client = BacktestMarketDataClient(

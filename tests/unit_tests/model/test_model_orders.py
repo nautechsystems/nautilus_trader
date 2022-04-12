@@ -79,10 +79,10 @@ class TestOrders:
     def test_flatten_side_given_invalid_value_or_flat_raises_value_error(self):
         # Arrange, Act
         with pytest.raises(ValueError):
-            Order.flatten_side(0)  # <-- invalid value
+            Order.closing_side(0)  # <-- invalid value
 
         with pytest.raises(ValueError):
-            Order.flatten_side(PositionSide.FLAT)
+            Order.closing_side(PositionSide.FLAT)
 
     @pytest.mark.parametrize(
         "side, expected",
@@ -105,9 +105,9 @@ class TestOrders:
             [PositionSide.SHORT, OrderSide.BUY],
         ],
     )
-    def test_flatten_side_returns_expected_sides(self, side, expected):
+    def test_closing_side_returns_expected_sides(self, side, expected):
         # Arrange, Act
-        result = Order.flatten_side(side)
+        result = Order.closing_side(side)
 
         # Assert
         assert result == expected
@@ -246,6 +246,7 @@ class TestOrders:
         assert order.venue == AUDUSD_SIM.id.venue
         assert order.type == OrderType.MARKET
         assert order.status == OrderStatus.INITIALIZED
+        assert order.side_string == "BUY"
         assert order.event_count == 1
         assert isinstance(order.last_event, OrderInitialized)
         assert not order.has_price
@@ -275,6 +276,7 @@ class TestOrders:
         # Assert
         assert order.type == OrderType.MARKET
         assert order.status == OrderStatus.INITIALIZED
+        assert order.side_string == "SELL"
         assert order.event_count == 1
         assert isinstance(order.last_event, OrderInitialized)
         assert len(order.events) == 1

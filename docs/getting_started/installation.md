@@ -16,13 +16,13 @@ To install the latest binary wheel (or sdist package) from PyPI:
 
 Also, the following optional dependency ‘extras’ are separately available for installation.
 
-- `distributed` - packages required for using Dask distributed in backtests.
-- `hyperopt` - packages required for model hyperparameter optimization in backtests.
-- `ib`  - packages required for the Interactive Brokers adapter.
+- `hyperopt` - package required for model hyperparameter optimization in backtests
+- `ib`  - package required for the Interactive Brokers adapter
+- `redis`  - packages required to use Redis as a cache database
 
-For example, to install including the `distributed` and `hyperopt` extras using pip:
+For example, to install including the `ib` and `redis` extras using pip:
 
-    pip install -U nautilus_trader[distributed,hyperopt]
+    pip install -U nautilus_trader[ib,redis]
 
 ## From Source
 Installation from source requires the `Python.h` header file, which is included in development releases such as `python-dev`. 

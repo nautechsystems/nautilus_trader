@@ -123,13 +123,3 @@
    :members:
    :member-order: bysource
 ```
-
-## Config
-
-```{eval-rst}
-.. automodule:: nautilus_trader.common.config
-   :show-inheritance:
-   :inherited-members:
-   :members:
-   :member-order: bysource
-```

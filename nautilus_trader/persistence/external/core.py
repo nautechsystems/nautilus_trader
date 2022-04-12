@@ -12,23 +12,22 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
-
+import logging
 import pathlib
 import re
+from concurrent.futures import Executor
+from concurrent.futures import ThreadPoolExecutor
+from io import BytesIO
 from itertools import groupby
 from typing import Dict, List, Optional, Tuple, Union
 
-import dask
 import fsspec
 import pandas as pd
 import pyarrow as pa
 import pyarrow.dataset as ds
 import pyarrow.parquet as pq
-from dask import compute
-from dask import delayed
-from dask.diagnostics import ProgressBar
-from dask.utils import parse_bytes
 from fsspec.core import OpenFile
+from pyarrow import ArrowInvalid
 from tqdm import tqdm
 
 from nautilus_trader.model.data.base import GenericData
@@ -38,6 +37,7 @@ from nautilus_trader.persistence.external.metadata import load_mappings
 from nautilus_trader.persistence.external.metadata import write_partition_column_mappings
 from nautilus_trader.persistence.external.readers import Reader
 from nautilus_trader.persistence.external.synchronization import named_lock
+from nautilus_trader.persistence.util import parse_bytes
 from nautilus_trader.serialization.arrow.serializer import ParquetSerializer
 from nautilus_trader.serialization.arrow.serializer import get_cls_table
 from nautilus_trader.serialization.arrow.serializer import get_partition_keys
@@ -115,23 +115,24 @@ def process_files(
     catalog: DataCatalog,
     block_size="128mb",
     compression="infer",
-    scheduler: Union[str, "distributed.Client"] = "sync",
+    executor: Optional[Executor] = None,
     **kw,
 ):
-    assert scheduler == "sync" or str(scheduler.__module__) == "distributed.client"
+    executor = executor or ThreadPoolExecutor()
+    assert isinstance(executor, Executor)
     raw_files = make_raw_files(
         glob_path=glob_path,
         block_size=block_size,
         compression=compression,
         **kw,
     )
-    tasks = [
-        delayed(process_raw_file)(catalog=catalog, reader=reader, raw_file=rf) for rf in raw_files
-    ]
-    with ProgressBar():
-        with dask.config.set(scheduler=scheduler):
-            results = compute(tasks)
-    return dict((rf.open_file.path, value) for rf, value in zip(raw_files, results[0]))
+    futures = {}
+    for rf in raw_files:
+        futures[rf] = executor.submit(process_raw_file, catalog=catalog, raw_file=rf, reader=reader)
+    # Show progress
+    for _ in tqdm(list(futures.values())):
+        pass
+    return {rf.open_file.path: f.result() for rf, f in futures.items()}
 
 
 def make_raw_files(glob_path, block_size="128mb", compression="infer", **kw) -> List[RawFile]:
@@ -269,9 +270,15 @@ def write_parquet(
     table = pa.Table.from_pandas(df, schema=schema)
 
     if "basename_template" not in kwargs and "ts_init" in df.columns:
-        kwargs["basename_template"] = (
-            f"{df['ts_init'].min()}-{df['ts_init'].max()}" + "-{i}.parquet"
-        )
+        if "bar_type" in df.columns:
+            suffix = df.iloc[0]["bar_type"].split(".")[1]
+            kwargs["basename_template"] = (
+                f"{df['ts_init'].min()}-{df['ts_init'].max()}" + "-" + suffix + "-{i}.parquet"
+            )
+        else:
+            kwargs["basename_template"] = (
+                f"{df['ts_init'].min()}-{df['ts_init'].max()}" + "-{i}.parquet"
+            )
 
     # Write the actual file
     partitions = (
@@ -298,7 +305,11 @@ def write_parquet(
     new_files = set(fs.glob(f"{path}/**/*.parquet")) - files
     del df
     for fn in new_files:
-        ndf = pd.read_parquet(fs.open(fn))
+        try:
+            ndf = pd.read_parquet(BytesIO(fs.open(fn).read()))
+        except ArrowInvalid:
+            logging.error(f"Failed to read {fn}")
+            continue
         # assert ndf.shape[0] == shape
         if "ts_init" in ndf.columns:
             ndf = ndf.sort_values("ts_init").reset_index(drop=True)

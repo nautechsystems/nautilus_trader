@@ -22,8 +22,9 @@ from nautilus_trader.common.enums import LogLevel
 from nautilus_trader.common.events.risk import TradingStateChanged
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.common.uuid import UUIDFactory
+from nautilus_trader.config.engines import ExecEngineConfig
+from nautilus_trader.config.engines import RiskEngineConfig
 from nautilus_trader.core.message import Event
-from nautilus_trader.execution.config import ExecEngineConfig
 from nautilus_trader.execution.engine import ExecutionEngine
 from nautilus_trader.execution.messages import CancelOrder
 from nautilus_trader.execution.messages import ModifyOrder
@@ -46,7 +47,6 @@ from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.orders.list import OrderList
 from nautilus_trader.msgbus.bus import MessageBus
 from nautilus_trader.portfolio.portfolio import Portfolio
-from nautilus_trader.risk.config import RiskEngineConfig
 from nautilus_trader.risk.engine import RiskEngine
 from nautilus_trader.trading.strategy import TradingStrategy
 from tests.test_kit.mocks.exec_clients import MockExecutionClient
@@ -89,8 +89,11 @@ class TestRiskEngine:
             logger=self.logger,
         )
 
-        config = ExecEngineConfig()
-        config.allow_cash_positions = True  # Retain original behaviour for now
+        config = ExecEngineConfig(
+            allow_cash_positions=True,  # Retain original behaviour for tests
+            debug=True,
+        )
+
         self.exec_engine = ExecutionEngine(
             msgbus=self.msgbus,
             cache=self.cache,

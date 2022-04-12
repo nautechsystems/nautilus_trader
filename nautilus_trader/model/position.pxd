@@ -91,8 +91,6 @@ cdef class Position:
     """The average open price.\n\n:returns: `Decimal`"""
     cdef readonly object avg_px_close
     """The average close price.\n\n:returns: `Decimal` or ``None``"""
-    cdef readonly object realized_points
-    """The current realized points for the position.\n\n:returns: `Decimal`"""
     cdef readonly object realized_return
     """The current realized return for the position.\n\n:returns: `Decimal`"""
     cdef readonly Money realized_pnl

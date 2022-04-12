@@ -15,6 +15,13 @@
 
 from typing import Optional
 
+import aiohttp
+import msgspec
+import orjson
+import pyarrow
+import pydantic
+import pytz
+
 from cpython.datetime cimport timedelta
 
 import asyncio
@@ -553,8 +560,30 @@ cpdef void nautilus_header(LoggerAdapter logger) except *:
     logger.info(f"python {python_version()}")
     logger.info(f"numpy {np.__version__}")
     logger.info(f"pandas {pd.__version__}")
+    logger.info(f"aiohttp {aiohttp.__version__}")
+    logger.info(f"msgspec {msgspec.__version__}")
+    logger.info(f"orjson {orjson.__version__}")
     logger.info(f"psutil {psutil.__version__}")
+    logger.info(f"pyarrow {pyarrow.__version__}")
+    logger.info(f"pydantic {pydantic.__version__}")
+    logger.info(f"pytz {pytz.__version__}")  # type: ignore
+    try:
+        import redis
+        logger.info(f"redis {redis.__version__}")
+    except ImportError:  # pragma: no cover
+        redis = None
+    try:
+        import hiredis
+        logger.info(f"hiredis {hiredis.__version__}")
+    except ImportError:  # pragma: no cover
+        hiredis = None
+    try:
+        import uvloop
+        logger.info(f"uvloop {uvloop.__version__}")
+    except ImportError:  # pragma: no cover
+        uvloop = None
 
+    logger.info("\033[36m=================================================================")
 
 cpdef void log_memory(LoggerAdapter logger) except *:
     logger.info("\033[36m=================================================================")

@@ -126,4 +126,4 @@ class MarketMaker(TradingStrategy):
 
         """
         self.cancel_all_orders(self.instrument_id)
-        self.flatten_all_positions(self.instrument_id)
+        self.close_all_positions(self.instrument_id)

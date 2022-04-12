@@ -111,7 +111,7 @@ class InteractiveBrokersGateway:
             return False
         return any([b"Login has completed" in line for line in logs.split(b"\n")])
 
-    def start(self, wait: Optional[int] = 30):
+    def start(self, wait: Optional[int] = 90):
         """
         :param wait: Seconds to wait until container is ready
         :return:

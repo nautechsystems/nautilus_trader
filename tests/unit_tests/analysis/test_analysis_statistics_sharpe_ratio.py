@@ -27,7 +27,7 @@ class TestSharpeRatioPortfolioStatistic:
         result = stat.name
 
         # Assert
-        assert result == "Sharpe Ratio"
+        assert result == "Sharpe Ratio (252 days)"
 
     def test_calculate_given_empty_series_returns_nan(self):
         # Arrange

@@ -613,7 +613,7 @@ class TestSimulatedExchangeContingencyAdvancedOrders:
         self.exchange.process(0)
 
         # Act
-        self.strategy.flatten_position(self.strategy.cache.position(en.position_id))
+        self.strategy.close_position(self.strategy.cache.position(en.position_id))
         self.exchange.process(0)
 
         # Assert
