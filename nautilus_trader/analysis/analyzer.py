@@ -145,7 +145,6 @@ class PortfolioAnalyzer:
 
         """
         self._positions += positions
-
         for position in positions:
             self.add_trade(position.id, position.realized_pnl)
             self.add_return(unix_nanos_to_dt(position.ts_closed), position.realized_return)

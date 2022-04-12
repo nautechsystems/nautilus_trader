@@ -115,6 +115,7 @@ cdef class CacheFacade:
     cpdef Position position(self, PositionId position_id)
     cpdef Position position_for_order(self, ClientOrderId client_order_id)
     cpdef PositionId position_id(self, ClientOrderId client_order_id)
+    cpdef list positions_archived(self, PositionId position_id=*)
     cpdef list positions(self, Venue venue=*, InstrumentId instrument_id=*, StrategyId strategy_id=*)
     cpdef list positions_open(self, Venue venue=*, InstrumentId instrument_id=*, StrategyId strategy_id=*)
     cpdef list positions_closed(self, Venue venue=*, InstrumentId instrument_id=*, StrategyId strategy_id=*)

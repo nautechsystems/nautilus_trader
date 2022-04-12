@@ -102,5 +102,5 @@ cdef class ExecutionEngine(Component):
     cdef void _determine_position_id(self, OrderFilled fill, OMSType oms_type) except *
     cdef void _handle_order_fill(self, OrderFilled fill, OMSType oms_type) except *
     cdef void _open_position(self,  Instrument instrument, OrderFilled fill, OMSType oms_type) except *
-    cdef void _update_position(self, Instrument instrument, Position position, OrderFilled fill, OMSType oms_type) except *
+    cdef void _update_position(self, Instrument instrument, OrderFilled fill, OMSType oms_type, Position position) except *
     cdef void _flip_position(self, Instrument instrument, Position position, OrderFilled fill, OMSType oms_type) except *
