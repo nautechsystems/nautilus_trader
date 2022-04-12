@@ -14,44 +14,16 @@
 # -------------------------------------------------------------------------------------------------
 
 import itertools
-import pickle
-from decimal import Decimal
 from typing import Dict, List, Optional
 
-import cloudpickle
-import dask
 import pandas as pd
-from dask.base import normalize_token
-from dask.delayed import Delayed
-from dask.utils import parse_timedelta
 
-
-try:
-    import hyperopt
-    from hyperopt import STATUS_FAIL
-    from hyperopt import STATUS_OK
-    from hyperopt import Trials
-    from hyperopt import fmin
-    from hyperopt import tpe
-except ImportError:
-    # hyperopt is an optional extra,
-    # which is only required when running `hyperopt_search()`.
-    hyperopt = None
-
-from nautilus_trader.backtest.config import BacktestDataConfig
-from nautilus_trader.backtest.config import BacktestRunConfig
-from nautilus_trader.backtest.config import BacktestVenueConfig
 from nautilus_trader.backtest.engine import BacktestEngine
 from nautilus_trader.backtest.engine import BacktestEngineConfig
 from nautilus_trader.backtest.results import BacktestResult
-from nautilus_trader.common.actor import Actor
-from nautilus_trader.common.clock import LiveClock
-from nautilus_trader.common.config import ActorFactory
-from nautilus_trader.common.config import ImportableActorConfig
-from nautilus_trader.common.logging import Logger
-from nautilus_trader.common.logging import LoggerAdapter
-from nautilus_trader.common.logging import LogLevel
-from nautilus_trader.core.inspect import is_nautilus_class
+from nautilus_trader.config.backtest import BacktestDataConfig
+from nautilus_trader.config.backtest import BacktestRunConfig
+from nautilus_trader.config.backtest import BacktestVenueConfig
 from nautilus_trader.model.currency import Currency
 from nautilus_trader.model.data.bar import Bar
 from nautilus_trader.model.data.base import DataType
@@ -64,18 +36,12 @@ from nautilus_trader.model.enums import BookTypeParser
 from nautilus_trader.model.enums import OMSType
 from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import Venue
-from nautilus_trader.model.instruments.base import Instrument
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.orderbook.data import OrderBookData
 from nautilus_trader.model.orderbook.data import OrderBookDelta
 from nautilus_trader.persistence.batching import batch_files
 from nautilus_trader.persistence.catalog import DataCatalog
-from nautilus_trader.persistence.config import PersistenceConfig
-from nautilus_trader.persistence.streaming import FeatherWriter
-from nautilus_trader.config.components import ImportableStrategyConfig
-from nautilus_trader.config.components import StrategyFactory
-from nautilus_trader.config.components import TradingStrategyConfig
-from nautilus_trader.trading.strategy import TradingStrategy
+from nautilus_trader.persistence.util import is_nautilus_class
 
 
 class BacktestNode:
@@ -83,177 +49,17 @@ class BacktestNode:
     Provides a node for orchestrating groups of configurable backtest runs.
     """
 
-    def build_graph(self, run_configs: List[BacktestRunConfig]) -> Delayed:
-        """
-        Build a `Delayed` graph from `backtest_configs` which can be passed to a dask executor.
-
-        Parameters
-        ----------
-        run_configs : list[BacktestRunConfig]
-            The backtest run configurations.
-
-        Returns
-        -------
-        Delayed
-            The delayed graph, yet to be computed.
-
-        """
-        results: List[BacktestResult] = []
-        for config in run_configs:
-            config.check()  # check all values set
-            result = self._run_delayed(
-                run_config_id=config.id,
-                engine_config=config.engine,
-                venue_configs=config.venues,
-                data_configs=config.data,
-                actor_configs=config.actors,
-                strategy_configs=config.strategies,
-                persistence=config.persistence,
-                batch_size_bytes=config.batch_size_bytes,
-            )
-            results.append(result)
-
-        return self._gather_delayed(results)
-
-    def set_strategy_config(
-        self,
-        path: str,
-        strategy: TradingStrategyConfig,
-        instrument_id: str,
-        bar_type: str,
-        trade_size: Decimal,
-    ) -> None:
-
-
-        """
-        Set strategy parameters which can be passed to the hyperopt objective.
-
-        Parameters
-        ----------
-        path : str
-            The path to the strategy.
-        strategy : TradingStrategyConfig
-            The strategy config object.
-        instrument_id : InstrumentId
-            The instrument ID.
-        bar_type : BarType
-            The type of bar type used.
-        trade_size : Decimal
-            The trade size to be used.
-
-        """
-        self.path = path
-        self.strategy = strategy
-        self.instrument_id = instrument_id
-        self.bar_type = bar_type
-        self.trade_size = trade_size
-
-    def hyperopt_search(self, config, params, minimum_positions=50, max_evals=50) -> Dict:
-
-        """
-        Run hyperopt to optimize strategy parameters.
-
-        Parameters
-        ----------
-        config : BacktestRunConfig
-            The configuration for the backtest test.
-        params : Dict[str, Any]
-            The set of strategy parameters to optimize.
-        max_evals : int
-            The maximum number of evaluations for the optimization problem.
-
-        Returns
-        -------
-        Dict
-            The optimized strategy parameters.
-
-        Raises
-        ------
-        ImportError
-            If hyperopt is not available.
-
-        """
-        if hyperopt is None:
-            raise ImportError(
-                "The hyperopt package is not installed. "
-                "Please install via pip or poetry install -E hyperopt",
-            )
-
-        logger = Logger(clock=LiveClock(), level_stdout=LogLevel.INFO)
-        logger_adapter = LoggerAdapter(component_name="HYPEROPT_LOGGER", logger=logger)
-        self.config = config
-
-        def objective(args):
-
-            logger_adapter.info(f"{args}")
-
-            strategies = [
-                ImportableStrategyConfig(
-                    path=self.path,
-                    config=self.strategy(
-                        instrument_id=self.instrument_id,
-                        bar_type=self.bar_type,
-                        trade_size=self.trade_size,
-                        **args,
-                    ),
-                ),
-            ]
-
-            local_config = self.config
-            local_config = local_config.replace(strategies=strategies)
-
-            local_config.check()
-
-            try:
-                result = self._run(
-                    engine_config=local_config.engine,
-                    run_config_id=local_config.id,
-                    venue_configs=local_config.venues,
-                    data_configs=local_config.data,
-                    actor_configs=local_config.actors,
-                    strategy_configs=local_config.strategies,
-                    persistence=local_config.persistence,
-                    batch_size_bytes=local_config.batch_size_bytes,
-                    # return_engine=True
-                )
-
-                base_currency = self.config.venues[0].base_currency
-                profit_factor = result.stats_returns['Profit Factor']
-                win_rate = result.stats_pnls['USDT']['Win Rate']
-                # logger_adapter.info(f"RESULT: {result}")
-                logger_adapter.info(f"OBJECTIVE: {1/profit_factor}")
-
-                if (1 / profit_factor) == 0 or profit_factor <= 0 or result.total_positions < minimum_positions \
-                    or win_rate < 0.51:
-                    ret = {"status": STATUS_FAIL}
-                else:
-                    ret = {"status": STATUS_OK, "loss": (1 / profit_factor)}
-
-            except Exception as e:
-                ret = {"status": STATUS_FAIL}
-                logger_adapter.error(f"Error : {e} ")
-            return ret
-
-        trials = hyperopt.Trials()
-
-        return hyperopt.fmin(
-            objective, params, algo=hyperopt.tpe.suggest, trials=trials, max_evals=max_evals
-        )
-
     def run(self, run_configs: List[BacktestRunConfig], **kwargs) -> List[BacktestResult]:
         """
         Run a list of backtest configs synchronously.
-
         Parameters
         ----------
         run_configs : list[BacktestRunConfig]
             The backtest run configurations.
-
         Returns
         -------
         list[BacktestResult]
             The results of the backtest runs.
-
         """
         results: List[BacktestResult] = []
         for config in run_configs:

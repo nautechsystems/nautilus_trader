@@ -82,7 +82,7 @@ class HyperoptBacktestNode(BacktestNode):
         self.bar_type = bar_type
         self.trade_size = trade_size
 
-    def hyperopt_search(self, config, params, max_evals=50) -> Dict:
+    def hyperopt_search(self, config, params, minimum_positions=50, max_evals=50) -> Dict:
         """
         Run hyperopt to optimize strategy parameters.
 
@@ -154,8 +154,10 @@ class HyperoptBacktestNode(BacktestNode):
                 # logger_adapter.info(f"{result.stats_pnls[base_currency]}")
                 pnl_pct = result.stats_pnls[base_currency]["PnL%"]
                 logger_adapter.info(f"OBJECTIVE: {1/pnl_pct}")
+                # win_rate = result.stats_pnls['USDT']['Win Rate']
 
-                if (1 / pnl_pct) == 0 or pnl_pct <= 0:
+                if (1 / pnl_pct) == 0 or pnl_pct <= 0 \
+                    or result.total_positions < minimum_positions:
                     ret = {"status": hyperopt.STATUS_FAIL}
                 else:
                     ret = {"status": hyperopt.STATUS_OK, "loss": (1 / pnl_pct)}
