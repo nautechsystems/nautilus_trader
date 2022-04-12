@@ -701,7 +701,7 @@ cdef class ExecutionEngine(Component):
         if position is None:
             self._open_position(instrument, fill, oms_type)
         else:
-            self._update_position(instrument, position, fill, oms_type)
+            self._update_position(instrument, fill, oms_type, position)
 
     cdef void _open_position(self, Instrument instrument, OrderFilled fill, OMSType oms_type) except *:
         cdef Position position = Position(instrument, fill)
@@ -719,7 +719,7 @@ cdef class ExecutionEngine(Component):
             msg=event,
         )
 
-    cdef void _update_position(self, Instrument instrument, Position position, OrderFilled fill, OMSType oms_type) except *:
+    cdef void _update_position(self, Instrument instrument, OrderFilled fill, OMSType oms_type, Position position) except *:
         # Check for flip (last_qty guaranteed to be positive)
         if (
             oms_type == OMSType.HEDGING
@@ -728,6 +728,9 @@ cdef class ExecutionEngine(Component):
         ):
             self._flip_position(instrument, position, fill, oms_type)
             return  # Handled in flip
+        elif oms_type == OMSType.NETTING and position.is_closed_c():
+            # Take a snapshot of closed netted position in current state
+            self._cache.archive_position(position)
 
         try:
             # Protected against duplicate OrderFilled
@@ -798,7 +801,7 @@ cdef class ExecutionEngine(Component):
             )
 
             # Close original position
-            self._update_position(instrument, position, fill_split1, oms_type)
+            self._update_position(instrument, fill_split1, oms_type, position)
 
         cdef PositionId position_id_flip = fill.position_id
         if oms_type == OMSType.HEDGING and fill.position_id.is_virtual_c():
