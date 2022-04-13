@@ -74,7 +74,7 @@ cdef dict _ORDER_STATE_TABLE = {
     (OrderStatus.PENDING_UPDATE, OrderStatus.FILLED): OrderStatus.FILLED,
     (OrderStatus.PENDING_CANCEL, OrderStatus.PENDING_CANCEL): OrderStatus.PENDING_CANCEL,  # Allow multiple requests
     (OrderStatus.PENDING_CANCEL, OrderStatus.CANCELED): OrderStatus.CANCELED,
-    (OrderStatus.PENDING_CANCEL, OrderStatus.ACCEPTED): OrderStatus.ACCEPTED,
+    (OrderStatus.PENDING_CANCEL, OrderStatus.ACCEPTED): OrderStatus.ACCEPTED,  # Allows failed cancel requests
     (OrderStatus.PENDING_CANCEL, OrderStatus.PARTIALLY_FILLED): OrderStatus.PARTIALLY_FILLED,
     (OrderStatus.PENDING_CANCEL, OrderStatus.FILLED): OrderStatus.FILLED,
     (OrderStatus.TRIGGERED, OrderStatus.REJECTED): OrderStatus.REJECTED,
@@ -556,7 +556,7 @@ cdef class Order:
     @property
     def is_canceled(self):
         """
-        If the order is canceled
+        If current `order.status` is ``CANCELED``.
 
         Returns
         -------
