@@ -730,7 +730,7 @@ cdef class ExecutionEngine(Component):
             return  # Handled in flip
         elif oms_type == OMSType.NETTING and position.is_closed_c():
             # Take a snapshot of closed netted position in current state
-            self._cache.archive_position(position)
+            self._cache.snapshot_position(position)
 
         try:
             # Protected against duplicate OrderFilled

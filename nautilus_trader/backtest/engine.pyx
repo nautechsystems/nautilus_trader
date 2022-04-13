@@ -974,7 +974,7 @@ cdef class BacktestEngine:
 
         # Get all positions for exchange venue
         cdef list positions = []
-        for position in self.kernel.cache.positions() + self.kernel.cache.positions_archived():
+        for position in self.kernel.cache.positions() + self.kernel.cache.position_snapshots():
             positions.append(position)
 
         self._log.info(f"Total positions: {len(positions):,}")

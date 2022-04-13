@@ -104,7 +104,7 @@ cdef class Cache(CacheFacade):
         self._accounts = {}                    # type: dict[AccountId, Account]
         self._orders = {}                      # type: dict[ClientOrderId, Order]
         self._positions = {}                   # type: dict[PositionId, Position]
-        self._positions_archive = {}           # type: dict[PositionId, list[bytes]]
+        self._position_snapshots = {}          # type: dict[PositionId, list[bytes]]
 
         # Cache index
         self._index_venue_account = {}         # type: dict[Venue, AccountId]
@@ -552,7 +552,7 @@ cdef class Cache(CacheFacade):
         self._accounts.clear()
         self._orders.clear()
         self._positions.clear()
-        self._positions_archive.clear()
+        self._position_snapshots.clear()
 
         self._log.debug(f"Cleared cache.")
 
@@ -1276,9 +1276,9 @@ cdef class Cache(CacheFacade):
         if self._database is not None:
             self._database.add_position(position)
 
-    cpdef void archive_position(self, Position position) except *:
+    cpdef void snapshot_position(self, Position position) except *:
         """
-        Archive a snapshot of the given position in its current state.
+        Snapshot the given position in its current state.
 
         The position ID will be appended with a UUID4 string.
 
@@ -1289,17 +1289,19 @@ cdef class Cache(CacheFacade):
 
         """
         cdef PositionId position_id = position.id
-        cdef list positions_archive = self._positions_archive.get(position_id)
+        cdef list snapshots = self._position_snapshots.get(position_id)
 
         # Reassign position ID
         cdef Position copied_position = copy.copy(position)
         copied_position.id = PositionId(position.id.value + f"-{uuid.uuid4()}")
         cdef bytes position_pickled = pickle.dumps(copied_position)
 
-        if positions_archive is not None:
-            positions_archive.append(position_pickled)
+        if snapshots is not None:
+            snapshots.append(position_pickled)
         else:
-            self._positions_archive[position_id] = [position_pickled]
+            self._position_snapshots[position_id] = [position_pickled]
+
+        self._log.debug(f"Snapshot {repr(copied_position)}.")
 
     cpdef void update_account(self, Account account) except *:
         """
@@ -2544,9 +2546,9 @@ cdef class Cache(CacheFacade):
 
         return self._index_order_position.get(client_order_id)
 
-    cpdef list positions_archived(self, PositionId position_id=None):
+    cpdef list position_snapshots(self, PositionId position_id=None):
         """
-        Return all archived positions with the given optional identifier filter.
+        Return all position snapshots with the given optional identifier filter.
 
         Parameters
         ----------
@@ -2558,17 +2560,17 @@ cdef class Cache(CacheFacade):
         list[Position]
 
         """
-        cdef list archive_list
-        cdef list positions_archive
+        cdef list snapshot_list
+        cdef list snapshots
         if position_id is not None:
-            positions_archive = self._positions_archive.get(position_id, [])
+            snapshots = self._position_snapshots.get(position_id, [])
         else:
-            positions_archive = []
-            for archive_list in self._positions_archive.values():
-                positions_archive += archive_list
+            snapshots = []
+            for snapshot_list in self._position_snapshots.values():
+                snapshots += snapshot_list
 
-        cdef bytes p
-        return [pickle.loads(p) for p in positions_archive]
+        cdef bytes s
+        return [pickle.loads(s) for s in snapshots]
 
     cpdef list positions(
         self,

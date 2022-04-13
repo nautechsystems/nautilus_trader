@@ -53,7 +53,7 @@ cdef class Cache(CacheFacade):
     cdef dict _accounts
     cdef dict _orders
     cdef dict _positions
-    cdef dict _positions_archive
+    cdef dict _position_snapshots
 
     cdef dict _index_venue_account
     cdef dict _index_venue_orders
@@ -122,7 +122,7 @@ cdef class Cache(CacheFacade):
     cpdef void add_order(self, Order order, PositionId position_id) except *
     cpdef void add_position_id(self, PositionId position_id, Venue venue, ClientOrderId client_order_id, StrategyId strategy_id) except *
     cpdef void add_position(self, Position position, OMSType oms_type) except *
-    cpdef void archive_position(self, Position position) except *
+    cpdef void snapshot_position(self, Position position) except *
 
     cpdef void update_account(self, Account account) except *
     cpdef void update_order(self, Order order) except *
