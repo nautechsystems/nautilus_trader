@@ -952,8 +952,8 @@ cdef class BacktestEngine:
         self._log.info(f"Run ID:         {self.run_id}")
         self._log.info(f"Run started:    {self.run_started}")
         self._log.info(f"Backtest start: {self.backtest_start}")
-        self._log.info(f"Batch start:    {start}.")
-        self._log.info(f"Batch end:      {end}.")
+        self._log.info(f"Batch start:    {start}")
+        self._log.info(f"Batch end:      {end}")
         self._log.info("\033[36m-----------------------------------------------------------------")
 
     def _log_post_run(self):
