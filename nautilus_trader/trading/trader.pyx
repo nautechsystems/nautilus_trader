@@ -479,7 +479,7 @@ cdef class Trader(Component):
         pd.DataFrame
 
         """
-        cdef list positions = self._cache.positions() + self._cache.positions_archived()
+        cdef list positions = self._cache.positions() + self._cache.position_snapshots()
         return ReportProvider.generate_positions_report(positions)
 
     cpdef object generate_account_report(self, Venue venue):
