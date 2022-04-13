@@ -38,7 +38,7 @@ If everything worked correctly, you should be able to see a single EUR/USD instr
 ```python
 from nautilus_trader.persistence.catalog import DataCatalog
 
-catalog = DataCatalog("EUDUSD202001/")
+catalog = DataCatalog("./")
 catalog.instruments()
 ```
 
@@ -141,17 +141,17 @@ class MACDStrategy(TradingStrategy):
 ```
 
 <!-- #region pycharm={"name": "#%% md\n"} -->
-## Configuing Backtests
+## Configuring Backtests
 
-Now that we have a trading strategy and data, we can run a backtest! Nautilus uses a `BacktestEngine` 
-to configure and run backtests, and requires some setup. This may seem a little complex at first, 
-however this is necessary for the correctness that Nautilus strives for.
+Now that we have a trading strategy and data, we can run a backtest! Nautilus uses a `BacktestNode` 
+to run backtests, and requires some setup. This may seem a little complex at first, 
+however this is necessary for the capabilities that Nautilus strives for.
 
-To configure a `BacktestEngine`, we create an instance of a `BacktestRunConfig`, configuring the 
+To configure a `BacktestNode`, we create an instance of a `BacktestRunConfig`, configuring the 
 following (minimal) aspects of the backtest:
-- `data` - The input data we would like to perform the backtest on
+- `engine` - The engine for the backtest which will contain our strategies
 - `venues` - The simulated venues (exchanges or brokers) available in the backtest
-- `strategies` - The strategy or strategies we would like to run for the backtest
+- `data` - The input data we would like to perform the backtest on
 
 There are many more configurable features which will be described later in the docs, for now this will get us up and running.
 <!-- #endregion -->
@@ -222,7 +222,10 @@ however is fine to leave with its defaults:
 ```python jupyter={"outputs_hidden": false} pycharm={"name": "#%%\n"}
 from nautilus_trader.config.backtest import BacktestEngineConfig
 
-engine = BacktestEngineConfig(log_level="ERROR") # Lower to `INFO` to see more logging about orders, events, etc.
+engine = BacktestEngineConfig(
+    strategies=[macd_strategy],
+    log_level="ERROR",
+) # Lower to `INFO` to see more logging about orders, events, etc.
 ```
 
 ## Strategies
@@ -253,11 +256,11 @@ from nautilus_trader.backtest.node import BacktestNode
 from nautilus_trader.config.backtest import BacktestRunConfig
 from nautilus_trader.config.components import ImportableStrategyConfig
 
+
 config = BacktestRunConfig(
-    venues=[venue],
-    strategies=[macd_strategy],
-    data=data,
     engine=engine,
+    venues=[venue],
+    data=data,
 )
 
 node = BacktestNode()
