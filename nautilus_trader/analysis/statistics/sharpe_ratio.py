@@ -23,7 +23,7 @@ from nautilus_trader.analysis.statistic import PortfolioStatistic
 
 class SharpeRatio(PortfolioStatistic):
     """
-    Calculates the annualized Sharpe Ratio from returns.
+    Calculates the Sharpe Ratio from returns.
 
     Parameters
     ----------
