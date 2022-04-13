@@ -1488,6 +1488,7 @@ class TestOrders:
 
         # Assert
         assert order.status == OrderStatus.CANCELED
+        assert order.is_canceled
         assert not order.is_inflight
         assert not order.is_open
         assert order.is_closed
