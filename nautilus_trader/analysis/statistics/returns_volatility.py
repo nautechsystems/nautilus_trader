@@ -23,7 +23,7 @@ from nautilus_trader.analysis.statistic import PortfolioStatistic
 
 class ReturnsVolatility(PortfolioStatistic):
     """
-    Calculates the annualized volatility of returns.
+    Calculates the volatility of returns.
 
     Parameters
     ----------
