@@ -134,6 +134,7 @@ cdef class Order:
     cdef bint is_parent_order_c(self) except *
     cdef bint is_child_order_c(self) except *
     cdef bint is_open_c(self) except *
+    cdef bint is_canceled_c(self) except *
     cdef bint is_closed_c(self) except *
     cdef bint is_inflight_c(self) except *
     cdef bint is_pending_update_c(self) except *
