@@ -239,6 +239,7 @@ The container images can be pulled as follows:
 
 You can launch the backtest example container by running:
 
+    docker pull ghcr.io/nautechsystems/jupyterlab:develop
     docker run -p 8888:8888 ghcr.io/nautechsystems/jupyterlab:develop
 
 Then navigate to the `backtest_example.ipynb` and run it!
