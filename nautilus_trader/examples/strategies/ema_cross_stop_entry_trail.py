@@ -17,7 +17,7 @@ from decimal import Decimal
 from typing import Dict, Optional
 
 from nautilus_trader.common.logging import LogColor
-from nautilus_trader.config import TradingStrategyConfig
+from nautilus_trader.config import StrategyConfig
 from nautilus_trader.core.data import Data
 from nautilus_trader.core.message import Event
 from nautilus_trader.indicators.atr import AverageTrueRange
@@ -35,14 +35,14 @@ from nautilus_trader.model.instruments.base import Instrument
 from nautilus_trader.model.orderbook.book import OrderBook
 from nautilus_trader.model.orders.market_if_touched import MarketIfTouchedOrder
 from nautilus_trader.model.orders.trailing_stop_market import TrailingStopMarketOrder
-from nautilus_trader.trading.strategy import TradingStrategy
+from nautilus_trader.trading.strategy import Strategy
 
 
 # *** THIS IS A TEST STRATEGY WITH NO ALPHA ADVANTAGE WHATSOEVER. ***
 # *** IT IS NOT INTENDED TO BE USED TO TRADE LIVE WITH REAL MONEY. ***
 
 
-class EMACrossStopEntryTrailConfig(TradingStrategyConfig):
+class EMACrossStopEntryTrailConfig(StrategyConfig):
     """
     Configuration for ``EMACross`` instances.
 
@@ -77,7 +77,7 @@ class EMACrossStopEntryTrailConfig(TradingStrategyConfig):
     trade_size: Decimal
 
 
-class EMACrossStopEntryTrail(TradingStrategy):
+class EMACrossStopEntryTrail(Strategy):
     """
     A simple moving average cross example strategy with a `MARKET_IF_TOUCHED`
     entry and `TRAILING_STOP_MARKET` stop.

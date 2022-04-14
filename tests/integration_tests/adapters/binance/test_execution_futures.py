@@ -41,7 +41,7 @@ from nautilus_trader.model.objects import Quantity
 from nautilus_trader.msgbus.bus import MessageBus
 from nautilus_trader.portfolio.portfolio import Portfolio
 from nautilus_trader.risk.engine import RiskEngine
-from nautilus_trader.trading.strategy import TradingStrategy
+from nautilus_trader.trading.strategy import Strategy
 from tests.test_kit.stubs.component import TestComponentStubs
 from tests.test_kit.stubs.identifiers import TestIdStubs
 
@@ -125,7 +125,7 @@ class TestBinanceFuturesExecutionClient:
             account_type=BinanceAccountType.FUTURES_USDT,
         )
 
-        self.strategy = TradingStrategy()
+        self.strategy = Strategy()
         self.strategy.register(
             trader_id=self.trader_id,
             portfolio=self.portfolio,

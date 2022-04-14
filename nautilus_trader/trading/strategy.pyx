@@ -17,17 +17,17 @@
 This module defines a trading strategy class which allows users to implement
 their own customized trading strategies
 
-A user can inherit from `TradingStrategy` and optionally override any of the
+A user can inherit from `Strategy` and optionally override any of the
 "on" named event methods. The class is not entirely initialized in a stand-alone
 way, the intended usage is to pass strategies to a `Trader` so that they can be
-fully "wired" into the platform. Exceptions will be raised if a `TradingStrategy`
+fully "wired" into the platform. Exceptions will be raised if a `Strategy`
 attempts to operate without a managing `Trader` instance.
 
 """
 
 from typing import Optional
 
-from nautilus_trader.config import TradingStrategyConfig
+from nautilus_trader.config import StrategyConfig
 
 from nautilus_trader.cache.base cimport CacheFacade
 from nautilus_trader.common.actor cimport Actor
@@ -71,7 +71,7 @@ from nautilus_trader.model.position cimport Position
 from nautilus_trader.msgbus.bus cimport MessageBus
 
 
-cdef class TradingStrategy(Actor):
+cdef class Strategy(Actor):
     """
     The abstract base class for all trading strategies.
 
@@ -89,23 +89,23 @@ cdef class TradingStrategy(Actor):
 
     Parameters
     ----------
-    config : TradingStrategyConfig, optional
+    config : StrategyConfig, optional
         The trading strategy configuration.
 
     Raises
     ------
     TypeError
-        If `config` is not of type `TradingStrategyConfig`.
+        If `config` is not of type `StrategyConfig`.
 
     Warnings
     --------
     This class should not be used directly, but through a concrete subclass.
     """
 
-    def __init__(self, config: Optional[TradingStrategyConfig]=None):
+    def __init__(self, config: Optional[StrategyConfig]=None):
         if config is None:
-            config = TradingStrategyConfig()
-        Condition.type(config, TradingStrategyConfig, "config")
+            config = StrategyConfig()
+        Condition.type(config, StrategyConfig, "config")
 
         super().__init__()
         # Assign strategy ID after base class initialized

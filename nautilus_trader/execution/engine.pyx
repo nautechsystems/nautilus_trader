@@ -324,13 +324,13 @@ cdef class ExecutionEngine(Component):
 
         self._log.info(f"Registered ExecutionClient-{client} for routing to {venue}.")
 
-    cpdef void register_oms_type(self, TradingStrategy strategy) except *:
+    cpdef void register_oms_type(self, Strategy strategy) except *:
         """
         Register the given trading strategies OMS (Order Management System) type.
 
         Parameters
         ----------
-        strategy : TradingStrategy
+        strategy : Strategy
             The strategy for the registration.
 
         """
@@ -340,7 +340,7 @@ cdef class ExecutionEngine(Component):
 
         self._log.info(
             f"Registered OMS.{OMSTypeParser.to_str(strategy.oms_type)} "
-            f"for TradingStrategy {strategy}.",
+            f"for Strategy {strategy}.",
         )
 
     cpdef void deregister_client(self, ExecutionClient client) except *:

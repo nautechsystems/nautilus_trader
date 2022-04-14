@@ -267,7 +267,7 @@ class ActorFactory:
         return strategy_cls(config=config_cls(**config.config))
 
 
-class TradingStrategyConfig(pydantic.BaseModel):
+class StrategyConfig(pydantic.BaseModel):
     """
     The base model for all trading strategy configurations.
 
@@ -325,7 +325,7 @@ class StrategyFactory:
 
         Returns
         -------
-        TradingStrategy
+        Strategy
 
         Raises
         ------

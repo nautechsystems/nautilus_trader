@@ -23,7 +23,7 @@ from nautilus_trader.common.logging import LogLevelParser
 from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.msgbus.bus import MessageBus
 from nautilus_trader.portfolio.portfolio import Portfolio
-from nautilus_trader.trading.strategy import TradingStrategy
+from nautilus_trader.trading.strategy import Strategy
 from tests.test_kit.mocks.engines import MockLiveDataEngine
 from tests.test_kit.mocks.engines import MockLiveExecutionEngine
 from tests.test_kit.mocks.engines import MockLiveRiskEngine
@@ -69,7 +69,7 @@ class TestComponentStubs:
 
     @staticmethod
     def trading_strategy():
-        strategy = TradingStrategy()
+        strategy = Strategy()
         strategy.register(
             trader_id=TraderId("TESTER-000"),
             portfolio=TestComponentStubs.portfolio(),

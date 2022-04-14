@@ -17,7 +17,7 @@ from decimal import Decimal
 from typing import Dict, Optional
 
 from nautilus_trader.common.logging import LogColor
-from nautilus_trader.config import TradingStrategyConfig
+from nautilus_trader.config import StrategyConfig
 from nautilus_trader.core.data import Data
 from nautilus_trader.core.message import Event
 from nautilus_trader.indicators.average.ema import ExponentialMovingAverage
@@ -32,14 +32,14 @@ from nautilus_trader.model.instruments.base import Instrument
 from nautilus_trader.model.orderbook.book import OrderBook
 from nautilus_trader.model.orderbook.data import OrderBookData
 from nautilus_trader.model.orders.market import MarketOrder
-from nautilus_trader.trading.strategy import TradingStrategy
+from nautilus_trader.trading.strategy import Strategy
 
 
 # *** THIS IS A TEST STRATEGY WITH NO ALPHA ADVANTAGE WHATSOEVER. ***
 # *** IT IS NOT INTENDED TO BE USED TO TRADE LIVE WITH REAL MONEY. ***
 
 
-class EMACrossConfig(TradingStrategyConfig):
+class EMACrossConfig(StrategyConfig):
     """
     Configuration for ``EMACross`` instances.
 
@@ -68,7 +68,7 @@ class EMACrossConfig(TradingStrategyConfig):
     trade_size: Decimal
 
 
-class EMACross(TradingStrategy):
+class EMACross(Strategy):
     """
     A simple moving average cross example strategy.
 

@@ -17,7 +17,7 @@ from decimal import Decimal
 from typing import Dict, Optional, Union
 
 from nautilus_trader.common.logging import LogColor
-from nautilus_trader.config import TradingStrategyConfig
+from nautilus_trader.config import StrategyConfig
 from nautilus_trader.core.data import Data
 from nautilus_trader.core.message import Event
 from nautilus_trader.indicators.atr import AverageTrueRange
@@ -34,14 +34,14 @@ from nautilus_trader.model.instruments.base import Instrument
 from nautilus_trader.model.orderbook.book import OrderBook
 from nautilus_trader.model.orderbook.data import OrderBookDelta
 from nautilus_trader.model.orders.limit import LimitOrder
-from nautilus_trader.trading.strategy import TradingStrategy
+from nautilus_trader.trading.strategy import Strategy
 
 
 # *** THIS IS A TEST STRATEGY WITH NO ALPHA ADVANTAGE WHATSOEVER. ***
 # *** IT IS NOT INTENDED TO BE USED TO TRADE LIVE WITH REAL MONEY. ***
 
 
-class VolatilityMarketMakerConfig(TradingStrategyConfig):
+class VolatilityMarketMakerConfig(StrategyConfig):
     """
     Configuration for ``VolatilityMarketMaker`` instances.
 
@@ -70,7 +70,7 @@ class VolatilityMarketMakerConfig(TradingStrategyConfig):
     trade_size: Decimal
 
 
-class VolatilityMarketMaker(TradingStrategy):
+class VolatilityMarketMaker(Strategy):
     """
     A very dumb market maker which brackets the current market based on
     volatility measured by an ATR indicator.

@@ -41,7 +41,7 @@ from nautilus_trader.model.identifiers cimport TraderId
 from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.msgbus.bus cimport MessageBus
 from nautilus_trader.risk.engine cimport RiskEngine
-from nautilus_trader.trading.strategy cimport TradingStrategy
+from nautilus_trader.trading.strategy cimport Strategy
 
 
 cdef class Trader(Component):
@@ -80,7 +80,7 @@ cdef class Trader(Component):
     ValueError
         If `strategies` is empty.
     TypeError
-        If `strategies` contains a type other than `TradingStrategy`.
+        If `strategies` contains a type other than `Strategy`.
     """
 
     def __init__(
@@ -185,7 +185,7 @@ cdef class Trader(Component):
         dict[StrategyId, str]
 
         """
-        cdef TradingStrategy s
+        cdef Strategy s
         return {s.id: s.state_string_c() for s in self._strategies}
 
 # -- ACTION IMPLEMENTATIONS ------------------------------------------------------------------------
@@ -199,7 +199,7 @@ cdef class Trader(Component):
         for actor in self._actors:
             actor.start()
 
-        cdef TradingStrategy strategy
+        cdef Strategy strategy
         for strategy in self._strategies:
             strategy.start()
 
@@ -211,7 +211,7 @@ cdef class Trader(Component):
             else:
                 self._log.warning(f"{actor} already stopped.")
 
-        cdef TradingStrategy strategy
+        cdef Strategy strategy
         for strategy in self._strategies:
             if strategy.is_running_c():
                 strategy.stop()
@@ -223,7 +223,7 @@ cdef class Trader(Component):
         for actor in self._actors:
             actor.reset()
 
-        cdef TradingStrategy strategy
+        cdef Strategy strategy
         for strategy in self._strategies:
             strategy.reset()
 
@@ -235,19 +235,19 @@ cdef class Trader(Component):
         for actor in self._actors:
             actor.dispose()
 
-        cdef TradingStrategy strategy
+        cdef Strategy strategy
         for strategy in self._strategies:
             strategy.dispose()
 
 # --------------------------------------------------------------------------------------------------
 
-    cpdef void add_strategy(self, TradingStrategy strategy) except *:
+    cpdef void add_strategy(self, Strategy strategy) except *:
         """
         Add the given trading strategy to the trader.
 
         Parameters
         ----------
-        strategy : TradingStrategy
+        strategy : Strategy
             The trading strategy to add and register.
 
         Raises
@@ -280,9 +280,9 @@ cdef class Trader(Component):
         self._exec_engine.register_oms_type(strategy)
         self._strategies.append(strategy)
 
-        self._log.info(f"Registered TradingStrategy {strategy}.")
+        self._log.info(f"Registered Strategy {strategy}.")
 
-    cpdef void add_strategies(self, list strategies: [TradingStrategy]) except *:
+    cpdef void add_strategies(self, list strategies: [Strategy]) except *:
         """
         Add the given trading strategies to the trader.
 
@@ -299,7 +299,7 @@ cdef class Trader(Component):
         """
         Condition.not_empty(strategies, "strategies")
 
-        cdef TradingStrategy strategy
+        cdef Strategy strategy
         for strategy in strategies:
             self.add_strategy(strategy)
 

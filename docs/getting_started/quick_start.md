@@ -37,7 +37,7 @@ registering indicators to receive certain data types, however in this example we
 `QuoteTick` to the indicator in the `on_quote_tick` method.
 
 ```python
-from nautilus_trader.trading.strategy import TradingStrategy, TradingStrategyConfig
+from nautilus_trader.trading.strategy import Strategy, StrategyConfig
 from nautilus_trader.indicators.macd import MovingAverageConvergenceDivergence
 from nautilus_trader.model.data.tick import QuoteTick
 from nautilus_trader.model.enums import PriceType
@@ -49,7 +49,7 @@ from nautilus_trader.model.position import Position
 
 
 
-class MACDConfig(TradingStrategyConfig):
+class MACDConfig(StrategyConfig):
     instrument_id: str
     fast_period: int
     slow_period: int
@@ -57,7 +57,7 @@ class MACDConfig(TradingStrategyConfig):
     entry_threshold: float = 0.00010
 
 
-class MACDStrategy(TradingStrategy):
+class MACDStrategy(Strategy):
     def __init__(self, config: MACDConfig):
         super().__init__(config=config)
         # Our "trading signal"

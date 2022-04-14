@@ -23,7 +23,7 @@ from nautilus_trader.execution.engine cimport ExecutionEngine
 from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.portfolio.portfolio cimport Portfolio
 from nautilus_trader.risk.engine cimport RiskEngine
-from nautilus_trader.trading.strategy cimport TradingStrategy
+from nautilus_trader.trading.strategy cimport Strategy
 
 
 cdef class Trader(Component):
@@ -47,7 +47,7 @@ cdef class Trader(Component):
     cpdef dict strategy_states(self)
     cpdef void add_actor(self, Actor actor) except *
     cpdef void add_actors(self, list actors) except *
-    cpdef void add_strategy(self, TradingStrategy strategy) except *
+    cpdef void add_strategy(self, Strategy strategy) except *
     cpdef void add_strategies(self, list strategies) except *
     cpdef void clear_actors(self) except *
     cpdef void clear_strategies(self) except *

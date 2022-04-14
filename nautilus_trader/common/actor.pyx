@@ -14,12 +14,12 @@
 # -------------------------------------------------------------------------------------------------
 
 """
-The `TradingStrategy` class allows traders to implement their own customized trading strategies.
+The `Strategy` class allows traders to implement their own customized trading strategies.
 
-A user can inherit from `TradingStrategy` and optionally override any of the
+A user can inherit from `Strategy` and optionally override any of the
 "on" named event methods. The class is not entirely initialized in a stand-alone
 way, the intended usage is to pass strategies to a `Trader` so that they can be
-fully "wired" into the platform. Exceptions will be raised if a `TradingStrategy`
+fully "wired" into the platform. Exceptions will be raised if a `Strategy`
 attempts to operate without a managing `Trader` instance.
 
 """
