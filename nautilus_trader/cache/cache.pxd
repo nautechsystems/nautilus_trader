@@ -34,7 +34,7 @@ from nautilus_trader.model.instruments.base cimport Instrument
 from nautilus_trader.model.orderbook.book cimport OrderBook
 from nautilus_trader.model.orders.base cimport Order
 from nautilus_trader.model.position cimport Position
-from nautilus_trader.trading.strategy cimport TradingStrategy
+from nautilus_trader.trading.strategy cimport Strategy
 
 
 cdef class Cache(CacheFacade):
@@ -106,7 +106,7 @@ cdef class Cache(CacheFacade):
     cpdef Account load_account(self, AccountId account_id)
     cpdef Order load_order(self, ClientOrderId order_id)
     cpdef Position load_position(self, PositionId position_id)
-    cpdef void load_strategy(self, TradingStrategy strategy) except *
+    cpdef void load_strategy(self, Strategy strategy) except *
 
     cpdef void add_order_book(self, OrderBook order_book) except *
     cpdef void add_ticker(self, Ticker ticker) except *
@@ -127,5 +127,5 @@ cdef class Cache(CacheFacade):
     cpdef void update_account(self, Account account) except *
     cpdef void update_order(self, Order order) except *
     cpdef void update_position(self, Position position) except *
-    cpdef void update_strategy(self, TradingStrategy strategy) except *
-    cpdef void delete_strategy(self, TradingStrategy strategy) except *
+    cpdef void update_strategy(self, Strategy strategy) except *
+    cpdef void delete_strategy(self, Strategy strategy) except *

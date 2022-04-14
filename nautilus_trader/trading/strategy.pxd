@@ -37,7 +37,7 @@ from nautilus_trader.msgbus.bus cimport MessageBus
 from nautilus_trader.portfolio.base cimport PortfolioFacade
 
 
-cdef class TradingStrategy(Actor):
+cdef class Strategy(Actor):
     cdef list _indicators
     cdef dict _indicators_for_quotes
     cdef dict _indicators_for_trades

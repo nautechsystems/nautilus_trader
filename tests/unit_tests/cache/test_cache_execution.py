@@ -44,7 +44,7 @@ from nautilus_trader.model.position import Position
 from nautilus_trader.msgbus.bus import MessageBus
 from nautilus_trader.portfolio.portfolio import Portfolio
 from nautilus_trader.risk.engine import RiskEngine
-from nautilus_trader.trading.strategy import TradingStrategy
+from nautilus_trader.trading.strategy import Strategy
 from tests.test_kit.stubs.data import TestDataStubs
 from tests.test_kit.stubs.events import TestEventStubs
 from tests.test_kit.stubs.execution import TestExecStubs
@@ -105,7 +105,7 @@ class TestCache:
             logger=self.logger,
         )
 
-        self.strategy = TradingStrategy()
+        self.strategy = Strategy()
         self.strategy.register(
             trader_id=self.trader_id,
             portfolio=self.portfolio,

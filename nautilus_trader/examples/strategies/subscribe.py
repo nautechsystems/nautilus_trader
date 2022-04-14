@@ -15,20 +15,20 @@
 
 from typing import Optional
 
-from nautilus_trader.config import TradingStrategyConfig
+from nautilus_trader.config import StrategyConfig
 from nautilus_trader.model.data.tick import QuoteTick
 from nautilus_trader.model.data.tick import TradeTick
 from nautilus_trader.model.enums import BookType
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.orderbook.book import OrderBook
 from nautilus_trader.model.orderbook.data import OrderBookData
-from nautilus_trader.trading.strategy import TradingStrategy
+from nautilus_trader.trading.strategy import Strategy
 
 
 # *** THIS IS A TEST STRATEGY ***
 
 
-class SubscribeStrategyConfig(TradingStrategyConfig):
+class SubscribeStrategyConfig(StrategyConfig):
     """
     Configuration for ``SubscribeStrategy`` instances.
     """
@@ -40,7 +40,7 @@ class SubscribeStrategyConfig(TradingStrategyConfig):
     quote_ticks: bool = False
 
 
-class SubscribeStrategy(TradingStrategy):
+class SubscribeStrategy(Strategy):
     """
     A strategy that simply subscribes to data and logs it (typically for testing adapters)
 

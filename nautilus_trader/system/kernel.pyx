@@ -64,7 +64,7 @@ from nautilus_trader.msgbus.bus cimport MessageBus
 from nautilus_trader.portfolio.portfolio cimport Portfolio
 from nautilus_trader.risk.engine cimport RiskEngine
 from nautilus_trader.serialization.msgpack.serializer cimport MsgPackSerializer
-from nautilus_trader.trading.strategy cimport TradingStrategy
+from nautilus_trader.trading.strategy cimport Strategy
 from nautilus_trader.trading.trader cimport Trader
 
 
@@ -351,7 +351,7 @@ cdef class NautilusKernel:
 
         # Create importable strategies
         for config in strategy_configs:
-            strategy: TradingStrategy = StrategyFactory.create(config)
+            strategy: Strategy = StrategyFactory.create(config)
             self.trader.add_strategy(strategy)
 
         cdef int64_t build_time_ms = nanos_to_millis(unix_timestamp_ns() - self.ts_created)

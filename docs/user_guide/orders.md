@@ -105,13 +105,13 @@ contingent on each other. More documentation for these options can be found in t
 
 ## Order Factory
 The easiest way to create new orders is by using the built-in `OrderFactory`, which is
-automatically attached to every `TradingStrategy` class. This factory will take care
+automatically attached to every `Strategy` class. This factory will take care
 of lower level details - such as ensuring the correct trader ID and strategy ID are assigned, generation
 of a necessary initialization ID and timestamp, and abstracts away parameters which don't necessarily
 apply to the order type being created, or are only needed to specify more advanced execution instructions. 
 
 This leaves the factory with simpler order creation methods to work with, all the
-examples will leverage an `OrderFactory` from within a `TradingStrategy` context.
+examples will leverage an `OrderFactory` from within a `Strategy` context.
 
 [API Reference](https://docs.nautilustrader.io/api_reference/common.html#module-nautilus_trader.common.factories)
 

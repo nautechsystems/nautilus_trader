@@ -3,6 +3,8 @@
 Released on TBC.
 
 ### Breaking Changes
+- Renamed `TradingStrategy` to `Strategy`
+- Renamed `TradingStrategyConfig` to `StrategyConfig`
 - Changes to configuration object import paths
 - Removed redundant `realized_points` concept from `Position`
 

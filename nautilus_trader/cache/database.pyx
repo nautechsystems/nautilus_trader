@@ -23,7 +23,7 @@ from nautilus_trader.model.identifiers cimport PositionId
 from nautilus_trader.model.identifiers cimport StrategyId
 from nautilus_trader.model.orders.base cimport Order
 from nautilus_trader.model.position cimport Position
-from nautilus_trader.trading.strategy cimport TradingStrategy
+from nautilus_trader.trading.strategy cimport Strategy
 
 
 cdef class CacheDatabase:
@@ -129,6 +129,6 @@ cdef class CacheDatabase:
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
-    cpdef void update_strategy(self, TradingStrategy strategy) except *:
+    cpdef void update_strategy(self, Strategy strategy) except *:
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover

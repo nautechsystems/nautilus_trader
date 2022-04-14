@@ -27,10 +27,10 @@ from nautilus_trader.model.instruments.base import Instrument
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.orderbook.book import OrderBook
 from nautilus_trader.model.orderbook.data import OrderBookData
-from nautilus_trader.trading.strategy import TradingStrategy
+from nautilus_trader.trading.strategy import Strategy
 
 
-class MarketMaker(TradingStrategy):
+class MarketMaker(Strategy):
     """
     Provides a market making strategy for testing.
 

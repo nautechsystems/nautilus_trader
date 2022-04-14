@@ -257,7 +257,7 @@ class BacktestEngineConfig(NautilusKernelConfig):
         return tuple(self.dict().items())
 
 
-# Required for passing `TradingStrategy` to `BacktestRunConfig.strategies`
+# Required for passing `Strategy` to `BacktestRunConfig.strategies`
 class _ArbitraryTypes:
     arbitrary_types_allowed = True
 

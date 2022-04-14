@@ -1,7 +1,7 @@
 # Strategies
 
 The heart of the NautilusTrader user experience is in writing and working with
-trading strategies. Defining a trading strategy is achieved by inheriting the `TradingStrategy` class, 
+trading strategies. Defining a trading strategy is achieved by inheriting the `Strategy` class, 
 and implementing the methods required by the strategy.
 
 Using the basic building blocks of data ingest and order management (which we will discuss
@@ -12,8 +12,8 @@ Please refer to the [API Reference](../api_reference/trading.md#strategy) for a 
 of all the possible functionality.
 
 There are two main parts of a Nautilus trading strategy:
-- The strategy implementation itself, defined by inheriting the `TradingStrategy` class
-- The _optional_ strategy configuration, defined by inheriting the `TradingStrategyConfig` class
+- The strategy implementation itself, defined by inheriting the `Strategy` class
+- The _optional_ strategy configuration, defined by inheriting the `StrategyConfig` class
 
 ```{note}
 Once a strategy is defined, the same source can be used for backtesting and live trading.
@@ -34,10 +34,10 @@ Here is an example configuration:
 
 ```python
 from decimal import Decimal
-from nautilus_trader.config import TradingStrategyConfig
+from nautilus_trader.config import StrategyConfig
 
 
-class MyStrategy(TradingStrategyConfig):
+class MyStrategy(StrategyConfig):
     instrument_id: str
     bar_type: str
     fast_ema_period: int = 10
@@ -73,11 +73,11 @@ See the `StrategyId` [documentation](../api_reference/model/identifiers.md) for 
 ```
 
 ## Implementation
-Since a trading strategy is a class which inherits from `TradingStrategy`, you must define
+Since a trading strategy is a class which inherits from `Strategy`, you must define
 a constructor where you can handle initialization. Minimally the base/super class needs to be initialized:
 
 ```python
-class MyStrategy(TradingStrategy):
+class MyStrategy(Strategy):
     def __init__(self):
         super().__init__()  # <-- the super class must be called to initialize the strategy
 ```
@@ -86,10 +86,10 @@ As per the above, it's also possible to define a configuration. Here we simply a
 as a string, to parameterize the instrument the strategy will trade.
 
 ```python
-class MyStrategyConfig(TradingStrategyConfig):
+class MyStrategyConfig(StrategyConfig):
     instrument_id: str
 
-class MyStrategy(TradingStrategy):
+class MyStrategy(Strategy):
     def __init__(self, config: MyStrategyConfig):
         super().__init__(config)
 

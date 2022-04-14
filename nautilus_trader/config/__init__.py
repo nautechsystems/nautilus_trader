@@ -36,8 +36,8 @@ from nautilus_trader.config.common import InstrumentProviderConfig  # noqa: bein
 from nautilus_trader.config.common import NautilusKernelConfig  # noqa: being used
 from nautilus_trader.config.common import PersistenceConfig  # noqa: being used
 from nautilus_trader.config.common import RiskEngineConfig  # noqa: being used
+from nautilus_trader.config.common import StrategyConfig  # noqa: being used
 from nautilus_trader.config.common import StrategyFactory  # noqa: being used
-from nautilus_trader.config.common import TradingStrategyConfig  # noqa: being used
 from nautilus_trader.config.live import ImportableClientConfig  # noqa: being used
 from nautilus_trader.config.live import InstrumentProviderConfig  # noqa: being used
 from nautilus_trader.config.live import LiveDataClientConfig  # noqa: being used

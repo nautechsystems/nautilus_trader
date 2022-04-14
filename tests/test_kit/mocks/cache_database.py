@@ -27,7 +27,7 @@ from nautilus_trader.model.identifiers import StrategyId
 from nautilus_trader.model.instruments.base import Instrument
 from nautilus_trader.model.orders.base import Order
 from nautilus_trader.model.position import Position
-from nautilus_trader.trading.strategy import TradingStrategy
+from nautilus_trader.trading.strategy import Strategy
 
 
 class MockCacheDatabase(CacheDatabase):
@@ -114,5 +114,5 @@ class MockCacheDatabase(CacheDatabase):
     def update_position(self, position: Position) -> None:
         pass  # Would persist the event
 
-    def update_strategy(self, strategy: TradingStrategy) -> None:
+    def update_strategy(self, strategy: Strategy) -> None:
         pass  # Would persist the user state dict
