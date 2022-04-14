@@ -32,7 +32,7 @@ just need to override the `execute`, `process`, `send` and `receive` methods.
 from typing import Callable, Optional
 
 from nautilus_trader.common.logging import LogColor
-from nautilus_trader.config.engines import DataEngineConfig
+from nautilus_trader.config import DataEngineConfig
 
 from cpython.datetime cimport timedelta
 

@@ -32,7 +32,7 @@ just need to override the `execute` and `process` methods.
 from decimal import Decimal
 from typing import Optional
 
-from nautilus_trader.config.engines import ExecEngineConfig
+from nautilus_trader.config import ExecEngineConfig
 
 from libc.stdint cimport int64_t
 

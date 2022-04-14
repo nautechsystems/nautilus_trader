@@ -23,8 +23,8 @@ from nautilus_trader.backtest.models import FillModel
 from nautilus_trader.common.actor import Actor
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.logging import Logger
-from nautilus_trader.config.components import ActorConfig
-from nautilus_trader.config.components import TradingStrategyConfig
+from nautilus_trader.config import ActorConfig
+from nautilus_trader.config import TradingStrategyConfig
 from nautilus_trader.data.engine import DataEngine
 from nautilus_trader.execution.engine import ExecutionEngine
 from nautilus_trader.model.currencies import USD

@@ -21,8 +21,8 @@ from nautilus_trader.common.factories import OrderFactory
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.common.logging import LogLevel
 from nautilus_trader.common.uuid import UUIDFactory
-from nautilus_trader.config.components import TradingStrategyConfig
-from nautilus_trader.config.live import ExecEngineConfig
+from nautilus_trader.config import ExecEngineConfig
+from nautilus_trader.config import TradingStrategyConfig
 from nautilus_trader.data.engine import DataEngine
 from nautilus_trader.execution.engine import ExecutionEngine
 from nautilus_trader.execution.messages import CancelOrder

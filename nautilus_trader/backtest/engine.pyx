@@ -20,13 +20,13 @@ from typing import Dict, List, Optional, Union
 import pandas as pd
 
 from nautilus_trader.backtest.results import BacktestResult
-from nautilus_trader.config.backtest import BacktestEngineConfig
-from nautilus_trader.config.components import CacheConfig
-from nautilus_trader.config.components import CacheDatabaseConfig
-from nautilus_trader.config.engines import DataEngineConfig
-from nautilus_trader.config.engines import ExecEngineConfig
-from nautilus_trader.config.engines import RiskEngineConfig
-from nautilus_trader.system.kernel import Environment
+from nautilus_trader.common import Environment
+from nautilus_trader.config import BacktestEngineConfig
+from nautilus_trader.config import CacheConfig
+from nautilus_trader.config import CacheDatabaseConfig
+from nautilus_trader.config import DataEngineConfig
+from nautilus_trader.config import ExecEngineConfig
+from nautilus_trader.config import RiskEngineConfig
 
 from cpython.datetime cimport datetime
 from libc.stdint cimport int64_t

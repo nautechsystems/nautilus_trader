@@ -182,7 +182,9 @@ class BetfairLiveDataClientFactory(LiveDataClientFactory):
             logger=logger,
         )
         provider = get_cached_betfair_instrument_provider(
-            client=client, logger=logger, market_filter=tuple(market_filter.items())
+            client=client,
+            logger=logger,
+            market_filter=tuple(market_filter.items()),
         )
 
         data_client = BetfairDataClient(

@@ -18,3 +18,32 @@ The `config` subpackage groups all configuration classes and factories.
 
 All configurations inherit from :class:`pydantic.pydantic.BaseModel`.
 """
+
+from nautilus_trader.config.backtest import BacktestDataConfig  # noqa: being used
+from nautilus_trader.config.backtest import BacktestEngineConfig  # noqa: being used
+from nautilus_trader.config.backtest import BacktestRunConfig  # noqa: being used
+from nautilus_trader.config.backtest import BacktestVenueConfig  # noqa: being used
+from nautilus_trader.config.backtest import Partialable  # noqa: being used
+from nautilus_trader.config.common import ActorConfig  # noqa: being used
+from nautilus_trader.config.common import ActorFactory  # noqa: being used
+from nautilus_trader.config.common import CacheConfig  # noqa: being used
+from nautilus_trader.config.common import CacheDatabaseConfig  # noqa: being used
+from nautilus_trader.config.common import DataEngineConfig  # noqa: being used
+from nautilus_trader.config.common import ExecEngineConfig  # noqa: being used
+from nautilus_trader.config.common import ImportableActorConfig  # noqa: being used
+from nautilus_trader.config.common import ImportableStrategyConfig  # noqa: being used
+from nautilus_trader.config.common import InstrumentProviderConfig  # noqa: being used
+from nautilus_trader.config.common import NautilusKernelConfig  # noqa: being used
+from nautilus_trader.config.common import PersistenceConfig  # noqa: being used
+from nautilus_trader.config.common import RiskEngineConfig  # noqa: being used
+from nautilus_trader.config.common import StrategyFactory  # noqa: being used
+from nautilus_trader.config.common import TradingStrategyConfig  # noqa: being used
+from nautilus_trader.config.live import ImportableClientConfig  # noqa: being used
+from nautilus_trader.config.live import InstrumentProviderConfig  # noqa: being used
+from nautilus_trader.config.live import LiveDataClientConfig  # noqa: being used
+from nautilus_trader.config.live import LiveDataEngineConfig  # noqa: being used
+from nautilus_trader.config.live import LiveExecClientConfig  # noqa: being used
+from nautilus_trader.config.live import LiveExecEngineConfig  # noqa: being used
+from nautilus_trader.config.live import LiveRiskEngineConfig  # noqa: being used
+from nautilus_trader.config.live import RoutingConfig  # noqa: being used
+from nautilus_trader.config.live import TradingNodeConfig  # noqa: being used
