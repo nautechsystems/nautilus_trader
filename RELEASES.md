@@ -3,12 +3,16 @@
 Released on TBC.
 
 ### Breaking Changes
-None
+- Removed redundant `realized_points` concept from `Position`
 
 ### Enhancements
+- Added `Cache.snapshot_position`
+- Execution engine now takes snapshots of closed netted positions
+- Performance statistics now based on total positions and snapshots
 - Added Binance Spot/Margin external order handling
 - Added support for millisecond bar aggregation
 - Added configurable `debug` mode for engines (with extra debug logging)
+- Improved annualized portfolio statistics with configurable period
 
 ### Fixes
 None

@@ -127,7 +127,6 @@ class TestPosition:
         # Act
         result = position.to_dict()
 
-        print(result)
         # Assert
         assert result == {
             "position_id": "P-123456",

@@ -15,23 +15,23 @@
 
 import pandas as pd
 
-from nautilus_trader.analysis.statistics.returns_annual_vol import ReturnsAnnualVolatility
+from nautilus_trader.analysis.statistics.returns_volatility import ReturnsVolatility
 
 
 class TestReturnsAnnualVolatilityPortfolioStatistic:
     def test_name_returns_expected_returns_expected(self):
         # Arrange
-        stat = ReturnsAnnualVolatility()
+        stat = ReturnsVolatility()
 
         # Act
         result = stat.name
 
         # Assert
-        assert result == "Annual Volatility (Returns)"
+        assert result == "Returns Volatility (252 days)"
 
     def test_calculate_given_empty_series_returns_nan(self):
         # Arrange
-        stat = ReturnsAnnualVolatility()
+        stat = ReturnsVolatility()
         data = pd.Series([])
 
         # Act
@@ -42,7 +42,7 @@ class TestReturnsAnnualVolatilityPortfolioStatistic:
 
     def test_calculate_given_mix_of_pnls2_returns_expected(self):
         # Arrange
-        stat = ReturnsAnnualVolatility()
+        stat = ReturnsVolatility()
         data = pd.Series([1.0, -1.0])
 
         # Act
@@ -53,7 +53,7 @@ class TestReturnsAnnualVolatilityPortfolioStatistic:
 
     def test_calculate_given_mix_of_pnls1_returns_expected(self):
         # Arrange
-        stat = ReturnsAnnualVolatility()
+        stat = ReturnsVolatility()
         data = pd.Series([3.0, 2.0, 1.0, -1.0, -2.0])
 
         # Act

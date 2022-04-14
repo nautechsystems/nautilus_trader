@@ -181,7 +181,7 @@ cdef class NautilusKernel:
         if self.environment == Environment.BACKTEST:
             self.clock = TestClock()
             self.logger = Logger(
-                clock=self.clock,
+                clock=LiveClock(loop=loop),
                 trader_id=self.trader_id,
                 machine_id=self.machine_id,
                 instance_id=self.instance_id,

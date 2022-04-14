@@ -13,6 +13,8 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from decimal import Decimal
+
 from libc.stdint cimport int64_t
 from libc.stdint cimport uint8_t
 

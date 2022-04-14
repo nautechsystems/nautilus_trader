@@ -952,8 +952,8 @@ cdef class BacktestEngine:
         self._log.info(f"Run ID:         {self.run_id}")
         self._log.info(f"Run started:    {self.run_started}")
         self._log.info(f"Backtest start: {self.backtest_start}")
-        self._log.info(f"Batch start:    {start}.")
-        self._log.info(f"Batch end:      {end}.")
+        self._log.info(f"Batch start:    {start}")
+        self._log.info(f"Batch end:      {end}")
         self._log.info("\033[36m-----------------------------------------------------------------")
 
     def _log_post_run(self):
@@ -971,7 +971,13 @@ cdef class BacktestEngine:
         self._log.info(f"Iterations: {self.iteration:,}")
         self._log.info(f"Total events: {self.kernel.exec_engine.event_count:,}")
         self._log.info(f"Total orders: {self.kernel.cache.orders_total_count():,}")
-        self._log.info(f"Total positions: {self.kernel.cache.positions_total_count():,}")
+
+        # Get all positions for exchange venue
+        cdef list positions = []
+        for position in self.kernel.cache.positions() + self.kernel.cache.position_snapshots():
+            positions.append(position)
+
+        self._log.info(f"Total positions: {len(positions):,}")
 
         if not self._config.run_analysis:
             return
@@ -1017,13 +1023,13 @@ cdef class BacktestEngine:
             self._log.info("\033[36m=================================================================")
 
             # Find all positions for exchange venue
-            positions = []
-            for position in self.kernel.cache.positions():
+            exchange_positions = []
+            for position in positions:
                 if position.instrument_id.venue == exchange.id:
-                    positions.append(position)
+                    exchange_positions.append(position)
 
             # Calculate statistics
-            self.kernel.trader.analyzer.calculate_statistics(account, positions)
+            self.kernel.trader.analyzer.calculate_statistics(account, exchange_positions)
 
             # Present PnL performance stats per asset
             for currency in account.currencies():
