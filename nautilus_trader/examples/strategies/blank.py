@@ -15,7 +15,7 @@
 
 from typing import Dict
 
-from nautilus_trader.config.components import TradingStrategyConfig
+from nautilus_trader.config import TradingStrategyConfig
 from nautilus_trader.core.data import Data
 from nautilus_trader.core.message import Event
 from nautilus_trader.model.data.bar import Bar

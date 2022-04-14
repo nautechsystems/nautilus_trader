@@ -17,7 +17,7 @@ import asyncio
 from decimal import Decimal
 from typing import Optional
 
-from nautilus_trader.config.live import LiveExecEngineConfig
+from nautilus_trader.config import LiveExecEngineConfig
 
 from nautilus_trader.cache.cache cimport Cache
 from nautilus_trader.common.clock cimport LiveClock

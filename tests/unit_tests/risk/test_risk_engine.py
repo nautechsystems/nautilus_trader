@@ -22,8 +22,8 @@ from nautilus_trader.common.enums import LogLevel
 from nautilus_trader.common.events.risk import TradingStateChanged
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.common.uuid import UUIDFactory
-from nautilus_trader.config.engines import ExecEngineConfig
-from nautilus_trader.config.engines import RiskEngineConfig
+from nautilus_trader.config import ExecEngineConfig
+from nautilus_trader.config import RiskEngineConfig
 from nautilus_trader.core.message import Event
 from nautilus_trader.execution.engine import ExecutionEngine
 from nautilus_trader.execution.messages import CancelOrder

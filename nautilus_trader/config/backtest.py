@@ -22,15 +22,15 @@ from typing import Dict, List, Optional, Union
 import pandas as pd
 import pydantic
 
-from nautilus_trader.config.engines import DataEngineConfig
-from nautilus_trader.config.engines import ExecEngineConfig
-from nautilus_trader.config.engines import RiskEngineConfig
-from nautilus_trader.config.kernel import NautilusKernelConfig
+from nautilus_trader.common import Environment
+from nautilus_trader.config.common import DataEngineConfig
+from nautilus_trader.config.common import ExecEngineConfig
+from nautilus_trader.config.common import NautilusKernelConfig
+from nautilus_trader.config.common import RiskEngineConfig
 from nautilus_trader.core.data import Data
 from nautilus_trader.core.datetime import maybe_dt_to_unix_nanos
 from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.persistence.util import tokenize
-from nautilus_trader.system.kernel import Environment
 
 
 class Partialable:

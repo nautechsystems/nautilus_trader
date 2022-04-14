@@ -27,7 +27,7 @@ attempts to operate without a managing `Trader` instance.
 
 from typing import Optional
 
-from nautilus_trader.config.components import TradingStrategyConfig
+from nautilus_trader.config import TradingStrategyConfig
 
 from nautilus_trader.cache.base cimport CacheFacade
 from nautilus_trader.common.actor cimport Actor

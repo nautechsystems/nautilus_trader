@@ -16,7 +16,7 @@
 import asyncio
 from typing import Optional
 
-from nautilus_trader.config.live import LiveRiskEngineConfig
+from nautilus_trader.config import LiveRiskEngineConfig
 
 from nautilus_trader.cache.base cimport CacheFacade
 from nautilus_trader.common.clock cimport LiveClock

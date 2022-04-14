@@ -16,7 +16,7 @@
 from decimal import Decimal
 from typing import Optional
 
-from nautilus_trader.config.components import TradingStrategyConfig
+from nautilus_trader.config import TradingStrategyConfig
 
 from nautilus_trader.common.logging cimport LogColor
 from nautilus_trader.core.data cimport Data

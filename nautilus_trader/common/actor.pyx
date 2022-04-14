@@ -29,7 +29,7 @@ from typing import Optional
 
 import cython
 
-from nautilus_trader.config.components import ActorConfig
+from nautilus_trader.config import ActorConfig
 
 from cpython.datetime cimport datetime
 

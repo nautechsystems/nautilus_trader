@@ -1,23 +1,8 @@
----
-jupyter:
-  jupytext:
-    formats: ipynb,md
-    text_representation:
-      extension: .md
-      format_name: markdown
-      format_version: '1.3'
-      jupytext_version: 1.13.5
-  kernelspec:
-    display_name: Python (nautilus_trader_gh)
-    language: python
-    name: nautilus_trader_gh
----
-
 # Quick Start
 
 This section explains how to get up and running with NautilusTrader by running some backtests on 
-FX data. The Nautilus maintainers have pre-loaded some existing data into the Nautilus storage 
-format (parquet) for this guide.
+FX data. The Nautilus maintainers have pre-loaded some existing data into the standard Nautilus storage 
+format (Parquet) for this guide.
 
 For more details on how to load other data into Nautilus, see [Backtest Example](../user_guide/backtest_example.md).
 
@@ -149,7 +134,8 @@ however this is necessary for the capabilities that Nautilus strives for.
 
 To configure a `BacktestNode`, we create an instance of a `BacktestRunConfig`, configuring the 
 following (minimal) aspects of the backtest:
-- `engine` - The engine for the backtest which will contain our strategies
+
+- `engine` - The engine for the backtest which will also contain our strategies
 - `venues` - The simulated venues (exchanges or brokers) available in the backtest
 - `data` - The input data we would like to perform the backtest on
 
@@ -166,7 +152,7 @@ the account type (cash vs margin), an optional base currency, and starting balan
 <!-- #endregion -->
 
 ```python jupyter={"outputs_hidden": false} pycharm={"name": "#%%\n"}
-from nautilus_trader.config.backtest import BacktestVenueConfig
+from nautilus_trader.config import BacktestVenueConfig
 
 venue = BacktestVenueConfig(
     name="SIM",
@@ -200,7 +186,7 @@ adding the `QuoteTick`(s) for our EUR/USD instrument:
 
 ```python jupyter={"outputs_hidden": false} pycharm={"name": "#%%\n"}
 from nautilus_trader.model.data.tick import QuoteTick
-from nautilus_trader.config.backtest import BacktestDataConfig
+from nautilus_trader.config import BacktestDataConfig
 
 data = [
     BacktestDataConfig(
@@ -212,25 +198,9 @@ data = [
 ]
 ```
 
-<!-- #region pycharm={"name": "#%% md\n"} -->
-## Engine
-
-Then, we need a `BacktestEngineConfig` which allows configuring the log level and other components, 
-however is fine to leave with its defaults:
-<!-- #endregion -->
-
-```python jupyter={"outputs_hidden": false} pycharm={"name": "#%%\n"}
-from nautilus_trader.config.backtest import BacktestEngineConfig
-
-engine = BacktestEngineConfig(
-    strategies=[macd_strategy],
-    log_level="ERROR",
-) # Lower to `INFO` to see more logging about orders, events, etc.
-```
-
 ## Strategies
 
-And finally is our actual trading strategy(s):
+We can then configure and instantiate our trading strategy(s):
 
 ```python
 macd_config = MACDConfig(
@@ -242,6 +212,20 @@ macd_config = MACDConfig(
 macd_strategy = MACDStrategy(config=macd_config)
 ```
 
+## Engine
+
+Then, we need a `BacktestEngineConfig` which configures the log level and other components, 
+however it's also fine to use the defaults:
+
+```python
+from nautilus_trader.config import BacktestEngineConfig
+
+engine = BacktestEngineConfig(
+    strategies=[macd_strategy],
+    log_level="ERROR",
+) # Lower to `INFO` to see more logging about orders, events, etc.
+```
+
 ## Running a backtest
 
 We can now pass our various config pieces to the `BacktestRunConfig` - this object now contains the 
@@ -251,10 +235,9 @@ The `BacktestNode` class _actually_ runs the backtest. The reason for this separ
 configuration and execution is the `BacktestNode` allows running multiple configurations (different 
 parameters or batches of data).
 
-```python pycharm={"name": "#%%\n"} tags=[]
+```python
 from nautilus_trader.backtest.node import BacktestNode
-from nautilus_trader.config.backtest import BacktestRunConfig
-from nautilus_trader.config.components import ImportableStrategyConfig
+from nautilus_trader.config import BacktestRunConfig
 
 
 config = BacktestRunConfig(
@@ -274,8 +257,5 @@ node = BacktestNode()
 
 ```python
 result.cache.orders()[:5]
-```
-
-```python
 result.cache.positions()[:5]
 ```

@@ -15,7 +15,7 @@
 
 import warnings
 
-from nautilus_trader.config.components import CacheDatabaseConfig
+from nautilus_trader.config import CacheDatabaseConfig
 
 from nautilus_trader.accounting.accounts.base cimport Account
 from nautilus_trader.accounting.factory cimport AccountFactory
