@@ -20,13 +20,13 @@ from typing import Dict, List, Optional, Union
 import pandas as pd
 
 from nautilus_trader.backtest.results import BacktestResult
-from nautilus_trader.config.backtest import BacktestEngineConfig
-from nautilus_trader.config.components import CacheConfig
-from nautilus_trader.config.components import CacheDatabaseConfig
-from nautilus_trader.config.engines import DataEngineConfig
-from nautilus_trader.config.engines import ExecEngineConfig
-from nautilus_trader.config.engines import RiskEngineConfig
-from nautilus_trader.system.kernel import Environment
+from nautilus_trader.common import Environment
+from nautilus_trader.config import BacktestEngineConfig
+from nautilus_trader.config import CacheConfig
+from nautilus_trader.config import CacheDatabaseConfig
+from nautilus_trader.config import DataEngineConfig
+from nautilus_trader.config import ExecEngineConfig
+from nautilus_trader.config import RiskEngineConfig
 
 from cpython.datetime cimport datetime
 from libc.stdint cimport int64_t
@@ -66,7 +66,7 @@ from nautilus_trader.model.objects cimport Currency
 from nautilus_trader.model.orderbook.data cimport OrderBookData
 from nautilus_trader.portfolio.base cimport PortfolioFacade
 from nautilus_trader.system.kernel cimport NautilusKernel
-from nautilus_trader.trading.strategy cimport TradingStrategy
+from nautilus_trader.trading.strategy cimport Strategy
 from nautilus_trader.trading.trader cimport Trader
 
 
@@ -606,11 +606,11 @@ cdef class BacktestEngine:
         # Checked inside trader
         self.kernel.trader.add_actors(actors)
 
-    def add_strategy(self, strategy: TradingStrategy) -> None:
+    def add_strategy(self, strategy: Strategy) -> None:
         # Checked inside trader
         self.kernel.trader.add_strategy(strategy)
 
-    def add_strategies(self, strategies: List[TradingStrategy]) -> None:
+    def add_strategies(self, strategies: List[Strategy]) -> None:
         # Checked inside trader
         self.kernel.trader.add_strategies(strategies)
 
@@ -916,7 +916,7 @@ cdef class BacktestEngine:
         cdef list time_events = []  # type: list[TimeEventHandler]
         cdef:
             Actor actor
-            TradingStrategy strategy
+            Strategy strategy
             cdef TimeEventHandler event_handler
         for actor in self.kernel.trader.actors_c():
             time_events += actor.clock.advance_time(now_ns)

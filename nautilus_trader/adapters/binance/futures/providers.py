@@ -29,7 +29,7 @@ from nautilus_trader.adapters.binance.futures.schemas.market import BinanceFutur
 from nautilus_trader.adapters.binance.http.client import BinanceHttpClient
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.common.providers import InstrumentProvider
-from nautilus_trader.config.components import InstrumentProviderConfig
+from nautilus_trader.config import InstrumentProviderConfig
 from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.core.datetime import millis_to_nanos
 from nautilus_trader.model.identifiers import InstrumentId

@@ -3,9 +3,13 @@
 Released on TBC.
 
 ### Breaking Changes
+- Renamed `TradingStrategy` to `Strategy`
+- Renamed `TradingStrategyConfig` to `StrategyConfig`
+- Changes to configuration object import paths
 - Removed redundant `realized_points` concept from `Position`
 
 ### Enhancements
+- All configuration objects can now be imported directly from `nautilus_trader.config`
 - Added `Cache.snapshot_position`
 - Execution engine now takes snapshots of closed netted positions
 - Performance statistics now based on total positions and snapshots

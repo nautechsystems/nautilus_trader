@@ -20,7 +20,7 @@ from collections import deque
 from decimal import Decimal
 from typing import Optional
 
-from nautilus_trader.config.components import CacheConfig
+from nautilus_trader.config import CacheConfig
 
 from libc.stdint cimport int64_t
 
@@ -52,7 +52,7 @@ from nautilus_trader.model.instruments.crypto_perpetual cimport CryptoPerpetual
 from nautilus_trader.model.instruments.currency_pair cimport CurrencyPair
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.orders.base cimport Order
-from nautilus_trader.trading.strategy cimport TradingStrategy
+from nautilus_trader.trading.strategy cimport Strategy
 
 
 cdef class Cache(CacheFacade):
@@ -717,13 +717,13 @@ cdef class Cache(CacheFacade):
             # 9: Build _index_strategies -> {StrategyId}
             self._index_strategies.add(position.strategy_id)
 
-    cpdef void load_strategy(self, TradingStrategy strategy) except *:
+    cpdef void load_strategy(self, Strategy strategy) except *:
         """
         Load the state dictionary for the given strategy.
 
         Parameters
         ----------
-        strategy : TradingStrategy
+        strategy : Strategy
             The strategy to load.
 
         """
@@ -1369,13 +1369,13 @@ cdef class Cache(CacheFacade):
         if self._database is not None:
             self._database.update_position(position)
 
-    cpdef void update_strategy(self, TradingStrategy strategy) except *:
+    cpdef void update_strategy(self, Strategy strategy) except *:
         """
         Update the given strategy state in the cache.
 
         Parameters
         ----------
-        strategy : TradingStrategy
+        strategy : Strategy
             The strategy to update.
         """
         Condition.not_none(strategy, "strategy")
@@ -1386,13 +1386,13 @@ cdef class Cache(CacheFacade):
         if self._database is not None:
             self._database.update_strategy(strategy)
 
-    cpdef void delete_strategy(self, TradingStrategy strategy) except *:
+    cpdef void delete_strategy(self, Strategy strategy) except *:
         """
         Delete the given strategy from the cache.
 
         Parameters
         ----------
-        strategy : TradingStrategy
+        strategy : Strategy
             The strategy to deregister.
 
         Raises

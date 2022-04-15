@@ -128,7 +128,7 @@ Nautilus has a top-level object `BacktestRunConfig` that allows configuring a ba
 ### Adding data and venues
 
 ```python
-from nautilus_trader.config.backtest import BacktestRunConfig, BacktestVenueConfig, BacktestDataConfig, BacktestEngineConfig
+from nautilus_trader.config import BacktestRunConfig, BacktestVenueConfig, BacktestDataConfig, BacktestEngineConfig
 
 instrument = catalog.instruments(as_nautilus=True)[0]
 

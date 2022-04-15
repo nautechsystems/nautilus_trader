@@ -15,7 +15,7 @@
 
 import warnings
 
-from nautilus_trader.config.components import CacheDatabaseConfig
+from nautilus_trader.config import CacheDatabaseConfig
 
 from nautilus_trader.accounting.accounts.base cimport Account
 from nautilus_trader.accounting.factory cimport AccountFactory
@@ -37,7 +37,7 @@ from nautilus_trader.model.orders.base cimport Order
 from nautilus_trader.model.orders.unpacker cimport OrderUnpacker
 from nautilus_trader.model.position cimport Position
 from nautilus_trader.serialization.base cimport Serializer
-from nautilus_trader.trading.strategy cimport TradingStrategy
+from nautilus_trader.trading.strategy cimport Strategy
 
 
 try:
@@ -587,13 +587,13 @@ cdef class RedisCacheDatabase(CacheDatabase):
 
         self._log.debug(f"Added Position(id={position.id.value}).")
 
-    cpdef void update_strategy(self, TradingStrategy strategy) except *:
+    cpdef void update_strategy(self, Strategy strategy) except *:
         """
         Update the given strategy state in the database.
 
         Parameters
         ----------
-        strategy : TradingStrategy
+        strategy : Strategy
             The strategy to update.
 
         """

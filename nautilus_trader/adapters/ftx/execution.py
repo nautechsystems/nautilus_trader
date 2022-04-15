@@ -38,6 +38,7 @@ from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.logging import LogColor
 from nautilus_trader.common.logging import Logger
+from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.execution.messages import CancelAllOrders
 from nautilus_trader.execution.messages import CancelOrder
 from nautilus_trader.execution.messages import ModifyOrder
@@ -243,6 +244,7 @@ class FTXExecutionClient(LiveExecutionClient):
     async def generate_order_status_report(
         self,
         instrument_id: InstrumentId,
+        client_order_id: ClientOrderId,
         venue_order_id: VenueOrderId,
     ) -> Optional[OrderStatusReport]:
         """
@@ -255,6 +257,8 @@ class FTXExecutionClient(LiveExecutionClient):
         ----------
         instrument_id : InstrumentId, optional
             The instrument ID query filter.
+        client_order_id : ClientOrderId, optional
+            The client order ID for the report.
         venue_order_id : VenueOrderId, optional
             The venue order ID (assigned by the venue) query filter.
 
@@ -262,7 +266,23 @@ class FTXExecutionClient(LiveExecutionClient):
         -------
         OrderStatusReport or ``None``
 
+        Raises
+        ------
+        ValueError
+            If both the `client_order_id` and `venue_order_id` are ``None``.
+
         """
+        PyCondition.true(
+            client_order_id is not None or venue_order_id is not None,
+            "both `client_order_id` and `venue_order_id` were `None`",
+        )
+
+        self._log.info(
+            f"Generating OrderStatusReport for "
+            f"{repr(client_order_id) if client_order_id else ''} "
+            f"{repr(venue_order_id) if venue_order_id else ''}..."
+        )
+
         try:
             response = await self._http_client.get_order_status(venue_order_id.value)
         except FTXError as ex:

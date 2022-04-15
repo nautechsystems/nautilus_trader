@@ -20,8 +20,8 @@ from nautilus_trader.adapters.ftx.config import FTXDataClientConfig
 from nautilus_trader.adapters.ftx.config import FTXExecClientConfig
 from nautilus_trader.adapters.ftx.factories import FTXLiveDataClientFactory
 from nautilus_trader.adapters.ftx.factories import FTXLiveExecClientFactory
-from nautilus_trader.config.components import CacheDatabaseConfig
-from nautilus_trader.config.nodes import TradingNodeConfig
+from nautilus_trader.config import CacheDatabaseConfig
+from nautilus_trader.config import TradingNodeConfig
 from nautilus_trader.examples.strategies.ema_cross_stop_entry_trail import EMACrossStopEntryTrail
 from nautilus_trader.examples.strategies.ema_cross_stop_entry_trail import (
     EMACrossStopEntryTrailConfig,

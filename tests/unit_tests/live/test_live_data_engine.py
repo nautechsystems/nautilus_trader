@@ -21,7 +21,7 @@ from nautilus_trader.backtest.data.providers import TestInstrumentProvider
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.common.uuid import UUIDFactory
-from nautilus_trader.config.live import LiveDataEngineConfig
+from nautilus_trader.config import LiveDataEngineConfig
 from nautilus_trader.core.data import Data
 from nautilus_trader.data.messages import DataRequest
 from nautilus_trader.data.messages import DataResponse

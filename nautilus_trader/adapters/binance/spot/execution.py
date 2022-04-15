@@ -55,6 +55,7 @@ from nautilus_trader.common.logging import LogColor
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.core.datetime import millis_to_nanos
+from nautilus_trader.core.datetime import secs_to_millis
 from nautilus_trader.execution.messages import CancelAllOrders
 from nautilus_trader.execution.messages import CancelOrder
 from nautilus_trader.execution.messages import ModifyOrder
@@ -273,6 +274,7 @@ class BinanceSpotExecutionClient(LiveExecutionClient):
     async def generate_order_status_report(
         self,
         instrument_id: InstrumentId,
+        client_order_id: ClientOrderId,
         venue_order_id: VenueOrderId,
     ) -> Optional[OrderStatusReport]:
         """
@@ -285,15 +287,31 @@ class BinanceSpotExecutionClient(LiveExecutionClient):
         ----------
         instrument_id : InstrumentId
             The instrument ID for the query.
-        venue_order_id : VenueOrderId
+        client_order_id : ClientOrderId, optional
+            The client order ID for the report.
+        venue_order_id : VenueOrderId, optional
             The venue order ID for the query.
 
         Returns
         -------
         OrderStatusReport or ``None``
 
+        Raises
+        ------
+        ValueError
+            If both the `client_order_id` and `venue_order_id` are ``None``.
+
         """
-        PyCondition.not_none(venue_order_id, "venue_order_id")
+        PyCondition.true(
+            client_order_id is not None or venue_order_id is not None,
+            "both `client_order_id` and `venue_order_id` were `None`",
+        )
+
+        self._log.info(
+            f"Generating OrderStatusReport for "
+            f"{repr(client_order_id) if client_order_id else ''} "
+            f"{repr(venue_order_id) if venue_order_id else ''}..."
+        )
 
         try:
             response = await self._http_account.get_order(
@@ -366,8 +384,8 @@ class BinanceSpotExecutionClient(LiveExecutionClient):
             for symbol in active_symbols:
                 response = await self._http_account.get_orders(
                     symbol=symbol,
-                    start_time=int(start.timestamp() * 1000) if start is not None else None,
-                    end_time=int(end.timestamp() * 1000) if end is not None else None,
+                    start_time=secs_to_millis(start.timestamp()) if start is not None else None,
+                    end_time=secs_to_millis(end.timestamp()) if end is not None else None,
                 )
                 order_msgs.extend(response)
         except BinanceError as ex:
@@ -443,8 +461,8 @@ class BinanceSpotExecutionClient(LiveExecutionClient):
             for symbol in active_symbols:
                 response = await self._http_account.get_account_trades(
                     symbol=symbol,
-                    start_time=int(start.timestamp() * 1000) if start is not None else None,
-                    end_time=int(end.timestamp() * 1000) if end is not None else None,
+                    start_time=secs_to_millis(start.timestamp()) if start is not None else None,
+                    end_time=secs_to_millis(end.timestamp()) if end is not None else None,
                 )
                 reports_raw.extend(response)
         except BinanceError as ex:
@@ -573,10 +591,11 @@ class BinanceSpotExecutionClient(LiveExecutionClient):
         )
 
     def sync_order_status(self, command: QueryOrder) -> None:
-        self._log.debug(f"sync_order_status {command}")
+        self._log.debug(f"Synchronizing order status {command}")
         self._loop.create_task(
             self.generate_order_status_report(
                 instrument_id=command.instrument_id,
+                client_order_id=command.client_order_id,
                 venue_order_id=command.venue_order_id,
             )
         )

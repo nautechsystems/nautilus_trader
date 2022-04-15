@@ -18,7 +18,7 @@ from typing import Dict, Optional
 
 import pandas as pd
 
-from nautilus_trader.config.engines import RiskEngineConfig
+from nautilus_trader.config import RiskEngineConfig
 
 from libc.stdint cimport int64_t
 

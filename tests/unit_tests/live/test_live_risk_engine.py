@@ -22,7 +22,7 @@ from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.factories import OrderFactory
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.common.uuid import UUIDFactory
-from nautilus_trader.config.live import LiveRiskEngineConfig
+from nautilus_trader.config import LiveRiskEngineConfig
 from nautilus_trader.execution.messages import SubmitOrder
 from nautilus_trader.live.data_engine import LiveDataEngine
 from nautilus_trader.live.execution_engine import LiveExecutionEngine
@@ -37,7 +37,7 @@ from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.msgbus.bus import MessageBus
 from nautilus_trader.portfolio.portfolio import Portfolio
-from nautilus_trader.trading.strategy import TradingStrategy
+from nautilus_trader.trading.strategy import Strategy
 from tests.test_kit.mocks.exec_clients import MockExecutionClient
 from tests.test_kit.stubs.component import TestComponentStubs
 from tests.test_kit.stubs.events import TestEventStubs
@@ -159,7 +159,7 @@ class TestLiveRiskEngine:
             config=LiveRiskEngineConfig(qsize=1),
         )
 
-        strategy = TradingStrategy()
+        strategy = Strategy()
         strategy.register(
             trader_id=self.trader_id,
             portfolio=self.portfolio,
@@ -207,7 +207,7 @@ class TestLiveRiskEngine:
             config=LiveRiskEngineConfig(qsize=1),
         )
 
-        strategy = TradingStrategy()
+        strategy = Strategy()
         strategy.register(
             trader_id=self.trader_id,
             portfolio=self.portfolio,
@@ -278,7 +278,7 @@ class TestLiveRiskEngine:
         # Arrange
         self.risk_engine.start()
 
-        strategy = TradingStrategy()
+        strategy = Strategy()
         strategy.register(
             trader_id=self.trader_id,
             portfolio=self.portfolio,
@@ -320,7 +320,7 @@ class TestLiveRiskEngine:
         # Arrange
         self.risk_engine.start()
 
-        strategy = TradingStrategy()
+        strategy = Strategy()
         strategy.register(
             trader_id=self.trader_id,
             portfolio=self.portfolio,

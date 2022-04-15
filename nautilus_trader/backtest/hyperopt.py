@@ -29,9 +29,9 @@ from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.common.logging import LoggerAdapter
 from nautilus_trader.common.logging import LogLevel
-from nautilus_trader.config.backtest import BacktestRunConfig
-from nautilus_trader.config.components import ImportableStrategyConfig
-from nautilus_trader.config.components import TradingStrategyConfig
+from nautilus_trader.config import BacktestRunConfig
+from nautilus_trader.config import ImportableStrategyConfig
+from nautilus_trader.config import StrategyConfig
 from nautilus_trader.model.data.bar import BarType
 from nautilus_trader.model.identifiers import InstrumentId
 
@@ -46,7 +46,7 @@ class HyperoptBacktestNode(BacktestNode):
     def __init__(self):
         self.strategy_path: Optional[str] = None
         self.config_path: Optional[str] = None
-        self.strategy_config: Optional[TradingStrategyConfig] = None
+        self.strategy_config: Optional[StrategyConfig] = None
         self.instrument_id: Optional[InstrumentId] = None
         self.bar_type: Optional[BarType] = None
         self.trade_size: Optional[Decimal] = None
@@ -56,7 +56,7 @@ class HyperoptBacktestNode(BacktestNode):
         self,
         strategy_path: str,
         config_path: str,
-        strategy_config: TradingStrategyConfig,
+        strategy_config: StrategyConfig,
         instrument_id: InstrumentId,
         bar_type: BarType,
         trade_size: Decimal,
@@ -70,7 +70,7 @@ class HyperoptBacktestNode(BacktestNode):
             The path to the strategy.
         config_path : str
             The path to the strategy config.
-        strategy_config : TradingStrategyConfig
+        strategy_config : StrategyConfig
             The strategy config object.
         instrument_id : InstrumentId
             The instrument ID.

@@ -32,7 +32,7 @@ from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.model.instruments.base cimport Instrument
 from nautilus_trader.model.orders.base cimport Order
 from nautilus_trader.model.position cimport Position
-from nautilus_trader.trading.strategy cimport TradingStrategy
+from nautilus_trader.trading.strategy cimport Strategy
 
 
 cdef class ExecutionEngine(Component):
@@ -65,7 +65,7 @@ cdef class ExecutionEngine(Component):
     cpdef void register_client(self, ExecutionClient client) except *
     cpdef void register_default_client(self, ExecutionClient client) except *
     cpdef void register_venue_routing(self, ExecutionClient client, Venue venue) except *
-    cpdef void register_oms_type(self, TradingStrategy strategy) except *
+    cpdef void register_oms_type(self, Strategy strategy) except *
     cpdef void deregister_client(self, ExecutionClient client) except *
 
 # -- ABSTRACT METHODS ------------------------------------------------------------------------------

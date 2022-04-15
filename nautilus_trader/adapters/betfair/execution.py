@@ -220,6 +220,7 @@ class BetfairExecutionClient(LiveExecutionClient):
     async def generate_order_status_report(
         self,
         instrument_id: InstrumentId,
+        client_order_id: ClientOrderId,
         venue_order_id: VenueOrderId,
     ) -> Optional[OrderStatusReport]:
         """
@@ -232,12 +233,19 @@ class BetfairExecutionClient(LiveExecutionClient):
         ----------
         instrument_id : InstrumentId, optional
             The instrument ID query filter.
+        client_order_id : ClientOrderId, optional
+            The client order ID for the report.
         venue_order_id : VenueOrderId, optional
             The venue order ID (assigned by the venue) query filter.
 
         Returns
         -------
         OrderStatusReport or ``None``
+
+        Raises
+        ------
+        ValueError
+            If both the `client_order_id` and `venue_order_id` are ``None``.
 
         """
         self._log.warning("Cannot generate OrderStatusReport: not yet implemented.")

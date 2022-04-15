@@ -34,6 +34,7 @@ from nautilus_trader.core.datetime import millis_to_nanos
 from nautilus_trader.core.datetime import nanos_to_micros
 from nautilus_trader.core.datetime import nanos_to_millis
 from nautilus_trader.core.datetime import nanos_to_secs
+from nautilus_trader.core.datetime import secs_to_millis
 from nautilus_trader.core.datetime import secs_to_nanos
 from nautilus_trader.core.datetime import unix_nanos_to_dt
 from tests.test_kit.stubs import UNIX_EPOCH
@@ -58,6 +59,26 @@ class TestDatetimeFunctions:
     def test_secs_to_nanos(self, value, expected):
         # Arrange, Act
         result = secs_to_nanos(value)
+
+        # Assert
+        assert result == expected
+
+    @pytest.mark.parametrize(
+        "value, expected",
+        [
+            [-0.01234, -12],
+            [-1, -1_000],
+            [0, 0],
+            [1, 1_000],
+            [1.1, 1_100],
+            [42, 42_000],
+            [0.01234, 12],
+            [0.001, 1],
+        ],
+    )
+    def test_secs_to_millis(self, value, expected):
+        # Arrange, Act
+        result = secs_to_millis(value)
 
         # Assert
         assert result == expected
