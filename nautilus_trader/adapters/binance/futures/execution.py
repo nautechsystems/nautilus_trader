@@ -63,6 +63,7 @@ from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.logging import LogColor
 from nautilus_trader.common.logging import Logger
+from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.core.datetime import millis_to_nanos
 from nautilus_trader.core.datetime import secs_to_millis
 from nautilus_trader.execution.messages import CancelAllOrders
@@ -301,6 +302,7 @@ class BinanceFuturesExecutionClient(LiveExecutionClient):
     async def generate_order_status_report(
         self,
         instrument_id: InstrumentId,
+        client_order_id: ClientOrderId,
         venue_order_id: VenueOrderId,
     ) -> Optional[OrderStatusReport]:
         """
@@ -313,21 +315,43 @@ class BinanceFuturesExecutionClient(LiveExecutionClient):
         ----------
         instrument_id : InstrumentId
             The instrument ID for the query.
-        venue_order_id : VenueOrderId
+        client_order_id : ClientOrderId, optional
+            The client order ID for the report.
+        venue_order_id : VenueOrderId, optional
             The venue order ID for the query.
 
         Returns
         -------
         OrderStatusReport or ``None``
 
+        Raises
+        ------
+        ValueError
+            If both the `client_order_id` and `venue_order_id` are ``None``
+
         """
-        self._log.warning("Cannot generate OrderStatusReport: not yet implemented.")
+        PyCondition.true(
+            client_order_id is not None or venue_order_id is not None,
+            "both `client_order_id` and `venue_order_id` were `None`",
+        )
+
+        self._log.info(
+            f"Generating OrderStatusReport for "
+            f"{repr(client_order_id) if client_order_id else ''} "
+            f"{repr(venue_order_id) if venue_order_id else ''}..."
+        )
 
         try:
-            binance_order: Optional[BinanceFuturesOrder] = await self._http_account.get_order(
-                symbol=instrument_id.symbol.value,
-                order_id=venue_order_id.value,
-            )
+            if client_order_id is not None:
+                binance_order: Optional[BinanceFuturesOrder] = await self._http_account.get_order(
+                    symbol=instrument_id.symbol.value,
+                    orig_client_order_id=client_order_id.value,
+                )
+            else:
+                binance_order = await self._http_account.get_order(
+                    symbol=instrument_id.symbol.value,
+                    order_id=venue_order_id.value,
+                )
         except BinanceError as ex:
             self._log.exception(
                 f"Cannot generate order status report for {venue_order_id}.",

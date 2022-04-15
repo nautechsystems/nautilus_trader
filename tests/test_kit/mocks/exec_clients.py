@@ -24,6 +24,7 @@ from nautilus_trader.execution.reports import TradeReport
 from nautilus_trader.live.execution_client import LiveExecutionClient
 from nautilus_trader.model.enums import OMSType
 from nautilus_trader.model.identifiers import AccountId
+from nautilus_trader.model.identifiers import ClientOrderId
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import VenueOrderId
 
@@ -226,6 +227,7 @@ class MockLiveExecutionClient(LiveExecutionClient):
     async def generate_order_status_report(
         self,
         instrument_id: InstrumentId,
+        client_order_id: ClientOrderId,
         venue_order_id: VenueOrderId,
     ) -> Optional[OrderStatusReport]:
         self.calls.append(inspect.currentframe().f_code.co_name)
