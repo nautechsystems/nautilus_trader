@@ -44,7 +44,7 @@ if platform.system() == "Windows":
     os.environ["LIBPATH"] = os.environ.get("LIBPATH", "") + f":{target_dir}"
     RUST_LIB_PFX = ""
     RUST_LIB_EXT = "lib"
-    TARGET_DIR = "x86_64-unknown-linux-musl/"
+    TARGET_DIR = "x86_64-pc-windows-msvc/"
 else:
     RUST_LIB_PFX = "lib"
     RUST_LIB_EXT = "a"
@@ -64,7 +64,7 @@ RUST_LIBS = [
 def _build_rust_libs() -> None:
     extra_flags = ""
     if platform.system() == "Windows":
-        extra_flags = " --target x86_64-unknown-linux-musl"
+        extra_flags = " --target=x86_64-pc-windows-msvc"
 
     build_option = " --release" if CARGO_MODE == "release" else ""
     # Build the Rust libraries using Cargo
