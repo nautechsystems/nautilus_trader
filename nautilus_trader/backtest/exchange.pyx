@@ -1539,7 +1539,7 @@ cdef class SimulatedExchange:
 
         self._generate_order_filled(
             order=order,
-            venue_position_id=venue_position_id if self.oms_type != OMSType.NETTING else None,
+            venue_position_id=None if self.oms_type == OMSType.NETTING else venue_position_id,
             last_qty=last_qty,
             last_px=last_px,
             quote_currency=instrument.quote_currency,
