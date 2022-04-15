@@ -64,6 +64,7 @@ from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.logging import LogColor
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.core.datetime import millis_to_nanos
+from nautilus_trader.core.datetime import secs_to_millis
 from nautilus_trader.execution.messages import CancelAllOrders
 from nautilus_trader.execution.messages import CancelOrder
 from nautilus_trader.execution.messages import ModifyOrder
@@ -412,8 +413,8 @@ class BinanceFuturesExecutionClient(LiveExecutionClient):
             for symbol in active_symbols:
                 response = await self._http_account.get_orders(
                     symbol=symbol,
-                    start_time=int(start.timestamp() * 1000) if start is not None else None,
-                    end_time=int(end.timestamp() * 1000) if end is not None else None,
+                    start_time=secs_to_millis(start.timestamp()) if start is not None else None,
+                    end_time=secs_to_millis(end.timestamp()) if end is not None else None,
                 )
                 binance_orders.extend(response)
         except BinanceError as ex:
@@ -496,8 +497,8 @@ class BinanceFuturesExecutionClient(LiveExecutionClient):
             for symbol in active_symbols:
                 symbol_trades = await self._http_account.get_account_trades(
                     symbol=symbol,
-                    start_time=int(start.timestamp() * 1000) if start is not None else None,
-                    end_time=int(end.timestamp() * 1000) if end is not None else None,
+                    start_time=secs_to_millis(start.timestamp()) if start is not None else None,
+                    end_time=secs_to_millis(end.timestamp()) if end is not None else None,
                 )
                 binance_trades.extend(symbol_trades)
         except BinanceError as ex:
