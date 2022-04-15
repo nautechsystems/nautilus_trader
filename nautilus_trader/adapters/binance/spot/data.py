@@ -51,6 +51,7 @@ from nautilus_trader.common.logging import LogColor
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.common.providers import InstrumentProvider
 from nautilus_trader.core.correctness import PyCondition
+from nautilus_trader.core.datetime import secs_to_millis
 from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.live.data_client import LiveMarketDataClient
 from nautilus_trader.model.c_enums.bar_aggregation import BarAggregationParser
@@ -587,8 +588,13 @@ class BinanceSpotDataClient(LiveMarketDataClient):
                 f"was {BarAggregationParser.to_str_py(bar_type.spec.aggregation)}",
             )
 
-        start_time_ms = from_datetime.to_datetime64() * 1000 if from_datetime is not None else None
-        end_time_ms = to_datetime.to_datetime64() * 1000 if to_datetime is not None else None
+        start_time_ms = None
+        if from_datetime is not None:
+            start_time_ms = secs_to_millis(from_datetime)
+
+        end_time_ms = None
+        if to_datetime is not None:
+            end_time_ms = secs_to_millis(to_datetime)
 
         data: List[List[Any]] = await self._http_market.klines(
             symbol=bar_type.instrument_id.symbol.value,
