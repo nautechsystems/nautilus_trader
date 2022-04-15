@@ -327,7 +327,7 @@ class BinanceFuturesExecutionClient(LiveExecutionClient):
         Raises
         ------
         ValueError
-            If both the `client_order_id` and `venue_order_id` are ``None``
+            If both the `client_order_id` and `venue_order_id` are ``None``.
 
         """
         PyCondition.true(

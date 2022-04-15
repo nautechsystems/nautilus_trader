@@ -164,7 +164,7 @@ cdef class LiveExecutionClient(ExecutionClient):
         Raises
         ------
         ValueError
-            If both the `client_order_id` and `venue_order_id` are ``None``
+            If both the `client_order_id` and `venue_order_id` are ``None``.
 
         """
         raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
