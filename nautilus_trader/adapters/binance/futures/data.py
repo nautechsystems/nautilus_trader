@@ -69,6 +69,7 @@ from nautilus_trader.model.enums import PriceType
 from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import Symbol
+from nautilus_trader.model.instruments.base import Instrument
 from nautilus_trader.model.orderbook.data import OrderBookData
 from nautilus_trader.model.orderbook.data import OrderBookDeltas
 from nautilus_trader.model.orderbook.data import OrderBookSnapshot
@@ -515,6 +516,23 @@ class BinanceFuturesDataClient(LiveMarketDataClient):
         self._remove_subscription_instrument_close_prices(instrument_id)
 
     # -- REQUESTS ----------------------------------------------------------------------------------
+
+    def request_instrument(self, instrument_id: InstrumentId, correlation_id: UUID4):
+        instrument: Optional[Instrument] = self._instrument_provider.find(instrument_id)
+        if instrument is None:
+            self._log.error(f"Cannot find instrument for {instrument_id}.")
+            return
+
+        data_type = DataType(
+            type=Instrument,
+            metadata={"instrument_id": instrument_id},
+        )
+
+        self._handle_data_response(
+            data_type=data_type,
+            data=[instrument],  # Data engine handles lists of instruments
+            correlation_id=correlation_id,
+        )
 
     def request_quote_ticks(
         self,

@@ -14,8 +14,9 @@ Released on TBC.
 ### Enhancements
 - Added `BacktestNode.get_engines()` method
 - Added `BacktestNode.get_engine(run_config_id)` method
+- Added `Actor.request_instrument()` method (also applies to `Strategy`)
+- Added `Cache.snapshot_position()` method
 - All configuration objects can now be imported directly from `nautilus_trader.config`
-- Added `Cache.snapshot_position`
 - Execution engine now takes snapshots of closed netted positions
 - Performance statistics now based on total positions and snapshots
 - Added Binance Spot/Margin external order handling

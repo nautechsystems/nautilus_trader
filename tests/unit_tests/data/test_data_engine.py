@@ -1601,3 +1601,30 @@ class TestDataEngine:
         # Assert
         assert handler1 == [bar]
         assert handler2 == [bar]
+
+    def test_request_instrument_reaches_client(self):
+        # Arrange
+        self.data_engine.register_client(self.binance_client)
+
+        handler = []
+        request = DataRequest(
+            client_id=None,
+            venue=BINANCE,
+            data_type=DataType(
+                Instrument,
+                metadata={  # str data type is invalid
+                    "instrument_id": ETHUSDT_BINANCE.id,
+                },
+            ),
+            callback=handler.append,
+            request_id=self.uuid_factory.generate(),
+            ts_init=self.clock.timestamp_ns(),
+        )
+
+        # Act
+        self.msgbus.request(endpoint="DataEngine.request", request=request)
+
+        # Assert
+        assert self.data_engine.request_count == 1
+        assert len(handler) == 1
+        assert handler[0].data == [ETHUSDT_BINANCE]
