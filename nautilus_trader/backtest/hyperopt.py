@@ -14,7 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 from decimal import Decimal
-from typing import Dict, Optional
+from typing import Any, Dict, Optional
 
 from nautilus_trader.backtest.node import BacktestNode
 
@@ -41,16 +41,24 @@ class HyperoptBacktestNode(BacktestNode):
     Provides a specific node for `hyperopt` backtest runs.
 
     Distributed Asynchronous Hyper-parameter Optimization.
+
+    Parameters
+    ----------
+    base_config : BacktestRunConfig
+        The base backtest run config to build from.
     """
 
-    def __init__(self):
+    def __init__(self, base_config: BacktestRunConfig):
+        super().__init__([base_config])
+
+        self.config: BacktestRunConfig = base_config
+
         self.strategy_path: Optional[str] = None
         self.config_path: Optional[str] = None
         self.strategy_config: Optional[StrategyConfig] = None
         self.instrument_id: Optional[InstrumentId] = None
         self.bar_type: Optional[BarType] = None
         self.trade_size: Optional[Decimal] = None
-        self.config: Optional[BacktestRunConfig] = None
 
     def set_strategy_config(
         self,
@@ -87,19 +95,22 @@ class HyperoptBacktestNode(BacktestNode):
         self.bar_type = bar_type
         self.trade_size = trade_size
 
-    def hyperopt_search(self, config, params, minimum_positions=50, max_evals=50) -> Dict:
+    def hyperopt_search(
+        self,
+        params: Dict[str, Any],
+        minimum_positions: int = 50,
+        max_evals: int = 50,
+    ) -> Dict:
         """
-        Run hyperopt to optimize strategy parameters.
+        Run with hyperopt to optimize strategy parameters.
 
         Parameters
         ----------
-        config : BacktestRunConfig
-            The configuration for the backtest test.
         params : Dict[str, Any]
             The set of strategy parameters to optimize.
-        minimum_positions: int
+        minimum_positions: int, default 50
             The minimum number of positions to accept a gradient.
-        max_evals : int
+        max_evals : int, default 50
             The maximum number of evaluations for the optimization problem.
 
         Returns
@@ -121,7 +132,6 @@ class HyperoptBacktestNode(BacktestNode):
 
         logger = Logger(clock=LiveClock(), level_stdout=LogLevel.INFO)
         logger_adapter = LoggerAdapter(component_name="HYPEROPT_LOGGER", logger=logger)
-        self.config = config
 
         def objective(args):
 
@@ -147,12 +157,11 @@ class HyperoptBacktestNode(BacktestNode):
 
             try:
                 result = self._run(
-                    engine_config=local_config.engine,
                     run_config_id=local_config.id,
+                    engine_config=local_config.engine,
                     venue_configs=local_config.venues,
                     data_configs=local_config.data,
                     batch_size_bytes=local_config.batch_size_bytes,
-                    # return_engine=True
                 )
 
                 base_currency = self.config.venues[0].base_currency

@@ -246,16 +246,13 @@ config = BacktestRunConfig(
     data=data,
 )
 
-node = BacktestNode()
+node = BacktestNode(configs=[config])
 
- # `run` runs one or many configs synchronously
-[result] = node.run(
-    run_configs=[config], 
-    return_engine=True # Return the full BacktestEngine (which contains much more detailed information) rather than the standard `BacktestResult`
-)
+ # Runs one or many configs synchronously
+results: List[BacktestResult] = node.run()
 ```
 
 ```python
-result.cache.orders()[:5]
-result.cache.positions()[:5]
+results[0].cache.orders()[:5]
+results[0].cache.positions()[:5]
 ```

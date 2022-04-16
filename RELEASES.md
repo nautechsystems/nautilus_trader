@@ -3,12 +3,17 @@
 Released on TBC.
 
 ### Breaking Changes
+- `BacktestNode` now requires configs at initialization
+- Removed `run_configs` param from `BacktestNode.run()` method
+- Removed `return_engine` flag
 - Renamed `TradingStrategy` to `Strategy`
 - Renamed `TradingStrategyConfig` to `StrategyConfig`
 - Changes to configuration object import paths
 - Removed redundant `realized_points` concept from `Position`
 
 ### Enhancements
+- Added `BacktestNode.get_engines()` method
+- Added `BacktestNode.get_engine(run_config_id)` method
 - All configuration objects can now be imported directly from `nautilus_trader.config`
 - Added `Cache.snapshot_position`
 - Execution engine now takes snapshots of closed netted positions

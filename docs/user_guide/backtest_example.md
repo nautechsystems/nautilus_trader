@@ -177,7 +177,7 @@ config = BacktestRunConfig(
 ## Run the backtest!
 
 ```python
-node = BacktestNode()
+node = BacktestNode(configs=[config])
 
-result = node.run(run_configs=[config])
+results = node.run()
 ```
