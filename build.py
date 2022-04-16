@@ -42,6 +42,7 @@ if platform.system() == "Windows":
     # https://docs.microsoft.com/en-US/cpp/error-messages/tool-errors/linker-tools-error-lnk1181?view=msvc-170&viewFallbackFrom=vs-2019
     target_dir = os.path.join(os.getcwd(), "nautilus_core", "target", "release")
     os.environ["LIBPATH"] = os.environ.get("LIBPATH", "") + f":{target_dir}"
+    os.environ["RUSTFLAGS"] = "-C target-feature=+crt-static"
     RUST_LIB_PFX = ""
     RUST_LIB_EXT = "lib"
     TARGET_DIR = "x86_64-pc-windows-msvc/"
@@ -64,7 +65,7 @@ RUST_LIBS = [
 def _build_rust_libs() -> None:
     extra_flags = ""
     if platform.system() == "Windows":
-        extra_flags = " --target=x86_64-pc-windows-msvc"
+        extra_flags = " --target x86_64-pc-windows-msvc"
 
     build_option = " --release" if CARGO_MODE == "release" else ""
     # Build the Rust libraries using Cargo
