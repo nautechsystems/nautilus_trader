@@ -13,7 +13,9 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import redis
+import warnings
+
+from nautilus_trader.config import CacheDatabaseConfig
 
 from nautilus_trader.accounting.accounts.base cimport Account
 from nautilus_trader.accounting.factory cimport AccountFactory
@@ -35,9 +37,13 @@ from nautilus_trader.model.orders.base cimport Order
 from nautilus_trader.model.orders.unpacker cimport OrderUnpacker
 from nautilus_trader.model.position cimport Position
 from nautilus_trader.serialization.base cimport Serializer
-from nautilus_trader.trading.strategy cimport TradingStrategy
+from nautilus_trader.trading.strategy cimport Strategy
 
-from nautilus_trader.infrastructure.config import CacheDatabaseConfig
+
+try:
+    import redis
+except ImportError:  # pragma: no cover
+    redis = None
 
 
 cdef str _UTF8 = 'utf-8'
@@ -88,6 +94,9 @@ cdef class RedisCacheDatabase(CacheDatabase):
         Serializer serializer not None,
         config: CacheDatabaseConfig=None,
     ):
+        if redis is None:
+            warnings.warn("redis is not available.")
+
         if config is None:
             config = CacheDatabaseConfig()
         Condition.type(config, CacheDatabaseConfig, "config")
@@ -527,8 +536,7 @@ cdef class RedisCacheDatabase(CacheDatabase):
         # Check data integrity of reply
         if len(reply) > 1:  # Reply = The length of the list after the push operation
             self._log.error(
-                f"The {repr(account.id)} already existed "
-                f"in the accounts and was appended to.",
+                f"The {repr(account.id)} already existed and was appended to.",
             )
 
         self._log.debug(f"Added {account}).")
@@ -550,9 +558,8 @@ cdef class RedisCacheDatabase(CacheDatabase):
 
         # Check data integrity of reply
         if reply > 1:  # Reply = The length of the list after the push operation
-            self._log.error(
-                f"The {repr(order.client_order_id)} already existed "
-                f"in the orders and was appended to.",
+            self._log.warning(
+                f"The {repr(order.client_order_id)} already existed and was appended to.",
             )
 
         self._log.debug(f"Added Order(id={order.client_order_id.value}).")
@@ -574,20 +581,19 @@ cdef class RedisCacheDatabase(CacheDatabase):
 
         # Check data integrity of reply
         if reply > 1:  # Reply = The length of the list after the push operation
-            self._log.error(
-                f"The {repr(position.id)} already existed "
-                f"in the positions and was overwritten.",
+            self._log.warning(
+                f"The {repr(position.id)} already existed and was appended to.",
             )
 
         self._log.debug(f"Added Position(id={position.id.value}).")
 
-    cpdef void update_strategy(self, TradingStrategy strategy) except *:
+    cpdef void update_strategy(self, Strategy strategy) except *:
         """
         Update the given strategy state in the database.
 
         Parameters
         ----------
-        strategy : TradingStrategy
+        strategy : Strategy
             The strategy to update.
 
         """

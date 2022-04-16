@@ -29,7 +29,8 @@ from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.msgbus.bus import MessageBus
 from nautilus_trader.portfolio.portfolio import Portfolio
-from tests.test_kit.stubs import TestStubs
+from tests.test_kit.stubs.component import TestComponentStubs
+from tests.test_kit.stubs.identifiers import TestIdStubs
 
 
 USDJPY_SIM = TestInstrumentProvider.default_fx_ccy("USD/JPY")
@@ -43,7 +44,7 @@ class TestExecutionClient:
         self.uuid_factory = UUIDFactory()
         self.logger = Logger(self.clock)
 
-        self.trader_id = TestStubs.trader_id()
+        self.trader_id = TestIdStubs.trader_id()
 
         self.msgbus = MessageBus(
             trader_id=self.trader_id,
@@ -51,7 +52,7 @@ class TestExecutionClient:
             logger=self.logger,
         )
 
-        self.cache = TestStubs.cache()
+        self.cache = TestComponentStubs.cache()
 
         self.portfolio = Portfolio(
             msgbus=self.msgbus,
@@ -71,6 +72,7 @@ class TestExecutionClient:
 
         self.client = ExecutionClient(
             client_id=ClientId(self.venue.value),
+            venue=self.venue,
             oms_type=OMSType.HEDGING,
             account_type=AccountType.MARGIN,
             base_currency=USD,
@@ -93,6 +95,7 @@ class TestExecutionClient:
         # Arrange
         client = ExecutionClient(
             client_id=ClientId("IB"),
+            venue=None,  # Multi-venue
             oms_type=OMSType.HEDGING,
             account_type=AccountType.MARGIN,
             base_currency=USD,

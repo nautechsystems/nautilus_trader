@@ -17,22 +17,24 @@ import sys
 
 import fsspec
 import pytest
-from dask.utils import parse_bytes
 
 from nautilus_trader.adapters.betfair.providers import BetfairInstrumentProvider
-from nautilus_trader.backtest.config import BacktestDataConfig
-from nautilus_trader.backtest.config import BacktestRunConfig
 from nautilus_trader.backtest.node import BacktestNode
+from nautilus_trader.config import BacktestDataConfig
+from nautilus_trader.config import BacktestEngineConfig
+from nautilus_trader.config import BacktestRunConfig
 from nautilus_trader.model.data.venue import InstrumentStatusUpdate
+from nautilus_trader.model.orderbook.data import OrderBookData
 from nautilus_trader.persistence.batching import batch_files
 from nautilus_trader.persistence.catalog import DataCatalog
 from nautilus_trader.persistence.external.core import process_files
 from nautilus_trader.persistence.external.readers import CSVReader
+from nautilus_trader.persistence.util import parse_bytes
 from tests.integration_tests.adapters.betfair.test_kit import BetfairTestStubs
 from tests.test_kit import PACKAGE_ROOT
-from tests.test_kit.mocks import NewsEventData
-from tests.test_kit.mocks import data_catalog_setup
-from tests.test_kit.stubs import TestStubs
+from tests.test_kit.mocks.data import NewsEventData
+from tests.test_kit.mocks.data import data_catalog_setup
+from tests.test_kit.stubs.persistence import TestPersistenceStubs
 
 
 TEST_DATA_DIR = PACKAGE_ROOT + "/data"
@@ -61,7 +63,7 @@ class TestPersistenceBatching:
         base = BacktestDataConfig(
             catalog_path=str(self.catalog.path),
             catalog_fs_protocol=self.catalog.fs.protocol,
-            data_cls_path="nautilus_trader.model.orderbook.data.OrderBookData",
+            data_cls=OrderBookData,
         )
 
         iter_batches = batch_files(
@@ -88,36 +90,37 @@ class TestPersistenceBatching:
 
     def test_batch_generic_data(self):
         # Arrange
-        TestStubs.setup_news_event_persistence()
+        TestPersistenceStubs.setup_news_event_persistence()
         process_files(
             glob_path=f"{PACKAGE_ROOT}/data/news_events.csv",
-            reader=CSVReader(block_parser=TestStubs.news_event_parser),
+            reader=CSVReader(block_parser=TestPersistenceStubs.news_event_parser),
             catalog=self.catalog,
         )
         data_config = BacktestDataConfig(
-            catalog_path="/root/",
+            catalog_path="/.nautilus/catalog/",
             catalog_fs_protocol="memory",
-            data_cls_path=f"{NewsEventData.__module__}.NewsEventData",
+            data_cls=NewsEventData,
             client_id="NewsClient",
         )
         # Add some arbitrary instrument data to appease BacktestEngine
         instrument_data_config = BacktestDataConfig(
-            catalog_path="/root/",
+            catalog_path="/.nautilus/catalog/",
             catalog_fs_protocol="memory",
             instrument_id=self.catalog.instruments(as_nautilus=True)[0].id.value,
-            data_cls_path=f"{InstrumentStatusUpdate.__module__}.InstrumentStatusUpdate",
+            data_cls=InstrumentStatusUpdate,
         )
+        persistence = BetfairTestStubs.persistence_config(catalog_path=self.catalog.path)
+        engine = BacktestEngineConfig(persistence=persistence)
         run_config = BacktestRunConfig(
+            engine=engine,
             data=[data_config, instrument_data_config],
-            persistence=BetfairTestStubs.persistence_config(catalog_path=self.catalog.path),
             venues=[BetfairTestStubs.betfair_venue_config()],
-            strategies=[],
             batch_size_bytes=parse_bytes("1mib"),
         )
 
         # Act
-        node = BacktestNode()
-        node.run_sync([run_config])
+        node = BacktestNode(configs=[run_config])
+        node.run()
 
         # Assert
         assert node

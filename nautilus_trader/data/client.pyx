@@ -40,6 +40,8 @@ cdef class DataClient(Component):
     ----------
     client_id : ClientId
         The data client ID.
+    venue : Venue, optional
+        The client venue. If multi-venue then can be ``None``.
     msgbus : MessageBus
         The message bus for the client.
     clock : Clock
@@ -57,6 +59,7 @@ cdef class DataClient(Component):
     def __init__(
         self,
         ClientId client_id not None,
+        Venue venue,  # Can be None
         MessageBus msgbus not None,
         Cache cache not None,
         Clock clock not None,
@@ -75,6 +78,8 @@ cdef class DataClient(Component):
         )
 
         self._cache = cache
+
+        self.venue = venue
 
         # Subscriptions
         self._subscriptions_generic = set()  # type: set[DataType]
@@ -167,6 +172,7 @@ cdef class DataClient(Component):
     cpdef void _handle_data_response(self, DataType data_type, object data, UUID4 correlation_id) except *:
         cdef DataResponse response = DataResponse(
             client_id=self.id,
+            venue=self.venue,
             data_type=data_type,
             data=data,
             correlation_id=correlation_id,
@@ -184,7 +190,9 @@ cdef class MarketDataClient(DataClient):
     Parameters
     ----------
     client_id : ClientId
-        The data client ID (normally the venue).
+        The data client ID.
+    venue : Venue, optional
+        The client venue. If multi-venue then can be ``None``.
     msgbus : MessageBus
         The message bus for the client.
     cache : Cache
@@ -204,6 +212,7 @@ cdef class MarketDataClient(DataClient):
     def __init__(
         self,
         ClientId client_id not None,
+        Venue venue,  # Can be None
         MessageBus msgbus not None,
         Cache cache not None,
         Clock clock not None,
@@ -212,6 +221,7 @@ cdef class MarketDataClient(DataClient):
     ):
         super().__init__(
             client_id=client_id,
+            venue=venue,
             msgbus=msgbus,
             cache=cache,
             clock=clock,
@@ -680,6 +690,10 @@ cdef class MarketDataClient(DataClient):
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
+    cpdef void request_instrument(self, InstrumentId instrument_id, UUID4 correlation_id) except *:
+        """Abstract method (implement in subclass)."""
+        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
+
     cpdef void request_quote_ticks(
         self,
         InstrumentId instrument_id,
@@ -732,6 +746,7 @@ cdef class MarketDataClient(DataClient):
     cpdef void _handle_quote_ticks(self, InstrumentId instrument_id, list ticks, UUID4 correlation_id) except *:
         cdef DataResponse response = DataResponse(
             client_id=self.id,
+            venue=self.venue,
             data_type=DataType(QuoteTick, metadata={"instrument_id": instrument_id}),
             data=ticks,
             correlation_id=correlation_id,
@@ -744,6 +759,7 @@ cdef class MarketDataClient(DataClient):
     cpdef void _handle_trade_ticks(self, InstrumentId instrument_id, list ticks, UUID4 correlation_id) except *:
         cdef DataResponse response = DataResponse(
             client_id=self.id,
+            venue=self.venue,
             data_type=DataType(TradeTick, metadata={"instrument_id": instrument_id}),
             data=ticks,
             correlation_id=correlation_id,
@@ -756,6 +772,7 @@ cdef class MarketDataClient(DataClient):
     cpdef void _handle_bars(self, BarType bar_type, list bars, Bar partial, UUID4 correlation_id) except *:
         cdef DataResponse response = DataResponse(
             client_id=self.id,
+            venue=self.venue,
             data_type=DataType(Bar, metadata={"bar_type": bar_type, "Partial": partial}),
             data=bars,
             correlation_id=correlation_id,

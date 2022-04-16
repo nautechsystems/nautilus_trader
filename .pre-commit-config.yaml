@@ -28,22 +28,23 @@ repos:
       - id: codespell
         description: Checks for common misspellings.
         types_or: [python, cython, rst, markdown]
-        exclude: "nautilus_trader/adapters/betfair/parsing.py|nautilus_trader/adapters/betfair/execution.py|tests/integration_tests/adapters/betfair/test_kit.py"
+        exclude: "nautilus_trader/adapters/betfair/parsing.py|nautilus_trader/adapters/betfair/execution.py|tests/integration_tests/adapters/betfair/test_kit.py|nautilus_trader/adapters/binance/futures/schemas/user.py"
 
   - repo: https://github.com/hadialqattan/pycln
-    rev: v1.1.0
+    rev: v1.2.5
     hooks:
       - id: pycln
         name: pycln (Python unused imports)
         exclude: "nautilus_trader/live/node.py|nautilus_trader/adapters/betfair/execution.py"
 
   - repo: https://github.com/psf/black
-    rev: 21.12b0
+    rev: 22.3.0
     hooks:
       - id: black
         args: [
             --line-length=100,
         ]
+        exclude: "docs/_pygments/monokai.py"
 
   - repo: https://github.com/pycqa/isort
     rev: 5.10.1
@@ -62,7 +63,7 @@ repos:
         ]
 
   - repo: https://github.com/pre-commit/mirrors-mypy
-    rev: v0.931
+    rev: v0.942
     hooks:
       - id: mypy
         args: [
@@ -72,6 +73,7 @@ repos:
         ]
         additional_dependencies: [
             pydantic,
+            types-frozendict,
             types-orjson,
             types-pytz,
             types-redis,
@@ -84,6 +86,7 @@ repos:
       - id: flake8
         name: flake8 (Python)
         additional_dependencies:
+          - bandit==1.7.2  # Pin due issue https://github.com/PyCQA/bandit/issues/841
           - flake8-2020
           - flake8-bandit
           - flake8-bugbear
@@ -103,10 +106,12 @@ repos:
             --max-line-length=150,
             --statistics,
             --ignore=C101 E203 E252 E402 D100 D101 D102 S101 S403 W503,
+            --min-python-version=3.8.0
         ]
       - id: flake8
         name: flake8 (Cython)
         additional_dependencies:
+          - bandit==1.7.2  # Pin due issue https://github.com/PyCQA/bandit/issues/841
           - flake8-2020
           - flake8-bandit
           - flake8-bugbear
@@ -138,11 +143,10 @@ repos:
         additional_dependencies:
           - toml
 
-#  - repo: https://github.com/kynan/nbstripout
-#    rev: 0.5.0
-#    hooks:
-#      - id: nbstripout
-
+  - repo: https://github.com/kynan/nbstripout
+    rev: 0.5.0
+    hooks:
+      - id: nbstripout
 
 # flake8 ignore justifications
 # ----------------------------

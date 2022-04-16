@@ -16,6 +16,8 @@
 import asyncio
 from typing import Optional
 
+from nautilus_trader.config import LiveRiskEngineConfig
+
 from nautilus_trader.cache.base cimport CacheFacade
 from nautilus_trader.common.clock cimport LiveClock
 from nautilus_trader.common.logging cimport Logger
@@ -27,8 +29,6 @@ from nautilus_trader.core.message cimport Message
 from nautilus_trader.core.message cimport MessageCategory
 from nautilus_trader.msgbus.bus cimport MessageBus
 from nautilus_trader.portfolio.base cimport PortfolioFacade
-
-from nautilus_trader.live.config import LiveRiskEngineConfig
 
 
 cdef class LiveRiskEngine(RiskEngine):

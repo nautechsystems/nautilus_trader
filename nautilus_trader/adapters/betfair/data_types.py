@@ -20,10 +20,10 @@ import pyarrow as pa
 
 from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.core.data import Data
-from nautilus_trader.model.c_enums.book_action import BookAction
-from nautilus_trader.model.c_enums.book_action import BookActionParser
-from nautilus_trader.model.c_enums.book_type import BookTypeParser
 from nautilus_trader.model.data.ticker import Ticker
+from nautilus_trader.model.enums import BookAction
+from nautilus_trader.model.enums import BookActionParser
+from nautilus_trader.model.enums import BookTypeParser
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity

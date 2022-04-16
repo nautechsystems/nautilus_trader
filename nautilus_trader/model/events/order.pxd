@@ -47,6 +47,8 @@ cdef class OrderEvent(Event):
     """The client order ID associated with the event.\n\n:returns: `ClientOrderId`"""
     cdef readonly VenueOrderId venue_order_id
     """The venue order ID associated with the event.\n\n:returns: `VenueOrderId` or ``None``"""
+    cdef readonly bint reconciliation
+    """If the event was generated during reconciliation.\n\n:returns: `bool`"""
 
 
 cdef class OrderInitialized(OrderEvent):
@@ -57,7 +59,7 @@ cdef class OrderInitialized(OrderEvent):
     cdef readonly Quantity quantity
     """The order quantity.\n\n:returns: `Quantity`"""
     cdef readonly TimeInForce time_in_force
-    """The order time-in-force.\n\n:returns: `TimeInForce`"""
+    """The order time in force.\n\n:returns: `TimeInForce`"""
     cdef readonly bint post_only
     """If the order will only provide liquidity (make a market).\n\n:returns: `bool`"""
     cdef readonly bint reduce_only
@@ -206,9 +208,9 @@ cdef class OrderUpdated(OrderEvent):
 
 cdef class OrderFilled(OrderEvent):
     cdef readonly TradeId trade_id
-    """The trade match ID associated with the event.\n\n:returns: `TradeId`"""
+    """The trade match ID (assigned by the venue).\n\n:returns: `TradeId`"""
     cdef readonly PositionId position_id
-    """The position ID associated with the event.\n\n:returns: `PositionId` or ``None``"""
+    """The position ID (assigned by the venue).\n\n:returns: `PositionId` or ``None``"""
     cdef readonly OrderSide order_side
     """The order side.\n\n:returns: `OrderSide`"""
     cdef readonly OrderType order_type

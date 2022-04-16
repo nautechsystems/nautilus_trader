@@ -7,7 +7,6 @@
 *.exp
 *.obj
 *.lib
-*.html
 *.log
 *.prof
 *.rdb

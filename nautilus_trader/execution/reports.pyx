@@ -80,7 +80,7 @@ cdef class OrderStatusReport(ExecutionReport):
         The reported order side.
     order_type : OrderType
         The reported order type.
-    time_in_force : TimeInForce
+    time_in_force : TimeInForce {``GTC``, ``IOC``, ``FOK``, ``GTD``, ``DAY``, ``AT_THE_OPEN``, ``AT_THE_CLOSE``}
         The reported order time in force.
     order_status : OrderStatus
         The reported order status at the exchange.
@@ -111,9 +111,9 @@ cdef class OrderStatusReport(ExecutionReport):
     trigger_type : TriggerType, default ``NONE``
         The reported order trigger type.
     limit_offset : Decimal, optional
-        The trailing offset for the order (LIMIT) price.
+        The trailing offset for the order price (LIMIT).
     trailing_offset : Decimal, optional
-        The trailing offset for the trigger (STOP) price.
+        The trailing offset for the trigger price (STOP).
     offset_type : TrailingOffsetType, default ``NONE``
         The order trailing offset type.
     avg_px : Decimal, optional
@@ -213,6 +213,14 @@ cdef class OrderStatusReport(ExecutionReport):
         self.ts_triggered = ts_triggered or 0
         self.ts_last = ts_last
 
+    def __eq__(self, OrderStatusReport other) -> bool:
+        return (
+            self.account_id == other.account_id
+            and self.instrument_id == other.instrument_id
+            and self.venue_order_id == other.venue_order_id
+            and self.ts_accepted == other.ts_accepted
+        )
+
     def __repr__(self) -> str:
         return (
             f"{type(self).__name__}("
@@ -269,7 +277,7 @@ cdef class TradeReport(ExecutionReport):
         otherwise pass ``None`` and the execution engine OMS will handle
         position ID resolution.
     trade_id : TradeId
-        The reported trade match ID.
+        The reported trade match ID (assigned by the venue).
     order_side : OrderSide {``BUY``, ``SELL``}
         The reported order side for the trade.
     last_qty : Quantity
@@ -329,6 +337,15 @@ cdef class TradeReport(ExecutionReport):
         self.liquidity_side = liquidity_side
         self.ts_event = ts_event
 
+    def __eq__(self, TradeReport other) -> bool:
+        return (
+            self.account_id == other.account_id
+            and self.instrument_id == other.instrument_id
+            and self.venue_order_id == other.venue_order_id
+            and self.trade_id == other.trade_id
+            and self.ts_event == other.ts_event
+        )
+
     def __repr__(self) -> str:
         return (
             f"{type(self).__name__}("
@@ -374,11 +391,6 @@ cdef class PositionStatusReport(ExecutionReport):
         venue has assigned a position ID / ticket for the trade then pass that
         here, otherwise pass ``None`` and the execution engine OMS will handle
         position ID resolution.
-
-    Raises
-    ------
-    ValueError
-        If `quantity` is not positive (> 0).
     """
 
     def __init__(
@@ -392,8 +404,6 @@ cdef class PositionStatusReport(ExecutionReport):
         int64_t ts_init,
         PositionId venue_position_id = None,  # Can be None
     ):
-        Condition.positive(quantity, "quantity")
-
         super().__init__(
             account_id,
             instrument_id,
@@ -465,7 +475,7 @@ cdef class ExecutionMassStatus(Document):
     def __repr__(self) -> str:
         return (
             f"{type(self).__name__}("
-            f"client_id={self.client_id.value}, "
+            f"client_id={self.client_id}, "
             f"account_id={self.account_id.value}, "
             f"venue={self.venue.value}, "
             f"order_reports={self._order_reports}, "

@@ -15,7 +15,6 @@
 
 import pickle
 import sys
-from unittest.mock import patch
 
 import fsspec
 import numpy as np
@@ -46,10 +45,11 @@ from nautilus_trader.persistence.external.core import write_tables
 from nautilus_trader.persistence.external.readers import CSVReader
 from tests.integration_tests.adapters.betfair.test_kit import BetfairTestStubs
 from tests.test_kit import PACKAGE_ROOT
-from tests.test_kit.mocks import MockReader
-from tests.test_kit.mocks import NewsEventData
-from tests.test_kit.mocks import data_catalog_setup
-from tests.test_kit.stubs import TestStubs
+from tests.test_kit.mocks.data import MockReader
+from tests.test_kit.mocks.data import NewsEventData
+from tests.test_kit.mocks.data import data_catalog_setup
+from tests.test_kit.stubs.identifiers import TestIdStubs
+from tests.test_kit.stubs.persistence import TestPersistenceStubs
 from tests.unit_tests.backtest.test_backtest_config import TEST_DATA_DIR
 
 
@@ -126,50 +126,6 @@ class TestPersistenceCore:
         assert result.open_file.path == expected.open_file.path
         assert result.block_size == expected.block_size
         assert result.open_file.compression == "bz2"
-
-    @pytest.mark.skip(reason="failing after upgrading fsspec")
-    def test_raw_file_distributed_serializable(self):
-        from distributed.protocol import deserialize
-        from distributed.protocol import serialize
-
-        # Arrange
-        fs = fsspec.filesystem("file")
-        path = TEST_DATA_DIR + "/betfair/1.166811431.bz2"
-        r = RawFile(open_file=fs.open(path=path, compression="bz2"))
-
-        # Act
-        result1: RawFile = deserialize(*serialize(r))
-
-        # Assert
-        assert result1.open_file.fs == r.open_file.fs
-        assert result1.open_file.path == r.open_file.path
-        assert result1.block_size == r.block_size
-        assert result1.open_file.compression == "bz2"
-
-    @patch("nautilus_trader.persistence.external.core.tqdm", spec=True)
-    @pytest.mark.skip("Awaiting fsspec callback feature")
-    def test_raw_file_progress(self, mock_progress):
-        # Arrange
-        raw_file = RawFile(
-            open_file=fsspec.open(f"{TEST_DATA}/1.166564490.bz2"),
-            block_size=5000,
-        )
-
-        # Act
-        data = b"".join(raw_file.iter())
-
-        # Assert
-        assert len(data) == 17338
-        result = [call.kwargs for call in mock_progress.mock_calls[:5]]
-        # Progress bar should update with compressed block size
-        expected = [
-            {"total": 17338},
-            {"n": 5000},
-            {"n": 5000},
-            {"n": 5000},
-            {"n": 2338},
-        ]
-        assert result == expected
 
     @pytest.mark.parametrize(
         "glob, num_files",
@@ -263,15 +219,15 @@ class TestPersistenceCore:
 
         # Assert
         assert result.equals(df[["value"]])  # instrument_id is a partition now
-        assert dataset.files[0].startswith("/root/sample.parquet/instrument_id=a/")
-        assert dataset.files[1].startswith("/root/sample.parquet/instrument_id=b/")
+        assert dataset.files[0].startswith("/.nautilus/catalog/sample.parquet/instrument_id=a/")
+        assert dataset.files[1].startswith("/.nautilus/catalog/sample.parquet/instrument_id=b/")
 
     def test_write_parquet_determine_partitions_writes_instrument_id(
         self,
     ):
         # Arrange
         quote = QuoteTick(
-            instrument_id=TestStubs.audusd_id(),
+            instrument_id=TestIdStubs.audusd_id(),
             bid=Price.from_str("0.80"),
             ask=Price.from_str("0.81"),
             bid_size=Quantity.from_int(1000),
@@ -286,8 +242,8 @@ class TestPersistenceCore:
         write_tables(catalog=self.catalog, tables=tables)
 
         # Assert
-        files = self.fs.ls("/root/data/quote_tick.parquet")
-        expected = "/root/data/quote_tick.parquet/instrument_id=AUD-USD.SIM"
+        files = self.fs.ls(f"{self.catalog.path}/data/quote_tick.parquet")
+        expected = f"{self.catalog.path}/data/quote_tick.parquet/instrument_id=AUD-USD.SIM"
         assert expected in files
 
     def test_load_text_betfair(self):
@@ -384,27 +340,6 @@ class TestPersistenceCore:
         # Assert
         assert len(instruments) == 3
 
-    def test_load_dask_distributed_client(self):
-        # Arrange
-        from distributed import Client
-
-        instrument_provider = BetfairInstrumentProvider.from_instruments([])
-
-        with Client(processes=False, threads_per_worker=1) as c:
-            tasks = process_files(
-                glob_path=f"{TEST_DATA_DIR}/1.166564490*",
-                reader=make_betfair_reader(instrument_provider),
-                catalog=self.catalog,
-                instrument_provider=instrument_provider,
-            )
-
-            # Act
-            results = c.gather(c.compute(tasks))
-
-        # Assert
-        expected = {TEST_DATA + "/1.166564490.bz2": 2908}
-        assert results == expected
-
     def test_repartition_dataset(self):
         # Arrange
         catalog = DataCatalog.from_env()
@@ -443,12 +378,12 @@ class TestPersistenceCore:
         # Assert
         assert len(original_partitions) == 6
         expected = [
-            "/root/sample.parquet/instrument_id=a/20200101.parquet",
-            "/root/sample.parquet/instrument_id=a/20200104.parquet",
-            "/root/sample.parquet/instrument_id=a/20200108.parquet",
-            "/root/sample.parquet/instrument_id=b/20200101.parquet",
-            "/root/sample.parquet/instrument_id=b/20200104.parquet",
-            "/root/sample.parquet/instrument_id=b/20200108.parquet",
+            "/.nautilus/catalog/sample.parquet/instrument_id=a/20200101.parquet",
+            "/.nautilus/catalog/sample.parquet/instrument_id=a/20200104.parquet",
+            "/.nautilus/catalog/sample.parquet/instrument_id=a/20200108.parquet",
+            "/.nautilus/catalog/sample.parquet/instrument_id=b/20200101.parquet",
+            "/.nautilus/catalog/sample.parquet/instrument_id=b/20200104.parquet",
+            "/.nautilus/catalog/sample.parquet/instrument_id=b/20200108.parquet",
         ]
         assert new_partitions == expected
 
@@ -467,24 +402,24 @@ class TestPersistenceCore:
 
         today_str = pd.Timestamp.utcnow().strftime("%Y%m%d")
         expected = [
-            f"/root/data/betfair_ticker.parquet/instrument_id={ins1}/20191220.parquet",
-            f"/root/data/betfair_ticker.parquet/instrument_id={ins2}/20191220.parquet",
-            f"/root/data/betting_instrument.parquet/{today_str}.parquet",
-            f"/root/data/instrument_status_update.parquet/instrument_id={ins1}/20191220.parquet",
-            f"/root/data/instrument_status_update.parquet/instrument_id={ins2}/20191220.parquet",
-            f"/root/data/order_book_data.parquet/instrument_id={ins1}/20191220.parquet",
-            f"/root/data/order_book_data.parquet/instrument_id={ins2}/20191220.parquet",
-            f"/root/data/trade_tick.parquet/instrument_id={ins1}/20191220.parquet",
-            f"/root/data/trade_tick.parquet/instrument_id={ins2}/20191220.parquet",
+            f"/.nautilus/catalog/data/betfair_ticker.parquet/instrument_id={ins1}/20191220.parquet",
+            f"/.nautilus/catalog/data/betfair_ticker.parquet/instrument_id={ins2}/20191220.parquet",
+            f"/.nautilus/catalog/data/betting_instrument.parquet/{today_str}.parquet",
+            f"/.nautilus/catalog/data/instrument_status_update.parquet/instrument_id={ins1}/20191220.parquet",
+            f"/.nautilus/catalog/data/instrument_status_update.parquet/instrument_id={ins2}/20191220.parquet",
+            f"/.nautilus/catalog/data/order_book_data.parquet/instrument_id={ins1}/20191220.parquet",
+            f"/.nautilus/catalog/data/order_book_data.parquet/instrument_id={ins2}/20191220.parquet",
+            f"/.nautilus/catalog/data/trade_tick.parquet/instrument_id={ins1}/20191220.parquet",
+            f"/.nautilus/catalog/data/trade_tick.parquet/instrument_id={ins2}/20191220.parquet",
         ]
         assert new_partitions == expected
 
     def test_split_and_serialize_generic_data_gets_correct_class(self):
         # Arrange
-        TestStubs.setup_news_event_persistence()
+        TestPersistenceStubs.setup_news_event_persistence()
         process_files(
             glob_path=f"{TEST_DATA_DIR}/news_events.csv",
-            reader=CSVReader(block_parser=TestStubs.news_event_parser),
+            reader=CSVReader(block_parser=TestPersistenceStubs.news_event_parser),
             catalog=self.catalog,
         )
         objs = self.catalog.generic_data(
@@ -501,10 +436,10 @@ class TestPersistenceCore:
 
     def test_catalog_generic_data_not_overwritten(self):
         # Arrange
-        TestStubs.setup_news_event_persistence()
+        TestPersistenceStubs.setup_news_event_persistence()
         process_files(
             glob_path=f"{TEST_DATA_DIR}/news_events.csv",
-            reader=CSVReader(block_parser=TestStubs.news_event_parser),
+            reader=CSVReader(block_parser=TestPersistenceStubs.news_event_parser),
             catalog=self.catalog,
         )
         objs = self.catalog.generic_data(

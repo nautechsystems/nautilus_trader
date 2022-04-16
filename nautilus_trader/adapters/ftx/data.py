@@ -19,18 +19,18 @@ from typing import Any, Dict, List, Optional
 import orjson
 import pandas as pd
 
-from nautilus_trader.adapters.ftx.common import FTX_VENUE
-from nautilus_trader.adapters.ftx.data_types import FTXTicker
+from nautilus_trader.adapters.ftx.core.constants import FTX_VENUE
+from nautilus_trader.adapters.ftx.core.types import FTXTicker
 from nautilus_trader.adapters.ftx.http.client import FTXHttpClient
 from nautilus_trader.adapters.ftx.http.error import FTXClientError
 from nautilus_trader.adapters.ftx.http.error import FTXError
-from nautilus_trader.adapters.ftx.parsing import parse_bars
-from nautilus_trader.adapters.ftx.parsing import parse_book_partial_ws
-from nautilus_trader.adapters.ftx.parsing import parse_book_update_ws
-from nautilus_trader.adapters.ftx.parsing import parse_market
-from nautilus_trader.adapters.ftx.parsing import parse_quote_tick_ws
-from nautilus_trader.adapters.ftx.parsing import parse_ticker_ws
-from nautilus_trader.adapters.ftx.parsing import parse_trade_ticks_ws
+from nautilus_trader.adapters.ftx.parsing.common import parse_instrument
+from nautilus_trader.adapters.ftx.parsing.http import parse_bars_http
+from nautilus_trader.adapters.ftx.parsing.websocket import parse_book_partial_ws
+from nautilus_trader.adapters.ftx.parsing.websocket import parse_book_update_ws
+from nautilus_trader.adapters.ftx.parsing.websocket import parse_quote_tick_ws
+from nautilus_trader.adapters.ftx.parsing.websocket import parse_ticker_ws
+from nautilus_trader.adapters.ftx.parsing.websocket import parse_trade_ticks_ws
 from nautilus_trader.adapters.ftx.providers import FTXInstrumentProvider
 from nautilus_trader.adapters.ftx.websocket.client import FTXWebSocketClient
 from nautilus_trader.cache.cache import Cache
@@ -97,6 +97,7 @@ class FTXDataClient(LiveMarketDataClient):
         super().__init__(
             loop=loop,
             client_id=ClientId(FTX_VENUE.value),
+            venue=FTX_VENUE,
             instrument_provider=instrument_provider,
             msgbus=msgbus,
             cache=cache,
@@ -109,7 +110,8 @@ class FTXDataClient(LiveMarketDataClient):
             loop=loop,
             clock=clock,
             logger=logger,
-            handler=self._handle_ws_message,
+            msg_handler=self._handle_ws_message,
+            reconnect_handler=self._handle_ws_reconnect,
             key=client.api_key,
             secret=client.api_secret,
             us=us,
@@ -140,9 +142,9 @@ class FTXDataClient(LiveMarketDataClient):
         if not self._http_client.connected:
             await self._http_client.connect()
         try:
-            await self._instrument_provider.load_all_or_wait_async()
+            await self._instrument_provider.initialize()
         except FTXError as ex:
-            self._log.exception(ex)
+            self._log.exception("Error on connect", ex)
             return
 
         self._send_all_instruments_to_data_engine()
@@ -310,6 +312,23 @@ class FTXDataClient(LiveMarketDataClient):
         )
 
     # -- REQUESTS ----------------------------------------------------------------------------------
+
+    def request_instrument(self, instrument_id: InstrumentId, correlation_id: UUID4):
+        instrument: Optional[Instrument] = self._instrument_provider.find(instrument_id)
+        if instrument is None:
+            self._log.error(f"Cannot find instrument for {instrument_id}.")
+            return
+
+        data_type = DataType(
+            type=Instrument,
+            metadata={"instrument_id": instrument_id},
+        )
+
+        self._handle_data_response(
+            data_type=data_type,
+            data=[instrument],  # Data engine handles lists of instruments
+            correlation_id=correlation_id,
+        )
 
     def request_quote_ticks(
         self,
@@ -490,7 +509,7 @@ class FTXDataClient(LiveMarketDataClient):
             while len(data) > limit:
                 data.pop(0)  # Pop left
 
-        bars: List[Bar] = parse_bars(
+        bars: List[Bar] = parse_bars_http(
             instrument=instrument,
             bar_type=bar_type,
             data=data,
@@ -516,14 +535,17 @@ class FTXDataClient(LiveMarketDataClient):
         for currency in self._instrument_provider.currencies().values():
             self._cache.add_currency(currency)
 
-    def _get_cached_instrument_id(self, msg: Dict[str, Any]) -> InstrumentId:
+    def _get_cached_instrument_id(self, symbol: str) -> InstrumentId:
         # Parse instrument ID
-        symbol: str = msg["market"]
         instrument_id: Optional[InstrumentId] = self._instrument_ids.get(symbol)
         if not instrument_id:
             instrument_id = InstrumentId(Symbol(symbol), FTX_VENUE)
             self._instrument_ids[symbol] = instrument_id
         return instrument_id
+
+    def _handle_ws_reconnect(self):
+        # TODO(cs): Request order book snapshot?
+        pass
 
     def _handle_ws_message(self, raw: bytes):
         msg: Dict[str, Any] = orjson.loads(raw)
@@ -560,8 +582,9 @@ class FTXDataClient(LiveMarketDataClient):
             )
             return
 
-        for _, data in data["data"].items():
-            instrument: Instrument = parse_market(
+        data_values = data["data"].values()
+        for data in data_values:
+            instrument: Instrument = parse_instrument(
                 account_info=account_info,
                 data=data,
                 ts_init=self._clock.timestamp_ns(),
@@ -575,7 +598,7 @@ class FTXDataClient(LiveMarketDataClient):
             return
 
         # Get instrument ID
-        instrument_id: InstrumentId = self._get_cached_instrument_id(msg)
+        instrument_id: InstrumentId = self._get_cached_instrument_id(msg["market"])
 
         msg_type = msg["type"]
         if msg_type == "partial":
@@ -600,7 +623,7 @@ class FTXDataClient(LiveMarketDataClient):
             return
 
         # Get instrument
-        instrument_id: InstrumentId = self._get_cached_instrument_id(msg)
+        instrument_id: InstrumentId = self._get_cached_instrument_id(msg["market"])
         instrument: Instrument = self._instrument_provider.find(instrument_id)
         if instrument is None:
             self._log.error(
@@ -630,7 +653,7 @@ class FTXDataClient(LiveMarketDataClient):
             return
 
         # Get instrument
-        instrument_id: InstrumentId = self._get_cached_instrument_id(msg)
+        instrument_id: InstrumentId = self._get_cached_instrument_id(msg["market"])
         instrument: Instrument = self._instrument_provider.find(instrument_id)
         if instrument is None:
             self._log.error(

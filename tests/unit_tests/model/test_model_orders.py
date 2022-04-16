@@ -47,10 +47,12 @@ from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.orders.base import Order
 from nautilus_trader.model.orders.market import MarketOrder
+from nautilus_trader.model.orders.market_to_limit import MarketToLimitOrder
 from nautilus_trader.model.orders.stop_limit import StopLimitOrder
 from nautilus_trader.model.orders.stop_market import StopMarketOrder
 from tests.test_kit.stubs import UNIX_EPOCH
-from tests.test_kit.stubs import TestStubs
+from tests.test_kit.stubs.events import TestEventStubs
+from tests.test_kit.stubs.identifiers import TestIdStubs
 
 
 AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy("AUD/USD")
@@ -59,9 +61,9 @@ AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy("AUD/USD")
 class TestOrders:
     def setup(self):
         # Fixture Setup
-        self.trader_id = TestStubs.trader_id()
-        self.strategy_id = TestStubs.strategy_id()
-        self.account_id = TestStubs.account_id()
+        self.trader_id = TestIdStubs.trader_id()
+        self.strategy_id = TestIdStubs.strategy_id()
+        self.account_id = TestIdStubs.account_id()
 
         self.order_factory = OrderFactory(
             trader_id=self.trader_id,
@@ -77,10 +79,10 @@ class TestOrders:
     def test_flatten_side_given_invalid_value_or_flat_raises_value_error(self):
         # Arrange, Act
         with pytest.raises(ValueError):
-            Order.flatten_side(0)  # <-- invalid value
+            Order.closing_side(0)  # <-- invalid value
 
         with pytest.raises(ValueError):
-            Order.flatten_side(PositionSide.FLAT)
+            Order.closing_side(PositionSide.FLAT)
 
     @pytest.mark.parametrize(
         "side, expected",
@@ -103,9 +105,9 @@ class TestOrders:
             [PositionSide.SHORT, OrderSide.BUY],
         ],
     )
-    def test_flatten_side_returns_expected_sides(self, side, expected):
+    def test_closing_side_returns_expected_sides(self, side, expected):
         # Arrange, Act
-        result = Order.flatten_side(side)
+        result = Order.closing_side(side)
 
         # Assert
         assert result == expected
@@ -119,7 +121,7 @@ class TestOrders:
                 AUDUSD_SIM.id,
                 ClientOrderId("O-123456"),
                 OrderSide.BUY,
-                Quantity.zero(),
+                Quantity.zero(),  # <- invalid
                 TimeInForce.DAY,
                 UUID4(),
                 0,
@@ -134,7 +136,7 @@ class TestOrders:
                 AUDUSD_SIM.id,
                 ClientOrderId("O-123456"),
                 OrderSide.BUY,
-                Quantity.zero(),
+                Quantity.from_int(100000),
                 TimeInForce.GTD,  # <-- invalid
                 UUID4(),
                 0,
@@ -175,6 +177,22 @@ class TestOrders:
                 expire_time=None,
             )
 
+    def test_market_to_limit_order_with_invalid_tif_raises_value_error(self):
+        # Arrange, Act, Assert
+        with pytest.raises(ValueError):
+            MarketToLimitOrder(
+                self.trader_id,
+                self.strategy_id,
+                AUDUSD_SIM.id,
+                ClientOrderId("O-123456"),
+                OrderSide.BUY,
+                Quantity.from_int(100000),
+                TimeInForce.AT_THE_CLOSE,  # <-- invalid
+                None,
+                UUID4(),
+                0,
+            )
+
     def test_overfill_limit_buy_order_raises_value_error(self):
         # Arrange, Act, Assert
         order = self.order_factory.limit(
@@ -184,9 +202,9 @@ class TestOrders:
             Price.from_str("1.00000"),
         )
 
-        order.apply(TestStubs.event_order_submitted(order))
-        order.apply(TestStubs.event_order_accepted(order))
-        over_fill = TestStubs.event_order_filled(
+        order.apply(TestEventStubs.order_submitted(order))
+        order.apply(TestEventStubs.order_accepted(order))
+        over_fill = TestEventStubs.order_filled(
             order, instrument=AUDUSD_SIM, last_qty=Quantity.from_int(110000)  # <-- overfill
         )
 
@@ -228,12 +246,14 @@ class TestOrders:
         assert order.venue == AUDUSD_SIM.id.venue
         assert order.type == OrderType.MARKET
         assert order.status == OrderStatus.INITIALIZED
+        assert order.side_string == "BUY"
         assert order.event_count == 1
         assert isinstance(order.last_event, OrderInitialized)
-        assert order.is_active
+        assert not order.has_price
+        assert not order.has_trigger_price
+        assert not order.is_open
+        assert not order.is_closed
         assert not order.is_inflight
-        assert not order.is_working
-        assert not order.is_completed
         assert order.is_buy
         assert order.is_aggressive
         assert not order.is_sell
@@ -256,13 +276,15 @@ class TestOrders:
         # Assert
         assert order.type == OrderType.MARKET
         assert order.status == OrderStatus.INITIALIZED
+        assert order.side_string == "SELL"
         assert order.event_count == 1
         assert isinstance(order.last_event, OrderInitialized)
         assert len(order.events) == 1
-        assert order.is_active
+        assert not order.has_price
+        assert not order.has_trigger_price
+        assert not order.is_open
+        assert not order.is_closed
         assert not order.is_inflight
-        assert not order.is_working
-        assert not order.is_completed
         assert not order.is_buy
         assert order.is_sell
         assert order.ts_last == 0
@@ -351,10 +373,12 @@ class TestOrders:
         assert order.type == OrderType.LIMIT
         assert order.status == OrderStatus.INITIALIZED
         assert order.time_in_force == TimeInForce.GTC
+        assert order.has_price
+        assert not order.has_trigger_price
         assert order.is_passive
-        assert order.is_active
+        assert not order.is_open
         assert not order.is_aggressive
-        assert not order.is_completed
+        assert not order.is_closed
         assert isinstance(order.init_event, OrderInitialized)
         assert (
             str(order)
@@ -429,7 +453,7 @@ class TestOrders:
         assert order.status == OrderStatus.INITIALIZED
         assert order.time_in_force == TimeInForce.GTD
         assert order.expire_time == UNIX_EPOCH + timedelta(minutes=1)
-        assert not order.is_completed
+        assert not order.is_closed
         assert isinstance(order.init_event, OrderInitialized)
         assert (
             str(order)
@@ -454,10 +478,12 @@ class TestOrders:
         assert order.type == OrderType.STOP_MARKET
         assert order.status == OrderStatus.INITIALIZED
         assert order.time_in_force == TimeInForce.GTC
+        assert not order.has_price
+        assert order.has_trigger_price
         assert order.is_passive
         assert not order.is_aggressive
-        assert order.is_active
-        assert not order.is_completed
+        assert not order.is_open
+        assert not order.is_closed
         assert isinstance(order.init_event, OrderInitialized)
         assert (
             str(order)
@@ -527,9 +553,11 @@ class TestOrders:
         assert order.type == OrderType.STOP_LIMIT
         assert order.status == OrderStatus.INITIALIZED
         assert order.time_in_force == TimeInForce.GTC
+        assert order.has_price
+        assert order.has_trigger_price
         assert order.is_passive
         assert not order.is_aggressive
-        assert not order.is_completed
+        assert not order.is_closed
         assert isinstance(order.init_event, OrderInitialized)
         assert (
             str(order)
@@ -590,6 +618,236 @@ class TestOrders:
             "ts_init": 0,
         }
 
+    def test_initialize_market_to_limit_order(self):
+        # Arrange, Act
+        order = self.order_factory.market_to_limit(
+            AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100000),
+            time_in_force=TimeInForce.GTD,
+            expire_time=UNIX_EPOCH + timedelta(hours=1),
+        )
+
+        # Assert
+        assert order.type == OrderType.MARKET_TO_LIMIT
+        assert order.status == OrderStatus.INITIALIZED
+        assert order.time_in_force == TimeInForce.GTD
+        assert order.expire_time == UNIX_EPOCH + timedelta(hours=1)
+        assert order.expire_time_ns == 3600000000000
+        assert not order.has_price
+        assert not order.has_trigger_price
+        assert order.is_passive
+        assert not order.is_aggressive
+        assert not order.is_open
+        assert not order.is_closed
+        assert isinstance(order.init_event, OrderInitialized)
+        assert (
+            str(order)
+            == "MarketToLimitOrder(BUY 100_000 AUD/USD.SIM MARKET_TO_LIMIT @ None GTD 1970-01-01T01:00:00.000Z, status=INITIALIZED, client_order_id=O-19700101-000000-000-001-1, venue_order_id=None, tags=None)"  # noqa
+        )
+        assert (
+            repr(order)
+            == "MarketToLimitOrder(BUY 100_000 AUD/USD.SIM MARKET_TO_LIMIT @ None GTD 1970-01-01T01:00:00.000Z, status=INITIALIZED, client_order_id=O-19700101-000000-000-001-1, venue_order_id=None, tags=None)"  # noqa
+        )
+
+    def test_market_to_limit_order_to_dict(self):
+        # Arrange
+        order = self.order_factory.market_to_limit(
+            AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100000),
+            time_in_force=TimeInForce.GTD,
+            expire_time=UNIX_EPOCH + timedelta(hours=1),
+        )
+
+        # Act
+        result = order.to_dict()
+
+        # Assert
+        assert result == {
+            "trader_id": "TESTER-000",
+            "strategy_id": "S-001",
+            "instrument_id": "AUD/USD.SIM",
+            "client_order_id": "O-19700101-000000-000-001-1",
+            "venue_order_id": None,
+            "position_id": None,
+            "account_id": None,
+            "last_trade_id": None,
+            "type": "MARKET_TO_LIMIT",
+            "side": "BUY",
+            "quantity": "100000",
+            "price": "None",
+            "time_in_force": "GTD",
+            "expire_time_ns": 3600000000000,
+            "reduce_only": False,
+            "filled_qty": "0",
+            "avg_px": None,
+            "slippage": "0",
+            "status": "INITIALIZED",
+            "order_list_id": None,
+            "contingency_type": "NONE",
+            "display_qty": None,
+            "linked_order_ids": None,
+            "parent_order_id": None,
+            "tags": None,
+            "ts_last": 0,
+            "ts_init": 0,
+        }
+
+    def test_initialize_market_if_touched_order(self):
+        # Arrange, Act
+        order = self.order_factory.market_if_touched(
+            AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100000),
+            Price.from_str("1.00000"),
+            TriggerType.BID_ASK,
+        )
+
+        # Assert
+        assert order.type == OrderType.MARKET_IF_TOUCHED
+        assert order.status == OrderStatus.INITIALIZED
+        assert order.time_in_force == TimeInForce.GTC
+        assert not order.has_price
+        assert order.has_trigger_price
+        assert order.is_passive
+        assert not order.is_aggressive
+        assert not order.is_open
+        assert not order.is_closed
+        assert isinstance(order.init_event, OrderInitialized)
+        assert (
+            str(order)
+            == "MarketIfTouchedOrder(BUY 100_000 AUD/USD.SIM MARKET_IF_TOUCHED @ 1.00000[BID_ASK] GTC, status=INITIALIZED, client_order_id=O-19700101-000000-000-001-1, venue_order_id=None, tags=None)"  # noqa
+        )
+        assert (
+            repr(order)
+            == "MarketIfTouchedOrder(BUY 100_000 AUD/USD.SIM MARKET_IF_TOUCHED @ 1.00000[BID_ASK] GTC, status=INITIALIZED, client_order_id=O-19700101-000000-000-001-1, venue_order_id=None, tags=None)"  # noqa
+        )
+
+    def test_market_if_touched_order_to_dict(self):
+        # Arrange
+        order = self.order_factory.market_if_touched(
+            AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100000),
+            Price.from_str("1.00000"),
+        )
+
+        # Act
+        result = order.to_dict()
+
+        # Assert
+        assert result == {
+            "trader_id": "TESTER-000",
+            "strategy_id": "S-001",
+            "instrument_id": "AUD/USD.SIM",
+            "client_order_id": "O-19700101-000000-000-001-1",
+            "venue_order_id": None,
+            "position_id": None,
+            "account_id": None,
+            "last_trade_id": None,
+            "type": "MARKET_IF_TOUCHED",
+            "side": "BUY",
+            "quantity": "100000",
+            "trigger_price": "1.00000",
+            "trigger_type": "DEFAULT",
+            "expire_time_ns": None,
+            "time_in_force": "GTC",
+            "filled_qty": "0",
+            "liquidity_side": "NONE",
+            "avg_px": None,
+            "slippage": "0",
+            "status": "INITIALIZED",
+            "is_reduce_only": False,
+            "order_list_id": None,
+            "contingency_type": "NONE",
+            "linked_order_ids": None,
+            "parent_order_id": None,
+            "tags": None,
+            "ts_last": 0,
+            "ts_init": 0,
+        }
+
+    def test_initialize_limit_if_touched_order(self):
+        # Arrange, Act
+        order = self.order_factory.limit_if_touched(
+            AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100000),
+            Price.from_str("1.00000"),
+            Price.from_str("1.10010"),
+            tags="ENTRY",
+        )
+
+        # Assert
+        assert order.type == OrderType.LIMIT_IF_TOUCHED
+        assert order.status == OrderStatus.INITIALIZED
+        assert order.time_in_force == TimeInForce.GTC
+        assert order.has_price
+        assert order.has_trigger_price
+        assert order.is_passive
+        assert not order.is_aggressive
+        assert not order.is_closed
+        assert isinstance(order.init_event, OrderInitialized)
+        assert (
+            str(order)
+            == "LimitIfTouchedOrder(BUY 100_000 AUD/USD.SIM LIMIT_IF_TOUCHED @ 1.10010-STOP[DEFAULT] 1.00000-LIMIT GTC, status=INITIALIZED, client_order_id=O-19700101-000000-000-001-1, venue_order_id=None, tags=ENTRY)"  # noqa
+        )
+        assert (
+            repr(order)
+            == "LimitIfTouchedOrder(BUY 100_000 AUD/USD.SIM LIMIT_IF_TOUCHED @ 1.10010-STOP[DEFAULT] 1.00000-LIMIT GTC, status=INITIALIZED, client_order_id=O-19700101-000000-000-001-1, venue_order_id=None, tags=ENTRY)"  # noqa
+        )
+
+    def test_limit_if_touched_order_to_dict(self):
+        # Arrange
+        order = self.order_factory.limit_if_touched(
+            AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100000),
+            Price.from_str("1.00000"),
+            Price.from_str("1.10010"),
+            trigger_type=TriggerType.MARK,
+            tags="STOP_LOSS",
+        )
+
+        # Act
+        result = order.to_dict()
+
+        # Assert
+        assert result == {
+            "trader_id": "TESTER-000",
+            "strategy_id": "S-001",
+            "instrument_id": "AUD/USD.SIM",
+            "client_order_id": "O-19700101-000000-000-001-1",
+            "venue_order_id": None,
+            "position_id": None,
+            "account_id": None,
+            "last_trade_id": None,
+            "type": "LIMIT_IF_TOUCHED",
+            "side": "BUY",
+            "quantity": "100000",
+            "price": "1.00000",
+            "trigger_price": "1.10010",
+            "trigger_type": "MARK",
+            "expire_time_ns": None,
+            "time_in_force": "GTC",
+            "filled_qty": "0",
+            "liquidity_side": "NONE",
+            "avg_px": None,
+            "slippage": "0",
+            "status": "INITIALIZED",
+            "is_post_only": False,
+            "is_reduce_only": False,
+            "display_qty": None,
+            "order_list_id": None,
+            "contingency_type": "NONE",
+            "linked_order_ids": None,
+            "parent_order_id": None,
+            "tags": "STOP_LOSS",
+            "ts_last": 0,
+            "ts_init": 0,
+        }
+
     def test_initialize_trailing_stop_market_order(self):
         # Arrange, Act
         order = self.order_factory.trailing_stop_market(
@@ -605,10 +863,12 @@ class TestOrders:
         assert order.status == OrderStatus.INITIALIZED
         assert order.time_in_force == TimeInForce.GTC
         assert order.offset_type == TrailingOffsetType.PRICE
+        assert not order.has_price
+        assert order.has_trigger_price
         assert order.is_passive
         assert not order.is_aggressive
-        assert order.is_active
-        assert not order.is_completed
+        assert not order.is_open
+        assert not order.is_closed
         assert isinstance(order.init_event, OrderInitialized)
         assert (
             str(order)
@@ -635,8 +895,8 @@ class TestOrders:
         assert order.offset_type == TrailingOffsetType.PRICE
         assert order.is_passive
         assert not order.is_aggressive
-        assert order.is_active
-        assert not order.is_completed
+        assert not order.is_open
+        assert not order.is_closed
         assert isinstance(order.init_event, OrderInitialized)
         assert (
             str(order)
@@ -756,9 +1016,11 @@ class TestOrders:
         assert order.type == OrderType.TRAILING_STOP_LIMIT
         assert order.status == OrderStatus.INITIALIZED
         assert order.time_in_force == TimeInForce.GTC
+        assert order.has_price
+        assert order.has_trigger_price
         assert order.is_passive
         assert not order.is_aggressive
-        assert not order.is_completed
+        assert not order.is_closed
         assert isinstance(order.init_event, OrderInitialized)
         assert (
             str(order)
@@ -785,7 +1047,7 @@ class TestOrders:
         assert order.time_in_force == TimeInForce.GTC
         assert order.is_passive
         assert not order.is_aggressive
-        assert not order.is_completed
+        assert not order.is_closed
         assert isinstance(order.init_event, OrderInitialized)
         assert (
             str(order)
@@ -1067,8 +1329,8 @@ class TestOrders:
         assert order.status == OrderStatus.DENIED
         assert order.event_count == 2
         assert order.last_event == denied
-        assert not order.is_active
-        assert order.is_completed
+        assert not order.is_open
+        assert order.is_closed
 
     def test_apply_order_submitted_event(self):
         # Arrange
@@ -1078,7 +1340,7 @@ class TestOrders:
             Quantity.from_int(100000),
         )
 
-        submitted = TestStubs.event_order_submitted(order)
+        submitted = TestEventStubs.order_submitted(order)
 
         # Act
         order.apply(submitted)
@@ -1087,10 +1349,9 @@ class TestOrders:
         assert order.status == OrderStatus.SUBMITTED
         assert order.event_count == 2
         assert order.last_event == submitted
-        assert order.is_active
         assert order.is_inflight
-        assert not order.is_working
-        assert not order.is_completed
+        assert not order.is_open
+        assert not order.is_closed
         assert not order.is_pending_update
         assert not order.is_pending_cancel
 
@@ -1102,17 +1363,16 @@ class TestOrders:
             Quantity.from_int(100000),
         )
 
-        order.apply(TestStubs.event_order_submitted(order))
+        order.apply(TestEventStubs.order_submitted(order))
 
         # Act
-        order.apply(TestStubs.event_order_accepted(order))
+        order.apply(TestEventStubs.order_accepted(order))
 
         # Assert
         assert order.status == OrderStatus.ACCEPTED
-        assert order.is_active
         assert not order.is_inflight
-        assert order.is_working
-        assert not order.is_completed
+        assert order.is_open
+        assert not order.is_closed
         assert (
             str(order)
             == "MarketOrder(BUY 100_000 AUD/USD.SIM MARKET GTC, status=ACCEPTED, client_order_id=O-19700101-000000-000-001-1, venue_order_id=1, tags=None)"  # noqa
@@ -1130,17 +1390,16 @@ class TestOrders:
             Quantity.from_int(100000),
         )
 
-        order.apply(TestStubs.event_order_submitted(order))
+        order.apply(TestEventStubs.order_submitted(order))
 
         # Act
-        order.apply(TestStubs.event_order_rejected(order))
+        order.apply(TestEventStubs.order_rejected(order))
 
         # Assert
         assert order.status == OrderStatus.REJECTED
-        assert not order.is_active
         assert not order.is_inflight
-        assert not order.is_working
-        assert order.is_completed
+        assert not order.is_open
+        assert order.is_closed
 
     def test_apply_order_expired_event(self):
         # Arrange
@@ -1153,18 +1412,17 @@ class TestOrders:
             expire_time=UNIX_EPOCH + timedelta(minutes=1),
         )
 
-        order.apply(TestStubs.event_order_submitted(order))
-        order.apply(TestStubs.event_order_accepted(order))
+        order.apply(TestEventStubs.order_submitted(order))
+        order.apply(TestEventStubs.order_accepted(order))
 
         # Act
-        order.apply(TestStubs.event_order_expired(order))
+        order.apply(TestEventStubs.order_expired(order))
 
         # Assert
         assert order.status == OrderStatus.EXPIRED
-        assert not order.is_active
         assert not order.is_inflight
-        assert not order.is_working
-        assert order.is_completed
+        assert not order.is_open
+        assert order.is_closed
 
     def test_apply_order_triggered_event(self):
         # Arrange
@@ -1178,18 +1436,17 @@ class TestOrders:
             expire_time=UNIX_EPOCH + timedelta(minutes=1),
         )
 
-        order.apply(TestStubs.event_order_submitted(order))
-        order.apply(TestStubs.event_order_accepted(order))
+        order.apply(TestEventStubs.order_submitted(order))
+        order.apply(TestEventStubs.order_accepted(order))
 
         # Act
-        order.apply(TestStubs.event_order_triggered(order))
+        order.apply(TestEventStubs.order_triggered(order))
 
         # Assert
         assert order.status == OrderStatus.TRIGGERED
-        assert order.is_active
         assert not order.is_inflight
-        assert order.is_working
-        assert not order.is_completed
+        assert order.is_open
+        assert not order.is_closed
 
     def test_order_status_pending_cancel(self):
         # Arrange
@@ -1199,18 +1456,17 @@ class TestOrders:
             Quantity.from_int(100000),
         )
 
-        order.apply(TestStubs.event_order_submitted(order))
-        order.apply(TestStubs.event_order_accepted(order))
+        order.apply(TestEventStubs.order_submitted(order))
+        order.apply(TestEventStubs.order_accepted(order))
 
         # Act
-        order.apply(TestStubs.event_order_pending_cancel(order))
+        order.apply(TestEventStubs.order_pending_cancel(order))
 
         # Assert
         assert order.status == OrderStatus.PENDING_CANCEL
-        assert order.is_active
         assert order.is_inflight
-        assert order.is_working
-        assert not order.is_completed
+        assert order.is_open
+        assert not order.is_closed
         assert not order.is_pending_update
         assert order.is_pending_cancel
         assert order.event_count == 4
@@ -1223,19 +1479,19 @@ class TestOrders:
             Quantity.from_int(100000),
         )
 
-        order.apply(TestStubs.event_order_submitted(order))
-        order.apply(TestStubs.event_order_accepted(order))
-        order.apply(TestStubs.event_order_pending_cancel(order))
+        order.apply(TestEventStubs.order_submitted(order))
+        order.apply(TestEventStubs.order_accepted(order))
+        order.apply(TestEventStubs.order_pending_cancel(order))
 
         # Act
-        order.apply(TestStubs.event_order_canceled(order))
+        order.apply(TestEventStubs.order_canceled(order))
 
         # Assert
         assert order.status == OrderStatus.CANCELED
-        assert not order.is_active
+        assert order.is_canceled
         assert not order.is_inflight
-        assert not order.is_working
-        assert order.is_completed
+        assert not order.is_open
+        assert order.is_closed
         assert not order.is_pending_update
         assert not order.is_pending_cancel
         assert order.event_count == 5
@@ -1248,18 +1504,17 @@ class TestOrders:
             Quantity.from_int(100000),
         )
 
-        order.apply(TestStubs.event_order_submitted(order))
-        order.apply(TestStubs.event_order_accepted(order))
+        order.apply(TestEventStubs.order_submitted(order))
+        order.apply(TestEventStubs.order_accepted(order))
 
         # Act
-        order.apply(TestStubs.event_order_pending_update(order))
+        order.apply(TestEventStubs.order_pending_update(order))
 
         # Assert
         assert order.status == OrderStatus.PENDING_UPDATE
-        assert order.is_active
         assert order.is_inflight
-        assert order.is_working
-        assert not order.is_completed
+        assert order.is_open
+        assert not order.is_closed
         assert order.is_pending_update
         assert not order.is_pending_cancel
         assert order.event_count == 4
@@ -1273,9 +1528,9 @@ class TestOrders:
             Price.from_str("1.00000"),
         )
 
-        order.apply(TestStubs.event_order_submitted(order))
-        order.apply(TestStubs.event_order_accepted(order))
-        order.apply(TestStubs.event_order_pending_update(order))
+        order.apply(TestEventStubs.order_submitted(order))
+        order.apply(TestEventStubs.order_accepted(order))
+        order.apply(TestEventStubs.order_pending_update(order))
 
         updated = OrderUpdated(
             order.trader_id,
@@ -1300,10 +1555,9 @@ class TestOrders:
         assert order.venue_order_id == VenueOrderId("1")
         assert order.quantity == Quantity.from_int(120000)
         assert order.trigger_price == Price.from_str("1.00001")
-        assert order.is_active
         assert not order.is_inflight
-        assert order.is_working
-        assert not order.is_completed
+        assert order.is_open
+        assert not order.is_closed
         assert order.event_count == 5
 
     def test_apply_order_updated_venue_id_change(self):
@@ -1315,9 +1569,9 @@ class TestOrders:
             Price.from_str("1.00000"),
         )
 
-        order.apply(TestStubs.event_order_submitted(order))
-        order.apply(TestStubs.event_order_accepted(order))
-        order.apply(TestStubs.event_order_pending_update(order))
+        order.apply(TestEventStubs.order_submitted(order))
+        order.apply(TestEventStubs.order_accepted(order))
+        order.apply(TestEventStubs.order_pending_update(order))
 
         updated = OrderUpdated(
             order.trader_id,
@@ -1349,10 +1603,10 @@ class TestOrders:
             Quantity.from_int(100000),
         )
 
-        order.apply(TestStubs.event_order_submitted(order))
-        order.apply(TestStubs.event_order_accepted(order))
+        order.apply(TestEventStubs.order_submitted(order))
+        order.apply(TestEventStubs.order_accepted(order))
 
-        filled = TestStubs.event_order_filled(
+        filled = TestEventStubs.order_filled(
             order,
             instrument=AUDUSD_SIM,
             position_id=PositionId("P-123456"),
@@ -1369,10 +1623,9 @@ class TestOrders:
         assert order.leaves_qty == Quantity.zero()
         assert order.avg_px == Decimal("1.00001")
         assert len(order.trade_ids) == 1
-        assert not order.is_active
         assert not order.is_inflight
-        assert not order.is_working
-        assert order.is_completed
+        assert not order.is_open
+        assert order.is_closed
         assert order.ts_last == 0
 
     def test_apply_order_filled_event_to_market_order(self):
@@ -1383,10 +1636,10 @@ class TestOrders:
             Quantity.from_int(100000),
         )
 
-        order.apply(TestStubs.event_order_submitted(order))
-        order.apply(TestStubs.event_order_accepted(order))
+        order.apply(TestEventStubs.order_submitted(order))
+        order.apply(TestEventStubs.order_accepted(order))
 
-        filled = TestStubs.event_order_filled(
+        filled = TestEventStubs.order_filled(
             order,
             instrument=AUDUSD_SIM,
             position_id=PositionId("P-123456"),
@@ -1402,10 +1655,9 @@ class TestOrders:
         assert order.filled_qty == Quantity.from_int(100000)
         assert order.avg_px == Decimal("1.00001")
         assert len(order.trade_ids) == 1
-        assert not order.is_active
         assert not order.is_inflight
-        assert not order.is_working
-        assert order.is_completed
+        assert not order.is_open
+        assert order.is_closed
         assert order.ts_last == 0
 
     def test_apply_partial_fill_events_to_market_order_results_in_partially_filled(
@@ -1418,10 +1670,10 @@ class TestOrders:
             Quantity.from_int(100000),
         )
 
-        order.apply(TestStubs.event_order_submitted(order))
-        order.apply(TestStubs.event_order_accepted(order))
+        order.apply(TestEventStubs.order_submitted(order))
+        order.apply(TestEventStubs.order_accepted(order))
 
-        fill1 = TestStubs.event_order_filled(
+        fill1 = TestEventStubs.order_filled(
             order,
             instrument=AUDUSD_SIM,
             trade_id=TradeId("1"),
@@ -1431,7 +1683,7 @@ class TestOrders:
             last_qty=Quantity.from_int(20000),
         )
 
-        fill2 = TestStubs.event_order_filled(
+        fill2 = TestEventStubs.order_filled(
             order,
             instrument=AUDUSD_SIM,
             trade_id=TradeId("2"),
@@ -1451,10 +1703,9 @@ class TestOrders:
         assert order.leaves_qty == Quantity.from_int(40000)
         assert order.avg_px == Decimal("1.000014")
         assert len(order.trade_ids) == 2
-        assert order.is_active
         assert not order.is_inflight
-        assert order.is_working
-        assert not order.is_completed
+        assert order.is_open
+        assert not order.is_closed
         assert order.ts_last == 0
 
     def test_apply_filled_events_to_market_order_results_in_filled(self):
@@ -1465,10 +1716,10 @@ class TestOrders:
             Quantity.from_int(100000),
         )
 
-        order.apply(TestStubs.event_order_submitted(order))
-        order.apply(TestStubs.event_order_accepted(order))
+        order.apply(TestEventStubs.order_submitted(order))
+        order.apply(TestEventStubs.order_accepted(order))
 
-        fill1 = TestStubs.event_order_filled(
+        fill1 = TestEventStubs.order_filled(
             order,
             instrument=AUDUSD_SIM,
             trade_id=TradeId("1"),
@@ -1478,7 +1729,7 @@ class TestOrders:
             last_qty=Quantity.from_int(20000),
         )
 
-        fill2 = TestStubs.event_order_filled(
+        fill2 = TestEventStubs.order_filled(
             order,
             instrument=AUDUSD_SIM,
             trade_id=TradeId("2"),
@@ -1488,7 +1739,7 @@ class TestOrders:
             last_qty=Quantity.from_int(40000),
         )
 
-        fill3 = TestStubs.event_order_filled(
+        fill3 = TestEventStubs.order_filled(
             order,
             instrument=AUDUSD_SIM,
             trade_id=TradeId("3"),
@@ -1508,10 +1759,9 @@ class TestOrders:
         assert order.filled_qty == Quantity.from_int(100000)
         assert order.avg_px == Decimal("1.000018571428571428571428571")
         assert len(order.trade_ids) == 3
-        assert not order.is_active
         assert not order.is_inflight
-        assert not order.is_working
-        assert order.is_completed
+        assert not order.is_open
+        assert order.is_closed
         assert order.ts_last == 0
 
     def test_apply_order_filled_event_to_buy_limit_order(self):
@@ -1523,8 +1773,8 @@ class TestOrders:
             Price.from_str("1.00000"),
         )
 
-        order.apply(TestStubs.event_order_submitted(order))
-        order.apply(TestStubs.event_order_accepted(order))
+        order.apply(TestEventStubs.order_submitted(order))
+        order.apply(TestEventStubs.order_accepted(order))
 
         filled = OrderFilled(
             order.trader_id,
@@ -1556,10 +1806,9 @@ class TestOrders:
         assert order.price == Price.from_str("1.00000")
         assert order.avg_px == Decimal("1.00001")
         assert order.slippage == Decimal("0.00001")
-        assert not order.is_active
         assert not order.is_inflight
-        assert not order.is_working
-        assert order.is_completed
+        assert not order.is_open
+        assert order.is_closed
         assert order.ts_last == 0
 
     def test_apply_order_partially_filled_event_to_buy_limit_order(self):
@@ -1571,8 +1820,8 @@ class TestOrders:
             Price.from_str("1.00000"),
         )
 
-        order.apply(TestStubs.event_order_submitted(order))
-        order.apply(TestStubs.event_order_accepted(order))
+        order.apply(TestEventStubs.order_submitted(order))
+        order.apply(TestEventStubs.order_accepted(order))
 
         partially = OrderFilled(
             order.trader_id,
@@ -1604,8 +1853,7 @@ class TestOrders:
         assert order.price == Price.from_str("1.00000")
         assert order.avg_px == Decimal("0.999999")
         assert order.slippage == Decimal("-0.000001")
-        assert order.is_active
         assert not order.is_inflight
-        assert order.is_working
-        assert not order.is_completed
+        assert order.is_open
+        assert not order.is_closed
         assert order.ts_last == 1_000_000_000, order.ts_last

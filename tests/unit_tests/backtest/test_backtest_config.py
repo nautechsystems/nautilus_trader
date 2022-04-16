@@ -21,29 +21,28 @@ import pickle
 import sys
 from typing import Optional
 
-import dask
 import pytest
-from dask.base import tokenize
 from pydantic import BaseModel
 from pydantic.json import pydantic_encoder
 
-from nautilus_trader.backtest.config import BacktestDataConfig
-from nautilus_trader.backtest.config import BacktestRunConfig
-from nautilus_trader.backtest.config import BacktestVenueConfig
-from nautilus_trader.backtest.config import Partialable
 from nautilus_trader.backtest.data.providers import TestInstrumentProvider
 from nautilus_trader.backtest.engine import BacktestEngineConfig
+from nautilus_trader.config import BacktestDataConfig
+from nautilus_trader.config import BacktestRunConfig
+from nautilus_trader.config import BacktestVenueConfig
+from nautilus_trader.config import Partialable
 from nautilus_trader.model.data.tick import QuoteTick
+from nautilus_trader.model.data.venue import InstrumentStatusUpdate
 from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.persistence.catalog import DataCatalog
 from nautilus_trader.persistence.external.core import process_files
 from nautilus_trader.persistence.external.readers import CSVReader
 from tests.integration_tests.adapters.betfair.test_kit import BetfairTestStubs
 from tests.test_kit import PACKAGE_ROOT
-from tests.test_kit.mocks import NewsEventData
-from tests.test_kit.mocks import aud_usd_data_loader
-from tests.test_kit.mocks import data_catalog_setup
-from tests.test_kit.stubs import TestStubs
+from tests.test_kit.mocks.data import NewsEventData
+from tests.test_kit.mocks.data import aud_usd_data_loader
+from tests.test_kit.mocks.data import data_catalog_setup
+from tests.test_kit.stubs.persistence import TestPersistenceStubs
 
 
 TEST_DATA_DIR = str(pathlib.Path(PACKAGE_ROOT).joinpath("data"))
@@ -61,7 +60,6 @@ class ExamplePartialable(Partialable):
 class TestBacktestConfig:
     def setup(self):
         data_catalog_setup()
-        dask.config.set(scheduler="single-threaded")
         aud_usd_data_loader()
         self.catalog = DataCatalog.from_env()
         self.backtest_config = BacktestRunConfig(
@@ -78,9 +76,9 @@ class TestBacktestConfig:
             ],
             data=[
                 BacktestDataConfig(
-                    catalog_path="/root",
+                    catalog_path="/.nautilus/catalog",
                     catalog_fs_protocol="memory",
-                    data_cls_path="nautilus_trader.model.data.tick.QuoteTick",
+                    data_cls=QuoteTick,
                     instrument_id="AUD/USD.SIM",
                     start_time=1580398089820000000,
                     end_time=1580504394501000000,
@@ -132,54 +130,12 @@ class TestBacktestConfig:
     def test_backtest_config_pickle(self):
         pickle.loads(pickle.dumps(self))  # noqa: S301
 
-    def test_strategies_tokenization(self):
-        # Arrange, Act
-        result = tokenize(self.backtest_config.strategies)
-
-        # Assert
-        assert result == "8c9f081a88f539969f3dff99d6e05e36"
-
-    def test_venue_config_tokenization(self):
-        # Arrange, Act
-        venue = self.backtest_config.venues[0]
-        result = tokenize(venue)
-
-        # Assert
-        assert result == "1a803a06f1ab329b5e9dd1b52cc134a8"
-
-    def test_data_config_tokenization(self):
-        # Arrange, Act
-        data_config = self.backtest_config.data[0]
-
-        # Act
-        result = tokenize(data_config)
-
-        # Assert
-        assert result == "a3bac111f5e433648a505aa156a85f32"
-
-    def test_engine_config_tokenization(self):
-        # Arrange,
-        engine_config = self.backtest_config.engine
-
-        # Act
-        result = tokenize(engine_config)
-
-        # Assert
-        assert result == "22d84218139004f8b662d2c6d3dccb4a"
-
-    def test_tokenization_config(self):
-        # Arrange, Act
-        result = tokenize(self.backtest_config)
-
-        # Assert
-        assert result == "6bbc700d9be1891f6fcb494b9920f370"
-
     def test_backtest_data_config_load(self):
         instrument = TestInstrumentProvider.default_fx_ccy("AUD/USD")
         c = BacktestDataConfig(
-            catalog_path="/root/",
+            catalog_path="/.nautilus/catalog",
             catalog_fs_protocol="memory",
-            data_cls_path="nautilus_trader.model.data.tick.QuoteTick",
+            data_cls=QuoteTick,
             instrument_id=instrument.id.value,
             start_time=1580398089820000000,
             end_time=1580504394501000000,
@@ -228,16 +184,16 @@ class TestBacktestConfig:
 
     def test_backtest_data_config_generic_data(self):
         # Arrange
-        TestStubs.setup_news_event_persistence()
+        TestPersistenceStubs.setup_news_event_persistence()
         process_files(
             glob_path=f"{TEST_DATA_DIR}/news_events.csv",
-            reader=CSVReader(block_parser=TestStubs.news_event_parser),
+            reader=CSVReader(block_parser=TestPersistenceStubs.news_event_parser),
             catalog=self.catalog,
         )
         c = BacktestDataConfig(
-            catalog_path="/root/",
+            catalog_path="/.nautilus/catalog",
             catalog_fs_protocol="memory",
-            data_cls_path=f"{NewsEventData.__module__}.NewsEventData",
+            data_cls=NewsEventData,
             client_id="NewsClient",
         )
         result = c.load()
@@ -247,16 +203,16 @@ class TestBacktestConfig:
 
     def test_backtest_data_config_filters(self):
         # Arrange
-        TestStubs.setup_news_event_persistence()
+        TestPersistenceStubs.setup_news_event_persistence()
         process_files(
             glob_path=f"{TEST_DATA_DIR}/news_events.csv",
-            reader=CSVReader(block_parser=TestStubs.news_event_parser),
+            reader=CSVReader(block_parser=TestPersistenceStubs.news_event_parser),
             catalog=self.catalog,
         )
         c = BacktestDataConfig(
-            catalog_path="/root/",
+            catalog_path="/.nautilus/catalog",
             catalog_fs_protocol="memory",
-            data_cls_path=f"{NewsEventData.__module__}.NewsEventData",
+            data_cls=NewsEventData,
             filter_expr="field('currency') == 'CHF'",
             client_id="NewsClient",
         )
@@ -270,9 +226,9 @@ class TestBacktestConfig:
             catalog=self.catalog,
         )
         c = BacktestDataConfig(
-            catalog_path="/root/",
+            catalog_path="/.nautilus/catalog",
             catalog_fs_protocol="memory",
-            data_cls_path="nautilus_trader.model.data.venue.InstrumentStatusUpdate",
+            data_cls=InstrumentStatusUpdate,
         )
         result = c.load()
         assert len(result["data"]) == 2
@@ -282,7 +238,7 @@ class TestBacktestConfig:
     def test_resolve_cls(self):
         config = BacktestDataConfig(
             "/",
-            "nautilus_trader.model.data.tick.QuoteTick",
+            "nautilus_trader.model.data.tick:QuoteTick",
             "memory",
             {},
             "AUD/USD.IDEALPRO",
@@ -298,7 +254,7 @@ class TestBacktestConfig:
             # https://github.com/python/mypy/issues/6239
             BacktestDataConfig(  # type: ignore
                 catalog_path="/",
-                data_cls_path="nautilus_trader.model.data.tick.QuoteTick",
+                data_cls=QuoteTick,
                 catalog_fs_protocol="memory",
                 catalog_fs_storage_options={},
                 instrument_id="AUD/USD.IDEALPRO",

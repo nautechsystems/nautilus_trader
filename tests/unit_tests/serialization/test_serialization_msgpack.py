@@ -17,7 +17,7 @@ from base64 import b64encode
 from datetime import timedelta
 from decimal import Decimal
 
-import msgpack
+import msgspec
 import pytest
 
 from nautilus_trader.backtest.data.providers import TestInstrumentProvider
@@ -26,10 +26,10 @@ from nautilus_trader.common.enums import ComponentState
 from nautilus_trader.common.events.system import ComponentStateChanged
 from nautilus_trader.common.factories import OrderFactory
 from nautilus_trader.core.uuid import UUID4
-from nautilus_trader.model.commands.trading import CancelOrder
-from nautilus_trader.model.commands.trading import ModifyOrder
-from nautilus_trader.model.commands.trading import SubmitOrder
-from nautilus_trader.model.commands.trading import SubmitOrderList
+from nautilus_trader.execution.messages import CancelOrder
+from nautilus_trader.execution.messages import ModifyOrder
+from nautilus_trader.execution.messages import SubmitOrder
+from nautilus_trader.execution.messages import SubmitOrderList
 from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.currencies import USDT
 from nautilus_trader.model.enums import AccountType
@@ -59,6 +59,7 @@ from nautilus_trader.model.events.position import PositionChanged
 from nautilus_trader.model.events.position import PositionClosed
 from nautilus_trader.model.events.position import PositionOpened
 from nautilus_trader.model.identifiers import AccountId
+from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import ClientOrderId
 from nautilus_trader.model.identifiers import ComponentId
 from nautilus_trader.model.identifiers import OrderListId
@@ -73,6 +74,9 @@ from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.orders.limit import LimitOrder
+from nautilus_trader.model.orders.limit_if_touched import LimitIfTouchedOrder
+from nautilus_trader.model.orders.market_if_touched import MarketIfTouchedOrder
+from nautilus_trader.model.orders.market_to_limit import MarketToLimitOrder
 from nautilus_trader.model.orders.stop_limit import StopLimitOrder
 from nautilus_trader.model.orders.stop_market import StopMarketOrder
 from nautilus_trader.model.orders.trailing_stop_limit import TrailingStopLimitOrder
@@ -81,19 +85,21 @@ from nautilus_trader.model.orders.unpacker import OrderUnpacker
 from nautilus_trader.model.position import Position
 from nautilus_trader.serialization.msgpack.serializer import MsgPackSerializer
 from tests.test_kit.stubs import UNIX_EPOCH
-from tests.test_kit.stubs import TestStubs
+from tests.test_kit.stubs.events import TestEventStubs
+from tests.test_kit.stubs.identifiers import TestIdStubs
 
 
 AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy("AUD/USD")
 ETHUSDT_BINANCE = TestInstrumentProvider.ethusdt_binance()
+BTCUSDT_220325 = TestInstrumentProvider.btcusdt_future_binance()
 
 
 class TestMsgPackSerializer:
     def setup(self):
         # Fixture Setup
-        self.trader_id = TestStubs.trader_id()
-        self.strategy_id = TestStubs.strategy_id()
-        self.account_id = TestStubs.account_id()
+        self.trader_id = TestIdStubs.trader_id()
+        self.strategy_id = TestIdStubs.strategy_id()
+        self.account_id = TestIdStubs.account_id()
         self.venue = Venue("SIM")
 
         self.unpacker = OrderUnpacker()
@@ -113,7 +119,7 @@ class TestMsgPackSerializer:
     def test_deserialize_unknown_object_raises_runtime_error(self):
         # Arrange, Act
         with pytest.raises(RuntimeError):
-            self.serializer.deserialize(msgpack.packb({"type": "UNKNOWN"}))
+            self.serializer.deserialize(msgspec.msgpack.encode({"type": "UNKNOWN"}))
 
     def test_serialize_and_deserialize_fx_instrument(self):
         # Arrange, Act
@@ -125,7 +131,7 @@ class TestMsgPackSerializer:
         print(b64encode(serialized))
         print(deserialized)
 
-    def test_serialize_and_deserialize_crypto_swap_instrument(self):
+    def test_serialize_and_deserialize_crypto_perpetual_instrument(self):
         # Arrange, Act
         serialized = self.serializer.serialize(ETHUSDT_BINANCE)
         deserialized = self.serializer.deserialize(serialized)
@@ -135,13 +141,13 @@ class TestMsgPackSerializer:
         print(b64encode(serialized))
         print(deserialized)
 
-    def test_serialize_and_deserialize_crypto_instrument(self):
+    def test_serialize_and_deserialize_crypto_future_instrument(self):
         # Arrange, Act
-        serialized = self.serializer.serialize(ETHUSDT_BINANCE)
+        serialized = self.serializer.serialize(BTCUSDT_220325)
         deserialized = self.serializer.deserialize(serialized)
 
         # Assert
-        assert deserialized == ETHUSDT_BINANCE
+        assert deserialized == BTCUSDT_220325
         print(b64encode(serialized))
         print(deserialized)
 
@@ -252,6 +258,77 @@ class TestMsgPackSerializer:
     def test_pack_and_unpack_stop_limit_orders(self):
         # Arrange
         order = StopLimitOrder(
+            self.trader_id,
+            self.strategy_id,
+            AUDUSD_SIM.id,
+            ClientOrderId("O-123456"),
+            OrderSide.BUY,
+            Quantity(100000, precision=0),
+            price=Price(1.00000, precision=5),
+            trigger_price=Price(1.00010, precision=5),
+            trigger_type=TriggerType.BID_ASK,
+            time_in_force=TimeInForce.GTC,
+            expire_time=None,
+            init_id=UUID4(),
+            ts_init=0,
+        )
+
+        # Act
+        packed = OrderInitialized.to_dict(order.last_event)
+        unpacked = self.unpacker.unpack(packed)
+
+        # Assert
+        assert unpacked == order
+
+    def test_pack_and_unpack_market_to_limit__orders(self):
+        # Arrange
+        order = MarketToLimitOrder(
+            self.trader_id,
+            self.strategy_id,
+            AUDUSD_SIM.id,
+            ClientOrderId("O-123456"),
+            OrderSide.BUY,
+            Quantity(100000, precision=0),
+            time_in_force=TimeInForce.GTD,  # <-- invalid
+            expire_time=UNIX_EPOCH + timedelta(minutes=1),
+            init_id=UUID4(),
+            ts_init=0,
+        )
+
+        # Act
+        packed = OrderInitialized.to_dict(order.last_event)
+        unpacked = self.unpacker.unpack(packed)
+
+        # Assert
+        assert unpacked == order
+
+    def test_pack_and_unpack_market_if_touched_orders(self):
+        # Arrange
+        order = MarketIfTouchedOrder(
+            self.trader_id,
+            self.strategy_id,
+            AUDUSD_SIM.id,
+            ClientOrderId("O-123456"),
+            OrderSide.BUY,
+            Quantity(100000, precision=0),
+            trigger_price=Price(1.00000, precision=5),
+            trigger_type=TriggerType.DEFAULT,
+            time_in_force=TimeInForce.GTD,
+            expire_time=UNIX_EPOCH + timedelta(minutes=1),
+            init_id=UUID4(),
+            ts_init=0,
+        )
+
+        # Act
+        packed = OrderInitialized.to_dict(order.last_event)
+        unpacked = self.unpacker.unpack(packed)
+
+        # Assert
+        assert unpacked == order
+
+    def test_pack_and_unpack_limit_if_touched_orders(self):
+        # Arrange
+        order = LimitIfTouchedOrder(
             self.trader_id,
             self.strategy_id,
             AUDUSD_SIM.id,
@@ -422,6 +499,7 @@ class TestMsgPackSerializer:
             order,
             UUID4(),
             0,
+            ClientId("SIM"),
         )
 
         # Act
@@ -449,6 +527,7 @@ class TestMsgPackSerializer:
         )
 
         command = SubmitOrderList(
+            client_id=ClientId("SIM"),
             trader_id=self.trader_id,
             strategy_id=StrategyId("SCALPER-001"),
             order_list=bracket,
@@ -466,7 +545,7 @@ class TestMsgPackSerializer:
         print(b64encode(serialized))
         print(command)
 
-    def test_serialize_and_deserialize_amend_order_commands(self):
+    def test_serialize_and_deserialize_modify_order_commands(self):
         # Arrange
         command = ModifyOrder(
             self.trader_id,
@@ -500,6 +579,7 @@ class TestMsgPackSerializer:
             VenueOrderId("001"),
             UUID4(),
             0,
+            ClientId("SIM-001"),
         )
 
         # Act
@@ -514,7 +594,7 @@ class TestMsgPackSerializer:
     def test_serialize_and_deserialize_component_state_changed_events(self):
         # Arrange
         event = ComponentStateChanged(
-            trader_id=TestStubs.trader_id(),
+            trader_id=TestIdStubs.trader_id(),
             component_id=ComponentId("MyActor-001"),
             component_type="MyActor",
             state=ComponentState.RUNNING,
@@ -920,7 +1000,7 @@ class TestMsgPackSerializer:
         # Assert
         assert deserialized == event
 
-    def test_serialize_and_deserialize_order_amended_events(self):
+    def test_serialize_and_deserialize_order_modify_events(self):
         # Arrange
         event = OrderUpdated(
             self.trader_id,
@@ -1054,7 +1134,7 @@ class TestMsgPackSerializer:
             Quantity.from_int(100000),
         )
 
-        fill = TestStubs.event_order_filled(
+        fill = TestEventStubs.order_filled(
             order,
             instrument=AUDUSD_SIM,
             position_id=PositionId("P-123456"),
@@ -1082,7 +1162,7 @@ class TestMsgPackSerializer:
             Quantity.from_int(100000),
         )
 
-        fill1 = TestStubs.event_order_filled(
+        fill1 = TestEventStubs.order_filled(
             order1,
             instrument=AUDUSD_SIM,
             position_id=PositionId("P-123456"),
@@ -1096,7 +1176,7 @@ class TestMsgPackSerializer:
             Quantity.from_int(50000),
         )
 
-        fill2 = TestStubs.event_order_filled(
+        fill2 = TestEventStubs.order_filled(
             order2,
             instrument=AUDUSD_SIM,
             position_id=PositionId("P-123456"),
@@ -1125,7 +1205,7 @@ class TestMsgPackSerializer:
             Quantity.from_int(100000),
         )
 
-        fill1 = TestStubs.event_order_filled(
+        fill1 = TestEventStubs.order_filled(
             order1,
             instrument=AUDUSD_SIM,
             position_id=PositionId("P-123456"),
@@ -1139,7 +1219,7 @@ class TestMsgPackSerializer:
             Quantity.from_int(100000),
         )
 
-        fill2 = TestStubs.event_order_filled(
+        fill2 = TestEventStubs.order_filled(
             order2,
             instrument=AUDUSD_SIM,
             position_id=PositionId("P-123456"),

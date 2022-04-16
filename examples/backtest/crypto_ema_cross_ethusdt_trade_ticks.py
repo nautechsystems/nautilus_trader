@@ -40,12 +40,13 @@ if __name__ == "__main__":
     # Configure backtest engine
     config = BacktestEngineConfig(
         trader_id="BACKTESTER-001",
+        exec_engine={"allow_cash_positions": True},  # Retain original behaviour for now
     )
     # Build the backtest engine
     engine = BacktestEngine(config=config)
 
     BINANCE = Venue("BINANCE")
-    instrument_id = InstrumentId(symbol=Symbol("ETH/USDT"), venue=BINANCE)
+    instrument_id = InstrumentId(symbol=Symbol("ETHUSDT"), venue=BINANCE)
     ETHUSDT_BINANCE = TestInstrumentProvider.ethusdt_binance()
 
     # Setup data
@@ -77,7 +78,7 @@ if __name__ == "__main__":
     # Configure your strategy
     config = EMACrossConfig(
         instrument_id=str(ETHUSDT_BINANCE.id),
-        bar_type="ETH/USDT.BINANCE-250-TICK-LAST-INTERNAL",
+        bar_type="ETHUSDT.BINANCE-250-TICK-LAST-INTERNAL",
         trade_size=Decimal("0.05"),
         fast_ema=10,
         slow_ema=20,

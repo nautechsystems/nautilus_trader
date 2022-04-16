@@ -16,15 +16,16 @@
 from datetime import datetime
 from typing import List, Optional
 
+from nautilus_trader.execution.messages import CancelAllOrders
+from nautilus_trader.execution.messages import CancelOrder
+from nautilus_trader.execution.messages import ModifyOrder
+from nautilus_trader.execution.messages import SubmitOrder
+from nautilus_trader.execution.messages import SubmitOrderList
 from nautilus_trader.execution.reports import OrderStatusReport
 from nautilus_trader.execution.reports import PositionStatusReport
 from nautilus_trader.execution.reports import TradeReport
 from nautilus_trader.live.execution_client import LiveExecutionClient
-from nautilus_trader.model.commands.trading import CancelAllOrders
-from nautilus_trader.model.commands.trading import CancelOrder
-from nautilus_trader.model.commands.trading import ModifyOrder
-from nautilus_trader.model.commands.trading import SubmitOrder
-from nautilus_trader.model.commands.trading import SubmitOrderList
+from nautilus_trader.model.identifiers import ClientOrderId
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import VenueOrderId
 
@@ -84,7 +85,9 @@ class TemplateLiveExecutionClient(LiveExecutionClient):
 
     async def generate_order_status_report(
         self,
-        venue_order_id: VenueOrderId = None,
+        instrument_id: InstrumentId,
+        client_order_id: ClientOrderId,
+        venue_order_id: VenueOrderId,
     ) -> Optional[OrderStatusReport]:
         """
         Generate an order status report for the given venue order ID.
@@ -94,12 +97,21 @@ class TemplateLiveExecutionClient(LiveExecutionClient):
 
         Parameters
         ----------
+        instrument_id : InstrumentId
+            The instrument ID for the report.
+        client_order_id : ClientOrderId, optional
+            The client order ID for the report.
         venue_order_id : VenueOrderId, optional
-            The venue order ID (assigned by the venue) query filter.
+            The venue order ID for the report.
 
         Returns
         -------
         OrderStatusReport or ``None``
+
+        Raises
+        ------
+        ValueError
+            If both the `client_order_id` and `venue_order_id` are ``None``.
 
         """
         raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover

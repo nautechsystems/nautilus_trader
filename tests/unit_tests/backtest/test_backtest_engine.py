@@ -51,9 +51,9 @@ from nautilus_trader.model.orderbook.data import Order
 from nautilus_trader.model.orderbook.data import OrderBookDelta
 from nautilus_trader.model.orderbook.data import OrderBookDeltas
 from nautilus_trader.model.orderbook.data import OrderBookSnapshot
-from nautilus_trader.trading.strategy import TradingStrategy
+from nautilus_trader.trading.strategy import Strategy
 from tests.test_kit.stubs import MyData
-from tests.test_kit.stubs import TestStubs
+from tests.test_kit.stubs.data import TestDataStubs
 
 
 ETHUSDT_BINANCE = TestInstrumentProvider.ethusdt_binance()
@@ -127,7 +127,7 @@ class TestBacktestEngine:
 
     def test_run(self):
         # Arrange, Act
-        self.engine.add_strategy(TradingStrategy())
+        self.engine.add_strategy(Strategy())
         self.engine.run()
 
         # Assert
@@ -201,7 +201,7 @@ class TestBacktestEngineData:
 
         # Assert
         log = "".join(capsys.readouterr())
-        assert "Added ETH/USDT.BINANCE Instrument." in log
+        assert "Added ETHUSDT.BINANCE Instrument." in log
 
     def test_add_order_book_snapshots_adds_to_engine(self, capsys):
         # Arrange
@@ -231,7 +231,7 @@ class TestBacktestEngineData:
 
         # Assert
         log = "".join(capsys.readouterr())
-        assert "Added 2 ETH/USDT.BINANCE OrderBookData elements." in log
+        assert "Added 2 ETHUSDT.BINANCE OrderBookData elements." in log
 
     def test_add_order_book_deltas_adds_to_engine(self, capsys):
         # Arrange
@@ -335,7 +335,7 @@ class TestBacktestEngineData:
 
         # Assert
         log = "".join(capsys.readouterr())
-        assert "Added 2 ETH/USDT.BINANCE OrderBookData elements." in log
+        assert "Added 2 ETHUSDT.BINANCE OrderBookData elements." in log
 
     def test_add_quote_ticks_adds_to_engine(self, capsys):
         # Arrange
@@ -368,7 +368,7 @@ class TestBacktestEngineData:
 
         # Assert
         log = "".join(capsys.readouterr())
-        assert "Added 69,806 ETH/USDT.BINANCE TradeTick elements." in log
+        assert "Added 69,806 ETHUSDT.BINANCE TradeTick elements." in log
 
     def test_add_bars_adds_to_engine(self, capsys):
         # Arrange
@@ -444,13 +444,13 @@ class TestBacktestWithAddedBars:
         # Setup data
         bid_bar_type = BarType(
             instrument_id=GBPUSD_SIM.id,
-            bar_spec=TestStubs.bar_spec_1min_bid(),
+            bar_spec=TestDataStubs.bar_spec_1min_bid(),
             aggregation_source=AggregationSource.EXTERNAL,  # <-- important
         )
 
         ask_bar_type = BarType(
             instrument_id=GBPUSD_SIM.id,
-            bar_spec=TestStubs.bar_spec_1min_ask(),
+            bar_spec=TestDataStubs.bar_spec_1min_ask(),
             aggregation_source=AggregationSource.EXTERNAL,  # <-- important
         )
 
@@ -488,7 +488,7 @@ class TestBacktestWithAddedBars:
         # Arrange
         bar_type = BarType(
             instrument_id=GBPUSD_SIM.id,
-            bar_spec=TestStubs.bar_spec_1min_bid(),
+            bar_spec=TestDataStubs.bar_spec_1min_bid(),
             aggregation_source=AggregationSource.EXTERNAL,  # <-- important
         )
         config = EMACrossConfig(
@@ -519,7 +519,7 @@ class TestBacktestWithAddedBars:
         # Arrange
         bar_type = BarType(
             instrument_id=GBPUSD_SIM.id,
-            bar_spec=TestStubs.bar_spec_1min_bid(),
+            bar_spec=TestDataStubs.bar_spec_1min_bid(),
             aggregation_source=AggregationSource.EXTERNAL,  # <-- important
         )
         config = EMACrossConfig(

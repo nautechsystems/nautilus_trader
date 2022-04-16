@@ -21,11 +21,11 @@ from nautilus_trader.model.currencies import ETH
 from nautilus_trader.model.currencies import GBP
 from nautilus_trader.model.currency import Currency
 from nautilus_trader.model.enums import CurrencyType
-from tests.test_kit.stubs import TestStubs
+from tests.test_kit.stubs.identifiers import TestIdStubs
 
 
-AUDUSD_SIM = TestStubs.audusd_id()
-GBPUSD_SIM = TestStubs.gbpusd_id()
+AUDUSD_SIM = TestIdStubs.audusd_id()
+GBPUSD_SIM = TestIdStubs.gbpusd_id()
 
 
 class TestCurrency:
@@ -121,12 +121,23 @@ class TestCurrency:
 
         assert result != another_aud
 
-    def test_from_str_given_unknown_code_returns_none(self):
+    def test_from_str_in_strict_mode_given_unknown_code_returns_none(self):
         # Arrange, Act
-        result = Currency.from_str("SOME_CURRENCY")
+        result = Currency.from_str("SOME_CURRENCY", strict=True)
 
         # Assert
         assert result is None
+
+    def test_from_str_not_in_strict_mode_returns_crypto(self):
+        # Arrange, Act
+        result = Currency.from_str("ZXX_EXOTIC", strict=False)
+
+        # Assert
+        assert result.code == "ZXX_EXOTIC"
+        assert result.precision == 8
+        assert result.iso4217 == 0
+        assert result.name == "ZXX_EXOTIC"
+        assert result.currency_type == CurrencyType.CRYPTO
 
     @pytest.mark.parametrize(
         "string, expected",

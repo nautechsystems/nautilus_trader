@@ -92,7 +92,6 @@ cdef class Position:
         self.base_currency = instrument.get_base_currency()  # Can be None
         self.cost_currency = instrument.get_cost_currency()
 
-        self.realized_points = Decimal(0)
         self.realized_return = Decimal(0)
         self.realized_pnl = Money(0, self.cost_currency)
 
@@ -147,7 +146,6 @@ cdef class Position:
             "quote_currency": self.quote_currency.code,
             "base_currency": self.base_currency.code,
             "cost_currency": self.cost_currency.code,
-            "realized_points": str(self.realized_points),
             "realized_return": str(round(self.realized_return, 5)),
             "realized_pnl": str(self.realized_pnl.to_str()),
             "commissions": str([c.to_str() for c in self.commissions()]),
@@ -412,7 +410,7 @@ cdef class Position:
 
         """
         Condition.not_none(fill, "fill")
-        Condition.not_in(fill.trade_id, self._trade_ids, "fill.trade_id", "self._trade_ids")
+        Condition.not_in(fill.trade_id, self._trade_ids, "fill.trade_id", "_trade_ids")
 
         self._events.append(fill)
         self._trade_ids.append(fill.trade_id)
@@ -590,7 +588,6 @@ cdef class Position:
         # SHORT POSITION
         elif self.net_qty < 0:
             self.avg_px_close = self._calculate_avg_px_close_px(fill)
-            self.realized_points = self._calculate_points(self.avg_px_open, self.avg_px_close)
             self.realized_return = self._calculate_return(self.avg_px_open, self.avg_px_close)
             realized_pnl += self._calculate_pnl(self.avg_px_open, fill.last_px, fill.last_qty)
 
@@ -613,7 +610,6 @@ cdef class Position:
         # LONG POSITION
         elif self.net_qty > 0:
             self.avg_px_close = self._calculate_avg_px_close_px(fill)
-            self.realized_points = self._calculate_points(self.avg_px_open, self.avg_px_close)
             self.realized_return = self._calculate_return(self.avg_px_open, self.avg_px_close)
             realized_pnl += self._calculate_pnl(self.avg_px_open, fill.last_px, fill.last_qty)
 

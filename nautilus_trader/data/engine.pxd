@@ -34,17 +34,22 @@ from nautilus_trader.model.data.ticker cimport Ticker
 from nautilus_trader.model.data.venue cimport InstrumentClosePrice
 from nautilus_trader.model.data.venue cimport StatusUpdate
 from nautilus_trader.model.identifiers cimport InstrumentId
+from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.model.instruments.base cimport Instrument
 from nautilus_trader.model.orderbook.data cimport OrderBookData
 
 
 cdef class DataEngine(Component):
     cdef Cache _cache
+    cdef DataClient _default_client
 
     cdef dict _clients
+    cdef dict _routing_map
     cdef dict _order_book_intervals
     cdef dict _bar_aggregators
 
+    cdef readonly bint debug
+    """If debug mode is active (will provide extra debug logging).\n\n:returns: `bool`"""
     cdef readonly int command_count
     """The total count of data commands received by the engine.\n\n:returns: `int`"""
     cdef readonly int data_count
@@ -59,8 +64,9 @@ cdef class DataEngine(Component):
 
 # -- REGISTRATION ----------------------------------------------------------------------------------
 
-    cpdef list registered_clients(self)
     cpdef void register_client(self, DataClient client) except *
+    cpdef void register_default_client(self, DataClient client) except *
+    cpdef void register_venue_routing(self, DataClient client, Venue venue) except *
     cpdef void deregister_client(self, DataClient client) except *
 
 # -- ABSTRACT METHODS ------------------------------------------------------------------------------

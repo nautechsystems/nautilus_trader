@@ -17,7 +17,6 @@ import os
 from decimal import Decimal
 
 import pandas as pd
-import pytest
 
 from nautilus_trader.backtest.data.providers import TestDataProvider
 from nautilus_trader.backtest.data.providers import TestInstrumentProvider
@@ -48,7 +47,7 @@ from nautilus_trader.model.objects import Money
 from nautilus_trader.model.orderbook.data import OrderBookData
 from tests.integration_tests.adapters.betfair.test_kit import BetfairDataProvider
 from tests.test_kit import PACKAGE_ROOT
-from tests.test_kit.mocks import data_catalog_setup
+from tests.test_kit.mocks.data import data_catalog_setup
 
 
 class TestBacktestAcceptanceTestsUSDJPY:
@@ -123,13 +122,13 @@ class TestBacktestAcceptanceTestsUSDJPY:
         self.engine.add_strategy(strategy)
 
         self.engine.run()
-        result1 = self.engine.analyzer.get_performance_stats_pnls()
+        result1 = self.engine.trader.analyzer.get_performance_stats_pnls()
 
         # Act
         self.engine.reset()
         self.engine.add_instrument(self.usdjpy)  # TODO(cs): Having to replace instrument
         self.engine.run()
-        result2 = self.engine.analyzer.get_performance_stats_pnls()
+        result2 = self.engine.trader.analyzer.get_performance_stats_pnls()
 
         # Assert
         assert all(result2) == all(result1)
@@ -157,7 +156,7 @@ class TestBacktestAcceptanceTestsUSDJPY:
         strategy2 = EMACross(config=config2)
 
         # Note since these strategies are operating on the same instrument_id as per
-        # the EMACross BUY/SELL logic they will be flattening each others positions.
+        # the EMACross BUY/SELL logic they will be closing each others positions.
         # The purpose of the test is just to ensure multiple strategies can run together.
         self.engine.add_strategies(strategies=[strategy1, strategy2])
 
@@ -317,6 +316,7 @@ class TestBacktestAcceptanceTestsBTCPERPTradeBars:
         config = BacktestEngineConfig(
             bypass_logging=False,
             run_analysis=False,
+            exec_engine={"allow_cash_positions": True},  # Retain original behaviour for now
             risk_engine={"bypass": True},
         )
         self.engine = BacktestEngine(config=config)
@@ -339,7 +339,7 @@ class TestBacktestAcceptanceTestsBTCPERPTradeBars:
     def test_run_ema_cross_with_minute_trade_bars(self):
         # Arrange
         wrangler = BarDataWrangler(
-            bar_type=BarType.from_str("BTC/USDT.BINANCE-1-MINUTE-LAST-EXTERNAL"),
+            bar_type=BarType.from_str("BTCUSDT.BINANCE-1-MINUTE-LAST-EXTERNAL"),
             instrument=self.btcusdt,
         )
 
@@ -354,7 +354,7 @@ class TestBacktestAcceptanceTestsBTCPERPTradeBars:
 
         config = EMACrossConfig(
             instrument_id=str(self.btcusdt.id),
-            bar_type="BTC/USDT.BINANCE-1-MINUTE-LAST-EXTERNAL",
+            bar_type="BTCUSDT.BINANCE-1-MINUTE-LAST-EXTERNAL",
             trade_size=Decimal(0.001),
             fast_ema=10,
             slow_ema=20,
@@ -389,7 +389,7 @@ class TestBacktestAcceptanceTestsBTCPERPTradeBars:
 
         config = EMACrossConfig(
             instrument_id=str(self.btcusdt.id),
-            bar_type="BTC/USDT.BINANCE-1-MINUTE-BID-INTERNAL",
+            bar_type="BTCUSDT.BINANCE-1-MINUTE-BID-INTERNAL",
             trade_size=Decimal(0.001),
             fast_ema=10,
             slow_ema=20,
@@ -518,7 +518,7 @@ class TestBacktestAcceptanceTestsETHUSDT:
         # Arrange
         config = EMACrossConfig(
             instrument_id=str(self.ethusdt.id),
-            bar_type="ETH/USDT.BINANCE-250-TICK-LAST-INTERNAL",
+            bar_type="ETHUSDT.BINANCE-250-TICK-LAST-INTERNAL",
             trade_size=Decimal(100),
             fast_ema=10,
             slow_ema=20,
@@ -593,7 +593,6 @@ class TestBacktestAcceptanceTestsOrderBookImbalance:
         assert self.engine.iteration in (8199, 7812)
 
 
-@pytest.mark.skip(reason="bm to fix")
 class TestBacktestAcceptanceTestsMarketMaking:
     def setup(self):
         # Fixture Setup

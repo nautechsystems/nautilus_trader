@@ -24,7 +24,6 @@ import pyarrow.dataset as ds
 import pyarrow.parquet as pq
 from pyarrow import ArrowInvalid
 
-from nautilus_trader.core.inspect import is_nautilus_class
 from nautilus_trader.model.data.bar import Bar
 from nautilus_trader.model.data.base import DataType
 from nautilus_trader.model.data.base import GenericData
@@ -37,6 +36,7 @@ from nautilus_trader.model.orderbook.data import OrderBookData
 from nautilus_trader.persistence.external.metadata import load_mappings
 from nautilus_trader.persistence.streaming import read_feather
 from nautilus_trader.persistence.util import Singleton
+from nautilus_trader.persistence.util import is_nautilus_class
 from nautilus_trader.serialization.arrow.serializer import ParquetSerializer
 from nautilus_trader.serialization.arrow.serializer import list_schemas
 from nautilus_trader.serialization.arrow.util import GENERIC_DATA_PREFIX
@@ -75,7 +75,7 @@ class DataCatalog(metaclass=Singleton):
 
     @classmethod
     def from_env(cls):
-        return cls.from_uri(uri=os.environ["NAUTILUS_CATALOG"])
+        return cls.from_uri(uri=os.path.join(os.environ["NAUTILUS_PATH"], "catalog"))
 
     @classmethod
     def from_uri(cls, uri):
@@ -197,7 +197,7 @@ class DataCatalog(metaclass=Singleton):
         as_type: Optional[Dict] = None,
         **kwargs,
     ):
-        if not is_nautilus_class(cls=cls):
+        if not is_nautilus_class(cls):
             # Special handling for generic data
             return self.generic_data(
                 cls=cls,
@@ -215,10 +215,6 @@ class DataCatalog(metaclass=Singleton):
             as_dataframe=not as_nautilus,
             **kwargs,
         )
-        # if as_nautilus:
-        #     return self._make_objects(df=df, cls=cls)
-        # else:
-        #     return df
 
     def _query_subclasses(
         self,
@@ -242,13 +238,13 @@ class DataCatalog(metaclass=Singleton):
                     **kwargs,
                 )
                 dfs.append(df)
-            except ArrowInvalid as e:
+            except ArrowInvalid as ex:
                 # If we're using a `filter_expr` here, there's a good chance this error is using a filter that is
                 # specific to one set of instruments and not the others, so we ignore it. If not; raise
                 if filter_expr is not None:
                     continue
                 else:
-                    raise e
+                    raise ex
 
         if not as_nautilus:
             return pd.concat([df for df in dfs if df is not None])
@@ -381,10 +377,10 @@ class DataCatalog(metaclass=Singleton):
                     table=df, cls=class_mapping[cls_name], mappings={}
                 )
                 data[cls_name] = objs
-            except Exception as e:
+            except Exception as ex:
                 if raise_on_failed_deserialize:
                     raise
-                print(f"Failed to deserialize {cls_name}: {e}")
+                print(f"Failed to deserialize {cls_name}: {ex}")
         return sorted(sum(data.values(), list()), key=lambda x: x.ts_init)
 
     def read_live_run(self, live_run_id: str, **kwargs):

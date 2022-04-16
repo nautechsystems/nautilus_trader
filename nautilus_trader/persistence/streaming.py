@@ -21,12 +21,12 @@ import fsspec
 import pyarrow as pa
 from pyarrow import RecordBatchStreamWriter
 
-from nautilus_trader.core.inspect import is_nautilus_class
 from nautilus_trader.model.data.base import GenericData
 from nautilus_trader.model.orderbook.data import OrderBookData
 from nautilus_trader.model.orderbook.data import OrderBookDelta
 from nautilus_trader.model.orderbook.data import OrderBookDeltas
 from nautilus_trader.model.orderbook.data import OrderBookSnapshot
+from nautilus_trader.persistence.util import is_nautilus_class
 from nautilus_trader.serialization.arrow.serializer import ParquetSerializer
 from nautilus_trader.serialization.arrow.serializer import get_cls_table
 from nautilus_trader.serialization.arrow.serializer import list_schemas
@@ -104,9 +104,12 @@ class FeatherWriter:
             keys=self._schemas[cls].names,
         )
         data = list(data.values())
-        batch = pa.record_batch(data, schema=self._schemas[cls])
-        writer.write_batch(batch)
-        self.check_flush()
+        try:
+            batch = pa.record_batch(data, schema=self._schemas[cls])
+            writer.write_batch(batch)
+            self.check_flush()
+        except Exception as ex:
+            print(str(ex), cls, data)
 
     def check_flush(self):
         now = datetime.datetime.now()

@@ -46,7 +46,7 @@ from nautilus_trader.model.orders.base cimport Order
 
 cdef class StopMarketOrder(Order):
     """
-    Represents a stop-market conditional order.
+    Represents a `Stop-Market` conditional order.
 
     Parameters
     ----------
@@ -66,19 +66,19 @@ cdef class StopMarketOrder(Order):
         The order trigger price (STOP).
     trigger_type : TriggerType
         The order trigger type.
-    time_in_force : TimeInForce
-        The order time-in-force.
+    time_in_force : TimeInForce {``GTC``, ``IOC``, ``FOK``, ``GTD``, ``DAY``}
+        The order time in force.
     expire_time : datetime, optional
         The order expiration.
     init_id : UUID4
         The order initialization event ID.
     ts_init : int64
         The UNIX timestamp (nanoseconds) when the object was initialized.
-    reduce_only : bool, optional
+    reduce_only : bool, default False
         If the order carries the 'reduce-only' execution instruction.
     order_list_id : OrderListId, optional
         The order list ID associated with the order.
-    contingency_type : ContingencyType
+    contingency_type : ContingencyType, default ``NONE``
         The order contingency type.
     linked_order_ids : list[ClientOrderId], optional
         The order linked client order ID(s).
@@ -95,8 +95,11 @@ cdef class StopMarketOrder(Order):
     ValueError
         If `trigger_type` is ``NONE``.
     ValueError
+        If `time_in_force` is ``AT_THE_OPEN`` or ``AT_THE_CLOSE``.
+    ValueError
         If `time_in_force` is ``GTD`` and `expire_time` is ``None`` or <= UNIX epoch.
     """
+
     def __init__(
         self,
         TraderId trader_id not None,
@@ -119,6 +122,8 @@ cdef class StopMarketOrder(Order):
         str tags=None,
     ):
         Condition.not_equal(trigger_type, TriggerType.NONE, "trigger_type", "NONE")
+        Condition.not_equal(time_in_force, TimeInForce.AT_THE_OPEN, "time_in_force", "AT_THE_OPEN`")
+        Condition.not_equal(time_in_force, TimeInForce.AT_THE_CLOSE, "time_in_force", "AT_THE_CLOSE`")
 
         cdef int64_t expire_time_ns = 0
         if time_in_force == TimeInForce.GTD:
@@ -164,6 +169,12 @@ cdef class StopMarketOrder(Order):
         self.trigger_type = trigger_type
         self.expire_time = expire_time
         self.expire_time_ns = expire_time_ns
+
+    cdef bint has_price_c(self) except *:
+        return False
+
+    cdef bint has_trigger_price_c(self) except *:
+        return True
 
     cpdef str info(self):
         """
@@ -225,7 +236,7 @@ cdef class StopMarketOrder(Order):
     @staticmethod
     cdef StopMarketOrder create(OrderInitialized init):
         """
-        Return a stop-market order from the given initialized event.
+        Return a `Stop-Market` order from the given initialized event.
 
         Parameters
         ----------

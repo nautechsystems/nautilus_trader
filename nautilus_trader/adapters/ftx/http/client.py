@@ -64,6 +64,10 @@ class FTXHttpClient(HttpClient):
         self._ftx_header = "FTX" if not us else "FTXUS"
 
     @property
+    def base_url(self) -> str:
+        return self._base_url
+
+    @property
     def api_key(self) -> str:
         return self._key
 
@@ -91,7 +95,7 @@ class FTXHttpClient(HttpClient):
         headers = {}
         query = self._url_encode(params)
         signature_payload: str = f"{ts}{http_method}/api/{url_path}{query}"
-        if payload and http_method in ["POST", "DELETE"]:
+        if payload:
             signature_payload += self._prepare_payload(payload)
             headers["Content-Type"] = "application/json"
 
@@ -205,6 +209,9 @@ class FTXHttpClient(HttpClient):
 
     async def list_futures(self) -> List[Dict[str, Any]]:
         return await self._send_request(http_method="GET", url_path="futures")
+
+    async def get_market(self, market: str) -> Dict[str, Any]:
+        return await self._send_request(http_method="GET", url_path=f"markets/{market}")
 
     async def list_markets(self) -> List[Dict[str, Any]]:
         return await self._send_request(http_method="GET", url_path="markets")
@@ -329,7 +336,7 @@ class FTXHttpClient(HttpClient):
         side: str,
         size: str,
         order_type: str,
-        client_id: str,
+        client_id: str = None,
         price: Optional[str] = None,
         ioc: bool = False,
         reduce_only: bool = False,
@@ -359,7 +366,7 @@ class FTXHttpClient(HttpClient):
         side: str,
         size: str,
         order_type: str,
-        client_id: str,
+        client_id: str = None,
         price: Optional[str] = None,
         trigger_price: Optional[str] = None,
         trail_value: Optional[str] = None,

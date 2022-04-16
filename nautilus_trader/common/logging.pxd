@@ -47,8 +47,10 @@ cpdef enum LogColor:
     NORMAL = 0
     GREEN = 1
     BLUE = 2
-    YELLOW = 3
-    RED = 4
+    MAGENTA = 3
+    CYAN = 4
+    YELLOW = 5
+    RED = 6
 
 
 cdef class LogLevelParser:
@@ -103,7 +105,7 @@ cdef class LoggerAdapter:
     cpdef void warning(self, str msg, LogColor color=*, dict annotations=*) except *
     cpdef void error(self, str msg, LogColor color=*, dict annotations=*) except *
     cpdef void critical(self, str msg, LogColor color=*, dict annotations=*) except *
-    cpdef void exception(self, ex, dict annotations=*) except *
+    cpdef void exception(self, str msg, ex, dict annotations=*) except *
 
 
 cpdef void nautilus_header(LoggerAdapter logger) except *

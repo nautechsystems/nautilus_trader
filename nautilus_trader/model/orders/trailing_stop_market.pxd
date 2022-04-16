@@ -29,7 +29,7 @@ cdef class TrailingStopMarketOrder(Order):
     cdef readonly TriggerType trigger_type
     """The trigger type for the order.\n\n:returns: `TriggerType`"""
     cdef readonly object trailing_offset
-    """The trailing offset for the orders trigger (STOP) price.\n\n:returns: `Decimal`"""
+    """The trailing offset for the orders trigger price (STOP).\n\n:returns: `Decimal`"""
     cdef readonly TrailingOffsetType offset_type
     """The trailing offset type.\n\n:returns: `Decimal`"""
     cdef readonly datetime expire_time

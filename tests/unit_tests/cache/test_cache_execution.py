@@ -44,8 +44,11 @@ from nautilus_trader.model.position import Position
 from nautilus_trader.msgbus.bus import MessageBus
 from nautilus_trader.portfolio.portfolio import Portfolio
 from nautilus_trader.risk.engine import RiskEngine
-from nautilus_trader.trading.strategy import TradingStrategy
-from tests.test_kit.stubs import TestStubs
+from nautilus_trader.trading.strategy import Strategy
+from tests.test_kit.stubs.data import TestDataStubs
+from tests.test_kit.stubs.events import TestEventStubs
+from tests.test_kit.stubs.execution import TestExecStubs
+from tests.test_kit.stubs.identifiers import TestIdStubs
 
 
 AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy("AUD/USD")
@@ -59,8 +62,8 @@ class TestCache:
         self.clock = TestClock()
         self.logger = Logger(self.clock)
 
-        self.trader_id = TestStubs.trader_id()
-        self.account_id = TestStubs.account_id()
+        self.trader_id = TestIdStubs.trader_id()
+        self.account_id = TestIdStubs.account_id()
 
         self.msgbus = MessageBus(
             trader_id=self.trader_id,
@@ -102,7 +105,7 @@ class TestCache:
             logger=self.logger,
         )
 
-        self.strategy = TradingStrategy()
+        self.strategy = Strategy()
         self.strategy.register(
             trader_id=self.trader_id,
             portfolio=self.portfolio,
@@ -179,7 +182,7 @@ class TestCache:
 
     def test_add_account(self):
         # Arrange
-        account = TestStubs.cash_account()
+        account = TestExecStubs.cash_account()
 
         # Act
         self.cache.add_account(account)
@@ -199,7 +202,7 @@ class TestCache:
 
     def test_load_account(self):
         # Arrange
-        account = TestStubs.cash_account()
+        account = TestExecStubs.cash_account()
 
         self.cache.add_account(account)
 
@@ -339,7 +342,7 @@ class TestCache:
         position_id = PositionId("P-1")
         self.cache.add_order(order, position_id)
 
-        fill = TestStubs.event_order_filled(
+        fill = TestEventStubs.order_filled(
             order,
             instrument=AUDUSD_SIM,
             position_id=PositionId("P-1"),
@@ -370,6 +373,40 @@ class TestCache:
         assert self.cache.position_for_order(order.client_order_id) == position
         assert self.cache.orders_for_position(position.id) == [order]
 
+    def test_snapshot_position(self):
+        # Arrange
+        order = self.strategy.order_factory.market(
+            AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100000),
+        )
+
+        position_id = PositionId("P-1")
+        self.cache.add_order(order, position_id)
+
+        fill = TestEventStubs.order_filled(
+            order,
+            instrument=AUDUSD_SIM,
+            position_id=PositionId("P-1"),
+            last_px=Price.from_str("1.00000"),
+        )
+
+        position = Position(instrument=AUDUSD_SIM, fill=fill)
+
+        # Act
+        self.cache.snapshot_position(position)
+        self.cache.snapshot_position(position)
+        snapshots = self.cache.position_snapshots(position.id)
+
+        # Assert
+        assert len(snapshots) == 2
+        assert snapshots[0].id.value.startswith(position.id.value)
+        snapshot_dict = snapshots[0].to_dict()
+        del snapshot_dict["position_id"]
+        position_dict = position.to_dict()
+        del position_dict["position_id"]
+        assert snapshot_dict == position_dict
+
     def test_load_position(self):
         # Arrange
         order = self.strategy.order_factory.market(
@@ -381,7 +418,7 @@ class TestCache:
         position_id = PositionId("P-1")
         self.cache.add_order(order, position_id)
 
-        fill = TestStubs.event_order_filled(
+        fill = TestEventStubs.order_filled(
             order,
             instrument=AUDUSD_SIM,
             position_id=PositionId("P-1"),
@@ -409,7 +446,7 @@ class TestCache:
         position_id = PositionId("P-1")
         self.cache.add_order(order, position_id)
 
-        order.apply(TestStubs.event_order_submitted(order))
+        order.apply(TestEventStubs.order_submitted(order))
 
         # Act
         self.cache.update_order(order)
@@ -418,35 +455,28 @@ class TestCache:
         assert self.cache.order_exists(order.client_order_id)
         assert order.client_order_id in self.cache.client_order_ids()
         assert order in self.cache.orders()
-        assert order in self.cache.orders_active()
-        assert order in self.cache.orders_active(instrument_id=order.instrument_id)
-        assert order in self.cache.orders_active(strategy_id=self.strategy.id)
-        assert order in self.cache.orders_active(
-            instrument_id=order.instrument_id, strategy_id=self.strategy.id
-        )
         assert order in self.cache.orders_inflight()
         assert order in self.cache.orders_inflight(instrument_id=order.instrument_id)
         assert order in self.cache.orders_inflight(strategy_id=self.strategy.id)
         assert order in self.cache.orders_inflight(
             instrument_id=order.instrument_id, strategy_id=self.strategy.id
         )
-        assert order not in self.cache.orders_working()
-        assert order not in self.cache.orders_working(instrument_id=order.instrument_id)
-        assert order not in self.cache.orders_working(strategy_id=self.strategy.id)
-        assert order not in self.cache.orders_working(
+        assert order not in self.cache.orders_open()
+        assert order not in self.cache.orders_open(instrument_id=order.instrument_id)
+        assert order not in self.cache.orders_open(strategy_id=self.strategy.id)
+        assert order not in self.cache.orders_open(
             instrument_id=order.instrument_id, strategy_id=self.strategy.id
         )
-        assert order not in self.cache.orders_completed()
-        assert order not in self.cache.orders_completed(instrument_id=order.instrument_id)
-        assert order not in self.cache.orders_completed(strategy_id=self.strategy.id)
-        assert order not in self.cache.orders_completed(
+        assert order not in self.cache.orders_closed()
+        assert order not in self.cache.orders_closed(instrument_id=order.instrument_id)
+        assert order not in self.cache.orders_closed(strategy_id=self.strategy.id)
+        assert order not in self.cache.orders_closed(
             instrument_id=order.instrument_id, strategy_id=self.strategy.id
         )
 
-        assert self.cache.orders_active_count() == 1
+        assert self.cache.orders_open_count() == 0
+        assert self.cache.orders_closed_count() == 0
         assert self.cache.orders_inflight_count() == 1
-        assert self.cache.orders_working_count() == 0
-        assert self.cache.orders_completed_count() == 0
         assert self.cache.orders_total_count() == 1
 
     def test_update_order_for_accepted_order(self):
@@ -461,10 +491,10 @@ class TestCache:
         position_id = PositionId("P-1")
         self.cache.add_order(order, position_id)
 
-        order.apply(TestStubs.event_order_submitted(order))
+        order.apply(TestEventStubs.order_submitted(order))
         self.cache.update_order(order)
 
-        order.apply(TestStubs.event_order_accepted(order))
+        order.apply(TestEventStubs.order_accepted(order))
 
         # Act
         self.cache.update_order(order)
@@ -473,10 +503,16 @@ class TestCache:
         assert self.cache.order_exists(order.client_order_id)
         assert order.client_order_id in self.cache.client_order_ids()
         assert order in self.cache.orders()
-        assert order in self.cache.orders_active()
-        assert order in self.cache.orders_active(instrument_id=order.instrument_id)
-        assert order in self.cache.orders_active(strategy_id=self.strategy.id)
-        assert order in self.cache.orders_active(
+        assert order in self.cache.orders_open()
+        assert order in self.cache.orders_open(instrument_id=order.instrument_id)
+        assert order in self.cache.orders_open(strategy_id=self.strategy.id)
+        assert order in self.cache.orders_open(
+            instrument_id=order.instrument_id, strategy_id=self.strategy.id
+        )
+        assert order not in self.cache.orders_closed()
+        assert order not in self.cache.orders_closed(instrument_id=order.instrument_id)
+        assert order not in self.cache.orders_closed(strategy_id=self.strategy.id)
+        assert order not in self.cache.orders_closed(
             instrument_id=order.instrument_id, strategy_id=self.strategy.id
         )
         assert order not in self.cache.orders_inflight()
@@ -486,26 +522,13 @@ class TestCache:
         assert order not in self.cache.orders_inflight(
             instrument_id=order.instrument_id, strategy_id=self.strategy.id
         )
-        assert order in self.cache.orders_working()
-        assert order in self.cache.orders_working(instrument_id=order.instrument_id)
-        assert order in self.cache.orders_working(strategy_id=self.strategy.id)
-        assert order in self.cache.orders_working(
-            instrument_id=order.instrument_id, strategy_id=self.strategy.id
-        )
-        assert order not in self.cache.orders_completed()
-        assert order not in self.cache.orders_completed(instrument_id=order.instrument_id)
-        assert order not in self.cache.orders_completed(strategy_id=self.strategy.id)
-        assert order not in self.cache.orders_completed(
-            instrument_id=order.instrument_id, strategy_id=self.strategy.id
-        )
 
-        assert self.cache.orders_active_count() == 1
+        assert self.cache.orders_open_count() == 1
+        assert self.cache.orders_closed_count() == 0
         assert self.cache.orders_inflight_count() == 0
-        assert self.cache.orders_working_count() == 1
-        assert self.cache.orders_completed_count() == 0
         assert self.cache.orders_total_count() == 1
 
-    def test_update_order_for_completed_order(self):
+    def test_update_order_for_closed_order(self):
         # Arrange
         order = self.strategy.order_factory.market(
             AUDUSD_SIM.id,
@@ -515,13 +538,13 @@ class TestCache:
 
         position_id = PositionId("P-1")
         self.cache.add_order(order, position_id)
-        order.apply(TestStubs.event_order_submitted(order))
+        order.apply(TestEventStubs.order_submitted(order))
         self.cache.update_order(order)
 
-        order.apply(TestStubs.event_order_accepted(order))
+        order.apply(TestEventStubs.order_accepted(order))
         self.cache.update_order(order)
 
-        fill = TestStubs.event_order_filled(
+        fill = TestEventStubs.order_filled(
             order, instrument=AUDUSD_SIM, last_px=Price.from_str("1.00001")
         )
 
@@ -534,10 +557,16 @@ class TestCache:
         assert self.cache.order_exists(order.client_order_id)
         assert order.client_order_id in self.cache.client_order_ids()
         assert order in self.cache.orders()
-        assert order not in self.cache.orders_active()
-        assert order not in self.cache.orders_active(instrument_id=order.instrument_id)
-        assert order not in self.cache.orders_active(strategy_id=self.strategy.id)
-        assert order not in self.cache.orders_active(
+        assert order not in self.cache.orders_open()
+        assert order not in self.cache.orders_open(instrument_id=order.instrument_id)
+        assert order not in self.cache.orders_open(strategy_id=self.strategy.id)
+        assert order not in self.cache.orders_open(
+            instrument_id=order.instrument_id, strategy_id=self.strategy.id
+        )
+        assert order in self.cache.orders_closed()
+        assert order in self.cache.orders_closed(instrument_id=order.instrument_id)
+        assert order in self.cache.orders_closed(strategy_id=self.strategy.id)
+        assert order in self.cache.orders_closed(
             instrument_id=order.instrument_id, strategy_id=self.strategy.id
         )
         assert order not in self.cache.orders_inflight()
@@ -546,24 +575,11 @@ class TestCache:
         assert order not in self.cache.orders_inflight(
             instrument_id=order.instrument_id, strategy_id=self.strategy.id
         )
-        assert order not in self.cache.orders_working()
-        assert order not in self.cache.orders_working(instrument_id=order.instrument_id)
-        assert order not in self.cache.orders_working(strategy_id=self.strategy.id)
-        assert order not in self.cache.orders_working(
-            instrument_id=order.instrument_id, strategy_id=self.strategy.id
-        )
-        assert order in self.cache.orders_completed()
-        assert order in self.cache.orders_completed(instrument_id=order.instrument_id)
-        assert order in self.cache.orders_completed(strategy_id=self.strategy.id)
-        assert order in self.cache.orders_completed(
-            instrument_id=order.instrument_id, strategy_id=self.strategy.id
-        )
 
         assert self.cache.venue_order_id(order.client_order_id) == order.venue_order_id
-        assert self.cache.orders_active_count() == 0
+        assert self.cache.orders_open_count() == 0
+        assert self.cache.orders_closed_count() == 1
         assert self.cache.orders_inflight_count() == 0
-        assert self.cache.orders_working_count() == 0
-        assert self.cache.orders_completed_count() == 1
         assert self.cache.orders_total_count() == 1
 
     def test_update_position_for_open_position(self):
@@ -576,12 +592,12 @@ class TestCache:
 
         position_id = PositionId("P-1")
         self.cache.add_order(order1, position_id)
-        order1.apply(TestStubs.event_order_submitted(order1))
+        order1.apply(TestEventStubs.order_submitted(order1))
         self.cache.update_order(order1)
 
-        order1.apply(TestStubs.event_order_accepted(order1))
+        order1.apply(TestEventStubs.order_accepted(order1))
         self.cache.update_order(order1)
-        fill1 = TestStubs.event_order_filled(
+        fill1 = TestEventStubs.order_filled(
             order1,
             instrument=AUDUSD_SIM,
             position_id=PositionId("P-1"),
@@ -624,12 +640,12 @@ class TestCache:
 
         position_id = PositionId("P-1")
         self.cache.add_order(order1, position_id)
-        order1.apply(TestStubs.event_order_submitted(order1))
+        order1.apply(TestEventStubs.order_submitted(order1))
         self.cache.update_order(order1)
 
-        order1.apply(TestStubs.event_order_accepted(order1))
+        order1.apply(TestEventStubs.order_accepted(order1))
         self.cache.update_order(order1)
-        fill1 = TestStubs.event_order_filled(
+        fill1 = TestEventStubs.order_filled(
             order1,
             instrument=AUDUSD_SIM,
             position_id=PositionId("P-1"),
@@ -646,12 +662,12 @@ class TestCache:
         )
         self.cache.add_order(order2, position_id)
 
-        order2.apply(TestStubs.event_order_submitted(order2))
+        order2.apply(TestEventStubs.order_submitted(order2))
         self.cache.update_order(order2)
 
-        order2.apply(TestStubs.event_order_accepted(order2))
+        order2.apply(TestEventStubs.order_accepted(order2))
         self.cache.update_order(order2)
-        order2_filled = TestStubs.event_order_filled(
+        order2_filled = TestEventStubs.order_filled(
             order2,
             instrument=AUDUSD_SIM,
             position_id=position_id,
@@ -699,12 +715,12 @@ class TestCache:
 
         position_id = PositionId("P-1")
         self.cache.add_order(order1, position_id)
-        order1.apply(TestStubs.event_order_submitted(order1))
+        order1.apply(TestEventStubs.order_submitted(order1))
         self.cache.update_order(order1)
 
-        order1.apply(TestStubs.event_order_accepted(order1))
+        order1.apply(TestEventStubs.order_accepted(order1))
         self.cache.update_order(order1)
-        fill1 = TestStubs.event_order_filled(
+        fill1 = TestEventStubs.order_filled(
             order1,
             instrument=AUDUSD_SIM,
             position_id=PositionId("P-1"),
@@ -722,12 +738,12 @@ class TestCache:
             Quantity.from_int(100000),
         )
 
-        order2.apply(TestStubs.event_order_submitted(order2))
+        order2.apply(TestEventStubs.order_submitted(order2))
         self.cache.update_order(order2)
 
-        order2.apply(TestStubs.event_order_accepted(order2))
+        order2.apply(TestEventStubs.order_accepted(order2))
         self.cache.update_order(order2)
-        fill2 = TestStubs.event_order_filled(
+        fill2 = TestEventStubs.order_filled(
             order2,
             instrument=GBPUSD_SIM,
             position_id=PositionId("P-2"),
@@ -769,12 +785,12 @@ class TestCache:
 
         position_id = PositionId("P-1")
         self.cache.add_order(order1, position_id)
-        order1.apply(TestStubs.event_order_submitted(order1))
+        order1.apply(TestEventStubs.order_submitted(order1))
         self.cache.update_order(order1)
 
-        order1.apply(TestStubs.event_order_accepted(order1))
+        order1.apply(TestEventStubs.order_accepted(order1))
         self.cache.update_order(order1)
-        fill1 = TestStubs.event_order_filled(
+        fill1 = TestEventStubs.order_filled(
             order1,
             instrument=AUDUSD_SIM,
             position_id=PositionId("P-1"),
@@ -792,12 +808,12 @@ class TestCache:
             Quantity.from_int(100000),
         )
 
-        order2.apply(TestStubs.event_order_submitted(order2))
+        order2.apply(TestEventStubs.order_submitted(order2))
         self.cache.update_order(order2)
 
-        order2.apply(TestStubs.event_order_accepted(order2))
+        order2.apply(TestEventStubs.order_accepted(order2))
         self.cache.update_order(order2)
-        fill2 = TestStubs.event_order_filled(
+        fill2 = TestEventStubs.order_filled(
             order2,
             instrument=GBPUSD_SIM,
             position_id=PositionId("P-2"),
@@ -813,12 +829,12 @@ class TestCache:
             Quantity.from_int(100000),
         )
 
-        order3.apply(TestStubs.event_order_submitted(order3))
+        order3.apply(TestEventStubs.order_submitted(order3))
         self.cache.update_order(order3)
 
-        order3.apply(TestStubs.event_order_accepted(order3))
+        order3.apply(TestEventStubs.order_accepted(order3))
         self.cache.update_order(order3)
-        fill3 = TestStubs.event_order_filled(
+        fill3 = TestEventStubs.order_filled(
             order3,
             instrument=GBPUSD_SIM,
             position_id=PositionId("P-2"),
@@ -846,7 +862,7 @@ class TestCache:
 
     def test_update_account(self):
         # Arrange
-        account = TestStubs.cash_account()
+        account = TestExecStubs.cash_account()
 
         self.cache.add_account(account)
 
@@ -877,13 +893,13 @@ class TestCache:
         position1_id = PositionId("P-1")
         self.cache.add_order(order1, position1_id)
 
-        order1.apply(TestStubs.event_order_submitted(order1))
+        order1.apply(TestEventStubs.order_submitted(order1))
         self.cache.update_order(order1)
 
-        order1.apply(TestStubs.event_order_accepted(order1))
+        order1.apply(TestEventStubs.order_accepted(order1))
         self.cache.update_order(order1)
 
-        fill1 = TestStubs.event_order_filled(
+        fill1 = TestEventStubs.order_filled(
             order1,
             instrument=AUDUSD_SIM,
             position_id=position1_id,
@@ -904,10 +920,10 @@ class TestCache:
         position2_id = PositionId("P-2")
         self.cache.add_order(order2, position2_id)
 
-        order2.apply(TestStubs.event_order_submitted(order2))
+        order2.apply(TestEventStubs.order_submitted(order2))
         self.cache.update_order(order2)
 
-        order2.apply(TestStubs.event_order_accepted(order2))
+        order2.apply(TestEventStubs.order_accepted(order2))
         self.cache.update_order(order2)
 
         # Act
@@ -927,13 +943,13 @@ class TestCache:
         position1_id = PositionId("P-1")
         self.cache.add_order(order1, position1_id)
 
-        order1.apply(TestStubs.event_order_submitted(order1))
+        order1.apply(TestEventStubs.order_submitted(order1))
         self.cache.update_order(order1)
 
-        order1.apply(TestStubs.event_order_accepted(order1))
+        order1.apply(TestEventStubs.order_accepted(order1))
         self.cache.update_order(order1)
 
-        fill1 = TestStubs.event_order_filled(
+        fill1 = TestEventStubs.order_filled(
             order1,
             instrument=AUDUSD_SIM,
             position_id=position1_id,
@@ -953,10 +969,10 @@ class TestCache:
         position2_id = PositionId("P-2")
         self.cache.add_order(order2, position2_id)
 
-        order2.apply(TestStubs.event_order_submitted(order2))
+        order2.apply(TestEventStubs.order_submitted(order2))
         self.cache.update_order(order2)
 
-        order2.apply(TestStubs.event_order_accepted(order2))
+        order2.apply(TestEventStubs.order_accepted(order2))
         self.cache.update_order(order2)
 
         self.cache.update_order(order2)
@@ -980,13 +996,13 @@ class TestCache:
         position1_id = PositionId("P-1")
         self.cache.add_order(order1, position1_id)
 
-        order1.apply(TestStubs.event_order_submitted(order1))
+        order1.apply(TestEventStubs.order_submitted(order1))
         self.cache.update_order(order1)
 
-        order1.apply(TestStubs.event_order_accepted(order1))
+        order1.apply(TestEventStubs.order_accepted(order1))
         self.cache.update_order(order1)
 
-        fill1 = TestStubs.event_order_filled(
+        fill1 = TestEventStubs.order_filled(
             order1,
             instrument=AUDUSD_SIM,
             position_id=position1_id,
@@ -1006,10 +1022,10 @@ class TestCache:
 
         position2_id = PositionId("P-2")
         self.cache.add_order(order2, position2_id)
-        order2.apply(TestStubs.event_order_submitted(order2))
+        order2.apply(TestEventStubs.order_submitted(order2))
         self.cache.update_order(order2)
 
-        order2.apply(TestStubs.event_order_accepted(order2))
+        order2.apply(TestEventStubs.order_accepted(order2))
         self.cache.update_order(order2)
 
         # Act
@@ -1054,7 +1070,7 @@ class TestExecutionCacheIntegrityCheck:
         # Arrange
         config = EMACrossConfig(
             instrument_id=str(self.usdjpy.id),
-            bar_type=str(TestStubs.bartype_usdjpy_1min_bid()),
+            bar_type=str(TestDataStubs.bartype_usdjpy_1min_bid()),
             trade_size=Decimal(1_000_000),
             fast_ema=10,
             slow_ema=20,

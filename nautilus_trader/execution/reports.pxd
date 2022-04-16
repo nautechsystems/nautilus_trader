@@ -61,7 +61,7 @@ cdef class OrderStatusReport(ExecutionReport):
     cdef readonly ContingencyType contingency_type
     """The reported orders contingency type.\n\n:returns: `ContingencyType`"""
     cdef readonly TimeInForce time_in_force
-    """The reported order time-in-force.\n\n:returns: `TimeInForce`"""
+    """The reported order time in force.\n\n:returns: `TimeInForce`"""
     cdef readonly datetime expire_time
     """The order expiration.\n\n:returns: `datetime` or ``None``"""
     cdef readonly OrderStatus order_status
@@ -75,7 +75,7 @@ cdef class OrderStatusReport(ExecutionReport):
     cdef readonly object limit_offset
     """The trailing offset for the orders limit price.\n\n:returns: `Decimal`"""
     cdef readonly object trailing_offset
-    """The trailing offset for the orders trigger (STOP) price.\n\n:returns: `Decimal`"""
+    """The trailing offset for the orders trigger price (STOP).\n\n:returns: `Decimal`"""
     cdef readonly TrailingOffsetType offset_type
     """The trailing offset type.\n\n:returns: `Decimal`"""
     cdef readonly Quantity quantity
@@ -110,7 +110,7 @@ cdef class TradeReport(ExecutionReport):
     cdef readonly PositionId venue_position_id
     """The reported venue position ID (assigned by the venue).\n\n:returns: `PositionId` or ``None``"""
     cdef readonly TradeId trade_id
-    """The reported trade match ID.\n\n:returns: `TradeId`"""
+    """The reported trade match ID (assigned by the venue).\n\n:returns: `TradeId`"""
     cdef readonly OrderSide order_side
     """The reported trades side.\n\n:returns: `OrderSide`"""
     cdef readonly Quantity last_qty

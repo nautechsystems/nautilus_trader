@@ -61,6 +61,23 @@ cpdef int64_t secs_to_nanos(double secs) except *:
     return lround(secs * NANOSECONDS_IN_SECOND)
 
 
+cpdef int64_t secs_to_millis(double secs) except *:
+    """
+    Return round milliseconds (ms) converted from the given seconds.
+
+    Parameters
+    ----------
+    secs : double
+        The seconds to convert.
+
+    Returns
+    -------
+    int64
+
+    """
+    return lround(secs * MILLISECONDS_IN_SECOND)
+
+
 cpdef int64_t millis_to_nanos(double millis) except *:
     """
     Return round nanoseconds (ns) converted from the given milliseconds (ms).

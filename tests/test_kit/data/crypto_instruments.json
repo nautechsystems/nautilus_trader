@@ -1,6 +1,6 @@
 [
   {
-    "type": "CurrencySpot",
+    "type": "CurrencyPair",
     "id": "XRP/USD.BITFINEX",
     "native_symbol": "XRPUSD",
     "base_currency": "XRP",
@@ -25,7 +25,7 @@
     "info": null
   },
   {
-    "type": "CurrencySpot",
+    "type": "CurrencyPair",
     "id": "BTC/USD.BITFINEX",
     "native_symbol": "BTCUSD",
     "base_currency": "BTC",
@@ -50,7 +50,7 @@
     "info": null
   },
   {
-    "type": "CurrencySpot",
+    "type": "CurrencyPair",
     "id": "ETH/USD.BITFINEX",
     "native_symbol": "ETHUSD",
     "base_currency": "ETH",
@@ -75,7 +75,7 @@
     "info": null
   },
   {
-    "type": "CurrencySpot",
+    "type": "CurrencyPair",
     "id": "BTC/AUD.BTCMARKETS",
     "native_symbol": "BTCAUD",
     "base_currency": "BTC",
@@ -100,7 +100,7 @@
     "info": null
   },
   {
-    "type": "CurrencySpot",
+    "type": "CurrencyPair",
     "id": "XRP/AUD.BTCMARKETS",
     "native_symbol": "XRPAUD",
     "base_currency": "XRP",
@@ -125,7 +125,7 @@
     "info": null
   },
   {
-    "type": "CurrencySpot",
+    "type": "CurrencyPair",
     "id": "ETH/AUD.BTCMARKETS",
     "native_symbol": "ETHAUD",
     "base_currency": "ETH",

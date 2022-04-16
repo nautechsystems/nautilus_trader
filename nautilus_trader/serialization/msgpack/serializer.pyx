@@ -15,7 +15,7 @@
 
 from typing import Any
 
-import msgpack
+from msgspec import msgpack
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.serialization.base cimport _OBJECT_FROM_DICT_MAP
@@ -30,8 +30,8 @@ cdef class MsgPackSerializer(Serializer):
     Parameters
     ----------
     timestamps_as_str : bool
-        If the serializer converts timestamp int64_t to str on serialization,
-        and back to int64_t on deserialization.
+        If the serializer converts `int64_t` timestamps to `str` on serialization,
+        and back to `int64_t` on deserialization.
     """
 
     def __init__(self, bint timestamps_as_str=False):
@@ -72,7 +72,7 @@ cdef class MsgPackSerializer(Serializer):
             if ts_init is not None:
                 obj_dict["ts_init"] = str(ts_init)
 
-        return msgpack.packb(obj_dict)
+        return msgpack.encode(obj_dict)
 
     cpdef object deserialize(self, bytes obj_bytes):
         """
@@ -95,7 +95,7 @@ cdef class MsgPackSerializer(Serializer):
         """
         Condition.not_none(obj_bytes, "obj_bytes")
 
-        cdef dict obj_dict = msgpack.unpackb(obj_bytes)  # type: dict[str, Any]
+        cdef dict obj_dict = msgpack.decode(obj_bytes)  # type: dict[str, Any]
         if self.timestamps_as_str:
             ts_event = obj_dict.get("ts_event")
             if ts_event is not None:

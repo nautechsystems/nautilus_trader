@@ -78,7 +78,7 @@ cdef class Order:
     cdef readonly OrderType type
     """The order type.\n\n:returns: `OrderType`"""
     cdef readonly TimeInForce time_in_force
-    """The order time-in-force.\n\n:returns: `TimeInForce`"""
+    """The order time in force.\n\n:returns: `TimeInForce`"""
     cdef readonly LiquiditySide liquidity_side
     """The order liquidity side.\n\n:returns: `LiquiditySide`"""
     cdef readonly bint is_post_only
@@ -124,6 +124,8 @@ cdef class Order:
     cdef str type_string_c(self)
     cdef str side_string_c(self)
     cdef str tif_string_c(self)
+    cdef bint has_price_c(self) except *
+    cdef bint has_trigger_price_c(self) except *
     cdef bint is_buy_c(self) except *
     cdef bint is_sell_c(self) except *
     cdef bint is_passive_c(self) except *
@@ -131,18 +133,18 @@ cdef class Order:
     cdef bint is_contingency_c(self) except *
     cdef bint is_parent_order_c(self) except *
     cdef bint is_child_order_c(self) except *
-    cdef bint is_active_c(self) except *
+    cdef bint is_open_c(self) except *
+    cdef bint is_canceled_c(self) except *
+    cdef bint is_closed_c(self) except *
     cdef bint is_inflight_c(self) except *
-    cdef bint is_working_c(self) except *
     cdef bint is_pending_update_c(self) except *
     cdef bint is_pending_cancel_c(self) except *
-    cdef bint is_completed_c(self) except *
 
     @staticmethod
     cdef OrderSide opposite_side_c(OrderSide side) except *
 
     @staticmethod
-    cdef OrderSide flatten_side_c(PositionSide side) except *
+    cdef OrderSide closing_side_c(PositionSide side) except *
 
     cpdef void apply(self, OrderEvent event) except *
 

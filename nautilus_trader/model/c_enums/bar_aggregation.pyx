@@ -37,12 +37,14 @@ cdef class BarAggregationParser:
         elif value == 9:
             return "VALUE_RUNS"
         elif value == 10:
-            return "SECOND"
+            return "MILLISECOND"
         elif value == 11:
-            return "MINUTE"
+            return "SECOND"
         elif value == 12:
-            return "HOUR"
+            return "MINUTE"
         elif value == 13:
+            return "HOUR"
+        elif value == 14:
             return "DAY"
         else:
             raise ValueError(f"value was invalid, was {value}")
@@ -67,6 +69,8 @@ cdef class BarAggregationParser:
             return BarAggregation.VALUE_IMBALANCE
         elif value == "VALUE_RUNS":
             return BarAggregation.VALUE_RUNS
+        elif value == "MILLISECOND":
+            return BarAggregation.MILLISECOND
         elif value == "SECOND":
             return BarAggregation.SECOND
         elif value == "MINUTE":

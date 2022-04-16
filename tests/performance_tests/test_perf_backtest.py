@@ -34,10 +34,10 @@ from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import OMSType
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.objects import Money
-from nautilus_trader.trading.strategy import TradingStrategy
+from nautilus_trader.trading.strategy import Strategy
 from tests.test_kit import PACKAGE_ROOT
 from tests.test_kit.performance import PerformanceHarness
-from tests.test_kit.stubs import TestStubs
+from tests.test_kit.stubs.data import TestDataStubs
 
 
 USDJPY_SIM = TestInstrumentProvider.default_fx_ccy("USD/JPY")
@@ -69,7 +69,7 @@ class TestBacktestEnginePerformance(PerformanceHarness):
                 starting_balances=[Money(1_000_000, USD)],
                 fill_model=FillModel(),
             )
-            strategies = [TradingStrategy()]
+            strategies = [Strategy()]
             start = datetime(2013, 1, 1, 22, 0, 0, 0, tzinfo=pytz.utc)
             end = datetime(2013, 8, 10, 0, 0, 0, 0, tzinfo=pytz.utc)
             return (engine, start, end, strategies), {}
@@ -106,7 +106,7 @@ class TestBacktestEnginePerformance(PerformanceHarness):
 
             config = EMACrossConfig(
                 instrument_id=str(USDJPY_SIM.id),
-                bar_type=str(TestStubs.bartype_usdjpy_1min_bid()),
+                bar_type=str(TestDataStubs.bartype_usdjpy_1min_bid()),
                 trade_size=Decimal(1_000_000),
                 fast_ema=10,
                 slow_ema=20,
@@ -156,7 +156,7 @@ class TestBacktestEnginePerformance(PerformanceHarness):
 
             config = EMACrossConfig(
                 instrument_id=str(USDJPY_SIM.id),
-                bar_type=str(TestStubs.bartype_usdjpy_1min_bid()),
+                bar_type=str(TestDataStubs.bartype_usdjpy_1min_bid()),
                 trade_size=Decimal(1_000_000),
                 fast_ema=10,
                 slow_ema=20,

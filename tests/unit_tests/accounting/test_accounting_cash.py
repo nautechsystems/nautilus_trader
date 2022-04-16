@@ -42,7 +42,9 @@ from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.position import Position
-from tests.test_kit.stubs import TestStubs
+from tests.test_kit.stubs.events import TestEventStubs
+from tests.test_kit.stubs.execution import TestExecStubs
+from tests.test_kit.stubs.identifiers import TestIdStubs
 
 
 AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy("AUD/USD")
@@ -54,7 +56,7 @@ BTCUSDT_BINANCE = TestInstrumentProvider.btcusdt_binance()
 class TestCashAccount:
     def setup(self):
         # Fixture Setup
-        self.trader_id = TestStubs.trader_id()
+        self.trader_id = TestIdStubs.trader_id()
 
         self.order_factory = OrderFactory(
             trader_id=self.trader_id,
@@ -64,7 +66,7 @@ class TestCashAccount:
 
     def test_instantiated_accounts_basic_properties(self):
         # Arrange, Act
-        account = TestStubs.cash_account()
+        account = TestExecStubs.cash_account()
 
         # Assert
         assert account == account
@@ -328,7 +330,7 @@ class TestCashAccount:
             Quantity.from_int(1_000_000),
         )
 
-        fill = TestStubs.event_order_filled(
+        fill = TestEventStubs.order_filled(
             order,
             instrument=AUDUSD_SIM,
             position_id=PositionId("P-123456"),
@@ -382,7 +384,7 @@ class TestCashAccount:
             Quantity.from_str("0.50000000"),
         )
 
-        fill1 = TestStubs.event_order_filled(
+        fill1 = TestEventStubs.order_filled(
             order1,
             instrument=BTCUSDT_BINANCE,
             position_id=PositionId("P-123456"),
@@ -405,7 +407,7 @@ class TestCashAccount:
             Quantity.from_str("0.50000000"),
         )
 
-        fill2 = TestStubs.event_order_filled(
+        fill2 = TestEventStubs.order_filled(
             order2,
             instrument=BTCUSDT_BINANCE,
             position_id=PositionId("P-123456"),
@@ -459,7 +461,7 @@ class TestCashAccount:
             Quantity.from_int(100),
         )
 
-        fill = TestStubs.event_order_filled(
+        fill = TestEventStubs.order_filled(
             order,
             instrument=ADABTC_BINANCE,
             position_id=PositionId("P-123456"),
@@ -483,7 +485,7 @@ class TestCashAccount:
         self,
     ):
         # Arrange
-        account = TestStubs.cash_account()
+        account = TestExecStubs.cash_account()
         instrument = TestInstrumentProvider.xbtusd_bitmex()
 
         # Act, Assert
@@ -504,7 +506,7 @@ class TestCashAccount:
     )
     def test_calculate_commission_for_inverse_maker_crypto(self, inverse_as_quote, expected):
         # Arrange
-        account = TestStubs.cash_account()
+        account = TestExecStubs.cash_account()
         instrument = TestInstrumentProvider.xbtusd_bitmex()
 
         # Act
@@ -521,7 +523,7 @@ class TestCashAccount:
 
     def test_calculate_commission_for_taker_fx(self):
         # Arrange
-        account = TestStubs.cash_account()
+        account = TestExecStubs.cash_account()
         instrument = AUDUSD_SIM
 
         # Act
@@ -537,7 +539,7 @@ class TestCashAccount:
 
     def test_calculate_commission_crypto_taker(self):
         # Arrange
-        account = TestStubs.cash_account()
+        account = TestExecStubs.cash_account()
         instrument = TestInstrumentProvider.xbtusd_bitmex()
 
         # Act
@@ -553,7 +555,7 @@ class TestCashAccount:
 
     def test_calculate_commission_fx_taker(self):
         # Arrange
-        account = TestStubs.cash_account()
+        account = TestExecStubs.cash_account()
         instrument = TestInstrumentProvider.default_fx_ccy("USD/JPY", Venue("IDEALPRO"))
 
         # Act

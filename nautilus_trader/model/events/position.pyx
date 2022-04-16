@@ -74,8 +74,6 @@ cdef class PositionEvent(Event):
         The average open price.
     avg_px_close : Decimal, optional
         The average close price.
-    realized_points : Decimal
-        The realized points for the position.
     realized_return : Decimal
         The realized return for the position.
     realized_pnl : Money
@@ -118,7 +116,6 @@ cdef class PositionEvent(Event):
         Currency currency not None,
         avg_px_open not None: Decimal,
         avg_px_close: Optional[Decimal],
-        realized_points not None: Decimal,
         realized_return not None: Decimal,
         Money realized_pnl not None,
         Money unrealized_pnl not None,
@@ -147,7 +144,6 @@ cdef class PositionEvent(Event):
         self.currency = currency
         self.avg_px_open = avg_px_open
         self.avg_px_close = avg_px_close
-        self.realized_points = realized_points
         self.realized_return = realized_return
         self.realized_pnl = realized_pnl
         self.unrealized_pnl = unrealized_pnl
@@ -172,7 +168,6 @@ cdef class PositionEvent(Event):
             f"currency={self.currency.code}, "
             f"avg_px_open={self.avg_px_open}, "
             f"avg_px_close={self.avg_px_close}, "
-            f"realized_points={self.realized_points}, "
             f"realized_return={self.realized_return:.5f}, "
             f"realized_pnl={self.realized_pnl.to_str()}, "
             f"unrealized_pnl={self.unrealized_pnl.to_str()}, "
@@ -201,7 +196,6 @@ cdef class PositionEvent(Event):
             f"currency={self.currency.code}, "
             f"avg_px_open={self.avg_px_open}, "
             f"avg_px_close={self.avg_px_close}, "
-            f"realized_points={self.realized_points}, "
             f"realized_return={self.realized_return:.5f}, "
             f"realized_pnl={self.realized_pnl.to_str()}, "
             f"unrealized_pnl={self.unrealized_pnl.to_str()}, "
@@ -301,7 +295,6 @@ cdef class PositionOpened(PositionEvent):
             currency,
             avg_px_open,
             None,
-            Decimal(0),
             Decimal(0),
             realized_pnl,
             Money(0, realized_pnl.currency),
@@ -496,8 +489,6 @@ cdef class PositionChanged(PositionEvent):
         The average open price.
     avg_px_close : Decimal, optional
         The average close price.
-    realized_points : Decimal
-        The realized points for the position.
     realized_return : Decimal
         The realized return for the position.
     realized_pnl : Money
@@ -532,7 +523,6 @@ cdef class PositionChanged(PositionEvent):
         Currency currency not None,
         avg_px_open not None: Decimal,
         avg_px_close: Optional[Decimal],
-        realized_points not None: Decimal,
         realized_return not None: Decimal,
         Money realized_pnl not None,
         Money unrealized_pnl not None,
@@ -559,7 +549,6 @@ cdef class PositionChanged(PositionEvent):
             currency,
             avg_px_open,
             avg_px_close,
-            realized_points,
             realized_return,
             realized_pnl,
             unrealized_pnl,
@@ -599,7 +588,6 @@ cdef class PositionChanged(PositionEvent):
             currency=position.quote_currency,
             avg_px_open=position.avg_px_open,
             avg_px_close=position.avg_px_close,
-            realized_points=position.realized_points,
             realized_return=position.realized_return,
             realized_pnl=position.realized_pnl,
             unrealized_pnl=position.unrealized_pnl(fill.last_px),
@@ -631,7 +619,6 @@ cdef class PositionChanged(PositionEvent):
             currency=Currency.from_str_c(values["currency"]),
             avg_px_open=Decimal(values["avg_px_open"]),
             avg_px_close=avg_px_close,
-            realized_points=Decimal(values["realized_points"]),
             realized_return=Decimal(values["realized_return"]),
             realized_pnl=Money.from_str_c(values["realized_pnl"]),
             unrealized_pnl=Money.from_str_c(values["unrealized_pnl"]),
@@ -662,7 +649,6 @@ cdef class PositionChanged(PositionEvent):
             "currency": obj.currency.code,
             "avg_px_open": str(obj.avg_px_open),
             "avg_px_close": str(obj.avg_px_close) if obj.avg_px_close else None,
-            "realized_points": str(obj.realized_points),
             "realized_return": f"{obj.realized_return:.5f}",
             "realized_pnl": obj.realized_pnl.to_str(),
             "unrealized_pnl": obj.unrealized_pnl.to_str(),
@@ -770,8 +756,6 @@ cdef class PositionClosed(PositionEvent):
         The average open price.
     avg_px_close : Decimal
         The average close price.
-    realized_points : Decimal
-        The realized points for the position.
     realized_return : Decimal
         The realized return for the position.
     realized_pnl : Money
@@ -806,7 +790,6 @@ cdef class PositionClosed(PositionEvent):
         Currency currency not None,
         avg_px_open not None: Decimal,
         avg_px_close not None: Decimal,
-        realized_points not None: Decimal,
         realized_return not None: Decimal,
         Money realized_pnl not None,
         UUID4 event_id not None,
@@ -833,7 +816,6 @@ cdef class PositionClosed(PositionEvent):
             currency,
             avg_px_open,
             avg_px_close,
-            realized_points,
             realized_return,
             realized_pnl,
             Money(0, realized_pnl.currency),  # No further unrealized PnL
@@ -873,7 +855,6 @@ cdef class PositionClosed(PositionEvent):
             currency=position.quote_currency,
             avg_px_open=position.avg_px_open,
             avg_px_close=position.avg_px_close,
-            realized_points=position.realized_points,
             realized_return=position.realized_return,
             realized_pnl=position.realized_pnl,
             event_id=event_id,
@@ -903,7 +884,6 @@ cdef class PositionClosed(PositionEvent):
             currency=Currency.from_str_c(values["currency"]),
             avg_px_open=Decimal(values["avg_px_open"]),
             avg_px_close=Decimal(values["avg_px_close"]),
-            realized_points=Decimal(values["realized_points"]),
             realized_return=Decimal(values["realized_return"]),
             realized_pnl=Money.from_str_c(values["realized_pnl"]),
             event_id=UUID4(values["event_id"]),
@@ -934,7 +914,6 @@ cdef class PositionClosed(PositionEvent):
             "currency": obj.currency.code,
             "avg_px_open": str(obj.avg_px_open),
             "avg_px_close": str(obj.avg_px_close) if obj.avg_px_close else None,
-            "realized_points": str(obj.realized_points),
             "realized_return": f"{obj.realized_return:.5f}",
             "realized_pnl": obj.realized_pnl.to_str(),
             "event_id": obj.id.value,

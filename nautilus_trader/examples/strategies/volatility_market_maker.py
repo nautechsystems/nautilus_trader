@@ -17,6 +17,7 @@ from decimal import Decimal
 from typing import Dict, Optional, Union
 
 from nautilus_trader.common.logging import LogColor
+from nautilus_trader.config import StrategyConfig
 from nautilus_trader.core.data import Data
 from nautilus_trader.core.message import Event
 from nautilus_trader.indicators.atr import AverageTrueRange
@@ -24,22 +25,23 @@ from nautilus_trader.model.data.bar import Bar
 from nautilus_trader.model.data.bar import BarType
 from nautilus_trader.model.data.tick import QuoteTick
 from nautilus_trader.model.data.tick import TradeTick
+from nautilus_trader.model.data.ticker import Ticker
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import TimeInForce
 from nautilus_trader.model.events.order import OrderFilled
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.instruments.base import Instrument
 from nautilus_trader.model.orderbook.book import OrderBook
+from nautilus_trader.model.orderbook.data import OrderBookDelta
 from nautilus_trader.model.orders.limit import LimitOrder
-from nautilus_trader.trading.config import TradingStrategyConfig
-from nautilus_trader.trading.strategy import TradingStrategy
+from nautilus_trader.trading.strategy import Strategy
 
 
 # *** THIS IS A TEST STRATEGY WITH NO ALPHA ADVANTAGE WHATSOEVER. ***
 # *** IT IS NOT INTENDED TO BE USED TO TRADE LIVE WITH REAL MONEY. ***
 
 
-class VolatilityMarketMakerConfig(TradingStrategyConfig):
+class VolatilityMarketMakerConfig(StrategyConfig):
     """
     Configuration for ``VolatilityMarketMaker`` instances.
 
@@ -68,12 +70,12 @@ class VolatilityMarketMakerConfig(TradingStrategyConfig):
     trade_size: Decimal
 
 
-class VolatilityMarketMaker(TradingStrategy):
+class VolatilityMarketMaker(Strategy):
     """
     A very dumb market maker which brackets the current market based on
     volatility measured by an ATR indicator.
 
-    Cancels all orders and flattens all positions on stop.
+    Cancels all orders and closes all positions on stop.
 
     Parameters
     ----------
@@ -116,6 +118,31 @@ class VolatilityMarketMaker(TradingStrategy):
         # Subscribe to live data
         self.subscribe_bars(self.bar_type)
         self.subscribe_quote_ticks(self.instrument_id)
+        # self.subscribe_trade_ticks(self.instrument_id)
+        # self.subscribe_ticker(self.instrument_id)  # For debugging
+        # self.subscribe_order_book_deltas(self.instrument_id, depth=100)  # For debugging
+        # self.subscribe_order_book_snapshots(self.instrument_id, depth=20, interval_ms=1000)  # For debugging
+        # self.subscribe_data(
+        #     data_type=DataType(
+        #         BinanceFuturesMarkPriceUpdate, metadata={"instrument_id": self.instrument.id}
+        #     ),
+        #     client_id=ClientId("BINANCE"),
+        # )
+
+    def on_data(self, data: Data):
+        """
+        Actions to be performed when the strategy is running and receives generic
+        data.
+
+        Parameters
+        ----------
+        data : Data
+            The data received.
+
+        """
+        # For debugging (must add a subscription)
+        # self.log.info(repr(data), LogColor.CYAN)
+        pass
 
     def on_instrument(self, instrument: Instrument):
         """
@@ -128,6 +155,8 @@ class VolatilityMarketMaker(TradingStrategy):
             The instrument received.
 
         """
+        # For debugging (must add a subscription)
+        # self.log.info(repr(instrument), LogColor.CYAN)
         pass
 
     def on_order_book(self, order_book: OrderBook):
@@ -140,7 +169,36 @@ class VolatilityMarketMaker(TradingStrategy):
             The order book received.
 
         """
-        # self.log.info(str(order_book))  # For debugging (must add a subscription)
+        # For debugging (must add a subscription)
+        # self.log.info(repr(order_book), LogColor.CYAN)
+        pass
+
+    def on_order_book_delta(self, delta: OrderBookDelta):
+        """
+        Actions to be performed when the strategy is running and receives an order book delta.
+
+        Parameters
+        ----------
+        delta : OrderBookDelta
+            The order book delta received.
+
+        """
+        # For debugging (must add a subscription)
+        # self.log.info(repr(delta), LogColor.CYAN)
+        pass
+
+    def on_ticker(self, ticker: Ticker):
+        """
+        Actions to be performed when the strategy is running and receives a ticker.
+
+        Parameters
+        ----------
+        ticker : Ticker
+            The ticker received.
+
+        """
+        # For debugging (must add a subscription)
+        # self.log.info(repr(ticker), LogColor.CYAN)
         pass
 
     def on_quote_tick(self, tick: QuoteTick):
@@ -153,7 +211,8 @@ class VolatilityMarketMaker(TradingStrategy):
             The quote tick received.
 
         """
-        # self.log.info(f"Received {repr(tick)}")  # For debugging (must add a subscription)
+        # For debugging (must add a subscription)
+        # self.log.info(repr(tick), LogColor.CYAN)
         pass
 
     def on_trade_tick(self, tick: TradeTick):
@@ -166,7 +225,8 @@ class VolatilityMarketMaker(TradingStrategy):
             The tick received.
 
         """
-        # self.log.info(f"Received {repr(tick)}")  # For debugging (must add a subscription)
+        # For debugging (must add a subscription)
+        # self.log.info(repr(tick), LogColor.CYAN)
         pass
 
     def on_bar(self, bar: Bar):
@@ -179,7 +239,7 @@ class VolatilityMarketMaker(TradingStrategy):
             The bar received.
 
         """
-        self.log.info(f"Received {repr(bar)}")
+        self.log.info(repr(bar), LogColor.CYAN)
 
         # Check if indicators ready
         if not self.indicators_initialized():
@@ -195,12 +255,12 @@ class VolatilityMarketMaker(TradingStrategy):
             return
 
         # Maintain buy orders
-        if self.buy_order and self.buy_order.is_working:
+        if self.buy_order and self.buy_order.is_open:
             self.cancel_order(self.buy_order)
         self.create_buy_order(last)
 
         # Maintain sell orders
-        if self.sell_order and self.sell_order.is_working:
+        if self.sell_order and self.sell_order.is_open:
             self.cancel_order(self.sell_order)
         self.create_sell_order(last)
 
@@ -216,7 +276,7 @@ class VolatilityMarketMaker(TradingStrategy):
             price=self.instrument.make_price(price),
             time_in_force=TimeInForce.GTC,
             post_only=True,  # default value is True
-            display_qty=self.instrument.make_qty(self.trade_size / 2),  # iceberg
+            # display_qty=self.instrument.make_qty(self.trade_size / 2),  # iceberg
         )
 
         self.buy_order = order
@@ -234,23 +294,11 @@ class VolatilityMarketMaker(TradingStrategy):
             price=self.instrument.make_price(price),
             time_in_force=TimeInForce.GTC,
             post_only=True,  # default value is True
-            display_qty=self.instrument.make_qty(self.trade_size / 2),  # iceberg
+            # display_qty=self.instrument.make_qty(self.trade_size / 2),  # iceberg
         )
 
         self.sell_order = order
         self.submit_order(order)
-
-    def on_data(self, data: Data):
-        """
-        Actions to be performed when the strategy is running and receives generic data.
-
-        Parameters
-        ----------
-        data : Data
-            The data received.
-
-        """
-        pass
 
     def on_event(self, event: Event):
         """
@@ -270,10 +318,10 @@ class VolatilityMarketMaker(TradingStrategy):
         # If order filled then replace order at atr multiple distance from the market
         if isinstance(event, OrderFilled):
             if event.order_side == OrderSide.BUY:
-                if self.buy_order.is_completed:
+                if self.buy_order.is_closed:
                     self.create_buy_order(last)
             elif event.order_side == OrderSide.SELL:
-                if self.sell_order.is_completed:
+                if self.sell_order.is_closed:
                     self.create_sell_order(last)
 
     def on_stop(self):
@@ -281,7 +329,7 @@ class VolatilityMarketMaker(TradingStrategy):
         Actions to be performed when the strategy is stopped.
         """
         self.cancel_all_orders(self.instrument_id)
-        self.flatten_all_positions(self.instrument_id)
+        self.close_all_positions(self.instrument_id)
 
         # Unsubscribe from data
         self.unsubscribe_bars(self.bar_type)

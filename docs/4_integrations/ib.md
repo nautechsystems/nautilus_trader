@@ -1,3 +1,0 @@
-# Interactive Brokers
-
-Planning phase...

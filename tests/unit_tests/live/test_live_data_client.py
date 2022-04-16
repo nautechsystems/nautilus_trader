@@ -27,7 +27,8 @@ from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.msgbus.bus import MessageBus
 from nautilus_trader.portfolio.portfolio import Portfolio
-from tests.test_kit.stubs import TestStubs
+from tests.test_kit.stubs.component import TestComponentStubs
+from tests.test_kit.stubs.identifiers import TestIdStubs
 
 
 BITMEX = Venue("BITMEX")
@@ -47,7 +48,7 @@ class TestLiveDataClientTests:
         self.uuid_factory = UUIDFactory()
         self.logger = Logger(self.clock)
 
-        self.trader_id = TestStubs.trader_id()
+        self.trader_id = TestIdStubs.trader_id()
 
         self.msgbus = MessageBus(
             trader_id=self.trader_id,
@@ -55,7 +56,7 @@ class TestLiveDataClientTests:
             logger=self.logger,
         )
 
-        self.cache = TestStubs.cache()
+        self.cache = TestComponentStubs.cache()
 
         self.engine = LiveDataEngine(
             loop=self.loop,
@@ -68,6 +69,7 @@ class TestLiveDataClientTests:
         self.client = LiveDataClient(
             loop=self.loop,
             client_id=ClientId("BLOOMBERG"),
+            venue=None,  # Multi-venue
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
@@ -89,7 +91,7 @@ class TestLiveMarketDataClientTests:
         self.uuid_factory = UUIDFactory()
         self.logger = Logger(self.clock)
 
-        self.trader_id = TestStubs.trader_id()
+        self.trader_id = TestIdStubs.trader_id()
 
         self.msgbus = MessageBus(
             trader_id=self.trader_id,
@@ -97,7 +99,7 @@ class TestLiveMarketDataClientTests:
             logger=self.logger,
         )
 
-        self.cache = TestStubs.cache()
+        self.cache = TestComponentStubs.cache()
 
         self.portfolio = Portfolio(
             msgbus=self.msgbus,
@@ -117,7 +119,11 @@ class TestLiveMarketDataClientTests:
         self.client = LiveMarketDataClient(
             loop=self.loop,
             client_id=ClientId(BINANCE.value),
-            instrument_provider=InstrumentProvider(),
+            venue=BINANCE,
+            instrument_provider=InstrumentProvider(
+                venue=Venue("SIM"),
+                logger=self.logger,
+            ),
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,

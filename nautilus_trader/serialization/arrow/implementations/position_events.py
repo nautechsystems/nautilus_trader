@@ -39,7 +39,6 @@ def serialize(event: PositionEvent):
         "last_qty": float,
         "last_px": float,
         "avg_px_close": try_float,
-        "realized_points": try_float,
         "realized_return": try_float,
     }
     values = {k: caster[k](v) if k in caster else v for k, v in data.items()}  # type: ignore

@@ -43,7 +43,7 @@ class TestFixedTickScheme:
         ],
     )
     def test_round_down(self, value, precision, expected):
-        base = 1 * 10 ** -precision
+        base = 1 * 10**-precision
         assert round_down(value, base=base) == Price.from_str(expected).as_double()
 
     @pytest.mark.parametrize(
@@ -56,7 +56,7 @@ class TestFixedTickScheme:
         ],
     )
     def test_round_up(self, value, precision, expected):
-        base = 1 * 10 ** -precision
+        base = 1 * 10**-precision
         assert round_up(value, base) == Price.from_str(expected).as_double()
 
     def test_attrs(self):

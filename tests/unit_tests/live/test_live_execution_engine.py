@@ -24,18 +24,18 @@ from nautilus_trader.common.factories import OrderFactory
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.common.providers import InstrumentProvider
 from nautilus_trader.common.uuid import UUIDFactory
+from nautilus_trader.config import LiveExecEngineConfig
 from nautilus_trader.core.uuid import UUID4
+from nautilus_trader.execution.messages import SubmitOrder
 from nautilus_trader.execution.reports import ExecutionMassStatus
 from nautilus_trader.execution.reports import OrderStatusReport
 from nautilus_trader.execution.reports import PositionStatusReport
 from nautilus_trader.execution.reports import TradeReport
-from nautilus_trader.live.config import LiveExecEngineConfig
 from nautilus_trader.live.data_engine import LiveDataEngine
 from nautilus_trader.live.execution_engine import LiveExecutionEngine
 from nautilus_trader.live.risk_engine import LiveRiskEngine
 from nautilus_trader.model.c_enums.trailing_offset_type import TrailingOffsetType
 from nautilus_trader.model.c_enums.trigger_type import TriggerType
-from nautilus_trader.model.commands.trading import SubmitOrder
 from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import ContingencyType
@@ -60,9 +60,11 @@ from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.msgbus.bus import MessageBus
 from nautilus_trader.portfolio.portfolio import Portfolio
-from nautilus_trader.trading.strategy import TradingStrategy
-from tests.test_kit.mocks import MockLiveExecutionClient
-from tests.test_kit.stubs import TestStubs
+from nautilus_trader.trading.strategy import Strategy
+from tests.test_kit.mocks.exec_clients import MockLiveExecutionClient
+from tests.test_kit.stubs.component import TestComponentStubs
+from tests.test_kit.stubs.events import TestEventStubs
+from tests.test_kit.stubs.identifiers import TestIdStubs
 
 
 SIM = Venue("SIM")
@@ -80,7 +82,7 @@ class TestLiveExecutionEngine:
         self.uuid_factory = UUIDFactory()
         self.logger = Logger(self.clock)
 
-        self.trader_id = TestStubs.trader_id()
+        self.trader_id = TestIdStubs.trader_id()
 
         self.order_factory = OrderFactory(
             trader_id=self.trader_id,
@@ -100,7 +102,7 @@ class TestLiveExecutionEngine:
             logger=self.logger,
         )
 
-        self.cache = TestStubs.cache()
+        self.cache = TestComponentStubs.cache()
 
         self.portfolio = Portfolio(
             msgbus=self.msgbus,
@@ -134,13 +136,17 @@ class TestLiveExecutionEngine:
             logger=self.logger,
         )
 
-        self.instrument_provider = InstrumentProvider()
+        self.instrument_provider = InstrumentProvider(
+            venue=SIM,
+            logger=self.logger,
+        )
         self.instrument_provider.add(AUDUSD_SIM)
         self.instrument_provider.add(GBPUSD_SIM)
 
         self.client = MockLiveExecutionClient(
             loop=self.loop,
             client_id=ClientId(SIM.value),
+            venue=SIM,
             account_type=AccountType.CASH,
             base_currency=USD,
             instrument_provider=self.instrument_provider,
@@ -149,7 +155,7 @@ class TestLiveExecutionEngine:
             clock=self.clock,
             logger=self.logger,
         )
-        self.portfolio.update_account(TestStubs.event_cash_account_state())
+        self.portfolio.update_account(TestEventStubs.cash_account_state())
         self.exec_engine.register_client(self.client)
 
         self.cache.add_instrument(AUDUSD_SIM)
@@ -170,10 +176,21 @@ class TestLiveExecutionEngine:
     async def test_message_qsize_at_max_blocks_on_put_command(self):
         # Arrange
         # Deregister test fixture ExecutionEngine from msgbus)
-        self.msgbus.deregister(endpoint="ExecEngine.execute", handler=self.exec_engine.execute)
-        self.msgbus.deregister(endpoint="ExecEngine.process", handler=self.exec_engine.process)
         self.msgbus.deregister(
-            endpoint="ExecEngine.reconcile_report", handler=self.exec_engine.reconcile_report
+            endpoint="ExecEngine.execute",
+            handler=self.exec_engine.execute,
+        )
+        self.msgbus.deregister(
+            endpoint="ExecEngine.process",
+            handler=self.exec_engine.process,
+        )
+        self.msgbus.deregister(
+            endpoint="ExecEngine.reconcile_report",
+            handler=self.exec_engine.reconcile_report,
+        )
+        self.msgbus.deregister(
+            endpoint="ExecEngine.reconcile_mass_status",
+            handler=self.exec_engine.reconcile_mass_status,
         )
 
         self.exec_engine = LiveExecutionEngine(
@@ -185,7 +202,7 @@ class TestLiveExecutionEngine:
             config=LiveExecEngineConfig(qsize=1),
         )
 
-        strategy = TradingStrategy()
+        strategy = Strategy()
         strategy.register(
             trader_id=self.trader_id,
             portfolio=self.portfolio,
@@ -223,10 +240,21 @@ class TestLiveExecutionEngine:
     async def test_message_qsize_at_max_blocks_on_put_event(self):
         # Arrange
         # Deregister test fixture ExecutionEngine from msgbus)
-        self.msgbus.deregister(endpoint="ExecEngine.execute", handler=self.exec_engine.execute)
-        self.msgbus.deregister(endpoint="ExecEngine.process", handler=self.exec_engine.process)
         self.msgbus.deregister(
-            endpoint="ExecEngine.reconcile_report", handler=self.exec_engine.reconcile_report
+            endpoint="ExecEngine.execute",
+            handler=self.exec_engine.execute,
+        )
+        self.msgbus.deregister(
+            endpoint="ExecEngine.process",
+            handler=self.exec_engine.process,
+        )
+        self.msgbus.deregister(
+            endpoint="ExecEngine.reconcile_report",
+            handler=self.exec_engine.reconcile_report,
+        )
+        self.msgbus.deregister(
+            endpoint="ExecEngine.reconcile_mass_status",
+            handler=self.exec_engine.reconcile_mass_status,
         )
 
         self.exec_engine = LiveExecutionEngine(
@@ -238,7 +266,7 @@ class TestLiveExecutionEngine:
             config=LiveExecEngineConfig(qsize=1),
         )
 
-        strategy = TradingStrategy()
+        strategy = Strategy()
         strategy.register(
             trader_id=self.trader_id,
             portfolio=self.portfolio,
@@ -263,7 +291,7 @@ class TestLiveExecutionEngine:
             self.clock.timestamp_ns(),
         )
 
-        event = TestStubs.event_order_submitted(order)
+        event = TestEventStubs.order_submitted(order)
 
         # Act
         self.exec_engine.execute(submit_order)
@@ -309,7 +337,7 @@ class TestLiveExecutionEngine:
         # Arrange
         self.exec_engine.start()
 
-        strategy = TradingStrategy()
+        strategy = Strategy()
         strategy.register(
             trader_id=self.trader_id,
             portfolio=self.portfolio,
@@ -344,359 +372,6 @@ class TestLiveExecutionEngine:
 
         # Tear Down
         self.exec_engine.stop()
-
-    @pytest.mark.skip("WIP: Reconciliation testing")
-    @pytest.mark.asyncio
-    async def test_reconcile_state_with_no_active_orders(self):
-        # Arrange
-        self.exec_engine.start()
-
-        strategy = TradingStrategy()
-        strategy.register(
-            trader_id=self.trader_id,
-            portfolio=self.portfolio,
-            msgbus=self.msgbus,
-            cache=self.cache,
-            clock=self.clock,
-            logger=self.logger,
-        )
-
-        # Act
-        await self.exec_engine.reconcile_state(timeout_secs=10)
-        self.exec_engine.stop()
-        await asyncio.sleep(0.1)
-
-        # Assert
-        assert True  # No exceptions raised
-
-    @pytest.mark.skip("WIP: Reconciliation testing")
-    @pytest.mark.asyncio
-    async def test_reconcile_state_when_report_agrees_reconciles(self):
-        # Arrange
-        self.exec_engine.start()
-
-        strategy = TradingStrategy()
-        strategy.register(
-            trader_id=self.trader_id,
-            portfolio=self.portfolio,
-            msgbus=self.msgbus,
-            cache=self.cache,
-            clock=self.clock,
-            logger=self.logger,
-        )
-
-        order = strategy.order_factory.limit(
-            AUDUSD_SIM.id,
-            OrderSide.BUY,
-            Quantity.from_int(100000),
-            Price.from_str("1.00000"),
-        )
-
-        submit_order = SubmitOrder(
-            self.trader_id,
-            strategy.id,
-            None,
-            order,
-            self.uuid_factory.generate(),
-            self.clock.timestamp_ns(),
-        )
-
-        self.exec_engine.execute(submit_order)
-        self.exec_engine.process(TestStubs.event_order_submitted(order))
-        self.exec_engine.process(TestStubs.event_order_accepted(order))
-
-        report = OrderStatusReport(
-            client_order_id=order.client_order_id,
-            venue_order_id=VenueOrderId("1"),  # <-- from stub event
-            order_status=OrderStatus.ACCEPTED,
-            filled_qty=Quantity.zero(),
-            ts_init=0,
-        )
-
-        self.client.add_order_status_report(report)
-
-        await asyncio.sleep(0.1)  # Allow processing time
-
-        # Act
-        result = await self.exec_engine.reconcile_state(timeout_secs=10)
-        self.exec_engine.stop()
-
-        # Assert
-        assert result
-
-    @pytest.mark.skip("WIP: Reconciliation testing")
-    @pytest.mark.asyncio
-    async def test_reconcile_state_when_canceled_reconciles(self):
-        # Arrange
-        self.exec_engine.start()
-
-        strategy = TradingStrategy()
-        strategy.register(
-            trader_id=self.trader_id,
-            portfolio=self.portfolio,
-            msgbus=self.msgbus,
-            cache=self.cache,
-            clock=self.clock,
-            logger=self.logger,
-        )
-
-        order = strategy.order_factory.limit(
-            AUDUSD_SIM.id,
-            OrderSide.BUY,
-            Quantity.from_int(100000),
-            Price.from_str("1.00000"),
-        )
-
-        submit_order = SubmitOrder(
-            self.trader_id,
-            strategy.id,
-            None,
-            order,
-            self.uuid_factory.generate(),
-            self.clock.timestamp_ns(),
-        )
-
-        self.exec_engine.execute(submit_order)
-        self.exec_engine.process(TestStubs.event_order_submitted(order))
-        self.exec_engine.process(TestStubs.event_order_accepted(order))
-
-        report = OrderStatusReport(
-            client_order_id=order.client_order_id,
-            venue_order_id=VenueOrderId("1"),  # <-- from stub event
-            order_status=OrderStatus.CANCELED,
-            filled_qty=Quantity.zero(),
-            ts_init=0,
-        )
-
-        self.client.add_order_status_report(report)
-
-        await asyncio.sleep(0.1)  # Allow processing time
-
-        # Act
-        result = await self.exec_engine.reconcile_state(timeout_secs=10)
-        self.exec_engine.stop()
-
-        # Assert
-        assert result
-
-    @pytest.mark.skip("WIP: Reconciliation testing")
-    @pytest.mark.asyncio
-    async def test_reconcile_state_when_expired_reconciles(self):
-        # Arrange
-        self.exec_engine.start()
-
-        strategy = TradingStrategy()
-        strategy.register(
-            trader_id=self.trader_id,
-            portfolio=self.portfolio,
-            msgbus=self.msgbus,
-            cache=self.cache,
-            clock=self.clock,
-            logger=self.logger,
-        )
-
-        order = strategy.order_factory.limit(
-            AUDUSD_SIM.id,
-            OrderSide.BUY,
-            Quantity.from_int(100000),
-            Price.from_str("1.00000"),
-        )
-
-        submit_order = SubmitOrder(
-            self.trader_id,
-            strategy.id,
-            None,
-            order,
-            self.uuid_factory.generate(),
-            self.clock.timestamp_ns(),
-        )
-
-        self.exec_engine.execute(submit_order)
-        self.exec_engine.process(TestStubs.event_order_submitted(order))
-        self.exec_engine.process(TestStubs.event_order_accepted(order))
-
-        report = OrderStatusReport(
-            client_order_id=order.client_order_id,
-            venue_order_id=VenueOrderId("1"),  # <-- from stub event
-            order_status=OrderStatus.EXPIRED,
-            filled_qty=Quantity.zero(),
-            ts_init=0,
-        )
-
-        self.client.add_order_status_report(report)
-
-        await asyncio.sleep(0.1)  # Allow processing time
-
-        # Act
-        result = await self.exec_engine.reconcile_state(timeout_secs=10)
-        self.exec_engine.stop()
-
-        # Assert
-        assert result
-
-    @pytest.mark.skip(reason="reimplement reconciliation")
-    @pytest.mark.asyncio
-    async def test_reconcile_state_when_partially_filled_reconciles(self):
-        # Arrange
-        self.exec_engine.start()
-
-        strategy = TradingStrategy()
-        strategy.register(
-            trader_id=self.trader_id,
-            portfolio=self.portfolio,
-            msgbus=self.msgbus,
-            cache=self.cache,
-            clock=self.clock,
-            logger=self.logger,
-        )
-
-        order = strategy.order_factory.limit(
-            AUDUSD_SIM.id,
-            OrderSide.BUY,
-            Quantity.from_int(100000),
-            Price.from_str("1.00000"),
-        )
-
-        submit_order = SubmitOrder(
-            self.trader_id,
-            strategy.id,
-            None,
-            order,
-            self.uuid_factory.generate(),
-            self.clock.timestamp_ns(),
-        )
-
-        self.exec_engine.execute(submit_order)
-        self.exec_engine.process(TestStubs.event_order_submitted(order))
-        self.exec_engine.process(TestStubs.event_order_accepted(order))
-
-        report = OrderStatusReport(
-            client_order_id=order.client_order_id,
-            venue_order_id=VenueOrderId("1"),  # <-- from stub event
-            order_status=OrderStatus.PARTIALLY_FILLED,
-            filled_qty=Quantity.from_int(70000),
-            ts_init=0,
-        )
-
-        trade1 = TradeReport(
-            client_order_id=order.client_order_id,
-            venue_order_id=VenueOrderId("1"),
-            venue_position_id=None,
-            trade_id=TradeId("1"),
-            last_qty=Quantity.from_int(50000),
-            last_px=Price.from_str("1.00000"),
-            commission=Money(5.00, USD),
-            liquidity_side=LiquiditySide.MAKER,
-            ts_event=0,
-            ts_init=0,
-        )
-
-        trade2 = TradeReport(
-            client_order_id=order.client_order_id,
-            venue_order_id=VenueOrderId("1"),
-            venue_position_id=None,
-            trade_id=TradeId("2"),
-            last_qty=Quantity.from_int(20000),
-            last_px=Price.from_str("1.00000"),
-            commission=Money(2.00, USD),
-            liquidity_side=LiquiditySide.MAKER,
-            ts_event=0,
-            ts_init=0,
-        )
-
-        self.client.add_order_status_report(report)
-        self.client.add_trades_list(VenueOrderId("1"), [trade1, trade2])
-
-        await asyncio.sleep(0.1)  # Allow processing time
-
-        # Act
-        result = await self.exec_engine.reconcile_state(timeout_secs=10)
-        self.exec_engine.stop()
-
-        # Assert
-        assert result
-
-    @pytest.mark.skip(reason="reimplement reconciliation")
-    @pytest.mark.asyncio
-    async def test_reconcile_state_when_filled_reconciles(self):
-        # Arrange
-        self.exec_engine.start()
-
-        strategy = TradingStrategy()
-        strategy.register(
-            trader_id=self.trader_id,
-            portfolio=self.portfolio,
-            msgbus=self.msgbus,
-            cache=self.cache,
-            clock=self.clock,
-            logger=self.logger,
-        )
-
-        order = strategy.order_factory.limit(
-            AUDUSD_SIM.id,
-            OrderSide.BUY,
-            Quantity.from_int(100000),
-            Price.from_str("1.00000"),
-        )
-
-        submit_order = SubmitOrder(
-            self.trader_id,
-            strategy.id,
-            None,
-            order,
-            self.uuid_factory.generate(),
-            self.clock.timestamp_ns(),
-        )
-
-        self.exec_engine.execute(submit_order)
-        self.exec_engine.process(TestStubs.event_order_submitted(order))
-        self.exec_engine.process(TestStubs.event_order_accepted(order))
-
-        report = OrderStatusReport(
-            client_order_id=order.client_order_id,
-            venue_order_id=VenueOrderId("1"),  # <-- from stub event
-            order_status=OrderStatus.FILLED,
-            filled_qty=Quantity.from_int(100000),
-            ts_init=0,
-        )
-
-        trade1 = TradeReport(
-            trade_id=TradeId("1"),
-            client_order_id=order.client_order_id,
-            venue_order_id=VenueOrderId("1"),
-            venue_position_id=None,
-            last_qty=Quantity.from_int(50000),
-            last_px=Price.from_str("1.00000"),
-            commission=Money(5.00, USD),
-            liquidity_side=LiquiditySide.MAKER,
-            ts_event=0,
-            ts_init=0,
-        )
-
-        trade2 = TradeReport(
-            trade_id=TradeId("2"),
-            client_order_id=order.client_order_id,
-            venue_order_id=VenueOrderId("1"),
-            venue_position_id=None,
-            last_qty=Quantity.from_int(50000),
-            last_px=Price.from_str("1.00000"),
-            commission=Money(2.00, USD),
-            liquidity_side=LiquiditySide.MAKER,
-            ts_event=0,
-            ts_init=0,
-        )
-
-        self.client.add_order_status_report(report)
-        self.client.add_trades_list(VenueOrderId("1"), [trade1, trade2])
-
-        await asyncio.sleep(0.1)  # Allow processing time
-
-        # Act
-        result = await self.exec_engine.reconcile_state(timeout_secs=10)
-        self.exec_engine.stop()
-
-        # Assert
-        assert result
 
     def test_handle_order_status_report(self):
         # Arrange
@@ -786,7 +461,7 @@ class TestLiveExecutionEngine:
         # Arrange
         mass_status = ExecutionMassStatus(
             client_id=ClientId("SIM"),
-            account_id=TestStubs.account_id(),
+            account_id=TestIdStubs.account_id(),
             venue=Venue("SIM"),
             report_id=UUID4(),
             ts_init=0,

@@ -66,8 +66,6 @@ cdef class PositionEvent(Event):
     """The average open price.\n\n:returns: `Decimal`"""
     cdef readonly object avg_px_close
     """The average closing price.\n\n:returns: `Decimal`"""
-    cdef readonly object realized_points
-    """The realized points for the position.\n\n:returns: `Decimal`"""
     cdef readonly object realized_return
     """The realized return for the position.\n\n:returns: `Decimal`"""
     cdef readonly Money realized_pnl

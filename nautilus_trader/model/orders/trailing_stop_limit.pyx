@@ -50,7 +50,7 @@ from nautilus_trader.model.orders.base cimport Order
 
 cdef class TrailingStopLimitOrder(Order):
     """
-    Represents a trailing stop-limit conditional order.
+    Represents a `Trailing-Stop-Limit` conditional order.
 
     Parameters
     ----------
@@ -75,28 +75,28 @@ cdef class TrailingStopLimitOrder(Order):
     trigger_type : TriggerType
         The order trigger type.
     limit_offset : Decimal
-        The trailing offset for the order (LIMIT) price.
+        The trailing offset for the order price (LIMIT).
     trailing_offset : Decimal
-        The trailing offset for the order trigger (STOP) price.
+        The trailing offset for the order trigger price (STOP).
     offset_type : TrailingOffsetType
         The order trailing offset type.
-    time_in_force : TimeInForce
-        The order time-in-force.
+    time_in_force : TimeInForce {``GTC``, ``IOC``, ``FOK``, ``GTD``, ``DAY``}
+        The order time in force.
     expire_time : datetime, optional
         The order expiration.
     init_id : UUID4
         The order initialization event ID.
     ts_init : int64
         The UNIX timestamp (nanoseconds) when the object was initialized.
-    post_only : bool, optional
+    post_only : bool, default False
         If the ``LIMIT`` order will only provide liquidity (once triggered).
-    reduce_only : bool, optional
+    reduce_only : bool, default False
         If the ``LIMIT`` order carries the 'reduce-only' execution instruction.
     display_qty : Quantity, optional
         The quantity of the ``LIMIT`` order to display on the public book (iceberg).
     order_list_id : OrderListId, optional
         The order list ID associated with the order.
-    contingency_type : ContingencyType
+    contingency_type : ContingencyType, default ``NONE``
         The order contingency type.
     linked_order_ids : list[ClientOrderId], optional
         The order linked client order ID(s).
@@ -112,6 +112,10 @@ cdef class TrailingStopLimitOrder(Order):
         If `quantity` is not positive (> 0).
     ValueError
         If `trigger_type` is ``NONE``.
+    ValueError
+        If `offset_type` is ``NONE``.
+    ValueError
+        If `time_in_force` is ``AT_THE_OPEN`` or ``AT_THE_CLOSE``.
     ValueError
         If `time_in_force` is ``GTD`` and `expire_time` is ``None`` or <= UNIX epoch.
     ValueError
@@ -146,6 +150,9 @@ cdef class TrailingStopLimitOrder(Order):
         str tags=None,
     ):
         Condition.not_equal(trigger_type, TriggerType.NONE, "trigger_type", "NONE")
+        Condition.not_equal(offset_type, TrailingOffsetType.NONE, "offset_type", "NONE")
+        Condition.not_equal(time_in_force, TimeInForce.AT_THE_OPEN, "time_in_force", "AT_THE_OPEN`")
+        Condition.not_equal(time_in_force, TimeInForce.AT_THE_CLOSE, "time_in_force", "AT_THE_CLOSE`")
 
         cdef int64_t expire_time_ns = 0
         if time_in_force == TimeInForce.GTD:
@@ -207,6 +214,12 @@ cdef class TrailingStopLimitOrder(Order):
         self.display_qty = display_qty
         self.is_triggered = False
         self.ts_triggered = 0
+
+    cdef bint has_price_c(self) except *:
+        return True
+
+    cdef bint has_trigger_price_c(self) except *:
+        return True
 
     cpdef str info(self):
         """
@@ -276,7 +289,7 @@ cdef class TrailingStopLimitOrder(Order):
     @staticmethod
     cdef TrailingStopLimitOrder create(OrderInitialized init):
         """
-        Return a stop-limit order from the given initialized event.
+        Return a `Trailing-Stop-Limit` order from the given initialized event.
 
         Parameters
         ----------
@@ -290,7 +303,7 @@ cdef class TrailingStopLimitOrder(Order):
         Raises
         ------
         ValueError
-            If `init.type` is not equal to ``STOP_LIMIT``.
+            If `init.type` is not equal to ``TRAILING_STOP_LIMIT``.
 
         """
         Condition.not_none(init, "init")

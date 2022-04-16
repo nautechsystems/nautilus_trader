@@ -25,6 +25,10 @@ from typing import Any, Callable
 
 import pandas as pd
 
+from nautilus_trader.analysis import statistics
+from nautilus_trader.analysis.analyzer import PortfolioAnalyzer
+from nautilus_trader.analysis.reporter import ReportProvider
+
 from nautilus_trader.accounting.accounts.base cimport Account
 from nautilus_trader.common.actor cimport Actor
 from nautilus_trader.common.clock cimport Clock
@@ -37,10 +41,7 @@ from nautilus_trader.model.identifiers cimport TraderId
 from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.msgbus.bus cimport MessageBus
 from nautilus_trader.risk.engine cimport RiskEngine
-from nautilus_trader.trading.strategy cimport TradingStrategy
-
-from nautilus_trader.analysis.performance import PerformanceAnalyzer
-from nautilus_trader.analysis.reports import ReportProvider
+from nautilus_trader.trading.strategy cimport Strategy
 
 
 cdef class Trader(Component):
@@ -79,7 +80,7 @@ cdef class Trader(Component):
     ValueError
         If `strategies` is empty.
     TypeError
-        If `strategies` contains a type other than `TradingStrategy`.
+        If `strategies` contains a type other than `Strategy`.
     """
 
     def __init__(
@@ -114,7 +115,26 @@ cdef class Trader(Component):
         self._actors = []
         self._strategies = []
 
-        self.analyzer = PerformanceAnalyzer()
+        self.analyzer = PortfolioAnalyzer()
+
+        # Register default statistics
+        self.analyzer.register_statistic(statistics.winner_max.MaxWinner())
+        self.analyzer.register_statistic(statistics.winner_avg.AvgWinner())
+        self.analyzer.register_statistic(statistics.winner_min.MinWinner())
+        self.analyzer.register_statistic(statistics.loser_min.MinLoser())
+        self.analyzer.register_statistic(statistics.loser_avg.AvgLoser())
+        self.analyzer.register_statistic(statistics.loser_max.MaxLoser())
+        self.analyzer.register_statistic(statistics.expectancy.Expectancy())
+        self.analyzer.register_statistic(statistics.win_rate.WinRate())
+        self.analyzer.register_statistic(statistics.returns_volatility.ReturnsVolatility())
+        self.analyzer.register_statistic(statistics.returns_avg.ReturnsAverage())
+        self.analyzer.register_statistic(statistics.returns_avg_loss.ReturnsAverageLoss())
+        self.analyzer.register_statistic(statistics.returns_avg_win.ReturnsAverageWin())
+        self.analyzer.register_statistic(statistics.sharpe_ratio.SharpeRatio())
+        self.analyzer.register_statistic(statistics.sortino_ratio.SortinoRatio())
+        self.analyzer.register_statistic(statistics.profit_factor.ProfitFactor())
+        self.analyzer.register_statistic(statistics.risk_return_ratio.RiskReturnRatio())
+        self.analyzer.register_statistic(statistics.long_ratio.LongRatio())
 
     cdef list actors_c(self):
         return self._actors
@@ -165,7 +185,7 @@ cdef class Trader(Component):
         dict[StrategyId, str]
 
         """
-        cdef TradingStrategy s
+        cdef Strategy s
         return {s.id: s.state_string_c() for s in self._strategies}
 
 # -- ACTION IMPLEMENTATIONS ------------------------------------------------------------------------
@@ -179,7 +199,7 @@ cdef class Trader(Component):
         for actor in self._actors:
             actor.start()
 
-        cdef TradingStrategy strategy
+        cdef Strategy strategy
         for strategy in self._strategies:
             strategy.start()
 
@@ -191,7 +211,7 @@ cdef class Trader(Component):
             else:
                 self._log.warning(f"{actor} already stopped.")
 
-        cdef TradingStrategy strategy
+        cdef Strategy strategy
         for strategy in self._strategies:
             if strategy.is_running_c():
                 strategy.stop()
@@ -203,7 +223,7 @@ cdef class Trader(Component):
         for actor in self._actors:
             actor.reset()
 
-        cdef TradingStrategy strategy
+        cdef Strategy strategy
         for strategy in self._strategies:
             strategy.reset()
 
@@ -215,19 +235,19 @@ cdef class Trader(Component):
         for actor in self._actors:
             actor.dispose()
 
-        cdef TradingStrategy strategy
+        cdef Strategy strategy
         for strategy in self._strategies:
             strategy.dispose()
 
 # --------------------------------------------------------------------------------------------------
 
-    cpdef void add_strategy(self, TradingStrategy strategy) except *:
+    cpdef void add_strategy(self, Strategy strategy) except *:
         """
         Add the given trading strategy to the trader.
 
         Parameters
         ----------
-        strategy : TradingStrategy
+        strategy : Strategy
             The trading strategy to add and register.
 
         Raises
@@ -239,7 +259,7 @@ cdef class Trader(Component):
 
         """
         Condition.not_none(strategy, "strategy")
-        Condition.not_in(strategy, self._strategies, "strategy", "strategies")
+        Condition.not_in(strategy, self._strategies, "strategy", "_strategies")
         Condition.true(not strategy.is_running_c(), "strategy.state was RUNNING")
         Condition.true(not strategy.is_disposed_c(), "strategy.state was DISPOSED")
 
@@ -260,9 +280,9 @@ cdef class Trader(Component):
         self._exec_engine.register_oms_type(strategy)
         self._strategies.append(strategy)
 
-        self._log.info(f"Registered TradingStrategy {strategy}.")
+        self._log.info(f"Registered Strategy {strategy}.")
 
-    cpdef void add_strategies(self, list strategies: [TradingStrategy]) except *:
+    cpdef void add_strategies(self, list strategies: [Strategy]) except *:
         """
         Add the given trading strategies to the trader.
 
@@ -279,7 +299,7 @@ cdef class Trader(Component):
         """
         Condition.not_empty(strategies, "strategies")
 
-        cdef TradingStrategy strategy
+        cdef Strategy strategy
         for strategy in strategies:
             self.add_strategy(strategy)
 
@@ -300,7 +320,7 @@ cdef class Trader(Component):
             If `component.state` is ``RUNNING`` or ``DISPOSED``.
 
         """
-        Condition.not_in(actor, self._actors, "actor", "actors")
+        Condition.not_in(actor, self._actors, "actor", "_actors")
         Condition.true(not actor.is_running_c(), "actor.state was RUNNING")
         Condition.true(not actor.is_disposed_c(), "actor.state was DISPOSED")
 
@@ -424,7 +444,7 @@ cdef class Trader(Component):
 
     cpdef void check_residuals(self) except *:
         """
-        Check for residual business objects such as working orders or open positions.
+        Check for residual open state such as open orders or open positions.
         """
         self._exec_engine.check_residuals()
 
@@ -459,7 +479,8 @@ cdef class Trader(Component):
         pd.DataFrame
 
         """
-        return ReportProvider.generate_positions_report(self._cache.positions())
+        cdef list positions = self._cache.positions() + self._cache.position_snapshots()
+        return ReportProvider.generate_positions_report(positions)
 
     cpdef object generate_account_report(self, Venue venue):
         """

@@ -18,7 +18,7 @@ import asyncio
 import pytest
 
 from nautilus_trader.network.websocket import WebSocketClient
-from tests.test_kit.stubs import TestStubs
+from tests.test_kit.stubs.component import TestComponentStubs
 
 
 class TestWebsocketClient:
@@ -30,9 +30,9 @@ class TestWebsocketClient:
 
         self.client = WebSocketClient(
             loop=asyncio.get_event_loop(),
-            logger=TestStubs.logger(level="DEBUG"),
+            logger=TestComponentStubs.logger(level="DEBUG"),
             handler=record,
-            max_retry_connection=10,
+            max_retry_connection=6,
         )
 
     @staticmethod
@@ -65,9 +65,9 @@ class TestWebsocketClient:
         await asyncio.sleep(0.1)
 
         # Act
-        await self.client.recv()
+        await self.client.receive()
         await asyncio.sleep(0.1)
-        await self.client.recv()
+        await self.client.receive()
 
         # Assert
         assert self.messages == [b"connected"] * 2
@@ -81,8 +81,8 @@ class TestWebsocketClient:
         for _ in range(2):
             await self.client.send(b"close")
             await asyncio.sleep(0.1)
-            await self.client.recv()
+            await self.client.receive()
             await asyncio.sleep(0.1)
-            await self.client.recv()
+            await self.client.receive()
 
-        assert self.client._connection_retry_count == 3
+        assert self.client.connection_retry_count == 2

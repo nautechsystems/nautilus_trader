@@ -20,10 +20,11 @@ from nautilus_trader.common.factories cimport OrderFactory
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.common.logging cimport LoggerAdapter
 from nautilus_trader.common.uuid cimport UUIDFactory
+from nautilus_trader.execution.messages cimport TradingCommand
 from nautilus_trader.indicators.base.indicator cimport Indicator
 from nautilus_trader.model.c_enums.oms_type cimport OMSType
-from nautilus_trader.model.commands.trading cimport TradingCommand
 from nautilus_trader.model.data.bar cimport BarType
+from nautilus_trader.model.identifiers cimport ClientId
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.identifiers cimport PositionId
 from nautilus_trader.model.identifiers cimport TraderId
@@ -36,7 +37,7 @@ from nautilus_trader.msgbus.bus cimport MessageBus
 from nautilus_trader.portfolio.base cimport PortfolioFacade
 
 
-cdef class TradingStrategy(Actor):
+cdef class Strategy(Actor):
     cdef list _indicators
     cdef dict _indicators_for_quotes
     cdef dict _indicators_for_trades
@@ -82,20 +83,23 @@ cdef class TradingStrategy(Actor):
 
 # -- TRADING COMMANDS ------------------------------------------------------------------------------
 
-    cpdef void submit_order(self, Order order, PositionId position_id=*) except *
-    cpdef void submit_order_list(self, OrderList order_list) except *
+    cpdef void submit_order(self, Order order, PositionId position_id=*, ClientId client_id=*) except *
+    cpdef void submit_order_list(self, OrderList order_list, ClientId client_id=*) except *
     cpdef void modify_order(
         self,
         Order order,
         Quantity quantity=*,
         Price price=*,
         Price trigger_price=*,
+        ClientId client_id = *,
     ) except *
-    cpdef void cancel_order(self, Order order) except *
-    cpdef void cancel_all_orders(self, InstrumentId instrument_id) except *
-    cpdef void flatten_position(self, Position position) except *
-    cpdef void flatten_all_positions(self, InstrumentId instrument_id) except *
+    cpdef void cancel_order(self, Order order, ClientId client_id=*) except *
+    cpdef void cancel_all_orders(self, InstrumentId instrument_id, ClientId client_id=*) except *
+    cpdef void close_position(self, Position position, ClientId client_id=*) except *
+    cpdef void close_all_positions(self, InstrumentId instrument_id, ClientId client_id=*) except *
+    cpdef void query_order(self, Order order, ClientId client_id=*) except *
 
 # -- EGRESS ----------------------------------------------------------------------------------------
 
+    cdef void _send_risk_cmd(self, TradingCommand command) except *
     cdef void _send_exec_cmd(self, TradingCommand command) except *

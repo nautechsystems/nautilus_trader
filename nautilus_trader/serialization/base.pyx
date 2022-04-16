@@ -15,13 +15,17 @@
 
 from typing import Any, Callable, Dict
 
+from nautilus_trader.adapters.binance.common.types import BinanceBar
+from nautilus_trader.adapters.binance.common.types import BinanceTicker
+from nautilus_trader.adapters.ftx.core.types import FTXTicker
+
 from nautilus_trader.common.events.risk cimport TradingStateChanged
 from nautilus_trader.common.events.system cimport ComponentStateChanged
 from nautilus_trader.core.correctness cimport Condition
-from nautilus_trader.model.commands.trading cimport CancelOrder
-from nautilus_trader.model.commands.trading cimport ModifyOrder
-from nautilus_trader.model.commands.trading cimport SubmitOrder
-from nautilus_trader.model.commands.trading cimport SubmitOrderList
+from nautilus_trader.execution.messages cimport CancelOrder
+from nautilus_trader.execution.messages cimport ModifyOrder
+from nautilus_trader.execution.messages cimport SubmitOrder
+from nautilus_trader.execution.messages cimport SubmitOrderList
 from nautilus_trader.model.data.bar cimport Bar
 from nautilus_trader.model.data.tick cimport QuoteTick
 from nautilus_trader.model.data.tick cimport TradeTick
@@ -49,15 +53,15 @@ from nautilus_trader.model.events.position cimport PositionClosed
 from nautilus_trader.model.events.position cimport PositionOpened
 from nautilus_trader.model.instruments.base cimport Instrument
 from nautilus_trader.model.instruments.betting cimport BettingInstrument
-from nautilus_trader.model.instruments.crypto_perp cimport CryptoPerpetual
-from nautilus_trader.model.instruments.currency cimport CurrencySpot
+from nautilus_trader.model.instruments.crypto_future cimport CryptoFuture
+from nautilus_trader.model.instruments.crypto_perpetual cimport CryptoPerpetual
+from nautilus_trader.model.instruments.currency_pair cimport CurrencyPair
 from nautilus_trader.model.instruments.equity cimport Equity
 from nautilus_trader.model.instruments.future cimport Future
 from nautilus_trader.model.instruments.option cimport Option
 
 
 # Default mappings for Nautilus objects
-
 _OBJECT_TO_DICT_MAP: Dict[str, Callable[[None], Dict]] = {
     CancelOrder.__name__: CancelOrder.to_dict_c,
     SubmitOrder.__name__: SubmitOrder.to_dict_c,
@@ -88,8 +92,9 @@ _OBJECT_TO_DICT_MAP: Dict[str, Callable[[None], Dict]] = {
     Equity.__name__: Equity.to_dict_c,
     Future.__name__: Future.to_dict_c,
     Option.__name__: Option.to_dict_c,
+    CurrencyPair.__name__: CurrencyPair.to_dict_c,
     CryptoPerpetual.__name__: CryptoPerpetual.to_dict_c,
-    CurrencySpot.__name__: CurrencySpot.to_dict_c,
+    CryptoFuture.__name__: CryptoFuture.to_dict_c,
     TradeTick.__name__: TradeTick.to_dict_c,
     Ticker.__name__: Ticker.to_dict_c,
     QuoteTick.__name__: QuoteTick.to_dict_c,
@@ -97,6 +102,9 @@ _OBJECT_TO_DICT_MAP: Dict[str, Callable[[None], Dict]] = {
     InstrumentStatusUpdate.__name__: InstrumentStatusUpdate.to_dict_c,
     VenueStatusUpdate.__name__: VenueStatusUpdate.to_dict_c,
     InstrumentClosePrice.__name__: InstrumentClosePrice.to_dict_c,
+    FTXTicker.__name__: FTXTicker.to_dict,
+    BinanceBar.__name__: BinanceBar.to_dict,
+    BinanceTicker.__name__: BinanceTicker.to_dict,
 }
 
 
@@ -131,8 +139,9 @@ _OBJECT_FROM_DICT_MAP: Dict[str, Callable[[Dict], Any]] = {
     Equity.__name__: Equity.from_dict_c,
     Future.__name__: Future.from_dict_c,
     Option.__name__: Option.from_dict_c,
+    CurrencyPair.__name__: CurrencyPair.from_dict_c,
     CryptoPerpetual.__name__: CryptoPerpetual.from_dict_c,
-    CurrencySpot.__name__: CurrencySpot.from_dict_c,
+    CryptoFuture.__name__: CryptoFuture.from_dict_c,
     TradeTick.__name__: TradeTick.from_dict_c,
     Ticker.__name__: Ticker.from_dict_c,
     QuoteTick.__name__: QuoteTick.from_dict_c,
@@ -140,6 +149,9 @@ _OBJECT_FROM_DICT_MAP: Dict[str, Callable[[Dict], Any]] = {
     InstrumentStatusUpdate.__name__: InstrumentStatusUpdate.from_dict_c,
     VenueStatusUpdate.__name__: VenueStatusUpdate.from_dict_c,
     InstrumentClosePrice.__name__: InstrumentClosePrice.from_dict_c,
+    FTXTicker.__name__: FTXTicker.from_dict,
+    BinanceBar.__name__: BinanceBar.from_dict,
+    BinanceTicker.__name__: BinanceTicker.from_dict,
 }
 
 

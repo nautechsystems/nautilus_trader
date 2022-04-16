@@ -26,12 +26,12 @@ from nautilus_trader.backtest.engine import BacktestEngine
 from nautilus_trader.backtest.engine import BacktestEngineConfig
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.logging import Logger
+from nautilus_trader.config import CacheDatabaseConfig
 from nautilus_trader.data.engine import DataEngine
 from nautilus_trader.examples.strategies.ema_cross import EMACross
 from nautilus_trader.examples.strategies.ema_cross import EMACrossConfig
 from nautilus_trader.execution.engine import ExecutionEngine
 from nautilus_trader.infrastructure.cache import RedisCacheDatabase
-from nautilus_trader.infrastructure.config import CacheDatabaseConfig
 from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.currency import Currency
 from nautilus_trader.model.enums import AccountType
@@ -48,9 +48,13 @@ from nautilus_trader.msgbus.bus import MessageBus
 from nautilus_trader.portfolio.portfolio import Portfolio
 from nautilus_trader.risk.engine import RiskEngine
 from nautilus_trader.serialization.msgpack.serializer import MsgPackSerializer
-from nautilus_trader.trading.strategy import TradingStrategy
-from tests.test_kit.mocks import MockStrategy
-from tests.test_kit.stubs import TestStubs
+from nautilus_trader.trading.strategy import Strategy
+from tests.test_kit.mocks.strategies import MockStrategy
+from tests.test_kit.stubs.component import TestComponentStubs
+from tests.test_kit.stubs.data import TestDataStubs
+from tests.test_kit.stubs.events import TestEventStubs
+from tests.test_kit.stubs.execution import TestExecStubs
+from tests.test_kit.stubs.identifiers import TestIdStubs
 
 
 AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy("AUD/USD")
@@ -59,14 +63,14 @@ AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy("AUD/USD")
 # - A Redis instance listening on the default port 6379
 
 
-@pytest.mark.skipif(sys.platform == "win32", reason="Redis not available on windows.")
+@pytest.mark.skipif(sys.platform == "win32", reason="Redis not available on windows")
 class TestRedisCacheDatabase:
     def setup(self):
         # Fixture Setup
         self.clock = TestClock()
         self.logger = Logger(self.clock)
 
-        self.trader_id = TestStubs.trader_id()
+        self.trader_id = TestIdStubs.trader_id()
 
         self.msgbus = MessageBus(
             trader_id=self.trader_id,
@@ -74,7 +78,7 @@ class TestRedisCacheDatabase:
             logger=self.logger,
         )
 
-        self.cache = TestStubs.cache()
+        self.cache = TestComponentStubs.cache()
 
         self.portfolio = Portfolio(
             msgbus=self.msgbus,
@@ -105,7 +109,7 @@ class TestRedisCacheDatabase:
             logger=self.logger,
         )
 
-        self.strategy = TradingStrategy()
+        self.strategy = Strategy()
         self.strategy.register(
             trader_id=self.trader_id,
             portfolio=self.portfolio,
@@ -145,7 +149,7 @@ class TestRedisCacheDatabase:
 
     def test_add_account(self):
         # Arrange
-        account = TestStubs.cash_account()
+        account = TestExecStubs.cash_account()
 
         # Act
         self.database.add_account(account)
@@ -186,7 +190,7 @@ class TestRedisCacheDatabase:
         self.database.add_order(order)
 
         position_id = PositionId("P-1")
-        fill = TestStubs.event_order_filled(
+        fill = TestEventStubs.order_filled(
             order,
             instrument=AUDUSD_SIM,
             position_id=position_id,
@@ -203,7 +207,7 @@ class TestRedisCacheDatabase:
 
     def test_update_account(self):
         # Arrange
-        account = TestStubs.cash_account()
+        account = TestExecStubs.cash_account()
         self.database.add_account(account)
 
         # Act
@@ -227,7 +231,7 @@ class TestRedisCacheDatabase:
         # Assert
         assert True  # No exceptions raised
 
-    def test_update_order_for_working_order(self):
+    def test_update_order_for_open_order(self):
         # Arrange
         order = self.strategy.order_factory.stop_market(
             AUDUSD_SIM.id,
@@ -238,10 +242,10 @@ class TestRedisCacheDatabase:
 
         self.database.add_order(order)
 
-        order.apply(TestStubs.event_order_submitted(order))
+        order.apply(TestEventStubs.order_submitted(order))
         self.database.update_order(order)
 
-        order.apply(TestStubs.event_order_accepted(order))
+        order.apply(TestEventStubs.order_accepted(order))
 
         # Act
         self.database.update_order(order)
@@ -249,7 +253,7 @@ class TestRedisCacheDatabase:
         # Assert
         assert self.database.load_order(order.client_order_id) == order
 
-    def test_update_order_for_completed_order(self):
+    def test_update_order_for_closed_order(self):
         # Arrange
         order = self.strategy.order_factory.market(
             AUDUSD_SIM.id,
@@ -259,13 +263,13 @@ class TestRedisCacheDatabase:
 
         self.database.add_order(order)
 
-        order.apply(TestStubs.event_order_submitted(order))
+        order.apply(TestEventStubs.order_submitted(order))
         self.database.update_order(order)
 
-        order.apply(TestStubs.event_order_accepted(order))
+        order.apply(TestEventStubs.order_accepted(order))
         self.database.update_order(order)
 
-        fill = TestStubs.event_order_filled(
+        fill = TestEventStubs.order_filled(
             order,
             instrument=AUDUSD_SIM,
             last_px=Price.from_str("1.00001"),
@@ -292,14 +296,14 @@ class TestRedisCacheDatabase:
         position_id = PositionId("P-1")
         self.database.add_order(order1)
 
-        order1.apply(TestStubs.event_order_submitted(order1))
+        order1.apply(TestEventStubs.order_submitted(order1))
         self.database.update_order(order1)
 
-        order1.apply(TestStubs.event_order_accepted(order1))
+        order1.apply(TestEventStubs.order_accepted(order1))
         self.database.update_order(order1)
 
         order1.apply(
-            TestStubs.event_order_filled(
+            TestEventStubs.order_filled(
                 order1,
                 instrument=AUDUSD_SIM,
                 position_id=position_id,
@@ -320,13 +324,13 @@ class TestRedisCacheDatabase:
 
         self.database.add_order(order2)
 
-        order2.apply(TestStubs.event_order_submitted(order2))
+        order2.apply(TestEventStubs.order_submitted(order2))
         self.database.update_order(order2)
 
-        order2.apply(TestStubs.event_order_accepted(order2))
+        order2.apply(TestEventStubs.order_accepted(order2))
         self.database.update_order(order2)
 
-        filled = TestStubs.event_order_filled(
+        filled = TestEventStubs.order_filled(
             order2,
             instrument=AUDUSD_SIM,
             position_id=position_id,
@@ -355,7 +359,7 @@ class TestRedisCacheDatabase:
         self.database.add_order(order)
 
         position_id = PositionId("P-1")
-        fill = TestStubs.event_order_filled(
+        fill = TestEventStubs.order_filled(
             order,
             instrument=AUDUSD_SIM,
             position_id=position_id,
@@ -372,7 +376,7 @@ class TestRedisCacheDatabase:
 
     def test_update_strategy(self):
         # Arrange
-        strategy = MockStrategy(TestStubs.bartype_btcusdt_binance_100tick_last())
+        strategy = MockStrategy(TestDataStubs.bartype_btcusdt_binance_100tick_last())
         strategy.register(
             trader_id=self.trader_id,
             portfolio=self.portfolio,
@@ -447,7 +451,7 @@ class TestRedisCacheDatabase:
 
     def test_load_account_when_no_account_in_database_returns_none(self):
         # Arrange
-        account = TestStubs.cash_account()
+        account = TestExecStubs.cash_account()
 
         # Act
         result = self.database.load_account(account.id)
@@ -457,7 +461,7 @@ class TestRedisCacheDatabase:
 
     def test_load_account_when_account_in_database_returns_account(self):
         # Arrange
-        account = TestStubs.cash_account()
+        account = TestExecStubs.cash_account()
         self.database.add_account(account)
 
         # Act
@@ -571,7 +575,7 @@ class TestRedisCacheDatabase:
         self.database.add_order(order)
 
         position_id = PositionId("P-1")
-        fill = TestStubs.event_order_filled(
+        fill = TestEventStubs.order_filled(
             order,
             instrument=AUDUSD_SIM,
             position_id=position_id,
@@ -600,7 +604,7 @@ class TestRedisCacheDatabase:
         self.database.add_order(order)
 
         position_id = PositionId("P-1")
-        fill = TestStubs.event_order_filled(
+        fill = TestEventStubs.order_filled(
             order,
             instrument=AUDUSD_SIM,
             position_id=position_id,
@@ -626,7 +630,7 @@ class TestRedisCacheDatabase:
 
     def test_load_accounts_cache_when_one_account_in_database(self):
         # Arrange
-        account = TestStubs.cash_account()
+        account = TestExecStubs.cash_account()
 
         # Act
         self.database.add_account(account)
@@ -678,10 +682,10 @@ class TestRedisCacheDatabase:
         self.database.add_order(order1)
 
         position_id = PositionId("P-1")
-        order1.apply(TestStubs.event_order_submitted(order1))
-        order1.apply(TestStubs.event_order_accepted(order1))
+        order1.apply(TestEventStubs.order_submitted(order1))
+        order1.apply(TestEventStubs.order_accepted(order1))
         order1.apply(
-            TestStubs.event_order_filled(
+            TestEventStubs.order_filled(
                 order1,
                 instrument=AUDUSD_SIM,
                 position_id=position_id,
@@ -717,7 +721,7 @@ class TestRedisCacheDatabase:
         self.database.add_order(order1)
 
         position1_id = PositionId("P-1")
-        fill = TestStubs.event_order_filled(
+        fill = TestEventStubs.order_filled(
             order1,
             instrument=AUDUSD_SIM,
             position_id=position1_id,
@@ -737,8 +741,8 @@ class TestRedisCacheDatabase:
 
         self.database.add_order(order2)
 
-        order2.apply(TestStubs.event_order_submitted(order2))
-        order2.apply(TestStubs.event_order_accepted(order2))
+        order2.apply(TestEventStubs.order_submitted(order2))
+        order2.apply(TestEventStubs.order_accepted(order2))
 
         self.database.update_order(order2)
 
@@ -751,7 +755,7 @@ class TestRedisCacheDatabase:
         assert self.database.load_position(position1.id) is None
 
 
-@pytest.mark.skipif(sys.platform == "win32", reason="Redis not available on windows.")
+@pytest.mark.skipif(sys.platform == "win32", reason="Redis not available on windows")
 class TestExecutionCacheWithRedisDatabaseTests:
     def setup(self):
         # Fixture Setup
@@ -794,7 +798,7 @@ class TestExecutionCacheWithRedisDatabaseTests:
         # Arrange
         config = EMACrossConfig(
             instrument_id=str(self.usdjpy.id),
-            bar_type=str(TestStubs.bartype_usdjpy_1min_bid()),
+            bar_type=str(TestDataStubs.bartype_usdjpy_1min_bid()),
             trade_size=Decimal(1_000_000),
             fast_ema=10,
             slow_ema=20,

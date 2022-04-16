@@ -13,9 +13,10 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from typing import Dict, List, Optional
+
 from nautilus_trader.common.providers import InstrumentProvider
 from nautilus_trader.model.identifiers import InstrumentId
-from nautilus_trader.model.identifiers import Venue
 
 
 # The 'pragma: no cover' comment excludes a method from test coverage.
@@ -28,9 +29,6 @@ from nautilus_trader.model.identifiers import Venue
 
 # *** THESE PRAGMA: NO COVER COMMENTS MUST BE REMOVED IN ANY IMPLEMENTATION. ***
 
-# It's recommended to have one constant for the venue
-TEMPLATE_VENUE = Venue("TEMPLATE")
-
 
 class TemplateInstrumentProvider(InstrumentProvider):
     """
@@ -38,14 +36,18 @@ class TemplateInstrumentProvider(InstrumentProvider):
     which must be implemented for an integration to be complete.
     """
 
-    async def load_all_async(self) -> None:
+    async def load_all_async(self, filters: Optional[Dict] = None) -> None:
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
-    def load_all(self) -> None:
+    async def load_ids_async(
+        self,
+        instrument_ids: List[InstrumentId],
+        filters: Optional[Dict] = None,
+    ) -> None:
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
-    def load(self, instrument_id: InstrumentId, details: dict) -> None:
+    async def load_async(self, instrument_id: InstrumentId, filters: Optional[Dict] = None):
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
