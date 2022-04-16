@@ -99,6 +99,12 @@ cdef class NautilusKernel:
         The risk engine configuration for the kernel.
     exec_config : Union[ExecEngineConfig, LiveExecEngineConfig]
         The execution engine configuration for the kernel.
+    persistence_config : PersistenceConfig, optional
+        The configuration for enabling persistence via feather files.
+    actor_configs : List[ImportableActorConfig], optional
+        The list of importable actor configs.
+    strategy_configs : List[ImportableStrategyConfig], optional
+        The list of importable strategy configs.
     loop : AbstractEventLoop, optional
         The event loop for the kernel.
     loop_sig_callback : Callable, optional
@@ -136,8 +142,8 @@ cdef class NautilusKernel:
         risk_config not None: Union[RiskEngineConfig, LiveRiskEngineConfig],
         exec_config not None: Union[ExecEngineConfig, LiveExecEngineConfig],
         persistence_config: Optional[PersistenceConfig] = None,
-        actor_configs: List[ImportableActorConfig] = None,
-        strategy_configs: List[ImportableStrategyConfig] = None,
+        actor_configs: Optional[List[ImportableActorConfig]] = None,
+        strategy_configs: Optional[List[ImportableStrategyConfig]] = None,
         loop: Optional[AbstractEventLoop] = None,
         loop_sig_callback: Optional[Callable] = None,
         loop_debug: bool = False,

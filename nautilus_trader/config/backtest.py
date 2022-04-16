@@ -227,7 +227,7 @@ class BacktestEngineConfig(NautilusKernelConfig):
         The live risk engine configuration.
     exec_engine : ExecEngineConfig, optional
         The live execution engine configuration.
-    persistence : LivePersistenceConfig, optional
+    persistence : PersistenceConfig, optional
         The configuration for enabling persistence via feather files.
     data_clients : dict[str, LiveDataClientConfig], optional
         The data client configurations.
