@@ -137,7 +137,7 @@ class BacktestNode:
         engine = BacktestEngine(config=config)
         self._engines[run_config_id] = engine
 
-        # Add instruments
+        # Add instruments (must be added prior to their venues)
         for config in data_configs:
             if is_nautilus_class(config.data_type):
                 instruments = config.catalog().instruments(
@@ -190,18 +190,6 @@ class BacktestNode:
             venue_configs=venue_configs,
             data_configs=data_configs,
         )
-
-        # Setup persistence
-        if engine_config is not None and engine_config.persistence is not None:
-            catalog = engine_config.persistence.as_catalog()
-            # Manually write instruments
-            instrument_ids = set(filter(None, (data.instrument_id for data in data_configs)))
-            for writer in engine.kernel.persistence_writers:
-                for instrument in catalog.instruments(
-                    instrument_ids=list(instrument_ids),
-                    as_nautilus=True,
-                ):
-                    writer.write(instrument)
 
         # Run backtest
         if batch_size_bytes is not None:
