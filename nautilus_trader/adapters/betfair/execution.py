@@ -223,8 +223,8 @@ class BetfairExecutionClient(LiveExecutionClient):
     async def generate_order_status_report(
         self,
         instrument_id: InstrumentId,
-        client_order_id: ClientOrderId,
-        venue_order_id: VenueOrderId,
+        venue_order_id: VenueOrderId = None,
+        client_order_id: ClientOrderId = None,
     ) -> Optional[OrderStatusReport]:
         """
         Generate an order status report for the given venue order ID.
