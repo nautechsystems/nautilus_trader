@@ -1,15 +1,15 @@
 # Quick Start
 
-This section explains how to get up and running with NautilusTrader by running some backtests on 
-FX data. The Nautilus maintainers have pre-loaded some existing data into the standard Nautilus storage 
+This guide explains how to get up and running with NautilusTrader backtesting with some
+FX data. The Nautilus maintainers have pre-loaded some test data using the standard Nautilus persistence 
 format (Parquet) for this guide.
 
-For more details on how to load other data into Nautilus, see [Backtest Example](../user_guide/backtest_example.md).
+For more details on how to load data into Nautilus, see [Backtest Example](../user_guide/backtest_example.md).
 
 
 ## Getting the sample data
 
-We have prepared a script to load sample data into the Nautilus format for use with this example. 
+To save time, we have prepared a script to load sample data into the Nautilus format for use with this example. 
 First, download and load the data by running the next cell (this should take ~ 1-2 mins):
 
 ```python
@@ -125,33 +125,28 @@ class MACDStrategy(Strategy):
             self.submit_order(order)
 ```
 
-<!-- #region pycharm={"name": "#%% md\n"} -->
 ## Configuring Backtests
 
-Now that we have a trading strategy and data, we can run a backtest! Nautilus uses a `BacktestNode` 
-to run backtests, and requires some setup. This may seem a little complex at first, 
+Now that we have a trading strategy and data, we can begin to configure a backtest run! Nautilus uses a `BacktestNode` 
+to orchestrate backtest runs, which requires some setup. This may seem a little complex at first, 
 however this is necessary for the capabilities that Nautilus strives for.
 
-To configure a `BacktestNode`, we create an instance of a `BacktestRunConfig`, configuring the 
+To configure a `BacktestNode`, we first need to create an instance of a `BacktestRunConfig`, configuring the 
 following (minimal) aspects of the backtest:
 
-- `engine` - The engine for the backtest which will also contain our strategies
+- `engine` - The engine for the backtest representing our core system, which will also contain our strategies
 - `venues` - The simulated venues (exchanges or brokers) available in the backtest
 - `data` - The input data we would like to perform the backtest on
 
 There are many more configurable features which will be described later in the docs, for now this will get us up and running.
-<!-- #endregion -->
-
-<!-- #region pycharm={"name": "#%% md\n"} -->
 
 ## Venue
 
-First, we create a venue. For this example we will create a simulated FX ECN venue. 
-A venue needs a name which acts as an ID, as well as some basic configuration; 
-the account type (cash vs margin), an optional base currency, and starting balance.
-<!-- #endregion -->
+First, we create a venue configuration. For this example we will create a simulated FX ECN. 
+A venue needs a name which acts as an ID (in this case `SIM`), as well as some basic configuration, e.g. 
+the account type (`CASH` vs `MARGIN`), an optional base currency, and starting balance(s).
 
-```python jupyter={"outputs_hidden": false} pycharm={"name": "#%%\n"}
+```python
 from nautilus_trader.config import BacktestVenueConfig
 
 venue = BacktestVenueConfig(
@@ -163,18 +158,15 @@ venue = BacktestVenueConfig(
 )
 ```
 
-<!-- #region -->
 ## Instruments
 
 Second, we need to know about the instruments that we would like to load data for, we can use the `DataCatalog` for this:
-<!-- #endregion -->
 
 ```python
 instruments = catalog.instruments(as_nautilus=True)
 instruments
 ```
 
-<!-- #region jupyter={"outputs_hidden": false} pycharm={"name": "#%% md\n"} -->
 ## Data
 
 Next, we need to configure the data for the backtest. Nautilus is built to be very flexible when it 
@@ -182,20 +174,17 @@ comes to loading data for backtests, however this also means some configuration 
 
 For each tick type (and instrument), we add a `BacktestDataConfig`. In this instance we are simply 
 adding the `QuoteTick`(s) for our EUR/USD instrument:
-<!-- #endregion -->
 
-```python jupyter={"outputs_hidden": false} pycharm={"name": "#%%\n"}
-from nautilus_trader.model.data.tick import QuoteTick
+```python
 from nautilus_trader.config import BacktestDataConfig
+from nautilus_trader.model.data.tick import QuoteTick
 
-data = [
-    BacktestDataConfig(
-        catalog_path=str(catalog.path),
-        data_cls=QuoteTick,
-        instrument_id=str(instruments[0].id),
-        end_time="2020-01-05",
-    )
-]
+data = BacktestDataConfig(
+    catalog_path=str(catalog.path),
+    data_cls=QuoteTick,
+    instrument_id=str(instruments[0].id),
+    end_time="2020-01-05",
+)
 ```
 
 ## Strategies
@@ -214,37 +203,44 @@ macd_strategy = MACDStrategy(config=macd_config)
 
 ## Engine
 
-Then, we need a `BacktestEngineConfig` which configures the log level and other components, 
-however it's also fine to use the defaults:
+Then, we need a `BacktestEngineConfig` which represents the configuration of our core trading system.
+Here we need to pass our trading strategies, we can also adjust the log level 
+and configure many other components (however, it's also fine to use the defaults):
 
 ```python
 from nautilus_trader.config import BacktestEngineConfig
 
 engine = BacktestEngineConfig(
     strategies=[macd_strategy],
-    log_level="ERROR",
-) # Lower to `INFO` to see more logging about orders, events, etc.
+    log_level="ERROR",  # Lower to `INFO` to see more logging about orders, events, etc.
+)
 ```
 
 ## Running a backtest
 
-We can now pass our various config pieces to the `BacktestRunConfig` - this object now contains the 
-full configuration for our backtest, we are ready to run some backtests!
+We can now pass our various config pieces to the `BacktestRunConfig`. This object now contains the 
+full configuration for our backtest.
 
-The `BacktestNode` class _actually_ runs the backtest. The reason for this separation between 
-configuration and execution is the `BacktestNode` allows running multiple configurations (different 
-parameters or batches of data).
 
 ```python
-from nautilus_trader.backtest.node import BacktestNode
 from nautilus_trader.config import BacktestRunConfig
 
 
 config = BacktestRunConfig(
     engine=engine,
     venues=[venue],
-    data=data,
+    data=[data],
 )
+
+```
+
+The `BacktestNode` class will orchestrate the backtest run. The reason for this separation between 
+configuration and execution is the `BacktestNode` allows running multiple configurations (different 
+parameters or batches of data). We are now ready to run some backtests!
+
+```python
+from nautilus_trader.backtest.node import BacktestNode
+
 
 node = BacktestNode(configs=[config])
 
@@ -252,7 +248,22 @@ node = BacktestNode(configs=[config])
 results: List[BacktestResult] = node.run()
 ```
 
+Now that the run is complete, we can also directly query for the `BacktestEngine`(s) used internally by the `BacktestNode`
+by using the run configs ID. The engine(s) can provide additional reports and information.
+
 ```python
-results[0].cache.orders()[:5]
-results[0].cache.positions()[:5]
+from nautilus_trader.backtest.engine import BacktestEngine
+from nautilus_trader.model.identifiers import Venue
+
+engine: BacktestEngine = node.get_engine(config.id)
+
+engine.trader.generate_account_report(Venue("SIM"))
+```
+
+```python
+engine.trader.generate_order_fills_report()
+```
+
+```python
+engine.trader.generate_positions_report()
 ```
