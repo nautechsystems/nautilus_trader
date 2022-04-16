@@ -256,6 +256,10 @@ class TemplateLiveMarketDataClient(LiveMarketDataClient):
 
     # -- REQUESTS ----------------------------------------------------------------------------------
 
+    def request_instrument(self, instrument_id: InstrumentId, correlation_id: UUID4):
+        """Abstract method (implement in subclass)."""
+        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
+
     def request_quote_ticks(
         self,
         instrument_id: InstrumentId,
