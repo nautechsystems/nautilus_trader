@@ -35,6 +35,7 @@ from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import BookTypeParser
 from nautilus_trader.model.enums import OMSType
 from nautilus_trader.model.identifiers import ClientId
+from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.orderbook.data import OrderBookData
@@ -63,10 +64,12 @@ class BacktestNode:
         If `configs` contains a type other than `BacktestRunConfig`.
     """
 
-    def __init__(self, configs: List[BacktestRunConfig] = None):
+    def __init__(self, configs: List[BacktestRunConfig]):
         PyCondition.not_none(configs, "configs")
         PyCondition.not_empty(configs, "configs")
         PyCondition.list_type(configs, BacktestRunConfig, "configs")
+
+        self._validate_configs(configs)
 
         # Configuration
         self._configs: List[BacktestRunConfig] = configs
@@ -125,6 +128,22 @@ class BacktestNode:
             results.append(result)
 
         return results
+
+    def _validate_configs(self, configs: List[BacktestRunConfig]):
+        venue_ids: List[Venue] = []
+        for config in configs:
+            venue_ids += [Venue(c.name) for c in config.venues]
+
+        for config in configs:
+            for data_config in config.data:
+                if data_config.instrument_id is None:
+                    continue  # No instrument associated with data
+                instrument_id: InstrumentId = InstrumentId.from_str(data_config.instrument_id)
+                if instrument_id.venue not in venue_ids:
+                    raise ValueError(
+                        f"Venue '{instrument_id.venue}' for {instrument_id} "
+                        f"does not have a `BacktestVenueConfig`.",
+                    )
 
     def _create_engine(
         self,

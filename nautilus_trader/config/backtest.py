@@ -257,16 +257,24 @@ class BacktestEngineConfig(NautilusKernelConfig):
         return tuple(self.dict().items())
 
 
-# Required for passing `Strategy` to `BacktestRunConfig.strategies`
-class _ArbitraryTypes:
-    arbitrary_types_allowed = True
-
-
-@pydantic.dataclasses.dataclass(config=_ArbitraryTypes)
+@pydantic.dataclasses.dataclass()
 class BacktestRunConfig(Partialable):
     """
-    Represents the configuration for one specific backtest run (a single set of
-    data / strategies / parameters).
+    Represents the configuration for one specific backtest run.
+
+    This includes a backtest engine with its actors and strategies, with the
+    external inputs of venues and data.
+
+    Parameters
+    ----------
+    engine : BacktestEngineConfig, optional
+        The backtest engine configuration (represents the core system kernel).
+    venues : List[BacktestVenueConfig]
+        The venue configurations for the backtest run.
+    data : List[BacktestDataConfig]
+        The data configurations for the backtest run.
+    batch_size_bytes : optional
+        The batch block size in bytes (will then run in streaming mode).
     """
 
     engine: Optional[BacktestEngineConfig] = None
