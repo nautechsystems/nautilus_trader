@@ -69,7 +69,7 @@ class TestPersistenceStreaming:
             instrument_id=instrument.id.value,
         )
         run_config.engine.persistence.flush_interval = 5000
-        node = BacktestNode()
+        node = BacktestNode(configs=[run_config])
 
         # Act
         backtest_result = node.run(run_configs=[run_config])
@@ -125,8 +125,8 @@ class TestPersistenceStreaming:
         )
 
         # Act
-        node = BacktestNode()
-        r = node.run([run_config])
+        node = BacktestNode(configs=[run_config])
+        r = node.run()
 
         # Assert
         result = self.catalog.read_backtest(

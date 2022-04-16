@@ -119,8 +119,8 @@ class TestPersistenceBatching:
         )
 
         # Act
-        node = BacktestNode()
-        node.run([run_config])
+        node = BacktestNode(configs=[run_config])
+        node.run()
 
         # Assert
         assert node
