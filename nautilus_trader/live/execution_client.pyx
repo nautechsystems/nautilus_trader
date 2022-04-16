@@ -140,8 +140,8 @@ cdef class LiveExecutionClient(ExecutionClient):
     async def generate_order_status_report(
         self,
         instrument_id: InstrumentId,
-        client_order_id: ClientOrderId,
-        venue_order_id: VenueOrderId,
+        client_order_id: Optional[ClientOrderId] = None,
+        venue_order_id: Optional[VenueOrderId] = None,
     ):
         """
         Generate an order status report for the given order identifier parameter(s).
