@@ -345,10 +345,10 @@ class NautilusKernelConfig(pydantic.BaseModel):
 
     Parameters
     ----------
-    environment : str
+    environment : Environment { ``BACKTEST``, ``SANDBOX``, ``LIVE`` }
         The kernel environment context.
     trader_id : str
-        The trader ID for the node (must be a name and ID tag separated by a hyphen).
+        The trader ID for the kernel (must be a name and ID tag separated by a hyphen).
     cache : CacheConfig, optional
         The cache configuration.
     cache_database : CacheDatabaseConfig, optional
@@ -359,7 +359,7 @@ class NautilusKernelConfig(pydantic.BaseModel):
         The live risk engine configuration.
     exec_engine : ExecEngineConfig, optional
         The live execution engine configuration.
-    persistence : LivePersistenceConfig, optional
+    persistence : PersistenceConfig, optional
         The configuration for enabling persistence via feather files.
     data_clients : dict[str, LiveDataClientConfig], optional
         The data client configurations.

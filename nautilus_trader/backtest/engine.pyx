@@ -293,7 +293,7 @@ cdef class BacktestEngine:
         ValueError
             If `data` is empty.
         ValueError
-            If `instrument_id` is not found in the cache.
+            If `instrument_id` for the data is not found in the cache.
 
         """
         Condition.not_empty(data, "data")
@@ -329,6 +329,8 @@ cdef class BacktestEngine:
         ------
         ValueError
             If `data` is empty.
+        ValueError
+            If `instrument_id` for the data is not found in the cache.
 
         """
         Condition.not_empty(data, "data")
@@ -364,11 +366,13 @@ cdef class BacktestEngine:
         ------
         ValueError
             If `data` is empty.
+        ValueError
+            If `instrument_id` for the data is not found in the cache.
 
         """
         Condition.not_empty(data, "data")
         cdef Data first = data[0]
-        assert hasattr(first, 'instrument_id'), "added data must have an instrument_id property"
+        assert hasattr(first, 'instrument_id'), "added data must have an `instrument_id` property"
         Condition.true(
             first.instrument_id in self.kernel.cache.instrument_ids(),
             f"Instrument {first.instrument_id} for the given data not found in the cache. "
@@ -404,7 +408,7 @@ cdef class BacktestEngine:
         ValueError
             If `data` is empty.
         ValueError
-            If `instrument_id` is not found in the cache.
+            If `instrument_id` for the data is not found in the cache.
 
         """
         Condition.not_empty(data, "data")

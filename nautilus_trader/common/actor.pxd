@@ -134,6 +134,7 @@ cdef class Actor(Component):
 # -- REQUESTS --------------------------------------------------------------------------------------
 
     cpdef void request_data(self, ClientId client_id, DataType data_type) except *
+    cpdef void request_instrument(self, InstrumentId instrument_id, ClientId client_id=*) except *
     cpdef void request_quote_ticks(
         self,
         InstrumentId instrument_id,
@@ -175,6 +176,7 @@ cdef class Actor(Component):
     cpdef void handle_event(self, Event event) except *
 
     cpdef void _handle_data_response(self, DataResponse response) except *
+    cpdef void _handle_instrument_response(self, DataResponse response) except *
     cpdef void _handle_quote_ticks_response(self, DataResponse response) except *
     cpdef void _handle_trade_ticks_response(self, DataResponse response) except *
     cpdef void _handle_bars_response(self, DataResponse response) except *
