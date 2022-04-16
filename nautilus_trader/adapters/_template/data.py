@@ -129,6 +129,7 @@ class TemplateLiveMarketDataClient(LiveMarketDataClient):
     | unsubscribe_instrument_status_updates | optional    |
     | unsubscribe_instrument_close_prices   | optional    |
     +---------------------------------------+-------------+
+    | request_instrument                    | optional    |
     | request_quote_ticks                   | optional    |
     | request_trade_ticks                   | optional    |
     | request_bars                          | optional    |
