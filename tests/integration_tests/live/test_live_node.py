@@ -14,16 +14,69 @@
 # -------------------------------------------------------------------------------------------------
 
 import asyncio
-import json
 
+import orjson
 import pytest
 
 from nautilus_trader.adapters.betfair.factories import BetfairLiveDataClientFactory
 from nautilus_trader.adapters.betfair.factories import BetfairLiveExecClientFactory
+from nautilus_trader.adapters.binance.factories import BinanceLiveDataClientFactory
+from nautilus_trader.adapters.binance.factories import BinanceLiveExecClientFactory
+from nautilus_trader.backtest.data.providers import TestInstrumentProvider
 from nautilus_trader.config import CacheDatabaseConfig
 from nautilus_trader.config import TradingNodeConfig
 from nautilus_trader.live.node import TradingNode
 from nautilus_trader.model.identifiers import StrategyId
+
+
+RAW_CONFIG = orjson.dumps(
+    {
+        "environment": "live",
+        "trader_id": "Test-111",
+        "log_level": "INFO",
+        "exec_engine": {
+            "reconciliation_lookback_mins": 1440,
+        },
+        "data_clients": {
+            "BINANCE": {
+                "factory_path": "nautilus_trader.adapters.binance.factories:BinanceLiveDataClientFactory",
+                "config_path": "nautilus_trader.adapters.binance.config:BinanceDataClientConfig",
+                "config": {
+                    "account_type": "FUTURES_USDT",
+                    "instrument_provider": {"load_all": True},
+                },
+            }
+        },
+        "exec_clients": {
+            "BINANCE": {
+                "factory_path": "nautilus_trader.adapters.binance.factories:BinanceLiveExecClientFactory",
+                "config_path": "nautilus_trader.adapters.binance.config:BinanceExecClientConfig",
+                "config": {
+                    "account_type": "FUTURES_USDT",
+                    "instrument_provider": {"load_all": True},
+                },
+            }
+        },
+        "timeout_connection": 5.0,
+        "timeout_reconciliation": 5.0,
+        "timeout_portfolio": 5.0,
+        "timeout_disconnection": 5.0,
+        "timeout_post_stop": 2.0,
+        "strategies": [
+            {
+                "strategy_path": "nautilus_trader.examples.strategies.volatility_market_maker:VolatilityMarketMaker",
+                "config_path": "nautilus_trader.examples.strategies.volatility_market_maker:VolatilityMarketMakerConfig",
+                "config": {
+                    "instrument_id": "ETHUSDT-PERP.BINANCE",
+                    "bar_type": "ETHUSDT-PERP.BINANCE-1-MINUTE-LAST-EXTERNAL",
+                    "atr_period": "20",
+                    "atr_multiple": "6.0",
+                    "trade_size": "0.01",
+                },
+            }
+        ],
+    }
+)
 
 
 class TestTradingNodeConfiguration:
@@ -45,57 +98,8 @@ class TestTradingNodeConfiguration:
         assert node is not None
 
     def test_node_config_from_raw(self):
-        # Arrange
-        raw = json.dumps(
-            {
-                "environment": "live",
-                "trader_id": "Test-111",
-                "log_level": "INFO",
-                "exec_engine": {
-                    "reconciliation_lookback_mins": 1440,
-                },
-                "data_clients": {
-                    "BINANCE": {
-                        "factory_path": "nautilus_trader.adapters.binance.factories:BinanceLiveDataClientFactory",
-                        "config_path": "nautilus_trader.adapters.binance.config:BinanceDataClientConfig",
-                        "config": {
-                            "account_type": "FUTURES_USDT",
-                            "instrument_provider": {"load_all": True},
-                        },
-                    }
-                },
-                "exec_clients": {
-                    "BINANCE": {
-                        "factory_path": "nautilus_trader.adapters.binance.factories:BinanceLiveExecClientFactory",
-                        "config_path": "nautilus_trader.adapters.binance.config:BinanceExecClientConfig",
-                        "config": {
-                            "account_type": "FUTURES_USDT",
-                            "instrument_provider": {"load_all": True},
-                        },
-                    }
-                },
-                "timeout_connection": 5.0,
-                "timeout_reconciliation": 5.0,
-                "timeout_portfolio": 5.0,
-                "timeout_disconnection": 5.0,
-                "timeout_post_stop": 2.0,
-                "strategies": [
-                    {
-                        "strategy_path": "nautilus_trader.examples.strategies.volatility_market_maker:VolatilityMarketMaker",
-                        "config_path": "nautilus_trader.examples.strategies.volatility_market_maker:VolatilityMarketMakerConfig",
-                        "config": {
-                            "instrument_id": "ETHUSDT-PERP.BINANCE",
-                            "bar_type": "ETHUSDT-PERP.BINANCE-1-MINUTE-LAST-EXTERNAL",
-                            "atr_period": "20",
-                            "atr_multiple": "6.0",
-                            "trade_size": "0.01",
-                        },
-                    }
-                ],
-            }
-        )
-        # Act
-        config = TradingNodeConfig.parse_raw(raw)
+        # Arrange, Act
+        config = TradingNodeConfig.parse_raw(RAW_CONFIG)
         node = TradingNode(config)
 
         # Assert
@@ -104,10 +108,6 @@ class TestTradingNodeConfiguration:
 
 
 class TestTradingNodeOperation:
-    def setup(self):
-        # Fixture Setup
-        self.node = TradingNode()
-
     def test_get_event_loop_returns_a_loop(self):
         # Arrange
         node = TradingNode()
@@ -121,36 +121,47 @@ class TestTradingNodeOperation:
     def test_build_called_twice_raises_runtime_error(self):
         # Arrange, # Act
         with pytest.raises(RuntimeError):
-            self.node.build()
-            self.node.build()
+            node = TradingNode()
+            node.build()
+            node.build()
 
     def test_start_when_not_built_raises_runtime_error(self):
         # Arrange, # Act
         with pytest.raises(RuntimeError):
-            self.node.start()
+            node = TradingNode()
+            node.start()
 
     def test_add_data_client_factory(self):
-        # Arrange, # Act
-        self.node.add_data_client_factory("BETFAIR", BetfairLiveDataClientFactory)
-        self.node.build()
+        # Arrange
+        node = TradingNode()
+
+        # Act
+        node.add_data_client_factory("BETFAIR", BetfairLiveDataClientFactory)
+        node.build()
 
         # TODO(cs): Assert existence of client
 
     def test_add_exec_client_factory(self):
-        # Arrange, # Act
-        self.node.add_exec_client_factory("BETFAIR", BetfairLiveExecClientFactory)
-        self.node.build()
+        # Arrange
+        node = TradingNode()
+
+        # Act
+        node.add_exec_client_factory("BETFAIR", BetfairLiveExecClientFactory)
+        node.build()
 
         # TODO(cs): Assert existence of client
 
     @pytest.mark.asyncio
     async def test_build_with_multiple_clients(self):
-        # Arrange, # Act
-        self.node.add_data_client_factory("BETFAIR", BetfairLiveDataClientFactory)
-        self.node.add_exec_client_factory("BETFAIR", BetfairLiveExecClientFactory)
-        self.node.build()
+        # Arrange
+        node = TradingNode()
 
-        self.node.start()
+        # Act
+        node.add_data_client_factory("BETFAIR", BetfairLiveDataClientFactory)
+        node.add_exec_client_factory("BETFAIR", BetfairLiveExecClientFactory)
+        node.build()
+
+        node.start()
         await asyncio.sleep(1)
 
         # assert self.node.kernel.data_engine.registered_clients
@@ -159,60 +170,74 @@ class TestTradingNodeOperation:
     @pytest.mark.asyncio
     async def test_register_log_sink(self):
         # Arrange
+        node = TradingNode()
+
         sink = []
 
         # Act
-        self.node.kernel.add_log_sink(sink.append)
-        self.node.build()
+        node.kernel.add_log_sink(sink.append)
+        node.build()
 
-        self.node.start()
+        node.start()
         await asyncio.sleep(1)
 
         # Assert: Log record received
-        assert sink[-1]["trader_id"] == self.node.trader_id.value
-        assert sink[-1]["machine_id"] == self.node.machine_id
-        assert sink[-1]["instance_id"] == self.node.instance_id.value
+        assert sink[-1]["trader_id"] == node.trader_id.value
+        assert sink[-1]["machine_id"] == node.machine_id
+        assert sink[-1]["instance_id"] == node.instance_id.value
 
     @pytest.mark.asyncio
     async def test_start(self):
         # Arrange
-        self.node.build()
+        node = TradingNode()
+        node.build()
 
         # Act
-        self.node.start()
+        node.start()
         await asyncio.sleep(2)
 
         # Assert
-        assert self.node.trader.is_running
+        assert node.trader.is_running
 
     @pytest.mark.asyncio
     async def test_stop(self):
         # Arrange
-        self.node.build()
-        self.node.start()
+        node = TradingNode()
+        node.build()
+        node.start()
         await asyncio.sleep(2)  # Allow node to start
 
         # Act
-        self.node.stop()
+        node.stop()
         await asyncio.sleep(3)  # Allow node to stop
 
         # Assert
-        assert self.node.trader.is_stopped
+        assert node.trader.is_stopped
 
-    @pytest.mark.skip(reason="refactor TradingNode coroutines")
+    @pytest.mark.skip(reason="setup sandbox environment")
     @pytest.mark.asyncio
-    async def test_dispose(self):
+    async def test_dispose(self, monkeypatch):
         # Arrange
-        self.node.build()
-        self.node.start()
+        monkeypatch.setenv("BINANCE_FUTURES_API_KEY", "SOME_API_KEY")
+        monkeypatch.setenv("BINANCE_FUTURES_API_SECRET", "SOME_API_SECRET")
+
+        config = TradingNodeConfig.parse_raw(RAW_CONFIG)
+        node = TradingNode(config)
+        node.add_data_client_factory("BINANCE", BinanceLiveDataClientFactory)
+        node.add_exec_client_factory("BINANCE", BinanceLiveExecClientFactory)
+
+        node.build()
+        node.kernel.cache.add_instrument(TestInstrumentProvider.ethusdt_perp_binance())
+
+        node.start()
         await asyncio.sleep(2)  # Allow node to start
 
-        self.node.stop()
+        node.stop()
         await asyncio.sleep(2)  # Allow node to stop
 
         # Act
-        self.node.dispose()
+        node.dispose()
         await asyncio.sleep(1)  # Allow node to dispose
 
         # Assert
-        assert self.node.trader.is_disposed
+        assert node.trader.is_disposed
