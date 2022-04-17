@@ -128,3 +128,9 @@ class PortfolioStatistic:
 
         """
         pass  # Override in implementation
+
+    def _check_valid_returns(self, returns: pd.Series) -> bool:
+        if returns is None or returns.empty or returns.isnull().all():
+            return False
+        else:
+            return True
