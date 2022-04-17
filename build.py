@@ -41,7 +41,8 @@ if platform.system() == "Windows":
     os.environ["LDSHARED"] = "clang -shared"
     # https://docs.microsoft.com/en-US/cpp/error-messages/tool-errors/linker-tools-error-lnk1181?view=msvc-170&viewFallbackFrom=vs-2019
     target_dir = os.path.join(os.getcwd(), "nautilus_core", "target", "release")
-    os.environ["LIBPATH"] = os.environ.get("LIBPATH", "") + f":{target_dir}"
+    libs_dir = os.path.join(os.getcwd(), "nautilus_core", "lib")
+    os.environ["LIBPATH"] = os.environ.get("LIBPATH", "") + f":{target_dir}:{libs_dir}"
     os.environ["RUSTFLAGS"] = "-C target-feature=+crt-static"
     RUST_LIB_PFX = ""
     RUST_LIB_EXT = "lib"
