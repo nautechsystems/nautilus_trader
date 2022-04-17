@@ -62,19 +62,19 @@ cdef class DataEngine(Component):
     cpdef bint check_connected(self) except *
     cpdef bint check_disconnected(self) except *
 
-# -- REGISTRATION ----------------------------------------------------------------------------------
+# -- REGISTRATION ---------------------------------------------------------------------------------
 
     cpdef void register_client(self, DataClient client) except *
     cpdef void register_default_client(self, DataClient client) except *
     cpdef void register_venue_routing(self, DataClient client, Venue venue) except *
     cpdef void deregister_client(self, DataClient client) except *
 
-# -- ABSTRACT METHODS ------------------------------------------------------------------------------
+# -- ABSTRACT METHODS -----------------------------------------------------------------------------
 
     cpdef void _on_start(self) except *
     cpdef void _on_stop(self) except *
 
-# -- SUBSCRIPTIONS ---------------------------------------------------------------------------------
+# -- SUBSCRIPTIONS --------------------------------------------------------------------------------
 
     cpdef list subscribed_generic_data(self)
     cpdef list subscribed_instruments(self)
@@ -87,14 +87,14 @@ cdef class DataEngine(Component):
     cpdef list subscribed_instrument_status_updates(self)
     cpdef list subscribed_instrument_close_prices(self)
 
-# -- COMMANDS --------------------------------------------------------------------------------------
+# -- COMMANDS -------------------------------------------------------------------------------------
 
     cpdef void execute(self, DataCommand command) except *
     cpdef void process(self, Data data) except *
     cpdef void request(self, DataRequest request) except *
     cpdef void response(self, DataResponse response) except *
 
-# -- COMMAND HANDLERS ------------------------------------------------------------------------------
+# -- COMMAND HANDLERS -----------------------------------------------------------------------------
 
     cdef void _execute_command(self, DataCommand command) except *
     cdef void _handle_subscribe(self, DataClient client, Subscribe command) except *
@@ -119,7 +119,7 @@ cdef class DataEngine(Component):
     cdef void _handle_unsubscribe_data(self, DataClient client, DataType data_type) except *
     cdef void _handle_request(self, DataRequest request) except *
 
-# -- DATA HANDLERS ---------------------------------------------------------------------------------
+# -- DATA HANDLERS --------------------------------------------------------------------------------
 
     cdef void _handle_data(self, Data data) except *
     cdef void _handle_instrument(self, Instrument instrument) except *
@@ -132,7 +132,7 @@ cdef class DataEngine(Component):
     cdef void _handle_status_update(self, StatusUpdate data) except *
     cdef void _handle_close_price(self, InstrumentClosePrice data) except *
 
-# -- RESPONSE HANDLERS -----------------------------------------------------------------------------
+# -- RESPONSE HANDLERS ----------------------------------------------------------------------------
 
     cdef void _handle_response(self, DataResponse response) except *
     cdef void _handle_instruments(self, list instruments) except *
@@ -140,7 +140,7 @@ cdef class DataEngine(Component):
     cdef void _handle_trade_ticks(self, list ticks) except *
     cdef void _handle_bars(self, list bars, Bar partial) except *
 
-# -- INTERNAL --------------------------------------------------------------------------------------
+# -- INTERNAL -------------------------------------------------------------------------------------
 
     cpdef void _internal_update_instruments(self, list instruments) except *
     cpdef void _maintain_order_book(self, OrderBookData data) except *

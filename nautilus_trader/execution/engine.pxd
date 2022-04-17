@@ -60,7 +60,7 @@ cdef class ExecutionEngine(Component):
     cpdef bint check_disconnected(self) except *
     cpdef bint check_residuals(self) except *
 
-# -- REGISTRATION ----------------------------------------------------------------------------------
+# -- REGISTRATION ---------------------------------------------------------------------------------
 
     cpdef void register_client(self, ExecutionClient client) except *
     cpdef void register_default_client(self, ExecutionClient client) except *
@@ -68,23 +68,23 @@ cdef class ExecutionEngine(Component):
     cpdef void register_oms_type(self, Strategy strategy) except *
     cpdef void deregister_client(self, ExecutionClient client) except *
 
-# -- ABSTRACT METHODS ------------------------------------------------------------------------------
+# -- ABSTRACT METHODS -----------------------------------------------------------------------------
 
     cpdef void _on_start(self) except *
     cpdef void _on_stop(self) except *
 
-# -- INTERNAL --------------------------------------------------------------------------------------
+# -- INTERNAL -------------------------------------------------------------------------------------
 
     cdef void _set_position_id_counts(self) except *
 
-# -- COMMANDS --------------------------------------------------------------------------------------
+# -- COMMANDS -------------------------------------------------------------------------------------
 
     cpdef void load_cache(self) except *
     cpdef void execute(self, TradingCommand command) except *
     cpdef void process(self, OrderEvent event) except *
     cpdef void flush_db(self) except *
 
-# -- COMMAND HANDLERS ------------------------------------------------------------------------------
+# -- COMMAND HANDLERS -----------------------------------------------------------------------------
 
     cdef void _execute_command(self, TradingCommand command) except *
     cdef void _handle_submit_order(self, ExecutionClient client, SubmitOrder command) except *
@@ -94,7 +94,7 @@ cdef class ExecutionEngine(Component):
     cdef void _handle_cancel_all_orders(self, ExecutionClient client, CancelAllOrders command) except *
     cdef void _handle_query_order(self, ExecutionClient client, QueryOrder command) except *
 
-# -- EVENT HANDLERS --------------------------------------------------------------------------------
+# -- EVENT HANDLERS -------------------------------------------------------------------------------
 
     cdef void _handle_event(self, OrderEvent event) except *
     cdef void _apply_event_to_order(self, Order order, OrderEvent event) except *

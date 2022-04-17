@@ -122,7 +122,7 @@ cdef class Portfolio(PortfolioFacade):
 
         self.initialized = False
 
-# -- COMMANDS --------------------------------------------------------------------------------------
+# -- COMMANDS -------------------------------------------------------------------------------------
 
     cpdef void initialize_orders(self) except *:
         """
@@ -522,7 +522,7 @@ cdef class Portfolio(PortfolioFacade):
 
         self._log.info("Reset.")
 
-# -- QUERIES ---------------------------------------------------------------------------------
+# -- QUERIES --------------------------------------------------------------------------------------
 
     cpdef Account account(self, Venue venue):
         """
@@ -945,7 +945,7 @@ cdef class Portfolio(PortfolioFacade):
 
         return True
 
-# -- INTERNAL --------------------------------------------------------------------------------------
+# -- INTERNAL -------------------------------------------------------------------------------------
 
     cdef object _net_position(self, InstrumentId instrument_id):
         return self._net_positions.get(instrument_id, Decimal(0))

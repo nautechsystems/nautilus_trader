@@ -214,7 +214,7 @@ class BinanceSpotDataClient(LiveMarketDataClient):
         self._set_connected(False)
         self._log.info("Disconnected.")
 
-    # -- SUBSCRIPTIONS -----------------------------------------------------------------------------
+    # -- SUBSCRIPTIONS ----------------------------------------------------------------------------
 
     def subscribe(self, data_type: DataType) -> None:
         """
@@ -465,7 +465,7 @@ class BinanceSpotDataClient(LiveMarketDataClient):
     def unsubscribe_instrument_close_prices(self, instrument_id: InstrumentId):
         self._remove_subscription_instrument_close_prices(instrument_id)
 
-    # -- REQUESTS ----------------------------------------------------------------------------------
+    # -- REQUESTS ---------------------------------------------------------------------------------
 
     def request_instrument(self, instrument_id: InstrumentId, correlation_id: UUID4):
         instrument: Optional[Instrument] = self._instrument_provider.find(instrument_id)

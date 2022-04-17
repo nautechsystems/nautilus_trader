@@ -162,7 +162,7 @@ cdef class DataEngine(Component):
         """
         return self._default_client.id if self._default_client is not None else None
 
-# --REGISTRATION -----------------------------------------------------------------------------------
+# --REGISTRATION ----------------------------------------------------------------------------------
 
     cpdef void register_client(self, DataClient client) except *:
         """
@@ -254,7 +254,7 @@ cdef class DataEngine(Component):
         del self._clients[client.id]
         self._log.info(f"Deregistered {client}.")
 
-# -- SUBSCRIPTIONS ---------------------------------------------------------------------------------
+# -- SUBSCRIPTIONS --------------------------------------------------------------------------------
 
     cpdef list subscribed_generic_data(self):
         """
@@ -438,7 +438,7 @@ cdef class DataEngine(Component):
                 return False
         return True
 
-# -- ABSTRACT METHODS ------------------------------------------------------------------------------
+# -- ABSTRACT METHODS -----------------------------------------------------------------------------
 
     cpdef void _on_start(self) except *:
         pass  # Optionally override in subclass
@@ -446,7 +446,7 @@ cdef class DataEngine(Component):
     cpdef void _on_stop(self) except *:
         pass  # Optionally override in subclass
 
-# -- ACTION IMPLEMENTATIONS ------------------------------------------------------------------------
+# -- ACTION IMPLEMENTATIONS -----------------------------------------------------------------------
 
     cpdef void _start(self) except *:
         cdef DataClient client
@@ -487,7 +487,7 @@ cdef class DataEngine(Component):
 
         self._clock.cancel_timers()
 
-# -- COMMANDS --------------------------------------------------------------------------------------
+# -- COMMANDS -------------------------------------------------------------------------------------
 
     cpdef void execute(self, DataCommand command) except *:
         """
@@ -545,7 +545,7 @@ cdef class DataEngine(Component):
 
         self._handle_response(response)
 
-# -- COMMAND HANDLERS ------------------------------------------------------------------------------
+# -- COMMAND HANDLERS -----------------------------------------------------------------------------
 
     cdef void _execute_command(self, DataCommand command) except *:
         if self.debug:
@@ -986,7 +986,7 @@ cdef class DataEngine(Component):
             )
             return
 
-# -- REQUEST HANDLERS ------------------------------------------------------------------------------
+# -- REQUEST HANDLERS -----------------------------------------------------------------------------
 
     cdef void _handle_request(self, DataRequest request) except *:
         if self.debug:
@@ -1044,7 +1044,7 @@ cdef class DataEngine(Component):
             except NotImplementedError:
                 self._log.error(f"Cannot handle request: unrecognized data type {request.data_type}.")
 
-# -- DATA HANDLERS ---------------------------------------------------------------------------------
+# -- DATA HANDLERS --------------------------------------------------------------------------------
 
     cdef void _handle_data(self, Data data) except *:
         self.data_count += 1
@@ -1128,7 +1128,7 @@ cdef class DataEngine(Component):
     cdef void _handle_generic_data(self, GenericData data) except *:
         self._msgbus.publish_c(topic=f"data.{data.data_type.topic}", msg=data.data)
 
-# -- RESPONSE HANDLERS -----------------------------------------------------------------------------
+# -- RESPONSE HANDLERS ----------------------------------------------------------------------------
 
     cdef void _handle_response(self, DataResponse response) except *:
         if self.debug:
@@ -1174,7 +1174,7 @@ cdef class DataEngine(Component):
                     # - with the partial bar being for a now removed aggregator.
                     self._log.error("No aggregator for partial bar update.")
 
-# -- INTERNAL --------------------------------------------------------------------------------------
+# -- INTERNAL -------------------------------------------------------------------------------------
 
     # Python wrapper to enable callbacks
     cpdef void _internal_update_instruments(self, list instruments: [Instrument]) except *:

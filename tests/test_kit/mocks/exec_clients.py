@@ -97,7 +97,7 @@ class MockExecutionClient(ExecutionClient):
     def _dispose(self) -> None:
         self.calls.append(inspect.currentframe().f_code.co_name)
 
-    # -- COMMANDS ----------------------------------------------------------------------------------
+    # -- COMMANDS ---------------------------------------------------------------------------------
 
     def account_inquiry(self, command) -> None:
         self.calls.append(inspect.currentframe().f_code.co_name)
@@ -200,7 +200,7 @@ class MockLiveExecutionClient(LiveExecutionClient):
     def reset(self) -> None:
         self.calls.append(inspect.currentframe().f_code.co_name)
 
-    # -- COMMANDS ----------------------------------------------------------------------------------
+    # -- COMMANDS ---------------------------------------------------------------------------------
 
     def account_inquiry(self, command) -> None:
         self.calls.append(inspect.currentframe().f_code.co_name)
@@ -222,7 +222,7 @@ class MockLiveExecutionClient(LiveExecutionClient):
         self.calls.append(inspect.currentframe().f_code.co_name)
         self.commands.append(command)
 
-    # -- EXECUTION REPORTS -------------------------------------------------------------------------
+    # -- EXECUTION REPORTS ------------------------------------------------------------------------
 
     async def generate_order_status_report(
         self,

@@ -169,7 +169,7 @@ class FTXDataClient(LiveMarketDataClient):
         self._set_connected(False)
         self._log.info("Disconnected.")
 
-    # -- SUBSCRIPTIONS -----------------------------------------------------------------------------
+    # -- SUBSCRIPTIONS ----------------------------------------------------------------------------
 
     def subscribe_instruments(self):
         """
@@ -311,7 +311,7 @@ class FTXDataClient(LiveMarketDataClient):
             "Cannot unsubscribe from instrument close prices (not supported by the FTX exchange).",
         )
 
-    # -- REQUESTS ----------------------------------------------------------------------------------
+    # -- REQUESTS ---------------------------------------------------------------------------------
 
     def request_instrument(self, instrument_id: InstrumentId, correlation_id: UUID4):
         instrument: Optional[Instrument] = self._instrument_provider.find(instrument_id)
