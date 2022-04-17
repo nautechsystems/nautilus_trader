@@ -157,7 +157,7 @@ cdef class ExecutionClient(Component):
         """
         return self._cache.account(self.account_id)
 
-# -- COMMAND HANDLERS ------------------------------------------------------------------------------
+# -- COMMAND HANDLERS -----------------------------------------------------------------------------
 
     cpdef void submit_order(self, SubmitOrder command) except *:
         """Abstract method (implement in subclass)."""
@@ -184,7 +184,7 @@ cdef class ExecutionClient(Component):
         raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
 
-# -- EVENT HANDLERS --------------------------------------------------------------------------------
+# -- EVENT HANDLERS -------------------------------------------------------------------------------
 
     cpdef void generate_account_state(
         self,

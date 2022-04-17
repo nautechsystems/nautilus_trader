@@ -75,7 +75,7 @@ class TemplateLiveDataClient(LiveDataClient):
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
-    # -- SUBSCRIPTIONS -----------------------------------------------------------------------------
+    # -- SUBSCRIPTIONS ----------------------------------------------------------------------------
 
     def subscribe(self, data_type: DataType) -> None:
         """Abstract method (implement in subclass)."""
@@ -85,7 +85,7 @@ class TemplateLiveDataClient(LiveDataClient):
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
-    # -- REQUESTS ----------------------------------------------------------------------------------
+    # -- REQUESTS ---------------------------------------------------------------------------------
 
     def request(self, datatype: DataType, correlation_id: UUID4) -> None:
         """Abstract method (implement in subclass)."""
@@ -153,7 +153,7 @@ class TemplateLiveMarketDataClient(LiveMarketDataClient):
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
-    # -- SUBSCRIPTIONS -----------------------------------------------------------------------------
+    # -- SUBSCRIPTIONS ----------------------------------------------------------------------------
 
     def subscribe(self, data_type: DataType) -> None:
         """Abstract method (implement in subclass)."""
@@ -255,7 +255,7 @@ class TemplateLiveMarketDataClient(LiveMarketDataClient):
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
-    # -- REQUESTS ----------------------------------------------------------------------------------
+    # -- REQUESTS ---------------------------------------------------------------------------------
 
     def request_instrument(self, instrument_id: InstrumentId, correlation_id: UUID4):
         """Abstract method (implement in subclass)."""

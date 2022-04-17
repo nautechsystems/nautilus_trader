@@ -188,7 +188,7 @@ cdef class Trader(Component):
         cdef Strategy s
         return {s.id: s.state_string_c() for s in self._strategies}
 
-# -- ACTION IMPLEMENTATIONS ------------------------------------------------------------------------
+# -- ACTION IMPLEMENTATIONS -----------------------------------------------------------------------
 
     cpdef void _start(self) except *:
         if not self._strategies:

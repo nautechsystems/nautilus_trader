@@ -56,12 +56,12 @@ cdef class Strategy(Actor):
 
     cpdef bint indicators_initialized(self) except *
 
-# -- ABSTRACT METHODS ------------------------------------------------------------------------------
+# -- ABSTRACT METHODS -----------------------------------------------------------------------------
 
     cpdef dict on_save(self)
     cpdef void on_load(self, dict state) except *
 
-# -- REGISTRATION ----------------------------------------------------------------------------------
+# -- REGISTRATION ---------------------------------------------------------------------------------
 
     cpdef void register(
         self,
@@ -76,12 +76,12 @@ cdef class Strategy(Actor):
     cpdef void register_indicator_for_trade_ticks(self, InstrumentId instrument_id, Indicator indicator) except *
     cpdef void register_indicator_for_bars(self, BarType bar_type, Indicator indicator) except *
 
-# -- STRATEGY COMMANDS -----------------------------------------------------------------------------
+# -- STRATEGY COMMANDS ----------------------------------------------------------------------------
 
     cpdef dict save(self)
     cpdef void load(self, dict state) except *
 
-# -- TRADING COMMANDS ------------------------------------------------------------------------------
+# -- TRADING COMMANDS -----------------------------------------------------------------------------
 
     cpdef void submit_order(self, Order order, PositionId position_id=*, ClientId client_id=*) except *
     cpdef void submit_order_list(self, OrderList order_list, ClientId client_id=*) except *
@@ -99,7 +99,7 @@ cdef class Strategy(Actor):
     cpdef void close_all_positions(self, InstrumentId instrument_id, ClientId client_id=*) except *
     cpdef void query_order(self, Order order, ClientId client_id=*) except *
 
-# -- EGRESS ----------------------------------------------------------------------------------------
+# -- EGRESS ---------------------------------------------------------------------------------------
 
     cdef void _send_risk_cmd(self, TradingCommand command) except *
     cdef void _send_exec_cmd(self, TradingCommand command) except *

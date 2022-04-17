@@ -141,7 +141,7 @@ class BetfairExecutionClient(LiveExecutionClient):
         self._set_account_id(AccountId(BETFAIR_VENUE.value, "001"))  # TODO(cs): Temporary
         AccountFactory.register_calculated_account(BETFAIR_VENUE.value)
 
-    # -- CONNECTION HANDLERS -----------------------------------------------------------------------
+    # -- CONNECTION HANDLERS ----------------------------------------------------------------------
 
     def connect(self):
         """
@@ -192,7 +192,7 @@ class BetfairExecutionClient(LiveExecutionClient):
                 self.stream.connect()
             await asyncio.sleep(1)
 
-    # -- ERROR HANDLING --------------------------------------------------------------------------
+    # -- ERROR HANDLING ---------------------------------------------------------------------------
     async def on_api_exception(self, ex: BetfairAPIError):
         if ex.kind == "INVALID_SESSION_INFORMATION":
             # Session is invalid, need to reconnect
@@ -201,7 +201,7 @@ class BetfairExecutionClient(LiveExecutionClient):
             await self._connect()
             self._log.info("Reconnected.")
 
-    # -- ACCOUNT HANDLERS --------------------------------------------------------------------------
+    # -- ACCOUNT HANDLERS -------------------------------------------------------------------------
 
     async def connection_account_state(self):
         account_details = await self._client.get_account_details()
@@ -218,7 +218,7 @@ class BetfairExecutionClient(LiveExecutionClient):
         self._send_account_state(account_state)
         self._log.debug("Initial Account state completed")
 
-    # -- EXECUTION REPORTS -------------------------------------------------------------------------
+    # -- EXECUTION REPORTS ------------------------------------------------------------------------
 
     async def generate_order_status_report(
         self,
@@ -371,7 +371,7 @@ class BetfairExecutionClient(LiveExecutionClient):
 
         return []
 
-    # -- COMMAND HANDLERS --------------------------------------------------------------------------
+    # -- COMMAND HANDLERS -------------------------------------------------------------------------
 
     def submit_order(self, command: SubmitOrder) -> None:
         PyCondition.not_none(command, "command")
@@ -728,7 +728,7 @@ class BetfairExecutionClient(LiveExecutionClient):
     # betfair allows up to 60 cancels per request
     #     raise NotImplementedError
 
-    # -- ACCOUNT -----------------------------------------------------------------------------------
+    # -- ACCOUNT ----------------------------------------------------------------------------------
 
     async def check_account_currency(self):
         """
@@ -742,7 +742,7 @@ class BetfairExecutionClient(LiveExecutionClient):
         assert currency_code == self.base_currency.code
         self._log.debug("Base currency matches client details")
 
-    # -- DEBUGGING ---------------------------------------------------------------------------------
+    # -- DEBUGGING --------------------------------------------------------------------------------
 
     def create_task(self, coro):
         self._loop.create_task(self._check_task(coro))
@@ -757,7 +757,7 @@ class BetfairExecutionClient(LiveExecutionClient):
     def client(self) -> BetfairClient:
         return self._client
 
-    # -- ORDER STREAM API --------------------------------------------------------------------------
+    # -- ORDER STREAM API -------------------------------------------------------------------------
 
     def handle_order_stream_update(self, raw: bytes) -> None:
         """Handle an update from the order stream socket"""

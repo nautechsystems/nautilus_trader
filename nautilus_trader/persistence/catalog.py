@@ -84,7 +84,7 @@ class DataCatalog(metaclass=Singleton):
         protocol, path = uri.split("://")
         return cls(path=path, fs_protocol=protocol)
 
-    # ---- QUERIES --------------------------------------------------------------------------------
+    # -- QUERIES -----------------------------------------------------------------------------------
 
     def _query(
         self,

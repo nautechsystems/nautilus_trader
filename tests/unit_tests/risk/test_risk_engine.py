@@ -251,7 +251,7 @@ class TestRiskEngine:
 
         self.risk_engine.process(random)
 
-    # -- SUBMIT ORDER TESTS ------------------------------------------------------------------------
+    # -- SUBMIT ORDER TESTS -----------------------------------------------------------------------
 
     def test_submit_order_with_default_settings_then_sends_to_client(self):
         # Arrange
@@ -1026,7 +1026,7 @@ class TestRiskEngine:
         # Assert
         assert self.risk_engine.command_count == 1  # <-- command never reaches engine
 
-    # -- SUBMIT BRACKET ORDER TESTS ----------------------------------------------------------------
+    # -- SUBMIT BRACKET ORDER TESTS ---------------------------------------------------------------
 
     def test_submit_bracket_with_default_settings_sends_to_client(self):
         # Arrange
@@ -1301,7 +1301,7 @@ class TestRiskEngine:
         # Assert
         assert self.exec_engine.command_count == 0  # <-- command never reaches engine
 
-    # -- UPDATE ORDER TESTS ------------------------------------------------------------------------
+    # -- UPDATE ORDER TESTS -----------------------------------------------------------------------
 
     def test_update_order_when_no_order_found_denies(self):
         # Arrange
@@ -1503,7 +1503,7 @@ class TestRiskEngine:
         assert self.risk_engine.command_count == 2
         assert self.exec_engine.command_count == 2
 
-    # -- CANCEL ORDER TESTS ------------------------------------------------------------------------
+    # -- CANCEL ORDER TESTS -----------------------------------------------------------------------
 
     def test_cancel_order_when_order_does_not_exist_then_denies(self):
         # Arrange

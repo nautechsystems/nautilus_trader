@@ -69,7 +69,7 @@ cdef class ExecutionClient(Component):
     cpdef void _set_connected(self, bint value=*) except *
     cpdef void _set_account_id(self, AccountId account_id) except *
 
-# -- COMMAND HANDLERS ------------------------------------------------------------------------------
+# -- COMMAND HANDLERS -----------------------------------------------------------------------------
 
     cpdef void submit_order(self, SubmitOrder command) except *
     cpdef void submit_order_list(self, SubmitOrderList command) except *
@@ -79,7 +79,7 @@ cdef class ExecutionClient(Component):
     cpdef void sync_order_status(self, QueryOrder command) except *
 
 
-# -- EVENT HANDLERS --------------------------------------------------------------------------------
+# -- EVENT HANDLERS -------------------------------------------------------------------------------
 
     cpdef void generate_account_state(
         self,

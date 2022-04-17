@@ -145,7 +145,7 @@ cdef class LiveRiskEngine(RiskEngine):
         """
         return self._queue.qsize()
 
-# -- COMMANDS --------------------------------------------------------------------------------------
+# -- COMMANDS -------------------------------------------------------------------------------------
 
     cpdef void kill(self) except *:
         """
@@ -213,7 +213,7 @@ cdef class LiveRiskEngine(RiskEngine):
             self._log.warning(f"Blocking on `_queue.put` as queue full at {self._queue.qsize()} items.")
             self._queue.put(event)  # Block until qsize reduces below maxsize
 
-# -- INTERNAL --------------------------------------------------------------------------------------
+# -- INTERNAL -------------------------------------------------------------------------------------
 
     cpdef void _on_start(self) except *:
         if not self._loop.is_running():
