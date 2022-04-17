@@ -165,7 +165,7 @@ cdef class Strategy(Actor):
                 return False
         return True
 
-# -- ABSTRACT METHODS ------------------------------------------------------------------------------
+# -- ABSTRACT METHODS -----------------------------------------------------------------------------
 
     cpdef dict on_save(self):
         """
@@ -198,7 +198,7 @@ cdef class Strategy(Actor):
         """
         pass  # Optionally override in subclass
 
-# -- REGISTRATION ----------------------------------------------------------------------------------
+# -- REGISTRATION ---------------------------------------------------------------------------------
 
     cpdef void register(
         self,
@@ -354,7 +354,7 @@ cdef class Strategy(Actor):
         else:
             self.log.error(f"Indicator {indicator} already registered for {bar_type} bars.")
 
-# -- ACTION IMPLEMENTATIONS ------------------------------------------------------------------------
+# -- ACTION IMPLEMENTATIONS -----------------------------------------------------------------------
 
     cpdef void _reset(self) except *:
         if self.order_factory:
@@ -367,7 +367,7 @@ cdef class Strategy(Actor):
 
         self.on_reset()
 
-# -- STRATEGY COMMANDS -----------------------------------------------------------------------------
+# -- STRATEGY COMMANDS ----------------------------------------------------------------------------
 
     cpdef dict save(self):
         """
@@ -437,7 +437,7 @@ cdef class Strategy(Actor):
             self.log.exception(f"Error on load {repr(state)}", ex)
             raise
 
-# -- TRADING COMMANDS ------------------------------------------------------------------------------
+# -- TRADING COMMANDS -----------------------------------------------------------------------------
 
     cpdef void submit_order(
         self,
@@ -841,7 +841,7 @@ cdef class Strategy(Actor):
 
         self._send_exec_cmd(command)
 
-# -- HANDLERS --------------------------------------------------------------------------------------
+# -- HANDLERS -------------------------------------------------------------------------------------
 
     cpdef void handle_quote_tick(self, QuoteTick tick, bint is_historical=False) except *:
         """
@@ -984,7 +984,7 @@ cdef class Strategy(Actor):
                 self.log.exception(f"Error on handling {repr(event)}", ex)
                 raise
 
-# -- EGRESS ----------------------------------------------------------------------------------------
+# -- EGRESS ---------------------------------------------------------------------------------------
 
     cdef void _send_risk_cmd(self, TradingCommand command) except *:
         if not self.log.is_bypassed:

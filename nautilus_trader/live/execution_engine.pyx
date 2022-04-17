@@ -165,7 +165,7 @@ cdef class LiveExecutionEngine(ExecutionEngine):
         """
         return self._queue.qsize()
 
-# -- COMMANDS --------------------------------------------------------------------------------------
+# -- COMMANDS -------------------------------------------------------------------------------------
 
     cpdef void kill(self) except *:
         """
@@ -348,7 +348,7 @@ cdef class LiveExecutionEngine(ExecutionEngine):
 
         self._reconcile_mass_status(report)
 
-# -- RECONCILIATION --------------------------------------------------------------------------------
+# -- RECONCILIATION -------------------------------------------------------------------------------
 
     cdef bint _reconcile_report(self, ExecutionReport report) except *:
         self._log.debug(f"{RECV}{RPT} {report}.")

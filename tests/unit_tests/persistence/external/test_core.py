@@ -13,6 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+import asyncio
 import pickle
 import sys
 
@@ -246,7 +247,8 @@ class TestPersistenceCore:
         expected = f"{self.catalog.path}/data/quote_tick.parquet/instrument_id=AUD-USD.SIM"
         assert expected in files
 
-    def test_load_text_betfair(self):
+    @pytest.mark.asyncio
+    async def test_load_text_betfair(self):
         # Arrange
         instrument_provider = BetfairInstrumentProvider.from_instruments([])
 
@@ -257,6 +259,8 @@ class TestPersistenceCore:
             catalog=self.catalog,
             instrument_provider=instrument_provider,
         )
+
+        await asyncio.sleep(2)  # Allow `ThreadPoolExecutor` to complete processing
 
         # Assert
         assert files == {

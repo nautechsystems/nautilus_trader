@@ -26,11 +26,10 @@ from nautilus_trader.common.logging import Logger
 
 @pytest.mark.asyncio
 async def test_binance_spot_market_http_client():
-    loop = asyncio.get_event_loop()
     clock = LiveClock()
 
     client = get_cached_binance_http_client(
-        loop=loop,
+        loop=asyncio.get_event_loop(),
         clock=clock,
         logger=Logger(clock=clock),
         key=os.getenv("BINANCE_API_KEY"),

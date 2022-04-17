@@ -245,7 +245,7 @@ cdef class ExecutionEngine(Component):
         """
         return self._cache.check_residuals()
 
-# -- REGISTRATION ----------------------------------------------------------------------------------
+# -- REGISTRATION ---------------------------------------------------------------------------------
 
     cpdef void register_client(self, ExecutionClient client) except *:
         """
@@ -371,7 +371,7 @@ cdef class ExecutionEngine(Component):
 
         self._log.info(f"Deregistered {client}.")
 
-# -- ABSTRACT METHODS ------------------------------------------------------------------------------
+# -- ABSTRACT METHODS -----------------------------------------------------------------------------
 
     cpdef void _on_start(self) except *:
         pass  # Optionally override in subclass
@@ -379,7 +379,7 @@ cdef class ExecutionEngine(Component):
     cpdef void _on_stop(self) except *:
         pass  # Optionally override in subclass
 
-# -- ACTION IMPLEMENTATIONS ------------------------------------------------------------------------
+# -- ACTION IMPLEMENTATIONS -----------------------------------------------------------------------
 
     cpdef void _start(self) except *:
         cdef ExecutionClient client
@@ -411,7 +411,7 @@ cdef class ExecutionEngine(Component):
         for client in self._clients.values():
             client.dispose()
 
-# -- COMMANDS --------------------------------------------------------------------------------------
+# -- COMMANDS -------------------------------------------------------------------------------------
 
     cpdef void load_cache(self) except *:
         """
@@ -469,7 +469,7 @@ cdef class ExecutionEngine(Component):
         """
         self._cache.flush_db()
 
-# -- INTERNAL --------------------------------------------------------------------------------------
+# -- INTERNAL -------------------------------------------------------------------------------------
 
     cdef void _set_position_id_counts(self) except *:
         # For the internal position ID generator
@@ -493,7 +493,7 @@ cdef class ExecutionEngine(Component):
             self._pos_id_generator.set_count(strategy_id, count)
             self._log.info(f"Set PositionId count for {repr(strategy_id)} to {count}.")
 
-# -- COMMAND HANDLERS ------------------------------------------------------------------------------
+# -- COMMAND HANDLERS -----------------------------------------------------------------------------
 
     cdef void _execute_command(self, TradingCommand command) except *:
         if self.debug:
@@ -556,7 +556,7 @@ cdef class ExecutionEngine(Component):
     cdef void _handle_query_order(self, ExecutionClient client, QueryOrder command) except *:
         client.sync_order_status(command)
 
-# -- EVENT HANDLERS --------------------------------------------------------------------------------
+# -- EVENT HANDLERS -------------------------------------------------------------------------------
 
     cdef void _handle_event(self, OrderEvent event) except *:
         if self.debug:

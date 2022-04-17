@@ -130,7 +130,7 @@ cdef class Cache(CacheFacade):
 
         self._log.info("INITIALIZED.")
 
-# -- COMMANDS --------------------------------------------------------------------------------------
+# -- COMMANDS -------------------------------------------------------------------------------------
 
     cpdef void cache_currencies(self) except *:
         """
@@ -1417,7 +1417,7 @@ cdef class Cache(CacheFacade):
             self._database.delete_strategy(strategy.id)
             self._log.debug(f"Deleted Strategy(id={strategy.id.value}).")
 
-# -- DATA QUERIES ----------------------------------------------------------------------------------
+# -- DATA QUERIES ---------------------------------------------------------------------------------
 
     cpdef list tickers(self, InstrumentId instrument_id):
         """
@@ -1907,7 +1907,7 @@ cdef class Cache(CacheFacade):
 
         return bid_quotes, ask_quotes
 
-# -- INSTRUMENT QUERIES ----------------------------------------------------------------------------
+# -- INSTRUMENT QUERIES ---------------------------------------------------------------------------
 
     cpdef Instrument instrument(self, InstrumentId instrument_id):
         """
@@ -1959,7 +1959,7 @@ cdef class Cache(CacheFacade):
         """
         return [x for x in self._instruments.values() if venue is None or venue == x.id.venue]
 
-# -- ACCOUNT QUERIES -------------------------------------------------------------------------------
+# -- ACCOUNT QUERIES ------------------------------------------------------------------------------
 
     cpdef Account account(self, AccountId account_id):
         """
@@ -2029,7 +2029,7 @@ cdef class Cache(CacheFacade):
         """
         return list(self._accounts.values())
 
-# -- IDENTIFIER QUERIES ----------------------------------------------------------------------------
+# -- IDENTIFIER QUERIES ---------------------------------------------------------------------------
 
     cdef set _build_ord_query_filter_set(
         self,
@@ -2300,7 +2300,7 @@ cdef class Cache(CacheFacade):
         """
         return self._index_strategies.copy()
 
-# -- ORDER QUERIES ---------------------------------------------------------------------------------
+# -- ORDER QUERIES --------------------------------------------------------------------------------
 
     cpdef Order order(self, ClientOrderId client_order_id):
         """
@@ -2491,7 +2491,7 @@ cdef class Cache(CacheFacade):
         except KeyError as ex:
             self._log.error("Cannot find Order object in the cache " + str(ex))
 
-# -- POSITION QUERIES ------------------------------------------------------------------------------
+# -- POSITION QUERIES -----------------------------------------------------------------------------
 
     cpdef Position position(self, PositionId position_id):
         """
@@ -2970,7 +2970,7 @@ cdef class Cache(CacheFacade):
         """
         return len(self.position_ids(venue, instrument_id, strategy_id))
 
-# -- STRATEGY QUERIES ------------------------------------------------------------------------------
+# -- STRATEGY QUERIES -----------------------------------------------------------------------------
 
     cpdef StrategyId strategy_id_for_order(self, ClientOrderId client_order_id):
         """

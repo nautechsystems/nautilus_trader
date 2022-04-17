@@ -176,7 +176,7 @@ class BetfairDataClient(LiveMarketDataClient):
             self._log.error("Cannot dispose a connected data client.")
             return
 
-    # -- REQUESTS --------------------------------------------------------------------------------------
+    # -- REQUESTS ---------------------------------------------------------------------------------
 
     def request(self, data_type: DataType, correlation_id: UUID4):
         if data_type.type == InstrumentSearch:
@@ -200,7 +200,7 @@ class BetfairDataClient(LiveMarketDataClient):
         )
         self._handle_data_response(data_type=data_type, data=search, correlation_id=correlation_id)
 
-    # -- SUBSCRIPTIONS ---------------------------------------------------------------------------------
+    # -- SUBSCRIPTIONS ----------------------------------------------------------------------------
 
     def subscribe_order_book_deltas(
         self,
@@ -303,12 +303,12 @@ class BetfairDataClient(LiveMarketDataClient):
         #  subscription message - when we have a use case
         self._log.warning("Betfair does not support unsubscribing from instruments")
 
-    # -- INTERNAL --------------------------------------------------------------------------------------
+    # -- INTERNAL ---------------------------------------------------------------------------------
 
     def _log_betfair_error(self, ex: Exception, method_name: str):
         self._log.warning(f"{type(ex).__name__}: {ex} in {method_name}")
 
-    # -- Debugging ---------------------------------------------------------------------------------------
+    # -- Debugging --------------------------------------------------------------------------------
 
     def instrument_provider(self) -> BetfairInstrumentProvider:
         return self._instrument_provider
@@ -316,7 +316,7 @@ class BetfairDataClient(LiveMarketDataClient):
     def handle_data(self, data: Data):
         self._handle_data(data=data)
 
-    # -- STREAMS ---------------------------------------------------------------------------------------
+    # -- STREAMS ----------------------------------------------------------------------------------
     def on_market_update(self, raw: bytes):
         update = orjson.loads(raw)
         self._on_market_update(update=update)

@@ -269,7 +269,7 @@ class BinanceSpotExecutionClient(LiveExecutionClient):
         self._set_connected(False)
         self._log.info("Disconnected.")
 
-    # -- EXECUTION REPORTS -------------------------------------------------------------------------
+    # -- EXECUTION REPORTS ------------------------------------------------------------------------
 
     async def generate_order_status_report(
         self,
@@ -527,7 +527,7 @@ class BinanceSpotExecutionClient(LiveExecutionClient):
 
         return []
 
-    # -- COMMAND HANDLERS --------------------------------------------------------------------------
+    # -- COMMAND HANDLERS -------------------------------------------------------------------------
 
     def submit_order(self, command: SubmitOrder) -> None:
         order: Order = command.order
@@ -779,10 +779,14 @@ class BinanceSpotExecutionClient(LiveExecutionClient):
 
     def _handle_execution_report(self, data: BinanceSpotOrderUpdateData):
         instrument_id: InstrumentId = self._get_cached_instrument_id(data.s)
-        client_order_id_str: str = data.c if data.c != "" else data.C
-        client_order_id = ClientOrderId(client_order_id_str) if client_order_id_str != "" else None
         venue_order_id = VenueOrderId(str(data.i))
         ts_event = millis_to_nanos(data.T)
+
+        # Parse client order ID
+        client_order_id_str: str = data.c
+        if not client_order_id_str or not client_order_id_str.startswith("O"):
+            client_order_id_str = data.C
+        client_order_id = ClientOrderId(client_order_id_str)
 
         # Fetch strategy ID
         strategy_id: StrategyId = self._cache.strategy_id_for_order(client_order_id)

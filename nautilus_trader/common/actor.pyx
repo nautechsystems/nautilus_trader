@@ -113,7 +113,7 @@ cdef class Actor(Component):
         self.cache = None      # Initialized when registered
         self.clock = None      # Initialized when registered
 
-# -- ABSTRACT METHODS ------------------------------------------------------------------------------
+# -- ABSTRACT METHODS -----------------------------------------------------------------------------
 
     cpdef void on_start(self) except *:
         """
@@ -416,7 +416,7 @@ cdef class Actor(Component):
         """
         pass  # Optionally override in subclass
 
-# -- REGISTRATION ----------------------------------------------------------------------------------
+# -- REGISTRATION ---------------------------------------------------------------------------------
 
     cpdef void register_base(
         self,
@@ -495,7 +495,7 @@ cdef class Actor(Component):
 
         self._log.debug(f"Deregistered `{event.__name__}` from warning log levels.")
 
-# -- ACTION IMPLEMENTATIONS ------------------------------------------------------------------------
+# -- ACTION IMPLEMENTATIONS -----------------------------------------------------------------------
 
     cpdef void _start(self) except *:
         self.on_start()
@@ -526,7 +526,7 @@ cdef class Actor(Component):
     cpdef void _fault(self) except *:
         self.on_fault()
 
-# -- SUBSCRIPTIONS ---------------------------------------------------------------------------------
+# -- SUBSCRIPTIONS --------------------------------------------------------------------------------
 
     cpdef void subscribe_data(self, DataType data_type, ClientId client_id=None) except *:
         """
@@ -1315,7 +1315,7 @@ cdef class Actor(Component):
 
         self._msgbus.publish_c(topic=f"data.{data_type.topic}", msg=data)
 
-# -- REQUESTS --------------------------------------------------------------------------------------
+# -- REQUESTS -------------------------------------------------------------------------------------
 
     cpdef void request_data(self, ClientId client_id, DataType data_type) except *:
         """
@@ -1528,7 +1528,7 @@ cdef class Actor(Component):
 
         self._send_data_req(request)
 
-# -- HANDLERS --------------------------------------------------------------------------------------
+# -- HANDLERS -------------------------------------------------------------------------------------
 
     cpdef void handle_instrument(self, Instrument instrument) except *:
         """
@@ -1959,7 +1959,7 @@ cdef class Actor(Component):
     cpdef void _handle_bars_response(self, DataResponse response) except *:
         self.handle_bars(response.data)
 
-# -- EGRESS ----------------------------------------------------------------------------------------
+# -- EGRESS ---------------------------------------------------------------------------------------
 
     cdef void _send_data_cmd(self, DataCommand command) except *:
         if not self._log.is_bypassed:

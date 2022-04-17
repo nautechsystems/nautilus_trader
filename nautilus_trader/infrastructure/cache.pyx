@@ -117,7 +117,7 @@ cdef class RedisCacheDatabase(CacheDatabase):
         # Redis client
         self._redis = redis.Redis(host=config.host, port=config.port, db=0)
 
-# -- COMMANDS --------------------------------------------------------------------------------------
+# -- COMMANDS -------------------------------------------------------------------------------------
 
     cpdef void flush(self) except *:
         """

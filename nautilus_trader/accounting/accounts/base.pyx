@@ -60,7 +60,7 @@ cdef class Account:
             f"base={base_str})"
         )
 
-# -- QUERIES ---------------------------------------------------------------------------------------
+# -- QUERIES --------------------------------------------------------------------------------------
 
     cdef AccountState last_event_c(self):
         return self._events[-1]  # Guaranteed at least one event from initialization
@@ -341,7 +341,7 @@ cdef class Account:
 
         return self._commissions.get(currency)
 
-# -- COMMANDS --------------------------------------------------------------------------------------
+# -- COMMANDS -------------------------------------------------------------------------------------
 
     cpdef void apply(self, AccountState event) except *:
         """
@@ -443,7 +443,7 @@ cdef class Account:
         cdef double total_commissions = self._commissions.get(currency, 0.0)
         self._commissions[currency] = Money(total_commissions + commission.as_f64_c(), currency)
 
-# -- CALCULATIONS ----------------------------------------------------------------------------------
+# -- CALCULATIONS ---------------------------------------------------------------------------------
 
     cdef void _recalculate_balance(self, Currency currency) except *:
         raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover

@@ -867,7 +867,7 @@ cdef class SimulatedExchange:
 
         self._log.info("Reset.")
 
-# -- COMMAND HANDLING ------------------------------------------------------------------------------
+# -- COMMAND HANDLING -----------------------------------------------------------------------------
 
     cdef void _process_order(self, Order order) except *:
         if order.client_order_id in self._order_index:
@@ -1079,7 +1079,7 @@ cdef class SimulatedExchange:
 
         self._generate_order_updated(order, qty, price, trigger_price or order.trigger_price)
 
-# -- EVENT HANDLING --------------------------------------------------------------------------------
+# -- EVENT HANDLING -------------------------------------------------------------------------------
 
     cdef void _accept_order(self, Order order) except *:
         self._add_order(order)
@@ -1170,7 +1170,7 @@ cdef class SimulatedExchange:
         if order.contingency_type == ContingencyType.OCO:
             self._cancel_oco_orders(order)
 
-# -- ORDER MATCHING ENGINE -------------------------------------------------------------------------
+# -- ORDER MATCHING ENGINE ------------------------------------------------------------------------
 
     cdef void _add_order(self, Order order) except *:
         # Index order
@@ -1610,7 +1610,7 @@ cdef class SimulatedExchange:
                         trigger_price=order.trigger_price if order.has_trigger_price_c() else None,
                     )
 
-# -- IDENTIFIER GENERATORS -------------------------------------------------------------------------
+# -- IDENTIFIER GENERATORS ------------------------------------------------------------------------
 
     cdef PositionId _get_position_id(self, Order order, bint generate=True):
         cdef PositionId position_id
@@ -1649,7 +1649,7 @@ cdef class SimulatedExchange:
         self._executions_count += 1
         return TradeId(f"{self.id.value}-{self._executions_count}")
 
-# -- EVENT GENERATORS ------------------------------------------------------------------------------
+# -- EVENT GENERATORS -----------------------------------------------------------------------------
 
     cdef void _generate_fresh_account_state(self) except *:
         cdef list balances = [

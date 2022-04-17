@@ -21,7 +21,7 @@ from nautilus_trader.model.objects cimport Money
 
 cdef class PortfolioFacade:
 
-# -- QUERIES ---------------------------------------------------------------------------------------  # noqa
+# -- QUERIES --------------------------------------------------------------------------------------  # noqa
 
     cdef readonly bint initialized
     """If the portfolio is initialized.\n\n:returns: `bool`"""

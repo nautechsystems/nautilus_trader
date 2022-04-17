@@ -87,7 +87,7 @@ cdef class BacktestDataClient(DataClient):
         self.is_connected = False
         self._log.info(f"Disconnected.")
 
-# -- SUBSCRIPTIONS ---------------------------------------------------------------------------------
+# -- SUBSCRIPTIONS --------------------------------------------------------------------------------
 
     cpdef void subscribe(self, DataType data_type) except *:
         """
@@ -119,7 +119,7 @@ cdef class BacktestDataClient(DataClient):
         self._remove_subscription(data_type)
         # Do nothing else for backtest
 
-# -- REQUESTS --------------------------------------------------------------------------------------
+# -- REQUESTS -------------------------------------------------------------------------------------
 
     cpdef void request(self, DataType data_type, UUID4 correlation_id) except *:
         """
@@ -185,7 +185,7 @@ cdef class BacktestMarketDataClient(MarketDataClient):
         self.is_connected = False
         self._log.info(f"Disconnected.")
 
-# -- SUBSCRIPTIONS ---------------------------------------------------------------------------------
+# -- SUBSCRIPTIONS --------------------------------------------------------------------------------
 
     cpdef void subscribe_instruments(self) except *:
         """
@@ -499,7 +499,7 @@ cdef class BacktestMarketDataClient(MarketDataClient):
         self._remove_subscription_instrument_close_prices(instrument_id)
         # Do nothing else for backtest
 
-# -- REQUESTS --------------------------------------------------------------------------------------
+# -- REQUESTS -------------------------------------------------------------------------------------
 
     cpdef void request_instrument(self, InstrumentId instrument_id, UUID4 correlation_id) except *:
         """

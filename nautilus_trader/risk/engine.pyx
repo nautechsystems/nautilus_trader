@@ -168,7 +168,7 @@ cdef class RiskEngine(Component):
         for instrument_id, value in max_notional_config.items():
             self.set_max_notional_per_order(InstrumentId.from_str_c(instrument_id), Decimal(value))
 
-# -- COMMANDS --------------------------------------------------------------------------------------
+# -- COMMANDS -------------------------------------------------------------------------------------
 
     cpdef void execute(self, Command command) except *:
         """
@@ -283,7 +283,7 @@ cdef class RiskEngine(Component):
             color=LogColor.BLUE,
         )
 
-# -- RISK SETTINGS ---------------------------------------------------------------------------------
+# -- RISK SETTINGS --------------------------------------------------------------------------------
 
     cpdef tuple max_order_rate(self):
         """
@@ -322,7 +322,7 @@ cdef class RiskEngine(Component):
         """
         return self._max_notional_per_order.get(instrument_id)
 
-# -- ABSTRACT METHODS ------------------------------------------------------------------------------
+# -- ABSTRACT METHODS -----------------------------------------------------------------------------
 
     cpdef void _on_start(self) except *:
         pass  # Optionally override in subclass
@@ -330,7 +330,7 @@ cdef class RiskEngine(Component):
     cpdef void _on_stop(self) except *:
         pass  # Optionally override in subclass
 
-# -- ACTION IMPLEMENTATIONS ------------------------------------------------------------------------
+# -- ACTION IMPLEMENTATIONS -----------------------------------------------------------------------
 
     cpdef void _start(self) except *:
         # Do nothing else for now
@@ -348,7 +348,7 @@ cdef class RiskEngine(Component):
         pass
         # Nothing to dispose for now
 
-# -- COMMAND HANDLERS ------------------------------------------------------------------------------
+# -- COMMAND HANDLERS -----------------------------------------------------------------------------
 
     cdef void _execute_command(self, Command command) except *:
         if self.debug:
@@ -566,7 +566,7 @@ cdef class RiskEngine(Component):
         # Currently no further checks: send for execution
         self._msgbus.send(endpoint="ExecEngine.execute", msg=command)
 
-# -- PRE-TRADE CHECKS ------------------------------------------------------------------------------
+# -- PRE-TRADE CHECKS -----------------------------------------------------------------------------
 
     cdef bint _check_order_id(self, Order order) except *:
         if order is None or not self._cache.order_exists(order.client_order_id):
@@ -698,7 +698,7 @@ cdef class RiskEngine(Component):
             # Check failed
             return f"quantity {quantity.to_str()} invalid (< minimum trade size of {instrument.min_quantity})"
 
-# -- DENIALS ---------------------------------------------------------------------------------------
+# -- DENIALS --------------------------------------------------------------------------------------
 
     cdef void _deny_command(self, TradingCommand command, str reason) except *:
         if isinstance(command, SubmitOrder):
@@ -748,7 +748,7 @@ cdef class RiskEngine(Component):
         for order in order_list.orders:
             self._deny_order(order=order, reason=reason)
 
-# -- EGRESS ----------------------------------------------------------------------------------------
+# -- EGRESS ---------------------------------------------------------------------------------------
 
     cdef void _execution_gateway(self, Instrument instrument, TradingCommand command, Order order) except *:
         # Check TradingState
@@ -785,7 +785,7 @@ cdef class RiskEngine(Component):
     cpdef void _send_command(self, TradingCommand command) except *:
         self._msgbus.send(endpoint="ExecEngine.execute", msg=command)
 
-# -- EVENT HANDLERS --------------------------------------------------------------------------------
+# -- EVENT HANDLERS -------------------------------------------------------------------------------
 
     cpdef void _handle_event(self, Event event) except *:
         if self.debug:

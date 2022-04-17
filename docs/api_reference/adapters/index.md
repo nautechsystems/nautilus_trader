@@ -14,5 +14,5 @@
    betfair.md
    binance.md
    ftx.md
-   ib.md
+   interactive_brokers.md
 ```

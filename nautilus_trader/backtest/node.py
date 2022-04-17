@@ -76,16 +76,26 @@ class BacktestNode:
         self._engines: Dict[str, BacktestEngine] = {}
 
     @property
-    def configs(self):
+    def configs(self) -> List[BacktestRunConfig]:
         """
         Return the loaded backtest run configs for the node.
+
+        Returns
+        -------
+        list[BacktestRunConfig]
+
         """
         return self._configs
 
-    def get_engine(self, run_config_id: str):
+    def get_engine(self, run_config_id: str) -> Optional[BacktestEngine]:
         """
         Return the backtest engine associated with the given run config ID
         (if found).
+
+        Parameters
+        ----------
+        run_config_id : str
+            The run configuration ID for the created engine.
 
         Returns
         -------
@@ -237,7 +247,7 @@ class BacktestNode:
         engine: BacktestEngine,
         data_configs: List[BacktestDataConfig],
         batch_size_bytes: int,
-    ):
+    ) -> None:
         config = data_configs[0]
         catalog: DataCatalog = config.catalog()
 
@@ -267,7 +277,7 @@ class BacktestNode:
         run_config_id: str,
         engine: BacktestEngine,
         data_configs: List[BacktestDataConfig],
-    ):
+    ) -> None:
         # Load data
         for config in data_configs:
             t0 = pd.Timestamp.now()

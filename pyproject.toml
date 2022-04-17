@@ -85,10 +85,10 @@ pytest-cov = "2.10.1"  # Pinned at 2.10.1 due coverage 4.5.4
 pytest-mock = "^3.7.0"
 pytest-xdist = { version = "^2.5.0", extras = ["psutil"] }
 linkify-it-py = "^1.0.3"
-myst-parser = "^0.17.1"
+myst-parser = "^0.17.2"
 sphinx_comments = "^0.0.3"
 sphinx_copybutton = "^0.5.0"
-sphinx-external-toc = "^0.2.4"
+sphinx-external-toc = "^0.3.0"
 sphinx-material = "^0.0.35"
 sphinx_togglebutton = "^0.3.0"
 

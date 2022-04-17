@@ -1,6 +1,6 @@
 # NautilusTrader 1.142.0 Beta
 
-Released on TBC.
+Released on 17th April 2022 (UTC).
 
 ### Breaking Changes
 - `BacktestNode` now requires configs at initialization
@@ -32,8 +32,6 @@ None
 # NautilusTrader 1.141.0 Beta
 
 Released on 4th April 2022 (UTC).
-
-This will be the final release without Rust compiled binaries.
 
 ### Breaking Changes
 - Renamed `BacktestNode.run_sync()` to `BacktestNode.run()`
