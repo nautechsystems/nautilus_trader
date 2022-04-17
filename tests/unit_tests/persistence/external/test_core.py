@@ -15,6 +15,7 @@
 
 import pickle
 import sys
+import time
 
 import fsspec
 import numpy as np
@@ -257,6 +258,8 @@ class TestPersistenceCore:
             catalog=self.catalog,
             instrument_provider=instrument_provider,
         )
+
+        time.sleep(1)  # Allow `ThreadPoolExecutor` to complete all processing
 
         # Assert
         assert files == {
