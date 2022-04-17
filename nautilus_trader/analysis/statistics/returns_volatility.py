@@ -39,4 +39,11 @@ class ReturnsVolatility(PortfolioStatistic):
         return f"Returns Volatility ({self.period} days)"
 
     def calculate_from_returns(self, returns: pd.Series) -> Optional[Any]:
+        # Preconditions
+        if not self._check_valid_returns(returns):
+            return np.nan
+
+        # Down sample the returns into daily bins
+        returns = returns.resample("1D").sum()
+
         return returns.std() * np.sqrt(self.period)

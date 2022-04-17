@@ -15,6 +15,8 @@
 
 import pandas as pd
 from numpy import float64
+from numpy import linspace
+from numpy import nan
 
 from nautilus_trader.analysis.statistics.sharpe_ratio import SharpeRatio
 
@@ -32,8 +34,22 @@ class TestSharpeRatioPortfolioStatistic:
 
     def test_calculate_given_empty_series_returns_nan(self):
         # Arrange
-        stat = SharpeRatio()
         data = pd.Series([], dtype=float64)
+
+        stat = SharpeRatio()
+
+        # Act
+        result = stat.calculate_from_returns(data)
+
+        # Assert
+        assert pd.isna(result)
+
+    def test_calculate_given_nan_series_returns_nan(self):
+        # Arrange
+        index = pd.date_range("1/1/2000", periods=10, freq="1D")
+        data = pd.Series([nan] * 10, index=index, dtype=float64)
+
+        stat = SharpeRatio()
 
         # Act
         result = stat.calculate_from_returns(data)
@@ -43,8 +59,10 @@ class TestSharpeRatioPortfolioStatistic:
 
     def test_calculate_given_mix_of_pnls1_returns_expected(self):
         # Arrange
+        index = pd.date_range("1/1/2000", periods=2, freq="1D")
+        data = pd.Series([1.0, -1.0], index=index, dtype=float64)
+
         stat = SharpeRatio()
-        data = pd.Series([1.0, -1.0], dtype=float64)
 
         # Act
         result = stat.calculate_from_returns(data)
@@ -54,11 +72,13 @@ class TestSharpeRatioPortfolioStatistic:
 
     def test_calculate_given_mix_of_pnls2_returns_expected(self):
         # Arrange
+        index = pd.date_range("1/1/2000", periods=10, freq="12H")
+        data = pd.Series(linspace(0.1, 1, 10), index=index, dtype=float64)
+
         stat = SharpeRatio()
-        data = pd.Series([2.0, 2.0, 1.0, -1.0, -2.0], dtype=float64)
 
         # Act
         result = stat.calculate_from_returns(data)
 
         # Assert
-        assert result == 3.495451590021212
+        assert result == 27.6097808756245

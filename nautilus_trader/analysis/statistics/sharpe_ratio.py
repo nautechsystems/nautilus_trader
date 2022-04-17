@@ -39,6 +39,14 @@ class SharpeRatio(PortfolioStatistic):
         return f"Sharpe Ratio ({self.period} days)"
 
     def calculate_from_returns(self, returns: pd.Series) -> Optional[Any]:
+        # Preconditions
+        if not self._check_valid_returns(returns):
+            return np.nan
+
+        # Down sample the returns into daily bins
+        returns = returns.resample("1D").sum()
+
+        # Calculate statistic
         divisor = returns.std(ddof=1)
         res = returns.mean() / divisor
 
