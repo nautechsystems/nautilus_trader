@@ -25,6 +25,8 @@ class SortinoRatio(PortfolioStatistic):
     """
     Calculates the annualized Sortino Ratio from returns.
 
+    The returns will be downsampled into daily bins.
+
     Parameters
     ----------
     period : int, default 252
@@ -43,8 +45,7 @@ class SortinoRatio(PortfolioStatistic):
         if not self._check_valid_returns(returns):
             return np.nan
 
-        # Down sample the returns into daily bins
-        returns = returns.resample("1D").sum()
+        returns = self._downsample_to_daily_bins(returns)
 
         downside = np.sqrt((returns[returns < 0] ** 2).sum() / len(returns))
         res = returns.mean() / downside
