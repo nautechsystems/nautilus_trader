@@ -109,7 +109,7 @@ def get_cached_binance_spot_instrument_provider(
     config: InstrumentProviderConfig,
 ) -> BinanceSpotInstrumentProvider:
     """
-    Cache and return a BinanceInstrumentProvider.
+    Cache and return an instrument provider for the `Binance Spot/Margin` exchange.
 
     If a cached provider already exists, then that provider will be returned.
 
@@ -145,7 +145,7 @@ def get_cached_binance_futures_instrument_provider(
     config: InstrumentProviderConfig,
 ) -> InstrumentProvider:
     """
-    Cache and return a BinanceInstrumentProvider.
+    Cache and return an instrument provider for the `Binance Futures` exchange.
 
     If a cached provider already exists, then that provider will be returned.
 
