@@ -37,7 +37,7 @@ from nautilus_trader.model.identifiers import InstrumentId
 
 class BinanceFuturesInstrumentProvider(InstrumentProvider):
     """
-    Provides a means of loading `Instrument`s from the Binance API.
+    Provides a means of loading instruments from the `Binance Futures` exchange.
 
     Parameters
     ----------

@@ -36,7 +36,7 @@ from nautilus_trader.model.identifiers import InstrumentId
 
 class BinanceSpotInstrumentProvider(InstrumentProvider):
     """
-    Provides a means of loading `Instrument`s from the Binance API.
+    Provides a means of loading instruments from the `Binance Spot/Margin` exchange.
 
     Parameters
     ----------

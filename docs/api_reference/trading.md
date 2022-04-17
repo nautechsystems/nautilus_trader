@@ -14,16 +14,6 @@
    :member-order: bysource
 ```
 
-## Kernel
-
-```{eval-rst}
-.. automodule:: nautilus_trader.trading.kernel
-   :show-inheritance:
-   :inherited-members:
-   :members:
-   :member-order: bysource
-```
-
 ## Strategy
 
 ```{eval-rst}

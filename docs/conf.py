@@ -131,7 +131,7 @@ myst_enable_extensions = [
     "substitution",
     "tasklist",
 ]
-myst_url_schemes = ["mailto", "http", "https"]
+myst_url_schemes = ("mailto", "http", "https")
 suppress_warnings = ["myst.domains"]
 
 # Do not auto-generate summary for class members
