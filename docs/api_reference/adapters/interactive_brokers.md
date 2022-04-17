@@ -1,7 +1,17 @@
 # Interactive Brokers
 
 ```{eval-rst}
-.. automodule:: nautilus_trader.adapters.ib
+.. automodule:: nautilus_trader.adapters.interactive_brokers
+   :show-inheritance:
+   :inherited-members:
+   :members:
+   :member-order: bysource
+```
+
+## Config
+
+```{eval-rst}
+.. automodule:: nautilus_trader.adapters.interactive_brokers.config
    :show-inheritance:
    :inherited-members:
    :members:
@@ -11,7 +21,7 @@
 ## Data
 
 ```{eval-rst}
-.. automodule:: nautilus_trader.adapters.ib.data
+.. automodule:: nautilus_trader.adapters.interactive_brokers.data
    :show-inheritance:
    :inherited-members:
    :members:
@@ -21,7 +31,7 @@
 ## Execution
 
 ```{eval-rst}
-.. automodule:: nautilus_trader.adapters.ib.execution
+.. automodule:: nautilus_trader.adapters.interactive_brokers.execution
    :show-inheritance:
    :inherited-members:
    :members:
@@ -31,7 +41,7 @@
 ## Factories
 
 ```{eval-rst}
-.. automodule:: nautilus_trader.adapters.ib.factories
+.. automodule:: nautilus_trader.adapters.interactive_brokers.factories
    :show-inheritance:
    :inherited-members:
    :members:
@@ -41,7 +51,7 @@
 ## Providers
 
 ```{eval-rst}
-.. automodule:: nautilus_trader.adapters.ib.providers
+.. automodule:: nautilus_trader.adapters.interactive_brokers.providers
    :show-inheritance:
    :inherited-members:
    :members:
