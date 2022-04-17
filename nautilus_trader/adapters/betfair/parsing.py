@@ -18,15 +18,18 @@ import hashlib
 import itertools
 from collections import defaultdict
 from functools import lru_cache
-from typing import Dict, List, Optional, Union
+from typing import Dict, List, Union
 
 import orjson
 import pandas as pd
 
 from nautilus_trader.adapters.betfair.common import B2N_MARKET_STREAM_SIDE
+from nautilus_trader.adapters.betfair.common import B2N_ORDER_STREAM_SIDE
+from nautilus_trader.adapters.betfair.common import B2N_TIME_IN_FORCE
 from nautilus_trader.adapters.betfair.common import B_ASK_KINDS
 from nautilus_trader.adapters.betfair.common import B_BID_KINDS
 from nautilus_trader.adapters.betfair.common import B_SIDE_KINDS
+from nautilus_trader.adapters.betfair.common import BETFAIR_QUANTITY_PRECISION
 from nautilus_trader.adapters.betfair.common import BETFAIR_TICK_SCHEME
 from nautilus_trader.adapters.betfair.common import BETFAIR_VENUE
 from nautilus_trader.adapters.betfair.common import MAX_BET_PROB
@@ -40,11 +43,13 @@ from nautilus_trader.adapters.betfair.data_types import BSPOrderBookDelta
 from nautilus_trader.adapters.betfair.util import hash_json
 from nautilus_trader.adapters.betfair.util import one
 from nautilus_trader.common.uuid import UUIDFactory
+from nautilus_trader.core.datetime import dt_to_unix_nanos
 from nautilus_trader.execution.messages import CancelOrder
 from nautilus_trader.execution.messages import ModifyOrder
 from nautilus_trader.execution.messages import SubmitOrder
 from nautilus_trader.execution.reports import OrderStatusReport
 from nautilus_trader.execution.reports import TradeReport
+from nautilus_trader.model.c_enums.order_type import OrderTypeParser
 from nautilus_trader.model.currency import Currency
 from nautilus_trader.model.data.tick import TradeTick
 from nautilus_trader.model.data.venue import InstrumentClosePrice
@@ -53,6 +58,7 @@ from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import AggressorSide
 from nautilus_trader.model.enums import BookAction
 from nautilus_trader.model.enums import BookType
+from nautilus_trader.model.enums import ContingencyType
 from nautilus_trader.model.enums import InstrumentCloseType
 from nautilus_trader.model.enums import InstrumentStatus
 from nautilus_trader.model.enums import LiquiditySide
@@ -62,6 +68,8 @@ from nautilus_trader.model.enums import TimeInForce
 from nautilus_trader.model.events.account import AccountState
 from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import ClientOrderId
+from nautilus_trader.model.identifiers import InstrumentId
+from nautilus_trader.model.identifiers import StrategyId
 from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import TradeId
 from nautilus_trader.model.identifiers import VenueOrderId
@@ -82,7 +90,7 @@ uuid_factory = UUIDFactory()
 MILLIS_TO_NANOS = 1_000_000
 
 
-def make_custom_order_ref(client_order_id, strategy_id):
+def make_custom_order_ref(client_order_id: ClientOrderId, strategy_id: StrategyId) -> str:
     return client_order_id.value.rsplit("-" + strategy_id.get_tag(), maxsplit=1)[0]
 
 
@@ -364,7 +372,7 @@ def _handle_market_trades(
         tick = TradeTick(
             instrument_id=instrument.id,
             price=price_to_probability(str(price)),
-            size=Quantity(volume, precision=4),
+            size=Quantity(volume, precision=BETFAIR_QUANTITY_PRECISION),
             aggressor_side=AggressorSide.UNKNOWN,
             trade_id=TradeId(trade_id),
             ts_event=ts_event,
@@ -385,7 +393,7 @@ def _handle_bsp_updates(runner, instrument, ts_event, ts_init):
                 action=BookAction.DELETE if volume == 0 else BookAction.UPDATE,
                 order=Order(
                     price=price_to_probability(str(price)),
-                    size=Quantity(volume, precision=8),
+                    size=Quantity(volume, precision=BETFAIR_QUANTITY_PRECISION),
                     side=B2N_MARKET_STREAM_SIDE[side],
                 ),
                 ts_event=ts_event,
@@ -413,7 +421,7 @@ def _handle_book_updates(runner, instrument, ts_event, ts_init):
                     action=BookAction.DELETE if volume == 0 else BookAction.UPDATE,
                     order=Order(
                         price=price_to_probability(str(price)),
-                        size=Quantity(volume, precision=8),
+                        size=Quantity(volume, precision=BETFAIR_QUANTITY_PRECISION),
                         side=B2N_MARKET_STREAM_SIDE[side],
                     ),
                     ts_event=ts_event,
@@ -537,7 +545,7 @@ def _handle_ticker(runner: dict, instrument: BettingInstrument, ts_event, ts_ini
     if "ltp" in runner:
         last_traded_price = price_to_probability(str(runner["ltp"]))
     if "tv" in runner:
-        traded_volume = Quantity(value=runner.get("tv"), precision=instrument.size_precision)
+        traded_volume = Quantity(value=runner.get("tv"), precision=BETFAIR_QUANTITY_PRECISION)
     return BetfairTicker(
         instrument_id=instrument.id,
         last_traded_price=last_traded_price,
@@ -690,19 +698,6 @@ def on_market_update(instrument_provider, update: dict):
     return []
 
 
-async def generate_order_status_report(self, order) -> Optional[OrderStatusReport]:
-    return [
-        OrderStatusReport(
-            client_order_id=ClientOrderId(),
-            venue_order_id=VenueOrderId(),
-            order_status=OrderStatus(),
-            filled_qty=Quantity.zero(),
-            ts_init=int(pd.Timestamp(order["timestamp"]).to_datetime64()),
-        )
-        for order in self.client().betting.list_current_orders()["currentOrders"]
-    ]
-
-
 async def generate_trades_list(
     self, venue_order_id: VenueOrderId, symbol: Symbol, since: datetime = None  # type: ignore
 ) -> List[TradeReport]:
@@ -743,3 +738,51 @@ def parse_handicap(x) -> str:
         return str(x)
     else:
         raise TypeError(f"Unexpected type ({type(x)}) for handicap: {x}")
+
+
+def bet_to_order_status_report(
+    order,
+    account_id: AccountId,
+    instrument_id: InstrumentId,
+    venue_order_id: VenueOrderId,
+    client_order_id: ClientOrderId,
+    ts_init,
+    report_id,
+) -> OrderStatusReport:
+    return OrderStatusReport(
+        account_id=account_id,
+        instrument_id=instrument_id,
+        venue_order_id=venue_order_id,
+        client_order_id=client_order_id,
+        order_side=B2N_ORDER_STREAM_SIDE[order["side"]],
+        order_type=OrderTypeParser.from_str_py(order["orderType"]),
+        contingency_type=ContingencyType.NONE,
+        time_in_force=B2N_TIME_IN_FORCE[order["persistenceType"]],
+        order_status=determine_order_status(order),
+        price=price_to_probability(str(order["priceSize"]["price"])),
+        quantity=Quantity(order["priceSize"]["size"], BETFAIR_QUANTITY_PRECISION),
+        filled_qty=Quantity(order["sizeMatched"], BETFAIR_QUANTITY_PRECISION),
+        report_id=report_id,
+        ts_accepted=dt_to_unix_nanos(pd.Timestamp(order["placedDate"])),
+        ts_triggered=0,
+        ts_last=dt_to_unix_nanos(pd.Timestamp(order["matchedDate"]))
+        if "matchedDate" in order
+        else 0,
+        ts_init=ts_init,
+    )
+
+
+def determine_order_status(order: Dict) -> OrderStatus:
+    order_size = order["priceSize"]["size"]
+    if order["status"] == "EXECUTION_COMPLETE":
+        if order_size == order["sizeMatched"]:
+            return OrderStatus.FILLED
+        elif order["sizeCancelled"] > 0.0:
+            return OrderStatus.CANCELED
+        else:
+            return OrderStatus.PARTIALLY_FILLED
+    elif order["status"] == "EXECUTABLE":
+        if order["sizeMatched"] == 0.0:
+            return OrderStatus.ACCEPTED
+        elif order["sizeMatched"] > 0.0:
+            return OrderStatus.PARTIALLY_FILLED
