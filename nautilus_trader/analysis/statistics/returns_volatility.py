@@ -25,6 +25,8 @@ class ReturnsVolatility(PortfolioStatistic):
     """
     Calculates the volatility of returns.
 
+    The returns will be downsampled into daily bins.
+
     Parameters
     ----------
     period : int, default 252
@@ -43,7 +45,6 @@ class ReturnsVolatility(PortfolioStatistic):
         if not self._check_valid_returns(returns):
             return np.nan
 
-        # Down sample the returns into daily bins
-        returns = returns.resample("1D").sum()
+        returns = self._downsample_to_daily_bins(returns)
 
         return returns.std() * np.sqrt(self.period)
