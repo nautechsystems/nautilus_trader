@@ -92,6 +92,11 @@ class BacktestNode:
         Return the backtest engine associated with the given run config ID
         (if found).
 
+        Parameters
+        ----------
+        run_config_id : str
+            The run configuration ID for the created engine.
+
         Returns
         -------
         BacktestEngine or ``None``
