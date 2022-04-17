@@ -136,7 +136,10 @@ cdef class InstrumentProvider:
 
         """
         loop = asyncio.get_event_loop()
-        loop.run_until_complete(self.load_all_async(filters))
+        if loop.is_running():
+            loop.create_task(self.load_all_async(filters))
+        else:
+            loop.run_until_complete(self.load_all_async(filters))
 
     def load_ids(self, instrument_ids: List[InstrumentId], filters: Optional[Dict] = None) -> None:
         """
@@ -152,7 +155,10 @@ cdef class InstrumentProvider:
 
         """
         loop = asyncio.get_event_loop()
-        loop.run_until_complete(self.load_ids_async(instrument_ids, filters))
+        if loop.is_running():
+            loop.create_task(self.load_ids_async(instrument_ids, filters))
+        else:
+            loop.run_until_complete(self.load_ids_async(instrument_ids, filters))
 
     def load(self, instrument_id: InstrumentId, filters: Optional[Dict] = None) -> None:
         """
@@ -168,7 +174,10 @@ cdef class InstrumentProvider:
 
         """
         loop = asyncio.get_event_loop()
-        loop.run_until_complete(self.load_async(instrument_id, filters))
+        if loop.is_running():
+            loop.create_task(self.load_async(instrument_id, filters))
+        else:
+            loop.run_until_complete(self.load_async(instrument_id, filters))
 
     cpdef void add_currency(self, Currency currency) except *:
         """
