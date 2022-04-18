@@ -13,37 +13,41 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import asyncio
-import json
-import os
+from typing import List
 
-import pytest
+import msgspec
 
 from nautilus_trader.adapters.binance.common.enums import BinanceAccountType
-from nautilus_trader.adapters.binance.factories import get_cached_binance_http_client
-from nautilus_trader.adapters.binance.spot.http.user import BinanceSpotUserDataHttpAPI
-from nautilus_trader.common.clock import LiveClock
-from nautilus_trader.common.logging import Logger
 
 
-@pytest.mark.asyncio
-async def test_binance_spot_account_http_client():
-    loop = asyncio.get_event_loop()
-    clock = LiveClock()
+################################################################################
+# HTTP responses
+################################################################################
 
-    client = get_cached_binance_http_client(
-        loop=loop,
-        clock=clock,
-        logger=Logger(clock=clock),
-        account_type=BinanceAccountType.SPOT,
-        key=os.getenv("BINANCE_API_KEY"),
-        secret=os.getenv("BINANCE_API_SECRET"),
-    )
-    await client.connect()
 
-    user = BinanceSpotUserDataHttpAPI(client=client)
-    response = await user.create_listen_key()
+class BinanceSpotBalanceInfo(msgspec.Struct):
+    """
+    HTTP response 'inner struct' from `Binance Spot/Margin` GET /api/v3/account (HMAC SHA256).
+    """
 
-    print(json.dumps(response, indent=4))
+    asset: str
+    free: str
+    locked: str
 
-    await client.disconnect()
+
+class BinanceSpotAccountInfo(msgspec.Struct):
+    """
+    HTTP response from `Binance Spot/Margin` GET /api/v3/account (HMAC SHA256).
+    """
+
+    makerCommission: int
+    takerCommission: int
+    buyerCommission: int
+    sellerCommission: int
+    canTrade: bool
+    canWithdraw: bool
+    canDeposit: bool
+    updateTime: int
+    accountType: BinanceAccountType
+    balances: List[BinanceSpotBalanceInfo]
+    permissions: List[str]

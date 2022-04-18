@@ -28,7 +28,7 @@ from nautilus_trader.adapters.binance.spot.schemas.market import BinanceSpotSymb
 from nautilus_trader.adapters.binance.spot.schemas.wallet import BinanceSpotTradeFees
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.common.providers import InstrumentProvider
-from nautilus_trader.config.components import InstrumentProviderConfig
+from nautilus_trader.config import InstrumentProviderConfig
 from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.core.datetime import millis_to_nanos
 from nautilus_trader.model.identifiers import InstrumentId
@@ -36,7 +36,7 @@ from nautilus_trader.model.identifiers import InstrumentId
 
 class BinanceSpotInstrumentProvider(InstrumentProvider):
     """
-    Provides a means of loading `Instrument`s from the Binance API.
+    Provides a means of loading instruments from the `Binance Spot/Margin` exchange.
 
     Parameters
     ----------

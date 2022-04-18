@@ -24,6 +24,7 @@ from nautilus_trader.common.uuid import UUIDFactory
 from nautilus_trader.core.data import Data
 from nautilus_trader.core.fsm import InvalidStateTrigger
 from nautilus_trader.data.engine import DataEngine
+from nautilus_trader.data.engine import DataEngineConfig
 from nautilus_trader.data.messages import DataCommand
 from nautilus_trader.data.messages import DataRequest
 from nautilus_trader.data.messages import DataResponse
@@ -95,11 +96,13 @@ class TestDataEngine:
             logger=self.logger,
         )
 
+        config = DataEngineConfig(debug=True)
         self.data_engine = DataEngine(
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
             logger=self.logger,
+            config=config,
         )
 
         self.binance_client = BacktestMarketDataClient(
@@ -1598,3 +1601,30 @@ class TestDataEngine:
         # Assert
         assert handler1 == [bar]
         assert handler2 == [bar]
+
+    def test_request_instrument_reaches_client(self):
+        # Arrange
+        self.data_engine.register_client(self.binance_client)
+
+        handler = []
+        request = DataRequest(
+            client_id=None,
+            venue=BINANCE,
+            data_type=DataType(
+                Instrument,
+                metadata={  # str data type is invalid
+                    "instrument_id": ETHUSDT_BINANCE.id,
+                },
+            ),
+            callback=handler.append,
+            request_id=self.uuid_factory.generate(),
+            ts_init=self.clock.timestamp_ns(),
+        )
+
+        # Act
+        self.msgbus.request(endpoint="DataEngine.request", request=request)
+
+        # Assert
+        assert self.data_engine.request_count == 1
+        assert len(handler) == 1
+        assert handler[0].data == [ETHUSDT_BINANCE]

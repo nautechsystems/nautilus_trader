@@ -147,7 +147,6 @@ class TestPosition:
             "quote_currency": "USD",
             "base_currency": "AUD",
             "cost_currency": "USD",
-            "realized_points": "0",
             "realized_return": "0.00000",
             "realized_pnl": "-2.00 USD",
             "commissions": "['2.00 USD']",
@@ -198,7 +197,6 @@ class TestPosition:
         assert not position.is_short
         assert position.is_open
         assert not position.is_closed
-        assert position.realized_points == 0
         assert position.realized_return == 0
         assert position.realized_pnl == Money(-2.00, USD)
         assert position.unrealized_pnl(last) == Money(49.00, USD)
@@ -241,7 +239,6 @@ class TestPosition:
         assert position.is_short
         assert position.is_open
         assert not position.is_closed
-        assert position.realized_points == 0
         assert position.realized_return == 0
         assert position.realized_pnl == Money(-2.00, USD)
         assert position.unrealized_pnl(last) == Money(-49.00, USD)
@@ -281,7 +278,6 @@ class TestPosition:
         assert not position.is_short
         assert position.is_open
         assert not position.is_closed
-        assert position.realized_points == 0
         assert position.realized_return == 0
         assert position.realized_pnl == Money(-2.00, USD)
         assert position.unrealized_pnl(last) == Money(23.50, USD)
@@ -334,7 +330,6 @@ class TestPosition:
         assert position.is_short
         assert position.is_open
         assert not position.is_closed
-        assert position.realized_points == 0
         assert position.realized_return == 0
         assert position.realized_pnl == Money(-4.00, USD)
         assert position.unrealized_pnl(last) == Money(-48.50, USD)
@@ -403,7 +398,6 @@ class TestPosition:
         assert not position.is_short
         assert not position.is_open
         assert position.is_closed
-        assert position.realized_points == Decimal("0.00010")
         assert position.realized_return == Decimal("0.00009999900000999990000099999000")
         assert position.realized_pnl == Money(12.00, USD)
         assert position.unrealized_pnl(last) == Money(0, USD)
@@ -532,7 +526,6 @@ class TestPosition:
         assert not position.is_short
         assert not position.is_open
         assert position.is_closed
-        assert position.realized_points == 0
         assert position.realized_return == 0
         assert position.realized_pnl == Money(-4.00, USD)
         assert position.unrealized_pnl(last) == Money(0, USD)
@@ -795,7 +788,6 @@ class TestPosition:
         assert position.is_open
         assert not position.is_short
         assert not position.is_closed
-        assert position.realized_points == Decimal("0.00010")
         assert position.realized_return == Decimal("0.00009999900000999990000099999000")
         assert position.realized_pnl == Money(12.00, USD)
         assert position.unrealized_pnl(last) == Money(43.50, USD)

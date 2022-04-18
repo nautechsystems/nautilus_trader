@@ -16,21 +16,21 @@
 from decimal import Decimal
 from typing import Optional
 
-from nautilus_trader.config.components import TradingStrategyConfig
+from nautilus_trader.config import StrategyConfig
 from nautilus_trader.model.enums import BookType
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.instruments.base import Instrument
 from nautilus_trader.model.orderbook.book import OrderBook
 from nautilus_trader.model.orderbook.data import OrderBookData
-from nautilus_trader.trading.strategy import TradingStrategy
+from nautilus_trader.trading.strategy import Strategy
 
 
 # *** THIS IS A TEST STRATEGY WITH NO ALPHA ADVANTAGE WHATSOEVER. ***
 # *** IT IS NOT INTENDED TO BE USED TO TRADE LIVE WITH REAL MONEY. ***
 
 
-class OrderBookImbalanceConfig(TradingStrategyConfig):
+class OrderBookImbalanceConfig(StrategyConfig):
     """
     Configuration for ``OrderBookImbalance`` instances.
 
@@ -59,7 +59,7 @@ class OrderBookImbalanceConfig(TradingStrategyConfig):
     trigger_imbalance_ratio: float = 0.20
 
 
-class OrderBookImbalance(TradingStrategy):
+class OrderBookImbalance(Strategy):
     """
     A simple strategy that sends FOK limit orders when there is a bid/ask
     imbalance in the order book.

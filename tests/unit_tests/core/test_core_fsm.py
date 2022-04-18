@@ -35,6 +35,7 @@ class TestFiniteStateMachine:
     def test_fsm_initialization(self):
         # Arrange, Act, Assert
         assert self.fsm.state == ComponentState.INITIALIZED
+        assert self.fsm.state_string == "INITIALIZED"
 
     def test_trigger_with_invalid_transition_raises_exception(self):
         # Arrange
@@ -55,3 +56,4 @@ class TestFiniteStateMachine:
 
         # Assert
         assert self.fsm.state == ComponentState.STARTING
+        assert self.fsm.state_string == "STARTING"

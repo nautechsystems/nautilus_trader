@@ -13,11 +13,14 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+import copy
+import pickle
+import uuid
 from collections import deque
 from decimal import Decimal
 from typing import Optional
 
-from nautilus_trader.config.components import CacheConfig
+from nautilus_trader.config import CacheConfig
 
 from libc.stdint cimport int64_t
 
@@ -49,7 +52,7 @@ from nautilus_trader.model.instruments.crypto_perpetual cimport CryptoPerpetual
 from nautilus_trader.model.instruments.currency_pair cimport CurrencyPair
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.orders.base cimport Order
-from nautilus_trader.trading.strategy cimport TradingStrategy
+from nautilus_trader.trading.strategy cimport Strategy
 
 
 cdef class Cache(CacheFacade):
@@ -101,6 +104,7 @@ cdef class Cache(CacheFacade):
         self._accounts = {}                    # type: dict[AccountId, Account]
         self._orders = {}                      # type: dict[ClientOrderId, Order]
         self._positions = {}                   # type: dict[PositionId, Position]
+        self._position_snapshots = {}          # type: dict[PositionId, list[bytes]]
 
         # Cache index
         self._index_venue_account = {}         # type: dict[Venue, AccountId]
@@ -126,7 +130,7 @@ cdef class Cache(CacheFacade):
 
         self._log.info("INITIALIZED.")
 
-# -- COMMANDS --------------------------------------------------------------------------------------
+# -- COMMANDS -------------------------------------------------------------------------------------
 
     cpdef void cache_currencies(self) except *:
         """
@@ -548,6 +552,7 @@ cdef class Cache(CacheFacade):
         self._accounts.clear()
         self._orders.clear()
         self._positions.clear()
+        self._position_snapshots.clear()
 
         self._log.debug(f"Cleared cache.")
 
@@ -712,13 +717,13 @@ cdef class Cache(CacheFacade):
             # 9: Build _index_strategies -> {StrategyId}
             self._index_strategies.add(position.strategy_id)
 
-    cpdef void load_strategy(self, TradingStrategy strategy) except *:
+    cpdef void load_strategy(self, Strategy strategy) except *:
         """
         Load the state dictionary for the given strategy.
 
         Parameters
         ----------
-        strategy : TradingStrategy
+        strategy : Strategy
             The strategy to load.
 
         """
@@ -1271,6 +1276,33 @@ cdef class Cache(CacheFacade):
         if self._database is not None:
             self._database.add_position(position)
 
+    cpdef void snapshot_position(self, Position position) except *:
+        """
+        Snapshot the given position in its current state.
+
+        The position ID will be appended with a UUID4 string.
+
+        Parameters
+        ----------
+        position : Position
+            The position to archive.
+
+        """
+        cdef PositionId position_id = position.id
+        cdef list snapshots = self._position_snapshots.get(position_id)
+
+        # Reassign position ID
+        cdef Position copied_position = copy.copy(position)
+        copied_position.id = PositionId(position.id.value + f"-{uuid.uuid4()}")
+        cdef bytes position_pickled = pickle.dumps(copied_position)
+
+        if snapshots is not None:
+            snapshots.append(position_pickled)
+        else:
+            self._position_snapshots[position_id] = [position_pickled]
+
+        self._log.debug(f"Snapshot {repr(copied_position)}.")
+
     cpdef void update_account(self, Account account) except *:
         """
         Update the given account in the cache.
@@ -1337,13 +1369,13 @@ cdef class Cache(CacheFacade):
         if self._database is not None:
             self._database.update_position(position)
 
-    cpdef void update_strategy(self, TradingStrategy strategy) except *:
+    cpdef void update_strategy(self, Strategy strategy) except *:
         """
         Update the given strategy state in the cache.
 
         Parameters
         ----------
-        strategy : TradingStrategy
+        strategy : Strategy
             The strategy to update.
         """
         Condition.not_none(strategy, "strategy")
@@ -1354,13 +1386,13 @@ cdef class Cache(CacheFacade):
         if self._database is not None:
             self._database.update_strategy(strategy)
 
-    cpdef void delete_strategy(self, TradingStrategy strategy) except *:
+    cpdef void delete_strategy(self, Strategy strategy) except *:
         """
         Delete the given strategy from the cache.
 
         Parameters
         ----------
-        strategy : TradingStrategy
+        strategy : Strategy
             The strategy to deregister.
 
         Raises
@@ -1385,7 +1417,7 @@ cdef class Cache(CacheFacade):
             self._database.delete_strategy(strategy.id)
             self._log.debug(f"Deleted Strategy(id={strategy.id.value}).")
 
-# -- DATA QUERIES ----------------------------------------------------------------------------------
+# -- DATA QUERIES ---------------------------------------------------------------------------------
 
     cpdef list tickers(self, InstrumentId instrument_id):
         """
@@ -1870,7 +1902,7 @@ cdef class Cache(CacheFacade):
 
         return bid_quotes, ask_quotes
 
-# -- INSTRUMENT QUERIES ----------------------------------------------------------------------------
+# -- INSTRUMENT QUERIES ---------------------------------------------------------------------------
 
     cpdef Instrument instrument(self, InstrumentId instrument_id):
         """
@@ -1922,7 +1954,7 @@ cdef class Cache(CacheFacade):
         """
         return [x for x in self._instruments.values() if venue is None or venue == x.id.venue]
 
-# -- ACCOUNT QUERIES -------------------------------------------------------------------------------
+# -- ACCOUNT QUERIES ------------------------------------------------------------------------------
 
     cpdef Account account(self, AccountId account_id):
         """
@@ -1992,7 +2024,7 @@ cdef class Cache(CacheFacade):
         """
         return list(self._accounts.values())
 
-# -- IDENTIFIER QUERIES ----------------------------------------------------------------------------
+# -- IDENTIFIER QUERIES ---------------------------------------------------------------------------
 
     cdef set _build_ord_query_filter_set(
         self,
@@ -2263,7 +2295,7 @@ cdef class Cache(CacheFacade):
         """
         return self._index_strategies.copy()
 
-# -- ORDER QUERIES ---------------------------------------------------------------------------------
+# -- ORDER QUERIES --------------------------------------------------------------------------------
 
     cpdef Order order(self, ClientOrderId client_order_id):
         """
@@ -2454,7 +2486,7 @@ cdef class Cache(CacheFacade):
         except KeyError as ex:
             self._log.error("Cannot find Order object in the cache " + str(ex))
 
-# -- POSITION QUERIES ------------------------------------------------------------------------------
+# -- POSITION QUERIES -----------------------------------------------------------------------------
 
     cpdef Position position(self, PositionId position_id):
         """
@@ -2513,6 +2545,32 @@ cdef class Cache(CacheFacade):
         Condition.not_none(client_order_id, "client_order_id")
 
         return self._index_order_position.get(client_order_id)
+
+    cpdef list position_snapshots(self, PositionId position_id=None):
+        """
+        Return all position snapshots with the given optional identifier filter.
+
+        Parameters
+        ----------
+        position_id : PositionId, optional
+            The position ID query filter.
+
+        Returns
+        -------
+        list[Position]
+
+        """
+        cdef list snapshot_list
+        cdef list snapshots
+        if position_id is not None:
+            snapshots = self._position_snapshots.get(position_id, [])
+        else:
+            snapshots = []
+            for snapshot_list in self._position_snapshots.values():
+                snapshots += snapshot_list
+
+        cdef bytes s
+        return [pickle.loads(s) for s in snapshots]
 
     cpdef list positions(
         self,
@@ -2907,7 +2965,7 @@ cdef class Cache(CacheFacade):
         """
         return len(self.position_ids(venue, instrument_id, strategy_id))
 
-# -- STRATEGY QUERIES ------------------------------------------------------------------------------
+# -- STRATEGY QUERIES -----------------------------------------------------------------------------
 
     cpdef StrategyId strategy_id_for_order(self, ClientOrderId client_order_id):
         """

@@ -93,7 +93,8 @@ cdef class BarSpecification:
     @staticmethod
     cdef bint check_time_aggregated_c(BarAggregation aggregation):
         if (
-            aggregation == BarAggregation.SECOND
+            aggregation == BarAggregation.MILLISECOND
+            or aggregation == BarAggregation.SECOND
             or aggregation == BarAggregation.MINUTE
             or aggregation == BarAggregation.HOUR
             or aggregation == BarAggregation.DAY

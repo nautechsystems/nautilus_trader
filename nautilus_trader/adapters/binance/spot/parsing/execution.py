@@ -16,6 +16,8 @@
 from decimal import Decimal
 from typing import Any, Dict, List, Tuple
 
+from nautilus_trader.adapters.binance.common.enums import BinanceOrderStatus
+from nautilus_trader.adapters.binance.spot.enums import BinanceSpotOrderType
 from nautilus_trader.core.datetime import millis_to_nanos
 from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.execution.reports import OrderStatusReport
@@ -25,7 +27,6 @@ from nautilus_trader.model.enums import LiquiditySide
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import OrderStatus
 from nautilus_trader.model.enums import OrderType
-from nautilus_trader.model.enums import OrderTypeParser
 from nautilus_trader.model.enums import TimeInForce
 from nautilus_trader.model.enums import TriggerType
 from nautilus_trader.model.identifiers import AccountId
@@ -73,50 +74,52 @@ def parse_time_in_force(time_in_force: str) -> TimeInForce:
         return TimeInForce[time_in_force]
 
 
-def parse_order_status(status: str) -> OrderStatus:
-    if status == "NEW":
+def parse_order_status(status: BinanceOrderStatus) -> OrderStatus:
+    if status == BinanceOrderStatus.NEW:
         return OrderStatus.ACCEPTED
-    elif status == "CANCELED":
+    elif status == BinanceOrderStatus.CANCELED:
         return OrderStatus.CANCELED
-    elif status == "PARTIALLY_FILLED":
+    elif status == BinanceOrderStatus.PARTIALLY_FILLED:
         return OrderStatus.PARTIALLY_FILLED
-    elif status == "FILLED":
+    elif status == BinanceOrderStatus.FILLED:
         return OrderStatus.FILLED
-    elif status == "EXPIRED":
+    elif status == BinanceOrderStatus.EXPIRED:
         return OrderStatus.EXPIRED
     else:  # pragma: no cover (design-time error)
         raise RuntimeError(f"unrecognized order status, was {status}")
 
 
-def parse_order_type(order_type: str) -> OrderType:
-    if order_type in ("STOP", "STOP_LOSS"):
+def parse_order_type(order_type: BinanceSpotOrderType) -> OrderType:
+    if order_type == BinanceSpotOrderType.STOP:
         return OrderType.STOP_MARKET
-    elif order_type == "STOP_LOSS_LIMIT":
+    elif order_type == BinanceSpotOrderType.STOP_LOSS:
+        return OrderType.STOP_MARKET
+    elif order_type == BinanceSpotOrderType.STOP_LOSS_LIMIT:
         return OrderType.STOP_LIMIT
-    elif order_type == "TAKE_PROFIT":
+    elif order_type == BinanceSpotOrderType.TAKE_PROFIT:
         return OrderType.LIMIT
-    elif order_type == "TAKE_PROFIT_LIMIT":
+    elif order_type == BinanceSpotOrderType.TAKE_PROFIT_LIMIT:
         return OrderType.STOP_LIMIT
-    elif order_type == "TAKE_PROFIT_MARKET":
-        return OrderType.MARKET_IF_TOUCHED
-    elif order_type == "LIMIT_MAKER":
+    elif order_type == BinanceSpotOrderType.LIMIT_MAKER:
+        return OrderType.LIMIT
+    elif order_type == BinanceSpotOrderType.LIMIT:
         return OrderType.LIMIT
     else:
-        return OrderTypeParser.from_str_py(order_type)
+        return OrderType.MARKET
 
 
-def binance_order_type(order: Order) -> str:
+def binance_order_type(order: Order) -> BinanceSpotOrderType:
     if order.type == OrderType.MARKET:
-        return "MARKET"
+        return BinanceSpotOrderType.MARKET
     elif order.type == OrderType.LIMIT:
         if order.is_post_only:
-            return "LIMIT_MAKER"
+            return BinanceSpotOrderType.LIMIT_MAKER
         else:
-            return "LIMIT"
+            return BinanceSpotOrderType.LIMIT
     elif order.type == OrderType.STOP_LIMIT:
-        return "STOP_LOSS_LIMIT"
+        return BinanceSpotOrderType.STOP_LOSS_LIMIT
     elif order.type == OrderType.LIMIT_IF_TOUCHED:
-        return "TAKE_PROFIT_LIMIT"
+        return BinanceSpotOrderType.TAKE_PROFIT_LIMIT
     else:  # pragma: no cover (design-time error)
         raise RuntimeError("invalid order type")
 
@@ -141,7 +144,7 @@ def parse_order_report_http(
         order_side=OrderSide[data["side"].upper()],
         order_type=parse_order_type(order_type),
         time_in_force=parse_time_in_force(data["timeInForce"].upper()),
-        order_status=parse_order_status(data["status"].upper()),
+        order_status=parse_order_status(BinanceOrderStatus(data["status"].upper())),
         price=Price.from_str(price) if price is not None else None,
         quantity=Quantity.from_str(data["origQty"]),
         filled_qty=Quantity.from_str(data["executedQty"]),

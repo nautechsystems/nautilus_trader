@@ -136,7 +136,7 @@ cdef class SimulatedExchange:
     cpdef void process(self, int64_t now_ns) except *
     cpdef void reset(self) except *
 
-# -- COMMAND HANDLING ------------------------------------------------------------------------------
+# -- COMMAND HANDLING -----------------------------------------------------------------------------
 
     cdef void _process_order(self, Order order) except *
     cdef void _process_market_order(self, MarketOrder order) except *
@@ -147,7 +147,7 @@ cdef class SimulatedExchange:
     cdef void _update_stop_market_order(self, Order order, Quantity qty, Price trigger_price) except *
     cdef void _update_stop_limit_order(self, Order order, Quantity qty, Price price, Price trigger_price) except *
 
-# -- EVENT HANDLING --------------------------------------------------------------------------------
+# -- EVENT HANDLING -------------------------------------------------------------------------------
 
     cdef void _accept_order(self, Order order) except *
     cdef void _update_order(self, Order order, Quantity qty, Price price=*, Price trigger_price=*, bint update_ocos=*) except *
@@ -156,7 +156,7 @@ cdef class SimulatedExchange:
     cdef void _cancel_oco_orders(self, Order order) except *
     cdef void _expire_order(self, Order order) except *
 
-# -- ORDER MATCHING ENGINE -------------------------------------------------------------------------
+# -- ORDER MATCHING ENGINE ------------------------------------------------------------------------
 
     cdef void _add_order(self, Order order) except *
     cdef void _delete_order(self, Order order) except *
@@ -193,14 +193,14 @@ cdef class SimulatedExchange:
         LiquiditySide liquidity_side,
     ) except *
 
-# -- IDENTIFIER GENERATORS -------------------------------------------------------------------------
+# -- IDENTIFIER GENERATORS ------------------------------------------------------------------------
 
     cdef PositionId _get_position_id(self, Order order, bint generate=*)
     cdef PositionId _generate_venue_position_id(self, InstrumentId instrument_id)
     cdef VenueOrderId _generate_venue_order_id(self, InstrumentId instrument_id)
     cdef TradeId _generate_trade_id(self)
 
-# -- EVENT GENERATORS ------------------------------------------------------------------------------
+# -- EVENT GENERATORS -----------------------------------------------------------------------------
 
     cdef void _generate_fresh_account_state(self) except *
     cdef void _generate_order_submitted(self, Order order) except *

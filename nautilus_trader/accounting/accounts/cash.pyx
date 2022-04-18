@@ -107,7 +107,7 @@ cdef class CashAccount(Account):
         if locked is not None:
             self._recalculate_balance(locked.currency)
 
-# -- CALCULATIONS ----------------------------------------------------------------------------------
+# -- CALCULATIONS ---------------------------------------------------------------------------------
 
     cdef void _recalculate_balance(self, Currency currency) except *:
         cdef AccountBalance current_balance = self._balances.get(currency)

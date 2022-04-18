@@ -17,9 +17,9 @@ import pkgutil
 
 import pytest
 
-from nautilus_trader.config.components import ActorConfig
-from nautilus_trader.config.components import ActorFactory
-from nautilus_trader.config.components import ImportableActorConfig
+from nautilus_trader.config import ActorConfig
+from nautilus_trader.config import ActorFactory
+from nautilus_trader.config import ImportableActorConfig
 from tests.test_kit.mocks.actors import MockActor
 
 

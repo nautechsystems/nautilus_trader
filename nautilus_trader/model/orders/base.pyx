@@ -74,6 +74,7 @@ cdef dict _ORDER_STATE_TABLE = {
     (OrderStatus.PENDING_UPDATE, OrderStatus.FILLED): OrderStatus.FILLED,
     (OrderStatus.PENDING_CANCEL, OrderStatus.PENDING_CANCEL): OrderStatus.PENDING_CANCEL,  # Allow multiple requests
     (OrderStatus.PENDING_CANCEL, OrderStatus.CANCELED): OrderStatus.CANCELED,
+    (OrderStatus.PENDING_CANCEL, OrderStatus.ACCEPTED): OrderStatus.ACCEPTED,  # Allows failed cancel requests
     (OrderStatus.PENDING_CANCEL, OrderStatus.PARTIALLY_FILLED): OrderStatus.PARTIALLY_FILLED,
     (OrderStatus.PENDING_CANCEL, OrderStatus.FILLED): OrderStatus.FILLED,
     (OrderStatus.TRIGGERED, OrderStatus.REJECTED): OrderStatus.REJECTED,
@@ -261,6 +262,9 @@ cdef class Order:
             or self._fsm.state == OrderStatus.PARTIALLY_FILLED
         )
 
+    cdef bint is_canceled_c(self) except *:
+        return self._fsm.state == OrderStatus.CANCELED
+
     cdef bint is_closed_c(self) except *:
         return (
             self._fsm.state == OrderStatus.DENIED
@@ -306,6 +310,18 @@ cdef class Order:
 
         """
         return self.instrument_id.venue
+
+    @property
+    def side_string(self) -> str:
+        """
+        The orders side as a string.
+
+        Returns
+        -------
+        str
+
+        """
+        return self.side_string_c()
 
     @property
     def status(self):
@@ -536,6 +552,18 @@ cdef class Order:
 
         """
         return self.is_open_c()
+
+    @property
+    def is_canceled(self):
+        """
+        If current `order.status` is ``CANCELED``.
+
+        Returns
+        -------
+        bool
+
+        """
+        return self.is_canceled_c()
 
     @property
     def is_closed(self):

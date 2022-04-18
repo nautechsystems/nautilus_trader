@@ -20,9 +20,9 @@ import pytest
 
 from nautilus_trader.adapters.betfair.providers import BetfairInstrumentProvider
 from nautilus_trader.backtest.node import BacktestNode
-from nautilus_trader.config.backtest import BacktestDataConfig
-from nautilus_trader.config.backtest import BacktestEngineConfig
-from nautilus_trader.config.backtest import BacktestRunConfig
+from nautilus_trader.config import BacktestDataConfig
+from nautilus_trader.config import BacktestEngineConfig
+from nautilus_trader.config import BacktestRunConfig
 from nautilus_trader.model.data.venue import InstrumentStatusUpdate
 from nautilus_trader.persistence.catalog import DataCatalog
 from nautilus_trader.persistence.external.core import process_files
@@ -69,7 +69,7 @@ class TestPersistenceStreaming:
             instrument_id=instrument.id.value,
         )
         run_config.engine.persistence.flush_interval = 5000
-        node = BacktestNode()
+        node = BacktestNode(configs=[run_config])
 
         # Act
         backtest_result = node.run(run_configs=[run_config])
@@ -83,7 +83,7 @@ class TestPersistenceStreaming:
 
         expected = {
             "AccountState": 666,
-            "BettingInstrument": 3,
+            "BettingInstrument": 2,
             "ComponentStateChanged": 11,
             "OrderAccepted": 322,
             "OrderBookDeltas": 1077,
@@ -125,8 +125,8 @@ class TestPersistenceStreaming:
         )
 
         # Act
-        node = BacktestNode()
-        r = node.run([run_config])
+        node = BacktestNode(configs=[run_config])
+        r = node.run()
 
         # Assert
         result = self.catalog.read_backtest(

@@ -38,6 +38,7 @@ from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.logging import LogColor
 from nautilus_trader.common.logging import Logger
+from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.execution.messages import CancelAllOrders
 from nautilus_trader.execution.messages import CancelOrder
 from nautilus_trader.execution.messages import ModifyOrder
@@ -238,12 +239,13 @@ class FTXExecutionClient(LiveExecutionClient):
         self._set_connected(False)
         self._log.info("Disconnected.")
 
-    # -- EXECUTION REPORTS -------------------------------------------------------------------------
+    # -- EXECUTION REPORTS ------------------------------------------------------------------------
 
     async def generate_order_status_report(
         self,
         instrument_id: InstrumentId,
-        venue_order_id: VenueOrderId,
+        client_order_id: Optional[ClientOrderId] = None,
+        venue_order_id: Optional[VenueOrderId] = None,
     ) -> Optional[OrderStatusReport]:
         """
         Generate an order status report for the given order identifier parameter(s).
@@ -255,6 +257,8 @@ class FTXExecutionClient(LiveExecutionClient):
         ----------
         instrument_id : InstrumentId, optional
             The instrument ID query filter.
+        client_order_id : ClientOrderId, optional
+            The client order ID for the report.
         venue_order_id : VenueOrderId, optional
             The venue order ID (assigned by the venue) query filter.
 
@@ -262,7 +266,23 @@ class FTXExecutionClient(LiveExecutionClient):
         -------
         OrderStatusReport or ``None``
 
+        Raises
+        ------
+        ValueError
+            If both the `client_order_id` and `venue_order_id` are ``None``.
+
         """
+        PyCondition.true(
+            client_order_id is not None or venue_order_id is not None,
+            "both `client_order_id` and `venue_order_id` were `None`",
+        )
+
+        self._log.info(
+            f"Generating OrderStatusReport for "
+            f"{repr(client_order_id) if client_order_id else ''} "
+            f"{repr(venue_order_id) if venue_order_id else ''}..."
+        )
+
         try:
             response = await self._http_client.get_order_status(venue_order_id.value)
         except FTXError as ex:
@@ -613,7 +633,7 @@ class FTXExecutionClient(LiveExecutionClient):
 
         return reports
 
-    # -- COMMAND HANDLERS --------------------------------------------------------------------------
+    # -- COMMAND HANDLERS -------------------------------------------------------------------------
 
     def submit_order(self, command: SubmitOrder) -> None:
         position: Optional[Position] = None
@@ -1113,7 +1133,7 @@ class FTXExecutionClient(LiveExecutionClient):
         # Fetch strategy ID
         strategy_id: StrategyId = self._cache.strategy_id_for_order(client_order_id)
         if strategy_id is None:
-            self._generate_external_order_status(instrument, data)
+            self._generate_external_order_report(instrument, data)
             return
 
         ts_event: int = int(pd.to_datetime(data["createdAt"], utc=True).to_datetime64())
@@ -1138,7 +1158,7 @@ class FTXExecutionClient(LiveExecutionClient):
                     ts_event=ts_event,
                 )
 
-    def _generate_external_order_status(self, instrument: Instrument, data: Dict[str, Any]) -> None:
+    def _generate_external_order_report(self, instrument: Instrument, data: Dict[str, Any]) -> None:
         client_id_str = data.get("clientId")
         price = data.get("price")
         created_at = int(pd.to_datetime(data["createdAt"], utc=True).to_datetime64())

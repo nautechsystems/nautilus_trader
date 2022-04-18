@@ -20,9 +20,9 @@ import pytest
 
 from nautilus_trader.adapters.betfair.providers import BetfairInstrumentProvider
 from nautilus_trader.backtest.node import BacktestNode
-from nautilus_trader.config.backtest import BacktestDataConfig
-from nautilus_trader.config.backtest import BacktestEngineConfig
-from nautilus_trader.config.backtest import BacktestRunConfig
+from nautilus_trader.config import BacktestDataConfig
+from nautilus_trader.config import BacktestEngineConfig
+from nautilus_trader.config import BacktestRunConfig
 from nautilus_trader.model.data.venue import InstrumentStatusUpdate
 from nautilus_trader.model.orderbook.data import OrderBookData
 from nautilus_trader.persistence.batching import batch_files
@@ -119,8 +119,8 @@ class TestPersistenceBatching:
         )
 
         # Act
-        node = BacktestNode()
-        node.run([run_config])
+        node = BacktestNode(configs=[run_config])
+        node.run()
 
         # Assert
         assert node

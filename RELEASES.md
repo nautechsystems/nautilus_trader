@@ -1,8 +1,37 @@
+# NautilusTrader 1.142.0 Beta
+
+Released on 17th April 2022 (UTC).
+
+### Breaking Changes
+- `BacktestNode` now requires configs at initialization
+- Removed `run_configs` param from `BacktestNode.run()` method
+- Removed `return_engine` flag
+- Renamed `TradingStrategy` to `Strategy`
+- Renamed `TradingStrategyConfig` to `StrategyConfig`
+- Changes to configuration object import paths
+- Removed redundant `realized_points` concept from `Position`
+
+### Enhancements
+- Added `BacktestNode.get_engines()` method
+- Added `BacktestNode.get_engine(run_config_id)` method
+- Added `Actor.request_instrument()` method (also applies to `Strategy`)
+- Added `Cache.snapshot_position()` method
+- All configuration objects can now be imported directly from `nautilus_trader.config`
+- Execution engine now takes snapshots of closed netted positions
+- Performance statistics now based on total positions and snapshots
+- Added Binance Spot/Margin external order handling
+- Added support for millisecond bar aggregation
+- Added configurable `debug` mode for engines (with extra debug logging)
+- Improved annualized portfolio statistics with configurable period
+
+### Fixes
+None
+
+---
+
 # NautilusTrader 1.141.0 Beta
 
 Released on 4th April 2022 (UTC).
-
-This will be the final release without Rust compiled binaries.
 
 ### Breaking Changes
 - Renamed `BacktestNode.run_sync()` to `BacktestNode.run()`

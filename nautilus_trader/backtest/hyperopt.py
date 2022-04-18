@@ -14,7 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 from decimal import Decimal
-from typing import Dict, Optional
+from typing import Any, Dict, Optional
 
 from nautilus_trader.backtest.node import BacktestNode
 
@@ -29,9 +29,9 @@ from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.common.logging import LoggerAdapter
 from nautilus_trader.common.logging import LogLevel
-from nautilus_trader.config.backtest import BacktestRunConfig
-from nautilus_trader.config.components import ImportableStrategyConfig
-from nautilus_trader.config.components import TradingStrategyConfig
+from nautilus_trader.config import BacktestRunConfig
+from nautilus_trader.config import ImportableStrategyConfig
+from nautilus_trader.config import StrategyConfig
 from nautilus_trader.model.data.bar import BarType
 from nautilus_trader.model.identifiers import InstrumentId
 
@@ -41,20 +41,30 @@ class HyperoptBacktestNode(BacktestNode):
     Provides a specific node for `hyperopt` backtest runs.
 
     Distributed Asynchronous Hyper-parameter Optimization.
+
+    Parameters
+    ----------
+    base_config : BacktestRunConfig
+        The base backtest run config to build from.
     """
 
-    def __init__(self):
-        self.path: Optional[str] = None
-        self.strategy: Optional[TradingStrategyConfig] = None
+    def __init__(self, base_config: BacktestRunConfig):
+        super().__init__([base_config])
+
+        self.config: BacktestRunConfig = base_config
+
+        self.strategy_path: Optional[str] = None
+        self.config_path: Optional[str] = None
+        self.strategy_config: Optional[StrategyConfig] = None
         self.instrument_id: Optional[InstrumentId] = None
         self.bar_type: Optional[BarType] = None
         self.trade_size: Optional[Decimal] = None
-        self.config: Optional[BacktestRunConfig] = None
 
     def set_strategy_config(
         self,
-        path: str,
-        strategy: TradingStrategyConfig,
+        strategy_path: str,
+        config_path: str,
+        strategy_config: StrategyConfig,
         instrument_id: InstrumentId,
         bar_type: BarType,
         trade_size: Decimal,
@@ -64,9 +74,11 @@ class HyperoptBacktestNode(BacktestNode):
 
         Parameters
         ----------
-        path : str
+        strategy_path : str
             The path to the strategy.
-        strategy : TradingStrategyConfig
+        config_path : str
+            The path to the strategy config.
+        strategy_config : StrategyConfig
             The strategy config object.
         instrument_id : InstrumentId
             The instrument ID.
@@ -76,23 +88,29 @@ class HyperoptBacktestNode(BacktestNode):
             The trade size to be used.
 
         """
-        self.path = path
-        self.strategy = strategy
+        self.strategy_path = strategy_path
+        self.config_path = config_path
+        self.strategy_config = strategy_config
         self.instrument_id = instrument_id
         self.bar_type = bar_type
         self.trade_size = trade_size
 
-    def hyperopt_search(self, config, params, max_evals=50) -> Dict:
+    def hyperopt_search(
+        self,
+        params: Dict[str, Any],
+        minimum_positions: int = 50,
+        max_evals: int = 50,
+    ) -> Dict:
         """
-        Run hyperopt to optimize strategy parameters.
+        Run with hyperopt to optimize strategy parameters.
 
         Parameters
         ----------
-        config : BacktestRunConfig
-            The configuration for the backtest test.
         params : Dict[str, Any]
             The set of strategy parameters to optimize.
-        max_evals : int
+        minimum_positions: int, default 50
+            The minimum number of positions to accept a gradient.
+        max_evals : int, default 50
             The maximum number of evaluations for the optimization problem.
 
         Returns
@@ -114,7 +132,6 @@ class HyperoptBacktestNode(BacktestNode):
 
         logger = Logger(clock=LiveClock(), level_stdout=LogLevel.INFO)
         logger_adapter = LoggerAdapter(component_name="HYPEROPT_LOGGER", logger=logger)
-        self.config = config
 
         def objective(args):
 
@@ -122,8 +139,9 @@ class HyperoptBacktestNode(BacktestNode):
 
             strategies = [
                 ImportableStrategyConfig(
-                    path=self.path,
-                    config=self.strategy(
+                    strategy_path=self.strategy_path,
+                    config_path=self.config_path,
+                    config=self.strategy_config(
                         instrument_id=self.instrument_id,
                         bar_type=self.bar_type,
                         trade_size=self.trade_size,
@@ -139,26 +157,28 @@ class HyperoptBacktestNode(BacktestNode):
 
             try:
                 result = self._run(
-                    engine_config=local_config.engine,
                     run_config_id=local_config.id,
+                    engine_config=local_config.engine,
                     venue_configs=local_config.venues,
                     data_configs=local_config.data,
-                    actor_configs=local_config.actors,
-                    strategy_configs=local_config.strategies,
-                    persistence=local_config.persistence,
                     batch_size_bytes=local_config.batch_size_bytes,
-                    # return_engine=True
                 )
 
                 base_currency = self.config.venues[0].base_currency
                 # logger_adapter.info(f"{result.stats_pnls[base_currency]}")
                 pnl_pct = result.stats_pnls[base_currency]["PnL%"]
+                profit_factor = result.stats_returns["Profit Factor"]
                 logger_adapter.info(f"OBJECTIVE: {1/pnl_pct}")
+                # win_rate = result.stats_pnls['USDT']['Win Rate']
 
-                if (1 / pnl_pct) == 0 or pnl_pct <= 0:
+                if (
+                    (1 / profit_factor) == 0
+                    or profit_factor <= 0
+                    or result.total_positions < minimum_positions
+                ):
                     ret = {"status": hyperopt.STATUS_FAIL}
                 else:
-                    ret = {"status": hyperopt.STATUS_OK, "loss": (1 / pnl_pct)}
+                    ret = {"status": hyperopt.STATUS_OK, "loss": (1 / profit_factor)}
 
             except Exception as e:
                 ret = {"status": hyperopt.STATUS_FAIL}
@@ -168,5 +188,9 @@ class HyperoptBacktestNode(BacktestNode):
         trials = hyperopt.Trials()
 
         return hyperopt.fmin(
-            objective, params, algo=hyperopt.tpe.suggest, trials=trials, max_evals=max_evals
+            fn=objective,
+            space=params,
+            algo=hyperopt.tpe.suggest,
+            trials=trials,
+            max_evals=max_evals,
         )

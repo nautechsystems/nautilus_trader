@@ -350,7 +350,6 @@ class TestPortfolio:
         # Assert
         assert self.portfolio.balances_locked(BINANCE)[USDT].as_decimal() == 50100
 
-    @pytest.mark.skip(reason="investigate margin cleanup")
     def test_update_orders_open_margin_account(self):
         # Arrange
         AccountFactory.register_calculated_account("BINANCE")
@@ -437,7 +436,7 @@ class TestPortfolio:
         self.portfolio.initialize_orders()
 
         # Assert
-        assert self.portfolio.margins_init(BINANCE) == {}
+        assert self.portfolio.margins_init(BINANCE) == {BTCUSDT_BINANCE.id: Money("0E-8", USDT)}
 
     def test_order_accept_updates_margin_init(self):
         # Arrange

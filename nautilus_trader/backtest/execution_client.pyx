@@ -95,7 +95,7 @@ cdef class BacktestExecClient(ExecutionClient):
         self.is_connected = False
         self._log.info(f"Disconnected.")
 
-# -- COMMAND HANDLERS ------------------------------------------------------------------------------
+# -- COMMAND HANDLERS -----------------------------------------------------------------------------
 
     cpdef void submit_order(self, SubmitOrder command) except *:
         """

@@ -78,7 +78,7 @@ def parser(line):
     )
 ```
 
-We'll set up a catalog in the current working directory
+We'll set up a catalog in the current working directory.
 
 ```python
 import os, shutil
@@ -124,35 +124,12 @@ catalog.quote_ticks(start=start, end=end)
 
 Nautilus has a top-level object `BacktestRunConfig` that allows configuring a backtest in one place. It is a `Partialable` object (which means it can be configured in stages); the benefits of which are reduced boilerplate code when creating multiple backtest runs (for example when doing some sort of grid search over parameters).
 
-### Staring with a Venue
 
-We can start partially configuring the config with just a Venue:
-
-```python
-from nautilus_trader.config.backtest import BacktestRunConfig, BacktestVenueConfig, BacktestDataConfig, BacktestEngineConfig
-
-# Create a `base` config object to be shared with all backtests
-base = BacktestRunConfig(
-    venues=[
-        BacktestVenueConfig(
-            name="SIM",
-            oms_type="HEDGING",
-            account_type="MARGIN",
-            base_currency="USD",
-            starting_balances=["1000000 USD"],
-        )
-    ]
-)
-base
-```
-
-### Adding Data
-
-Notice many of the fields are `None` - we can continue to configure the backtest via `update`.
-
-The `data_config` arg allows adding multiple data types (`quotes`, `trades`, `generic_data`), but for this example, we will simply load the quote ticks we added earlier.
+### Adding data and venues
 
 ```python
+from nautilus_trader.config import BacktestRunConfig, BacktestVenueConfig, BacktestDataConfig, BacktestEngineConfig
+
 instrument = catalog.instruments(as_nautilus=True)[0]
 
 data_config=[
@@ -165,64 +142,42 @@ data_config=[
     )
 ]
 
-config = base.update(
-    data=data_config,
-    engine=BacktestEngineConfig()
-)
-
-config
-```
-
-### Finally, add Strategy instances
-
-We can perform a grid-search of some parameters by using the `replace` method, which returns a new copy of the config. We use the `ImportableStrategyConfig` object to tell Nautilus where the `TradingStrategy` class exists, and add some config. 
-
-```python
-from decimal import Decimal
-from nautilus_trader.config.components import ImportableStrategyConfig
-from nautilus_trader.examples.strategies.ema_cross import EMACrossConfig
-
-
-PARAM_SET = [
-    {"fast_ema": 5, "slow_ema": 20},
-    {"fast_ema": 10, "slow_ema": 50},
-    {"fast_ema": 30, "slow_ema": 100},
+venues_config=[
+    BacktestVenueConfig(
+        name="SIM",
+        oms_type="HEDGING",
+        account_type="MARGIN",
+        base_currency="USD",
+        starting_balances=["1000000 USD"],
+    )
 ]
 
-configs = []
-for params in PARAM_SET:
-    strategies = [
-        ImportableStrategyConfig(
-            strategy_path="examples.strategies.ema_cross_simple:EMACross",
-            config_path="examples.strategies.ema_cross_simple:EMACrossConfig",
-            config=EMACrossConfig(
-                instrument_id=instrument.id.value,
-                bar_type='AUD/USD.SIM-15-MINUTE-BID-INTERNAL',
-                trade_size=Decimal(1_000_000),
-                **params
-            ),
+strategies = [
+    ImportableStrategyConfig(
+        strategy_path="nautilus_trader.examples.strategies.ema_cross:EMACross",
+        config_path="nautilus_trader.examples.strategies.ema_cross:EMACrossConfig",
+        config=EMACrossConfig(
+            instrument_id=instrument.id.value,
+            bar_type="EUR/USD.SIM-15-MINUTE-BID-INTERNAL",
+            fast_ema=10,
+            slow_ema=20,
+            trade_size=Decimal(1_000_000),
         ),
-    ]
-    # Create the final config
-    new = config.replace(strategies=strategies)
-    
-    configs.append(new)
+    ),
+]
+
+config = BacktestRunConfig(
+    engine=BacktestEngineConfig(strategies=strategies),
+    data=data_config,
+    venues=venues_config,
+)
+
 ```
 
-### This gives us 3 parameter sets to backtest
+## Run the backtest!
 
 ```python
-print("\n\n".join(map(str, configs)))
-```
+node = BacktestNode(configs=[config])
 
-## Run the backtest
-
-Finally, we can create a `BacktestNode` and run the backtest:
-
-```python
-from nautilus_trader.backtest.node import BacktestNode
-node = BacktestNode()
-
-results = node.run(run_configs=configs)
-pd.DataFrame([r.stats_pnls for r in results])['USD'].apply(pd.Series)
+results = node.run()
 ```
