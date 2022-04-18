@@ -46,11 +46,12 @@ def get_cached_binance_http_client(
     loop: asyncio.AbstractEventLoop,
     clock: LiveClock,
     logger: Logger,
+    account_type: BinanceAccountType,
     key: Optional[str] = None,
     secret: Optional[str] = None,
-    account_type: BinanceAccountType = BinanceAccountType.SPOT,
     base_url: Optional[str] = None,
     is_testnet: bool = False,
+    is_us: bool = False,
 ) -> BinanceHttpClient:
     """
     Cache and return a Binance HTTP client with the given key and secret.
@@ -66,16 +67,18 @@ def get_cached_binance_http_client(
         The clock for the client.
     logger : Logger
         The logger for the client.
+    account_type : BinanceAccountType
+        The account type for the client.
     key : str, optional
         The API key for the client.
     secret : str, optional
         The API secret for the client.
-    account_type : BinanceAccountType, default BinanceAccountType.SPOT
-        The account type for the client.
     base_url : str, optional
         The base URL for the API endpoints.
     is_testnet : bool, default False
         If the client is connecting to the testnet API.
+    is_us : bool, default False
+        If the client is connecting to Binance US.
 
     Returns
     -------
@@ -86,6 +89,7 @@ def get_cached_binance_http_client(
 
     key = key or _get_api_key(account_type, is_testnet)
     secret = secret or _get_api_secret(account_type, is_testnet)
+    default_http_base_url = _get_http_base_url(account_type, is_testnet, is_us)
 
     client_key: str = "|".join((key, secret))
     if client_key not in HTTP_CLIENTS:
@@ -95,7 +99,7 @@ def get_cached_binance_http_client(
             logger=logger,
             key=key,
             secret=secret,
-            base_url=base_url,
+            base_url=base_url or default_http_base_url,
         )
         HTTP_CLIENTS[client_key] = client
     return HTTP_CLIENTS[client_key]
@@ -218,18 +222,23 @@ class BinanceLiveDataClientFactory(LiveDataClientFactory):
             If `config.account_type` is not a valid `BinanceAccountType`.
 
         """
-        base_url_http_default: str = _get_http_base_url(config)
-        base_url_ws_default: str = _get_ws_base_url(config)
-
+        # Get HTTP client singleton
         client: BinanceHttpClient = get_cached_binance_http_client(
             loop=loop,
             clock=clock,
             logger=logger,
+            account_type=config.account_type,
             key=config.api_key,
             secret=config.api_secret,
-            account_type=config.account_type,
-            base_url=config.base_url_http or base_url_http_default,
+            base_url=config.base_url_http,
             is_testnet=config.testnet,
+            is_us=config.us,
+        )
+
+        default_base_url_ws: str = _get_ws_base_url(
+            account_type=config.account_type,
+            is_testnet=config.testnet,
+            is_us=config.us,
         )
 
         if config.account_type.is_spot or config.account_type.is_margin:
@@ -251,7 +260,7 @@ class BinanceLiveDataClientFactory(LiveDataClientFactory):
                 logger=logger,
                 instrument_provider=provider,
                 account_type=config.account_type,
-                base_url_ws=config.base_url_ws or base_url_ws_default,
+                base_url_ws=config.base_url_ws or default_base_url_ws,
             )
         else:
             # Get instrument provider singleton
@@ -272,7 +281,7 @@ class BinanceLiveDataClientFactory(LiveDataClientFactory):
                 logger=logger,
                 instrument_provider=provider,
                 account_type=config.account_type,
-                base_url_ws=config.base_url_ws or base_url_ws_default,
+                base_url_ws=config.base_url_ws or default_base_url_ws,
             )
 
 
@@ -321,18 +330,23 @@ class BinanceLiveExecClientFactory(LiveExecClientFactory):
             If `config.account_type` is not a valid `BinanceAccountType`.
 
         """
-        base_url_http_default: str = _get_http_base_url(config)
-        base_url_ws_default: str = _get_ws_base_url(config)
-
+        # Get HTTP client singleton
         client: BinanceHttpClient = get_cached_binance_http_client(
             loop=loop,
             clock=clock,
             logger=logger,
+            account_type=config.account_type,
             key=config.api_key,
             secret=config.api_secret,
-            account_type=config.account_type,
-            base_url=config.base_url_http or base_url_http_default,
+            base_url=config.base_url_http,
             is_testnet=config.testnet,
+            is_us=config.us,
+        )
+
+        default_base_url_ws: str = _get_ws_base_url(
+            account_type=config.account_type,
+            is_testnet=config.testnet,
+            is_us=config.us,
         )
 
         if config.account_type.is_spot or config.account_type.is_margin:
@@ -354,7 +368,7 @@ class BinanceLiveExecClientFactory(LiveExecClientFactory):
                 logger=logger,
                 instrument_provider=provider,
                 account_type=config.account_type,
-                base_url_ws=config.base_url_ws or base_url_ws_default,
+                base_url_ws=config.base_url_ws or default_base_url_ws,
             )
         else:
             # Get instrument provider singleton
@@ -375,7 +389,7 @@ class BinanceLiveExecClientFactory(LiveExecClientFactory):
                 logger=logger,
                 instrument_provider=provider,
                 account_type=config.account_type,
-                base_url_ws=config.base_url_ws or base_url_ws_default,
+                base_url_ws=config.base_url_ws or default_base_url_ws,
             )
 
 
@@ -405,51 +419,51 @@ def _get_api_secret(account_type: BinanceAccountType, is_testnet: bool) -> str:
         return os.environ["BINANCE_FUTURES_API_SECRET"]
 
 
-def _get_http_base_url(config: Union[BinanceDataClientConfig, BinanceExecClientConfig]) -> str:
+def _get_http_base_url(account_type: BinanceAccountType, is_testnet: bool, is_us: bool) -> str:
     # Testnet base URLs
-    if config.testnet:
-        if config.account_type in (BinanceAccountType.SPOT, BinanceAccountType.MARGIN):
+    if is_testnet:
+        if account_type in (BinanceAccountType.SPOT, BinanceAccountType.MARGIN):
             return "https://testnet.binance.vision/api"
-        elif config.account_type == BinanceAccountType.FUTURES_USDT:
+        elif account_type == BinanceAccountType.FUTURES_USDT:
             return "https://testnet.binancefuture.com"
-        elif config.account_type == BinanceAccountType.FUTURES_COIN:
+        elif account_type == BinanceAccountType.FUTURES_COIN:
             return "https://testnet.binancefuture.com"
         else:  # pragma: no cover (design-time error)
-            raise RuntimeError(f"invalid Binance account type, was {config.account_type}")
+            raise RuntimeError(f"invalid Binance account type, was {account_type}")
 
     # Live base URLs
-    top_level_domain: str = "us" if config.us else "com"
-    if config.account_type == BinanceAccountType.SPOT:
+    top_level_domain: str = "us" if is_us else "com"
+    if account_type == BinanceAccountType.SPOT:
         return f"https://api.binance.{top_level_domain}"
-    elif config.account_type == BinanceAccountType.MARGIN:
+    elif account_type == BinanceAccountType.MARGIN:
         return f"https://sapi.binance.{top_level_domain}"
-    elif config.account_type == BinanceAccountType.FUTURES_USDT:
+    elif account_type == BinanceAccountType.FUTURES_USDT:
         return f"https://fapi.binance.{top_level_domain}"
-    elif config.account_type == BinanceAccountType.FUTURES_COIN:
+    elif account_type == BinanceAccountType.FUTURES_COIN:
         return f"https://dapi.binance.{top_level_domain}"
     else:  # pragma: no cover (design-time error)
-        raise RuntimeError(f"invalid Binance account type, was {config.account_type}")
+        raise RuntimeError(f"invalid Binance account type, was {account_type}")
 
 
-def _get_ws_base_url(config: Union[BinanceDataClientConfig, BinanceExecClientConfig]) -> str:
+def _get_ws_base_url(account_type: BinanceAccountType, is_testnet: bool, is_us: bool) -> str:
     # Testnet base URLs
-    if config.testnet:
-        if config.account_type in (BinanceAccountType.SPOT, BinanceAccountType.MARGIN):
+    if is_testnet:
+        if account_type in (BinanceAccountType.SPOT, BinanceAccountType.MARGIN):
             return "wss://testnet.binance.vision"
-        elif config.account_type == BinanceAccountType.FUTURES_USDT:
+        elif account_type == BinanceAccountType.FUTURES_USDT:
             return "wss://stream.binancefuture.com"
-        elif config.account_type == BinanceAccountType.FUTURES_COIN:
+        elif account_type == BinanceAccountType.FUTURES_COIN:
             raise ValueError("no testnet for COIN-M futures")
         else:  # pragma: no cover (design-time error)
-            raise RuntimeError(f"invalid Binance account type, was {config.account_type}")
+            raise RuntimeError(f"invalid Binance account type, was {account_type}")
 
     # Live base URLs
-    top_level_domain: str = "us" if config.us else "com"
-    if config.account_type in (BinanceAccountType.SPOT, BinanceAccountType.MARGIN):
+    top_level_domain: str = "us" if is_us else "com"
+    if account_type in (BinanceAccountType.SPOT, BinanceAccountType.MARGIN):
         return f"wss://stream.binance.{top_level_domain}:9443"
-    elif config.account_type == BinanceAccountType.FUTURES_USDT:
+    elif account_type == BinanceAccountType.FUTURES_USDT:
         return f"wss://fstream.binance.{top_level_domain}"
-    elif config.account_type == BinanceAccountType.FUTURES_COIN:
+    elif account_type == BinanceAccountType.FUTURES_COIN:
         return f"wss://dstream.binance.{top_level_domain}"
     else:  # pragma: no cover (design-time error)
-        raise RuntimeError(f"invalid Binance account type, was {config.account_type}")
+        raise RuntimeError(f"invalid Binance account type, was {account_type}")

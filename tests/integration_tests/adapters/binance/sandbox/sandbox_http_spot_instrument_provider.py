@@ -18,6 +18,7 @@ import os
 
 import pytest
 
+from nautilus_trader.adapters.binance.common.enums import BinanceAccountType
 from nautilus_trader.adapters.binance.factories import get_cached_binance_http_client
 from nautilus_trader.adapters.binance.spot.providers import BinanceSpotInstrumentProvider
 from nautilus_trader.common.clock import LiveClock
@@ -32,6 +33,7 @@ async def test_binance_spot_market_http_client():
         loop=asyncio.get_event_loop(),
         clock=clock,
         logger=Logger(clock=clock),
+        account_type=BinanceAccountType.SPOT,
         key=os.getenv("BINANCE_API_KEY"),
         secret=os.getenv("BINANCE_API_SECRET"),
     )
