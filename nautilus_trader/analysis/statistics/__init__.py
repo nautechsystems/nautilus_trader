@@ -13,20 +13,41 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from nautilus_trader.analysis.statistics import expectancy  # noqa (being used)
-from nautilus_trader.analysis.statistics import long_ratio  # noqa (being used)
-from nautilus_trader.analysis.statistics import loser_avg  # noqa (being used)
-from nautilus_trader.analysis.statistics import loser_max  # noqa (being used)
-from nautilus_trader.analysis.statistics import loser_min  # noqa (being used)
-from nautilus_trader.analysis.statistics import profit_factor  # noqa (being used)
-from nautilus_trader.analysis.statistics import returns_avg  # noqa (being used)
-from nautilus_trader.analysis.statistics import returns_avg_loss  # noqa (being used)
-from nautilus_trader.analysis.statistics import returns_avg_win  # noqa (being used)
-from nautilus_trader.analysis.statistics import returns_volatility  # noqa (being used)
-from nautilus_trader.analysis.statistics import risk_return_ratio  # noqa (being used)
-from nautilus_trader.analysis.statistics import sharpe_ratio  # noqa (being used)
-from nautilus_trader.analysis.statistics import sortino_ratio  # noqa (being used)
-from nautilus_trader.analysis.statistics import win_rate  # noqa (being used)
-from nautilus_trader.analysis.statistics import winner_avg  # noqa (being used)
-from nautilus_trader.analysis.statistics import winner_max  # noqa (being used)
-from nautilus_trader.analysis.statistics import winner_min  # noqa (being used)
+from nautilus_trader.analysis.statistics import expectancy
+from nautilus_trader.analysis.statistics import long_ratio
+from nautilus_trader.analysis.statistics import loser_avg
+from nautilus_trader.analysis.statistics import loser_max
+from nautilus_trader.analysis.statistics import loser_min
+from nautilus_trader.analysis.statistics import profit_factor
+from nautilus_trader.analysis.statistics import returns_avg
+from nautilus_trader.analysis.statistics import returns_avg_loss
+from nautilus_trader.analysis.statistics import returns_avg_win
+from nautilus_trader.analysis.statistics import returns_volatility
+from nautilus_trader.analysis.statistics import risk_return_ratio
+from nautilus_trader.analysis.statistics import sharpe_ratio
+from nautilus_trader.analysis.statistics import sortino_ratio
+from nautilus_trader.analysis.statistics import win_rate
+from nautilus_trader.analysis.statistics import winner_avg
+from nautilus_trader.analysis.statistics import winner_max
+from nautilus_trader.analysis.statistics import winner_min
+
+
+__all__ = [
+    "expectancy",
+    "long_ratio",
+    "loser_avg",
+    "loser_max",
+    "loser_min",
+    "profit_factor",
+    "returns_avg",
+    "returns_avg_loss",
+    "returns_avg_win",
+    "returns_volatility",
+    "risk_return_ratio",
+    "sharpe_ratio",
+    "sortino_ratio",
+    "win_rate",
+    "winner_avg",
+    "winner_max",
+    "winner_min",
+]
