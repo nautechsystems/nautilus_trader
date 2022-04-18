@@ -115,6 +115,15 @@ def _build_extensions() -> List[Extension]:
         extra_compile_args.append("-O3")
         extra_compile_args.append("-pipe")
 
+    extra_link_args = RUST_LIBS
+    if platform.system() == "Windows":
+        extra_link_args += [
+            "WS2_32.Lib",
+            "AdvAPI32.Lib",
+            "UserEnv.Lib",
+            "bcrypt.lib"
+        ]
+
     print("Creating C extension modules...")
     print(f"define_macros={define_macros}")
     print(f"extra_compile_args={extra_compile_args}")
@@ -126,7 +135,7 @@ def _build_extensions() -> List[Extension]:
             include_dirs=[".", np.get_include()] + RUST_INCLUDES,
             define_macros=define_macros,
             language="c",
-            extra_link_args=RUST_LIBS,
+            extra_link_args=extra_link_args,
             extra_compile_args=extra_compile_args,
         )
         for pyx in itertools.chain(Path("nautilus_trader").rglob("*.pyx"))
