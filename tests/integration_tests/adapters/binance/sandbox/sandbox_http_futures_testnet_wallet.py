@@ -19,6 +19,7 @@ import os
 
 import pytest
 
+from nautilus_trader.adapters.binance.common.enums import BinanceAccountType
 from nautilus_trader.adapters.binance.factories import get_cached_binance_http_client
 from nautilus_trader.adapters.binance.futures.http.wallet import BinanceFuturesWalletHttpAPI
 from nautilus_trader.common.clock import LiveClock
@@ -34,9 +35,9 @@ async def test_binance_futures_testnet_wallet_http_client():
         loop=loop,
         clock=clock,
         logger=Logger(clock=clock),
+        account_type=BinanceAccountType.FUTURES_USDT,
         key=os.getenv("BINANCE_FUTURES_TESTNET_API_KEY"),
         secret=os.getenv("BINANCE_FUTURES_TESTNET_API_SECRET"),
-        base_url="https://testnet.binancefuture.com",
         is_testnet=True,
     )
 
