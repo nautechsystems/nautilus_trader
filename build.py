@@ -121,7 +121,7 @@ def _build_extensions() -> List[Extension]:
             "WS2_32.Lib",
             "AdvAPI32.Lib",
             "UserEnv.Lib",
-            "bcrypt.lib"
+            "bcrypt.lib",
         ]
 
     print("Creating C extension modules...")
