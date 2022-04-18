@@ -21,9 +21,9 @@ from nautilus_trader.adapters.binance.config import BinanceDataClientConfig
 from nautilus_trader.adapters.binance.config import BinanceExecClientConfig
 from nautilus_trader.adapters.binance.factories import BinanceLiveDataClientFactory
 from nautilus_trader.adapters.binance.factories import BinanceLiveExecClientFactory
-from nautilus_trader.config.components import CacheDatabaseConfig
-from nautilus_trader.config.live import InstrumentProviderConfig
-from nautilus_trader.config.nodes import TradingNodeConfig
+from nautilus_trader.config import CacheDatabaseConfig
+from nautilus_trader.config import InstrumentProviderConfig
+from nautilus_trader.config import TradingNodeConfig
 from nautilus_trader.examples.strategies.volatility_market_maker import VolatilityMarketMaker
 from nautilus_trader.examples.strategies.volatility_market_maker import VolatilityMarketMakerConfig
 from nautilus_trader.live.node import TradingNode

@@ -24,10 +24,30 @@ from nautilus_trader.analysis.statistic import PortfolioStatistic
 class SortinoRatio(PortfolioStatistic):
     """
     Calculates the annualized Sortino Ratio from returns.
+
+    The returns will be downsampled into daily bins.
+
+    Parameters
+    ----------
+    period : int, default 252
+        The trading period in days.
     """
 
+    def __init__(self, period: int = 252):
+        self.period = period
+
+    @property
+    def name(self) -> str:
+        return f"Sortino Ratio ({self.period} days)"
+
     def calculate_from_returns(self, returns: pd.Series) -> Optional[Any]:
+        # Preconditions
+        if not self._check_valid_returns(returns):
+            return np.nan
+
+        returns = self._downsample_to_daily_bins(returns)
+
         downside = np.sqrt((returns[returns < 0] ** 2).sum() / len(returns))
         res = returns.mean() / downside
 
-        return res * np.sqrt(252)
+        return res * np.sqrt(self.period)

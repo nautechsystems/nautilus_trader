@@ -82,7 +82,14 @@ class TestBarSpecification:
     @pytest.mark.parametrize(
         "value, expected",
         [
-            ["1-MINUTE-BID", BarSpecification(1, BarAggregation.MINUTE, PriceType.BID)],
+            [
+                "300-MILLISECOND-LAST",
+                BarSpecification(300, BarAggregation.MILLISECOND, PriceType.LAST),
+            ],
+            [
+                "1-MINUTE-BID",
+                BarSpecification(1, BarAggregation.MINUTE, PriceType.BID),
+            ],
             [
                 "15-MINUTE-MID",
                 BarSpecification(15, BarAggregation.MINUTE, PriceType.MID),

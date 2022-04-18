@@ -25,14 +25,17 @@ from nautilus_trader.accounting.factory import AccountFactory
 from nautilus_trader.adapters.betfair.client.core import BetfairClient
 from nautilus_trader.adapters.betfair.client.exceptions import BetfairAPIError
 from nautilus_trader.adapters.betfair.common import B2N_ORDER_STREAM_SIDE
+from nautilus_trader.adapters.betfair.common import BETFAIR_QUANTITY_PRECISION
 from nautilus_trader.adapters.betfair.common import BETFAIR_VENUE
 from nautilus_trader.adapters.betfair.common import price_to_probability
 from nautilus_trader.adapters.betfair.common import probability_to_price
+from nautilus_trader.adapters.betfair.parsing import bet_to_order_status_report
 from nautilus_trader.adapters.betfair.parsing import betfair_account_to_account_state
 from nautilus_trader.adapters.betfair.parsing import order_cancel_all_to_betfair
 from nautilus_trader.adapters.betfair.parsing import order_cancel_to_betfair
 from nautilus_trader.adapters.betfair.parsing import order_submit_to_betfair
 from nautilus_trader.adapters.betfair.parsing import order_update_to_betfair
+from nautilus_trader.adapters.betfair.parsing import parse_handicap
 from nautilus_trader.adapters.betfair.providers import BetfairInstrumentProvider
 from nautilus_trader.adapters.betfair.sockets import BetfairOrderStreamClient
 from nautilus_trader.cache.cache import Cache
@@ -138,7 +141,7 @@ class BetfairExecutionClient(LiveExecutionClient):
         self._set_account_id(AccountId(BETFAIR_VENUE.value, "001"))  # TODO(cs): Temporary
         AccountFactory.register_calculated_account(BETFAIR_VENUE.value)
 
-    # -- CONNECTION HANDLERS -----------------------------------------------------------------------
+    # -- CONNECTION HANDLERS ----------------------------------------------------------------------
 
     def connect(self):
         """
@@ -189,7 +192,7 @@ class BetfairExecutionClient(LiveExecutionClient):
                 self.stream.connect()
             await asyncio.sleep(1)
 
-    # -- ERROR HANDLING --------------------------------------------------------------------------
+    # -- ERROR HANDLING ---------------------------------------------------------------------------
     async def on_api_exception(self, ex: BetfairAPIError):
         if ex.kind == "INVALID_SESSION_INFORMATION":
             # Session is invalid, need to reconnect
@@ -198,7 +201,7 @@ class BetfairExecutionClient(LiveExecutionClient):
             await self._connect()
             self._log.info("Reconnected.")
 
-    # -- ACCOUNT HANDLERS --------------------------------------------------------------------------
+    # -- ACCOUNT HANDLERS -------------------------------------------------------------------------
 
     async def connection_account_state(self):
         account_details = await self._client.get_account_details()
@@ -215,12 +218,13 @@ class BetfairExecutionClient(LiveExecutionClient):
         self._send_account_state(account_state)
         self._log.debug("Initial Account state completed")
 
-    # -- EXECUTION REPORTS -------------------------------------------------------------------------
+    # -- EXECUTION REPORTS ------------------------------------------------------------------------
 
     async def generate_order_status_report(
         self,
         instrument_id: InstrumentId,
-        venue_order_id: VenueOrderId,
+        client_order_id: Optional[ClientOrderId] = None,
+        venue_order_id: Optional[VenueOrderId] = None,
     ) -> Optional[OrderStatusReport]:
         """
         Generate an order status report for the given venue order ID.
@@ -232,6 +236,8 @@ class BetfairExecutionClient(LiveExecutionClient):
         ----------
         instrument_id : InstrumentId, optional
             The instrument ID query filter.
+        client_order_id : ClientOrderId, optional
+            The client order ID for the report.
         venue_order_id : VenueOrderId, optional
             The venue order ID (assigned by the venue) query filter.
 
@@ -239,10 +245,38 @@ class BetfairExecutionClient(LiveExecutionClient):
         -------
         OrderStatusReport or ``None``
 
-        """
-        self._log.warning("Cannot generate OrderStatusReport: not yet implemented.")
+        Raises
+        ------
+        ValueError
+            If both the `client_order_id` and `venue_order_id` are ``None``.
 
-        return None
+        """
+        assert venue_order_id is not None
+        orders = await self._client.list_current_orders(
+            bet_ids=[venue_order_id],
+        )
+
+        if not orders:
+            self._log.warning(f"Could not find order for venue_order_id={venue_order_id}")
+            return None
+        # We have a response, check list length and grab first entry
+        assert len(orders) == 1
+        order = orders[0]
+        instrument = self._instrument_provider.get_betting_instrument(
+            market_id=str(order["marketId"]),
+            selection_id=str(order["selectionId"]),
+            handicap=parse_handicap(order["handicap"]),
+        )
+        venue_order_id = VenueOrderId(order["betId"])
+        return bet_to_order_status_report(
+            order=order,
+            account_id=self.account_id,
+            instrument_id=instrument.id,
+            venue_order_id=venue_order_id,
+            client_order_id=self._cache.client_order_id(venue_order_id),
+            report_id=self._uuid_factory.generate(),
+            ts_init=self._clock.timestamp_ns(),
+        )
 
     async def generate_order_status_reports(
         self,
@@ -337,7 +371,7 @@ class BetfairExecutionClient(LiveExecutionClient):
 
         return []
 
-    # -- COMMAND HANDLERS --------------------------------------------------------------------------
+    # -- COMMAND HANDLERS -------------------------------------------------------------------------
 
     def submit_order(self, command: SubmitOrder) -> None:
         PyCondition.not_none(command, "command")
@@ -511,7 +545,8 @@ class BetfairExecutionClient(LiveExecutionClient):
                 client_order_id=client_order_id,
                 venue_order_id=VenueOrderId(update_instruction["betId"]),
                 quantity=Quantity(
-                    update_instruction["instruction"]["limitOrder"]["size"], precision=4
+                    update_instruction["instruction"]["limitOrder"]["size"],
+                    precision=BETFAIR_QUANTITY_PRECISION,
                 ),
                 price=price_to_probability(
                     str(update_instruction["instruction"]["limitOrder"]["price"])
@@ -693,7 +728,7 @@ class BetfairExecutionClient(LiveExecutionClient):
     # betfair allows up to 60 cancels per request
     #     raise NotImplementedError
 
-    # -- ACCOUNT -----------------------------------------------------------------------------------
+    # -- ACCOUNT ----------------------------------------------------------------------------------
 
     async def check_account_currency(self):
         """
@@ -707,7 +742,7 @@ class BetfairExecutionClient(LiveExecutionClient):
         assert currency_code == self.base_currency.code
         self._log.debug("Base currency matches client details")
 
-    # -- DEBUGGING ---------------------------------------------------------------------------------
+    # -- DEBUGGING --------------------------------------------------------------------------------
 
     def create_task(self, coro):
         self._loop.create_task(self._check_task(coro))
@@ -722,7 +757,7 @@ class BetfairExecutionClient(LiveExecutionClient):
     def client(self) -> BetfairClient:
         return self._client
 
-    # -- ORDER STREAM API --------------------------------------------------------------------------
+    # -- ORDER STREAM API -------------------------------------------------------------------------
 
     def handle_order_stream_update(self, raw: bytes) -> None:
         """Handle an update from the order stream socket"""
@@ -800,7 +835,7 @@ class BetfairExecutionClient(LiveExecutionClient):
                     trade_id=trade_id,
                     order_side=B2N_ORDER_STREAM_SIDE[update["side"]],
                     order_type=OrderType.LIMIT,
-                    last_qty=Quantity(fill_qty, instrument.size_precision),
+                    last_qty=Quantity(fill_qty, BETFAIR_QUANTITY_PRECISION),
                     last_px=price_to_probability(str(fill_price)),
                     # avg_px=Decimal(order['avp']),
                     quote_currency=instrument.quote_currency,
@@ -862,7 +897,7 @@ class BetfairExecutionClient(LiveExecutionClient):
                     trade_id=trade_id,
                     order_side=B2N_ORDER_STREAM_SIDE[update["side"]],
                     order_type=OrderType.LIMIT,
-                    last_qty=Quantity(fill_qty, instrument.size_precision),
+                    last_qty=Quantity(fill_qty, BETFAIR_QUANTITY_PRECISION),
                     last_px=price_to_probability(str(fill_price)),
                     quote_currency=instrument.quote_currency,
                     # avg_px=order['avp'],

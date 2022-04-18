@@ -15,21 +15,21 @@
 
 import pytest
 
+from nautilus_trader.adapters.binance.spot.enums import BinanceSpotOrderType
 from nautilus_trader.adapters.binance.spot.parsing.execution import parse_order_type
 from nautilus_trader.model.enums import OrderType
 
 
-class TestBinanceCommonParsing:
+class TestBinanceSpotParsing:
     @pytest.mark.parametrize(
         "order_type, expected",
         [
-            ["MARKET", OrderType.MARKET],
-            ["LIMIT", OrderType.LIMIT],
-            ["STOP", OrderType.STOP_MARKET],
-            ["STOP_LOSS", OrderType.STOP_MARKET],
-            ["TAKE_PROFIT", OrderType.LIMIT],
-            ["TAKE_PROFIT_MARKET", OrderType.MARKET_IF_TOUCHED],
-            ["TRAILING_STOP_MARKET", OrderType.TRAILING_STOP_MARKET],
+            [BinanceSpotOrderType.MARKET, OrderType.MARKET],
+            [BinanceSpotOrderType.LIMIT, OrderType.LIMIT],
+            [BinanceSpotOrderType.STOP, OrderType.STOP_MARKET],
+            [BinanceSpotOrderType.STOP_LOSS, OrderType.STOP_MARKET],
+            [BinanceSpotOrderType.TAKE_PROFIT, OrderType.LIMIT],
+            [BinanceSpotOrderType.TAKE_PROFIT_LIMIT, OrderType.STOP_LIMIT],
         ],
     )
     def test_parse_order_type(self, order_type, expected):

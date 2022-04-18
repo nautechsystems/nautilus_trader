@@ -15,8 +15,8 @@
 
 from typing import Optional
 
-from nautilus_trader.config.live import LiveDataClientConfig
-from nautilus_trader.config.live import LiveExecClientConfig
+from nautilus_trader.config import LiveDataClientConfig
+from nautilus_trader.config import LiveExecClientConfig
 
 
 class FTXDataClientConfig(LiveDataClientConfig):

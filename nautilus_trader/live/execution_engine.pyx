@@ -17,7 +17,7 @@ import asyncio
 from decimal import Decimal
 from typing import Optional
 
-from nautilus_trader.config.live import LiveExecEngineConfig
+from nautilus_trader.config import LiveExecEngineConfig
 
 from nautilus_trader.cache.cache cimport Cache
 from nautilus_trader.common.clock cimport LiveClock
@@ -165,7 +165,7 @@ cdef class LiveExecutionEngine(ExecutionEngine):
         """
         return self._queue.qsize()
 
-# -- COMMANDS --------------------------------------------------------------------------------------
+# -- COMMANDS -------------------------------------------------------------------------------------
 
     cpdef void kill(self) except *:
         """
@@ -348,7 +348,7 @@ cdef class LiveExecutionEngine(ExecutionEngine):
 
         self._reconcile_mass_status(report)
 
-# -- RECONCILIATION --------------------------------------------------------------------------------
+# -- RECONCILIATION -------------------------------------------------------------------------------
 
     cdef bint _reconcile_report(self, ExecutionReport report) except *:
         self._log.debug(f"{RECV}{RPT} {report}.")

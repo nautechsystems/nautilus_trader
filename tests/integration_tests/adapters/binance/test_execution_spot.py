@@ -30,7 +30,7 @@ from nautilus_trader.backtest.data.providers import TestInstrumentProvider
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.common.uuid import UUIDFactory
-from nautilus_trader.config.components import InstrumentProviderConfig
+from nautilus_trader.config import InstrumentProviderConfig
 from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.data.engine import DataEngine
 from nautilus_trader.execution.engine import ExecutionEngine
@@ -42,7 +42,7 @@ from nautilus_trader.model.objects import Quantity
 from nautilus_trader.msgbus.bus import MessageBus
 from nautilus_trader.portfolio.portfolio import Portfolio
 from nautilus_trader.risk.engine import RiskEngine
-from nautilus_trader.trading.strategy import TradingStrategy
+from nautilus_trader.trading.strategy import Strategy
 from tests.test_kit.stubs.component import TestComponentStubs
 from tests.test_kit.stubs.identifiers import TestIdStubs
 
@@ -126,7 +126,9 @@ class TestBinanceSpotExecutionClient:
             account_type=BinanceAccountType.SPOT,
         )
 
-        self.strategy = TradingStrategy()
+        self.exec_engine.register_client(self.exec_client)
+
+        self.strategy = Strategy()
         self.strategy.register(
             trader_id=self.trader_id,
             portfolio=self.portfolio,
@@ -394,3 +396,24 @@ class TestBinanceSpotExecutionClient:
         assert request[2]["stopPrice"] == "10099.00"
         assert request[2]["recvWindow"] == "5000"
         assert request[2]["signature"] is not None
+
+    @pytest.mark.asyncio
+    async def test_sync_order_status(self, mocker):
+        # Arrange
+        mock_sync_order_status = mocker.patch(
+            target="nautilus_trader.adapters.binance.spot.execution.BinanceSpotExecutionClient.sync_order_status"
+        )
+
+        order = self.strategy.order_factory.limit(
+            instrument_id=ETHUSDT_BINANCE.id,
+            order_side=OrderSide.BUY,
+            quantity=Quantity.from_int(10),
+            price=Price.from_str("10050.80"),
+        )
+
+        # Act
+        self.strategy.query_order(order)
+        await asyncio.sleep(0.3)
+
+        # Assert
+        assert mock_sync_order_status.called

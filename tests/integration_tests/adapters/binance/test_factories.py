@@ -68,201 +68,157 @@ class TestBinanceFactories:
         )
 
     @pytest.mark.parametrize(
-        "config, expected",
+        "account_type, is_testnet, is_us, expected",
         [
             [
-                BinanceExecClientConfig(
-                    account_type=BinanceAccountType.SPOT,
-                    us=False,
-                    testnet=False,
-                ),
+                BinanceAccountType.SPOT,
+                False,
+                False,
                 "https://api.binance.com",
             ],
             [
-                BinanceExecClientConfig(
-                    account_type=BinanceAccountType.MARGIN,
-                    us=False,
-                    testnet=False,
-                ),
+                BinanceAccountType.MARGIN,
+                False,
+                False,
                 "https://sapi.binance.com",
             ],
             [
-                BinanceExecClientConfig(
-                    account_type=BinanceAccountType.FUTURES_USDT,
-                    us=False,
-                    testnet=False,
-                ),
+                BinanceAccountType.FUTURES_USDT,
+                False,
+                False,
                 "https://fapi.binance.com",
             ],
             [
-                BinanceExecClientConfig(
-                    account_type=BinanceAccountType.FUTURES_COIN,
-                    us=False,
-                    testnet=False,
-                ),
+                BinanceAccountType.FUTURES_COIN,
+                False,
+                False,
                 "https://dapi.binance.com",
             ],
             [
-                BinanceExecClientConfig(
-                    account_type=BinanceAccountType.SPOT,
-                    us=True,
-                    testnet=False,
-                ),
+                BinanceAccountType.SPOT,
+                False,
+                True,
                 "https://api.binance.us",
             ],
             [
-                BinanceExecClientConfig(
-                    account_type=BinanceAccountType.MARGIN,
-                    us=True,
-                    testnet=False,
-                ),
+                BinanceAccountType.MARGIN,
+                False,
+                True,
                 "https://sapi.binance.us",
             ],
             [
-                BinanceExecClientConfig(
-                    account_type=BinanceAccountType.FUTURES_USDT,
-                    us=True,
-                    testnet=False,
-                ),
+                BinanceAccountType.FUTURES_USDT,
+                False,
+                True,
                 "https://fapi.binance.us",
             ],
             [
-                BinanceExecClientConfig(
-                    account_type=BinanceAccountType.FUTURES_COIN,
-                    us=True,
-                    testnet=False,
-                ),
+                BinanceAccountType.FUTURES_COIN,
+                False,
+                True,
                 "https://dapi.binance.us",
             ],
             [
-                BinanceExecClientConfig(
-                    account_type=BinanceAccountType.SPOT,
-                    us=False,
-                    testnet=True,
-                ),
+                BinanceAccountType.SPOT,
+                True,
+                False,
                 "https://testnet.binance.vision/api",
             ],
             [
-                BinanceExecClientConfig(
-                    account_type=BinanceAccountType.MARGIN,
-                    us=False,
-                    testnet=True,
-                ),
+                BinanceAccountType.MARGIN,
+                True,
+                False,
                 "https://testnet.binance.vision/api",
             ],
             [
-                BinanceExecClientConfig(
-                    account_type=BinanceAccountType.FUTURES_USDT,
-                    us=False,
-                    testnet=True,
-                ),
+                BinanceAccountType.FUTURES_USDT,
+                True,
+                False,
                 "https://testnet.binancefuture.com",
             ],
         ],
     )
-    def test_get_http_base_url(self, config, expected):
+    def test_get_http_base_url(self, account_type, is_testnet, is_us, expected):
         # Arrange, Act
-        base_url = _get_http_base_url(config)
+        base_url = _get_http_base_url(account_type, is_testnet, is_us)
 
         # Assert
         assert base_url == expected
 
     @pytest.mark.parametrize(
-        "config, expected",
+        "account_type, is_testnet, is_us, expected",
         [
             [
-                BinanceExecClientConfig(
-                    account_type=BinanceAccountType.SPOT,
-                    us=False,
-                    testnet=False,
-                ),
+                BinanceAccountType.SPOT,
+                False,
+                False,
                 "wss://stream.binance.com:9443",
             ],
             [
-                BinanceExecClientConfig(
-                    account_type=BinanceAccountType.MARGIN,
-                    us=False,
-                    testnet=False,
-                ),
+                BinanceAccountType.MARGIN,
+                False,
+                False,
                 "wss://stream.binance.com:9443",
             ],
             [
-                BinanceExecClientConfig(
-                    account_type=BinanceAccountType.FUTURES_USDT,
-                    us=False,
-                    testnet=False,
-                ),
+                BinanceAccountType.FUTURES_USDT,
+                False,
+                False,
                 "wss://fstream.binance.com",
             ],
             [
-                BinanceExecClientConfig(
-                    account_type=BinanceAccountType.FUTURES_COIN,
-                    us=False,
-                    testnet=False,
-                ),
+                BinanceAccountType.FUTURES_COIN,
+                False,
+                False,
                 "wss://dstream.binance.com",
             ],
             [
-                BinanceExecClientConfig(
-                    account_type=BinanceAccountType.SPOT,
-                    us=True,
-                    testnet=False,
-                ),
+                BinanceAccountType.SPOT,
+                False,
+                True,
                 "wss://stream.binance.us:9443",
             ],
             [
-                BinanceExecClientConfig(
-                    account_type=BinanceAccountType.MARGIN,
-                    us=True,
-                    testnet=False,
-                ),
+                BinanceAccountType.MARGIN,
+                False,
+                True,
                 "wss://stream.binance.us:9443",
             ],
             [
-                BinanceExecClientConfig(
-                    account_type=BinanceAccountType.FUTURES_USDT,
-                    us=True,
-                    testnet=False,
-                ),
+                BinanceAccountType.FUTURES_USDT,
+                False,
+                True,
                 "wss://fstream.binance.us",
             ],
             [
-                BinanceExecClientConfig(
-                    account_type=BinanceAccountType.FUTURES_COIN,
-                    us=True,
-                    testnet=False,
-                ),
+                BinanceAccountType.FUTURES_COIN,
+                False,
+                True,
                 "wss://dstream.binance.us",
             ],
             [
-                BinanceExecClientConfig(
-                    account_type=BinanceAccountType.SPOT,
-                    us=False,
-                    testnet=True,
-                ),
+                BinanceAccountType.SPOT,
+                True,
+                False,
                 "wss://testnet.binance.vision",
             ],
             [
-                BinanceExecClientConfig(
-                    account_type=BinanceAccountType.MARGIN,
-                    us=False,
-                    testnet=True,
-                ),
+                BinanceAccountType.MARGIN,
+                True,
+                False,
                 "wss://testnet.binance.vision",
             ],
             [
-                BinanceExecClientConfig(
-                    account_type=BinanceAccountType.FUTURES_USDT,
-                    us=False,
-                    testnet=True,
-                ),
+                BinanceAccountType.FUTURES_USDT,
+                True,
+                False,
                 "wss://stream.binancefuture.com",
             ],
         ],
     )
-    def test_get_ws_base_url(self, config, expected):
+    def test_get_ws_base_url(self, account_type, is_testnet, is_us, expected):
         # Arrange, Act
-        base_url = _get_ws_base_url(config)
+        base_url = _get_ws_base_url(account_type, is_testnet, is_us)
 
         # Assert
         assert base_url == expected

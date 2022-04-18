@@ -14,12 +14,12 @@
 # -------------------------------------------------------------------------------------------------
 
 """
-The `TradingStrategy` class allows traders to implement their own customized trading strategies.
+The `Strategy` class allows traders to implement their own customized trading strategies.
 
-A user can inherit from `TradingStrategy` and optionally override any of the
+A user can inherit from `Strategy` and optionally override any of the
 "on" named event methods. The class is not entirely initialized in a stand-alone
 way, the intended usage is to pass strategies to a `Trader` so that they can be
-fully "wired" into the platform. Exceptions will be raised if a `TradingStrategy`
+fully "wired" into the platform. Exceptions will be raised if a `Strategy`
 attempts to operate without a managing `Trader` instance.
 
 """
@@ -29,7 +29,7 @@ from typing import Optional
 
 import cython
 
-from nautilus_trader.config.components import ActorConfig
+from nautilus_trader.config import ActorConfig
 
 from cpython.datetime cimport datetime
 
@@ -113,7 +113,7 @@ cdef class Actor(Component):
         self.cache = None      # Initialized when registered
         self.clock = None      # Initialized when registered
 
-# -- ABSTRACT METHODS ------------------------------------------------------------------------------
+# -- ABSTRACT METHODS -----------------------------------------------------------------------------
 
     cpdef void on_start(self) except *:
         """
@@ -416,7 +416,7 @@ cdef class Actor(Component):
         """
         pass  # Optionally override in subclass
 
-# -- REGISTRATION ----------------------------------------------------------------------------------
+# -- REGISTRATION ---------------------------------------------------------------------------------
 
     cpdef void register_base(
         self,
@@ -495,7 +495,7 @@ cdef class Actor(Component):
 
         self._log.debug(f"Deregistered `{event.__name__}` from warning log levels.")
 
-# -- ACTION IMPLEMENTATIONS ------------------------------------------------------------------------
+# -- ACTION IMPLEMENTATIONS -----------------------------------------------------------------------
 
     cpdef void _start(self) except *:
         self.on_start()
@@ -526,7 +526,7 @@ cdef class Actor(Component):
     cpdef void _fault(self) except *:
         self.on_fault()
 
-# -- SUBSCRIPTIONS ---------------------------------------------------------------------------------
+# -- SUBSCRIPTIONS --------------------------------------------------------------------------------
 
     cpdef void subscribe_data(self, DataType data_type, ClientId client_id=None) except *:
         """
@@ -1315,7 +1315,7 @@ cdef class Actor(Component):
 
         self._msgbus.publish_c(topic=f"data.{data_type.topic}", msg=data)
 
-# -- REQUESTS --------------------------------------------------------------------------------------
+# -- REQUESTS -------------------------------------------------------------------------------------
 
     cpdef void request_data(self, ClientId client_id, DataType data_type) except *:
         """
@@ -1344,6 +1344,34 @@ cdef class Actor(Component):
 
         self._send_data_req(request)
 
+    cpdef void request_instrument(self, InstrumentId instrument_id, ClientId client_id=None) except *:
+        """
+        Request an instrument for the given parameters.
+
+        Parameters
+        ----------
+        instrument_id : InstrumentId
+            The instrument ID for the request.
+        client_id : ClientId, optional
+            The specific client ID for the command.
+            If ``None`` then will be inferred from the venue in the instrument ID.
+
+        """
+        Condition.not_none(instrument_id, "instrument_id")
+
+        cdef DataRequest request = DataRequest(
+            client_id=client_id,
+            venue=instrument_id.venue,
+            data_type=DataType(Instrument, metadata={
+                "instrument_id": instrument_id,
+            }),
+            callback=self._handle_instrument_response,
+            request_id=self._uuid_factory.generate(),
+            ts_init=self._clock.timestamp_ns(),
+        )
+
+        self._send_data_req(request)
+
     cpdef void request_quote_ticks(
         self,
         InstrumentId instrument_id,
@@ -1354,7 +1382,7 @@ cdef class Actor(Component):
         """
         Request historical quote ticks for the given parameters.
 
-        If datetimes are ``None`` then will request the most recent data.
+        If `to_datetime` is ``None`` then will request up to the most recent data.
 
         Parameters
         ----------
@@ -1404,7 +1432,7 @@ cdef class Actor(Component):
         """
         Request historical trade ticks for the given parameters.
 
-        If datetimes are ``None`` then will request the most recent data.
+        If `to_datetime` is ``None`` then will request up to the most recent data.
 
         Parameters
         ----------
@@ -1454,7 +1482,7 @@ cdef class Actor(Component):
         """
         Request historical bars for the given parameters.
 
-        If datetimes are ``None`` then will request the most recent data.
+        If `to_datetime` is ``None`` then will request up to the most recent data.
 
         Parameters
         ----------
@@ -1500,7 +1528,7 @@ cdef class Actor(Component):
 
         self._send_data_req(request)
 
-# -- HANDLERS --------------------------------------------------------------------------------------
+# -- HANDLERS -------------------------------------------------------------------------------------
 
     cpdef void handle_instrument(self, Instrument instrument) except *:
         """
@@ -1919,6 +1947,9 @@ cdef class Actor(Component):
     cpdef void _handle_data_response(self, DataResponse response) except *:
         self.handle_data(response.data)
 
+    cpdef void _handle_instrument_response(self, DataResponse response) except *:
+        self.handle_instrument(response.data)
+
     cpdef void _handle_quote_ticks_response(self, DataResponse response) except *:
         self.handle_quote_ticks(response.data)
 
@@ -1928,7 +1959,7 @@ cdef class Actor(Component):
     cpdef void _handle_bars_response(self, DataResponse response) except *:
         self.handle_bars(response.data)
 
-# -- EGRESS ----------------------------------------------------------------------------------------
+# -- EGRESS ---------------------------------------------------------------------------------------
 
     cdef void _send_data_cmd(self, DataCommand command) except *:
         if not self._log.is_bypassed:

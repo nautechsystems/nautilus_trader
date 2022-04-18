@@ -48,7 +48,7 @@ from nautilus_trader.serialization.arrow.util import dict_of_lists_to_list_of_di
 
 class DataCatalog(metaclass=Singleton):
     """
-    Provides a queryable data catalogue.
+    Provides a queryable data catalog.
 
     Parameters
     ----------
@@ -84,7 +84,7 @@ class DataCatalog(metaclass=Singleton):
         protocol, path = uri.split("://")
         return cls(path=path, fs_protocol=protocol)
 
-    # ---- QUERIES ---------------------------------------------------------------------------------------- #
+    # -- QUERIES -----------------------------------------------------------------------------------
 
     def _query(
         self,

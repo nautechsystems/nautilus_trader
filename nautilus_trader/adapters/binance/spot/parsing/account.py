@@ -13,16 +13,47 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from decimal import Decimal
+from typing import List
 
-from typing import Dict, List
-
-from nautilus_trader.adapters.binance.spot.parsing.execution import parse_balances
+from nautilus_trader.adapters.binance.spot.schemas.account import BinanceSpotBalanceInfo
+from nautilus_trader.adapters.binance.spot.schemas.user import BinanceSpotBalance
+from nautilus_trader.model.currency import Currency
 from nautilus_trader.model.objects import AccountBalance
+from nautilus_trader.model.objects import Money
 
 
-def parse_account_balances_ws(raw_balances: List[Dict[str, str]]) -> List[AccountBalance]:
-    return parse_balances(raw_balances, "a", "f", "l")
+def parse_account_balances_ws(raw_balances: List[BinanceSpotBalance]) -> List[AccountBalance]:
+    balances: List[AccountBalance] = []
+    for b in raw_balances:
+        currency = Currency.from_str(b.a)
+        free = Decimal(b.f)
+        locked = Decimal(b.l)
+        total: Decimal = free + locked
+
+        balance = AccountBalance(
+            total=Money(total, currency),
+            locked=Money(locked, currency),
+            free=Money(free, currency),
+        )
+        balances.append(balance)
+
+    return balances
 
 
-def parse_account_balances_http(raw_balances: List[Dict[str, str]]) -> List[AccountBalance]:
-    return parse_balances(raw_balances, "asset", "free", "locked")
+def parse_account_balances_http(raw_balances: List[BinanceSpotBalanceInfo]) -> List[AccountBalance]:
+    balances: List[AccountBalance] = []
+    for b in raw_balances:
+        currency = Currency.from_str(b.asset)
+        free = Decimal(b.free)
+        locked = Decimal(b.locked)
+        total: Decimal = free + locked
+
+        balance = AccountBalance(
+            total=Money(total, currency),
+            locked=Money(locked, currency),
+            free=Money(free, currency),
+        )
+        balances.append(balance)
+
+    return balances

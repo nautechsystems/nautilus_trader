@@ -21,26 +21,25 @@ import signal
 import socket
 import warnings
 from asyncio import AbstractEventLoop
-from enum import Enum
-from enum import unique
 from functools import partial
 from typing import Any, Callable, Dict, List, Optional, Union
 
 import orjson
 
-from nautilus_trader.config.components import ActorFactory
-from nautilus_trader.config.components import CacheConfig
-from nautilus_trader.config.components import CacheDatabaseConfig
-from nautilus_trader.config.components import ImportableActorConfig
-from nautilus_trader.config.components import ImportableStrategyConfig
-from nautilus_trader.config.components import StrategyFactory
-from nautilus_trader.config.engines import DataEngineConfig
-from nautilus_trader.config.engines import ExecEngineConfig
-from nautilus_trader.config.engines import RiskEngineConfig
-from nautilus_trader.config.live import LiveDataEngineConfig
-from nautilus_trader.config.live import LiveExecEngineConfig
-from nautilus_trader.config.live import LiveRiskEngineConfig
-from nautilus_trader.config.persistence import PersistenceConfig
+from nautilus_trader.common import Environment
+from nautilus_trader.config import ActorFactory
+from nautilus_trader.config import CacheConfig
+from nautilus_trader.config import CacheDatabaseConfig
+from nautilus_trader.config import DataEngineConfig
+from nautilus_trader.config import ExecEngineConfig
+from nautilus_trader.config import ImportableActorConfig
+from nautilus_trader.config import ImportableStrategyConfig
+from nautilus_trader.config import LiveDataEngineConfig
+from nautilus_trader.config import LiveExecEngineConfig
+from nautilus_trader.config import LiveRiskEngineConfig
+from nautilus_trader.config import PersistenceConfig
+from nautilus_trader.config import RiskEngineConfig
+from nautilus_trader.config import StrategyFactory
 from nautilus_trader.persistence.streaming import FeatherWriter
 
 from nautilus_trader.cache.cache cimport Cache
@@ -65,7 +64,7 @@ from nautilus_trader.msgbus.bus cimport MessageBus
 from nautilus_trader.portfolio.portfolio cimport Portfolio
 from nautilus_trader.risk.engine cimport RiskEngine
 from nautilus_trader.serialization.msgpack.serializer cimport MsgPackSerializer
-from nautilus_trader.trading.strategy cimport TradingStrategy
+from nautilus_trader.trading.strategy cimport Strategy
 from nautilus_trader.trading.trader cimport Trader
 
 
@@ -74,12 +73,6 @@ try:
     asyncio.set_event_loop_policy(uvloop.EventLoopPolicy())
 except ImportError:  # pragma: no cover
     uvloop = None
-
-@unique
-class Environment(Enum):
-    BACKTEST = "backtest"
-    SANDBOX = "sandbox"
-    LIVE = "live"
 
 
 cdef class NautilusKernel:
@@ -106,6 +99,12 @@ cdef class NautilusKernel:
         The risk engine configuration for the kernel.
     exec_config : Union[ExecEngineConfig, LiveExecEngineConfig]
         The execution engine configuration for the kernel.
+    persistence_config : PersistenceConfig, optional
+        The configuration for enabling persistence via feather files.
+    actor_configs : List[ImportableActorConfig], optional
+        The list of importable actor configs.
+    strategy_configs : List[ImportableStrategyConfig], optional
+        The list of importable strategy configs.
     loop : AbstractEventLoop, optional
         The event loop for the kernel.
     loop_sig_callback : Callable, optional
@@ -143,8 +142,8 @@ cdef class NautilusKernel:
         risk_config not None: Union[RiskEngineConfig, LiveRiskEngineConfig],
         exec_config not None: Union[ExecEngineConfig, LiveExecEngineConfig],
         persistence_config: Optional[PersistenceConfig] = None,
-        actor_configs: List[ImportableActorConfig] = None,
-        strategy_configs: List[ImportableStrategyConfig] = None,
+        actor_configs: Optional[List[ImportableActorConfig]] = None,
+        strategy_configs: Optional[List[ImportableStrategyConfig]] = None,
         loop: Optional[AbstractEventLoop] = None,
         loop_sig_callback: Optional[Callable] = None,
         loop_debug: bool = False,
@@ -181,7 +180,7 @@ cdef class NautilusKernel:
         if self.environment == Environment.BACKTEST:
             self.clock = TestClock()
             self.logger = Logger(
-                clock=self.clock,
+                clock=LiveClock(loop=loop),
                 trader_id=self.trader_id,
                 machine_id=self.machine_id,
                 instance_id=self.instance_id,
@@ -358,7 +357,7 @@ cdef class NautilusKernel:
 
         # Create importable strategies
         for config in strategy_configs:
-            strategy: TradingStrategy = StrategyFactory.create(config)
+            strategy: Strategy = StrategyFactory.create(config)
             self.trader.add_strategy(strategy)
 
         cdef int64_t build_time_ms = nanos_to_millis(unix_timestamp_ns() - self.ts_created)

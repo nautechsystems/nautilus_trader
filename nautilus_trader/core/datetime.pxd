@@ -20,6 +20,7 @@ from libc.stdint cimport int64_t
 
 
 cpdef int64_t secs_to_nanos(double seconds) except *
+cpdef int64_t secs_to_millis(double secs) except *
 cpdef int64_t millis_to_nanos(double millis) except *
 cpdef int64_t micros_to_nanos(double micros) except *
 cpdef double nanos_to_secs(double nanos) except *

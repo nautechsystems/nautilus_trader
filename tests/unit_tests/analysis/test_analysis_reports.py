@@ -252,5 +252,4 @@ class TestReportProvider:
         assert report.iloc[0]["avg_px_close"] == "1.00010"
         assert report.iloc[0]["ts_opened"] == UNIX_EPOCH
         assert report.iloc[0]["ts_closed"] == UNIX_EPOCH
-        assert report.iloc[0]["realized_points"] == "0.00000"
         assert report.iloc[0]["realized_return"] == "0.00000"

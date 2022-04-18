@@ -43,12 +43,12 @@ cdef class LiveExecutionEngine(ExecutionEngine):
     cpdef void kill(self) except *
     cdef void _enqueue_sentinel(self) except *
 
-# -- COMMANDS --------------------------------------------------------------------------------------
+# -- COMMANDS -------------------------------------------------------------------------------------
 
     cpdef void reconcile_report(self, ExecutionReport report) except *
     cpdef void reconcile_mass_status(self, ExecutionMassStatus report) except *
 
-# -- RECONCILIATION --------------------------------------------------------------------------------
+# -- RECONCILIATION -------------------------------------------------------------------------------
 
     cdef bint _reconcile_report(self, ExecutionReport report) except *
     cdef bint _reconcile_mass_status(self, ExecutionMassStatus report) except *

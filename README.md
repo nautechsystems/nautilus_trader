@@ -19,9 +19,9 @@
 
 | Platform         | Rust      | Python |
 |:-----------------|:----------|:-------|
-| Linux (x86_64)   | `1.59.0+` | `3.8+` |
-| macOS (x86_64)   | `1.59.0+` | `3.8+` |
-| Windows (x86_64) | `1.59.0+` | `3.8+` |
+| Linux (x86_64)   | `1.60.0+` | `3.8+` |
+| macOS (x86_64)   | `1.60.0+` | `3.8+` |
+| Windows (x86_64) | `1.60.0+` | `3.8+` |
 
 - **Website:** https://nautilustrader.io
 - **Docs:** https://docs.nautilustrader.io
@@ -239,6 +239,7 @@ The container images can be pulled as follows:
 
 You can launch the backtest example container by running:
 
+    docker pull ghcr.io/nautechsystems/jupyterlab:develop
     docker run -p 8888:8888 ghcr.io/nautechsystems/jupyterlab:develop
 
 Then navigate to the `backtest_example.ipynb` and run it!
@@ -247,11 +248,11 @@ Then navigate to the `backtest_example.ipynb` and run it!
 
 The following is a minimal EMA Cross strategy example which just uses bar data.
 While trading strategies can become very advanced with this platform, it's still possible to put
-together simple strategies. First inherit from the `TradingStrategy` base class, then only the
+together simple strategies. First inherit from the `Strategy` base class, then only the
 methods which are required by the strategy need to be implemented.
 
 ```python
-class EMACross(TradingStrategy):
+class EMACross(Strategy):
     """
     A simple moving average cross example strategy.
 

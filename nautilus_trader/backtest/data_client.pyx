@@ -87,7 +87,7 @@ cdef class BacktestDataClient(DataClient):
         self.is_connected = False
         self._log.info(f"Disconnected.")
 
-# -- SUBSCRIPTIONS ---------------------------------------------------------------------------------
+# -- SUBSCRIPTIONS --------------------------------------------------------------------------------
 
     cpdef void subscribe(self, DataType data_type) except *:
         """
@@ -119,7 +119,7 @@ cdef class BacktestDataClient(DataClient):
         self._remove_subscription(data_type)
         # Do nothing else for backtest
 
-# -- REQUESTS --------------------------------------------------------------------------------------
+# -- REQUESTS -------------------------------------------------------------------------------------
 
     cpdef void request(self, DataType data_type, UUID4 correlation_id) except *:
         """
@@ -185,7 +185,7 @@ cdef class BacktestMarketDataClient(MarketDataClient):
         self.is_connected = False
         self._log.info(f"Disconnected.")
 
-# -- SUBSCRIPTIONS ---------------------------------------------------------------------------------
+# -- SUBSCRIPTIONS --------------------------------------------------------------------------------
 
     cpdef void subscribe_instruments(self) except *:
         """
@@ -499,7 +499,38 @@ cdef class BacktestMarketDataClient(MarketDataClient):
         self._remove_subscription_instrument_close_prices(instrument_id)
         # Do nothing else for backtest
 
-# -- REQUESTS --------------------------------------------------------------------------------------
+# -- REQUESTS -------------------------------------------------------------------------------------
+
+    cpdef void request_instrument(self, InstrumentId instrument_id, UUID4 correlation_id) except *:
+        """
+        Request an instrument for the given parameters.
+
+        Parameters
+        ----------
+        instrument_id : InstrumentId
+            The instrument ID for the request.
+        correlation_id : UUID4
+            The correlation ID for the request.
+
+        """
+        Condition.not_none(instrument_id, "instrument_id")
+        Condition.not_none(correlation_id, "correlation_id")
+
+        cdef Instrument instrument = self._cache.instrument(instrument_id)
+        if instrument is None:
+            self._log.error(f"Cannot find instrument for {instrument_id}.")
+            return
+
+        data_type = DataType(
+            type=Instrument,
+            metadata={"instrument_id": instrument_id},
+        )
+
+        self._handle_data_response(
+            data_type=data_type,
+            data=[instrument],  # Data engine handles lists of instruments
+            correlation_id=correlation_id,
+        )
 
     cpdef void request_quote_ticks(
         self,

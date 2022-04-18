@@ -1,7 +1,7 @@
 repos:
 
   - repo: https://github.com/pre-commit/pre-commit-hooks
-    rev: v4.1.0
+    rev: v4.2.0
     hooks:
       - id: forbid-new-submodules
       - id: fix-encoding-pragma
@@ -31,7 +31,7 @@ repos:
         exclude: "nautilus_trader/adapters/betfair/parsing.py|nautilus_trader/adapters/betfair/execution.py|tests/integration_tests/adapters/betfair/test_kit.py|nautilus_trader/adapters/binance/futures/schemas/user.py"
 
   - repo: https://github.com/hadialqattan/pycln
-    rev: v1.2.5
+    rev: v1.3.1
     hooks:
       - id: pycln
         name: pycln (Python unused imports)
@@ -106,6 +106,7 @@ repos:
             --max-line-length=150,
             --statistics,
             --ignore=C101 E203 E252 E402 D100 D101 D102 S101 S403 W503,
+            --min-python-version=3.8.0
         ]
       - id: flake8
         name: flake8 (Cython)
@@ -142,10 +143,10 @@ repos:
         additional_dependencies:
           - toml
 
-#  - repo: https://github.com/kynan/nbstripout
-#    rev: 0.5.0
-#    hooks:
-#      - id: nbstripout
+  - repo: https://github.com/kynan/nbstripout
+    rev: 0.5.0
+    hooks:
+      - id: nbstripout
 
 # flake8 ignore justifications
 # ----------------------------

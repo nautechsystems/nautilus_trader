@@ -13,7 +13,38 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from nautilus_trader.indicators.fuzzy_enums.candle_size cimport CandleSize
+from typing import Any, Optional
+
+import numpy as np
+import pandas as pd
+
+from nautilus_trader.analysis.statistic import PortfolioStatistic
 
 
-__all__ = ["CandleSize"]
+class ReturnsVolatility(PortfolioStatistic):
+    """
+    Calculates the volatility of returns.
+
+    The returns will be downsampled into daily bins.
+
+    Parameters
+    ----------
+    period : int, default 252
+        The trading period in days.
+    """
+
+    def __init__(self, period: int = 252):
+        self.period = period
+
+    @property
+    def name(self) -> str:
+        return f"Returns Volatility ({self.period} days)"
+
+    def calculate_from_returns(self, returns: pd.Series) -> Optional[Any]:
+        # Preconditions
+        if not self._check_valid_returns(returns):
+            return np.nan
+
+        returns = self._downsample_to_daily_bins(returns)
+
+        return returns.std() * np.sqrt(self.period)

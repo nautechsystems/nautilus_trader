@@ -101,7 +101,7 @@ cdef class DataClient(Component):
         """
         self.is_connected = value
 
-# -- SUBSCRIPTIONS ---------------------------------------------------------------------------------
+# -- SUBSCRIPTIONS --------------------------------------------------------------------------------
 
     cpdef list subscribed_generic_data(self):
         """
@@ -150,13 +150,13 @@ cdef class DataClient(Component):
 
         self._subscriptions_generic.discard(data_type)
 
-# -- REQUESTS --------------------------------------------------------------------------------------
+# -- REQUESTS -------------------------------------------------------------------------------------
 
     cpdef void request(self, DataType data_type, UUID4 correlation_id) except *:
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
-# -- PYTHON WRAPPERS -------------------------------------------------------------------------------
+# -- PYTHON WRAPPERS ------------------------------------------------------------------------------
 
     def _handle_data_py(self, Data data):
         self._handle_data(data)
@@ -164,7 +164,7 @@ cdef class DataClient(Component):
     def _handle_data_response_py(self, DataType data_type, object data, UUID4 correlation_id):
         self._handle_data_response(data_type, data, correlation_id)
 
-# -- DATA HANDLERS ---------------------------------------------------------------------------------
+# -- DATA HANDLERS --------------------------------------------------------------------------------
 
     cpdef void _handle_data(self, Data data) except *:
         self._msgbus.send(endpoint="DataEngine.process", msg=data)
@@ -243,7 +243,7 @@ cdef class MarketDataClient(DataClient):
         # Tasks
         self._update_instruments_task = None
 
-# -- SUBSCRIPTIONS ---------------------------------------------------------------------------------
+# -- SUBSCRIPTIONS --------------------------------------------------------------------------------
 
     cpdef list subscribed_instruments(self):
         """
@@ -684,9 +684,13 @@ cdef class MarketDataClient(DataClient):
 
         self._subscriptions_instrument_close_price.discard(instrument_id)
 
-# -- REQUESTS --------------------------------------------------------------------------------------
+# -- REQUESTS -------------------------------------------------------------------------------------
 
     cpdef void request(self, DataType datatype, UUID4 correlation_id) except *:
+        """Abstract method (implement in subclass)."""
+        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
+
+    cpdef void request_instrument(self, InstrumentId instrument_id, UUID4 correlation_id) except *:
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
@@ -723,7 +727,7 @@ cdef class MarketDataClient(DataClient):
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
-# -- PYTHON WRAPPERS -------------------------------------------------------------------------------
+# -- PYTHON WRAPPERS ------------------------------------------------------------------------------
 
     # Convenient pure Python wrappers for the data handlers. Often Python methods
     # involving threads or the event loop don't work with cpdef methods.
@@ -737,7 +741,7 @@ cdef class MarketDataClient(DataClient):
     def _handle_bars_py(self, BarType bar_type, list bars, Bar partial, UUID4 correlation_id):
         self._handle_bars(bar_type, bars, partial, correlation_id)
 
-# -- DATA HANDLERS ---------------------------------------------------------------------------------
+# -- DATA HANDLERS --------------------------------------------------------------------------------
 
     cpdef void _handle_quote_ticks(self, InstrumentId instrument_id, list ticks, UUID4 correlation_id) except *:
         cdef DataResponse response = DataResponse(

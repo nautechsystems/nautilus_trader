@@ -14,9 +14,10 @@
 # -------------------------------------------------------------------------------------------------
 
 import heapq
+import itertools
 import sys
 from collections import namedtuple
-from typing import Any, Iterator, List, Set
+from typing import Any, Dict, Iterator, List, Set
 
 import fsspec
 import pandas as pd
@@ -24,7 +25,7 @@ import pyarrow.dataset as ds
 import pyarrow.parquet as pq
 from pyarrow.lib import ArrowInvalid
 
-from nautilus_trader.config.backtest import BacktestDataConfig
+from nautilus_trader.config import BacktestDataConfig
 from nautilus_trader.persistence.catalog import DataCatalog
 from nautilus_trader.persistence.util import parse_bytes
 from nautilus_trader.serialization.arrow.serializer import ParquetSerializer
@@ -138,3 +139,31 @@ def batch_files(  # noqa: C901
 
     if sent_count == 0:
         raise ValueError("No data found, check data_configs")
+
+
+def groupby_datatype(data):
+    def _groupby_key(x):
+        return type(x).__name__
+
+    return [
+        {"type": type(v[0]), "data": v}
+        for v in [
+            list(v) for _, v in itertools.groupby(sorted(data, key=_groupby_key), key=_groupby_key)
+        ]
+    ]
+
+
+def extract_generic_data_client_ids(data_configs: List[BacktestDataConfig]) -> Dict:
+    """
+    Extract a mapping of data_type : client_id from the list of `data_configs`.
+    In the process of merging the streaming data, we lose the `client_id` for
+    generic data, we need to inject this back in so the backtest engine can be
+    correctly loaded.
+    """
+    data_client_ids = [
+        (config.data_type, config.client_id) for config in data_configs if config.client_id
+    ]
+    assert len(set(data_client_ids)) == len(
+        dict(data_client_ids)
+    ), "data_type found with multiple client_ids"
+    return dict(data_client_ids)

@@ -20,7 +20,7 @@ import pytest
 from nautilus_trader.common.enums import ComponentState
 from nautilus_trader.common.events.risk import TradingStateChanged
 from nautilus_trader.common.events.system import ComponentStateChanged
-from nautilus_trader.config.components import ActorConfig
+from nautilus_trader.config import ActorConfig
 from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.model.enums import TradingState
 from nautilus_trader.model.identifiers import ComponentId
