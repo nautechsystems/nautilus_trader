@@ -315,6 +315,7 @@ class TestBacktestAcceptanceTestsBTCPERPTradeBars:
         # Fixture Setup
         config = BacktestEngineConfig(
             bypass_logging=False,
+            allow_cash_positions=True,
             run_analysis=False,
             risk_engine={"bypass": True},
         )
