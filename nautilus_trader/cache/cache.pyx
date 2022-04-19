@@ -1292,7 +1292,7 @@ cdef class Cache(CacheFacade):
         cdef list snapshots = self._position_snapshots.get(position_id)
 
         # Reassign position ID
-        cdef Position copied_position = copy.copy(position)
+        cdef Position copied_position = copy.deepcopy(position)
         copied_position.id = PositionId(position.id.value + f"-{uuid.uuid4()}")
         cdef bytes position_pickled = pickle.dumps(copied_position)
 

@@ -15,6 +15,7 @@
 
 from decimal import Decimal
 
+import cython
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
 from nautilus_trader.model.c_enums.order_side cimport OrderSideParser
@@ -27,6 +28,7 @@ from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
 
 
+@cython.auto_pickle(True)
 cdef class Position:
     """
     Represents a position in a financial market.
