@@ -202,7 +202,7 @@ NAUTILUS_PARQUET_SCHEMA = {
             "post_only": pa.bool_(),
             "reduce_only": pa.bool_(),
             # -- Options fields -- #
-            "price": pa.string(),
+            "price": pa.float64(),
             "trigger_price": pa.string(),
             "trigger_type": pa.dictionary(pa.int8(), pa.string()),
             "limit_offset": pa.string(),
