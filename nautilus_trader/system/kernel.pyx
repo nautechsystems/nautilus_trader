@@ -392,6 +392,7 @@ cdef class NautilusKernel:
             path=path,
             fs_protocol=config.fs_protocol,
             flush_interval=config.flush_interval,
+            logger=self.log
         )
         self.persistence_writers.append(writer)
         self.trader.subscribe("*", writer.write)
