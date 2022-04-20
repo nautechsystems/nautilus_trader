@@ -21,6 +21,7 @@ import fsspec
 import pyarrow as pa
 from pyarrow import RecordBatchStreamWriter
 
+from nautilus_trader.common.logging import LoggerAdapter
 from nautilus_trader.model.data.base import GenericData
 from nautilus_trader.model.orderbook.data import OrderBookData
 from nautilus_trader.model.orderbook.data import OrderBookDelta
@@ -41,6 +42,7 @@ class FeatherWriter:
     def __init__(
         self,
         path: str,
+        logger: LoggerAdapter,
         fs_protocol: str = "file",
         flush_interval: Optional[int] = None,
         replace=False,
@@ -60,6 +62,7 @@ class FeatherWriter:
                 OrderBookSnapshot: self._schemas[OrderBookData],
             }
         )
+        self.logger = logger
         self._files: Dict[type, BinaryIO] = {}
         self._writers: Dict[type, RecordBatchStreamWriter] = {}
         self._create_writers()
@@ -95,7 +98,7 @@ class FeatherWriter:
         table = get_cls_table(cls).__name__
         if table not in self._writers:
             if cls not in self.missing_writers:
-                print(f"Can't find writer for cls: {cls}")
+                self.logger.warning(f"Can't find writer for cls: {cls}")
                 self.missing_writers.add(cls)
             return
         writer = self._writers[table]
@@ -112,9 +115,9 @@ class FeatherWriter:
             writer.write_batch(batch)
             self.check_flush()
         except Exception as ex:
-            print(f"Failed to serialize {cls=}")
-            print(f"ERROR = `{ex}`")
-            print(f"data = {original}")
+            self.logger.error(f"Failed to serialize {cls=}")
+            self.logger.error(f"ERROR = `{ex}`")
+            self.logger.debug(f"data = {original}")
             raise
 
     def check_flush(self):
