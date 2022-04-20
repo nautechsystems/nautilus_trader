@@ -15,7 +15,7 @@
 
 import datetime
 import pathlib
-from typing import BinaryIO, Dict, Optional
+from typing import BinaryIO, Dict, Optional, Set
 
 import fsspec
 import pyarrow as pa
@@ -65,6 +65,7 @@ class FeatherWriter:
         self._create_writers()
         self.flush_interval = datetime.timedelta(milliseconds=flush_interval or 1000)
         self._last_flush = datetime.datetime(1970, 1, 1)
+        self.missing_writers: Set[type] = set()
 
     def _check_path(self, p):
         path = pathlib.Path(p)
@@ -93,23 +94,28 @@ class FeatherWriter:
             cls = obj.data_type.type
         table = get_cls_table(cls).__name__
         if table not in self._writers:
-            print(f"Can't find writer for cls: {cls}")
+            if cls not in self.missing_writers:
+                print(f"Can't find writer for cls: {cls}")
+                self.missing_writers.add(cls)
             return
         writer = self._writers[table]
         serialized = ParquetSerializer.serialize(obj)
         if isinstance(serialized, dict):
             serialized = [serialized]
-        data = list_dicts_to_dict_lists(
+        original = list_dicts_to_dict_lists(
             serialized,
             keys=self._schemas[cls].names,
         )
-        data = list(data.values())
+        data = list(original.values())
         try:
             batch = pa.record_batch(data, schema=self._schemas[cls])
             writer.write_batch(batch)
             self.check_flush()
         except Exception as ex:
-            print(str(ex), cls, data)
+            print(f"Failed to serialize {cls=}")
+            print(f"ERROR = `{ex}`")
+            print(f"data = {original}")
+            raise
 
     def check_flush(self):
         now = datetime.datetime.now()

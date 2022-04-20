@@ -89,7 +89,7 @@ class TestPersistenceStreaming:
             "OrderBookDeltas": 1077,
             "OrderBookSnapshot": 1,
             "OrderFilled": 344,
-            "OrderInitialized": 1,
+            "OrderInitialized": 323,
             "OrderSubmitted": 323,
             "PositionChanged": 343,
             "PositionOpened": 1,
