@@ -118,7 +118,6 @@ class FeatherWriter:
             self.logger.error(f"Failed to serialize {cls=}")
             self.logger.error(f"ERROR = `{ex}`")
             self.logger.debug(f"data = {original}")
-            raise
 
     def check_flush(self):
         now = datetime.datetime.now()
