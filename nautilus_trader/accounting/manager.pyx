@@ -159,7 +159,6 @@ cdef class AccountsManager:
         AccountState
 
         """
-        print("orders open", orders_open)
         Condition.not_none(account, "account")
         Condition.not_none(instrument, "instrument")
         Condition.not_none(orders_open, "orders_open")
