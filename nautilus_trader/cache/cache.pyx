@@ -1361,7 +1361,10 @@ cdef class Cache(CacheFacade):
         """
         Condition.not_none(position, "position")
 
-        if position.is_closed_c():
+        if position.is_open_c():
+            self._index_positions_open.add(position.id)
+            self._index_positions_closed.discard(position.id)
+        elif position.is_closed_c():
             self._index_positions_closed.add(position.id)
             self._index_positions_open.discard(position.id)
 

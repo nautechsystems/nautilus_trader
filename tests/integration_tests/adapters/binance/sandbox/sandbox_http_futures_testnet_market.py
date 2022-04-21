@@ -14,14 +14,12 @@
 # -------------------------------------------------------------------------------------------------
 
 import asyncio
-import json
 import os
 
 import pytest
 
 from nautilus_trader.adapters.binance.common.enums import BinanceAccountType
 from nautilus_trader.adapters.binance.factories import get_cached_binance_http_client
-from nautilus_trader.adapters.binance.futures.http.market import BinanceFuturesMarketHttpAPI
 from nautilus_trader.adapters.binance.futures.providers import BinanceFuturesInstrumentProvider
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.logging import Logger
@@ -32,26 +30,23 @@ async def test_binance_futures_testnet_market_http_client():
     loop = asyncio.get_event_loop()
     clock = LiveClock()
 
+    account_type = BinanceAccountType.FUTURES_USDT
+
     client = get_cached_binance_http_client(
         loop=loop,
         clock=clock,
         logger=Logger(clock=clock),
-        account_type=BinanceAccountType.FUTURES_USDT,
+        account_type=account_type,
         key=os.getenv("BINANCE_FUTURES_TESTNET_API_KEY"),
         secret=os.getenv("BINANCE_FUTURES_TESTNET_API_SECRET"),
         is_testnet=True,
     )
     await client.connect()
 
-    account_type = BinanceAccountType.FUTURES_USDT
-    market = BinanceFuturesMarketHttpAPI(client=client, account_type=account_type)
-    response = await market.exchange_info(symbol="BTCUSDT")
-    print(json.dumps(response, indent=4))
-
     provider = BinanceFuturesInstrumentProvider(
         client=client,
         logger=Logger(clock=clock),
-        account_type=account_type,
+        account_type=BinanceAccountType.FUTURES_USDT,
     )
 
     await provider.load_all_async()

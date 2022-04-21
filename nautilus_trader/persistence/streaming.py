@@ -15,12 +15,13 @@
 
 import datetime
 import pathlib
-from typing import BinaryIO, Dict, Optional
+from typing import BinaryIO, Dict, Optional, Set
 
 import fsspec
 import pyarrow as pa
 from pyarrow import RecordBatchStreamWriter
 
+from nautilus_trader.common.logging import LoggerAdapter
 from nautilus_trader.model.data.base import GenericData
 from nautilus_trader.model.orderbook.data import OrderBookData
 from nautilus_trader.model.orderbook.data import OrderBookDelta
@@ -41,6 +42,7 @@ class FeatherWriter:
     def __init__(
         self,
         path: str,
+        logger: LoggerAdapter,
         fs_protocol: str = "file",
         flush_interval: Optional[int] = None,
         replace=False,
@@ -60,11 +62,13 @@ class FeatherWriter:
                 OrderBookSnapshot: self._schemas[OrderBookData],
             }
         )
+        self.logger = logger
         self._files: Dict[type, BinaryIO] = {}
         self._writers: Dict[type, RecordBatchStreamWriter] = {}
         self._create_writers()
         self.flush_interval = datetime.timedelta(milliseconds=flush_interval or 1000)
         self._last_flush = datetime.datetime(1970, 1, 1)
+        self.missing_writers: Set[type] = set()
 
     def _check_path(self, p):
         path = pathlib.Path(p)
@@ -93,23 +97,27 @@ class FeatherWriter:
             cls = obj.data_type.type
         table = get_cls_table(cls).__name__
         if table not in self._writers:
-            print(f"Can't find writer for cls: {cls}")
+            if cls not in self.missing_writers:
+                self.logger.warning(f"Can't find writer for cls: {cls}")
+                self.missing_writers.add(cls)
             return
         writer = self._writers[table]
         serialized = ParquetSerializer.serialize(obj)
         if isinstance(serialized, dict):
             serialized = [serialized]
-        data = list_dicts_to_dict_lists(
+        original = list_dicts_to_dict_lists(
             serialized,
             keys=self._schemas[cls].names,
         )
-        data = list(data.values())
+        data = list(original.values())
         try:
             batch = pa.record_batch(data, schema=self._schemas[cls])
             writer.write_batch(batch)
             self.check_flush()
         except Exception as ex:
-            print(str(ex), cls, data)
+            self.logger.error(f"Failed to serialize {cls=}")
+            self.logger.error(f"ERROR = `{ex}`")
+            self.logger.debug(f"data = {original}")
 
     def check_flush(self):
         now = datetime.datetime.now()

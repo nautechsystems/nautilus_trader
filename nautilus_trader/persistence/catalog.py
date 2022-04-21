@@ -362,6 +362,18 @@ class DataCatalog(metaclass=Singleton):
             partitions[level.name] = level.keys
         return partitions
 
+    def list_backtests(self) -> List[str]:
+        return [p.stem for p in map(pathlib.Path, self.fs.glob(f"{self.path}/backtest/*.feather"))]
+
+    def list_live_runs(self) -> List[str]:
+        return [p.stem for p in map(pathlib.Path, self.fs.glob(f"{self.path}/live/*.feather"))]
+
+    def read_live_run(self, live_run_id: str, **kwargs):
+        return self._read_feather(kind="live", run_id=live_run_id, **kwargs)
+
+    def read_backtest(self, backtest_run_id: str, **kwargs):
+        return self._read_feather(kind="backtest", run_id=backtest_run_id, **kwargs)
+
     def _read_feather(self, kind: str, run_id: str, raise_on_failed_deserialize: bool = False):
         class_mapping: Dict[str, type] = {class_to_filename(cls): cls for cls in list_schemas()}
         data = {}
@@ -382,12 +394,6 @@ class DataCatalog(metaclass=Singleton):
                     raise
                 print(f"Failed to deserialize {cls_name}: {ex}")
         return sorted(sum(data.values(), list()), key=lambda x: x.ts_init)
-
-    def read_live_run(self, live_run_id: str, **kwargs):
-        return self._read_feather(kind="live", run_id=live_run_id, **kwargs)
-
-    def read_backtest(self, backtest_run_id: str, **kwargs):
-        return self._read_feather(kind="backtest", run_id=backtest_run_id, **kwargs)
 
 
 def combine_filters(*filters):
