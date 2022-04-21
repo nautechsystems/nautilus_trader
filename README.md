@@ -168,6 +168,7 @@ as specified in the `pyproject.toml`. However, we highly recommend installing us
    - Linux and macOS:
        ```
        curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+       rustup toolchain install stable
        ```
    - Windows:
        - Download and install [`rustup-init.exe`](https://win.rustup.rs/x86_64)
