@@ -235,10 +235,6 @@ class BacktestNode:
                 data_configs=data_configs,
             )
 
-        # Cleanup writers
-        for writer in engine.kernel.persistence_writers:
-            writer.close()
-
         return engine.get_result()
 
     def _run_streaming(
