@@ -370,8 +370,8 @@ class TestBacktestAcceptanceTestsBTCPERPTradeBars:
         assert self.engine.iteration == 10000
         btc_ending_balance = self.engine.portfolio.account(self.venue).balance_total(BTC)
         usdt_ending_balance = self.engine.portfolio.account(self.venue).balance_total(USDT)
-        assert btc_ending_balance == Money(9.57200000, BTC)
-        assert usdt_ending_balance == Money(10017114.27716700, USDT)
+        assert btc_ending_balance == Money(10.00000000, BTC)
+        assert usdt_ending_balance == Money(9999872.71139900, USDT)
 
     def test_run_ema_cross_with_trade_ticks_from_bar_data(self):
         # Arrange
@@ -405,8 +405,8 @@ class TestBacktestAcceptanceTestsBTCPERPTradeBars:
         assert self.engine.iteration == 40000
         btc_ending_balance = self.engine.portfolio.account(self.venue).balance_total(BTC)
         usdt_ending_balance = self.engine.portfolio.account(self.venue).balance_total(USDT)
-        assert btc_ending_balance == Money(9.57200000, BTC)
-        assert usdt_ending_balance == Money(10017114.27716700, USDT)
+        assert btc_ending_balance == Money(10.00000000, BTC)
+        assert usdt_ending_balance == Money(9999872.71139900, USDT)
 
 
 class TestBacktestAcceptanceTestsAUDUSD:
@@ -532,7 +532,7 @@ class TestBacktestAcceptanceTestsETHUSDT:
         # Assert
         assert strategy.fast_ema.count == 279
         assert self.engine.iteration == 69806
-        expected_usdt = Money(977458.26906744, USDT)
+        expected_usdt = Money(998563.22730045, USDT)
         assert self.engine.portfolio.account(self.venue).balance_total(USDT) == expected_usdt
 
 

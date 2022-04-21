@@ -28,5 +28,6 @@ in the near future to assist with this.
    strategies.md
    instruments.md
    orders.md
+   adapters.md
    advanced/index.md
 ```

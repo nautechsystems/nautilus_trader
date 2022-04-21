@@ -1,3 +1,20 @@
+# NautilusTrader 1.143.0 Beta
+
+Released on 21st April 2022 (UTC).
+
+### Breaking Changes
+None
+
+### Enhancements
+None
+
+### Fixes
+- Fixed segfault for `CashAccount.calculate_balance_locked` with no base currency
+- Various FeatherWriter fixes
+
+
+---
+
 # NautilusTrader 1.142.0 Beta
 
 Released on 17th April 2022 (UTC).
