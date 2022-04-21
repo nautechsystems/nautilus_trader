@@ -30,6 +30,7 @@ from nautilus_trader.model.c_enums.order_side import OrderSide
 from nautilus_trader.model.currencies import BTC
 from nautilus_trader.model.currencies import ETH
 from nautilus_trader.model.currencies import GBP
+from nautilus_trader.model.currencies import JPY
 from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.currencies import USDT
 from nautilus_trader.model.data.tick import QuoteTick
@@ -37,10 +38,13 @@ from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import OMSType
 from nautilus_trader.model.events.account import AccountState
 from nautilus_trader.model.identifiers import AccountId
+from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import PositionId
 from nautilus_trader.model.identifiers import StrategyId
+from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.identifiers import VenueOrderId
+from nautilus_trader.model.instruments.equity import Equity
 from nautilus_trader.model.objects import AccountBalance
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
@@ -349,6 +353,87 @@ class TestPortfolio:
 
         # Assert
         assert self.portfolio.balances_locked(BINANCE)[USDT].as_decimal() == 50100
+
+    def test_update_orders_open_cash_account_jpy(self):
+
+        # Arrange
+        AccountFactory.register_calculated_account("TSE")
+
+        account_id = AccountId("TSE", "000")
+
+        event = AccountState(
+            account_id=account_id,
+            account_type=AccountType.CASH,
+            base_currency=JPY,
+            reported=True,
+            balances=[
+                AccountBalance(
+                    Money.from_str("10_000_000 JPY"),
+                    Money(0.00, JPY),
+                    Money.from_str("10_000_000 JPY"),
+                ),
+            ],
+            margins=[],
+            info={},  # No default currency set
+            event_id=UUID4(),
+            ts_event=0,
+            ts_init=0,
+        )
+        self.portfolio.update_account(event)
+
+        instrument = Equity(
+            instrument_id=InstrumentId.from_str("1365.TSE"),
+            native_symbol=Symbol("1365.T"),
+            currency=JPY,
+            price_precision=2,
+            price_increment=Price(0.01, 2),
+            multiplier=Quantity.from_int(1),
+            lot_size=Quantity.from_int(100),
+            isin=None,
+            ts_event=0,
+            ts_init=0,
+        )
+        self.cache.add_instrument(instrument)
+
+        # Create open order
+        order = self.order_factory.limit(
+            instrument.id,
+            OrderSide.BUY,
+            Quantity.from_str("100"),
+            Price.from_str("11165.00"),
+        )
+
+        self.cache.add_order(order, position_id=None)
+
+        # Act: push order state to ACCEPTED
+        self.exec_engine.process(TestEventStubs.order_submitted(order, account_id=account_id))
+        self.exec_engine.process(TestEventStubs.order_accepted(order, account_id=account_id))
+        self.exec_engine.process(
+            TestEventStubs.order_filled(
+                order=order,
+                instrument=instrument,
+                last_px=Price.from_str("4235.00"),
+                last_qty=Quantity.from_int(2),
+            )
+        )
+
+        # Create open order
+        order = self.order_factory.limit(
+            instrument.id,
+            OrderSide.SELL,
+            Quantity.from_str("100"),
+            Price.from_str("11165.00"),
+        )
+
+        self.cache.add_order(order, position_id=None)
+
+        # Act: push order state to ACCEPTED
+        self.exec_engine.process(TestEventStubs.order_submitted(order, account_id=account_id))
+        accepted = TestEventStubs.order_accepted(order, account_id=account_id)
+        self.exec_engine.process(accepted)
+
+        # Assert
+        assert self.portfolio.balances_locked(instrument.venue)[JPY].as_decimal() == 1116500
 
     def test_update_orders_open_margin_account(self):
         # Arrange

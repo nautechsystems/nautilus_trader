@@ -34,9 +34,12 @@ from nautilus_trader.model.enums import LiquiditySide
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.events.account import AccountState
 from nautilus_trader.model.identifiers import AccountId
+from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import PositionId
 from nautilus_trader.model.identifiers import StrategyId
+from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import Venue
+from nautilus_trader.model.instruments.equity import Equity
 from nautilus_trader.model.objects import AccountBalance
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
@@ -568,3 +571,50 @@ class TestCashAccount:
 
         # Assert
         assert result == Money(5294, JPY)
+
+    def test_calculate_balance_post_order(self):
+        # Arrange
+        event = AccountState(
+            account_id=AccountId("SIM", "001"),
+            account_type=AccountType.CASH,
+            base_currency=JPY,
+            reported=True,
+            balances=[
+                AccountBalance(
+                    Money.from_str("10_000_000 JPY"),
+                    Money(0.00, JPY),
+                    Money.from_str("10_000_000 JPY"),
+                ),
+            ],
+            margins=[],
+            info={},  # No default currency set
+            event_id=UUID4(),
+            ts_event=0,
+            ts_init=0,
+        )
+
+        account = CashAccount(event)
+
+        instrument = Equity(
+            instrument_id=InstrumentId.from_str("1365.TSE"),
+            native_symbol=Symbol("1365.T"),
+            currency=JPY,
+            price_precision=2,
+            price_increment=Price(0.01, 2),
+            multiplier=Quantity.from_int(1),
+            lot_size=Quantity.from_int(100),
+            isin=None,
+            ts_event=0,
+            ts_init=0,
+        )
+
+        # Act
+        result = account.calculate_balance_locked(
+            instrument=instrument,
+            side=OrderSide.BUY,
+            quantity=Quantity.from_int(100),
+            price=Price.from_str("11165.00"),
+        )
+
+        # Assert
+        assert result == Money(1116500.00, JPY)  # Notional + expected commission

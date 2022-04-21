@@ -455,7 +455,7 @@ cdef class ExecutionEngine(Component):
 
         """
         Condition.not_none(event, "event")
-
+        print("event", event)
         self._handle_event(event)
 
     cpdef void flush_db(self) except *:
@@ -559,6 +559,7 @@ cdef class ExecutionEngine(Component):
 # -- EVENT HANDLERS -------------------------------------------------------------------------------
 
     cdef void _handle_event(self, OrderEvent event) except *:
+        print("event", event)
         if self.debug:
             self._log.debug(f"{RECV}{EVT} {event}.", LogColor.MAGENTA)
         self.event_count += 1
