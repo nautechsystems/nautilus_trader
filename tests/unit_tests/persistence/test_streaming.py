@@ -31,6 +31,7 @@ from tests.integration_tests.adapters.betfair.test_kit import BetfairTestStubs
 from tests.test_kit import PACKAGE_ROOT
 from tests.test_kit.mocks.data import NewsEventData
 from tests.test_kit.mocks.data import data_catalog_setup
+from tests.test_kit.stubs.config import TestConfigStubs
 from tests.test_kit.stubs.persistence import TestPersistenceStubs
 
 
@@ -135,3 +136,18 @@ class TestPersistenceStreaming:
         )
         result = Counter([r.__class__.__name__ for r in result])
         assert result["NewsEventData"] == 86985
+
+    def test_file_handle_leaks(self):
+        # Arrange
+        instrument = self.catalog.instruments(as_nautilus=True)[0]
+        run_config = TestConfigStubs.backtest_run_config(
+            catalog=self.catalog,
+            instrument_ids=[instrument.id.value],
+            venues=[BetfairTestStubs.betfair_venue_config()],
+            persist=True,
+        )
+        run_config.engine.persistence.flush_interval = 5000
+        node = BacktestNode(configs=[run_config])
+
+        # Act
+        node.run(run_configs=[run_config])

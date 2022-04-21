@@ -15,6 +15,7 @@
 
 import asyncio
 
+from nautilus_trader.backtest.node import BacktestNode
 from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.factories import OrderFactory
@@ -22,11 +23,13 @@ from nautilus_trader.common.logging import LiveLogger
 from nautilus_trader.common.logging import LogLevelParser
 from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.msgbus.bus import MessageBus
+from nautilus_trader.persistence.catalog import DataCatalog
 from nautilus_trader.portfolio.portfolio import Portfolio
 from nautilus_trader.trading.strategy import Strategy
 from tests.test_kit.mocks.engines import MockLiveDataEngine
 from tests.test_kit.mocks.engines import MockLiveExecutionEngine
 from tests.test_kit.mocks.engines import MockLiveRiskEngine
+from tests.test_kit.stubs.config import TestConfigStubs
 from tests.test_kit.stubs.identifiers import TestIdStubs
 
 
@@ -118,3 +121,19 @@ class TestComponentStubs:
             strategy_id=TestIdStubs.strategy_id(),
             clock=TestComponentStubs.clock(),
         )
+
+    @staticmethod
+    def backtest_node(
+        catalog: DataCatalog,
+        persist: bool = False,
+        bypass_risk: bool = True,
+        add_strategy: bool = True,
+    ) -> BacktestNode:
+        config = TestConfigStubs.backtest_run_config(
+            catalog=catalog,
+            persist=persist,
+            bypass_risk=bypass_risk,
+            add_strategy=add_strategy,
+        )
+        node = BacktestNode(configs=[config])
+        return node

@@ -34,7 +34,7 @@ from nautilus_trader.serialization.arrow.serializer import list_schemas
 from nautilus_trader.serialization.arrow.util import list_dicts_to_dict_lists
 
 
-class FeatherWriter:
+class StreamingPersistence:
     """
     Provides a stream writer of Nautilus objects into feather files.
     """
@@ -129,10 +129,12 @@ class FeatherWriter:
         for cls in self._files:
             self._files[cls].flush()
 
-    def close(self):
+    def dispose(self):
         self.flush()
         for cls in self._writers:
             self._writers[cls].close()
+        for cls in self._files:
+            self._files[cls].close()
 
 
 def read_feather(path: str, fs: fsspec.AbstractFileSystem = None):
