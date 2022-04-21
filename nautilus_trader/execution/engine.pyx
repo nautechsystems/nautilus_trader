@@ -455,6 +455,7 @@ cdef class ExecutionEngine(Component):
 
         """
         Condition.not_none(event, "event")
+
         self._handle_event(event)
 
     cpdef void flush_db(self) except *:
