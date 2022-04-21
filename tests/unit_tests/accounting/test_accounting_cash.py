@@ -49,6 +49,7 @@ AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy("AUD/USD")
 USDJPY_SIM = TestInstrumentProvider.default_fx_ccy("USD/JPY")
 ADABTC_BINANCE = TestInstrumentProvider.adabtc_binance()
 BTCUSDT_BINANCE = TestInstrumentProvider.btcusdt_binance()
+AAPL_NASDAQ = TestInstrumentProvider.aapl_equity()
 
 
 class TestCashAccount:
@@ -298,6 +299,40 @@ class TestCashAccount:
 
         # Assert
         assert result == Money(1_000_040.00, AUD)  # Notional + expected commission
+
+    def test_calculate_balance_locked_sell_no_base_currency(self):
+        # Arrange
+        event = AccountState(
+            account_id=AccountId("SIM", "001"),
+            account_type=AccountType.CASH,
+            base_currency=USD,
+            reported=True,
+            balances=[
+                AccountBalance(
+                    Money(1_000_000.00, USD),
+                    Money(0.00, USD),
+                    Money(1_000_000.00, USD),
+                ),
+            ],
+            margins=[],
+            info={},  # No default currency set
+            event_id=UUID4(),
+            ts_event=0,
+            ts_init=0,
+        )
+
+        account = CashAccount(event)
+
+        # Act
+        result = account.calculate_balance_locked(
+            instrument=AAPL_NASDAQ,
+            side=OrderSide.SELL,
+            quantity=Quantity.from_int(100),
+            price=Price.from_str("1500.00"),
+        )
+
+        # Assert
+        assert result == Money(100.00, USD)  # Notional + expected commission
 
     def test_calculate_pnls_for_single_currency_cash_account(self):
         # Arrange

@@ -229,7 +229,7 @@ cdef class CashAccount(Account):
         Condition.not_none(price, "price")
 
         cdef Currency quote_currency = instrument.quote_currency
-        cdef Currency base_currency = instrument.get_base_currency()
+        cdef Currency base_currency = instrument.get_base_currency() or instrument.quote_currency
 
         cdef double notional
         # Determine notional value
