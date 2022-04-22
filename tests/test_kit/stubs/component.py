@@ -14,14 +14,26 @@
 # -------------------------------------------------------------------------------------------------
 
 import asyncio
+from typing import List, Optional
 
+from nautilus_trader.backtest.engine import BacktestEngine
+from nautilus_trader.backtest.engine import BacktestEngineConfig
+from nautilus_trader.backtest.models import FillModel
 from nautilus_trader.backtest.node import BacktestNode
 from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.factories import OrderFactory
 from nautilus_trader.common.logging import LiveLogger
 from nautilus_trader.common.logging import LogLevelParser
+from nautilus_trader.model.currencies import USD
+from nautilus_trader.model.currency import Currency
+from nautilus_trader.model.data.tick import Tick
+from nautilus_trader.model.enums import AccountType
+from nautilus_trader.model.enums import OMSType
 from nautilus_trader.model.identifiers import TraderId
+from nautilus_trader.model.identifiers import Venue
+from nautilus_trader.model.instruments.base import Instrument
+from nautilus_trader.model.objects import Money
 from nautilus_trader.msgbus.bus import MessageBus
 from nautilus_trader.persistence.catalog import DataCatalog
 from nautilus_trader.portfolio.portfolio import Portfolio
@@ -125,15 +137,34 @@ class TestComponentStubs:
     @staticmethod
     def backtest_node(
         catalog: DataCatalog,
-        persist: bool = False,
-        bypass_risk: bool = True,
-        add_strategy: bool = True,
+        engine_config: BacktestEngineConfig,
     ) -> BacktestNode:
-        config = TestConfigStubs.backtest_run_config(
-            catalog=catalog,
-            persist=persist,
-            bypass_risk=bypass_risk,
-            add_strategy=add_strategy,
-        )
-        node = BacktestNode(configs=[config])
+        run_config = TestConfigStubs.backtest_run_config(catalog=catalog, config=engine_config)
+        node = BacktestNode(configs=[run_config])
         return node
+
+    @staticmethod
+    def backtest_engine(
+        config: Optional[BacktestEngineConfig] = None,
+        instrument: Optional[Instrument] = None,
+        ticks: List[Tick] = None,
+        venue: Optional[Venue] = None,
+        oms_type: Optional[OMSType] = None,
+        account_type: Optional[AccountType] = None,
+        base_currency: Optional[Currency] = None,
+        starting_balances: Optional[List[Money]] = None,
+        fill_model: Optional[FillModel] = None,
+    ) -> BacktestEngine:
+        engine = BacktestEngine(config=config)
+        engine.add_instrument(instrument)
+        if ticks:
+            engine.add_ticks(ticks)
+        engine.add_venue(
+            venue=venue or Venue("SIM"),
+            oms_type=oms_type or OMSType.HEDGING,
+            account_type=account_type or AccountType.MARGIN,
+            base_currency=base_currency or USD,
+            starting_balances=starting_balances or [Money(1_000_000, USD)],
+            fill_model=fill_model or FillModel(),
+        )
+        return engine

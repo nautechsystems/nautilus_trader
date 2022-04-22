@@ -299,3 +299,7 @@ class BacktestNode:
             engine._log.info(f"Engine load took {pd.Timedelta(t2 - t1)}s")
 
         engine.run(run_config_id=run_config_id)
+
+    def dispose(self):
+        for engine in self.get_engines():
+            engine.dispose()

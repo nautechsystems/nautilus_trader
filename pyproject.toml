@@ -69,6 +69,7 @@ ib_insync = { version = "^0.9.70", optional = true }
 redis = { version = "^4.2.2", optional = true }
 # Removed due to 3.10 windows build issue - https://github.com/docker/docker-py/issues/2902
 # docker = {version = "^5.0.3", optional = true }
+money = "^1.3.0"
 
 [tool.poetry.dev-dependencies]
 # coverage 5.x is currently broken for Cython
