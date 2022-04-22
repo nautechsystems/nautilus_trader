@@ -235,10 +235,6 @@ class BacktestNode:
                 data_configs=data_configs,
             )
 
-        # Cleanup writers
-        for writer in engine.kernel.persistence_writers:
-            writer.close()
-
         return engine.get_result()
 
     def _run_streaming(
@@ -303,3 +299,7 @@ class BacktestNode:
             engine._log.info(f"Engine load took {pd.Timedelta(t2 - t1)}s")
 
         engine.run(run_config_id=run_config_id)
+
+    def dispose(self):
+        for engine in self.get_engines():
+            engine.dispose()

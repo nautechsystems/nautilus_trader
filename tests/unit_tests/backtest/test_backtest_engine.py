@@ -12,7 +12,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
-
+import tempfile
 from decimal import Decimal
 
 import pandas as pd
@@ -51,8 +51,11 @@ from nautilus_trader.model.orderbook.data import Order
 from nautilus_trader.model.orderbook.data import OrderBookDelta
 from nautilus_trader.model.orderbook.data import OrderBookDeltas
 from nautilus_trader.model.orderbook.data import OrderBookSnapshot
+from nautilus_trader.persistence.catalog import DataCatalog
 from nautilus_trader.trading.strategy import Strategy
 from tests.test_kit.stubs import MyData
+from tests.test_kit.stubs.component import TestComponentStubs
+from tests.test_kit.stubs.config import TestConfigStubs
 from tests.test_kit.stubs.data import TestDataStubs
 
 
@@ -151,6 +154,24 @@ class TestBacktestEngine:
         # Assert
         assert len(report) == 1
         assert report.index[0] == start
+
+    def test_persistence_files_cleaned_up(self):
+        # Arrange
+        temp_dir = tempfile.mkdtemp()
+        catalog = DataCatalog(
+            path=str(temp_dir),
+            fs_protocol="file",
+        )
+        config = TestConfigStubs.backtest_engine_config(persist=True, catalog=catalog)
+        engine = TestComponentStubs.backtest_engine(
+            config=config, instrument=self.usdjpy, ticks=TestDataStubs.quote_ticks_usdjpy()
+        )
+        engine.run()
+        persistence = engine.kernel.persistence
+        assert not any([f.closed for f in persistence._files.values()])
+        engine.dispose()
+        assert all([f.closed for f in persistence._files.values()])
+        print(persistence)
 
 
 class TestBacktestEngineData:

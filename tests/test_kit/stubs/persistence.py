@@ -22,9 +22,6 @@ from nautilus_trader.trading.filters import NewsImpact
 from tests.test_kit.mocks.data import NewsEventData
 
 
-# TODO (bm) - this can probably be removed
-
-
 class TestPersistenceStubs:
     @staticmethod
     def setup_news_event_persistence():
