@@ -20,6 +20,7 @@ import pandas as pd
 
 from nautilus_trader.backtest.data.providers import TestDataProvider
 from nautilus_trader.backtest.data.providers import TestInstrumentProvider
+from nautilus_trader.backtest.data.wranglers import QuoteTickDataWrangler
 from nautilus_trader.core.datetime import millis_to_nanos
 from nautilus_trader.model.data.bar import Bar
 from nautilus_trader.model.data.bar import BarSpecification
@@ -95,6 +96,17 @@ class TestDataStubs:
             ts_event=0,
             ts_init=0,
         )
+
+    @staticmethod
+    def quote_ticks_usdjpy() -> List[QuoteTick]:
+        usdjpy = TestInstrumentProvider.default_fx_ccy("USD/JPY")
+        wrangler = QuoteTickDataWrangler(instrument=usdjpy)
+        provider = TestDataProvider()
+        ticks = wrangler.process_bar_data(
+            bid_data=provider.read_csv_bars("fxcm-usdjpy-m1-bid-2013.csv")[:2000],
+            ask_data=provider.read_csv_bars("fxcm-usdjpy-m1-ask-2013.csv")[:2000],
+        )
+        return ticks
 
     @staticmethod
     def trade_tick_3decimal(

@@ -40,7 +40,6 @@ from nautilus_trader.config import LiveRiskEngineConfig
 from nautilus_trader.config import PersistenceConfig
 from nautilus_trader.config import RiskEngineConfig
 from nautilus_trader.config import StrategyFactory
-from nautilus_trader.persistence.streaming import FeatherWriter
 
 from nautilus_trader.cache.cache cimport Cache
 from nautilus_trader.common.actor cimport Actor
@@ -62,6 +61,7 @@ from nautilus_trader.live.execution_engine cimport LiveExecutionEngine
 from nautilus_trader.live.risk_engine cimport LiveRiskEngine
 from nautilus_trader.msgbus.bus cimport MessageBus
 from nautilus_trader.portfolio.portfolio cimport Portfolio
+from nautilus_trader.persistence.streaming import StreamingPersistence
 from nautilus_trader.risk.engine cimport RiskEngine
 from nautilus_trader.serialization.msgpack.serializer cimport MsgPackSerializer
 from nautilus_trader.trading.strategy cimport Strategy
@@ -345,7 +345,7 @@ cdef class NautilusKernel:
             self.trader.load()
 
         # Setup persistence (requires trader)
-        self.persistence_writers: List[Any] = []
+        self.persistence: Optional[StreamingPersistence] = None
 
         if persistence_config:
             self._setup_persistence(config=persistence_config)
@@ -388,14 +388,13 @@ cdef class NautilusKernel:
             catalog.fs.mkdir(persistence_dir)
 
         path = os.path.join(persistence_dir, self.instance_id.value + ".feather")
-        writer = FeatherWriter(
+        self.persistence = StreamingPersistence(
             path=path,
             fs_protocol=config.fs_protocol,
             flush_interval=config.flush_interval,
             logger=self.log
         )
-        self.persistence_writers.append(writer)
-        self.trader.subscribe("*", writer.write)
+        self.trader.subscribe("*", self.persistence.write)
         self.log.info(f"Persisting data & events to {path=}")
 
         # Setup logging
