@@ -341,7 +341,7 @@ class TradingNode:
             self.kernel.data_engine.dispose()
             self.kernel.exec_engine.dispose()
             self.kernel.risk_engine.dispose()
-            self.kernel.persistence.displose()
+            self.kernel.persistence.dispose()
 
             self.kernel.log.info("Shutting down executor...")
             if sys.version_info >= (3, 9):
