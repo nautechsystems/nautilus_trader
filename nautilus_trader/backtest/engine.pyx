@@ -695,6 +695,8 @@ cdef class BacktestEngine:
         self.kernel.data_engine.dispose()
         self.kernel.exec_engine.dispose()
         self.kernel.risk_engine.dispose()
+        if self.kernel.persistence is not None:
+            self.kernel.persistence.dispose()
 
     def run(
         self,
