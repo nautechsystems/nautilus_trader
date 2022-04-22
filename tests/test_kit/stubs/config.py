@@ -70,31 +70,37 @@ class TestConfigStubs:
         )
 
     @staticmethod
+    def backtest_engine_config(
+        log_level="INFO",
+        bypass_logging=True,
+        bypass_risk=False,
+        allow_cash_position=True,
+        persist=False,
+        catalog: Optional[DataCatalog] = None,
+        strategies: List[ImportableStrategyConfig] = None,
+    ) -> BacktestEngineConfig:
+        if persist:
+            assert catalog is not None, "If `persist=True`, must pass `catalog`"
+        return BacktestEngineConfig(
+            log_level=log_level,
+            bypass_logging=bypass_logging,
+            exec_engine=ExecEngineConfig(allow_cash_positions=allow_cash_position),
+            risk_engine=RiskEngineConfig(bypass=bypass_risk),
+            persistence=TestConfigStubs.persistence_config(catalog=catalog) if persist else None,
+            strategies=strategies or [],
+        )
+
+    @staticmethod
     def backtest_run_config(
         catalog: DataCatalog,
+        config: Optional[BacktestEngineConfig] = None,
         instrument_ids: Optional[List[str]] = None,
         data_types: Tuple[Data] = (QuoteTick,),
         venues: Optional[List[Venue]] = None,
-        persist: bool = False,
-        bypass_risk: bool = True,
-        add_strategy: bool = True,
     ):
         instrument_ids = instrument_ids or []
-        engine_config = BacktestEngineConfig(
-            log_level="INFO",
-            bypass_logging=True,
-            exec_engine=ExecEngineConfig(allow_cash_positions=True),
-            risk_engine=RiskEngineConfig(bypass=bypass_risk),
-            persistence=TestConfigStubs.persistence_config(catalog=catalog) if persist else None,
-            strategies=[
-                TestConfigStubs.order_book_imbalance(instrument_id=instrument_id)
-                for instrument_id in instrument_ids
-            ]
-            if add_strategy
-            else None,
-        )
         run_config = BacktestRunConfig(  # type: ignore
-            engine=engine_config,
+            engine=config,
             venues=venues or [TestConfigStubs.backtest_venue_config()],
             data=[
                 BacktestDataConfig(  # type: ignore

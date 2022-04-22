@@ -131,8 +131,9 @@ class StreamingPersistence:
 
     def dispose(self):
         self.flush()
-        for cls in self._writers:
+        for cls in tuple(self._writers):
             self._writers[cls].close()
+            del self._writers[cls]
         for cls in self._files:
             self._files[cls].close()
 
