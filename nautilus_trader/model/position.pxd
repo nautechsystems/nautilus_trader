@@ -13,8 +13,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from decimal import Decimal
-
 from libc.stdint cimport int64_t
 from libc.stdint cimport uint8_t
 
@@ -57,8 +55,8 @@ cdef class Position:
     """The position entry order side.\n\n:returns: `OrderSide`"""
     cdef readonly PositionSide side
     """The current position side.\n\n:returns: `PositionSide`"""
-    cdef readonly object net_qty
-    """The current net quantity (positive for position side ``LONG``, negative for ``SHORT``).\n\n:returns: `Decimal`"""
+    cdef readonly double net_qty
+    """The current net quantity (positive for position side ``LONG``, negative for ``SHORT``).\n\n:returns: `double`"""
     cdef readonly Quantity quantity
     """The current open quantity.\n\n:returns: `Quantity`"""
     cdef readonly Quantity peak_qty

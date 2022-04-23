@@ -50,7 +50,7 @@ cdef class PositionEvent(Event):
     """The entry direction from open.\n\n:returns: `OrderSide`"""
     cdef readonly PositionSide side
     """The position side.\n\n:returns: `PositionSide`"""
-    cdef readonly object net_qty
+    cdef readonly double net_qty
     """The net quantity (positive for ``LONG``, negative for ``SHORT``).\n\n:returns: `Decimal`"""
     cdef readonly Quantity quantity
     """The position open quantity.\n\n:returns: `Quantity`"""

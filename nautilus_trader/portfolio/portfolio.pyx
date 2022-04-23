@@ -108,7 +108,7 @@ cdef class Portfolio(PortfolioFacade):
         )
 
         self._unrealized_pnls = {}   # type: dict[InstrumentId, Money]
-        self._net_positions = {}     # type: dict[InstrumentId, Decimal]
+        self._net_positions = {}     # type: dict[InstrumentId, float]
         self._pending_calcs = set()  # type: set[InstrumentId]
 
         # Register endpoints
@@ -900,7 +900,7 @@ cdef class Portfolio(PortfolioFacade):
         """
         Condition.not_none(instrument_id, "instrument_id")
 
-        return self._net_position(instrument_id) > 0
+        return self._net_position(instrument_id) > 0.0
 
     cpdef bint is_net_short(self, InstrumentId instrument_id) except *:
         """
@@ -920,7 +920,7 @@ cdef class Portfolio(PortfolioFacade):
         """
         Condition.not_none(instrument_id, "instrument_id")
 
-        return self._net_position(instrument_id) < 0
+        return self._net_position(instrument_id) < 0.0
 
     cpdef bint is_flat(self, InstrumentId instrument_id) except *:
         """
@@ -940,7 +940,7 @@ cdef class Portfolio(PortfolioFacade):
         """
         Condition.not_none(instrument_id, "instrument_id")
 
-        return self._net_position(instrument_id) == 0
+        return self._net_position(instrument_id) == 0.0
 
     cpdef bint is_completely_flat(self) except *:
         """
@@ -964,17 +964,16 @@ cdef class Portfolio(PortfolioFacade):
         return self._net_positions.get(instrument_id, Decimal(0))
 
     cdef void _update_net_position(self, InstrumentId instrument_id, list positions_open) except *:
-        net_position = Decimal(0)
+        cdef double net_position = 0.0
 
         cdef Position position
         for position in positions_open:
             net_position += position.net_qty
 
-        existing_position: Decimal = self._net_positions.get(instrument_id)
+        cdef double existing_position = self._net_positions.get(instrument_id, 0.0)
         if existing_position is None or existing_position != net_position:
             self._net_positions[instrument_id] = net_position
-            net_position_str = f"{net_position:,}".replace(",", "_")
-            self._log.info(f"{instrument_id} net_position={net_position_str}")
+            self._log.info(f"{instrument_id} net_position={net_position}")
 
     cdef Money _calculate_unrealized_pnl(self, InstrumentId instrument_id):
         cdef Account account = self._cache.account_for_venue(instrument_id.venue)

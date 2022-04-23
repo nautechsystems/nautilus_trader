@@ -13,9 +13,8 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from decimal import Decimal
-
 import cython
+
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
 from nautilus_trader.model.c_enums.order_side cimport OrderSideParser
@@ -76,7 +75,7 @@ cdef class Position:
         # Properties
         self.entry = fill.order_side
         self.side = Position.side_from_order_side(fill.order_side)
-        self.net_qty = Decimal(0)
+        self.net_qty = 0.0
         self.quantity = Quantity.zero_c(precision=instrument.size_precision)
         self.peak_qty = Quantity.zero_c(precision=instrument.size_precision)
         self.ts_init = fill.ts_init
@@ -117,7 +116,7 @@ cdef class Position:
         str
 
         """
-        cdef str quantity = " " if self.net_qty == 0 else f" {self.quantity.to_str()} "
+        cdef str quantity = " " if self.quantity.is_zero() else f" {self.quantity.to_str()} "
         return f"{PositionSideParser.to_str(self.side)}{quantity}{self.instrument_id}"
 
     cpdef dict to_dict(self):
@@ -137,7 +136,7 @@ cdef class Position:
             "instrument_id": self.instrument_id.value,
             "entry": OrderSideParser.to_str(self.entry),
             "side": PositionSideParser.to_str(self.side),
-            "net_qty": str(self.net_qty),
+            "net_qty": self.net_qty,
             "quantity": str(self.quantity),
             "peak_qty": str(self.peak_qty),
             "ts_opened": self.ts_opened,
@@ -437,12 +436,12 @@ cdef class Position:
             self.peak_qty = self.quantity
 
         # Set state
-        if self.net_qty > 0:
+        if self.net_qty > 0.0:
             self.entry = OrderSide.BUY
             self.side = PositionSide.LONG
             self.ts_closed = 0
             self.duration_ns = 0
-        elif self.net_qty < 0:
+        elif self.net_qty < 0.0:
             self.entry = OrderSide.SELL
             self.side = PositionSide.SHORT
             self.ts_closed = 0
@@ -593,7 +592,8 @@ cdef class Position:
 
         # Update quantities
         self._buy_qty.add_assign(fill.last_qty)
-        self.net_qty = self.net_qty + fill.last_qty.as_decimal()
+        self.net_qty += fill.last_qty.as_f64_c()
+        self.net_qty = round(self.net_qty, self.size_precision)
 
     cdef void _handle_sell_order_fill(self, OrderFilled fill) except *:
         # Initialize realized PnL for fill
@@ -615,10 +615,11 @@ cdef class Position:
 
         # Update quantities
         self._sell_qty.add_assign(fill.last_qty)
-        self.net_qty = self.net_qty - fill.last_qty.as_decimal()
+        self.net_qty -= fill.last_qty.as_f64_c()
+        self.net_qty = round(self.net_qty, self.size_precision)
 
     cdef double _calculate_avg_px_open_px(self, OrderFilled fill):
-        return self._calculate_avg_px(abs(self.net_qty), self.avg_px_open, fill)
+        return self._calculate_avg_px(self.quantity.as_f64_c(), self.avg_px_open, fill)
 
     cdef double _calculate_avg_px_close_px(self, OrderFilled fill):
         if not self.avg_px_close:

@@ -136,7 +136,7 @@ class TestPosition:
             "instrument_id": "AUD/USD.SIM",
             "entry": "BUY",
             "side": "LONG",
-            "net_qty": "100000",
+            "net_qty": 100000.0,
             "quantity": "100000",
             "peak_qty": "100000",
             "ts_opened": 0,
