@@ -18,8 +18,7 @@ FROM base as builder
 RUN apt-get update && apt-get install -y gcc curl
 
 # Install Rust stable
-RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh && \
-  rustup install stable
+RUN curl https://sh.rustup.rs -sSf | bash -s -- -y
 
 # Install poetry
 RUN curl -sSL https://install.python-poetry.org | python3 -
@@ -29,6 +28,7 @@ COPY poetry.lock pyproject.toml build.py ./
 RUN poetry install --no-root --no-dev
 
 # Build nautilus_trader
+COPY nautilus_core ./nautilus_core
 COPY nautilus_trader ./nautilus_trader
 COPY README.md ./
 RUN poetry install --no-dev
