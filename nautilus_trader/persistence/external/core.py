@@ -210,7 +210,7 @@ def merge_existing_data(catalog: DataCatalog, cls: type, df: pd.DataFrame) -> pd
     else:
         try:
             existing = catalog.instruments(instrument_type=cls)
-            return existing.append(df.drop(["type"], axis=1)).drop_duplicates()
+            return existing.concat(df.drop(["type"], axis=1)).drop_duplicates()
         except pa.lib.ArrowInvalid:
             return df
 
