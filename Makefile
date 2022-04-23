@@ -35,12 +35,15 @@ clean:
 docs:
 	poetry run sphinx-build docs docs/build/html -b html
 
-pre-commit:
+format:
+	(cd nautilus_core && cargo fmt)
+
+pre-commit: format
 	pre-commit run --all-files
 
 update:
-	poetry update
 	(cd nautilus_core && cargo update)
+	poetry update
 
 docker-build: clean
 	docker pull ${IMAGE_FULL} || docker pull ${IMAGE}:develop ||  true
