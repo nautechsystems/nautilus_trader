@@ -13,8 +13,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from nautilus_trader.accounting.error import AccountBalanceNegative
-
 from nautilus_trader.accounting.accounts.base cimport Account
 from nautilus_trader.accounting.accounts.cash cimport CashAccount
 from nautilus_trader.accounting.accounts.margin cimport MarginAccount
@@ -197,7 +195,6 @@ cdef class AccountsManager:
         cdef Currency currency = instrument.get_cost_currency()
         cdef:
             Order order
-            double xrate
         for order in orders_open:
             assert order.instrument_id == instrument.id
             assert order.is_open_c()
@@ -211,27 +208,25 @@ cdef class AccountsManager:
             ).as_f64_c()
 
             if account.base_currency is not None:
-                if base_xrate != 0.0:
-                    locked *= base_xrate
-                    return
-
-                currency = account.base_currency
-                xrate = self._calculate_xrate_to_base(
-                    instrument=instrument,
-                    account=account,
-                    side=order.side,
-                )
-
-                if xrate == 0.0:
-                    self._log.debug(
-                        f"Cannot calculate balance locked: "
-                        f"insufficient data for "
-                        f"{instrument.get_cost_currency()}/{account.base_currency}."
+                if base_xrate == 0.0:
+                    # Cache base currency and xrate
+                    currency = account.base_currency
+                    base_xrate = self._calculate_xrate_to_base(
+                        instrument=instrument,
+                        account=account,
+                        side=order.side,
                     )
-                    return None  # Cannot calculate
 
-                base_xrate = xrate  # Cache xrate
-                locked *= base_xrate  # Apply xrate
+                    if base_xrate == 0.0:
+                        self._log.debug(
+                            f"Cannot calculate balance locked: "
+                            f"insufficient data for "
+                            f"{instrument.get_cost_currency()}/{account.base_currency}."
+                        )
+                        return None  # Cannot calculate
+
+                # Apply base xrate
+                locked = round(locked * base_xrate, currency.get_precision())
 
             # Increment total locked
             total_locked += locked
@@ -293,7 +288,6 @@ cdef class AccountsManager:
         cdef:
             Order order
             double margin_init
-            double xrate
         for order in orders_open:
             assert order.instrument_id == instrument.id
             assert order.is_open_c()
@@ -306,27 +300,25 @@ cdef class AccountsManager:
             ).as_f64_c()
 
             if account.base_currency is not None:
-                if base_xrate != 0.0:
-                    margin_init *= base_xrate
-                    return
-
-                currency = account.base_currency
-                xrate = self._calculate_xrate_to_base(
-                    instrument=instrument,
-                    account=account,
-                    side=order.side,
-                )
-
-                if xrate == 0.0:
-                    self._log.debug(
-                        f"Cannot calculate initial (order) margin: "
-                        f"insufficient data for "
-                        f"{instrument.get_cost_currency()}/{account.base_currency}."
+                if base_xrate == 0.0:
+                    # Cache base currency and xrate
+                    currency = account.base_currency
+                    base_xrate = self._calculate_xrate_to_base(
+                        instrument=instrument,
+                        account=account,
+                        side=order.side,
                     )
-                    return None  # Cannot calculate
 
-                base_xrate = xrate  # Cache xrate
-                margin_init *= base_xrate  # Apply xrate
+                    if base_xrate == 0.0:
+                        self._log.debug(
+                            f"Cannot calculate initial (order) margin: "
+                            f"insufficient data for "
+                            f"{instrument.get_cost_currency()}/{account.base_currency}."
+                        )
+                        return None  # Cannot calculate
+
+                # Apply base xrate
+                margin_init = round(margin_init * base_xrate, currency.get_precision())
 
             # Increment total initial margin
             total_margin_init += margin_init
@@ -387,7 +379,6 @@ cdef class AccountsManager:
         cdef:
             Position position
             double margin_maint
-            double xrate
         for position in positions_open:
             assert position.instrument_id == instrument.id
             assert position.is_open_c()
@@ -401,27 +392,25 @@ cdef class AccountsManager:
             ).as_f64_c()
 
             if account.base_currency is not None:
-                if base_xrate != 0.0:
-                    margin_maint *= base_xrate
-                    return
-
-                currency = account.base_currency
-                xrate = self._calculate_xrate_to_base(
-                    instrument=instrument,
-                    account=account,
-                    side=position.entry,
-                )
-
-                if xrate == 0.0:
-                    self._log.debug(
-                        f"Cannot calculate maintenance (position) margin: "
-                        f"insufficient data for "
-                        f"{instrument.get_cost_currency()}/{account.base_currency})."
+                if base_xrate == 0.0:
+                    # Cache base currency and xrate
+                    currency = account.base_currency
+                    base_xrate = self._calculate_xrate_to_base(
+                        instrument=instrument,
+                        account=account,
+                        side=position.entry,
                     )
-                    return None  # Cannot calculate
 
-                base_xrate = xrate  # Cache xrate
-                margin_maint *= base_xrate  # Apply xrate
+                    if base_xrate == 0.0:
+                        self._log.debug(
+                            f"Cannot calculate maintenance (position) margin: "
+                            f"insufficient data for "
+                            f"{instrument.get_cost_currency()}/{account.base_currency})."
+                        )
+                        return None  # Cannot calculate
+
+                # Apply base xrate
+                margin_maint = round(margin_maint * base_xrate, currency.get_precision())
 
             # Increment total maintenance margin
             total_margin_maint += margin_maint

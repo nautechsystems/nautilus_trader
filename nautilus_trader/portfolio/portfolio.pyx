@@ -709,6 +709,7 @@ cdef class Portfolio(PortfolioFacade):
             Position position
             Instrument instrument
             Price last
+            Currency cost_currency
             double xrate
         for position in positions_open:
             instrument = self._cache.instrument(position.instrument_id)
@@ -740,16 +741,21 @@ cdef class Portfolio(PortfolioFacade):
                 )
                 return None  # Cannot calculate
 
-            net_exposure = net_exposures.get(instrument.get_cost_currency(), 0.0)
-            net_exposure += instrument.notional_value(
+            if account.base_currency is not None:
+                cost_currency = account.base_currency
+            else:
+                cost_currency = instrument.get_cost_currency()
+
+            net_exposure = instrument.notional_value(
                 position.quantity,
                 last,
-            ).as_f64_c() * xrate
+            ).as_f64_c()
+            net_exposure = round(net_exposure * xrate, cost_currency.get_precision())
 
-            if account.base_currency is not None:
-                net_exposures[account.base_currency] = net_exposure
-            else:
-                net_exposures[instrument.get_cost_currency()] = net_exposure
+            total_net_exposure = net_exposures.get(cost_currency, 0.0)
+            total_net_exposure += net_exposure
+
+            net_exposures[cost_currency] = total_net_exposure
 
         return {k: Money(v, k) for k, v in net_exposures.items()}
 
@@ -998,10 +1004,7 @@ cdef class Portfolio(PortfolioFacade):
             instrument_id=instrument_id,
         )
         if not positions_open:
-            if account.base_currency is not None:
-                return Money(0, account.base_currency)
-            else:
-                return Money(0, instrument.get_cost_currency())
+            return Money(0, currency)
 
         cdef double total_pnl = 0.0
 
@@ -1039,7 +1042,7 @@ cdef class Portfolio(PortfolioFacade):
                     self._pending_calcs.add(instrument.id)
                     return None  # Cannot calculate
 
-                pnl *= xrate
+                pnl = round(pnl * xrate, currency.get_precision())
 
             total_pnl += pnl
 

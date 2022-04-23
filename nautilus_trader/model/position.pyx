@@ -419,8 +419,9 @@ cdef class Position:
 
         # Calculate cumulative commission
         cdef Currency currency = fill.commission.currency
-        cdef Money cum_commission = Money(self._commissions.get(currency, Decimal(0)) + fill.commission, currency)
-        self._commissions[currency] = cum_commission
+        cdef Money commissions = self._commissions.get(currency)
+        cdef double total_commissions = commissions.as_f64_c() if commissions is not None else 0.0
+        self._commissions[currency] = Money(total_commissions + fill.commission.as_f64_c(), currency)
 
         # Calculate avg prices, points, return, PnL
         if fill.order_side == OrderSide.BUY:
@@ -471,9 +472,9 @@ cdef class Position:
         Condition.not_none(last, "last")
 
         if self.is_inverse:
-            return Money(self.quantity * self.multiplier * (1 / last), self.base_currency)
+            return Money(self.quantity.as_f64_c() * self.multiplier.as_f64_c() * (1.0 / last.as_f64_c()), self.base_currency)
         else:
-            return Money(self.quantity * self.multiplier * last, self.quote_currency)
+            return Money(self.quantity.as_f64_c() * self.multiplier.as_f64_c() * last.as_f64_c(), self.quote_currency)
 
     cpdef Money calculate_pnl(
         self,
@@ -646,9 +647,9 @@ cdef class Position:
 
     cdef double _calculate_points_inverse(self, double avg_px_open, double avg_px_close):
         if self.side == PositionSide.LONG:
-            return (1 / avg_px_open) - (1 / avg_px_close)
+            return (1.0 / avg_px_open) - (1.0 / avg_px_close)
         elif self.side == PositionSide.SHORT:
-            return (1 / avg_px_close) - (1 / avg_px_open)
+            return (1.0 / avg_px_close) - (1.0 / avg_px_open)
         else:
             return 0.0  # FLAT
 
