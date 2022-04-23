@@ -1,5 +1,7 @@
 repos:
-
+  ##############################################################################
+  #  General checks
+  ##############################################################################
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v4.2.0
     hooks:
@@ -30,13 +32,9 @@ repos:
         types_or: [python, cython, rst, markdown]
         exclude: "nautilus_trader/adapters/betfair/parsing.py|nautilus_trader/adapters/betfair/execution.py|tests/integration_tests/adapters/betfair/test_kit.py|nautilus_trader/adapters/binance/futures/schemas/user.py"
 
-  - repo: https://github.com/hadialqattan/pycln
-    rev: v1.3.1
-    hooks:
-      - id: pycln
-        name: pycln (Python unused imports)
-        exclude: "nautilus_trader/live/node.py|nautilus_trader/adapters/betfair/execution.py"
-
+  ##############################################################################
+  #  Rust checks
+  ##############################################################################
   - repo: https://github.com/doublify/pre-commit-rust
     rev: v1.0
     hooks:
@@ -45,8 +43,11 @@ repos:
       - id: clippy
         args: ["--manifest-path", "nautilus_core/Cargo.toml"]
 
+  ##############################################################################
+  #  Python/Cython checks
+  ##############################################################################
   - repo: https://github.com/hadialqattan/pycln
-    rev: v1.2.4
+    rev: v1.3.1
     hooks:
       - id: pycln
         name: pycln (Python unused imports)
