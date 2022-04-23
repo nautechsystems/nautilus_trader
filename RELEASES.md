@@ -6,7 +6,7 @@ Released on TBD.
 None
 
 ### Enhancements
-None
+- The `bypass_logging` config option will also now bypass the `BacktestEngine` logger
 
 ### Fixes
 None
