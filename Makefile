@@ -38,6 +38,10 @@ docs:
 pre-commit:
 	pre-commit run --all-files
 
+update:
+	poetry update
+	(cd nautilus_core && cargo update)
+
 docker-build: clean
 	docker pull ${IMAGE_FULL} || docker pull ${IMAGE}:develop ||  true
 	docker build -f .docker/nautilus_trader.dockerfile --platform linux/x86_64 -t ${IMAGE_FULL} .
