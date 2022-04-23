@@ -12,6 +12,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+
 import logging
 import pathlib
 import re
@@ -210,7 +211,7 @@ def merge_existing_data(catalog: DataCatalog, cls: type, df: pd.DataFrame) -> pd
     else:
         try:
             existing = catalog.instruments(instrument_type=cls)
-            return existing.append(df.drop(["type"], axis=1)).drop_duplicates()
+            return pd.concat([existing, df.drop(["type"], axis=1).drop_duplicates()])
         except pa.lib.ArrowInvalid:
             return df
 

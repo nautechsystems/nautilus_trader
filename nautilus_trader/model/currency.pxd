@@ -14,22 +14,19 @@
 # -------------------------------------------------------------------------------------------------
 
 from libc.stdint cimport uint8_t
-from libc.stdint cimport uint16_t
 
-from nautilus_trader.model.c_enums.currency_type cimport CurrencyType
+from nautilus_trader.core.rust.model cimport Currency_t
 
 
 cdef class Currency:
+    cdef Currency_t _currency
+
     cdef readonly str code
     """The currency ID code.\n\n:returns: `str`"""
-    cdef readonly uint8_t precision
-    """The currency decimal precision.\n\n:returns: `uint8`"""
-    cdef readonly uint16_t iso4217
-    """The currency ISO 4217 code.\n\n:returns: `uint16`"""
     cdef readonly str name
     """The currency name.\n\n:returns: `str`"""
-    cdef readonly CurrencyType currency_type
-    """The currency type {``FIAT``, ``CRYPTO``}.\n\n:returns: `CurrencyType`"""
+
+    cdef uint8_t get_precision(self)
 
     @staticmethod
     cdef void register_c(Currency currency, bint overwrite=*) except *

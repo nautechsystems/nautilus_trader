@@ -220,7 +220,7 @@ cdef class LimitOrder(Order):
             "expire_time_ns": self.expire_time_ns if self.expire_time_ns > 0 else None,
             "filled_qty": str(self.filled_qty),
             "liquidity_side": LiquiditySideParser.to_str(self.liquidity_side),
-            "avg_px": str(self.avg_px) if self.avg_px else None,
+            "avg_px": str(self.avg_px),
             "slippage": str(self.slippage),
             "status": self._fsm.state_string_c(),
             "is_post_only": self.is_post_only,
@@ -288,12 +288,12 @@ cdef class LimitOrder(Order):
             self.venue_order_id = event.venue_order_id
         if event.quantity is not None:
             self.quantity = event.quantity
-            self.leaves_qty = Quantity(self.quantity - self.filled_qty, self.quantity.precision)
+            self.leaves_qty = Quantity(self.quantity.as_f64_c() - self.filled_qty.as_f64_c(), self.quantity.precision)
         if event.price is not None:
             self.price = event.price
 
     cdef void _set_slippage(self) except *:
         if self.side == OrderSide.BUY:
-            self.slippage = self.avg_px - self.price
+            self.slippage = self.avg_px - self.price.as_f64_c()
         elif self.side == OrderSide.SELL:
-            self.slippage = self.price - self.avg_px
+            self.slippage = self.price.as_f64_c() - self.avg_px

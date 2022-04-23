@@ -413,9 +413,7 @@ cdef class PositionStatusReport(ExecutionReport):
         self.venue_position_id = venue_position_id
         self.position_side = position_side
         self.quantity = quantity
-        self.net_qty = self.quantity.as_decimal()
-        if self.position_side == PositionSide.SHORT:
-            self.net_qty = -self.quantity.as_decimal()
+        self.net_qty = -self.quantity.as_f64_c() if quantity.is_negative() else self.quantity.as_f64_c()
         self.ts_last = ts_last
 
     def __repr__(self) -> str:

@@ -25,7 +25,6 @@ from nautilus_trader.core.correctness cimport Condition
 cpdef inline uint8_t precision_from_str(str value) except *:
     """
     Return the decimal precision inferred from the given string.
-
     Can accept scientific notation strings including an 'e' character.
 
     Parameters

@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
 
+import glob
 import itertools
 import os
 import platform
 import shutil
+import subprocess
 import sys
 from datetime import datetime
 from pathlib import Path
@@ -18,6 +20,8 @@ from setuptools import Distribution
 from setuptools import Extension
 
 
+# The Cargo rustc mode
+CARGO_MODE = os.getenv("CARGO_MODE", "release")  # Release mode by default until there's an issue
 # If DEBUG mode is enabled, include traces necessary for coverage, profiling and skip optimizations
 DEBUG_MODE = bool(os.getenv("DEBUG_MODE", ""))
 # If ANNOTATION mode is enabled, generate an annotated HTML version of the input source files
@@ -27,9 +31,52 @@ PARALLEL_BUILD = True if os.getenv("PARALLEL_BUILD", "true") == "true" else Fals
 # If SKIP_BUILD_COPY is enabled, prevents copying built *.so files back into the source tree
 SKIP_BUILD_COPY = bool(os.getenv("SKIP_BUILD_COPY", ""))
 
-##########################
-#  Cython build options  #
-##########################
+
+################################################################################
+#  RUST BUILD
+################################################################################
+if platform.system() == "Windows":
+    # Use clang as the default compiler
+    os.environ["CC"] = "clang"
+    os.environ["LDSHARED"] = "clang -shared"
+    # https://docs.microsoft.com/en-US/cpp/error-messages/tool-errors/linker-tools-error-lnk1181?view=msvc-170&viewFallbackFrom=vs-2019
+    target_dir = os.path.join(os.getcwd(), "nautilus_core", "target", "release")
+    os.environ["LIBPATH"] = os.environ.get("LIBPATH", "") + f":{target_dir}"
+    RUST_LIB_PFX = ""
+    RUST_LIB_EXT = "lib"
+    TARGET_DIR = "x86_64-pc-windows-msvc/"
+else:
+    RUST_LIB_PFX = "lib"
+    RUST_LIB_EXT = "a"
+    TARGET_DIR = ""
+
+# Directories with headers to include
+RUST_INCLUDES = glob.glob("nautilus_trader/core/includes")
+RUST_LIB_DIR = "debug" if CARGO_MODE in ("", "debug") else "release"
+
+RUST_LIBS = [
+    f"nautilus_core/target/{TARGET_DIR}{RUST_LIB_DIR}/{RUST_LIB_PFX}nautilus_core.{RUST_LIB_EXT}",
+    f"nautilus_core/target/{TARGET_DIR}{RUST_LIB_DIR}/{RUST_LIB_PFX}nautilus_model.{RUST_LIB_EXT}",
+]
+# Later we can be more selective about which libs are included where - to optimize binary sizes
+
+
+def _build_rust_libs() -> None:
+    extra_flags = ""
+    if platform.system() == "Windows":
+        extra_flags = " --target x86_64-pc-windows-msvc"
+
+    build_option = " --release" if CARGO_MODE == "release" else ""
+    # Build the Rust libraries using Cargo
+    print("Compiling Rust libraries...")
+    build_cmd = f"(cd nautilus_core && cargo build{build_option}{extra_flags})"
+    print(build_cmd)
+    os.system(build_cmd)  # noqa
+
+
+################################################################################
+#  CYTHON BUILD
+################################################################################
 # https://cython.readthedocs.io/en/latest/src/userguide/source_files_and_compilation.html
 
 Options.docstrings = True  # Include docstrings in modules
@@ -67,6 +114,15 @@ def _build_extensions() -> List[Extension]:
         extra_compile_args.append("-O3")
         extra_compile_args.append("-pipe")
 
+    extra_link_args = RUST_LIBS
+    if platform.system() == "Windows":
+        extra_link_args += [
+            "WS2_32.Lib",
+            "AdvAPI32.Lib",
+            "UserEnv.Lib",
+            "bcrypt.lib",
+        ]
+
     print("Creating C extension modules...")
     print(f"define_macros={define_macros}")
     print(f"extra_compile_args={extra_compile_args}")
@@ -75,9 +131,10 @@ def _build_extensions() -> List[Extension]:
         Extension(
             name=str(pyx.relative_to(".")).replace(os.path.sep, ".")[:-4],
             sources=[str(pyx)],
-            include_dirs=[".", np.get_include()],
+            include_dirs=[".", np.get_include()] + RUST_INCLUDES,
             define_macros=define_macros,
             language="c",
+            extra_link_args=extra_link_args,
             extra_compile_args=extra_compile_args,
         )
         for pyx in itertools.chain(Path("nautilus_trader").rglob("*.pyx"))
@@ -126,11 +183,13 @@ def _copy_build_dir_to_project(cmd: build_ext) -> None:
         mode |= (mode & 0o444) >> 2
         os.chmod(relative_extension, mode)
 
-    print("Copied all compiled '.so' dynamic library files into source")
+    print("Copied all compiled dynamic library files into source")
 
 
 def build() -> None:
     """Construct the extensions and distribution."""  # noqa
+    _build_rust_libs()
+
     # Create C Extensions to feed into cythonize()
     extensions = _build_extensions()
     distribution = _build_distribution(extensions)
@@ -173,14 +232,16 @@ if __name__ == "__main__":
     # “64-bitness” of the current interpreter, it is more reliable to query the
     # sys.maxsize attribute:
     bits = "64-bit" if sys.maxsize > 2**32 else "32-bit"
-    print("Project: nautilus_trader")
-    print(f"System:  {platform.system()} {bits}")
-    print(f"Python:  {platform.python_version()}")
-    print(f"Cython:  {cython_compiler_version}")
-    print(f"NumPy:   {np.__version__}")
+    rustc_version = subprocess.check_output(["rustc", "--version"])  # noqa
+    print(f"System: {platform.system()} {bits}")
+    print(f"Rust:   {rustc_version.lstrip(b'rustc ').decode()[:-1]}")
+    print(f"Python: {platform.python_version()}")
+    print(f"Cython: {cython_compiler_version}")
+    print(f"NumPy:  {np.__version__}")
     print("")
 
     print("Starting build...")
+    print(f"CARGO_MODE={CARGO_MODE}")
     print(f"DEBUG_MODE={DEBUG_MODE}")
     print(f"ANNOTATION_MODE={ANNOTATION_MODE}")
     print(f"PARALLEL_BUILD={PARALLEL_BUILD}")

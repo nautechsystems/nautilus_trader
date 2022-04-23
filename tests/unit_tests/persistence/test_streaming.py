@@ -72,7 +72,7 @@ class TestPersistenceStreaming:
         node = BacktestNode(configs=[run_config])
 
         # Act
-        backtest_result = node.run(run_configs=[run_config])
+        backtest_result = node.run()
 
         # Assert
         result = self.catalog.read_backtest(

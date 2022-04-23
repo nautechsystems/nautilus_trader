@@ -88,7 +88,7 @@ class TestPersistenceCatalog:
         write_objects(catalog=self.catalog, chunk=[instruments[0]])
         write_objects(catalog=self.catalog, chunk=[instruments[1]])
         instruments = self.catalog.instruments(as_nautilus=True)
-        assert len(instruments) == 2
+        assert len(instruments) == 3
 
     def test_data_catalog_instruments_filtered_df(self):
         instrument_id = (

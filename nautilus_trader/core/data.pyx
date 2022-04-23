@@ -35,6 +35,7 @@ cdef class Data:
     def __init__(self, int64_t ts_event, int64_t ts_init):
         # Design-time invariant: correct ordering of timestamps
         assert ts_event <= ts_init
+
         self.ts_event = ts_event
         self.ts_init = ts_init
 
