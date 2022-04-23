@@ -31,8 +31,8 @@ from nautilus_trader.common.logging cimport LogColor
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.common.logging cimport LoggerAdapter
 from nautilus_trader.core.correctness cimport Condition
-from nautilus_trader.core.time cimport unix_timestamp
-from nautilus_trader.core.time cimport unix_timestamp_us
+from nautilus_trader.core.rust.core cimport unix_timestamp
+from nautilus_trader.core.rust.core cimport unix_timestamp_us
 from nautilus_trader.model.c_enums.oms_type cimport OMSType
 from nautilus_trader.model.c_enums.price_type cimport PriceType
 from nautilus_trader.model.currency cimport Currency
@@ -1292,7 +1292,7 @@ cdef class Cache(CacheFacade):
         cdef list snapshots = self._position_snapshots.get(position_id)
 
         # Reassign position ID
-        cdef Position copied_position = copy.copy(position)
+        cdef Position copied_position = copy.deepcopy(position)
         copied_position.id = PositionId(position.id.value + f"-{uuid.uuid4()}")
         cdef bytes position_pickled = pickle.dumps(copied_position)
 
@@ -1838,13 +1838,13 @@ cdef class Cache(CacheFacade):
 
         return self.bar_count(bar_type) > 0
 
-    cpdef object get_xrate(
+    cpdef double get_xrate(
         self,
         Venue venue,
         Currency from_currency,
         Currency to_currency,
         PriceType price_type=PriceType.MID,
-    ):
+    ) except *:
         """
         Return the calculated exchange rate.
 
@@ -1861,7 +1861,7 @@ cdef class Cache(CacheFacade):
 
         Returns
         -------
-        Decimal
+        double
 
         Raises
         ------
@@ -1889,8 +1889,11 @@ cdef class Cache(CacheFacade):
         cdef dict bid_quotes = {}
         cdef dict ask_quotes = {}
 
-        cdef InstrumentId instrument_id
-        cdef str base_quote
+        cdef:
+            InstrumentId instrument_id
+            str base_quote
+            Price bid
+            Price ask
         for instrument_id, base_quote in self._xrate_symbols.items():
             if instrument_id.venue != venue:
                 continue
@@ -1900,8 +1903,10 @@ cdef class Cache(CacheFacade):
                 # No quotes for instrument_id
                 continue
 
-            bid_quotes[base_quote] = ticks[0].bid.as_decimal()
-            ask_quotes[base_quote] = ticks[0].ask.as_decimal()
+            bid = ticks[0].bid
+            ask = ticks[0].ask
+            bid_quotes[base_quote] = bid.as_f64_c()
+            ask_quotes[base_quote] = ask.as_f64_c()
 
         return bid_quotes, ask_quotes
 

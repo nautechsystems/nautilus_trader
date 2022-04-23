@@ -117,10 +117,10 @@ BETFAIR_TICK_SCHEME = TieredTickScheme(
 register_tick_scheme(BETFAIR_TICK_SCHEME)
 
 
-def price_to_probability(price: str) -> Price:
-    PyCondition.type(price, str, "price", "str")
-    PyCondition.positive(float(price), "price")
-    price = Price.from_str(price)
+def price_to_probability(price_str: str) -> Price:
+    PyCondition.type(price_str, str, "price", "str")
+    price = Price.from_str(f"{float(price_str):.2f}")
+    assert price > 0.0
     if price in BETFAIR_PRICE_TO_PROBABILITY_MAP:
         return BETFAIR_PRICE_TO_PROBABILITY_MAP[price]
     else:

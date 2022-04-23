@@ -26,7 +26,7 @@ import pandas as pd
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.datetime cimport as_utc_index
 from nautilus_trader.core.datetime cimport secs_to_nanos
-from nautilus_trader.model.c_enums.aggressor_side cimport AggressorSideParser
+from nautilus_trader.model.c_enums.aggressor_side cimport AggressorSide
 from nautilus_trader.model.data.bar cimport Bar
 from nautilus_trader.model.data.bar cimport BarType
 from nautilus_trader.model.data.tick cimport QuoteTick
@@ -93,7 +93,10 @@ cdef class QuoteTickDataWrangler:
 
         return list(map(
             self._build_tick,
-            data.values,
+            data["bid"],
+            data["ask"],
+            data["bid_size"],
+            data["ask_size"],
             ts_events,
             ts_inits,
         ))
@@ -205,21 +208,32 @@ cdef class QuoteTickDataWrangler:
 
         return list(map(
             self._build_tick,
-            df_ticks_final.values,
+            df_ticks_final["bid"],
+            df_ticks_final["ask"],
+            df_ticks_final["bid_size"],
+            df_ticks_final["ask_size"],
             ts_events,
             ts_inits,
         ))
 
     # cpdef method for Python wrap() (called with map)
-    cpdef QuoteTick _build_tick(self, double[:] values, int64_t ts_event, int64_t ts_init):
+    cpdef QuoteTick _build_tick(
+        self,
+        double bid,
+        double ask,
+        double bid_size,
+        double ask_size,
+        int64_t ts_event,
+        int64_t ts_init,
+    ):
         # Build a quote tick from the given values. The function expects the values to
         # be an ndarray with 4 elements [bid, ask, bid_size, ask_size] of type double.
         return QuoteTick(
             instrument_id=self.instrument.id,
-            bid=Price(values[0], self.instrument.price_precision),
-            ask=Price(values[1], self.instrument.price_precision),
-            bid_size=Quantity(values[2], self.instrument.size_precision),
-            ask_size=Quantity(values[3], self.instrument.size_precision),
+            bid=Price(bid, self.instrument.price_precision),
+            ask=Price(ask, self.instrument.price_precision),
+            bid_size=Quantity(bid_size, self.instrument.size_precision),
+            ask_size=Quantity(ask_size, self.instrument.size_precision),
             ts_event=ts_event,
             ts_init=ts_init,
         )
@@ -262,38 +276,43 @@ cdef class TradeTickDataWrangler:
 
         data = as_utc_index(data)
 
-        processed = pd.DataFrame(index=data.index)
-        processed["price"] = data["price"].apply(lambda x: f'{x:.{self.instrument.price_precision}f}')
-        processed["quantity"] = data["quantity"].apply(lambda x: f'{x:.{self.instrument.size_precision}f}')
-        processed["aggressor_side"] = self._create_side_if_not_exist(data)
-        processed["trade_id"] = data["trade_id"].apply(str)
-
         cdef int64_t[:] ts_events = np.ascontiguousarray([secs_to_nanos(dt.timestamp()) for dt in data.index], dtype=np.int64)  # noqa
         cdef int64_t[:] ts_inits = np.ascontiguousarray([ts_event + ts_init_delta for ts_event in ts_events], dtype=np.int64)  # noqa
 
         return list(map(
             self._build_tick,
-            processed.values,
+            data["price"],
+            data["quantity"],
+            self._create_side_if_not_exist(data),
+            data["trade_id"],
             ts_events,
             ts_inits,
         ))
 
     def _create_side_if_not_exist(self, data):
         if "side" in data.columns:
-            return data["side"]
+            return data["side"].apply(lambda x: AggressorSide.BUY if str(x).upper() == "BUY" else AggressorSide.SELL)
         else:
-            return data["buyer_maker"].apply(lambda x: "SELL" if x is True else "BUY")
+            return data["buyer_maker"].apply(lambda x: AggressorSide.SELL if x is True else AggressorSide.BUY)
 
     # cpdef method for Python wrap() (called with map)
-    cpdef TradeTick _build_tick(self, str[:] values, int64_t ts_event, int64_t ts_init):
+    cpdef TradeTick _build_tick(
+        self,
+        double price,
+        double size,
+        AggressorSide aggressor_side,
+        int trade_id,
+        int64_t ts_event,
+        int64_t ts_init,
+    ):
         # Build a quote tick from the given values. The function expects the values to
         # be an ndarray with 4 elements [bid, ask, bid_size, ask_size] of type double.
         return TradeTick(
             instrument_id=self.instrument.id,
-            price=Price(values[0], self.instrument.price_precision),
-            size=Quantity(values[1], self.instrument.size_precision),
-            aggressor_side=AggressorSideParser.from_str(values[2]),
-            trade_id=TradeId(values[3]),
+            price=Price(price, self.instrument.price_precision),
+            size=Quantity(size, self.instrument.size_precision),
+            aggressor_side=aggressor_side,
+            trade_id=TradeId(str(trade_id)),
             ts_event=ts_event,
             ts_init=ts_init,
         )

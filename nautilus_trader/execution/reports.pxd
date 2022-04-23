@@ -132,8 +132,8 @@ cdef class PositionStatusReport(ExecutionReport):
     """The reported position side at the exchange.\n\n:returns: `PositionSide`"""
     cdef readonly Quantity quantity
     """The reported position quantity at the exchange.\n\n:returns: `Quantity`"""
-    cdef readonly object net_qty
-    """The reported net quantity (positive for ``LONG``, negative for ``SHORT``).\n\n:returns: `Decimal`"""
+    cdef readonly double net_qty
+    """The reported net quantity (positive for ``LONG``, negative for ``SHORT``).\n\n:returns: `double`"""
     cdef readonly int64_t ts_last
     """The UNIX timestamp (nanoseconds) of the last position change.\n\n:returns: `int64`"""
 

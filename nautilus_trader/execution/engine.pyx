@@ -48,7 +48,7 @@ from nautilus_trader.common.logging cimport LogColor
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.fsm cimport InvalidStateTrigger
-from nautilus_trader.core.time cimport unix_timestamp_ms
+from nautilus_trader.core.rust.core cimport unix_timestamp_ms
 from nautilus_trader.execution.client cimport ExecutionClient
 from nautilus_trader.execution.messages cimport CancelAllOrders
 from nautilus_trader.execution.messages cimport CancelOrder
@@ -724,7 +724,7 @@ cdef class ExecutionEngine(Component):
         if (
             oms_type == OMSType.HEDGING
             and position.is_opposite_side(fill.order_side)
-            and fill.last_qty > position.quantity
+            and fill.last_qty.gt(position.quantity)
         ):
             self._flip_position(instrument, position, fill, oms_type)
             return  # Handled in flip

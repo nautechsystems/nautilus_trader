@@ -59,13 +59,13 @@ cdef class CacheFacade:
     cpdef bint has_trade_ticks(self, InstrumentId instrument_id) except *
     cpdef bint has_bars(self, BarType bar_type) except *
 
-    cpdef object get_xrate(
+    cpdef double get_xrate(
         self,
         Venue venue,
         Currency from_currency,
         Currency to_currency,
         PriceType price_type=*,
-    )
+    ) except *
 
 # -- INSTRUMENT QUERIES ---------------------------------------------------------------------------
 

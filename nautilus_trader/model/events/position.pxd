@@ -50,7 +50,7 @@ cdef class PositionEvent(Event):
     """The entry direction from open.\n\n:returns: `OrderSide`"""
     cdef readonly PositionSide side
     """The position side.\n\n:returns: `PositionSide`"""
-    cdef readonly object net_qty
+    cdef readonly double net_qty
     """The net quantity (positive for ``LONG``, negative for ``SHORT``).\n\n:returns: `Decimal`"""
     cdef readonly Quantity quantity
     """The position open quantity.\n\n:returns: `Quantity`"""
@@ -62,12 +62,12 @@ cdef class PositionEvent(Event):
     """The last fill price for the position.\n\n:returns: `Price`"""
     cdef readonly Currency currency
     """The position quote currency.\n\n:returns: `Currency`"""
-    cdef readonly object avg_px_open
-    """The average open price.\n\n:returns: `Decimal`"""
-    cdef readonly object avg_px_close
-    """The average closing price.\n\n:returns: `Decimal`"""
-    cdef readonly object realized_return
-    """The realized return for the position.\n\n:returns: `Decimal`"""
+    cdef readonly double avg_px_open
+    """The average open price.\n\n:returns: `double`"""
+    cdef readonly double avg_px_close
+    """The average closing price.\n\n:returns: `double`"""
+    cdef readonly double realized_return
+    """The realized return for the position.\n\n:returns: `double`"""
     cdef readonly Money realized_pnl
     """The realized PnL for the position (including commissions).\n\n:returns: `Money`"""
     cdef readonly Money unrealized_pnl

@@ -91,10 +91,10 @@ cdef class Order:
     """The order total filled quantity.\n\n:returns: `Quantity`"""
     cdef readonly Quantity leaves_qty
     """The order total leaves quantity.\n\n:returns: `Quantity`"""
-    cdef readonly object avg_px
-    """The order average fill price.\n\n:returns: `Decimal` or ``None``"""
-    cdef readonly object slippage
-    """The order total price slippage.\n\n:returns: `Decimal`"""
+    cdef readonly double avg_px
+    """The order average fill price.\n\n:returns: `double`"""
+    cdef readonly double slippage
+    """The order total price slippage.\n\n:returns: `double`"""
     cdef readonly ContingencyType contingency_type
     """The orders contingency type.\n\n:returns: `ContingencyType`"""
     cdef readonly list linked_order_ids
@@ -157,5 +157,5 @@ cdef class Order:
     cdef void _canceled(self, OrderCanceled event) except *
     cdef void _expired(self, OrderExpired event) except *
     cdef void _filled(self, OrderFilled event) except *
-    cdef object _calculate_avg_px(self, Quantity last_qty, Price last_px)
+    cdef double _calculate_avg_px(self, double last_qty, double last_px)
     cdef void _set_slippage(self) except *

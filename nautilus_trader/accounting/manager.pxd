@@ -43,4 +43,4 @@ cdef class AccountsManager:
     cdef void _update_balance_single_currency(self, Account account, OrderFilled fill, Money pnl) except *
     cdef void _update_balance_multi_currency(self, Account account, OrderFilled fill, list pnls) except *
     cdef AccountState _generate_account_state(self, Account account, int64_t ts_event)
-    cdef object _calculate_xrate_to_base(self, Account account, Instrument instrument, OrderSide side)
+    cdef double _calculate_xrate_to_base(self, Account account, Instrument instrument, OrderSide side) except *

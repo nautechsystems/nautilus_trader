@@ -107,7 +107,7 @@ class TestBacktestAcceptanceTestsUSDJPY:
         # Assert - Should return expected PnL
         assert strategy.fast_ema.count == 2689
         assert self.engine.iteration == 115044
-        assert self.engine.portfolio.account(self.venue).balance_total(USD) == Money(992811.26, USD)
+        assert self.engine.portfolio.account(self.venue).balance_total(USD) == Money(992811.19, USD)
 
     def test_rerun_ema_cross_strategy_returns_identical_performance(self):
         # Arrange
@@ -167,7 +167,7 @@ class TestBacktestAcceptanceTestsUSDJPY:
         assert strategy1.fast_ema.count == 2689
         assert strategy2.fast_ema.count == 2689
         assert self.engine.iteration == 115044
-        assert self.engine.portfolio.account(self.venue).balance_total(USD) == Money(985622.52, USD)
+        assert self.engine.portfolio.account(self.venue).balance_total(USD) == Money(985622.38, USD)
 
 
 class TestBacktestAcceptanceTestsGBPUSDBarsInternal:
@@ -227,7 +227,7 @@ class TestBacktestAcceptanceTestsGBPUSDBarsInternal:
         # Assert
         assert strategy.fast_ema.count == 8353
         assert self.engine.iteration == 120468
-        assert self.engine.portfolio.account(self.venue).balance_total(GBP) == Money(931346.81, GBP)
+        assert self.engine.portfolio.account(self.venue).balance_total(GBP) == Money(931346.76, GBP)
 
 
 class TestBacktestAcceptanceTestsGBPUSDBarsExternal:
@@ -307,7 +307,7 @@ class TestBacktestAcceptanceTestsGBPUSDBarsExternal:
         assert strategy.fast_ema.count == 30117
         assert self.engine.iteration == 60234
         ending_balance = self.engine.portfolio.account(self.venue).balance_total(USD)
-        assert ending_balance == Money(1016188.45, USD)
+        assert ending_balance == Money(1016187.69, USD)
 
 
 class TestBacktestAcceptanceTestsBTCPERPTradeBars:
@@ -315,8 +315,8 @@ class TestBacktestAcceptanceTestsBTCPERPTradeBars:
         # Fixture Setup
         config = BacktestEngineConfig(
             bypass_logging=False,
+            allow_cash_positions=True,
             run_analysis=False,
-            exec_engine={"allow_cash_positions": True},  # Retain original behaviour for now
             risk_engine={"bypass": True},
         )
         self.engine = BacktestEngine(config=config)
@@ -370,8 +370,8 @@ class TestBacktestAcceptanceTestsBTCPERPTradeBars:
         assert self.engine.iteration == 10000
         btc_ending_balance = self.engine.portfolio.account(self.venue).balance_total(BTC)
         usdt_ending_balance = self.engine.portfolio.account(self.venue).balance_total(USDT)
-        assert btc_ending_balance == Money(10.00000000, BTC)
-        assert usdt_ending_balance == Money(9999872.71139900, USDT)
+        assert btc_ending_balance == Money(9.57500000, BTC)
+        assert usdt_ending_balance == Money(10016974.96985900, USDT)
 
     def test_run_ema_cross_with_trade_ticks_from_bar_data(self):
         # Arrange
@@ -405,8 +405,8 @@ class TestBacktestAcceptanceTestsBTCPERPTradeBars:
         assert self.engine.iteration == 40000
         btc_ending_balance = self.engine.portfolio.account(self.venue).balance_total(BTC)
         usdt_ending_balance = self.engine.portfolio.account(self.venue).balance_total(USDT)
-        assert btc_ending_balance == Money(10.00000000, BTC)
-        assert usdt_ending_balance == Money(9999872.71139900, USDT)
+        assert btc_ending_balance == Money(9.57500000, BTC)
+        assert usdt_ending_balance == Money(10016974.96985900, USDT)
 
 
 class TestBacktestAcceptanceTestsAUDUSD:
@@ -461,7 +461,7 @@ class TestBacktestAcceptanceTestsAUDUSD:
         # Assert
         assert strategy.fast_ema.count == 1771
         assert self.engine.iteration == 100000
-        assert self.engine.portfolio.account(self.venue).balance_total(AUD) == Money(987920.04, AUD)
+        assert self.engine.portfolio.account(self.venue).balance_total(AUD) == Money(987919.96, AUD)
 
     def test_run_ema_cross_with_tick_bar_spec(self):
         # Arrange

@@ -14,7 +14,6 @@
 # -------------------------------------------------------------------------------------------------
 
 import pandas as pd
-
 from libc.stdint cimport int64_t
 
 from decimal import Decimal
@@ -213,9 +212,7 @@ cdef class BettingInstrument(Instrument):
 
         return Symbol(value=",".join([_clean(getattr(self, k)) for k in keys]))
 
-    cpdef Money notional_value(self, Quantity quantity, price: Decimal, bint inverse_as_quote=False):
+    cpdef Money notional_value(self, Quantity quantity, double price, bint inverse_as_quote=False):
         Condition.not_none(quantity, "quantity")
-        Condition.type(price, (Decimal, Price), "price")
-        bet_price: Decimal = Decimal("1.0") / price
-        notional_value: Decimal = quantity * self.multiplier * bet_price
-        return Money(notional_value, self.quote_currency)
+        cdef double bet_price = 1.0 / price
+        return Money(quantity.as_f64_c() * float(self.multiplier) * bet_price, self.quote_currency)

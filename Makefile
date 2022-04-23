@@ -20,6 +20,7 @@ clean:
 	rm -rf cython_debug
 	rm -rf dist
 	rm -rf docs/build
+	find . -name target -type d -exec rm -rf {} +
 	find . -name .benchmarks -type d -exec rm -rf {} +
 	find . -name '*.dll' -exec rm {} +
 	find . -name '*.prof' -exec rm {} +

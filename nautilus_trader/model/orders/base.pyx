@@ -13,7 +13,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from decimal import Decimal
 from typing import List
 
 from nautilus_trader.core.correctness cimport Condition
@@ -41,7 +40,6 @@ from nautilus_trader.model.events.order cimport OrderSubmitted
 from nautilus_trader.model.events.order cimport OrderTriggered
 from nautilus_trader.model.events.order cimport OrderUpdated
 from nautilus_trader.model.identifiers cimport TradeId
-from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
 
 
@@ -147,8 +145,8 @@ cdef class Order:
         # Execution
         self.filled_qty = Quantity.zero_c(precision=0)
         self.leaves_qty = init.quantity
-        self.avg_px = None  # Can be None
-        self.slippage = Decimal(0)
+        self.avg_px = 0.0  # No fills yet
+        self.slippage = 0.0
 
         # Timestamps
         self.init_id = init.id
@@ -788,8 +786,8 @@ cdef class Order:
         self.strategy_id = fill.strategy_id
         self._trade_ids.append(fill.trade_id)
         self.last_trade_id = fill.trade_id
-        filled_qty: Decimal = self.filled_qty.as_decimal() + fill.last_qty.as_decimal()
-        leaves_qty: Decimal = self.quantity.as_decimal() - filled_qty
+        cdef double filled_qty = self.filled_qty.as_f64_c() + fill.last_qty.as_f64_c()
+        cdef double leaves_qty = self.quantity.as_f64_c() - filled_qty
         if leaves_qty < 0:
             raise ValueError(
                 f"invalid order.leaves_qty: was {leaves_qty}, "
@@ -798,20 +796,21 @@ cdef class Order:
                 f"fill.last_qty={fill.last_qty}, "
                 f"fill={fill}",
             )
-        self.filled_qty = Quantity(filled_qty, fill.last_qty.precision)
+        self.filled_qty.add_assign(fill.last_qty)
         self.leaves_qty = Quantity(leaves_qty, fill.last_qty.precision)
         self.ts_last = fill.ts_event
-        self.avg_px = self._calculate_avg_px(fill.last_qty, fill.last_px)
+        self.avg_px = self._calculate_avg_px(fill.last_qty.as_f64_c(), fill.last_px.as_f64_c())
         self.liquidity_side = fill.liquidity_side
         self._set_slippage()
 
-    cdef object _calculate_avg_px(self, Quantity last_qty, Price last_px):
-        if self.avg_px is None:
+    cdef double _calculate_avg_px(self, double last_qty, double last_px):
+        if self.avg_px == 0.0:
             return last_px
 
-        total_qty: Decimal = self.filled_qty + last_qty
+        cdef double filled_qty_f64 = self.filled_qty.as_f64_c()
+        cdef double total_qty = filled_qty_f64 + last_qty
         if total_qty > 0:  # Protect divide by zero
-            return ((self.avg_px * self.filled_qty) + (last_px * last_qty)) / total_qty
+            return ((self.avg_px * filled_qty_f64) + (last_px * last_qty)) / total_qty
 
     cdef void _set_slippage(self) except *:
         pass  # Optionally implement

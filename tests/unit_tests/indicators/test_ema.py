@@ -13,6 +13,8 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from decimal import Decimal
+
 from nautilus_trader.backtest.data.providers import TestInstrumentProvider
 from nautilus_trader.indicators.average.ema import ExponentialMovingAverage
 from nautilus_trader.model.enums import PriceType
@@ -76,6 +78,8 @@ class TestExponentialMovingAverage:
         indicator.handle_quote_tick(tick)
 
         # Assert
+        print(Decimal(1.00002))
+        print(Decimal(indicator.value))
         assert indicator.has_inputs
         assert indicator.value == 1.00002
 
