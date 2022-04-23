@@ -137,6 +137,7 @@ cdef class BacktestEngine:
             trader_id=self.kernel.trader_id,
             machine_id=self.kernel.machine_id,
             instance_id=self.kernel.instance_id,
+            bypass=config.bypass_logging,
         )
 
         self._log = LoggerAdapter(

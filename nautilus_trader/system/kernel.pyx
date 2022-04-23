@@ -195,7 +195,7 @@ cdef class NautilusKernel:
                 trader_id=self.trader_id,
                 machine_id=self.machine_id,
                 instance_id=self.instance_id,
-                level_stdout=log_level
+                level_stdout=log_level,
             )
         else:  # pragma: no cover (design-time error)
             raise NotImplementedError(f"environment {environment} not recognized")
