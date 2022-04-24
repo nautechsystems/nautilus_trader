@@ -50,6 +50,8 @@ cdef class Currency:
     OverflowError
         If `precision` is negative (< 0).
     ValueError
+        If `precision` greater than 9.
+    ValueError
         If `name` is not a valid string.
     """
 
@@ -63,7 +65,8 @@ cdef class Currency:
     ):
         Condition.valid_string(code, "code")
         Condition.valid_string(name, "name")
-        Condition.not_negative_int(precision, "precision")
+        Condition.true(precision <= 9, "invalid precision, was > 9")
+
 
         self._currency = currency_new(
             pystr_to_cstring(code),
