@@ -25,7 +25,7 @@ from nautilus_trader.common.logging import LiveLogger
 from tests.integration_tests.adapters.betfair.test_kit import BetfairTestStubs
 
 
-@pytest.mark.skipif(sys.platform == "win32", reason="failing on windows")
+@pytest.mark.skipif(sys.platform == "win32", reason="failing on Windows")
 class TestBetfairSockets:
     def setup(self):
         # Fixture Setup

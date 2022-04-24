@@ -30,7 +30,7 @@ from nautilus_trader.config.common import RiskEngineConfig
 from nautilus_trader.core.data import Data
 from nautilus_trader.core.datetime import maybe_dt_to_unix_nanos
 from nautilus_trader.model.identifiers import ClientId
-from nautilus_trader.persistence.util import tokenize
+from nautilus_trader.persistence.funcs import tokenize
 
 
 class Partialable:
