@@ -17,7 +17,7 @@ import heapq
 import itertools
 import sys
 from collections import namedtuple
-from typing import Any, Dict, Iterator, List, Set
+from typing import Dict, Iterator, List, Set
 
 import fsspec
 import pandas as pd
@@ -27,7 +27,7 @@ from pyarrow.lib import ArrowInvalid
 
 from nautilus_trader.config import BacktestDataConfig
 from nautilus_trader.persistence.catalog import DataCatalog
-from nautilus_trader.persistence.util import parse_bytes
+from nautilus_trader.persistence.funcs import parse_bytes
 from nautilus_trader.serialization.arrow.serializer import ParquetSerializer
 from nautilus_trader.serialization.arrow.util import clean_key
 
@@ -36,7 +36,9 @@ FileMeta = namedtuple("FileMeta", "filename datatype instrument_id client_id sta
 
 
 def dataset_batches(
-    file_meta: FileMeta, fs: fsspec.AbstractFileSystem, n_rows: int
+    file_meta: FileMeta,
+    fs: fsspec.AbstractFileSystem,
+    n_rows: int,
 ) -> Iterator[pd.DataFrame]:
     try:
         d: ds.Dataset = ds.dataset(file_meta.filename, filesystem=fs)
@@ -56,7 +58,10 @@ def dataset_batches(
             yield df
 
 
-def build_filenames(catalog: DataCatalog, data_configs: List[BacktestDataConfig]) -> List[FileMeta]:
+def build_filenames(
+    catalog: DataCatalog,
+    data_configs: List[BacktestDataConfig],
+) -> List[FileMeta]:
     files = []
     for config in data_configs:
         filename = catalog._make_path(cls=config.data_type)
@@ -77,7 +82,7 @@ def build_filenames(catalog: DataCatalog, data_configs: List[BacktestDataConfig]
     return files
 
 
-def frame_to_nautilus(df: pd.DataFrame, cls: type) -> List[Any]:
+def frame_to_nautilus(df: pd.DataFrame, cls: type):
     return ParquetSerializer.deserialize(cls=cls, chunk=df.to_dict("records"))
 
 

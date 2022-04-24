@@ -22,12 +22,12 @@ import pyarrow as pa
 from pyarrow import RecordBatchStreamWriter
 
 from nautilus_trader.common.logging import LoggerAdapter
+from nautilus_trader.core.inspect import is_nautilus_class
 from nautilus_trader.model.data.base import GenericData
 from nautilus_trader.model.orderbook.data import OrderBookData
 from nautilus_trader.model.orderbook.data import OrderBookDelta
 from nautilus_trader.model.orderbook.data import OrderBookDeltas
 from nautilus_trader.model.orderbook.data import OrderBookSnapshot
-from nautilus_trader.persistence.util import is_nautilus_class
 from nautilus_trader.serialization.arrow.serializer import ParquetSerializer
 from nautilus_trader.serialization.arrow.serializer import get_cls_table
 from nautilus_trader.serialization.arrow.serializer import list_schemas
@@ -45,7 +45,7 @@ class StreamingPersistence:
         logger: LoggerAdapter,
         fs_protocol: str = "file",
         flush_interval: Optional[int] = None,
-        replace=False,
+        replace: bool = False,
     ):
         self.fs: fsspec.AbstractFileSystem = fsspec.filesystem(fs_protocol)
         self.path = str(self._check_path(path))
@@ -70,7 +70,7 @@ class StreamingPersistence:
         self._last_flush = datetime.datetime(1970, 1, 1)
         self.missing_writers: Set[type] = set()
 
-    def _check_path(self, p):
+    def _check_path(self, p: str):
         path = pathlib.Path(p)
         err_parent = f"Parent of path {path} does not exist, please create it"
         assert self.fs.exists(str(path.parent)), err_parent
@@ -101,7 +101,7 @@ class StreamingPersistence:
                 self.logger.warning(f"Can't find writer for cls: {cls}")
                 self.missing_writers.add(cls)
             return
-        writer = self._writers[table]
+        writer: RecordBatchStreamWriter = self._writers[table]
         serialized = ParquetSerializer.serialize(obj)
         if isinstance(serialized, dict):
             serialized = [serialized]

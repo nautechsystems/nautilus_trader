@@ -54,7 +54,7 @@ from tests.test_kit.stubs.execution import TestExecStubs
 from tests.test_kit.stubs.identifiers import TestIdStubs
 
 
-@pytest.mark.skipif(sys.platform == "win32", reason="failing on windows")
+@pytest.mark.skipif(sys.platform == "win32", reason="failing on Windows")
 class TestBetfairParsing:
     def setup(self):
         # Fixture Setup

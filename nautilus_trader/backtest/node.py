@@ -24,6 +24,7 @@ from nautilus_trader.config import BacktestDataConfig
 from nautilus_trader.config import BacktestRunConfig
 from nautilus_trader.config import BacktestVenueConfig
 from nautilus_trader.core.correctness import PyCondition
+from nautilus_trader.core.inspect import is_nautilus_class
 from nautilus_trader.model.currency import Currency
 from nautilus_trader.model.data.bar import Bar
 from nautilus_trader.model.data.base import DataType
@@ -44,7 +45,6 @@ from nautilus_trader.persistence.batching import batch_files
 from nautilus_trader.persistence.batching import extract_generic_data_client_ids
 from nautilus_trader.persistence.batching import groupby_datatype
 from nautilus_trader.persistence.catalog import DataCatalog
-from nautilus_trader.persistence.util import is_nautilus_class
 
 
 class BacktestNode:

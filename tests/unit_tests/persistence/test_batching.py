@@ -29,7 +29,7 @@ from nautilus_trader.persistence.batching import batch_files
 from nautilus_trader.persistence.catalog import DataCatalog
 from nautilus_trader.persistence.external.core import process_files
 from nautilus_trader.persistence.external.readers import CSVReader
-from nautilus_trader.persistence.util import parse_bytes
+from nautilus_trader.persistence.funcs import parse_bytes
 from tests.integration_tests.adapters.betfair.test_kit import BetfairTestStubs
 from tests.test_kit import PACKAGE_ROOT
 from tests.test_kit.mocks.data import NewsEventData

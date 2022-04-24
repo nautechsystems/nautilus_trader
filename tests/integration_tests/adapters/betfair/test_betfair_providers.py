@@ -32,7 +32,7 @@ from tests.integration_tests.adapters.betfair.test_kit import BetfairTestStubs
 from tests.test_kit.stubs.component import TestComponentStubs
 
 
-@pytest.mark.skipif(sys.platform == "win32", reason="failing on windows")
+@pytest.mark.skipif(sys.platform == "win32", reason="failing on Windows")
 class TestBetfairInstrumentProvider:
     def setup(self):
         # Fixture Setup

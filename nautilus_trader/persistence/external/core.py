@@ -37,8 +37,7 @@ from nautilus_trader.persistence.catalog import DataCatalog
 from nautilus_trader.persistence.external.metadata import load_mappings
 from nautilus_trader.persistence.external.metadata import write_partition_column_mappings
 from nautilus_trader.persistence.external.readers import Reader
-from nautilus_trader.persistence.external.synchronization import named_lock
-from nautilus_trader.persistence.util import parse_bytes
+from nautilus_trader.persistence.funcs import parse_bytes
 from nautilus_trader.serialization.arrow.serializer import ParquetSerializer
 from nautilus_trader.serialization.arrow.serializer import get_cls_table
 from nautilus_trader.serialization.arrow.serializer import get_partition_keys
@@ -47,12 +46,6 @@ from nautilus_trader.serialization.arrow.util import check_partition_columns
 from nautilus_trader.serialization.arrow.util import class_to_filename
 from nautilus_trader.serialization.arrow.util import clean_partition_cols
 from nautilus_trader.serialization.arrow.util import maybe_list
-
-
-try:
-    import distributed
-except ImportError:  # pragma: no cover
-    distributed = None
 
 
 class RawFile:
@@ -64,19 +57,19 @@ class RawFile:
         self,
         open_file: OpenFile,
         block_size: Optional[int] = None,
-        progress=False,
+        progress: bool = False,
     ):
         """
         Initialize a new instance of the ``RawFile`` class.
 
         Parameters
         ----------
-        open_file : OpenFile
+        open_file : fsspec.core.OpenFile
             The fsspec.OpenFile source of this data.
         block_size: int
-            The max block (chunk) size to read from the file.
-        progress: bool
-            Show a progress bar while processing this individual file.
+            The max block (chunk) size in bytes to read from the file.
+        progress: bool, default False
+            If a progress bar should be shown when processing this individual file.
 
         """
         self.open_file = open_file
@@ -88,7 +81,7 @@ class RawFile:
     def iter(self):
         with self.open_file as f:
             if self.progress:
-                f.read = read_progress(  # type: ignore
+                f.read = read_progress(
                     f.read, total=self.open_file.fs.stat(self.open_file.path)["size"]
                 )
 
@@ -238,15 +231,14 @@ def write_tables(catalog: DataCatalog, tables: Dict[type, Dict[str, pd.DataFrame
         name = f"{class_to_filename(cls)}.parquet"
         path = f"{catalog.path}/data/{name}"
         merged = merge_existing_data(catalog=catalog, cls=cls, df=df)
-        with named_lock(name):
-            write_parquet(
-                fs=catalog.fs,
-                path=path,
-                df=merged,
-                partition_cols=partition_cols,
-                schema=schema,
-                **kwargs,
-            )
+        write_parquet(
+            fs=catalog.fs,
+            path=path,
+            df=merged,
+            partition_cols=partition_cols,
+            schema=schema,
+            **kwargs,
+        )
         rows_written += len(df)
 
     return rows_written
