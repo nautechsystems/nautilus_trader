@@ -57,7 +57,7 @@ from tests.unit_tests.backtest.test_backtest_config import TEST_DATA_DIR
 TEST_DATA = PACKAGE_ROOT + "/data"
 
 
-@pytest.mark.skipif(sys.platform == "win32", reason="test path broken on windows")
+@pytest.mark.skipif(sys.platform == "win32", reason="test path broken on Windows")
 class TestPersistenceCore:
     def setup(self):
         data_catalog_setup()

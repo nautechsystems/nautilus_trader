@@ -13,17 +13,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from typing import Optional
-
-import aiohttp
-import msgspec
-import orjson
-import pyarrow
-import pydantic
-import pytz
-
-from cpython.datetime cimport timedelta
-
 import asyncio
 import platform
 import socket
@@ -32,12 +21,21 @@ import traceback
 from asyncio import Task
 from collections import defaultdict
 from platform import python_version
+from typing import Optional
 
+import aiohttp
+import msgspec
 import numpy as np
+import orjson
 import pandas as pd
 import psutil
+import pyarrow
+import pydantic
+import pytz
 
 from nautilus_trader import __version__
+
+from cpython.datetime cimport timedelta
 
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.clock cimport LiveClock

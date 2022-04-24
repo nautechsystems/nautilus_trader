@@ -22,6 +22,7 @@ import pyarrow as pa
 from pyarrow import RecordBatchStreamWriter
 
 from nautilus_trader.common.logging import LoggerAdapter
+from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.core.inspect import is_nautilus_class
 from nautilus_trader.model.data.base import GenericData
 from nautilus_trader.model.orderbook.data import OrderBookData
@@ -31,12 +32,26 @@ from nautilus_trader.model.orderbook.data import OrderBookSnapshot
 from nautilus_trader.serialization.arrow.serializer import ParquetSerializer
 from nautilus_trader.serialization.arrow.serializer import get_cls_table
 from nautilus_trader.serialization.arrow.serializer import list_schemas
+from nautilus_trader.serialization.arrow.util import GENERIC_DATA_PREFIX
 from nautilus_trader.serialization.arrow.util import list_dicts_to_dict_lists
 
 
-class StreamingPersistence:
+class StreamingFeatherWriter:
     """
     Provides a stream writer of Nautilus objects into feather files.
+
+    Parameters
+    ----------
+    path : str
+        The path to persist the stream to.
+    logger : LoggerAdapter
+        The logger for the writer.
+    fs_protocol : str, default 'file'
+        The `fsspec` file system protocol.
+    flush_interval_ms : int, optional
+        The flush interval (milliseconds) for writing chunks.
+    replace : bool, default False
+        If existing files at the given `path` should be replaced.
     """
 
     def __init__(
@@ -44,11 +59,11 @@ class StreamingPersistence:
         path: str,
         logger: LoggerAdapter,
         fs_protocol: str = "file",
-        flush_interval: Optional[int] = None,
+        flush_interval_ms: Optional[int] = None,
         replace: bool = False,
     ):
         self.fs: fsspec.AbstractFileSystem = fsspec.filesystem(fs_protocol)
-        self.path = str(self._check_path(path))
+        self.path = self._check_path(path)
         if self.fs.exists(self.path) and replace:
             for fn in self.fs.ls(self.path):
                 self.fs.rm(fn)
@@ -66,32 +81,47 @@ class StreamingPersistence:
         self._files: Dict[type, BinaryIO] = {}
         self._writers: Dict[type, RecordBatchStreamWriter] = {}
         self._create_writers()
-        self.flush_interval = datetime.timedelta(milliseconds=flush_interval or 1000)
-        self._last_flush = datetime.datetime(1970, 1, 1)
+        self.flush_interval_ms = datetime.timedelta(milliseconds=flush_interval_ms or 1000)
+        self._last_flush = datetime.datetime(1970, 1, 1)  # Default value to begin
         self.missing_writers: Set[type] = set()
 
-    def _check_path(self, p: str):
+    def _check_path(self, p: str) -> str:
         path = pathlib.Path(p)
         err_parent = f"Parent of path {path} does not exist, please create it"
         assert self.fs.exists(str(path.parent)), err_parent
         err_dir_empty = "Path must be directory or empty"
         assert self.fs.isdir(str(path)) or not self.fs.exists(str(path)), err_dir_empty
-        return path
+        return str(path)
 
     def _create_writers(self):
         for cls in self._schemas:
             table_name = get_cls_table(cls).__name__
             if table_name in self._writers:
                 continue
-            prefix = "genericdata_" if not is_nautilus_class(cls) else ""
+            prefix = GENERIC_DATA_PREFIX if not is_nautilus_class(cls) else ""
             schema = self._schemas[cls]
             full_path = f"{self.path}/{prefix}{table_name}.feather"
             f = self.fs.open(str(full_path), "wb")
             self._files[cls] = f
             self._writers[table_name] = pa.ipc.new_stream(f, schema)
 
-    def write(self, obj: object):
-        assert obj is not None
+    def write(self, obj: object) -> None:
+        """
+        Write the object to the stream.
+
+        Parameters
+        ----------
+        obj : object
+            The object to write.
+
+        Raises
+        ------
+        ValueError
+            If `obj` is ``None``.
+
+        """
+        PyCondition.not_none(obj, "obj")
+
         cls = obj.__class__
         if isinstance(obj, GenericData):
             cls = obj.data_type.type
@@ -119,32 +149,29 @@ class StreamingPersistence:
             self.logger.error(f"ERROR = `{ex}`")
             self.logger.debug(f"data = {original}")
 
-    def check_flush(self):
+    def check_flush(self) -> None:
+        """
+        Flush all stream writers if current time greater than the next flush interval.
+        """
         now = datetime.datetime.now()
-        if now - self._last_flush > self.flush_interval:
+        if now - self._last_flush > self.flush_interval_ms:
             self.flush()
             self._last_flush = now
 
-    def flush(self):
+    def flush(self) -> None:
+        """
+        Flush all stream writers.
+        """
         for cls in self._files:
             self._files[cls].flush()
 
-    def dispose(self):
+    def close(self) -> None:
+        """
+        Flush and close all stream writers.
+        """
         self.flush()
         for cls in tuple(self._writers):
             self._writers[cls].close()
             del self._writers[cls]
         for cls in self._files:
             self._files[cls].close()
-
-
-def read_feather(path: str, fs: fsspec.AbstractFileSystem = None):
-    fs = fs or fsspec.filesystem("file")
-    if not fs.exists(path):
-        return
-    try:
-        with fs.open(path) as f:
-            reader = pa.ipc.open_stream(f)
-            return reader.read_pandas()
-    except (pa.ArrowInvalid, FileNotFoundError):
-        return

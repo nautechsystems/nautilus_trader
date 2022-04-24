@@ -341,7 +341,10 @@ class TradingNode:
             self.kernel.data_engine.dispose()
             self.kernel.exec_engine.dispose()
             self.kernel.risk_engine.dispose()
-            self.kernel.persistence.dispose()
+
+            # Cleanup writers
+            for writer in self.kernel.writers:
+                writer.close()
 
             self.kernel.log.info("Shutting down executor...")
             if sys.version_info >= (3, 9):
@@ -545,9 +548,9 @@ class TradingNode:
         for name in timer_names:
             self.kernel.log.info(f"Cancelled Timer(name={name}).")
 
-        # Clean up persistence
-        for writer in self.kernel.persistence_writers:
-            writer.close()
+        # Flush writers
+        for writer in self.kernel.writers:
+            writer.flush()
 
         self.kernel.log.info("STOPPED.")
         self.kernel.logger.stop()

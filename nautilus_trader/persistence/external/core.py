@@ -31,6 +31,7 @@ from fsspec.core import OpenFile
 from pyarrow import ArrowInvalid
 from tqdm import tqdm
 
+from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.model.data.base import GenericData
 from nautilus_trader.model.instruments.base import Instrument
 from nautilus_trader.persistence.catalog import DataCatalog
@@ -107,26 +108,34 @@ def process_files(
     glob_path,
     reader: Reader,
     catalog: DataCatalog,
-    block_size="128mb",
-    compression="infer",
+    block_size: str = "128mb",
+    compression: str = "infer",
     executor: Optional[Executor] = None,
-    **kw,
+    **kwargs,
 ):
+    PyCondition.type_or_none(executor, Executor, "executor")
+
     executor = executor or ThreadPoolExecutor()
-    assert isinstance(executor, Executor)
+
     raw_files = make_raw_files(
         glob_path=glob_path,
         block_size=block_size,
         compression=compression,
-        **kw,
+        **kwargs,
     )
+
     futures = {}
     for rf in raw_files:
         futures[rf] = executor.submit(process_raw_file, catalog=catalog, raw_file=rf, reader=reader)
+
     # Show progress
     for _ in tqdm(list(futures.values())):
         pass
-    return {rf.open_file.path: f.result() for rf, f in futures.items()}
+
+    results = {rf.open_file.path: f.result() for rf, f in futures.items()}
+    executor.shutdown()
+
+    return results
 
 
 def make_raw_files(glob_path, block_size="128mb", compression="infer", **kw) -> List[RawFile]:

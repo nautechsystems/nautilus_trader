@@ -68,5 +68,5 @@ cdef class NautilusKernel:
     """The kernels execution engine.\n\n:returns: `ExecutionEngine`"""
     cdef readonly Trader trader
     """The kernels trader instance.\n\n:returns: `Trader`"""
-    cdef readonly object persistence
-    """The kernels persistence writer.\n\n:returns: `Any` or ``None``"""
+    cdef readonly list writers
+    """The kernels persistence writers.\n\n:returns: `List`"""
