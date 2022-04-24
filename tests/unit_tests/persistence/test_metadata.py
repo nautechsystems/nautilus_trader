@@ -30,7 +30,7 @@ from tests.test_kit.stubs.data import TestDataStubs
 TEST_DATA_DIR = PACKAGE_ROOT + "/data"
 
 
-@pytest.mark.skipif(sys.platform == "win32", reason="test path broken on windows")
+@pytest.mark.skipif(sys.platform == "win32", reason="test path broken on Windows")
 class TestPersistenceBatching:
     def setup(self):
         data_catalog_setup()

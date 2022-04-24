@@ -34,7 +34,7 @@ from tests.test_kit.mocks.data import data_catalog_setup
 from tests.test_kit.stubs.persistence import TestPersistenceStubs
 
 
-@pytest.mark.skipif(sys.platform == "win32", reason="test path broken on windows")
+@pytest.mark.skipif(sys.platform == "win32", reason="test path broken on Windows")
 class TestPersistenceStreaming:
     def setup(self):
         data_catalog_setup()
@@ -68,7 +68,7 @@ class TestPersistenceStreaming:
             catalog_fs_protocol=self.catalog.fs.protocol,
             instrument_id=instrument.id.value,
         )
-        run_config.engine.persistence.flush_interval = 5000
+        run_config.engine.persistence.flush_interval_ms = 5000
         node = BacktestNode(configs=[run_config])
 
         # Act

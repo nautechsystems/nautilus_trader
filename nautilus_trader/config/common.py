@@ -174,20 +174,20 @@ class PersistenceConfig(pydantic.BaseModel):
     Parameters
     ----------
     catalog_path : str
-        The path to the data catalog
-    fs_protocol : str
-        The fsspec filesystem protocol of the catalog
-    persist_logs: bool
-        Persist log file to catalog
-    flush_interval : int
-        How often to write chunks, in milliseconds
+        The path to the data catalog.
+    fs_protocol : str, optional
+        The `fsspec` filesystem protocol for the catalog.
+    persist_logs: bool, default False
+        If the log should be persisted.
+    flush_interval_ms : int, optional
+        The flush interval (milliseconds) for writing chunks.
     """
 
     catalog_path: str
     fs_protocol: Optional[str] = None
     fs_storage_options: Optional[Dict] = None
     persist_logs: bool = False
-    flush_interval: Optional[int] = None
+    flush_interval_ms: Optional[int] = None
     replace_existing: bool = False
 
     @classmethod

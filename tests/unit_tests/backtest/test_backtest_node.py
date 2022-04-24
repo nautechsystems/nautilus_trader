@@ -32,7 +32,7 @@ from tests.test_kit.mocks.data import aud_usd_data_loader
 from tests.test_kit.mocks.data import data_catalog_setup
 
 
-pytestmark = pytest.mark.skipif(sys.platform == "win32", reason="test path broken on windows")
+pytestmark = pytest.mark.skipif(sys.platform == "win32", reason="test path broken on Windows")
 
 
 class TestBacktestNode:

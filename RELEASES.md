@@ -3,7 +3,8 @@
 Released on TBD.
 
 ### Breaking Changes
-None
+- Renamed `StreamingPersistence` to `StreamingFeatherWriter`
+- Renamed `PersistenceConfig.flush_interval` to `flush_interval_ms`
 
 ### Enhancements
 - The `bypass_logging` config option will also now bypass the `BacktestEngine` logger

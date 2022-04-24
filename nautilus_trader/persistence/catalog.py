@@ -36,7 +36,6 @@ from nautilus_trader.model.instruments.base import Instrument
 from nautilus_trader.model.orderbook.data import OrderBookData
 from nautilus_trader.persistence.base import Singleton
 from nautilus_trader.persistence.external.metadata import load_mappings
-from nautilus_trader.persistence.streaming import read_feather
 from nautilus_trader.serialization.arrow.serializer import ParquetSerializer
 from nautilus_trader.serialization.arrow.serializer import list_schemas
 from nautilus_trader.serialization.arrow.util import GENERIC_DATA_PREFIX
@@ -54,8 +53,8 @@ class DataCatalog(metaclass=Singleton):
     ----------
     path : str
         The root path to the data.
-    fs_protocol : str
-        The file system protocol to use.
+    fs_protocol : str, default 'file'
+        The fsspec filesystem protocol to use.
     fs_storage_options : Dict, optional
         The fs storage options.
     """
@@ -425,7 +424,7 @@ class DataCatalog(metaclass=Singleton):
         data = {}
         for path in [p for p in self.fs.glob(f"{self.path}/{kind}/{run_id}.feather/*.feather")]:
             cls_name = camel_to_snake_case(pathlib.Path(path).stem).replace("__", "_")
-            df = read_feather(path=path, fs=self.fs)
+            df = read_feather_file(self, path=path, fs=self.fs)
             if df is None:
                 print(f"No data for {cls_name}")
                 continue
@@ -440,6 +439,18 @@ class DataCatalog(metaclass=Singleton):
                     raise
                 print(f"Failed to deserialize {cls_name}: {ex}")
         return sorted(sum(data.values(), list()), key=lambda x: x.ts_init)
+
+
+def read_feather_file(self, path: str, fs: fsspec.AbstractFileSystem = None):
+    fs = fs or fsspec.filesystem("file")
+    if not fs.exists(path):
+        return
+    try:
+        with fs.open(path) as f:
+            reader = pa.ipc.open_stream(f)
+            return reader.read_pandas()
+    except (pa.ArrowInvalid, FileNotFoundError):
+        return
 
 
 def combine_filters(*filters):

@@ -45,7 +45,7 @@ from tests.test_kit.stubs.data import TestDataStubs
 
 TEST_DATA_DIR = str(pathlib.Path(PACKAGE_ROOT).joinpath("data"))
 
-pytestmark = pytest.mark.skipif(sys.platform == "win32", reason="test path broken on windows")
+pytestmark = pytest.mark.skipif(sys.platform == "win32", reason="test path broken on Windows")
 
 
 class TestPersistenceParsers:

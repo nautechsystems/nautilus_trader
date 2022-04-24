@@ -22,7 +22,7 @@ import socket
 import warnings
 from asyncio import AbstractEventLoop
 from functools import partial
-from typing import Any, Callable, Dict, List, Optional, Union
+from typing import Callable, Dict, List, Optional, Union
 
 import orjson
 
@@ -61,7 +61,7 @@ from nautilus_trader.live.execution_engine cimport LiveExecutionEngine
 from nautilus_trader.live.risk_engine cimport LiveRiskEngine
 from nautilus_trader.msgbus.bus cimport MessageBus
 from nautilus_trader.portfolio.portfolio cimport Portfolio
-from nautilus_trader.persistence.streaming import StreamingPersistence
+from nautilus_trader.persistence.streaming import StreamingFeatherWriter
 from nautilus_trader.risk.engine cimport RiskEngine
 from nautilus_trader.serialization.msgpack.serializer cimport MsgPackSerializer
 from nautilus_trader.trading.strategy cimport Strategy
@@ -344,8 +344,8 @@ cdef class NautilusKernel:
         if load_state:
             self.trader.load()
 
-        # Setup persistence (requires trader)
-        self.persistence: Optional[StreamingPersistence] = None
+        # Setup writers
+        self.writers = []
 
         if persistence_config:
             self._setup_persistence(config=persistence_config)
@@ -388,26 +388,26 @@ cdef class NautilusKernel:
             catalog.fs.mkdir(persistence_dir)
 
         path = os.path.join(persistence_dir, self.instance_id.value + ".feather")
-        self.persistence = StreamingPersistence(
+        feather_writer = StreamingFeatherWriter(
             path=path,
             fs_protocol=config.fs_protocol,
-            flush_interval=config.flush_interval,
+            flush_interval_ms=config.flush_interval_ms,
             logger=self.log
         )
-        self.trader.subscribe("*", self.persistence.write)
-        self.log.info(f"Persisting data & events to {path=}")
+        self.writers.append(feather_writer)
+        self.trader.subscribe("*", feather_writer.write)
+        self.log.info(f"Writing data & events to {path}")
 
         # Setup logging
         if config.persist_logs:
-
             def sink(record, f):
                 f.write(orjson.dumps(record) + b"\n")
 
             path = f"{config.catalog_path}/logs/{self.instance_id}.log"
             log_sink = open(path, "wb")
-            self.persistence_writers.append(log_sink)
+            self.writers.append(log_sink)
             self.logger.register_sink(partial(sink, f=log_sink))
-            self.log.info(f"Persisting logs to {path=}")
+            self.log.info(f"Writing logs to {path}")
 
     def add_log_sink(self, handler: Callable[[Dict], None]):
         """

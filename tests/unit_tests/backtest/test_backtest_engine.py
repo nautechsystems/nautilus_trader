@@ -52,6 +52,7 @@ from nautilus_trader.model.orderbook.data import OrderBookDelta
 from nautilus_trader.model.orderbook.data import OrderBookDeltas
 from nautilus_trader.model.orderbook.data import OrderBookSnapshot
 from nautilus_trader.persistence.catalog import DataCatalog
+from nautilus_trader.persistence.streaming import StreamingFeatherWriter
 from nautilus_trader.trading.strategy import Strategy
 from tests.test_kit.stubs import MyData
 from tests.test_kit.stubs.component import TestComponentStubs
@@ -167,11 +168,11 @@ class TestBacktestEngine:
             config=config, instrument=self.usdjpy, ticks=TestDataStubs.quote_ticks_usdjpy()
         )
         engine.run()
-        persistence = engine.kernel.persistence
-        assert not any([f.closed for f in persistence._files.values()])
         engine.dispose()
-        assert all([f.closed for f in persistence._files.values()])
-        print(persistence)
+
+        for writer in engine.kernel.writers:
+            if isinstance(writer, StreamingFeatherWriter):
+                assert all([f.closed for f in writer._files.values()])
 
 
 class TestBacktestEngineData:
