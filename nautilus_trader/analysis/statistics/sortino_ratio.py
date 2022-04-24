@@ -48,6 +48,9 @@ class SortinoRatio(PortfolioStatistic):
         returns = self._downsample_to_daily_bins(returns)
 
         downside = np.sqrt((returns[returns < 0] ** 2).sum() / len(returns))
+        if downside == 0:
+            return np.nan
+
         res = returns.mean() / downside
 
         return res * np.sqrt(self.period)
