@@ -56,7 +56,8 @@ class TestUUID:
         # Arrange, Act
         result = UUID4()
 
+        print(result)
         # Assert
         assert isinstance(result, UUID4)
-        assert len(result.value) == 36
-        assert len(result.value.replace("-", "")) == 32
+        assert len(str(result)) == 36
+        assert len(str(result).replace("-", "")) == 32

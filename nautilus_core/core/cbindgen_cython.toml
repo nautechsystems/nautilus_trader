@@ -10,6 +10,7 @@ header = '"../includes/core.h"'
 
 [cython.cimports]
 "libc.stdint" = [
+    "uint8_t",
     "int64_t",
 ]
 
