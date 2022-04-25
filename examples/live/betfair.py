@@ -109,7 +109,7 @@ async def main(market_id: str):
     node.build()
 
     try:
-        await node.start()
+        node.start()
     except Exception as ex:
         print(ex)
         print(traceback.format_exc())

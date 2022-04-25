@@ -271,7 +271,7 @@ class TradingNode:
         self._builder.build_exec_clients(self._config.exec_clients)
         self._is_built = True
 
-    def start(self) -> Optional[asyncio.Task]:
+    def start(self) -> None:
         """
         Start the trading node.
         """
@@ -283,13 +283,11 @@ class TradingNode:
 
         try:
             if self.kernel.loop.is_running():
-                return self.kernel.loop.create_task(self._run())
+                self.kernel.loop.create_task(self._run())
             else:
                 self.kernel.loop.run_until_complete(self._run())
-                return None
         except RuntimeError as ex:
             self.kernel.log.exception("Error on run", ex)
-            return None
 
     def stop(self) -> None:
         """
