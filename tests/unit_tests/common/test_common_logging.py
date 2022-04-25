@@ -187,7 +187,7 @@ class TestLoggerTests:
             "machine_id": socket.gethostname(),
             "level": "INF",
             "msg": "A log event",
-            "instance_id": f"{logger.instance_id.value}",
+            "instance_id": f"{logger.instance_id.to_str()}",
             "tag": "risk",
             "timestamp": 0,
             "trader_id": "TRADER-000",

@@ -212,7 +212,7 @@ cdef class Logger:
             "color": color,
             "trader_id": self.trader_id.value,
             "machine_id": self.machine_id,
-            "instance_id": self.instance_id.value,
+            "instance_id": self.instance_id.to_str(),
             "component": component,
             "msg": msg,
         }
@@ -548,9 +548,9 @@ cpdef void nautilus_header(LoggerAdapter logger) except *:
     logger.info("\033[36m=================================================================")
     logger.info("\033[36m IDENTIFIERS")
     logger.info("\033[36m=================================================================")
-    logger.info(f"trader_id: {logger.trader_id.value}")
+    logger.info(f"trader_id: {logger.trader_id}")
     logger.info(f"machine_id: {logger.machine_id}")
-    logger.info(f"instance_id: {logger.instance_id.value}")
+    logger.info(f"instance_id: {logger.instance_id}")
     logger.info("\033[36m=================================================================")
     logger.info("\033[36m VERSIONING")
     logger.info("\033[36m=================================================================")

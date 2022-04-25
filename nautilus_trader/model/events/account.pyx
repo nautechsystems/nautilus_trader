@@ -126,7 +126,7 @@ cdef class AccountState(Event):
             "margins": orjson.dumps([m.to_dict() for m in obj.margins]),
             "reported": obj.is_reported,
             "info": orjson.dumps(obj.info),
-            "event_id": obj.id.value,
+            "event_id": obj.id.to_str(),
             "ts_event": obj.ts_event,
             "ts_init": obj.ts_init,
         }

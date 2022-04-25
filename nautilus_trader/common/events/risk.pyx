@@ -139,7 +139,7 @@ cdef class TradingStateChanged(RiskEvent):
             "trader_id": obj.trader_id.value,
             "state": TradingStateParser.to_str(obj.state),
             "config": config_bytes,
-            "event_id": obj.id.value,
+            "event_id": obj.id.to_str(),
             "ts_event": obj.ts_event,
             "ts_init": obj.ts_init,
         }

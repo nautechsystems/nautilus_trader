@@ -13,7 +13,30 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-pub mod buffer;
-pub mod string;
-pub mod time;
-pub mod uuid;
+#[repr(C)]
+#[derive(Clone, Hash, PartialEq, Eq)]
+pub struct Buffer8 {
+    pub data: [u8; 8],
+    pub len: u8,
+}
+
+#[repr(C)]
+#[derive(Clone, Hash, PartialEq, Eq)]
+pub struct Buffer16 {
+    pub data: [u8; 16],
+    pub len: u8,
+}
+
+#[repr(C)]
+#[derive(Clone, Hash, PartialEq, Eq)]
+pub struct Buffer32 {
+    pub data: [u8; 32],
+    pub len: u8,
+}
+
+#[repr(C)]
+#[derive(Clone, Hash, PartialEq, Eq)]
+pub struct Buffer36 {
+    pub data: [u8; 36],
+    pub len: u8,
+}

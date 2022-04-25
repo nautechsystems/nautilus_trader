@@ -5,6 +5,7 @@ Released on TBD.
 ### Breaking Changes
 - Renamed `StreamingPersistence` to `StreamingFeatherWriter`
 - Renamed `PersistenceConfig.flush_interval` to `flush_interval_ms`
+- Replaced `UUID4.value` property with `UUID4.to_str()` method
 
 ### Enhancements
 - The `bypass_logging` config option will also now bypass the `BacktestEngine` logger

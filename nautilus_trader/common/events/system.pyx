@@ -129,7 +129,7 @@ cdef class ComponentStateChanged(Event):
             "component_type": obj.component_type,
             "state": ComponentStateParser.to_str(obj.state),
             "config": config_bytes,
-            "event_id": obj.id.value,
+            "event_id": obj.id.to_str(),
             "ts_event": obj.ts_event,
             "ts_init": obj.ts_init,
         }
