@@ -18,9 +18,8 @@ use crate::types::currency::Currency;
 use crate::types::money::Money;
 use crate::types::price::Price;
 use crate::types::quantity::Quantity;
-use nautilus_core::string::{from_cstring, into_cstring};
+use nautilus_core::buffer::{Buffer16, Buffer32};
 use std::ops::{AddAssign, SubAssign};
-use std::os::raw::c_char;
 
 ////////////////////////////////////////////////////////////////////////////////
 // Price
@@ -102,35 +101,19 @@ pub extern "C" fn quantity_sub_assign_u64(mut a: Quantity, b: u64) {
 // Currency
 ////////////////////////////////////////////////////////////////////////////////
 #[no_mangle]
-pub unsafe extern "C" fn currency_new(
-    code_ptr: *const c_char,
+pub extern "C" fn currency_new(
+    code: Buffer16,
     precision: u8,
     iso4217: u16,
-    name_ptr: *const c_char,
+    name: Buffer32,
     currency_type: CurrencyType,
 ) -> Currency {
-    Currency::new(
-        from_cstring(code_ptr).as_str(),
-        precision,
-        iso4217,
-        from_cstring(name_ptr).as_str(),
-        currency_type,
-    )
+    Currency::new(code, precision, iso4217, name, currency_type)
 }
 
 #[no_mangle]
 pub extern "C" fn currency_free(currency: Currency) {
     drop(currency); // Memory freed here
-}
-
-#[no_mangle]
-pub extern "C" fn currency_code_to_cstring(currency: &Currency) -> *const c_char {
-    into_cstring(currency.code.to_string())
-}
-
-#[no_mangle]
-pub extern "C" fn currency_name_to_cstring(currency: &Currency) -> *const c_char {
-    into_cstring(currency.name.to_string())
 }
 
 ////////////////////////////////////////////////////////////////////////////////

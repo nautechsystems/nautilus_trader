@@ -19,7 +19,10 @@ from libc.stdint cimport uint16_t
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.rust.model cimport currency_free
 from nautilus_trader.core.rust.model cimport currency_new
-from nautilus_trader.core.string cimport pystr_to_cstring
+from nautilus_trader.core.string cimport buffer16_to_pystr
+from nautilus_trader.core.string cimport buffer32_to_pystr
+from nautilus_trader.core.string cimport pystr_to_buffer16
+from nautilus_trader.core.string cimport pystr_to_buffer32
 from nautilus_trader.model.c_enums.currency_type cimport CurrencyType
 from nautilus_trader.model.c_enums.currency_type cimport CurrencyTypeParser
 from nautilus_trader.model.currencies cimport _CURRENCY_MAP
@@ -67,36 +70,39 @@ cdef class Currency:
         Condition.valid_string(name, "name")
         Condition.true(precision <= 9, "invalid precision, was > 9")
 
-
         self._currency = currency_new(
-            pystr_to_cstring(code),
+            pystr_to_buffer16(code),
             precision,
             iso4217,
-            pystr_to_cstring(name),
+            pystr_to_buffer32(name),
             currency_type,
         )
-        self.code = code
-        self.name = name
+
+    @property
+    def code(self) -> str:
+        return buffer16_to_pystr(self._currency.code)
+
+    @property
+    def name(self) -> str:
+        return buffer32_to_pystr(self._currency.name)
 
     def __getstate__(self):
         return (
-            self.code,
+            buffer16_to_pystr(self._currency.code),
             self._currency.precision,
             self._currency.iso4217,
-            self.name,
+            buffer32_to_pystr(self._currency.name),
             <CurrencyType>self._currency.currency_type,
         )
 
     def __setstate__(self, state):
         self._currency = currency_new(
-            pystr_to_cstring(state[0]),
+            pystr_to_buffer16(state[0]),
             state[1],
             state[2],
-            pystr_to_cstring(state[3]),
+            pystr_to_buffer32(state[3]),
             state[4],
         )
-        self.code = state[0]
-        self.name = state[3]
 
     def __eq__(self, Currency other) -> bool:
         return self.code == other.code and self._currency.precision == other._currency.precision

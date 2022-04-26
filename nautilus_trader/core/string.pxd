@@ -15,16 +15,56 @@
 
 from libc.stdint cimport uint8_t
 
-from nautilus_trader.core.rust.core cimport cstring_free
+from nautilus_trader.core.rust.core cimport Buffer16
+from nautilus_trader.core.rust.core cimport Buffer32
+from nautilus_trader.core.rust.core cimport Buffer36
 
 
-cdef inline const char* pystr_to_cstring(str value) except *:
-    return value.encode("utf-8") + b"\x00"  # Add NUL byte (hex literal)
+cdef inline Buffer16 pystr_to_buffer16(str value) except *:
+    cdef Buffer16 buffer
+    cdef bytes data = value.encode()
+    cdef uint8_t length = len(data)
+    assert 0 < length <= 16
+    buffer.data = data + (16 - length) * b"\x00"
+    buffer.len = length
+    return buffer
 
 
-cdef inline str cstring_to_pystr(const char* ptr):
-    cdef str value = ptr.decode()  # Copy decoded UTF-8 bytes from `ptr` to PyObject str
-    cstring_free(ptr)  # `ptr` moved to Rust (then dropped)
+cdef inline str buffer16_to_pystr(Buffer16 buffer):
+    # Copy decoded ASCII bytes from buffer
+    cdef str value = buffer.data[:buffer.len].decode()
+    return value
+
+
+cdef inline Buffer32 pystr_to_buffer32(str value) except *:
+    cdef Buffer32 buffer
+    cdef bytes data = value.encode()
+    cdef uint8_t length = len(data)
+    assert 0 < length <= 32
+    buffer.data = data + (32 - length) * b"\x00"
+    buffer.len = length
+    return buffer
+
+
+cdef inline str buffer32_to_pystr(Buffer32 buffer):
+    # Copy decoded ASCII bytes from buffer
+    cdef str value = buffer.data[:buffer.len].decode()
+    return value
+
+
+cdef inline Buffer36 pystr_to_buffer36(str value) except *:
+    cdef Buffer36 buffer
+    cdef bytes data = value.encode()
+    cdef uint8_t length = len(data)
+    assert 0 < length <= 36
+    buffer.data = data + (36 - length) * b"\x00"
+    buffer.len = length
+    return buffer
+
+
+cdef inline str buffer36_to_pystr(Buffer36 buffer):
+    # Copy decoded ASCII bytes from buffer
+    cdef str value = buffer.data[:buffer.len].decode()
     return value
 
 

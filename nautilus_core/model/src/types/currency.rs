@@ -14,30 +14,31 @@
 // -------------------------------------------------------------------------------------------------
 
 use crate::enums::CurrencyType;
+use nautilus_core::buffer::{Buffer16, Buffer32};
 
 #[repr(C)]
 #[derive(Eq, PartialEq, Clone, Hash, Debug)]
 pub struct Currency {
-    pub code: Box<String>,
+    pub code: Buffer16,
     pub precision: u8,
     pub iso4217: u16,
-    pub name: Box<String>,
+    pub name: Buffer32,
     pub currency_type: CurrencyType,
 }
 
 impl Currency {
     pub fn new(
-        code: &str,
+        code: Buffer16,
         precision: u8,
         iso4217: u16,
-        name: &str,
+        name: Buffer32,
         currency_type: CurrencyType,
     ) -> Currency {
         Currency {
-            code: Box::from(code.to_string()),
+            code,
             precision,
             iso4217,
-            name: Box::from(name.to_string()),
+            name,
             currency_type,
         }
     }
@@ -48,16 +49,23 @@ impl Currency {
 mod tests {
     use crate::enums::CurrencyType;
     use crate::types::currency::Currency;
+    use nautilus_core::buffer::{Buffer16, Buffer32};
 
     #[test]
     fn test_price_new() {
-        let currency = Currency::new("AUD", 8, 036, "Australian dollar", CurrencyType::FIAT);
+        let currency = Currency::new(
+            Buffer16::from_str("AUD"),
+            8,
+            036,
+            Buffer32::from_str("Australian dollar"),
+            CurrencyType::FIAT,
+        );
 
         assert_eq!(currency, currency);
-        assert_eq!(currency.code.as_str(), "AUD");
+        assert_eq!(currency.code.to_str(), "AUD");
         assert_eq!(currency.precision, 8);
         assert_eq!(currency.iso4217, 036);
-        assert_eq!(currency.name.as_str(), "Australian dollar");
+        assert_eq!(currency.name.to_str(), "Australian dollar");
         assert_eq!(currency.currency_type, CurrencyType::FIAT);
     }
 }

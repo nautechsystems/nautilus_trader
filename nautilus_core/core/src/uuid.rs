@@ -26,13 +26,8 @@ pub struct UUID4 {
 impl UUID4 {
     pub fn new() -> UUID4 {
         let uuid = Uuid::new_v4();
-        let mut buffer: [u8; 36] = [0; 36];
-        buffer.copy_from_slice(uuid.to_string().into_bytes().as_slice());
         UUID4 {
-            value: Buffer36 {
-                data: buffer,
-                len: 36,
-            },
+            value: Buffer36::from_str(uuid.to_string().as_str()),
         }
     }
 
@@ -42,13 +37,8 @@ impl UUID4 {
 
     pub fn from_str(s: &str) -> UUID4 {
         let uuid = Uuid::parse_str(s).unwrap();
-        let mut buffer: [u8; 36] = [0; 36];
-        buffer.copy_from_slice(uuid.to_string().into_bytes().as_slice());
         UUID4 {
-            value: Buffer36 {
-                data: buffer,
-                len: 36,
-            },
+            value: Buffer36::from_str(uuid.to_string().as_str()),
         }
     }
 }
@@ -61,13 +51,13 @@ impl Default for UUID4 {
 
 impl Debug for UUID4 {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result {
-        write!(f, "{}", String::from_utf8_lossy(self.value.data.as_slice()))
+        write!(f, "{}", self.value.to_str())
     }
 }
 
 impl Display for UUID4 {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result {
-        write!(f, "{}", String::from_utf8_lossy(self.value.data.as_slice()))
+        write!(f, "{}", self.value.to_str())
     }
 }
 
@@ -84,7 +74,6 @@ pub extern "C" fn uuid4_free(uuid4: UUID4) {
     drop(uuid4); // Memory freed here
 }
 
-/// Expects `ptr` to be an array of valid UTF-8 chars with the trailing nul byte terminator.
 #[no_mangle]
 pub extern "C" fn uuid4_from_bytes(value: Buffer36) -> UUID4 {
     UUID4::from_bytes(value)

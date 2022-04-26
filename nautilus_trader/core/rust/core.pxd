@@ -4,6 +4,14 @@ from libc.stdint cimport uint8_t, int64_t
 
 cdef extern from "../includes/core.h":
 
+    cdef struct Buffer16:
+        uint8_t data[16];
+        uint8_t len;
+
+    cdef struct Buffer32:
+        uint8_t data[32];
+        uint8_t len;
+
     cdef struct Buffer36:
         uint8_t data[36];
         uint8_t len;
@@ -11,8 +19,9 @@ cdef extern from "../includes/core.h":
     cdef struct UUID4_t:
         Buffer36 value;
 
-    # Expects `ptr` to be an array of valid UTF-8 chars with the trailing nul byte terminator.
-    void cstring_free(const char *ptr);
+    Buffer16 dummy_16(Buffer16 ptr);
+
+    Buffer32 dummy_32(Buffer32 ptr);
 
     # Returns the current seconds since the UNIX epoch.
     double unix_timestamp();
@@ -30,7 +39,6 @@ cdef extern from "../includes/core.h":
 
     void uuid4_free(UUID4_t uuid4);
 
-    # Expects `ptr` to be an array of valid UTF-8 chars with the trailing nul byte terminator.
     UUID4_t uuid4_from_bytes(Buffer36 value);
 
     Buffer36 uuid4_to_bytes(const UUID4_t *uuid);
