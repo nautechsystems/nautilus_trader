@@ -16,6 +16,11 @@ header = '"../includes/model.h"'
     "int64_t",
 ]
 
+"nautilus_trader.core.rust.core" = [
+    "Buffer16",
+    "Buffer32",
+]
+
 [export.rename]
 "Currency" = "Currency_t"
 "Money" = "Money_t"

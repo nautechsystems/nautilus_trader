@@ -29,7 +29,10 @@ impl fmt::Display for AccountBalance {
         write!(
             f,
             "{} {} {} {}",
-            self.currency.code, self.total, self.locked, self.free,
+            self.currency.code.to_str(),
+            self.total,
+            self.locked,
+            self.free,
         )
     }
 }

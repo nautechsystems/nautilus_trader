@@ -16,10 +16,11 @@
 import re
 
 from nautilus_trader.core.correctness cimport Condition
-from nautilus_trader.core.rust.core cimport Buffer36
 from nautilus_trader.core.rust.core cimport uuid4_free
 from nautilus_trader.core.rust.core cimport uuid4_from_bytes
 from nautilus_trader.core.rust.core cimport uuid4_new
+from nautilus_trader.core.string cimport buffer36_to_pystr
+from nautilus_trader.core.string cimport pystr_to_buffer36
 
 
 _UUID_REGEX = re.compile("[0-F]{8}-([0-F]{4}-){3}[0-F]{12}", re.I)
@@ -54,26 +55,19 @@ cdef class UUID4:
             self._uuid4 = self._uuid4_from_pystring(value)
 
     cdef UUID4_t _uuid4_from_pystring(self, str value) except *:
-        cdef Buffer36 buffer
-        buffer.data = value.encode()
-        buffer.len = 36
-        self._uuid4 = uuid4_from_bytes(buffer)
-        return uuid4_from_bytes(buffer)  # `value` moved to Rust, `UUID4_t` owned from Rust
+        return uuid4_from_bytes(pystr_to_buffer36(value))  # `value` moved to Rust, `UUID4_t` owned from Rust
 
     cpdef str to_str(self):
-        return self._uuid4.value.data[:36].decode()
+        return buffer36_to_pystr(self._uuid4.value)
 
     def __getstate__(self):
-        return self._uuid4.value.data[:36]
+        return self.to_str()
 
     def __setstate__(self, state):
-        cdef Buffer36 buffer
-        buffer.data = state
-        buffer.len = 36
-        self._uuid4 = uuid4_from_bytes(buffer)
+        self._uuid4 = self._uuid4_from_pystring(state)
 
     def __eq__(self, UUID4 other) -> bool:
-        return self._uuid4.value.data[:36] == other._uuid4.value.data[:36]
+        return self.to_str() == other.to_str()
 
     def __hash__(self) -> int:
         return hash(self._uuid4.value.data)

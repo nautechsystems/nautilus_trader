@@ -184,7 +184,7 @@ impl Display for Money {
             "{:.*} {}",
             self.currency.precision as usize,
             self.as_f64(),
-            self.currency.code
+            self.currency.code.to_str()
         )
     }
 }
@@ -193,24 +193,37 @@ impl Display for Money {
 mod tests {
     use super::*;
     use crate::enums::CurrencyType;
+    use nautilus_core::buffer::{Buffer16, Buffer32};
 
     #[test]
     fn test_money_new_usd() {
-        let usd = Currency::new("USD", 2, 840, "United States dollar", CurrencyType::FIAT);
+        let usd = Currency::new(
+            Buffer16::from_str("USD"),
+            2,
+            840,
+            Buffer32::from_str("United States dollar"),
+            CurrencyType::FIAT,
+        );
         let money = Money::new(1000.0, usd);
 
-        assert_eq!("USD", money.currency.code.as_str());
+        assert_eq!("USD", money.currency.code.to_str());
         assert_eq!(2, money.currency.precision);
         assert_eq!("1000.00 USD", money.to_string());
     }
 
     #[test]
     fn test_money_new_btc() {
-        let btc = Currency::new("BTC", 8, 0, "Bitcoin", CurrencyType::FIAT);
+        let btc = Currency::new(
+            Buffer16::from_str("BTC"),
+            8,
+            0,
+            Buffer32::from_str("Bitcoin"),
+            CurrencyType::FIAT,
+        );
 
         let money = Money::new(10.3, btc);
 
-        assert_eq!("BTC", money.currency.code.as_str());
+        assert_eq!("BTC", money.currency.code.to_str());
         assert_eq!(8, money.currency.precision);
         assert_eq!("10.30000000 BTC", money.to_string());
     }

@@ -8,6 +8,7 @@ Released on TBD.
 - Replaced `UUID4.value` property with `UUID4.to_str()` method
 
 ### Enhancements
+- Eliminated all use of `unsafe` Rust and nul byte terminated C strings.
 - The `bypass_logging` config option will also now bypass the `BacktestEngine` logger
 
 ### Fixes

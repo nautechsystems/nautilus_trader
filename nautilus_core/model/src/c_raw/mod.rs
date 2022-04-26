@@ -13,6 +13,5 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-mod identifiers;
 mod orderbook;
 mod types;
