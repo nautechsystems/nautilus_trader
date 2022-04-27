@@ -13,6 +13,8 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+use nautilus_core::buffer::Buffer;
+
 use crate::types::currency::Currency;
 use crate::types::fixed::{f64_to_fixed_i64, fixed_i64_to_f64};
 use std::cmp::Ordering;
@@ -193,7 +195,7 @@ impl Display for Money {
 mod tests {
     use super::*;
     use crate::enums::CurrencyType;
-    use nautilus_core::buffer::{Buffer16, Buffer32};
+    use nautilus_core::buffer::{Buffer, Buffer16, Buffer32};
 
     #[test]
     fn test_money_new_usd() {
