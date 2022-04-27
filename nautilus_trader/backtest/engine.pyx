@@ -124,7 +124,7 @@ cdef class BacktestEngine:
             data_config=config.data_engine or DataEngineConfig(),
             risk_config=config.risk_engine or RiskEngineConfig(),
             exec_config=config.exec_engine or ExecEngineConfig(),
-            persistence_config=config.persistence,
+            streaming_config=config.streaming,
             actor_configs=config.actors,
             strategy_configs=config.strategies,
             log_level=LogLevelParser.from_str(config.log_level.upper()),
@@ -697,8 +697,8 @@ cdef class BacktestEngine:
         self.kernel.exec_engine.dispose()
         self.kernel.risk_engine.dispose()
 
-        for writer in self.kernel.writers:
-            writer.close()
+        if self.kernel.writer is not None:
+            self.kernel.writer.close()
 
     def run(
         self,

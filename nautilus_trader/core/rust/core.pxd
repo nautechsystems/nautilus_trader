@@ -12,6 +12,14 @@ cdef extern from "../includes/core.h":
         uint8_t data[32];
         uintptr_t len;
 
+    cdef struct Buffer64:
+        uint8_t data[64];
+        uintptr_t len;
+
+    cdef struct Buffer128:
+        uint8_t data[128];
+        uintptr_t len;
+
     cdef struct Buffer36:
         uint8_t data[36];
         uintptr_t len;
@@ -19,9 +27,13 @@ cdef extern from "../includes/core.h":
     cdef struct UUID4_t:
         Buffer36 value;
 
-    Buffer16 dummy_16(Buffer16 ptr);
+    Buffer16 dummy_16(Buffer16 buffer);
 
-    Buffer32 dummy_32(Buffer32 ptr);
+    Buffer32 dummy_32(Buffer32 buffer);
+
+    Buffer64 dummy_64(Buffer64 buffer);
+
+    Buffer128 dummy_128(Buffer128 buffer);
 
     # Returns the current seconds since the UNIX epoch.
     double unix_timestamp();

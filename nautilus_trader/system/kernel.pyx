@@ -37,9 +37,9 @@ from nautilus_trader.config import ImportableStrategyConfig
 from nautilus_trader.config import LiveDataEngineConfig
 from nautilus_trader.config import LiveExecEngineConfig
 from nautilus_trader.config import LiveRiskEngineConfig
-from nautilus_trader.config import PersistenceConfig
 from nautilus_trader.config import RiskEngineConfig
 from nautilus_trader.config import StrategyFactory
+from nautilus_trader.config import StreamingConfig
 
 from nautilus_trader.cache.cache cimport Cache
 from nautilus_trader.common.actor cimport Actor
@@ -61,7 +61,9 @@ from nautilus_trader.live.execution_engine cimport LiveExecutionEngine
 from nautilus_trader.live.risk_engine cimport LiveRiskEngine
 from nautilus_trader.msgbus.bus cimport MessageBus
 from nautilus_trader.portfolio.portfolio cimport Portfolio
+
 from nautilus_trader.persistence.streaming import StreamingFeatherWriter
+
 from nautilus_trader.risk.engine cimport RiskEngine
 from nautilus_trader.serialization.msgpack.serializer cimport MsgPackSerializer
 from nautilus_trader.trading.strategy cimport Strategy
@@ -99,8 +101,8 @@ cdef class NautilusKernel:
         The risk engine configuration for the kernel.
     exec_config : Union[ExecEngineConfig, LiveExecEngineConfig]
         The execution engine configuration for the kernel.
-    persistence_config : PersistenceConfig, optional
-        The configuration for enabling persistence via feather files.
+    streaming_config : StreamingConfig, optional
+        The configuration for streaming to feather files.
     actor_configs : List[ImportableActorConfig], optional
         The list of importable actor configs.
     strategy_configs : List[ImportableStrategyConfig], optional
@@ -141,7 +143,7 @@ cdef class NautilusKernel:
         data_config not None: Union[DataEngineConfig, LiveDataEngineConfig],
         risk_config not None: Union[RiskEngineConfig, LiveRiskEngineConfig],
         exec_config not None: Union[ExecEngineConfig, LiveExecEngineConfig],
-        persistence_config: Optional[PersistenceConfig] = None,
+        streaming_config: Optional[StreamingConfig] = None,
         actor_configs: Optional[List[ImportableActorConfig]] = None,
         strategy_configs: Optional[List[ImportableStrategyConfig]] = None,
         loop: Optional[AbstractEventLoop] = None,
@@ -165,7 +167,7 @@ cdef class NautilusKernel:
         Condition.true(isinstance(data_config, (DataEngineConfig, LiveDataEngineConfig)), "data_config was unrecognized type", ex_type=TypeError)
         Condition.true(isinstance(risk_config, (RiskEngineConfig, LiveRiskEngineConfig)), "risk_config was unrecognized type", ex_type=TypeError)
         Condition.true(isinstance(exec_config, (ExecEngineConfig, LiveExecEngineConfig)), "exec_config was unrecognized type", ex_type=TypeError)
-        Condition.type_or_none(persistence_config, PersistenceConfig, "persistence_config")
+        Condition.type_or_none(streaming_config, StreamingConfig, "streaming_config")
 
         self.environment = environment
 
@@ -344,11 +346,10 @@ cdef class NautilusKernel:
         if load_state:
             self.trader.load()
 
-        # Setup writers
-        self.writers = []
-
-        if persistence_config:
-            self._setup_persistence(config=persistence_config)
+        # Setup writer
+        self.writer: Optional[StreamingFeatherWriter] = None
+        if streaming_config:
+            self._setup_streaming(config=streaming_config)
 
         # Create importable actors
         for config in actor_configs:
@@ -380,7 +381,7 @@ cdef class NautilusKernel:
         if self.loop_sig_callback:
             self.loop_sig_callback(sig)
 
-    def _setup_persistence(self, config: PersistenceConfig) -> None:
+    def _setup_streaming(self, config: StreamingConfig) -> None:
         # Setup persistence
         catalog = config.as_catalog()
         persistence_dir = os.path.join(config.catalog_path, self.environment.value)
@@ -388,26 +389,14 @@ cdef class NautilusKernel:
             catalog.fs.mkdir(persistence_dir)
 
         path = os.path.join(persistence_dir, self.instance_id.to_str() + ".feather")
-        feather_writer = StreamingFeatherWriter(
+        self.writer = StreamingFeatherWriter(
             path=path,
             fs_protocol=config.fs_protocol,
             flush_interval_ms=config.flush_interval_ms,
             logger=self.log
         )
-        self.writers.append(feather_writer)
-        self.trader.subscribe("*", feather_writer.write)
+        self.trader.subscribe("*", self.writer.write)
         self.log.info(f"Writing data & events to {path}")
-
-        # Setup logging
-        if config.persist_logs:
-            def sink(record, f):
-                f.write(orjson.dumps(record) + b"\n")
-
-            path = f"{config.catalog_path}/logs/{self.instance_id}.log"
-            log_sink = open(path, "wb")
-            self.writers.append(log_sink)
-            self.logger.register_sink(partial(sink, f=log_sink))
-            self.log.info(f"Writing logs to {path}")
 
     def add_log_sink(self, handler: Callable[[Dict], None]):
         """

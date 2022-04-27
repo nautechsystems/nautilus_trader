@@ -68,7 +68,7 @@ class TestPersistenceStreaming:
             catalog_fs_protocol=self.catalog.fs.protocol,
             instrument_id=instrument.id.value,
         )
-        run_config.engine.persistence.flush_interval_ms = 5000
+        run_config.engine.streaming.flush_interval_ms = 5000
         node = BacktestNode(configs=[run_config])
 
         # Act
@@ -117,9 +117,9 @@ class TestPersistenceStreaming:
             catalog_fs_protocol="memory",
             data_cls=InstrumentStatusUpdate,
         )
-        persistence = BetfairTestStubs.persistence_config(catalog_path=self.catalog.path)
+        streaming = BetfairTestStubs.streaming_config(catalog_path=self.catalog.path)
         run_config = BacktestRunConfig(
-            engine=BacktestEngineConfig(persistence=persistence),
+            engine=BacktestEngineConfig(streaming=streaming),
             data=[data_config, instrument_data_config],
             venues=[BetfairTestStubs.betfair_venue_config()],
         )
