@@ -109,8 +109,8 @@ class TestPersistenceBatching:
             instrument_id=self.catalog.instruments(as_nautilus=True)[0].id.value,
             data_cls=InstrumentStatusUpdate,
         )
-        persistence = BetfairTestStubs.persistence_config(catalog_path=self.catalog.path)
-        engine = BacktestEngineConfig(persistence=persistence)
+        streaming = BetfairTestStubs.streaming_config(catalog_path=self.catalog.path)
+        engine = BacktestEngineConfig(streaming=streaming)
         run_config = BacktestRunConfig(
             engine=engine,
             data=[data_config, instrument_data_config],

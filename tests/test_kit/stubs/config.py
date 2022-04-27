@@ -22,8 +22,8 @@ from nautilus_trader.config import BacktestRunConfig
 from nautilus_trader.config import BacktestVenueConfig
 from nautilus_trader.config import ExecEngineConfig
 from nautilus_trader.config import ImportableStrategyConfig
-from nautilus_trader.config import PersistenceConfig
 from nautilus_trader.config import RiskEngineConfig
+from nautilus_trader.config import StreamingConfig
 from nautilus_trader.core.data import Data
 from nautilus_trader.model.data.tick import QuoteTick
 from nautilus_trader.model.identifiers import Venue
@@ -35,16 +35,14 @@ AAPL_US = TestInstrumentProvider.aapl_equity()
 
 class TestConfigStubs:
     @staticmethod
-    def persistence_config(
+    def streaming_config(
         catalog: DataCatalog,
         kind: str = "backtest",
-        persist_logs=False,
-    ) -> PersistenceConfig:
-        return PersistenceConfig(
+    ) -> StreamingConfig:
+        return StreamingConfig(
             catalog_path=str(catalog.path),
             fs_protocol=catalog.fs_protocol,
             kind=kind,
-            persit_logs=persist_logs,
         )
 
     @staticmethod
@@ -86,7 +84,7 @@ class TestConfigStubs:
             bypass_logging=bypass_logging,
             exec_engine=ExecEngineConfig(allow_cash_positions=allow_cash_position),
             risk_engine=RiskEngineConfig(bypass=bypass_risk),
-            persistence=TestConfigStubs.persistence_config(catalog=catalog) if persist else None,
+            streaming=TestConfigStubs.streaming_config(catalog=catalog) if persist else None,
             strategies=strategies or [],
         )
 

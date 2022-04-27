@@ -76,7 +76,7 @@ class TradingNode:
             data_config=config.data_engine or LiveDataEngineConfig(),
             risk_config=config.risk_engine or LiveRiskEngineConfig(),
             exec_config=config.exec_engine or LiveExecEngineConfig(),
-            persistence_config=config.persistence,
+            streaming_config=config.streaming,
             actor_configs=config.actors,
             strategy_configs=config.strategies,
             loop=loop,
@@ -340,9 +340,9 @@ class TradingNode:
             self.kernel.exec_engine.dispose()
             self.kernel.risk_engine.dispose()
 
-            # Cleanup writers
-            for writer in self.kernel.writers:
-                writer.close()
+            # Cleanup writer
+            if self.kernel.writer is not None:
+                self.kernel.writer.close()
 
             self.kernel.log.info("Shutting down executor...")
             if sys.version_info >= (3, 9):
@@ -546,9 +546,9 @@ class TradingNode:
         for name in timer_names:
             self.kernel.log.info(f"Cancelled Timer(name={name}).")
 
-        # Flush writers
-        for writer in self.kernel.writers:
-            writer.flush()
+        # Flush writer
+        if self.kernel.writer is not None:
+            self.kernel.writer.flush()
 
         self.kernel.log.info("STOPPED.")
         self.kernel.logger.stop()
