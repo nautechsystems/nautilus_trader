@@ -13,30 +13,26 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+use nautilus_core::buffer::{Buffer, Buffer32};
 use std::fmt::{Debug, Display, Formatter, Result};
-use std::str::FromStr;
 
 #[repr(C)]
 #[derive(Clone, Hash, PartialEq, Debug)]
 pub struct TradeId {
-    value: u64,
+    value: Buffer32,
 }
 
 impl TradeId {
-    pub fn new(value: u64) -> TradeId {
-        TradeId { value }
-    }
-
     pub fn from_str(s: &str) -> TradeId {
         TradeId {
-            value: u64::from_str(s).expect("u64::from_str failed"),
+            value: Buffer32::from_str(s),
         }
     }
 }
 
 impl Display for TradeId {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result {
-        write!(f, "{}", self.value)
+        write!(f, "{}", self.value.to_str())
     }
 }
 
@@ -51,6 +47,12 @@ mod tests {
 
         assert_eq!(trade_id1, trade_id1);
         assert_ne!(trade_id1, trade_id2);
-        assert_eq!(trade_id1.value, 123456789)
+    }
+
+    #[test]
+    fn test_trade_id_as_str() {
+        let trade_id = TradeId::from_str("1234567890");
+
+        assert_eq!(trade_id.to_string(), "1234567890");
     }
 }

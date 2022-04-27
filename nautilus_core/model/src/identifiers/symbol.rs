@@ -13,31 +13,26 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+use nautilus_core::buffer::{Buffer, Buffer32};
 use std::fmt::{Debug, Display, Formatter, Result};
 
 #[repr(C)]
 #[derive(Clone, Hash, PartialEq, Debug)]
 pub struct Symbol {
-    value: Box<String>,
+    pub value: Buffer32,
 }
 
 impl Symbol {
-    pub fn from_string(s: String) -> Symbol {
-        Symbol {
-            value: Box::from(s),
-        }
-    }
-
     pub fn from_str(s: &str) -> Symbol {
         Symbol {
-            value: Box::from(s.to_owned()),
+            value: Buffer32::from_str(s),
         }
     }
 }
 
 impl Display for Symbol {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result {
-        write!(f, "{}", self.value)
+        write!(f, "{}", self.value.to_str())
     }
 }
 

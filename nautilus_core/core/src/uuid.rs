@@ -31,10 +31,6 @@ impl UUID4 {
         }
     }
 
-    pub fn from_bytes(value: Buffer36) -> UUID4 {
-        UUID4 { value }
-    }
-
     pub fn from_str(s: &str) -> UUID4 {
         let uuid = Uuid::parse_str(s).unwrap();
         UUID4 {
@@ -76,7 +72,7 @@ pub extern "C" fn uuid4_free(uuid4: UUID4) {
 
 #[no_mangle]
 pub extern "C" fn uuid4_from_bytes(value: Buffer36) -> UUID4 {
-    UUID4::from_bytes(value)
+    UUID4 { value }
 }
 
 #[no_mangle]

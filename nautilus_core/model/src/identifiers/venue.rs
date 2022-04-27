@@ -13,31 +13,26 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+use nautilus_core::buffer::{Buffer, Buffer16};
 use std::fmt::{Debug, Display, Formatter, Result};
 
 #[repr(C)]
 #[derive(Clone, Hash, PartialEq, Debug)]
 pub struct Venue {
-    value: Box<String>,
+    pub value: Buffer16,
 }
 
 impl Venue {
-    pub fn from_string(s: String) -> Venue {
-        Venue {
-            value: Box::from(s),
-        }
-    }
-
     pub fn from_str(s: &str) -> Venue {
         Venue {
-            value: Box::from(s.to_owned()),
+            value: Buffer16::from_str(s),
         }
     }
 }
 
 impl Display for Venue {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result {
-        write!(f, "{}", self.value)
+        write!(f, "{}", self.value.to_str())
     }
 }
 
