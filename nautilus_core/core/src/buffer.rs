@@ -17,21 +17,21 @@
 #[derive(Clone, Hash, PartialEq, Eq, Debug)]
 pub struct Buffer16 {
     pub data: [u8; 16],
-    pub len: u8,
+    pub len: usize,
 }
 
 #[repr(C)]
 #[derive(Clone, Hash, PartialEq, Eq, Debug)]
 pub struct Buffer32 {
     pub data: [u8; 32],
-    pub len: u8,
+    pub len: usize,
 }
 
 #[repr(C)]
 #[derive(Clone, Hash, PartialEq, Eq, Debug)]
 pub struct Buffer36 {
     pub data: [u8; 36],
-    pub len: u8,
+    pub len: usize,
 }
 
 pub trait Buffer {
@@ -39,8 +39,8 @@ pub trait Buffer {
     where
         Self: Sized;
     fn to_str(&self) -> String;
-    fn len(&self) -> u8;
-    fn max_len(&self) -> u8;
+    fn len(&self) -> usize;
+    fn max_len(&self) -> usize;
 }
 
 macro_rules! impl_buffer_trait {
@@ -52,18 +52,18 @@ macro_rules! impl_buffer_trait {
             {
                 assert!(s.is_ascii()); // Enforce ASCII only code points
                 let mut buffer: [u8; $size] = [0; $size];
-                let len = s.len() as u8;
+                let len = s.len();
                 assert!(len <= $size);
-                buffer[..len as usize].copy_from_slice(s.as_bytes());
+                buffer[..len].copy_from_slice(s.as_bytes());
                 $name { data: buffer, len }
             }
             fn to_str(&self) -> String {
-                String::from_utf8(self.data[..self.len as usize].to_vec()).unwrap()
+                String::from_utf8(self.data[..self.len].to_vec()).unwrap()
             }
-            fn len(&self) -> u8 {
+            fn len(&self) -> usize {
                 self.len
             }
-            fn max_len(&self) -> u8 {
+            fn max_len(&self) -> usize {
                 $size
             }
         }

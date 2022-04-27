@@ -14,6 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 from libc.stdint cimport uint8_t
+from libc.stdint cimport uintptr_t
 
 from nautilus_trader.core.rust.core cimport Buffer16
 from nautilus_trader.core.rust.core cimport Buffer32
@@ -23,7 +24,7 @@ from nautilus_trader.core.rust.core cimport Buffer36
 cdef inline Buffer16 pystr_to_buffer16(str value) except *:
     cdef Buffer16 buffer
     cdef bytes data = value.encode()
-    cdef uint8_t length = len(data)
+    cdef uintptr_t length = len(data)
     assert 0 < length <= 16
     buffer.data = data + (16 - length) * b"\x00"
     buffer.len = length
@@ -39,7 +40,7 @@ cdef inline str buffer16_to_pystr(Buffer16 buffer):
 cdef inline Buffer32 pystr_to_buffer32(str value) except *:
     cdef Buffer32 buffer
     cdef bytes data = value.encode()
-    cdef uint8_t length = len(data)
+    cdef uintptr_t length = len(data)
     assert 0 < length <= 32
     buffer.data = data + (32 - length) * b"\x00"
     buffer.len = length
@@ -55,7 +56,7 @@ cdef inline str buffer32_to_pystr(Buffer32 buffer):
 cdef inline Buffer36 pystr_to_buffer36(str value) except *:
     cdef Buffer36 buffer
     cdef bytes data = value.encode()
-    cdef uint8_t length = len(data)
+    cdef uintptr_t length = len(data)
     assert 0 < length <= 36
     buffer.data = data + (36 - length) * b"\x00"
     buffer.len = length
