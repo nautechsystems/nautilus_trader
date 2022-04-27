@@ -20,41 +20,11 @@ pub struct Buffer16 {
     pub len: u8,
 }
 
-impl Buffer16 {
-    pub fn from_str(s: &str) -> Buffer16 {
-        assert!(s.is_ascii()); // Enforce ASCII only code points
-        let mut buffer: [u8; 16] = [0; 16];
-        let len = s.len() as u8;
-        assert!(len <= 16);
-        buffer[..len as usize].copy_from_slice(s.as_bytes());
-        Buffer16 { data: buffer, len }
-    }
-
-    pub fn to_str(&self) -> String {
-        String::from_utf8(self.data[..self.len as usize].to_vec()).unwrap()
-    }
-}
-
 #[repr(C)]
 #[derive(Clone, Hash, PartialEq, Eq, Debug)]
 pub struct Buffer32 {
     pub data: [u8; 32],
     pub len: u8,
-}
-
-impl Buffer32 {
-    pub fn from_str(s: &str) -> Buffer32 {
-        assert!(s.is_ascii()); // Enforce ASCII only code points
-        let mut buffer: [u8; 32] = [0; 32];
-        let len = s.len() as u8;
-        assert!(len <= 32);
-        buffer[..len as usize].copy_from_slice(s.as_bytes());
-        Buffer32 { data: buffer, len }
-    }
-
-    pub fn to_str(&self) -> String {
-        String::from_utf8(self.data[..self.len as usize].to_vec()).unwrap()
-    }
 }
 
 #[repr(C)]
@@ -64,20 +34,45 @@ pub struct Buffer36 {
     pub len: u8,
 }
 
-impl Buffer36 {
-    pub fn from_str(s: &str) -> Buffer36 {
-        assert!(s.is_ascii()); // Enforce ASCII only code points
-        let mut buffer: [u8; 36] = [0; 36];
-        let len = s.len() as u8;
-        assert!(len <= 36);
-        buffer[..len as usize].copy_from_slice(s.as_bytes());
-        Buffer36 { data: buffer, len }
-    }
-
-    pub fn to_str(&self) -> String {
-        String::from_utf8(self.data[..self.len as usize].to_vec()).unwrap()
-    }
+pub trait Buffer {
+    fn from_str(s: &str) -> Self
+    where
+        Self: Sized;
+    fn to_str(&self) -> String;
+    fn len(&self) -> u8;
+    fn max_len(&self) -> u8;
 }
+
+macro_rules! impl_buffer_trait {
+    ($name:ident, $size:literal) => {
+        impl Buffer for $name {
+            fn from_str(s: &str) -> Self
+            where
+                Self: Sized,
+            {
+                assert!(s.is_ascii()); // Enforce ASCII only code points
+                let mut buffer: [u8; $size] = [0; $size];
+                let len = s.len() as u8;
+                assert!(len <= $size);
+                buffer[..len as usize].copy_from_slice(s.as_bytes());
+                $name { data: buffer, len }
+            }
+            fn to_str(&self) -> String {
+                String::from_utf8(self.data[..self.len as usize].to_vec()).unwrap()
+            }
+            fn len(&self) -> u8 {
+                self.len
+            }
+            fn max_len(&self) -> u8 {
+                $size
+            }
+        }
+    };
+}
+
+impl_buffer_trait!(Buffer16, 16);
+impl_buffer_trait!(Buffer32, 32);
+impl_buffer_trait!(Buffer36, 36);
 
 #[no_mangle]
 pub extern "C" fn dummy_16(ptr: Buffer16) -> Buffer16 {

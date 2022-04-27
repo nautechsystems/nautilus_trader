@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use crate::buffer::Buffer36;
+use crate::buffer::{Buffer36, Buffer};
 use std::fmt::{Debug, Display, Formatter, Result};
 use uuid::Uuid;
 

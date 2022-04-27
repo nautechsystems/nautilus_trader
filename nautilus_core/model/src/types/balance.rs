@@ -13,6 +13,8 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+use nautilus_core::buffer::Buffer;
+
 use crate::types::currency::Currency;
 use crate::types::money::Money;
 use std::fmt;
