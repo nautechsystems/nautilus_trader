@@ -21,10 +21,7 @@ import signal
 import socket
 import warnings
 from asyncio import AbstractEventLoop
-from functools import partial
 from typing import Callable, Dict, List, Optional, Union
-
-import orjson
 
 from nautilus_trader.common import Environment
 from nautilus_trader.config import ActorFactory
@@ -40,6 +37,7 @@ from nautilus_trader.config import LiveRiskEngineConfig
 from nautilus_trader.config import RiskEngineConfig
 from nautilus_trader.config import StrategyFactory
 from nautilus_trader.config import StreamingConfig
+from nautilus_trader.persistence.streaming import StreamingFeatherWriter
 
 from nautilus_trader.cache.cache cimport Cache
 from nautilus_trader.common.actor cimport Actor
@@ -61,9 +59,6 @@ from nautilus_trader.live.execution_engine cimport LiveExecutionEngine
 from nautilus_trader.live.risk_engine cimport LiveRiskEngine
 from nautilus_trader.msgbus.bus cimport MessageBus
 from nautilus_trader.portfolio.portfolio cimport Portfolio
-
-from nautilus_trader.persistence.streaming import StreamingFeatherWriter
-
 from nautilus_trader.risk.engine cimport RiskEngine
 from nautilus_trader.serialization.msgpack.serializer cimport MsgPackSerializer
 from nautilus_trader.trading.strategy cimport Strategy
