@@ -112,6 +112,7 @@ cdef class Actor(Component):
         self.msgbus = None     # Initialized when registered
         self.cache = None      # Initialized when registered
         self.clock = None      # Initialized when registered
+        self.log = self._log
 
 # -- ABSTRACT METHODS -----------------------------------------------------------------------------
 
@@ -462,6 +463,7 @@ cdef class Actor(Component):
         self.msgbus = msgbus
         self.cache = cache
         self.clock = self._clock
+        self.log = self._log
 
     cpdef void register_warning_event(self, type event) except *:
         """
