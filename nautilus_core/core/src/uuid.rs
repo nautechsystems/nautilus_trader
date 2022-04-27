@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use crate::buffer::{Buffer36, Buffer};
+use crate::buffer::{Buffer, Buffer36};
 use std::fmt::{Debug, Display, Formatter, Result};
 use uuid::Uuid;
 
@@ -116,16 +116,16 @@ mod tests {
 
     #[test]
     fn test_uuid4_from_bytes() {
-        let mut buffer: [u8; 36] = [0; 36];
-        buffer.copy_from_slice(
+        let mut data: [u8; 36] = [0; 36];
+        data.copy_from_slice(
             "2d89666b-1a1e-4a75-b193-4eb3b454c757"
                 .to_string()
                 .into_bytes()
                 .as_slice(),
         );
         let value = Buffer36 {
-            data: buffer,
-            len: 36,
+            data,
+            len: data.len(),
         };
         let uuid = uuid4_from_bytes(value);
 

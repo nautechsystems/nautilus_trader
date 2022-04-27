@@ -49,7 +49,7 @@ impl Currency {
 mod tests {
     use crate::enums::CurrencyType;
     use crate::types::currency::Currency;
-    use nautilus_core::buffer::{Buffer16, Buffer32, Buffer};
+    use nautilus_core::buffer::{Buffer, Buffer16, Buffer32};
 
     #[test]
     fn test_price_new() {
