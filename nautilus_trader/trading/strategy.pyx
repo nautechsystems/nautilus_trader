@@ -123,7 +123,6 @@ cdef class Strategy(Actor):
         # Public components
         self.clock = self._clock
         self.uuid_factory = self._uuid_factory
-        self.log = self._log
         self.cache = None          # Initialized when registered
         self.portfolio = None      # Initialized when registered
         self.order_factory = None  # Initialized when registered
@@ -247,7 +246,6 @@ cdef class Strategy(Actor):
             logger=logger,
         )
 
-        self.log = self._log
         self.portfolio = portfolio  # Assigned as PortfolioFacade
 
         self.order_factory = OrderFactory(
