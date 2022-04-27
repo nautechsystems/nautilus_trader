@@ -28,23 +28,20 @@ cdef extern from "../includes/model.h":
     cdef struct HashMap_u64__BookPrice:
         pass
 
-    cdef struct String:
-        pass
+    cdef struct Symbol:
+        Buffer32 value;
+
+    cdef struct Venue:
+        Buffer16 value;
+
+    cdef struct InstrumentId:
+        Symbol symbol;
+        Venue venue;
 
     cdef struct Ladder:
         OrderSide side;
         BTreeMap_BookPrice__Level *levels;
         HashMap_u64__BookPrice *cache;
-
-    cdef struct Symbol:
-        String *value;
-
-    cdef struct Venue:
-        String *value;
-
-    cdef struct InstrumentId:
-        Symbol symbol;
-        Venue venue;
 
     cdef struct OrderBook:
         Ladder bids;
@@ -72,6 +69,22 @@ cdef extern from "../includes/model.h":
     cdef struct Money_t:
         int64_t fixed;
         Currency_t currency;
+
+    void symbol_free(Symbol symbol);
+
+    Symbol symbol_from_bytes(Buffer32 value);
+
+    Buffer32 symbol_to_bytes(Symbol symbol);
+
+    void venue_free(Venue venue);
+
+    Venue venue_from_bytes(Buffer16 value);
+
+    Buffer16 venue_to_bytes(Venue venue);
+
+    void instrument_id_free(InstrumentId instrument_id);
+
+    InstrumentId instrument_id_from_bytes(Buffer32 symbol_value, Buffer16 venue_value);
 
     OrderBook order_book_new(InstrumentId instrument_id, BookLevel book_level);
 

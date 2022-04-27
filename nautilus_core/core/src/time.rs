@@ -19,15 +19,9 @@ use std::time::UNIX_EPOCH;
 
 /// Represents a timestamp in UNIX nanoseconds.
 #[repr(C)]
-#[derive(Clone, Hash, PartialEq, Eq, Debug)]
+#[derive(Default, Clone, Hash, PartialEq, Eq, Debug)]
 pub struct Timestamp {
     value: i64,
-}
-
-impl Default for Timestamp {
-    fn default() -> Self {
-        Timestamp { value: 0 }
-    }
 }
 
 impl Display for Timestamp {

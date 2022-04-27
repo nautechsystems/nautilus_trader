@@ -16,10 +16,10 @@
 pub fn precision_from_str(s: &str) -> u8 {
     let lower_s = s.to_lowercase();
     // Handle scientific notation
-    if lower_s.find("e-").is_some() {
+    if lower_s.contains("e-") {
         return lower_s.split("e-").last().unwrap().parse::<u8>().unwrap();
     }
-    if lower_s.find('.').is_none() {
+    if !lower_s.contains('.') {
         return 0;
     }
     return lower_s.split('.').last().unwrap().len() as u8;
