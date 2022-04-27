@@ -83,3 +83,32 @@ pub extern "C" fn dummy_16(ptr: Buffer16) -> Buffer16 {
 pub extern "C" fn dummy_32(ptr: Buffer32) -> Buffer32 {
     ptr
 }
+
+#[cfg(test)]
+mod tests {
+    use super::{Buffer, Buffer16};
+
+    #[test]
+    fn test_len() {
+        let b = Buffer16::from_str("");
+        let b1 = Buffer16::from_str("testing testing");
+        assert_eq!(b.len(), 0);
+        assert_eq!(b1.len(), 15);
+    }
+
+    #[test]
+    fn test_identity() {
+        let b = Buffer16::from_str("");
+        let b1 = Buffer16::from_str("testing testing");
+        assert_eq!(b.to_str(), "");
+        assert_eq!(b1.to_str(), "testing testing");
+    }
+
+    #[test]
+    fn test_panic() {
+        let result = std::panic::catch_unwind(|| Buffer16::from_str("more testing will panic"));
+        let result1 = std::panic::catch_unwind(|| Buffer16::from_str("😜️💥💀"));
+        assert!(result.is_err());
+        assert!(result1.is_err());
+    }
+}
