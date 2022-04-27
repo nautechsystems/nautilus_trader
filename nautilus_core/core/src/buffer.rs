@@ -34,6 +34,20 @@ pub struct Buffer36 {
     pub len: usize,
 }
 
+#[repr(C)]
+#[derive(Clone, Hash, PartialEq, Eq, Debug)]
+pub struct Buffer64 {
+    pub data: [u8; 64],
+    pub len: usize,
+}
+
+#[repr(C)]
+#[derive(Clone, Hash, PartialEq, Eq, Debug)]
+pub struct Buffer128 {
+    pub data: [u8; 128],
+    pub len: usize,
+}
+
 pub trait Buffer {
     fn from_str(s: &str) -> Self
     where
@@ -73,13 +87,29 @@ macro_rules! impl_buffer_trait {
 impl_buffer_trait!(Buffer16, 16);
 impl_buffer_trait!(Buffer32, 32);
 impl_buffer_trait!(Buffer36, 36);
+impl_buffer_trait!(Buffer64, 64);
+impl_buffer_trait!(Buffer128, 128);
 
+// Temporary dummy function to make cbindgen generate the header
 #[no_mangle]
-pub extern "C" fn dummy_16(ptr: Buffer16) -> Buffer16 {
-    ptr
+pub extern "C" fn dummy_16(buffer: Buffer16) -> Buffer16 {
+    buffer
 }
 
+// Temporary dummy function to make cbindgen generate the header
 #[no_mangle]
-pub extern "C" fn dummy_32(ptr: Buffer32) -> Buffer32 {
-    ptr
+pub extern "C" fn dummy_32(buffer: Buffer32) -> Buffer32 {
+    buffer
+}
+
+// Temporary dummy function to make cbindgen generate the header
+#[no_mangle]
+pub extern "C" fn dummy_64(buffer: Buffer64) -> Buffer64 {
+    buffer
+}
+
+// Temporary dummy function to make cbindgen generate the header
+#[no_mangle]
+pub extern "C" fn dummy_128(buffer: Buffer128) -> Buffer128 {
+    buffer
 }

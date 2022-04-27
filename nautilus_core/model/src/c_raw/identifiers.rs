@@ -73,8 +73,3 @@ pub extern "C" fn instrument_id_from_bytes(
     let venue = Venue { value: venue_value };
     InstrumentId::new(symbol, venue)
 }
-
-#[no_mangle]
-pub extern "C" fn instrument_id_to_bytes(instrument_id: InstrumentId) -> (Buffer32, Buffer16) {
-    (instrument_id.symbol.value, instrument_id.venue.value)
-}
