@@ -49,21 +49,16 @@ pub struct Buffer128 {
 }
 
 pub trait Buffer {
-    fn from_str(s: &str) -> Self
-    where
-        Self: Sized;
     fn to_str(&self) -> String;
     fn len(&self) -> usize;
-    fn max_len(&self) -> usize;
+    fn capacity(&self) -> usize;
 }
 
 macro_rules! impl_buffer_trait {
     ($name:ident, $size:literal) => {
-        impl Buffer for $name {
-            fn from_str(s: &str) -> Self
-            where
-                Self: Sized,
-            {
+
+        impl From<&str> for $name {
+            fn from(s: &str) -> $name {
                 assert!(s.is_ascii()); // Enforce ASCII only code points
                 let mut buffer: [u8; $size] = [0; $size];
                 let len = s.len();
@@ -71,13 +66,16 @@ macro_rules! impl_buffer_trait {
                 buffer[..len].copy_from_slice(s.as_bytes());
                 $name { data: buffer, len }
             }
+        }
+
+        impl Buffer for $name {
             fn to_str(&self) -> String {
                 String::from_utf8(self.data[..self.len].to_vec()).unwrap()
             }
             fn len(&self) -> usize {
                 self.len
             }
-            fn max_len(&self) -> usize {
+            fn capacity(&self) -> usize {
                 $size
             }
         }
@@ -120,24 +118,24 @@ mod tests {
 
     #[test]
     fn test_len() {
-        let b = Buffer16::from_str("");
-        let b1 = Buffer16::from_str("testing testing");
+        let b = Buffer16::from("");
+        let b1 = Buffer16::from("testing testing");
         assert_eq!(b.len(), 0);
         assert_eq!(b1.len(), 15);
     }
 
     #[test]
     fn test_identity() {
-        let b = Buffer16::from_str("");
-        let b1 = Buffer16::from_str("testing testing");
+        let b = Buffer16::from("");
+        let b1 = Buffer16::from("testing testing");
         assert_eq!(b.to_str(), "");
         assert_eq!(b1.to_str(), "testing testing");
     }
 
     #[test]
     fn test_panic() {
-        let result = std::panic::catch_unwind(|| Buffer16::from_str("more testing will panic"));
-        let result1 = std::panic::catch_unwind(|| Buffer16::from_str("😜️💥💀"));
+        let result = std::panic::catch_unwind(|| Buffer16::from("more testing will panic"));
+        let result1 = std::panic::catch_unwind(|| Buffer16::from("😜️💥💀"));
         assert!(result.is_err());
         assert!(result1.is_err());
     }

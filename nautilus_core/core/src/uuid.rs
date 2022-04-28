@@ -27,14 +27,16 @@ impl UUID4 {
     pub fn new() -> UUID4 {
         let uuid = Uuid::new_v4();
         UUID4 {
-            value: Buffer36::from_str(uuid.to_string().as_str()),
+            value: Buffer36::from(uuid.to_string().as_str()),
         }
     }
+}
 
-    pub fn from_str(s: &str) -> UUID4 {
+impl From<&str> for UUID4 {
+    fn from(s: &str) -> Self {
         let uuid = Uuid::parse_str(s).unwrap();
         UUID4 {
-            value: Buffer36::from_str(uuid.to_string().as_str()),
+            value: Buffer36::from(uuid.to_string().as_str()),
         }
     }
 }
@@ -90,14 +92,14 @@ mod tests {
 
     #[test]
     fn test_new() {
-        let uuid = UUID4::from_str("2d89666b-1a1e-4a75-b193-4eb3b454c757");
+        let uuid = UUID4::from("2d89666b-1a1e-4a75-b193-4eb3b454c757");
 
         assert_eq!(uuid.to_string().len(), 36)
     }
 
     #[test]
     fn test_from_str() {
-        let uuid = UUID4::from_str("2d89666b-1a1e-4a75-b193-4eb3b454c757");
+        let uuid = UUID4::from("2d89666b-1a1e-4a75-b193-4eb3b454c757");
 
         assert_eq!(uuid.to_string().len(), 36);
         assert_eq!(uuid.to_string(), "2d89666b-1a1e-4a75-b193-4eb3b454c757");
