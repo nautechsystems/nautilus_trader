@@ -443,6 +443,7 @@ cdef class Strategy(Actor):
         Order order,
         PositionId position_id=None,
         ClientId client_id=None,
+        bint check_position_exists=True,
     ) except *:
         """
         Submit the given order with optional position ID and routing instructions.
@@ -459,6 +460,8 @@ cdef class Strategy(Actor):
         client_id : ClientId, optional
             The specific client ID for the command.
             If ``None`` then will be inferred from the venue in the instrument ID.
+        check_position_exists : bool, default True
+            If a position is checked to exist for any given position ID.
 
         """
         Condition.not_none(order, "order")
@@ -474,6 +477,7 @@ cdef class Strategy(Actor):
             self.trader_id,
             self.id,
             position_id,
+            check_position_exists,
             order,
             self.uuid_factory.generate(),
             self.clock.timestamp_ns(),
@@ -774,6 +778,7 @@ cdef class Strategy(Actor):
             self.trader_id,
             self.id,
             position.id,
+            True,  # Check position exists
             order,
             self.uuid_factory.generate(),
             self.clock.timestamp_ns(),

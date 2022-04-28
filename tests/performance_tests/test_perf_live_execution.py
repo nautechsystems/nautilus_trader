@@ -148,6 +148,7 @@ class TestLiveExecutionPerformance(PerformanceHarness):
             self.trader_id,
             self.strategy.id,
             None,
+            True,
             order,
             self.uuid_factory.generate(),
             self.clock.timestamp_ns(),
