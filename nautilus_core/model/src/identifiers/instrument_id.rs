@@ -24,13 +24,13 @@ pub struct InstrumentId {
     pub venue: Venue,
 }
 
-impl InstrumentId {
-    pub fn from_str(value: &str) -> InstrumentId {
+impl From<&str> for InstrumentId {
+    fn from(value: &str) -> Self {
         let pieces: Vec<&str> = value.split('.').collect();
         assert!(pieces.len() >= 2, "malformed `InstrumentId` string");
         InstrumentId {
-            symbol: Symbol::from_str(pieces[0]),
-            venue: Venue::from_str(pieces[1]),
+            symbol: Symbol::from(pieces[0]),
+            venue: Venue::from(pieces[1]),
         }
     }
 }
@@ -53,8 +53,8 @@ mod tests {
 
     #[test]
     fn test_instrument_id_from_str() {
-        let instrument_id1 = InstrumentId::from_str("ETH/USDT.BINANCE");
-        let instrument_id2 = InstrumentId::from_str("XBT/USD.BITMEX");
+        let instrument_id1 = InstrumentId::from("ETH/USDT.BINANCE");
+        let instrument_id2 = InstrumentId::from("XBT/USD.BITMEX");
 
         assert_eq!(instrument_id1, instrument_id1);
         assert_ne!(instrument_id1, instrument_id2);

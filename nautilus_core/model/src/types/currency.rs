@@ -54,10 +54,10 @@ mod tests {
     #[test]
     fn test_price_new() {
         let currency = Currency::new(
-            Buffer16::from_str("AUD"),
+            Buffer16::from("AUD"),
             8,
             036,
-            Buffer32::from_str("Australian dollar"),
+            Buffer32::from("Australian dollar"),
             CurrencyType::FIAT,
         );
 
