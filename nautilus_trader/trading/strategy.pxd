@@ -80,7 +80,7 @@ cdef class Strategy(Actor):
 
 # -- TRADING COMMANDS -----------------------------------------------------------------------------
 
-    cpdef void submit_order(self, Order order, PositionId position_id=*, ClientId client_id=*) except *
+    cpdef void submit_order(self, Order order, PositionId position_id=*, ClientId client_id=*, bint check_position_exists=*) except *
     cpdef void submit_order_list(self, OrderList order_list, ClientId client_id=*) except *
     cpdef void modify_order(
         self,
