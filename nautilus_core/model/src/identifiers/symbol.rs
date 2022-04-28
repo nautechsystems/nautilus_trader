@@ -22,10 +22,10 @@ pub struct Symbol {
     pub value: Buffer32,
 }
 
-impl Symbol {
-    pub fn from_str(s: &str) -> Symbol {
+impl From<&str> for Symbol {
+    fn from(s: &str) -> Symbol {
         Symbol {
-            value: Buffer32::from_str(s),
+            value: Buffer32::from(s),
         }
     }
 }
@@ -42,8 +42,8 @@ mod tests {
 
     #[test]
     fn test_symbol_from_str() {
-        let symbol1 = Symbol::from_str("XRD/USD");
-        let symbol2 = Symbol::from_str("BTC/USD");
+        let symbol1 = Symbol::from("XRD/USD");
+        let symbol2 = Symbol::from("BTC/USD");
 
         assert_eq!(symbol1, symbol1);
         assert_ne!(symbol1, symbol2);
@@ -52,7 +52,7 @@ mod tests {
 
     #[test]
     fn test_symbol_as_str() {
-        let symbol = Symbol::from_str("ETH-PERP");
+        let symbol = Symbol::from("ETH-PERP");
 
         assert_eq!(symbol.to_string(), "ETH-PERP");
     }

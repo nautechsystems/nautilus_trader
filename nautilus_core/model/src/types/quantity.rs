@@ -41,20 +41,22 @@ impl Quantity {
         Quantity { fixed, precision }
     }
 
-    pub fn new_from_str(input: &str) -> Self {
+    pub fn is_zero(&self) -> bool {
+        self.fixed == 0
+    }
+    pub fn as_f64(&self) -> f64 {
+        fixed_u64_to_f64(self.fixed)
+    }
+}
+
+impl From<&str> for Quantity {
+    fn from(input: &str) -> Self {
         let float_from_input = input.parse::<f64>();
         let float_res = match float_from_input {
             Ok(number) => number,
             Err(err) => panic!("Cannot parse `input` string '{}' as f64, {}", input, err),
         };
         Quantity::new(float_res, precision_from_str(input))
-    }
-
-    pub fn is_zero(&self) -> bool {
-        self.fixed == 0
-    }
-    pub fn as_f64(&self) -> f64 {
-        fixed_u64_to_f64(self.fixed)
     }
 }
 
@@ -216,7 +218,7 @@ mod tests {
 
     #[test]
     fn test_qty_new_from_str() {
-        let qty = Quantity::new_from_str("0.00812000");
+        let qty = Quantity::from("0.00812000");
 
         assert_eq!(qty, qty);
         assert_eq!(qty.fixed, 8120000);
@@ -244,7 +246,7 @@ mod tests {
     fn test_qty_display() {
         use std::fmt::Write as FmtWrite;
         let input_string = "44.12";
-        let qty = Quantity::new_from_str(&input_string);
+        let qty = Quantity::from(input_string);
         let mut res = String::new();
 
         write!(&mut res, "{}", qty).unwrap();
