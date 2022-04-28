@@ -191,6 +191,42 @@ impl Display for Money {
     }
 }
 
+////////////////////////////////////////////////////////////////////////////////
+// C API
+////////////////////////////////////////////////////////////////////////////////
+#[no_mangle]
+pub extern "C" fn money_new(amount: f64, currency: Currency) -> Money {
+    Money::new(amount, currency)
+}
+
+#[no_mangle]
+pub extern "C" fn money_from_fixed(fixed: i64, currency: Currency) -> Money {
+    Money::from_fixed(fixed, currency)
+}
+
+#[no_mangle]
+pub extern "C" fn money_free(money: Money) {
+    drop(money); // Memory freed here
+}
+
+#[no_mangle]
+pub extern "C" fn money_as_f64(money: &Money) -> f64 {
+    money.as_f64()
+}
+
+#[no_mangle]
+pub extern "C" fn money_add_assign(mut a: Money, b: Money) {
+    a.add_assign(b);
+}
+
+#[no_mangle]
+pub extern "C" fn money_sub_assign(mut a: Money, b: Money) {
+    a.sub_assign(b);
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// Tests
+////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -172,10 +172,56 @@ impl Display for Quantity {
     }
 }
 
+////////////////////////////////////////////////////////////////////////////////
+// C API
+////////////////////////////////////////////////////////////////////////////////
+#[no_mangle]
+pub extern "C" fn quantity_new(value: f64, precision: u8) -> Quantity {
+    Quantity::new(value, precision)
+}
+
+#[no_mangle]
+pub extern "C" fn quantity_from_fixed(fixed: u64, precision: u8) -> Quantity {
+    Quantity::from_fixed(fixed, precision)
+}
+
+#[no_mangle]
+pub extern "C" fn quantity_free(qty: Quantity) {
+    drop(qty); // Memory freed here
+}
+
+#[no_mangle]
+pub extern "C" fn quantity_as_f64(qty: &Quantity) -> f64 {
+    qty.as_f64()
+}
+
+#[no_mangle]
+pub extern "C" fn quantity_add_assign(mut a: Quantity, b: Quantity) {
+    a.add_assign(b);
+}
+
+#[no_mangle]
+pub extern "C" fn quantity_add_assign_u64(mut a: Quantity, b: u64) {
+    a.add_assign(b);
+}
+
+#[no_mangle]
+pub extern "C" fn quantity_sub_assign(mut a: Quantity, b: Quantity) {
+    a.sub_assign(b);
+}
+
+#[no_mangle]
+pub extern "C" fn quantity_sub_assign_u64(mut a: Quantity, b: u64) {
+    a.sub_assign(b);
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// Tests
+////////////////////////////////////////////////////////////////////////////////
 #[allow(unused_imports)] // warning: unused import: `std::fmt::Write as FmtWrite`
 #[cfg(test)]
 mod tests {
-    use crate::types::quantity::Quantity;
+    use super::Quantity;
 
     #[test]
     fn test_qty_new() {

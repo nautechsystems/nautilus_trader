@@ -44,6 +44,28 @@ impl Currency {
     }
 }
 
+////////////////////////////////////////////////////////////////////////////////
+// C API
+////////////////////////////////////////////////////////////////////////////////
+#[no_mangle]
+pub extern "C" fn currency_new(
+    code: Buffer16,
+    precision: u8,
+    iso4217: u16,
+    name: Buffer32,
+    currency_type: CurrencyType,
+) -> Currency {
+    Currency::new(code, precision, iso4217, name, currency_type)
+}
+
+#[no_mangle]
+pub extern "C" fn currency_free(currency: Currency) {
+    drop(currency); // Memory freed here
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// Tests
+////////////////////////////////////////////////////////////////////////////////
 #[allow(unused_imports)] // warning: unused import: `std::fmt::Write as FmtWrite`
 #[cfg(test)]
 mod tests {
