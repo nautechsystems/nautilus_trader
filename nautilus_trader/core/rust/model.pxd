@@ -51,14 +51,6 @@ cdef extern from "../includes/model.h":
         OrderSide last_side;
         int64_t ts_last;
 
-    cdef struct Price_t:
-        int64_t fixed;
-        uint8_t precision;
-
-    cdef struct Quantity_t:
-        uint64_t fixed;
-        uint8_t precision;
-
     cdef struct Currency_t:
         Buffer16 code;
         uint8_t precision;
@@ -69,6 +61,18 @@ cdef extern from "../includes/model.h":
     cdef struct Money_t:
         int64_t fixed;
         Currency_t currency;
+
+    cdef struct Price_t:
+        int64_t fixed;
+        uint8_t precision;
+
+    cdef struct Quantity_t:
+        uint64_t fixed;
+        uint8_t precision;
+
+    void instrument_id_free(InstrumentId instrument_id);
+
+    InstrumentId instrument_id_from_bytes(Buffer32 symbol_value, Buffer16 venue_value);
 
     void symbol_free(Symbol symbol);
 
@@ -82,11 +86,27 @@ cdef extern from "../includes/model.h":
 
     Buffer16 venue_to_bytes(Venue venue);
 
-    void instrument_id_free(InstrumentId instrument_id);
-
-    InstrumentId instrument_id_from_bytes(Buffer32 symbol_value, Buffer16 venue_value);
-
     OrderBook order_book_new(InstrumentId instrument_id, BookLevel book_level);
+
+    Currency_t currency_new(Buffer16 code,
+                            uint8_t precision,
+                            uint16_t iso4217,
+                            Buffer32 name,
+                            CurrencyType currency_type);
+
+    void currency_free(Currency_t currency);
+
+    Money_t money_new(double amount, Currency_t currency);
+
+    Money_t money_from_fixed(int64_t fixed, Currency_t currency);
+
+    void money_free(Money_t money);
+
+    double money_as_f64(const Money_t *money);
+
+    void money_add_assign(Money_t a, Money_t b);
+
+    void money_sub_assign(Money_t a, Money_t b);
 
     Price_t price_new(double value, uint8_t precision);
 
@@ -115,23 +135,3 @@ cdef extern from "../includes/model.h":
     void quantity_sub_assign(Quantity_t a, Quantity_t b);
 
     void quantity_sub_assign_u64(Quantity_t a, uint64_t b);
-
-    Currency_t currency_new(Buffer16 code,
-                            uint8_t precision,
-                            uint16_t iso4217,
-                            Buffer32 name,
-                            CurrencyType currency_type);
-
-    void currency_free(Currency_t currency);
-
-    Money_t money_new(double amount, Currency_t currency);
-
-    Money_t money_from_fixed(int64_t fixed, Currency_t currency);
-
-    void money_free(Money_t money);
-
-    double money_as_f64(const Money_t *money);
-
-    void money_add_assign(Money_t a, Money_t b);
-
-    void money_sub_assign(Money_t a, Money_t b);

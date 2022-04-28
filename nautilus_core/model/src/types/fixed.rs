@@ -16,7 +16,6 @@
 pub const FIXED_PRECISION: u8 = 9;
 pub const FIXED_SCALAR: f64 = 1000000000.0; // 10.0**FIXED_PRECISION
 
-#[no_mangle]
 pub fn f64_to_fixed_i64(value: f64, precision: u8) -> i64 {
     assert!(precision <= 9);
     let pow1 = 10_i64.pow(precision as u32);
@@ -25,7 +24,6 @@ pub fn f64_to_fixed_i64(value: f64, precision: u8) -> i64 {
     rounded * pow2
 }
 
-#[no_mangle]
 pub fn f64_to_fixed_u64(value: f64, precision: u8) -> u64 {
     assert!(precision <= 9);
     let pow1 = 10_u64.pow(precision as u32);
@@ -42,6 +40,9 @@ pub fn fixed_u64_to_f64(value: u64) -> f64 {
     (value as f64) * 0.000000001
 }
 
+////////////////////////////////////////////////////////////////////////////////
+// Tests
+////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
     use crate::types::fixed::{

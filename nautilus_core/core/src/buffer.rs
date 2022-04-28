@@ -56,7 +56,6 @@ pub trait Buffer {
 
 macro_rules! impl_buffer_trait {
     ($name:ident, $size:literal) => {
-
         impl From<&str> for $name {
             fn from(s: &str) -> $name {
                 assert!(s.is_ascii()); // Enforce ASCII only code points
@@ -88,30 +87,33 @@ impl_buffer_trait!(Buffer36, 36);
 impl_buffer_trait!(Buffer64, 64);
 impl_buffer_trait!(Buffer128, 128);
 
-// Temporary dummy function to make cbindgen generate the header
+// Temporary dummy function to make cbindgen generate a header
 #[no_mangle]
 pub extern "C" fn dummy_16(buffer: Buffer16) -> Buffer16 {
     buffer
 }
 
-// Temporary dummy function to make cbindgen generate the header
+// Temporary dummy function to make cbindgen generate a header
 #[no_mangle]
 pub extern "C" fn dummy_32(buffer: Buffer32) -> Buffer32 {
     buffer
 }
 
-// Temporary dummy function to make cbindgen generate the header
+// Temporary dummy function to make cbindgen generate a header
 #[no_mangle]
 pub extern "C" fn dummy_64(buffer: Buffer64) -> Buffer64 {
     buffer
 }
 
-// Temporary dummy function to make cbindgen generate the header
+// Temporary dummy function to make cbindgen generate a header
 #[no_mangle]
 pub extern "C" fn dummy_128(buffer: Buffer128) -> Buffer128 {
     buffer
 }
 
+////////////////////////////////////////////////////////////////////////////////
+// Tests
+////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
     use super::{Buffer, Buffer16};

@@ -15,6 +15,7 @@
 
 use crate::identifiers::symbol::Symbol;
 use crate::identifiers::venue::Venue;
+use nautilus_core::buffer::{Buffer16, Buffer32};
 use std::fmt::{Debug, Display, Formatter, Result};
 
 #[repr(C)]
@@ -47,6 +48,29 @@ impl Display for InstrumentId {
     }
 }
 
+////////////////////////////////////////////////////////////////////////////////
+// C API
+////////////////////////////////////////////////////////////////////////////////
+#[no_mangle]
+pub extern "C" fn instrument_id_free(instrument_id: InstrumentId) {
+    drop(instrument_id); // Memory freed here
+}
+
+#[no_mangle]
+pub extern "C" fn instrument_id_from_bytes(
+    symbol_value: Buffer32,
+    venue_value: Buffer16,
+) -> InstrumentId {
+    let symbol = Symbol {
+        value: symbol_value,
+    };
+    let venue = Venue { value: venue_value };
+    InstrumentId::new(symbol, venue)
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// Tests
+////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
     use crate::identifiers::instrument_id::InstrumentId;

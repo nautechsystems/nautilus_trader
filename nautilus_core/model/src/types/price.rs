@@ -190,10 +190,46 @@ impl Display for Price {
     }
 }
 
+////////////////////////////////////////////////////////////////////////////////
+// C API
+////////////////////////////////////////////////////////////////////////////////
+#[no_mangle]
+pub extern "C" fn price_new(value: f64, precision: u8) -> Price {
+    Price::new(value, precision)
+}
+
+#[no_mangle]
+pub extern "C" fn price_from_fixed(fixed: i64, precision: u8) -> Price {
+    Price::from_fixed(fixed, precision)
+}
+
+#[no_mangle]
+pub extern "C" fn price_free(price: Price) {
+    drop(price); // Memory freed here
+}
+
+#[no_mangle]
+pub extern "C" fn price_as_f64(price: &Price) -> f64 {
+    price.as_f64()
+}
+
+#[no_mangle]
+pub extern "C" fn price_add_assign(mut a: Price, b: Price) {
+    a.add_assign(b);
+}
+
+#[no_mangle]
+pub extern "C" fn price_sub_assign(mut a: Price, b: Price) {
+    a.sub_assign(b);
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// Tests
+////////////////////////////////////////////////////////////////////////////////
 #[allow(unused_imports)] // warning: unused import: `std::fmt::Write as FmtWrite`
 #[cfg(test)]
 mod tests {
-    use crate::types::price::Price;
+    use super::Price;
 
     #[test]
     fn test_price_new() {
