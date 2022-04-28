@@ -18,7 +18,6 @@ from nautilus_trader.common.actor cimport Actor
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.factories cimport OrderFactory
 from nautilus_trader.common.logging cimport Logger
-from nautilus_trader.common.logging cimport LoggerAdapter
 from nautilus_trader.common.uuid cimport UUIDFactory
 from nautilus_trader.execution.messages cimport TradingCommand
 from nautilus_trader.indicators.base.indicator cimport Indicator
@@ -93,8 +92,8 @@ cdef class Strategy(Actor):
     ) except *
     cpdef void cancel_order(self, Order order, ClientId client_id=*) except *
     cpdef void cancel_all_orders(self, InstrumentId instrument_id, ClientId client_id=*) except *
-    cpdef void close_position(self, Position position, ClientId client_id=*) except *
-    cpdef void close_all_positions(self, InstrumentId instrument_id, ClientId client_id=*) except *
+    cpdef void close_position(self, Position position, ClientId client_id=*, str tags=*) except *
+    cpdef void close_all_positions(self, InstrumentId instrument_id, ClientId client_id=*, str tags=*) except *
     cpdef void query_order(self, Order order, ClientId client_id=*) except *
 
 # -- EGRESS ---------------------------------------------------------------------------------------
