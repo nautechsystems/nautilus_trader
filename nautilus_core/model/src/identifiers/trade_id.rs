@@ -22,10 +22,10 @@ pub struct TradeId {
     value: Buffer32,
 }
 
-impl TradeId {
-    pub fn from_str(s: &str) -> TradeId {
+impl From<&str> for TradeId {
+    fn from(s: &str) -> TradeId {
         TradeId {
-            value: Buffer32::from_str(s),
+            value: Buffer32::from(s),
         }
     }
 }
@@ -42,8 +42,8 @@ mod tests {
 
     #[test]
     fn test_instrument_id_from_str() {
-        let trade_id1 = TradeId::from_str("123456789");
-        let trade_id2 = TradeId::from_str("234567890");
+        let trade_id1 = TradeId::from("123456789");
+        let trade_id2 = TradeId::from("234567890");
 
         assert_eq!(trade_id1, trade_id1);
         assert_ne!(trade_id1, trade_id2);
@@ -51,7 +51,7 @@ mod tests {
 
     #[test]
     fn test_trade_id_as_str() {
-        let trade_id = TradeId::from_str("1234567890");
+        let trade_id = TradeId::from("1234567890");
 
         assert_eq!(trade_id.to_string(), "1234567890");
     }

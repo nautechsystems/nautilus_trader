@@ -200,10 +200,10 @@ mod tests {
     #[test]
     fn test_money_new_usd() {
         let usd = Currency::new(
-            Buffer16::from_str("USD"),
+            Buffer16::from("USD"),
             2,
             840,
-            Buffer32::from_str("United States dollar"),
+            Buffer32::from("United States dollar"),
             CurrencyType::FIAT,
         );
         let money = Money::new(1000.0, usd);
@@ -216,10 +216,10 @@ mod tests {
     #[test]
     fn test_money_new_btc() {
         let btc = Currency::new(
-            Buffer16::from_str("BTC"),
+            Buffer16::from("BTC"),
             8,
             0,
-            Buffer32::from_str("Bitcoin"),
+            Buffer32::from("Bitcoin"),
             CurrencyType::FIAT,
         );
 

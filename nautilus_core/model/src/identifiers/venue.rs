@@ -22,10 +22,10 @@ pub struct Venue {
     pub value: Buffer16,
 }
 
-impl Venue {
-    pub fn from_str(s: &str) -> Venue {
+impl From<&str> for Venue {
+    fn from(s: &str) -> Venue {
         Venue {
-            value: Buffer16::from_str(s),
+            value: Buffer16::from(s),
         }
     }
 }
@@ -42,8 +42,8 @@ mod tests {
 
     #[test]
     fn test_venue_from_str() {
-        let venue1 = Venue::from_str("FTX");
-        let venue2 = Venue::from_str("IDEALPRO");
+        let venue1 = Venue::from("FTX");
+        let venue2 = Venue::from("IDEALPRO");
 
         assert_eq!(venue1, venue1);
         assert_ne!(venue1, venue2);
@@ -52,7 +52,7 @@ mod tests {
 
     #[test]
     fn test_venue_as_str() {
-        let venue = Venue::from_str("FTX");
+        let venue = Venue::from("FTX");
 
         assert_eq!(venue.to_string(), "FTX")
     }
