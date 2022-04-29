@@ -49,8 +49,10 @@ cdef class Position:
     """The position ID.\n\n:returns: `PositionId`"""
     cdef readonly AccountId account_id
     """The account ID associated with the position.\n\n:returns: `AccountId`"""
-    cdef readonly ClientOrderId from_order
-    """The client order ID for the order which initially opened the position.\n\n:returns: `ClientOrderId`"""
+    cdef readonly ClientOrderId opening_order_id
+    """The client order ID for the order which opened the position.\n\n:returns: `ClientOrderId`"""
+    cdef readonly ClientOrderId closing_order_id
+    """The client order ID for the order which closed the position.\n\n:returns: `ClientOrderId` or ``None``"""
     cdef readonly OrderSide entry
     """The position entry order side.\n\n:returns: `OrderSide`"""
     cdef readonly PositionSide side

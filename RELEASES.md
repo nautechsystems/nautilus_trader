@@ -3,14 +3,16 @@
 Released on TBD.
 
 ### Breaking Changes
+- Renamed `Position.from_order` to `Position.opening_order_id`
 - Renamed `StreamingPersistence` to `StreamingFeatherWriter`
 - Renamed `PersistenceConfig` to `StreamingConfig`
 - Renamed `PersistenceConfig.flush_interval` to `flush_interval_ms`
 - Replaced `UUID4.value` property with `UUID4.to_str()` method
 
 ### Enhancements
-- Add `tags` param to `Strategy.submit_order`
-- Add optional `check_positon_exists` flag to `Strategy.submit_order`
+- Added `Position.closing_order_id` property
+- Added `tags` param to `Strategy.submit_order`
+- Added optional `check_positon_exists` flag to `Strategy.submit_order`
 - Eliminated all use of `unsafe` Rust and nul byte terminated C strings.
 - The `bypass_logging` config option will also now bypass the `BacktestEngine` logger
 

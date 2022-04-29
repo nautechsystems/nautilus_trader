@@ -130,10 +130,11 @@ class TestPosition:
         # Assert
         assert result == {
             "position_id": "P-123456",
-            "account_id": "SIM-000",
-            "from_order": "O-19700101-000000-000-001-1",
-            "strategy_id": "S-001",
             "instrument_id": "AUD/USD.SIM",
+            "account_id": "SIM-000",
+            "opening_order_id": "O-19700101-000000-000-001-1",
+            "closing_order_id": None,
+            "strategy_id": "S-001",
             "entry": "BUY",
             "side": "LONG",
             "net_qty": 100000.0,
@@ -178,7 +179,8 @@ class TestPosition:
         assert position.venue == AUDUSD_SIM.id.venue
         assert not position.is_opposite_side(fill.order_side)
         assert not position != position  # Equality operator test
-        assert position.from_order == ClientOrderId("O-19700101-000000-000-001-1")
+        assert position.opening_order_id == ClientOrderId("O-19700101-000000-000-001-1")
+        assert position.closing_order_id is None
         assert position.quantity == Quantity.from_int(100000)
         assert position.peak_qty == Quantity.from_int(100000)
         assert position.entry == OrderSide.BUY

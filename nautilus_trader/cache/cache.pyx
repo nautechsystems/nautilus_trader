@@ -1250,7 +1250,7 @@ cdef class Cache(CacheFacade):
         self.add_position_id(
             position.id,
             position.instrument_id.venue,
-            position.from_order,
+            position.opening_order_id,
             position.strategy_id,
         )
 
