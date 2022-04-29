@@ -49,8 +49,10 @@ cdef class PositionEvent(Event):
         The position IDt.
     account_id : AccountId
         The strategy ID.
-    from_order : ClientOrderId
-        The client order ID for the order which initially opened the position.
+    opening_order_id : ClientOrderId
+        The client order ID for the order which opened the position.
+    closing_order_id : ClientOrderId
+        The client order ID for the order which closed the position.
     entry : OrderSide {``BUY``, ``SELL``}
         The position entry order side.
     side : PositionSide {``FLAT``, ``LONG``, ``SHORT``}
@@ -102,7 +104,8 @@ cdef class PositionEvent(Event):
         InstrumentId instrument_id not None,
         PositionId position_id not None,
         AccountId account_id not None,
-        ClientOrderId from_order not None,
+        ClientOrderId opening_order_id not None,
+        ClientOrderId closing_order_id,  # Can be None
         OrderSide entry,
         PositionSide side,
         double net_qty,
@@ -130,7 +133,8 @@ cdef class PositionEvent(Event):
         self.instrument_id = instrument_id
         self.position_id = position_id
         self.account_id = account_id
-        self.from_order = from_order
+        self.opening_order_id = opening_order_id
+        self.closing_order_id = closing_order_id
         self.entry = entry
         self.side = side
         self.net_qty = net_qty
@@ -154,7 +158,8 @@ cdef class PositionEvent(Event):
             f"instrument_id={self.instrument_id.value}, "
             f"position_id={self.position_id.value}, "
             f"account_id={self.account_id.value}, "
-            f"from_order={self.from_order.value}, "
+            f"opening_order_id={self.opening_order_id.value}, "
+            f"closing_order_id={self.closing_order_id}, "
             f"strategy_id={self.strategy_id.value}, "
             f"entry={OrderSideParser.to_str(self.entry)}, "
             f"side={PositionSideParser.to_str(self.side)}, "
@@ -181,7 +186,8 @@ cdef class PositionEvent(Event):
             f"instrument_id={self.instrument_id.value}, "
             f"position_id={self.position_id.value}, "
             f"account_id={self.account_id.value}, "
-            f"from_order={self.from_order.value}, "
+            f"opening_order_id={self.opening_order_id.value}, "
+            f"closing_order_id={self.closing_order_id}, "
             f"strategy_id={self.strategy_id.value}, "
             f"entry={OrderSideParser.to_str(self.entry)}, "
             f"side={PositionSideParser.to_str(self.side)}, "
@@ -218,8 +224,8 @@ cdef class PositionOpened(PositionEvent):
         The position IDt.
     account_id : AccountId
         The strategy ID.
-    from_order : ClientOrderId
-        The client order ID for the order which initially opened the position.
+    opening_order_id : ClientOrderId
+        The client order ID for the order which opened the position.
     strategy_id : StrategyId
         The strategy ID associated with the event.
     entry : OrderSide {``BUY``, ``SELL``}
@@ -257,7 +263,7 @@ cdef class PositionOpened(PositionEvent):
         InstrumentId instrument_id not None,
         PositionId position_id not None,
         AccountId account_id not None,
-        ClientOrderId from_order not None,
+        ClientOrderId opening_order_id not None,
         OrderSide entry,
         PositionSide side,
         double net_qty,
@@ -279,7 +285,8 @@ cdef class PositionOpened(PositionEvent):
             instrument_id,
             position_id,
             account_id,
-            from_order,
+            opening_order_id,
+            None,  # Position is still open
             entry,
             side,
             net_qty,
@@ -318,7 +325,7 @@ cdef class PositionOpened(PositionEvent):
             instrument_id=position.instrument_id,
             position_id=position.id,
             account_id=position.account_id,
-            from_order=position.from_order,
+            opening_order_id=position.opening_order_id,
             entry=position.entry,
             side=position.side,
             net_qty=position.net_qty,
@@ -343,7 +350,7 @@ cdef class PositionOpened(PositionEvent):
             instrument_id=InstrumentId.from_str_c(values["instrument_id"]),
             position_id=PositionId(values["position_id"]),
             account_id=AccountId.from_str_c(values["account_id"]),
-            from_order=ClientOrderId(values["from_order"]),
+            opening_order_id=ClientOrderId(values["opening_order_id"]),
             entry=OrderSideParser.from_str(values["entry"]),
             side=PositionSideParser.from_str(values["side"]),
             net_qty=values["net_qty"],
@@ -369,7 +376,7 @@ cdef class PositionOpened(PositionEvent):
             "instrument_id": obj.instrument_id.value,
             "position_id": obj.position_id.value,
             "account_id": obj.account_id.value,
-            "from_order": obj.from_order.value,
+            "opening_order_id": obj.opening_order_id.value,
             "entry": OrderSideParser.to_str(obj.entry),
             "side": PositionSideParser.to_str(obj.side),
             "net_qty": obj.net_qty,
@@ -460,8 +467,8 @@ cdef class PositionChanged(PositionEvent):
         The position IDt.
     account_id : AccountId
         The strategy ID.
-    from_order : ClientOrderId
-        The client order ID for the order which initially opened the position.
+    opening_order_id : ClientOrderId
+        The client order ID for the order which opened the position.
     strategy_id : StrategyId
         The strategy ID associated with the event.
     entry : OrderSide {``BUY``, ``SELL``}
@@ -507,7 +514,7 @@ cdef class PositionChanged(PositionEvent):
         InstrumentId instrument_id not None,
         PositionId position_id not None,
         AccountId account_id not None,
-        ClientOrderId from_order not None,
+        ClientOrderId opening_order_id not None,
         OrderSide entry,
         PositionSide side,
         double net_qty,
@@ -533,7 +540,8 @@ cdef class PositionChanged(PositionEvent):
             instrument_id,
             position_id,
             account_id,
-            from_order,
+            opening_order_id,
+            None,  # Position is still open
             entry,
             side,
             net_qty,
@@ -572,7 +580,7 @@ cdef class PositionChanged(PositionEvent):
             instrument_id=position.instrument_id,
             position_id=position.id,
             account_id=position.account_id,
-            from_order=position.from_order,
+            opening_order_id=position.opening_order_id,
             entry=position.entry,
             side=position.side,
             net_qty=position.net_qty,
@@ -601,7 +609,7 @@ cdef class PositionChanged(PositionEvent):
             instrument_id=InstrumentId.from_str_c(values["instrument_id"]),
             position_id=PositionId(values["position_id"]),
             account_id=AccountId.from_str_c(values["account_id"]),
-            from_order=ClientOrderId(values["from_order"]),
+            opening_order_id=ClientOrderId(values["opening_order_id"]),
             entry=OrderSideParser.from_str(values["entry"]),
             side=PositionSideParser.from_str(values["side"]),
             net_qty=values["net_qty"],
@@ -631,7 +639,7 @@ cdef class PositionChanged(PositionEvent):
             "instrument_id": obj.instrument_id.value,
             "position_id": obj.position_id.value,
             "account_id": obj.account_id.value,
-            "from_order": obj.from_order.value,
+            "opening_order_id": obj.opening_order_id.value,
             "entry": OrderSideParser.to_str(obj.entry),
             "side": PositionSideParser.to_str(obj.side),
             "net_qty": obj.net_qty,
@@ -725,8 +733,10 @@ cdef class PositionClosed(PositionEvent):
         The position IDt.
     account_id : AccountId
         The strategy ID.
-    from_order : ClientOrderId
-        The client order ID for the order which initially opened the position.
+    opening_order_id : ClientOrderId
+        The client order ID for the order which opened the position.
+    closing_order_id : ClientOrderId
+        The client order ID for the order which closed the position.
     strategy_id : StrategyId
         The strategy ID associated with the event.
     entry : OrderSide {``BUY``, ``SELL``}
@@ -772,7 +782,8 @@ cdef class PositionClosed(PositionEvent):
         InstrumentId instrument_id not None,
         PositionId position_id not None,
         AccountId account_id not None,
-        ClientOrderId from_order not None,
+        ClientOrderId opening_order_id not None,
+        ClientOrderId closing_order_id not None,
         OrderSide entry,
         PositionSide side,
         double net_qty,
@@ -798,7 +809,8 @@ cdef class PositionClosed(PositionEvent):
             instrument_id,
             position_id,
             account_id,
-            from_order,
+            opening_order_id,
+            closing_order_id,
             entry,
             side,
             net_qty,
@@ -837,7 +849,8 @@ cdef class PositionClosed(PositionEvent):
             instrument_id=position.instrument_id,
             position_id=position.id,
             account_id=position.account_id,
-            from_order=position.from_order,
+            opening_order_id=position.opening_order_id,
+            closing_order_id=position.closing_order_id,
             entry=position.entry,
             side=position.side,
             net_qty=position.net_qty,
@@ -866,7 +879,8 @@ cdef class PositionClosed(PositionEvent):
             instrument_id=InstrumentId.from_str_c(values["instrument_id"]),
             position_id=PositionId(values["position_id"]),
             account_id=AccountId.from_str_c(values["account_id"]),
-            from_order=ClientOrderId(values["from_order"]),
+            opening_order_id=ClientOrderId(values["opening_order_id"]),
+            closing_order_id=ClientOrderId(values["closing_order_id"]),
             entry=OrderSideParser.from_str(values["entry"]),
             side=PositionSideParser.from_str(values["side"]),
             net_qty=values["net_qty"],
@@ -896,7 +910,8 @@ cdef class PositionClosed(PositionEvent):
             "instrument_id": obj.instrument_id.value,
             "position_id": obj.position_id.value,
             "account_id": obj.account_id.value,
-            "from_order": obj.from_order.value,
+            "opening_order_id": obj.opening_order_id.value,
+            "closing_order_id": obj.closing_order_id.value,
             "entry": OrderSideParser.to_str(obj.entry),
             "side": PositionSideParser.to_str(obj.side),
             "net_qty": obj.net_qty,

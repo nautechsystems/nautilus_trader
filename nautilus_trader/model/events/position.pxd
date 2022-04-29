@@ -44,8 +44,10 @@ cdef class PositionEvent(Event):
     """The position ID associated with the event.\n\n:returns: `PositionId`"""
     cdef readonly AccountId account_id
     """The account ID associated with the position.\n\n:returns: `AccountId`"""
-    cdef readonly ClientOrderId from_order
-    """The client order ID for the order which first opened the position.\n\n:returns: `ClientOrderId`"""
+    cdef readonly ClientOrderId opening_order_id
+    """The client order ID for the order which opened the position.\n\n:returns: `ClientOrderId`"""
+    cdef readonly ClientOrderId closing_order_id
+    """The client order ID for the order which closed the position.\n\n:returns: `ClientOrderId` or ``None``"""
     cdef readonly OrderSide entry
     """The entry direction from open.\n\n:returns: `OrderSide`"""
     cdef readonly PositionSide side

@@ -70,7 +70,8 @@ cdef class Position:
         self.instrument_id = fill.instrument_id
         self.id = fill.position_id
         self.account_id = fill.account_id
-        self.from_order = fill.client_order_id
+        self.opening_order_id = fill.client_order_id
+        self.closing_order_id = None
 
         # Properties
         self.entry = fill.order_side
@@ -131,7 +132,8 @@ cdef class Position:
         return {
             "position_id": self.id.value,
             "account_id": self.account_id.value,
-            "from_order": self.from_order.value,
+            "opening_order_id": self.opening_order_id.value,
+            "closing_order_id": self.closing_order_id.value if self.closing_order_id is not None else None,
             "strategy_id": self.strategy_id.value,
             "instrument_id": self.instrument_id.value,
             "entry": OrderSideParser.to_str(self.entry),
@@ -416,6 +418,9 @@ cdef class Position:
         self._events.append(fill)
         self._trade_ids.append(fill.trade_id)
 
+        if self.side == PositionSide.FLAT:
+            self.opening_order_id = fill.client_order_id
+
         # Calculate cumulative commission
         cdef Currency currency = fill.commission.currency
         cdef Money commissions = self._commissions.get(currency)
@@ -448,6 +453,7 @@ cdef class Position:
             self.duration_ns = 0
         else:
             self.side = PositionSide.FLAT
+            self.closing_order_id = fill.client_order_id
             self.ts_closed = fill.ts_event
             self.duration_ns = self.ts_closed - self.ts_opened
 
