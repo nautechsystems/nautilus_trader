@@ -45,3 +45,27 @@ pub struct TradeTick {
     pub ts_event: Timestamp,
     pub ts_init: Timestamp,
 }
+
+////////////////////////////////////////////////////////////////////////////////
+// C API
+////////////////////////////////////////////////////////////////////////////////
+#[no_mangle]
+pub extern "C" fn quote_tick_new(
+    instrument_id: InstrumentId,
+    bid: Price,
+    ask: Price,
+    bid_size: Quantity,
+    ask_size: Quantity,
+    ts_event: i64,
+    ts_init: i64,
+) -> QuoteTick {
+    QuoteTick {
+        instrument_id,
+        bid,
+        ask,
+        bid_size,
+        ask_size,
+        ts_event: Timestamp { value: ts_event },
+        ts_init: Timestamp { value: ts_init },
+    }
+}

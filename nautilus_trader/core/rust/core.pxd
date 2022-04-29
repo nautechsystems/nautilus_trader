@@ -20,6 +20,10 @@ cdef extern from "../includes/core.h":
         uint8_t data[128];
         uintptr_t len;
 
+    # Represents a timestamp in UNIX nanoseconds.
+    cdef struct Timestamp:
+        int64_t value;
+
     cdef struct Buffer36:
         uint8_t data[36];
         uintptr_t len;
@@ -46,6 +50,8 @@ cdef extern from "../includes/core.h":
 
     # Returns the current nanoseconds since the UNIX epoch.
     int64_t unix_timestamp_ns();
+
+    Timestamp dummy_timestamp(Timestamp ts);
 
     UUID4_t uuid4_new();
 
