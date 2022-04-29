@@ -19,6 +19,7 @@ header = '"../includes/model.h"'
 "nautilus_trader.core.rust.core" = [
     "Buffer16",
     "Buffer32",
+    "Timestamp",
 ]
 
 [export.rename]

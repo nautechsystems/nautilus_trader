@@ -21,7 +21,7 @@ use std::time::UNIX_EPOCH;
 #[repr(C)]
 #[derive(Default, Clone, Hash, PartialEq, Eq, Debug)]
 pub struct Timestamp {
-    value: i64,
+    pub value: i64,
 }
 
 impl Display for Timestamp {
@@ -66,6 +66,15 @@ pub extern "C" fn unix_timestamp_ns() -> i64 {
         .as_nanos() as i64
 }
 
+// Temporary dummy function to make cbindgen generate a header
+#[no_mangle]
+pub extern "C" fn dummy_timestamp(ts: Timestamp) -> Timestamp {
+    ts
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// Tests
+////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
     use crate::time;
