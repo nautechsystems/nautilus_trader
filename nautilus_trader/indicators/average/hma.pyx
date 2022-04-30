@@ -22,6 +22,7 @@ from nautilus_trader.model.c_enums.price_type cimport PriceType
 from nautilus_trader.model.data.bar cimport Bar
 from nautilus_trader.model.data.tick cimport QuoteTick
 from nautilus_trader.model.data.tick cimport TradeTick
+from nautilus_trader.model.objects cimport Price
 
 
 cdef class HullMovingAverage(MovingAverage):
@@ -77,7 +78,8 @@ cdef class HullMovingAverage(MovingAverage):
         """
         Condition.not_none(tick, "tick")
 
-        self.update_raw(tick.extract_price(self.price_type).as_double())
+        cdef Price price = tick.extract_price(self.price_type)
+        self.update_raw(Price.raw_to_f64_c(price._mem.raw))
 
     cpdef void handle_trade_tick(self, TradeTick tick) except *:
         """
@@ -91,7 +93,7 @@ cdef class HullMovingAverage(MovingAverage):
         """
         Condition.not_none(tick, "tick")
 
-        self.update_raw(tick.price.as_double())
+        self.update_raw(Price.raw_to_f64_c(tick._mem.price.raw))
 
     cpdef void handle_bar(self, Bar bar) except *:
         """

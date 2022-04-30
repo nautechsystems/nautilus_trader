@@ -22,6 +22,7 @@ from nautilus_trader.model.c_enums.price_type cimport PriceType
 from nautilus_trader.model.data.bar cimport Bar
 from nautilus_trader.model.data.tick cimport QuoteTick
 from nautilus_trader.model.data.tick cimport TradeTick
+from nautilus_trader.model.objects cimport Price
 
 
 cdef class AdaptiveMovingAverage(MovingAverage):
@@ -66,8 +67,8 @@ cdef class AdaptiveMovingAverage(MovingAverage):
         self.period_er = period_er
         self.period_alpha_fast = period_alpha_fast
         self.period_alpha_slow = period_alpha_slow
-        self.alpha_fast = 2. / (float(period_alpha_fast) + 1.)
-        self.alpha_slow = 2. / (float(period_alpha_slow) + 1.)
+        self.alpha_fast = 2.0 / (float(period_alpha_fast) + 1.0)
+        self.alpha_slow = 2.0 / (float(period_alpha_slow) + 1.0)
         self.alpha_diff = self.alpha_fast - self.alpha_slow
         self._efficiency_ratio = EfficiencyRatio(self.period_er)
         self._prior_value = 0
@@ -85,7 +86,8 @@ cdef class AdaptiveMovingAverage(MovingAverage):
         """
         Condition.not_none(tick, "tick")
 
-        self.update_raw(tick.extract_price(self.price_type).as_double())
+        cdef Price price = tick.extract_price(self.price_type)
+        self.update_raw(Price.raw_to_f64_c(price._mem.raw))
 
     cpdef void handle_trade_tick(self, TradeTick tick) except *:
         """
@@ -99,7 +101,7 @@ cdef class AdaptiveMovingAverage(MovingAverage):
         """
         Condition.not_none(tick, "tick")
 
-        self.update_raw(tick.price.as_double())
+        self.update_raw(Price.raw_to_f64_c(tick._mem.price.raw))
 
     cpdef void handle_bar(self, Bar bar) except *:
         """
