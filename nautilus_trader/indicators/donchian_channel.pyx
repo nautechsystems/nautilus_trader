@@ -20,6 +20,7 @@ from nautilus_trader.indicators.base.indicator cimport Indicator
 from nautilus_trader.model.data.bar cimport Bar
 from nautilus_trader.model.data.tick cimport QuoteTick
 from nautilus_trader.model.data.tick cimport TradeTick
+from nautilus_trader.model.objects cimport Price
 
 
 cdef class DonchianChannel(Indicator):
@@ -66,7 +67,9 @@ cdef class DonchianChannel(Indicator):
         """
         Condition.not_none(tick, "tick")
 
-        self.update_raw(tick.ask.as_double(), tick.bid.as_double())
+        cdef double ask = Price.raw_to_f64_c(tick._mem.ask.raw)
+        cdef double bid = Price.raw_to_f64_c(tick._mem.bid.raw)
+        self.update_raw(ask, bid)
 
     cpdef void handle_trade_tick(self, TradeTick tick) except *:
         """
@@ -80,7 +83,7 @@ cdef class DonchianChannel(Indicator):
         """
         Condition.not_none(tick, "tick")
 
-        cdef double price = tick.price.as_double()
+        cdef double price = Price.raw_to_f64_c(tick._mem.price.raw)
         self.update_raw(price, price)
 
     cpdef void handle_bar(self, Bar bar) except *:
