@@ -117,7 +117,7 @@ cdef class Position:
         str
 
         """
-        cdef str quantity = " " if self.quantity.is_zero() else f" {self.quantity.to_str()} "
+        cdef str quantity = " " if self.quantity._mem.raw == 0 else f" {self.quantity.to_str()} "
         return f"{PositionSideParser.to_str(self.side)}{quantity}{self.instrument_id}"
 
     cpdef dict to_dict(self):
@@ -437,7 +437,7 @@ cdef class Position:
 
         # Set quantities
         self.quantity = Quantity(abs(self.net_qty), self.size_precision)
-        if self.quantity.gt(self.peak_qty):
+        if self.quantity._mem.raw > self.peak_qty._mem.raw:
             self.peak_qty = self.quantity
 
         # Set state

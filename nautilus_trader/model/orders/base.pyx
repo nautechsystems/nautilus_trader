@@ -744,10 +744,6 @@ cdef class Order:
             else:
                 Condition.not_in(event.trade_id, self._trade_ids, "event.trade_id", "_trade_ids")
             # Fill order
-            if self.filled_qty + event.last_qty < self.quantity:
-                self._fsm.trigger(OrderStatus.PARTIALLY_FILLED)
-            else:
-                self._fsm.trigger(OrderStatus.FILLED)
             self._filled(event)
         else:  # pragma: no cover (design-time error)
             raise ValueError(f"invalid OrderEvent, was {type(event)}")
@@ -768,9 +764,12 @@ cdef class Order:
         self.venue_order_id = event.venue_order_id
 
     cdef void _updated(self, OrderUpdated event) except *:
-        if event.quantity is not None:
-            self.quantity = event.quantity
-            self.leaves_qty = Quantity(self.quantity - self.filled_qty, self.quantity.precision)
+        if event.quantity is None:
+            return
+
+        cdef uint64_t raw_leaves_qty = self.leaves_qty.raw_uint64_c() - self.filled_qty.raw_uint64_c()
+        self.leaves_qty = Quantity.from_raw_c(raw_leaves_qty, self.quantity.precision)
+        self.quantity = event.quantity
 
     cdef void _triggered(self, OrderTriggered event) except *:
         """Abstract method (implement in subclass)."""
@@ -783,6 +782,11 @@ cdef class Order:
         pass  # Do nothing else
 
     cdef void _filled(self, OrderFilled fill) except *:
+        if self.filled_qty._mem.raw + fill.last_qty._mem.raw < self.quantity._mem.raw:
+            self._fsm.trigger(OrderStatus.PARTIALLY_FILLED)
+        else:
+            self._fsm.trigger(OrderStatus.FILLED)
+
         self.venue_order_id = fill.venue_order_id
         self.position_id = fill.position_id
         self.strategy_id = fill.strategy_id

@@ -23,7 +23,7 @@ use std::ops::{Add, AddAssign, Mul, MulAssign, Neg, Sub, SubAssign};
 #[repr(C)]
 #[derive(Eq, Clone, Default)]
 pub struct Price {
-    raw: i64,
+    pub raw: i64,
     pub precision: u8,
 }
 

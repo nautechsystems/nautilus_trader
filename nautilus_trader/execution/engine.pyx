@@ -724,7 +724,7 @@ cdef class ExecutionEngine(Component):
         if (
             oms_type == OMSType.HEDGING
             and position.is_opposite_side(fill.order_side)
-            and fill.last_qty.gt(position.quantity)
+            and fill.last_qty._mem.raw > position.quantity._mem.raw
         ):
             self._flip_position(instrument, position, fill, oms_type)
             return  # Handled in flip
