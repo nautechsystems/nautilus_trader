@@ -49,7 +49,7 @@ cdef class Portfolio(PortfolioFacade):
 
     cpdef void initialize_orders(self) except *
     cpdef void initialize_positions(self) except *
-    cpdef void update_tick(self, QuoteTick tick) except *
+    cpdef void update_quote_tick(self, QuoteTick tick) except *
     cpdef void update_account(self, AccountState event) except *
     cpdef void update_order(self, OrderEvent event) except *
     cpdef void update_position(self, PositionEvent event) except *

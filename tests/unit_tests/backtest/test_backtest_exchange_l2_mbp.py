@@ -293,7 +293,7 @@ class TestL2OrderBookExchange:
             ask_volume=Quantity.from_int(1000),
         )
         # New tick will be in cross with our order
-        self.exchange.process_tick(tick)
+        self.exchange.process_quote_tick(tick)
 
         # Assert
         assert order.status == OrderStatus.PARTIALLY_FILLED
@@ -330,7 +330,7 @@ class TestL2OrderBookExchange:
             ts_event=0,
             ts_init=0,
         )
-        self.exchange.process_tick(tick1)
+        self.exchange.process_quote_tick(tick1)
 
         # Assert
         assert order.status == OrderStatus.PARTIALLY_FILLED

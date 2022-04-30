@@ -80,7 +80,7 @@ mod tests {
             8,
             036,
             Buffer32::from("Australian dollar"),
-            CurrencyType::FIAT,
+            CurrencyType::Fiat,
         );
 
         assert_eq!(currency, currency);
@@ -88,6 +88,6 @@ mod tests {
         assert_eq!(currency.precision, 8);
         assert_eq!(currency.iso4217, 036);
         assert_eq!(currency.name.to_str(), "Australian dollar");
-        assert_eq!(currency.currency_type, CurrencyType::FIAT);
+        assert_eq!(currency.currency_type, CurrencyType::Fiat);
     }
 }

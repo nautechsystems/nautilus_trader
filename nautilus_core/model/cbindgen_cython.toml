@@ -19,6 +19,9 @@ header = '"../includes/model.h"'
 "nautilus_trader.core.rust.core" = [
     "Buffer16",
     "Buffer32",
+    "Buffer36",
+    "Buffer64",
+    "Buffer128",
     "Timestamp",
 ]
 
@@ -27,3 +30,7 @@ header = '"../includes/model.h"'
 "Money" = "Money_t"
 "Price" = "Price_t"
 "Quantity" = "Quantity_t"
+"QuoteTick" = "QuoteTick_t"
+"TradeTick" = "TradeTick_t"
+"InstrumentId" = "InstrumentId_t"
+"TradeId" = "TradeId_t"

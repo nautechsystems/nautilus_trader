@@ -70,7 +70,7 @@ class TestBacktestAcceptanceTestsUSDJPY:
             ask_data=provider.read_csv_bars("fxcm-usdjpy-m1-ask-2013.csv"),
         )
         self.engine.add_instrument(self.usdjpy)
-        self.engine.add_ticks(ticks)
+        self.engine.add_data(ticks)
 
         interest_rate_data = pd.read_csv(
             os.path.join(PACKAGE_ROOT, "data", "short-term-interest.csv")
@@ -190,7 +190,7 @@ class TestBacktestAcceptanceTestsGBPUSDBarsInternal:
             ask_data=provider.read_csv_bars("fxcm-gbpusd-m1-ask-2012.csv"),
         )
         self.engine.add_instrument(self.gbpusd)
-        self.engine.add_ticks(ticks)
+        self.engine.add_data(ticks)
 
         interest_rate_data = pd.read_csv(
             os.path.join(PACKAGE_ROOT, "data", "short-term-interest.csv")
@@ -385,7 +385,7 @@ class TestBacktestAcceptanceTestsBTCPERPTradeBars:
             ask_data=provider.read_csv_bars("ftx-btc-perp-20211231-20220201_1m.csv")[:10000],
         )
 
-        self.engine.add_ticks(ticks)
+        self.engine.add_data(ticks)
 
         config = EMACrossConfig(
             instrument_id=str(self.btcusdt.id),
@@ -426,7 +426,7 @@ class TestBacktestAcceptanceTestsAUDUSD:
         provider = TestDataProvider()
         ticks = wrangler.process(provider.read_csv_ticks("truefx-audusd-ticks.csv"))
         self.engine.add_instrument(self.audusd)
-        self.engine.add_ticks(ticks)
+        self.engine.add_data(ticks)
 
         interest_rate_data = provider.read_csv("short-term-interest.csv")
         fx_rollover_interest = FXRolloverInterestModule(rate_data=interest_rate_data)
@@ -501,7 +501,7 @@ class TestBacktestAcceptanceTestsETHUSDT:
         provider = TestDataProvider()
         ticks = wrangler.process(provider.read_csv_ticks("binance-ethusdt-trades.csv"))
         self.engine.add_instrument(self.ethusdt)
-        self.engine.add_ticks(ticks)
+        self.engine.add_data(ticks)
 
         self.engine.add_venue(
             venue=self.venue,
@@ -562,7 +562,7 @@ class TestBacktestAcceptanceTestsOrderBookImbalance:
                 d for d in data if isinstance(d, OrderBookData) and d.instrument_id == instrument.id
             ]
             self.engine.add_instrument(instrument)
-            self.engine.add_ticks(trade_ticks)
+            self.engine.add_data(trade_ticks)
             self.engine.add_order_book_data(order_book_deltas)
             self.instrument = instrument
         self.engine.add_venue(
@@ -619,7 +619,7 @@ class TestBacktestAcceptanceTestsMarketMaking:
                 d for d in data if isinstance(d, OrderBookData) and d.instrument_id == instrument.id
             ]
             self.engine.add_instrument(instrument)
-            self.engine.add_ticks(trade_ticks)
+            self.engine.add_data(trade_ticks)
             self.engine.add_order_book_data(order_book_deltas)
             self.instrument = instrument
         self.engine.add_venue(

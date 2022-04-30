@@ -80,7 +80,7 @@ class TestBacktestEngine:
             ask_data=provider.read_csv_bars("fxcm-usdjpy-m1-ask-2013.csv")[:2000],
         )
         self.engine.add_instrument(USDJPY_SIM)
-        self.engine.add_ticks(ticks)
+        self.engine.add_data(ticks)
 
         self.engine.add_venue(
             venue=Venue("SIM"),
@@ -367,7 +367,7 @@ class TestBacktestEngineData:
         ticks = wrangler.process(provider.read_csv_ticks("truefx-audusd-ticks.csv"))
 
         # Act
-        engine.add_ticks(ticks)
+        engine.add_data(ticks)
 
         # Assert
         log = "".join(capsys.readouterr())
@@ -383,7 +383,7 @@ class TestBacktestEngineData:
         ticks = wrangler.process(provider.read_csv_ticks("binance-ethusdt-trades.csv"))
 
         # Act
-        engine.add_ticks(ticks)
+        engine.add_data(ticks)
 
         # Assert
         log = "".join(capsys.readouterr())

@@ -59,7 +59,7 @@ if __name__ == "__main__":
         ask_data=provider.read_csv_bars("fxcm-gbpusd-m1-ask-2012.csv"),
     )
     engine.add_instrument(GBPUSD_SIM)
-    engine.add_ticks(ticks)
+    engine.add_data(ticks)
 
     # Create a fill model (optional)
     fill_model = FillModel(

@@ -3,6 +3,7 @@
 Released on TBD.
 
 ### Breaking Changes
+- Removed `BacktestEngine.add_ticks()` as redundant with `.add_data()`
 - Renamed `Position.from_order` to `Position.opening_order_id`
 - Renamed `StreamingPersistence` to `StreamingFeatherWriter`
 - Renamed `PersistenceConfig` to `StreamingConfig`

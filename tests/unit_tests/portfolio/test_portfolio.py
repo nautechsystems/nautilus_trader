@@ -198,7 +198,7 @@ class TestPortfolio:
         tick = TestDataStubs.quote_tick_5decimal(GBPUSD_SIM.id)
 
         # Act
-        self.portfolio.update_tick(tick)
+        self.portfolio.update_quote_tick(tick)
 
         # Assert
         assert self.portfolio.unrealized_pnl(GBPUSD_SIM.id) is None
@@ -431,7 +431,7 @@ class TestPortfolio:
         )
 
         # Act
-        self.portfolio.update_tick(last)
+        self.portfolio.update_quote_tick(last)
         self.portfolio.initialize_orders()
 
         # Assert
@@ -592,7 +592,7 @@ class TestPortfolio:
         self.cache.add_position(position1, OMSType.HEDGING)
         self.cache.add_position(position2, OMSType.HEDGING)
         self.portfolio.initialize_positions()
-        self.portfolio.update_tick(last)
+        self.portfolio.update_quote_tick(last)
 
         # Assert
         assert self.portfolio.is_net_long(BTCUSDT_BINANCE.id)
@@ -659,7 +659,7 @@ class TestPortfolio:
         )
 
         self.cache.add_quote_tick(last)
-        self.portfolio.update_tick(last)
+        self.portfolio.update_quote_tick(last)
 
         position = Position(instrument=BTCUSDT_BINANCE, fill=fill)
 
@@ -743,7 +743,7 @@ class TestPortfolio:
         )
 
         self.cache.add_quote_tick(last)
-        self.portfolio.update_tick(last)
+        self.portfolio.update_quote_tick(last)
 
         position = Position(instrument=BTCUSDT_BINANCE, fill=fill)
 
@@ -818,8 +818,8 @@ class TestPortfolio:
 
         self.cache.add_quote_tick(last_ethusd)
         self.cache.add_quote_tick(last_btcusd)
-        self.portfolio.update_tick(last_ethusd)
-        self.portfolio.update_tick(last_btcusd)
+        self.portfolio.update_quote_tick(last_ethusd)
+        self.portfolio.update_quote_tick(last_btcusd)
 
         order = self.order_factory.market(
             ETHUSD_BITMEX.id,
@@ -975,8 +975,8 @@ class TestPortfolio:
         self.cache.add_position(position, OMSType.HEDGING)
         self.cache.add_quote_tick(last_ethusd)
         self.cache.add_quote_tick(last_xbtusd)
-        self.portfolio.update_tick(last_ethusd)
-        self.portfolio.update_tick(last_xbtusd)
+        self.portfolio.update_quote_tick(last_ethusd)
+        self.portfolio.update_quote_tick(last_xbtusd)
 
         # Act
         result = self.portfolio.net_exposures(BITMEX)
@@ -1032,8 +1032,8 @@ class TestPortfolio:
 
         self.cache.add_quote_tick(last_audusd)
         self.cache.add_quote_tick(last_gbpusd)
-        self.portfolio.update_tick(last_audusd)
-        self.portfolio.update_tick(last_gbpusd)
+        self.portfolio.update_quote_tick(last_audusd)
+        self.portfolio.update_quote_tick(last_gbpusd)
 
         order1 = self.order_factory.market(
             AUDUSD_SIM.id,
@@ -1137,7 +1137,7 @@ class TestPortfolio:
         )
 
         self.cache.add_quote_tick(last_audusd)
-        self.portfolio.update_tick(last_audusd)
+        self.portfolio.update_quote_tick(last_audusd)
 
         order1 = self.order_factory.market(
             AUDUSD_SIM.id,
@@ -1380,8 +1380,8 @@ class TestPortfolio:
 
         self.cache.add_quote_tick(last_audusd)
         self.cache.add_quote_tick(last_gbpusd)
-        self.portfolio.update_tick(last_audusd)
-        self.portfolio.update_tick(last_gbpusd)
+        self.portfolio.update_quote_tick(last_audusd)
+        self.portfolio.update_quote_tick(last_gbpusd)
 
         self.cache.add_position(position1, OMSType.HEDGING)
         self.cache.add_position(position2, OMSType.HEDGING)

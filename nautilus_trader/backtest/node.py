@@ -192,14 +192,12 @@ class BacktestNode:
         return engine
 
     def _load_engine_data(self, engine: BacktestEngine, data) -> None:
-        if data["type"] in (QuoteTick, TradeTick):
-            engine.add_ticks(data=data["data"])
+        if data["type"] in (QuoteTick, TradeTick, InstrumentStatusUpdate):
+            engine.add_data(data=data["data"])
         elif data["type"] == Bar:
             engine.add_bars(data=data["data"])
         elif data["type"] in (OrderBookDelta, OrderBookData):
             engine.add_order_book_data(data=data["data"])
-        elif data["type"] in (InstrumentStatusUpdate,):
-            engine.add_data(data=data["data"])
         elif not is_nautilus_class(data["type"]):
             engine.add_generic_data(client_id=data["client_id"], data=data["data"])
         else:

@@ -59,7 +59,7 @@ class TestBacktestEnginePerformance(PerformanceHarness):
                 ask_data=provider.read_csv_bars("fxcm-usdjpy-m1-ask-2013.csv"),
             )
             engine.add_instrument(USDJPY_SIM)
-            engine.add_ticks(ticks)
+            engine.add_data(ticks)
 
             engine.add_venue(
                 venue=Venue("SIM"),
@@ -94,7 +94,7 @@ class TestBacktestEnginePerformance(PerformanceHarness):
                 ask_data=provider.read_csv_bars("fxcm-usdjpy-m1-ask-2013.csv"),
             )
             engine.add_instrument(USDJPY_SIM)
-            engine.add_ticks(ticks)
+            engine.add_data(ticks)
 
             engine.add_venue(
                 venue=Venue("SIM"),
@@ -138,7 +138,7 @@ class TestBacktestEnginePerformance(PerformanceHarness):
                 ask_data=provider.read_csv_bars("fxcm-usdjpy-m1-ask-2013.csv"),
             )
             engine.add_instrument(USDJPY_SIM)
-            engine.add_ticks(ticks)
+            engine.add_data(ticks)
 
             interest_rate_data = pd.read_csv(
                 os.path.join(PACKAGE_ROOT, "data", "short-term-interest.csv")

@@ -11,3 +11,7 @@ tab_width = 4
 "Money" = "Money_t"
 "Price" = "Price_t"
 "Quantity" = "Quantity_t"
+"QuoteTick" = "QuoteTick_t"
+"TradeTick" = "TradeTick_t"
+"InstrumentId" = "InstrumentId_t"
+"TradeId" = "TradeId_t"
