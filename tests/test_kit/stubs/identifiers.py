@@ -80,12 +80,7 @@ class TestIdStubs:
 
     @staticmethod
     def betting_instrument_id():
-        return InstrumentId(
-            Symbol(
-                "AmericanFootball,NFL,29678534,20220207-233000,ODDS,SPECIAL,1.179082386,50214,0.0"
-            ),
-            Venue("BETFAIR"),
-        )
+        return InstrumentId(Symbol("29678534-1.179082386-50214-0.0"), Venue("BETFAIR"))
 
     @staticmethod
     def client_order_id() -> ClientOrderId:

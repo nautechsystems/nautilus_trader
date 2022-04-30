@@ -91,9 +91,7 @@ class TestPersistenceCatalog:
         assert len(instruments) == 3
 
     def test_data_catalog_instruments_filtered_df(self):
-        instrument_id = (
-            "Basketball,,29628709,20191221-001000,ODDS,MATCH_ODDS,1.166564490,237491,0.0.BETFAIR"
-        )
+        instrument_id = "29628709-1.166564490-237491-0.0.BETFAIR"
         instruments = self.catalog.instruments(instrument_ids=[instrument_id])
         assert len(instruments) == 1
         assert instruments["id"].iloc[0] == instrument_id
