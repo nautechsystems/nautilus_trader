@@ -471,7 +471,7 @@ cdef class AccountsManager:
             pnl = Money(pnl.as_f64_c() * xrate, account.base_currency)
 
         pnl = pnl.sub(commission)
-        if pnl.is_zero():
+        if pnl._mem.raw == 0:
             return  # Nothing to adjust
 
         cdef AccountBalance balance = account.balance()
@@ -502,7 +502,7 @@ cdef class AccountsManager:
             Money pnl
         for pnl in pnls:
             currency = pnl.currency
-            if commission.currency != currency and not commission.is_zero():
+            if commission.currency != currency and commission._mem.raw != 0:
                 balance = account.balance(commission.currency)
                 if balance is None:
                     self._log.error(
@@ -516,12 +516,12 @@ cdef class AccountsManager:
             else:
                 pnl = pnl.sub(commission)
 
-            if not balances and pnl.is_zero():
+            if not balances and pnl._mem.raw == 0:
                 return  # No adjustment
 
             balance = account.balance(currency)
             if balance is None:
-                if pnl.is_negative():
+                if pnl._mem.raw < 0:
                     self._log.error(
                         "Cannot calculate account state: "
                         f"no cached balances for {currency}."

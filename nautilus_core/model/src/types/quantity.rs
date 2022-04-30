@@ -23,7 +23,7 @@ use std::ops::{Add, AddAssign, Mul, MulAssign, Sub, SubAssign};
 #[repr(C)]
 #[derive(Eq, Clone, Default)]
 pub struct Quantity {
-    raw: u64,
+    pub raw: u64,
     pub precision: u8,
 }
 

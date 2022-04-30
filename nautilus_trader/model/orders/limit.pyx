@@ -286,9 +286,11 @@ cdef class LimitOrder(Order):
         if self.venue_order_id != event.venue_order_id:
             self._venue_order_ids.append(self.venue_order_id)
             self.venue_order_id = event.venue_order_id
+
         if event.quantity is not None:
             self.quantity = event.quantity
-            self.leaves_qty = Quantity(self.quantity.as_f64_c() - self.filled_qty.as_f64_c(), self.quantity.precision)
+            self.leaves_qty = Quantity.from_raw_c(self.quantity._mem.raw - self.filled_qty._mem.raw, self.quantity.precision)
+
         if event.price is not None:
             self.price = event.price
 

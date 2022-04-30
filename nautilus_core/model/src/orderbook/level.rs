@@ -64,7 +64,7 @@ impl Level {
     pub fn update(&mut self, order: Order) {
         assert_eq!(order.price, self.price.value); // Confirm order for this level
 
-        if order.size.is_zero() {
+        if order.size.raw == 0 {
             self.delete(&order)
         } else {
             let idx = self

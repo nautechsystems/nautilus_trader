@@ -403,8 +403,8 @@ cdef class Account:
 
         cdef AccountBalance balance
         for balance in balances:
-            if not balance.total.is_positive():
-                if balance.total.is_negative():
+            if not balance.total._mem.raw > 0:
+                if balance.total._mem.raw < 0:
                     raise RuntimeError(
                         f"account blow up (balance was {balance.total}).",
                     )
@@ -436,7 +436,7 @@ cdef class Account:
         Condition.not_none(commission, "commission")
 
         # Increment total commissions
-        if commission.is_zero():
+        if commission._mem.raw == 0:
             return  # Nothing to update
 
         cdef Currency currency = commission.currency

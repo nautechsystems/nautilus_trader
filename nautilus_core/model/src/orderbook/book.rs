@@ -52,7 +52,7 @@ impl OrderBook {
     pub fn update(&mut self, order: Order, ts_event: i64) {
         self.last_side = order.side;
         self.ts_last = ts_event;
-        if order.size.is_zero() {
+        if order.size.raw == 0 {
             self.delete(order, ts_event);
         } else {
             match order.side {
