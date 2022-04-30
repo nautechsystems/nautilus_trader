@@ -25,7 +25,7 @@ from nautilus_trader.model.identifiers cimport InstrumentId
 
 
 cdef class Quantity:
-    cdef Quantity_t _qty
+    cdef Quantity_t _mem
 
     cdef bint eq(self, Quantity other) except *
     cdef bint ne(self, Quantity other) except *
@@ -36,7 +36,7 @@ cdef class Quantity:
     cdef bint is_zero(self) except *
     cdef bint is_negative(self) except *
     cdef bint is_positive(self) except *
-    cdef uint64_t fixed_uint64_c(self) except *
+    cdef uint64_t raw_uint64_c(self) except *
     cdef double as_f64_c(self) except *
 
     cpdef str to_str(self)
@@ -48,7 +48,7 @@ cdef class Quantity:
     cdef bint _compare(a, b, int op) except *
 
     @staticmethod
-    cdef Quantity from_fixed_c(uint64_t fixed, uint8_t precision)
+    cdef Quantity from_raw_c(uint64_t raw, uint8_t precision)
 
     @staticmethod
     cdef Quantity zero_c(uint8_t precision)
@@ -69,7 +69,7 @@ cdef class Quantity:
 
 
 cdef class Price:
-    cdef Price_t _price
+    cdef Price_t _mem
 
     cdef bint eq(self, Price other) except *
     cdef bint ne(self, Price other) except *
@@ -80,7 +80,7 @@ cdef class Price:
     cdef bint is_zero(self) except *
     cdef bint is_negative(self) except *
     cdef bint is_positive(self) except *
-    cdef int64_t fixed_int64_c(self) except *
+    cdef int64_t raw_int64_c(self) except *
     cdef double as_f64_c(self) except *
 
     @staticmethod
@@ -90,7 +90,7 @@ cdef class Price:
     cdef bint _compare(a, b, int op) except *
 
     @staticmethod
-    cdef Price from_fixed_c(int64_t fixed, uint8_t precision)
+    cdef Price from_raw_c(int64_t raw, uint8_t precision)
 
     @staticmethod
     cdef Price from_str_c(str value)
@@ -108,7 +108,7 @@ cdef class Price:
 
 
 cdef class Money:
-    cdef Money_t _money
+    cdef Money_t _mem
 
     cdef readonly Currency currency
     """The currency of the money.\n\n:returns: `Currency`"""
@@ -116,11 +116,11 @@ cdef class Money:
     cdef bint is_zero(self) except *
     cdef bint is_negative(self) except *
     cdef bint is_positive(self) except *
-    cdef int64_t fixed_int64_c(self)
+    cdef int64_t raw_int64_c(self)
     cdef double as_f64_c(self)
 
     @staticmethod
-    cdef Money from_fixed_c(uint64_t fixed, Currency currency)
+    cdef Money from_raw_c(uint64_t raw, Currency currency)
 
     @staticmethod
     cdef Money from_str_c(str value)

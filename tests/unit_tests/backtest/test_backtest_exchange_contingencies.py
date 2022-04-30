@@ -160,7 +160,7 @@ class TestSimulatedExchangeContingencyAdvancedOrders:
         )
 
         self.data_engine.process(tick)
-        self.exchange.process_tick(tick)
+        self.exchange.process_quote_tick(tick)
 
         bracket = self.strategy.order_factory.bracket_market(
             instrument_id=ETHUSD_FTX.id,
@@ -192,7 +192,7 @@ class TestSimulatedExchangeContingencyAdvancedOrders:
         )
 
         self.data_engine.process(tick)
-        self.exchange.process_tick(tick)
+        self.exchange.process_quote_tick(tick)
 
         bracket = self.strategy.order_factory.bracket_market(
             instrument_id=ETHUSD_FTX.id,
@@ -224,7 +224,7 @@ class TestSimulatedExchangeContingencyAdvancedOrders:
         )
 
         self.data_engine.process(tick)
-        self.exchange.process_tick(tick)
+        self.exchange.process_quote_tick(tick)
 
         bracket = self.strategy.order_factory.bracket_limit(
             instrument_id=ETHUSD_FTX.id,
@@ -257,7 +257,7 @@ class TestSimulatedExchangeContingencyAdvancedOrders:
         )
 
         self.data_engine.process(tick)
-        self.exchange.process_tick(tick)
+        self.exchange.process_quote_tick(tick)
 
         bracket = self.strategy.order_factory.bracket_limit(
             instrument_id=ETHUSD_FTX.id,
@@ -290,7 +290,7 @@ class TestSimulatedExchangeContingencyAdvancedOrders:
         )
 
         self.data_engine.process(tick)
-        self.exchange.process_tick(tick)
+        self.exchange.process_quote_tick(tick)
 
         bracket = self.strategy.order_factory.bracket_limit(
             instrument_id=ETHUSD_FTX.id,
@@ -326,7 +326,7 @@ class TestSimulatedExchangeContingencyAdvancedOrders:
         )
 
         self.data_engine.process(tick)
-        self.exchange.process_tick(tick)
+        self.exchange.process_quote_tick(tick)
 
         bracket = self.strategy.order_factory.bracket_limit(
             instrument_id=ETHUSD_FTX.id,
@@ -362,7 +362,7 @@ class TestSimulatedExchangeContingencyAdvancedOrders:
         )
 
         self.data_engine.process(tick)
-        self.exchange.process_tick(tick)
+        self.exchange.process_quote_tick(tick)
 
         bracket = self.strategy.order_factory.bracket_limit(
             instrument_id=ETHUSD_FTX.id,
@@ -399,7 +399,7 @@ class TestSimulatedExchangeContingencyAdvancedOrders:
         )
 
         self.data_engine.process(tick1)
-        self.exchange.process_tick(tick1)
+        self.exchange.process_quote_tick(tick1)
 
         bracket = self.strategy.order_factory.bracket_limit(
             instrument_id=ETHUSD_FTX.id,
@@ -424,7 +424,7 @@ class TestSimulatedExchangeContingencyAdvancedOrders:
         )
 
         # Act
-        self.exchange.process_tick(tick2)
+        self.exchange.process_quote_tick(tick2)
 
         # Assert
         assert bracket.orders[0].status == OrderStatus.FILLED
@@ -446,7 +446,7 @@ class TestSimulatedExchangeContingencyAdvancedOrders:
         )
 
         self.data_engine.process(tick1)
-        self.exchange.process_tick(tick1)
+        self.exchange.process_quote_tick(tick1)
 
         bracket = self.strategy.order_factory.bracket_limit(
             instrument_id=ETHUSD_FTX.id,
@@ -471,7 +471,7 @@ class TestSimulatedExchangeContingencyAdvancedOrders:
             ts_init=0,
         )
 
-        self.exchange.process_tick(tick2)
+        self.exchange.process_quote_tick(tick2)
 
         # Assert
         assert bracket.orders[0].status == OrderStatus.FILLED
@@ -493,7 +493,7 @@ class TestSimulatedExchangeContingencyAdvancedOrders:
         )
 
         self.data_engine.process(tick1)
-        self.exchange.process_tick(tick1)
+        self.exchange.process_quote_tick(tick1)
 
         bracket = self.strategy.order_factory.bracket_limit(
             instrument_id=ETHUSD_FTX.id,
@@ -522,7 +522,7 @@ class TestSimulatedExchangeContingencyAdvancedOrders:
             ts_init=0,
         )
 
-        self.exchange.process_tick(tick2)
+        self.exchange.process_quote_tick(tick2)
 
         # Assert
         assert en.status == OrderStatus.FILLED
@@ -547,7 +547,7 @@ class TestSimulatedExchangeContingencyAdvancedOrders:
         )
 
         self.data_engine.process(tick1)
-        self.exchange.process_tick(tick1)
+        self.exchange.process_quote_tick(tick1)
 
         bracket = self.strategy.order_factory.bracket_limit(
             instrument_id=ETHUSD_FTX.id,
@@ -595,7 +595,7 @@ class TestSimulatedExchangeContingencyAdvancedOrders:
         )
 
         self.data_engine.process(tick1)
-        self.exchange.process_tick(tick1)
+        self.exchange.process_quote_tick(tick1)
 
         bracket = self.strategy.order_factory.bracket_market(
             instrument_id=ETHUSD_FTX.id,
@@ -636,7 +636,7 @@ class TestSimulatedExchangeContingencyAdvancedOrders:
         )
 
         self.data_engine.process(tick1)
-        self.exchange.process_tick(tick1)
+        self.exchange.process_quote_tick(tick1)
 
         bracket = self.strategy.order_factory.bracket_market(
             instrument_id=ETHUSD_FTX.id,

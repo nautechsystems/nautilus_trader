@@ -31,11 +31,11 @@ pub struct OrderBook {
 impl OrderBook {
     pub fn new(instrument_id: InstrumentId, book_level: BookLevel) -> Self {
         OrderBook {
-            bids: Ladder::new(OrderSide::BUY),
-            asks: Ladder::new(OrderSide::SELL),
+            bids: Ladder::new(OrderSide::Buy),
+            asks: Ladder::new(OrderSide::Sell),
             instrument_id,
             book_level,
-            last_side: OrderSide::BUY,
+            last_side: OrderSide::Buy,
             ts_last: 0,
         }
     }
@@ -44,8 +44,8 @@ impl OrderBook {
         self.last_side = order.side;
         self.ts_last = ts_event;
         match order.side {
-            OrderSide::BUY => self.bids.add(order),
-            OrderSide::SELL => self.asks.add(order),
+            OrderSide::Buy => self.bids.add(order),
+            OrderSide::Sell => self.asks.add(order),
         }
     }
 
@@ -56,8 +56,8 @@ impl OrderBook {
             self.delete(order, ts_event);
         } else {
             match order.side {
-                OrderSide::BUY => self.bids.update(order),
-                OrderSide::SELL => self.asks.update(order),
+                OrderSide::Buy => self.bids.update(order),
+                OrderSide::Sell => self.asks.update(order),
             }
         }
     }
@@ -66,8 +66,8 @@ impl OrderBook {
         self.last_side = order.side;
         self.ts_last = ts_event;
         match order.side {
-            OrderSide::BUY => self.bids.delete(order),
-            OrderSide::SELL => self.asks.delete(order),
+            OrderSide::Buy => self.bids.delete(order),
+            OrderSide::Sell => self.asks.delete(order),
         }
     }
 }

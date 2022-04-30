@@ -25,73 +25,73 @@ use std::ops::{Add, AddAssign, Mul, MulAssign, Neg, Sub, SubAssign};
 #[repr(C)]
 #[derive(Eq, Clone)]
 pub struct Money {
-    fixed: i64,
+    raw: i64,
     pub currency: Currency,
 }
 
 impl Money {
     pub fn new(amount: f64, currency: Currency) -> Money {
         Money {
-            fixed: f64_to_fixed_i64(amount, currency.precision),
+            raw: f64_to_fixed_i64(amount, currency.precision),
             currency,
         }
     }
 
-    pub fn from_fixed(fixed: i64, currency: Currency) -> Money {
-        Money { fixed, currency }
+    pub fn from_raw(raw: i64, currency: Currency) -> Money {
+        Money { raw, currency }
     }
 
     pub fn is_zero(&self) -> bool {
-        self.fixed == 0
+        self.raw == 0
     }
     pub fn as_f64(&self) -> f64 {
-        fixed_i64_to_f64(self.fixed)
+        fixed_i64_to_f64(self.raw)
     }
 }
 
 impl Hash for Money {
     fn hash<H: Hasher>(&self, state: &mut H) {
-        self.fixed.hash(state);
+        self.raw.hash(state);
         self.currency.hash(state);
     }
 }
 
 impl PartialEq for Money {
     fn eq(&self, other: &Self) -> bool {
-        self.fixed == other.fixed && self.currency == other.currency
+        self.raw == other.raw && self.currency == other.currency
     }
 }
 
 impl PartialOrd for Money {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        self.fixed.partial_cmp(&other.fixed)
+        self.raw.partial_cmp(&other.raw)
     }
 
     fn lt(&self, other: &Self) -> bool {
         assert_eq!(self.currency, other.currency);
-        self.fixed.lt(&other.fixed)
+        self.raw.lt(&other.raw)
     }
 
     fn le(&self, other: &Self) -> bool {
         assert_eq!(self.currency, other.currency);
-        self.fixed.le(&other.fixed)
+        self.raw.le(&other.raw)
     }
 
     fn gt(&self, other: &Self) -> bool {
         assert_eq!(self.currency, other.currency);
-        self.fixed.gt(&other.fixed)
+        self.raw.gt(&other.raw)
     }
 
     fn ge(&self, other: &Self) -> bool {
         assert_eq!(self.currency, other.currency);
-        self.fixed.ge(&other.fixed)
+        self.raw.ge(&other.raw)
     }
 }
 
 impl Ord for Money {
     fn cmp(&self, other: &Self) -> Ordering {
         assert_eq!(self.currency, other.currency);
-        self.fixed.cmp(&other.fixed)
+        self.raw.cmp(&other.raw)
     }
 }
 
@@ -99,7 +99,7 @@ impl Neg for Money {
     type Output = Self;
     fn neg(self) -> Self::Output {
         Money {
-            fixed: -self.fixed,
+            raw: -self.raw,
             currency: self.currency,
         }
     }
@@ -110,7 +110,7 @@ impl Add for Money {
     fn add(self, rhs: Money) -> Self::Output {
         assert_eq!(self.currency, rhs.currency);
         Money {
-            fixed: self.fixed + rhs.fixed,
+            raw: self.raw + rhs.raw,
             currency: self.currency,
         }
     }
@@ -121,7 +121,7 @@ impl Sub for Money {
     fn sub(self, rhs: Money) -> Self::Output {
         assert_eq!(self.currency, rhs.currency);
         Money {
-            fixed: self.fixed - rhs.fixed,
+            raw: self.raw - rhs.raw,
             currency: self.currency,
         }
     }
@@ -132,7 +132,7 @@ impl Mul for Money {
     fn mul(self, rhs: Money) -> Self {
         assert_eq!(self.currency, rhs.currency);
         Money {
-            fixed: self.fixed * rhs.fixed,
+            raw: self.raw * rhs.raw,
             currency: self.currency,
         }
     }
@@ -141,20 +141,20 @@ impl Mul for Money {
 impl AddAssign for Money {
     fn add_assign(&mut self, other: Self) {
         assert_eq!(self.currency, other.currency);
-        self.fixed += other.fixed;
+        self.raw += other.raw;
     }
 }
 
 impl SubAssign for Money {
     fn sub_assign(&mut self, other: Self) {
         assert_eq!(self.currency, other.currency);
-        self.fixed -= other.fixed;
+        self.raw -= other.raw;
     }
 }
 
 impl MulAssign for Money {
     fn mul_assign(&mut self, multiplier: Self) {
-        self.fixed *= multiplier.fixed;
+        self.raw *= multiplier.raw;
     }
 }
 
@@ -200,8 +200,8 @@ pub extern "C" fn money_new(amount: f64, currency: Currency) -> Money {
 }
 
 #[no_mangle]
-pub extern "C" fn money_from_fixed(fixed: i64, currency: Currency) -> Money {
-    Money::from_fixed(fixed, currency)
+pub extern "C" fn money_from_raw(raw: i64, currency: Currency) -> Money {
+    Money::from_raw(raw, currency)
 }
 
 #[no_mangle]
@@ -240,7 +240,7 @@ mod tests {
             2,
             840,
             Buffer32::from("United States dollar"),
-            CurrencyType::FIAT,
+            CurrencyType::Fiat,
         );
         let money = Money::new(1000.0, usd);
 
@@ -256,7 +256,7 @@ mod tests {
             8,
             0,
             Buffer32::from("Bitcoin"),
-            CurrencyType::FIAT,
+            CurrencyType::Fiat,
         );
 
         let money = Money::new(10.3, btc);

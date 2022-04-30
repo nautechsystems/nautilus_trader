@@ -48,8 +48,8 @@ impl From<Vec<&str>> for Order {
         let price = Price::from(vec[0]);
         let size = Quantity::from(vec[1]);
         let side = match vec[2] {
-            "B" => OrderSide::BUY,
-            "S" => OrderSide::SELL,
+            "B" => OrderSide::Buy,
+            "S" => OrderSide::Sell,
             _ => panic!("Cannot parse side, was {}", vec[2]),
         };
         Order::new(price, size, side, 0)
@@ -73,7 +73,7 @@ mod tests {
 
         assert_eq!(order.price, Price::new(1.0, 0));
         assert_eq!(order.size, Quantity::new(100.0, 0));
-        assert_eq!(order.side, OrderSide::BUY);
+        assert_eq!(order.side, OrderSide::Buy);
         assert_eq!(order.id, 0);
     }
 }

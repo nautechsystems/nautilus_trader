@@ -51,7 +51,7 @@ if __name__ == "__main__":
     wrangler = QuoteTickDataWrangler(instrument=AUDUSD_SIM)
     ticks = wrangler.process(provider.read_csv_ticks("truefx-audusd-ticks.csv"))
     engine.add_instrument(AUDUSD_SIM)
-    engine.add_ticks(ticks)
+    engine.add_data(ticks)
 
     # Create a fill model (optional)
     fill_model = FillModel(

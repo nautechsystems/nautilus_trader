@@ -1058,7 +1058,7 @@ class TestExecutionCacheIntegrityCheck:
             ask_data=provider.read_csv_bars("fxcm-usdjpy-m1-ask-2013.csv"),
         )
         self.engine.add_instrument(self.usdjpy)
-        self.engine.add_ticks(ticks)
+        self.engine.add_data(ticks)
 
         self.engine.add_venue(
             venue=Venue("SIM"),

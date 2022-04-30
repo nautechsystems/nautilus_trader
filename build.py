@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 
-import glob
 import itertools
 import os
 import platform
@@ -51,7 +50,11 @@ else:
     TARGET_DIR = ""
 
 # Directories with headers to include
-RUST_INCLUDES = glob.glob("nautilus_trader/core/includes")
+RUST_INCLUDES = [
+    "nautilus_trader/core/includes",
+    "nautilus_trader/model/includes",
+]
+
 RUST_LIB_DIR = "debug" if CARGO_MODE in ("", "debug") else "release"
 
 RUST_LIBS = [

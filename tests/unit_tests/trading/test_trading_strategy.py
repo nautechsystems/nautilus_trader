@@ -163,7 +163,7 @@ class TestStrategy:
         self.cache.add_instrument(GBPUSD_SIM)
         self.cache.add_instrument(USDJPY_SIM)
 
-        self.exchange.process_tick(
+        self.exchange.process_quote_tick(
             TestDataStubs.quote_tick_3decimal(USDJPY_SIM.id)
         )  # Prepare market
 

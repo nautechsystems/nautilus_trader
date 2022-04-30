@@ -115,7 +115,7 @@ cdef class Portfolio(PortfolioFacade):
         self._msgbus.register(endpoint="Portfolio.update_account", handler=self.update_account)
 
         # Required subscriptions
-        self._msgbus.subscribe(topic="data.quotes*", handler=self.update_tick, priority=10)
+        self._msgbus.subscribe(topic="data.quotes*", handler=self.update_quote_tick, priority=10)
         self._msgbus.subscribe(topic="events.order*", handler=self.update_order, priority=10)
         self._msgbus.subscribe(topic="events.position*", handler=self.update_position, priority=10)
         self._msgbus.subscribe(topic="events.account*", handler=self.update_account, priority=10)
@@ -262,7 +262,7 @@ cdef class Portfolio(PortfolioFacade):
 
         self.initialized = initialized
 
-    cpdef void update_tick(self, QuoteTick tick) except *:
+    cpdef void update_quote_tick(self, QuoteTick tick) except *:
         """
         Update the portfolio with the given tick.
 

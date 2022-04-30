@@ -25,9 +25,9 @@ from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.factories import OrderFactory
 from nautilus_trader.common.logging import LiveLogger
 from nautilus_trader.common.logging import LogLevelParser
+from nautilus_trader.core.data import Data
 from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.currency import Currency
-from nautilus_trader.model.data.tick import Tick
 from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import OMSType
 from nautilus_trader.model.identifiers import TraderId
@@ -147,7 +147,7 @@ class TestComponentStubs:
     def backtest_engine(
         config: Optional[BacktestEngineConfig] = None,
         instrument: Optional[Instrument] = None,
-        ticks: List[Tick] = None,
+        ticks: List[Data] = None,
         venue: Optional[Venue] = None,
         oms_type: Optional[OMSType] = None,
         account_type: Optional[AccountType] = None,
@@ -158,7 +158,7 @@ class TestComponentStubs:
         engine = BacktestEngine(config=config)
         engine.add_instrument(instrument)
         if ticks:
-            engine.add_ticks(ticks)
+            engine.add_data(ticks)
         engine.add_venue(
             venue=venue or Venue("SIM"),
             oms_type=oms_type or OMSType.HEDGING,

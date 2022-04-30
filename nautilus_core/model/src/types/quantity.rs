@@ -23,7 +23,7 @@ use std::ops::{Add, AddAssign, Mul, MulAssign, Sub, SubAssign};
 #[repr(C)]
 #[derive(Eq, Clone, Default)]
 pub struct Quantity {
-    fixed: u64,
+    raw: u64,
     pub precision: u8,
 }
 
@@ -32,20 +32,20 @@ impl Quantity {
         assert!(value >= 0.0);
 
         Quantity {
-            fixed: f64_to_fixed_u64(value, precision),
+            raw: f64_to_fixed_u64(value, precision),
             precision,
         }
     }
 
-    pub fn from_fixed(fixed: u64, precision: u8) -> Self {
-        Quantity { fixed, precision }
+    pub fn from_raw(raw: u64, precision: u8) -> Self {
+        Quantity { raw, precision }
     }
 
     pub fn is_zero(&self) -> bool {
-        self.fixed == 0
+        self.raw == 0
     }
     pub fn as_f64(&self) -> f64 {
-        fixed_u64_to_f64(self.fixed)
+        fixed_u64_to_f64(self.raw)
     }
 }
 
@@ -62,41 +62,41 @@ impl From<&str> for Quantity {
 
 impl Hash for Quantity {
     fn hash<H: Hasher>(&self, state: &mut H) {
-        self.fixed.hash(state)
+        self.raw.hash(state)
     }
 }
 
 impl PartialEq for Quantity {
     fn eq(&self, other: &Self) -> bool {
-        self.fixed == other.fixed
+        self.raw == other.raw
     }
 }
 
 impl PartialOrd for Quantity {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        self.fixed.partial_cmp(&other.fixed)
+        self.raw.partial_cmp(&other.raw)
     }
 
     fn lt(&self, other: &Self) -> bool {
-        self.fixed.lt(&other.fixed)
+        self.raw.lt(&other.raw)
     }
 
     fn le(&self, other: &Self) -> bool {
-        self.fixed.le(&other.fixed)
+        self.raw.le(&other.raw)
     }
 
     fn gt(&self, other: &Self) -> bool {
-        self.fixed.gt(&other.fixed)
+        self.raw.gt(&other.raw)
     }
 
     fn ge(&self, other: &Self) -> bool {
-        self.fixed.ge(&other.fixed)
+        self.raw.ge(&other.raw)
     }
 }
 
 impl Ord for Quantity {
     fn cmp(&self, other: &Self) -> Ordering {
-        self.fixed.cmp(&other.fixed)
+        self.raw.cmp(&other.raw)
     }
 }
 
@@ -104,7 +104,7 @@ impl Add for Quantity {
     type Output = Self;
     fn add(self, rhs: Self) -> Self::Output {
         Quantity {
-            fixed: self.fixed + rhs.fixed,
+            raw: self.raw + rhs.raw,
             precision: self.precision,
         }
     }
@@ -114,7 +114,7 @@ impl Sub for Quantity {
     type Output = Self;
     fn sub(self, rhs: Self) -> Self::Output {
         Quantity {
-            fixed: self.fixed - rhs.fixed,
+            raw: self.raw - rhs.raw,
             precision: self.precision,
         }
     }
@@ -124,7 +124,7 @@ impl Mul for Quantity {
     type Output = Self;
     fn mul(self, rhs: Self) -> Self::Output {
         Quantity {
-            fixed: self.fixed * rhs.fixed,
+            raw: self.raw * rhs.raw,
             precision: self.precision,
         }
     }
@@ -132,31 +132,31 @@ impl Mul for Quantity {
 
 impl AddAssign for Quantity {
     fn add_assign(&mut self, other: Self) {
-        self.fixed += other.fixed;
+        self.raw += other.raw;
     }
 }
 
 impl AddAssign<u64> for Quantity {
     fn add_assign(&mut self, other: u64) {
-        self.fixed += other;
+        self.raw += other;
     }
 }
 
 impl SubAssign for Quantity {
     fn sub_assign(&mut self, other: Self) {
-        self.fixed -= other.fixed;
+        self.raw -= other.raw;
     }
 }
 
 impl SubAssign<u64> for Quantity {
     fn sub_assign(&mut self, other: u64) {
-        self.fixed -= other;
+        self.raw -= other;
     }
 }
 
 impl MulAssign<u64> for Quantity {
     fn mul_assign(&mut self, multiplier: u64) {
-        self.fixed *= multiplier;
+        self.raw *= multiplier;
     }
 }
 
@@ -181,8 +181,8 @@ pub extern "C" fn quantity_new(value: f64, precision: u8) -> Quantity {
 }
 
 #[no_mangle]
-pub extern "C" fn quantity_from_fixed(fixed: u64, precision: u8) -> Quantity {
-    Quantity::from_fixed(fixed, precision)
+pub extern "C" fn quantity_from_raw(raw: u64, precision: u8) -> Quantity {
+    Quantity::from_raw(raw, precision)
 }
 
 #[no_mangle]
@@ -228,7 +228,7 @@ mod tests {
         let qty = Quantity::new(0.00812, 8);
 
         assert_eq!(qty, qty);
-        assert_eq!(qty.fixed, 8120000);
+        assert_eq!(qty.raw, 8120000);
         assert_eq!(qty.precision, 8);
         assert_eq!(qty.as_f64(), 0.00812);
         assert_eq!(qty.to_string(), "0.00812000");
@@ -238,7 +238,7 @@ mod tests {
     fn test_qty_minimum() {
         let qty = Quantity::new(0.000000001, 9);
 
-        assert_eq!(qty.fixed, 1);
+        assert_eq!(qty.raw, 1);
         assert_eq!(qty.to_string(), "0.000000001");
     }
 
@@ -247,7 +247,7 @@ mod tests {
         let qty = Quantity::new(0.0, 8);
 
         assert_eq!(qty, qty);
-        assert_eq!(qty.fixed, 0);
+        assert_eq!(qty.raw, 0);
         assert_eq!(qty.precision, 8);
         assert_eq!(qty.as_f64(), 0.0);
         assert_eq!(qty.to_string(), "0.00000000");
@@ -258,7 +258,7 @@ mod tests {
     fn test_qty_precision() {
         let qty = Quantity::new(1.001, 2);
 
-        assert_eq!(qty.fixed, 1000000000);
+        assert_eq!(qty.raw, 1000000000);
         assert_eq!(qty.to_string(), "1.00");
     }
 
@@ -267,7 +267,7 @@ mod tests {
         let qty = Quantity::from("0.00812000");
 
         assert_eq!(qty, qty);
-        assert_eq!(qty.fixed, 8120000);
+        assert_eq!(qty.raw, 8120000);
         assert_eq!(qty.precision, 8);
         assert_eq!(qty.as_f64(), 0.00812);
         assert_eq!(qty.to_string(), "0.00812000");

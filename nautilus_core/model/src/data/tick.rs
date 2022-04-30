@@ -40,7 +40,7 @@ pub struct TradeTick {
     pub instrument_id: InstrumentId,
     pub price: Price,
     pub size: Quantity,
-    pub side: OrderSide,
+    pub aggressor_side: OrderSide,
     pub trade_id: TradeId,
     pub ts_event: Timestamp,
     pub ts_init: Timestamp,
@@ -49,6 +49,11 @@ pub struct TradeTick {
 ////////////////////////////////////////////////////////////////////////////////
 // C API
 ////////////////////////////////////////////////////////////////////////////////
+#[no_mangle]
+pub extern "C" fn quote_tick_free(tick: QuoteTick) {
+    drop(tick); // Memory freed here
+}
+
 #[no_mangle]
 pub extern "C" fn quote_tick_new(
     instrument_id: InstrumentId,
@@ -65,6 +70,57 @@ pub extern "C" fn quote_tick_new(
         ask,
         bid_size,
         ask_size,
+        ts_event: Timestamp { value: ts_event },
+        ts_init: Timestamp { value: ts_init },
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn quote_tick_from_raw(
+    instrument_id: InstrumentId,
+    bid: i64,
+    ask: i64,
+    price_prec: u8,
+    bid_size: u64,
+    ask_size: u64,
+    size_prec: u8,
+    ts_event: i64,
+    ts_init: i64,
+) -> QuoteTick {
+    QuoteTick {
+        instrument_id,
+        bid: Price::from_raw(bid, price_prec),
+        ask: Price::from_raw(ask, price_prec),
+        bid_size: Quantity::from_raw(bid_size, size_prec),
+        ask_size: Quantity::from_raw(ask_size, size_prec),
+        ts_event: Timestamp { value: ts_event },
+        ts_init: Timestamp { value: ts_init },
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn trade_tick_free(tick: TradeTick) {
+    drop(tick); // Memory freed here
+}
+
+#[no_mangle]
+pub extern "C" fn trade_tick_from_raw(
+    instrument_id: InstrumentId,
+    price: i64,
+    price_prec: u8,
+    size: u64,
+    size_prec: u8,
+    aggressor_side: OrderSide,
+    trade_id: TradeId,
+    ts_event: i64,
+    ts_init: i64,
+) -> TradeTick {
+    TradeTick {
+        instrument_id,
+        price: Price::from_raw(price, price_prec),
+        size: Quantity::from_raw(size, size_prec),
+        aggressor_side,
+        trade_id,
         ts_event: Timestamp { value: ts_event },
         ts_init: Timestamp { value: ts_init },
     }

@@ -85,7 +85,7 @@ cdef class CashAccount(Account):
         """
         Condition.not_none(instrument_id, "instrument_id")
         Condition.not_none(locked, "locked")
-        Condition.true(locked.fixed_int64_c() >= 0, "locked was negative")
+        Condition.true(locked.raw_int64_c() >= 0, "locked was negative")
 
         self._balances_locked[instrument_id] = locked
         self._recalculate_balance(locked.currency)

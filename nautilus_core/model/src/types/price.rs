@@ -23,28 +23,28 @@ use std::ops::{Add, AddAssign, Mul, MulAssign, Neg, Sub, SubAssign};
 #[repr(C)]
 #[derive(Eq, Clone, Default)]
 pub struct Price {
-    fixed: i64,
+    raw: i64,
     pub precision: u8,
 }
 
 impl Price {
     pub fn new(value: f64, precision: u8) -> Self {
         Price {
-            fixed: f64_to_fixed_i64(value, precision),
+            raw: f64_to_fixed_i64(value, precision),
             precision,
         }
     }
 
-    pub fn from_fixed(fixed: i64, precision: u8) -> Self {
-        Price { fixed, precision }
+    pub fn from_raw(raw: i64, precision: u8) -> Self {
+        Price { raw, precision }
     }
 
     pub fn is_zero(&self) -> bool {
-        self.fixed == 0
+        self.raw == 0
     }
 
     pub fn as_f64(&self) -> f64 {
-        fixed_i64_to_f64(self.fixed)
+        fixed_i64_to_f64(self.raw)
     }
 }
 
@@ -61,41 +61,41 @@ impl From<&str> for Price {
 
 impl Hash for Price {
     fn hash<H: Hasher>(&self, state: &mut H) {
-        self.fixed.hash(state)
+        self.raw.hash(state)
     }
 }
 
 impl PartialEq for Price {
     fn eq(&self, other: &Self) -> bool {
-        self.fixed == other.fixed
+        self.raw == other.raw
     }
 }
 
 impl PartialOrd for Price {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        self.fixed.partial_cmp(&other.fixed)
+        self.raw.partial_cmp(&other.raw)
     }
 
     fn lt(&self, other: &Self) -> bool {
-        self.fixed.lt(&other.fixed)
+        self.raw.lt(&other.raw)
     }
 
     fn le(&self, other: &Self) -> bool {
-        self.fixed.le(&other.fixed)
+        self.raw.le(&other.raw)
     }
 
     fn gt(&self, other: &Self) -> bool {
-        self.fixed.gt(&other.fixed)
+        self.raw.gt(&other.raw)
     }
 
     fn ge(&self, other: &Self) -> bool {
-        self.fixed.ge(&other.fixed)
+        self.raw.ge(&other.raw)
     }
 }
 
 impl Ord for Price {
     fn cmp(&self, other: &Self) -> Ordering {
-        self.fixed.cmp(&other.fixed)
+        self.raw.cmp(&other.raw)
     }
 }
 
@@ -103,7 +103,7 @@ impl Neg for Price {
     type Output = Self;
     fn neg(self) -> Self::Output {
         Price {
-            fixed: -self.fixed,
+            raw: -self.raw,
             precision: self.precision,
         }
     }
@@ -113,7 +113,7 @@ impl Add for Price {
     type Output = Self;
     fn add(self, rhs: Price) -> Self::Output {
         Price {
-            fixed: self.fixed + rhs.fixed,
+            raw: self.raw + rhs.raw,
             precision: self.precision,
         }
     }
@@ -123,7 +123,7 @@ impl Sub for Price {
     type Output = Self;
     fn sub(self, rhs: Price) -> Self::Output {
         Price {
-            fixed: self.fixed - rhs.fixed,
+            raw: self.raw - rhs.raw,
             precision: self.precision,
         }
     }
@@ -133,7 +133,7 @@ impl Mul for Price {
     type Output = Self;
     fn mul(self, rhs: Price) -> Self {
         Price {
-            fixed: self.fixed * rhs.fixed,
+            raw: self.raw * rhs.raw,
             precision: self.precision,
         }
     }
@@ -141,19 +141,19 @@ impl Mul for Price {
 
 impl AddAssign for Price {
     fn add_assign(&mut self, other: Self) {
-        self.fixed += other.fixed;
+        self.raw += other.raw;
     }
 }
 
 impl SubAssign for Price {
     fn sub_assign(&mut self, other: Self) {
-        self.fixed -= other.fixed;
+        self.raw -= other.raw;
     }
 }
 
 impl MulAssign for Price {
     fn mul_assign(&mut self, multiplier: Self) {
-        self.fixed *= multiplier.fixed;
+        self.raw *= multiplier.raw;
     }
 }
 
@@ -199,8 +199,8 @@ pub extern "C" fn price_new(value: f64, precision: u8) -> Price {
 }
 
 #[no_mangle]
-pub extern "C" fn price_from_fixed(fixed: i64, precision: u8) -> Price {
-    Price::from_fixed(fixed, precision)
+pub extern "C" fn price_from_raw(raw: i64, precision: u8) -> Price {
+    Price::from_raw(raw, precision)
 }
 
 #[no_mangle]
@@ -236,7 +236,7 @@ mod tests {
         let price = Price::new(0.00812, 8);
 
         assert_eq!(price, price);
-        assert_eq!(price.fixed, 8120000);
+        assert_eq!(price.raw, 8120000);
         assert_eq!(price.precision, 8);
         assert_eq!(price.as_f64(), 0.00812);
         assert_eq!(price.to_string(), "0.00812000");
@@ -246,7 +246,7 @@ mod tests {
     fn test_price_minimum() {
         let price = Price::new(0.000000001, 9);
 
-        assert_eq!(price.fixed, 1);
+        assert_eq!(price.raw, 1);
         assert_eq!(price.to_string(), "0.000000001");
     }
 
@@ -255,7 +255,7 @@ mod tests {
         let price = Price::new(0.0, 8);
 
         assert_eq!(price, price);
-        assert_eq!(price.fixed, 0);
+        assert_eq!(price.raw, 0);
         assert_eq!(price.precision, 8);
         assert_eq!(price.as_f64(), 0.0);
         assert_eq!(price.to_string(), "0.00000000");
@@ -266,7 +266,7 @@ mod tests {
     fn test_price_precision() {
         let price = Price::new(1.001, 2);
 
-        assert_eq!(price.fixed, 1000000000);
+        assert_eq!(price.raw, 1000000000);
         assert_eq!(price.to_string(), "1.00");
     }
 
@@ -275,7 +275,7 @@ mod tests {
         let price = Price::from("0.00812000");
 
         assert_eq!(price, price);
-        assert_eq!(price.fixed, 8120000);
+        assert_eq!(price.raw, 8120000);
         assert_eq!(price.precision, 8);
         assert_eq!(price.as_f64(), 0.00812);
         assert_eq!(price.to_string(), "0.00812000");
@@ -302,7 +302,7 @@ mod tests {
         let price2 = Price::new(1.011, 3);
 
         let price3 = price1 + price2;
-        assert_eq!(price3.fixed, 2011000000)
+        assert_eq!(price3.raw, 2011000000)
     }
 
     #[test]
@@ -310,7 +310,7 @@ mod tests {
         let mut price = Price::new(1.000, 3);
         price += Price::new(1.011, 3);
 
-        assert_eq!(price.fixed, 2011000000)
+        assert_eq!(price.raw, 2011000000)
     }
 
     #[test]
@@ -318,7 +318,7 @@ mod tests {
         let mut price = Price::new(1.000, 3);
         price -= Price::new(0.011, 3);
 
-        assert_eq!(price.fixed, 989000000)
+        assert_eq!(price.raw, 989000000)
     }
 
     #[test]
@@ -338,7 +338,7 @@ mod tests {
         let input_string = "44.123456";
         let price = Price::from(input_string);
 
-        assert_eq!(price.fixed, 44123456000);
+        assert_eq!(price.raw, 44123456000);
         assert_eq!(price.precision, 6);
         assert_eq!(price.as_f64(), 44.123456000000004);
         assert_eq!(price.to_string(), "44.123456");

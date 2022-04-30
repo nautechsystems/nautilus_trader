@@ -554,9 +554,9 @@ class TestQuantity:
         # Assert
         assert new_qty == 0
 
-    def test_from_fixed_returns_expected_quantity(self):
+    def test_from_raw_returns_expected_quantity(self):
         # Arrange, Act
-        qty1 = Quantity.from_fixed(1000000000000, 3)
+        qty1 = Quantity.from_raw(1000000000000, 3)
         qty2 = Quantity(1000, 3)
 
         # Assert
@@ -1192,9 +1192,9 @@ class TestPrice:
         # Assert
         assert new_price == 0
 
-    def test_from_fixed_returns_expected_price(self):
+    def test_from_raw_returns_expected_price(self):
         # Arrange, Act
-        price1 = Price.from_fixed(1000000000000, 3)
+        price1 = Price.from_raw(1000000000000, 3)
         price2 = Price(1000, 3)
 
         # Assert

@@ -17,26 +17,26 @@
 #[derive(Copy, Clone, Debug, Hash, PartialEq, Eq)]
 #[allow(non_camel_case_types)]
 pub enum CurrencyType {
-    CRYPTO,
-    FIAT,
+    Crypto,
+    Fiat,
 }
 
 #[repr(C)]
 #[derive(Copy, Clone, Debug, Hash, PartialEq, Eq)]
 #[allow(non_camel_case_types)]
 pub enum OrderSide {
-    BUY = 1,
-    SELL = 2,
+    Buy = 1,
+    Sell = 2,
 }
 
 #[repr(C)]
 #[derive(Copy, Clone, Debug, Hash, PartialEq, Eq)]
 #[allow(non_camel_case_types)]
 pub enum PriceType {
-    BID = 1,
-    ASK = 2,
-    MID = 3,
-    LAST = 4,
+    Bid = 1,
+    Ask = 2,
+    Mid = 3,
+    Last = 4,
 }
 
 #[repr(C)]
@@ -52,16 +52,16 @@ pub enum BookLevel {
 #[derive(Copy, Clone, Debug, Hash, PartialEq, Eq)]
 #[allow(non_camel_case_types)]
 pub enum BookAction {
-    ADD = 1,
-    UPDATE = 2,
-    DELETE = 3,
-    CLEAR = 4,
+    Add = 1,
+    Update = 2,
+    Delete = 3,
+    Clear = 4,
 }
 
 #[repr(C)]
 #[derive(Copy, Clone, Debug, Hash, PartialEq, Eq)]
 #[allow(non_camel_case_types)]
 pub enum DepthType {
-    VOLUME = 1,
-    EXPOSURE = 2,
+    Volume = 1,
+    Exposure = 2,
 }

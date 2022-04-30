@@ -17,8 +17,18 @@ from libc.stdint cimport int64_t
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.data cimport Data
+from nautilus_trader.core.rust.model cimport instrument_id_from_buffers
+from nautilus_trader.core.rust.model cimport quote_tick_free
+from nautilus_trader.core.rust.model cimport quote_tick_from_raw
+from nautilus_trader.core.rust.model cimport trade_id_from_buffer
+from nautilus_trader.core.rust.model cimport trade_tick_free
+from nautilus_trader.core.rust.model cimport trade_tick_from_raw
+from nautilus_trader.core.string cimport pystr_to_buffer16
+from nautilus_trader.core.string cimport pystr_to_buffer64
+from nautilus_trader.core.string cimport pystr_to_buffer128
 from nautilus_trader.model.c_enums.aggressor_side cimport AggressorSide
 from nautilus_trader.model.c_enums.aggressor_side cimport AggressorSideParser
+from nautilus_trader.model.c_enums.order_side cimport OrderSide
 from nautilus_trader.model.c_enums.price_type cimport PriceType
 from nautilus_trader.model.c_enums.price_type cimport PriceTypeParser
 from nautilus_trader.model.identifiers cimport InstrumentId
@@ -26,36 +36,7 @@ from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
 
 
-cdef class Tick(Data):
-    """
-    The abstract base class for all ticks.
-
-    Parameters
-    ----------
-    instrument_id : InstrumentId
-        The ticks instrument ID.
-    ts_event: int64
-        The UNIX timestamp (nanoseconds) when the tick event occurred.
-    ts_init : int64
-        The UNIX timestamp (nanoseconds) when the object was initialized.
-
-    Warnings
-    --------
-    This class should not be used directly, but through a concrete subclass.
-    """
-
-    def __init__(
-        self,
-        InstrumentId instrument_id not None,
-        int64_t ts_event,
-        int64_t ts_init,
-    ):
-        super().__init__(ts_event, ts_init)
-
-        self.instrument_id = instrument_id
-
-
-cdef class QuoteTick(Tick):
+cdef class QuoteTick(Data):
     """
     Represents a single quote tick in a financial market.
 
@@ -89,12 +70,25 @@ cdef class QuoteTick(Tick):
         int64_t ts_event,
         int64_t ts_init,
     ):
-        super().__init__(instrument_id, ts_event, ts_init)
+        super().__init__(ts_event, ts_init)
 
-        self.bid = bid
-        self.ask = ask
-        self.bid_size = bid_size
-        self.ask_size = ask_size
+        # Temporary until identifiers moved to Rust
+        self.instrument_id = instrument_id
+
+        self._mem = quote_tick_from_raw(
+            instrument_id_from_buffers(
+                pystr_to_buffer128(instrument_id.symbol.value),
+                pystr_to_buffer16(instrument_id.venue.value),
+            ),
+            bid.raw_int64_c(),
+            ask.raw_int64_c(),
+            bid._mem.precision,
+            bid_size.raw_uint64_c(),
+            ask_size.raw_uint64_c(),
+            bid_size._mem.precision,
+            ts_event,
+            ts_init,
+        )
 
     def __eq__(self, QuoteTick other) -> bool:
         return QuoteTick.to_dict_c(self) == QuoteTick.to_dict_c(other)
@@ -114,6 +108,58 @@ cdef class QuoteTick(Tick):
 
     def __repr__(self) -> str:
         return f"{type(self).__name__}({self})"
+
+    def __del__(self) -> None:
+        # https://cython.readthedocs.io/en/latest/src/userguide/special_methods.html#finalization-methods-dealloc-and-del
+        quote_tick_free(self._mem)  # `self._mem` moved to Rust (then dropped)
+
+    @property
+    def bid(self) -> Price:
+        """
+        The top of book bid price.
+
+        Returns
+        -------
+        Price
+
+        """
+        return Price.from_raw_c(self._mem.bid.raw, self._mem.bid.precision)
+
+    @property
+    def ask(self) -> Price:
+        """
+        The top of book ask price.
+
+        Returns
+        -------
+        Price
+
+        """
+        return Price.from_raw_c(self._mem.ask.raw, self._mem.ask.precision)
+
+    @property
+    def bid_size(self) -> Quantity:
+        """
+        The top of book bid size.
+
+        Returns
+        -------
+        Quantity
+
+        """
+        return Quantity.from_raw_c(self._mem.bid_size.raw, self._mem.bid_size.precision)
+
+    @property
+    def ask_size(self) -> Quantity:
+        """
+        The top of book ask size.
+
+        Returns
+        -------
+        Quantity
+
+        """
+        return Quantity.from_raw_c(self._mem.ask_size.raw, self._mem.ask_size.precision)
 
     @staticmethod
     cdef QuoteTick from_dict_c(dict values):
@@ -186,7 +232,7 @@ cdef class QuoteTick(Tick):
 
         """
         if price_type == PriceType.MID:
-            return Price(((self.bid + self.ask) / 2), self.bid.precision + 1)
+            return Price.from_raw_c(((self._mem.bid.raw + self._mem.ask.raw) / 2), self._mem.bid.precision + 1)
         elif price_type == PriceType.BID:
             return self.bid
         elif price_type == PriceType.ASK:
@@ -209,7 +255,7 @@ cdef class QuoteTick(Tick):
 
         """
         if price_type == PriceType.MID:
-            return Quantity((self.bid_size + self.ask_size) / 2, self.bid_size.precision + 1)
+            return Quantity.from_raw_c((self._mem.bid_size.raw + self._mem.ask_size.raw) / 2, self._mem.bid_size.precision + 1)
         elif price_type == PriceType.BID:
             return self.bid_size
         elif price_type == PriceType.ASK:
@@ -218,7 +264,7 @@ cdef class QuoteTick(Tick):
             raise ValueError(f"Cannot extract with PriceType {PriceTypeParser.to_str(price_type)}")
 
 
-cdef class TradeTick(Tick):
+cdef class TradeTick(Data):
     """
     Represents a single trade tick in a financial market.
 
@@ -258,12 +304,26 @@ cdef class TradeTick(Tick):
         int64_t ts_event,
         int64_t ts_init,
     ):
-        super().__init__(instrument_id, ts_event, ts_init)
+        super().__init__(ts_event, ts_init)
 
-        self.price = price
-        self.size = size
-        self.aggressor_side = aggressor_side
+        # Temporary until identifiers moved to Rust
+        self.instrument_id = instrument_id
         self.trade_id = trade_id
+
+        self._mem = trade_tick_from_raw(
+            instrument_id_from_buffers(
+                pystr_to_buffer128(instrument_id.symbol.value),
+                pystr_to_buffer16(instrument_id.venue.value),
+            ),
+            price.raw_int64_c(),
+            price._mem.precision,
+            size.raw_uint64_c(),
+            size._mem.precision,
+            <OrderSide>aggressor_side,
+            trade_id_from_buffer(pystr_to_buffer64(trade_id.value)),
+            ts_event,
+            ts_init,
+        )
 
     def __eq__(self, TradeTick other) -> bool:
         return TradeTick.to_dict_c(self) == TradeTick.to_dict_c(other)
@@ -276,13 +336,53 @@ cdef class TradeTick(Tick):
             f"{self.instrument_id.value},"
             f"{self.price},"
             f"{self.size},"
-            f"{AggressorSideParser.to_str(self.aggressor_side)},"
+            f"{AggressorSideParser.to_str(self._mem.aggressor_side)},"
             f"{self.trade_id.value},"
             f"{self.ts_event}"
         )
 
     def __repr__(self) -> str:
         return f"{type(self).__name__}({self})"
+
+    def __del__(self) -> None:
+        # https://cython.readthedocs.io/en/latest/src/userguide/special_methods.html#finalization-methods-dealloc-and-del
+        trade_tick_free(self._mem)  # `self._mem` moved to Rust (then dropped)
+
+    @property
+    def price(self) -> Price:
+        """
+        The ticks price.
+
+        Returns
+        -------
+        Price
+
+        """
+        return Price.from_raw_c(self._mem.price.raw, self._mem.price.precision)
+
+    @property
+    def size(self) -> Price:
+        """
+        The ticks size.
+
+        Returns
+        -------
+        Quantity
+
+        """
+        return Quantity.from_raw_c(self._mem.size.raw, self._mem.size.precision)
+
+    @property
+    def aggressor_side(self) -> AggressorSide:
+        """
+        The ticks aggressor side.
+
+        Returns
+        -------
+        AggressorSide
+
+        """
+        return <AggressorSide>self._mem.aggressor_side
 
     @staticmethod
     cdef TradeTick from_dict_c(dict values):
@@ -305,7 +405,7 @@ cdef class TradeTick(Tick):
             "instrument_id": obj.instrument_id.value,
             "price": str(obj.price),
             "size": str(obj.size),
-            "aggressor_side": AggressorSideParser.to_str(obj.aggressor_side),
+            "aggressor_side": AggressorSideParser.to_str(obj._mem.aggressor_side),
             "trade_id": obj.trade_id.value,
             "ts_event": obj.ts_event,
             "ts_init": obj.ts_init,

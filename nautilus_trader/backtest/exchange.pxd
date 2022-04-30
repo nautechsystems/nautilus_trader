@@ -32,7 +32,8 @@ from nautilus_trader.model.c_enums.oms_type cimport OMSType
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
 from nautilus_trader.model.currency cimport Currency
 from nautilus_trader.model.data.bar cimport Bar
-from nautilus_trader.model.data.tick cimport Tick
+from nautilus_trader.model.data.tick cimport QuoteTick
+from nautilus_trader.model.data.tick cimport TradeTick
 from nautilus_trader.model.identifiers cimport ClientOrderId
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.identifiers cimport PositionId
@@ -129,7 +130,8 @@ cdef class SimulatedExchange:
     cdef tuple generate_inflight_command(self, TradingCommand command)
     cpdef void send(self, TradingCommand command) except *
     cpdef void process_order_book(self, OrderBookData data) except *
-    cpdef void process_tick(self, Tick tick) except *
+    cpdef void process_quote_tick(self, QuoteTick tick) except *
+    cpdef void process_trade_tick(self, TradeTick tick) except *
     cpdef void process_bar(self, Bar bar) except *
     cdef void _process_trade_ticks_from_bar(self, OrderBook book, Bar bar) except *
     cdef void _process_quote_ticks_from_bar(self, OrderBook book) except *

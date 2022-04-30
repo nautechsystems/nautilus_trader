@@ -57,7 +57,8 @@ from nautilus_trader.model.c_enums.book_type cimport BookType
 from nautilus_trader.model.c_enums.oms_type cimport OMSType
 from nautilus_trader.model.data.bar cimport Bar
 from nautilus_trader.model.data.base cimport GenericData
-from nautilus_trader.model.data.tick cimport Tick
+from nautilus_trader.model.data.tick cimport QuoteTick
+from nautilus_trader.model.data.tick cimport TradeTick
 from nautilus_trader.model.identifiers cimport ClientId
 from nautilus_trader.model.identifiers cimport TraderId
 from nautilus_trader.model.identifiers cimport Venue
@@ -315,43 +316,6 @@ cdef class BacktestEngine:
         self._log.info(
             f"Added {len(data):,} {first.instrument_id} "
             f"OrderBookData element{'' if len(data) == 1 else 's'}.",
-        )
-
-    def add_ticks(self, list data) -> None:
-        """
-        Add the tick data to the backtest engine.
-
-        Parameters
-        ----------
-        data : list[Tick]
-            The tick data to add.
-
-        Raises
-        ------
-        ValueError
-            If `data` is empty.
-        ValueError
-            If `instrument_id` for the data is not found in the cache.
-
-        """
-        Condition.not_empty(data, "data")
-        Condition.list_type(data, Tick, "data")
-        cdef Tick first = data[0]
-        Condition.true(
-            first.instrument_id in self.kernel.cache.instrument_ids(),
-            f"Instrument {first.instrument_id} for the given data not found in the cache. "
-            "Please add the instrument through `add_instrument()` prior to adding related data.",
-        )
-
-        # Check client has been registered
-        self._add_market_data_client_if_not_exists(first.instrument_id.venue)
-
-        # Add data
-        self._data = sorted(self._data + data, key=lambda x: x.ts_init)
-
-        self._log.info(
-            f"Added {len(data):,} {first.instrument_id} "
-            f"{type(first).__name__} element{'' if len(data) == 1 else 's'}.",
         )
 
     def add_data(self, list data) -> None:
@@ -888,8 +852,10 @@ cdef class BacktestEngine:
             self._advance_time(data.ts_init)
             if isinstance(data, OrderBookData):
                 self._exchanges[data.instrument_id.venue].process_order_book(data)
-            elif isinstance(data, Tick):
-                self._exchanges[data.instrument_id.venue].process_tick(data)
+            elif isinstance(data, QuoteTick):
+                self._exchanges[data.instrument_id.venue].process_quote_tick(data)
+            elif isinstance(data, TradeTick):
+                self._exchanges[data.instrument_id.venue].process_trade_tick(data)
             elif isinstance(data, Bar):
                 self._exchanges[data.type.instrument_id.venue].process_bar(data)
             self.kernel.data_engine.process(data)

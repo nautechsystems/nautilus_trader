@@ -15,6 +15,8 @@
 
 from typing import List
 
+from libc.stdint cimport uint64_t
+
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.model.c_enums.liquidity_side cimport LiquiditySide
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
@@ -786,18 +788,18 @@ cdef class Order:
         self.strategy_id = fill.strategy_id
         self._trade_ids.append(fill.trade_id)
         self.last_trade_id = fill.trade_id
-        cdef double filled_qty = self.filled_qty.as_f64_c() + fill.last_qty.as_f64_c()
-        cdef double leaves_qty = self.quantity.as_f64_c() - filled_qty
-        if leaves_qty < 0:
+        cdef uint64_t raw_filled_qty = self.filled_qty._mem.raw + fill.last_qty._mem.raw
+        cdef int64_t raw_leaves_qty = self.quantity._mem.raw - raw_filled_qty
+        if raw_leaves_qty < 0:
             raise ValueError(
-                f"invalid order.leaves_qty: was {leaves_qty}, "
+                f"invalid order.leaves_qty: was {<uint64_t>raw_leaves_qty / 1e9}, "
                 f"order.quantity={self.quantity}, "
                 f"order.filled_qty={self.filled_qty}, "
                 f"fill.last_qty={fill.last_qty}, "
                 f"fill={fill}",
             )
         self.filled_qty.add_assign(fill.last_qty)
-        self.leaves_qty = Quantity(leaves_qty, fill.last_qty.precision)
+        self.leaves_qty = Quantity.from_raw_c(<uint64_t>raw_leaves_qty, fill.last_qty.precision)
         self.ts_last = fill.ts_event
         self.avg_px = self._calculate_avg_px(fill.last_qty.as_f64_c(), fill.last_px.as_f64_c())
         self.liquidity_side = fill.liquidity_side

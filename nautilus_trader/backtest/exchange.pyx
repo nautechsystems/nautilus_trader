@@ -53,7 +53,6 @@ from nautilus_trader.model.c_enums.order_type cimport OrderType
 from nautilus_trader.model.c_enums.order_type cimport OrderTypeParser
 from nautilus_trader.model.c_enums.price_type cimport PriceType
 from nautilus_trader.model.data.tick cimport QuoteTick
-from nautilus_trader.model.data.tick cimport Tick
 from nautilus_trader.model.data.tick cimport TradeTick
 from nautilus_trader.model.identifiers cimport ClientOrderId
 from nautilus_trader.model.identifiers cimport InstrumentId
@@ -562,15 +561,15 @@ cdef class SimulatedExchange:
         if not self._log.is_bypassed:
             self._log.debug(f"Processed {data}")
 
-    cpdef void process_tick(self, Tick tick) except *:
+    cpdef void process_quote_tick(self, QuoteTick tick) except *:
         """
-        Process the exchanges market for the given tick.
+        Process the exchanges market for the given quote tick.
 
         Market dynamics are simulated by auctioning open orders.
 
         Parameters
         ----------
-        tick : Tick
+        tick : QuoteTick
             The tick to process.
 
         """
@@ -580,7 +579,35 @@ cdef class SimulatedExchange:
 
         cdef OrderBook book = self.get_book(tick.instrument_id)
         if book.type == BookType.L1_TBBO:
-            book.update_tick(tick)
+            book.update_quote_tick(tick)
+
+        self._iterate_matching_engine(
+            tick.instrument_id,
+            tick.ts_init,
+        )
+
+        if not self._log.is_bypassed:
+            self._log.debug(f"Processed {tick}")
+
+    cpdef void process_trade_tick(self, TradeTick tick) except *:
+        """
+        Process the exchanges market for the given trade tick.
+
+        Market dynamics are simulated by auctioning open orders.
+
+        Parameters
+        ----------
+        tick : TradeTick
+            The tick to process.
+
+        """
+        Condition.not_none(tick, "tick")
+
+        self._clock.set_time(tick.ts_init)
+
+        cdef OrderBook book = self.get_book(tick.instrument_id)
+        if book.type == BookType.L1_TBBO:
+            book.update_trade_tick(tick)
 
         self._iterate_matching_engine(
             tick.instrument_id,
@@ -637,15 +664,15 @@ cdef class SimulatedExchange:
             bar.type.instrument_id,
             bar.open,
             size,
-            AggressorSide.BUY if last is None or bar.open.gt(last) else AggressorSide.SELL,
+            <OrderSide>AggressorSide.BUY if last is None or bar.open._mem.raw > last._mem.raw else <OrderSide>AggressorSide.SELL,
             self._generate_trade_id(),
             bar.ts_event,
             bar.ts_event,
         )
 
         # Open
-        if last is None or bar.open.ne(last):
-            book.update_tick(tick)
+        if last is None or bar.open._mem.raw != last._mem.raw:  # Direct memory comparison
+            book.update_trade_tick(tick)
             self._iterate_matching_engine(
                 tick.instrument_id,
                 tick.ts_init,
@@ -653,11 +680,11 @@ cdef class SimulatedExchange:
             last = bar.open
 
         # High
-        if bar.high.gt(last):
-            tick.price = bar.high
-            tick.aggressor_side = AggressorSide.BUY
+        if bar.high._mem.raw > last._mem.raw:  # Direct memory comparison
+            tick._mem.price = bar.high._mem  # Direct memory assignment
+            tick._mem.aggressor_side = <OrderSide>AggressorSide.BUY  # Direct memory assignment
             tick.trade_id = self._generate_trade_id()
-            book.update_tick(tick)
+            book.update_trade_tick(tick)
             self._iterate_matching_engine(
                 tick.instrument_id,
                 tick.ts_init,
@@ -665,11 +692,11 @@ cdef class SimulatedExchange:
             last = bar.high
 
         # Low
-        if bar.low.lt(last):
-            tick.price = bar.low
-            tick.aggressor_side = AggressorSide.SELL
+        if bar.low._mem.raw < last._mem.raw:  # Direct memory comparison
+            tick._mem.price = bar.low._mem  # Direct memory assignment
+            tick._mem.aggressor_side = <OrderSide>AggressorSide.SELL
             tick.trade_id = self._generate_trade_id()
-            book.update_tick(tick)
+            book.update_trade_tick(tick)
             self._iterate_matching_engine(
                 tick.instrument_id,
                 tick.ts_init,
@@ -677,11 +704,11 @@ cdef class SimulatedExchange:
             last = bar.low
 
         # Close
-        if bar.close.ne(last):
-            tick.price = bar.close
-            tick.aggressor_side = AggressorSide.BUY if bar.close.gt(last) else AggressorSide.SELL
+        if bar.close._mem.raw != last._mem.raw:  # Direct memory comparison
+            tick._mem.price = bar.close._mem  # Direct memory assignment
+            tick._mem.aggressor_side = <OrderSide>AggressorSide.BUY if bar.close._mem.raw > last._mem.raw else <OrderSide>AggressorSide.SELL
             tick.trade_id = self._generate_trade_id()
-            book.update_tick(tick)
+            book.update_trade_tick(tick)
             self._iterate_matching_engine(
                 tick.instrument_id,
                 tick.ts_init,
@@ -715,34 +742,34 @@ cdef class SimulatedExchange:
         )
 
         # Open
-        book.update_tick(tick)
+        book.update_quote_tick(tick)
         self._iterate_matching_engine(
             tick.instrument_id,
             tick.ts_init,
         )
 
         # High
-        tick.bid = last_bid_bar.high
-        tick.ask = last_ask_bar.high
-        book.update_tick(tick)
+        tick._mem.bid = last_bid_bar.high._mem  # Direct memory assignment
+        tick._mem.ask = last_ask_bar.high._mem  # Direct memory assignment
+        book.update_quote_tick(tick)
         self._iterate_matching_engine(
             tick.instrument_id,
             tick.ts_init,
         )
 
         # Low
-        tick.bid = last_bid_bar.low
-        tick.ask = last_ask_bar.low
-        book.update_tick(tick)
+        tick._mem.bid = last_bid_bar.low._mem  # Assigning memory directly
+        tick._mem.ask = last_ask_bar.low._mem  # Assigning memory directly
+        book.update_quote_tick(tick)
         self._iterate_matching_engine(
             tick.instrument_id,
             tick.ts_init,
         )
 
         # Close
-        tick.bid = last_bid_bar.close
-        tick.ask = last_ask_bar.close
-        book.update_tick(tick)
+        tick._mem.bid = last_bid_bar.close._mem  # Assigning memory directly
+        tick._mem.ask = last_ask_bar.close._mem  # Assigning memory directly
+        book.update_quote_tick(tick)
         self._iterate_matching_engine(
             tick.instrument_id,
             tick.ts_init,

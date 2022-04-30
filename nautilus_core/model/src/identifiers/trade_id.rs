@@ -13,19 +13,19 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use nautilus_core::buffer::{Buffer, Buffer32};
+use nautilus_core::buffer::{Buffer, Buffer64};
 use std::fmt::{Debug, Display, Formatter, Result};
 
 #[repr(C)]
 #[derive(Clone, Hash, PartialEq, Debug)]
 pub struct TradeId {
-    value: Buffer32,
+    value: Buffer64, // TODO: Temporary to support Betfair
 }
 
 impl From<&str> for TradeId {
     fn from(s: &str) -> TradeId {
         TradeId {
-            value: Buffer32::from(s),
+            value: Buffer64::from(s),
         }
     }
 }
@@ -34,6 +34,19 @@ impl Display for TradeId {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result {
         write!(f, "{}", self.value.to_str())
     }
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// C API
+////////////////////////////////////////////////////////////////////////////////
+#[no_mangle]
+pub extern "C" fn trade_id_free(trade_id: TradeId) {
+    drop(trade_id); // Memory freed here
+}
+
+#[no_mangle]
+pub extern "C" fn trade_id_from_buffer(value: Buffer64) -> TradeId {
+    TradeId { value }
 }
 
 ////////////////////////////////////////////////////////////////////////////////
