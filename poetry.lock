@@ -434,11 +434,11 @@ python-versions = "*"
 
 [[package]]
 name = "jinja2"
-version = "3.0.3"
+version = "3.1.2"
 description = "A very fast and expressive template engine."
 category = "dev"
 optional = false
-python-versions = ">=3.6"
+python-versions = ">=3.7"
 
 [package.dependencies]
 MarkupSafe = ">=2.0"
@@ -628,15 +628,15 @@ python-versions = ">=3.8"
 
 [[package]]
 name = "numpydoc"
-version = "1.2.1"
+version = "1.3.1"
 description = "Sphinx extension to support docstrings in Numpy format"
 category = "dev"
 optional = false
 python-versions = ">=3.7"
 
 [package.dependencies]
-Jinja2 = ">=2.10,<3.1"
-sphinx = ">=1.8"
+Jinja2 = ">=2.10"
+sphinx = ">=3.0"
 
 [package.extras]
 testing = ["pytest", "pytest-cov", "matplotlib"]
@@ -1395,7 +1395,7 @@ redis = ["hiredis", "redis"]
 [metadata]
 lock-version = "1.1"
 python-versions = ">=3.8,<3.11"
-content-hash = "149cc44981705aca93a6944bb4da04b796444173de7f8bcccf2a31f1004a0fe6"
+content-hash = "d01ebf878dbfbff96b649f510f7972b8380c96e82500d908f923a2289c461cb3"
 
 [metadata.files]
 aiodns = [
@@ -1851,8 +1851,8 @@ iniconfig = [
     {file = "iniconfig-1.1.1.tar.gz", hash = "sha256:bc3af051d7d14b2ee5ef9969666def0cd1a000e121eaea580d4a313df4b37f32"},
 ]
 jinja2 = [
-    {file = "Jinja2-3.0.3-py3-none-any.whl", hash = "sha256:077ce6014f7b40d03b47d1f1ca4b0fc8328a692bd284016f806ed0eaca390ad8"},
-    {file = "Jinja2-3.0.3.tar.gz", hash = "sha256:611bb273cd68f3b993fabdc4064fc858c5b47a973cb5aa7999ec1ba405c87cd7"},
+    {file = "Jinja2-3.1.2-py3-none-any.whl", hash = "sha256:6088930bfe239f0e6710546ab9c19c9ef35e29792895fed6e6e31a023a182a61"},
+    {file = "Jinja2-3.1.2.tar.gz", hash = "sha256:31351a702a408a9e7595a8fc6150fc3f43bb6bf7e319770cbc0db9df9437e852"},
 ]
 linkify-it-py = [
     {file = "linkify-it-py-1.0.3.tar.gz", hash = "sha256:2b3f168d5ce75e3a425e34b341a6b73e116b5d9ed8dbbbf5dc7456843b7ce2ee"},
@@ -2093,8 +2093,8 @@ numpy = [
     {file = "numpy-1.22.3.zip", hash = "sha256:dbc7601a3b7472d559dc7b933b18b4b66f9aa7452c120e87dfb33d02008c8a18"},
 ]
 numpydoc = [
-    {file = "numpydoc-1.2.1-py3-none-any.whl", hash = "sha256:2d317df5fd9404a5199bb993c1b6627436b2804582d2775bf9ccf3c5912ebe99"},
-    {file = "numpydoc-1.2.1.tar.gz", hash = "sha256:7ce826ed0d54c3fdc9097992a8d73a4d459dc468611351c68e444fec44a45af6"},
+    {file = "numpydoc-1.3.1-py3-none-any.whl", hash = "sha256:a49822cb225e71b7ef7889dd42576b5aa14c56ce62e0bc030f97abc8a3ae240f"},
+    {file = "numpydoc-1.3.1.tar.gz", hash = "sha256:349ff29e00a5caf119141967e579f8f17b24d41c46740b13ea4e8dba9971b20f"},
 ]
 orjson = [
     {file = "orjson-3.6.8-cp310-cp310-macosx_10_7_x86_64.whl", hash = "sha256:3a287a650458de2211db03681b71c3e5cb2212b62f17a39df8ad99fc54855d0f"},

@@ -15,7 +15,7 @@
 
 use crate::identifiers::symbol::Symbol;
 use crate::identifiers::venue::Venue;
-use nautilus_core::buffer::{Buffer128, Buffer16};
+use nautilus_core::buffer::{Buffer16, Buffer32};
 use std::fmt::{Debug, Display, Formatter, Result};
 
 #[repr(C)]
@@ -57,7 +57,7 @@ pub extern "C" fn instrument_id_free(instrument_id: InstrumentId) {
 }
 
 #[no_mangle]
-pub extern "C" fn instrument_id_from_buffers(symbol: Buffer128, venue: Buffer16) -> InstrumentId {
+pub extern "C" fn instrument_id_from_buffers(symbol: Buffer32, venue: Buffer16) -> InstrumentId {
     let symbol = Symbol { value: symbol };
     let venue = Venue { value: venue };
     InstrumentId::new(symbol, venue)

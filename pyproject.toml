@@ -76,7 +76,7 @@ redis = { version = "^4.2.2", optional = true }
 # https://github.com/cython/cython/issues/3515
 coverage = "4.5.4"  # Pinned at 4.5.4 due Cython
 nox = "^2022.1.7"
-numpydoc = "^1.2.1"
+numpydoc = "^1.3.1"
 pre-commit = "^2.18.1"
 pytest = "^7.1.2"
 pytest-asyncio = "^0.18.3"

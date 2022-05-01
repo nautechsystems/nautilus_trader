@@ -483,7 +483,7 @@ class TestTickBarAggregator:
         assert last_bar.high == Price.from_str("425.25")
         assert last_bar.low == Price.from_str("424.51")
         assert last_bar.close == Price.from_str("425.15")
-        assert last_bar.volume == Quantity.from_int(3083)
+        assert last_bar.volume == Quantity.from_int(3142)
 
 
 class TestVolumeBarAggregator:
@@ -854,11 +854,11 @@ class TestVolumeBarAggregator:
 
         # Assert
         last_bar = bar_store.get_store()[-1]
-        assert len(bar_store.get_store()) == 26
-        assert last_bar.open == Price.from_str("425.11")
-        assert last_bar.high == Price.from_str("425.24")
+        assert len(bar_store.get_store()) == 27
+        assert last_bar.open == Price.from_str("425.07")
+        assert last_bar.high == Price.from_str("425.20")
         assert last_bar.low == Price.from_str("424.69")
-        assert last_bar.close == Price.from_str("425.07")
+        assert last_bar.close == Price.from_str("425.06")
         assert last_bar.volume == Quantity.from_int(1000)
 
 
