@@ -14,6 +14,12 @@ nautilus_core = { path = "../core" }
 
 [dev-dependencies]
 rstest = "0.12.0"
+criterion = "0.3.5"
+iai = "0.1"
 
 [build-dependencies]
 cbindgen = "^0.20.0"
+
+[[bench]]
+name = "criterion_fixed_precision_benchmark"
+harness = false
