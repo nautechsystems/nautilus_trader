@@ -188,7 +188,7 @@ cdef class Quantity:
         return hash(self._mem.raw)
 
     def __str__(self) -> str:
-        return f"{self.as_f64_c():.{self._mem.precision}f}"
+        return f"{self._mem.raw / FIXED_SCALAR:.{self._mem.precision}f}"
 
     def __repr__(self) -> str:
         return f"{type(self).__name__}('{self}')"
@@ -196,6 +196,18 @@ cdef class Quantity:
     def __del__(self) -> None:
         # https://cython.readthedocs.io/en/latest/src/userguide/special_methods.html#finalization-methods-dealloc-and-del
         quantity_free(self._mem)  # `self._mem` moved to Rust (then dropped)
+
+    @property
+    def precision(self) -> int:
+        """
+        The precision for the quantity.
+
+        Returns
+        -------
+        uint8
+
+        """
+        return self._mem.precision
 
     cdef bint eq(self, Quantity other) except *:
         return self._mem.raw == other._mem.raw
@@ -293,18 +305,6 @@ cdef class Quantity:
     @staticmethod
     cdef Quantity from_int_c(int value):
         return Quantity(value, precision=0)
-
-    @property
-    def precision(self) -> int:
-        """
-        The precision for the price.
-
-        Returns
-        -------
-        uint8
-
-        """
-        return self._mem.precision
 
     @staticmethod
     def from_raw(uint64_t raw, uint8_t precision):
@@ -555,7 +555,7 @@ cdef class Price:
         return hash(self._mem.raw)
 
     def __str__(self) -> str:
-        return f"{self.as_f64_c():.{self._mem.precision}f}"
+        return f"{self._mem.raw / FIXED_SCALAR:.{self._mem.precision}f}"
 
     def __repr__(self) -> str:
         return f"{type(self).__name__}('{self}')"
@@ -563,6 +563,18 @@ cdef class Price:
     def __del__(self) -> None:
         # https://cython.readthedocs.io/en/latest/src/userguide/special_methods.html#finalization-methods-dealloc-and-del
         price_free(self._mem)  # `self._mem` moved to Rust (then dropped)
+
+    @property
+    def precision(self) -> int:
+        """
+        The precision for the price.
+
+        Returns
+        -------
+        uint8
+
+        """
+        return self._mem.precision
 
     cdef bint eq(self, Price other) except *:
         return self._mem.raw == other._mem.raw
@@ -646,10 +658,6 @@ cdef class Price:
     @staticmethod
     cdef double raw_to_f64_c(uint64_t raw) except *:
         return raw / FIXED_SCALAR
-
-    @property
-    def precision(self) -> int:
-        return self._mem.precision
 
     @staticmethod
     cdef Price from_str_c(str value):
@@ -863,7 +871,7 @@ cdef class Money:
         return hash((self._mem.raw, self.currency.code))
 
     def __str__(self) -> str:
-        return f"{self.as_f64_c():.{self._mem.currency.precision}f}"
+        return f"{self._mem.raw / FIXED_SCALAR:.{self._mem.currency.precision}f}"
 
     def __repr__(self) -> str:
         return f"{type(self).__name__}('{str(self)}', {self.currency.code})"
@@ -937,28 +945,6 @@ cdef class Money:
 
         return Money(pieces[0], Currency.from_str_c(pieces[1]))
 
-    cpdef object as_decimal(self):
-        """
-        Return the value as a built-in `Decimal`.
-
-        Returns
-        -------
-        Decimal
-
-        """
-        return decimal.Decimal(f"{self.as_f64_c():.{self._mem.currency.precision}f}")
-
-    cpdef double as_double(self) except *:
-        """
-        Return the value as a `double`.
-
-        Returns
-        -------
-        double
-
-        """
-        return self.as_f64_c()
-
     @staticmethod
     def from_str(str value) -> Money:
         """
@@ -992,6 +978,28 @@ cdef class Money:
             raise ValueError(f"The `Money` string value was malformed, was {value}")
 
         return Money.from_str_c(value)
+
+    cpdef object as_decimal(self):
+        """
+        Return the value as a built-in `Decimal`.
+
+        Returns
+        -------
+        Decimal
+
+        """
+        return decimal.Decimal(f"{self.as_f64_c():.{self._mem.currency.precision}f}")
+
+    cpdef double as_double(self) except *:
+        """
+        Return the value as a `double`.
+
+        Returns
+        -------
+        double
+
+        """
+        return self.as_f64_c()
 
     cpdef str to_str(self):
         """
