@@ -116,7 +116,16 @@ pub extern "C" fn dummy_128(buffer: Buffer128) -> Buffer128 {
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
-    use super::{Buffer, Buffer16};
+    use super::{Buffer, Buffer128, Buffer16, Buffer32, Buffer36, Buffer64};
+
+    #[test]
+    fn test_capacity() {
+        assert_eq!(Buffer16::from("").capacity(), 16);
+        assert_eq!(Buffer32::from("").capacity(), 32);
+        assert_eq!(Buffer36::from("").capacity(), 36);
+        assert_eq!(Buffer64::from("").capacity(), 64);
+        assert_eq!(Buffer128::from("").capacity(), 128);
+    }
 
     #[test]
     fn test_len() {
