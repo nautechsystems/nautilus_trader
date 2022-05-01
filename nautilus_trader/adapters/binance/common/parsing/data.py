@@ -184,18 +184,22 @@ def parse_bar_ws(
     data: BinanceCandlestick,
     ts_init: int,
 ) -> BinanceBar:
-    resolution = data.i[1]
+    resolution = data.i[-1]
     if resolution == "m":
         aggregation = BarAggregation.MINUTE
     elif resolution == "h":
         aggregation = BarAggregation.HOUR
     elif resolution == "d":
         aggregation = BarAggregation.DAY
+    elif resolution == "w":
+        aggregation = BarAggregation.WEEK
+    elif resolution == "M":
+        aggregation = BarAggregation.MONTH
     else:  # pragma: no cover (design-time error)
         raise RuntimeError(f"unsupported time aggregation resolution, was {resolution}")
 
     bar_spec = BarSpecification(
-        step=int(data.i[0]),
+        step=int(data.i[:-1]),
         aggregation=aggregation,
         price_type=PriceType.LAST,
     )
