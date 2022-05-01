@@ -209,7 +209,6 @@ def parse_historic_trade_ticks(
             size=Quantity.from_str(str(tick.size)),
             aggressor_side=AggressorSide.UNKNOWN,
             trade_id=generate_trade_id(
-                symbol=instrument_id.symbol.value,
                 ts_event=ts_init,
                 price=tick.price,
                 size=tick.size,

@@ -13,10 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import hashlib
-
-import orjson
-
+from nautilus_trader.core.datetime import nanos_to_secs
 from nautilus_trader.model.enums import BookAction
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.identifiers import TradeId
@@ -39,7 +36,7 @@ IB_TICK_TYPE = {
 }
 
 
-def generate_trade_id(symbol: str, ts_event: int, price: str, size: str) -> TradeId:
-    hash_values = (symbol, ts_event, price, size)
-    h = hashlib.sha256(orjson.dumps(hash_values))
-    return TradeId(h.hexdigest())
+def generate_trade_id(ts_event: int, price: str, size: str) -> TradeId:
+    id = TradeId(f"{int(nanos_to_secs(ts_event))}-{price}-{size}")
+    assert len(id.value) < 36, f"TradeId too long, was {len(id.value)}"
+    return id

@@ -42,7 +42,7 @@ class TestInteractiveBrokersHistoric:
                 "price": "6.2",
                 "size": "30.0",
                 "aggressor_side": "UNKNOWN",
-                "trade_id": "2a62fd894bf039d1907675dcaa8d2a64a9022fe3fa4bdd0ef9972c4b40e041d5",
+                "trade_id": "1646185673-6.2-30.0",
                 "ts_event": 1646185673000000000,
                 "ts_init": 1646185673000000000,
             }
