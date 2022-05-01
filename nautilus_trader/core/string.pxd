@@ -28,7 +28,7 @@ cdef inline Buffer16 pystr_to_buffer16(str value) except *:
     cdef Buffer16 buffer
     cdef bytes data = value.encode()
     cdef uintptr_t length = len(data)
-    assert length > 0, "Invalid empty string"
+    assert length > 0, "Invalid string: was empty"
     assert length <= 16, f"Invalid string: length exceeded buffer capacity of {16}, was {length}"
     buffer.data = data + (16 - length) * b"\x00"
     buffer.len = length
@@ -47,7 +47,7 @@ cdef inline Buffer32 pystr_to_buffer32(str value) except *:
     cdef Buffer32 buffer
     cdef bytes data = value.encode()
     cdef uintptr_t length = len(data)
-    assert length > 0, "Invalid empty string"
+    assert length > 0, "Invalid string: was empty"
     assert length <= 32, f"Invalid string: length exceeded buffer capacity of {32}, was {length}"
     buffer.data = data + (32 - length) * b"\x00"
     buffer.len = length
@@ -66,7 +66,7 @@ cdef inline Buffer36 pystr_to_buffer36(str value) except *:
     cdef Buffer36 buffer
     cdef bytes data = value.encode()
     cdef uintptr_t length = len(data)
-    assert length > 0, "Invalid empty string"
+    assert length > 0, "Invalid string: was empty"
     assert length <= 36, f"Invalid string: length exceeded buffer capacity of {36}, was {length}"
     buffer.data = data + (36 - length) * b"\x00"
     buffer.len = length
@@ -85,7 +85,7 @@ cdef inline Buffer64 pystr_to_buffer64(str value) except *:
     cdef Buffer64 buffer
     cdef bytes data = value.encode()
     cdef uintptr_t length = len(data)
-    assert length > 0, "Invalid empty string"
+    assert length > 0, "Invalid string: was empty"
     assert length <= 64, f"Invalid string: length exceeded buffer capacity of {64}, was {length}"
     buffer.data = data + (64 - length) * b"\x00"
     buffer.len = length
@@ -104,7 +104,7 @@ cdef inline Buffer128 pystr_to_buffer128(str value) except *:
     cdef Buffer128 buffer
     cdef bytes data = value.encode()
     cdef uintptr_t length = len(data)
-    assert length > 0, "Invalid empty string"
+    assert length > 0, "Invalid string: was empty"
     assert length <= 128, f"Invalid string: length exceeded buffer capacity of {128}, was {length}"
     buffer.data = data + (128 - length) * b"\x00"
     buffer.len = length
