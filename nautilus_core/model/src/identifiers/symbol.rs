@@ -13,19 +13,19 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use nautilus_core::buffer::{Buffer, Buffer128};
+use nautilus_core::buffer::{Buffer, Buffer32};
 use std::fmt::{Debug, Display, Formatter, Result};
 
 #[repr(C)]
 #[derive(Clone, Hash, PartialEq, Debug)]
 pub struct Symbol {
-    pub value: Buffer128, // TODO: Temporary to support Betfair
+    pub value: Buffer32,
 }
 
 impl From<&str> for Symbol {
     fn from(s: &str) -> Symbol {
         Symbol {
-            value: Buffer128::from(s),
+            value: Buffer32::from(s),
         }
     }
 }
@@ -45,12 +45,12 @@ pub extern "C" fn symbol_free(symbol: Symbol) {
 }
 
 #[no_mangle]
-pub extern "C" fn symbol_from_bytes(value: Buffer128) -> Symbol {
+pub extern "C" fn symbol_from_bytes(value: Buffer32) -> Symbol {
     Symbol { value }
 }
 
 #[no_mangle]
-pub extern "C" fn symbol_to_bytes(symbol: Symbol) -> Buffer128 {
+pub extern "C" fn symbol_to_bytes(symbol: Symbol) -> Buffer32 {
     symbol.value
 }
 

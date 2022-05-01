@@ -29,7 +29,7 @@ cdef extern from "../includes/model.h":
         pass
 
     cdef struct Symbol:
-        Buffer128 value;
+        Buffer32 value;
 
     cdef struct Venue:
         Buffer16 value;
@@ -57,7 +57,7 @@ cdef extern from "../includes/model.h":
         Timestamp ts_init;
 
     cdef struct TradeId_t:
-        Buffer64 value;
+        Buffer36 value;
 
     # Represents a single trade tick in a financial market.
     cdef struct TradeTick_t:
@@ -127,17 +127,17 @@ cdef extern from "../includes/model.h":
 
     void instrument_id_free(InstrumentId_t instrument_id);
 
-    InstrumentId_t instrument_id_from_buffers(Buffer128 symbol, Buffer16 venue);
+    InstrumentId_t instrument_id_from_buffers(Buffer32 symbol, Buffer16 venue);
 
     void symbol_free(Symbol symbol);
 
-    Symbol symbol_from_bytes(Buffer128 value);
+    Symbol symbol_from_bytes(Buffer32 value);
 
-    Buffer128 symbol_to_bytes(Symbol symbol);
+    Buffer32 symbol_to_bytes(Symbol symbol);
 
     void trade_id_free(TradeId_t trade_id);
 
-    TradeId_t trade_id_from_buffer(Buffer64 value);
+    TradeId_t trade_id_from_buffer(Buffer36 value);
 
     void venue_free(Venue venue);
 

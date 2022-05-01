@@ -13,19 +13,19 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use nautilus_core::buffer::{Buffer, Buffer64};
+use nautilus_core::buffer::{Buffer, Buffer36};
 use std::fmt::{Debug, Display, Formatter, Result};
 
 #[repr(C)]
 #[derive(Clone, Hash, PartialEq, Debug)]
 pub struct TradeId {
-    value: Buffer64, // TODO: Temporary to support Betfair
+    value: Buffer36,
 }
 
 impl From<&str> for TradeId {
     fn from(s: &str) -> TradeId {
         TradeId {
-            value: Buffer64::from(s),
+            value: Buffer36::from(s),
         }
     }
 }
@@ -45,7 +45,7 @@ pub extern "C" fn trade_id_free(trade_id: TradeId) {
 }
 
 #[no_mangle]
-pub extern "C" fn trade_id_from_buffer(value: Buffer64) -> TradeId {
+pub extern "C" fn trade_id_from_buffer(value: Buffer36) -> TradeId {
     TradeId { value }
 }
 
