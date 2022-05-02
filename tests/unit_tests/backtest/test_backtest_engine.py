@@ -203,8 +203,8 @@ class TestBacktestEngineData:
         ]
 
         # Act
-        engine.add_generic_data(ClientId("NEWS_CLIENT"), generic_data1)
-        engine.add_generic_data(ClientId("NEWS_CLIENT"), generic_data2)
+        engine.add_data(generic_data1, ClientId("NEWS_CLIENT"))
+        engine.add_data(generic_data2, ClientId("NEWS_CLIENT"))
 
         # Assert
         log = "".join(capsys.readouterr())
@@ -246,11 +246,11 @@ class TestBacktestEngineData:
         )
 
         # Act
-        engine.add_order_book_data([snapshot2, snapshot1])  # <-- reverse order
+        engine.add_data([snapshot2, snapshot1])  # <-- reverse order
 
         # Assert
         log = "".join(capsys.readouterr())
-        assert "Added 2 ETHUSDT.BINANCE OrderBookData elements." in log
+        assert "Added 2 ETHUSDT.BINANCE OrderBookSnapshot elements." in log
 
     def test_add_order_book_deltas_adds_to_engine(self, capsys):
         # Arrange
@@ -350,11 +350,11 @@ class TestBacktestEngineData:
         )
 
         # Act
-        engine.add_order_book_data([operations2, operations1])  # <-- not sorted
+        engine.add_data([operations2, operations1])  # <-- not sorted
 
         # Assert
         log = "".join(capsys.readouterr())
-        assert "Added 2 ETHUSDT.BINANCE OrderBookData elements." in log
+        assert "Added 2 ETHUSDT.BINANCE OrderBookDeltas elements." in log
 
     def test_add_quote_ticks_adds_to_engine(self, capsys):
         # Arrange
@@ -414,7 +414,7 @@ class TestBacktestEngineData:
 
         # Act
         engine.add_instrument(USDJPY_SIM)
-        engine.add_bars(data=bars)
+        engine.add_data(data=bars)
 
         # Assert
         log = "".join(capsys.readouterr())
@@ -489,8 +489,8 @@ class TestBacktestWithAddedBars:
 
         # Add data
         self.engine.add_instrument(GBPUSD_SIM)
-        self.engine.add_bars(bid_bars)
-        self.engine.add_bars(ask_bars)
+        self.engine.add_data(bid_bars)
+        self.engine.add_data(ask_bars)
 
         self.engine.add_venue(
             venue=self.venue,
