@@ -78,10 +78,10 @@ def back_fill_catalog(
     kinds : tuple[str] (default: ('BID_ASK', 'TRADES')
         The kinds to query data for
     """
-    for contract in contracts:
-        [details] = ib.reqContractDetails(contract=contract)
-        instrument = parse_instrument(contract_details=details)
-        for date in pd.bdate_range(start_date, end_date, tz=tz_name):
+    for date in pd.bdate_range(start_date, end_date, tz=tz_name):
+        for contract in contracts:
+            [details] = ib.reqContractDetails(contract=contract)
+            instrument = parse_instrument(contract_details=details)
             for kind in kinds:
                 fn = make_filename(catalog, instrument_id=instrument.id, kind=kind, date=date)
                 if catalog.fs.exists(fn):
@@ -144,7 +144,13 @@ def fetch_market_data(
 
         if last_date != date:
             # May contain data from next date, filter this out
-            data.extend([tick for tick in ticks if pd.to_datetime(tick)])
+            data.extend(
+                [
+                    tick
+                    for tick in ticks
+                    if pd.Timestamp(tick.time).astimezone(tz_name).date() == date
+                ]
+            )
             break
         else:
             data.extend(ticks)
