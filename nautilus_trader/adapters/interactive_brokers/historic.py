@@ -15,11 +15,13 @@
 
 import datetime
 import logging
-from typing import Dict, List, Literal
+from typing import Dict, List, Literal, Union
 
 import pandas as pd
+import pytz
 from ib_insync import IB
 from ib_insync import BarData
+from ib_insync import BarDataList
 from ib_insync import Contract
 from ib_insync import HistoricalTickBidAsk
 from ib_insync import HistoricalTickLast
@@ -105,7 +107,7 @@ def back_fill_catalog(
                 data = request_data(
                     contract=contract,
                     instrument=instrument,
-                    date=date.to_pydatetime(),
+                    date=date.date(),
                     kind=kind,
                     tz_name=tz_name,
                     ib=ib,
@@ -120,7 +122,7 @@ def back_fill_catalog(
 def request_data(
     contract: Contract,
     instrument: Instrument,
-    date: datetime.datetime,
+    date: datetime.date,
     kind: str,
     tz_name: str,
     ib: IB = None,
@@ -138,7 +140,7 @@ def request_data(
     if not raw:
         logging.info(f"No ticks for {date=} {kind=} {contract=}, skipping")
         return
-    logger.info(f"Fetched {len(raw)} raw ticks")
+    logger.info(f"Fetched {len(raw)} raw {kind}")
     if kind == "TRADES":
         return parse_historic_trade_ticks(historic_ticks=raw, instrument_id=instrument.id)
     elif kind == "BID_ASK":
@@ -156,7 +158,9 @@ def request_tick_data(
     data: List = []
 
     while True:
-        start_time = _determine_next_timestamp(date=date, timestamps=[d.time for d in data])
+        start_time = _determine_next_timestamp(
+            date=date, timestamps=[d.time for d in data], tz_name=tz_name
+        )
         logger.debug(f"Using start_time: {start_time}")
 
         ticks = _request_historical_ticks(
@@ -192,37 +196,42 @@ def request_tick_data(
 
 
 def request_bar_data(
-    contract: Contract, date: datetime.datetime, tz_name: str, bar_spec: BarSpecification, ib=None
+    contract: Contract, date: datetime.date, tz_name: str, bar_spec: BarSpecification, ib=None
 ) -> List:
     data: List = []
 
-    end_time = date + datetime.timedelta(days=1)
+    start_time = pd.Timestamp(date).tz_localize(tz_name).tz_convert("UTC")
+    end_time = start_time + datetime.timedelta(days=1)
 
     while True:
         logger.debug(f"Using end_time: {end_time}")
 
-        bars: List[BarData] = _request_historical_bars(
+        bar_data_list: BarDataList = _request_historical_bars(
             ib=ib,
             contract=contract,
             end_time=end_time.strftime("%Y%m%d %H:%M:%S %Z"),
             bar_spec=bar_spec,
         )
 
-        bars = [bar for bar in bars if bar not in data and bar.volume != 0]
+        bars = [bar for bar in bar_data_list if bar not in data and bar.volume != 0]
 
         if not bars:
             break
 
-        logger.debug(f"Received {len(bars)} bars between {bars[0].date} and {bars[-1].date}")
+        logger.info(f"Received {len(bars)} bars between {bars[0].date} and {bars[-1].date}")
 
         # We're requesting from end_date backwards, set our timestamp to the earliest timestamp
-        first_timestamp = pd.Timestamp(bars[0].date)
+        first_timestamp = pd.Timestamp(bars[0].date).tz_convert(tz_name)
         first_date = first_timestamp.date()
 
-        if first_date != date.date():
+        if first_date != date:
             # May contain data from next date, filter this out
             data.extend(
-                [bar for bar in bars if pd.Timestamp(bar.date).astimezone(tz_name).date() == date]
+                [
+                    bar
+                    for bar in bars
+                    if parse_response_datetime(bar.date, tz_name=tz_name).date() == date
+                ]
             )
             break
         else:
@@ -271,22 +280,34 @@ def _request_historical_bars(ib: IB, contract: Contract, end_time: str, bar_spec
         barSizeSetting=spec["barSizeSetting"],
         whatToShow=spec["whatToShow"],
         useRTH=False,
+        formatDate=2,
     )
 
 
-def _determine_next_timestamp(timestamps: List[pd.Timestamp], date: datetime.date):
+def _determine_next_timestamp(timestamps: List[pd.Timestamp], date: datetime.date, tz_name: str):
     """
     While looping over available data, it is possible for very liquid products that a 1s period may contain 1000 ticks,
     at which point we need to step the time forward to avoid getting stuck when iterating.
     """
     if not timestamps:
-        return pd.Timestamp(date).tz_convert("UTC")
+        return pd.Timestamp(date, tz=tz_name).tz_convert("UTC")
     unique_values = set(timestamps)
     if len(unique_values) == 1:
         timestamp = timestamps[-1]
         return timestamp + pd.Timedelta(seconds=1)
     else:
         return timestamps[-1]
+
+
+def parse_response_datetime(
+    dt: Union[datetime.datetime, pd.Timestamp], tz_name: str
+) -> datetime.datetime:
+    if isinstance(dt, pd.Timestamp):
+        dt = dt.to_pydatetime()
+    if dt.tzinfo is None:
+        tz = pytz.timezone(tz_name)
+        dt = tz.localize(dt)
+    return dt
 
 
 def parse_historic_quote_ticks(

@@ -15,13 +15,16 @@
 import datetime
 from unittest import mock
 
+import pandas as pd
 import pytest
+import pytz
 
 from nautilus_trader.adapters.interactive_brokers.historic import _bar_spec_to_hist_data_request
 from nautilus_trader.adapters.interactive_brokers.historic import back_fill_catalog
 from nautilus_trader.adapters.interactive_brokers.historic import parse_historic_bars
 from nautilus_trader.adapters.interactive_brokers.historic import parse_historic_quote_ticks
 from nautilus_trader.adapters.interactive_brokers.historic import parse_historic_trade_ticks
+from nautilus_trader.adapters.interactive_brokers.historic import parse_response_datetime
 from nautilus_trader.model.data.bar import Bar
 from nautilus_trader.model.data.bar import BarSpecification
 from nautilus_trader.model.data.tick import QuoteTick
@@ -110,10 +113,11 @@ class TestInteractiveBrokersHistoric:
             "durationStr": "1 D",
             "useRTH": False,
             "whatToShow": "TRADES",
+            "formatDate": 2,
         }
         expected = [
-            dict(contract=contract, endDateTime="20200102 00:00:00 EST", **shared),
-            dict(contract=contract, endDateTime="20200103 00:00:00 EST", **shared),
+            dict(contract=contract, endDateTime="20200102 05:00:00 UTC", **shared),
+            dict(contract=contract, endDateTime="20200103 05:00:00 UTC", **shared),
         ]
         result = [call.kwargs for call in mock_ticks.call_args_list]
         assert result == expected
@@ -238,4 +242,18 @@ class TestInteractiveBrokersHistoric:
             result = _bar_spec_to_hist_data_request(BarSpecification.from_str(spec))
         except AssertionError as exc:
             result = exc.args[0]
+        assert result == expected
+
+    @pytest.mark.parametrize(
+        "dt",
+        [
+            datetime.datetime(2019, 12, 31, 10, 5, 40),
+            pd.Timestamp("2019-12-31 10:05:40"),
+            pd.Timestamp("2019-12-31 10:05:40", tz="America/New_York"),
+        ],
+    )
+    def test_parse_response_datetime(self, dt):
+        result = parse_response_datetime(dt, tz_name="America/New_York")
+        tz = pytz.timezone("America/New_York")
+        expected = tz.localize(datetime.datetime(2019, 12, 31, 10, 5, 40))
         assert result == expected
