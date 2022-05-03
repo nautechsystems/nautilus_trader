@@ -13,24 +13,24 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use nautilus_core::buffer::{Buffer, Buffer64};
+use nautilus_core::buffer::{Buffer, Buffer128};
 use std::fmt::{Debug, Display, Formatter, Result};
 
 #[repr(C)]
 #[derive(Clone, Hash, PartialEq, Debug)]
-pub struct TradeId {
-    value: Buffer64,
+pub struct PositionId {
+    pub value: Buffer128,
 }
 
-impl From<&str> for TradeId {
-    fn from(s: &str) -> TradeId {
-        TradeId {
-            value: Buffer64::from(s),
+impl From<&str> for PositionId {
+    fn from(s: &str) -> PositionId {
+        PositionId {
+            value: Buffer128::from(s),
         }
     }
 }
 
-impl Display for TradeId {
+impl Display for PositionId {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result {
         write!(f, "{}", self.value.to_str())
     }
@@ -40,13 +40,13 @@ impl Display for TradeId {
 // C API
 ////////////////////////////////////////////////////////////////////////////////
 #[no_mangle]
-pub extern "C" fn trade_id_free(trade_id: TradeId) {
-    drop(trade_id); // Memory freed here
+pub extern "C" fn position_id_free(position_id: PositionId) {
+    drop(position_id); // Memory freed here
 }
 
 #[no_mangle]
-pub extern "C" fn trade_id_from_buffer(value: Buffer64) -> TradeId {
-    TradeId { value }
+pub extern "C" fn position_id_from_buffer(value: Buffer128) -> PositionId {
+    PositionId { value }
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -54,21 +54,22 @@ pub extern "C" fn trade_id_from_buffer(value: Buffer64) -> TradeId {
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
-    use super::TradeId;
+    use super::PositionId;
 
     #[test]
-    fn test_instrument_id_from_str() {
-        let trade_id1 = TradeId::from("123456789");
-        let trade_id2 = TradeId::from("234567890");
+    fn test_position_id_from_str() {
+        let position_id1 = PositionId::from("ETHUSDT.BINANCE-EMACross-001");
+        let position_id2 = PositionId::from("BTCUSDT.BINANCE-EMACross-002");
 
-        assert_eq!(trade_id1, trade_id1);
-        assert_ne!(trade_id1, trade_id2);
+        assert_eq!(position_id1, position_id1);
+        assert_ne!(position_id1, position_id2);
+        assert_eq!(position_id1.to_string(), "ETHUSDT.BINANCE-EMACross-001");
     }
 
     #[test]
-    fn test_trade_id_as_str() {
-        let trade_id = TradeId::from("1234567890");
+    fn test_position_id_as_str() {
+        let position_id = PositionId::from("ETHUSDT.BINANCE-EMACross-001");
 
-        assert_eq!(trade_id.to_string(), "1234567890");
+        assert_eq!(position_id.to_string(), "ETHUSDT.BINANCE-EMACross-001");
     }
 }

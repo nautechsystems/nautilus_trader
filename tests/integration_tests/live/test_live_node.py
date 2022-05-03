@@ -184,7 +184,7 @@ class TestTradingNodeOperation:
         # Assert: Log record received
         assert sink[-1]["trader_id"] == node.trader_id.value
         assert sink[-1]["machine_id"] == node.machine_id
-        assert sink[-1]["instance_id"] == node.instance_id.to_str()
+        assert sink[-1]["instance_id"] == node.instance_id.value
 
     @pytest.mark.asyncio
     async def test_start(self):

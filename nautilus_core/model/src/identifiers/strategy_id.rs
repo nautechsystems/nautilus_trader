@@ -13,24 +13,24 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use nautilus_core::buffer::{Buffer, Buffer64};
+use nautilus_core::buffer::{Buffer, Buffer36};
 use std::fmt::{Debug, Display, Formatter, Result};
 
 #[repr(C)]
 #[derive(Clone, Hash, PartialEq, Debug)]
-pub struct TradeId {
-    value: Buffer64,
+pub struct StrategyId {
+    pub value: Buffer36,
 }
 
-impl From<&str> for TradeId {
-    fn from(s: &str) -> TradeId {
-        TradeId {
-            value: Buffer64::from(s),
+impl From<&str> for StrategyId {
+    fn from(s: &str) -> StrategyId {
+        StrategyId {
+            value: Buffer36::from(s),
         }
     }
 }
 
-impl Display for TradeId {
+impl Display for StrategyId {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result {
         write!(f, "{}", self.value.to_str())
     }
@@ -40,13 +40,13 @@ impl Display for TradeId {
 // C API
 ////////////////////////////////////////////////////////////////////////////////
 #[no_mangle]
-pub extern "C" fn trade_id_free(trade_id: TradeId) {
-    drop(trade_id); // Memory freed here
+pub extern "C" fn strategy_id_free(strategy_id: StrategyId) {
+    drop(strategy_id); // Memory freed here
 }
 
 #[no_mangle]
-pub extern "C" fn trade_id_from_buffer(value: Buffer64) -> TradeId {
-    TradeId { value }
+pub extern "C" fn strategy_id_from_buffer(value: Buffer36) -> StrategyId {
+    StrategyId { value }
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -54,21 +54,22 @@ pub extern "C" fn trade_id_from_buffer(value: Buffer64) -> TradeId {
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
-    use super::TradeId;
+    use super::StrategyId;
 
     #[test]
-    fn test_instrument_id_from_str() {
-        let trade_id1 = TradeId::from("123456789");
-        let trade_id2 = TradeId::from("234567890");
+    fn test_strategy_id_from_str() {
+        let strategy_id1 = StrategyId::from("EMACross-001");
+        let strategy_id2 = StrategyId::from("EMACross-002");
 
-        assert_eq!(trade_id1, trade_id1);
-        assert_ne!(trade_id1, trade_id2);
+        assert_eq!(strategy_id1, strategy_id1);
+        assert_ne!(strategy_id1, strategy_id2);
+        assert_eq!(strategy_id1.to_string(), "EMACross-001");
     }
 
     #[test]
-    fn test_trade_id_as_str() {
-        let trade_id = TradeId::from("1234567890");
+    fn test_strategy_id_as_str() {
+        let strategy_id = StrategyId::from("EMACross-001");
 
-        assert_eq!(trade_id.to_string(), "1234567890");
+        assert_eq!(strategy_id.to_string(), "EMACross-001");
     }
 }

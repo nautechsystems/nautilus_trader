@@ -168,7 +168,7 @@ cdef class Order:
             f"{self.info()}, "
             f"status={self._fsm.state_string_c()}, "
             f"client_order_id={self.client_order_id.value}, "
-            f"venue_order_id={self.venue_order_id}, "
+            f"venue_order_id={self.venue_order_id}, "  # Can be None
             f"tags={self.tags})"
         )
 

@@ -85,6 +85,9 @@ cdef class Quantity:
 
         self._mem = quantity_new(value, precision)
 
+    def __del__(self) -> None:
+        quantity_free(self._mem)  # `self._mem` moved to Rust (then dropped)
+
     def __getstate__(self):
         return self._mem.raw, self._mem.precision
 
@@ -192,10 +195,6 @@ cdef class Quantity:
 
     def __repr__(self) -> str:
         return f"{type(self).__name__}('{self}')"
-
-    def __del__(self) -> None:
-        # https://cython.readthedocs.io/en/latest/src/userguide/special_methods.html#finalization-methods-dealloc-and-del
-        quantity_free(self._mem)  # `self._mem` moved to Rust (then dropped)
 
     @property
     def precision(self) -> int:
@@ -452,6 +451,9 @@ cdef class Price:
 
         self._mem = price_new(value, precision)
 
+    def __del__(self) -> None:
+        price_free(self._mem)  # `self._mem` moved to Rust (then dropped)
+
     def __getstate__(self):
         return self._mem.raw, self._mem.precision
 
@@ -559,10 +561,6 @@ cdef class Price:
 
     def __repr__(self) -> str:
         return f"{type(self).__name__}('{self}')"
-
-    def __del__(self) -> None:
-        # https://cython.readthedocs.io/en/latest/src/userguide/special_methods.html#finalization-methods-dealloc-and-del
-        price_free(self._mem)  # `self._mem` moved to Rust (then dropped)
 
     @property
     def precision(self) -> int:
@@ -761,6 +759,9 @@ cdef class Money:
         self._mem = money_new(float(value), <Currency_t>currency._currency)  # borrows wrapped `currency`
         self.currency = currency
 
+    def __del__(self) -> None:
+        money_free(self._mem)  # `self._mem` moved to Rust (then dropped)
+
     def __getstate__(self):
         return self._mem.raw, self.currency
 
@@ -875,10 +876,6 @@ cdef class Money:
 
     def __repr__(self) -> str:
         return f"{type(self).__name__}('{str(self)}', {self.currency.code})"
-
-    def __del__(self) -> None:
-        # https://cython.readthedocs.io/en/latest/src/userguide/special_methods.html#finalization-methods-dealloc-and-del
-        money_free(self._mem)  # `self._mem` moved to Rust (then dropped)
 
     cdef bint is_zero(self) except *:
         return self._mem.raw == 0
