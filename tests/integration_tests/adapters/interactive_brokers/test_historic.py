@@ -185,13 +185,13 @@ class TestInteractiveBrokersHistoric:
             {
                 "type": "Bar",
                 "bar_type": "AAPL.NASDAQ-1-MINUTE-LAST-EXTERNAL",
-                "open": "141.00",
-                "high": "141.00",
-                "low": "141.00",
-                "close": "141.00",
-                "volume": "4",
-                "ts_event": 1577786700000000000,
-                "ts_init": 1577786700000000000,
+                "open": "219.00",
+                "high": "219.00",
+                "low": "219.00",
+                "close": "219.00",
+                "volume": "1",
+                "ts_event": 1609838880000000000,
+                "ts_init": 1609838880000000000,
             }
         )
         assert ticks[0] == expected

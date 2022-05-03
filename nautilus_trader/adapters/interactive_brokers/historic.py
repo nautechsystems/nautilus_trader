@@ -120,7 +120,7 @@ def back_fill_catalog(
 def request_data(
     contract: Contract,
     instrument: Instrument,
-    date: datetime.date,
+    date: datetime.datetime,
     kind: str,
     tz_name: str,
     ib: IB = None,
@@ -192,7 +192,7 @@ def request_tick_data(
 
 
 def request_bar_data(
-    contract: Contract, date: datetime.date, tz_name: str, bar_spec: BarSpecification, ib=None
+    contract: Contract, date: datetime.datetime, tz_name: str, bar_spec: BarSpecification, ib=None
 ) -> List:
     data: List = []
 
@@ -201,33 +201,34 @@ def request_bar_data(
     while True:
         logger.debug(f"Using end_time: {end_time}")
 
-        bars = _request_historical_bars(
+        bars: List[BarData] = _request_historical_bars(
             ib=ib,
             contract=contract,
             end_time=end_time.strftime("%Y%m%d %H:%M:%S %Z"),
             bar_spec=bar_spec,
         )
 
-        bars = [t for t in bars if t not in data]
+        bars = [bar for bar in bars if bar not in data and bar.volume != 0]
 
         if not bars:
-            return []
+            break
 
-        logger.debug(f"Received {len(bars)} bars between {bars[0].time} and {bars[-1].time}")
+        logger.debug(f"Received {len(bars)} bars between {bars[0].date} and {bars[-1].date}")
 
-        last_timestamp = pd.Timestamp(bars[-1].time)
-        last_date = last_timestamp.astimezone(tz_name).date()
+        # We're requesting from end_date backwards, set our timestamp to the earliest timestamp
+        first_timestamp = pd.Timestamp(bars[0].date)
+        first_date = first_timestamp.date()
 
-        if last_date != date:
+        if first_date != date.date():
             # May contain data from next date, filter this out
             data.extend(
-                [bar for bar in bars if pd.Timestamp(bar.time).astimezone(tz_name).date() == date]
+                [bar for bar in bars if pd.Timestamp(bar.date).astimezone(tz_name).date() == date]
             )
             break
         else:
             data.extend(bars)
 
-        end_time = last_timestamp
+        end_time = first_timestamp
 
     return data
 
