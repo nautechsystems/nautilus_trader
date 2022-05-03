@@ -45,13 +45,8 @@ pub extern "C" fn symbol_free(symbol: Symbol) {
 }
 
 #[no_mangle]
-pub extern "C" fn symbol_from_bytes(value: Buffer32) -> Symbol {
+pub extern "C" fn symbol_from_buffer(value: Buffer32) -> Symbol {
     Symbol { value }
-}
-
-#[no_mangle]
-pub extern "C" fn symbol_to_bytes(symbol: Symbol) -> Buffer32 {
-    symbol.value
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -59,7 +54,7 @@ pub extern "C" fn symbol_to_bytes(symbol: Symbol) -> Buffer32 {
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
-    use crate::identifiers::symbol::Symbol;
+    use super::Symbol;
 
     #[test]
     fn test_symbol_from_str() {

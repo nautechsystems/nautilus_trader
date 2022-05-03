@@ -100,13 +100,13 @@ cdef class Position:
         self.apply(fill)
 
     def __eq__(self, Position other) -> bool:
-        return self.id.value == other.id.value
+        return self.id == other.id
 
     def __hash__(self) -> int:
-        return hash(self.id.value)
+        return hash(self.id)
 
     def __repr__(self) -> str:
-        return f"{type(self).__name__}({self.info()}, id={self.id.value})"
+        return f"{type(self).__name__}({self.info()}, id={self.id})"
 
     cpdef str info(self):
         """

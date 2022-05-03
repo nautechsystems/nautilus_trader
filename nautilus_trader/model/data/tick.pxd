@@ -31,9 +31,6 @@ from nautilus_trader.model.objects cimport Quantity
 cdef class QuoteTick(Data):
     cdef QuoteTick_t _mem
 
-    cdef readonly InstrumentId instrument_id
-    """The tick instrument ID.\n\n:returns: `InstrumentId`"""
-
     @staticmethod
     cdef QuoteTick from_raw_c(
         InstrumentId instrument_id,
@@ -58,11 +55,6 @@ cdef class QuoteTick(Data):
 
 cdef class TradeTick(Data):
     cdef TradeTick_t _mem
-
-    cdef readonly InstrumentId instrument_id
-    """The tick instrument ID.\n\n:returns: `InstrumentId`"""
-    cdef readonly TradeId trade_id
-    """The trade match ID.\n\n:returns: `str`"""
 
     @staticmethod
     cdef TradeTick from_raw_c(

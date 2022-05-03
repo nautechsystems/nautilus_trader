@@ -13,24 +13,24 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use nautilus_core::buffer::{Buffer, Buffer64};
+use nautilus_core::buffer::{Buffer, Buffer36};
 use std::fmt::{Debug, Display, Formatter, Result};
 
 #[repr(C)]
 #[derive(Clone, Hash, PartialEq, Debug)]
-pub struct TradeId {
-    value: Buffer64,
+pub struct AccountId {
+    value: Buffer36,
 }
 
-impl From<&str> for TradeId {
-    fn from(s: &str) -> TradeId {
-        TradeId {
-            value: Buffer64::from(s),
+impl From<&str> for AccountId {
+    fn from(s: &str) -> AccountId {
+        AccountId {
+            value: Buffer36::from(s),
         }
     }
 }
 
-impl Display for TradeId {
+impl Display for AccountId {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result {
         write!(f, "{}", self.value.to_str())
     }
@@ -40,13 +40,13 @@ impl Display for TradeId {
 // C API
 ////////////////////////////////////////////////////////////////////////////////
 #[no_mangle]
-pub extern "C" fn trade_id_free(trade_id: TradeId) {
-    drop(trade_id); // Memory freed here
+pub extern "C" fn account_id_free(account_id: AccountId) {
+    drop(account_id); // Memory freed here
 }
 
 #[no_mangle]
-pub extern "C" fn trade_id_from_buffer(value: Buffer64) -> TradeId {
-    TradeId { value }
+pub extern "C" fn account_id_from_buffer(value: Buffer36) -> AccountId {
+    AccountId { value }
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -54,21 +54,21 @@ pub extern "C" fn trade_id_from_buffer(value: Buffer64) -> TradeId {
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
-    use super::TradeId;
+    use super::AccountId;
 
     #[test]
-    fn test_instrument_id_from_str() {
-        let trade_id1 = TradeId::from("123456789");
-        let trade_id2 = TradeId::from("234567890");
+    fn test_account_id_from_str() {
+        let account_id1 = AccountId::from("123456789");
+        let account_id2 = AccountId::from("234567890");
 
-        assert_eq!(trade_id1, trade_id1);
-        assert_ne!(trade_id1, trade_id2);
+        assert_eq!(account_id1, account_id1);
+        assert_ne!(account_id1, account_id2);
     }
 
     #[test]
-    fn test_trade_id_as_str() {
-        let trade_id = TradeId::from("1234567890");
+    fn test_account_id_as_str() {
+        let account_id = AccountId::from("1234567890");
 
-        assert_eq!(trade_id.to_string(), "1234567890");
+        assert_eq!(account_id.to_string(), "1234567890");
     }
 }

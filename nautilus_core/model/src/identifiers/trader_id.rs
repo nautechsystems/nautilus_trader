@@ -13,24 +13,24 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use nautilus_core::buffer::{Buffer, Buffer64};
+use nautilus_core::buffer::{Buffer, Buffer32};
 use std::fmt::{Debug, Display, Formatter, Result};
 
 #[repr(C)]
 #[derive(Clone, Hash, PartialEq, Debug)]
-pub struct TradeId {
-    value: Buffer64,
+pub struct TraderId {
+    pub value: Buffer32,
 }
 
-impl From<&str> for TradeId {
-    fn from(s: &str) -> TradeId {
-        TradeId {
-            value: Buffer64::from(s),
+impl From<&str> for TraderId {
+    fn from(s: &str) -> TraderId {
+        TraderId {
+            value: Buffer32::from(s),
         }
     }
 }
 
-impl Display for TradeId {
+impl Display for TraderId {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result {
         write!(f, "{}", self.value.to_str())
     }
@@ -40,13 +40,13 @@ impl Display for TradeId {
 // C API
 ////////////////////////////////////////////////////////////////////////////////
 #[no_mangle]
-pub extern "C" fn trade_id_free(trade_id: TradeId) {
-    drop(trade_id); // Memory freed here
+pub extern "C" fn trader_id_free(trader_id: TraderId) {
+    drop(trader_id); // Memory freed here
 }
 
 #[no_mangle]
-pub extern "C" fn trade_id_from_buffer(value: Buffer64) -> TradeId {
-    TradeId { value }
+pub extern "C" fn trader_id_from_buffer(value: Buffer32) -> TraderId {
+    TraderId { value }
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -54,21 +54,22 @@ pub extern "C" fn trade_id_from_buffer(value: Buffer64) -> TradeId {
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
-    use super::TradeId;
+    use super::TraderId;
 
     #[test]
-    fn test_instrument_id_from_str() {
-        let trade_id1 = TradeId::from("123456789");
-        let trade_id2 = TradeId::from("234567890");
+    fn test_trader_id_from_str() {
+        let trader_id1 = TraderId::from("EMACross-001");
+        let trader_id2 = TraderId::from("EMACross-002");
 
-        assert_eq!(trade_id1, trade_id1);
-        assert_ne!(trade_id1, trade_id2);
+        assert_eq!(trader_id1, trader_id1);
+        assert_ne!(trader_id1, trader_id2);
+        assert_eq!(trader_id1.to_string(), "EMACross-001");
     }
 
     #[test]
-    fn test_trade_id_as_str() {
-        let trade_id = TradeId::from("1234567890");
+    fn test_trader_id_as_str() {
+        let trader_id = TraderId::from("EMACross-001");
 
-        assert_eq!(trade_id.to_string(), "1234567890");
+        assert_eq!(trader_id.to_string(), "EMACross-001");
     }
 }

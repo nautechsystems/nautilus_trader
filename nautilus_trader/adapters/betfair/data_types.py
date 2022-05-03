@@ -80,7 +80,7 @@ class BSPOrderBookDelta(OrderBookDelta):
             else None
         )
         return BSPOrderBookDelta(
-            instrument_id=InstrumentId.from_str(values["instrument_id"]),
+            instrument_id=InstrumentId.from_str(values["instrument_id"][:32]),
             book_type=BookTypeParser.from_str_py(values["book_type"]),
             action=action,
             order=order,

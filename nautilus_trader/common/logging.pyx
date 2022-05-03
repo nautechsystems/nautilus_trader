@@ -212,7 +212,7 @@ cdef class Logger:
             "color": color,
             "trader_id": self.trader_id.value,
             "machine_id": self.machine_id,
-            "instance_id": self.instance_id.to_str(),
+            "instance_id": self.instance_id.value,
             "component": component,
             "msg": msg,
         }

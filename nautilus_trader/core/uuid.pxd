@@ -19,6 +19,7 @@ from nautilus_trader.core.rust.core cimport UUID4_t
 cdef class UUID4:
     cdef UUID4_t _uuid4
 
-    cdef UUID4_t _uuid4_from_pystring(self, str value) except *
+    cdef readonly str value
+    """The UUID4 value.\n\n:returns: `str`"""
 
-    cpdef str to_str(self)
+    cdef UUID4_t _uuid4_from_pystring(self, str value) except *
