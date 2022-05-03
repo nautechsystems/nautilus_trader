@@ -200,8 +200,8 @@ class TestInteractiveBrokersHistoric:
         "spec, expected",
         [
             (
-                "1-SECOND-BID",
-                {"durationStr": "1 D", "barSizeSetting": "1 sec", "whatToShow": "BID"},
+                "1-SECOND-BID",  # For some reason 1 = secs but 1 = min
+                {"durationStr": "1 D", "barSizeSetting": "1 secs", "whatToShow": "BID"},
             ),
             (
                 "5-SECOND-BID",

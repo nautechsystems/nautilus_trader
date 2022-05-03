@@ -256,8 +256,9 @@ def _bar_spec_to_hist_data_request(bar_spec: BarSpecification) -> Dict[str, str]
     what_to_show = price_mapping.get(price_type, price_type)
 
     size_mapping = {"SECOND": "sec", "MINUTE": "min", "HOUR": "hour"}
+    suffix = "" if bar_spec.step == 1 and aggregation != "SECOND" else "s"
     bar_size = size_mapping.get(aggregation, aggregation)
-    bar_size_setting = f"{bar_spec.step} {bar_size if bar_spec.step == 1 else bar_size + 's'}"
+    bar_size_setting = f"{bar_spec.step} {bar_size + suffix}"
     return {"durationStr": "1 D", "barSizeSetting": bar_size_setting, "whatToShow": what_to_show}
 
 
