@@ -55,4 +55,4 @@ class TestUUIDPerformance(PerformanceHarness):
             runs=100000,
             iterations=1,
         )
-        # ~0.0ms / ~0.7μs / 701ns minimum of 100,000 runs @ 1 iteration each run.
+        # ~0.0ms / ~0.9μs / 910ns minimum of 100,000 runs @ 1 iteration each run.

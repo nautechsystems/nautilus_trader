@@ -631,7 +631,7 @@ cdef class LiveExecutionEngine(ExecutionEngine):
             client_order_id=order.client_order_id,
             venue_order_id=report.venue_order_id,
             position_id=PositionId(f"{instrument.id}-EXTERNAL"),
-            trade_id=TradeId(str({self._uuid_factory.generate().to_str()})),
+            trade_id=TradeId(self._uuid_factory.generate().value),
             order_side=order.side,
             order_type=order.type,
             last_qty=last_qty,

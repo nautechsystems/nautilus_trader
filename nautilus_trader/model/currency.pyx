@@ -78,6 +78,9 @@ cdef class Currency:
             currency_type,
         )
 
+    def __del__(self) -> None:
+        currency_free(self._currency)  # `self._currency` moved to Rust (then dropped)
+
     def __getstate__(self):
         return (
             buffer16_to_pystr(self._currency.code),
@@ -114,9 +117,6 @@ cdef class Currency:
             f"iso4217={self._currency.iso4217}, "
             f"type={CurrencyTypeParser.to_str(<CurrencyType>self._currency.currency_type)})"
         )
-
-    def __del__(self) -> None:
-        currency_free(self._currency)  # `self._currency` moved to Rust (then dropped)
 
     @property
     def code(self) -> str:

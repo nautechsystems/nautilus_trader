@@ -142,7 +142,7 @@ class TestObjectPerformance(PerformanceHarness):
             runs=100000,
             iterations=1,
         )
-        # ~0.0ms / ~0.8μs / 824ns minimum of 100,000 runs @ 1 iteration each run.
+        # ~0.0ms / ~0.2μs / 225ns minimum of 100,000 runs @ 1 iteration each run.
 
     def test_create_trade_tick(self):
         audusd_sim = TestInstrumentProvider.default_fx_ccy("AUD/USD")
@@ -163,7 +163,7 @@ class TestObjectPerformance(PerformanceHarness):
             runs=100000,
             iterations=1,
         )
-        # ~0.0ms / ~3.2μs / 3153ns minimum of 100,000 runs @ 1 iteration each run.
+        # ~0.0ms / ~2.5μs / 2492ns minimum of 100,000 runs @ 1 iteration each run.
 
     def test_create_trade_tick_from_raw(self):
         audusd_sim = TestInstrumentProvider.default_fx_ccy("AUD/USD")
@@ -186,4 +186,4 @@ class TestObjectPerformance(PerformanceHarness):
             runs=100000,
             iterations=1,
         )
-        # ~0.0ms / ~1.6μs / 1605ns minimum of 100,000 runs @ 1 iteration each run.
+        # ~0.0ms / ~1.0μs / 972ns minimum of 100,000 runs @ 1 iteration each run.

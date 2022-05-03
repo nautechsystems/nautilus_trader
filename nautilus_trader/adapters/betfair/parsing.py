@@ -197,7 +197,7 @@ def order_submit_to_betfair(command: SubmitOrder, instrument: BettingInstrument)
     place_order = {
         "market_id": instrument.market_id,
         # Used to de-dupe orders on betfair server side
-        "customer_ref": command.id.to_str().replace("-", ""),
+        "customer_ref": command.id.value.replace("-", ""),
         "customer_strategy_ref": command.strategy_id.value[:15],
         "instructions": [
             {
@@ -228,7 +228,7 @@ def order_update_to_betfair(
     """
     return {
         "market_id": instrument.market_id,
-        "customer_ref": command.id.to_str().replace("-", ""),
+        "customer_ref": command.id.value.replace("-", ""),
         "instructions": [
             {
                 "betId": venue_order_id.value,
@@ -244,7 +244,7 @@ def order_cancel_to_betfair(command: CancelOrder, instrument: BettingInstrument)
     """
     return {
         "market_id": instrument.market_id,
-        "customer_ref": command.id.to_str().replace("-", ""),
+        "customer_ref": command.id.value.replace("-", ""),
         "instructions": [{"betId": command.venue_order_id.value}],
     }
 

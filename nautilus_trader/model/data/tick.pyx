@@ -19,15 +19,10 @@ from libc.stdint cimport uint64_t
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.data cimport Data
-from nautilus_trader.core.rust.model cimport instrument_id_from_buffers
 from nautilus_trader.core.rust.model cimport quote_tick_free
 from nautilus_trader.core.rust.model cimport quote_tick_from_raw
-from nautilus_trader.core.rust.model cimport trade_id_from_buffer
 from nautilus_trader.core.rust.model cimport trade_tick_free
 from nautilus_trader.core.rust.model cimport trade_tick_from_raw
-from nautilus_trader.core.string cimport pystr_to_buffer16
-from nautilus_trader.core.string cimport pystr_to_buffer32
-from nautilus_trader.core.string cimport pystr_to_buffer36
 from nautilus_trader.model.c_enums.aggressor_side cimport AggressorSide
 from nautilus_trader.model.c_enums.aggressor_side cimport AggressorSideParser
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
@@ -74,14 +69,8 @@ cdef class QuoteTick(Data):
     ):
         super().__init__(ts_event, ts_init)
 
-        # Temporary until identifiers moved to Rust
-        self.instrument_id = instrument_id
-
         self._mem = quote_tick_from_raw(
-            instrument_id_from_buffers(
-                pystr_to_buffer32(instrument_id.symbol.value),
-                pystr_to_buffer16(instrument_id.venue.value),
-            ),
+            instrument_id._mem,
             bid._mem.raw,
             ask._mem.raw,
             bid._mem.precision,
@@ -91,6 +80,9 @@ cdef class QuoteTick(Data):
             ts_event,
             ts_init,
         )
+
+    def __del__(self) -> None:
+        quote_tick_free(self._mem)  # `self._mem` moved to Rust (then dropped)
 
     def __eq__(self, QuoteTick other) -> bool:
         return QuoteTick.to_dict_c(self) == QuoteTick.to_dict_c(other)
@@ -111,10 +103,6 @@ cdef class QuoteTick(Data):
     def __repr__(self) -> str:
         return f"{type(self).__name__}({self})"
 
-    def __del__(self) -> None:
-        # https://cython.readthedocs.io/en/latest/src/userguide/special_methods.html#finalization-methods-dealloc-and-del
-        quote_tick_free(self._mem)  # `self._mem` moved to Rust (then dropped)
-
     @staticmethod
     cdef QuoteTick from_raw_c(
         InstrumentId instrument_id,
@@ -128,14 +116,10 @@ cdef class QuoteTick(Data):
         uint64_t ts_init,
     ):
         cdef QuoteTick tick = QuoteTick.__new__(QuoteTick)
-        tick.instrument_id = instrument_id
         tick.ts_event = ts_event
         tick.ts_init = ts_init
         tick._mem = quote_tick_from_raw(
-            instrument_id_from_buffers(
-                pystr_to_buffer32(instrument_id.symbol.value),
-                pystr_to_buffer16(instrument_id.venue.value),
-            ),
+            instrument_id._mem,
             raw_bid,
             raw_ask,
             price_prec,
@@ -147,6 +131,18 @@ cdef class QuoteTick(Data):
         )
 
         return tick
+
+    @property
+    def instrument_id(self) -> InstrumentId:
+        """
+        The tick instrument ID.
+
+        Returns
+        -------
+        Price
+
+        """
+        return InstrumentId.from_raw_c(self._mem.instrument_id)
 
     @property
     def bid(self) -> Price:
@@ -394,24 +390,20 @@ cdef class TradeTick(Data):
     ):
         super().__init__(ts_event, ts_init)
 
-        # Temporary until identifiers moved to Rust
-        self.instrument_id = instrument_id
-        self.trade_id = trade_id
-
         self._mem = trade_tick_from_raw(
-            instrument_id_from_buffers(
-                pystr_to_buffer32(instrument_id.symbol.value),
-                pystr_to_buffer16(instrument_id.venue.value),
-            ),
+            instrument_id._mem,
             price._mem.raw,
             price._mem.precision,
             size._mem.raw,
             size._mem.precision,
             <OrderSide>aggressor_side,
-            trade_id_from_buffer(pystr_to_buffer36(trade_id.value)),
+            trade_id._mem,
             ts_event,
             ts_init,
         )
+
+    def __del__(self) -> None:
+        trade_tick_free(self._mem)  # `self._mem` moved to Rust (then dropped)
 
     def __eq__(self, TradeTick other) -> bool:
         return TradeTick.to_dict_c(self) == TradeTick.to_dict_c(other)
@@ -432,9 +424,29 @@ cdef class TradeTick(Data):
     def __repr__(self) -> str:
         return f"{type(self).__name__}({self})"
 
-    def __del__(self) -> None:
-        # https://cython.readthedocs.io/en/latest/src/userguide/special_methods.html#finalization-methods-dealloc-and-del
-        trade_tick_free(self._mem)  # `self._mem` moved to Rust (then dropped)
+    @property
+    def instrument_id(self) -> InstrumentId:
+        """
+        The tick instrument ID.
+
+        Returns
+        -------
+        Price
+
+        """
+        return InstrumentId.from_raw_c(self._mem.instrument_id)
+
+    @property
+    def trade_id(self) -> InstrumentId:
+        """
+        The tick instrument ID.
+
+        Returns
+        -------
+        Price
+
+        """
+        return TradeId.from_raw_c(self._mem.trade_id)
 
     @property
     def price(self) -> Price:
@@ -485,21 +497,16 @@ cdef class TradeTick(Data):
         uint64_t ts_init,
     ):
         cdef TradeTick tick = TradeTick.__new__(TradeTick)
-        tick.instrument_id = instrument_id
-        tick.trade_id = trade_id
         tick.ts_event = ts_event
         tick.ts_init = ts_init
         tick._mem = trade_tick_from_raw(
-            instrument_id_from_buffers(
-                pystr_to_buffer32(instrument_id.symbol.value),
-                pystr_to_buffer16(instrument_id.venue.value),
-            ),
+            instrument_id._mem,
             raw_price,
             price_prec,
             raw_size,
             size_prec,
             <OrderSide>aggressor_side,
-            trade_id_from_buffer(pystr_to_buffer36(trade_id.value)),
+            trade_id._mem,
             ts_event,
             ts_init,
         )

@@ -685,7 +685,7 @@ cdef class SimulatedExchange:
         if bar.high._mem.raw > last._mem.raw:  # Direct memory comparison
             tick._mem.price = bar.high._mem  # Direct memory assignment
             tick._mem.aggressor_side = <OrderSide>AggressorSide.BUY  # Direct memory assignment
-            tick.trade_id = self._generate_trade_id()
+            tick._mem.trade_id = self._generate_trade_id()._mem
             book.update_trade_tick(tick)
             self._iterate_matching_engine(
                 tick.instrument_id,
@@ -697,7 +697,7 @@ cdef class SimulatedExchange:
         if bar.low._mem.raw < last._mem.raw:  # Direct memory comparison
             tick._mem.price = bar.low._mem  # Direct memory assignment
             tick._mem.aggressor_side = <OrderSide>AggressorSide.SELL
-            tick.trade_id = self._generate_trade_id()
+            tick._mem.trade_id = self._generate_trade_id()._mem
             book.update_trade_tick(tick)
             self._iterate_matching_engine(
                 tick.instrument_id,
@@ -709,7 +709,7 @@ cdef class SimulatedExchange:
         if bar.close._mem.raw != last._mem.raw:  # Direct memory comparison
             tick._mem.price = bar.close._mem  # Direct memory assignment
             tick._mem.aggressor_side = <OrderSide>AggressorSide.BUY if bar.close._mem.raw > last._mem.raw else <OrderSide>AggressorSide.SELL
-            tick.trade_id = self._generate_trade_id()
+            tick._mem.trade_id = self._generate_trade_id()._mem
             book.update_trade_tick(tick)
             self._iterate_matching_engine(
                 tick.instrument_id,

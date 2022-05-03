@@ -13,19 +13,19 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use nautilus_core::buffer::{Buffer, Buffer16};
+use nautilus_core::buffer::{Buffer, Buffer32};
 use std::fmt::{Debug, Display, Formatter, Result};
 
 #[repr(C)]
 #[derive(Clone, Hash, PartialEq, Debug)]
 pub struct Venue {
-    pub value: Buffer16,
+    pub value: Buffer32,
 }
 
 impl From<&str> for Venue {
     fn from(s: &str) -> Venue {
         Venue {
-            value: Buffer16::from(s),
+            value: Buffer32::from(s),
         }
     }
 }
@@ -45,13 +45,8 @@ pub extern "C" fn venue_free(venue: Venue) {
 }
 
 #[no_mangle]
-pub extern "C" fn venue_from_bytes(value: Buffer16) -> Venue {
+pub extern "C" fn venue_from_buffer(value: Buffer32) -> Venue {
     Venue { value }
-}
-
-#[no_mangle]
-pub extern "C" fn venue_to_bytes(venue: Venue) -> Buffer16 {
-    venue.value
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -59,7 +54,7 @@ pub extern "C" fn venue_to_bytes(venue: Venue) -> Buffer16 {
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
-    use crate::identifiers::venue::Venue;
+    use super::Venue;
 
     #[test]
     fn test_venue_from_str() {

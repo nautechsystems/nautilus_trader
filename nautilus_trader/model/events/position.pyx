@@ -187,7 +187,7 @@ cdef class PositionEvent(Event):
             f"position_id={self.position_id.value}, "
             f"account_id={self.account_id.value}, "
             f"opening_order_id={self.opening_order_id.value}, "
-            f"closing_order_id={self.closing_order_id}, "
+            f"closing_order_id={self.closing_order_id}, "  # Can be None
             f"strategy_id={self.strategy_id.value}, "
             f"entry={OrderSideParser.to_str(self.entry)}, "
             f"side={PositionSideParser.to_str(self.side)}, "
@@ -388,7 +388,7 @@ cdef class PositionOpened(PositionEvent):
             "avg_px_open": obj.avg_px_open,
             "realized_pnl": obj.realized_pnl.to_str(),
             "duration_ns": obj.duration_ns,
-            "event_id": obj.id.to_str(),
+            "event_id": obj.id.value,
             "ts_event": obj.ts_event,
             "ts_init": obj.ts_init,
         }
@@ -653,7 +653,7 @@ cdef class PositionChanged(PositionEvent):
             "realized_return": obj.realized_return,
             "realized_pnl": obj.realized_pnl.to_str(),
             "unrealized_pnl": obj.unrealized_pnl.to_str(),
-            "event_id": obj.id.to_str(),
+            "event_id": obj.id.value,
             "ts_opened": obj.ts_opened,
             "ts_event": obj.ts_event,
             "ts_init": obj.ts_init,
@@ -924,7 +924,7 @@ cdef class PositionClosed(PositionEvent):
             "avg_px_close": obj.avg_px_close,
             "realized_return": obj.realized_return,
             "realized_pnl": obj.realized_pnl.to_str(),
-            "event_id": obj.id.to_str(),
+            "event_id": obj.id.value,
             "ts_opened": obj.ts_opened,
             "ts_closed": obj.ts_closed,
             "duration_ns": obj.duration_ns,
