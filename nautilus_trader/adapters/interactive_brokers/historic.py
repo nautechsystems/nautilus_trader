@@ -15,10 +15,11 @@
 
 import datetime
 import logging
-from typing import List, Literal
+from typing import Dict, List, Literal
 
 import pandas as pd
 from ib_insync import IB
+from ib_insync import BarData
 from ib_insync import Contract
 from ib_insync import HistoricalTickBidAsk
 from ib_insync import HistoricalTickLast
@@ -26,10 +27,17 @@ from ib_insync import HistoricalTickLast
 from nautilus_trader.adapters.interactive_brokers.parsing.data import generate_trade_id
 from nautilus_trader.adapters.interactive_brokers.parsing.instruments import parse_instrument
 from nautilus_trader.core.datetime import dt_to_unix_nanos
+from nautilus_trader.model.c_enums.bar_aggregation import BarAggregationParser
+from nautilus_trader.model.c_enums.price_type import PriceTypeParser
+from nautilus_trader.model.data.bar import Bar
+from nautilus_trader.model.data.bar import BarSpecification
+from nautilus_trader.model.data.bar import BarType
 from nautilus_trader.model.data.tick import QuoteTick
 from nautilus_trader.model.data.tick import TradeTick
+from nautilus_trader.model.enums import AggregationSource
 from nautilus_trader.model.enums import AggressorSide
 from nautilus_trader.model.identifiers import InstrumentId
+from nautilus_trader.model.instruments.base import Instrument
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.persistence.catalog import DataCatalog
@@ -39,13 +47,13 @@ from nautilus_trader.persistence.external.core import write_objects
 logger = logging.getLogger(__name__)
 
 
-def make_filename(
+def generate_filename(
     catalog: DataCatalog,
     instrument_id: InstrumentId,
     kind: Literal["BID_ASK", "TRADES"],
     date: datetime.date,
-):
-    fn_kind = {"BID_ASK": "quote_tick", "TRADES": "trade_tick"}[kind]
+) -> str:
+    fn_kind = {"BID_ASK": "quote_tick", "TRADES": "trade_tick", "BARS": "bars"}[kind.split("-")[0]]
     return f"{catalog.path}/data/{fn_kind}.parquet/instrument_id={instrument_id.value}/{date:%Y%m%d}-0.parquet"
 
 
@@ -66,7 +74,7 @@ def back_fill_catalog(
     ib : IB
         The ib_insync client.
     catalog : DataCatalog
-        DataCatalog to write the data to
+        The DataCatalog to write the data to
     contracts : List[Contract]
         The list of IB Contracts to collect data for
     start_date : datetime.date
@@ -76,53 +84,79 @@ def back_fill_catalog(
     tz_name : str
         The timezone of the contracts
     kinds : tuple[str] (default: ('BID_ASK', 'TRADES')
-        The kinds to query data for
+        The kinds to query data for, can be any of:
+        - BID_ASK
+        - TRADES
+        - A bar specification, i.e. BARS-1-MINUTE-LAST or BARS-5-SECOND-MID
     """
     for date in pd.bdate_range(start_date, end_date, tz=tz_name):
         for contract in contracts:
             [details] = ib.reqContractDetails(contract=contract)
             instrument = parse_instrument(contract_details=details)
             for kind in kinds:
-                fn = make_filename(catalog, instrument_id=instrument.id, kind=kind, date=date)
+                fn = generate_filename(catalog, instrument_id=instrument.id, kind=kind, date=date)
                 if catalog.fs.exists(fn):
                     logger.info(
                         f"file for {instrument.id.value} {kind} {date:%Y-%m-%d} exists, skipping"
                     )
                     continue
                 logger.info(f"Fetching {instrument.id.value} {kind} for {date:%Y-%m-%d}")
-                raw = fetch_market_data(
-                    contract=contract, date=date.to_pydatetime(), kind=kind, tz_name=tz_name, ib=ib
+
+                data = request_data(
+                    contract=contract,
+                    instrument=instrument,
+                    date=date.to_pydatetime(),
+                    kind=kind,
+                    tz_name=tz_name,
+                    ib=ib,
                 )
-                if not raw:
-                    logging.info("No ticks for {, skipping")
+                if data is None:
                     continue
-                logger.info(f"Fetched {len(raw)} raw ticks")
-                if kind == "TRADES":
-                    ticks = parse_historic_trade_ticks(
-                        historic_ticks=raw, instrument_id=instrument.id
-                    )
-                elif kind == "BID_ASK":
-                    ticks = parse_historic_quote_ticks(
-                        historic_ticks=raw, instrument_id=instrument.id
-                    )
-                else:
-                    raise RuntimeError()
+
                 template = f"{date:%Y%m%d}" + "-{i}.parquet"
-                write_objects(catalog=catalog, chunk=ticks, basename_template=template)
+                write_objects(catalog=catalog, chunk=data, basename_template=template)
 
 
-def fetch_market_data(
+def request_data(
+    contract: Contract,
+    instrument: Instrument,
+    date: datetime.date,
+    kind: str,
+    tz_name: str,
+    ib: IB = None,
+):
+    if kind in ("TRADES", "BID_ASK"):
+        raw = request_tick_data(contract=contract, date=date, kind=kind, tz_name=tz_name, ib=ib)
+    elif kind.split("-")[0] == "BARS":
+        bar_spec = BarSpecification.from_str(kind.split("-", maxsplit=1)[1])
+        raw = request_bar_data(
+            contract=contract, date=date, bar_spec=bar_spec, tz_name=tz_name, ib=ib
+        )
+    else:
+        raise RuntimeError(f"Unknown {kind=}")
+
+    if not raw:
+        logging.info(f"No ticks for {date=} {kind=} {contract=}, skipping")
+        return
+    logger.info(f"Fetched {len(raw)} raw ticks")
+    if kind == "TRADES":
+        return parse_historic_trade_ticks(historic_ticks=raw, instrument_id=instrument.id)
+    elif kind == "BID_ASK":
+        return parse_historic_quote_ticks(historic_ticks=raw, instrument_id=instrument.id)
+    elif kind.split("-")[0] == "BARS":
+        return parse_historic_bars(historic_bars=raw, instrument=instrument, kind=kind)
+    else:
+        raise RuntimeError(f"Unknown {kind=}")
+
+
+def request_tick_data(
     contract: Contract, date: datetime.date, kind: str, tz_name: str, ib=None
 ) -> List:
-    if isinstance(date, datetime.datetime):
-        date = date.date()
     assert kind in ("TRADES", "BID_ASK")
     data: List = []
 
     while True:
-        start_time = _determine_next_timestamp(
-            date=date, timestamps=[d.time for d in data], tz_name=tz_name
-        )
+        start_time = _determine_next_timestamp(date=date, timestamps=[d.time for d in data])
         logger.debug(f"Using start_time: {start_time}")
 
         ticks = _request_historical_ticks(
@@ -157,6 +191,47 @@ def fetch_market_data(
     return data
 
 
+def request_bar_data(
+    contract: Contract, date: datetime.date, tz_name: str, bar_spec: BarSpecification, ib=None
+) -> List:
+    data: List = []
+
+    end_time = date + datetime.timedelta(days=1)
+
+    while True:
+        logger.debug(f"Using end_time: {end_time}")
+
+        bars = _request_historical_bars(
+            ib=ib,
+            contract=contract,
+            end_time=end_time.strftime("%Y%m%d %H:%M:%S %Z"),
+            bar_spec=bar_spec,
+        )
+
+        bars = [t for t in bars if t not in data]
+
+        if not bars:
+            return []
+
+        logger.debug(f"Received {len(bars)} bars between {bars[0].time} and {bars[-1].time}")
+
+        last_timestamp = pd.Timestamp(bars[-1].time)
+        last_date = last_timestamp.astimezone(tz_name).date()
+
+        if last_date != date:
+            # May contain data from next date, filter this out
+            data.extend(
+                [bar for bar in bars if pd.Timestamp(bar.time).astimezone(tz_name).date() == date]
+            )
+            break
+        else:
+            data.extend(bars)
+
+        end_time = last_timestamp
+
+    return data
+
+
 def _request_historical_ticks(ib: IB, contract: Contract, start_time: str, what="BID_ASK"):
     return ib.reqHistoricalTicks(
         contract=contract,
@@ -168,13 +243,42 @@ def _request_historical_ticks(ib: IB, contract: Contract, start_time: str, what=
     )
 
 
-def _determine_next_timestamp(timestamps: List[pd.Timestamp], date: datetime.date, tz_name: str):
+def _bar_spec_to_hist_data_request(bar_spec: BarSpecification) -> Dict[str, str]:
+    aggregation = BarAggregationParser.to_str_py(bar_spec.aggregation)
+    price_type = PriceTypeParser.to_str_py(bar_spec.price_type)
+    accepted_aggregations = ("SECOND", "MINUTE", "HOUR")
+
+    err = f"Loading historic bars is for intraday data, bar_spec.aggregation should be {accepted_aggregations}"
+    assert aggregation in accepted_aggregations, err
+
+    price_mapping = {"MID": "MIDPOINT", "LAST": "TRADES"}
+    what_to_show = price_mapping.get(price_type, price_type)
+
+    size_mapping = {"SECOND": "sec", "MINUTE": "min", "HOUR": "hour"}
+    bar_size = size_mapping.get(aggregation, aggregation)
+    bar_size_setting = f"{bar_spec.step} {bar_size if bar_spec.step == 1 else bar_size + 's'}"
+    return {"durationStr": "1 D", "barSizeSetting": bar_size_setting, "whatToShow": what_to_show}
+
+
+def _request_historical_bars(ib: IB, contract: Contract, end_time: str, bar_spec: BarSpecification):
+    spec = _bar_spec_to_hist_data_request(bar_spec=bar_spec)
+    return ib.reqHistoricalData(
+        contract=contract,
+        endDateTime=end_time,
+        durationStr=spec["durationStr"],
+        barSizeSetting=spec["barSizeSetting"],
+        whatToShow=spec["whatToShow"],
+        useRTH=False,
+    )
+
+
+def _determine_next_timestamp(timestamps: List[pd.Timestamp], date: datetime.date):
     """
     While looping over available data, it is possible for very liquid products that a 1s period may contain 1000 ticks,
     at which point we need to step the time forward to avoid getting stuck when iterating.
     """
     if not timestamps:
-        return pd.Timestamp(date, tz=tz_name).tz_convert("UTC")
+        return pd.Timestamp(date).tz_convert("UTC")
     unique_values = set(timestamps)
     if len(unique_values) == 1:
         timestamp = timestamps[-1]
@@ -225,3 +329,30 @@ def parse_historic_trade_ticks(
         trades.append(trade_tick)
 
     return trades
+
+
+def parse_historic_bars(
+    historic_bars: List[BarData], instrument: Instrument, kind: str
+) -> List[Bar]:
+    bars = []
+    bar_type = BarType(
+        bar_spec=BarSpecification.from_str(kind.split("-", maxsplit=1)[1]),
+        instrument_id=instrument.id,
+        aggregation_source=AggregationSource.EXTERNAL,
+    )
+    precision = instrument.price_precision
+    for bar in historic_bars:
+        ts_init = dt_to_unix_nanos(bar.date)
+        trade_tick = Bar(
+            bar_type=bar_type,
+            open=Price(bar.open, precision),
+            high=Price(bar.high, precision),
+            low=Price(bar.low, precision),
+            close=Price(bar.close, precision),
+            volume=Quantity(bar.volume, instrument.size_precision),
+            ts_init=ts_init,
+            ts_event=ts_init,
+        )
+        bars.append(trade_tick)
+
+    return bars
