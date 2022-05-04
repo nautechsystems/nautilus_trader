@@ -48,8 +48,8 @@ including FX, Equities, Futures, Options, CFDs, Crypto and Betting - across mult
 
 ## Features
 
-- **Fast:** C-level speed through Cython. Asynchronous networking with [uvloop](https://github.com/MagicStack/uvloop)
-- **Reliable:** Type safety through Cython. Redis backed performant state persistence
+- **Fast:** C-level speed through Rust and Cython. Asynchronous networking with [uvloop](https://github.com/MagicStack/uvloop)
+- **Reliable:** Type safety through Rust and Cython. Redis backed performant state persistence
 - **Flexible:** OS independent, runs on Linux, macOS, Windows. Deploy using Docker
 - **Integrated:** Modular adapters mean any REST, WebSocket, or FIX API can be integrated
 - **Advanced:** Time in force `IOC`, `FOK`, `GTD`, `AT_THE_OPEN`, `AT_THE_CLOSE`, advanced order types and conditional triggers. Execution instructions `post-only`, `reduce-only`, and icebergs. Contingency order lists including `OCO`, `OTO`
@@ -374,7 +374,7 @@ Contributors are also required to sign a standard Contributor License Agreement 
 ---
 
 Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
-https://nautechsystems.io
+https://nautilustrader.io
 
 ![nautechsystems](https://github.com/nautechsystems/nautilus_trader/blob/develop/docs/_images/ns-logo.png?raw=true "nautechsystems")
 <img src="https://github.com/nautechsystems/nautilus_trader/blob/develop/docs/_images/ferris.png" width="128">
