@@ -107,6 +107,7 @@ cdef class Actor(Component):
         )
 
         self._warning_events = set()
+        self._signal_classes = dict()
 
         self.trader_id = None  # Initialized when registered
         self.msgbus = None     # Initialized when registered
@@ -1316,6 +1317,56 @@ cdef class Actor(Component):
         Condition.true(self.trader_id is not None, "The actor has not been registered")
 
         self._msgbus.publish_c(topic=f"data.{data_type.topic}", msg=data)
+
+    cpdef void publish_signal(self, str name, int ts_init, object value, bint stream = False) except *:
+        """
+        Publish the given value as a signal to the message bus. Optionally setup persistence for this `signal`.
+
+        Parameters
+        ----------
+        name : str
+            The name of the signal being published.
+        value : object
+            The data to publish.
+
+        """
+        Condition.not_none(name, "name")
+        Condition.not_none(value, "value")
+        Condition.is_in(type(value), (int, float, str), "value", "int, float, str")
+        Condition.true(self.trader_id is not None, "The actor has not been registered")
+
+        if name not in self._signal_classes:
+            self.setup_signal_persistence(name=name, value=value)
+        cls = self._signal_classes[name]
+        data = cls(ts_init=ts_init, value=value)
+        self.publish_data(data_type=DataType(cls), data=data)
+
+    def setup_signal_persistence(self, name: str, value: object):
+        import pyarrow as pa
+
+        from nautilus_trader.serialization.arrow.serializer import register_parquet
+
+        def init(self, value, ts_init: int):
+            self.value = value
+            self.ts_init=  ts_init
+
+        def serialize(self):
+            return {
+                "ts_init": self.ts_init,
+                "value": self.value,
+            }
+
+        cls = type(name, (Data,), {"__init__": init})
+        register_parquet(
+            cls=cls,
+            serializer=serialize,
+            schema=pa.schema({
+                "ts_init": pa.int64(),
+                "value": {int: pa.int64(), float: pa.float64(), str: pa.string()}[type(value)]
+            }),
+        )
+
+        self._signal_classes[name] = cls
 
 # -- REQUESTS -------------------------------------------------------------------------------------
 
