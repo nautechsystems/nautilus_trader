@@ -95,6 +95,11 @@ def back_fill_catalog(
         for contract in contracts:
             [details] = ib.reqContractDetails(contract=contract)
             instrument = parse_instrument(contract_details=details)
+
+            # Check if this instrument exists in the catalog, if not, write it.
+            if not catalog.instruments(instrument_ids=[instrument.id.value], as_nautilus=True):
+                write_objects(catalog=catalog, chunk=[instrument])
+
             for kind in kinds:
                 fn = generate_filename(catalog, instrument_id=instrument.id, kind=kind, date=date)
                 if catalog.fs.exists(fn):
