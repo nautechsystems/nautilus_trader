@@ -46,6 +46,10 @@ cdef class BarAggregationParser:
             return "HOUR"
         elif value == 14:
             return "DAY"
+        elif value == 15:
+            return "WEEK"
+        elif value == 16:
+            return "MONTH"
         else:
             raise ValueError(f"value was invalid, was {value}")
 
@@ -79,6 +83,10 @@ cdef class BarAggregationParser:
             return BarAggregation.HOUR
         elif value == "DAY":
             return BarAggregation.DAY
+        elif value == "WEEK":
+            return BarAggregation.WEEK
+        elif value == "MONTH":
+            return BarAggregation.MONTH
         else:
             raise ValueError(f"value was invalid, was {value}")
 

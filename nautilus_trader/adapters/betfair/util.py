@@ -13,7 +13,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import hashlib
 from functools import partial
 from typing import Dict
 
@@ -65,9 +64,8 @@ def chunk(list_like, n):
         yield list_like[i : i + n]
 
 
-def hash_json(data):
-    h = hashlib.sha256(orjson.dumps(data))
-    return h.hexdigest()
+def hash_market_trade(timestamp: int, price: float, volume: float):
+    return f"{str(timestamp)[:-6]}{price}{str(volume)}"
 
 
 def one(iterable):

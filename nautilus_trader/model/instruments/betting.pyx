@@ -194,23 +194,18 @@ cdef class BettingInstrument(Instrument):
 
     def make_symbol(self):
         cdef tuple keys = (
-            "event_type_name",
-            "competition_name",
             "event_id",
-            "market_start_time",
-            "betting_type",
-            "market_type",
             "market_id",
             "selection_id",
             "selection_handicap",
         )
 
         def _clean(s):
-            if isinstance(s, (datetime, pd.Timestamp)):
-                return pd.Timestamp(s).tz_convert("UTC").strftime("%Y%m%d-%H%M%S")
             return str(s).replace(' ', '').replace(':', '')
 
-        return Symbol(value=",".join([_clean(getattr(self, k)) for k in keys]))
+        value: str = "".join([_clean(getattr(self, k)) for k in keys])
+        assert len(value) <= 32, f"Symbol too long ({len(value)}): '{value}'"
+        return Symbol(value)
 
     cpdef Money notional_value(self, Quantity quantity, double price, bint inverse_as_quote=False):
         Condition.not_none(quantity, "quantity")

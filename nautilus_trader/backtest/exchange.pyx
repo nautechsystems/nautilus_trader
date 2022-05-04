@@ -53,6 +53,7 @@ from nautilus_trader.model.c_enums.order_status cimport OrderStatus
 from nautilus_trader.model.c_enums.order_type cimport OrderType
 from nautilus_trader.model.c_enums.order_type cimport OrderTypeParser
 from nautilus_trader.model.c_enums.price_type cimport PriceType
+from nautilus_trader.model.c_enums.time_in_force cimport TimeInForce
 from nautilus_trader.model.data.tick cimport QuoteTick
 from nautilus_trader.model.data.tick cimport TradeTick
 from nautilus_trader.model.identifiers cimport ClientOrderId
@@ -684,7 +685,7 @@ cdef class SimulatedExchange:
         if bar.high._mem.raw > last._mem.raw:  # Direct memory comparison
             tick._mem.price = bar.high._mem  # Direct memory assignment
             tick._mem.aggressor_side = <OrderSide>AggressorSide.BUY  # Direct memory assignment
-            tick.trade_id = self._generate_trade_id()
+            tick._mem.trade_id = self._generate_trade_id()._mem
             book.update_trade_tick(tick)
             self._iterate_matching_engine(
                 tick.instrument_id,
@@ -696,7 +697,7 @@ cdef class SimulatedExchange:
         if bar.low._mem.raw < last._mem.raw:  # Direct memory comparison
             tick._mem.price = bar.low._mem  # Direct memory assignment
             tick._mem.aggressor_side = <OrderSide>AggressorSide.SELL
-            tick.trade_id = self._generate_trade_id()
+            tick._mem.trade_id = self._generate_trade_id()._mem
             book.update_trade_tick(tick)
             self._iterate_matching_engine(
                 tick.instrument_id,
@@ -708,7 +709,7 @@ cdef class SimulatedExchange:
         if bar.close._mem.raw != last._mem.raw:  # Direct memory comparison
             tick._mem.price = bar.close._mem  # Direct memory assignment
             tick._mem.aggressor_side = <OrderSide>AggressorSide.BUY if bar.close._mem.raw > last._mem.raw else <OrderSide>AggressorSide.SELL
-            tick.trade_id = self._generate_trade_id()
+            tick._mem.trade_id = self._generate_trade_id()._mem
             book.update_trade_tick(tick)
             self._iterate_matching_engine(
                 tick.instrument_id,
@@ -1491,6 +1492,16 @@ cdef class SimulatedExchange:
             Quantity fill_qty
             Quantity updated_qty
         for fill_px, fill_qty in fills:
+            if order.filled_qty._mem.raw == 0:
+                if order.time_in_force == TimeInForce.FOK and fill_qty._mem.raw < order.quantity._mem.raw:
+                    # FOK order cannot fill the entire quantity - cancel
+                    self._cancel_order(order)
+                    return
+            elif order.time_in_force == TimeInForce.IOC:
+                # IOC order has already filled at one price - cancel remaining
+                self._cancel_order(order)
+                return
+
             if order.is_reduce_only and order.leaves_qty._mem.raw == 0:
                 return  # Done early
             if order.type == OrderType.STOP_MARKET:
@@ -1532,6 +1543,11 @@ cdef class SimulatedExchange:
             and self.book_type == BookType.L1_TBBO
             and (order.type == OrderType.MARKET or order.type == OrderType.STOP_MARKET)
         ):
+            if order.time_in_force == TimeInForce.IOC:
+                # IOC order has already filled at one price - cancel remaining
+                self._cancel_order(order)
+                return
+
             # Exhausted simulated book volume (continue aggressive filling into next level)
             fill_px = fills[-1][0]
             if order.side == OrderSide.BUY:

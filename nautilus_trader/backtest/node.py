@@ -26,12 +26,8 @@ from nautilus_trader.config import BacktestVenueConfig
 from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.core.inspect import is_nautilus_class
 from nautilus_trader.model.currency import Currency
-from nautilus_trader.model.data.bar import Bar
 from nautilus_trader.model.data.base import DataType
 from nautilus_trader.model.data.base import GenericData
-from nautilus_trader.model.data.tick import QuoteTick
-from nautilus_trader.model.data.tick import TradeTick
-from nautilus_trader.model.data.venue import InstrumentStatusUpdate
 from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import BookTypeParser
 from nautilus_trader.model.enums import OMSType
@@ -39,8 +35,6 @@ from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.objects import Money
-from nautilus_trader.model.orderbook.data import OrderBookData
-from nautilus_trader.model.orderbook.data import OrderBookDelta
 from nautilus_trader.persistence.batching import batch_files
 from nautilus_trader.persistence.batching import extract_generic_data_client_ids
 from nautilus_trader.persistence.batching import groupby_datatype
@@ -192,16 +186,14 @@ class BacktestNode:
         return engine
 
     def _load_engine_data(self, engine: BacktestEngine, data) -> None:
-        if data["type"] in (QuoteTick, TradeTick, InstrumentStatusUpdate):
+        if is_nautilus_class(data["type"]):
             engine.add_data(data=data["data"])
-        elif data["type"] == Bar:
-            engine.add_bars(data=data["data"])
-        elif data["type"] in (OrderBookDelta, OrderBookData):
-            engine.add_order_book_data(data=data["data"])
-        elif not is_nautilus_class(data["type"]):
-            engine.add_generic_data(client_id=data["client_id"], data=data["data"])
         else:
-            raise ValueError(f"Data type {data['type']} not setup for loading into backtest engine")
+            if "client_id" not in data:
+                raise ValueError(
+                    f"Data type {data['type']} not setup for loading into backtest engine"
+                )
+            engine.add_data(data=data["data"], client_id=data["client_id"])
 
     def _run(
         self,

@@ -52,10 +52,10 @@ cdef class Quantity:
     """
     Represents a quantity with a non-negative value.
 
-    Capable of storing either a whole number (no decimal places) of “shares”
-    (securities denominated in whole units) or a decimal value containing
-    decimal places for non-share quantity asset classes (securities denominated
-    in fractional units).
+    Capable of storing either a whole number (no decimal places) of 'contracts'
+    or 'shares' (securities denominated in whole units) or a decimal value
+    containing decimal places for non-share quantity asset classes (securities
+    denominated in fractional units).
 
     Parameters
     ----------
@@ -84,6 +84,9 @@ cdef class Quantity:
         Condition.true(value >= 0.0, f"quantity negative, was {value}")
 
         self._mem = quantity_new(value, precision)
+
+    def __del__(self) -> None:
+        quantity_free(self._mem)  # `self._mem` moved to Rust (then dropped)
 
     def __getstate__(self):
         return self._mem.raw, self._mem.precision
@@ -188,14 +191,22 @@ cdef class Quantity:
         return hash(self._mem.raw)
 
     def __str__(self) -> str:
-        return f"{self.as_f64_c():.{self._mem.precision}f}"
+        return f"{self._mem.raw / FIXED_SCALAR:.{self._mem.precision}f}"
 
     def __repr__(self) -> str:
         return f"{type(self).__name__}('{self}')"
 
-    def __del__(self) -> None:
-        # https://cython.readthedocs.io/en/latest/src/userguide/special_methods.html#finalization-methods-dealloc-and-del
-        quantity_free(self._mem)  # `self._mem` moved to Rust (then dropped)
+    @property
+    def precision(self) -> int:
+        """
+        The precision for the quantity.
+
+        Returns
+        -------
+        uint8
+
+        """
+        return self._mem.precision
 
     cdef bint eq(self, Quantity other) except *:
         return self._mem.raw == other._mem.raw
@@ -224,21 +235,39 @@ cdef class Quantity:
     cdef bint is_positive(self) except *:
         return self._mem.raw > 0
 
-    @staticmethod
-    def from_raw(uint64_t raw, uint8_t precision):
-        return Quantity.from_raw_c(raw, precision)
+    cdef Quantity add(self, Quantity other):
+        cdef int64_t raw = self._mem.raw + other.raw_int64_c()
+        return Quantity.from_raw_c(raw, self._mem.precision)
 
-    @staticmethod
-    cdef Quantity from_raw_c(uint64_t raw, uint8_t precision):
-        cdef Quantity quantity = Quantity.__new__(Quantity)
-        quantity._mem = quantity_from_raw(raw, precision)
-        return quantity
+    cdef Quantity sub(self, Quantity other):
+        cdef int64_t raw = self._mem.raw - other.raw_int64_c()
+        return Quantity.from_raw_c(raw, self._mem.precision)
+
+    cdef void add_assign(self, Quantity other) except *:
+        self._mem.raw += other.raw_uint64_c()
+        if self._mem.precision == 0:
+            self._mem.precision = other.precision
+
+    cdef void sub_assign(self, Quantity other) except *:
+        self._mem.raw -= other.raw_uint64_c()
+        if self._mem.precision == 0:
+            self._mem.precision = other.precision
 
     cdef uint64_t raw_uint64_c(self) except *:
         return self._mem.raw
 
     cdef double as_f64_c(self) except *:
         return self._mem.raw / FIXED_SCALAR
+
+    @staticmethod
+    cdef double raw_to_f64_c(uint64_t raw) except *:
+        return raw / FIXED_SCALAR
+
+    @staticmethod
+    cdef Quantity from_raw_c(uint64_t raw, uint8_t precision):
+        cdef Quantity quantity = Quantity.__new__(Quantity)
+        quantity._mem = quantity_from_raw(raw, precision)
+        return quantity
 
     @staticmethod
     cdef object _extract_decimal(object obj):
@@ -262,10 +291,6 @@ cdef class Quantity:
 
         return PyObject_RichCompareBool(a, b, op)
 
-    @property
-    def precision(self) -> int:
-        return self._mem.precision
-
     @staticmethod
     cdef Quantity zero_c(uint8_t precision):
         return Quantity(0, precision)
@@ -279,6 +304,10 @@ cdef class Quantity:
     @staticmethod
     cdef Quantity from_int_c(int value):
         return Quantity(value, precision=0)
+
+    @staticmethod
+    def from_raw(uint64_t raw, uint8_t precision):
+        return Quantity.from_raw_c(raw, precision)
 
     @staticmethod
     def zero(uint8_t precision=0) -> Quantity:
@@ -365,24 +394,6 @@ cdef class Quantity:
         """
         return f"{self.as_f64_c():,.{self._mem.precision}f}".replace(",", "_")
 
-    cdef Quantity add(self, Quantity other):
-        cdef int64_t raw = self._mem.raw + other.raw_int64_c()
-        return Quantity.from_raw_c(raw, self._mem.precision)
-
-    cdef Quantity sub(self, Quantity other):
-        cdef int64_t raw = self._mem.raw - other.raw_int64_c()
-        return Quantity.from_raw_c(raw, self._mem.precision)
-
-    cdef void add_assign(self, Quantity other) except *:
-        self._mem.raw += other.raw_uint64_c()
-        if self._mem.precision == 0:
-            self._mem.precision = other.precision
-
-    cdef void sub_assign(self, Quantity other) except *:
-        self._mem.raw -= other.raw_uint64_c()
-        if self._mem.precision == 0:
-            self._mem.precision = other.precision
-
     cpdef object as_decimal(self):
         """
         Return the value as a built-in `Decimal`.
@@ -392,7 +403,7 @@ cdef class Quantity:
         Decimal
 
         """
-        return decimal.Decimal(f"{self.as_double():.{self._mem.precision}f}")
+        return decimal.Decimal(f"{self.as_f64_c():.{self._mem.precision}f}")
 
     cpdef double as_double(self) except *:
         """
@@ -439,6 +450,9 @@ cdef class Price:
         Condition.true(precision <= 9, "invalid precision, was > 9")
 
         self._mem = price_new(value, precision)
+
+    def __del__(self) -> None:
+        price_free(self._mem)  # `self._mem` moved to Rust (then dropped)
 
     def __getstate__(self):
         return self._mem.raw, self._mem.precision
@@ -543,14 +557,22 @@ cdef class Price:
         return hash(self._mem.raw)
 
     def __str__(self) -> str:
-        return f"{self.as_f64_c():.{self._mem.precision}f}"
+        return f"{self._mem.raw / FIXED_SCALAR:.{self._mem.precision}f}"
 
     def __repr__(self) -> str:
         return f"{type(self).__name__}('{self}')"
 
-    def __del__(self) -> None:
-        # https://cython.readthedocs.io/en/latest/src/userguide/special_methods.html#finalization-methods-dealloc-and-del
-        price_free(self._mem)  # `self._mem` moved to Rust (then dropped)
+    @property
+    def precision(self) -> int:
+        """
+        The precision for the price.
+
+        Returns
+        -------
+        uint8
+
+        """
+        return self._mem.precision
 
     cdef bint eq(self, Price other) except *:
         return self._mem.raw == other._mem.raw
@@ -578,6 +600,20 @@ cdef class Price:
 
     cdef bint is_positive(self) except *:
         return self._mem.raw > 0
+
+    cdef Price add(self, Price other):
+        cdef int64_t raw = self._mem.raw + other.raw_int64_c()
+        return Price.from_raw_c(raw, self._mem.precision)
+
+    cdef Price sub(self, Price other):
+        cdef int64_t raw = self._mem.raw - other.raw_int64_c()
+        return Price.from_raw_c(raw, self._mem.precision)
+
+    cdef void add_assign(self, Price other) except *:
+        self._mem.raw += other.raw_int64_c()
+
+    cdef void sub_assign(self, Price other) except *:
+        self._mem.raw -= other.raw_int64_c()
 
     @staticmethod
     def from_raw(int64_t raw, uint8_t precision):
@@ -617,9 +653,9 @@ cdef class Price:
 
         return PyObject_RichCompareBool(a, b, op)
 
-    @property
-    def precision(self) -> int:
-        return self._mem.precision
+    @staticmethod
+    cdef double raw_to_f64_c(uint64_t raw) except *:
+        return raw / FIXED_SCALAR
 
     @staticmethod
     cdef Price from_str_c(str value):
@@ -690,7 +726,7 @@ cdef class Price:
         Decimal
 
         """
-        return decimal.Decimal(f"{self.as_double():.{self._mem.precision}f}")
+        return decimal.Decimal(f"{self.as_f64_c():.{self._mem.precision}f}")
 
     cpdef double as_double(self) except *:
         """
@@ -702,20 +738,6 @@ cdef class Price:
 
         """
         return self.as_f64_c()
-
-    cdef Price add(self, Price other):
-        cdef int64_t raw = self._mem.raw + other.raw_int64_c()
-        return Price.from_raw_c(raw, self._mem.precision)
-
-    cdef Price sub(self, Price other):
-        cdef int64_t raw = self._mem.raw - other.raw_int64_c()
-        return Price.from_raw_c(raw, self._mem.precision)
-
-    cdef void add_assign(self, Price other) except *:
-        self._mem.raw += other.raw_int64_c()
-
-    cdef void sub_assign(self, Price other) except *:
-        self._mem.raw -= other.raw_int64_c()
 
 
 cdef class Money:
@@ -736,6 +758,9 @@ cdef class Money:
 
         self._mem = money_new(float(value), <Currency_t>currency._currency)  # borrows wrapped `currency`
         self.currency = currency
+
+    def __del__(self) -> None:
+        money_free(self._mem)  # `self._mem` moved to Rust (then dropped)
 
     def __getstate__(self):
         return self._mem.raw, self.currency
@@ -847,14 +872,10 @@ cdef class Money:
         return hash((self._mem.raw, self.currency.code))
 
     def __str__(self) -> str:
-        return f"{self.as_f64_c():.{self._mem.currency.precision}f}"
+        return f"{self._mem.raw / FIXED_SCALAR:.{self._mem.currency.precision}f}"
 
     def __repr__(self) -> str:
         return f"{type(self).__name__}('{str(self)}', {self.currency.code})"
-
-    def __del__(self) -> None:
-        # https://cython.readthedocs.io/en/latest/src/userguide/special_methods.html#finalization-methods-dealloc-and-del
-        money_free(self._mem)  # `self._mem` moved to Rust (then dropped)
 
     cdef bint is_zero(self) except *:
         return self._mem.raw == 0
@@ -865,11 +886,33 @@ cdef class Money:
     cdef bint is_positive(self) except *:
         return self._mem.raw > 0
 
+    cdef Money add(self, Money other):
+        assert self.currency == other.currency, "other money currency was not equal"  # design-time check
+        cdef int64_t raw = self._mem.raw + other.raw_int64_c()
+        return Money.from_raw_c(raw, self.currency)
+
+    cdef Money sub(self, Money other):
+        assert self.currency == other.currency, "other money currency was not equal"  # design-time check
+        cdef int64_t raw = self._mem.raw - other.raw_int64_c()
+        return Money.from_raw_c(raw, self.currency)
+
+    cdef void add_assign(self, Money other) except *:
+        assert self.currency == other.currency, "other money currency was not equal"  # design-time check
+        self._mem.raw += other.raw_int64_c()
+
+    cdef void sub_assign(self, Money other) except *:
+        assert self.currency == other.currency, "other money currency was not equal"  # design-time check
+        self._mem.raw -= other.raw_int64_c()
+
     cdef int64_t raw_int64_c(self):
         return self._mem.raw
 
     cdef double as_f64_c(self):
         return self._mem.raw / FIXED_SCALAR
+
+    @staticmethod
+    cdef double raw_to_f64_c(uint64_t raw) except *:
+        return raw / FIXED_SCALAR
 
     @staticmethod
     def from_raw(uint64_t raw, uint8_t precision):
@@ -898,46 +941,6 @@ cdef class Money:
             raise ValueError(f"The `Money` string value was malformed, was {value}")
 
         return Money(pieces[0], Currency.from_str_c(pieces[1]))
-
-    cdef Money add(self, Money other):
-        assert self.currency == other.currency, "other money currency was not equal"  # design-time check
-        cdef int64_t raw = self._mem.raw + other.raw_int64_c()
-        return Money.from_raw_c(raw, self.currency)
-
-    cdef Money sub(self, Money other):
-        assert self.currency == other.currency, "other money currency was not equal"  # design-time check
-        cdef int64_t raw = self._mem.raw - other.raw_int64_c()
-        return Money.from_raw_c(raw, self.currency)
-
-    cdef void add_assign(self, Money other) except *:
-        assert self.currency == other.currency, "other money currency was not equal"  # design-time check
-        self._mem.raw += other.raw_int64_c()
-
-    cdef void sub_assign(self, Money other) except *:
-        assert self.currency == other.currency, "other money currency was not equal"  # design-time check
-        self._mem.raw -= other.raw_int64_c()
-
-    cpdef object as_decimal(self):
-        """
-        Return the value as a built-in `Decimal`.
-
-        Returns
-        -------
-        Decimal
-
-        """
-        return decimal.Decimal(f"{self.as_double():.{self._mem.currency.precision}f}")
-
-    cpdef double as_double(self) except *:
-        """
-        Return the value as a `double`.
-
-        Returns
-        -------
-        double
-
-        """
-        return self.as_f64_c()
 
     @staticmethod
     def from_str(str value) -> Money:
@@ -972,6 +975,28 @@ cdef class Money:
             raise ValueError(f"The `Money` string value was malformed, was {value}")
 
         return Money.from_str_c(value)
+
+    cpdef object as_decimal(self):
+        """
+        Return the value as a built-in `Decimal`.
+
+        Returns
+        -------
+        Decimal
+
+        """
+        return decimal.Decimal(f"{self.as_f64_c():.{self._mem.currency.precision}f}")
+
+    cpdef double as_double(self) except *:
+        """
+        Return the value as a `double`.
+
+        Returns
+        -------
+        double
+
+        """
+        return self.as_f64_c()
 
     cpdef str to_str(self):
         """

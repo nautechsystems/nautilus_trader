@@ -90,7 +90,7 @@ class TestBetfairParsing:
         )
         result = order_submit_to_betfair(command=command, instrument=self.instrument)
         expected = {
-            "customer_ref": command.id.to_str().replace("-", ""),
+            "customer_ref": command.id.value.replace("-", ""),
             "customer_strategy_ref": "S-001",
             "instructions": [
                 {

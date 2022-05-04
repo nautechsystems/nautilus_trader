@@ -14,13 +14,11 @@
 # -------------------------------------------------------------------------------------------------
 
 import datetime
-import hashlib
 import itertools
 from collections import defaultdict
 from functools import lru_cache
 from typing import Dict, List, Union
 
-import orjson
 import pandas as pd
 
 from nautilus_trader.adapters.betfair.common import B2N_MARKET_STREAM_SIDE
@@ -40,7 +38,7 @@ from nautilus_trader.adapters.betfair.common import price_to_probability
 from nautilus_trader.adapters.betfair.common import probability_to_price
 from nautilus_trader.adapters.betfair.data_types import BetfairTicker
 from nautilus_trader.adapters.betfair.data_types import BSPOrderBookDelta
-from nautilus_trader.adapters.betfair.util import hash_json
+from nautilus_trader.adapters.betfair.util import hash_market_trade
 from nautilus_trader.adapters.betfair.util import one
 from nautilus_trader.common.uuid import UUIDFactory
 from nautilus_trader.core.datetime import dt_to_unix_nanos
@@ -199,7 +197,7 @@ def order_submit_to_betfair(command: SubmitOrder, instrument: BettingInstrument)
     place_order = {
         "market_id": instrument.market_id,
         # Used to de-dupe orders on betfair server side
-        "customer_ref": command.id.to_str().replace("-", ""),
+        "customer_ref": command.id.value.replace("-", ""),
         "customer_strategy_ref": command.strategy_id.value[:15],
         "instructions": [
             {
@@ -230,7 +228,7 @@ def order_update_to_betfair(
     """
     return {
         "market_id": instrument.market_id,
-        "customer_ref": command.id.to_str().replace("-", ""),
+        "customer_ref": command.id.value.replace("-", ""),
         "instructions": [
             {
                 "betId": venue_order_id.value,
@@ -246,7 +244,7 @@ def order_cancel_to_betfair(command: CancelOrder, instrument: BettingInstrument)
     """
     return {
         "market_id": instrument.market_id,
-        "customer_ref": command.id.to_str().replace("-", ""),
+        "customer_ref": command.id.value.replace("-", ""),
         "instructions": [{"betId": command.venue_order_id.value}],
     }
 
@@ -290,15 +288,6 @@ def betfair_account_to_account_state(
         ts_event=ts_event,
         ts_init=ts_init,
     )
-
-
-TRADE_ID_KEYS = ("id", "p", "s", "side", "pt", "ot", "pd", "md", "avp", "sm")  # noqa:
-
-
-def betfair_trade_id(uo) -> TradeId:
-    data = orjson.dumps({k: uo[k] for k in TRADE_ID_KEYS if uo.get(k)})
-    hsh = hashlib.sha1(data).hexdigest()  # noqa: S303
-    return TradeId(hsh)
 
 
 def _handle_market_snapshot(selection, instrument, ts_event, ts_init):
@@ -366,9 +355,9 @@ def _handle_market_trades(
     for price, volume in runner.get("trd", []):
         if volume == 0:
             continue
-        # Betfair doesn't publish trade ids, so we make our own
         # TODO - should we use clk here for ID instead of the hash?
-        trade_id = hash_json(data=(ts_event, price, volume))
+        # Betfair doesn't publish trade ids, so we make our own
+        trade_id = hash_market_trade(timestamp=ts_event, price=price, volume=volume)
         tick = TradeTick(
             instrument_id=instrument.id,
             price=price_to_probability(str(price)),

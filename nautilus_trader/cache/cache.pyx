@@ -1270,7 +1270,7 @@ cdef class Cache(CacheFacade):
         else:
             instrument_positions.add(position.id)
 
-        self._log.debug(f"Added Position(id={position.id.value}, strategy_id={position.strategy_id}).")
+        self._log.debug(f"Added Position(id={position.id.value}, strategy_id={position.strategy_id.value}).")
 
         # Update database
         if self._database is not None:
@@ -1293,7 +1293,7 @@ cdef class Cache(CacheFacade):
 
         # Reassign position ID
         cdef Position copied_position = copy.deepcopy(position)
-        copied_position.id = PositionId(position.id.value + f"-{uuid.uuid4()}")
+        copied_position.id = PositionId(position.id.value + str(uuid.uuid4()))
         cdef bytes position_pickled = pickle.dumps(copied_position)
 
         if snapshots is not None:

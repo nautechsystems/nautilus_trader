@@ -4,21 +4,25 @@ Released on TBD.
 
 ### Breaking Changes
 - Removed `BacktestEngine.add_ticks()` as redundant with `.add_data()`
+- Removed `BacktestEngine.add_bars()` as redundant with `.add_data()`
+- Removed `BacktestEngine.add_generic_data()` as redundant with `.add_data()`
+- Removed `BacktestEngine.add_order_book_data()` as redundant with `.add_data()`
 - Renamed `Position.from_order` to `Position.opening_order_id`
 - Renamed `StreamingPersistence` to `StreamingFeatherWriter`
 - Renamed `PersistenceConfig` to `StreamingConfig`
 - Renamed `PersistenceConfig.flush_interval` to `flush_interval_ms`
-- Replaced `UUID4.value` property with `UUID4.to_str()` method
 
 ### Enhancements
+- Added `WEEK` and `MONTH` bar aggregation options
 - Added `Position.closing_order_id` property
 - Added `tags` param to `Strategy.submit_order`
 - Added optional `check_positon_exists` flag to `Strategy.submit_order`
-- Eliminated all use of `unsafe` Rust and nul byte terminated C strings.
+- Eliminated all use of `unsafe` Rust and C null-terminated byte strings
 - The `bypass_logging` config option will also now bypass the `BacktestEngine` logger
 
 ### Fixes
-None
+- Fixed behaviour of `IOC` and `FOK` time in force instructions
+- Fixed Binance bar resolution parsing
 
 ---
 

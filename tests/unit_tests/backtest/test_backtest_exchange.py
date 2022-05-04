@@ -380,6 +380,64 @@ class TestSimulatedExchange:
         # Assert
         assert order.status == OrderStatus.FILLED
 
+    def test_submit_market_order_with_fok_time_in_force_cancels_immediately(self):
+        # Arrange: Prepare market
+        tick = TestDataStubs.quote_tick_3decimal(
+            instrument_id=USDJPY_SIM.id,
+            bid=Price.from_str("90.002"),
+            ask=Price.from_str("90.005"),
+            bid_volume=Quantity.from_int(500_000),
+            ask_volume=Quantity.from_int(500_000),
+        )
+        self.data_engine.process(tick)
+        self.exchange.process_quote_tick(tick)
+
+        # Create order
+        order = self.strategy.order_factory.market(
+            USDJPY_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(1_000_000),
+            time_in_force=TimeInForce.FOK,
+        )
+
+        # Act
+        self.strategy.submit_order(order)
+        self.exchange.process(0)
+
+        # Assert
+        assert order.status == OrderStatus.CANCELED
+        assert order.quantity == Quantity.from_int(1_000_000)
+        assert order.filled_qty == Quantity.from_int(0)
+
+    def test_submit_market_order_with_ioc_time_in_force_cancels_remaining_qty(self):
+        # Arrange: Prepare market
+        tick = TestDataStubs.quote_tick_3decimal(
+            instrument_id=USDJPY_SIM.id,
+            bid=Price.from_str("90.002"),
+            ask=Price.from_str("90.005"),
+            bid_volume=Quantity.from_int(500_000),
+            ask_volume=Quantity.from_int(500_000),
+        )
+        self.data_engine.process(tick)
+        self.exchange.process_quote_tick(tick)
+
+        # Create order
+        order = self.strategy.order_factory.market(
+            USDJPY_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(1_000_000),
+            time_in_force=TimeInForce.IOC,
+        )
+
+        # Act
+        self.strategy.submit_order(order)
+        self.exchange.process(0)
+
+        # Assert
+        assert order.status == OrderStatus.CANCELED
+        assert order.quantity == Quantity.from_int(1_000_000)
+        assert order.filled_qty == Quantity.from_int(500_000)
+
     def test_submit_limit_order_then_immediately_cancel_submits_then_cancels(self):
         # Arrange: Prepare market
         tick = TestDataStubs.quote_tick_3decimal(

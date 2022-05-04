@@ -78,13 +78,8 @@ cdef class Currency:
             currency_type,
         )
 
-    @property
-    def code(self) -> str:
-        return buffer16_to_pystr(self._currency.code)
-
-    @property
-    def name(self) -> str:
-        return buffer32_to_pystr(self._currency.name)
+    def __del__(self) -> None:
+        currency_free(self._currency)  # `self._currency` moved to Rust (then dropped)
 
     def __getstate__(self):
         return (
@@ -116,33 +111,75 @@ cdef class Currency:
     def __repr__(self) -> str:
         return (
             f"{type(self).__name__}("
-            f"code={self.code}, "
-            f"name={self.name}, "
+            f"code={buffer16_to_pystr(self._currency.code)}, "
+            f"name={buffer32_to_pystr(self._currency.name)}, "
             f"precision={self._currency.precision}, "
             f"iso4217={self._currency.iso4217}, "
             f"type={CurrencyTypeParser.to_str(<CurrencyType>self._currency.currency_type)})"
         )
 
-    def __del__(self) -> None:
-        currency_free(self._currency)  # `self._currency` moved to Rust (then dropped)
+    @property
+    def code(self) -> str:
+        """
+        The currency code.
 
-    cdef uint8_t get_precision(self):
-        return self._currency.precision
+        Returns
+        -------
+        str
+
+        """
+        return buffer16_to_pystr(self._currency.code)
+
+    @property
+    def name(self) -> str:
+        """
+        The currency name.
+
+        Returns
+        -------
+        str
+
+        """
+        return buffer32_to_pystr(self._currency.name)
 
     @property
     def precision(self) -> int:
-        """The currency decimal precision."""
+        """
+        The currency decimal precision.
+
+        Returns
+        -------
+        uint8
+
+        """
         return self._currency.precision
 
     @property
     def iso4217(self) -> int:
-        """The currency ISO 4217 code."""
+        """
+        The currency ISO 4217 code.
+
+        Returns
+        -------
+        str
+
+        """
         return self._currency.iso4217
 
     @property
     def currency_type(self) -> CurrencyType:
-        """The currency type."""
+        """
+        The currency type.
+
+        Returns
+        -------
+        CurrencyType
+
+        """
         return <CurrencyType>self._currency.currency_type
+
+    cdef uint8_t get_precision(self):
+        return self._currency.precision
 
     @staticmethod
     cdef void register_c(Currency currency, bint overwrite=False) except *:

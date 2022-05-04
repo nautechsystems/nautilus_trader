@@ -28,15 +28,15 @@ cdef extern from "../includes/model.h":
     cdef struct HashMap_u64__BookPrice:
         pass
 
-    cdef struct Symbol:
-        Buffer128 value;
+    cdef struct Symbol_t:
+        Buffer32 value;
 
-    cdef struct Venue:
-        Buffer16 value;
+    cdef struct Venue_t:
+        Buffer32 value;
 
     cdef struct InstrumentId_t:
-        Symbol symbol;
-        Venue venue;
+        Symbol_t symbol;
+        Venue_t venue;
 
     cdef struct Price_t:
         int64_t raw;
@@ -68,6 +68,36 @@ cdef extern from "../includes/model.h":
         TradeId_t trade_id;
         Timestamp ts_event;
         Timestamp ts_init;
+
+    cdef struct AccountId_t:
+        Buffer36 value;
+
+    cdef struct ClientId_t:
+        Buffer32 value;
+
+    cdef struct ClientOrderId_t:
+        Buffer36 value;
+
+    cdef struct ClientOrderLinkId_t:
+        Buffer36 value;
+
+    cdef struct ComponentId_t:
+        Buffer32 value;
+
+    cdef struct OrderListId_t:
+        Buffer32 value;
+
+    cdef struct PositionId_t:
+        Buffer128 value;
+
+    cdef struct StrategyId_t:
+        Buffer36 value;
+
+    cdef struct TraderId_t:
+        Buffer32 value;
+
+    cdef struct VenueOrderId_t:
+        Buffer36 value;
 
     cdef struct Ladder:
         OrderSide side;
@@ -125,25 +155,61 @@ cdef extern from "../includes/model.h":
                                     int64_t ts_event,
                                     int64_t ts_init);
 
+    void account_id_free(AccountId_t account_id);
+
+    AccountId_t account_id_from_buffer(Buffer36 value);
+
+    void client_id_free(ClientId_t client_id);
+
+    ClientId_t client_id_from_buffer(Buffer32 value);
+
+    void client_order_id_free(ClientOrderId_t client_order_id);
+
+    ClientOrderId_t client_order_id_from_buffer(Buffer36 value);
+
+    void client_order_link_id_free(ClientOrderLinkId_t client_order_link_id);
+
+    ClientOrderLinkId_t client_order_link_id_from_buffer(Buffer36 value);
+
+    void component_id_free(ComponentId_t component_id);
+
+    ComponentId_t component_id_from_buffer(Buffer32 value);
+
     void instrument_id_free(InstrumentId_t instrument_id);
 
-    InstrumentId_t instrument_id_from_buffers(Buffer128 symbol, Buffer16 venue);
+    InstrumentId_t instrument_id_from_buffers(Buffer32 symbol, Buffer32 venue);
 
-    void symbol_free(Symbol symbol);
+    void order_list_id_free(OrderListId_t order_list_id);
 
-    Symbol symbol_from_bytes(Buffer128 value);
+    OrderListId_t order_list_id_from_buffer(Buffer32 value);
 
-    Buffer128 symbol_to_bytes(Symbol symbol);
+    void position_id_free(PositionId_t position_id);
+
+    PositionId_t position_id_from_buffer(Buffer128 value);
+
+    void strategy_id_free(StrategyId_t strategy_id);
+
+    StrategyId_t strategy_id_from_buffer(Buffer36 value);
+
+    void symbol_free(Symbol_t symbol);
+
+    Symbol_t symbol_from_buffer(Buffer32 value);
 
     void trade_id_free(TradeId_t trade_id);
 
     TradeId_t trade_id_from_buffer(Buffer64 value);
 
-    void venue_free(Venue venue);
+    void trader_id_free(TraderId_t trader_id);
 
-    Venue venue_from_bytes(Buffer16 value);
+    TraderId_t trader_id_from_buffer(Buffer32 value);
 
-    Buffer16 venue_to_bytes(Venue venue);
+    void venue_free(Venue_t venue);
+
+    Venue_t venue_from_buffer(Buffer32 value);
+
+    void venue_order_id_free(VenueOrderId_t venue_order_id);
+
+    VenueOrderId_t venue_order_id_from_buffer(Buffer36 value);
 
     OrderBook order_book_new(InstrumentId_t instrument_id, BookLevel book_level);
 

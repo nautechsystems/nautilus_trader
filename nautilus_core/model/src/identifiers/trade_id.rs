@@ -19,7 +19,7 @@ use std::fmt::{Debug, Display, Formatter, Result};
 #[repr(C)]
 #[derive(Clone, Hash, PartialEq, Debug)]
 pub struct TradeId {
-    value: Buffer64, // TODO: Temporary to support Betfair
+    value: Buffer64,
 }
 
 impl From<&str> for TradeId {
@@ -54,7 +54,7 @@ pub extern "C" fn trade_id_from_buffer(value: Buffer64) -> TradeId {
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
-    use crate::identifiers::trade_id::TradeId;
+    use super::TradeId;
 
     #[test]
     fn test_instrument_id_from_str() {
