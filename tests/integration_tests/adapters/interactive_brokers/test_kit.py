@@ -14,10 +14,16 @@
 # -------------------------------------------------------------------------------------------------
 
 import datetime
+import gzip
 import pathlib
 import pickle
 
+import orjson
+import pandas as pd
+from ib_insync import BarData
 from ib_insync import Contract
+from ib_insync import HistoricalTickBidAsk
+from ib_insync import HistoricalTickLast
 from ib_insync import LimitOrder as IBLimitOrder
 from ib_insync import Order
 from ib_insync import Order as IBOrder
@@ -64,13 +70,34 @@ class IBTestStubs:
 
     @staticmethod
     def historic_trades():
-        with open(RESPONSES_PATH / "historic/trade_ticks.pkl", "rb") as f:
-            return pickle.loads(f.read())  # noqa: S301
+        trades = []
+        with gzip.open(RESPONSES_PATH / "historic/trade_ticks.json.gz", "rb") as f:
+            for line in f:
+                data = orjson.loads(line)
+                tick = HistoricalTickLast(**data)
+                trades.append(tick)
+        return trades
 
     @staticmethod
     def historic_bid_ask():
-        with open(RESPONSES_PATH / "historic/bid_ask_ticks.pkl", "rb") as f:
-            return pickle.loads(f.read())  # noqa: S301
+        trades = []
+        with gzip.open(RESPONSES_PATH / "historic/bid_ask_ticks.json.gz", "rb") as f:
+            for line in f:
+                data = orjson.loads(line)
+                tick = HistoricalTickBidAsk(**data)
+                trades.append(tick)
+        return trades
+
+    @staticmethod
+    def historic_bars():
+        trades = []
+        with gzip.open(RESPONSES_PATH / "historic/bars.json.gz", "rb") as f:
+            for line in f:
+                data = orjson.loads(line)
+                data["date"] = pd.Timestamp(data["date"]).to_pydatetime()
+                tick = BarData(**data)
+                trades.append(tick)
+        return trades
 
     @staticmethod
     def create_order(
