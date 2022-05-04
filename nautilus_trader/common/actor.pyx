@@ -1347,6 +1347,7 @@ cdef class Actor(Component):
         from nautilus_trader.serialization.arrow.serializer import register_parquet
 
         def init(self, value, ts_init: int):
+            super().__init__(ts_init=ts_init, ts_event=ts_init)
             self.value = value
             self.ts_init=  ts_init
 
