@@ -167,8 +167,7 @@ as specified in the `pyproject.toml`. However, we highly recommend installing us
 1. Install [rustup](https://rustup.rs/) (the Rust toolchain installer):
    - Linux and macOS:
        ```
-       curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
-       rustup toolchain install stable
+       curl https://sh.rustup.rs -sSf | sh
        ```
    - Windows:
        - Download and install [`rustup-init.exe`](https://win.rustup.rs/x86_64)
