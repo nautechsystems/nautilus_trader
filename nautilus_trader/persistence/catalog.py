@@ -15,7 +15,6 @@
 
 import os
 import pathlib
-import platform
 from typing import Callable, Dict, List, Optional, Union
 
 import fsspec
@@ -25,6 +24,7 @@ import pyarrow.dataset as ds
 import pyarrow.parquet as pq
 from fsspec.utils import infer_storage_options
 from pyarrow import ArrowInvalid
+from upath import UPath
 
 from nautilus_trader.core.inspect import is_nautilus_class
 from nautilus_trader.model.data.bar import Bar
@@ -54,7 +54,7 @@ class DataCatalog(metaclass=Singleton):
     Parameters
     ----------
     path : str
-        The root path to the data.
+        The root path for this data catalog. Must exist and must be an absolute path.
     fs_protocol : str, default 'file'
         The fsspec filesystem protocol to use.
     fs_storage_options : Dict, optional
@@ -67,12 +67,12 @@ class DataCatalog(metaclass=Singleton):
         fs_protocol: str = "file",
         fs_storage_options: Optional[Dict] = None,
     ):
-        self.path: pathlib.Path = pathlib.Path(path)
         self.fs_protocol = fs_protocol
         self.fs_storage_options = fs_storage_options or {}
         self.fs: fsspec.AbstractFileSystem = fsspec.filesystem(
             self.fs_protocol, **self.fs_storage_options
         )
+        self.path: pathlib.Path = resolve_path(path=pathlib.Path(path), fs=self.fs)
 
     @classmethod
     def from_env(cls):
@@ -119,7 +119,7 @@ class DataCatalog(metaclass=Singleton):
         if end is not None:
             filters.append(ds.field(ts_column) <= int(pd.Timestamp(end).to_datetime64()))
 
-        full_path = self._make_path(cls=cls)
+        full_path = str(self._make_path(cls=cls))
         if not (self.fs.exists(full_path) or self.fs.isdir(full_path)):
             if raise_on_empty:
                 raise FileNotFoundError(f"protocol={self.fs.protocol}, path={full_path}")
@@ -190,9 +190,7 @@ class DataCatalog(metaclass=Singleton):
         return data
 
     def _make_path(self, cls: type) -> str:
-        return resolve_pathlib(
-            path=self.path / "data" / f"{class_to_filename(cls=cls)}.parquet", fs=self.fs
-        )
+        return str(self.path / "data" / f"{class_to_filename(cls=cls)}.parquet")
 
     def query(
         self,
@@ -396,8 +394,8 @@ class DataCatalog(metaclass=Singleton):
         return data
 
     def list_data_types(self):
-        glob_path = resolve_pathlib(path=self.path / "data" / "*.parquet", fs=self.fs)
-        return [pathlib.Path(p).stem for p in self.fs.glob(glob_path)]
+        glob_path = self.path / "data" / "*.parquet"
+        return [pathlib.Path(p).stem for p in self.fs.glob(str(glob_path))]
 
     def list_generic_data_types(self):
         data_types = self.list_data_types()
@@ -410,9 +408,7 @@ class DataCatalog(metaclass=Singleton):
     def list_partitions(self, cls_type: type):
         assert isinstance(cls_type, type), "`cls_type` should be type, i.e. TradeTick"
         name = class_to_filename(cls_type)
-        dataset = pq.ParquetDataset(
-            resolve_pathlib(path=self.path / f"{name}.parquet", fs=self.fs), filesystem=self.fs
-        )
+        dataset = pq.ParquetDataset(str(self.path / f"{name}.parquet"), filesystem=self.fs)
         partitions = {}
         for level in dataset.partitions.levels:
             partitions[level.name] = level.keys
@@ -433,12 +429,10 @@ class DataCatalog(metaclass=Singleton):
     def _read_feather(self, kind: str, run_id: str, raise_on_failed_deserialize: bool = False):
         class_mapping: Dict[str, type] = {class_to_filename(cls): cls for cls in list_schemas()}
         data = {}
-        glob_path = resolve_pathlib(
-            path=self.path / kind / f"{run_id}.feather" / "*.feather", fs=self.fs
-        )
+        glob_path = str(self.path / kind / f"{run_id}.feather" / "*.feather")
         for path in [p for p in self.fs.glob(glob_path)]:
             cls_name = camel_to_snake_case(pathlib.Path(path).stem).replace("__", "_")
-            df = read_feather_file(self, path=path, fs=self.fs)
+            df = read_feather_file(path=path, fs=self.fs)
             if df is None:
                 print(f"No data for {cls_name}")
                 continue
@@ -455,7 +449,7 @@ class DataCatalog(metaclass=Singleton):
         return sorted(sum(data.values(), list()), key=lambda x: x.ts_init)
 
 
-def read_feather_file(self, path: str, fs: fsspec.AbstractFileSystem = None):
+def read_feather_file(path: str, fs: fsspec.AbstractFileSystem = None):
     fs = fs or fsspec.filesystem("file")
     if not fs.exists(path):
         return
@@ -480,17 +474,5 @@ def combine_filters(*filters):
         return expr
 
 
-def resolve_pathlib(path: pathlib.Path, fs: fsspec.AbstractFileSystem):
-    from fsspec.implementations.local import LocalFileSystem
-
-    try:
-        from fsspec.implementations.smb import SMBFileSystem
-    except ImportError:
-        SMBFileSystem = LocalFileSystem
-
-    IS_WINDOWS = platform.system() == "Windows"
-    IS_WINDOWS_LOCAL_FS = isinstance(fs, (LocalFileSystem, SMBFileSystem))
-    if IS_WINDOWS and IS_WINDOWS_LOCAL_FS:
-        return path.absolute()
-    else:
-        return path.absolute().as_posix()
+def resolve_path(path: pathlib.Path, fs: fsspec.AbstractFileSystem) -> pathlib.Path:
+    return pathlib.Path(UPath(f"{fs.protocol}://{path}").path)
