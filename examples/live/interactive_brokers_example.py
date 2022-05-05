@@ -18,9 +18,9 @@ from nautilus_trader.adapters.interactive_brokers.config import InteractiveBroke
 from nautilus_trader.adapters.interactive_brokers.factories import (
     InteractiveBrokersLiveDataClientFactory,
 )
-from nautilus_trader.config.live import InstrumentProviderConfig
-from nautilus_trader.config.live import RoutingConfig
-from nautilus_trader.config.nodes import TradingNodeConfig
+from nautilus_trader.config import InstrumentProviderConfig
+from nautilus_trader.config import RoutingConfig
+from nautilus_trader.config import TradingNodeConfig
 from nautilus_trader.examples.strategies.subscribe import SubscribeStrategy
 from nautilus_trader.examples.strategies.subscribe import SubscribeStrategyConfig
 from nautilus_trader.live.node import TradingNode

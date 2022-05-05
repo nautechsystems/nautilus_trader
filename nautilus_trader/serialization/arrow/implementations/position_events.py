@@ -39,7 +39,6 @@ def serialize(event: PositionEvent):
         "last_qty": float,
         "last_px": float,
         "avg_px_close": try_float,
-        "realized_points": try_float,
         "realized_return": try_float,
     }
     values = {k: caster[k](v) if k in caster else v for k, v in data.items()}  # type: ignore
@@ -54,7 +53,7 @@ def serialize(event: PositionEvent):
 
 def deserialize(cls):
     def inner(data: Dict) -> Union[PositionOpened, PositionChanged, PositionClosed]:
-        for k in ("net_qty", "quantity", "last_qty", "peak_qty", "last_px"):
+        for k in ("quantity", "last_qty", "peak_qty", "last_px"):
             if k in data:
                 data[k] = str(data[k])
         if "realized_pnl" in data:

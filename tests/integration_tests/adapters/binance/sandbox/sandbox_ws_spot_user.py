@@ -18,6 +18,7 @@ import os
 
 import pytest
 
+from nautilus_trader.adapters.binance.common.enums import BinanceAccountType
 from nautilus_trader.adapters.binance.factories import get_cached_binance_http_client
 from nautilus_trader.adapters.binance.spot.http.user import BinanceSpotUserDataHttpAPI
 from nautilus_trader.adapters.binance.websocket.client import BinanceWebSocketClient
@@ -35,6 +36,7 @@ async def test_binance_websocket_client():
         loop=loop,
         clock=clock,
         logger=Logger(clock=clock),
+        account_type=BinanceAccountType.SPOT,
         key=os.getenv("BINANCE_API_KEY"),
         secret=os.getenv("BINANCE_API_SECRET"),
     )

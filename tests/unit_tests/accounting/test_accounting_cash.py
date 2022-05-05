@@ -13,8 +13,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from decimal import Decimal
-
 import pytest
 
 from nautilus_trader.accounting.accounts.cash import CashAccount
@@ -51,6 +49,7 @@ AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy("AUD/USD")
 USDJPY_SIM = TestInstrumentProvider.default_fx_ccy("USD/JPY")
 ADABTC_BINANCE = TestInstrumentProvider.adabtc_binance()
 BTCUSDT_BINANCE = TestInstrumentProvider.btcusdt_binance()
+AAPL_NASDAQ = TestInstrumentProvider.aapl_equity()
 
 
 class TestCashAccount:
@@ -301,6 +300,40 @@ class TestCashAccount:
         # Assert
         assert result == Money(1_000_040.00, AUD)  # Notional + expected commission
 
+    def test_calculate_balance_locked_sell_no_base_currency(self):
+        # Arrange
+        event = AccountState(
+            account_id=AccountId("SIM", "001"),
+            account_type=AccountType.CASH,
+            base_currency=USD,
+            reported=True,
+            balances=[
+                AccountBalance(
+                    Money(1_000_000.00, USD),
+                    Money(0.00, USD),
+                    Money(1_000_000.00, USD),
+                ),
+            ],
+            margins=[],
+            info={},  # No default currency set
+            event_id=UUID4(),
+            ts_event=0,
+            ts_init=0,
+        )
+
+        account = CashAccount(event)
+
+        # Act
+        result = account.calculate_balance_locked(
+            instrument=AAPL_NASDAQ,
+            side=OrderSide.SELL,
+            quantity=Quantity.from_int(100),
+            price=Price.from_str("1500.00"),
+        )
+
+        # Assert
+        assert result == Money(100.00, USD)  # Notional + expected commission
+
     def test_calculate_pnls_for_single_currency_cash_account(self):
         # Arrange
         event = AccountState(
@@ -381,7 +414,7 @@ class TestCashAccount:
         order1 = self.order_factory.market(
             BTCUSDT_BINANCE.id,
             OrderSide.SELL,
-            Quantity.from_str("0.50000000"),
+            Quantity.from_str("0.500000"),
         )
 
         fill1 = TestEventStubs.order_filled(
@@ -404,7 +437,7 @@ class TestCashAccount:
         order2 = self.order_factory.market(
             BTCUSDT_BINANCE.id,
             OrderSide.BUY,
-            Quantity.from_str("0.50000000"),
+            Quantity.from_str("0.500000"),
         )
 
         fill2 = TestEventStubs.order_filled(
@@ -493,7 +526,7 @@ class TestCashAccount:
             account.calculate_commission(
                 instrument=instrument,
                 last_qty=Quantity.from_int(100000),
-                last_px=Decimal("11450.50"),
+                last_px=Price.from_str("11450.50"),
                 liquidity_side=LiquiditySide.NONE,
             )
 
@@ -513,7 +546,7 @@ class TestCashAccount:
         result = account.calculate_commission(
             instrument=instrument,
             last_qty=Quantity.from_int(100000),
-            last_px=Decimal("11450.50"),
+            last_px=Price.from_str("11450.50"),
             liquidity_side=LiquiditySide.MAKER,
             inverse_as_quote=inverse_as_quote,
         )
@@ -530,7 +563,7 @@ class TestCashAccount:
         result = account.calculate_commission(
             instrument=instrument,
             last_qty=Quantity.from_int(1500000),
-            last_px=Decimal("0.80050"),
+            last_px=Price.from_str("0.80050"),
             liquidity_side=LiquiditySide.TAKER,
         )
 
@@ -546,7 +579,7 @@ class TestCashAccount:
         result = account.calculate_commission(
             instrument=instrument,
             last_qty=Quantity.from_int(100000),
-            last_px=Decimal("11450.50"),
+            last_px=Price.from_str("11450.50"),
             liquidity_side=LiquiditySide.TAKER,
         )
 
@@ -562,7 +595,7 @@ class TestCashAccount:
         result = account.calculate_commission(
             instrument=instrument,
             last_qty=Quantity.from_int(2200000),
-            last_px=Decimal("120.310"),
+            last_px=Price.from_str("120.310"),
             liquidity_side=LiquiditySide.TAKER,
         )
 

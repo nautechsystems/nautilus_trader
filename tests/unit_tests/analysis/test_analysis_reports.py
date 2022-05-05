@@ -148,8 +148,8 @@ class TestReportProvider:
         assert report.iloc[0]["type"] == "LIMIT"
         assert report.iloc[0]["quantity"] == "1500000"
         assert report.iloc[0]["avg_px"] == "0.80011"
-        assert report.iloc[0]["slippage"] == "0.00001"
-        assert report.iloc[1]["avg_px"] is None
+        assert report.iloc[0]["slippage"] == "9.99999999995449e-06"
+        assert report.iloc[1]["avg_px"] == "0.0"
 
     def test_generate_order_fills_report(self):
         # Arrange
@@ -197,7 +197,7 @@ class TestReportProvider:
         assert report.iloc[0]["type"] == "LIMIT"
         assert report.iloc[0]["quantity"] == "1500000"
         assert report.iloc[0]["avg_px"] == "0.80011"
-        assert report.iloc[0]["slippage"] == "0.00001"
+        assert report.iloc[0]["slippage"] == "9.99999999995449e-06"
 
     def test_generate_positions_report(self):
         # Arrange
@@ -248,9 +248,8 @@ class TestReportProvider:
         assert report.iloc[0]["entry"] == "BUY"
         assert report.iloc[0]["side"] == "FLAT"
         assert report.iloc[0]["peak_qty"] == "100000"
-        assert report.iloc[0]["avg_px_open"] == "1.00010"
-        assert report.iloc[0]["avg_px_close"] == "1.00010"
+        assert report.iloc[0]["avg_px_open"] == "1.0001"
+        assert report.iloc[0]["avg_px_close"] == "1.0001"
         assert report.iloc[0]["ts_opened"] == UNIX_EPOCH
         assert report.iloc[0]["ts_closed"] == UNIX_EPOCH
-        assert report.iloc[0]["realized_points"] == "0.00000"
-        assert report.iloc[0]["realized_return"] == "0.00000"
+        assert report.iloc[0]["realized_return"] == "0.0"

@@ -92,8 +92,8 @@ def parse_spot_instrument_http(
     min_notional = None
     if filters.get(BinanceSymbolFilterType.MIN_NOTIONAL):
         min_notional = Money(min_notional_filter.minNotional, currency=quote_currency)
-    max_price = Price(float(price_filter.maxPrice), precision=price_precision)
-    min_price = Price(float(price_filter.minPrice), precision=price_precision)
+    max_price = Price(min(float(price_filter.maxPrice), 4294967296.0), precision=price_precision)
+    min_price = Price(max(float(price_filter.minPrice), 0.0), precision=price_precision)
 
     # Parse fees
     maker_fee: Decimal = Decimal(0)

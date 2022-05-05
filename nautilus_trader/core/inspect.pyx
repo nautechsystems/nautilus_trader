@@ -17,7 +17,7 @@ import gc
 import sys
 
 
-cpdef bint is_nautilus_class(cls):
+def is_nautilus_class(cls: type) -> bool:
     """
     Determine whether a class belongs to `nautilus_trader`.
     """

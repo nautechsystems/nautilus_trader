@@ -206,7 +206,7 @@ cdef class MarketToLimitOrder(Order):
             "reduce_only": self.is_reduce_only,
             "display_qty": str(self.display_qty) if self.display_qty is not None else None,
             "filled_qty": str(self.filled_qty),
-            "avg_px": str(self.avg_px) if self.avg_px else None,
+            "avg_px": str(self.avg_px),
             "slippage": str(self.slippage),
             "status": self._fsm.state_string_c(),
             "order_list_id": self.order_list_id,
@@ -269,12 +269,12 @@ cdef class MarketToLimitOrder(Order):
             self.venue_order_id = event.venue_order_id
         if event.quantity is not None:
             self.quantity = event.quantity
-            self.leaves_qty = Quantity(self.quantity - self.filled_qty, self.quantity.precision)
+            self.leaves_qty.sub_assign(self.filled_qty)
         if event.price is not None:
             self.price = event.price
 
     cdef void _set_slippage(self) except *:
         if self.side == OrderSide.BUY:
-            self.slippage = self.avg_px - self.price
+            self.slippage = self.avg_px - self.price.as_f64_c()
         elif self.side == OrderSide.SELL:
-            self.slippage = self.price - self.avg_px
+            self.slippage = self.price.as_f64_c() - self.avg_px

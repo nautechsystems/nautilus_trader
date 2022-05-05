@@ -37,7 +37,7 @@ from nautilus_trader.model.position cimport Position
 
 cdef class CacheFacade:
 
-# -- DATA QUERIES ----------------------------------------------------------------------------------  # noqa
+# -- DATA QUERIES ---------------------------------------------------------------------------------  # noqa
 
     cpdef list tickers(self, InstrumentId instrument_id)
     cpdef list quote_ticks(self, InstrumentId instrument_id)
@@ -59,28 +59,28 @@ cdef class CacheFacade:
     cpdef bint has_trade_ticks(self, InstrumentId instrument_id) except *
     cpdef bint has_bars(self, BarType bar_type) except *
 
-    cpdef object get_xrate(
+    cpdef double get_xrate(
         self,
         Venue venue,
         Currency from_currency,
         Currency to_currency,
         PriceType price_type=*,
-    )
+    ) except *
 
-# -- INSTRUMENT QUERIES ----------------------------------------------------------------------------
+# -- INSTRUMENT QUERIES ---------------------------------------------------------------------------
 
     cpdef Instrument instrument(self, InstrumentId instrument_id)
     cpdef list instrument_ids(self, Venue venue=*)
     cpdef list instruments(self, Venue venue=*)
 
-# -- ACCOUNT QUERIES -------------------------------------------------------------------------------
+# -- ACCOUNT QUERIES ------------------------------------------------------------------------------
 
     cpdef Account account(self, AccountId account_id)
     cpdef Account account_for_venue(self, Venue venue)
     cpdef AccountId account_id(self, Venue venue)
     cpdef list accounts(self)
 
-# -- IDENTIFIER QUERIES ----------------------------------------------------------------------------
+# -- IDENTIFIER QUERIES ---------------------------------------------------------------------------
 
     cpdef set client_order_ids(self, Venue venue=*, InstrumentId instrument_id=*, StrategyId strategy_id=*)
     cpdef set client_order_ids_open(self, Venue venue=*, InstrumentId instrument_id=*, StrategyId strategy_id=*)
@@ -91,7 +91,7 @@ cdef class CacheFacade:
     cpdef set position_closed_ids(self, Venue venue=*, InstrumentId instrument_id=*, StrategyId strategy_id=*)
     cpdef set strategy_ids(self)
 
-# -- ORDER QUERIES ---------------------------------------------------------------------------------
+# -- ORDER QUERIES --------------------------------------------------------------------------------
 
     cpdef Order order(self, ClientOrderId client_order_id)
     cpdef ClientOrderId client_order_id(self, VenueOrderId venue_order_id)
@@ -110,11 +110,12 @@ cdef class CacheFacade:
     cpdef int orders_inflight_count(self, Venue venue=*, InstrumentId instrument_id=*, StrategyId strategy_id=*) except *
     cpdef int orders_total_count(self, Venue venue=*, InstrumentId instrument_id=*, StrategyId strategy_id=*) except *
 
-# -- POSITION QUERIES ------------------------------------------------------------------------------
+# -- POSITION QUERIES -----------------------------------------------------------------------------
 
     cpdef Position position(self, PositionId position_id)
     cpdef Position position_for_order(self, ClientOrderId client_order_id)
     cpdef PositionId position_id(self, ClientOrderId client_order_id)
+    cpdef list position_snapshots(self, PositionId position_id=*)
     cpdef list positions(self, Venue venue=*, InstrumentId instrument_id=*, StrategyId strategy_id=*)
     cpdef list positions_open(self, Venue venue=*, InstrumentId instrument_id=*, StrategyId strategy_id=*)
     cpdef list positions_closed(self, Venue venue=*, InstrumentId instrument_id=*, StrategyId strategy_id=*)
@@ -125,7 +126,7 @@ cdef class CacheFacade:
     cpdef int positions_closed_count(self, Venue venue=*, InstrumentId instrument_id=*, StrategyId strategy_id=*) except *
     cpdef int positions_total_count(self, Venue venue=*, InstrumentId instrument_id=*, StrategyId strategy_id=*) except *
 
-# -- STRATEGY QUERIES ------------------------------------------------------------------------------
+# -- STRATEGY QUERIES -----------------------------------------------------------------------------
 
     cpdef StrategyId strategy_id_for_order(self, ClientOrderId client_order_id)
     cpdef StrategyId strategy_id_for_position(self, PositionId position_id)

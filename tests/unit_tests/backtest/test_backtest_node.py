@@ -18,12 +18,12 @@ from decimal import Decimal
 
 from nautilus_trader.backtest.engine import BacktestEngineConfig
 from nautilus_trader.backtest.node import BacktestNode
-from nautilus_trader.config.backtest import BacktestDataConfig
-from nautilus_trader.config.backtest import BacktestRunConfig
-from nautilus_trader.config.backtest import BacktestVenueConfig
-from nautilus_trader.config.components import ImportableStrategyConfig
+from nautilus_trader.config import BacktestDataConfig
+from nautilus_trader.config import BacktestRunConfig
+from nautilus_trader.config import BacktestVenueConfig
+from nautilus_trader.config import ImportableStrategyConfig
 from nautilus_trader.model.data.tick import QuoteTick
-from nautilus_trader.persistence.util import parse_bytes
+from nautilus_trader.persistence.funcs import parse_bytes
 from tests.test_kit.mocks.data import aud_usd_data_loader
 from tests.test_kit.mocks.data import data_catalog_setup
 
@@ -71,22 +71,21 @@ class TestBacktestNode:
         aud_usd_data_loader()  # Load sample data
 
     def test_init(self):
-        node = BacktestNode()
+        node = BacktestNode(configs=self.backtest_configs)
         assert node
 
     def test_run(self):
         # Arrange
-        node = BacktestNode()
+        node = BacktestNode(configs=self.backtest_configs)
 
         # Act
-        results = node.run(run_configs=self.backtest_configs)
+        results = node.run()
 
         # Assert
         assert len(results) == 1
 
     def test_backtest_run_streaming_sync(self):
         # Arrange
-        node = BacktestNode()
         config = BacktestRunConfig(
             engine=BacktestEngineConfig(strategies=self.strategies),
             venues=[self.venue_config],
@@ -94,18 +93,20 @@ class TestBacktestNode:
             batch_size_bytes=parse_bytes("10kib"),
         )
 
+        node = BacktestNode(configs=[config])
+
         # Act
-        results = node.run([config])
+        results = node.run()
 
         # Assert
         assert len(results) == 1
 
     def test_backtest_run_results(self):
         # Arrange
-        node = BacktestNode()
+        node = BacktestNode(configs=self.backtest_configs)
 
         # Act
-        results = node.run(self.backtest_configs)
+        results = node.run()
 
         # Assert
         assert isinstance(results, list)
@@ -161,7 +162,7 @@ class TestBacktestNode:
 
         # Act
         config = BacktestRunConfig.parse_raw(raw)
-        node = BacktestNode()
+        node = BacktestNode(configs=[config])
 
         # Assert
-        node.run(run_configs=[config])
+        node.run()

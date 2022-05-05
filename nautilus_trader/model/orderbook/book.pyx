@@ -386,6 +386,12 @@ cdef class OrderBook:
         if best_bid >= best_ask:
             raise BookIntegrityError(f"Orders in cross [{best_bid} @ {best_ask}]")
 
+    cdef void update_quote_tick(self, QuoteTick tick) except *:
+        raise NotImplementedError()
+
+    cdef void update_trade_tick(self, TradeTick tick) except *:
+        raise NotImplementedError()
+
     cpdef int trade_side(self, TradeTick trade):
         """
         Return which side of the book a trade occurred given a trade tick.

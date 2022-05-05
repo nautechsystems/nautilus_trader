@@ -23,3 +23,17 @@ implementations which can control many `Timer` instances.
 Trading domain specific components for generating `Order` and `Identifier` objects.
 Common logging components. A high performance `Queue`. Common `UUID4` factory.
 """
+
+from enum import Enum
+from enum import unique
+
+
+@unique
+class Environment(Enum):
+    """
+    Represents the environment context for a Nautilus system.
+    """
+
+    BACKTEST = "backtest"
+    SANDBOX = "sandbox"
+    LIVE = "live"

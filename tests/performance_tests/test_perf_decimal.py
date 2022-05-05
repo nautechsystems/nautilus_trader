@@ -17,8 +17,9 @@ import decimal
 from decimal import Decimal
 
 from nautilus_trader.core.inspect import get_size_of
-from nautilus_trader.model.objects import BaseDecimal
 from nautilus_trader.model.objects import Price
+from nautilus_trader.model.objects import Quantity
+from tests.test_kit.performance import PerformanceBench
 from tests.test_kit.performance import PerformanceHarness
 
 
@@ -26,8 +27,8 @@ _PRECISION_5_CONTEXT = decimal.Context(prec=5)
 _BUILTIN_DECIMAL1 = Decimal("1.00000")
 _BUILTIN_DECIMAL2 = Decimal("1.00001")
 
-_DECIMAL1 = BaseDecimal(1, precision=1)
-_DECIMAL2 = BaseDecimal(1.00001, precision=5)
+_DECIMAL1 = Quantity(1, precision=1)
+_DECIMAL2 = Quantity(1.00001, precision=5)
 
 
 class DecimalTesting:
@@ -93,7 +94,7 @@ class TestDecimalPerformance(PerformanceHarness):
 
     def test_make_decimal(self):
         self.benchmark.pedantic(
-            target=BaseDecimal,
+            target=Quantity,
             args=(1.23456, 5),
             iterations=1,
             rounds=100_000,
@@ -101,13 +102,22 @@ class TestDecimalPerformance(PerformanceHarness):
         # ~0.0ms / ~0.4μs / 353ns minimum of 100,000 runs @ 1 iteration each run.
 
     def test_make_price(self):
-        self.benchmark.pedantic(
-            target=Price,
-            args=(1.23456, 5),
+        # self.benchmark.pedantic(
+        #     target=Price,
+        #     args=(1.23456, 5),
+        #     iterations=1,
+        #     rounds=100_000,
+        # )
+        def make_price():
+            Price(1.23456, 5)
+
+        PerformanceBench.profile_function(
+            target=make_price,
+            runs=100_000,
             iterations=1,
-            rounds=100_000,
         )
         # ~0.0ms / ~0.5μs / 526ns minimum of 100,000 runs @ 1 iteration each run.
+        # ~0.0ms / ~0.2μs / 193ns minimum of 100,000 runs @ 1 iteration each run.
 
     def test_make_price_from_float(self):
         self.benchmark.pedantic(
@@ -155,7 +165,13 @@ class TestDecimalPerformance(PerformanceHarness):
             iterations=1,
             rounds=100_000,
         )
-        # ~34.0ms / ~33955.2μs / 33955203ns minimum of 3 runs @ 100,000 iterations each run.
+
+        PerformanceBench.profile_function(
+            target=DecimalTesting.builtin_decimal_arithmetic,
+            runs=100_000,
+            iterations=1,
+        )
+        # ~0.0ms / ~0.4μs / 424ns minimum of 100,000 runs @ 1 iteration each run.
 
     def test_decimal_arithmetic(self):
         self.benchmark.pedantic(

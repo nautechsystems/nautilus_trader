@@ -21,8 +21,8 @@ from nautilus_trader.common.factories import OrderFactory
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.common.logging import LogLevel
 from nautilus_trader.common.uuid import UUIDFactory
-from nautilus_trader.config.components import TradingStrategyConfig
-from nautilus_trader.config.live import ExecEngineConfig
+from nautilus_trader.config import ExecEngineConfig
+from nautilus_trader.config import StrategyConfig
 from nautilus_trader.data.engine import DataEngine
 from nautilus_trader.execution.engine import ExecutionEngine
 from nautilus_trader.execution.messages import CancelOrder
@@ -50,7 +50,7 @@ from nautilus_trader.model.position import Position
 from nautilus_trader.msgbus.bus import MessageBus
 from nautilus_trader.portfolio.portfolio import Portfolio
 from nautilus_trader.risk.engine import RiskEngine
-from nautilus_trader.trading.strategy import TradingStrategy
+from nautilus_trader.trading.strategy import Strategy
 from tests.test_kit.mocks.cache_database import MockCacheDatabase
 from tests.test_kit.mocks.exec_clients import MockExecutionClient
 from tests.test_kit.stubs.events import TestEventStubs
@@ -115,7 +115,7 @@ class TestExecutionEngine:
             logger=self.logger,
         )
 
-        config = ExecEngineConfig()
+        config = ExecEngineConfig(debug=True)
         config.allow_cash_positions = True  # Retain original behaviour for now
         self.exec_engine = ExecutionEngine(
             msgbus=self.msgbus,
@@ -264,7 +264,7 @@ class TestExecutionEngine:
         order = self.order_factory.market(
             BTCUSDT_BINANCE.id,
             OrderSide.BUY,
-            Quantity.from_str("1.00000000"),
+            Quantity.from_str("1.000"),
         )
 
         order.apply(TestEventStubs.order_submitted(order))
@@ -308,7 +308,7 @@ class TestExecutionEngine:
         # Arrange
         self.exec_engine.start()
 
-        strategy = TradingStrategy()
+        strategy = Strategy()
         strategy.register(
             trader_id=self.trader_id,
             portfolio=self.portfolio,
@@ -328,6 +328,7 @@ class TestExecutionEngine:
             self.trader_id,
             strategy.id,
             None,
+            True,
             order,
             self.uuid_factory.generate(),
             self.clock.timestamp_ns(),
@@ -346,7 +347,7 @@ class TestExecutionEngine:
         self.cache.add_instrument(BTCUSDT_BINANCE)
         self.exec_engine.start()
 
-        strategy = TradingStrategy()
+        strategy = Strategy()
         strategy.register(
             trader_id=self.trader_id,
             portfolio=self.portfolio,
@@ -366,6 +367,7 @@ class TestExecutionEngine:
             self.trader_id,
             strategy.id,
             None,
+            True,
             order,
             self.uuid_factory.generate(),
             self.clock.timestamp_ns(),
@@ -382,7 +384,7 @@ class TestExecutionEngine:
         # Arrange
         self.exec_engine.start()
 
-        strategy = TradingStrategy()
+        strategy = Strategy()
         strategy.register(
             trader_id=self.trader_id,
             portfolio=self.portfolio,
@@ -402,6 +404,7 @@ class TestExecutionEngine:
             self.trader_id,
             strategy.id,
             PositionId("RANDOM"),  # Invalid PositionId
+            True,
             order,
             self.uuid_factory.generate(),
             self.clock.timestamp_ns(),
@@ -417,7 +420,7 @@ class TestExecutionEngine:
         # Arrange
         self.exec_engine.start()
 
-        strategy = TradingStrategy()
+        strategy = Strategy()
         strategy.register(
             trader_id=self.trader_id,
             portfolio=self.portfolio,
@@ -437,6 +440,7 @@ class TestExecutionEngine:
             self.trader_id,
             strategy.id,
             None,
+            True,
             order,
             self.uuid_factory.generate(),
             self.clock.timestamp_ns(),
@@ -462,7 +466,7 @@ class TestExecutionEngine:
         # Arrange
         self.exec_engine.start()
 
-        strategy = TradingStrategy()
+        strategy = Strategy()
         strategy.register(
             trader_id=self.trader_id,
             portfolio=self.portfolio,
@@ -524,7 +528,7 @@ class TestExecutionEngine:
         # Arrange
         self.exec_engine.start()
 
-        strategy = TradingStrategy()
+        strategy = Strategy()
         strategy.register(
             trader_id=self.trader_id,
             portfolio=self.portfolio,
@@ -620,7 +624,7 @@ class TestExecutionEngine:
         self.exec_engine.start()
         self.risk_engine.start()
 
-        strategy = TradingStrategy()
+        strategy = Strategy()
         strategy.register(
             trader_id=self.trader_id,
             portfolio=self.portfolio,
@@ -714,7 +718,7 @@ class TestExecutionEngine:
         # Arrange
         self.exec_engine.start()
 
-        strategy = TradingStrategy()
+        strategy = Strategy()
         strategy.register(
             trader_id=self.trader_id,
             portfolio=self.portfolio,
@@ -734,6 +738,7 @@ class TestExecutionEngine:
             self.trader_id,
             strategy.id,
             None,
+            True,
             order,
             self.uuid_factory.generate(),
             self.clock.timestamp_ns(),
@@ -750,7 +755,7 @@ class TestExecutionEngine:
         # Arrange
         self.exec_engine.start()
 
-        strategy = TradingStrategy()
+        strategy = Strategy()
         strategy.register(
             trader_id=self.trader_id,
             portfolio=self.portfolio,
@@ -770,6 +775,7 @@ class TestExecutionEngine:
             self.trader_id,
             strategy.id,
             None,
+            True,
             order,
             self.uuid_factory.generate(),
             self.clock.timestamp_ns(),
@@ -787,7 +793,7 @@ class TestExecutionEngine:
         # Arrange
         self.exec_engine.start()
 
-        strategy = TradingStrategy()
+        strategy = Strategy()
         strategy.register(
             trader_id=self.trader_id,
             portfolio=self.portfolio,
@@ -807,6 +813,7 @@ class TestExecutionEngine:
             self.trader_id,
             strategy.id,
             None,
+            True,
             order,
             self.uuid_factory.generate(),
             self.clock.timestamp_ns(),
@@ -823,7 +830,7 @@ class TestExecutionEngine:
         # Arrange
         self.exec_engine.start()
 
-        strategy = TradingStrategy()
+        strategy = Strategy()
         strategy.register(
             trader_id=self.trader_id,
             portfolio=self.portfolio,
@@ -850,7 +857,7 @@ class TestExecutionEngine:
         # Arrange
         self.exec_engine.start()
 
-        strategy = TradingStrategy()
+        strategy = Strategy()
         strategy.register(
             trader_id=self.trader_id,
             portfolio=self.portfolio,
@@ -871,6 +878,7 @@ class TestExecutionEngine:
             self.trader_id,
             strategy.id,
             None,
+            True,
             order,
             self.uuid_factory.generate(),
             self.clock.timestamp_ns(),
@@ -901,7 +909,7 @@ class TestExecutionEngine:
         # Arrange
         self.exec_engine.start()
 
-        strategy = TradingStrategy()
+        strategy = Strategy()
         strategy.register(
             trader_id=self.trader_id,
             portfolio=self.portfolio,
@@ -923,6 +931,7 @@ class TestExecutionEngine:
             self.trader_id,
             strategy.id,
             None,
+            True,
             order,
             self.uuid_factory.generate(),
             self.clock.timestamp_ns(),
@@ -957,7 +966,7 @@ class TestExecutionEngine:
         # Arrange
         self.exec_engine.start()
 
-        strategy = TradingStrategy()
+        strategy = Strategy()
         strategy.register(
             trader_id=self.trader_id,
             portfolio=self.portfolio,
@@ -977,6 +986,7 @@ class TestExecutionEngine:
             self.trader_id,
             strategy.id,
             None,
+            True,
             order,
             self.uuid_factory.generate(),
             self.clock.timestamp_ns(),
@@ -1010,7 +1020,7 @@ class TestExecutionEngine:
         # Arrange
         self.exec_engine.start()
 
-        strategy = TradingStrategy()
+        strategy = Strategy()
         strategy.register(
             trader_id=self.trader_id,
             portfolio=self.portfolio,
@@ -1030,6 +1040,7 @@ class TestExecutionEngine:
             self.trader_id,
             strategy.id,
             None,
+            True,
             order,
             self.uuid_factory.generate(),
             self.clock.timestamp_ns(),
@@ -1061,7 +1072,7 @@ class TestExecutionEngine:
         # Arrange
         self.exec_engine.start()
 
-        strategy = TradingStrategy()
+        strategy = Strategy()
         strategy.register(
             trader_id=self.trader_id,
             portfolio=self.portfolio,
@@ -1081,6 +1092,7 @@ class TestExecutionEngine:
             self.trader_id,
             strategy.id,
             None,
+            True,
             order,
             self.uuid_factory.generate(),
             self.clock.timestamp_ns(),
@@ -1114,7 +1126,7 @@ class TestExecutionEngine:
         # Arrange
         self.exec_engine.start()
 
-        strategy = TradingStrategy()
+        strategy = Strategy()
         strategy.register(
             trader_id=self.trader_id,
             portfolio=self.portfolio,
@@ -1134,6 +1146,7 @@ class TestExecutionEngine:
             self.trader_id,
             strategy.id,
             None,
+            True,
             order,
             self.uuid_factory.generate(),
             self.clock.timestamp_ns(),
@@ -1171,7 +1184,7 @@ class TestExecutionEngine:
         # Arrange
         self.exec_engine.start()
 
-        strategy = TradingStrategy()
+        strategy = Strategy()
         strategy.register(
             trader_id=self.trader_id,
             portfolio=self.portfolio,
@@ -1191,6 +1204,7 @@ class TestExecutionEngine:
             self.trader_id,
             strategy.id,
             None,
+            True,
             order,
             self.uuid_factory.generate(),
             self.clock.timestamp_ns(),
@@ -1223,7 +1237,7 @@ class TestExecutionEngine:
         # Arrange
         self.exec_engine.start()
 
-        strategy = TradingStrategy()
+        strategy = Strategy()
         strategy.register(
             trader_id=self.trader_id,
             portfolio=self.portfolio,
@@ -1243,6 +1257,7 @@ class TestExecutionEngine:
             self.trader_id,
             strategy.id,
             None,
+            True,
             order,
             self.uuid_factory.generate(),
             self.clock.timestamp_ns(),
@@ -1291,7 +1306,7 @@ class TestExecutionEngine:
         # Arrange
         self.exec_engine.start()
 
-        strategy = TradingStrategy()
+        strategy = Strategy()
         strategy.register(
             trader_id=self.trader_id,
             portfolio=self.portfolio,
@@ -1311,6 +1326,7 @@ class TestExecutionEngine:
             self.trader_id,
             strategy.id,
             None,
+            True,
             order,
             self.uuid_factory.generate(),
             self.clock.timestamp_ns(),
@@ -1343,7 +1359,7 @@ class TestExecutionEngine:
         # Arrange
         self.exec_engine.start()
 
-        strategy = TradingStrategy()
+        strategy = Strategy()
         strategy.register(
             trader_id=self.trader_id,
             portfolio=self.portfolio,
@@ -1369,6 +1385,7 @@ class TestExecutionEngine:
             self.trader_id,
             strategy.id,
             None,
+            True,
             order1,
             self.uuid_factory.generate(),
             self.clock.timestamp_ns(),
@@ -1385,6 +1402,7 @@ class TestExecutionEngine:
             self.trader_id,
             strategy.id,
             expected_position_id,
+            True,
             order2,
             self.uuid_factory.generate(),
             self.clock.timestamp_ns(),
@@ -1415,7 +1433,7 @@ class TestExecutionEngine:
         # Arrange
         self.exec_engine.start()
 
-        strategy = TradingStrategy()
+        strategy = Strategy()
         strategy.register(
             trader_id=self.trader_id,
             portfolio=self.portfolio,
@@ -1443,6 +1461,7 @@ class TestExecutionEngine:
             self.trader_id,
             strategy.id,
             None,
+            True,
             order1,
             self.uuid_factory.generate(),
             self.clock.timestamp_ns(),
@@ -1461,6 +1480,7 @@ class TestExecutionEngine:
             self.trader_id,
             strategy.id,
             position_id,
+            True,
             order2,
             self.uuid_factory.generate(),
             self.clock.timestamp_ns(),
@@ -1495,7 +1515,7 @@ class TestExecutionEngine:
         # Arrange
         self.exec_engine.start()
 
-        strategy1 = TradingStrategy()
+        strategy1 = Strategy()
         strategy1.register(
             trader_id=self.trader_id,
             portfolio=self.portfolio,
@@ -1505,7 +1525,7 @@ class TestExecutionEngine:
             logger=self.logger,
         )
 
-        strategy2 = TradingStrategy(TradingStrategyConfig(order_id_tag="002"))
+        strategy2 = Strategy(StrategyConfig(order_id_tag="002"))
         strategy2.register(
             trader_id=self.trader_id,
             portfolio=self.portfolio,
@@ -1533,6 +1553,7 @@ class TestExecutionEngine:
             self.trader_id,
             strategy1.id,
             None,
+            True,
             order1,
             self.uuid_factory.generate(),
             self.clock.timestamp_ns(),
@@ -1542,6 +1563,7 @@ class TestExecutionEngine:
             self.trader_id,
             strategy2.id,
             None,
+            True,
             order2,
             self.uuid_factory.generate(),
             self.clock.timestamp_ns(),
@@ -1600,7 +1622,7 @@ class TestExecutionEngine:
         # Arrange
         self.exec_engine.start()
 
-        strategy1 = TradingStrategy()
+        strategy1 = Strategy()
         strategy1.register(
             trader_id=self.trader_id,
             portfolio=self.portfolio,
@@ -1610,7 +1632,7 @@ class TestExecutionEngine:
             logger=self.logger,
         )
 
-        strategy2 = TradingStrategy(TradingStrategyConfig(order_id_tag="002"))
+        strategy2 = Strategy(StrategyConfig(order_id_tag="002"))
         strategy2.register(
             trader_id=self.trader_id,
             portfolio=self.portfolio,
@@ -1645,6 +1667,7 @@ class TestExecutionEngine:
             self.trader_id,
             strategy1.id,
             None,
+            True,
             order1,
             self.uuid_factory.generate(),
             self.clock.timestamp_ns(),
@@ -1656,6 +1679,7 @@ class TestExecutionEngine:
             self.trader_id,
             strategy1.id,
             position_id1,
+            True,
             order2,
             self.uuid_factory.generate(),
             self.clock.timestamp_ns(),
@@ -1665,6 +1689,7 @@ class TestExecutionEngine:
             self.trader_id,
             strategy2.id,
             None,
+            True,
             order3,
             self.uuid_factory.generate(),
             self.clock.timestamp_ns(),
@@ -1723,7 +1748,7 @@ class TestExecutionEngine:
         # Arrange
         self.exec_engine.start()
 
-        strategy = TradingStrategy()
+        strategy = Strategy()
         strategy.register(
             trader_id=self.trader_id,
             portfolio=self.portfolio,
@@ -1749,6 +1774,7 @@ class TestExecutionEngine:
             self.trader_id,
             strategy.id,
             None,
+            True,
             order1,
             self.uuid_factory.generate(),
             self.clock.timestamp_ns(),
@@ -1767,6 +1793,7 @@ class TestExecutionEngine:
             self.trader_id,
             strategy.id,
             position_id,
+            True,
             order2,
             self.uuid_factory.generate(),
             self.clock.timestamp_ns(),
@@ -1802,7 +1829,7 @@ class TestExecutionEngine:
         # Arrange
         self.exec_engine.start()
 
-        strategy = TradingStrategy()
+        strategy = Strategy()
         strategy.register(
             trader_id=self.trader_id,
             portfolio=self.portfolio,
@@ -1828,6 +1855,7 @@ class TestExecutionEngine:
             self.trader_id,
             strategy.id,
             None,
+            True,
             order1,
             self.uuid_factory.generate(),
             self.clock.timestamp_ns(),
@@ -1846,6 +1874,7 @@ class TestExecutionEngine:
             self.trader_id,
             strategy.id,
             position_id,
+            True,
             order2,
             self.uuid_factory.generate(),
             self.clock.timestamp_ns(),
@@ -1881,7 +1910,7 @@ class TestExecutionEngine:
         # Arrange
         self.exec_engine.start()
 
-        strategy = TradingStrategy()
+        strategy = Strategy()
         strategy.register(
             trader_id=self.trader_id,
             portfolio=self.portfolio,
@@ -1913,6 +1942,7 @@ class TestExecutionEngine:
             self.trader_id,
             strategy.id,
             None,
+            True,
             order1,
             self.uuid_factory.generate(),
             self.clock.timestamp_ns(),
@@ -1931,6 +1961,7 @@ class TestExecutionEngine:
             self.trader_id,
             strategy.id,
             position_id,
+            True,
             order2,
             self.uuid_factory.generate(),
             self.clock.timestamp_ns(),
@@ -1940,6 +1971,7 @@ class TestExecutionEngine:
             self.trader_id,
             strategy.id,
             position_id,
+            True,
             order3,
             self.uuid_factory.generate(),
             self.clock.timestamp_ns(),
@@ -1966,7 +1998,7 @@ class TestExecutionEngine:
         # Arrange
         self.exec_engine.start()
 
-        strategy = TradingStrategy()
+        strategy = Strategy()
         strategy.register(
             trader_id=self.trader_id,
             portfolio=self.portfolio,
@@ -1987,6 +2019,7 @@ class TestExecutionEngine:
             self.trader_id,
             strategy.id,
             None,
+            True,
             order,
             self.uuid_factory.generate(),
             self.clock.timestamp_ns(),

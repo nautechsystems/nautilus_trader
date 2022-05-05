@@ -21,27 +21,23 @@ import signal
 import socket
 import warnings
 from asyncio import AbstractEventLoop
-from enum import Enum
-from enum import unique
-from functools import partial
-from typing import Any, Callable, Dict, List, Optional, Union
+from typing import Callable, Dict, List, Optional, Union
 
-import orjson
-
-from nautilus_trader.config.components import ActorFactory
-from nautilus_trader.config.components import CacheConfig
-from nautilus_trader.config.components import CacheDatabaseConfig
-from nautilus_trader.config.components import ImportableActorConfig
-from nautilus_trader.config.components import ImportableStrategyConfig
-from nautilus_trader.config.components import StrategyFactory
-from nautilus_trader.config.engines import DataEngineConfig
-from nautilus_trader.config.engines import ExecEngineConfig
-from nautilus_trader.config.engines import RiskEngineConfig
-from nautilus_trader.config.live import LiveDataEngineConfig
-from nautilus_trader.config.live import LiveExecEngineConfig
-from nautilus_trader.config.live import LiveRiskEngineConfig
-from nautilus_trader.config.persistence import PersistenceConfig
-from nautilus_trader.persistence.streaming import FeatherWriter
+from nautilus_trader.common import Environment
+from nautilus_trader.config import ActorFactory
+from nautilus_trader.config import CacheConfig
+from nautilus_trader.config import CacheDatabaseConfig
+from nautilus_trader.config import DataEngineConfig
+from nautilus_trader.config import ExecEngineConfig
+from nautilus_trader.config import ImportableActorConfig
+from nautilus_trader.config import ImportableStrategyConfig
+from nautilus_trader.config import LiveDataEngineConfig
+from nautilus_trader.config import LiveExecEngineConfig
+from nautilus_trader.config import LiveRiskEngineConfig
+from nautilus_trader.config import RiskEngineConfig
+from nautilus_trader.config import StrategyFactory
+from nautilus_trader.config import StreamingConfig
+from nautilus_trader.persistence.streaming import StreamingFeatherWriter
 
 from nautilus_trader.cache.cache cimport Cache
 from nautilus_trader.common.actor cimport Actor
@@ -54,7 +50,7 @@ from nautilus_trader.common.logging cimport LogLevel
 from nautilus_trader.common.logging cimport nautilus_header
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.datetime cimport nanos_to_millis
-from nautilus_trader.core.time cimport unix_timestamp_ns
+from nautilus_trader.core.rust.core cimport unix_timestamp_ns
 from nautilus_trader.data.engine cimport DataEngine
 from nautilus_trader.execution.engine cimport ExecutionEngine
 from nautilus_trader.infrastructure.cache cimport RedisCacheDatabase
@@ -65,7 +61,7 @@ from nautilus_trader.msgbus.bus cimport MessageBus
 from nautilus_trader.portfolio.portfolio cimport Portfolio
 from nautilus_trader.risk.engine cimport RiskEngine
 from nautilus_trader.serialization.msgpack.serializer cimport MsgPackSerializer
-from nautilus_trader.trading.strategy cimport TradingStrategy
+from nautilus_trader.trading.strategy cimport Strategy
 from nautilus_trader.trading.trader cimport Trader
 
 
@@ -74,13 +70,6 @@ try:
     asyncio.set_event_loop_policy(uvloop.EventLoopPolicy())
 except ImportError:  # pragma: no cover
     uvloop = None
-    warnings.warn("uvloop is not available.")
-
-@unique
-class Environment(Enum):
-    BACKTEST = "backtest"
-    SANDBOX = "sandbox"
-    LIVE = "live"
 
 
 cdef class NautilusKernel:
@@ -107,6 +96,12 @@ cdef class NautilusKernel:
         The risk engine configuration for the kernel.
     exec_config : Union[ExecEngineConfig, LiveExecEngineConfig]
         The execution engine configuration for the kernel.
+    streaming_config : StreamingConfig, optional
+        The configuration for streaming to feather files.
+    actor_configs : List[ImportableActorConfig], optional
+        The list of importable actor configs.
+    strategy_configs : List[ImportableStrategyConfig], optional
+        The list of importable strategy configs.
     loop : AbstractEventLoop, optional
         The event loop for the kernel.
     loop_sig_callback : Callable, optional
@@ -143,9 +138,9 @@ cdef class NautilusKernel:
         data_config not None: Union[DataEngineConfig, LiveDataEngineConfig],
         risk_config not None: Union[RiskEngineConfig, LiveRiskEngineConfig],
         exec_config not None: Union[ExecEngineConfig, LiveExecEngineConfig],
-        persistence_config: Optional[PersistenceConfig] = None,
-        actor_configs: List[ImportableActorConfig] = None,
-        strategy_configs: List[ImportableStrategyConfig] = None,
+        streaming_config: Optional[StreamingConfig] = None,
+        actor_configs: Optional[List[ImportableActorConfig]] = None,
+        strategy_configs: Optional[List[ImportableStrategyConfig]] = None,
         loop: Optional[AbstractEventLoop] = None,
         loop_sig_callback: Optional[Callable] = None,
         loop_debug: bool = False,
@@ -154,6 +149,8 @@ cdef class NautilusKernel:
         LogLevel log_level = LogLevel.INFO,
         bypass_logging: bool = False,
     ):
+        if uvloop is None:
+            warnings.warn("uvloop is not available.")
         if actor_configs is None:
             actor_configs = []
         if strategy_configs is None:
@@ -165,7 +162,7 @@ cdef class NautilusKernel:
         Condition.true(isinstance(data_config, (DataEngineConfig, LiveDataEngineConfig)), "data_config was unrecognized type", ex_type=TypeError)
         Condition.true(isinstance(risk_config, (RiskEngineConfig, LiveRiskEngineConfig)), "risk_config was unrecognized type", ex_type=TypeError)
         Condition.true(isinstance(exec_config, (ExecEngineConfig, LiveExecEngineConfig)), "exec_config was unrecognized type", ex_type=TypeError)
-        Condition.type_or_none(persistence_config, PersistenceConfig, "persistence_config")
+        Condition.type_or_none(streaming_config, StreamingConfig, "streaming_config")
 
         self.environment = environment
 
@@ -180,7 +177,7 @@ cdef class NautilusKernel:
         if self.environment == Environment.BACKTEST:
             self.clock = TestClock()
             self.logger = Logger(
-                clock=self.clock,
+                clock=LiveClock(loop=loop),
                 trader_id=self.trader_id,
                 machine_id=self.machine_id,
                 instance_id=self.instance_id,
@@ -195,7 +192,7 @@ cdef class NautilusKernel:
                 trader_id=self.trader_id,
                 machine_id=self.machine_id,
                 instance_id=self.instance_id,
-                level_stdout=log_level
+                level_stdout=log_level,
             )
         else:  # pragma: no cover (design-time error)
             raise NotImplementedError(f"environment {environment} not recognized")
@@ -344,11 +341,10 @@ cdef class NautilusKernel:
         if load_state:
             self.trader.load()
 
-        # Setup persistence (requires trader)
-        self.persistence_writers: List[Any] = []
-
-        if persistence_config:
-            self._setup_persistence(config=persistence_config)
+        # Setup writer
+        self.writer: Optional[StreamingFeatherWriter] = None
+        if streaming_config:
+            self._setup_streaming(config=streaming_config)
 
         # Create importable actors
         for config in actor_configs:
@@ -357,7 +353,7 @@ cdef class NautilusKernel:
 
         # Create importable strategies
         for config in strategy_configs:
-            strategy: TradingStrategy = StrategyFactory.create(config)
+            strategy: Strategy = StrategyFactory.create(config)
             self.trader.add_strategy(strategy)
 
         cdef int64_t build_time_ms = nanos_to_millis(unix_timestamp_ns() - self.ts_created)
@@ -380,7 +376,7 @@ cdef class NautilusKernel:
         if self.loop_sig_callback:
             self.loop_sig_callback(sig)
 
-    def _setup_persistence(self, config: PersistenceConfig) -> None:
+    def _setup_streaming(self, config: StreamingConfig) -> None:
         # Setup persistence
         catalog = config.as_catalog()
         persistence_dir = os.path.join(config.catalog_path, self.environment.value)
@@ -388,26 +384,14 @@ cdef class NautilusKernel:
             catalog.fs.mkdir(persistence_dir)
 
         path = os.path.join(persistence_dir, self.instance_id.value + ".feather")
-        writer = FeatherWriter(
+        self.writer = StreamingFeatherWriter(
             path=path,
             fs_protocol=config.fs_protocol,
-            flush_interval=config.flush_interval,
+            flush_interval_ms=config.flush_interval_ms,
+            logger=self.log
         )
-        self.persistence_writers.append(writer)
-        self.trader.subscribe("*", writer.write)
-        self.log.info(f"Persisting data & events to {path=}")
-
-        # Setup logging
-        if config.persist_logs:
-
-            def sink(record, f):
-                f.write(orjson.dumps(record) + b"\n")
-
-            path = f"{config.catalog_path}/logs/{self.instance_id}.log"
-            log_sink = open(path, "wb")
-            self.persistence_writers.append(log_sink)
-            self.logger.register_sink(partial(sink, f=log_sink))
-            self.log.info(f"Persisting logs to {path=}")
+        self.trader.subscribe("*", self.writer.write)
+        self.log.info(f"Writing data & events to {path}")
 
     def add_log_sink(self, handler: Callable[[Dict], None]):
         """

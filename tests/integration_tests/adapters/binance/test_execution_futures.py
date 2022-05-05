@@ -27,7 +27,7 @@ from nautilus_trader.backtest.data.providers import TestInstrumentProvider
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.common.uuid import UUIDFactory
-from nautilus_trader.config.components import InstrumentProviderConfig
+from nautilus_trader.config import InstrumentProviderConfig
 from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.data.engine import DataEngine
 from nautilus_trader.execution.engine import ExecutionEngine
@@ -41,7 +41,7 @@ from nautilus_trader.model.objects import Quantity
 from nautilus_trader.msgbus.bus import MessageBus
 from nautilus_trader.portfolio.portfolio import Portfolio
 from nautilus_trader.risk.engine import RiskEngine
-from nautilus_trader.trading.strategy import TradingStrategy
+from nautilus_trader.trading.strategy import Strategy
 from tests.test_kit.stubs.component import TestComponentStubs
 from tests.test_kit.stubs.identifiers import TestIdStubs
 
@@ -125,7 +125,7 @@ class TestBinanceFuturesExecutionClient:
             account_type=BinanceAccountType.FUTURES_USDT,
         )
 
-        self.strategy = TradingStrategy()
+        self.strategy = Strategy()
         self.strategy.register(
             trader_id=self.trader_id,
             portfolio=self.portfolio,
@@ -153,6 +153,7 @@ class TestBinanceFuturesExecutionClient:
             trader_id=self.trader_id,
             strategy_id=self.strategy.id,
             position_id=None,
+            check_position_exists=True,
             order=order,
             command_id=UUID4(),
             ts_init=0,
@@ -192,6 +193,7 @@ class TestBinanceFuturesExecutionClient:
             trader_id=self.trader_id,
             strategy_id=self.strategy.id,
             position_id=None,
+            check_position_exists=True,
             order=order,
             command_id=UUID4(),
             ts_init=0,
@@ -233,6 +235,7 @@ class TestBinanceFuturesExecutionClient:
             trader_id=self.trader_id,
             strategy_id=self.strategy.id,
             position_id=None,
+            check_position_exists=True,
             order=order,
             command_id=UUID4(),
             ts_init=0,
@@ -277,6 +280,7 @@ class TestBinanceFuturesExecutionClient:
             trader_id=self.trader_id,
             strategy_id=self.strategy.id,
             position_id=None,
+            check_position_exists=True,
             order=order,
             command_id=UUID4(),
             ts_init=0,
@@ -323,6 +327,7 @@ class TestBinanceFuturesExecutionClient:
             trader_id=self.trader_id,
             strategy_id=self.strategy.id,
             position_id=None,
+            check_position_exists=True,
             order=order,
             command_id=UUID4(),
             ts_init=0,
@@ -367,6 +372,7 @@ class TestBinanceFuturesExecutionClient:
             trader_id=self.trader_id,
             strategy_id=self.strategy.id,
             position_id=None,
+            check_position_exists=True,
             order=order,
             command_id=UUID4(),
             ts_init=0,
@@ -410,6 +416,7 @@ class TestBinanceFuturesExecutionClient:
             trader_id=self.trader_id,
             strategy_id=self.strategy.id,
             position_id=None,
+            check_position_exists=True,
             order=order,
             command_id=UUID4(),
             ts_init=0,
@@ -459,6 +466,7 @@ class TestBinanceFuturesExecutionClient:
             trader_id=self.trader_id,
             strategy_id=self.strategy.id,
             position_id=None,
+            check_position_exists=True,
             order=order,
             command_id=UUID4(),
             ts_init=0,

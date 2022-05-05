@@ -34,9 +34,9 @@ async def test_binance_spot_account_http_client():
         loop=loop,
         clock=clock,
         logger=Logger(clock=clock),
+        account_type=BinanceAccountType.FUTURES_USDT,
         key=os.getenv("BINANCE_FUTURES_TESTNET_API_KEY"),
         secret=os.getenv("BINANCE_FUTURES_TESTNET_API_SECRET"),
-        base_url="https://testnet.binancefuture.com",
     )
     await client.connect()
 

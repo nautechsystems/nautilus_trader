@@ -17,9 +17,9 @@ from collections import Counter
 
 from nautilus_trader.adapters.betfair.providers import BetfairInstrumentProvider
 from nautilus_trader.backtest.node import BacktestNode
-from nautilus_trader.config.backtest import BacktestDataConfig
-from nautilus_trader.config.backtest import BacktestEngineConfig
-from nautilus_trader.config.backtest import BacktestRunConfig
+from nautilus_trader.config import BacktestDataConfig
+from nautilus_trader.config import BacktestEngineConfig
+from nautilus_trader.config import BacktestRunConfig
 from nautilus_trader.model.data.venue import InstrumentStatusUpdate
 from nautilus_trader.persistence.catalog import DataCatalog
 from nautilus_trader.persistence.external.core import process_files
@@ -64,11 +64,11 @@ class TestPersistenceStreaming:
             catalog_fs_protocol=self.catalog.fs.protocol,
             instrument_id=instrument.id.value,
         )
-        run_config.engine.persistence.flush_interval = 5000
-        node = BacktestNode()
+        run_config.engine.streaming.flush_interval_ms = 5000
+        node = BacktestNode(configs=[run_config])
 
         # Act
-        backtest_result = node.run(run_configs=[run_config])
+        backtest_result = node.run()
 
         # Assert
         result = self.catalog.read_backtest(
@@ -79,13 +79,13 @@ class TestPersistenceStreaming:
 
         expected = {
             "AccountState": 666,
-            "BettingInstrument": 3,
+            "BettingInstrument": 2,
             "ComponentStateChanged": 11,
             "OrderAccepted": 322,
             "OrderBookDeltas": 1077,
             "OrderBookSnapshot": 1,
             "OrderFilled": 344,
-            "OrderInitialized": 1,
+            "OrderInitialized": 323,
             "OrderSubmitted": 323,
             "PositionChanged": 343,
             "PositionOpened": 1,
@@ -113,16 +113,16 @@ class TestPersistenceStreaming:
             catalog_fs_protocol="memory",
             data_cls=InstrumentStatusUpdate,
         )
-        persistence = BetfairTestStubs.persistence_config(catalog_path=self.catalog.path)
+        streaming = BetfairTestStubs.streaming_config(catalog_path=self.catalog.path)
         run_config = BacktestRunConfig(
-            engine=BacktestEngineConfig(persistence=persistence),
+            engine=BacktestEngineConfig(streaming=streaming),
             data=[data_config, instrument_data_config],
             venues=[BetfairTestStubs.betfair_venue_config()],
         )
 
         # Act
-        node = BacktestNode()
-        r = node.run([run_config])
+        node = BacktestNode(configs=[run_config])
+        r = node.run()
 
         # Assert
         result = self.catalog.read_backtest(

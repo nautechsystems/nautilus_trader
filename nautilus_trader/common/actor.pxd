@@ -19,6 +19,7 @@ from nautilus_trader.cache.base cimport CacheFacade
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.component cimport Component
 from nautilus_trader.common.logging cimport Logger
+from nautilus_trader.common.logging cimport LoggerAdapter
 from nautilus_trader.core.data cimport Data
 from nautilus_trader.core.message cimport Event
 from nautilus_trader.data.messages cimport DataCommand
@@ -49,12 +50,14 @@ cdef class Actor(Component):
 
     cdef readonly Clock clock
     """The actors clock.\n\n:returns: `Clock`"""
+    cdef readonly LoggerAdapter log
+    """The actors logger.\n\n:returns: `LoggerAdapter`"""
     cdef readonly MessageBus msgbus
     """The message bus for the actor (if registered).\n\n:returns: `MessageBus` or ``None``"""
     cdef readonly CacheFacade cache
     """The read-only cache for the actor.\n\n:returns: `CacheFacade`"""
 
-# -- ABSTRACT METHODS ------------------------------------------------------------------------------
+# -- ABSTRACT METHODS -----------------------------------------------------------------------------
 
     cpdef void on_start(self) except *
     cpdef void on_stop(self) except *
@@ -76,7 +79,7 @@ cdef class Actor(Component):
     cpdef void on_instrument_close_price(self, InstrumentClosePrice update) except *
     cpdef void on_event(self, Event event) except *
 
-# -- REGISTRATION ----------------------------------------------------------------------------------
+# -- REGISTRATION ---------------------------------------------------------------------------------
 
     cpdef void register_base(
         self,
@@ -90,7 +93,7 @@ cdef class Actor(Component):
     cpdef void register_warning_event(self, type event) except *
     cpdef void deregister_warning_event(self, type event) except *
 
-# -- SUBSCRIPTIONS ---------------------------------------------------------------------------------
+# -- SUBSCRIPTIONS --------------------------------------------------------------------------------
 
     cpdef void subscribe_data(self, DataType data_type, ClientId client_id=*) except *
     cpdef void subscribe_instruments(self, Venue venue, ClientId client_id=*) except *
@@ -131,9 +134,10 @@ cdef class Actor(Component):
     cpdef void unsubscribe_venue_status_updates(self, Venue venue, ClientId client_id=*) except *
     cpdef void publish_data(self, DataType data_type, Data data) except *
 
-# -- REQUESTS --------------------------------------------------------------------------------------
+# -- REQUESTS -------------------------------------------------------------------------------------
 
     cpdef void request_data(self, ClientId client_id, DataType data_type) except *
+    cpdef void request_instrument(self, InstrumentId instrument_id, ClientId client_id=*) except *
     cpdef void request_quote_ticks(
         self,
         InstrumentId instrument_id,
@@ -156,7 +160,7 @@ cdef class Actor(Component):
         ClientId client_id= *,
     ) except *
 
-# -- HANDLERS --------------------------------------------------------------------------------------
+# -- HANDLERS -------------------------------------------------------------------------------------
 
     cpdef void handle_instrument(self, Instrument instrument) except *
     cpdef void handle_order_book(self, OrderBook order_book) except *
@@ -175,11 +179,12 @@ cdef class Actor(Component):
     cpdef void handle_event(self, Event event) except *
 
     cpdef void _handle_data_response(self, DataResponse response) except *
+    cpdef void _handle_instrument_response(self, DataResponse response) except *
     cpdef void _handle_quote_ticks_response(self, DataResponse response) except *
     cpdef void _handle_trade_ticks_response(self, DataResponse response) except *
     cpdef void _handle_bars_response(self, DataResponse response) except *
 
-# -- EGRESS ----------------------------------------------------------------------------------------
+# -- EGRESS ---------------------------------------------------------------------------------------
 
     cdef void _send_data_cmd(self, DataCommand command) except *
     cdef void _send_data_req(self, DataRequest request) except *

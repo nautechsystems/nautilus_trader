@@ -19,9 +19,9 @@
 
 | Platform         | Rust      | Python |
 |:-----------------|:----------|:-------|
-| Linux (x86_64)   | `1.59.0+` | `3.8+` |
-| macOS (x86_64)   | `1.59.0+` | `3.8+` |
-| Windows (x86_64) | `1.59.0+` | `3.8+` |
+| Linux (x86_64)   | `1.60.0+` | `3.8+` |
+| macOS (x86_64)   | `1.60.0+` | `3.8+` |
+| Windows (x86_64) | `1.60.0+` | `3.8+` |
 
 - **Website:** https://nautilustrader.io
 - **Docs:** https://docs.nautilustrader.io
@@ -48,8 +48,8 @@ including FX, Equities, Futures, Options, CFDs, Crypto and Betting - across mult
 
 ## Features
 
-- **Fast:** C-level speed through Cython. Asynchronous networking with [uvloop](https://github.com/MagicStack/uvloop)
-- **Reliable:** Type safety through Cython. Redis backed performant state persistence
+- **Fast:** C-level speed through Rust and Cython. Asynchronous networking with [uvloop](https://github.com/MagicStack/uvloop)
+- **Reliable:** Type safety through Rust and Cython. Redis backed performant state persistence
 - **Flexible:** OS independent, runs on Linux, macOS, Windows. Deploy using Docker
 - **Integrated:** Modular adapters mean any REST, WebSocket, or FIX API can be integrated
 - **Advanced:** Time in force `IOC`, `FOK`, `GTD`, `AT_THE_OPEN`, `AT_THE_CLOSE`, advanced order types and conditional triggers. Execution instructions `post-only`, `reduce-only`, and icebergs. Contingency order lists including `OCO`, `OTO`
@@ -168,6 +168,7 @@ as specified in the `pyproject.toml`. However, we highly recommend installing us
    - Linux and macOS:
        ```
        curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+       rustup toolchain install stable
        ```
    - Windows:
        - Download and install [`rustup-init.exe`](https://win.rustup.rs/x86_64)
@@ -239,6 +240,7 @@ The container images can be pulled as follows:
 
 You can launch the backtest example container by running:
 
+    docker pull ghcr.io/nautechsystems/jupyterlab:develop
     docker run -p 8888:8888 ghcr.io/nautechsystems/jupyterlab:develop
 
 Then navigate to the `backtest_example.ipynb` and run it!
@@ -247,11 +249,11 @@ Then navigate to the `backtest_example.ipynb` and run it!
 
 The following is a minimal EMA Cross strategy example which just uses bar data.
 While trading strategies can become very advanced with this platform, it's still possible to put
-together simple strategies. First inherit from the `TradingStrategy` base class, then only the
+together simple strategies. First inherit from the `Strategy` base class, then only the
 methods which are required by the strategy need to be implemented.
 
 ```python
-class EMACross(TradingStrategy):
+class EMACross(Strategy):
     """
     A simple moving average cross example strategy.
 
@@ -372,7 +374,7 @@ Contributors are also required to sign a standard Contributor License Agreement 
 ---
 
 Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
-https://nautechsystems.io
+https://nautilustrader.io
 
 ![nautechsystems](https://github.com/nautechsystems/nautilus_trader/blob/develop/docs/_images/ns-logo.png?raw=true "nautechsystems")
 <img src="https://github.com/nautechsystems/nautilus_trader/blob/develop/docs/_images/ferris.png" width="128">

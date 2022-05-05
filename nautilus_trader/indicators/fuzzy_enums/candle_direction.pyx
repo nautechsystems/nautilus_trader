@@ -13,7 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-# isort:skip_file
+from nautilus_trader.indicators.fuzzy_enums.candle_direction cimport CandleDirection
 
 
-from nautilus_trader.indicators.fuzzy_enums.candle_direction cimport CandleDirection  # noqa F401 (being used)
+__all__ = ["CandleDirection"]

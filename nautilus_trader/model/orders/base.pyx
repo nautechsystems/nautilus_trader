@@ -13,8 +13,9 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from decimal import Decimal
 from typing import List
+
+from libc.stdint cimport uint64_t
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.model.c_enums.liquidity_side cimport LiquiditySide
@@ -41,7 +42,6 @@ from nautilus_trader.model.events.order cimport OrderSubmitted
 from nautilus_trader.model.events.order cimport OrderTriggered
 from nautilus_trader.model.events.order cimport OrderUpdated
 from nautilus_trader.model.identifiers cimport TradeId
-from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
 
 
@@ -53,6 +53,7 @@ cdef dict _ORDER_STATE_TABLE = {
     (OrderStatus.INITIALIZED, OrderStatus.REJECTED): OrderStatus.REJECTED,  # Covers external orders
     (OrderStatus.INITIALIZED, OrderStatus.CANCELED): OrderStatus.CANCELED,  # Covers external orders
     (OrderStatus.SUBMITTED, OrderStatus.REJECTED): OrderStatus.REJECTED,
+    (OrderStatus.SUBMITTED, OrderStatus.CANCELED): OrderStatus.CANCELED,  # Covers FOK and IOC cases
     (OrderStatus.SUBMITTED, OrderStatus.ACCEPTED): OrderStatus.ACCEPTED,
     (OrderStatus.SUBMITTED, OrderStatus.PARTIALLY_FILLED): OrderStatus.PARTIALLY_FILLED,
     (OrderStatus.SUBMITTED, OrderStatus.FILLED): OrderStatus.FILLED,
@@ -74,6 +75,7 @@ cdef dict _ORDER_STATE_TABLE = {
     (OrderStatus.PENDING_UPDATE, OrderStatus.FILLED): OrderStatus.FILLED,
     (OrderStatus.PENDING_CANCEL, OrderStatus.PENDING_CANCEL): OrderStatus.PENDING_CANCEL,  # Allow multiple requests
     (OrderStatus.PENDING_CANCEL, OrderStatus.CANCELED): OrderStatus.CANCELED,
+    (OrderStatus.PENDING_CANCEL, OrderStatus.ACCEPTED): OrderStatus.ACCEPTED,  # Allows failed cancel requests
     (OrderStatus.PENDING_CANCEL, OrderStatus.PARTIALLY_FILLED): OrderStatus.PARTIALLY_FILLED,
     (OrderStatus.PENDING_CANCEL, OrderStatus.FILLED): OrderStatus.FILLED,
     (OrderStatus.TRIGGERED, OrderStatus.REJECTED): OrderStatus.REJECTED,
@@ -85,7 +87,7 @@ cdef dict _ORDER_STATE_TABLE = {
     (OrderStatus.TRIGGERED, OrderStatus.FILLED): OrderStatus.FILLED,
     (OrderStatus.PARTIALLY_FILLED, OrderStatus.PENDING_UPDATE): OrderStatus.PENDING_UPDATE,
     (OrderStatus.PARTIALLY_FILLED, OrderStatus.PENDING_CANCEL): OrderStatus.PENDING_CANCEL,
-    (OrderStatus.PARTIALLY_FILLED, OrderStatus.CANCELED): OrderStatus.FILLED,
+    (OrderStatus.PARTIALLY_FILLED, OrderStatus.CANCELED): OrderStatus.CANCELED,
     (OrderStatus.PARTIALLY_FILLED, OrderStatus.PARTIALLY_FILLED): OrderStatus.PARTIALLY_FILLED,
     (OrderStatus.PARTIALLY_FILLED, OrderStatus.FILLED): OrderStatus.FILLED,
 }
@@ -146,8 +148,8 @@ cdef class Order:
         # Execution
         self.filled_qty = Quantity.zero_c(precision=0)
         self.leaves_qty = init.quantity
-        self.avg_px = None  # Can be None
-        self.slippage = Decimal(0)
+        self.avg_px = 0.0  # No fills yet
+        self.slippage = 0.0
 
         # Timestamps
         self.init_id = init.id
@@ -166,7 +168,7 @@ cdef class Order:
             f"{self.info()}, "
             f"status={self._fsm.state_string_c()}, "
             f"client_order_id={self.client_order_id.value}, "
-            f"venue_order_id={self.venue_order_id}, "
+            f"venue_order_id={self.venue_order_id}, "  # Can be None
             f"tags={self.tags})"
         )
 
@@ -261,6 +263,9 @@ cdef class Order:
             or self._fsm.state == OrderStatus.PARTIALLY_FILLED
         )
 
+    cdef bint is_canceled_c(self) except *:
+        return self._fsm.state == OrderStatus.CANCELED
+
     cdef bint is_closed_c(self) except *:
         return (
             self._fsm.state == OrderStatus.DENIED
@@ -306,6 +311,18 @@ cdef class Order:
 
         """
         return self.instrument_id.venue
+
+    @property
+    def side_string(self) -> str:
+        """
+        The orders side as a string.
+
+        Returns
+        -------
+        str
+
+        """
+        return self.side_string_c()
 
     @property
     def status(self):
@@ -538,6 +555,18 @@ cdef class Order:
         return self.is_open_c()
 
     @property
+    def is_canceled(self):
+        """
+        If current `order.status` is ``CANCELED``.
+
+        Returns
+        -------
+        bool
+
+        """
+        return self.is_canceled_c()
+
+    @property
     def is_closed(self):
         """
         If the order is closed.
@@ -716,10 +745,6 @@ cdef class Order:
             else:
                 Condition.not_in(event.trade_id, self._trade_ids, "event.trade_id", "_trade_ids")
             # Fill order
-            if self.filled_qty + event.last_qty < self.quantity:
-                self._fsm.trigger(OrderStatus.PARTIALLY_FILLED)
-            else:
-                self._fsm.trigger(OrderStatus.FILLED)
             self._filled(event)
         else:  # pragma: no cover (design-time error)
             raise ValueError(f"invalid OrderEvent, was {type(event)}")
@@ -740,9 +765,12 @@ cdef class Order:
         self.venue_order_id = event.venue_order_id
 
     cdef void _updated(self, OrderUpdated event) except *:
-        if event.quantity is not None:
-            self.quantity = event.quantity
-            self.leaves_qty = Quantity(self.quantity - self.filled_qty, self.quantity.precision)
+        if event.quantity is None:
+            return
+
+        cdef uint64_t raw_leaves_qty = self.leaves_qty.raw_uint64_c() - self.filled_qty.raw_uint64_c()
+        self.leaves_qty = Quantity.from_raw_c(raw_leaves_qty, self.quantity.precision)
+        self.quantity = event.quantity
 
     cdef void _triggered(self, OrderTriggered event) except *:
         """Abstract method (implement in subclass)."""
@@ -755,35 +783,41 @@ cdef class Order:
         pass  # Do nothing else
 
     cdef void _filled(self, OrderFilled fill) except *:
+        if self.filled_qty._mem.raw + fill.last_qty._mem.raw < self.quantity._mem.raw:
+            self._fsm.trigger(OrderStatus.PARTIALLY_FILLED)
+        else:
+            self._fsm.trigger(OrderStatus.FILLED)
+
         self.venue_order_id = fill.venue_order_id
         self.position_id = fill.position_id
         self.strategy_id = fill.strategy_id
         self._trade_ids.append(fill.trade_id)
         self.last_trade_id = fill.trade_id
-        filled_qty: Decimal = self.filled_qty.as_decimal() + fill.last_qty.as_decimal()
-        leaves_qty: Decimal = self.quantity.as_decimal() - filled_qty
-        if leaves_qty < 0:
+        cdef uint64_t raw_filled_qty = self.filled_qty._mem.raw + fill.last_qty._mem.raw
+        cdef int64_t raw_leaves_qty = self.quantity._mem.raw - raw_filled_qty
+        if raw_leaves_qty < 0:
             raise ValueError(
-                f"invalid order.leaves_qty: was {leaves_qty}, "
+                f"invalid order.leaves_qty: was {<uint64_t>raw_leaves_qty / 1e9}, "
                 f"order.quantity={self.quantity}, "
                 f"order.filled_qty={self.filled_qty}, "
                 f"fill.last_qty={fill.last_qty}, "
                 f"fill={fill}",
             )
-        self.filled_qty = Quantity(filled_qty, fill.last_qty.precision)
-        self.leaves_qty = Quantity(leaves_qty, fill.last_qty.precision)
+        self.filled_qty.add_assign(fill.last_qty)
+        self.leaves_qty = Quantity.from_raw_c(<uint64_t>raw_leaves_qty, fill.last_qty.precision)
         self.ts_last = fill.ts_event
-        self.avg_px = self._calculate_avg_px(fill.last_qty, fill.last_px)
+        self.avg_px = self._calculate_avg_px(fill.last_qty.as_f64_c(), fill.last_px.as_f64_c())
         self.liquidity_side = fill.liquidity_side
         self._set_slippage()
 
-    cdef object _calculate_avg_px(self, Quantity last_qty, Price last_px):
-        if self.avg_px is None:
+    cdef double _calculate_avg_px(self, double last_qty, double last_px):
+        if self.avg_px == 0.0:
             return last_px
 
-        total_qty: Decimal = self.filled_qty + last_qty
+        cdef double filled_qty_f64 = self.filled_qty.as_f64_c()
+        cdef double total_qty = filled_qty_f64 + last_qty
         if total_qty > 0:  # Protect divide by zero
-            return ((self.avg_px * self.filled_qty) + (last_px * last_qty)) / total_qty
+            return ((self.avg_px * filled_qty_f64) + (last_px * last_qty)) / total_qty
 
     cdef void _set_slippage(self) except *:
         pass  # Optionally implement

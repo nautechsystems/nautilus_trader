@@ -128,3 +128,12 @@ class PortfolioStatistic:
 
         """
         pass  # Override in implementation
+
+    def _check_valid_returns(self, returns: pd.Series) -> bool:
+        if returns is None or returns.empty or returns.isnull().all():
+            return False
+        else:
+            return True
+
+    def _downsample_to_daily_bins(self, returns: pd.Series) -> pd.Series:
+        return returns.dropna().resample("1D").sum()

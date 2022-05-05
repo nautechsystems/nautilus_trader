@@ -33,7 +33,7 @@ from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.msgbus.bus import MessageBus
 from nautilus_trader.portfolio.portfolio import Portfolio
-from nautilus_trader.trading.strategy import TradingStrategy
+from nautilus_trader.trading.strategy import Strategy
 from tests.test_kit.mocks.exec_clients import MockExecutionClient
 from tests.test_kit.performance import PerformanceHarness
 from tests.test_kit.stubs.component import TestComponentStubs
@@ -111,7 +111,7 @@ class TestLiveExecutionPerformance(PerformanceHarness):
         self.portfolio.update_account(TestEventStubs.margin_account_state())
         self.exec_engine.register_client(self.exec_client)
 
-        self.strategy = TradingStrategy()
+        self.strategy = Strategy()
         self.strategy.register(
             trader_id=self.trader_id,
             portfolio=self.portfolio,
@@ -148,6 +148,7 @@ class TestLiveExecutionPerformance(PerformanceHarness):
             self.trader_id,
             self.strategy.id,
             None,
+            True,
             order,
             self.uuid_factory.generate(),
             self.clock.timestamp_ns(),

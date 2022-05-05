@@ -12,6 +12,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+
 from typing import Any, Dict, List, Optional
 
 import msgspec
@@ -19,6 +20,7 @@ import orjson
 
 from nautilus_trader.adapters.binance.common.functions import convert_symbols_list_to_json_array
 from nautilus_trader.adapters.binance.common.functions import format_symbol
+from nautilus_trader.adapters.binance.common.schemas import BinanceTrade
 from nautilus_trader.adapters.binance.http.client import BinanceHttpClient
 from nautilus_trader.adapters.binance.spot.schemas.market import BinanceSpotExchangeInfo
 
@@ -39,6 +41,7 @@ class BinanceSpotMarketHttpAPI:
         self.client = client
 
         self._decoder_exchange_info = msgspec.json.Decoder(BinanceSpotExchangeInfo)
+        self._decoder_trades = msgspec.json.Decoder(List[BinanceTrade])
 
     async def ping(self) -> Dict[str, Any]:
         """
@@ -153,7 +156,7 @@ class BinanceSpotMarketHttpAPI:
 
         return orjson.loads(raw)
 
-    async def trades(self, symbol: str, limit: Optional[int] = None) -> List[Dict[str, Any]]:
+    async def trades(self, symbol: str, limit: Optional[int] = None) -> List[BinanceTrade]:
         """
         Get recent market trades.
 
@@ -169,7 +172,7 @@ class BinanceSpotMarketHttpAPI:
 
         Returns
         -------
-        list[dict[str, Any]]
+        List[BinanceTrade]
 
         References
         ----------
@@ -185,7 +188,7 @@ class BinanceSpotMarketHttpAPI:
             payload=payload,
         )
 
-        return orjson.loads(raw)
+        return self._decoder_trades.decode(raw)
 
     async def historical_trades(
         self,

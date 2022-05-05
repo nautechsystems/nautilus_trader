@@ -55,6 +55,7 @@ class TestSerializationPerformance(PerformanceHarness):
             self.trader_id,
             StrategyId("SCALPER-001"),
             PositionId("P-123456"),
+            True,
             self.order,
             UUID4(),
             0,

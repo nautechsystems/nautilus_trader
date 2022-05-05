@@ -45,20 +45,20 @@ cdef class Portfolio(PortfolioFacade):
     cdef dict _net_positions
     cdef set _pending_calcs
 
-# -- COMMANDS --------------------------------------------------------------------------------------
+# -- COMMANDS -------------------------------------------------------------------------------------
 
     cpdef void initialize_orders(self) except *
     cpdef void initialize_positions(self) except *
-    cpdef void update_tick(self, QuoteTick tick) except *
+    cpdef void update_quote_tick(self, QuoteTick tick) except *
     cpdef void update_account(self, AccountState event) except *
     cpdef void update_order(self, OrderEvent event) except *
     cpdef void update_position(self, PositionEvent event) except *
     cpdef void reset(self) except *
 
-# -- INTERNAL --------------------------------------------------------------------------------------
+# -- INTERNAL -------------------------------------------------------------------------------------
 
     cdef object _net_position(self, InstrumentId instrument_id)
     cdef void _update_net_position(self, InstrumentId instrument_id, list positions_open) except *
     cdef Money _calculate_unrealized_pnl(self, InstrumentId instrument_id)
-    cdef object _calculate_xrate_to_base(self, Account account, Instrument instrument, OrderSide side)
     cdef Price _get_last_price(self, Position position)
+    cdef double _calculate_xrate_to_base(self, Account account, Instrument instrument, OrderSide side)

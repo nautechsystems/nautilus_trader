@@ -18,7 +18,7 @@ from typing import Dict, Optional
 
 import pandas as pd
 
-from nautilus_trader.config.engines import RiskEngineConfig
+from nautilus_trader.config import RiskEngineConfig
 
 from libc.stdint cimport int64_t
 
@@ -120,8 +120,10 @@ cdef class RiskEngine(Component):
         self._portfolio = portfolio
         self._cache = cache
 
+        # Settings
         self.trading_state = TradingState.ACTIVE  # Start active by default
         self.is_bypassed = config.bypass
+        self.debug = config.debug
         self._log_state()
 
         # Counters
@@ -166,7 +168,7 @@ cdef class RiskEngine(Component):
         for instrument_id, value in max_notional_config.items():
             self.set_max_notional_per_order(InstrumentId.from_str_c(instrument_id), Decimal(value))
 
-# -- COMMANDS --------------------------------------------------------------------------------------
+# -- COMMANDS -------------------------------------------------------------------------------------
 
     cpdef void execute(self, Command command) except *:
         """
@@ -281,7 +283,7 @@ cdef class RiskEngine(Component):
             color=LogColor.BLUE,
         )
 
-# -- RISK SETTINGS ---------------------------------------------------------------------------------
+# -- RISK SETTINGS --------------------------------------------------------------------------------
 
     cpdef tuple max_order_rate(self):
         """
@@ -320,7 +322,7 @@ cdef class RiskEngine(Component):
         """
         return self._max_notional_per_order.get(instrument_id)
 
-# -- ABSTRACT METHODS ------------------------------------------------------------------------------
+# -- ABSTRACT METHODS -----------------------------------------------------------------------------
 
     cpdef void _on_start(self) except *:
         pass  # Optionally override in subclass
@@ -328,7 +330,7 @@ cdef class RiskEngine(Component):
     cpdef void _on_stop(self) except *:
         pass  # Optionally override in subclass
 
-# -- ACTION IMPLEMENTATIONS ------------------------------------------------------------------------
+# -- ACTION IMPLEMENTATIONS -----------------------------------------------------------------------
 
     cpdef void _start(self) except *:
         # Do nothing else for now
@@ -346,10 +348,11 @@ cdef class RiskEngine(Component):
         pass
         # Nothing to dispose for now
 
-# -- COMMAND HANDLERS ------------------------------------------------------------------------------
+# -- COMMAND HANDLERS -----------------------------------------------------------------------------
 
     cdef void _execute_command(self, Command command) except *:
-        self._log.debug(f"{RECV}{CMD} {command}.")
+        if self.debug:
+            self._log.debug(f"{RECV}{CMD} {command}.", LogColor.MAGENTA)
         self.command_count += 1
 
         if isinstance(command, SubmitOrder):
@@ -377,13 +380,13 @@ cdef class RiskEngine(Component):
         cdef Position position
         if command.position_id is not None:
             position = self._cache.position(command.position_id)
-            if position is None:
+            if command.check_position_exists and position is None:
                 self._deny_command(
                     command=command,
                     reason=f"Position with {repr(command.position_id)} does not exist",
                 )
                 return  # Denied
-            if position.is_closed_c():
+            if position is not None and position.is_closed_c():
                 self._deny_command(
                     command=command,
                     reason=f"Position with {repr(command.position_id)} already closed",
@@ -563,7 +566,7 @@ cdef class RiskEngine(Component):
         # Currently no further checks: send for execution
         self._msgbus.send(endpoint="ExecEngine.execute", msg=command)
 
-# -- PRE-TRADE CHECKS ------------------------------------------------------------------------------
+# -- PRE-TRADE CHECKS -----------------------------------------------------------------------------
 
     cdef bint _check_order_id(self, Order order) except *:
         if order is None or not self._cache.order_exists(order.client_order_id):
@@ -658,7 +661,7 @@ cdef class RiskEngine(Component):
             else:
                 last_px = order.price
 
-            notional: Decimal = instrument.notional_value(order.quantity, last_px).as_decimal()
+            notional: Decimal = instrument.notional_value(order.quantity, last_px.as_f64_c()).as_decimal()
             if max_notional and notional > max_notional:
                 self._deny_order(
                     order=order,
@@ -677,7 +680,7 @@ cdef class RiskEngine(Component):
             # Check failed
             return f"price {price} invalid (precision {price.precision} > {instrument.price_precision})"
         if instrument.asset_type != AssetType.OPTION:
-            if price.as_decimal() <= 0:
+            if price.raw_int64_c() <= 0:
                 # Check failed
                 return f"price {price} invalid (not positive)"
 
@@ -695,7 +698,7 @@ cdef class RiskEngine(Component):
             # Check failed
             return f"quantity {quantity.to_str()} invalid (< minimum trade size of {instrument.min_quantity})"
 
-# -- DENIALS ---------------------------------------------------------------------------------------
+# -- DENIALS --------------------------------------------------------------------------------------
 
     cdef void _deny_command(self, TradingCommand command, str reason) except *:
         if isinstance(command, SubmitOrder):
@@ -745,7 +748,7 @@ cdef class RiskEngine(Component):
         for order in order_list.orders:
             self._deny_order(order=order, reason=reason)
 
-# -- EGRESS ----------------------------------------------------------------------------------------
+# -- EGRESS ---------------------------------------------------------------------------------------
 
     cdef void _execution_gateway(self, Instrument instrument, TradingCommand command, Order order) except *:
         # Check TradingState
@@ -782,8 +785,9 @@ cdef class RiskEngine(Component):
     cpdef void _send_command(self, TradingCommand command) except *:
         self._msgbus.send(endpoint="ExecEngine.execute", msg=command)
 
-# -- EVENT HANDLERS --------------------------------------------------------------------------------
+# -- EVENT HANDLERS -------------------------------------------------------------------------------
 
     cpdef void _handle_event(self, Event event) except *:
-        self._log.debug(f"{RECV}{EVT} {event}.")
+        if self.debug:
+            self._log.debug(f"{RECV}{EVT} {event}.", LogColor.MAGENTA)
         self.event_count += 1

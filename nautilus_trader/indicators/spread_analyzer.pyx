@@ -22,6 +22,7 @@ from nautilus_trader.core.stats cimport fast_mean_iterated
 from nautilus_trader.indicators.base.indicator cimport Indicator
 from nautilus_trader.model.data.tick cimport QuoteTick
 from nautilus_trader.model.identifiers cimport InstrumentId
+from nautilus_trader.model.objects cimport Price
 
 
 cdef class SpreadAnalyzer(Indicator):
@@ -80,7 +81,9 @@ cdef class SpreadAnalyzer(Indicator):
             if len(self._spreads) == self.capacity:
                 self._set_initialized(True)
 
-        cdef double spread = tick.ask.as_double() - tick.bid.as_double()
+        cdef double ask = Price.raw_to_f64_c(tick._mem.ask.raw)
+        cdef double bid = Price.raw_to_f64_c(tick._mem.bid.raw)
+        cdef double spread = ask - bid
 
         self.current = spread
         self._spreads.append(spread)

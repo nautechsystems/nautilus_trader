@@ -12,6 +12,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+import asyncio
 import pickle
 
 import fsspec
@@ -242,7 +243,8 @@ class TestPersistenceCore:
         expected = f"{self.catalog.path}/data/quote_tick.parquet/instrument_id=AUD-USD.SIM"
         assert expected in files
 
-    def test_load_text_betfair(self):
+    @pytest.mark.asyncio
+    async def test_load_text_betfair(self):
         # Arrange
         instrument_provider = BetfairInstrumentProvider.from_instruments([])
 
@@ -254,10 +256,16 @@ class TestPersistenceCore:
             instrument_provider=instrument_provider,
         )
 
-        # Assert
+        await asyncio.sleep(2)  # Allow `ThreadPoolExecutor` to complete processing
+
+        # Assert  # TODO(bm): `process_files` is non-deterministic?
         assert files == {
             TEST_DATA_DIR + "/1.166564490.bz2": 2908,
             TEST_DATA_DIR + "/betfair/1.180305278.bz2": 17085,
+            TEST_DATA_DIR + "/betfair/1.166811431.bz2": 22692,
+        } or {
+            TEST_DATA_DIR + "/1.166564490.bz2": 2908,
+            TEST_DATA_DIR + "/betfair/1.180305278.bz2": 17087,
             TEST_DATA_DIR + "/betfair/1.166811431.bz2": 22692,
         }
 

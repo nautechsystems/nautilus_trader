@@ -14,12 +14,13 @@
 # -------------------------------------------------------------------------------------------------
 
 from decimal import Decimal
-from typing import Dict, List, Tuple
+from typing import List, Tuple
 
 from nautilus_trader.adapters.binance.common.schemas import BinanceCandlestick
 from nautilus_trader.adapters.binance.common.schemas import BinanceOrderBookData
 from nautilus_trader.adapters.binance.common.schemas import BinanceQuoteData
 from nautilus_trader.adapters.binance.common.schemas import BinanceTickerData
+from nautilus_trader.adapters.binance.common.schemas import BinanceTrade
 from nautilus_trader.adapters.binance.common.types import BinanceBar
 from nautilus_trader.adapters.binance.common.types import BinanceTicker
 from nautilus_trader.core.datetime import millis_to_nanos
@@ -43,14 +44,18 @@ from nautilus_trader.model.orderbook.data import OrderBookDelta
 from nautilus_trader.model.orderbook.data import OrderBookDeltas
 
 
-def parse_trade_tick_http(instrument_id: InstrumentId, msg: Dict, ts_init: int) -> TradeTick:
+def parse_trade_tick_http(
+    instrument_id: InstrumentId,
+    trade: BinanceTrade,
+    ts_init: int,
+) -> TradeTick:
     return TradeTick(
         instrument_id=instrument_id,
-        price=Price.from_str(msg["price"]),
-        size=Quantity.from_str(msg["qty"]),
-        aggressor_side=AggressorSide.SELL if msg["isBuyerMaker"] else AggressorSide.BUY,
-        trade_id=TradeId(str(msg["id"])),
-        ts_event=millis_to_nanos(msg["time"]),
+        price=Price.from_str(trade.price),
+        size=Quantity.from_str(trade.qty),
+        aggressor_side=AggressorSide.SELL if trade.isBuyerMaker else AggressorSide.BUY,
+        trade_id=TradeId(str(trade.id)),
+        ts_event=millis_to_nanos(trade.time),
         ts_init=ts_init,
     )
 
@@ -179,18 +184,22 @@ def parse_bar_ws(
     data: BinanceCandlestick,
     ts_init: int,
 ) -> BinanceBar:
-    resolution = data.i[1]
+    resolution = data.i[-1]
     if resolution == "m":
         aggregation = BarAggregation.MINUTE
     elif resolution == "h":
         aggregation = BarAggregation.HOUR
     elif resolution == "d":
         aggregation = BarAggregation.DAY
+    elif resolution == "w":
+        aggregation = BarAggregation.WEEK
+    elif resolution == "M":
+        aggregation = BarAggregation.MONTH
     else:  # pragma: no cover (design-time error)
         raise RuntimeError(f"unsupported time aggregation resolution, was {resolution}")
 
     bar_spec = BarSpecification(
-        step=int(data.i[0]),
+        step=int(data.i[:-1]),
         aggregation=aggregation,
         price_type=PriceType.LAST,
     )

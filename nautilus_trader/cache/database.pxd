@@ -24,7 +24,7 @@ from nautilus_trader.model.identifiers cimport StrategyId
 from nautilus_trader.model.instruments.base cimport Instrument
 from nautilus_trader.model.orders.base cimport Order
 from nautilus_trader.model.position cimport Position
-from nautilus_trader.trading.strategy cimport TradingStrategy
+from nautilus_trader.trading.strategy cimport Strategy
 
 
 cdef class CacheDatabase:
@@ -53,4 +53,4 @@ cdef class CacheDatabase:
     cpdef void update_account(self, Account account) except *
     cpdef void update_order(self, Order order) except *
     cpdef void update_position(self, Position position) except *
-    cpdef void update_strategy(self, TradingStrategy strategy) except *
+    cpdef void update_strategy(self, Strategy strategy) except *

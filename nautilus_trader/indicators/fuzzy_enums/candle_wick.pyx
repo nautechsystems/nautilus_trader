@@ -13,7 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-# isort:skip_file
+from nautilus_trader.indicators.fuzzy_enums.candle_wick cimport CandleWickSize
 
 
-from nautilus_trader.indicators.fuzzy_enums.candle_wick cimport CandleWickSize  # noqa F401 (being used)
+__all__ = ["CandleWickSize"]

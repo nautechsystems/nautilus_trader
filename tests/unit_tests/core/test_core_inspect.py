@@ -34,7 +34,7 @@ from nautilus_trader.model.orderbook.data import OrderBookData
 )
 def test_is_nautilus_class(cls, is_nautilus):
     # Arrange, Act, Assert
-    assert is_nautilus_class(cls) is is_nautilus
+    assert is_nautilus_class(cls=cls) is is_nautilus
 
 
 def test_get_size_of():

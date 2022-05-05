@@ -61,7 +61,7 @@ cdef class Component:
     cdef void _change_logger(self, Logger logger) except *
     cdef void _change_msgbus(self, MessageBus msgbus) except *
 
-# -- ABSTRACT METHODS ------------------------------------------------------------------------------
+# -- ABSTRACT METHODS -----------------------------------------------------------------------------
 
     cpdef void _start(self) except *
     cpdef void _stop(self) except *
@@ -71,7 +71,7 @@ cdef class Component:
     cpdef void _degrade(self) except *
     cpdef void _fault(self) except *
 
-# -- COMMANDS --------------------------------------------------------------------------------------
+# -- COMMANDS -------------------------------------------------------------------------------------
 
     cdef void _initialize(self) except *
     cpdef void start(self) except *

@@ -34,7 +34,6 @@ async def test_binance_futures_account_http_client():
         clock=clock,
         logger=Logger(clock=clock),
         account_type=BinanceAccountType.FUTURES_USDT,
-        base_url="https://fapi.binance.com",
     )
     await client.connect()
 

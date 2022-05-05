@@ -20,21 +20,21 @@ from datetime import timedelta
 from typing import Optional
 
 from nautilus_trader.cache.base import CacheFacade
+from nautilus_trader.common import Environment
 from nautilus_trader.common.logging import LiveLogger
 from nautilus_trader.common.logging import LogColor
 from nautilus_trader.common.logging import LogLevelParser
-from nautilus_trader.config.components import CacheConfig
-from nautilus_trader.config.components import CacheDatabaseConfig
-from nautilus_trader.config.live import LiveDataEngineConfig
-from nautilus_trader.config.live import LiveExecEngineConfig
-from nautilus_trader.config.live import LiveRiskEngineConfig
-from nautilus_trader.config.nodes import TradingNodeConfig
+from nautilus_trader.config import CacheConfig
+from nautilus_trader.config import CacheDatabaseConfig
+from nautilus_trader.config import LiveDataEngineConfig
+from nautilus_trader.config import LiveExecEngineConfig
+from nautilus_trader.config import LiveRiskEngineConfig
+from nautilus_trader.config import TradingNodeConfig
 from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.live.node_builder import TradingNodeBuilder
 from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.portfolio.base import PortfolioFacade
-from nautilus_trader.system.kernel import Environment
 from nautilus_trader.system.kernel import NautilusKernel
 from nautilus_trader.trading.trader import Trader
 
@@ -76,7 +76,7 @@ class TradingNode:
             data_config=config.data_engine or LiveDataEngineConfig(),
             risk_config=config.risk_engine or LiveRiskEngineConfig(),
             exec_config=config.exec_engine or LiveExecEngineConfig(),
-            persistence_config=config.persistence,
+            streaming_config=config.streaming,
             actor_configs=config.actors,
             strategy_configs=config.strategies,
             loop=loop,
@@ -271,7 +271,7 @@ class TradingNode:
         self._builder.build_exec_clients(self._config.exec_clients)
         self._is_built = True
 
-    def start(self) -> Optional[asyncio.Task]:
+    def start(self) -> None:
         """
         Start the trading node.
         """
@@ -283,13 +283,11 @@ class TradingNode:
 
         try:
             if self.kernel.loop.is_running():
-                return self.kernel.loop.create_task(self._run())
+                self.kernel.loop.create_task(self._run())
             else:
                 self.kernel.loop.run_until_complete(self._run())
-                return None
         except RuntimeError as ex:
             self.kernel.log.exception("Error on run", ex)
-            return None
 
     def stop(self) -> None:
         """
@@ -341,6 +339,10 @@ class TradingNode:
             self.kernel.data_engine.dispose()
             self.kernel.exec_engine.dispose()
             self.kernel.risk_engine.dispose()
+
+            # Cleanup writer
+            if self.kernel.writer is not None:
+                self.kernel.writer.close()
 
             self.kernel.log.info("Shutting down executor...")
             if sys.version_info >= (3, 9):
@@ -544,9 +546,9 @@ class TradingNode:
         for name in timer_names:
             self.kernel.log.info(f"Cancelled Timer(name={name}).")
 
-        # Clean up persistence
-        for writer in self.kernel.persistence_writers:
-            writer.close()
+        # Flush writer
+        if self.kernel.writer is not None:
+            self.kernel.writer.flush()
 
         self.kernel.log.info("STOPPED.")
         self.kernel.logger.stop()

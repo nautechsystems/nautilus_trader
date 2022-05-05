@@ -309,10 +309,13 @@ class TestBarAggregation:
             [BarAggregation.VALUE, "VALUE"],
             [BarAggregation.VALUE_IMBALANCE, "VALUE_IMBALANCE"],
             [BarAggregation.VALUE_RUNS, "VALUE_RUNS"],
+            [BarAggregation.MILLISECOND, "MILLISECOND"],
             [BarAggregation.SECOND, "SECOND"],
             [BarAggregation.MINUTE, "MINUTE"],
             [BarAggregation.HOUR, "HOUR"],
             [BarAggregation.DAY, "DAY"],
+            [BarAggregation.WEEK, "WEEK"],
+            [BarAggregation.MONTH, "MONTH"],
         ],
     )
     def test_bar_aggregation_to_str(self, enum, expected):
@@ -334,10 +337,13 @@ class TestBarAggregation:
             ["VALUE", BarAggregation.VALUE],
             ["VALUE_IMBALANCE", BarAggregation.VALUE_IMBALANCE],
             ["VALUE_RUNS", BarAggregation.VALUE_RUNS],
+            ["MILLISECOND", BarAggregation.MILLISECOND],
             ["SECOND", BarAggregation.SECOND],
             ["MINUTE", BarAggregation.MINUTE],
             ["HOUR", BarAggregation.HOUR],
             ["DAY", BarAggregation.DAY],
+            ["WEEK", BarAggregation.WEEK],
+            ["MONTH", BarAggregation.MONTH],
         ],
     )
     def test_bar_aggregation_from_str(self, string, expected):

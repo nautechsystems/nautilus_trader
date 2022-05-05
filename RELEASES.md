@@ -1,8 +1,81 @@
+# NautilusTrader 1.144.0 Beta
+
+Released on TBD.
+
+### Breaking Changes
+- Removed `BacktestEngine.add_ticks()` as redundant with `.add_data()`
+- Removed `BacktestEngine.add_bars()` as redundant with `.add_data()`
+- Removed `BacktestEngine.add_generic_data()` as redundant with `.add_data()`
+- Removed `BacktestEngine.add_order_book_data()` as redundant with `.add_data()`
+- Renamed `Position.from_order` to `Position.opening_order_id`
+- Renamed `StreamingPersistence` to `StreamingFeatherWriter`
+- Renamed `PersistenceConfig` to `StreamingConfig`
+- Renamed `PersistenceConfig.flush_interval` to `flush_interval_ms`
+
+### Enhancements
+- Added `WEEK` and `MONTH` bar aggregation options
+- Added `Position.closing_order_id` property
+- Added `tags` param to `Strategy.submit_order`
+- Added optional `check_positon_exists` flag to `Strategy.submit_order`
+- Eliminated all use of `unsafe` Rust and C null-terminated byte strings
+- The `bypass_logging` config option will also now bypass the `BacktestEngine` logger
+
+### Fixes
+- Fixed behaviour of `IOC` and `FOK` time in force instructions
+- Fixed Binance bar resolution parsing
+
+---
+
+# NautilusTrader 1.143.0 Beta
+
+Released on 21st April 2022 (UTC).
+
+### Breaking Changes
+None
+
+### Enhancements
+None
+
+### Fixes
+- Fixed segfault for `CashAccount.calculate_balance_locked` with no base currency
+- Various FeatherWriter fixes
+
+---
+
+# NautilusTrader 1.142.0 Beta
+
+Released on 17th April 2022 (UTC).
+
+### Breaking Changes
+- `BacktestNode` now requires configs at initialization
+- Removed `run_configs` param from `BacktestNode.run()` method
+- Removed `return_engine` flag
+- Renamed `TradingStrategy` to `Strategy`
+- Renamed `TradingStrategyConfig` to `StrategyConfig`
+- Changes to configuration object import paths
+- Removed redundant `realized_points` concept from `Position`
+
+### Enhancements
+- Added `BacktestNode.get_engines()` method
+- Added `BacktestNode.get_engine(run_config_id)` method
+- Added `Actor.request_instrument()` method (also applies to `Strategy`)
+- Added `Cache.snapshot_position()` method
+- All configuration objects can now be imported directly from `nautilus_trader.config`
+- Execution engine now takes snapshots of closed netted positions
+- Performance statistics now based on total positions and snapshots
+- Added Binance Spot/Margin external order handling
+- Added support for millisecond bar aggregation
+- Added configurable `debug` mode for engines (with extra debug logging)
+- Improved annualized portfolio statistics with configurable period
+
+### Fixes
+None
+
+---
+
 # NautilusTrader 1.141.0 Beta
 
-Released on 30th March 2022 (UTC).
-
-This will be the final release without Rust compiled binaries.
+Released on 4th April 2022 (UTC).
 
 ### Breaking Changes
 - Renamed `BacktestNode.run_sync()` to `BacktestNode.run()`
