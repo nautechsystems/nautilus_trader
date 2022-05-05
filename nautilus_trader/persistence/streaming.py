@@ -156,7 +156,7 @@ class StreamingFeatherWriter:
             cls = obj.data_type.type
         table = get_cls_table(cls).__name__
         if table not in self._writers:
-            if table.startswith("Signal-"):
+            if table.startswith("Signal"):
                 self.handle_signal(obj)
             elif cls not in self.missing_writers:
                 self.logger.warning(f"Can't find writer for cls: {cls}")
