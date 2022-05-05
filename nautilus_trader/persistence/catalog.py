@@ -190,7 +190,11 @@ class DataCatalog(metaclass=Singleton):
         return data
 
     def _make_path(self, cls: type) -> str:
-        return str(self.path / "data" / f"{class_to_filename(cls=cls)}.parquet")
+        return str(
+            resolve_path(
+                path=self.path / "data" / f"{class_to_filename(cls=cls)}.parquet", fs=self.fs
+            )
+        )
 
     def query(
         self,

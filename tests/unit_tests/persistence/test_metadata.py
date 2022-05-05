@@ -20,12 +20,8 @@ from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.persistence.catalog import DataCatalog
 from nautilus_trader.persistence.external.core import write_objects
 from nautilus_trader.persistence.external.metadata import load_mappings
-from tests.test_kit import PACKAGE_ROOT
 from tests.test_kit.mocks.data import data_catalog_setup
 from tests.test_kit.stubs.data import TestDataStubs
-
-
-TEST_DATA_DIR = PACKAGE_ROOT + "/data"
 
 
 class TestPersistenceBatching:
