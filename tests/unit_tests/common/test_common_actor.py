@@ -1506,7 +1506,7 @@ class TestActor:
 
         # Act, Assert
         with pytest.raises(KeyError):
-            actor.publish_signal(name="test", value=dict(a=1))
+            actor.publish_signal(name="test", value=dict(a=1), ts_init=0)
 
     def test_publish_signal_sends_to_subscriber(self):
         # Arrange
@@ -1527,10 +1527,13 @@ class TestActor:
 
         # Act
         value = 5.0
-        actor.publish_signal(name="test", value=value)
+        actor.publish_signal(name="test", value=value, ts_init=0)
 
         # Assert
-        assert value in handler
+        msg = handler[0]
+        assert isinstance(msg, Data)
+        assert msg.ts_init == 0
+        assert msg.value == value
 
     def test_publish_data_persist(self):
         # Arrange

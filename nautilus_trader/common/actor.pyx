@@ -1336,38 +1336,26 @@ cdef class Actor(Component):
         Condition.true(self.trader_id is not None, "The actor has not been registered")
 
         if name not in self._signal_classes:
-            self.setup_signal_persistence(name=name, value=value)
+            self._signal_classes[name] = self.setup_signal_persistence(name=name, value=value)
         cls = self._signal_classes[name]
         data = cls(ts_init=ts_init, value=value)
         self.publish_data(data_type=DataType(cls), data=data)
 
     def setup_signal_persistence(self, name: str, value: object):
-        import pyarrow as pa
+        """
+        Dynamically create a Data subclass for this signal
+        """
+        def inner():
 
-        from nautilus_trader.serialization.arrow.serializer import register_parquet
+            class SignalData(Data):
+                def __init__(self, value, ts_init: int):
+                    super().__init__(ts_init=ts_init, ts_event=ts_init)
+                    self.value = value
 
-        def init(self, value, ts_init: int):
-            super().__init__(ts_init=ts_init, ts_event=ts_init)
-            self.value = value
-            self.ts_init=  ts_init
+            SignalData.__name__ = f"Signal-{name}"
+            return SignalData
 
-        def serialize(self):
-            return {
-                "ts_init": self.ts_init,
-                "value": self.value,
-            }
-
-        cls = type(name, (Data,), {"__init__": init})
-        register_parquet(
-            cls=cls,
-            serializer=serialize,
-            schema=pa.schema({
-                "ts_init": pa.int64(),
-                "value": {int: pa.int64(), float: pa.float64(), str: pa.string()}[type(value)]
-            }),
-        )
-
-        self._signal_classes[name] = cls
+        return inner()
 
 # -- REQUESTS -------------------------------------------------------------------------------------
 
