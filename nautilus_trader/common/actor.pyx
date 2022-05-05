@@ -1336,7 +1336,7 @@ cdef class Actor(Component):
         Condition.true(self.trader_id is not None, "The actor has not been registered")
 
         if name not in self._signal_classes:
-            self._signal_classes[name] = self._generate_signal_class(name=name, value=value)
+            self._signal_classes[name] = self._generate_signal_class(name=name)
         cls = self._signal_classes[name]
         data = cls(ts_init=ts_init, value=value)
         self.publish_data(data_type=DataType(cls), data=data)
