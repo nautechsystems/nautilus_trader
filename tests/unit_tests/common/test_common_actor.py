@@ -1559,10 +1559,10 @@ class TestActor:
         self.msgbus.subscribe("data*", writer.write)
 
         # Act
-        actor.publish_signal(name="test", ts_init=0, value=5.0)
+        actor.publish_signal(name="Test", ts_init=0, value=5.0)
 
         # Assert
-        assert (catalog.path / "data" / "test.feather").exists()
+        assert catalog.fs.exists(str(catalog.path / "SignalTest.feather"))
 
     def test_subscribe_bars(self):
         # Arrange

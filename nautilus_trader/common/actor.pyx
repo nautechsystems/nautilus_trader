@@ -1336,12 +1336,12 @@ cdef class Actor(Component):
         Condition.true(self.trader_id is not None, "The actor has not been registered")
 
         if name not in self._signal_classes:
-            self._signal_classes[name] = self.setup_signal_persistence(name=name, value=value)
+            self._signal_classes[name] = self._generate_signal_class(name=name, value=value)
         cls = self._signal_classes[name]
         data = cls(ts_init=ts_init, value=value)
         self.publish_data(data_type=DataType(cls), data=data)
 
-    def setup_signal_persistence(self, name: str, value: object):
+    def _generate_signal_class(self, name: str):
         """
         Dynamically create a Data subclass for this signal
         """
@@ -1352,7 +1352,7 @@ cdef class Actor(Component):
                     super().__init__(ts_init=ts_init, ts_event=ts_init)
                     self.value = value
 
-            SignalData.__name__ = f"Signal-{name}"
+            SignalData.__name__ = f"Signal{name}"
             return SignalData
 
         return inner()

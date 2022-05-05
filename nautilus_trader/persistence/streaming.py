@@ -114,21 +114,25 @@ class StreamingFeatherWriter:
                 "value": self.value,
             }
 
-        register_parquet(
-            cls=type(signal),
-            serializer=serialize,
-            schema=pa.schema(
-                {
-                    "ts_init": pa.int64(),
-                    "value": {int: pa.int64(), float: pa.float64(), str: pa.string()}[
-                        type(signal.value)
-                    ],
-                }
-            ),
+        register_parquet(cls=type(signal), serializer=serialize)
+
+        schema = pa.schema(
+            {
+                "ts_init": pa.int64(),
+                "value": {int: pa.int64(), float: pa.float64(), str: pa.string()}[
+                    type(signal.value)
+                ],
+            }
         )
         # Refresh schemas, create writer for new table
-        self._schemas = list_schemas()
-        self._create_writers()
+        cls = type(signal)
+        self._schemas[cls] = schema
+        table_name = get_cls_table(cls).__name__
+        schema = self._schemas[cls]
+        full_path = f"{self.path}/{table_name}.feather"
+        f = self.fs.open(str(full_path), "wb")
+        self._files[cls] = f
+        self._writers[table_name] = pa.ipc.new_stream(f, schema)
 
     def write(self, obj: object) -> None:
         """
