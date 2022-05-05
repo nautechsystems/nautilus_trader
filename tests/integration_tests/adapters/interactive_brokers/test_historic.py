@@ -13,6 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 import datetime
+import sys
 from unittest import mock
 
 import pandas as pd
@@ -40,6 +41,7 @@ class TestInteractiveBrokersHistoric:
         self.catalog = DataCatalog.from_env()
         self.ib = mock.Mock()
 
+    @pytest.mark.skipif(sys.platform == "win32", reason="test path broken on Windows")
     def test_back_fill_catalog_ticks(self, mocker):
         # Arrange
         contract_details = IBTestStubs.contract_details("AAPL")
@@ -89,6 +91,7 @@ class TestInteractiveBrokersHistoric:
         result = [call.kwargs for call in mock_ticks.call_args_list]
         assert result == expected
 
+    @pytest.mark.skipif(sys.platform == "win32", reason="test path broken on Windows")
     def test_back_fill_catalog_bars(self, mocker):
         # Arrange
         contract_details = IBTestStubs.contract_details("AAPL")
