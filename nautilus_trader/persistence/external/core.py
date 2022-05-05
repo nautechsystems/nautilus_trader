@@ -295,7 +295,7 @@ def write_parquet(
     if pa.__version__ >= "6.0.0":
         kwargs.update(existing_data_behavior="overwrite_or_ignore")
     files = set(fs.glob(str(resolve_path(path / "**", fs=fs))))
-    path = resolve_path(path=path, fs=fs)
+    path = str(resolve_path(path=path, fs=fs))  # type: ignore
     ds.write_dataset(
         data=table,
         base_dir=path,
