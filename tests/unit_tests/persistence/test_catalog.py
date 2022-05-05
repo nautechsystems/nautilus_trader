@@ -54,9 +54,9 @@ class TestPersistenceCatalog:
         data_catalog_setup()
         self.catalog = DataCatalog.from_env()
         self.fs: fsspec.AbstractFileSystem = self.catalog.fs
-        self._loaded_data_into_catalog()
+        self._load_data_into_catalog()
 
-    def _loaded_data_into_catalog(self):
+    def _load_data_into_catalog(self):
         self.instrument_provider = BetfairInstrumentProvider.from_instruments([])
         process_files(
             glob_path=PACKAGE_ROOT + "/data/1.166564490.bz2",

@@ -36,9 +36,9 @@ class TestPersistenceStreaming:
         data_catalog_setup()
         self.catalog = DataCatalog.from_env()
         self.fs = self.catalog.fs
-        self._loaded_data_into_catalog()
+        self._load_data_into_catalog()
 
-    def _loaded_data_into_catalog(self):
+    def _load_data_into_catalog(self):
         self.instrument_provider = BetfairInstrumentProvider.from_instruments([])
         result = process_files(
             glob_path=PACKAGE_ROOT + "/data/1.166564490*.bz2",
@@ -54,7 +54,7 @@ class TestPersistenceStreaming:
             + self.catalog.order_book_deltas(as_nautilus=True)
             + self.catalog.tickers(as_nautilus=True)
         )
-        return data
+        assert len(data) == 2533
 
     def test_feather_writer(self):
         # Arrange

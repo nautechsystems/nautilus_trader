@@ -20,6 +20,7 @@ from typing import Generator
 
 import pandas as pd
 from fsspec.implementations.memory import MemoryFileSystem
+from upath import UPath
 
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.logging import Logger
@@ -57,8 +58,8 @@ def data_catalog_setup():
     Reset the filesystem and DataCatalog to a clean state
     """
     clear_singleton_instances(DataCatalog)
-
-    os.environ["NAUTILUS_PATH"] = "memory:///.nautilus/"
+    path = UPath("memory:///.nautilus/").path
+    os.environ["NAUTILUS_PATH"] = f"memory://{path}"
     catalog = DataCatalog.from_env()
     assert isinstance(catalog.fs, MemoryFileSystem)
     try:
