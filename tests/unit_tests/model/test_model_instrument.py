@@ -28,6 +28,7 @@ from nautilus_trader.model.enums import OptionKindParser
 from nautilus_trader.model.instruments.base import Instrument
 from nautilus_trader.model.instruments.crypto_future import CryptoFuture
 from nautilus_trader.model.instruments.crypto_perpetual import CryptoPerpetual
+from nautilus_trader.model.instruments.equity import Equity
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
@@ -215,6 +216,32 @@ class TestInstrument:
             "ts_event": 0,
             "ts_init": 0,
             "info": None,
+        }
+
+    def test_equity_instrument_to_dict(self):
+        # Arrange, Act
+        result = Equity.to_dict(AAPL_EQUITY)
+
+        # Assert
+        assert Equity.from_dict(result) == AAPL_EQUITY
+        assert result == {
+            "type": "Equity",
+            "id": "AAPL.NASDAQ",
+            "native_symbol": "AAPL",
+            "currency": "USD",
+            "price_precision": 2,
+            "price_increment": "0.01",
+            "size_precision": 0,
+            "size_increment": "1",
+            "multiplier": "1",
+            "lot_size": "1",
+            "isin": "US0378331005",
+            "margin_init": "0",
+            "margin_maint": "0",
+            "maker_fee": "0",
+            "taker_fee": "0",
+            "ts_event": 0,
+            "ts_init": 0,
         }
 
     @pytest.mark.parametrize(
