@@ -50,6 +50,14 @@ cdef class Equity(Instrument):
         The rounded lot unit size (standard/board).
     isin : str
         The International Securities Identification Number (ISIN).
+    margin_init : Decimal
+        The initial (order) margin requirement in percentage of order value.
+    margin_maint : Decimal
+        The maintenance (position) margin in percentage of position value.
+    maker_fee : Decimal
+        The fee rate for liquidity makers as a percentage of order value.
+    taker_fee : Decimal
+        The fee rate for liquidity takers as a percentage of order value.
     ts_event: int64
         The UNIX timestamp (nanoseconds) when the data event occurred.
     ts_init: int64
@@ -76,9 +84,13 @@ cdef class Equity(Instrument):
         Price price_increment not None,
         Quantity multiplier not None,
         Quantity lot_size not None,
-        str isin,  # can be None
+        str isin,  # can be None,
         int64_t ts_event,
         int64_t ts_init,
+        margin_init: Decimal = None,  # can be None,
+        margin_maint: Decimal = None,  # can be None,
+        maker_fee: Decimal = None,  # can be None,
+        taker_fee: Decimal = None,  # can be None,
     ):
         super().__init__(
             instrument_id=instrument_id,
@@ -99,10 +111,10 @@ cdef class Equity(Instrument):
             min_notional=None,
             max_price=None,
             min_price=None,
-            margin_init=Decimal(0),
-            margin_maint=Decimal(0),
-            maker_fee=Decimal(0),
-            taker_fee=Decimal(0),
+            margin_init=margin_init if margin_init else Decimal(0),
+            margin_maint=margin_maint if margin_maint else Decimal(0),
+            maker_fee=maker_fee if maker_fee else Decimal(0),
+            taker_fee=taker_fee if taker_fee else Decimal(0),
             ts_event=ts_event,
             ts_init=ts_init,
             info={},
@@ -120,7 +132,11 @@ cdef class Equity(Instrument):
             price_increment=Price.from_str(values['price_increment']),
             multiplier=Quantity.from_str(values['multiplier']),
             lot_size=Quantity.from_str(values['lot_size']),
-            isin=values.get('isin'),  # Can be None
+            isin=values.get('isin'),  # Can be None,
+            margin_init=Decimal(values.get('margin_init', 0)),  # Can be None,
+            margin_maint=Decimal(values.get('margin_maint', 0)),  # Can be None,
+            maker_fee=Decimal(values.get('maker_fee', 0)),  # Can be None,
+            taker_fee=Decimal(values.get('taker_fee', 0)),  # Can be None,
             ts_event=values['ts_event'],
             ts_init=values['ts_init'],
         )
@@ -142,6 +158,8 @@ cdef class Equity(Instrument):
             "isin": obj.isin,
             "margin_init": str(obj.margin_init),
             "margin_maint": str(obj.margin_maint),
+            "maker_fee": str(obj.maker_fee),
+            "taker_fee": str(obj.taker_fee),
             "ts_event": obj.ts_event,
             "ts_init": obj.ts_init,
         }
@@ -158,10 +176,10 @@ cdef class Equity(Instrument):
 
         Returns
         -------
-        Instrument
+        Equity
 
         """
-        return Instrument.from_dict_c(values)
+        return Equity.from_dict_c(values)
 
     @staticmethod
     def to_dict(Instrument obj):
@@ -173,4 +191,4 @@ cdef class Equity(Instrument):
         dict[str, object]
 
         """
-        return Instrument.to_d1ict_c(obj)
+        return Equity.to_dict_c(obj)
