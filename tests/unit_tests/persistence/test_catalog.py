@@ -15,6 +15,7 @@
 
 import datetime
 import sys
+from decimal import Decimal
 
 import fsspec
 import pyarrow.dataset as ds
@@ -23,13 +24,17 @@ import pytest
 from nautilus_trader.adapters.betfair.providers import BetfairInstrumentProvider
 from nautilus_trader.backtest.data.providers import TestInstrumentProvider
 from nautilus_trader.backtest.data.wranglers import BarDataWrangler
+from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.data.base import GenericData
 from nautilus_trader.model.data.tick import QuoteTick
 from nautilus_trader.model.data.tick import TradeTick
 from nautilus_trader.model.enums import AggressorSide
+from nautilus_trader.model.identifiers import InstrumentId
+from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import TradeId
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.instruments.betting import BettingInstrument
+from nautilus_trader.model.instruments.equity import Equity
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.persistence.catalog import DataCatalog
@@ -266,3 +271,46 @@ class TestPersistenceCatalog:
         trades = self.catalog.trade_ticks(projections=projections)
         assert "tid" in trades.columns
         assert trades["trade_id"].equals(trades["tid"])
+
+    def test_catalog_persists_equity(self):
+        # Arrange
+        instrument = Equity(
+            instrument_id=InstrumentId(symbol=Symbol("AAPL"), venue=Venue("NASDAQ")),
+            native_symbol=Symbol("AAPL"),
+            currency=USD,
+            price_precision=2,
+            price_increment=Price.from_str("0.01"),
+            multiplier=Quantity.from_int(1),
+            lot_size=Quantity.from_int(1),
+            isin="US0378331005",
+            ts_event=0,
+            ts_init=0,
+            margin_init=Decimal("0.01"),
+            margin_maint=Decimal("0.005"),
+            maker_fee=Decimal("0.005"),
+            taker_fee=Decimal("0.01"),
+        )
+
+        quote_tick = QuoteTick(
+            instrument_id=instrument.id,
+            ask=Price.from_str("2.0"),
+            bid=Price.from_str("2.1"),
+            bid_size=Quantity.from_int(10),
+            ask_size=Quantity.from_int(10),
+            ts_event=0,
+            ts_init=0,
+        )
+
+        # Act
+        catalog = DataCatalog.from_env()
+        write_objects(catalog=catalog, chunk=[instrument, quote_tick])
+        instrument_from_catalog = catalog.instruments(
+            as_nautilus=True,
+            instrument_ids=[instrument.id.value],
+        )[0]
+
+        # Assert
+        assert instrument.taker_fee == instrument_from_catalog.taker_fee
+        assert instrument.maker_fee == instrument_from_catalog.maker_fee
+        assert instrument.margin_init == instrument_from_catalog.margin_init
+        assert instrument.margin_maint == instrument_from_catalog.margin_maint
