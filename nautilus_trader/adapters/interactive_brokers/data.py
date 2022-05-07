@@ -219,7 +219,7 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
         )
         self._tickers[ContractId(ticker.contract.conId)].append(ticker)
 
-    def subscribed_bars(self, bar_type: BarType):
+    def subscribe_bars(self, bar_type: BarType):
         price_type: PriceType = bar_type.spec.price_type
         contract_details: ContractDetails = self._instrument_provider.contract_details[
             bar_type.instrument_id
