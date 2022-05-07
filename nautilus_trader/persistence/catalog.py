@@ -36,8 +36,6 @@ from nautilus_trader.model.data.ticker import Ticker
 from nautilus_trader.model.data.venue import InstrumentStatusUpdate
 from nautilus_trader.model.instruments.base import Instrument
 from nautilus_trader.model.orderbook.data import OrderBookData
-from upath import UPath
-
 from nautilus_trader.persistence.base import Singleton
 from nautilus_trader.persistence.external.metadata import load_mappings
 from nautilus_trader.serialization.arrow.serializer import ParquetSerializer
@@ -74,7 +72,7 @@ class DataCatalog(metaclass=Singleton):
         self.fs: fsspec.AbstractFileSystem = fsspec.filesystem(
             self.fs_protocol, **self.fs_storage_options
         )
-        self.root: pathlib.Path = pathlib.Path(path)
+        self.path: pathlib.Path = pathlib.Path(path)
 
     @classmethod
     def from_env(cls):
@@ -194,7 +192,7 @@ class DataCatalog(metaclass=Singleton):
     def _make_path(self, cls: type) -> str:
         return str(
             resolve_path(
-                path=self.root / "data" / f"{class_to_filename(cls=cls)}.parquet", fs=self.fs
+                path=self.path / "data" / f"{class_to_filename(cls=cls)}.parquet", fs=self.fs
             )
         )
 
@@ -400,7 +398,7 @@ class DataCatalog(metaclass=Singleton):
         return data
 
     def list_data_types(self):
-        glob_path = self.root / "data" / "*.parquet"
+        glob_path = self.path / "data" / "*.parquet"
         return [pathlib.Path(p).stem for p in self.fs.glob(str(glob_path))]
 
     def list_generic_data_types(self):
@@ -482,7 +480,7 @@ def combine_filters(*filters):
 
 def _should_use_windows_paths(fs: fsspec.filesystem) -> bool:
     """
-    pathlib will try and use windows style paths even when a fsspec.filesystem does not (memory, s3, etc).
+    Pathlib will try and use windows style paths even when a fsspec.filesystem does not (memory, s3, etc).
 
     We need to determine the case when we should use windows paths, which is when we are on windows and using a
     fsspec.filesystem that is local.

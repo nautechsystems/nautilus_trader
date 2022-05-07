@@ -34,7 +34,8 @@ from tqdm import tqdm
 from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.model.data.base import GenericData
 from nautilus_trader.model.instruments.base import Instrument
-from nautilus_trader.persistence.catalog import DataCatalog, resolve_path
+from nautilus_trader.persistence.catalog import DataCatalog
+from nautilus_trader.persistence.catalog import resolve_path
 from nautilus_trader.persistence.external.metadata import load_mappings
 from nautilus_trader.persistence.external.metadata import write_partition_column_mappings
 from nautilus_trader.persistence.external.readers import Reader
@@ -238,7 +239,7 @@ def write_tables(catalog: DataCatalog, tables: Dict[type, Dict[str, pd.DataFrame
             continue
         partition_cols = determine_partition_cols(cls=cls, instrument_id=instrument_id)
         name = f"{class_to_filename(cls)}.parquet"
-        path = catalog.root / "data" / name
+        path = catalog.path / "data" / name
         merged = merge_existing_data(catalog=catalog, cls=cls, df=df)
         write_parquet(
             fs=catalog.fs,
