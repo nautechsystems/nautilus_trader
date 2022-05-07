@@ -20,7 +20,6 @@ from typing import Generator
 import fsspec
 import pandas as pd
 from fsspec.implementations.memory import MemoryFileSystem
-from upath import UPath
 
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.logging import Logger
