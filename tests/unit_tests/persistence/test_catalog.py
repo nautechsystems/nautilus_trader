@@ -14,9 +14,13 @@
 # -------------------------------------------------------------------------------------------------
 
 import datetime
+import os
+import pathlib
+import sys
 
 import fsspec
 import pyarrow.dataset as ds
+import pytest
 
 from nautilus_trader.adapters.betfair.providers import BetfairInstrumentProvider
 from nautilus_trader.backtest.data.providers import TestInstrumentProvider
@@ -30,7 +34,7 @@ from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.instruments.betting import BettingInstrument
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
-from nautilus_trader.persistence.catalog import DataCatalog
+from nautilus_trader.persistence.catalog import DataCatalog, resolve_path
 from nautilus_trader.persistence.external.core import dicts_to_dataframes
 from nautilus_trader.persistence.external.core import process_files
 from nautilus_trader.persistence.external.core import split_and_serialize
@@ -64,6 +68,19 @@ class TestPersistenceCatalog:
             instrument_provider=self.instrument_provider,
             catalog=self.catalog,
         )
+
+    @pytest.mark.skipif(sys.platform != "win32", reason="windows only")
+    def test_catalog_root_path_windows_local(self):
+        from tempfile import tempdir
+        catalog = DataCatalog(path=tempdir, fs_protocol="file")
+        path = resolve_path(path=catalog.root / "test", fs=catalog.fs)
+        assert path == str(pathlib.Path(tempdir) / "test")
+
+    @pytest.mark.skipif(sys.platform != "win32", reason="windows only")
+    def test_catalog_root_path_windows_non_local(self):
+        catalog = DataCatalog(path="/some/path", fs_protocol="memory")
+        path = resolve_path(path=catalog.root / "test", fs=catalog.fs)
+        assert path == "/some/path/test"
 
     def test_list_data_types(self):
         data_types = self.catalog.list_data_types()

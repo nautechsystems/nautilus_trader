@@ -15,6 +15,7 @@
 
 import os
 import pathlib
+import platform
 from typing import Callable, Dict, List, Optional, Union
 
 import fsspec
@@ -24,7 +25,6 @@ import pyarrow.dataset as ds
 import pyarrow.parquet as pq
 from fsspec.utils import infer_storage_options
 from pyarrow import ArrowInvalid
-from upath import UPath
 
 from nautilus_trader.core.inspect import is_nautilus_class
 from nautilus_trader.model.data.bar import Bar
@@ -36,6 +36,8 @@ from nautilus_trader.model.data.ticker import Ticker
 from nautilus_trader.model.data.venue import InstrumentStatusUpdate
 from nautilus_trader.model.instruments.base import Instrument
 from nautilus_trader.model.orderbook.data import OrderBookData
+from upath import UPath
+
 from nautilus_trader.persistence.base import Singleton
 from nautilus_trader.persistence.external.metadata import load_mappings
 from nautilus_trader.serialization.arrow.serializer import ParquetSerializer
@@ -72,7 +74,7 @@ class DataCatalog(metaclass=Singleton):
         self.fs: fsspec.AbstractFileSystem = fsspec.filesystem(
             self.fs_protocol, **self.fs_storage_options
         )
-        self.path: pathlib.Path = resolve_path(path=pathlib.Path(path), fs=self.fs)
+        self.root: pathlib.Path = pathlib.Path(path)
 
     @classmethod
     def from_env(cls):
@@ -192,7 +194,7 @@ class DataCatalog(metaclass=Singleton):
     def _make_path(self, cls: type) -> str:
         return str(
             resolve_path(
-                path=self.path / "data" / f"{class_to_filename(cls=cls)}.parquet", fs=self.fs
+                path=self.root / "data" / f"{class_to_filename(cls=cls)}.parquet", fs=self.fs
             )
         )
 
@@ -398,7 +400,7 @@ class DataCatalog(metaclass=Singleton):
         return data
 
     def list_data_types(self):
-        glob_path = self.path / "data" / "*.parquet"
+        glob_path = self.root / "data" / "*.parquet"
         return [pathlib.Path(p).stem for p in self.fs.glob(str(glob_path))]
 
     def list_generic_data_types(self):
@@ -478,5 +480,28 @@ def combine_filters(*filters):
         return expr
 
 
-def resolve_path(path: pathlib.Path, fs: fsspec.AbstractFileSystem) -> pathlib.Path:
-    return pathlib.Path(UPath(f"{fs.protocol}://{path}").path)
+def _should_use_windows_paths(fs: fsspec.filesystem) -> bool:
+    """
+    pathlib will try and use windows style paths even when a fsspec.filesystem does not (memory, s3, etc).
+
+    We need to determine the case when we should use windows paths, which is when we are on windows and using a
+    fsspec.filesystem that is local.
+
+    """
+    from fsspec.implementations.local import LocalFileSystem
+
+    try:
+        from fsspec.implementations.smb import SMBFileSystem
+    except ImportError:
+        SMBFileSystem = LocalFileSystem
+
+    IS_WINDOWS = platform.system() == "Windows"
+    IS_WINDOWS_LOCAL_FS = isinstance(fs, (LocalFileSystem, SMBFileSystem))
+    return IS_WINDOWS and IS_WINDOWS_LOCAL_FS
+
+
+def resolve_path(path: pathlib.Path, fs: fsspec.filesystem) -> str:
+    if _should_use_windows_paths(fs=fs):
+        return str(path)
+    else:
+        return path.as_posix()

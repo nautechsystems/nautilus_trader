@@ -34,8 +34,7 @@ from tqdm import tqdm
 from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.model.data.base import GenericData
 from nautilus_trader.model.instruments.base import Instrument
-from nautilus_trader.persistence.catalog import DataCatalog
-from nautilus_trader.persistence.catalog import resolve_path
+from nautilus_trader.persistence.catalog import DataCatalog, resolve_path
 from nautilus_trader.persistence.external.metadata import load_mappings
 from nautilus_trader.persistence.external.metadata import write_partition_column_mappings
 from nautilus_trader.persistence.external.readers import Reader
@@ -239,7 +238,7 @@ def write_tables(catalog: DataCatalog, tables: Dict[type, Dict[str, pd.DataFrame
             continue
         partition_cols = determine_partition_cols(cls=cls, instrument_id=instrument_id)
         name = f"{class_to_filename(cls)}.parquet"
-        path = catalog.path / "data" / name
+        path = catalog.root / "data" / name
         merged = merge_existing_data(catalog=catalog, cls=cls, df=df)
         write_parquet(
             fs=catalog.fs,
@@ -294,7 +293,7 @@ def write_parquet(
     )
     if pa.__version__ >= "6.0.0":
         kwargs.update(existing_data_behavior="overwrite_or_ignore")
-    files = set(fs.glob(str(resolve_path(path / "**", fs=fs))))
+    files = set(fs.glob(resolve_path(path / "**", fs=fs)))
     path = str(resolve_path(path=path, fs=fs))  # type: ignore
     ds.write_dataset(
         data=table,
