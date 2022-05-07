@@ -208,3 +208,17 @@ class StreamingFeatherWriter:
             del self._writers[cls]
         for cls in self._files:
             self._files[cls].close()
+
+
+def generate_signal_class(name: str):
+    """
+    Dynamically create a Data subclass for this signal
+    """
+
+    class SignalData(Data):
+        def __init__(self, value, ts_init: int):
+            super().__init__(ts_init=ts_init, ts_event=ts_init)
+            self.value = value
+
+    SignalData.__name__ = f"Signal{name.title()}"
+    return SignalData

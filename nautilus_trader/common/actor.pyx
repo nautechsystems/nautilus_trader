@@ -68,6 +68,8 @@ from nautilus_trader.model.orderbook.data cimport OrderBookData
 from nautilus_trader.model.orderbook.data cimport OrderBookSnapshot
 from nautilus_trader.msgbus.bus cimport MessageBus
 
+from nautilus_trader.persistence.streaming import generate_signal_class
+
 
 cdef class Actor(Component):
     """
@@ -1336,22 +1338,10 @@ cdef class Actor(Component):
         Condition.true(self.trader_id is not None, "The actor has not been registered")
 
         if name not in self._signal_classes:
-            self._signal_classes[name] = self._generate_signal_class(name=name)
+            self._signal_classes[name] = generate_signal_class(name=name)
         cls = self._signal_classes[name]
         data = cls(ts_init=ts_init, value=value)
         self.publish_data(data_type=DataType(cls), data=data)
-
-    def _generate_signal_class(self, name: str):
-        """
-        Dynamically create a Data subclass for this signal
-        """
-        class SignalData(Data):
-            def __init__(self, value, ts_init: int):
-                super().__init__(ts_init=ts_init, ts_event=ts_init)
-                self.value = value
-
-        SignalData.__name__ = f"Signal{name}"
-        return SignalData
 
 # -- REQUESTS -------------------------------------------------------------------------------------
 

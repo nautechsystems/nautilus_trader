@@ -23,10 +23,12 @@ from nautilus_trader.backtest.node import BacktestNode
 from nautilus_trader.config import BacktestDataConfig
 from nautilus_trader.config import BacktestEngineConfig
 from nautilus_trader.config import BacktestRunConfig
+from nautilus_trader.core.data import Data
 from nautilus_trader.model.data.venue import InstrumentStatusUpdate
 from nautilus_trader.persistence.catalog import DataCatalog
 from nautilus_trader.persistence.external.core import process_files
 from nautilus_trader.persistence.external.readers import CSVReader
+from nautilus_trader.persistence.streaming import generate_signal_class
 from tests.integration_tests.adapters.betfair.test_kit import BetfairTestStubs
 from tests.test_kit import PACKAGE_ROOT
 from tests.test_kit.mocks.data import NewsEventData
@@ -135,3 +137,11 @@ class TestPersistenceStreaming:
         )
         result = Counter([r.__class__.__name__ for r in result])
         assert result["NewsEventData"] == 86985
+
+    def test_generate_signal_class(self):
+        cls = generate_signal_class(name="test")
+        instance = cls(value=5.0, ts_init=0)
+        assert isinstance(instance, Data)
+        assert instance.value == 5.0
+        assert instance.ts_init == 0
+        assert instance.ts_event == 0
