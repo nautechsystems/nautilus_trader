@@ -707,7 +707,7 @@ testing = ["pytest", "pytest-benchmark"]
 
 [[package]]
 name = "pre-commit"
-version = "2.18.1"
+version = "2.19.0"
 description = "A framework for managing and maintaining multi-language pre-commit hooks."
 category = "dev"
 optional = false
@@ -1312,20 +1312,6 @@ optional = false
 python-versions = ">=3.5"
 
 [[package]]
-name = "universal-pathlib"
-version = "0.0.18"
-description = "Pathlib API extended to use fsspec backends"
-category = "main"
-optional = false
-python-versions = ">=3.7"
-
-[package.dependencies]
-fsspec = "*"
-
-[package.extras]
-test = ["aiohttp", "flake8", "gcsfs", "hadoop-test-cluster", "ipython", "jupyter", "moto", "pyarrow", "pylint", "pytest", "requests", "s3fs"]
-
-[[package]]
 name = "urllib3"
 version = "1.26.9"
 description = "HTTP library with thread-safe connection pooling, file post, and more."
@@ -1409,7 +1395,7 @@ redis = ["hiredis", "redis"]
 [metadata]
 lock-version = "1.1"
 python-versions = ">=3.8,<3.11"
-content-hash = "2efd38540bf5fae24fd97f0fa855afd93715517bc192ad1b0a7f9927da1d3021"
+content-hash = "d01ebf878dbfbff96b649f510f7972b8380c96e82500d908f923a2289c461cb3"
 
 [metadata.files]
 aiodns = [
@@ -2181,8 +2167,8 @@ pluggy = [
     {file = "pluggy-1.0.0.tar.gz", hash = "sha256:4224373bacce55f955a878bf9cfa763c1e360858e330072059e10bad68531159"},
 ]
 pre-commit = [
-    {file = "pre_commit-2.18.1-py2.py3-none-any.whl", hash = "sha256:02226e69564ebca1a070bd1f046af866aa1c318dbc430027c50ab832ed2b73f2"},
-    {file = "pre_commit-2.18.1.tar.gz", hash = "sha256:5d445ee1fa8738d506881c5d84f83c62bb5be6b2838e32207433647e8e5ebe10"},
+    {file = "pre_commit-2.19.0-py2.py3-none-any.whl", hash = "sha256:10c62741aa5704faea2ad69cb550ca78082efe5697d6f04e5710c3c229afdd10"},
+    {file = "pre_commit-2.19.0.tar.gz", hash = "sha256:4233a1e38621c87d9dda9808c6606d7e7ba0e087cd56d3fe03202a01d2919615"},
 ]
 psutil = [
     {file = "psutil-5.9.0-cp27-cp27m-manylinux2010_i686.whl", hash = "sha256:55ce319452e3d139e25d6c3f85a1acf12d1607ddedea5e35fb47a552c051161b"},
@@ -2549,10 +2535,6 @@ uc-micro-py = [
 unidecode = [
     {file = "Unidecode-1.3.4-py3-none-any.whl", hash = "sha256:afa04efcdd818a93237574791be9b2817d7077c25a068b00f8cff7baa4e59257"},
     {file = "Unidecode-1.3.4.tar.gz", hash = "sha256:8e4352fb93d5a735c788110d2e7ac8e8031eb06ccbfe8d324ab71735015f9342"},
-]
-universal-pathlib = [
-    {file = "universal_pathlib-0.0.18-py3-none-any.whl", hash = "sha256:ddaa3cbfd98d0aef0d018915d1787149b8a77da473ede4245ab0103d85b6784a"},
-    {file = "universal_pathlib-0.0.18.tar.gz", hash = "sha256:b011f68611c1e9f839d86a76a154f3cd4fc17f4a9952cc43ddcd23e2080d74e0"},
 ]
 urllib3 = [
     {file = "urllib3-1.26.9-py2.py3-none-any.whl", hash = "sha256:44ece4d53fb1706f667c9bd1c648f5469a2ec925fcf3a776667042d645472c14"},

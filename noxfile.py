@@ -98,7 +98,6 @@ def _run_pytest(session: Session, *args, parallel: bool = False) -> None:
         *args,
         "--new-first",
         "--failed-first",
-        "tests/unit_tests/persistence/",
     ]
     if parallel:
         pytest_args += ["--numprocesses=auto", "--dist=loadscope"]

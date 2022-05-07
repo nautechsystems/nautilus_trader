@@ -493,9 +493,9 @@ def _should_use_windows_paths(fs: fsspec.filesystem) -> bool:
     except ImportError:
         SMBFileSystem = LocalFileSystem
 
-    IS_WINDOWS = platform.system() == "Windows"
-    IS_WINDOWS_LOCAL_FS = isinstance(fs, (LocalFileSystem, SMBFileSystem))
-    return IS_WINDOWS and IS_WINDOWS_LOCAL_FS
+    is_windows = platform.system() == "Windows"
+    is_windows_local_fs = isinstance(fs, (LocalFileSystem, SMBFileSystem))
+    return is_windows and is_windows_local_fs
 
 
 def resolve_path(path: pathlib.Path, fs: fsspec.filesystem) -> str:
