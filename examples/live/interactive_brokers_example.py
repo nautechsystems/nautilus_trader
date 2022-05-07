@@ -43,24 +43,6 @@ config_node = TradingNodeConfig(
             instrument_provider=InstrumentProviderConfig(
                 load_all=True,
                 filters=tuple({"secType": "CASH", "pair": "EURUSD"}.items()),
-                #     filters=tuple(
-                #         {
-                #             "secType": "STK",
-                #             "symbol": "9988",
-                #             "exchange": "SEHK",
-                #             "currency": "HKD",
-                #             "build_options_chain": True,
-                #             "option_kwargs": json.dumps(
-                #                 {
-                #                     "min_expiry": "20220601",
-                #                     "max_expiry": "20220701",
-                #                     "min_strike": 90,
-                #                     "max_strike": 110,
-                #                     "exchange": "SEHK"
-                #                 }
-                #             ),
-                #         }.items()
-                #     ),
             ),
             routing=RoutingConfig(venues={"IDEALPRO"}),
         ),
@@ -82,9 +64,10 @@ node = TradingNode(config=config_node)
 strategy_config = SubscribeStrategyConfig(
     instrument_id="EUR/USD.IDEALPRO",
     book_type=BookType.L2_MBP,
-    snapshots=True,
+    # snapshots=True,
     # trade_ticks=True,
     # quote_ticks=True,
+    bars=True,
 )
 # Instantiate your strategy
 strategy = SubscribeStrategy(config=strategy_config)

@@ -16,16 +16,20 @@
 from typing import Optional
 
 from nautilus_trader.config import StrategyConfig
+
+# *** THIS IS A TEST STRATEGY ***
+from nautilus_trader.model.data.bar import BarSpecification
+from nautilus_trader.model.data.bar import BarType
 from nautilus_trader.model.data.tick import QuoteTick
 from nautilus_trader.model.data.tick import TradeTick
+from nautilus_trader.model.enums import AggregationSource
+from nautilus_trader.model.enums import BarAggregation
 from nautilus_trader.model.enums import BookType
+from nautilus_trader.model.enums import PriceType
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.orderbook.book import OrderBook
 from nautilus_trader.model.orderbook.data import OrderBookData
 from nautilus_trader.trading.strategy import Strategy
-
-
-# *** THIS IS A TEST STRATEGY ***
 
 
 class SubscribeStrategyConfig(StrategyConfig):
@@ -35,9 +39,10 @@ class SubscribeStrategyConfig(StrategyConfig):
 
     instrument_id: str
     book_type: Optional[BookType] = None
-    snapshots: bool = True
+    snapshots: bool = False
     trade_ticks: bool = False
     quote_ticks: bool = False
+    bars: bool = False
 
 
 class SubscribeStrategy(Strategy):
@@ -81,6 +86,15 @@ class SubscribeStrategy(Strategy):
             self.subscribe_trade_ticks(instrument_id=self.instrument_id)
         if self.config.quote_ticks:
             self.subscribe_quote_ticks(instrument_id=self.instrument_id)
+        if self.config.bars:
+            bar_type: BarType = BarType(
+                instrument_id=self.instrument_id,
+                bar_spec=BarSpecification(
+                    step=5, aggregation=BarAggregation.SECOND, price_type=PriceType.LAST
+                ),
+                aggregation_source=AggregationSource.EXTERNAL,
+            )
+            self.subscribe_bars(bar_type)
 
     def on_order_book_delta(self, data: OrderBookData):
         self.book.apply(data)

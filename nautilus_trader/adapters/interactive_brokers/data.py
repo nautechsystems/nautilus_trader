@@ -20,6 +20,7 @@ from typing import Callable, Dict, List
 import ib_insync
 from ib_insync import Contract
 from ib_insync import ContractDetails
+from ib_insync import RealTimeBarList
 from ib_insync import Ticker
 
 from nautilus_trader.adapters.interactive_brokers.common import IB_VENUE
@@ -34,10 +35,12 @@ from nautilus_trader.common.logging import Logger
 from nautilus_trader.common.logging import defaultdict
 from nautilus_trader.core.datetime import dt_to_unix_nanos
 from nautilus_trader.live.data_client import LiveMarketDataClient
+from nautilus_trader.model.data.bar import BarType
 from nautilus_trader.model.data.tick import QuoteTick
 from nautilus_trader.model.data.tick import TradeTick
 from nautilus_trader.model.enums import AggressorSide
 from nautilus_trader.model.enums import BookType
+from nautilus_trader.model.enums import PriceType
 from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.objects import Price
@@ -216,6 +219,28 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
         )
         self._tickers[ContractId(ticker.contract.conId)].append(ticker)
 
+    def subscribed_bars(self, bar_type: BarType):
+        price_type: PriceType = bar_type.spec.price_type
+        contract_details: ContractDetails = self._instrument_provider.contract_details[
+            bar_type.instrument_id
+        ]
+
+        what_to_show = {
+            PriceType.ASK: "ASK",
+            PriceType.BID: "BID",
+            PriceType.LAST: "TRADES",
+            PriceType.MID: "MIDPOINT",
+        }
+
+        bar_list: RealTimeBarList = self._client.reqRealTimeBars(
+            contract=contract_details.contract,
+            barSize=5,
+            whatToShow=what_to_show[price_type],
+            useRTH=False,
+        )
+
+        bar_list.updateEvent += partial(self._on_bar_update, contract=contract_details.contract)
+
     def _request_top_of_book(self, instrument_id: InstrumentId):
         contract_details: ContractDetails = self._instrument_provider.contract_details[
             instrument_id
@@ -324,3 +349,7 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
                 ts_init=self._clock.timestamp_ns(),
             )
             self._handle_data(update)
+
+    def _on_bar_update(self, **kwargs):
+        print(kwargs)
+        pass
