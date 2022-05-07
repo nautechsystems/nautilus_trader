@@ -625,6 +625,8 @@ NAUTILUS_PARQUET_SCHEMA = {
             "isin": pa.string(),
             "margin_init": pa.string(),
             "margin_maint": pa.string(),
+            "maker_fee": pa.string(),
+            "taker_fee": pa.string(),
             "ts_init": pa.int64(),
             "ts_event": pa.int64(),
         }
