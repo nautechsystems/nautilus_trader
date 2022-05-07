@@ -1,4 +1,4 @@
-use crate::timer::{TimeEvent, TimeNS};
+use crate::timer::{TimeEvent};
 use std::collections::HashMap;
 
 use super::timer::{NameID, TestTimer};

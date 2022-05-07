@@ -18,15 +18,6 @@ pub struct TimeEvent {
     pub ts_init: TimeNS,
 }
 
-impl PartialEq for TimeEvent {
-    fn eq(&self, other: &Self) -> bool {
-        self.name == other.name
-    }
-}
-
-impl Eq for TimeEvent {
-    fn assert_receiver_is_total_eq(&self) {}
-}
 
 pub trait Timer {
     fn pop_event(&self, event_id: UUID4, ts_init: TimeNS) -> TimeEvent;
@@ -41,23 +32,6 @@ pub struct TestTimer {
     stop_time_ns: Option<TimeNS>,
     pub next_time_ns: TimeNS,
     pub is_expired: bool,
-}
-
-impl Timer for TestTimer {
-    fn pop_event(&self, event_id: UUID4, ts_init: TimeNS) -> TimeEvent {
-        TimeEvent {
-            name: self.name,
-            id: event_id,
-            ts_event: self.next_time_ns,
-            ts_init,
-        }
-    }
-    fn iterate_next_time(&mut self, now_ns: TimeNS) {
-        self.next_time_ns += self.interval_ns;
-    }
-    fn cancel(&mut self) {
-        self.is_expired = true;
-    }
 }
 
 impl TestTimer {
@@ -92,12 +66,15 @@ impl Iterator for TestTimer {
         if self.is_expired {
             None
         } else {
-            let item = (TimeEvent {
-                name: self.name,
-                id: UUID4::new(),
-                ts_event: self.next_time_ns,
-                ts_init: self.next_time_ns,
-            }, self.next_time_ns);
+            let item = (
+                TimeEvent {
+                    name: self.name,
+                    id: UUID4::new(),
+                    ts_event: self.next_time_ns,
+                    ts_init: self.next_time_ns,
+                },
+                self.next_time_ns,
+            );
 
             // if current next event time has exceeded
             // stop time expire timer
