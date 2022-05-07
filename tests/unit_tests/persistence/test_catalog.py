@@ -286,8 +286,8 @@ class TestPersistenceCatalog:
             ts_event=0,
             ts_init=0,
             margin_init=Decimal("0.01"),
-            margin_maint=Decimal("0.01"),
-            maker_fee=Decimal("0.01"),
+            margin_maint=Decimal("0.005"),
+            maker_fee=Decimal("0.005"),
             taker_fee=Decimal("0.01"),
         )
 
@@ -304,8 +304,13 @@ class TestPersistenceCatalog:
         # Act
         catalog = DataCatalog.from_env()
         write_objects(catalog=catalog, chunk=[instrument, quote_tick])
+        instrument_from_catalog = catalog.instruments(
+            as_nautilus=True,
+            instrument_ids=[instrument.id.value],
+        )[0]
 
         # Assert
-        assert instrument.taker_fee == catalog.instruments(as_nautilus=True)[-1].taker_fee
-        assert instrument.maker_fee == catalog.instruments(as_nautilus=True)[-1].maker_fee
-        assert instrument.margin_init == catalog.instruments(as_nautilus=True)[-1].margin_init
+        assert instrument.taker_fee == instrument_from_catalog.taker_fee
+        assert instrument.maker_fee == instrument_from_catalog.maker_fee
+        assert instrument.margin_init == instrument_from_catalog.margin_init
+        assert instrument.margin_maint == instrument_from_catalog.margin_maint
