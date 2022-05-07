@@ -1,11 +1,21 @@
-use nautilus_core::{buffer::Buffer64, uuid::UUID4};
+use nautilus_core::uuid::UUID4;
+
+/// Index of name string in global string store
+pub type NameID = u64;
+/// Unix time stamp in nanoseconds
+pub type TimeNS = u64;
 
 #[derive(Clone, Hash, Debug)]
+/// Represents a time event occurring at the event timestamp.
 pub struct TimeEvent {
-    name: Buffer64,
+    /// The event name.
+    pub name: NameID,
+    /// The event ID.
     pub id: UUID4,
-    pub ts_event: u64,
-    pub ts_init: u64,
+    /// The UNIX timestamp (nanoseconds) when the time event occurred.
+    pub ts_event: TimeNS,
+    /// The UNIX timestamp (nanoseconds) when the object was initialized.
+    pub ts_init: TimeNS,
 }
 
 impl PartialEq for TimeEvent {
@@ -18,36 +28,32 @@ impl Eq for TimeEvent {
     fn assert_receiver_is_total_eq(&self) {}
 }
 
-trait Timer {
-    fn pop_event(&self, event_id: UUID4, ts_init: u64) -> TimeEvent;
-    fn iterate_next_time(&mut self, now_ns: u64);
+pub trait Timer {
+    fn pop_event(&self, event_id: UUID4, ts_init: TimeNS) -> TimeEvent;
+    fn iterate_next_time(&mut self, now_ns: TimeNS);
     fn cancel(&mut self);
 }
 
 pub struct TestTimer {
-    name: Buffer64,
-    // callback: PyObject,
-    interval_ns: u64,
-    start_time_ns: u64,
-    stop_time_ns: u64,
-    next_time_ns: u64,
-    is_expired: bool,
+    name: NameID,
+    interval_ns: TimeNS,
+    start_time_ns: TimeNS,
+    stop_time_ns: Option<TimeNS>,
+    pub next_time_ns: TimeNS,
+    pub is_expired: bool,
 }
 
 impl Timer for TestTimer {
-    fn pop_event(&self, event_id: UUID4, ts_init: u64) -> TimeEvent {
+    fn pop_event(&self, event_id: UUID4, ts_init: TimeNS) -> TimeEvent {
         TimeEvent {
-            name: self.name.clone(),
+            name: self.name,
             id: event_id,
             ts_event: self.next_time_ns,
             ts_init,
         }
     }
-    fn iterate_next_time(&mut self, now_ns: u64) {
+    fn iterate_next_time(&mut self, now_ns: TimeNS) {
         self.next_time_ns += self.interval_ns;
-        if self.stop_time_ns <= now_ns {
-            self.is_expired = true
-        }
     }
     fn cancel(&mut self) {
         self.is_expired = true;
@@ -55,61 +61,66 @@ impl Timer for TestTimer {
 }
 
 impl TestTimer {
-    fn new(
-        name: Buffer64,
-        // callback: PyObject,
-        interval_ns: u64,
-        start_time_ns: u64,
-        stop_time_ns: Option<u64>,
+    pub fn new(
+        name: NameID,
+        interval_ns: TimeNS,
+        start_time_ns: TimeNS,
+        stop_time_ns: Option<TimeNS>,
     ) -> Self {
         TestTimer {
             name,
-            // callback,
             interval_ns,
             start_time_ns,
-            stop_time_ns: stop_time_ns.unwrap_or(0),
+            stop_time_ns,
             next_time_ns: start_time_ns + interval_ns,
             is_expired: false,
         }
     }
-    fn list_advance(&mut self, to_time_ns: u64) -> Vec<TimeEvent> {
-        self.take_while(|(_, next_time)| to_time_ns >= *next_time)
+    pub fn advance<'a>(&'a mut self, to_time_ns: TimeNS) -> impl Iterator<Item = TimeEvent> + 'a {
+        self.take_while(move |(_, next_time)| to_time_ns >= *next_time)
             .map(|(event, _)| event)
-            .collect()
     }
-    fn pop_next_event(&mut self) -> TimeEvent {
+    pub fn pop_next_event(&mut self) -> TimeEvent {
         self.next().unwrap().0
     }
 }
 
 impl Iterator for TestTimer {
-    type Item = (TimeEvent, u64);
+    type Item = (TimeEvent, TimeNS);
 
     fn next(&mut self) -> Option<Self::Item> {
         if self.is_expired {
             None
         } else {
-            let event = TimeEvent {
-                name: self.name.clone(),
+            let item = (TimeEvent {
+                name: self.name,
                 id: UUID4::new(),
                 ts_event: self.next_time_ns,
                 ts_init: self.next_time_ns,
-            };
+            }, self.next_time_ns);
+
+            // if current next event time has exceeded
+            // stop time expire timer
+            if let Some(stop_time_ns) = self.stop_time_ns {
+                if self.next_time_ns >= stop_time_ns {
+                    self.is_expired = true;
+                }
+            }
+
             self.next_time_ns += self.interval_ns;
-            Some((event, self.next_time_ns))
+
+            Some(item)
         }
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use nautilus_core::buffer::Buffer64;
-
-    use super::TestTimer;
+    use super::{TestTimer, TimeEvent};
 
     #[test]
     fn pop_event() {
-        let mut timer = TestTimer::new(Buffer64::from("test"), 0, 1, None);
+        let mut timer = TestTimer::new(0, 0, 1, None);
         assert!(timer.next().is_some());
         assert!(timer.next().is_some());
         timer.is_expired = true;
@@ -117,9 +128,16 @@ mod tests {
     }
 
     #[test]
-    fn list_advance() {
-        let mut timer = TestTimer::new(Buffer64::from("test"), 1, 0, None);
-        let events = timer.list_advance(5);
-        assert_eq!(events.len(), 4);
+    fn advance() {
+        let mut timer = TestTimer::new(0, 1, 0, None);
+        let events: Vec<TimeEvent> = timer.advance(5).collect();
+        assert_eq!(events.len(), 5);
+    }
+
+    #[test]
+    fn advance_stop() {
+        let mut timer = TestTimer::new(0, 1, 0, Some(5));
+        let events: Vec<TimeEvent> = timer.advance(10).collect();
+        assert_eq!(events.len(), 5);
     }
 }

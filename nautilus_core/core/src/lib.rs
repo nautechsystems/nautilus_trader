@@ -14,6 +14,7 @@
 // -------------------------------------------------------------------------------------------------
 
 pub mod buffer;
+pub mod datetime;
 pub mod string;
 pub mod time;
 pub mod uuid;

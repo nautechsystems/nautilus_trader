@@ -8,3 +8,4 @@ edition = "2021"
 [dependencies]
 nautilus_core = { path = "../core" }
 cpython = "0.7.0"
+pyo3 = "0.16.4"
