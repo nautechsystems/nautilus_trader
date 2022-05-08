@@ -410,5 +410,5 @@ def _validate_dataset(catalog: DataCatalog, path: str, new_partition_format="%Y%
 
 def validate_data_catalog(catalog: DataCatalog, **kwargs):
     for cls in catalog.list_data_types():
-        path = f"{catalog.path}/data/{cls}.parquet"
+        path = resolve_path(catalog.path / "data" / f"{cls}.parquet", fs=catalog.fs)
         _validate_dataset(catalog=catalog, path=path, **kwargs)

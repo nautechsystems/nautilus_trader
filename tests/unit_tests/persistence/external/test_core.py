@@ -30,6 +30,7 @@ from nautilus_trader.model.data.tick import QuoteTick
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.persistence.catalog import DataCatalog
+from nautilus_trader.persistence.catalog import resolve_path
 from nautilus_trader.persistence.external.core import RawFile
 from nautilus_trader.persistence.external.core import _validate_dataset
 from nautilus_trader.persistence.external.core import dicts_to_dataframes
@@ -184,7 +185,9 @@ class TestPersistenceCore:
             partition_cols=None,
         )
         result = (
-            ds.dataset(str(root.joinpath("sample.parquet")), filesystem=fs).to_table().to_pandas()
+            ds.dataset(resolve_path(root / "sample.parquet", fs=fs), filesystem=fs)
+            .to_table()
+            .to_pandas()
         )
 
         # Assert
@@ -211,7 +214,7 @@ class TestPersistenceCore:
             schema=pa.schema({"value": pa.float64(), "instrument_id": pa.string()}),
             partition_cols=["instrument_id"],
         )
-        dataset = ds.dataset(str(root.joinpath("sample.parquet")), filesystem=fs)
+        dataset = ds.dataset(resolve_path(root.joinpath("sample.parquet"), fs=fs), filesystem=fs)
         result = dataset.to_table().to_pandas()
 
         # Assert
@@ -239,8 +242,13 @@ class TestPersistenceCore:
         write_tables(catalog=self.catalog, tables=tables)
 
         # Assert
-        files = self.fs.ls(f"{self.catalog.path}/data/quote_tick.parquet")
-        expected = f"{self.catalog.path}/data/quote_tick.parquet/instrument_id=AUD-USD.SIM"
+        files = self.fs.ls(
+            resolve_path(self.catalog.path / "data" / "quote_tick.parquet", fs=self.fs)
+        )
+        expected = resolve_path(
+            self.catalog.path / "data" / "quote_tick.parquet" / "instrument_id=AUD-USD.SIM",
+            fs=self.fs,
+        )
         assert expected in files
 
     @pytest.mark.asyncio
@@ -272,7 +280,7 @@ class TestPersistenceCore:
     def test_data_catalog_instruments_no_partition(self):
         # Arrange, Act
         self._loaded_data_into_catalog()
-        path = f"{self.catalog.path}/data/betting_instrument.parquet"
+        path = resolve_path(self.catalog.path / "data" / "betting_instrument.parquet", fs=self.fs)
         dataset = pq.ParquetDataset(
             path_or_paths=path,
             filesystem=self.fs,
@@ -286,7 +294,9 @@ class TestPersistenceCore:
         # Arrange, Act, Assert
         self._loaded_data_into_catalog()
         assert ds.parquet_dataset(
-            f"{self.catalog.path}/data/trade_tick.parquet/_common_metadata",
+            resolve_path(
+                self.catalog.path / "data" / "trade_tick.parquet" / "_common_metadata", fs=self.fs
+            ),
             filesystem=self.fs,
         )
 
@@ -296,7 +306,7 @@ class TestPersistenceCore:
 
         # Act
         dataset = ds.dataset(
-            str(self.catalog.path / "data" / "trade_tick.parquet"),
+            resolve_path(self.catalog.path / "data" / "trade_tick.parquet", fs=self.fs),
             filesystem=self.catalog.fs,
         )
         schema = {
@@ -373,11 +383,11 @@ class TestPersistenceCore:
                 partition_cols=["instrument_id"],
             )
 
-        original_partitions = fs.glob(f"{root}/{path}/**/*.parquet")
+        original_partitions = fs.glob(resolve_path(root / path / "**" / "*.parquet", fs=self.fs))
 
         # Act
-        _validate_dataset(catalog=catalog, path=f"{root}/{path}")
-        new_partitions = fs.glob(f"{root}/{path}/**/*.parquet")
+        _validate_dataset(catalog=catalog, path=resolve_path(root / path, fs=self.fs))
+        new_partitions = fs.glob(resolve_path(root / path / "**" / "*.parquet", fs=self.fs))
 
         # Assert
         assert len(original_partitions) == 6
@@ -400,7 +410,9 @@ class TestPersistenceCore:
 
         # Assert
         new_partitions = [
-            f for f in self.fs.glob(f"{self.catalog.path}/**/*.parquet") if self.fs.isfile(f)
+            f
+            for f in self.fs.glob(resolve_path(self.catalog.path / "**" / "*.parquet", fs=self.fs))
+            if self.fs.isfile(f)
         ]
         ins1, ins2 = self.catalog.instruments()["id"].tolist()
 
