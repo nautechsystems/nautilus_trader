@@ -30,6 +30,7 @@ from nautilus_trader.model.orderbook.data import OrderBookData
 from nautilus_trader.model.orderbook.data import OrderBookDelta
 from nautilus_trader.model.orderbook.data import OrderBookDeltas
 from nautilus_trader.model.orderbook.data import OrderBookSnapshot
+from nautilus_trader.persistence.catalog import resolve_path
 from nautilus_trader.serialization.arrow.serializer import ParquetSerializer
 from nautilus_trader.serialization.arrow.serializer import get_cls_table
 from nautilus_trader.serialization.arrow.serializer import list_schemas
@@ -90,10 +91,11 @@ class StreamingFeatherWriter:
     def _check_path(self, p: str) -> str:
         path = pathlib.Path(p)
         err_parent = f"Parent of path {path} does not exist, please create it"
-        assert self.fs.exists(str(path.parent)), err_parent
+        assert self.fs.exists(resolve_path(path.parent, fs=self.fs)), err_parent
         err_dir_empty = "Path must be directory or empty"
-        assert self.fs.isdir(str(path)) or not self.fs.exists(str(path)), err_dir_empty
-        return str(path)
+        str_path = resolve_path(path, fs=self.fs)
+        assert self.fs.isdir(str_path) or not self.fs.exists(str_path), err_dir_empty
+        return str_path
 
     def _create_writers(self):
         for cls in self._schemas:
