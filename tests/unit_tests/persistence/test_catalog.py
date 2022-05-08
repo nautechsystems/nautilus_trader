@@ -74,13 +74,13 @@ class TestPersistenceCatalog:
         from tempfile import tempdir
 
         catalog = DataCatalog(path=tempdir, fs_protocol="file")
-        path = resolve_path(path=catalog.root / "test", fs=catalog.fs)
+        path = resolve_path(path=catalog.path / "test", fs=catalog.fs)
         assert path == str(pathlib.Path(tempdir) / "test")
 
     @pytest.mark.skipif(sys.platform != "win32", reason="windows only")
     def test_catalog_root_path_windows_non_local(self):
         catalog = DataCatalog(path="/some/path", fs_protocol="memory")
-        path = resolve_path(path=catalog.root / "test", fs=catalog.fs)
+        path = resolve_path(path=catalog.path / "test", fs=catalog.fs)
         assert path == "/some/path/test"
 
     def test_list_data_types(self):

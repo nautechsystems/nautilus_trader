@@ -398,8 +398,8 @@ class DataCatalog(metaclass=Singleton):
         return data
 
     def list_data_types(self):
-        glob_path = self.path / "data" / "*.parquet"
-        return [pathlib.Path(p).stem for p in self.fs.glob(str(glob_path))]
+        glob_path = resolve_path(self.path / "data" / "*.parquet", fs=self.fs)
+        return [pathlib.Path(p).stem for p in self.fs.glob(glob_path)]
 
     def list_generic_data_types(self):
         data_types = self.list_data_types()
@@ -412,17 +412,21 @@ class DataCatalog(metaclass=Singleton):
     def list_partitions(self, cls_type: type):
         assert isinstance(cls_type, type), "`cls_type` should be type, i.e. TradeTick"
         name = class_to_filename(cls_type)
-        dataset = pq.ParquetDataset(str(self.path / f"{name}.parquet"), filesystem=self.fs)
+        dataset = pq.ParquetDataset(
+            resolve_path(self.path / f"{name}.parquet", fs=self.fs), filesystem=self.fs
+        )
         partitions = {}
         for level in dataset.partitions.levels:
             partitions[level.name] = level.keys
         return partitions
 
     def list_backtests(self) -> List[str]:
-        return [p.stem for p in map(pathlib.Path, self.fs.glob(f"{self.path}/backtest/*.feather"))]
+        glob = resolve_path(self.path / "backtest" / "*.feather", fs=self.fs)
+        return [p.stem for p in map(pathlib.Path, self.fs.glob(glob))]
 
     def list_live_runs(self) -> List[str]:
-        return [p.stem for p in map(pathlib.Path, self.fs.glob(f"{self.path}/live/*.feather"))]
+        glob = resolve_path(self.path / "live" / "*.feather", fs=self.fs)
+        return [p.stem for p in map(pathlib.Path, self.fs.glob(glob))]
 
     def read_live_run(self, live_run_id: str, **kwargs):
         return self._read_feather(kind="live", run_id=live_run_id, **kwargs)
@@ -433,7 +437,7 @@ class DataCatalog(metaclass=Singleton):
     def _read_feather(self, kind: str, run_id: str, raise_on_failed_deserialize: bool = False):
         class_mapping: Dict[str, type] = {class_to_filename(cls): cls for cls in list_schemas()}
         data = {}
-        glob_path = str(self.path / kind / f"{run_id}.feather" / "*.feather")
+        glob_path = resolve_path(self.path / kind / f"{run_id}.feather" / "*.feather", fs=self.fs)
         for path in [p for p in self.fs.glob(glob_path)]:
             cls_name = camel_to_snake_case(pathlib.Path(path).stem).replace("__", "_")
             df = read_feather_file(path=path, fs=self.fs)
