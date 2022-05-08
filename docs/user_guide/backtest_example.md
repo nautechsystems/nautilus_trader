@@ -3,6 +3,30 @@
 This notebook runs through a complete backtest example using raw data (external to nautilus) to a parameterised run 
 
 <!-- #region tags=[] -->
+
+## Imports
+
+We'll start with all of our imports for the remainder of this guide.
+
+```python
+import datetime
+import os
+import shutil
+from decimal import Decimal
+
+import fsspec
+import pandas as pd
+from nautilus_trader.core.datetime import dt_to_unix_nanos
+from nautilus_trader.model.data.tick import QuoteTick
+from nautilus_trader.model.objects import Price, Quantity
+
+from nautilus_trader.backtest.data.providers import TestInstrumentProvider
+from nautilus_trader.backtest.node import BacktestNode
+from nautilus_trader.persistence.catalog import DataCatalog
+from nautilus_trader.persistence.external.core import process_files, write_objects
+from nautilus_trader.persistence.external.readers import TextReader
+```
+
 ## Getting some raw data
 
 Before we start the notebook - as a once off we need to download some sample data for backtesting
@@ -19,7 +43,6 @@ DATA_DIR = "~/Downloads/"
 Run the cell below; you should see the files that you downloaded
 
 ```python
-import fsspec
 fs = fsspec.filesystem('file')
 raw_files = fs.glob(f"{DATA_DIR}/HISTDATA*")
 assert raw_files, f"Unable to find any histdata files in directory {DATA_DIR}"
@@ -47,21 +70,6 @@ Then, we simply instantiate a `DataCatalog` (passing in a directory where to sto
 
 It should only take a couple of minutes to load the data (depending on how many months).
 
-```python
-import datetime
-import pandas as pd
-
-from nautilus_trader.persistence.catalog import DataCatalog
-from nautilus_trader.persistence.external.core import process_files, write_objects
-from nautilus_trader.persistence.external.readers import TextReader
-
-from nautilus_trader.model.data.tick import QuoteTick
-from nautilus_trader.model.objects import Price, Quantity
-from nautilus_trader.core.datetime import dt_to_unix_nanos
-
-
-from nautilus_trader.backtest.data.providers import TestInstrumentProvider
-```
 
 ```python
 def parser(line):
@@ -81,7 +89,6 @@ def parser(line):
 We'll set up a catalog in the current working directory.
 
 ```python
-import os, shutil
 CATALOG_PATH = os.getcwd() + "/catalog"
 
 # Clear if it already exists, then create fresh
@@ -128,8 +135,6 @@ Nautilus has a top-level object `BacktestRunConfig` that allows configuring a ba
 ### Adding data and venues
 
 ```python
-from nautilus_trader.config import BacktestRunConfig, BacktestVenueConfig, BacktestDataConfig, BacktestEngineConfig
-
 instrument = catalog.instruments(as_nautilus=True)[0]
 
 data_config=[

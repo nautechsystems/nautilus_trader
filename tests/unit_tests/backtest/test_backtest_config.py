@@ -18,7 +18,6 @@ import datetime
 import json
 import pathlib
 import pickle
-import sys
 from typing import Optional
 
 import pytest
@@ -34,7 +33,6 @@ from nautilus_trader.config import Partialable
 from nautilus_trader.model.data.tick import QuoteTick
 from nautilus_trader.model.data.venue import InstrumentStatusUpdate
 from nautilus_trader.model.identifiers import ClientId
-from nautilus_trader.persistence.catalog import DataCatalog
 from nautilus_trader.persistence.external.core import process_files
 from nautilus_trader.persistence.external.readers import CSVReader
 from tests.integration_tests.adapters.betfair.test_kit import BetfairTestStubs
@@ -47,8 +45,6 @@ from tests.test_kit.stubs.persistence import TestPersistenceStubs
 
 TEST_DATA_DIR = str(pathlib.Path(PACKAGE_ROOT).joinpath("data"))
 
-pytestmark = pytest.mark.skipif(sys.platform == "win32", reason="test path broken on Windows")
-
 
 @dataclasses.dataclass(repr=False)
 class ExamplePartialable(Partialable):
@@ -59,9 +55,8 @@ class ExamplePartialable(Partialable):
 
 class TestBacktestConfig:
     def setup(self):
-        data_catalog_setup()
+        self.catalog = data_catalog_setup()
         aud_usd_data_loader()
-        self.catalog = DataCatalog.from_env()
         self.backtest_config = BacktestRunConfig(
             engine=BacktestEngineConfig(),
             venues=[
