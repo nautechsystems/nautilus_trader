@@ -66,7 +66,7 @@ def data_catalog_setup():
         pass
     catalog.fs.mkdir("/.nautilus/catalog/data")
     assert catalog.fs.exists("/.nautilus/catalog/")
-    assert not catalog.fs.ls("/.nautilus/catalog/data")
+    assert not catalog.fs.glob("/.nautilus/catalog/**/*")
     return catalog
 
 

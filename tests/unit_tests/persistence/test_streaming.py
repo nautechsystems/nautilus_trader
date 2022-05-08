@@ -22,6 +22,7 @@ from nautilus_trader.config import BacktestEngineConfig
 from nautilus_trader.config import BacktestRunConfig
 from nautilus_trader.model.data.venue import InstrumentStatusUpdate
 from nautilus_trader.persistence.catalog import DataCatalog
+from nautilus_trader.persistence.catalog import resolve_path
 from nautilus_trader.persistence.external.core import process_files
 from nautilus_trader.persistence.external.readers import CSVReader
 from tests.integration_tests.adapters.betfair.test_kit import BetfairTestStubs
@@ -60,7 +61,7 @@ class TestPersistenceStreaming:
         # Arrange
         instrument = self.catalog.instruments(as_nautilus=True)[0]
         run_config = BetfairTestStubs.betfair_backtest_run_config(
-            catalog_path=str(self.catalog.path),
+            catalog_path=resolve_path(self.catalog.path, fs=self.fs),
             catalog_fs_protocol=self.catalog.fs.protocol,
             instrument_id=instrument.id.value,
         )
@@ -113,7 +114,9 @@ class TestPersistenceStreaming:
             catalog_fs_protocol="memory",
             data_cls=InstrumentStatusUpdate,
         )
-        streaming = BetfairTestStubs.streaming_config(catalog_path=self.catalog.path)
+        streaming = BetfairTestStubs.streaming_config(
+            catalog_path=resolve_path(self.catalog.path, self.fs)
+        )
         run_config = BacktestRunConfig(
             engine=BacktestEngineConfig(streaming=streaming),
             data=[data_config, instrument_data_config],

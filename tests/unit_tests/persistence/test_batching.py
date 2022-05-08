@@ -25,6 +25,7 @@ from nautilus_trader.model.data.venue import InstrumentStatusUpdate
 from nautilus_trader.model.orderbook.data import OrderBookData
 from nautilus_trader.persistence.batching import batch_files
 from nautilus_trader.persistence.catalog import DataCatalog
+from nautilus_trader.persistence.catalog import resolve_path
 from nautilus_trader.persistence.external.core import process_files
 from nautilus_trader.persistence.external.readers import CSVReader
 from nautilus_trader.persistence.funcs import parse_bytes
@@ -106,7 +107,9 @@ class TestPersistenceBatching:
             instrument_id=self.catalog.instruments(as_nautilus=True)[0].id.value,
             data_cls=InstrumentStatusUpdate,
         )
-        streaming = BetfairTestStubs.streaming_config(catalog_path=self.catalog.path)
+        streaming = BetfairTestStubs.streaming_config(
+            catalog_path=resolve_path(self.catalog.path, self.fs)
+        )
         engine = BacktestEngineConfig(streaming=streaming)
         run_config = BacktestRunConfig(
             engine=engine,
