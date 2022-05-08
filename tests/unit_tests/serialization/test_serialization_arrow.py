@@ -15,7 +15,6 @@
 
 import copy
 import os
-import sys
 from typing import Any
 
 import pytest
@@ -66,7 +65,6 @@ def _reset():
     assert catalog.fs.exists("/.nautilus/catalog/")
 
 
-@pytest.mark.skipif(sys.platform == "win32", reason="does not run on windows")
 class TestParquetSerializer:
     def setup(self):
         # Fixture Setup

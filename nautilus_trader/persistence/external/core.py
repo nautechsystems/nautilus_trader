@@ -35,6 +35,7 @@ from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.model.data.base import GenericData
 from nautilus_trader.model.instruments.base import Instrument
 from nautilus_trader.persistence.catalog import DataCatalog
+from nautilus_trader.persistence.catalog import resolve_path
 from nautilus_trader.persistence.external.metadata import load_mappings
 from nautilus_trader.persistence.external.metadata import write_partition_column_mappings
 from nautilus_trader.persistence.external.readers import Reader
@@ -238,7 +239,7 @@ def write_tables(catalog: DataCatalog, tables: Dict[type, Dict[str, pd.DataFrame
             continue
         partition_cols = determine_partition_cols(cls=cls, instrument_id=instrument_id)
         name = f"{class_to_filename(cls)}.parquet"
-        path = f"{catalog.path}/data/{name}"
+        path = catalog.path / "data" / name
         merged = merge_existing_data(catalog=catalog, cls=cls, df=df)
         write_parquet(
             fs=catalog.fs,
@@ -255,7 +256,7 @@ def write_tables(catalog: DataCatalog, tables: Dict[type, Dict[str, pd.DataFrame
 
 def write_parquet(
     fs: fsspec.AbstractFileSystem,
-    path: str,
+    path: pathlib.Path,
     df: pd.DataFrame,
     partition_cols: Optional[List[str]],
     schema: pa.Schema,
@@ -293,7 +294,8 @@ def write_parquet(
     )
     if pa.__version__ >= "6.0.0":
         kwargs.update(existing_data_behavior="overwrite_or_ignore")
-    files = set(fs.glob(f"{path}/**"))
+    files = set(fs.glob(resolve_path(path / "**", fs=fs)))
+    path = str(resolve_path(path=path, fs=fs))  # type: ignore
     ds.write_dataset(
         data=table,
         base_dir=path,
@@ -408,5 +410,5 @@ def _validate_dataset(catalog: DataCatalog, path: str, new_partition_format="%Y%
 
 def validate_data_catalog(catalog: DataCatalog, **kwargs):
     for cls in catalog.list_data_types():
-        path = f"{catalog.path}/data/{cls}.parquet"
+        path = resolve_path(catalog.path / "data" / f"{cls}.parquet", fs=catalog.fs)
         _validate_dataset(catalog=catalog, path=path, **kwargs)
