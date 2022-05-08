@@ -24,7 +24,6 @@ from nautilus_trader.config import TradingNodeConfig
 from nautilus_trader.examples.strategies.subscribe import SubscribeStrategy
 from nautilus_trader.examples.strategies.subscribe import SubscribeStrategyConfig
 from nautilus_trader.live.node import TradingNode
-from nautilus_trader.model.enums import BookType
 
 
 # *** THIS IS A TEST STRATEGY WITH NO ALPHA ADVANTAGE WHATSOEVER. ***
@@ -42,7 +41,7 @@ config_node = TradingNodeConfig(
             gateway_host="127.0.0.1",
             instrument_provider=InstrumentProviderConfig(
                 load_all=True,
-                filters=tuple({"secType": "CASH", "pair": "EURUSD"}.items()),
+                filters=tuple({"secType": "CASH", "symbol": "EUR", "currency": "USD"}.items()),
             ),
             routing=RoutingConfig(venues={"IDEALPRO"}),
         ),
@@ -63,7 +62,7 @@ node = TradingNode(config=config_node)
 # Configure your strategy
 strategy_config = SubscribeStrategyConfig(
     instrument_id="EUR/USD.IDEALPRO",
-    book_type=BookType.L2_MBP,
+    # book_type=None,
     # snapshots=True,
     # trade_ticks=True,
     # quote_ticks=True,
