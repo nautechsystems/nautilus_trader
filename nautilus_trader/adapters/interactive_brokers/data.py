@@ -20,6 +20,7 @@ from typing import Callable, Dict, List
 import ib_insync
 from ib_insync import Contract
 from ib_insync import ContractDetails
+from ib_insync import RealTimeBar
 from ib_insync import RealTimeBarList
 from ib_insync import Ticker
 
@@ -35,6 +36,7 @@ from nautilus_trader.common.logging import Logger
 from nautilus_trader.common.logging import defaultdict
 from nautilus_trader.core.datetime import dt_to_unix_nanos
 from nautilus_trader.live.data_client import LiveMarketDataClient
+from nautilus_trader.model.data.bar import Bar
 from nautilus_trader.model.data.bar import BarType
 from nautilus_trader.model.data.tick import QuoteTick
 from nautilus_trader.model.data.tick import TradeTick
@@ -239,7 +241,7 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
             useRTH=False,
         )
 
-        bar_list.updateEvent += partial(self._on_bar_update, contract=contract_details.contract)
+        bar_list.updateEvent += partial(self._on_bar_update, bar_type=bar_type)
 
     def _request_top_of_book(self, instrument_id: InstrumentId):
         contract_details: ContractDetails = self._instrument_provider.contract_details[
@@ -350,6 +352,25 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
             )
             self._handle_data(update)
 
-    def _on_bar_update(self, **kwargs):
-        print(kwargs)
-        pass
+    def _on_bar_update(
+        self,
+        bars: List[RealTimeBar],
+        hasNewBar: bool = False,
+        bar_type: BarType = None,
+    ):
+
+        if not hasNewBar:
+            return
+
+        last_bar: RealTimeBar = bars[-1]
+        data = Bar(
+            bar_type=bar_type,
+            open=last_bar.open_,
+            high=last_bar.high,
+            low=last_bar.low,
+            close=last_bar.close,
+            volume=last_bar.volume,
+            ts_init=0,
+            ts_event=0,
+        )
+        self._handle_data(data)
