@@ -13,7 +13,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import sys
 from decimal import Decimal
 
 import pytest
@@ -64,7 +63,6 @@ AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy("AUD/USD")
 pytestmark = pytest.mark.redis
 
 
-@pytest.mark.skipif(sys.platform == "win32", reason="Redis not available on windows")
 class TestRedisCacheDatabase:
     def setup(self):
         # Fixture Setup
@@ -756,7 +754,6 @@ class TestRedisCacheDatabase:
         assert self.database.load_position(position1.id) is None
 
 
-@pytest.mark.skipif(sys.platform == "win32", reason="Redis not available on windows")
 class TestExecutionCacheWithRedisDatabaseTests:
     def setup(self):
         # Fixture Setup
