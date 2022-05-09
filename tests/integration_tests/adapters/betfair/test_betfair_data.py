@@ -14,7 +14,6 @@
 # -------------------------------------------------------------------------------------------------
 
 import asyncio
-import sys
 from collections import Counter
 from functools import partial
 from unittest.mock import patch
@@ -64,7 +63,6 @@ from tests.test_kit.stubs.identifiers import TestIdStubs
 INSTRUMENTS = []
 
 
-@pytest.mark.skipif(sys.platform == "win32", reason="failing on Windows")
 @pytest.fixture(scope="session", autouse=True)
 @patch("nautilus_trader.adapters.betfair.providers.load_markets_metadata")
 def instrument_list(mock_load_markets_metadata, loop: asyncio.AbstractEventLoop):
@@ -95,7 +93,6 @@ def instrument_list(mock_load_markets_metadata, loop: asyncio.AbstractEventLoop)
     assert INSTRUMENTS
 
 
-@pytest.mark.skipif(sys.platform == "win32", reason="failing on Windows")
 class TestBetfairDataClient:
     def setup(self):
         # Fixture Setup

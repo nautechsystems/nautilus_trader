@@ -17,6 +17,7 @@ import os
 from functools import partial
 from typing import Generator
 
+import fsspec
 import pandas as pd
 from fsspec.implementations.memory import MemoryFileSystem
 
@@ -52,8 +53,11 @@ def data_catalog_setup():
     Reset the filesystem and DataCatalog to a clean state
     """
     clear_singleton_instances(DataCatalog)
-
-    os.environ["NAUTILUS_PATH"] = "memory:///.nautilus/"
+    fs = fsspec.filesystem("memory")
+    path = "/.nautilus/"
+    if not fs.exists(path):
+        fs.mkdir(path)
+    os.environ["NAUTILUS_PATH"] = f"memory://{path}"
     catalog = DataCatalog.from_env()
     assert isinstance(catalog.fs, MemoryFileSystem)
     try:
@@ -62,7 +66,8 @@ def data_catalog_setup():
         pass
     catalog.fs.mkdir("/.nautilus/catalog/data")
     assert catalog.fs.exists("/.nautilus/catalog/")
-    assert not catalog.fs.ls("/.nautilus/catalog/data")
+    assert not catalog.fs.glob("/.nautilus/catalog/**/*")
+    return catalog
 
 
 def aud_usd_data_loader():

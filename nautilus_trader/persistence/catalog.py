@@ -15,6 +15,7 @@
 
 import os
 import pathlib
+import platform
 from typing import Callable, Dict, List, Optional, Union
 
 import fsspec
@@ -22,6 +23,7 @@ import pandas as pd
 import pyarrow as pa
 import pyarrow.dataset as ds
 import pyarrow.parquet as pq
+from fsspec.utils import infer_storage_options
 from pyarrow import ArrowInvalid
 
 from nautilus_trader.core.inspect import is_nautilus_class
@@ -52,7 +54,7 @@ class DataCatalog(metaclass=Singleton):
     Parameters
     ----------
     path : str
-        The root path to the data.
+        The root path for this data catalog. Must exist and must be an absolute path.
     fs_protocol : str, default 'file'
         The fsspec filesystem protocol to use.
     fs_storage_options : Dict, optional
@@ -65,12 +67,12 @@ class DataCatalog(metaclass=Singleton):
         fs_protocol: str = "file",
         fs_storage_options: Optional[Dict] = None,
     ):
-        self.path = pathlib.Path(path)
         self.fs_protocol = fs_protocol
         self.fs_storage_options = fs_storage_options or {}
         self.fs: fsspec.AbstractFileSystem = fsspec.filesystem(
             self.fs_protocol, **self.fs_storage_options
         )
+        self.path: pathlib.Path = pathlib.Path(path)
 
     @classmethod
     def from_env(cls):
@@ -79,9 +81,13 @@ class DataCatalog(metaclass=Singleton):
     @classmethod
     def from_uri(cls, uri):
         if "://" not in uri:
+            # Assume a local path
             uri = "file://" + uri
-        protocol, path = uri.split("://")
-        return cls(path=path, fs_protocol=protocol)
+        parsed = infer_storage_options(uri)
+        path = parsed.pop("path")
+        protocol = parsed.pop("protocol")
+        storage_options = parsed.copy()
+        return cls(path=path, fs_protocol=protocol, fs_storage_options=storage_options)
 
     # -- QUERIES -----------------------------------------------------------------------------------
 
@@ -113,7 +119,7 @@ class DataCatalog(metaclass=Singleton):
         if end is not None:
             filters.append(ds.field(ts_column) <= int(pd.Timestamp(end).to_datetime64()))
 
-        full_path = self._make_path(cls=cls)
+        full_path = str(self._make_path(cls=cls))
         if not (self.fs.exists(full_path) or self.fs.isdir(full_path)):
             if raise_on_empty:
                 raise FileNotFoundError(f"protocol={self.fs.protocol}, path={full_path}")
@@ -184,7 +190,11 @@ class DataCatalog(metaclass=Singleton):
         return data
 
     def _make_path(self, cls: type) -> str:
-        return f"{self.path}/data/{class_to_filename(cls=cls)}.parquet"
+        return str(
+            resolve_path(
+                path=self.path / "data" / f"{class_to_filename(cls=cls)}.parquet", fs=self.fs
+            )
+        )
 
     def query(
         self,
@@ -388,7 +398,8 @@ class DataCatalog(metaclass=Singleton):
         return data
 
     def list_data_types(self):
-        return [pathlib.Path(p).stem for p in self.fs.glob(f"{self.path}/data/*.parquet")]
+        glob_path = resolve_path(self.path / "data" / "*.parquet", fs=self.fs)
+        return [pathlib.Path(p).stem for p in self.fs.glob(glob_path)]
 
     def list_generic_data_types(self):
         data_types = self.list_data_types()
@@ -401,17 +412,21 @@ class DataCatalog(metaclass=Singleton):
     def list_partitions(self, cls_type: type):
         assert isinstance(cls_type, type), "`cls_type` should be type, i.e. TradeTick"
         name = class_to_filename(cls_type)
-        dataset = pq.ParquetDataset(self.path / f"{name}.parquet", filesystem=self.fs)
+        dataset = pq.ParquetDataset(
+            resolve_path(self.path / f"{name}.parquet", fs=self.fs), filesystem=self.fs
+        )
         partitions = {}
         for level in dataset.partitions.levels:
             partitions[level.name] = level.keys
         return partitions
 
     def list_backtests(self) -> List[str]:
-        return [p.stem for p in map(pathlib.Path, self.fs.glob(f"{self.path}/backtest/*.feather"))]
+        glob = resolve_path(self.path / "backtest" / "*.feather", fs=self.fs)
+        return [p.stem for p in map(pathlib.Path, self.fs.glob(glob))]
 
     def list_live_runs(self) -> List[str]:
-        return [p.stem for p in map(pathlib.Path, self.fs.glob(f"{self.path}/live/*.feather"))]
+        glob = resolve_path(self.path / "live" / "*.feather", fs=self.fs)
+        return [p.stem for p in map(pathlib.Path, self.fs.glob(glob))]
 
     def read_live_run(self, live_run_id: str, **kwargs):
         return self._read_feather(kind="live", run_id=live_run_id, **kwargs)
@@ -422,9 +437,10 @@ class DataCatalog(metaclass=Singleton):
     def _read_feather(self, kind: str, run_id: str, raise_on_failed_deserialize: bool = False):
         class_mapping: Dict[str, type] = {class_to_filename(cls): cls for cls in list_schemas()}
         data = {}
-        for path in [p for p in self.fs.glob(f"{self.path}/{kind}/{run_id}.feather/*.feather")]:
+        glob_path = resolve_path(self.path / kind / f"{run_id}.feather" / "*.feather", fs=self.fs)
+        for path in [p for p in self.fs.glob(glob_path)]:
             cls_name = camel_to_snake_case(pathlib.Path(path).stem).replace("__", "_")
-            df = read_feather_file(self, path=path, fs=self.fs)
+            df = read_feather_file(path=path, fs=self.fs)
             if df is None:
                 print(f"No data for {cls_name}")
                 continue
@@ -441,7 +457,7 @@ class DataCatalog(metaclass=Singleton):
         return sorted(sum(data.values(), list()), key=lambda x: x.ts_init)
 
 
-def read_feather_file(self, path: str, fs: fsspec.AbstractFileSystem = None):
+def read_feather_file(path: str, fs: fsspec.AbstractFileSystem = None):
     fs = fs or fsspec.filesystem("file")
     if not fs.exists(path):
         return
@@ -464,3 +480,30 @@ def combine_filters(*filters):
         for f in filters[1:]:
             expr = expr & f
         return expr
+
+
+def _should_use_windows_paths(fs: fsspec.filesystem) -> bool:
+    """
+    Pathlib will try and use windows style paths even when a fsspec.filesystem does not (memory, s3, etc).
+
+    We need to determine the case when we should use windows paths, which is when we are on windows and using a
+    fsspec.filesystem that is local.
+
+    """
+    from fsspec.implementations.local import LocalFileSystem
+
+    try:
+        from fsspec.implementations.smb import SMBFileSystem
+    except ImportError:
+        SMBFileSystem = LocalFileSystem
+
+    is_windows = platform.system() == "Windows"
+    is_windows_local_fs = isinstance(fs, (LocalFileSystem, SMBFileSystem))
+    return is_windows and is_windows_local_fs
+
+
+def resolve_path(path: pathlib.Path, fs: fsspec.filesystem) -> str:
+    if _should_use_windows_paths(fs=fs):
+        return str(path)
+    else:
+        return path.as_posix()

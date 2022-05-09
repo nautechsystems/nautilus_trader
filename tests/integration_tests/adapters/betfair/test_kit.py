@@ -359,7 +359,7 @@ class BetfairTestStubs:
     @staticmethod
     def streaming_config(catalog_path: str, catalog_fs_protocol: str = "memory") -> StreamingConfig:
         return StreamingConfig(
-            catalog_path=str(catalog_path),
+            catalog_path=catalog_path,
             fs_protocol=catalog_fs_protocol,
             kind="backtest",
             persit_logs=True,

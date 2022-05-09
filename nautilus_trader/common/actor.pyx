@@ -68,6 +68,8 @@ from nautilus_trader.model.orderbook.data cimport OrderBookData
 from nautilus_trader.model.orderbook.data cimport OrderBookSnapshot
 from nautilus_trader.msgbus.bus cimport MessageBus
 
+from nautilus_trader.persistence.streaming import generate_signal_class
+
 
 cdef class Actor(Component):
     """
@@ -107,6 +109,7 @@ cdef class Actor(Component):
         )
 
         self._warning_events = set()
+        self._signal_classes = dict()
 
         self.trader_id = None  # Initialized when registered
         self.msgbus = None     # Initialized when registered
@@ -1316,6 +1319,29 @@ cdef class Actor(Component):
         Condition.true(self.trader_id is not None, "The actor has not been registered")
 
         self._msgbus.publish_c(topic=f"data.{data_type.topic}", msg=data)
+
+    cpdef void publish_signal(self, str name, int ts_init, object value, bint stream = False) except *:
+        """
+        Publish the given value as a signal to the message bus. Optionally setup persistence for this `signal`.
+
+        Parameters
+        ----------
+        name : str
+            The name of the signal being published.
+        value : object
+            The data to publish.
+
+        """
+        Condition.not_none(name, "name")
+        Condition.not_none(value, "value")
+        Condition.is_in(type(value), (int, float, str), "value", "int, float, str")
+        Condition.true(self.trader_id is not None, "The actor has not been registered")
+
+        if name not in self._signal_classes:
+            self._signal_classes[name] = generate_signal_class(name=name)
+        cls = self._signal_classes[name]
+        data = cls(ts_init=ts_init, value=value)
+        self.publish_data(data_type=DataType(cls), data=data)
 
 # -- REQUESTS -------------------------------------------------------------------------------------
 
