@@ -45,7 +45,7 @@ jobs:
 
       # Test pip installation
       - name: Test pip installation
-        run: pip install .[distributed,docs]
+        run: pip install .
 
   tag-release:
     needs: [ test-pip-install ]

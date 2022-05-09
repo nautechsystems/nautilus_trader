@@ -40,6 +40,10 @@ jobs:
         run: |
           python -m pip install --upgrade pip setuptools wheel poetry pre-commit nox
 
+      # Test pip installation TODO: Temporarily test pip install as part of normal build
+      - name: Test pip installation
+        run: pip install .
+
       # Setup cached pre-commit
       - name: Setup cached pre-commit
         id: cache-pre-commit
