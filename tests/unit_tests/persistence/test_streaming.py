@@ -13,7 +13,10 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+import sys
 from collections import Counter
+
+import pytest
 
 from nautilus_trader.adapters.betfair.providers import BetfairInstrumentProvider
 from nautilus_trader.backtest.node import BacktestNode
@@ -59,6 +62,7 @@ class TestPersistenceStreaming:
         )
         assert len(data) == 2533
 
+    @pytest.mark.skipif(sys.platform == "win32", reason="Currently flaky on Windows")
     def test_feather_writer(self):
         # Arrange
         instrument = self.catalog.instruments(as_nautilus=True)[0]
