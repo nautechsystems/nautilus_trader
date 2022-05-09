@@ -84,6 +84,11 @@ jobs:
           sudo apt-get install redis-server
           redis-server --daemonize yes
 
+      - name: Install Memurai (Windows)
+        if: runner.os == 'Windows'
+        run: |
+          choco install memurai-developer.install
+
       # Run tests (Linux)
       - name: Run tests (Linux)
         if: runner.os == 'Linux'
